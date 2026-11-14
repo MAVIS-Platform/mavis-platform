@@ -74,7 +74,9 @@ public sealed class ManagedRuntimeTests : IDisposable
         Assert.Equal("{\"a\":\"Việt\",\"b\":[null,{\"x\":1,\"y\":2}]}", Encoding.UTF8.GetString(ReceiptCanonicalJson.Canonicalize(input)));
         Assert.Equal("sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a", ReceiptCanonicalJson.Digest("{}"));
         Assert.Throws<ArgumentException>(() => ReceiptCanonicalJson.Digest("{\"x\":null,\"x\":1}"));
-        Assert.Throws<ArgumentException>(() => ReceiptCanonicalJson.Digest("{\"x\":1.5}"));
+        Assert.Equal("{\"x\":1.5}",Encoding.UTF8.GetString(ReceiptCanonicalJson.Canonicalize("{\"x\":1.50}")));
+        Assert.Throws<ArgumentException>(() => ReceiptCanonicalJson.Digest("{\"x\":1e300}"));
+        Assert.Throws<ArgumentException>(() => ReceiptCanonicalJson.Digest("{\"x\":1e-40}"));
     }
 
     [Fact]
@@ -191,6 +193,14 @@ public sealed class ManagedRuntimeTests : IDisposable
         Assert.Equal(new[] { "run-definition", "lifecycle-ack", "ingest-receipt-ack" }, routes);
         Assert.True(File.Exists(Path.Combine(root, "receipts", Project + ".json")));
         Assert.True(File.Exists(Path.Combine(root, "receipts", Project + ".ack.json")));
+    }
+
+    [Fact]
+    public void MeasuredFractionalErrorRatesCanBeSignedWithoutLosingPrecision()
+    {
+        const string input="{\"errorRatePercent\":33.333333333333336,\"zero\":0.0}";
+        Assert.Equal("{\"errorRatePercent\":33.333333333333336,\"zero\":0}",Encoding.UTF8.GetString(ReceiptCanonicalJson.Canonicalize(input)));
+        Assert.Equal(ReceiptCanonicalJson.Digest("{\"x\":1e-7}"),ReceiptCanonicalJson.Digest("{\"x\":0.0000001}"));
     }
 
     [Fact]

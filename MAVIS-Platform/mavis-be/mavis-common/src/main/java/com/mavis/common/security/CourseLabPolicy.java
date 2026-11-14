@@ -91,7 +91,7 @@ public class CourseLabPolicy {
 
     public void requireOpen(Assignment lab, User student) {
         if (!canOpen(lab, student)) {
-            throw new BusinessException(ErrorCode.FORBIDDEN, "Complete the preceding Lab to access this Lab");
+            throw new BusinessException(ErrorCode.FORBIDDEN, "PREREQUISITE_LAB_LOCKED", "Complete the preceding Lab to access this Lab");
         }
     }
 

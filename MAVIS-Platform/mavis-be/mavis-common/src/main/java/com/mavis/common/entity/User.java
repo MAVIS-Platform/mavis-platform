@@ -34,6 +34,13 @@ public class User {
     @Column(name = "full_name", nullable = false)
     private String fullName;
 
+    @Column(name = "avatar_url", length = 1000)
+    private String avatarUrl;
+
+    @Builder.Default
+    @Column(name = "preferred_locale", nullable = false, length = 5)
+    private String preferredLocale = "en";
+
     @Builder.Default
     @Column(nullable = false, length = 20)
     private String status = "ACTIVE";

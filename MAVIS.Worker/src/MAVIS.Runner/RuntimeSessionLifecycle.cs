@@ -43,7 +43,11 @@ public static class RuntimeSessionLifecycle
             infrastructureActions = await backend.ExecuteInfrastructureActionsAsync(deadline.Token);
             status = "Completed"; // Processing completion is separate from scenario pass/fail.
         }
-        catch (OperationCanceledException) { status = ct.IsCancellationRequested ? "Cancelled" : "TimedOut"; }
+        catch (OperationCanceledException)
+        {
+            status = ct.IsCancellationRequested ? "Cancelled" : "TimedOut";
+            if (status == "TimedOut") diagnostics.Add("SESSION_TIMED_OUT_AT_" + backend.Stage);
+        }
         catch (RuntimeStageException ex) { diagnostics.Add(ex.Code); }
         catch (Exception ex) { diagnostics.Add("SESSION_EXECUTION_FAILED_AT_" + backend.Stage); diagnostics.Add(ex.GetType().Name); }
         finally

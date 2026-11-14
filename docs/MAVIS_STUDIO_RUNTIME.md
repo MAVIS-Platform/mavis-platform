@@ -6,7 +6,7 @@ Each session pins its source, model, profile and confirmed service mappings. The
 
 ## Runtime requirements
 
-- Apply Flyway V29 and V30 with the other pending migrations.
+- Apply Flyway V32 and V33 after the existing V29–V31 migrations from main.
 - Deploy the Java backend, frontend and updated managed Runner together.
 - Configure the existing Runner service credential, state root, Linux Docker Engine, collector and approved execution profile.
 - Interactive mode requires the managed Runner transport. Existing one-shot scenarios keep their execution flow.
@@ -38,7 +38,7 @@ Snapshots are fetched separately for download so the regular polling response ca
 
 New interactive receipt callbacks carry an HMAC-SHA256 signature over the canonical receipt digest using the existing Runner service credential. Java verifies the signature before committing the receipt. Downloaded receipt evidence includes the digest, signature and receipt body. Existing trusted local outbox recovery retains its compatibility path.
 
-When an interactive Studio session is attached to a coursework submission, submission creation requires a captured snapshot and a completed, verified run with confirmed cleanup. V30 freezes the Studio snapshots and receipt into the submission. Later captures or telemetry updates do not change that submitted evidence. Full Studio evidence is included in the submission export; list/detail summaries omit large images and trace payloads.
+When an interactive Studio session is attached to a coursework submission, submission creation requires a captured snapshot and a completed, verified run with confirmed cleanup. V33 freezes the Studio snapshots and receipt into the submission, whose package digest includes that evidence. Later captures or telemetry updates do not change the submitted evidence. Full Studio evidence is included in the submission export; list/detail summaries omit large images and trace payloads.
 
 ## API
 

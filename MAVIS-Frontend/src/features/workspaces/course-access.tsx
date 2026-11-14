@@ -25,7 +25,12 @@ type Roadmap = {
   enrollmentStatus: "ENROLLED" | "IN_PROGRESS" | "COMPLETED" | null;
   labs: Lab[];
 };
-type KeyStatus = { active: boolean; expiresAt: string | null };
+type KeyStatus = {
+  active: boolean;
+  expiresAt: string | null;
+  maxStudents: number | null;
+  enrolledStudents: number;
+};
 type IssuedKey = { code: string; expiresAt: string };
 
 const roadmapKey = (workspaceId: string) => ["api", "course-roadmap", workspaceId];
@@ -233,6 +238,7 @@ function CoursePasskey({ workspaceId }: { workspaceId: string }) {
   const cache = useQueryClient();
   const path = `workspaces/${workspaceId}/course-passkey`;
   const [validHours, setValidHours] = useState(24);
+  const [maxStudents, setMaxStudents] = useState(30);
   const [issued, setIssued] = useState<IssuedKey>();
   const [copied, setCopied] = useState(false);
   const status = useQuery({
@@ -242,7 +248,10 @@ function CoursePasskey({ workspaceId }: { workspaceId: string }) {
   const change = useMutation<IssuedKey | null, Error, "issue" | "revoke">({
     mutationFn: (action: "issue" | "revoke") =>
       action === "issue"
-        ? courseApi<IssuedKey>(path, { method: "POST", body: JSON.stringify({ validHours }) })
+        ? courseApi<IssuedKey>(path, {
+            method: "POST",
+            body: JSON.stringify({ validHours, maxStudents }),
+          })
         : courseApi<null>(`${path}/revoke`, { method: "POST" }),
     onSuccess: (key) => {
       setIssued(key ?? undefined);
@@ -259,6 +268,12 @@ function CoursePasskey({ workspaceId }: { workspaceId: string }) {
           <time dateTime={status.data.expiresAt}>
             {new Date(status.data.expiresAt).toLocaleString()}
           </time>
+        </p>
+      )}
+      {status.data && (
+        <p className="text-sm text-muted-foreground">
+          {t("Enrollment", "Ghi danh")}: {status.data.enrolledStudents}/
+          {status.data.maxStudents ?? t("Unlimited", "Không giới hạn")}
         </p>
       )}
       <form
@@ -282,6 +297,19 @@ function CoursePasskey({ workspaceId }: { workspaceId: string }) {
               required
               value={validHours || ""}
               onChange={(event) => setValidHours(Number(event.target.value))}
+            />
+          )}
+        </FormField>
+        <FormField label={t("Maximum students", "Sĩ số tối đa")}>
+          {(props) => (
+            <Input
+              {...props}
+              type="number"
+              min={1}
+              max={10000}
+              required
+              value={maxStudents || ""}
+              onChange={(event) => setMaxStudents(Number(event.target.value))}
             />
           )}
         </FormField>
@@ -395,6 +423,81 @@ export function PublishCourseLab({
           {t(
             "Could not publish. Check the assigned source and class status.",
             "Chưa thể công bố. Hãy kiểm tra nguồn mẫu và trạng thái lớp.",
+          )}
+        </p>
+      )}
+    </div>
+  );
+}
+
+export function SeedCuratedCourseLabs({
+  workspaceId,
+  variant = "outline",
+}: {
+  workspaceId: string;
+  variant?: "default" | "outline";
+}) {
+  const t = useCourseText();
+  const cache = useQueryClient();
+  const [activePreset, setActivePreset] = useState<"STANDARD_DEMO" | "FULL_CURRICULUM" | null>(null);
+  const seed = useMutation({
+    mutationFn: (preset: "STANDARD_DEMO" | "FULL_CURRICULUM") => {
+      setActivePreset(preset);
+      return courseApi<Roadmap>(`workspaces/${workspaceId}/course-labs/seed-curated`, {
+        method: "POST",
+        body: JSON.stringify({ preset }),
+      });
+    },
+    onSuccess: () => {
+      void cache.invalidateQueries({ queryKey: roadmapKey(workspaceId) });
+      void cache.invalidateQueries({ queryKey: ["api", "assignments"] });
+      void cache.invalidateQueries({ queryKey: ["api", "projects"] });
+    },
+    onSettled: () => setActivePreset(null),
+  });
+  return (
+    <div className="inline-flex flex-col items-start gap-1.5">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          variant={variant}
+          disabled={seed.isPending}
+          onClick={() => seed.mutate("STANDARD_DEMO")}
+        >
+          {seed.isPending && activePreset === "STANDARD_DEMO"
+            ? t("Seeding Curated Labs…", "Đang khởi tạo Bộ Lab Chuẩn…")
+            : t(
+                "⚡ 1-Click Seed Curated Labs (Lab 01–03)",
+                "⚡ Khởi tạo nhanh Bộ Lab Chuẩn (Lab 01–03)",
+              )}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={seed.isPending}
+          onClick={() => seed.mutate("FULL_CURRICULUM")}
+        >
+          {seed.isPending && activePreset === "FULL_CURRICULUM"
+            ? t("Seeding Full 13-Lab Curriculum…", "Đang khởi tạo 13 Lab Giáo trình…")
+            : t(
+                "📚 Seed Full 12 Java + 1 C# Curriculum",
+                "📚 Khởi tạo trọn bộ 13 Lab (12 Java + 1 C#)",
+              )}
+        </Button>
+      </div>
+      {seed.isSuccess && (
+        <p role="status" className="text-xs text-success">
+          {t(
+            `Ready (${seed.data.labs.length} guided labs published).`,
+            `Đã sẵn sàng (${seed.data.labs.length} Lab tuần tự đã công bố).`,
+          )}
+        </p>
+      )}
+      {seed.isError && (
+        <p role="alert" className="text-xs text-destructive">
+          {t(
+            "Could not seed curated labs. Verify workspace status and lecturer permissions.",
+            "Chưa thể khởi tạo Lab mẫu. Hãy kiểm tra trạng thái lớp và quyền giảng viên.",
           )}
         </p>
       )}

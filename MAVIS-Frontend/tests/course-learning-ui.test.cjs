@@ -93,6 +93,26 @@ test("assignment and submission screens preserve the selected Lab context", () =
   assert.ok(submissions.includes("No snapshot has been submitted for this Lab yet"));
 });
 
+test("WF-04 submission UI exposes every evidence gate and the sealed package digest", () => {
+  const composer = read("src/features/submissions/composer.tsx");
+  const frozen = read("src/features/submissions/frozen-artifacts.tsx");
+  const contract = read("src/lib/api/java-operations.ts");
+
+  for (const gate of [
+    "Step 1 · Static C1–C3 &amp; AI:",
+    "Step 2 · C0–C3 Ground Truth:",
+    "Step 3 · OpenTelemetry Runtime View:",
+    "Step 4 · MAVIS Studio RuntimeReceipt:",
+  ])
+    assert.ok(composer.includes(gate), gate);
+  assert.match(
+    composer,
+    /guided && \(!stage1Ready \|\| !stage2Ready \|\| !stage3Ready \|\| !stage4Ready\)/,
+  );
+  assert.ok(frozen.includes("Evidence package SHA-256"));
+  assert.match(contract, /evidencePackageDigest:\s*z\s*\.string\(\)\s*\.regex/);
+});
+
 test("lecturer review requires comments and maps the documented pass threshold to /100", () => {
   const grading = read("src/features/submissions/grading.tsx");
 
@@ -233,4 +253,171 @@ test("Studio in the guided Lab requires observed traces on the current model", (
   assert.match(course, /item\.projectId === projectId && item\.modelId === model\?\.id/);
   assert.match(course, /const studioReady = runtimeReady && Boolean\(observedRuntime\)/);
   assert.match(course, /\(step\.id === 4 && studioReady\)/);
+});
+
+test("WF-04 per-snapshot submission explanations, > 5.0/10 grading rule, and SR-15 EN/VI runtime/studio translations", async () => {
+  const composer = read("src/features/submissions/composer.tsx");
+  const grading = read("src/features/submissions/grading.tsx");
+  const frozen = read("src/features/submissions/frozen-artifacts.tsx");
+  const runtimeScreens = read("src/features/runtime/screens.tsx");
+  const dict = read("src/lib/i18n/locale-context.tsx");
+
+  assert.ok(composer.includes("Captured Snapshots & Written Theoretical Explanations"));
+  assert.ok(composer.includes("Snapshot 1 · Static C1–C3 Architecture & 3E Reasoning"));
+  assert.ok(composer.includes("Snapshot 2 · MAVIS Studio Runtime Stop/Scale Before-After Analysis"));
+  assert.ok(composer.includes("(guided && !hasWrittenExplanation)"));
+
+  assert.ok(grading.includes("const SNAPSHOT_PASS_EXCLUSIVE = 5.0"));
+  assert.ok(grading.includes("Per-snapshot grading results (> 5.0 / 10 required)"));
+  assert.ok(frozen.includes("Submitted Snapshots &amp; Theoretical Explanations"));
+  assert.ok(runtimeScreens.includes('t("Step 2: Test Scenarios")'));
+
+  for (const key of [
+    "Studio results (Before vs. After)",
+    "Step 2: Test Scenarios",
+    "Step 3: Run & Trace",
+    "Captured Snapshots & Written Theoretical Explanations",
+    "Every required snapshot must score > 5.0 / 10 (5.1 or higher) with a mandatory overall summary to pass and unlock the next Lab; any snapshot <= 5.0 results in NEEDS REVISION.",
+  ]) {
+    assert.ok(dict.includes(key), `Missing Vietnamese dictionary entry for: ${key}`);
+  }
+
+  const { MockAdapter } = require("../src/lib/api/mock-adapter.ts");
+  const adapter = new MockAdapter("normal", 0);
+  await adapter.execute("mockLogin", { role: "student" });
+  const subs = await adapter.execute("submissions", {});
+  const targetSub = subs[0];
+  assert.ok(targetSub, "Expected mock student submission");
+
+  await adapter.execute("mockLogin", { role: "lecturer" });
+  const failReview = await adapter.execute("gradeSubmission", {
+    submissionId: targetSub.id,
+    expectedRevision: 0,
+    status: "GRADED",
+    score: null,
+    summary: "One snapshot at exact 5.0 threshold.",
+    snapshotGrades: [
+      { snapshotId: "STEP_1_STATIC", title: "Static C1-C3", score: 8.5, comment: "Solid" },
+      { snapshotId: "STEP_4_RUNTIME", title: "Runtime Studio", score: 5.0, comment: "Missing trace link" },
+    ],
+  });
+  assert.equal(failReview.labOutcome, "NEEDS_REVISION");
+  assert.equal(failReview.score, 67.5);
+
+  const passReview = await adapter.execute("gradeSubmission", {
+    submissionId: targetSub.id,
+    expectedRevision: 1,
+    status: "GRADED",
+    score: null,
+    summary: "Both snapshots exceed > 5.0/10.",
+    snapshotGrades: [
+      { snapshotId: "STEP_1_STATIC", title: "Static C1-C3", score: 5.1, comment: "Pass" },
+      { snapshotId: "STEP_4_RUNTIME", title: "Runtime Studio", score: 6.9, comment: "Verified" },
+    ],
+  });
+  assert.equal(passReview.labOutcome, "PASSED");
+  assert.equal(passReview.score, 60);
+
+  // TC-GR01 / TC-GR02 / TC-GR03: Verify resolveSubmissionOutcome & SubmissionResult logic on > 5.0 / 10 rule
+  const submissionsScreen = read("src/features/submissions/screens.tsx");
+  const { resolveSubmissionOutcome } = require("../src/features/submissions/grading.tsx");
+  // TC-GR01: [5.1, 8.0] -> PASS
+  assert.equal(
+    resolveSubmissionOutcome({
+      status: "GRADED",
+      score: 65.5,
+      labOutcome: "PASSED",
+      snapshotGrades: [
+        { score: 5.1 },
+        { score: 8.0 },
+      ],
+    }),
+    "PASS",
+  );
+  // TC-GR02: [9.0, 5.0] -> score: 70, labOutcome: "NEEDS_REVISION" -> NEEDS REVISION
+  assert.equal(
+    resolveSubmissionOutcome({
+      status: "GRADED",
+      score: 70,
+      labOutcome: "NEEDS_REVISION",
+      snapshotGrades: [
+        { score: 9.0 },
+        { score: 5.0 },
+      ],
+    }),
+    "NEEDS REVISION",
+  );
+  assert.equal(
+    resolveSubmissionOutcome({
+      status: "GRADED",
+      score: 70,
+      snapshotGrades: [
+        { score: 9.0 },
+        { score: 5.0 },
+      ],
+    }),
+    "NEEDS REVISION",
+  );
+  // TC-GR03: [4.9, 9.5] -> score: 72 -> NEEDS REVISION even without explicit labOutcome
+  assert.equal(
+    resolveSubmissionOutcome({
+      status: "GRADED",
+      score: 72,
+      snapshotGrades: [
+        { score: 4.9 },
+        { score: 9.5 },
+      ],
+    }),
+    "NEEDS REVISION",
+  );
+  assert.equal(
+    resolveSubmissionOutcome({
+      status: "GRADED",
+      score: 60,
+      labOutcome: "PASSED",
+      snapshotGrades: [
+        { score: 5.1 },
+        { score: 6.9 },
+      ],
+    }),
+    "PASS",
+  );
+  assert.ok(submissionsScreen.includes("resolveSubmissionOutcome(query.data)"));
+  assert.ok(grading.includes("At least one snapshot scored <= 5.0 / 10"));
+});
+
+test("Stage 1 reference views, 1-click workspace init, Step 4 submit bridge, and composer 1-click analysis", () => {
+  const course = read("src/features/courses/screens.tsx");
+  const composer = read("src/features/submissions/composer.tsx");
+
+  assert.ok(course.includes("const referenceModelQuery ="));
+  assert.ok(course.includes("Initialize & Analyze My Lab Workspace"));
+  assert.ok(course.includes("Proceed to Submit Lab"));
+  assert.ok(course.includes("#submission-composer"));
+  assert.ok(composer.includes('id="submission-composer"'));
+  assert.ok(composer.includes("(guided || useReferenceSnapshot) && requirements?.referenceSource?.snapshotId"));
+  assert.ok(composer.includes("Run Static Analysis Now"));
+});
+
+test("Stage 3 lecturer 1-click curated course lab seeder is wired on courses and assignments pages", () => {
+  const access = read("src/features/workspaces/course-access.tsx");
+  const course = read("src/features/courses/screens.tsx");
+  const assignments = read("src/features/assignments/screens.tsx");
+  const { allowedBackendPath } = require("../src/lib/api/backend-path.ts");
+
+  assert.ok(access.includes("export function SeedCuratedCourseLabs"));
+  assert.ok(access.includes("course-labs/seed-curated"));
+  assert.ok(access.includes("STANDARD_DEMO"));
+  assert.ok(access.includes("FULL_CURRICULUM"));
+  assert.equal(allowedBackendPath("workspaces/11111111-1111-1111-1111-111111111111/course-labs/seed-curated"), true);
+  assert.ok(course.includes("<SeedCuratedCourseLabs workspaceId={workspaceId}"));
+  assert.ok(assignments.includes("<SeedCuratedCourseLabs workspaceId={workspaceId}"));
+});
+
+test("guided submission requires Studio evidence on the selected model", () => {
+  const lab = read("src/features/courses/screens.tsx");
+  const composer = read("src/features/submissions/composer.tsx");
+  assert.match(lab, /canSubmitFromStep4 = step === 4 && runtimeReady && studioVerified/);
+  assert.match(composer, /s\.studioVerified && s\.snapshotId === model\.snapshotId/);
+  assert.match(composer, /stage3Ready && selectedRuntime\?\.studioVerified === true/);
 });

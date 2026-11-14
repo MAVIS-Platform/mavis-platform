@@ -89,24 +89,11 @@ interface ObservedStepItem {
 function normalizeEndpointDisplay(
   method: string | null | undefined,
   operation: string | null | undefined,
-  callee: string | null | undefined,
 ): string {
-  const m = (method ?? "GET").trim().toUpperCase();
-  let op = (operation ?? "").trim();
-  if (op.toUpperCase().startsWith(m + " ")) {
-    op = op.slice(m.length).trim();
-  }
-  if (op.startsWith("HTTP -> ")) {
-    op = "/api/" + op.slice("HTTP -> ".length).trim().toLowerCase();
-  }
-  if (!op || op === callee || !op.includes("/")) {
-    const cleanSlug = (op || callee || "service")
-      .replace(/^fruit[-_]/i, "")
-      .replace(/[-_]service$/i, "")
-      .toLowerCase();
-    op = `/api/${cleanSlug}`;
-  }
-  return `${m} ${op}`;
+  const verb = method?.trim().toUpperCase();
+  const label = operation?.trim();
+  if (!label) return verb || "Operation unavailable";
+  return !verb || label.toUpperCase().startsWith(verb + " ") ? label : `${verb} ${label}`;
 }
 
 function methodStrokeColor(method: string | null | undefined, isError = false): string {
@@ -340,9 +327,6 @@ function buildRuntimeSequenceSvgString(
       <marker id="seq-err-arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
         <polygon points="0 0, 10 4, 0 8" fill="#f43f5e" />
       </marker>
-      <marker id="seq-reply-arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
-        <polyline points="1 1, 9 4, 1 7" fill="none" stroke="#34d399" stroke-width="1.8" />
-      </marker>
     </defs>
   `);
 
@@ -398,10 +382,9 @@ function buildRuntimeSequenceSvgString(
     const x1 = xOf(caller);
     const x2 = xOf(callee);
     const callY = topMargin + idx * rowHeight + 18;
-    const replyY = callY + 26;
-    const status = step.httpStatusCode ?? 200;
-    const isError = status >= 400;
-    const verb = (step.httpMethod ?? "GET").toUpperCase();
+    const status = step.httpStatusCode;
+    const isError = status != null && status >= 400;
+    const verb = step.httpMethod?.toUpperCase();
     const strokeCol = methodStrokeColor(verb, isError);
     const markerId = isError
       ? "seq-err-arrow"
@@ -410,9 +393,9 @@ function buildRuntimeSequenceSvgString(
         : verb === "PUT"
           ? "seq-put-arrow"
           : "seq-sync-arrow";
-    const durationText = step.durationMs != null ? `${step.durationMs} ms` : "duration n/a";
-    const endpointLabel = `#${idx + 1} ${normalizeEndpointDisplay(step.httpMethod, step.operation, callee)}`;
-    const replyLabel = `HTTP ${status} (${durationText})`;
+    const durationText = step.durationMs != null ? `${step.durationMs} ms` : null;
+    const endpointLabel = `#${idx + 1} ${normalizeEndpointDisplay(step.httpMethod, step.operation)}`;
+    const evidenceLabel = [status == null ? null : `HTTP ${status}`, durationText].filter(Boolean).join(" · ");
 
     parts.push(
       `<rect x="${x1 - 5}" y="${callY - 6}" width="10" height="38" rx="2" fill="#0284c7" stroke="#38bdf8" stroke-width="1" />`,
@@ -427,7 +410,7 @@ function buildRuntimeSequenceSvgString(
         `<path d="M ${x1 + 5} ${callY} L ${x1 + loopW} ${callY} L ${x1 + loopW} ${callY + 20} L ${x1 + 6} ${callY + 20}" fill="none" stroke="${strokeCol}" stroke-width="1.8" marker-end="url(#${markerId})" />`,
       );
       parts.push(
-        `<text x="${x1 + loopW + 6}" y="${callY + 13}" fill="#e2e8f0" font-size="10.5" font-weight="bold">${escapeXml(endpointLabel)} (${escapeXml(replyLabel)})</text>`,
+        `<text x="${x1 + loopW + 6}" y="${callY + 13}" fill="#e2e8f0" font-size="10.5" font-weight="bold">${escapeXml(endpointLabel)}${evidenceLabel ? ` · ${escapeXml(evidenceLabel)}` : ""}</text>`,
       );
     } else {
       const dir = x2 > x1 ? 1 : -1;
@@ -450,12 +433,11 @@ function buildRuntimeSequenceSvgString(
         `<text x="${midX}" y="${callY - 8}" text-anchor="middle" fill="#f8fafc" font-size="10.5" font-weight="bold">${escapeXml(endpointLabel)}</text>`,
       );
 
-      parts.push(
-        `<line x1="${endX}" y1="${replyY}" x2="${startX}" y2="${replyY}" stroke="#34d399" stroke-width="1.3" stroke-dasharray="4 3" marker-end="url(#seq-reply-arrow)" />`,
-      );
-      parts.push(
-        `<text x="${midX}" y="${replyY - 4}" text-anchor="middle" fill="#6ee7b7" font-size="9.5">${escapeXml(replyLabel)}</text>`,
-      );
+      if (evidenceLabel) {
+        parts.push(
+          `<text x="${midX}" y="${callY + 22}" text-anchor="middle" fill="#cbd5e1" font-size="9.5">${escapeXml(evidenceLabel)}</text>`,
+        );
+      }
     }
   });
 
@@ -463,18 +445,121 @@ function buildRuntimeSequenceSvgString(
   return { svgMarkup: parts.join("\n"), width, height, participants };
 }
 
+export interface StudioComparisonOverlay {
+  action: string;
+  service: string;
+  replicasBefore?: number | null | undefined;
+  replicasAfter?: number | null | undefined;
+  requestCountBefore?: number | null | undefined;
+  requestCountAfter?: number | null | undefined;
+  p95LatencyMsBefore?: number | null | undefined;
+  p95LatencyMsAfter?: number | null | undefined;
+  errorRateBefore?: number | null | undefined;
+  errorRateAfter?: number | null | undefined;
+  capturedSpanCount?: number | null | undefined;
+  cleanupStatus?: string | null | undefined;
+  measurementStatus?: string | null | undefined;
+  measurementNote?: string | null | undefined;
+}
+
+function resolveSessionStudioComparisons(
+  data: {
+    beforeAfterComparison?: StudioComparisonOverlay[] | null | undefined;
+    capturedSpanCount?: number | null | undefined;
+    cleanupStatus?: string | null | undefined;
+    infrastructureActions?: Array<{
+      action: string;
+      service: string;
+      confirmed?: boolean;
+      replicasBefore?: number | null;
+      replicasAfter?: number | null;
+      metricsBefore: Record<string, unknown>;
+      metricsAfter: Record<string, unknown>;
+    }> | null | undefined;
+  } | null | undefined,
+): StudioComparisonOverlay[] {
+  if (!data) return [];
+  if (data.beforeAfterComparison?.length) {
+    return data.beforeAfterComparison;
+  }
+  return (data.infrastructureActions ?? [])
+    .filter((action) => action.confirmed)
+    .map((action) => {
+      const reqBefore =
+        typeof action.metricsBefore["requestCount"] === "number"
+          ? action.metricsBefore["requestCount"]
+          : null;
+      const reqAfter =
+        typeof action.metricsAfter["requestCount"] === "number"
+          ? action.metricsAfter["requestCount"]
+          : null;
+      const p95Before =
+        typeof action.metricsBefore["p95LatencyMs"] === "number"
+          ? action.metricsBefore["p95LatencyMs"]
+          : null;
+      const p95After =
+        typeof action.metricsAfter["p95LatencyMs"] === "number"
+          ? action.metricsAfter["p95LatencyMs"]
+          : null;
+      const errBefore =
+        typeof action.metricsBefore["errorRatePercent"] === "number"
+          ? action.metricsBefore["errorRatePercent"]
+          : null;
+      const errAfter =
+        typeof action.metricsAfter["errorRatePercent"] === "number"
+          ? action.metricsAfter["errorRatePercent"]
+          : null;
+      const hasSamples =
+        reqBefore !== null &&
+        reqBefore > 0 &&
+        reqAfter !== null &&
+        reqAfter > 0 &&
+        p95Before !== null &&
+        p95After !== null;
+      return {
+        action: action.action,
+        service: action.service,
+        replicasBefore: action.replicasBefore,
+        replicasAfter: action.replicasAfter,
+        requestCountBefore: reqBefore,
+        requestCountAfter: reqAfter,
+        p95LatencyMsBefore: p95Before,
+        p95LatencyMsAfter: p95After,
+        errorRateBefore: errBefore,
+        errorRateAfter: errAfter,
+        capturedSpanCount: data.capturedSpanCount ?? null,
+        cleanupStatus: data.cleanupStatus ?? null,
+        measurementStatus: hasSamples ? "MEASURED" : "INSUFFICIENT_TELEMETRY_SAMPLES",
+        measurementNote: hasSamples
+          ? "Measured before/after workload comparison captured"
+          : "Insufficient telemetry samples",
+      };
+    });
+}
+
 function RuntimeWorkflowTopologyCanvas({
   steps,
   planned,
   selectedService,
   onSelectService,
+  studioComparisons = [],
+  studioServices,
+  onQuickStudioAction,
+  quickRunPending = false,
 }: {
   steps: ObservedStepItem[];
   planned: boolean;
   selectedService: string | null;
   onSelectService: (svc: string | null) => void;
+  studioComparisons?: StudioComparisonOverlay[];
+  studioServices: string[];
+  onQuickStudioAction?: (service: string, action: "STOP" | "START" | "SCALE", replicas?: number) => void;
+  quickRunPending?: boolean;
 }) {
+  const { t } = useLocale();
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const [nodeAction, setNodeAction] = useState<"STOP" | "START" | "SCALE">("SCALE");
+  const [nodeReplicas, setNodeReplicas] = useState<number>(2);
   const [customPositions, setCustomPositions] = useState<Record<string, { x: number; y: number }>>(
     {},
   );
@@ -499,7 +584,7 @@ function RuntimeWorkflowTopologyCanvas({
         count: number;
         totalMs: number;
         hasError: boolean;
-        samplePath: string;
+        measuredCount: number;
       }
     >();
 
@@ -517,12 +602,15 @@ function RuntimeWorkflowTopologyCanvas({
         count: 0,
         totalMs: 0,
         hasError: false,
-        samplePath: normalizeEndpointDisplay(st.httpMethod, st.operation, to),
+        measuredCount: 0,
       };
-      existing.methods.add((st.httpMethod ?? "GET").toUpperCase());
+      if (st.httpMethod) existing.methods.add(st.httpMethod.toUpperCase());
       existing.count += 1;
-      existing.totalMs += st.durationMs ?? 0;
-      if ((st.httpStatusCode ?? 200) >= 400) existing.hasError = true;
+      if (st.durationMs != null) {
+        existing.totalMs += st.durationMs;
+        existing.measuredCount += 1;
+      }
+      if (st.httpStatusCode != null && st.httpStatusCode >= 400) existing.hasError = true;
       edgeMap.set(key, existing);
     }
 
@@ -550,7 +638,7 @@ function RuntimeWorkflowTopologyCanvas({
 
     const maxRows = Math.max(1, ...columns.map((c) => c.length));
     const svgW = Math.max(880, columns.length * 300 + 120);
-    const svgH = Math.max(360, maxRows * 130 + 110);
+    const svgH = Math.max(380, maxRows * 135 + 120);
 
     const posMap = new Map<string, { x: number; y: number; tier: number }>();
     columns.forEach((col, colIdx) => {
@@ -578,12 +666,24 @@ function RuntimeWorkflowTopologyCanvas({
           ? {
               ...n,
               x: Math.max(84, Math.min(width - 84, custom.x)),
-              y: Math.max(40, Math.min(height - 40, custom.y)),
+              y: Math.max(54, Math.min(height - 40, custom.y)),
             }
           : n;
       }),
     [baseNodes, customPositions, width, height],
   );
+
+  const findNodeStudioState = (nodeName: string): StudioComparisonOverlay | undefined => {
+    const key = nodeName.trim().toLowerCase();
+    return [...studioComparisons].reverse().find((item) => item.service.trim().toLowerCase() === key);
+  };
+
+  const selectedStudioState =
+    selectedService && !isRunnerActor(selectedService)
+      ? findNodeStudioState(selectedService)
+      : undefined;
+  const selectedIsStopped = selectedStudioState?.replicasAfter === 0;
+  const selectedReplicas = selectedStudioState?.replicasAfter;
 
   const toSvgPoint = (clientX: number, clientY: number) => {
     const svg = svgRef.current;
@@ -614,8 +714,8 @@ function RuntimeWorkflowTopologyCanvas({
           </p>
           <p className="text-[11px] text-slate-400 mt-0.5">
             {planned
-              ? "PLANNED: built from your Step 2 requests and real model edges. Drag nodes to rearrange or click a node to filter."
-              : "OBSERVED: built from captured trace spans. Drag nodes to rearrange or click a service node to filter calls below."}
+              ? "PLANNED: built from your Step 2 requests and real model edges. Select an application service to run a new Studio experiment."
+              : "OBSERVED: built from captured trace spans. Select an application service to run a new Studio experiment."}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -643,6 +743,117 @@ function RuntimeWorkflowTopologyCanvas({
           )}
         </div>
       </div>
+
+      {selectedService && studioServices.includes(selectedService) && onQuickStudioAction && (
+        <div
+          data-testid="studio-2d-node-control-bar"
+          className="rounded-lg border border-sky-500/40 bg-slate-900/90 px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs"
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-semibold text-sky-300">
+              🎯 {t("Selected 2D Service Node")}:{" "}
+              <span className="font-mono text-white">{selectedService}</span>
+            </span>
+            <span
+              className={`rounded-full px-2 py-0.5 font-mono text-[10px] font-semibold border ${
+                selectedIsStopped
+                  ? "border-rose-500/50 bg-rose-500/15 text-rose-300"
+                  : (selectedReplicas ?? 0) > 1
+                    ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-300"
+                    : "border-sky-500/40 bg-sky-500/10 text-sky-300"
+              }`}
+            >
+              {selectedIsStopped
+                ? t("Stopped after experiment (0 replicas)")
+                : selectedReplicas == null
+                  ? t("No confirmed replica count")
+                  : t("Replicas after experiment: {count}").replace("{count}", String(selectedReplicas))}
+            </span>
+          </div>
+          <p className="basis-full text-muted-foreground">{t("Each experiment starts a new sandbox run.")}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex rounded-md border border-slate-700 bg-slate-950 p-0.5">
+              <button
+                type="button"
+                onClick={() => setNodeAction("STOP")}
+                className={`rounded px-2.5 py-1 font-medium transition ${
+                  nodeAction === "STOP"
+                    ? "bg-rose-600 text-white shadow-sm"
+                    : "text-slate-300 hover:bg-slate-800"
+                }`}
+              >
+                ⏹ Stop {selectedService}
+              </button>
+              <button
+                type="button"
+                onClick={() => setNodeAction("START")}
+                className={`rounded px-2.5 py-1 font-medium transition ${
+                  nodeAction === "START"
+                    ? "bg-emerald-600 text-white shadow-sm"
+                    : "text-slate-300 hover:bg-slate-800"
+                }`}
+              >
+                ▶ Start {selectedService}
+              </button>
+              <button
+                type="button"
+                onClick={() => setNodeAction("SCALE")}
+                className={`rounded px-2.5 py-1 font-medium transition ${
+                  nodeAction === "SCALE"
+                    ? "bg-sky-600 text-white shadow-sm"
+                    : "text-slate-300 hover:bg-slate-800"
+                }`}
+              >
+                📈 Scale {selectedService}
+              </button>
+            </div>
+            {nodeAction === "SCALE" && (
+              <div className="flex items-center gap-1.5">
+                {[2, 4, 8].map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => setNodeReplicas(preset)}
+                    className={`rounded border px-2 py-1 font-mono text-[11px] font-semibold transition ${
+                      nodeReplicas === preset
+                        ? "border-emerald-400 bg-emerald-500/20 text-emerald-300"
+                        : "border-slate-700 bg-slate-950 text-slate-300 hover:border-slate-500"
+                    }`}
+                  >
+                    ×{preset}
+                  </button>
+                ))}
+                <Input
+                  aria-label="Scale replicas (1 to 8)"
+                  type="number"
+                  min={1}
+                  max={8}
+                  value={nodeReplicas}
+                  onChange={(e) =>
+                    setNodeReplicas(Math.max(1, Math.min(8, Number(e.target.value) || 1)))
+                  }
+                  className="h-7 w-14 border-slate-700 bg-slate-950 text-center font-mono text-xs text-white"
+                />
+              </div>
+            )}
+            <Button
+              type="button"
+              size="sm"
+              disabled={quickRunPending}
+              onClick={() =>
+                onQuickStudioAction(
+                  selectedService,
+                  nodeAction,
+                  nodeAction === "SCALE" ? nodeReplicas : undefined,
+                )
+              }
+              className="h-7 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs"
+            >
+              ⚡ {t("Run new Studio experiment")}
+            </Button>
+          </div>
+        </div>
+      )}
 
       <div className="overflow-x-auto rounded-lg border border-slate-800 bg-[#070d19] p-2">
         <svg
@@ -702,7 +913,7 @@ function RuntimeWorkflowTopologyCanvas({
             const midX = (x1 + x2) / 2;
             const midY = (y1 + y2) / 2;
             const verbs = Array.from(edge.methods).join("/");
-            const avgMs = Math.round(edge.totalMs / Math.max(1, edge.count));
+            const avgMs = edge.measuredCount ? Math.round(edge.totalMs / edge.measuredCount) : null;
             const stroke = methodStrokeColor(Array.from(edge.methods)[0], edge.hasError);
             const isDimmed =
               selectedService && edge.from !== selectedService && edge.to !== selectedService;
@@ -800,7 +1011,7 @@ function RuntimeWorkflowTopologyCanvas({
                   fontSize="9.5"
                   fontWeight="bold"
                 >
-                  {planned ? `${verbs} · PLANNED` : `${verbs} · ${edge.count}x (${avgMs}ms)`}
+                  {[verbs, planned ? "PLANNED" : `${edge.count}x`, avgMs == null ? null : `${avgMs} ms`].filter(Boolean).join(" · ")}
                 </text>
               </g>
             );
@@ -812,13 +1023,30 @@ function RuntimeWorkflowTopologyCanvas({
             const isGateway = node.name.toLowerCase().includes("gateway");
             const isSelected = selectedService === node.name;
             const isDragging = draggingNode === node.name;
+            const studioState = !isRunner ? findNodeStudioState(node.name) : undefined;
+            const isStopped = studioState?.replicasAfter === 0;
+            const activeReplicas = studioState?.replicasAfter ?? 0;
+            const isScaled = !isStopped && activeReplicas > 1;
             const borderCol = isSelected
               ? "#facc15"
-              : isRunner
-                ? "#a855f7"
-                : isGateway
+              : isStopped
+                ? "#f43f5e"
+                : isScaled || isGateway
                   ? "#10b981"
-                  : "#38bdf8";
+                  : isRunner
+                    ? "#a855f7"
+                    : "#38bdf8";
+            const fillCol = isStopped
+              ? isSelected
+                ? "#4c0519"
+                : "#3b0a1e"
+              : isScaled
+                ? isSelected
+                  ? "#064e3b"
+                  : "#062e26"
+                : isSelected
+                  ? "#1e293b"
+                  : "#0f172a";
             const roleLabel = isRunner
               ? "⚡ TEST RUNNER"
               : isGateway
@@ -828,6 +1056,15 @@ function RuntimeWorkflowTopologyCanvas({
             return (
               <g
                 key={node.name}
+                role="button"
+                tabIndex={0}
+                aria-label={node.name}
+                aria-pressed={isSelected}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" && event.key !== " ") return;
+                  event.preventDefault();
+                  onSelectService(isSelected ? null : node.name);
+                }}
                 style={{ cursor: isDragging ? "grabbing" : "grab" }}
                 onPointerDown={(e) => {
                   e.stopPropagation();
@@ -853,7 +1090,7 @@ function RuntimeWorkflowTopologyCanvas({
                   }
                   const pt = toSvgPoint(e.clientX, e.clientY);
                   const nextX = Math.max(84, Math.min(width - 84, pt.x - activeDrag.offsetX));
-                  const nextY = Math.max(36, Math.min(height - 36, pt.y - activeDrag.offsetY));
+                  const nextY = Math.max(54, Math.min(height - 36, pt.y - activeDrag.offsetY));
                   setCustomPositions((prev) => ({
                     ...prev,
                     [node.name]: { x: nextX, y: nextY },
@@ -878,16 +1115,91 @@ function RuntimeWorkflowTopologyCanvas({
                   setDraggingNode(null);
                 }}
               >
+                {isScaled && activeReplicas > 2 && (
+                  <rect
+                    x={node.x - 68}
+                    y={node.y - 36}
+                    width="152"
+                    height="56"
+                    rx="10"
+                    fill="#064e3b"
+                    fillOpacity="0.55"
+                    stroke="#10b981"
+                    strokeWidth="1.2"
+                  />
+                )}
+                {isScaled && (
+                  <rect
+                    x={node.x - 72}
+                    y={node.y - 32}
+                    width="152"
+                    height="56"
+                    rx="10"
+                    fill="#065f46"
+                    fillOpacity="0.7"
+                    stroke="#10b981"
+                    strokeWidth="1.4"
+                  />
+                )}
                 <rect
                   x={node.x - 76}
                   y={node.y - 28}
                   width="152"
                   height="56"
                   rx="10"
-                  fill={isSelected ? "#1e293b" : "#0f172a"}
+                  fill={fillCol}
                   stroke={borderCol}
+                  strokeDasharray={isStopped ? "5 3" : undefined}
                   strokeWidth={isSelected || isDragging ? "2.5" : "1.8"}
                 />
+                {isStopped && (
+                  <g>
+                    <rect
+                      x={node.x - 74}
+                      y={node.y - 47}
+                      width="148"
+                      height="16"
+                      rx="4"
+                      fill="#9f1239"
+                      stroke="#fb7185"
+                      strokeWidth="1"
+                    />
+                    <text
+                      x={node.x}
+                      y={node.y - 36}
+                      textAnchor="middle"
+                      fill="#fff1f2"
+                      fontSize="8.5"
+                      fontWeight="bold"
+                    >
+                      ⛔ STOPPED · 0 Replicas
+                    </text>
+                  </g>
+                )}
+                {isScaled && (
+                  <g>
+                    <rect
+                      x={node.x - 56}
+                      y={node.y - 47}
+                      width="112"
+                      height="16"
+                      rx="4"
+                      fill="#065f46"
+                      stroke="#34d399"
+                      strokeWidth="1"
+                    />
+                    <text
+                      x={node.x}
+                      y={node.y - 36}
+                      textAnchor="middle"
+                      fill="#ecfdf5"
+                      fontSize="8.5"
+                      fontWeight="bold"
+                    >
+                      ×{activeReplicas} REPLICAS
+                    </text>
+                  </g>
+                )}
                 <circle cx={node.x - 60} cy={node.y - 10} r="4" fill={borderCol} />
                 <text
                   x={node.x - 50}
@@ -1142,22 +1454,21 @@ function buildRuntimeActivitySvgString(
       const cy = topMargin + headerHeight + (idx + 1) * rowHeight;
       const topY = cy - nodeH / 2;
       const bottomY = cy + nodeH / 2;
-      const status = step.httpStatusCode ?? 200;
-      const isError = status >= 400;
-      const verb = (step.httpMethod ?? "GET").toUpperCase();
+      const status = step.httpStatusCode;
+      const isError = status != null && status >= 400;
+      const verb = step.httpMethod?.toUpperCase();
       const strokeCol = methodStrokeColor(verb, isError);
       const endpointLabel = `#${idx + 1} ${normalizeEndpointDisplay(
         step.httpMethod,
         step.operation,
-        targetSvc,
       )}`;
       const shortEndpoint =
         endpointLabel.length > 34 ? `${endpointLabel.slice(0, 32)}…` : endpointLabel;
-      const durText = step.durationMs != null ? `${step.durationMs}ms` : "n/a";
+      const durText = step.durationMs != null ? `${step.durationMs} ms` : null;
       const caller = (step.callerService ?? "").trim();
       const fromText =
-        caller && !isRunnerActor(caller) && caller !== targetSvc ? `from ${caller} · ` : "";
-      const subLabel = `${fromText}HTTP ${status} · ${durText}`;
+        caller && !isRunnerActor(caller) && caller !== targetSvc ? `from ${caller}` : null;
+      const subLabel = [fromText, status == null ? null : `HTTP ${status}`, durText].filter(Boolean).join(" · ");
 
       // Orthogonal control-flow edge from previous node to this action node
       const midY = Math.round((prevBottomY + topY) / 2);
@@ -1373,6 +1684,8 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
     { sessionId: selectedId },
     { enabled: !!selectedId, poll: true },
   );
+  const sessionProjectId = session.data?.projectId ?? projectId;
+  const sessionModelId = session.data?.modelId;
   const sessionOptions =
     session.data && !visible.some((s) => s.id === session.data?.id)
       ? [session.data, ...visible]
@@ -1408,6 +1721,20 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
     { projectId, modelId: targetModelId ?? "" },
     { enabled: !!projectId && !!targetModelId },
   );
+  const requestedModelId = selectedId ? sessionModelId : targetModelId;
+  const needsSessionModel = Boolean(
+    sessionModelId && (sessionModelId !== targetModelId || sessionProjectId !== projectId),
+  );
+  const sessionModel = useApiQuery(
+    "model",
+    { projectId: sessionProjectId, modelId: sessionModelId ?? "" },
+    { enabled: needsSessionModel },
+  );
+  const workflowModel = requestedModelId
+    ? needsSessionModel
+      ? sessionModel.data
+      : modelDetail.data
+    : undefined;
   const startRuntime = useApiMutation("startRuntime");
   const [quickRunRunning, setQuickRunRunning] = useState(false);
   const [quickRunMsg, setQuickRunMsg] = useState("");
@@ -1521,8 +1848,8 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
   }, [savedScenarioSteps, storedDraft.plannedSteps]);
 
   const plannedRequests = useMemo(() => {
-    if (session.data?.stepResults?.length) {
-      return session.data.stepResults
+    if (selectedId) {
+      return (session.data?.stepResults ?? [])
         .filter((sr) => Boolean(sr.service && sr.path))
         .map((sr) => ({
           service: sr.service ?? "api-gateway",
@@ -1532,17 +1859,17 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
     }
     if (storedDraft.plannedSteps?.length) return storedDraft.plannedSteps;
     return savedScenarioSteps.length ? savedScenarioSteps : detectedEndpoints.slice(0, 6);
-  }, [session.data?.stepResults, storedDraft.plannedSteps, savedScenarioSteps, detectedEndpoints]);
+  }, [selectedId, session.data?.stepResults, storedDraft.plannedSteps, savedScenarioSteps, detectedEndpoints]);
 
   const workflowData = useMemo(
     () =>
       deriveWorkflowSteps(
         sequence.data?.steps,
         plannedRequests,
-        modelDetail.data,
+        workflowModel,
         effectiveServiceMappings,
       ),
-    [sequence.data?.steps, plannedRequests, modelDetail.data, effectiveServiceMappings],
+    [sequence.data?.steps, plannedRequests, workflowModel, effectiveServiceMappings],
   );
   const observed = workflowData.mode === "OBSERVED";
 
@@ -1603,7 +1930,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
       if (st.calleeService && st.calleeService !== "mavis-runner") {
         entry.services.add(st.calleeService);
       }
-      const routeLabel = `${(st.httpMethod ?? "GET").toUpperCase()} ${st.operation ?? "/"}`;
+      const routeLabel = normalizeEndpointDisplay(st.httpMethod, st.operation);
       if (!entry.routes.includes(routeLabel)) {
         entry.routes.push(routeLabel);
       }
@@ -1642,8 +1969,16 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
     [workflowData.steps],
   );
 
-  const handleQuickRun = async () => {
-    if (!projectId || quickRunRunning) return;
+  const runWorkflowWithStudio = async (override?: {
+    service?: string;
+    action?: "OBSERVE" | "STOP" | "START" | "SCALE";
+    replicas?: number;
+  }) => {
+    if (administrative || !projectId || quickRunRunning || active.has(upperExecStatus)) return;
+    const effAction = override?.action ?? studioAction;
+    const effService = override?.service ?? selectedStudioService;
+    const effReplicas = override?.replicas ?? studioReplicas;
+    if (effAction !== "OBSERVE" && !runtimeApplicationServices.includes(effService)) return;
     setQuickRunRunning(true);
     setQuickRunMsg("Saving Step 1 & Step 2 runtime configuration and launching workflow...");
     setQuickRunError("");
@@ -2031,13 +2366,16 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
         scenarioRevision: savedScenario.revision,
         approved: true,
         interactiveStudio,
-        infrastructureActions: !interactiveStudio && selectedStudioService && studioAction !== "OBSERVE"
-          ? [{
-              action: studioAction,
-              service: selectedStudioService,
-              ...(studioAction === "SCALE" ? { replicas: studioReplicas } : {}),
-            }]
-          : undefined,
+        infrastructureActions:
+          !interactiveStudio && effService && effAction !== "OBSERVE"
+            ? [
+                {
+                  action: effAction,
+                  service: effService,
+                  ...(effAction === "SCALE" ? { replicas: effReplicas } : {}),
+                },
+              ]
+            : undefined,
         ...(Object.keys(boundedEnv).length ? { environment: boundedEnv } : {}),
       });
 
@@ -2056,6 +2394,15 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
       setQuickRunRunning(false);
     }
   };
+
+  const handleQuickRun = () => {
+    void runWorkflowWithStudio();
+  };
+
+  const studioComparisons = useMemo(
+    () => resolveSessionStudioComparisons(session.data),
+    [session.data],
+  );
 
   if (!projectId && !administrative)
     return (
@@ -2328,7 +2675,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
       )}
 
       {/* Runtime-Enriched Architecture Hub */}
-      {enrichedModelId && projectId && (
+      {enrichedModelId && sessionProjectId && (
         <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="space-y-1">
             <div className="flex flex-wrap items-center gap-2">
@@ -2363,7 +2710,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
               asChild
             >
               <Link
-                href={`/architecture?project=${encodeURIComponent(projectId)}&model=${encodeURIComponent(enrichedModelId)}`}
+                href={`/architecture?project=${encodeURIComponent(sessionProjectId)}&model=${encodeURIComponent(enrichedModelId)}`}
               >
                 <ExternalLink className="h-3 w-3 mr-1.5" />
                 Architecture Graph
@@ -2376,7 +2723,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
               asChild
             >
               <Link
-                href={`/diagrams?project=${encodeURIComponent(projectId)}&model=${encodeURIComponent(enrichedModelId)}&kind=UML_SEQUENCE&mode=observed&session=${encodeURIComponent(selectedId)}`}
+                href={`/diagrams?project=${encodeURIComponent(sessionProjectId)}&model=${encodeURIComponent(enrichedModelId)}&kind=UML_SEQUENCE&mode=observed&session=${encodeURIComponent(selectedId)}`}
               >
                 Sequence Diagram
               </Link>
@@ -2388,7 +2735,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
               asChild
             >
               <Link
-                href={`/diagrams?project=${encodeURIComponent(projectId)}&model=${encodeURIComponent(enrichedModelId)}&kind=UML_ACTIVITY&mode=observed&session=${encodeURIComponent(selectedId)}`}
+                href={`/diagrams?project=${encodeURIComponent(sessionProjectId)}&model=${encodeURIComponent(enrichedModelId)}&kind=UML_ACTIVITY&mode=observed&session=${encodeURIComponent(selectedId)}`}
               >
                 Activity Diagram
               </Link>
@@ -2458,7 +2805,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                   ))}
                 </select>
               )}
-              {projectId && !enrichedModelId && (
+              {sessionProjectId && requestedModelId && !enrichedModelId && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -2466,9 +2813,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                   asChild
                 >
                   <Link
-                    href={`/architecture?project=${encodeURIComponent(projectId)}${
-                      targetModelId ? `&model=${encodeURIComponent(targetModelId)}` : ""
-                    }`}
+                    href={`/architecture?project=${encodeURIComponent(sessionProjectId)}&model=${encodeURIComponent(requestedModelId)}`}
                   >
                     <ExternalLink className="h-3 w-3 mr-1.5" />
                     Architecture Graph
@@ -2484,6 +2829,18 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
           {list.isError && <ErrorState error={list.error} />}
           {session.isError && <ErrorState error={session.error} />}
           {sequence.isError && <ErrorState error={sequence.error} />}
+          {needsSessionModel && sessionModel.isError && <ErrorState error={sessionModel.error} />}
+          {hasSession && (
+            <p className="text-xs text-muted-foreground" role="status">
+              {observed
+                ? t("Showing calls recorded by OpenTelemetry for this session.")
+                : active.has(upperExecStatus)
+                  ? t("Waiting for OpenTelemetry evidence from the Runner.")
+                  : t("This session has no recorded service calls.")}
+              {observed && session.data?.traceStatus?.toUpperCase() === "PARTIAL" &&
+                ` ${t("Trace evidence is partial.")}`}
+            </p>
+          )}
           {!list.isPending && !list.isError && !visible.length && !selectedId && (
             <p className="text-xs text-muted-foreground">
               No runtime session yet. The diagram below is the planned workflow; run it to capture a
@@ -2602,7 +2959,6 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                       {normalizeEndpointDisplay(
                         slowest.httpMethod,
                         slowest.operation,
-                        slowest.calleeService,
                       )}
                       , {slowest.durationMs} ms)
                     </p>
@@ -2722,30 +3078,68 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
           <div className="space-y-4">
             {selectedId && <StudioControls key={selectedId} sessionId={selectedId}/>}
             {/* Visual Canvas 1: Service Workflow Topology */}
-            {Boolean(session.data?.infrastructureActions?.length) && (
+            {Boolean(studioComparisons.length) && (
               <div className="space-y-2 rounded-lg border p-3 text-sm">
-                <h3 className="font-medium">Studio results</h3>
-                {session.data?.infrastructureActions?.map((action, index) => (
-                  <div className="space-y-1" key={index}>
-                    <p className="font-medium">{action.action} {action.service}</p>
-                    {!action.confirmed && <p role="status" className="text-destructive">{t("Action not confirmed")}</p>}
-                    <dl className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4">
-                      <dt>Running replicas</dt><dd>{action.replicasBefore} → {action.replicasAfter}</dd>
-                      <dt>Requests measured</dt><dd>{studioMetric(action.metricsBefore["requestCount"])} → {studioMetric(action.metricsAfter["requestCount"])}</dd>
-                      <dt>p95 latency (ms)</dt><dd>{studioMetric(action.metricsBefore["p95LatencyMs"])} → {studioMetric(action.metricsAfter["p95LatencyMs"])}</dd>
-                      <dt>Request error rate (%)</dt><dd>{studioMetric(action.metricsBefore["errorRatePercent"])} → {studioMetric(action.metricsAfter["errorRatePercent"])}</dd>
+                <h3 className="font-medium">
+                  {t("Studio results (Before vs. After)")}
+                </h3>
+                {studioComparisons.map((item, index) => (
+                  <div className="space-y-1.5 rounded-md border bg-muted/20 p-2.5" key={index}>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="font-medium">
+                        {item.action} {item.service}
+                      </p>
+                      <StatusLabel status={item.measurementStatus ?? "UNKNOWN"} />
+                    </div>
+                    <dl className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 text-xs">
+                      <dt>{t("Running replicas")}</dt>
+                      <dd>
+                        {studioMetric(item.replicasBefore)} → {studioMetric(item.replicasAfter)}
+                      </dd>
+                      <dt>{t("Requests measured")}</dt>
+                      <dd>
+                        {studioMetric(item.requestCountBefore)} →{" "}
+                        {studioMetric(item.requestCountAfter)}
+                      </dd>
+                      <dt>{t("p95 latency (ms)")}</dt>
+                      <dd>
+                        {studioMetric(item.p95LatencyMsBefore)} →{" "}
+                        {studioMetric(item.p95LatencyMsAfter)}
+                      </dd>
+                      <dt>{t("Request error rate (%)")}</dt>
+                      <dd>
+                        {studioMetric(item.errorRateBefore)} → {studioMetric(item.errorRateAfter)}
+                      </dd>
+                      <dt>{t("Captured OTel spans")}</dt>
+                      <dd>{studioMetric(item.capturedSpanCount)}</dd>
+                      <dt>{t("Cleanup")}</dt>
+                      <dd>{item.cleanupStatus ?? "—"}</dd>
                     </dl>
+                    <p className="text-[11px] text-muted-foreground">{item.measurementNote}</p>
                   </div>
                 ))}
               </div>
             )}
-            {vizMode === "topology" && (
+            {vizMode === "topology" && !interactiveStudio && (
               <div data-tour="session-topology" className="min-w-0">
                 <RuntimeWorkflowTopologyCanvas
                   steps={filteredSteps}
                   planned={!observed}
                   selectedService={selectedServiceFilter}
                   onSelectService={setSelectedServiceFilter}
+                  studioComparisons={studioComparisons}
+                  studioServices={administrative || sessionProjectId !== projectId ? [] : runtimeApplicationServices}
+                  quickRunPending={quickRunRunning || active.has(upperExecStatus)}
+                  onQuickStudioAction={(svc, act, reps) => {
+                    setStudioAction(act);
+                    setStudioService(svc);
+                    if (reps !== undefined) setStudioReplicas(reps);
+                    void runWorkflowWithStudio({
+                      service: svc,
+                      action: act,
+                      ...(reps !== undefined ? { replicas: reps } : {}),
+                    });
+                  }}
                 />
               </div>
             )}
@@ -2768,8 +3162,8 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                     storedDraft.scenarioName ??
                     "Architecture Verification Workflow"
                   }
-                  projectId={projectId}
-                  targetGraphModelId={enrichedModelId ?? targetModelId}
+                  projectId={sessionProjectId}
+                  targetGraphModelId={enrichedModelId ?? sessionModelId}
                   sessionId={selectedId || "preview"}
                 />
               </div>
@@ -2794,8 +3188,8 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                     storedDraft.scenarioName ??
                     "Architecture Verification Workflow"
                   }
-                  projectId={projectId}
-                  targetGraphModelId={enrichedModelId ?? targetModelId}
+                  projectId={sessionProjectId}
+                  targetGraphModelId={enrichedModelId ?? sessionModelId}
                   sessionId={selectedId || "preview"}
                 />
               </div>
@@ -3061,7 +3455,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                                   4,
                                   Math.min(100, Math.round((dur / maxStepDuration) * 100)),
                                 );
-                          const method = (step.httpMethod ?? "GET").toUpperCase();
+                          const method = step.httpMethod?.toUpperCase();
                           const statusCode = step.httpStatusCode;
                           return (
                             <div
@@ -3073,11 +3467,13 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                                   <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-primary/20 text-primary text-[10px] font-bold">
                                     {displayIndex}
                                   </span>
-                                  <span
-                                    className={`px-2 py-0.5 rounded text-[11px] font-bold ${httpMethodBadgeClass(method)}`}
-                                  >
-                                    {method}
-                                  </span>
+                                  {method && (
+                                    <span
+                                      className={`px-2 py-0.5 rounded text-[11px] font-bold ${httpMethodBadgeClass(method)}`}
+                                    >
+                                      {method}
+                                    </span>
+                                  )}
                                   {chainServices.map((svcName, sIdx) => (
                                     <span
                                       key={`${svcName}:${sIdx}`}
@@ -3103,7 +3499,6 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                                     {normalizeEndpointDisplay(
                                       step.httpMethod,
                                       step.operation,
-                                      step.calleeService,
                                     )}
                                   </span>
                                 </div>

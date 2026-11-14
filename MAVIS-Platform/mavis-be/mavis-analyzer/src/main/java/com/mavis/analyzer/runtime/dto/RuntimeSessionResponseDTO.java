@@ -42,6 +42,27 @@ public class RuntimeSessionResponseDTO {
         private String parentSpanId;
     }
 
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class BeforeAfterComparisonDTO {
+        private String action;
+        private String service;
+        private Integer replicasBefore;
+        private Integer replicasAfter;
+        private Integer requestCountBefore;
+        private Integer requestCountAfter;
+        private Double p95LatencyMsBefore;
+        private Double p95LatencyMsAfter;
+        private Double errorRateBefore;
+        private Double errorRateAfter;
+        private Integer capturedSpanCount;
+        private String cleanupStatus;
+        private String measurementStatus;
+        private String measurementNote;
+    }
+
     private UUID id;
     private UUID projectId;
     private UUID sourceSnapshotId;
@@ -72,6 +93,7 @@ public class RuntimeSessionResponseDTO {
     private Integer capturedSpanCount;
     private boolean studioVerified;
     private JsonNode infrastructureActions;
+    private List<BeforeAfterComparisonDTO> beforeAfterComparison;
     private List<ScenarioStepResultDTO> stepResults;
     private Boolean sandboxEnforcementConfirmed;
     private OffsetDateTime cancelRequestedAt;
@@ -214,16 +236,7 @@ public class RuntimeSessionResponseDTO {
             }
         }
 
-        JsonNode plannedActions = entity.requestedInfrastructureActions();
-        boolean studioVerified = plannedActions != null && plannedActions.isArray() && !plannedActions.isEmpty()
-                && capturedSpanCount != null && capturedSpanCount > 0
-                && "COMPLETED".equalsIgnoreCase(entity.getExecutionStatus())
-                && "PASSED".equalsIgnoreCase(entity.getScenarioStatus())
-                && "AVAILABLE".equalsIgnoreCase(entity.getEvidenceStatus())
-                && "CONFIRMED".equalsIgnoreCase(entity.getCleanupStatus())
-                && receipt.path("infrastructureActions").isArray()
-                && java.util.stream.StreamSupport.stream(receipt.path("infrastructureActions").spliterator(), false)
-                        .anyMatch(action -> action.path("confirmed").asBoolean(false));
+        boolean studioVerified = entity.hasVerifiedStudioEvidence();
 
         return RuntimeSessionResponseDTO.builder()
                 .id(entity.getId())
@@ -253,6 +266,7 @@ public class RuntimeSessionResponseDTO {
                 .capturedSpanCount(capturedSpanCount)
                 .studioVerified(studioVerified)
                 .infrastructureActions(studioVerified ? receipt.path("infrastructureActions") : null)
+                .beforeAfterComparison(studioVerified ? buildBeforeAfterComparison(receipt.path("infrastructureActions"), capturedSpanCount, entity.getCleanupStatus()) : null)
                 .stepResults(stepResults)
                 .sandboxEnforcementConfirmed(entity.getSandboxEnforcementConfirmed())
                 .traceStatus(entity.getTraceStatus())
@@ -364,5 +378,77 @@ public class RuntimeSessionResponseDTO {
 
     private static String firstNonBlank(String a, String b) {
         return (a != null && !a.isBlank()) ? a : ((b != null && !b.isBlank()) ? b : null);
+    }
+
+    private static List<BeforeAfterComparisonDTO> buildBeforeAfterComparison(
+            JsonNode actionsNode, Integer capturedSpanCount, String cleanupStatus) {
+        if (actionsNode == null || !actionsNode.isArray() || actionsNode.isEmpty()) {
+            return null;
+        }
+        List<BeforeAfterComparisonDTO> comparisons = new ArrayList<>();
+        for (JsonNode action : actionsNode) {
+            if (action == null || !action.path("confirmed").asBoolean(false)) {
+                continue;
+            }
+            JsonNode before = action.path("metricsBefore");
+            JsonNode after = action.path("metricsAfter");
+            Integer reqBefore = intMetric(before, "requestCount");
+            Integer reqAfter = intMetric(after, "requestCount");
+            Double p95Before = doubleMetric(before, "p95LatencyMs");
+            Double p95After = doubleMetric(after, "p95LatencyMs");
+            Double errBefore = doubleMetric(before, "errorRatePercent");
+            Double errAfter = doubleMetric(after, "errorRatePercent");
+            String type = action.path("action").asText("").trim().toUpperCase(Locale.ROOT);
+            Integer repBefore = intMetric(action, "replicasBefore");
+            Integer repAfter = intMetric(action, "replicasAfter");
+
+            boolean hasSamples = reqBefore != null && reqBefore > 0 && reqAfter != null && reqAfter > 0
+                    && p95Before != null && p95After != null;
+            String measurementStatus = hasSamples ? "MEASURED" : "INSUFFICIENT_TELEMETRY_SAMPLES";
+            String measurementNote;
+            if (!hasSamples) {
+                measurementNote = "Insufficient telemetry samples";
+            } else if ("STOP".equals(type) && repAfter != null && repAfter == 0) {
+                measurementNote = (errAfter != null && errBefore != null && errAfter > errBefore)
+                        ? "Service stopped; circuit fallback or error span path active"
+                        : "Service stopped cleanly";
+            } else if ("SCALE".equals(type) && repBefore != null && repAfter != null) {
+                measurementNote = "Scaled " + action.path("service").asText("") + " from " + repBefore + " to " + repAfter + " replica(s)";
+            } else {
+                measurementNote = "Measured before/after workload comparison captured";
+            }
+
+            comparisons.add(BeforeAfterComparisonDTO.builder()
+                    .action(type)
+                    .service(action.path("service").asText(""))
+                    .replicasBefore(repBefore)
+                    .replicasAfter(repAfter)
+                    .requestCountBefore(reqBefore)
+                    .requestCountAfter(reqAfter)
+                    .p95LatencyMsBefore(p95Before)
+                    .p95LatencyMsAfter(p95After)
+                    .errorRateBefore(errBefore)
+                    .errorRateAfter(errAfter)
+                    .capturedSpanCount(capturedSpanCount)
+                    .cleanupStatus(cleanupStatus)
+                    .measurementStatus(measurementStatus)
+                    .measurementNote(measurementNote)
+                    .build());
+        }
+        return comparisons.isEmpty() ? null : comparisons;
+    }
+
+    private static Integer intMetric(JsonNode node, String field) {
+        if (node == null || !node.hasNonNull(field) || !node.get(field).isNumber()) {
+            return null;
+        }
+        return node.get(field).asInt();
+    }
+
+    private static Double doubleMetric(JsonNode node, String field) {
+        if (node == null || !node.hasNonNull(field) || !node.get(field).isNumber()) {
+            return null;
+        }
+        return node.get(field).asDouble();
     }
 }

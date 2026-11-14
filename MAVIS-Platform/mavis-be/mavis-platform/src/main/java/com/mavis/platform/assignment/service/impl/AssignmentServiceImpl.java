@@ -62,9 +62,7 @@ public class AssignmentServiceImpl implements AssignmentService {
         JsonNode requiredDiagramTypesNode = request.getRequiredDiagramTypes() != null
                 ? objectMapper.valueToTree(request.getRequiredDiagramTypes())
                 : null;
-        JsonNode aiPolicyNode = request.getAiPolicy() != null
-                ? objectMapper.valueToTree(request.getAiPolicy())
-                : null;
+        JsonNode aiPolicyNode = toAiPolicyNode(request.getAiPolicy());
 
         String ruleSetVersion = request.getRuleSetVersion() != null && !request.getRuleSetVersion().isBlank()
                 ? request.getRuleSetVersion().trim()
@@ -72,6 +70,10 @@ public class AssignmentServiceImpl implements AssignmentService {
         Boolean requireRuntimeTrace = request.getRequireRuntimeTrace() != null
                 ? request.getRequireRuntimeTrace()
                 : false;
+
+        if (request.getLabOrder() != null && request.getLabOrder() < 1) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Thứ tự Lab phải >= 1");
+        }
 
         OffsetDateTime now = OffsetDateTime.now();
         Assignment assignment = Assignment.builder()
@@ -83,6 +85,7 @@ public class AssignmentServiceImpl implements AssignmentService {
                 .ruleSetVersion(ruleSetVersion)
                 .requireRuntimeTrace(requireRuntimeTrace)
                 .aiPolicy(aiPolicyNode)
+                .labOrder(request.getLabOrder())
                 .dueAt(request.getDueAt())
                 .createdAt(now)
                 .updatedAt(now)
@@ -171,7 +174,16 @@ public class AssignmentServiceImpl implements AssignmentService {
         }
 
         if (request.getAiPolicy() != null) {
-            assignment.setAiPolicy(objectMapper.valueToTree(request.getAiPolicy()));
+            assignment.setAiPolicy(toAiPolicyNode(request.getAiPolicy()));
+        }
+
+        if (request.getLabOrder() != null) {
+            if (request.getLabOrder() < 1) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "Thứ tự Lab phải >= 1");
+            }
+            if (assignment.getLabOrder() == null) {
+                assignment.setLabOrder(request.getLabOrder());
+            }
         }
 
         if (request.getDueAt() != null) {
@@ -273,6 +285,30 @@ public class AssignmentServiceImpl implements AssignmentService {
         return result;
     }
 
+    private JsonNode toAiPolicyNode(Object rawAiPolicy) {
+        if (rawAiPolicy == null) {
+            return null;
+        }
+        if (rawAiPolicy instanceof JsonNode node) {
+            return node;
+        }
+        if (rawAiPolicy instanceof String text) {
+            String trimmed = text.trim();
+            if (trimmed.isEmpty()) {
+                return null;
+            }
+            if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+                try {
+                    return objectMapper.readTree(trimmed);
+                } catch (Exception ex) {
+                    throw new BusinessException(ErrorCode.BAD_REQUEST, "Định dạng aiPolicy JSON không hợp lệ");
+                }
+            }
+            return objectMapper.valueToTree(trimmed);
+        }
+        return objectMapper.valueToTree(rawAiPolicy);
+    }
+
     private void validateDiagramTypes(List<String> diagramTypes) {
         if (diagramTypes == null) {
             return;
@@ -332,6 +368,7 @@ public class AssignmentServiceImpl implements AssignmentService {
                 .ruleSetVersion(assignment.getRuleSetVersion())
                 .requireRuntimeTrace(assignment.getRequireRuntimeTrace())
                 .aiPolicy(assignment.getAiPolicy())
+                .labOrder(assignment.getLabOrder())
                 .referenceSource(referenceDetails(assignment))
                 .dueAt(assignment.getDueAt())
                 .submissionCount(submissionCount)

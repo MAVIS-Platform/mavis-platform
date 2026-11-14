@@ -22,7 +22,13 @@ import {QueryClient,QueryClientProvider} from '@tanstack/react-query';
 import {ApiContext} from '@/providers/app-context';
 import {LocaleProvider} from '@/lib/i18n/locale-context';
 import {StudioControls} from '@/features/runtime/studio-controls';
+import {StudioSubmissionEvidence} from '@/features/submissions/studio-evidence';
 const state={sessionId:'fixture',interactive:true,services:['orders','payment'],executionStatus:'RUNNING',cleanupStatus:'NOT_APPLICABLE',finishRequested:false,actions:[]};
+const model={id:'model-1',projectId:'project-1',snapshotId:'source-1',revision:1,label:'Pinned model',elements:[
+ {id:'orders-id',name:'orders',elementType:'SERVICE_CONTAINER',layer:'domain',description:'',evidence:[]},
+ {id:'payment-id',name:'payment',elementType:'SERVICE_CONTAINER',layer:'domain',description:'',evidence:[]}],
+ edges:[{id:'orders-payment',from:'orders-id',to:'payment-id',protocol:'SERVICE_HTTP_CALL',originLayer:'STATIC',uncertain:false,evidence:[]}]};
+state.modelVersionId=model.id;state.projectId=model.projectId;state.serviceMappings={'orders':'orders-id','payment':'payment-id'};
 state.telemetry={observedAt:new Date().toISOString(),services:[
  {service:'orders',replicas:1,runningReplicas:1,stats:[{containerId:'orders-1',cpu:'1%',memory:'30MiB / 512MiB',network:'2kB / 1kB'}],logs:'CircuitBreaker fallback observed'},
  {service:'payment',replicas:1,runningReplicas:1,stats:[],logs:'ready'}],
@@ -31,20 +37,24 @@ state.telemetry={observedAt:new Date().toISOString(),services:[
 state.snapshots=[];
 window.studioCalls=[];
 const api={mode:'backend',async execute(op,input){
+ if(op==='model')return model;
+ if(op==='impact')return {modelId:model.id,targetId:input.targetId,paths:input.targetId==='payment-id'?[['orders-id','payment-id']]:[],limitations:'Fixture confirmed HTTP path'};
  if(op==='studioAction'){
   window.studioCalls.push(input);
   state.actions.push({...input,status:'PENDING',requestedAt:new Date().toISOString()});
-  setTimeout(()=>{const a=state.actions.at(-1);a.status='CONFIRMED';a.result={action:a.action,service:a.service,confirmed:true,replicasBefore:1,replicasAfter:a.replicas??0,metricsBefore:{requestCount:1,p95LatencyMs:20},metricsAfter:{requestCount:1,p95LatencyMs:30}}},1800);
+  setTimeout(()=>{const a=state.actions.at(-1);a.status='CONFIRMED';a.result={action:a.action,service:a.service,confirmed:true,replicasBefore:1,replicasAfter:a.replicas??0,metricsBefore:{requestCount:1,p95LatencyMs:20},metricsAfter:{requestCount:1,p95LatencyMs:30}};
+    const target=state.telemetry.services.find(service=>service.service===a.service);target.replicas=a.replicas??0;target.runningReplicas=a.replicas??0;state.telemetry.observedAt=new Date().toISOString();},1800);
  }
  if(op==='studioFinish'){state.finishRequested=true;state.executionStatus='COMPLETED';state.cleanupStatus='CONFIRMED'}
- if(op==='studioCapture'){state.snapshots.push({id:'snapshot-1',sessionId:'fixture',sourceSnapshotId:'source-1',modelVersionId:'model-1',
-  capturedAt:new Date().toISOString(),explanation:input.explanation,digest:'sha256:fixture',telemetry:structuredClone(state.telemetry),actions:structuredClone(state.actions)})}
+ if(op==='studioCapture'){state.snapshots.push({id:'snapshot-'+(state.snapshots.length+1),sessionId:'fixture',sourceSnapshotId:'source-1',modelVersionId:'model-1',
+  capturedAt:new Date().toISOString(),explanation:input.explanation,imageData:input.imageData,digest:'sha256:fixture',telemetry:structuredClone(state.telemetry),actions:structuredClone(state.actions)})}
  if(op==='studioSnapshot')return structuredClone(state.snapshots.find(item=>item.id===input.snapshotId));
+ if(op==='submissionExport')return {studioEvidence:{receiptDigest:'sha256:receipt-fixture',snapshots:structuredClone(state.snapshots)}};
  if(op==='stopRuntime'){state.executionStatus='CANCELLED';state.cleanupStatus='CONFIRMED'}
  return structuredClone(state);
 }};
 const client=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
-createRoot(document.getElementById('root')).render(<LocaleProvider><ApiContext.Provider value={api}><QueryClientProvider client={client}><div style={{padding:16}}><StudioControls sessionId="fixture"/></div></QueryClientProvider></ApiContext.Provider></LocaleProvider>);
+createRoot(document.getElementById('root')).render(<LocaleProvider><ApiContext.Provider value={api}><QueryClientProvider client={client}><div style={{padding:16}}><StudioControls sessionId="fixture"/><StudioSubmissionEvidence submissionId="submitted-fixture" available={true}/></div></QueryClientProvider></ApiContext.Provider></LocaleProvider>);
 `,
 );
 
@@ -109,16 +119,27 @@ async function main() {
       if (message.type() === "error") console.error(message.text());
     });
     await page.goto("http://127.0.0.1:" + server.address().port);
-    await page.getByRole("button",{name:"3D",exact:true}).click();
-    await page.getByRole("button",{name:"Rotate right",exact:true}).click();
-    await page.getByRole("button",{name:"2D",exact:true}).click();
-    assert.equal(await page.getByRole("button",{name:"orders",exact:true}).getAttribute("aria-pressed"),"true");
+    await page.getByRole("button", { name: "payment", exact: true }).click();
+    await page
+      .getByRole("heading", { name: "Worker verified impact paths", exact: true })
+      .waitFor();
+    await page.getByRole("button", { name: "3D", exact: true }).click();
+    await page.getByRole("button", { name: "Rotate right", exact: true }).click();
+    await page.getByRole("button", { name: "2D", exact: true }).click();
+    assert.equal(
+      await page.getByRole("button", { name: "payment", exact: true }).getAttribute("aria-pressed"),
+      "true",
+    );
+    await page.getByRole("button", { name: "orders", exact: true }).click();
     await page.screenshot({ path: path.join(output, "studio-initial.png"), fullPage: true });
     const finish = page.getByRole("button", {
       name: "Finish Studio and save evidence",
       exact: true,
     });
     assert.equal(await finish.isDisabled(), true);
+    await page.getByLabel("Explain the observed behavior").fill("Baseline before scaling");
+    await page.getByRole("button", { name: "Capture evidence snapshot", exact: true }).click();
+    await page.getByRole("button", { name: "Download evidence", exact: true }).waitFor();
     await page.getByLabel("Replicas (1–8)").fill("4");
     await page.getByRole("button", { name: "Scale replicas", exact: true }).click();
     await page.getByText("PENDING", { exact: false }).waitFor();
@@ -137,11 +158,23 @@ async function main() {
     assert.equal(await page.evaluate(() => window.studioCalls.length), 1);
     assert.equal(await page.evaluate(() => window.studioCalls[0].replicas), 4);
     await page.getByLabel("Explain the observed behavior").fill("Observed scaling and fallback");
-    await page.getByRole("button",{name:"Capture evidence snapshot",exact:true}).click();
-    await page.getByRole("button",{name:"Download evidence",exact:true}).waitFor();
-    const imageDownload=page.waitForEvent("download");
-    await page.getByRole("button",{name:"Export snapshot image",exact:true}).click();
-    await (await imageDownload).saveAs(path.join(output,"studio-graph.png"));
+    await page.getByRole("button", { name: "Capture evidence snapshot", exact: true }).click();
+    await page.getByRole("button", { name: "Download evidence", exact: true }).last().waitFor();
+    await page.getByRole("heading", { name: "Compare captured snapshots", exact: true }).waitFor();
+    const evidenceDownload = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Download evidence", exact: true }).last().click();
+    const evidencePath = path.join(output, "studio-evidence.json");
+    await (await evidenceDownload).saveAs(evidencePath);
+    await page.getByText("Frozen Studio evidence", { exact: true }).click();
+    await page.getByRole("img", { name: "Studio snapshot 1", exact: true }).waitFor();
+    assert.ok(
+      JSON.parse(fs.readFileSync(evidencePath, "utf8")).imageData.startsWith(
+        "data:image/png;base64,",
+      ),
+    );
+    const imageDownload = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export snapshot image", exact: true }).click();
+    await (await imageDownload).saveAs(path.join(output, "studio-graph.png"));
     await page.screenshot({ path: path.join(output, "studio-desktop.png"), fullPage: true });
     await page.setViewportSize({ width: 390, height: 844 });
     assert.equal(
@@ -151,6 +184,11 @@ async function main() {
     await page.screenshot({ path: path.join(output, "studio-mobile.png"), fullPage: true });
     await finish.click();
     await page.getByText("COMPLETED", { exact: false }).waitFor();
+    await page.evaluate(()=>localStorage.setItem("mavis.locale","vi"));
+    await page.reload();
+    await page.getByRole("button",{name:"Dừng dịch vụ",exact:true}).waitFor();
+    await page.getByRole("button",{name:"3D",exact:true}).click();
+    await page.screenshot({path:path.join(output,"studio-vi.png"),fullPage:true,animations:"disabled"});
     assert.equal(errors.length, 0, errors.join("\n"));
     console.log("PASS Studio UI actions, pending lock, measured results, finish and mobile layout");
   } finally {

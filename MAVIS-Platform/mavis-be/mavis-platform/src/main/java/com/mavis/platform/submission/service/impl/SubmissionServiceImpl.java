@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -195,6 +196,40 @@ public class SubmissionServiceImpl implements SubmissionService {
             }
         }
 
+        if (assignment.getWorkspace() != null && assignment.getWorkspace().isCourseMode()) {
+            List<String> missingStages = new ArrayList<>();
+            if (sourceSnapshot.getArtifactHash() == null || sourceSnapshot.getArtifactHash().isBlank()) missingStages.add("STEP_1_STATIC_ANALYZED");
+            double score = evaluationRun != null && evaluationRun.getSummaryMetrics() != null
+                    ? evaluationRun.getSummaryMetrics().path("complianceScore").asDouble(-1) : -1;
+            if (score < 70) missingStages.add("STEP_2_C4_GROUND_TRUTH_70");
+            if (runtimeSession == null || !("COMPLETE".equalsIgnoreCase(runtimeSession.getTraceStatus()) || "PARTIAL".equalsIgnoreCase(runtimeSession.getTraceStatus())))
+                missingStages.add("STEP_3_RUNTIME_OTEL_VIEW");
+            if (runtimeSession == null || !runtimeSession.hasVerifiedStudioEvidence()
+                    || (modelVersion.getRuntimeSession() == null && (runtimeSession.getModelVersion() == null
+                        || !modelVersion.getId().equals(runtimeSession.getModelVersion().getId()))))
+                missingStages.add("STEP_4_SIGNED_RUNTIME_RECEIPT");
+            if (!missingStages.isEmpty()) throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,
+                    "INCOMPLETE_4STAGE_EVIDENCE: " + String.join(",", missingStages));
+
+            if (com.mavis.common.security.CourseLabPolicy.isStudent(submitter)) {
+                boolean hasWrittenExplanation = (request.getSubmissionNotes() != null && !request.getSubmissionNotes().isBlank())
+                        || (request.getStudentSnapshots() != null && request.getStudentSnapshots().stream()
+                                .anyMatch(item -> item != null && item.getWrittenExplanation() != null && !item.getWrittenExplanation().isBlank()));
+                if (!hasWrittenExplanation) {
+                    throw new BusinessException(ErrorCode.BAD_REQUEST,
+                            "Written theoretical explanation is required for course Lab submission");
+                }
+            }
+        }
+
+        ObjectMapper mapper = this.json != null ? this.json : new ObjectMapper();
+        JsonNode studentSnapshotsNode = (request.getStudentSnapshots() != null && !request.getStudentSnapshots().isEmpty())
+                ? mapper.valueToTree(request.getStudentSnapshots())
+                : null;
+
+        String evidencePackageDigest = evidencePackageDigest(assignment, project, sourceSnapshot, modelVersion,
+                diagramVersion, evaluationRun, runtimeSession, courseQuizEvidence, studentSnapshotsNode, request.getSubmissionNotes());
+
         // 9. Lưu bản ghi nộp bài bất biến vào submission_snapshots
         com.fasterxml.jackson.databind.node.ObjectNode studioEvidence=null;
         if(runtimeSession!=null && runtimeSession.getScenarioConfig()!=null &&
@@ -212,6 +247,21 @@ public class SubmissionServiceImpl implements SubmissionService {
             studioEvidence.set("snapshots",control.path("snapshots").deepCopy());
             studioEvidence.set("receiptSignature",control.path("receiptSignature").deepCopy());
             studioEvidence.set("receipt",runtimeSession.getRunnerReceiptJson().deepCopy());
+            if(assignment.getWorkspace()!=null && assignment.getWorkspace().isCourseMode()) {
+                java.util.Set<String> suppliedStudioIds=new java.util.HashSet<>();
+                if(request.getStudentSnapshots()!=null)
+                    for(var item:request.getStudentSnapshots())
+                        if(item!=null && item.getWrittenExplanation()!=null && !item.getWrittenExplanation().isBlank())
+                            suppliedStudioIds.add(item.getSnapshotId());
+                for(var captured:control.path("snapshots"))
+                    if(!suppliedStudioIds.contains(captured.path("id").asText()))
+                        throw new BusinessException(ErrorCode.BAD_REQUEST,"Include each captured Studio snapshot and its explanation in the submission.");
+            }
+            StringBuilder snapshotDigests=new StringBuilder();
+            for(var captured:control.path("snapshots"))
+                snapshotDigests.append(captured.path("id").asText()).append(':').append(captured.path("digest").asText()).append('|');
+            evidencePackageDigest="sha256:"+com.mavis.common.utils.HashUtils.sha256Hex(
+                (evidencePackageDigest+"|"+snapshotDigests+"|"+control.path("receiptSignature").asText("")).getBytes(StandardCharsets.UTF_8));
         }
         SubmissionSnapshot submission = SubmissionSnapshot.builder()
                 .studioEvidence(studioEvidence)
@@ -224,7 +274,9 @@ public class SubmissionServiceImpl implements SubmissionService {
                 .evaluationRun(evaluationRun)
                 .runtimeSession(runtimeSession)
                 .courseQuizEvidence(courseQuizEvidence)
+                .studentSnapshots(studentSnapshotsNode)
                 .submissionNotes(request.getSubmissionNotes())
+                .evidencePackageDigest(evidencePackageDigest)
                 .build();
 
         submission = submissionSnapshotRepository.save(submission);
@@ -326,6 +378,7 @@ public class SubmissionServiceImpl implements SubmissionService {
                 .submittedByName(submission.getSubmittedBy() != null ? submission.getSubmittedBy().getFullName() : null)
                 .sourceSnapshotId(submission.getSourceSnapshot() != null ? submission.getSourceSnapshot().getId() : null)
                 .artifactHash(submission.getSourceSnapshot() != null ? submission.getSourceSnapshot().getArtifactHash() : null)
+                .evidencePackageDigest(submission.getEvidencePackageDigest())
                 .modelVersionId(submission.getModelVersion() != null ? submission.getModelVersion().getId() : null)
                 .modelRevision(submission.getModelVersion() != null ? submission.getModelVersion().getRevision() : null)
                 .diagramVersionId(dv != null ? dv.getId() : null)
@@ -339,6 +392,9 @@ public class SubmissionServiceImpl implements SubmissionService {
                 .reviewedAt(releasedReview.map(SubmissionReview::getUpdatedAt).orElse(null))
                 .runtimeSessionId(submission.getRuntimeSession() != null ? submission.getRuntimeSession().getId() : null)
                 .courseQuizEvidence(submission.getCourseQuizEvidence())
+                .studentSnapshots(submission.getStudentSnapshots())
+                .snapshotGrades(releasedReview.map(SubmissionReview::getSnapshotGrades).orElse(null))
+                .labOutcome(releasedReview.map(SubmissionReview::getLabOutcome).orElse(null))
                 .scenarioStatus(submission.getRuntimeSession() != null ? submission.getRuntimeSession().getScenarioStatus() : null)
                 .lecturerFeedbacks(feedbacks)
                 .markdownSummaryReport(markdownReport)
@@ -371,6 +427,7 @@ public class SubmissionServiceImpl implements SubmissionService {
         sb.append("- **Model Version ID**: `").append(s.getModelVersion() != null ? s.getModelVersion().getId() : "N/A").append("`\n");
         sb.append("- **Phiên bản mô hình (Revision)**: ").append(s.getModelVersion() != null ? s.getModelVersion().getRevision() : "N/A").append("\n");
         sb.append("- **Diagram Version ID**: `").append(s.getDiagramVersion() != null ? s.getDiagramVersion().getId() : "N/A").append("`\n\n");
+        sb.append("- **Evidence Package SHA-256**: `").append(s.getEvidencePackageDigest()).append("`\n\n");
 
         sb.append("## 3. Đánh Giá Kiến Trúc & Thực Nghiệm Runtime\n");
         sb.append("- **Điểm tuân thủ quy tắc kiến trúc (Compliance Score)**: ")
@@ -408,6 +465,25 @@ public class SubmissionServiceImpl implements SubmissionService {
             }
         }
         return sb.toString();
+    }
+
+    private String evidencePackageDigest(Assignment assignment, Project project, SourceSnapshot sourceSnapshot,
+                                         ModelVersion modelVersion, DiagramVersion diagramVersion,
+                                         EvaluationRun evaluationRun, RuntimeSession runtimeSession,
+                                         JsonNode courseQuizEvidence, JsonNode studentSnapshots, String notes) {
+        String canonical = String.join("|",
+                assignment.getId().toString(), project.getId().toString(), sourceSnapshot.getId().toString(),
+                Objects.toString(sourceSnapshot.getArtifactHash(), ""), modelVersion.getId().toString(),
+                Objects.toString(modelVersion.getRevision(), ""), diagramVersion.getId().toString(),
+                Objects.toString(diagramVersion.getLayoutJson(), ""),
+                evaluationRun == null ? "" : evaluationRun.getId().toString(),
+                evaluationRun == null ? "" : Objects.toString(evaluationRun.getSummaryMetrics(), ""),
+                runtimeSession == null ? "" : runtimeSession.getId().toString(),
+                runtimeSession == null ? "" : Objects.toString(runtimeSession.getReceiptDigest(), ""),
+                Objects.toString(courseQuizEvidence, ""),
+                Objects.toString(studentSnapshots, ""),
+                Objects.toString(notes, ""));
+        return "sha256:" + com.mavis.common.utils.HashUtils.sha256Hex(canonical.getBytes(StandardCharsets.UTF_8));
     }
 
     private List<SubmissionResponseDTO> mapToResponseListWithFeedbackCount(List<SubmissionSnapshot> submissions) {

@@ -5,7 +5,7 @@ using System.Text.Json;
 
 namespace MAVIS.Runner;
 
-/// <summary>Round-2 canonicalization for the integer-only Runner receipt schema; cross-team golden gate remains required.</summary>
+/// <summary>Canonical receipt JSON with normalized bounded decimals for measured percentages.</summary>
 public static class ReceiptCanonicalJson
 {
     public static string Digest(string json) => "sha256:" + Convert.ToHexStringLower(SHA256.HashData(Canonicalize(json)));
@@ -43,10 +43,15 @@ public static class ReceiptCanonicalJson
                 writer.WriteEndArray();
                 break;
             case JsonValueKind.Number:
-                // Current receipts contain only integer counters/status codes; no guessed floating-point normalization.
                 if (node.TryGetInt64(out var signed)) writer.WriteRawValue(signed.ToString(CultureInfo.InvariantCulture));
                 else if (node.TryGetUInt64(out var unsigned)) writer.WriteRawValue(unsigned.ToString(CultureInfo.InvariantCulture));
-                else throw new ArgumentException("Receipt number is outside the integer contract.");
+                else if(decimal.TryParse(node.GetRawText(),NumberStyles.Float,CultureInfo.InvariantCulture,out var number))
+                {
+                    if(number==0 && node.GetRawText().Split('e','E')[0].Any(character=>character is >= '1' and <= '9'))
+                        throw new ArgumentException("Receipt decimal underflows the supported range.");
+                    writer.WriteRawValue(number.ToString("0.############################",CultureInfo.InvariantCulture));
+                }
+                else throw new ArgumentException("Receipt number is outside the supported decimal range.");
                 break;
             default: node.WriteTo(writer); break;
         }

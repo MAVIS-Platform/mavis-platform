@@ -844,6 +844,8 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
             }
         }
 
+        validateInfrastructureActions(bounded, apps);
+
         // Tự động dựng scenarioNode nếu thiếu hoặc rỗng
         ObjectNode scenarioNode = bounded.has("scenario") && bounded.get("scenario").isObject()
                 ? (ObjectNode) bounded.get("scenario")
@@ -1729,6 +1731,34 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                 || model.getSourceSnapshot() == null || !snapshot.getId().equals(model.getSourceSnapshot().getId())
                 || "RUNTIME_ENRICHED".equalsIgnoreCase(model.getOrigin())) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Pinned model must belong to the selected snapshot");
+        }
+    }
+
+    private void validateInfrastructureActions(ObjectNode bounded, ObjectNode apps) {
+        JsonNode actionsNode = bounded.path("infrastructureActions");
+        if (actionsNode == null || actionsNode.isMissingNode() || actionsNode.isNull()) {
+            return;
+        }
+        if (!actionsNode.isArray()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "infrastructureActions must be an array");
+        }
+        for (JsonNode actionNode : actionsNode) {
+            if (actionNode == null || !actionNode.isObject()) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "Invalid infrastructure action item");
+            }
+            String action = actionNode.path("action").asText("").trim().toUpperCase(Locale.ROOT);
+            String service = actionNode.path("service").asText("").trim();
+            if (!Set.of("STOP", "START", "SCALE").contains(action) || service.isEmpty() || !apps.has(service)) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST,
+                        "INFRASTRUCTURE_ACTION_INVALID: Action must target STOP/START/SCALE on an approved profile service");
+            }
+            if ("SCALE".equals(action)) {
+                JsonNode replicasNode = actionNode.path("replicas");
+                if (!replicasNode.isIntegralNumber() || replicasNode.asInt() < 1 || replicasNode.asInt() > 8) {
+                    throw new BusinessException(ErrorCode.BAD_REQUEST,
+                            "REPLICA_BOUNDS_EXCEEDED: Replica count must be between 1 and 8 for SCALE action");
+                }
+            }
         }
     }
 

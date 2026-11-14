@@ -22,6 +22,7 @@ export function StudioObservability({
   const [view, setView] = useState<"2D" | "3D">("2D");
   const [camera, setCamera] = useState({ yaw: 0.4, pitch: 0.35 });
   const [traceId, setTraceId] = useState("");
+  const [exportError, setExportError] = useState(false);
   const drag = useRef<{ x: number; y: number } | null>(null);
   const svg = useRef<SVGSVGElement>(null);
   const reference = useApiQuery(
@@ -38,8 +39,10 @@ export function StudioObservability({
   );
   const impact = useMemo(
     () =>
-      reference.data && modelId ? computeArchitectureImpact(reference.data, modelId, "all",workerImpact.data?.paths??[]) : null,
-    [reference.data, modelId,workerImpact.data],
+      reference.data && modelId
+        ? computeArchitectureImpact(reference.data, modelId, "all", workerImpact.data?.paths ?? [])
+        : null,
+    [reference.data, modelId, workerImpact.data],
   );
   const affected = new Set(impact?.upstreamImpacted.map((item) => item.elementId) ?? []);
   const positions = new Map(
@@ -62,6 +65,18 @@ export function StudioObservability({
       return [name, { x: x + 350, y: y + 230, z }];
     }),
   );
+  if (positions.size > 0) {
+    const points = [...positions.values()];
+    const minX = Math.min(...points.map((point) => point.x)),
+      maxX = Math.max(...points.map((point) => point.x));
+    const minY = Math.min(...points.map((point) => point.y)),
+      maxY = Math.max(...points.map((point) => point.y));
+    const fit = Math.min(1, 540 / Math.max(1, maxX - minX), 320 / Math.max(1, maxY - minY));
+    for (const point of points) {
+      point.x = 350 + (point.x - (minX + maxX) / 2) * fit;
+      point.y = 230 + (point.y - (minY + maxY) / 2) * fit;
+    }
+  }
   const staticEdges =
     reference.data?.edges.flatMap((edge) => {
       const from = Object.entries(data.serviceMappings ?? {}).find(
@@ -70,56 +85,27 @@ export function StudioObservability({
       const to = Object.entries(data.serviceMappings ?? {}).find(([, id]) => id === edge.to)?.[0];
       return from && to ? [{ from, to, id: edge.id }] : [];
     }) ?? [];
-  function downloadGraph(png = false) {
+  async function downloadGraph(png = false) {
     if (!svg.current) return;
-    const clone = svg.current.cloneNode(true) as SVGSVGElement;
-    const styles = getComputedStyle(svg.current);
-    clone.setAttribute(
-      "style",
-      `color:${styles.color};background:${styles.backgroundColor};font-family:Arial,sans-serif`,
-    );
-    clone.setAttribute("width", "1400");
-    clone.setAttribute("height", "920");
-    clone.querySelectorAll("[fill],[stroke]").forEach((element) => {
-      for (const attribute of ["fill", "stroke"]) {
-        const value = element.getAttribute(attribute);
-        const variable = value?.match(/^var\((--[\w-]+)\)$/);
-        if (variable) element.setAttribute(attribute, styles.getPropertyValue(variable[1]!).trim());
-      }
-    });
-    const blob = new Blob([new XMLSerializer().serializeToString(clone)], {
-      type: "image/svg+xml;charset=utf-8",
-    });
-    const url = URL.createObjectURL(blob),
-      anchor = document.createElement("a");
-    if (png) {
-      const image = new Image();
-      image.onload = () => {
-        const canvas = document.createElement("canvas");
-        canvas.width = 1400;
-        canvas.height = 920;
-        const context = canvas.getContext("2d");
-        if (context) {
-          context.fillStyle = styles.backgroundColor;
-          context.fillRect(0, 0, 1400, 920);
-          context.drawImage(image, 0, 0);
-          anchor.href = canvas.toDataURL("image/png");
-          anchor.download = `studio-${data.sessionId}-${view}.png`;
-          anchor.click();
-        }
-        URL.revokeObjectURL(url);
-      };
-      image.onerror = () => URL.revokeObjectURL(url);
-      image.src = url;
-    } else {
+    try {
+      const url = png
+        ? await captureStudioImage(svg.current)
+        : URL.createObjectURL(
+            new Blob([serializeStudioGraph(svg.current)], { type: "image/svg+xml;charset=utf-8" }),
+          );
+      const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = `studio-${data.sessionId}-${view}.svg`;
+      anchor.download = `studio-${data.sessionId}-${view}.${png ? "png" : "svg"}`;
       anchor.click();
-      URL.revokeObjectURL(url);
+      if (!png) URL.revokeObjectURL(url);
+    } catch {
+      setExportError(true);
     }
   }
+
   return (
     <div className="space-y-4">
+      {exportError && <p role="alert">{t("Could not export graph")}</p>}
       <div className="flex flex-wrap items-center gap-2">
         <h3 className="mr-auto font-medium">{t("Runtime topology and impact")}</h3>
         {(["2D", "3D"] as const).map((mode) => (
@@ -158,156 +144,164 @@ export function StudioObservability({
           {t("Export snapshot image")}
         </Button>
       </div>
-      <p className="text-sm text-muted-foreground">
-        {t("Dashed edges show static dependencies. Solid edges show captured trace interactions.")}
-      </p>
-      <svg
-        ref={svg}
-        data-studio-graph="true"
-        xmlns="http://www.w3.org/2000/svg"
-        viewBox="0 0 700 460"
-        className="w-full rounded-lg border bg-background"
-        role="group"
-        aria-label={t("Runtime topology and impact")}
-        style={{ maxHeight: 500, touchAction: view === "3D" ? "none" : "auto" }}
-        onPointerDown={(event) => {
-          if (view === "3D" && event.target === event.currentTarget) {
+      <div className="max-w-full overflow-x-auto">
+        <svg
+          ref={svg}
+          data-studio-graph="true"
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 700 460"
+          className="min-w-[640px] w-full rounded-lg border bg-background"
+          role="group"
+          aria-label={t("Runtime topology and impact")}
+          style={{ maxHeight: 500, touchAction: view === "3D" ? "none" : "auto" }}
+          onPointerDown={(event) => {
+            if (view === "3D" && event.target === event.currentTarget) {
+              drag.current = { x: event.clientX, y: event.clientY };
+              event.currentTarget.setPointerCapture(event.pointerId);
+            }
+          }}
+          onPointerUp={() => {
+            drag.current = null;
+          }}
+          onPointerCancel={() => {
+            drag.current = null;
+          }}
+          onPointerMove={(event) => {
+            if (!drag.current) return;
+            const dx = event.clientX - drag.current.x,
+              dy = event.clientY - drag.current.y;
             drag.current = { x: event.clientX, y: event.clientY };
-            event.currentTarget.setPointerCapture(event.pointerId);
-          }
-        }}
-        onPointerUp={() => {
-          drag.current = null;
-        }}
-        onPointerCancel={() => {
-          drag.current = null;
-        }}
-        onPointerMove={(event) => {
-          if (!drag.current) return;
-          const dx = event.clientX - drag.current.x,
-            dy = event.clientY - drag.current.y;
-          drag.current = { x: event.clientX, y: event.clientY };
-          setCamera((value) => ({
-            yaw: value.yaw + dx * 0.008,
-            pitch: Math.max(-1, Math.min(1, value.pitch + dy * 0.008)),
-          }));
-        }}
-      >
-        {staticEdges.map((edge) => {
-          const from = positions.get(edge.from),
-            to = positions.get(edge.to);
-          return from && to ? (
-            <line
-              key={edge.id}
-              x1={from.x}
-              y1={from.y}
-              x2={to.x}
-              y2={to.y}
-              stroke="currentColor"
-              strokeDasharray="5 5"
-              opacity=".25"
-            />
-          ) : null;
-        })}
-        {telemetry?.interactions
-          .filter((edge) => !traceId || edge.traceId === traceId)
-          .map((edge, index) => {
-            const from = positions.get(edge.fromService),
-              to = positions.get(edge.toService);
+            setCamera((value) => ({
+              yaw: value.yaw + dx * 0.008,
+              pitch: Math.max(-1, Math.min(1, value.pitch + dy * 0.008)),
+            }));
+          }}
+        >
+          <text x="16" y="22" fill="currentColor" fontSize="12">
+            {t("Static dependencies (dashed)")}
+          </text>
+          <text x="16" y="40" fill="currentColor" fontSize="12">
+            {t("Observed runtime (solid)")}
+          </text>
+          <text x="684" y="22" fill="currentColor" fontSize="12" textAnchor="end">
+            {view}
+          </text>
+          {staticEdges.map((edge) => {
+            const from = positions.get(edge.from),
+              to = positions.get(edge.to);
             return from && to ? (
-              <g
-                key={edge.traceId + index}
-                onClick={() => setTraceId(edge.traceId)}
-                className="cursor-pointer"
-              >
-                <title>{edge.fromService + " → " + edge.toService + " · " + edge.traceId}</title>
-                <line
-                  x1={from.x}
-                  y1={from.y}
-                  x2={to.x}
-                  y2={to.y}
-                  stroke="var(--primary)"
-                  strokeWidth="2"
-                />
-                <circle
-                  cx={(from.x + to.x) / 2}
-                  cy={(from.y + to.y) / 2}
-                  r="4"
-                  fill="var(--primary)"
-                />
-              </g>
+              <line
+                key={edge.id}
+                x1={from.x}
+                y1={from.y}
+                x2={to.x}
+                y2={to.y}
+                stroke="currentColor"
+                strokeDasharray="5 5"
+                opacity=".25"
+              />
             ) : null;
           })}
-        {[...positions.entries()]
-          .sort((a, b) => b[1].z - a[1].z)
-          .map(([name, point]) => {
-            const live = telemetry?.services.find((item) => item.service === name);
-            const isAffected = affected.has(data.serviceMappings?.[name] ?? "");
-            return (
-              <g
-                key={name}
-                role="button"
-                tabIndex={0}
-                aria-label={name}
-                aria-pressed={selected === name}
-                onClick={() => onSelect(name)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    onSelect(name);
-                  }
-                }}
-                className="cursor-pointer"
-              >
-                <rect
-                  x={point.x - 70}
-                  y={point.y - 27}
-                  width="140"
-                  height="54"
-                  rx="8"
-                  fill="var(--background)"
-                  stroke={
-                    selected === name
-                      ? "var(--primary)"
-                      : isAffected
-                        ? "var(--destructive)"
-                        : "currentColor"
-                  }
-                  strokeWidth={selected === name ? 3 : 1}
-                />
-                <text
-                  x={point.x}
-                  y={point.y - 3}
-                  textAnchor="middle"
-                  fill="currentColor"
-                  fontSize="12"
+          {telemetry?.interactions
+            .filter((edge) => !traceId || edge.traceId === traceId)
+            .map((edge, index) => {
+              const from = positions.get(edge.fromService),
+                to = positions.get(edge.toService);
+              return from && to ? (
+                <g
+                  key={edge.traceId + index}
+                  onClick={() => setTraceId(edge.traceId)}
+                  className="cursor-pointer"
                 >
-                  {name}
-                </text>
-                <text
-                  x={point.x}
-                  y={point.y + 15}
-                  textAnchor="middle"
-                  fill="currentColor"
-                  fontSize="11"
-                >
-                  {live
-                    ? `${live.runningReplicas}/${live.replicas} ${t("running")}`
-                    : t("Waiting for telemetry")}
-                </text>
-                {Array.from({ length: Math.min(live?.runningReplicas ?? 0, 8) }, (_, i) => (
+                  <title>{edge.fromService + " → " + edge.toService + " · " + edge.traceId}</title>
+                  <line
+                    x1={from.x}
+                    y1={from.y}
+                    x2={to.x}
+                    y2={to.y}
+                    stroke="var(--primary)"
+                    strokeWidth="2"
+                  />
                   <circle
-                    key={i}
-                    cx={point.x - 28 + i * 8}
-                    cy={point.y + 34 + (view === "3D" ? (i % 2) * 3 : 0)}
-                    r="3"
+                    cx={(from.x + to.x) / 2}
+                    cy={(from.y + to.y) / 2}
+                    r="4"
                     fill="var(--primary)"
                   />
-                ))}
-              </g>
-            );
-          })}
-      </svg>
+                </g>
+              ) : null;
+            })}
+          {[...positions.entries()]
+            .sort((a, b) => b[1].z - a[1].z)
+            .map(([name, point]) => {
+              const live = telemetry?.services.find((item) => item.service === name);
+              const isAffected = affected.has(data.serviceMappings?.[name] ?? "");
+              return (
+                <g
+                  key={name}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={name}
+                  aria-pressed={selected === name}
+                  onClick={() => onSelect(name)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      onSelect(name);
+                    }
+                  }}
+                  className="cursor-pointer"
+                >
+                  <rect
+                    x={point.x - 70}
+                    y={point.y - 27}
+                    width="140"
+                    height="54"
+                    rx="8"
+                    fill="var(--background)"
+                    stroke={
+                      selected === name
+                        ? "var(--primary)"
+                        : isAffected
+                          ? "var(--destructive)"
+                          : "currentColor"
+                    }
+                    strokeWidth={selected === name ? 3 : 1}
+                  />
+                  <text
+                    x={point.x}
+                    y={point.y - 3}
+                    textAnchor="middle"
+                    fill="currentColor"
+                    fontSize="12"
+                  >
+                    {name}
+                  </text>
+                  <text
+                    x={point.x}
+                    y={point.y + 15}
+                    textAnchor="middle"
+                    fill="currentColor"
+                    fontSize="11"
+                  >
+                    {live
+                      ? `${live.runningReplicas}/${live.replicas} ${t("running")}`
+                      : t("Waiting for telemetry")}
+                  </text>
+                  {Array.from({ length: Math.min(live?.runningReplicas ?? 0, 8) }, (_, i) => (
+                    <circle
+                      key={i}
+                      cx={point.x - 28 + i * 8}
+                      cy={point.y + 34 + (view === "3D" ? (i % 2) * 3 : 0)}
+                      r="3"
+                      fill="var(--primary)"
+                    />
+                  ))}
+                </g>
+              );
+            })}
+        </svg>
+      </div>
       {!telemetry && <p role="status">{t("Waiting for observed telemetry from Runner.")}</p>}
       {telemetry && (
         <p className="text-sm text-muted-foreground">
@@ -403,33 +397,43 @@ export function StudioObservability({
                 </details>
               </section>
             ))}
-          <div className="flex flex-wrap items-center gap-2">
-            <h4 className="mr-auto font-medium">{t("Trace spans")}</h4>
-            {traceId && (
-              <Button variant="outline" size="sm" onClick={() => setTraceId("")}>
-                {t("Show all traces")}
-              </Button>
-            )}
-          </div>
-          {telemetry.spans
-            .filter(
-              (span) =>
-                (!selected || span.runtimeService === selected) &&
-                (!traceId || span.traceId === traceId),
-            )
-            .slice(-50)
-            .map((span) => (
-              <button
-                type="button"
-                key={span.traceId + span.spanId}
-                className="block w-full break-all rounded border p-2 text-left text-sm"
-                onClick={() => setTraceId(span.traceId)}
-              >
-                {span.runtimeService} · HTTP {span.httpStatusCode ?? "—"} ·{" "}
-                {span.spanStatus ?? "UNSET"} · {span.traceId}
-              </button>
-            ))}
-          {telemetry.spans.length === 0 && <p role="status">{t("No captured spans yet.")}</p>}
+          <details open={traceId ? true : undefined}>
+            <summary className="font-medium">
+              {t("Trace spans")} · {telemetry.spans.length}
+            </summary>
+            <div className="flex flex-wrap items-center gap-2">
+              {traceId && (
+                <Button variant="outline" size="sm" onClick={() => setTraceId("")}>
+                  {t("Show all traces")}
+                </Button>
+              )}
+            </div>
+            {telemetry.spans
+              .filter(
+                (span) =>
+                  (!selected || span.runtimeService === selected) &&
+                  (!traceId || span.traceId === traceId),
+              )
+              .slice(-50)
+              .map((span) => (
+                <button
+                  type="button"
+                  key={span.traceId + span.spanId}
+                  className="block w-full break-all rounded border p-2 text-left text-sm"
+                  onClick={() => setTraceId(span.traceId)}
+                >
+                  {span.runtimeService} · HTTP {span.httpStatusCode ?? "—"} ·{" "}
+                  {span.spanStatus ?? "UNSET"} · {span.traceId}
+                  <span className="block text-xs text-muted-foreground">
+                    {span.spanId} ·{" "}
+                    {span.durationNanoseconds && Number.isFinite(Number(span.durationNanoseconds))
+                      ? (Number(span.durationNanoseconds) / 1000000).toFixed(2) + " ms"
+                      : "—"}
+                  </span>
+                </button>
+              ))}
+            {telemetry.spans.length === 0 && <p role="status">{t("No captured spans yet.")}</p>}
+          </details>
         </div>
       )}
     </div>
@@ -437,24 +441,9 @@ export function StudioObservability({
 }
 
 export async function captureStudioImage(svg: SVGSVGElement): Promise<string> {
-  const clone = svg.cloneNode(true) as SVGSVGElement;
   const styles = getComputedStyle(svg);
-  clone.setAttribute(
-    "style",
-    `color:${styles.color};background:${styles.backgroundColor};font-family:Arial,sans-serif`,
-  );
-  clone.setAttribute("width", "1400");
-  clone.setAttribute("height", "920");
-  clone.querySelectorAll("[fill],[stroke]").forEach((element) => {
-    for (const attribute of ["fill", "stroke"]) {
-      const variable = element.getAttribute(attribute)?.match(/^var\((--[\w-]+)\)$/);
-      if (variable) element.setAttribute(attribute, styles.getPropertyValue(variable[1]!).trim());
-    }
-  });
   const url = URL.createObjectURL(
-    new Blob([new XMLSerializer().serializeToString(clone)], {
-      type: "image/svg+xml;charset=utf-8",
-    }),
+    new Blob([serializeStudioGraph(svg)], { type: "image/svg+xml;charset=utf-8" }),
   );
   try {
     const image = new Image();
@@ -475,4 +464,22 @@ export async function captureStudioImage(svg: SVGSVGElement): Promise<string> {
   } finally {
     URL.revokeObjectURL(url);
   }
+}
+
+function serializeStudioGraph(svg: SVGSVGElement): string {
+  const clone = svg.cloneNode(true) as SVGSVGElement;
+  const styles = getComputedStyle(svg);
+  clone.setAttribute(
+    "style",
+    `color:${styles.color};background:${styles.backgroundColor};font-family:Arial,sans-serif`,
+  );
+  clone.setAttribute("width", "1400");
+  clone.setAttribute("height", "920");
+  clone.querySelectorAll("[fill],[stroke]").forEach((element) => {
+    for (const attribute of ["fill", "stroke"]) {
+      const variable = element.getAttribute(attribute)?.match(/^var\((--[\w-]+)\)$/);
+      if (variable) element.setAttribute(attribute, styles.getPropertyValue(variable[1]!).trim());
+    }
+  });
+  return new XMLSerializer().serializeToString(clone);
 }

@@ -86,6 +86,9 @@ class RuntimeStudioServiceTest {
         var evidence=service.capture(id,new RuntimeStudioService.CaptureRequest("Observed failure propagation"));
         assertFalse(evidence.toString().contains("supersecret"));
         assertTrue(evidence.path("digest").asText().matches("sha256:[a-f0-9]{64}"));
+        var payload=(ObjectNode)evidence.deepCopy();
+        String digest=payload.remove("digest").asText();
+        assertEquals(digest,com.mavis.analyzer.runtime.utils.CanonicalReceiptDigestUtils.computeDigest(payload));
         telemetry.put("observedAt","sample-after");
         service.telemetry(id,new RuntimeStudioService.TelemetryRequest(id,session.getResourceProject(),telemetry));
         assertEquals("sample-before",session.getStudioControl().path("snapshots").get(0).path("telemetry").path("observedAt").asText());

@@ -42,7 +42,7 @@ public class CourseAccessService {
     public record Lab(UUID assignmentId, int position, String title, String state, String reason) {}
     public record Roadmap(boolean guided, String enrollmentStatus, List<Lab> labs) {}
     public record Passkey(String code, OffsetDateTime expiresAt) {}
-    public record KeyStatus(OffsetDateTime expiresAt, boolean active) {}
+    public record KeyStatus(OffsetDateTime expiresAt, boolean active, Integer maxStudents, int enrolledStudents) {}
     public record Enrollment(UUID workspaceId) {}
 
     public Lab publish(UUID workspaceId, UUID assignmentId) {
@@ -76,8 +76,10 @@ public class CourseAccessService {
         return new Lab(assignmentId, next, assignment.getTitle(), "UNLOCKED", null);
     }
 
-    public Passkey issue(UUID workspaceId, int validHours) {
+    public Passkey issue(UUID workspaceId, int validHours) { return issue(workspaceId, validHours, null); }
+    public Passkey issue(UUID workspaceId, int validHours, Integer maxStudents) {
         Workspace workspace = manage(workspaceId);
+        if (maxStudents != null) workspace.setMaxStudents(maxStudents);
         if (!workspace.isCourseMode()) {
             throw new BusinessException(ErrorCode.CONFLICT, "Publish the first Lab before issuing a Passkey");
         }
@@ -98,13 +100,16 @@ public class CourseAccessService {
     @Transactional(readOnly = true)
     public KeyStatus keyStatus(UUID workspaceId) {
         access.requireWorkspaceLecturer(workspaceId);
+        int enrolled = jdbc.queryForObject("SELECT count(*) FROM workspace_members WHERE workspace_id=? AND member_role='STUDENT'", Integer.class, workspaceId);
         return jdbc.query("""
                 SELECT k.expires_at, k.revoked_at IS NULL AND k.expires_at > now()
                        AND w.status = 'ACTIVE' AS active
                 FROM course_passkeys k JOIN workspaces w ON w.id = k.workspace_id
                 WHERE k.workspace_id = ?
                 """, (rs, row) -> new KeyStatus(rs.getObject("expires_at", OffsetDateTime.class),
-                rs.getBoolean("active")), workspaceId).stream().findFirst().orElse(new KeyStatus(null, false));
+                rs.getBoolean("active"), workspaces.findById(workspaceId).map(Workspace::getMaxStudents).orElse(null), enrolled), workspaceId)
+                .stream().findFirst().orElse(new KeyStatus(null, false,
+                        workspaces.findById(workspaceId).map(Workspace::getMaxStudents).orElse(null), enrolled));
     }
 
     public void revoke(UUID workspaceId) {
@@ -120,6 +125,7 @@ public class CourseAccessService {
         if (!CourseLabPolicy.isStudent(actor)) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "Only students can redeem a course Passkey");
         }
+        passkeyRateCheck(actor.getId());
         String keyDigest = digest(code);
         UUID prior = replay(actor.getId(), requestId, keyDigest);
         if (prior != null) {
@@ -127,7 +133,7 @@ public class CourseAccessService {
         }
         UUID workspaceId = jdbc.queryForList("SELECT workspace_id FROM course_passkeys WHERE digest = ?",
                         UUID.class, keyDigest)
-                .stream().findFirst().orElseThrow(CourseAccessService::invalidKey);
+                .stream().findFirst().orElseThrow(() -> { passkeyFailure(actor.getId()); return invalidKey(); });
         Workspace workspace = lock(workspaceId);
         prior = replay(actor.getId(), requestId, keyDigest);
         if (prior != null) {
@@ -138,8 +144,12 @@ public class CourseAccessService {
                 AND revoked_at IS NULL AND expires_at > statement_timestamp())
                 """, Boolean.class, workspaceId, keyDigest));
         if (!valid || !workspace.isCourseMode() || !"ACTIVE".equals(workspace.getStatus())) {
+            passkeyFailure(actor.getId());
             throw invalidKey();
         }
+        Integer capacity = workspace.getMaxStudents();
+        if (capacity != null && jdbc.queryForObject("SELECT count(*) FROM workspace_members WHERE workspace_id=? AND member_role='STUDENT'", Integer.class, workspaceId) >= capacity)
+            throw new BusinessException(ErrorCode.CONFLICT, "COURSE_CAPACITY_REACHED", "This course has reached its student capacity");
         int added = jdbc.update("""
                 INSERT INTO workspace_members (workspace_id, user_id, member_role,
                     enrollment_request_id, enrollment_key_digest)
@@ -147,9 +157,11 @@ public class CourseAccessService {
                 ON CONFLICT (workspace_id, user_id) DO NOTHING
                 """, workspaceId, actor.getId(), requestId, keyDigest);
         if (added == 0) {
-            throw new BusinessException(ErrorCode.CONFLICT, "Already enrolled in this course");
+            throw new BusinessException(ErrorCode.CONFLICT, "ALREADY_ENROLLED", "Already enrolled in this course");
         }
         AuthorizationRequestCache.evictMembership(workspaceId, actor.getId());
+        jdbc.update("DELETE FROM auth_rate_limits WHERE scope='PASSKEY' AND subject_digest=?", digest(actor.getId().toString()));
+        audit("COURSE_ENROLLED", "WORKSPACE", workspaceId);
         return new Enrollment(workspaceId);
     }
 
@@ -224,6 +236,8 @@ public class CourseAccessService {
     }
 
     private static BusinessException invalidKey() {
-        return new BusinessException(ErrorCode.BAD_REQUEST, "Invalid or expired Passkey");
+        return new BusinessException(ErrorCode.BAD_REQUEST, "INVALID_OR_EXPIRED_PASSKEY", "Invalid or expired Passkey");
     }
+    private void passkeyRateCheck(UUID actor){Boolean blocked=jdbc.queryForObject("SELECT coalesce((SELECT blocked_until>now() FROM auth_rate_limits WHERE scope='PASSKEY' AND subject_digest=?),false)",Boolean.class,digest(actor.toString()));if(Boolean.TRUE.equals(blocked))throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS,"PASSKEY_RATE_LIMITED","Too many invalid Passkeys. Try again later");}
+    private void passkeyFailure(UUID actor){jdbc.update("INSERT INTO auth_rate_limits(scope,subject_digest,attempts) VALUES ('PASSKEY',?,1) ON CONFLICT(scope,subject_digest) DO UPDATE SET attempts=auth_rate_limits.attempts+1,blocked_until=CASE WHEN auth_rate_limits.attempts+1>=5 THEN now()+interval '15 minutes' ELSE auth_rate_limits.blocked_until END",digest(actor.toString()));}
 }

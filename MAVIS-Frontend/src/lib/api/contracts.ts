@@ -6,7 +6,14 @@ const id = z.string().min(1);
 const project = z.object({ projectId: id });
 const nothing = z.object({});
 const ok = z.object({ ok: z.literal(true) });
-const notificationReadAck=ok.extend({recipientId:z.string().uuid().optional(),readAt:z.string().datetime().optional(),asOf:z.string().datetime().optional(),unreadCount:z.number().int().nonnegative().optional(),before:z.string().datetime().optional(),notificationId:z.string().uuid().optional()});
+const notificationReadAck = ok.extend({
+  recipientId: z.string().uuid().optional(),
+  readAt: z.string().datetime().optional(),
+  asOf: z.string().datetime().optional(),
+  unreadCount: z.number().int().nonnegative().optional(),
+  before: z.string().datetime().optional(),
+  notificationId: z.string().uuid().optional(),
+});
 function contract<I extends z.ZodTypeAny, O extends z.ZodTypeAny>(
   input: I,
   output: O,
@@ -14,24 +21,76 @@ function contract<I extends z.ZodTypeAny, O extends z.ZodTypeAny>(
 ) {
   return { input, output, mutation };
 }
-const notificationCategory = z.enum(["WORKSPACE","ASSIGNMENT","SUBMISSION","ANALYSIS","RUNTIME","ACCOUNT","SYSTEM"]);
-const notificationItem = z.object({ id:z.string().uuid(),category:notificationCategory,title:z.string(),body:z.string(),targetPath:z.string().refine(p=>/^\/(?!\/)/.test(p)&&!p.includes("\\")),createdAt:z.string().datetime(),readAt:z.string().datetime().nullable() });
-const activityBase=z.object({id,projectId:id,projectName:z.string(),occurredAt:z.string().nullable(),projectDeleted:z.boolean(),targetId:id.nullable(),targetName:z.string().nullable(),actorId:id.nullable(),actorName:z.string().nullable()});
-const activityItem=z.discriminatedUnion("kind",[
- activityBase.extend({kind:z.literal("ANALYSIS"),job:d.analysisJobSchema}),
- activityBase.extend({kind:z.literal("PROJECT_DELETED"),job:z.null()}),
- activityBase.extend({kind:z.literal("SNAPSHOT_DELETED"),job:z.null()}),
+const notificationCategory = z.enum([
+  "WORKSPACE",
+  "ASSIGNMENT",
+  "SUBMISSION",
+  "ANALYSIS",
+  "RUNTIME",
+  "ACCOUNT",
+  "SYSTEM",
+]);
+const notificationItem = z.object({
+  id: z.string().uuid(),
+  category: notificationCategory,
+  title: z.string(),
+  body: z.string(),
+  targetPath: z.string().refine((p) => /^\/(?!\/)/.test(p) && !p.includes("\\")),
+  createdAt: z.string().datetime(),
+  readAt: z.string().datetime().nullable(),
+});
+const activityBase = z.object({
+  id,
+  projectId: id,
+  projectName: z.string(),
+  occurredAt: z.string().nullable(),
+  projectDeleted: z.boolean(),
+  targetId: id.nullable(),
+  targetName: z.string().nullable(),
+  actorId: id.nullable(),
+  actorName: z.string().nullable(),
+});
+const activityItem = z.discriminatedUnion("kind", [
+  activityBase.extend({ kind: z.literal("ANALYSIS"), job: d.analysisJobSchema }),
+  activityBase.extend({ kind: z.literal("PROJECT_DELETED"), job: z.null() }),
+  activityBase.extend({ kind: z.literal("SNAPSHOT_DELETED"), job: z.null() }),
 ]);
 export const contracts = {
-  notifications: contract(z.object({page:z.number().int().min(0).max(10000),size:z.number().int().min(1).max(50),unreadOnly:z.boolean(),category:notificationCategory.optional()}),z.object({items:z.array(notificationItem),total:z.number().int().nonnegative(),unreadCount:z.number().int().nonnegative(),page:z.number().int(),size:z.number().int(),asOf:z.string().datetime(),recipientId:z.string().uuid().optional()})),
-  readNotification: contract(z.object({notificationId:z.string().uuid()}),notificationReadAck,true),
-  readAllNotifications: contract(z.object({before:z.string().datetime()}),notificationReadAck,true),
+  notifications: contract(
+    z.object({
+      page: z.number().int().min(0).max(10000),
+      size: z.number().int().min(1).max(50),
+      unreadOnly: z.boolean(),
+      category: notificationCategory.optional(),
+    }),
+    z.object({
+      items: z.array(notificationItem),
+      total: z.number().int().nonnegative(),
+      unreadCount: z.number().int().nonnegative(),
+      page: z.number().int(),
+      size: z.number().int(),
+      asOf: z.string().datetime(),
+      recipientId: z.string().uuid().optional(),
+    }),
+  ),
+  readNotification: contract(
+    z.object({ notificationId: z.string().uuid() }),
+    notificationReadAck,
+    true,
+  ),
+  readAllNotifications: contract(
+    z.object({ before: z.string().datetime() }),
+    notificationReadAck,
+    true,
+  ),
   updateProfile: contract(
     z
       .object({
         fullName: z.string().trim().min(1).max(255),
         currentPassword: z.string().min(1).max(100).optional(),
         newPassword: z.string().min(6).max(100).optional(),
+        avatarUrl: z.string().url().max(1000).nullable().optional(),
+        preferredLocale: z.enum(["en", "vi"]).optional(),
       })
       .refine((value) => value.newPassword === undefined || Boolean(value.currentPassword), {
         path: ["currentPassword"],
@@ -278,6 +337,8 @@ export const contracts = {
       lecturerId: z.string().nullable(),
       lecturerName: z.string().nullable(),
       updatedAt: z.string().nullable(),
+      snapshotGrades: z.array(d.snapshotGradeSchema).optional(),
+      labOutcome: z.enum(["PENDING", "PASSED", "NEEDS_REVISION"]).optional(),
     }),
   ),
   gradeSubmission: contract(
@@ -287,6 +348,7 @@ export const contracts = {
       status: z.enum(["DRAFT", "RETURNED", "GRADED"]),
       score: z.number().min(0).max(100).nullable(),
       summary: z.string().max(10000),
+      snapshotGrades: z.array(d.snapshotGradeSchema).optional(),
     }),
     z.object({
       submissionId: id,
@@ -297,6 +359,8 @@ export const contracts = {
       lecturerId: z.string().nullable(),
       lecturerName: z.string().nullable(),
       updatedAt: z.string().nullable(),
+      snapshotGrades: z.array(d.snapshotGradeSchema).optional(),
+      labOutcome: z.enum(["PENDING", "PASSED", "NEEDS_REVISION"]).optional(),
     }),
     true,
   ),
@@ -388,8 +452,30 @@ export const contracts = {
     d.snapshotSchema,
     true,
   ),
-  projectActivity: contract(z.object({page:z.number().int().min(0).max(10000),size:z.number().int().min(1).max(50)}),z.object({items:z.array(activityItem),total:z.number().int().nonnegative(),page:z.number().int(),size:z.number().int()})),
-  projectAnalysisActivity: contract(z.object({page:z.number().int().min(0).max(10000),size:z.number().int().min(1).max(50)}),z.object({items:z.array(d.analysisJobSchema.extend({projectName:z.string(),startedAt:z.string().nullable(),completedAt:z.string().nullable()})),total:z.number().int().nonnegative(),page:z.number().int(),size:z.number().int()})),
+  projectActivity: contract(
+    z.object({ page: z.number().int().min(0).max(10000), size: z.number().int().min(1).max(50) }),
+    z.object({
+      items: z.array(activityItem),
+      total: z.number().int().nonnegative(),
+      page: z.number().int(),
+      size: z.number().int(),
+    }),
+  ),
+  projectAnalysisActivity: contract(
+    z.object({ page: z.number().int().min(0).max(10000), size: z.number().int().min(1).max(50) }),
+    z.object({
+      items: z.array(
+        d.analysisJobSchema.extend({
+          projectName: z.string(),
+          startedAt: z.string().nullable(),
+          completedAt: z.string().nullable(),
+        }),
+      ),
+      total: z.number().int().nonnegative(),
+      page: z.number().int(),
+      size: z.number().int(),
+    }),
+  ),
   analysisJobs: contract(project, z.array(d.analysisJobSchema)),
   startAnalysis: contract(
     project.extend({ snapshotId: id, idempotencyKey: z.string().min(1).optional() }),
@@ -400,16 +486,28 @@ export const contracts = {
   models: contract(project, z.array(d.modelSchema)),
   model: contract(z.object({ modelId: id, projectId: id.optional() }), d.modelSchema),
   deleteProject: contract(project, ok, true),
-  deleteSnapshot: contract(z.object({projectId:id,snapshotId:id}),ok,true),
-  contextCandidates: contract(z.object({modelId:id}), z.object({entries:z.array(z.record(z.unknown()))})),
-  reviewContext: contract(z.object({
-    modelId: id, expectedRevision: z.number().int().positive(),
-    action: z.enum(["SUGGEST", "PROPOSE", "EDIT", "CONFIRM", "REJECT"]),
-    candidateId: z.string().optional(), name: z.string().trim().min(1).max(255).optional(),
-    kind: z.enum(["PERSON", "EXTERNAL_SYSTEM"]).optional(), targetKey: z.string().max(500).optional(),
-    direction: z.enum(["INBOUND", "OUTBOUND"]).optional(), basis: z.string().trim().max(2000).optional(),
-    boundary: z.string().trim().min(10).max(2000).optional(), evidenceIds: z.array(z.string().uuid()).max(20).optional(),
-  }), d.modelSchema, true),
+  deleteSnapshot: contract(z.object({ projectId: id, snapshotId: id }), ok, true),
+  contextCandidates: contract(
+    z.object({ modelId: id }),
+    z.object({ entries: z.array(z.record(z.unknown())) }),
+  ),
+  reviewContext: contract(
+    z.object({
+      modelId: id,
+      expectedRevision: z.number().int().positive(),
+      action: z.enum(["SUGGEST", "PROPOSE", "EDIT", "CONFIRM", "REJECT"]),
+      candidateId: z.string().optional(),
+      name: z.string().trim().min(1).max(255).optional(),
+      kind: z.enum(["PERSON", "EXTERNAL_SYSTEM"]).optional(),
+      targetKey: z.string().max(500).optional(),
+      direction: z.enum(["INBOUND", "OUTBOUND"]).optional(),
+      basis: z.string().trim().max(2000).optional(),
+      boundary: z.string().trim().min(10).max(2000).optional(),
+      evidenceIds: z.array(z.string().uuid()).max(20).optional(),
+    }),
+    d.modelSchema,
+    true,
+  ),
   saveModel: contract(
     z.object({
       modelId: id,
@@ -519,7 +617,10 @@ export const contracts = {
           rationale: z.string().optional(),
           source: z.string().optional(),
           environmentVariables: z.record(z.string()).nullable().optional(),
-          envHeaders: z.array(z.object({ name: z.string(), reference: z.string() })).nullable().optional(),
+          envHeaders: z
+            .array(z.object({ name: z.string(), reference: z.string() }))
+            .nullable()
+            .optional(),
           bodyReference: z.string().nullable().optional(),
           allowClientError: z.boolean().nullable().optional(),
           headers: z.record(z.string()).nullable().optional(),
@@ -591,14 +692,31 @@ export const contracts = {
           }),
         )
         .optional(),
-      configurationRevision: z.number().int().nonnegative().transform((v) => Math.max(1, v)),
-      scenarioRevision: z.number().int().nonnegative().transform((v) => Math.max(1, v)),
-      environment: z.record(z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/), z.string().max(16000)).refine(v => Object.keys(v).length <= 64).optional(),
-      infrastructureActions: z.array(z.object({
-        action: z.enum(["STOP", "START", "SCALE"]),
-        service: z.string().min(1).max(128),
-        replicas: z.number().int().min(1).max(8).optional(),
-      })).min(1).max(8).optional(),
+      configurationRevision: z
+        .number()
+        .int()
+        .nonnegative()
+        .transform((v) => Math.max(1, v)),
+      scenarioRevision: z
+        .number()
+        .int()
+        .nonnegative()
+        .transform((v) => Math.max(1, v)),
+      environment: z
+        .record(z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/), z.string().max(16000))
+        .refine((v) => Object.keys(v).length <= 64)
+        .optional(),
+      infrastructureActions: z
+        .array(
+          z.object({
+            action: z.enum(["STOP", "START", "SCALE"]),
+            service: z.string().min(1).max(128),
+            replicas: z.number().int().min(1).max(8).optional(),
+          }),
+        )
+        .min(1)
+        .max(8)
+        .optional(),
       approved: z.literal(true).default(true),
     }),
     d.runtimeSessionSchema,
@@ -686,7 +804,10 @@ export const contracts = {
       description: z.string().max(10000).optional(),
       dueAt: z.string().datetime({ offset: true }).nullable(),
       requiredDiagramTypes: z.array(z.string()).max(10),
+      ruleSetVersion: z.string().trim().min(1).max(50).optional(),
       requireRuntimeTrace: z.boolean(),
+      aiPolicy: z.union([z.record(z.unknown()), z.string().max(4000)]).nullable().optional(),
+      labOrder: z.number().int().positive().optional(),
       referenceModelId: id.optional(),
       clearReferenceSource: z.boolean().optional(),
     }),
@@ -702,7 +823,10 @@ export const contracts = {
       description: z.string().max(10000),
       dueAt: z.string().datetime({ offset: true }).nullable(),
       requiredDiagramTypes: z.array(z.string()).max(10),
+      ruleSetVersion: z.string().trim().min(1).max(50).optional(),
       requireRuntimeTrace: z.boolean(),
+      aiPolicy: z.union([z.record(z.unknown()), z.string().max(4000)]).nullable().optional(),
+      labOrder: z.number().int().positive().optional(),
       referenceModelId: id.optional(),
       clearReferenceSource: z.boolean().optional(),
     }),
@@ -730,6 +854,7 @@ export const contracts = {
       evaluationRunId: id.nullable().optional(),
       runtimeSessionId: id.nullable(),
       submissionNotes: z.string().max(5000).optional(),
+      studentSnapshots: z.array(d.studentSnapshotSchema).optional(),
     }),
     d.submissionSchema,
     true,
@@ -791,11 +916,22 @@ export const contracts = {
     nothing,
     z.object({
       eventsAvailable: z.boolean().optional(),
-      events: z.array(z.object({
-        requestId: z.string(), recordedAt: z.string(), source: z.string(),
-        provider: z.string(), model: z.string(), inputTokens: z.number(), outputTokens: z.number(),
-        userId: z.string().nullable(), userName: z.string().nullable(), userEmail: z.string().nullable(),
-      })).optional(),
+      events: z
+        .array(
+          z.object({
+            requestId: z.string(),
+            recordedAt: z.string(),
+            source: z.string(),
+            provider: z.string(),
+            model: z.string(),
+            inputTokens: z.number(),
+            outputTokens: z.number(),
+            userId: z.string().nullable(),
+            userName: z.string().nullable(),
+            userEmail: z.string().nullable(),
+          }),
+        )
+        .optional(),
       status: z.enum(["AVAILABLE", "UNAVAILABLE"]),
       updatedAt: z.string(),
       message: z.string().nullable(),
@@ -810,44 +946,64 @@ export const contracts = {
               requestCount: z.number().int().nonnegative(),
             })
             .nullable(),
-          geminiQuota: z.object({
-            scope: z.literal("project"),
-            samples: z.array(z.object({
-              model: z.string(), metric: z.string(), limitName: z.string(),
-              kind: z.enum(["limit", "usage"]), value: z.number(),
-              measuredAt: z.string(), startTime: z.string().optional(),
-            })),
-            partial: z.boolean(),
-          }).nullable().optional(),
+          geminiQuota: z
+            .object({
+              scope: z.literal("project"),
+              samples: z.array(
+                z.object({
+                  model: z.string(),
+                  metric: z.string(),
+                  limitName: z.string(),
+                  kind: z.enum(["limit", "usage"]),
+                  value: z.number(),
+                  measuredAt: z.string(),
+                  startTime: z.string().optional(),
+                }),
+              ),
+              partial: z.boolean(),
+            })
+            .nullable()
+            .optional(),
           providerDataMessage: z.string().nullable().optional(),
           providerDataUpdatedAt: z.string().nullable().optional(),
-          providerUsage: z.object({
-            scope: z.literal("project"),
-            inputTokens: z.number().nonnegative(),
-            outputTokens: z.number().nonnegative(),
-            requestCount: z.number().nonnegative(),
-            startTime: z.string(),
-            endTime: z.string(),
-          }).nullable().optional(),
-          coverage: z.object({
-            java: z.enum(["OBSERVED", "UNKNOWN"]),
-            next: z.enum(["OBSERVED", "UNKNOWN"]),
-          }).optional(),
-          limits: z.object({
-            scope: z.literal("project"),
-            models: z.array(z.object({
-              model: z.string(),
-              requestsPerMinute: z.number().nullable(),
-              tokensPerMinute: z.number().nullable(),
-            })),
-          }).nullable(),
-          cost: z.object({
-            scope: z.literal("project"),
-            amount: z.number(),
-            currency: z.string(),
-            startTime: z.string(),
-            endTime: z.string(),
-          }).nullable(),
+          providerUsage: z
+            .object({
+              scope: z.literal("project"),
+              inputTokens: z.number().nonnegative(),
+              outputTokens: z.number().nonnegative(),
+              requestCount: z.number().nonnegative(),
+              startTime: z.string(),
+              endTime: z.string(),
+            })
+            .nullable()
+            .optional(),
+          coverage: z
+            .object({
+              java: z.enum(["OBSERVED", "UNKNOWN"]),
+              next: z.enum(["OBSERVED", "UNKNOWN"]),
+            })
+            .optional(),
+          limits: z
+            .object({
+              scope: z.literal("project"),
+              models: z.array(
+                z.object({
+                  model: z.string(),
+                  requestsPerMinute: z.number().nullable(),
+                  tokensPerMinute: z.number().nullable(),
+                }),
+              ),
+            })
+            .nullable(),
+          cost: z
+            .object({
+              scope: z.literal("project"),
+              amount: z.number(),
+              currency: z.string(),
+              startTime: z.string(),
+              endTime: z.string(),
+            })
+            .nullable(),
           balance: z.unknown().nullable(),
           status: z.enum(["AVAILABLE", "UNAVAILABLE"]),
           message: z.string().nullable(),
@@ -855,12 +1011,26 @@ export const contracts = {
       ),
     }),
   ),
-  adminHealth: contract(nothing, z.object({
-    status: z.enum(["UP", "DEGRADED", "UNKNOWN"]), checkedAt: z.string(), scope: z.string(),
-    checks: z.array(z.object({ id: z.string(), name: z.string(), status: z.enum(["UP","DOWN","WARNING","UNKNOWN","DISABLED"]), latencyMs: z.number().nullable(), message: z.string(), action: z.string().nullable() })),
-    jvm: z.object({ usedBytes: z.number(), maxBytes: z.number(), uptimeSeconds: z.number() }),
-    storage: z.object({ totalBytes: z.number().optional(), freeBytes: z.number().optional() }),
-  })),
+  adminHealth: contract(
+    nothing,
+    z.object({
+      status: z.enum(["UP", "DEGRADED", "UNKNOWN"]),
+      checkedAt: z.string(),
+      scope: z.string(),
+      checks: z.array(
+        z.object({
+          id: z.string(),
+          name: z.string(),
+          status: z.enum(["UP", "DOWN", "WARNING", "UNKNOWN", "DISABLED"]),
+          latencyMs: z.number().nullable(),
+          message: z.string(),
+          action: z.string().nullable(),
+        }),
+      ),
+      jvm: z.object({ usedBytes: z.number(), maxBytes: z.number(), uptimeSeconds: z.number() }),
+      storage: z.object({ totalBytes: z.number().optional(), freeBytes: z.number().optional() }),
+    }),
+  ),
   platformSummary: contract(
     nothing,
     z.object({
