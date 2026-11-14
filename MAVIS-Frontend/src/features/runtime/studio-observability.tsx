@@ -129,140 +129,91 @@ function getArchetypeTheme(
     };
   }
   const lower = serviceName.toLowerCase();
-  const base = /(cdn|cloudflare|cloudfront)/.test(lower)
-    ? {
-        stroke: "#06b6d4",
-        cardFill: "#061c24",
-        iconBg: "#083344",
-        accent: "#22d3ee",
-        badgeText: "CDN",
-        typeLabel: "EDGE POP CACHE",
-      }
+  // Cohesive 4-Tier Semantic Palette:
+  // 1. Edge / Ingress  -> Sky Cyan (#38bdf8)
+  // 2. Compute / App   -> Indigo (#818cf8)
+  // 3. Data / Storage  -> Emerald (#10b981)
+  // 4. Broker / Infra  -> Amber (#f59e0b)
+  const isEdge =
+    archetype === "GATEWAY" ||
+    /(cdn|cloudflare|cloudfront|waf|shield|firewall|ddos|load-balancer|lb|gateway|edge|ingress)/.test(
+      lower,
+    );
+  const isData =
+    archetype === "DATABASE" ||
+    /(postgres|mysql|sql|db|settlement|redis|memcache|cache|mongo|dynamo|cassandra|nosql|s3|bucket|blob|minio|storage|elastic|opensearch|search|solr)/.test(
+      lower,
+    );
+  const isInfra =
+    archetype === "QUEUE" ||
+    /(kafka|stream|broker|rabbit|amqp|celery|bull|mq|otel|prometheus|grafana|jaeger|monitor|telemetry)/.test(
+      lower,
+    );
+
+  const badgeAndType = /(cdn|cloudflare|cloudfront)/.test(lower)
+    ? { badgeText: "CDN", typeLabel: "EDGE POP CACHE" }
     : /(waf|shield|firewall|ddos)/.test(lower)
+      ? { badgeText: "WAF", typeLabel: "EDGE FIREWALL" }
+      : /(load-balancer|lb)/.test(lower)
+        ? { badgeText: "LB", typeLabel: "LOAD BALANCER" }
+        : /(redis|memcache|cache)/.test(lower)
+          ? { badgeText: "CACHE", typeLabel: "IN-MEMORY KV" }
+          : /(s3|bucket|blob|minio|storage)/.test(lower)
+            ? { badgeText: "STORAGE", typeLabel: "OBJECT BUCKET" }
+            : /(elastic|opensearch|search|solr)/.test(lower)
+              ? { badgeText: "SEARCH", typeLabel: "FULL-TEXT INDEX" }
+              : /(mongo|dynamo|cassandra|nosql)/.test(lower)
+                ? { badgeText: "NOSQL", typeLabel: "DOCUMENT DB" }
+                : /(rabbit|amqp|celery|bull)/.test(lower)
+                  ? { badgeText: "MQ BUS", typeLabel: "TASK QUEUE" }
+                  : /(otel|prometheus|grafana|jaeger|monitor|telemetry)/.test(lower)
+                    ? { badgeText: "OTEL", typeLabel: "OBSERVABILITY" }
+                    : /(worker|consumer|job|batch|cron)/.test(lower)
+                      ? { badgeText: "WORKER", typeLabel: "ASYNC CONSUMER" }
+                      : /(auth|sso|oauth|iam|keycloak)/.test(lower)
+                        ? { badgeText: "AUTH", typeLabel: "IDENTITY / SSO" }
+                        : /(lambda|serverless|fn|edge-fn)/.test(lower)
+                          ? { badgeText: "FN", typeLabel: "SERVERLESS" }
+                          : isEdge
+                            ? { badgeText: "EDGE", typeLabel: "API GATEWAY" }
+                            : isData
+                              ? { badgeText: "DATA", typeLabel: "RELATIONAL DB" }
+                              : isInfra
+                                ? { badgeText: "STREAM", typeLabel: "EVENT BROKER" }
+                                : { badgeText: "COMPUTE", typeLabel: "APP SERVER" };
+
+  const base = isEdge
+    ? {
+        stroke: "#38bdf8",
+        cardFill: "#081926",
+        iconBg: "#0c4a6e",
+        accent: "#7dd3fc",
+        ...badgeAndType,
+      }
+    : isData
       ? {
-          stroke: "#fb7185",
-          cardFill: "#240a12",
-          iconBg: "#4c0519",
-          accent: "#fda4af",
-          badgeText: "WAF",
-          typeLabel: "EDGE FIREWALL",
+          stroke: "#10b981",
+          cardFill: "#061f17",
+          iconBg: "#064e3b",
+          accent: "#34d399",
+          ...badgeAndType,
         }
-      : /(redis|memcache|cache)/.test(lower)
+      : isInfra
         ? {
-            stroke: "#ef4444",
-            cardFill: "#220a0a",
-            iconBg: "#450a0a",
-            accent: "#f87171",
-            badgeText: "CACHE",
-            typeLabel: "IN-MEMORY KV",
+            stroke: "#f59e0b",
+            cardFill: "#1d1407",
+            iconBg: "#451a03",
+            accent: "#fbbf24",
+            ...badgeAndType,
           }
-        : /(s3|bucket|blob|minio|storage)/.test(lower)
-          ? {
-              stroke: "#0ea5e9",
-              cardFill: "#071927",
-              iconBg: "#0c4a6e",
-              accent: "#38bdf8",
-              badgeText: "STORAGE",
-              typeLabel: "OBJECT BUCKET",
-            }
-          : /(elastic|opensearch|search|solr)/.test(lower)
-            ? {
-                stroke: "#eab308",
-                cardFill: "#1f1905",
-                iconBg: "#422006",
-                accent: "#facc15",
-                badgeText: "SEARCH",
-                typeLabel: "INVERTED INDEX",
-              }
-            : /(mongo|dynamo|cassandra|nosql)/.test(lower)
-              ? {
-                  stroke: "#22c55e",
-                  cardFill: "#071f10",
-                  iconBg: "#14532d",
-                  accent: "#4ade80",
-                  badgeText: "NOSQL",
-                  typeLabel: "DOCUMENT DB",
-                }
-              : /(rabbit|amqp|celery|bull)/.test(lower)
-                ? {
-                    stroke: "#d946ef",
-                    cardFill: "#220a29",
-                    iconBg: "#4a044e",
-                    accent: "#e879f9",
-                    badgeText: "MQ BUS",
-                    typeLabel: "TASK QUEUE",
-                  }
-                : /(otel|prometheus|grafana|jaeger|monitor|telemetry)/.test(lower)
-                  ? {
-                      stroke: "#ec4899",
-                      cardFill: "#240919",
-                      iconBg: "#500724",
-                      accent: "#f472b6",
-                      badgeText: "OTEL",
-                      typeLabel: "OBSERVABILITY",
-                    }
-                  : /(worker|consumer|job|batch|cron)/.test(lower)
-                    ? {
-                        stroke: "#3b82f6",
-                        cardFill: "#0b162c",
-                        iconBg: "#172554",
-                        accent: "#60a5fa",
-                        badgeText: "WORKER",
-                        typeLabel: "ASYNC CONSUMER",
-                      }
-                    : /(auth|sso|oauth|iam|keycloak)/.test(lower)
-                      ? {
-                          stroke: "#14b8a6",
-                          cardFill: "#061f1e",
-                          iconBg: "#134e4a",
-                          accent: "#2dd4bf",
-                          badgeText: "AUTH",
-                          typeLabel: "IDENTITY / SSO",
-                        }
-                      : /(lambda|serverless|fn|edge-fn)/.test(lower)
-                        ? {
-                            stroke: "#38bdf8",
-                            cardFill: "#081b29",
-                            iconBg: "#075985",
-                            accent: "#7dd3fc",
-                            badgeText: "FN",
-                            typeLabel: "SERVERLESS",
-                          }
-                        : archetype === "GATEWAY"
-                          ? {
-                              stroke: "#f59e0b",
-                              cardFill: "#1d1407",
-                              iconBg: "#451a03",
-                              accent: "#fbbf24",
-                              badgeText: "EDGE",
-                              typeLabel: "LOAD BALANCER",
-                            }
-                          : archetype === "DATABASE"
-                            ? {
-                                stroke: "#10b981",
-                                cardFill: "#061f17",
-                                iconBg: "#064e3b",
-                                accent: "#34d399",
-                                badgeText: "DATA",
-                                typeLabel: "RELATIONAL DB",
-                              }
-                            : archetype === "QUEUE"
-                              ? {
-                                  stroke: "#a855f7",
-                                  cardFill: "#1a0e29",
-                                  iconBg: "#3b0764",
-                                  accent: "#c084fc",
-                                  badgeText: "STREAM",
-                                  typeLabel: "EVENT BROKER",
-                                }
-                              : {
-                                  stroke: "#6366f1",
-                                  cardFill: "#0f152a",
-                                  iconBg: "#1e1b4b",
-                                  accent: "#818cf8",
-                                  badgeText: "COMPUTE",
-                                  typeLabel: "APP SERVER",
-                                };
+        : {
+            stroke: "#818cf8",
+            cardFill: "#0f152a",
+            iconBg: "#1e1b4b",
+            accent: "#a5b4fc",
+            ...badgeAndType,
+          };
+
   if (isDropTarget) {
     return { ...base, stroke: "#38bdf8", accent: "#38bdf8" };
   }
@@ -603,21 +554,21 @@ export function StudioObservability({
   const project3DPoint = useMemo(() => {
     const cosY = Math.cos(camera.yaw);
     const sinY = Math.sin(camera.yaw);
-    const cosP = Math.cos(camera.pitch);
-    const sinP = Math.sin(camera.pitch);
+    // Lock standard 2:1 orthographic isometric elevation (30° tilt) so the board never flips or warps
+    const cosP = 0.866;
+    const sinP = 0.5;
     return (wx: number, wy: number, wz: number) => {
       const rx = wx * cosY - wz * sinY;
       const rz = wx * sinY + wz * cosY;
       const ry = wy * cosP + rz * sinP;
       const depthZ = -wy * sinP + rz * cosP;
-      const perspective = 1150 / Math.max(420, 1150 + depthZ);
       return {
-        x: 600 + (rx * perspective + pan.x) * zoom,
-        y: 325 + (ry * perspective + pan.y) * zoom,
+        x: 600 + (rx + pan.x) * zoom,
+        y: 325 + (ry + pan.y) * zoom,
         z: depthZ,
       };
     };
-  }, [camera.yaw, camera.pitch, pan.x, pan.y, zoom]);
+  }, [camera.yaw, pan.x, pan.y, zoom]);
 
   const positions = useMemo(() => {
     const raw = new Map<string, { x: number; y: number; z: number; tier: number }>();
@@ -682,8 +633,8 @@ export function StudioObservability({
         const px = (pinned ? pinned.x : proj.x) + offset.x;
         const py = (pinned ? pinned.y : proj.y) + offset.y;
         raw.set(name, {
-          x: Math.max(76, Math.min(1124, px)),
-          y: Math.max(54, Math.min(606, py)),
+          x: px,
+          y: py,
           z: proj.z,
           tier,
         });
@@ -722,8 +673,8 @@ export function StudioObservability({
         py = Math.round(py / 16) * 16;
       }
       raw.set(name, {
-        x: Math.max(88, Math.min(1112, px)),
-        y: Math.max(58, Math.min(602, py)),
+        x: px,
+        y: py,
         z: tier,
         tier,
       });
@@ -1176,7 +1127,7 @@ export function StudioObservability({
             cameraDrag.current = {
               x: event.clientX,
               y: event.clientY,
-              mode: view === "3D" && !event.shiftKey ? "ROTATE" : "PAN",
+              mode: view === "3D" && event.shiftKey ? "ROTATE" : "PAN",
             };
             event.currentTarget.setPointerCapture(event.pointerId);
           }}
@@ -1206,8 +1157,8 @@ export function StudioObservability({
               setCustomOffsets((prev) => ({
                 ...prev,
                 [targetService]: {
-                  x: snapToGrid ? Math.round(nextX / 12) * 12 : nextX,
-                  y: snapToGrid ? Math.round(nextY / 12) * 12 : nextY,
+                  x: nextX,
+                  y: nextY,
                 },
               }));
               return;
@@ -1222,13 +1173,13 @@ export function StudioObservability({
             };
             if (cameraDrag.current.mode === "ROTATE") {
               setCamera((value) => ({
-                yaw: value.yaw - dx * 0.009,
-                pitch: Math.max(0.18, Math.min(1.35, value.pitch + dy * 0.007)),
+                ...value,
+                yaw: value.yaw - dx * 0.008,
               }));
             } else {
               setPan((prev) => ({
-                x: Math.max(-520, Math.min(520, prev.x + dx * 0.9)),
-                y: Math.max(-340, Math.min(340, prev.y + dy * 0.9)),
+                x: Math.max(-960, Math.min(960, prev.x + dx * 1.15)),
+                y: Math.max(-680, Math.min(680, prev.y + dy * 1.15)),
               }));
             }
           }}
@@ -1273,8 +1224,8 @@ export function StudioObservability({
           {/* 3D Rotating Multi-Tier Architecture Platform Deck (orbits 360° with camera.yaw & pitch) */}
           {view === "3D" &&
             (() => {
-              const halfW = 450;
-              const halfD = 340;
+              const halfW = 380;
+              const halfD = 380;
               const topCorners = [
                 project3DPoint(-halfW, 14, -halfD),
                 project3DPoint(halfW, 14, -halfD),

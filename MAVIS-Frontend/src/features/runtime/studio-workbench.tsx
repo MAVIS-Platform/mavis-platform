@@ -239,7 +239,7 @@ type StudioComponentPreset = {
 };
 
 const STUDIO_COMPONENT_CATALOG: StudioComponentPreset[] = [
-  // EDGE & SECURITY (4)
+  // 1. EDGE & INGRESS (Sky Cyan #38bdf8)
   {
     key: "cdn-edge",
     label: "CDN Edge",
@@ -249,24 +249,26 @@ const STUDIO_COMPONENT_CATALOG: StudioComponentPreset[] = [
     elementType: "API_GATEWAY",
     baseCpu: 9.5,
     baseRam: 128,
-    cardClass: "border-cyan-500/35 bg-cyan-500/10 hover:border-cyan-400 hover:bg-cyan-500/20",
-    iconClass: "bg-cyan-500/25 text-cyan-300",
-    titleClass: "text-cyan-200",
-    specClass: "text-cyan-300/70",
+    cardClass:
+      "border-slate-700/80 bg-slate-900/90 hover:border-sky-400/70 hover:bg-slate-800/90",
+    iconClass: "text-sky-400",
+    titleClass: "text-slate-100",
+    specClass: "text-slate-400",
   },
   {
     key: "waf-shield",
-    label: "WAF Firewall",
+    label: "WAF",
     spec: "3,000 req/s · DDoS",
     category: "EDGE",
     layer: "edge",
     elementType: "API_GATEWAY",
     baseCpu: 14.0,
     baseRam: 150,
-    cardClass: "border-rose-500/35 bg-rose-500/10 hover:border-rose-400 hover:bg-rose-500/20",
-    iconClass: "bg-rose-500/25 text-rose-300",
-    titleClass: "text-rose-200",
-    specClass: "text-rose-300/70",
+    cardClass:
+      "border-slate-700/80 bg-slate-900/90 hover:border-sky-400/70 hover:bg-slate-800/90",
+    iconClass: "text-sky-400",
+    titleClass: "text-slate-100",
+    specClass: "text-slate-400",
   },
   {
     key: "load-balancer",
@@ -277,54 +279,58 @@ const STUDIO_COMPONENT_CATALOG: StudioComponentPreset[] = [
     elementType: "API_GATEWAY",
     baseCpu: 16.5,
     baseRam: 160,
-    cardClass: "border-amber-500/35 bg-amber-500/10 hover:border-amber-400 hover:bg-amber-500/20",
-    iconClass: "bg-amber-500/25 text-amber-300",
-    titleClass: "text-amber-200",
-    specClass: "text-amber-300/70",
+    cardClass:
+      "border-slate-700/80 bg-slate-900/90 hover:border-sky-400/70 hover:bg-slate-800/90",
+    iconClass: "text-sky-400",
+    titleClass: "text-slate-100",
+    specClass: "text-slate-400",
   },
   {
     key: "edge-gateway",
-    label: "API Gateway",
+    label: "Gateway",
     spec: "1,500 req/s · OAuth",
     category: "EDGE",
     layer: "edge",
     elementType: "API_GATEWAY",
     baseCpu: 22.0,
     baseRam: 180,
-    cardClass: "border-orange-500/35 bg-orange-500/10 hover:border-orange-400 hover:bg-orange-500/20",
-    iconClass: "bg-orange-500/25 text-orange-300",
-    titleClass: "text-orange-200",
-    specClass: "text-orange-300/70",
+    cardClass:
+      "border-slate-700/80 bg-slate-900/90 hover:border-sky-400/70 hover:bg-slate-800/90",
+    iconClass: "text-sky-400",
+    titleClass: "text-slate-100",
+    specClass: "text-slate-400",
   },
 
-  // COMPUTE & MICROSERVICES (4)
+  // 2. COMPUTE & SERVICES (Indigo #818cf8)
   {
     key: "app-service",
-    label: "App Server",
+    label: "Service",
     spec: "500 req/s · 220 MiB",
     category: "COMPUTE",
     layer: "application",
     elementType: "SERVICE_CONTAINER",
     baseCpu: 34.0,
     baseRam: 220,
-    cardClass: "border-indigo-500/35 bg-indigo-500/10 hover:border-indigo-400 hover:bg-indigo-500/20",
-    iconClass: "bg-indigo-500/25 text-indigo-300",
-    titleClass: "text-indigo-200",
-    specClass: "text-indigo-300/70",
+    cardClass:
+      "border-slate-700/80 bg-slate-900/90 hover:border-indigo-400/70 hover:bg-slate-800/90",
+    iconClass: "text-indigo-400",
+    titleClass: "text-slate-100",
+    specClass: "text-slate-400",
   },
   {
     key: "async-worker",
-    label: "Worker Node",
+    label: "Worker",
     spec: "300 jobs/s · Consumer",
     category: "COMPUTE",
     layer: "domain",
     elementType: "SERVICE_CONTAINER",
     baseCpu: 42.0,
     baseRam: 280,
-    cardClass: "border-blue-500/35 bg-blue-500/10 hover:border-blue-400 hover:bg-blue-500/20",
-    iconClass: "bg-blue-500/25 text-blue-300",
-    titleClass: "text-blue-200",
-    specClass: "text-blue-300/70",
+    cardClass:
+      "border-slate-700/80 bg-slate-900/90 hover:border-indigo-400/70 hover:bg-slate-800/90",
+    iconClass: "text-indigo-400",
+    titleClass: "text-slate-100",
+    specClass: "text-slate-400",
   },
   {
     key: "auth-sso",
@@ -335,140 +341,150 @@ const STUDIO_COMPONENT_CATALOG: StudioComponentPreset[] = [
     elementType: "SERVICE_CONTAINER",
     baseCpu: 21.0,
     baseRam: 160,
-    cardClass: "border-teal-500/35 bg-teal-500/10 hover:border-teal-400 hover:bg-teal-500/20",
-    iconClass: "bg-teal-500/25 text-teal-300",
-    titleClass: "text-teal-200",
-    specClass: "text-teal-300/70",
+    cardClass:
+      "border-slate-700/80 bg-slate-900/90 hover:border-indigo-400/70 hover:bg-slate-800/90",
+    iconClass: "text-indigo-400",
+    titleClass: "text-slate-100",
+    specClass: "text-slate-400",
   },
   {
     key: "lambda-fn",
-    label: "Serverless Fn",
+    label: "Serverless",
     spec: "1,200 req/s · Auto",
     category: "COMPUTE",
     layer: "application",
     elementType: "SERVICE_CONTAINER",
     baseCpu: 14.0,
     baseRam: 128,
-    cardClass: "border-sky-500/35 bg-sky-500/10 hover:border-sky-400 hover:bg-sky-500/20",
-    iconClass: "bg-sky-500/25 text-sky-300",
-    titleClass: "text-sky-200",
-    specClass: "text-sky-300/70",
+    cardClass:
+      "border-slate-700/80 bg-slate-900/90 hover:border-indigo-400/70 hover:bg-slate-800/90",
+    iconClass: "text-indigo-400",
+    titleClass: "text-slate-100",
+    specClass: "text-slate-400",
   },
 
-  // DATA & STORAGE (5)
+  // 3. DATA & STORAGE (Emerald #10b981)
   {
     key: "postgres-db",
-    label: "PostgreSQL DB",
+    label: "Postgres",
     spec: "400 qps · ACID SQL",
     category: "DATA",
     layer: "data",
     elementType: "DATABASE",
     baseCpu: 32.0,
     baseRam: 320,
-    cardClass: "border-emerald-500/35 bg-emerald-500/10 hover:border-emerald-400 hover:bg-emerald-500/20",
-    iconClass: "bg-emerald-500/25 text-emerald-300",
-    titleClass: "text-emerald-200",
-    specClass: "text-emerald-300/70",
+    cardClass:
+      "border-slate-700/80 bg-slate-900/90 hover:border-emerald-400/70 hover:bg-slate-800/90",
+    iconClass: "text-emerald-400",
+    titleClass: "text-slate-100",
+    specClass: "text-slate-400",
   },
   {
     key: "redis-cache",
-    label: "Redis Cache",
+    label: "Redis",
     spec: "10k ops/s · 2ms KV",
     category: "DATA",
     layer: "data",
     elementType: "DATABASE",
     baseCpu: 15.0,
     baseRam: 190,
-    cardClass: "border-red-500/35 bg-red-500/10 hover:border-red-400 hover:bg-red-500/20",
-    iconClass: "bg-red-500/25 text-red-300",
-    titleClass: "text-red-200",
-    specClass: "text-red-300/70",
+    cardClass:
+      "border-slate-700/80 bg-slate-900/90 hover:border-emerald-400/70 hover:bg-slate-800/90",
+    iconClass: "text-emerald-400",
+    titleClass: "text-slate-100",
+    specClass: "text-slate-400",
   },
   {
     key: "mongo-nosql",
-    label: "MongoDB Doc",
+    label: "MongoDB",
     spec: "1,800 ops/s · NoSQL",
     category: "DATA",
     layer: "data",
     elementType: "DATABASE",
     baseCpu: 28.0,
     baseRam: 290,
-    cardClass: "border-green-500/35 bg-green-500/10 hover:border-green-400 hover:bg-green-500/20",
-    iconClass: "bg-green-500/25 text-green-300",
-    titleClass: "text-green-200",
-    specClass: "text-green-300/70",
+    cardClass:
+      "border-slate-700/80 bg-slate-900/90 hover:border-emerald-400/70 hover:bg-slate-800/90",
+    iconClass: "text-emerald-400",
+    titleClass: "text-slate-100",
+    specClass: "text-slate-400",
   },
   {
     key: "s3-storage",
-    label: "S3 Object Store",
+    label: "S3 Store",
     spec: "2,000 req/s · Blob",
     category: "DATA",
     layer: "data",
     elementType: "DATABASE",
     baseCpu: 11.0,
     baseRam: 140,
-    cardClass: "border-sky-500/35 bg-sky-500/10 hover:border-sky-400 hover:bg-sky-500/20",
-    iconClass: "bg-sky-500/25 text-sky-300",
-    titleClass: "text-sky-200",
-    specClass: "text-sky-300/70",
+    cardClass:
+      "border-slate-700/80 bg-slate-900/90 hover:border-emerald-400/70 hover:bg-slate-800/90",
+    iconClass: "text-emerald-400",
+    titleClass: "text-slate-100",
+    specClass: "text-slate-400",
   },
   {
     key: "elastic-search",
-    label: "ElasticSearch",
+    label: "Elastic",
     spec: "700 qps · Full-Text",
     category: "DATA",
     layer: "data",
     elementType: "DATABASE",
     baseCpu: 39.0,
     baseRam: 380,
-    cardClass: "border-yellow-500/35 bg-yellow-500/10 hover:border-yellow-400 hover:bg-yellow-500/20",
-    iconClass: "bg-yellow-500/25 text-yellow-300",
-    titleClass: "text-yellow-200",
-    specClass: "text-yellow-300/70",
+    cardClass:
+      "border-slate-700/80 bg-slate-900/90 hover:border-emerald-400/70 hover:bg-slate-800/90",
+    iconClass: "text-emerald-400",
+    titleClass: "text-slate-100",
+    specClass: "text-slate-400",
   },
 
-  // MESSAGING & OBSERVABILITY (3)
+  // 4. MESSAGING & OBSERVABILITY (Amber #f59e0b)
   {
     key: "kafka-broker",
-    label: "Kafka Stream",
+    label: "Kafka",
     spec: "5,000 msg/s · Topic",
     category: "INFRA",
     layer: "infrastructure",
     elementType: "MESSAGE_BROKER",
     baseCpu: 24.0,
     baseRam: 310,
-    cardClass: "border-purple-500/35 bg-purple-500/10 hover:border-purple-400 hover:bg-purple-500/20",
-    iconClass: "bg-purple-500/25 text-purple-300",
-    titleClass: "text-purple-200",
-    specClass: "text-purple-300/70",
+    cardClass:
+      "border-slate-700/80 bg-slate-900/90 hover:border-amber-400/70 hover:bg-slate-800/90",
+    iconClass: "text-amber-400",
+    titleClass: "text-slate-100",
+    specClass: "text-slate-400",
   },
   {
     key: "rabbitmq-bus",
-    label: "RabbitMQ Bus",
+    label: "RabbitMQ",
     spec: "1,500 msg/s · AMQP",
     category: "INFRA",
     layer: "infrastructure",
     elementType: "MESSAGE_BROKER",
     baseCpu: 19.0,
     baseRam: 210,
-    cardClass: "border-fuchsia-500/35 bg-fuchsia-500/10 hover:border-fuchsia-400 hover:bg-fuchsia-500/20",
-    iconClass: "bg-fuchsia-500/25 text-fuchsia-300",
-    titleClass: "text-fuchsia-200",
-    specClass: "text-fuchsia-300/70",
+    cardClass:
+      "border-slate-700/80 bg-slate-900/90 hover:border-amber-400/70 hover:bg-slate-800/90",
+    iconClass: "text-amber-400",
+    titleClass: "text-slate-100",
+    specClass: "text-slate-400",
   },
   {
     key: "otel-collector",
-    label: "Prometheus / OTel",
+    label: "OTel APM",
     spec: "2,000 spans/s · APM",
     category: "INFRA",
     layer: "infrastructure",
     elementType: "MESSAGE_BROKER",
     baseCpu: 16.0,
     baseRam: 190,
-    cardClass: "border-pink-500/35 bg-pink-500/10 hover:border-pink-400 hover:bg-pink-500/20",
-    iconClass: "bg-pink-500/25 text-pink-300",
-    titleClass: "text-pink-200",
-    specClass: "text-pink-300/70",
+    cardClass:
+      "border-slate-700/80 bg-slate-900/90 hover:border-amber-400/70 hover:bg-slate-800/90",
+    iconClass: "text-amber-400",
+    titleClass: "text-slate-100",
+    specClass: "text-slate-400",
   },
 ];
 
@@ -569,13 +585,14 @@ export function StudioWorkbench() {
   const [capturing, setCapturing] = useState(false);
   const [liveSessionId, setLiveSessionId] = useState(initialSessionId);
   const [bottomTab, setBottomTab] = useState<"MATRIX" | "SNAPSHOTS">("MATRIX");
-  const [leftWidth, setLeftWidth] = useState(236);
-  const [rightWidth, setRightWidth] = useState(256);
+  const [leftWidth, setLeftWidth] = useState(286);
+  const [rightWidth, setRightWidth] = useState(268);
   const [bottomHeight, setBottomHeight] = useState(196);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
   const [bottomCollapsed, setBottomCollapsed] = useState(false);
   const workspaceRef = useRef<HTMLDivElement>(null);
+  const leftGridCols = leftWidth >= 480 ? 4 : leftWidth >= 355 ? 3 : leftWidth >= 230 ? 2 : 1;
 
   function startResize(
     axis: "left" | "right" | "bottom",
@@ -590,7 +607,7 @@ export function StudioWorkbench() {
 
     function onPointerMove(moveEvent: PointerEvent) {
       if (axis === "left") {
-        const next = Math.max(170, Math.min(460, initialLeft + (moveEvent.clientX - startX)));
+        const next = Math.max(160, Math.min(640, initialLeft + (moveEvent.clientX - startX)));
         setLeftCollapsed(false);
         setLeftWidth(next);
       } else if (axis === "right") {
@@ -1125,46 +1142,51 @@ export function StudioWorkbench() {
       ) : (
         /* 4-ZONE STANDALONE WORKBENCH LAYOUT (MATCHING USER WIREFRAME) */
         <div className="flex min-h-0 flex-1 overflow-hidden">
-          {/* 1. LEFT VERTICAL TOOLBOX: Clean Component Spawner + Compact Action Grid + Nodes */}
+          {/* 1. LEFT VERTICAL TOOLBOX: Pure Functional Block Library + Smart Auto-Reflow Grid */}
           {!leftCollapsed && (
             <aside
               style={{ width: leftWidth }}
               className="flex shrink-0 flex-col justify-between overflow-y-auto bg-card/90 p-2.5"
             >
-              <div className="space-y-3">
-                {/* Section A: 16-Component System Design Catalog (Filterable + Searchable + Drag/Click) */}
-                <div className="space-y-1.5">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">
-                    Components ({STUDIO_COMPONENT_CATALOG.length})
-                  </p>
+              <div className="flex min-h-0 flex-1 flex-col gap-3">
+                {/* Section A: 16-Component Functional Block Library (Smart 1/2/3/4 Column Auto-Grid) */}
+                <div className="flex min-h-0 flex-1 flex-col gap-2">
+                  <div className="flex items-center justify-between gap-1">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-300">
+                      3D Block Library ({STUDIO_COMPONENT_CATALOG.length})
+                    </p>
+                    <span className="rounded border border-slate-700/80 bg-slate-900/90 px-1.5 py-0.5 font-mono text-[9px] text-emerald-400">
+                      {leftGridCols} col{leftGridCols > 1 ? "s" : ""} ⇄
+                    </span>
+                  </div>
 
                   {/* Search Input */}
                   <Input
                     value={componentSearch}
                     onChange={(e) => setComponentSearch(e.target.value)}
-                    placeholder="🔍 Search 16 components..."
-                    className="h-6 text-[11px]"
+                    placeholder="Search functional blocks..."
+                    className="h-7 rounded-full border-slate-700/80 bg-slate-900/80 px-3 text-[11px]"
                   />
 
-                  {/* Category Filter Pills (200Lab style: All | Edge | Compute | Data | Infra) */}
+                  {/* Category Filter Pills (4 Semantic Tiers: Edge | Compute | Data | Infra) */}
                   <div className="flex flex-wrap gap-1">
                     {(
                       [
-                        ["ALL", "All"],
-                        ["EDGE", "Edge"],
-                        ["COMPUTE", "Compute"],
-                        ["DATA", "Data"],
-                        ["INFRA", "Infra"],
+                        ["ALL", "All", "bg-emerald-500 text-slate-950"],
+                        ["EDGE", "Edge", "bg-sky-500 text-slate-950"],
+                        ["COMPUTE", "Compute", "bg-indigo-500 text-white"],
+                        ["DATA", "Data", "bg-emerald-500 text-slate-950"],
+                        ["INFRA", "Infra", "bg-amber-500 text-slate-950"],
                       ] as const
-                    ).map(([cat, label]) => (
+                    ).map(([cat, label, activeCls]) => (
                       <button
                         key={cat}
                         type="button"
                         onClick={() => setComponentCategory(cat)}
-                        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold transition ${
+                        className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold transition ${
                           componentCategory === cat
-                            ? "bg-emerald-500 text-slate-950"
-                            : "border border-border/70 bg-background/60 text-muted-foreground hover:text-foreground"
+                            ? activeCls
+                            : "border border-slate-700/80 bg-slate-900/70 text-slate-400 hover:border-slate-500 hover:text-slate-200"
                         }`}
                       >
                         {label}
@@ -1172,8 +1194,13 @@ export function StudioWorkbench() {
                     ))}
                   </div>
 
-                  {/* Scrollable Component Cards */}
-                  <div className="grid max-h-[360px] grid-cols-1 gap-1 overflow-y-auto pr-0.5">
+                  {/* Smart Auto-Distributing Functional Block Grid (1, 2, 3, or 4 columns as sidebar stretches) */}
+                  <div
+                    style={{
+                      gridTemplateColumns: `repeat(${leftGridCols}, minmax(0, 1fr))`,
+                    }}
+                    className="grid min-h-0 flex-1 content-start gap-1.5 overflow-y-auto pr-0.5"
+                  >
                     {STUDIO_COMPONENT_CATALOG.filter((item) => {
                       const matchesCat =
                         componentCategory === "ALL" || item.category === componentCategory;
@@ -1189,60 +1216,55 @@ export function StudioWorkbench() {
                         key={item.key}
                         type="button"
                         draggable
+                        title={`${item.label} (${item.spec})`}
                         onDragStart={(event) => {
                           event.dataTransfer.setData("application/x-mavis-studio-spawn", item.key);
                           event.dataTransfer.effectAllowed = "copy";
                         }}
                         onClick={() => addCustomBlock(item.key)}
-                        className={`flex cursor-grab items-center justify-between gap-1.5 rounded-lg border px-2 py-1.5 text-left text-[11px] transition active:cursor-grabbing ${item.cardClass}`}
+                        className={`flex cursor-grab items-center gap-2 rounded-full border px-3 py-2 text-left text-[11.5px] font-semibold text-slate-100 shadow-xs transition active:cursor-grabbing ${item.cardClass}`}
                       >
-                        <div className="flex min-w-0 items-center gap-2.5">
-                          <span
-                            className={`flex size-8 shrink-0 items-center justify-center rounded-lg border border-white/10 shadow-xs ${item.iconClass}`}
-                          >
-                            {renderComponentIcon(item.key, "size-4")}
-                          </span>
-                          <div className="min-w-0 leading-tight">
-                            <p className={`truncate font-semibold ${item.titleClass}`}>
-                              {item.label}
-                            </p>
-                            <p className={`truncate font-mono text-[9px] ${item.specClass}`}>
-                              {item.spec}
-                            </p>
-                          </div>
-                        </div>
-                        <span className="text-[10px] opacity-55">⋮⋮</span>
+                        <span className={`shrink-0 ${item.iconClass}`}>
+                          {renderComponentIcon(item.key, "size-4")}
+                        </span>
+                        <span className="truncate">+ {item.label}</span>
                       </button>
                     ))}
                   </div>
 
-                  <div className="flex gap-1 pt-0.5">
+                  <div className="flex gap-1.5 pt-0.5">
                     <Input
                       value={newNodeName}
                       onChange={(e) => setNewNodeName(e.target.value)}
-                      placeholder="Custom node name..."
-                      className="h-6 text-[11px]"
+                      placeholder="Custom block name..."
+                      className="h-7 rounded-full border-slate-700/80 bg-slate-900/80 px-3 text-[11px]"
                     />
                     <Button
                       type="button"
                       size="sm"
                       variant="secondary"
-                      className="h-6 px-2"
+                      className="h-7 w-8 shrink-0 rounded-full border border-slate-700/80 bg-slate-800 p-0 hover:bg-slate-700"
                       onClick={() => addCustomBlock()}
                     >
-                      <Plus className="size-3" />
+                      <Plus className="size-3.5" />
                     </Button>
                   </div>
                 </div>
 
-                {/* Section B: One-Click Cluster Scenarios (System-Wide Simulation Presets) */}
-                <div className="space-y-1.5 border-t pt-2.5">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-sky-400">
+                {/* Section B: Compact Cluster Scenarios (Smart Auto-Grid + Unified Dark Slate Pills) */}
+                <div className="space-y-1.5 border-t border-slate-800/80 pt-2.5">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                     Cluster Scenarios
                   </p>
-                  <div className="grid grid-cols-1 gap-1.5">
+                  <div
+                    style={{
+                      gridTemplateColumns: `repeat(${Math.min(3, leftGridCols)}, minmax(0, 1fr))`,
+                    }}
+                    className="grid gap-1.5"
+                  >
                     <button
                       type="button"
+                      title="Spike cluster traffic 4×"
                       onClick={() => {
                         setNodeConfigs(() =>
                           Object.fromEntries(
@@ -1257,24 +1279,15 @@ export function StudioWorkbench() {
                           setReplicasMap((prev) => ({ ...prev, [gw]: 4 }));
                         }
                       }}
-                      className="flex items-center justify-between rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-left transition hover:border-amber-400 hover:bg-amber-500/20"
+                      className="flex items-center gap-1.5 rounded-full border border-slate-700/80 bg-slate-900/90 px-2.5 py-1.5 text-left text-[11px] font-semibold text-slate-200 transition hover:border-amber-400/70 hover:bg-slate-800"
                     >
-                      <div className="flex items-center gap-2">
-                        <Flame className="size-3.5 shrink-0 text-amber-400" />
-                        <div className="leading-tight">
-                          <p className="text-[11px] font-bold text-amber-200">Black Friday 4× Surge</p>
-                          <p className="font-mono text-[9px] text-amber-300/75">
-                            Spike cluster traffic 4×
-                          </p>
-                        </div>
-                      </div>
-                      <span className="rounded bg-amber-500/25 px-1.5 py-0.5 font-mono text-[9px] font-bold text-amber-300">
-                        4× LOAD
-                      </span>
+                      <Flame className="size-3.5 shrink-0 text-amber-400" />
+                      <span className="truncate">4× Surge</span>
                     </button>
 
                     <button
                       type="button"
+                      title="Kill primary DB (503 test)"
                       onClick={() => {
                         const dbNode =
                           customServices.find((s) =>
@@ -1284,24 +1297,15 @@ export function StudioWorkbench() {
                           applySandboxAction({ action: "STOP", service: dbNode });
                         }
                       }}
-                      className="flex items-center justify-between rounded-lg border border-rose-500/40 bg-rose-500/10 px-2.5 py-1.5 text-left transition hover:border-rose-400 hover:bg-rose-500/20"
+                      className="flex items-center gap-1.5 rounded-full border border-slate-700/80 bg-slate-900/90 px-2.5 py-1.5 text-left text-[11px] font-semibold text-slate-200 transition hover:border-rose-400/70 hover:bg-slate-800"
                     >
-                      <div className="flex items-center gap-2">
-                        <ShieldAlert className="size-3.5 shrink-0 text-rose-400" />
-                        <div className="leading-tight">
-                          <p className="text-[11px] font-bold text-rose-200">DB Outage Drill</p>
-                          <p className="font-mono text-[9px] text-rose-300/75">
-                            Kill primary DB (503 test)
-                          </p>
-                        </div>
-                      </div>
-                      <span className="rounded bg-rose-500/25 px-1.5 py-0.5 font-mono text-[9px] font-bold text-rose-300">
-                        FAULT
-                      </span>
+                      <ShieldAlert className="size-3.5 shrink-0 text-rose-400" />
+                      <span className="truncate">DB Outage</span>
                     </button>
 
                     <button
                       type="button"
+                      title="Kill random active pod"
                       onClick={() => {
                         const running = customServices.filter((s) => (replicasMap[s] ?? 1) > 0);
                         if (running.length > 0) {
@@ -1312,24 +1316,15 @@ export function StudioWorkbench() {
                           applySandboxAction({ action: "STOP", service: pick });
                         }
                       }}
-                      className="flex items-center justify-between rounded-lg border border-fuchsia-500/40 bg-fuchsia-500/10 px-2.5 py-1.5 text-left transition hover:border-fuchsia-400 hover:bg-fuchsia-500/20"
+                      className="flex items-center gap-1.5 rounded-full border border-slate-700/80 bg-slate-900/90 px-2.5 py-1.5 text-left text-[11px] font-semibold text-slate-200 transition hover:border-indigo-400/70 hover:bg-slate-800"
                     >
-                      <div className="flex items-center gap-2">
-                        <Zap className="size-3.5 shrink-0 text-fuchsia-400" />
-                        <div className="leading-tight">
-                          <p className="text-[11px] font-bold text-fuchsia-200">Chaos Monkey</p>
-                          <p className="font-mono text-[9px] text-fuchsia-300/75">
-                            Kill random active pod
-                          </p>
-                        </div>
-                      </div>
-                      <span className="rounded bg-fuchsia-500/25 px-1.5 py-0.5 font-mono text-[9px] font-bold text-fuchsia-300">
-                        RANDOM
-                      </span>
+                      <Zap className="size-3.5 shrink-0 text-indigo-400" />
+                      <span className="truncate">Chaos</span>
                     </button>
 
                     <button
                       type="button"
+                      title="Scale all ×4 + Enable Cache"
                       onClick={() => {
                         setReplicasMap(
                           Object.fromEntries(customServices.map((s) => [s, 4])),
@@ -1347,32 +1342,22 @@ export function StudioWorkbench() {
                           ),
                         );
                       }}
-                      className="flex items-center justify-between rounded-lg border border-sky-500/40 bg-sky-500/10 px-2.5 py-1.5 text-left transition hover:border-sky-400 hover:bg-sky-500/20"
+                      className="flex items-center gap-1.5 rounded-full border border-slate-700/80 bg-slate-900/90 px-2.5 py-1.5 text-left text-[11px] font-semibold text-slate-200 transition hover:border-sky-400/70 hover:bg-slate-800"
                     >
-                      <div className="flex items-center gap-2">
-                        <Sparkles className="size-3.5 shrink-0 text-sky-400" />
-                        <div className="leading-tight">
-                          <p className="text-[11px] font-bold text-sky-200">HA Auto-Scale ×4</p>
-                          <p className="font-mono text-[9px] text-sky-300/75">
-                            Scale all ×4 + Enable Cache
-                          </p>
-                        </div>
-                      </div>
-                      <span className="rounded bg-sky-500/25 px-1.5 py-0.5 font-mono text-[9px] font-bold text-sky-300">
-                        ×4 HA
-                      </span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => switchTemplate(templateId)}
-                      title={t("Reset cluster")}
-                      className="flex items-center justify-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-2.5 py-1.5 text-[11px] font-bold text-emerald-300 transition hover:bg-emerald-500/25"
-                    >
-                      <RotateCcw className="size-3.5" />
-                      Reset Cluster Baseline
+                      <Sparkles className="size-3.5 shrink-0 text-sky-400" />
+                      <span className="truncate">×4 HA Scale</span>
                     </button>
                   </div>
+
+                  <button
+                    type="button"
+                    onClick={() => switchTemplate(templateId)}
+                    title={t("Reset cluster")}
+                    className="flex w-full items-center justify-center gap-1.5 rounded-full border border-slate-700/80 bg-slate-900/90 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-400 transition hover:border-emerald-400/70 hover:bg-slate-800"
+                  >
+                    <RotateCcw className="size-3.5" />
+                    Reset Cluster
+                  </button>
                 </div>
               </div>
             </aside>
@@ -1382,12 +1367,12 @@ export function StudioWorkbench() {
           <div
             role="separator"
             aria-orientation="vertical"
-            title="Kéo để thay đổi độ rộng thanh công cụ trái (Double-click để thu gọn/mở rộng)"
+            title="Kéo ra/vào để tự động chia 1, 2, 3, 4 cột khối chức năng (Double-click để thu gọn)"
             onPointerDown={(e) => startResize("left", e)}
             onDoubleClick={() => setLeftCollapsed((prev) => !prev)}
-            className="group relative flex w-1.5 shrink-0 cursor-col-resize items-center justify-center border-x border-border/60 bg-muted/20 transition hover:bg-primary/30 active:bg-primary/50"
+            className="group relative flex w-2 shrink-0 cursor-col-resize items-center justify-center border-x border-slate-800 bg-slate-950/80 transition hover:bg-emerald-500/25 active:bg-emerald-500/40"
           >
-            <div className="h-8 w-0.5 rounded-full bg-muted-foreground/40 group-hover:bg-primary" />
+            <div className="h-10 w-0.5 rounded-full bg-slate-600 group-hover:bg-emerald-400" />
           </div>
 
           {/* CENTER COLUMN: TOP (FULL-BLEED 3D/2D CANVAS) + BOTTOM (TELEMETRY DOCK) */}
@@ -1490,7 +1475,12 @@ export function StudioWorkbench() {
               {!bottomCollapsed && (
                 <div className="flex-1 overflow-y-auto p-2.5">
                   {bottomTab === "MATRIX" ? (
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+                    <div
+                      style={{
+                        gridTemplateColumns: "repeat(auto-fill, minmax(235px, 1fr))",
+                      }}
+                      className="grid gap-2"
+                    >
                       {deploymentRows.map((row) => {
                         const isSelected = row.serviceName === selectedService;
                         const isDown = row.replicasNow === 0;
@@ -1503,20 +1493,24 @@ export function StudioWorkbench() {
                               isDown
                                 ? "border-rose-500/50 bg-rose-950/20"
                                 : isSelected
-                                  ? "border-sky-400/80 bg-sky-500/10 shadow-xs"
-                                  : "border-border/70 bg-background/65 hover:border-slate-600"
+                                  ? "border-sky-400/80 bg-slate-800/90 shadow-xs"
+                                  : "border-slate-800 bg-slate-900/75 hover:border-slate-600"
                             }`}
                           >
                             {/* Row 1: Functional Icon + Service Name + Layer/Type + Quick Scale & Replica Badge */}
                             <div className="flex items-start justify-between gap-2">
                               <div className="flex min-w-0 items-center gap-2">
                                 <span
-                                  className={`flex size-7 shrink-0 items-center justify-center rounded-lg border border-white/10 ${
+                                  className={`flex size-7 shrink-0 items-center justify-center rounded-lg border border-slate-700/80 bg-slate-950/90 ${
                                     isDown
-                                      ? "bg-rose-500/20 text-rose-400"
-                                      : row.replicasNow > 1
-                                        ? "bg-sky-500/20 text-sky-300"
-                                        : "bg-emerald-500/20 text-emerald-300"
+                                      ? "text-rose-400"
+                                      : row.type === "API_GATEWAY"
+                                        ? "text-sky-400"
+                                        : row.type === "DATABASE"
+                                          ? "text-emerald-400"
+                                          : row.type === "MESSAGE_BROKER"
+                                            ? "text-amber-400"
+                                            : "text-indigo-400"
                                   }`}
                                 >
                                   {renderComponentIcon(row.serviceName, "size-3.5")}
@@ -1728,28 +1722,22 @@ export function StudioWorkbench() {
                 <div className="space-y-2.5">
                   {/* Card 1: Selected Node Identity + Replica & Lifecycle Controls */}
                   <div
-                    className={`space-y-2 rounded-lg border p-2.5 ${
+                    className={`space-y-2 rounded-xl border p-2.5 ${
                       selectedRow.replicasNow === 0
-                        ? "border-rose-500/50 bg-rose-950/30"
-                        : selectedRow.type === "API_GATEWAY"
-                          ? "border-amber-500/40 bg-amber-950/25"
-                          : selectedRow.type === "DATABASE"
-                            ? "border-emerald-500/40 bg-emerald-950/25"
-                            : selectedRow.type === "MESSAGE_BROKER"
-                              ? "border-purple-500/40 bg-purple-950/25"
-                              : "border-indigo-500/40 bg-indigo-950/25"
+                        ? "border-rose-500/50 bg-rose-950/25"
+                        : "border-slate-800 bg-slate-900/75"
                     }`}
                   >
                     <div className="flex items-center justify-between gap-1.5">
                       <span
-                        className={`rounded px-1.5 py-0.5 font-mono text-[9px] font-bold ${
+                        className={`rounded border border-slate-700/80 bg-slate-950/90 px-1.5 py-0.5 font-mono text-[9px] font-bold ${
                           selectedRow.type === "API_GATEWAY"
-                            ? "bg-amber-500/20 text-amber-300"
+                            ? "text-sky-400"
                             : selectedRow.type === "DATABASE"
-                              ? "bg-emerald-500/20 text-emerald-300"
+                              ? "text-emerald-400"
                               : selectedRow.type === "MESSAGE_BROKER"
-                                ? "bg-purple-500/20 text-purple-300"
-                                : "bg-indigo-500/20 text-indigo-300"
+                                ? "text-amber-400"
+                                : "text-indigo-400"
                         }`}
                       >
                         {selectedRow.type}
@@ -1760,7 +1748,7 @@ export function StudioWorkbench() {
                             ? "bg-rose-500/25 text-rose-300"
                             : selectedRow.replicasNow > 1
                               ? "bg-sky-500/25 text-sky-300"
-                              : "bg-emerald-500/25 text-emerald-300"
+                              : "bg-emerald-500/20 text-emerald-300"
                         }`}
                       >
                         {selectedRow.replicasNow === 0
@@ -1770,7 +1758,17 @@ export function StudioWorkbench() {
                     </div>
 
                     <div className="flex items-center gap-2">
-                      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-background/60 text-emerald-300">
+                      <span
+                        className={`flex size-8 shrink-0 items-center justify-center rounded-lg border border-slate-700/80 bg-slate-950/90 ${
+                          selectedRow.type === "API_GATEWAY"
+                            ? "text-sky-400"
+                            : selectedRow.type === "DATABASE"
+                              ? "text-emerald-400"
+                              : selectedRow.type === "MESSAGE_BROKER"
+                                ? "text-amber-400"
+                                : "text-indigo-400"
+                        }`}
+                      >
                         {renderComponentIcon(selectedRow.serviceName, "size-4")}
                       </span>
                       <div className="min-w-0 flex-1">
@@ -1845,8 +1843,8 @@ export function StudioWorkbench() {
                   </div>
 
                   {/* Card 2: Hardware Spec & Stress Simulation (Instance Tier, Traffic Spike, Latency Fault) */}
-                  <div className="space-y-2 rounded-lg border border-sky-500/30 bg-sky-950/10 p-2.5 text-[11px]">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-sky-400">
+                  <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-900/75 p-2.5 text-[11px]">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-300">
                       Hardware & Stress Simulation
                     </p>
 
@@ -1946,8 +1944,8 @@ export function StudioWorkbench() {
                   </div>
 
                   {/* Card 3: Resilience & Architecture Policies (4 Interactive Toggles) */}
-                  <div className="space-y-1.5 rounded-lg border border-emerald-500/30 bg-emerald-950/10 p-2.5 text-[11px]">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">
+                  <div className="space-y-1.5 rounded-xl border border-slate-800 bg-slate-900/75 p-2.5 text-[11px]">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-300">
                       Resilience Policies
                     </p>
                     <div className="grid grid-cols-2 gap-1.5">
@@ -1987,12 +1985,10 @@ export function StudioWorkbench() {
 
                   {/* Card 4: Impact & Interactive Topology Wiring */}
                   <div
-                    className={`space-y-2 rounded-lg border border-l-4 p-2.5 text-[11px] ${
+                    className={`space-y-2 rounded-xl border p-2.5 text-[11px] ${
                       selectedRow.replicasNow === 0
-                        ? "border-rose-500/40 border-l-rose-500 bg-rose-950/20"
-                        : selectedRow.replicasNow > 1
-                          ? "border-emerald-500/40 border-l-emerald-400 bg-emerald-950/15"
-                          : "border-indigo-500/35 border-l-indigo-400 bg-indigo-950/15"
+                        ? "border-rose-500/40 bg-rose-950/20"
+                        : "border-slate-800 bg-slate-900/75"
                     }`}
                   >
                     <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">
