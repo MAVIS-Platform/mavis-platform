@@ -120,7 +120,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy snapshot với ID: " + snapshotId));
 
         if (snapshot.getProject() != null) {
-            accessPolicyService.requireProjectReadAccess(snapshot.getProject());
+            runnerServiceAuthGuard.checkRunnerOrProjectReadAccess(snapshot.getProject());
         }
 
         String storagePathStr = snapshot.getStoragePath();

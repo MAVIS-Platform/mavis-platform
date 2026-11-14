@@ -31,6 +31,9 @@ public class RunnerServiceAuthGuard {
     @Value("${mavis.runner.service-key:}")
     private String runnerServiceKey;
 
+    @Value("${mavis.runner.previous-service-key:}")
+    private String previousRunnerServiceKey;
+
     private static final ThreadLocal<Boolean> INTERNAL_DISPATCH = ThreadLocal.withInitial(() -> false);
 
     public static void runWithInternalBypass(Runnable runnable) {
@@ -42,12 +45,25 @@ public class RunnerServiceAuthGuard {
         }
     }
 
+    private static boolean isUsableKey(String key) {
+        return key != null && !key.isBlank() && !key.equals("mavis-local-runner-secret-key");
+    }
+
+    private java.util.List<String> activeKeys() {
+        var keys = new java.util.ArrayList<String>(2);
+        if (isUsableKey(runnerServiceKey)) keys.add(runnerServiceKey);
+        if (isUsableKey(previousRunnerServiceKey) && !previousRunnerServiceKey.equals(runnerServiceKey)) {
+            keys.add(previousRunnerServiceKey);
+        }
+        return keys;
+    }
+
     public boolean isConfigured() {
-        return runnerServiceKey != null && !runnerServiceKey.isBlank() && !runnerServiceKey.equals("mavis-local-runner-secret-key");
+        return !activeKeys().isEmpty();
     }
 
     public String derivedEnvironmentKey() {
-        if (!isConfigured()) return null;
+        if (!isUsableKey(runnerServiceKey)) return null;
         try {
             return java.util.Base64.getEncoder().encodeToString(
                     MessageDigest.getInstance("SHA-256").digest(("mavis-runtime-env:" + runnerServiceKey).getBytes(StandardCharsets.UTF_8)));
@@ -60,10 +76,8 @@ public class RunnerServiceAuthGuard {
         if (Boolean.TRUE.equals(INTERNAL_DISPATCH.get())) {
             return true;
         }
-        if (!isConfigured()) {
-            return false;
-        }
-        if (httpServletRequest == null) {
+        var keys = activeKeys();
+        if (keys.isEmpty() || httpServletRequest == null) {
             return false;
         }
         try {
@@ -71,9 +85,13 @@ public class RunnerServiceAuthGuard {
             if (providedKey == null || providedKey.isBlank()) {
                 return false;
             }
-            byte[] expectedBytes = runnerServiceKey.getBytes(StandardCharsets.UTF_8);
             byte[] providedBytes = providedKey.getBytes(StandardCharsets.UTF_8);
-            return MessageDigest.isEqual(expectedBytes, providedBytes);
+            for (String candidate : keys) {
+                if (MessageDigest.isEqual(candidate.getBytes(StandardCharsets.UTF_8), providedBytes)) {
+                    return true;
+                }
+            }
+            return false;
         } catch (Exception ignored) {
             return false;
         }
@@ -90,16 +108,22 @@ public class RunnerServiceAuthGuard {
         if (Boolean.TRUE.equals(INTERNAL_DISPATCH.get())) return null;
         requireRunnerService();
         try {
-            String provided=httpServletRequest==null?null:httpServletRequest.getHeader("X-Mavis-Receipt-Signature");
-            var mac=javax.crypto.Mac.getInstance("HmacSHA256");
-            mac.init(new javax.crypto.spec.SecretKeySpec(runnerServiceKey.getBytes(StandardCharsets.UTF_8),"HmacSHA256"));
-            String expected="hmac-sha256:"+java.util.HexFormat.of().formatHex(mac.doFinal(digest.getBytes(StandardCharsets.UTF_8)));
-            if(provided!=null && MessageDigest.isEqual(expected.getBytes(StandardCharsets.UTF_8),provided.getBytes(StandardCharsets.UTF_8)))
-                return provided;
-        } catch(java.security.GeneralSecurityException failure) {
-            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR,"Receipt signature verification unavailable");
+            String provided = httpServletRequest == null ? null : httpServletRequest.getHeader("X-Mavis-Receipt-Signature");
+            if (provided != null) {
+                byte[] providedBytes = provided.getBytes(StandardCharsets.UTF_8);
+                for (String key : activeKeys()) {
+                    var mac = javax.crypto.Mac.getInstance("HmacSHA256");
+                    mac.init(new javax.crypto.spec.SecretKeySpec(key.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+                    String expected = "hmac-sha256:" + java.util.HexFormat.of().formatHex(mac.doFinal(digest.getBytes(StandardCharsets.UTF_8)));
+                    if (MessageDigest.isEqual(expected.getBytes(StandardCharsets.UTF_8), providedBytes)) {
+                        return provided;
+                    }
+                }
+            }
+        } catch (java.security.GeneralSecurityException failure) {
+            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR, "Receipt signature verification unavailable");
         }
-        throw new BusinessException(ErrorCode.FORBIDDEN,"A valid Runner receipt signature is required");
+        throw new BusinessException(ErrorCode.FORBIDDEN, "A valid Runner receipt signature is required");
     }
 
     public void checkRunnerOrProjectWriteAccess(Project project) {
