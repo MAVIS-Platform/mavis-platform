@@ -413,9 +413,21 @@ class CourseHttpAcceptanceTest {
         var staticGrade = Map.of("snapshotId", "STEP_1_STATIC", "score", new java.math.BigDecimal("9.00"));
         var borderline = Map.of("snapshotId", "STEP_4_RUNTIME", "score", new java.math.BigDecimal("5.00"));
         var passedGrade = Map.of("snapshotId", "STEP_4_RUNTIME", "score", new java.math.BigDecimal("5.01"));
-        JsonNode failedReview = data(send("PUT", review, lecturer, Map.of("expectedRevision", 0, "status", "GRADED",
+        send("PUT", review, lecturer, Map.of("expectedRevision", 0, "status", "DRAFT",
+                "summary", "Draft", "snapshotGrades", List.of(Map.of("snapshotId", "wrong-snapshot", "score", 9))), 400);
+        send("PUT", review, lecturer, Map.of("expectedRevision", 0, "status", "DRAFT",
+                "summary", "Draft", "snapshotGrades", List.of(staticGrade)), 200);
+        JsonNode draft = data(send("GET", review, lecturer, null, 200));
+        assertEquals("DRAFT", draft.path("status").asText());
+        assertEquals(1, draft.path("snapshotGrades").size());
+        assertEquals(9.0, draft.path("snapshotGrades").get(0).path("score").asDouble());
+        assertFalse(draft.hasNonNull("score"));
+        assertEquals("PENDING", data(send("GET", review, student, null, 200)).path("status").asText());
+        JsonNode failedReview = data(send("PUT", review, lecturer, Map.of("expectedRevision", 1, "status", "GRADED",
+                "score", 99,
                 "summary", "Explain the measured impact.", "snapshotGrades", List.of(staticGrade, borderline)), 200));
         assertEquals("NEEDS_REVISION", failedReview.path("labOutcome").asText());
+        assertEquals(70.0, failedReview.path("score").asDouble());
         send("GET", "assignments/" + lab2, student, null, 403);
         var replacement = new java.util.HashMap<>(submission);
         replacement.put("submissionNotes", "Revised observations after lecturer feedback.");
@@ -426,7 +438,7 @@ class CourseHttpAcceptanceTest {
         var gradeRequest = Map.of("expectedRevision", 0, "status", "GRADED",
                 "summary", "Verified runtime and architecture.", "snapshotGrades", List.of(staticGrade, passedGrade));
         send("PUT", revisedReview, student, gradeRequest, 403);
-        send("PUT", review, lecturer, Map.of("expectedRevision", 1, "status", "GRADED",
+        send("PUT", review, lecturer, Map.of("expectedRevision", 2, "status", "GRADED",
                 "summary", "Older submission.", "snapshotGrades", List.of(staticGrade, passedGrade)), 409);
         var publication = request("PUT", revisedReview, lecturer, gradeRequest).build();
         var first = http.sendAsync(publication, HttpResponse.BodyHandlers.ofByteArray());

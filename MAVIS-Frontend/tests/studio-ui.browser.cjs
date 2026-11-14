@@ -23,6 +23,7 @@ import {ApiContext} from '@/providers/app-context';
 import {LocaleProvider} from '@/lib/i18n/locale-context';
 import {StudioControls} from '@/features/runtime/studio-controls';
 import {StudioSubmissionEvidence} from '@/features/submissions/studio-evidence';
+import {GradingPanel} from '@/features/submissions/grading';
 const state={sessionId:'fixture',interactive:true,services:['orders','payment'],executionStatus:'RUNNING',cleanupStatus:'NOT_APPLICABLE',finishRequested:false,actions:[]};
 const model={id:'model-1',projectId:'project-1',snapshotId:'source-1',revision:1,label:'Pinned model',elements:[
  {id:'orders-id',name:'orders',elementType:'SERVICE_CONTAINER',layer:'domain',description:'',evidence:[]},
@@ -36,7 +37,14 @@ state.telemetry={observedAt:new Date().toISOString(),services:[
  interactions:[{traceId:'trace-observed',fromService:'orders',toService:'payment',parentSpanId:'span-orders',childSpanId:'span-payment'}]};
 state.snapshots=[];
 window.studioCalls=[];
+let review={submissionId:'submitted-fixture',revision:0,status:'PENDING',score:null,summary:'',snapshotGrades:[],labOutcome:'PENDING'};
 const api={mode:'backend',async execute(op,input){
+ if(op==='session')return {user:{id:'lecturer',role:'lecturer'}};
+ if(op==='submissionReview')return structuredClone(review);
+ if(op==='gradeSubmission'){
+  review={...review,...input,revision:review.revision+1,snapshotGrades:input.snapshotGrades??[]};
+  return structuredClone(review);
+ }
  if(op==='model')return model;
  if(op==='impact')return {modelId:model.id,targetId:input.targetId,paths:input.targetId==='payment-id'?[['orders-id','payment-id']]:[],limitations:'Fixture confirmed HTTP path'};
  if(op==='studioAction'){
@@ -54,7 +62,7 @@ const api={mode:'backend',async execute(op,input){
  return structuredClone(state);
 }};
 const client=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
-createRoot(document.getElementById('root')).render(<LocaleProvider><ApiContext.Provider value={api}><QueryClientProvider client={client}><div style={{padding:16}}><StudioControls sessionId="fixture"/><StudioSubmissionEvidence submissionId="submitted-fixture" available={true}/></div></QueryClientProvider></ApiContext.Provider></LocaleProvider>);
+createRoot(document.getElementById('root')).render(<LocaleProvider><ApiContext.Provider value={api}><QueryClientProvider client={client}><div style={{padding:16}}><StudioControls sessionId="fixture"/><StudioSubmissionEvidence submissionId="submitted-fixture" available={true}/><GradingPanel submissionId="submitted-fixture" guidedLab studentSnapshots={[{snapshotId:'static',title:'Static C1–C3'},{snapshotId:'runtime',title:'Studio capture'}]}/></div></QueryClientProvider></ApiContext.Provider></LocaleProvider>);
 `,
 );
 
@@ -149,7 +157,7 @@ async function main() {
     await page.getByRole("button", { name: "Download evidence", exact: true }).waitFor();
     await page.getByLabel("Replicas (1–8)").fill("4");
     await page.getByRole("button", { name: "Scale replicas", exact: true }).click();
-    await page.getByText("PENDING", { exact: false }).waitFor();
+    await page.getByText("SCALE orders → 4 · PENDING", { exact: true }).waitFor();
     assert.equal(
       await page.getByRole("button", { name: "Stop service", exact: true }).isDisabled(),
       true,
@@ -191,13 +199,21 @@ async function main() {
     await page.screenshot({ path: path.join(output, "studio-mobile.png"), fullPage: true });
     await finish.click();
     await page.getByText("COMPLETED", { exact: false }).waitFor();
+    const staticScore = page.getByRole("spinbutton", { name: "Score — Static C1–C3", exact: true });
+    const studioScore = page.getByRole("spinbutton", { name: "Score — Studio capture", exact: true });
+    await staticScore.fill("5.01");
+    await page.getByRole("button", { name: "Save grading draft", exact: true }).click();
+    await page.getByText("Draft", { exact: true }).waitFor();
+    assert.equal(await staticScore.inputValue(), "5.01");
+    assert.equal(await studioScore.inputValue(), "");
+    assert.equal(await page.getByRole("button", { name: "Publish grade", exact: true }).isDisabled(), true);
     await page.evaluate(()=>localStorage.setItem("mavis.locale","vi"));
     await page.reload();
     await page.getByRole("button",{name:"Dừng dịch vụ",exact:true}).waitFor();
     await page.getByRole("button",{name:"3D",exact:true}).click();
     await page.screenshot({path:path.join(output,"studio-vi.png"),fullPage:true,animations:"disabled"});
     assert.equal(errors.length, 0, errors.join("\n"));
-    console.log("PASS Studio UI actions, pending lock, measured results, finish and mobile layout");
+    console.log("PASS Studio UI and partial grading draft on mobile");
   } finally {
     if (browser) await browser.close();
     await new Promise((resolve) => server.close(resolve));
