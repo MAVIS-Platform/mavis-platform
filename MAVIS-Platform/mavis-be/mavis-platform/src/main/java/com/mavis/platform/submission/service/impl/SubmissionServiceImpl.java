@@ -31,6 +31,7 @@ public class SubmissionServiceImpl implements SubmissionService {
 
     private final SubmissionSnapshotRepository submissionSnapshotRepository;
     private final AssignmentRepository assignmentRepository;
+    private final WorkspaceRepository workspaceRepository;
     private final com.mavis.common.security.CourseLabPolicy courseLabs;
     private final ProjectRepository projectRepository;
     private final UserRepository userRepository;
@@ -73,7 +74,13 @@ public class SubmissionServiceImpl implements SubmissionService {
         if (assignment.getWorkspace()!=null) accessPolicyService.requireWorkspaceMember(assignment.getWorkspace().getId());
 
         if (studentLab) {
+            UUID workspaceId = assignment.getWorkspace().getId();
+            workspaceRepository.findLockedById(workspaceId)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Workspace not found"));
             courseLabs.requireOpen(assignment, submitter);
+            if (courseLabs.passedAssignments(workspaceId, currentUserId).contains(assignment.getId())) {
+                throw new BusinessException(ErrorCode.CONFLICT, "LAB_SUBMISSION_ALREADY_PASSED");
+            }
         }
 
         // 1. Kiểm tra hạn nộp bài (BR-14)
