@@ -851,9 +851,6 @@ export function StudioObservability({
             <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               {t("Studio Action Palette")}
             </span>
-            <span className="text-xs text-muted-foreground">
-              {t("Drag an action block onto any service node on the 2D/3D canvas")}
-            </span>
           </div>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5">
             {PALETTE_ITEMS.map((item) => {

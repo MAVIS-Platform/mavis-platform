@@ -1015,12 +1015,9 @@ export function StudioWorkbench() {
               <div className="space-y-3">
                 {/* Section A: 16-Component System Design Catalog (Filterable + Searchable + Drag/Click) */}
                 <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">
-                      Components ({STUDIO_COMPONENT_CATALOG.length})
-                    </p>
-                    <span className="text-[9px] text-muted-foreground">Drag or Click</span>
-                  </div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">
+                    Components ({STUDIO_COMPONENT_CATALOG.length})
+                  </p>
 
                   {/* Search Input */}
                   <Input
@@ -1129,14 +1126,9 @@ export function StudioWorkbench() {
 
                 {/* Section B: Compact Drag & Drop Actions (2-Column Pill Grid) */}
                 <div className="space-y-1.5 border-t pt-2.5">
-                  <div className="flex items-center justify-between">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-sky-400">
-                      Actions
-                    </p>
-                    <span className="truncate font-mono text-[9px] text-muted-foreground">
-                      → {selectedService}
-                    </span>
-                  </div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-sky-400">
+                    Actions
+                  </p>
                   <div className="grid grid-cols-2 gap-1.5">
                     {LEFT_DOCK_ACTIONS.map((item) => (
                       <div
