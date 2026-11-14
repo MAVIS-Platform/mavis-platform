@@ -1372,6 +1372,8 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
     { sessionId: selectedId },
     { enabled: !!selectedId, poll: true },
   );
+  const sessionProjectId = session.data?.projectId ?? projectId;
+  const sessionModelId = session.data?.modelId;
   const sessionOptions =
     session.data && !visible.some((s) => s.id === session.data?.id)
       ? [session.data, ...visible]
@@ -1407,6 +1409,20 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
     { projectId, modelId: targetModelId ?? "" },
     { enabled: !!projectId && !!targetModelId },
   );
+  const requestedModelId = selectedId ? sessionModelId : targetModelId;
+  const needsSessionModel = Boolean(
+    sessionModelId && (sessionModelId !== targetModelId || sessionProjectId !== projectId),
+  );
+  const sessionModel = useApiQuery(
+    "model",
+    { projectId: sessionProjectId, modelId: sessionModelId ?? "" },
+    { enabled: needsSessionModel },
+  );
+  const workflowModel = requestedModelId
+    ? needsSessionModel
+      ? sessionModel.data
+      : modelDetail.data
+    : undefined;
   const startRuntime = useApiMutation("startRuntime");
   const [quickRunRunning, setQuickRunRunning] = useState(false);
   const [quickRunMsg, setQuickRunMsg] = useState("");
@@ -1517,8 +1533,8 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
   }, [savedScenarioSteps, storedDraft.plannedSteps]);
 
   const plannedRequests = useMemo(() => {
-    if (session.data?.stepResults?.length) {
-      return session.data.stepResults
+    if (selectedId) {
+      return (session.data?.stepResults ?? [])
         .filter((sr) => Boolean(sr.service && sr.path))
         .map((sr) => ({
           service: sr.service ?? "api-gateway",
@@ -1528,17 +1544,17 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
     }
     if (storedDraft.plannedSteps?.length) return storedDraft.plannedSteps;
     return savedScenarioSteps.length ? savedScenarioSteps : detectedEndpoints.slice(0, 6);
-  }, [session.data?.stepResults, storedDraft.plannedSteps, savedScenarioSteps, detectedEndpoints]);
+  }, [selectedId, session.data?.stepResults, storedDraft.plannedSteps, savedScenarioSteps, detectedEndpoints]);
 
   const workflowData = useMemo(
     () =>
       deriveWorkflowSteps(
         sequence.data?.steps,
         plannedRequests,
-        modelDetail.data,
+        workflowModel,
         effectiveServiceMappings,
       ),
-    [sequence.data?.steps, plannedRequests, modelDetail.data, effectiveServiceMappings],
+    [sequence.data?.steps, plannedRequests, workflowModel, effectiveServiceMappings],
   );
   const observed = workflowData.mode === "OBSERVED";
 
@@ -2306,7 +2322,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
       )}
 
       {/* Runtime-Enriched Architecture Hub */}
-      {enrichedModelId && projectId && (
+      {enrichedModelId && sessionProjectId && (
         <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="space-y-1">
             <div className="flex flex-wrap items-center gap-2">
@@ -2341,7 +2357,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
               asChild
             >
               <Link
-                href={`/architecture?project=${encodeURIComponent(projectId)}&model=${encodeURIComponent(enrichedModelId)}`}
+                href={`/architecture?project=${encodeURIComponent(sessionProjectId)}&model=${encodeURIComponent(enrichedModelId)}`}
               >
                 <ExternalLink className="h-3 w-3 mr-1.5" />
                 Architecture Graph
@@ -2354,7 +2370,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
               asChild
             >
               <Link
-                href={`/diagrams?project=${encodeURIComponent(projectId)}&model=${encodeURIComponent(enrichedModelId)}&kind=UML_SEQUENCE&mode=observed&session=${encodeURIComponent(selectedId)}`}
+                href={`/diagrams?project=${encodeURIComponent(sessionProjectId)}&model=${encodeURIComponent(enrichedModelId)}&kind=UML_SEQUENCE&mode=observed&session=${encodeURIComponent(selectedId)}`}
               >
                 Sequence Diagram
               </Link>
@@ -2366,7 +2382,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
               asChild
             >
               <Link
-                href={`/diagrams?project=${encodeURIComponent(projectId)}&model=${encodeURIComponent(enrichedModelId)}&kind=UML_ACTIVITY&mode=observed&session=${encodeURIComponent(selectedId)}`}
+                href={`/diagrams?project=${encodeURIComponent(sessionProjectId)}&model=${encodeURIComponent(enrichedModelId)}&kind=UML_ACTIVITY&mode=observed&session=${encodeURIComponent(selectedId)}`}
               >
                 Activity Diagram
               </Link>
@@ -2436,7 +2452,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                   ))}
                 </select>
               )}
-              {projectId && !enrichedModelId && (
+              {sessionProjectId && requestedModelId && !enrichedModelId && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -2444,9 +2460,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                   asChild
                 >
                   <Link
-                    href={`/architecture?project=${encodeURIComponent(projectId)}${
-                      targetModelId ? `&model=${encodeURIComponent(targetModelId)}` : ""
-                    }`}
+                    href={`/architecture?project=${encodeURIComponent(sessionProjectId)}&model=${encodeURIComponent(requestedModelId)}`}
                   >
                     <ExternalLink className="h-3 w-3 mr-1.5" />
                     Architecture Graph
@@ -2462,6 +2476,18 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
           {list.isError && <ErrorState error={list.error} />}
           {session.isError && <ErrorState error={session.error} />}
           {sequence.isError && <ErrorState error={sequence.error} />}
+          {needsSessionModel && sessionModel.isError && <ErrorState error={sessionModel.error} />}
+          {hasSession && (
+            <p className="text-xs text-muted-foreground" role="status">
+              {observed
+                ? t("Showing calls recorded by OpenTelemetry for this session.")
+                : active.has(upperExecStatus)
+                  ? t("Waiting for OpenTelemetry evidence from the Runner.")
+                  : t("This session has no recorded service calls.")}
+              {observed && session.data?.traceStatus?.toUpperCase() === "PARTIAL" &&
+                ` ${t("Trace evidence is partial.")}`}
+            </p>
+          )}
           {!list.isPending && !list.isError && !visible.length && !selectedId && (
             <p className="text-xs text-muted-foreground">
               No runtime session yet. The diagram below is the planned workflow; run it to capture a
@@ -2827,8 +2853,8 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                     storedDraft.scenarioName ??
                     "Architecture Verification Workflow"
                   }
-                  projectId={projectId}
-                  targetGraphModelId={enrichedModelId ?? targetModelId}
+                  projectId={sessionProjectId}
+                  targetGraphModelId={enrichedModelId ?? sessionModelId}
                   sessionId={selectedId || "preview"}
                 />
               </div>
@@ -2853,8 +2879,8 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                     storedDraft.scenarioName ??
                     "Architecture Verification Workflow"
                   }
-                  projectId={projectId}
-                  targetGraphModelId={enrichedModelId ?? targetModelId}
+                  projectId={sessionProjectId}
+                  targetGraphModelId={enrichedModelId ?? sessionModelId}
                   sessionId={selectedId || "preview"}
                 />
               </div>
