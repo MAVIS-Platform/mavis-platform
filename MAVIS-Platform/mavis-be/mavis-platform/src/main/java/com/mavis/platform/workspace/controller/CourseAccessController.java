@@ -24,6 +24,7 @@ public class CourseAccessController {
 
     public record IssueKey(@Min(1) @Max(168) int validHours, @Min(1) @Max(10000) Integer maxStudents) {}
     public record RedeemKey(@NotBlank @Pattern(regexp = "[A-Za-z0-9_-]{22}") String code) {}
+    public record SeedCuratedRequest(String preset) {}
 
     @GetMapping("/workspaces/{workspaceId}/course-roadmap")
     public ApiResponse<CourseAccessService.Roadmap> roadmap(@PathVariable UUID workspaceId) {
@@ -36,8 +37,10 @@ public class CourseAccessController {
     }
 
     @PostMapping("/workspaces/{workspaceId}/course-labs/seed-curated")
-    public ApiResponse<CourseAccessService.Roadmap> seedCurated(@PathVariable UUID workspaceId) {
-        return ApiResponse.success(seeder.seedCurated(workspaceId));
+    public ApiResponse<CourseAccessService.Roadmap> seedCurated(
+            @PathVariable UUID workspaceId,
+            @RequestBody(required = false) SeedCuratedRequest request) {
+        return ApiResponse.success(seeder.seedCurated(workspaceId, request != null ? request.preset() : null));
     }
 
     @GetMapping("/workspaces/{workspaceId}/course-passkey")

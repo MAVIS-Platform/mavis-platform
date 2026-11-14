@@ -158,3 +158,21 @@ test('runtime sequence SVG displays recorded span fields without inventing respo
   assert.match(measured, /HTTP 503 · 12 ms/);
   assert.doesNotMatch(measured, /POST POST|seq-reply-arrow/);
 });
+
+test('interactive 2D Studio topology renders stacked replica cards, stopped node badge, and direct node control bar', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/features/runtime/backend.tsx'), 'utf8');
+  const dict = fs.readFileSync(path.join(__dirname, '../src/lib/i18n/locale-context.tsx'), 'utf8');
+  assert.ok(source.includes('studio-2d-node-control-bar'));
+  assert.ok(source.includes('Selected 2D Service Node'));
+  assert.ok(source.includes('Run new Studio experiment'));
+  assert.ok(source.includes('STOPPED · 0 Replicas'));
+  assert.ok(source.includes('REPLICAS'));
+  assert.ok(source.includes('onQuickStudioAction'));
+  assert.ok(source.includes('runWorkflowWithStudio'));
+  assert.ok(dict.includes('Selected 2D Service Node'));
+  assert.ok(dict.includes('Run new Studio experiment'));
+  assert.ok(source.includes('Each experiment starts a new sandbox run.'));
+  assert.ok(source.includes('studioServices.includes(selectedService)'));
+  assert.ok(source.includes('No confirmed replica count'));
+  assert.ok(source.includes('aria-pressed={isSelected}'));
+});
