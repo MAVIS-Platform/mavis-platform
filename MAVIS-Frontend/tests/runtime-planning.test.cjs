@@ -128,3 +128,12 @@ test('WF-03 F05-006/007: runtimeReadSchema preserves honest beforeAfterCompariso
  assert.equal(session.beforeAfterComparison?.[0]?.measurementStatus, 'INSUFFICIENT_TELEMETRY_SAMPLES');
  assert.equal(session.beforeAfterComparison?.[0]?.p95LatencyMsAfter, null);
 });
+
+test('runtime history keeps evidence scoped to its pinned project and model', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/features/runtime/backend.tsx'), 'utf8');
+  assert.match(source, /sessionProjectId = session\.data\?\.projectId/);
+  assert.match(source, /requestedModelId = selectedId \? sessionModelId : targetModelId/);
+  assert.match(source, /if \(selectedId\) \{\s+return \(session\.data\?\.stepResults \?\? \[\]\)/);
+  assert.match(source, /projectId=\{sessionProjectId\}\s+targetGraphModelId=\{enrichedModelId \?\? sessionModelId\}/);
+  assert.match(source, /observed && session\.data\?\.traceStatus\?\.toUpperCase\(\) === "PARTIAL"/);
+});
