@@ -95,7 +95,7 @@ export function GradingPanel({
                       {g.comment && <p className="text-muted-foreground">{g.comment}</p>}
                     </div>
                     <Badge variant={g.score > SNAPSHOT_PASS_EXCLUSIVE ? "success" : "warning"}>
-                      {g.score.toFixed(1)} / 10
+                      {g.score.toFixed(2)} / 10
                     </Badge>
                   </div>
                 ))}
@@ -150,24 +150,28 @@ interface EditableSnapshotGrade {
   comment: string;
 }
 
-function buildInitialSnapshotGrades(
+export function buildInitialSnapshotGrades(
   review: Response<"submissionReview">,
   studentSnapshots?: StudentSnapshotItem[],
 ): EditableSnapshotGrade[] {
-  if (review.snapshotGrades && review.snapshotGrades.length > 0) {
-    return review.snapshotGrades.map((g) => ({
-      snapshotId: g.snapshotId,
-      title: g.title || g.snapshotId,
-      score: String(g.score),
-      comment: g.comment ?? "",
-    }));
+  if (studentSnapshots?.length) {
+    const grades = new Map(review.snapshotGrades?.map((grade) => [grade.snapshotId, grade]));
+    return studentSnapshots.map((snapshot) => {
+      const grade = grades.get(snapshot.snapshotId);
+      return {
+        snapshotId: snapshot.snapshotId,
+        title: snapshot.title || snapshot.snapshotId,
+        score: grade ? String(grade.score) : "",
+        comment: grade?.comment ?? "",
+      };
+    });
   }
-  if (studentSnapshots && studentSnapshots.length > 0) {
-    return studentSnapshots.map((s) => ({
-      snapshotId: s.snapshotId,
-      title: s.title || s.snapshotId,
-      score: "",
-      comment: "",
+  if (review.snapshotGrades?.length) {
+    return review.snapshotGrades.map((grade) => ({
+      snapshotId: grade.snapshotId,
+      title: grade.title || grade.snapshotId,
+      score: String(grade.score),
+      comment: grade.comment ?? "",
     }));
   }
   return [
@@ -299,7 +303,7 @@ function GradeForm({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">
           {t(
-            "Every required snapshot must score > 5.0 / 10 (5.1 or higher) with a mandatory overall summary to pass and unlock the next Lab; any snapshot <= 5.0 results in NEEDS REVISION.",
+            "Every required snapshot must score > 5.0 / 10 (5.01 or higher) with a mandatory overall summary to pass and unlock the next Lab; any snapshot <= 5.0 results in NEEDS REVISION.",
           )}
         </p>
         <label className="flex items-center gap-2 text-xs font-medium">
@@ -339,7 +343,7 @@ function GradeForm({
                     type="number"
                     min={0}
                     max={10}
-                    step="0.1"
+                    step="0.01"
                     placeholder="0.0 – 10.0"
                     value={row.score}
                     onChange={(e) =>
@@ -397,7 +401,7 @@ function GradeForm({
       {!valid && (
         <p role="alert" className="text-sm text-destructive">
           {usePerSnapshot
-            ? t("Enter a score between 0.0 and 10.0 for every snapshot (e.g. 5.1 to pass).")
+            ? t("Enter a score between 0.0 and 10.0 for every snapshot (e.g. 5.01 to pass).")
             : t("Enter a score between 0 and 100 with at most two decimal places.")}
         </p>
       )}
