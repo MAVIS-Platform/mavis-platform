@@ -260,7 +260,17 @@ class SubmissionServiceImplTest {
     @Test void submittedStudioEvidenceIsFrozenIndependentlyOfLiveSession() {
         runtimeSession.setScenarioConfig(objectMapper.createObjectNode().put("interactiveStudio",true));
         runtimeSession.setReceiptDigest("sha256:fixture");
+        runtimeSession.setSandboxEnforcementConfirmed(true);
         var control=objectMapper.createObjectNode().put("receiptSignature","hmac-sha256:fixture");
+        control.putArray("actions").addObject().put("action", "STOP").put("service", "orders");
+        var receipt = objectMapper.createObjectNode();
+        receipt.putObject("outcome").putObject("trace").putArray("spans").addObject().put("spanId", "fixture");
+        var action = receipt.putArray("infrastructureActions").addObject()
+                .put("action", "STOP").put("service", "orders").put("replicasBefore", 1).put("replicasAfter", 0)
+                .put("confirmed", true);
+        action.putObject("metricsBefore");
+        action.putObject("metricsAfter");
+        runtimeSession.setRunnerReceiptJson(receipt);
         control.putArray("snapshots").addObject().put("id","captured").put("explanation","Observed fallback").put("imageData","png-fixture");
         runtimeSession.setStudioControl(control);
         when(userRepository.findById(userId)).thenReturn(Optional.of(student));
@@ -327,7 +337,7 @@ class SubmissionServiceImplTest {
     }
 
     @Test
-    void courseSubmissionReportsEveryMissingFourStageEvidenceItem() {
+    void courseSubmissionRequiresImmutableStaticEvidence() {
         var workspace=Workspace.builder().id(UUID.randomUUID()).courseMode(true).status("ACTIVE").build();
         student.setRole(Role.builder().code("STUDENT").build());
         assignment.setWorkspace(workspace);assignment.setLabOrder(1);assignment.setRequireRuntimeTrace(false);
@@ -344,11 +354,7 @@ class SubmissionServiceImplTest {
         var request=SubmissionCreateRequest.builder().assignmentId(assignmentId).projectId(projectId)
                 .modelVersionId(modelVersionId).diagramVersionId(diagramVersionId).build();
         assertThatThrownBy(()->submissionService.submitAssignment(request)).isInstanceOf(BusinessException.class)
-                .hasMessageContaining("INCOMPLETE_4STAGE_EVIDENCE")
-                .hasMessageContaining("STEP_1_STATIC_ANALYZED")
-                .hasMessageContaining("STEP_2_C4_GROUND_TRUTH_70")
-                .hasMessageContaining("STEP_3_RUNTIME_OTEL_VIEW")
-                .hasMessageContaining("STEP_4_SIGNED_RUNTIME_RECEIPT");
+                .hasMessage("STEP_1_STATIC_ANALYZED");
         verify(submissionSnapshotRepository,never()).save(any());
     }
 
@@ -799,7 +805,7 @@ class SubmissionServiceImplTest {
 
         assertThatThrownBy(() -> submissionService.submitAssignment(missingNotesReq))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("Written theoretical explanation is required");
+                .hasMessageContaining("SUBMISSION_SNAPSHOT_EXPLANATIONS_REQUIRED");
 
         var snapshotItems = List.of(
                 SubmissionCreateRequest.StudentSnapshotItemDTO.builder()

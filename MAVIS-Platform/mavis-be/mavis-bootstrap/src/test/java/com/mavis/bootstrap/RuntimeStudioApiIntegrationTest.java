@@ -333,10 +333,7 @@ class RuntimeStudioApiIntegrationTest extends ApiIntegrationContext {
             "runtimeSessionId", session.getId(),
             "submissionNotes", "Completed 4-stage Lab 1 with Before/After Studio scaling snapshots.",
             "studentSnapshots", java.util.List.of(
-                Map.of("snapshotId", snapBeforeId, "step", "STEP_3", "title", "Baseline 1 Replica",
-                    "writtenExplanation", "Orders service baseline at 1 replica before scaling."),
-                Map.of("snapshotId", snapAfterId, "step", "STEP_4", "title", "Scaled 2 Replicas",
-                    "writtenExplanation", "Orders service scaled to 2 replicas with p95 latency reduced from 42ms to 19ms.")
+                Map.of("snapshotId", "STEP_1_STATIC", "step", "STEP_1_STATIC", "writtenExplanation", "Orders calls Payment.")
             )
         );
         var submitRes = mvc.perform(post("/api/v1/submissions").header("Authorization", studentAuth)
@@ -346,13 +343,20 @@ class RuntimeStudioApiIntegrationTest extends ApiIntegrationContext {
             .andReturn();
         String submissionId = mapper.readTree(submitRes.getResponse().getContentAsString()).path("data").path("id").asText();
 
-        // Lecturer grades both Studio snapshots (> 5.0) and approves Lab 1 -> unlocks Lab 2
+        // The backend adds both server-captured Snapshot IDs after the static explanation.
+        var saved = mapper.readTree(submitRes.getResponse().getContentAsString()).path("data").path("studentSnapshots");
+        org.junit.jupiter.api.Assertions.assertEquals(3, saved.size());
+        org.junit.jupiter.api.Assertions.assertEquals(snapBeforeId, saved.get(1).path("snapshotId").asText());
+        org.junit.jupiter.api.Assertions.assertEquals(snapAfterId, saved.get(2).path("snapshotId").asText());
+
+        // Lecturer grades all frozen snapshots (> 5.0) and approves Lab 1 -> unlocks Lab 2
         var reviewBody = Map.of(
             "expectedRevision", 0,
             "status", "GRADED",
             "score", 88.0,
             "summary", "Verified Before/After Studio scaling snapshots and OTel trace correlation.",
             "snapshotGrades", java.util.List.of(
+                Map.of("snapshotId", "STEP_1_STATIC", "score", 9.0),
                 Map.of("snapshotId", snapBeforeId, "title", "Baseline 1 Replica", "score", 8.5, "comment", "Clear baseline capture"),
                 Map.of("snapshotId", snapAfterId, "title", "Scaled 2 Replicas", "score", 9.0, "comment", "Accurate latency comparison")
             )
@@ -662,8 +666,7 @@ class RuntimeStudioApiIntegrationTest extends ApiIntegrationContext {
                 "runtimeSessionId", session.getId(),
                 "submissionNotes", "Full-stack live Docker Studio run with STOP/START/SCALE and Before/After snapshots.",
                 "studentSnapshots", java.util.List.of(
-                    Map.of("snapshotId", snapBeforeId, "step", "STEP_3", "title", "Live Baseline", "writtenExplanation", "Initial 1-replica baseline"),
-                    Map.of("snapshotId", snapAfterId, "step", "STEP_4", "title", "Live Scaled 2 Replicas", "writtenExplanation", "Scaled orders to 2 replicas after fault recovery")
+                    Map.of("snapshotId", "STEP_1_STATIC", "step", "STEP_1_STATIC", "writtenExplanation", "Orders calls Payment.")
                 )
             );
             var submitRes = mvc.perform(post("/api/v1/submissions").header("Authorization", studentAuth)
@@ -679,6 +682,7 @@ class RuntimeStudioApiIntegrationTest extends ApiIntegrationContext {
                 "score", 92.5,
                 "summary", "Full-stack live Docker & OpenTelemetry Studio submission verified.",
                 "snapshotGrades", java.util.List.of(
+                    Map.of("snapshotId", "STEP_1_STATIC", "score", 9.0),
                     Map.of("snapshotId", snapBeforeId, "title", "Live Baseline", "score", 9.0, "comment", "Verified baseline"),
                     Map.of("snapshotId", snapAfterId, "title", "Live Scaled 2 Replicas", "score", 9.5, "comment", "Verified scale to 2 replicas")
                 )

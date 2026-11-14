@@ -26,6 +26,7 @@ public class SubmissionResponseDTO {
 
     private UUID id;
     private UUID assignmentId;
+    private boolean guidedLab;
     private String assignmentTitle;
     private UUID projectId;
     private String projectName;
@@ -65,6 +66,7 @@ public class SubmissionResponseDTO {
         return SubmissionResponseDTO.builder()
                 .id(s.getId())
                 .assignmentId(s.getAssignment() != null ? s.getAssignment().getId() : null)
+                .guidedLab(s.getAssignment() != null && s.getAssignment().getLabOrder() != null)
                 .assignmentTitle(s.getAssignment() != null ? s.getAssignment().getTitle() : null)
                 .projectId(s.getProject() != null ? s.getProject().getId() : null)
                 .projectName(s.getProject() != null ? s.getProject().getName() : null)

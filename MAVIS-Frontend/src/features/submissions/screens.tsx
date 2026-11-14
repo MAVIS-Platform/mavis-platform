@@ -201,6 +201,7 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
           <GradingPanel
             key={query.data.id}
             submissionId={query.data.id}
+            guidedLab={query.data.guidedLab === true}
             studentSnapshots={query.data.studentSnapshots ?? undefined}
           />
           <section id="review" className="scroll-mt-24">
