@@ -134,7 +134,11 @@ public static class RunnerProgram
         }
         catch (OperationCanceledException) { Console.Error.WriteLine("Runner operation cancelled or timed out."); return 3; }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or JsonException or InvalidOperationException or KeyNotFoundException)
-        { Console.Error.WriteLine("Input could not be processed; check the supported profile and input references."); return 2; }
+        {
+            if (Environment.GetEnvironmentVariable("MAVIS_RUNNER_DEBUG") == "1") Console.Error.WriteLine(ex);
+            Console.Error.WriteLine("Input could not be processed; check the supported profile and input references.");
+            return 2;
+        }
     }
 
     private static async Task<string> Read(string path, int limit)

@@ -77,3 +77,17 @@ Local verification includes backend topology validation and service authorizatio
 - PreparedStudioActivatesMissingBlockAndConfirmsRealDockerChanges passed against Linux Docker using cached, digest-pinned sample images. It checks route enabled error rate 0%, disabled 100%, re-enabled 0%, scale to two replicas, captured spans and confirmed cleanup. Java callbacks in this test use an in-process transport fixture.
 - Runtime START and SCALE now wait for the target health endpoint before confirming readiness and measuring the next GET/HEAD workload. This fixed an observed startup race in the Docker test.
 - Production deployment, real account authorization through a backend server, and a teacher/student Lab submission round-trip were not exercised in this local run.
+
+## Real Docker + Runner acceptance on 16/11/2026
+
+`RuntimeStudioApiIntegrationTest#realManagedDotnetRunnerAndDockerFullStackStudioFlow` passed with the real .NET Runner process and Linux Docker Engine after rebuilding the runner from current source:
+
+```bash
+dotnet publish MAVIS.Worker/src/MAVIS.Runner/MAVIS.Runner.csproj -c Release \
+  -o MAVIS.Worker/samples/runtime-poc/artifacts/runner-publish \
+  --property:UseAppHost=false
+```
+
+Observed result: STOP payment moved request error rate from 0% to 100%, START returned it to 0%, SCALE orders reached 2 replicas, before/after snapshots were captured, the HMAC receipt and submission evidence were frozen, grading unlocked the next Lab, and cleanup reported `CONFIRMED`. The session was run with V34 and the isolated PostgreSQL test database.
+
+A stale `samples/runtime-poc/artifacts/runner-publish/MAVIS.Runner.dll` can reject a newer run definition with the generic Runner input error. Rebuild the DLL from the current runner source before this opt-in test.
