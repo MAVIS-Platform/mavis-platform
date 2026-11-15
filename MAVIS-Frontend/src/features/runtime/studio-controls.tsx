@@ -1,101 +1,56 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { useApi, useApiMutation, useApiQuery } from "@/hooks/use-api";
+import { useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SelectField } from "@/components/shared/forms";
 import { ErrorState } from "@/components/shared/request-state";
 import { useLocale } from "@/lib/i18n/locale-context";
-import { StudioObservability, captureStudioImage } from "./studio-observability";
+import { StudioObservability } from "./studio-observability";
 import { LiveSandboxParity } from "./live-sandbox-parity";
 import { Textarea } from "@/components/ui/textarea";
 import { StudioSnapshotComparison } from "./studio-snapshot-comparison";
 import { PreparedLiveTopology } from "./prepared-live-topology";
+import { useStudioSession } from "./use-studio-session";
 
 export function StudioControls({ sessionId }: { sessionId: string }) {
   const { t } = useLocale();
-  const api = useApi();
-  const [downloadError, setDownloadError] = useState<Error | null>(null);
-  const state = useApiQuery("studioState", { sessionId }, { enabled: !!sessionId, poll: true });
-  const action = useApiMutation("studioAction");
-  const finish = useApiMutation("studioFinish");
-  const cancel = useApiMutation("stopRuntime");
-  const capture = useApiMutation("studioCapture");
-  const [explanation, setExplanation] = useState("");
-  const [capturing, setCapturing] = useState(false);
+  const {
+    state,
+    services,
+    target,
+    service,
+    setService,
+    replicas,
+    setReplicas,
+    waiting,
+    hasConfirmedAction,
+    runningReplicas,
+    canScaleTarget,
+    busy,
+    action,
+    finish,
+    cancel,
+    capture,
+    explanation,
+    setExplanation,
+    capturing,
+    downloadError,
+    chaosTarget,
+    setChaosTarget,
+    send,
+    finishStudio,
+    cancelStudio,
+    captureSnapshot,
+    downloadReceipt,
+    downloadSnapshot,
+  } = useStudioSession(sessionId);
   const workspace = useRef<HTMLElement>(null);
-  const [chaosTarget, setChaosTarget] = useState("");
-  const [service, setService] = useState("");
-  const [replicas, setReplicas] = useState(2);
-  const pending = useRef<{
-    actionId: string;
-    action: "START" | "STOP" | "SCALE";
-    service: string;
-    replicas?: number;
-  } | null>(null);
-  const services = state.data?.services ?? [];
-  const target = services.includes(service) ? service : (services[0] ?? "");
   if (!state.data?.interactive)
     return state.isError ? (
       <ErrorState error={state.error} onRetry={() => void state.refetch()} />
     ) : null;
   const data = state.data;
-  const waiting = data.actions.some(
-    (item) => item.status === "PENDING" || item.status === "RUNNING",
-  );
-  const hasConfirmedAction = data.actions.some((item) => item.status === "CONFIRMED");
-  const lastConfirmedReplicas = [...data.actions]
-    .reverse()
-    .find((item) => item.service === target && item.status === "CONFIRMED")?.result?.replicasAfter;
-  // The first Studio render may not have an action history yet. Runner telemetry is
-  // the source of truth for that initial state; a confirmed action takes precedence
-  // while the next telemetry sample is still in flight.
-  const observedRunningReplicas = data.telemetry?.services.find(
-    (item) => item.service === target,
-  )?.runningReplicas;
-  const runningReplicas = lastConfirmedReplicas ?? observedRunningReplicas;
-  const selectedBlock = data.topology?.blocks.find((block) => block.service === target);
-  const canScaleTarget = data.topology ? selectedBlock?.canScale === true : Boolean(target);
-  const busy =
-    state.isError ||
-    action.isPending ||
-    finish.isPending ||
-    cancel.isPending ||
-    waiting ||
-    data.finishRequested ||
-    data.executionStatus !== "RUNNING";
-  async function send(
-    kind: "START" | "STOP" | "SCALE",
-    targetService = target,
-    overrideReplicas?: number,
-  ) {
-    const requestedReplicas = overrideReplicas ?? replicas;
-    if (overrideReplicas !== undefined) {
-      setReplicas(overrideReplicas);
-    }
-    const previous = pending.current;
-    const command =
-      previous &&
-      previous.action === kind &&
-      previous.service === targetService &&
-      previous.replicas === (kind === "SCALE" ? requestedReplicas : undefined)
-        ? previous
-        : {
-            actionId: crypto.randomUUID(),
-            action: kind,
-            service: targetService,
-            ...(kind === "SCALE" ? { replicas: requestedReplicas } : {}),
-          };
-    pending.current = command;
-    try {
-      await action.mutateAsync({ sessionId, ...command });
-      pending.current = null;
-      await state.refetch();
-    } catch {
-      await state.refetch();
-    }
-  }
   return (
     <section ref={workspace} className="space-y-3 rounded-lg border p-4" aria-label="MAVIS Studio">
       <h3 className="font-medium">MAVIS Studio</h3>
@@ -182,12 +137,7 @@ export function StudioControls({ sessionId }: { sessionId: string }) {
             data.finishRequested ||
             data.executionStatus !== "RUNNING"
           }
-          onClick={() =>
-            void finish
-              .mutateAsync({ sessionId })
-              .then(() => state.refetch())
-              .catch(() => state.refetch())
-          }
+          onClick={() => void finishStudio()}
         >
           {t("Finish Studio and save evidence")}
         </Button>
@@ -195,12 +145,7 @@ export function StudioControls({ sessionId }: { sessionId: string }) {
           type="button"
           variant="outline"
           disabled={cancel.isPending || data.executionStatus !== "RUNNING"}
-          onClick={() =>
-            void cancel
-              .mutateAsync({ sessionId, action: "cancel" })
-              .then(() => state.refetch())
-              .catch(() => state.refetch())
-          }
+          onClick={() => void cancelStudio()}
         >
           {t("Cancel Studio session")}
         </Button>
@@ -379,30 +324,7 @@ export function StudioControls({ sessionId }: { sessionId: string }) {
       <section className="space-y-2">
         <h4 className="font-medium">{t("Capture evidence snapshot")}</h4>
         {data.receiptDigest && (
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              setDownloadError(null);
-              void api
-                .execute("studioReceipt", { sessionId })
-                .then((evidence) => {
-                  const url = URL.createObjectURL(
-                    new Blob([JSON.stringify(evidence, null, 2)], { type: "application/json" }),
-                  );
-                  const link = document.createElement("a");
-                  link.href = url;
-                  link.download = `studio-receipt-${sessionId}.json`;
-                  link.click();
-                  URL.revokeObjectURL(url);
-                })
-                .catch((error) =>
-                  setDownloadError(
-                    error instanceof Error ? error : new Error("Could not load receipt"),
-                  ),
-                );
-            }}
-          >
+          <Button type="button" variant="outline" onClick={() => void downloadReceipt()}>
             {t(data.receiptSignature ? "Download signed receipt" : "Download receipt")}
           </Button>
         )}
@@ -424,34 +346,11 @@ export function StudioControls({ sessionId }: { sessionId: string }) {
             waiting ||
             (data.snapshots?.length ?? 0) >= 8
           }
-          onClick={() => {
-            setCapturing(true);
-            setDownloadError(null);
-            const graph = workspace.current?.querySelector<SVGSVGElement>("svg[data-studio-graph]");
-            if (!graph) {
-              setCapturing(false);
-              return;
-            }
-            void captureStudioImage(graph)
-              .then((imageData) =>
-                capture.mutateAsync({
-                  sessionId,
-                  explanation: explanation.trim(),
-                  imageData,
-                  observedAt: data.telemetry?.observedAt,
-                }),
-              )
-              .then(() => {
-                setExplanation("");
-                return state.refetch();
-              })
-              .catch((error) =>
-                setDownloadError(
-                  error instanceof Error ? error : new Error("Could not capture evidence"),
-                ),
-              )
-              .finally(() => setCapturing(false));
-          }}
+          onClick={() =>
+            void captureSnapshot(
+              workspace.current?.querySelector<SVGSVGElement>("svg[data-studio-graph]") ?? null,
+            )
+          }
         >
           {t("Capture evidence snapshot")}
         </Button>
@@ -465,26 +364,7 @@ export function StudioControls({ sessionId }: { sessionId: string }) {
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => {
-                setDownloadError(null);
-                void api
-                  .execute("studioSnapshot", { sessionId, snapshotId: snapshot.id })
-                  .then((evidence) => {
-                    const url = URL.createObjectURL(
-                      new Blob([JSON.stringify(evidence, null, 2)], { type: "application/json" }),
-                    );
-                    const link = document.createElement("a");
-                    link.href = url;
-                    link.download = `studio-evidence-${snapshot.id}.json`;
-                    link.click();
-                    URL.revokeObjectURL(url);
-                  })
-                  .catch((error) =>
-                    setDownloadError(
-                      error instanceof Error ? error : new Error("Could not load evidence"),
-                    ),
-                  );
-              }}
+              onClick={() => void downloadSnapshot(snapshot.id)}
             >
               {t("Download evidence")}
             </Button>

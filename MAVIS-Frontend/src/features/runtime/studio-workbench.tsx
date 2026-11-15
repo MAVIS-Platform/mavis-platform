@@ -40,7 +40,6 @@ import { useApiQuery } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { SelectField } from "@/components/shared/forms";
 import { LocaleSwitchButton, useLocale } from "@/lib/i18n/locale-context";
 import { AppearanceSelector } from "@/components/appearance-selector";
 import type { Response } from "@/lib/api/contracts";
@@ -51,8 +50,7 @@ import {
   type StudioQuickAction,
 } from "./studio-observability";
 import { startStudioRecording } from "./studio-recording";
-import { StudioControls } from "./studio-controls";
-import { LiveSandboxParity } from "./live-sandbox-parity";
+import { LiveStudioWorkbench } from "./live-studio-workbench";
 import { useStudioSound } from "./studio-sound";
 import {
   downloadStudioEvidence,
@@ -65,16 +63,6 @@ import {
 } from "./studio-evidence";
 
 type StudioData = Response<"studioState">;
-
-const EMPTY_LIVE_STUDIO: StudioData = {
-  sessionId: "",
-  interactive: true,
-  services: [],
-  finishRequested: false,
-  executionStatus: "NOT_STARTED",
-  cleanupStatus: "UNKNOWN",
-  actions: [],
-};
 
 type SandboxTemplate = {
   id: string;
@@ -1655,51 +1643,13 @@ export function StudioWorkbench() {
 
       <p role="status" className="sr-only">{clipboardMessage}</p>
       {mode === "LIVE" ? (
-        <div className="flex-1 overflow-y-auto p-5">
-          <div className="mx-auto max-w-6xl space-y-4 rounded-xl border bg-card p-4">
-            <div className="flex flex-wrap items-end justify-between gap-3">
-              <Button asChild size="sm">
-                <Link href="/sessions?studio=1">{t("Prepare and start Live project")}</Link>
-              </Button>
-              <SelectField
-                label={t("Select active or recent runtime session")}
-                value={liveSessionId || (liveSessions[0]?.id ?? "")}
-                onChange={setLiveSessionId}
-                options={
-                  liveSessions.length > 0
-                    ? liveSessions.map((s) => ({
-                        value: s.id,
-                        label: `${s.id.slice(0, 8)} · ${s.scenarioName ?? "Studio Session"} · ${s.executionStatus}`,
-                      }))
-                    : [{ value: "", label: t("No live Docker sessions found") }]
-                }
-              />
-              <Button type="button" variant="outline" size="sm" onClick={() => setMode("SANDBOX")}>
-                {t("Switch to Instant Sandbox Builder")}
-              </Button>
-            </div>
-            {liveSessionId || liveSessions[0]?.id ? (
-              <StudioControls
-                key={liveSessionId || liveSessions[0]!.id}
-                sessionId={liveSessionId || liveSessions[0]!.id}
-              />
-            ) : (
-              <div className="space-y-3">
-                <p className="text-sm text-muted-foreground">
-                  {t(
-                    "No live Docker session is currently active. Start one from the Lab runtime workspace or switch to Sandbox to explore the same controls with simulation.",
-                  )}
-                </p>
-                <LiveSandboxParity
-                  data={EMPTY_LIVE_STUDIO}
-                  selected=""
-                  busy
-                  onSelect={() => undefined}
-                  onCommand={async () => undefined}
-                />
-              </div>
-            )}
-          </div>
+        <div className="flex min-h-0 flex-1 p-3">
+          <LiveStudioWorkbench
+            sessions={liveSessions}
+            sessionId={liveSessionId}
+            onSelectSession={setLiveSessionId}
+            onSwitchToSandbox={() => setMode("SANDBOX")}
+          />
         </div>
       ) : (
         /* 4-ZONE STANDALONE WORKBENCH LAYOUT (MATCHING USER WIREFRAME) */

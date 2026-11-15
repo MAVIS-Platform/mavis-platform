@@ -8,7 +8,12 @@ fs.mkdirSync(output, { recursive: true });
 const webpack = require("next/dist/compiled/webpack/webpack");
 webpack.init();
 const loader = path.join(output, "typescript-loader.cjs");
+const navigation = path.join(output, "navigation.ts");
 const entry = path.join(output, "fixture.tsx");
+fs.writeFileSync(
+  navigation,
+  'import React from "react";export const useSearchParams=()=>new URLSearchParams(location.search);export const usePathname=()=>"/studio";export const useRouter=()=>({push(){},replace(){},prefetch(){}});export default function Link({href,children,...props}){return React.createElement("a",{href:typeof href==="string"?href:"#",...props},children)}',
+);
 fs.writeFileSync(
   loader,
   `const ts=require(${JSON.stringify(require.resolve("typescript"))});module.exports=s=>ts.transpileModule(s,{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;`,
@@ -22,6 +27,7 @@ import {QueryClient,QueryClientProvider} from '@tanstack/react-query';
 import {ApiContext} from '@/providers/app-context';
 import {LocaleProvider} from '@/lib/i18n/locale-context';
 import {StudioControls} from '@/features/runtime/studio-controls';
+import {LiveStudioWorkbench} from '@/features/runtime/live-studio-workbench';
 import {StudioSubmissionEvidence} from '@/features/submissions/studio-evidence';
 import {GradingPanel} from '@/features/submissions/grading';
 const state={sessionId:'fixture',interactive:true,services:['orders','payment'],executionStatus:'RUNNING',cleanupStatus:'NOT_APPLICABLE',finishRequested:false,actions:[]};
@@ -75,7 +81,7 @@ const api={mode:'backend',async execute(op,input){
  return structuredClone(state);
 }};
 const client=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
-createRoot(document.getElementById('root')).render(<LocaleProvider><ApiContext.Provider value={api}><QueryClientProvider client={client}><div style={{padding:16}}><StudioControls sessionId="fixture"/><StudioSubmissionEvidence submissionId="submitted-fixture" available={true}/><GradingPanel submissionId="submitted-fixture" guidedLab studentSnapshots={[{snapshotId:'static',title:'Static C1–C3'},{snapshotId:'runtime',title:'Studio capture'}]}/></div></QueryClientProvider></ApiContext.Provider></LocaleProvider>);
+createRoot(document.getElementById('root')).render(<LocaleProvider><ApiContext.Provider value={api}><QueryClientProvider client={client}><div style={{padding:16}}>{location.search.includes("workbench=1")?<LiveStudioWorkbench sessions={[{id:'fixture',scenarioName:'Fixture session',executionStatus:'RUNNING'}]} sessionId="fixture" onSelectSession={()=>{}} onSwitchToSandbox={()=>{}}/>:<StudioControls sessionId="fixture"/>}<StudioSubmissionEvidence submissionId="submitted-fixture" available={true}/><GradingPanel submissionId="submitted-fixture" guidedLab studentSnapshots={[{snapshotId:'static',title:'Static C1–C3'},{snapshotId:'runtime',title:'Studio capture'}]}/></div></QueryClientProvider></ApiContext.Provider></LocaleProvider>);
 `,
 );
 
@@ -88,7 +94,7 @@ async function main() {
         output: { path: output, filename: "fixture.js" },
         resolve: {
           extensions: [".tsx", ".ts", ".js"],
-          alias: { "@": path.join(root, "src") },
+          alias: { "@": path.join(root, "src"), "next/navigation$": navigation, "next/link$": navigation },
           modules: [path.join(root, "node_modules")],
         },
         resolveLoader: { modules: [path.join(root, "node_modules")] },
@@ -288,6 +294,17 @@ async function main() {
     await page.waitForFunction(()=>window.studioCalls.some(call=>call.action==="STOP" && call.service==="orders-payment"));
     await connect.waitFor();
     await page.screenshot({path:path.join(output,"prepared-live-builder.png"),fullPage:true});
+    await page.setViewportSize({width:1440,height:900});
+    await page.goto("http://127.0.0.1:"+server.address().port+"?workbench=1");
+    await page.getByRole("region",{name:"Live block library",exact:true}).waitFor();
+    await page.getByRole("region",{name:"Live inspector",exact:true}).waitFor();
+    await page.getByRole("button",{name:/Service Telemetry & Impact/}).waitFor();
+    await page.screenshot({path:path.join(output,"live-workbench-before-tabs.png"),fullPage:true,animations:"disabled"});
+    await page.getByRole("button",{name:/Stats/}).click();
+    await page.getByText("Step 1: Capture baseline snapshot",{exact:true}).waitFor();
+    await page.getByRole("button",{name:/Snapshots/}).click();
+    await page.getByText("Capture evidence snapshot",{exact:true}).waitFor();
+    await page.screenshot({path:path.join(output,"live-workbench.png"),fullPage:true,animations:"disabled"});
     assert.equal(errors.length, 0, errors.join("\n"));
     console.log("PASS Studio UI and partial grading draft on mobile");
   } finally {
