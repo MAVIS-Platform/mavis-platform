@@ -42,8 +42,10 @@ Hợp đồng kỹ thuật, cơ chế đóng băng bằng chứng nộp bài (`V
 
 **Frontend (`MAVIS-Frontend`):**
 - `src/features/submissions/composer.tsx` (`#submission-composer`): Trình soạn thảo giải trình theo **4 bước/snapshot (`Giai đoạn 1..4`)** hỗ trợ tự điền tên project Guided Mode, gắn `referenceSnapshotId` khi tạo project và nút 1-click `"Run Static Analysis Now"` khi project chưa có model phân tích.
+- Với phiên Studio tương tác, các snapshot C03 đã chụp được đưa vào `studentSnapshots[]` cho cả Guided Lab và bài tự do; frontend không được bỏ các snapshot này chỉ vì `guided = true`. Backend tiếp tục chuẩn hóa danh sách theo Studio evidence đã đóng băng trước khi tính `evidencePackageDigest`.
 - `src/features/submissions/frozen-artifacts.tsx`: Hiển thị `evidencePackageDigest` SHA-256, chứng chỉ Quiz đóng băng (`courseQuizEvidence`), và danh sách giải trình `studentSnapshots[]`.
 - `src/features/submissions/grading.tsx` & `screens.tsx` (`SubmissionResult`): Chuẩn hóa qua `resolveSubmissionOutcome(review)` để cả màn hình kết quả của sinh viên lẫn bảng chấm của giảng viên tuân thủ thống nhất quy tắc `labOutcome` (`> 5.0/10` mọi Snapshot -> `"PASS"`, bất kỳ Snapshot `<= 5.0/10` -> `"NEEDS REVISION"` ngay cả khi điểm tổng `> 50/100`), kèm cảnh báo song ngữ EN/VI trực tiếp trên `GradeForm`.
+- Khi đọc response C04 cũ chưa có `labOutcome`, trạng thái phát hành vẫn được ưu tiên: `PENDING` không hiển thị kết quả và `RETURNED` luôn là `NEEDS REVISION`, không suy ngược thành `PASS` từ điểm cũ.
 
 ## 3. Đối chiếu Ma trận Nghiệm thu BM04 (`Wf04AcceptanceMatrixTest` — **33 ca** gồm `F04`, `F11`, `F12`, `TC-GR01..06`, `TC-ST04`, `TC-WF04-E2E`, `TC-N06`)
 

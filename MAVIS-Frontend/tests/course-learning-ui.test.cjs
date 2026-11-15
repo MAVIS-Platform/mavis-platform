@@ -112,6 +112,11 @@ test("WF-04 submission UI exposes every evidence gate and the sealed package dig
   assert.match(composer, /useCourseQuiz\(workspaceId, assignmentId, guided\)/);
   assert.match(composer, /guided && !stage2Ready/);
   assert.match(composer, /requiresStudio && !stage4Ready/);
+  assert.match(
+    composer,
+    /\.\.\.\(interactiveStudio\s*\? capturedStudioSnapshots\.map/,
+    "guided interactive Studio captures must be included in the C04 submission payload",
+  );
   assert.match(composer, /staticExplanation\.trim\(\)\.length > 0\s+&& \(!requiresStudio \|\| \(interactiveStudio \? capturedStudioSnapshots\.length > 0 : runtimeExplanation\.trim\(\)\.length > 0\)\)/);
   assert.ok(frozen.includes("Evidence package SHA-256"));
   assert.match(contract, /evidencePackageDigest:\s*z\s*\.string\(\)\s*\.regex/);
@@ -471,4 +476,24 @@ test("a partial grading draft keeps valid entered scores and leaves publication 
   });
   assert.equal(parseSnapshotGradeRows([rows[0], { ...rows[1], score: "10.01" }]).invalid, true);
   assert.equal(parseSnapshotGradeRows([rows[0], { ...rows[1], score: "5.00" }]).complete, true);
+});
+
+test("WF-04 released review state wins over legacy score fallback", () => {
+  const { resolveSubmissionOutcome } = require("../src/features/submissions/grading.tsx");
+  assert.equal(
+    resolveSubmissionOutcome({
+      status: "RETURNED",
+      score: 90,
+      snapshotGrades: [{ score: 9 }, { score: 8 }],
+    }),
+    "NEEDS REVISION",
+  );
+  assert.equal(
+    resolveSubmissionOutcome({
+      status: "PENDING",
+      score: 90,
+      snapshotGrades: [{ score: 9 }],
+    }),
+    null,
+  );
 });

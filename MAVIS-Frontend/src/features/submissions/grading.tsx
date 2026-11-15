@@ -25,9 +25,12 @@ export interface SubmissionOutcomeInput {
 export function resolveSubmissionOutcome(
   review: SubmissionOutcomeInput,
 ): "PASS" | "NEEDS REVISION" | null {
-  if (review.status === "DRAFT") return null;
+  if (review.status === "DRAFT" || review.status === "PENDING") return null;
   if (review.labOutcome === "PASSED") return "PASS";
   if (review.labOutcome === "NEEDS_REVISION") return "NEEDS REVISION";
+  // Older C04 responses may not include labOutcome. The released review state
+  // still wins over score-derived fallbacks: a returned submission is never a pass.
+  if (review.status === "RETURNED") return "NEEDS REVISION";
   if (review.snapshotGrades && review.snapshotGrades.length > 0) {
     return review.snapshotGrades.every((g) => g.score > SNAPSHOT_PASS_EXCLUSIVE)
       ? "PASS"

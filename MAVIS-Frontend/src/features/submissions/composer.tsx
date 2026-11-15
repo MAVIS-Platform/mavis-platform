@@ -216,7 +216,7 @@ export function SubmissionComposer({
           },
         ]
       : []),
-    ...(!guided && interactiveStudio
+    ...(interactiveStudio
       ? capturedStudioSnapshots.map((snapshot, index) => ({
           snapshotId: snapshot.id,
           step: "STEP_4_RUNTIME",
