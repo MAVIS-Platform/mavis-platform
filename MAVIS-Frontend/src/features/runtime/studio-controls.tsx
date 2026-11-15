@@ -10,6 +10,7 @@ import { useLocale } from "@/lib/i18n/locale-context";
 import { StudioObservability, captureStudioImage } from "./studio-observability";
 import { Textarea } from "@/components/ui/textarea";
 import { StudioSnapshotComparison } from "./studio-snapshot-comparison";
+import { PreparedLiveTopology } from "./prepared-live-topology";
 
 export function StudioControls({ sessionId }: { sessionId: string }) {
   const { t } = useLocale();
@@ -277,16 +278,19 @@ export function StudioControls({ sessionId }: { sessionId: string }) {
           ))}
         </div>
       </div>
-      <StudioObservability
+      {data.topology ? <PreparedLiveTopology
+        data={data} selected={target} onSelect={setService} busy={busy}
+        onCommand={send}
+      /> : <StudioObservability
         data={data}
         selected={target}
         onSelect={setService}
         busy={busy}
         onQuickAction={(cmd) => {
           setService(cmd.service);
-          void send(cmd.action, cmd.service, cmd.replicas);
+          void send(cmd.action, cmd.service, cmd.replicas).catch(() => undefined);
         }}
-      />
+      />}
       {data.actions.length > 0 && (
         <ol className="space-y-2 text-sm">
           {data.actions.map((item) => (

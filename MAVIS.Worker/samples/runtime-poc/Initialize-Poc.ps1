@@ -17,8 +17,8 @@ if ((& docker info --format '{{.OSType}}').Trim() -ne 'linux') { throw 'Docker L
 Invoke-Checked docker @('pull', $runtime)
 Invoke-Checked docker @('pull', $collector)
 Invoke-Checked docker @('pull', $runnerRuntime)
-foreach ($sample in @('orders','catalog')) {
-    $project = if ($sample -eq 'orders') { 'Orders.csproj' } else { 'Catalog.csproj' }
+foreach ($sample in @('orders','catalog','route-controller')) {
+    $project = switch ($sample) { 'orders' { 'Orders.csproj' } 'catalog' { 'Catalog.csproj' } 'route-controller' { 'RouteController.csproj' } }
     $directory = Join-Path $PSScriptRoot $sample
     Invoke-Checked dotnet @('publish',(Join-Path $directory $project),'-c','Release','-p:UseAppHost=false','-o',(Join-Path $directory 'publish'),'--verbosity','minimal')
     Invoke-Checked docker @('build','--quiet','--build-arg',"RUNTIME_IMAGE=$runtime",'-t',"mavis-poc-${sample}:1",$directory)
@@ -58,7 +58,7 @@ if (!$volume) {
     [IO.File]::WriteAllText($volumeFile,$volume)
 }
 $images = @{}
-foreach ($sample in @('orders','payment','catalog','gateway','runner')) {
+foreach ($sample in @('orders','payment','catalog','gateway','runner','route-controller')) {
     $images[$sample] = (& docker image inspect --format '{{.Id}}' "mavis-poc-${sample}:1").Trim()
     if ($LASTEXITCODE -ne 0) { throw 'Missing PoC image.' }
 }

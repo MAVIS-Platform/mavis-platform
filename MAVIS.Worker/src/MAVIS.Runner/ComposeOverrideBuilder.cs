@@ -4,10 +4,14 @@ namespace MAVIS.Runner;
 
 public sealed record RuntimeEnvironmentBinding(string Name, string Reference);
 public sealed record RuntimeServiceProfile(string Runtime, int ContainerPort, string ReadinessPath = "/health", bool AllowClientErrorReadiness = false);
+public sealed record StudioBlock(string Service, string Label, bool CanScale = false, bool InitiallyStopped = false);
+public sealed record StudioConnection(string From, string To, string ControllerService, string Protocol, bool InitiallyStopped = false);
+public sealed record StudioTopology(int Version, IReadOnlyList<StudioBlock> Blocks, IReadOnlyList<StudioConnection> Connections);
 public sealed record RunnerExecutionProfile(string CollectorImage, string InstrumentationVolume,
     IReadOnlyDictionary<string, RuntimeServiceProfile> Applications, int MemoryMiB = 256, double Cpus = 1,
     int TimeoutSeconds = 120, bool ApprovedForLocalPoc = false, string? ScenarioRunnerImage = null,
-    string DotnetInstrumentationVersion = "1.17.0", string JavaInstrumentationVersion = "2.32.0", IReadOnlyDictionary<string, IReadOnlyList<RuntimeEnvironmentBinding>>? EnvironmentBindings = null);
+    string DotnetInstrumentationVersion = "1.17.0", string JavaInstrumentationVersion = "2.32.0", IReadOnlyDictionary<string, IReadOnlyList<RuntimeEnvironmentBinding>>? EnvironmentBindings = null,
+    StudioTopology? StudioTopology = null);
 
 /// <summary>Generates only an override; it does not claim compatibility or launch workloads.</summary>
 public static class ComposeOverrideBuilder

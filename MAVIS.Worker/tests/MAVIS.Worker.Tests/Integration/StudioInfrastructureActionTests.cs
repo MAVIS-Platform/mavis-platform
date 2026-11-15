@@ -90,6 +90,31 @@ public sealed class StudioInfrastructureActionTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task PreparedTopologyStopsOptionalBlockAfterReadinessBeforeBaseline()
+    {
+        var docker = new MockDocker();
+        var definition = CreateDefinition([]);
+        definition = definition with
+        {
+            InteractiveStudio = true,
+            Profile = definition.Profile with
+            {
+                StudioTopology = new(1,
+                    [new("order-service", "Orders", true), new("payment-service", "Payment", InitiallyStopped: true)], [])
+            }
+        };
+        var session = new DockerComposeSession(definition, _root, "receivers: {}", docker);
+        var directory = Path.Combine(_root, ResourceProject);
+        Directory.CreateDirectory(directory);
+        typeof(DockerComposeSession).GetField("_directory", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .SetValue(session, directory);
+        await session.WaitUntilReadyAsync(CancellationToken.None);
+        Assert.Equal(0, docker.RunningCounts["payment-service"]);
+        Assert.Equal(1, docker.RunningCounts["order-service"]);
+        Assert.Empty(session.ObservedInfrastructureActions);
+    }
+
     private static RuntimeRunDefinition CreateDefinition(IReadOnlyList<RuntimeInfrastructureActionDefinition> actions)
     {
         var digest = new string('a', 64);

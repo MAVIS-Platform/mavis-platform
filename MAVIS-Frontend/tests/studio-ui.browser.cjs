@@ -36,6 +36,16 @@ state.telemetry={observedAt:new Date().toISOString(),services:[
  spans:[{traceId:'trace-observed',spanId:'span-orders',runtimeService:'orders',httpStatusCode:200,spanStatus:'OK'}],
  interactions:[{traceId:'trace-observed',fromService:'orders',toService:'payment',parentSpanId:'span-orders',childSpanId:'span-payment'}]};
 state.snapshots=[];
+if (location.search.includes("prepared=1")) {
+  state.topology={version:1,blocks:[
+    {service:"orders",label:"Orders",canScale:true,initiallyStopped:false},
+    {service:"payment",label:"Payment",canScale:false,initiallyStopped:true}
+  ],connections:[{from:"orders",to:"payment",controllerService:"orders-payment",protocol:"HTTP",initiallyStopped:true}]};
+  state.services.push("orders-payment");
+  state.telemetry.services[1].replicas=0;state.telemetry.services[1].runningReplicas=0;
+  state.telemetry.services.push({service:"orders-payment",replicas:0,runningReplicas:0,stats:[],logs:"stopped"});
+  state.telemetry.interactions=[];
+}
 window.studioCalls=[];
 let review={submissionId:'submitted-fixture',revision:0,status:'PENDING',score:null,summary:'',snapshotGrades:[],labOutcome:'PENDING'};
 const api={mode:'backend',async execute(op,input){
@@ -50,8 +60,8 @@ const api={mode:'backend',async execute(op,input){
  if(op==='studioAction'){
   window.studioCalls.push(input);
   state.actions.push({...input,status:'PENDING',requestedAt:new Date().toISOString()});
-  setTimeout(()=>{const a=state.actions.at(-1);a.status='CONFIRMED';a.result={action:a.action,service:a.service,confirmed:true,replicasBefore:1,replicasAfter:a.replicas??0,metricsBefore:{requestCount:1,p95LatencyMs:20},metricsAfter:{requestCount:1,p95LatencyMs:30}};
-    const target=state.telemetry.services.find(service=>service.service===a.service);target.replicas=a.replicas??0;target.runningReplicas=a.replicas??0;state.telemetry.observedAt=new Date().toISOString();},1800);
+  setTimeout(()=>{const a=state.actions.at(-1);a.status='CONFIRMED';a.result={action:a.action,service:a.service,confirmed:true,replicasBefore:1,replicasAfter:a.action==="START"?1:a.replicas??0,metricsBefore:{requestCount:1,p95LatencyMs:20},metricsAfter:{requestCount:1,p95LatencyMs:30}};
+    const target=state.telemetry.services.find(service=>service.service===a.service);target.replicas=a.action==="START"?1:a.replicas??0;target.runningReplicas=target.replicas;state.telemetry.observedAt=new Date().toISOString();},1800);
  }
  if(op==='studioFinish'){state.finishRequested=true;state.executionStatus='COMPLETED';state.cleanupStatus='CONFIRMED'}
  if(op==='studioCapture'){state.snapshots.push({id:'snapshot-'+(state.snapshots.length+1),sessionId:'fixture',sourceSnapshotId:'source-1',modelVersionId:'model-1',
@@ -225,6 +235,23 @@ async function main() {
     await page.getByRole("button",{name:"Dừng dịch vụ",exact:true}).waitFor();
     await page.getByRole("button",{name:"3D",exact:true}).click();
     await page.screenshot({path:path.join(output,"studio-vi.png"),fullPage:true,animations:"disabled"});
+    await page.evaluate(()=>localStorage.setItem("mavis.locale","en"));
+    await page.goto("http://127.0.0.1:"+server.address().port+"?prepared=1");
+    const builder=page.getByRole("region",{name:"Prepared Live builder"});
+    await builder.waitFor();
+    await builder.getByRole("button",{name:"+ Add · Payment",exact:true}).click();
+    await page.waitForFunction(()=>window.studioCalls.some(call=>call.action==="START" && call.service==="payment"));
+    await builder.getByRole("button",{name:"Running · Payment",exact:true}).waitFor();
+    await builder.getByText("Prepared connections",{exact:true}).click();
+    const connect=builder.getByRole("button",{name:"Connect",exact:true});
+    await connect.click();
+    await page.waitForFunction(()=>window.studioCalls.some(call=>call.action==="START" && call.service==="orders-payment"));
+    await builder.getByRole("button",{name:"Disconnect",exact:true}).waitFor();
+    assert.equal(await builder.locator("[data-studio-edge-from=orders][data-studio-edge-to=payment]").count(),1);
+    await builder.getByRole("button",{name:"Disconnect",exact:true}).click();
+    await page.waitForFunction(()=>window.studioCalls.some(call=>call.action==="STOP" && call.service==="orders-payment"));
+    await connect.waitFor();
+    await page.screenshot({path:path.join(output,"prepared-live-builder.png"),fullPage:true});
     assert.equal(errors.length, 0, errors.join("\n"));
     console.log("PASS Studio UI and partial grading draft on mobile");
   } finally {

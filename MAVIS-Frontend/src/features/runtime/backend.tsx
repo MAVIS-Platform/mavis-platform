@@ -42,6 +42,7 @@ import { ConfirmDialog, Pagination, SearchInput, SelectField } from "@/component
 import { AdminToolbar } from "@/features/administration/operations";
 import { Button } from "@/components/ui/button";
 import { StudioControls } from "./studio-controls";
+import { PreparedTopologyEditor } from "./prepared-topology-editor";
 
 const active = new Set([
   "NOT_STARTED",
@@ -2519,6 +2520,10 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
               )}
             </div>
             <div className="flex flex-wrap items-end gap-2 shrink-0">
+              {interactiveStudio && config.data && !config.data.profile?.["studioTopologyInherited"] && (
+                <PreparedTopologyEditor projectId={projectId} configuration={config.data}
+                  onSaved={() => { void config.refetch(); }} />
+              )}
               <label className="flex items-center gap-2 text-sm">
                 <input type="checkbox" checked={interactiveStudio} disabled={studioBusy}
                   onChange={event=>setInteractiveStudio(event.target.checked)}/>

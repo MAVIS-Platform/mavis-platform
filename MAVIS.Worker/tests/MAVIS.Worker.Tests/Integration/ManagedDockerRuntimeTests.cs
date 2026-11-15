@@ -18,6 +18,13 @@ public sealed class ManagedDockerRuntimeTests
 {
     [ManagedDockerFact]
     public async Task InteractiveStudioProcessesStopStartScaleBeforeFinishingAndCleaning()
+        => await RunInteractiveStudio(false);
+
+    [ManagedDockerFact]
+    public async Task PreparedStudioActivatesMissingBlockAndConfirmsRealDockerChanges()
+        => await RunInteractiveStudio(true);
+
+    private static async Task RunInteractiveStudio(bool prepared)
     {
         var poc = Environment.GetEnvironmentVariable("MAVIS_MANAGED_DOCKER_TEST_ROOT")!;
         using var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(poc, "artifacts", "manifest.json")));
@@ -35,37 +42,61 @@ public sealed class ManagedDockerRuntimeTests
             new Dictionary<string,string> { ["orders"]="550e8400-e29b-41d4-a716-446655440001", ["payment"]="550e8400-e29b-41d4-a716-446655440002" },
             "config","scenario",project,InteractiveStudio:true);
         definition = definition with { Scenario = definition.Scenario with { SessionId = definition.SessionId } };
-        var handler = new StudioJava(definition);
+        if (prepared) {
+            var applications = new Dictionary<string, RuntimeServiceProfile>(definition.Profile.Applications)
+                { ["orders-payment-route"] = new("dotnet8-linux-x64-glibc",8080) };
+            var mappings = new Dictionary<string,string>(definition.ConfirmedServiceMappings)
+                { ["orders-payment-route"] = "550e8400-e29b-41d4-a716-446655440003" };
+            definition = definition with {
+                ComposeYaml = definition.ComposeYaml.Replace("PAYMENT_URL: http://payment:8080", "PAYMENT_URL: http://orders-payment-route:8080")
+                    + $"  orders-payment-route:\n    image: {images.GetProperty("route-controller").GetString()}\n    environment:\n      UPSTREAM_URL: http://payment:8080\n",
+                ConfirmedServiceMappings = mappings,
+                Profile = definition.Profile with {
+                    Applications = applications,
+                    StudioTopology = new(1, [new("orders", "Orders", true), new("payment", "Payment", InitiallyStopped: true)],
+                        [new("orders","payment","orders-payment-route","HTTP",true)])
+                }
+            };
+        }
+        var handler = new StudioJava(definition, prepared);
         using var client = new JavaRuntimeClient(new Uri("http://127.0.0.1:8080"),"fixture-managed-key",handler);
         var outcome = await new ManagedRuntimeAdapter(client,new RecordedDocker(root))
             .RunAsync(definition.SessionId,Path.Combine(poc,"collector.yaml"),root);
         Assert.Equal("Completed",outcome.ExecutionStatus);
         Assert.Equal("Confirmed",outcome.CleanupStatus);
-        Assert.Equal(new[]{"STOP","START","SCALE"}, outcome.InfrastructureActions!.Select(action=>action.Action));
+        Assert.Equal(prepared ? new[]{"START","START","STOP","START","SCALE"} : new[]{"STOP","START","SCALE"}, outcome.InfrastructureActions!.Select(action=>action.Action));
+        if (prepared) {
+            Assert.Equal(0, outcome.InfrastructureActions![0].ReplicasBefore);
+            Assert.Equal(1, outcome.InfrastructureActions[0].ReplicasAfter);
+            Assert.Equal(0d, outcome.InfrastructureActions[1].MetricsAfter["errorRatePercent"]!.GetValue<double>());
+            Assert.Equal(100d, outcome.InfrastructureActions[2].MetricsAfter["errorRatePercent"]!.GetValue<double>());
+            Assert.Equal(0d, outcome.InfrastructureActions[3].MetricsAfter["errorRatePercent"]!.GetValue<double>());
+        }
         Assert.All(outcome.InfrastructureActions!, action=>Assert.True(action.Confirmed));
-        Assert.Equal(2,outcome.InfrastructureActions![2].ReplicasAfter);
-        Assert.Equal(3,handler.Acknowledged);
+        Assert.Equal(2,outcome.InfrastructureActions!.Last().ReplicasAfter);
+        Assert.Equal(prepared ? 5 : 3,handler.Acknowledged);
         Assert.True(handler.Telemetry.Count>=4);
         Assert.Contains(handler.Telemetry,sample=>sample.GetProperty("spans").GetArrayLength()>0);
-        Assert.All(handler.Telemetry,sample=>Assert.Equal(2,sample.GetProperty("services").GetArrayLength()));
+        Assert.All(handler.Telemetry,sample=>Assert.Equal(prepared ? 3 : 2,sample.GetProperty("services").GetArrayLength()));
         Assert.False(Directory.Exists(Path.Combine(root,project)));
         Assert.NotEmpty(outcome.Trace!.Spans);
     }
 
-    private sealed class StudioJava(RuntimeRunDefinition definition) : HttpMessageHandler
+    private sealed class StudioJava(RuntimeRunDefinition definition, bool prepared = false) : HttpMessageHandler
     {
         public int Acknowledged;
         public List<JsonElement> Telemetry {get;}=[];
-        private readonly string[] ids = [Guid.NewGuid().ToString(),Guid.NewGuid().ToString(),Guid.NewGuid().ToString()];
+        private readonly string[] ids = Enumerable.Range(0,5).Select(_=>Guid.NewGuid().ToString()).ToArray();
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken ct)
         {
             object response;
             var route=request.RequestUri!.Segments.Last();
             if(route=="run-definition") response=definition;
             else if(route=="commands")
-                response=new {definition.SessionId,definition.ResourceProject,finishRequested=Acknowledged==3,
-                    command=Acknowledged==3?null:new {actionId=ids[Acknowledged],action=new[]{"STOP","START","SCALE"}[Acknowledged],
-                        service=Acknowledged==2?"orders":"payment",replicas=Acknowledged==2?(int?)2:null}};
+                response=new {definition.SessionId,definition.ResourceProject,finishRequested=Acknowledged==(prepared?5:3),
+                    command=Acknowledged==(prepared?5:3)?null:new {actionId=ids[Acknowledged],action=(prepared ? new[]{"START","START","STOP","START","SCALE"} : new[]{"STOP","START","SCALE"})[Acknowledged],
+                        service=Acknowledged==(prepared?4:2)?"orders":prepared&&Acknowledged>0?"orders-payment-route":"payment",
+                        replicas=Acknowledged==(prepared?4:2)?(int?)2:null}};
             else {
                 var body=await request.Content!.ReadAsStringAsync(ct);
                 using var json=JsonDocument.Parse(body);

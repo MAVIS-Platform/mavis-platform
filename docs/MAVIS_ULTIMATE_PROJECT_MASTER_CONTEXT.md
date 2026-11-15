@@ -353,3 +353,13 @@ flowchart TB
 10. **`RF-10` (Lê Minh Triết — Hạn `15/11/2026`):** Siết chặt kiểm tra bằng chứng tại điểm gọi hàm (`Call-site Evidence`) trong `RULE-04` và giải thích AI; tách bạch `FindingStatus` khỏi `FindingSeverity` trong `SRS/SDD`.
 11. **`RF-11` (Huỳnh Anh Nhựt — Hạn `15/11/2026`):** Hoàn tất xác minh biên nhận `RuntimeReceipt` ký `HMAC-SHA256`, tương quan chuỗi gọi `Causal OpenTelemetry Spans` và kiểm tra tự động dọn sạch `0 Orphaned Containers` sau khi kết thúc phiên.
 12. **`RF-12` (Lê Ngọc Hậu — Hạn `15/11/2026`):** Ràng buộc kiểm tra đủ 4 bước trước khi nộp bài (`BR-09`), thực thi quy tắc chấm từng Snapshot `> 5.0/10` kèm nhận xét bắt buộc (`BR-10`), cập nhật sơ đồ ranh giới AI trên `Next.js Server` và hoàn thiện nhãn song ngữ `EN/VI`.
+
+## Bổ sung đã được người dùng chấp thuận ngày 15/11/2026 cho Studio Live
+
+Phạm vi mở rộng này bổ sung thao tác block và dây trên curated repo đã được chuẩn bị. Hợp đồng gốc FR-IMP-03/04, BR-07/08 tiếp tục áp dụng cho thực thi Docker, xác nhận Runner, giới hạn 1–8 replica và bằng chứng.
+
+- Block Live ánh xạ tới service đã ghim trong Compose/profile. Thêm block kích hoạt bằng START. Gỡ block dừng bằng STOP. Định nghĩa service vẫn thuộc phiên đã chuẩn bị.
+- Dây tương tác ánh xạ tới một service điều khiển tuyến riêng đã được repo chuẩn bị. Nối dây START tuyến, cắt dây STOP tuyến. Ứng dụng phải thực sự gọi qua tuyến này để thao tác có tác động runtime.
+- Chỉ block được khai báo canScale mới cho SCALE. Các cặp kết nối ngoài danh mục bị từ chối.
+- Cấu hình ban đầu có thể chỉ định block/tuyến dừng sau readiness để tạo bài thực hành thiếu dependency. Baseline và trace ghi nhận trạng thái đó.
+- Đây là phần mở rộng được chấp thuận trong phiên làm việc, không phải nguyên văn quyết định Review 2. Thiết kế, cấu hình và giới hạn được ghi tại [Prepared Live Studio](PREPARED_LIVE_STUDIO.md).

@@ -102,14 +102,18 @@ public class RuntimePlanningService {
  public record BuildImagesView(UUID projectId,UUID snapshotId,Map<String,String> builtImages,List<String> errors){}
 
  private Project project(UUID id,boolean write){var p=projects.findById(id).orElseThrow(()->new BusinessException(ErrorCode.NOT_FOUND));if(write)policy.requireProjectWriteAccess(p);else policy.requireProjectReadAccess(p);return p;}
- private void lock(UUID id){var p=projects.findLockedById(id).orElseThrow(()->new BusinessException(ErrorCode.NOT_FOUND));policy.requireProjectWriteAccess(p);}
+ private Project lock(UUID id){var p=projects.findLockedById(id).orElseThrow(()->new BusinessException(ErrorCode.NOT_FOUND));policy.requireProjectWriteAccess(p);return p;}
 
  @Transactional(readOnly=true)
- public ConfigurationView configuration(UUID id){project(id,false);var c=configurations.findById(id).orElse(null);var snapshot=c!=null?c.getSourceSnapshotId():sources.findFirstByProjectIdOrderByCreatedAtDesc(id).map(SourceSnapshot::getId).orElse(null);var warnings=new ArrayList<String>();boolean supported=false;
+ public ConfigurationView configuration(UUID id){var runtimeProject=project(id,false);var c=configurations.findById(id).orElse(null);var snapshot=c!=null?c.getSourceSnapshotId():sources.findFirstByProjectIdOrderByCreatedAtDesc(id).map(SourceSnapshot::getId).orElse(null);var warnings=new ArrayList<String>();boolean supported=false;
   PreflightCheckResponseDTO pre=null;
   if(snapshot!=null){pre=runtime.runComposePreflight(snapshot);supported=pre.isCompatible();warnings.addAll(pre.getSecurityWarnings());}else warnings.add("No source snapshot exists");
   boolean enabled=settings.enabled("otel-collector")&&(c==null||settings.profile(c.getProfileId()).enabled());if(!enabled)warnings.add("Runtime integration or execution profile is disabled");
   ObjectNode profileNode=c!=null&&c.getProfile()!=null&&c.getProfile().isObject()?(ObjectNode)c.getProfile().deepCopy():json.createObjectNode();
+  if(isGuidedStudentProject(runtimeProject)) {
+   profileNode.remove("studioTopology");
+   profileNode.put("studioTopologyInherited",true);
+  }
   Set<String> configuredSecrets=new TreeSet<>(runtime.getConfiguredSecretKeys(id));
   if(profileNode.hasNonNull("sealedInputs")){
    Map<String,String> unsealed=environments.unsealProjectInputs(id,profileNode.get("sealedInputs").asText(""));
@@ -202,6 +206,19 @@ public class RuntimePlanningService {
   String existingSealed=c.getProfile()!=null&&c.getProfile().hasNonNull("sealedInputs")?c.getProfile().get("sealedInputs").asText(null):null;
   JsonNode normalizedProfile=normalizeStep1Profile(id,r.snapshotId(),r.profileId(),r.profile(),existingSealed);
   validateProfile(normalizedProfile);
+  var owner=source.getProject();
+  if(normalizedProfile instanceof ObjectNode profile){
+   JsonNode previous=java.util.Objects.equals(c.getSourceSnapshotId(),r.snapshotId()) && c.getProfile()!=null
+       ? c.getProfile().get("studioTopology") : null;
+   if(!profile.has("studioTopology") && previous!=null) profile.set("studioTopology",previous);
+   if(profile.has("studioTopology") && !java.util.Objects.equals(previous,profile.get("studioTopology")) &&
+       owner.getWorkspace()!=null) policy.requireWorkspaceLecturer(owner.getWorkspace().getId());
+  }
+  if(normalizedProfile.hasNonNull("studioTopology")){
+   Set<String> topologyServices=new java.util.HashSet<>();
+   normalizedProfile.path("applications").fieldNames().forEachRemaining(topologyServices::add);
+   PreparedStudioTopology.read(normalizedProfile,topologyServices,json);
+  }
   c.setProjectId(id);c.setSourceSnapshotId(r.snapshotId());c.setModelVersionId(model.getId());c.setProfileId(r.profileId());c.setProfile(normalizedProfile.deepCopy());c.setRevision(c.getRevision()+1);configurations.saveAndFlush(c);return configuration(id);
  }
 
@@ -2062,7 +2079,7 @@ public class RuntimePlanningService {
  }
 
  @Transactional
- public RuntimeSessionResponseDTO start(UUID id,StartRequest r){lock(id);if(!r.approved())throw new BusinessException(ErrorCode.BAD_REQUEST,"Explicit approval required");
+ public RuntimeSessionResponseDTO start(UUID id,StartRequest r){var guidedProject=lock(id);if(!r.approved())throw new BusinessException(ErrorCode.BAD_REQUEST,"Explicit approval required");
   var c=configurations.findById(id).orElseThrow(()->new BusinessException(ErrorCode.BAD_REQUEST,"Save runtime configuration first"));var s=scenarios.findById(r.scenarioId()).orElseThrow(()->new BusinessException(ErrorCode.NOT_FOUND));
   if(!id.equals(s.getProjectId())||!r.snapshotId().equals(c.getSourceSnapshotId()))throw new BusinessException(ErrorCode.BAD_REQUEST,"Pinned planning scope mismatch");
   if(c.getRevision()!=r.configurationRevision()||s.getRevision()!=r.scenarioRevision())throw new BusinessException(ErrorCode.CONFLICT);
@@ -2148,6 +2165,28 @@ public class RuntimePlanningService {
    }
   var planning=config.putObject("planning");planning.put("scenarioId",s.getId().toString());planning.put("scenarioRevision",s.getRevision());planning.put("configurationRevision",c.getRevision());
   Map<String,String> confirmedMappings=resolveConfirmedServiceMappings(c.getModelVersionId(),c.getProfile(),pre,apps);
+  if (!r.interactiveStudio()) {
+   profileCopy.remove("studioTopology");
+  } else {
+   if(isGuidedStudentProject(guidedProject)) {
+    profileCopy.remove("studioTopology");
+    var assignment=guidedProject.getAssignment();
+    var model=assignment==null?null:assignment.getReferenceModel();
+    var reference=model==null?null:model.getSourceSnapshot();
+    if(reference!=null && reference.getProject()!=null && Boolean.TRUE.equals(reference.getIsPublished())
+        && java.util.Objects.equals(reference.getId(),guidedProject.getReferenceSnapshotId())) {
+     configurations.findById(reference.getProject().getId())
+         .filter(referenceConfig -> reference.getId().equals(referenceConfig.getSourceSnapshotId()))
+         .map(RuntimeConfiguration::getProfile)
+         .map(profile -> profile.get("studioTopology"))
+         .ifPresent(topology -> profileCopy.set("studioTopology",topology));
+    }
+   }
+   Set<String> studioServices=new java.util.HashSet<>(confirmedMappings.keySet());
+   studioServices.removeIf(service -> !apps.has(service));
+   var preparedTopology=PreparedStudioTopology.read(profileCopy,studioServices,json);
+   if(preparedTopology!=null)profileCopy.set("studioTopology",preparedTopology);
+  }
   var createBuilder=RuntimeSessionCreateRequest.builder()
    .projectId(id)
    .sourceSnapshotId(c.getSourceSnapshotId())
@@ -2161,6 +2200,11 @@ public class RuntimePlanningService {
   // Fails (and rolls back the session) when MAVIS_RUNTIME_ENVIRONMENT_KEY is missing instead of silently dropping inputs.
   if(!boundedProtectedEnv.isEmpty())environments.store(created.getId(),boundedProtectedEnv);
   return runtime.approveAndStartSession(created.getId());
+ }
+
+ private static boolean isGuidedStudentProject(Project project) {
+  return project.getWorkspace()!=null && project.getWorkspace().isCourseMode()
+      && "STUDENT_WORKING".equals(project.getProjectType());
  }
 
  private static final Pattern SINGLE_BRACE_PATH_PARAM=Pattern.compile("(?<!\\{)\\{([^{}/]+)}(?!})");

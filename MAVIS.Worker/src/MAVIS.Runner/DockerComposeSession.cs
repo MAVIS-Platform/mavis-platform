@@ -43,6 +43,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             throw new ArgumentException("Invalid session provenance or operator state root.");
         var preflight = ComposePreflight.Check(definition.ComposeYaml);
         if (!preflight.Compatible) throw new ArgumentException("Compose preflight rejected this execution profile.");
+        ValidateStudioTopology();
         _ = ComposeOverrideBuilder.Build(preflight, definition.Profile, Path.Combine(Path.GetFullPath(stateRoot), "validate", "collector.yaml"), secrets);
         if (!PinnedRunnerImage(definition.Profile.ScenarioRunnerImage)) throw new ArgumentException("A content-addressed scenario runner image is required.");
         new HttpScenarioRunner(allowContainerDns: true).ValidateDefinition(definition.Scenario,
@@ -159,6 +160,14 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
 
             if (result?.Status == "Passed")
             {
+                if (definition.InteractiveStudio && definition.Profile.StudioTopology is { } topology)
+                {
+                    var stopped = topology.Blocks.Where(block => block.InitiallyStopped).Select(block => block.Service)
+                        .Concat(topology.Connections.Where(link => link.InitiallyStopped).Select(link => link.ControllerService))
+                        .ToArray();
+                    if (stopped.Length > 0)
+                        await Require(new[] { "stop", "--timeout", "5" }.Concat(stopped).ToArray(), ct);
+                }
                 await CheckpointAsync("RUNNING", 2, ct);
                 return;
             }
@@ -178,6 +187,30 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
     private Task<HttpScenarioOutcome> ExecuteWorkloadAsync(CancellationToken ct) =>
         RunInsideNetwork(definition.Scenario, _endpoints.Where(p => p.Key != "mavis-collector").ToDictionary(),
             secrets ?? new Dictionary<string, string>(), ct);
+
+    private void ValidateStudioTopology()
+    {
+        if (definition.Profile.StudioTopology is not { } topology) return;
+        if (!definition.InteractiveStudio || topology.Version != 1 || topology.Blocks is null ||
+            topology.Connections is null || topology.Blocks.Count is < 1 or > 10 || topology.Connections.Count > 20)
+            throw new ArgumentException("Invalid prepared Studio topology.");
+        var blocks = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var block in topology.Blocks)
+            if (block is null || !definition.Profile.Applications.ContainsKey(block.Service) ||
+                !definition.ConfirmedServiceMappings.ContainsKey(block.Service) ||
+                string.IsNullOrWhiteSpace(block.Label) || block.Label.Length > 64 || !blocks.Add(block.Service))
+                throw new ArgumentException("Invalid prepared Studio block.");
+        var controllers = new HashSet<string>(StringComparer.Ordinal);
+        var pairs = new HashSet<(string, string)>();
+        foreach (var connection in topology.Connections)
+            if (connection is null || !blocks.Contains(connection.From) || !blocks.Contains(connection.To) ||
+                connection.From == connection.To || blocks.Contains(connection.ControllerService) ||
+                !definition.Profile.Applications.ContainsKey(connection.ControllerService) ||
+                !definition.ConfirmedServiceMappings.ContainsKey(connection.ControllerService) ||
+                string.IsNullOrWhiteSpace(connection.Protocol) || connection.Protocol.Length > 32 ||
+                !controllers.Add(connection.ControllerService) || !pairs.Add((connection.From, connection.To)))
+                throw new ArgumentException("Invalid prepared Studio connection.");
+    }
 
     public async Task<IReadOnlyList<RuntimeInfrastructureActionResult>> ExecuteInfrastructureActionsAsync(CancellationToken ct)
     {
@@ -241,6 +274,8 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
                 "START" => before.running == 0 && after.running >= 1,
                 _ => before.running > 0 && after.running == item.Replicas && before.running != after.running
             };
+            if (expected && action is "START" or "SCALE")
+                expected = await WaitForServiceReadyAsync(service, ct);
             var performedAt = DateTimeOffset.UtcNow;
             results.Add(new(action, service, before.running, after.running,
                 Metrics(before, beforeWorkload), Metrics(after, null), performedAt, expected));
@@ -277,6 +312,26 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             }
             return metrics;
         }
+    }
+
+    private async Task<bool> WaitForServiceReadyAsync(string service, CancellationToken ct)
+    {
+        var app = definition.Profile.Applications[service];
+        var probe = new HttpScenarioDefinition("studio-readiness",
+            [new("ready", service, "GET", app.ReadinessPath, 200, AllowClientError: app.AllowClientErrorReadiness)], 3);
+        for (var attempt = 0; attempt < 10; attempt++)
+        {
+            ct.ThrowIfCancellationRequested();
+            try {
+                var outcome = await RunInsideNetwork(probe, _endpoints, new Dictionary<string, string>(), ct);
+                if (outcome.Status == "Passed") return true;
+            } catch (OperationCanceledException) when (!ct.IsCancellationRequested) {
+                if (!await ScenarioContainerCleanup.RemoveAsync(docker, _directory!, ResourceProject, ct))
+                    throw new RuntimeStageException("STUDIO_READINESS_PROBE_CLEANUP_UNCONFIRMED");
+            }
+            await Task.Delay(500, ct);
+        }
+        return false;
     }
 
     private async Task<(int total, int running)> ReadServiceMetrics(string service, CancellationToken ct)

@@ -63,3 +63,7 @@ From MAVIS-Frontend, run npm run typecheck and node tests/studio-ui.browser.cjs.
 Java tests include RuntimeStudioServiceTest and RuntimeStudioApiIntegrationTest. The integration test requires a dedicated PostgreSQL database through MAVIS_DB_URL, MAVIS_DB_USERNAME and MAVIS_DB_PASSWORD.
 
 For real Docker verification, initialize MAVIS.Worker/samples/runtime-poc/Initialize-Poc.ps1 from the repository root. Set MAVIS_MANAGED_DOCKER_TEST_ROOT to the absolute sample directory and run ManagedDockerRuntimeTests. The interactive test exercises Stop, Start and Scale through a fixture Java transport with real Docker, telemetry and receipt delivery. The existing managed test exercises five success/cancellation cycles and cleanup.
+
+## Prepared project topology
+
+Optional prepared profiles can expose real block activation and connection controls through the existing command queue. See [Prepared Live Studio](PREPARED_LIVE_STUDIO.md) for the versioned topology contract, routing requirements and initialization behavior.

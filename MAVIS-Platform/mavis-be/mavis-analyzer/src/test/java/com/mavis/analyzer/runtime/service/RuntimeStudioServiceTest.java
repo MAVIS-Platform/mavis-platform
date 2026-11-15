@@ -47,6 +47,18 @@ class RuntimeStudioServiceTest {
             new RuntimeStudioService.ActionRequest(UUID.randomUUID(), "STOP", "orders", null)));
     }
 
+    @Test void preparedProfileAllowsOnlyDeclaredScaleTargets() throws Exception {
+        var profile = mapper.readTree("""
+          {"studioTopology":{"version":1,"blocks":[{"service":"orders","label":"Orders","canScale":false}],"connections":[]}}
+          """);
+        ((ObjectNode) session.getScenarioConfig()).set("profile", profile);
+        assertThrows(BusinessException.class, () -> service.submit(id,
+            new RuntimeStudioService.ActionRequest(UUID.randomUUID(), "SCALE", "orders", 2)));
+        assertEquals("orders", service.submit(id,
+            new RuntimeStudioService.ActionRequest(UUID.randomUUID(), "STOP", "orders", null))
+            .path("topology").path("blocks").get(0).path("service").asText());
+    }
+
     @Test void pollAndAcknowledgementKeepSameCommandAcrossRetries() {
         UUID actionId = UUID.randomUUID();
         service.submit(id, new RuntimeStudioService.ActionRequest(actionId, "STOP", "orders", null));

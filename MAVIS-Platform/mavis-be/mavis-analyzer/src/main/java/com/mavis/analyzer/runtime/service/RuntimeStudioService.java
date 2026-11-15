@@ -136,6 +136,18 @@ public class RuntimeStudioService {
             }
         }
         requireRunning(session);
+        var topology = PreparedStudioTopology.read(
+            session.getScenarioConfig().path("profile"),
+            session.getConfirmedServiceMappings() == null ? Set.of() : session.getConfirmedServiceMappings().keySet(), mapper);
+        if (topology != null) {
+            boolean allowed = false;
+            for (var block : topology.path("blocks"))
+                allowed |= request.service().equals(block.path("service").asText()) &&
+                    (!"SCALE".equals(request.action()) || block.path("canScale").asBoolean());
+            for (var link : topology.path("connections"))
+                allowed |= request.service().equals(link.path("controllerService").asText()) && !"SCALE".equals(request.action());
+            if (!allowed) throw error(ErrorCode.BAD_REQUEST, "Action is not enabled for this prepared block or connection.");
+        }
         if (control.path("finishRequested").asBoolean()) throw error(ErrorCode.CONFLICT, "Studio is finishing.");
         if (control.withArray("actions").size() >= 32) throw error(ErrorCode.CONFLICT, "Studio action limit reached.");
         for (JsonNode action : control.withArray("actions"))
@@ -254,6 +266,10 @@ public class RuntimeStudioService {
                 if (Set.of("PENDING", "RUNNING").contains(action.path("status").asText()))
                     ((ObjectNode) action).put("status", "INTERRUPTED");
         var services = result.putArray("services");
+        var topology = PreparedStudioTopology.read(
+            session.getScenarioConfig() == null ? null : session.getScenarioConfig().path("profile"),
+            session.getConfirmedServiceMappings() == null ? Set.of() : session.getConfirmedServiceMappings().keySet(), mapper);
+        if (topology != null) result.set("topology", topology);
         result.set("serviceMappings", mapper.valueToTree(session.getConfirmedServiceMappings() == null ? java.util.Map.of() : session.getConfirmedServiceMappings()));
         if (session.getConfirmedServiceMappings() != null)
             session.getConfirmedServiceMappings().keySet().stream().filter(name -> !"mavis-collector".equals(name)).sorted().forEach(services::add);

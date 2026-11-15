@@ -1647,6 +1647,9 @@ export function StudioWorkbench() {
         <div className="flex-1 overflow-y-auto p-5">
           <div className="mx-auto max-w-6xl space-y-4 rounded-xl border bg-card p-4">
             <div className="flex flex-wrap items-end justify-between gap-3">
+              <Button asChild size="sm">
+                <Link href="/sessions?studio=1">{t("Prepare and start Live project")}</Link>
+              </Button>
               <SelectField
                 label={t("Select active or recent runtime session")}
                 value={liveSessionId || (liveSessions[0]?.id ?? "")}

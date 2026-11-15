@@ -945,6 +945,7 @@ export function StudioObservability({
   onDisconnect,
   onSound,
   nodeNames,
+  configuredEdges,
   nodeStatus,
   simulated = false,
   canvasOnly = false,
@@ -960,6 +961,7 @@ export function StudioObservability({
   onDisconnect?: (from: string, to: string) => void;
   onSound?: (sound: "select" | "place") => void;
   nodeNames?: Readonly<Record<string, string>>;
+  configuredEdges?: ReadonlyArray<{ from: string; to: string; id: string; protocol: string; active: boolean }>;
   nodeStatus?: Readonly<Record<string, string>>;
   simulated?: boolean;
   canvasOnly?: boolean;
@@ -1042,9 +1044,10 @@ export function StudioObservability({
     { enabled: Boolean(data.modelVersionId && data.projectId) },
   );
   const telemetry = data.telemetry;
-  const activeWire = selectedWire && telemetry?.interactions.some((edge) =>
+  const activeWire = selectedWire && (telemetry?.interactions.some((edge) =>
     edge.fromService === selectedWire.from && edge.toService === selectedWire.to,
-  ) ? selectedWire : null;
+  ) || configuredEdges?.some((edge) => edge.active && edge.from === selectedWire.from && edge.to === selectedWire.to))
+    ? selectedWire : null;
   const spansByTraceAndId = useMemo(() => new Map(
     telemetry?.spans.map((span) => [`${span.traceId}:${span.spanId}`, span]),
   ), [telemetry?.spans]);
@@ -1065,7 +1068,7 @@ export function StudioObservability({
 
   const staticEdges = useMemo(
     () =>
-      reference.data?.edges.flatMap((edge) => {
+      configuredEdges ?? reference.data?.edges.flatMap((edge) => {
         const from = Object.entries(data.serviceMappings ?? {}).find(
           ([, id]) => id === edge.from,
         )?.[0];
@@ -1074,7 +1077,7 @@ export function StudioObservability({
           ? [{ from, to, id: edge.id, protocol: edge.protocol ?? "HTTP" }]
           : [];
       }) ?? [],
-    [reference.data, data.serviceMappings],
+    [reference.data, data.serviceMappings, configuredEdges],
   );
 
   // Compute deterministic topological tier for LAYERED layout (invariant under STOP/START/SCALE so nodes never jump)
@@ -1949,13 +1952,31 @@ export function StudioObservability({
             const midX = (from.x + to.x) / 2;
             const midY = (from.y + to.y) / 2;
             return (
-              <g key={edge.id}>
+              <g key={edge.id}
+                data-studio-edge-from={edge.from} data-studio-edge-to={edge.to}
+                role={configuredEdges && onDisconnect ? "button" : undefined}
+                tabIndex={configuredEdges && onDisconnect ? 0 : undefined}
+                aria-label={configuredEdges ? `${nodeNames?.[edge.from] ?? edge.from} → ${nodeNames?.[edge.to] ?? edge.to}` : undefined}
+                onPointerDown={(event) => { if (configuredEdges && event.button === 0) event.stopPropagation(); }}
+                onClick={() => { if (configuredEdges && onDisconnect) setSelectedWire({ from: edge.from, to: edge.to }); }}
+                onKeyDown={(event) => {
+                  if (!configuredEdges || !onDisconnect) return;
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    setSelectedWire({ from: edge.from, to: edge.to });
+                  }
+                }}
+                className="cursor-pointer outline-none"
+              >
+                <title>{configuredEdges ? "Configured route, awaiting observed traces" : "Static dependency"} · {edge.protocol}</title>
+                {configuredEdges && <line x1={from.x} y1={from.y} x2={to.x} y2={to.y}
+                  stroke="transparent" strokeWidth="16" vectorEffect="non-scaling-stroke" pointerEvents="stroke" />}
                 <line
                   x1={from.x}
                   y1={from.y}
                   x2={to.x}
                   y2={to.y}
-                  stroke={targetStopped ? "var(--destructive)" : "currentColor"}
+                  stroke={targetStopped ? "var(--destructive)" : activeWire?.from === edge.from && activeWire.to === edge.to ? "#7dd3fc" : "currentColor"}
                   strokeDasharray={targetStopped ? "6 4" : "5 5"}
                   strokeWidth={targetStopped ? "2.2" : "1.5"}
                   opacity={targetStopped ? "0.9" : ".28"}

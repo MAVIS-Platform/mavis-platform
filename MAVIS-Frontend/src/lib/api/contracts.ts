@@ -636,6 +636,11 @@ export const contracts = {
   ),
   runtimeSessions: contract(project, z.array(d.runtimeSessionSchema)),
   studioState: contract(z.object({sessionId:id}), z.object({
+    topology:z.object({
+      version:z.literal(1),
+      blocks:z.array(z.object({service:z.string(),label:z.string(),canScale:z.boolean(),initiallyStopped:z.boolean()})),
+      connections:z.array(z.object({from:z.string(),to:z.string(),controllerService:z.string(),protocol:z.string(),initiallyStopped:z.boolean()})),
+    }).optional(),
     projectId:z.string().optional(),modelVersionId:z.string().optional(),sourceSnapshotId:z.string().optional(),
     serviceMappings:z.record(z.string()).optional(),
     receiptDigest:z.string().nullable().optional(),telemetryReceivedAt:z.string().optional(),
