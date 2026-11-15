@@ -643,6 +643,10 @@ export const contracts = {
     }).optional(),
     projectId:z.string().optional(),modelVersionId:z.string().optional(),sourceSnapshotId:z.string().optional(),
     serviceMappings:z.record(z.string()).optional(),
+    limits:z.object({
+      memoryMiB:z.number().optional(),cpus:z.number().optional(),timeoutSeconds:z.number().optional(),
+      services:z.record(z.object({runtime:z.string(),containerPort:z.number(),readinessPath:z.string()})).optional(),
+    }).optional(),
     receiptDigest:z.string().nullable().optional(),telemetryReceivedAt:z.string().optional(),
     receiptSignature:z.string().optional(),
     telemetry:z.object({

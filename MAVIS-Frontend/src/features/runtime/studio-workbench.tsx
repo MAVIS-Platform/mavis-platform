@@ -52,6 +52,7 @@ import {
 } from "./studio-observability";
 import { startStudioRecording } from "./studio-recording";
 import { StudioControls } from "./studio-controls";
+import { LiveSandboxParity } from "./live-sandbox-parity";
 import { useStudioSound } from "./studio-sound";
 import {
   downloadStudioEvidence,
@@ -64,6 +65,16 @@ import {
 } from "./studio-evidence";
 
 type StudioData = Response<"studioState">;
+
+const EMPTY_LIVE_STUDIO: StudioData = {
+  sessionId: "",
+  interactive: true,
+  services: [],
+  finishRequested: false,
+  executionStatus: "NOT_STARTED",
+  cleanupStatus: "UNKNOWN",
+  actions: [],
+};
 
 type SandboxTemplate = {
   id: string;
@@ -1673,11 +1684,20 @@ export function StudioWorkbench() {
                 sessionId={liveSessionId || liveSessions[0]!.id}
               />
             ) : (
-              <p className="text-sm text-muted-foreground">
-                {t(
-                  "No live Docker session is currently active. Switch to Interactive Studio Sandbox above to test 2D/3D scaling and fault injection immediately.",
-                )}
-              </p>
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  {t(
+                    "No live Docker session is currently active. Start one from the Lab runtime workspace or switch to Sandbox to explore the same controls with simulation.",
+                  )}
+                </p>
+                <LiveSandboxParity
+                  data={EMPTY_LIVE_STUDIO}
+                  selected=""
+                  busy
+                  onSelect={() => undefined}
+                  onCommand={async () => undefined}
+                />
+              </div>
             )}
           </div>
         </div>

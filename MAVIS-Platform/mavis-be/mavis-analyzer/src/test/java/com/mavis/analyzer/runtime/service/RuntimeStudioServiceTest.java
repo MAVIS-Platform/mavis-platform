@@ -90,6 +90,29 @@ class RuntimeStudioServiceTest {
         assertEquals("UNKNOWN", state.path("cleanupStatus").asText());
     }
 
+    @Test void stateExposesOnlyPinnedLimitsWithoutEnvironmentValues() throws Exception {
+        var config = (ObjectNode) session.getScenarioConfig();
+        config.set("profile", mapper.readTree("""
+          {"memoryMiB":512,"cpus":1.5,
+           "applications":{
+             "orders":{"runtime":"java","containerPort":8080,"readinessPath":"/health","environment":{"DB_PASSWORD":"must-not-leak"}},
+             "payment":{"runtime":"passthrough","containerPort":9090}},
+           "environmentBindings":{"orders":[{"name":"DB_PASSWORD","reference":"DB_PASSWORD"}]},
+           "sealedInputs":"sealed-envelope-must-not-leak"}
+          """));
+        config.putObject("scenario").put("timeoutSeconds",240);
+        when(sessions.findById(id)).thenReturn(Optional.of(session));
+        var state = service.state(id);
+        assertEquals(512, state.path("limits").path("memoryMiB").asInt());
+        assertEquals(1.5, state.path("limits").path("cpus").asDouble());
+        assertEquals(240, state.path("limits").path("timeoutSeconds").asInt());
+        assertEquals("java", state.path("limits").path("services").path("orders").path("runtime").asText());
+        assertEquals(8080, state.path("limits").path("services").path("orders").path("containerPort").asInt());
+        assertEquals("/health", state.path("limits").path("services").path("orders").path("readinessPath").asText());
+        assertFalse(state.toString().contains("DB_PASSWORD"));
+        assertFalse(state.toString().contains("sealed-envelope-must-not-leak"));
+    }
+
     @Test void telemetryIsRedactedAndCapturedEvidenceDoesNotChangeWithNewSamples() {
         session.setSourceSnapshot(SourceSnapshot.builder().id(UUID.randomUUID()).build());
         var telemetry = mapper.createObjectNode().put("observedAt","sample-before");

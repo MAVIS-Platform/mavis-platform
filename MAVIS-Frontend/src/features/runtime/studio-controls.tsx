@@ -8,6 +8,7 @@ import { SelectField } from "@/components/shared/forms";
 import { ErrorState } from "@/components/shared/request-state";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { StudioObservability, captureStudioImage } from "./studio-observability";
+import { LiveSandboxParity } from "./live-sandbox-parity";
 import { Textarea } from "@/components/ui/textarea";
 import { StudioSnapshotComparison } from "./studio-snapshot-comparison";
 import { PreparedLiveTopology } from "./prepared-live-topology";
@@ -54,6 +55,8 @@ export function StudioControls({ sessionId }: { sessionId: string }) {
     (item) => item.service === target,
   )?.runningReplicas;
   const runningReplicas = lastConfirmedReplicas ?? observedRunningReplicas;
+  const selectedBlock = data.topology?.blocks.find((block) => block.service === target);
+  const canScaleTarget = data.topology ? selectedBlock?.canScale === true : Boolean(target);
   const busy =
     state.isError ||
     action.isPending ||
@@ -121,7 +124,14 @@ export function StudioControls({ sessionId }: { sessionId: string }) {
         >
           {t("Stop service")}
         </Button>
-        <label className="text-sm">
+        <label
+          className="text-sm"
+          title={
+            canScaleTarget
+              ? undefined
+              : t("This prepared service is not marked canScale in the assigned topology.")
+          }
+        >
           {t("Replicas (1–8)")}
           <Input
             type="number"
@@ -129,7 +139,7 @@ export function StudioControls({ sessionId }: { sessionId: string }) {
             max={8}
             step={1}
             value={replicas}
-            disabled={busy}
+            disabled={busy || !canScaleTarget}
             className="w-24"
             onChange={(event) =>
               setReplicas(Math.max(1, Math.min(8, Math.trunc(Number(event.target.value)) || 1)))
@@ -141,7 +151,7 @@ export function StudioControls({ sessionId }: { sessionId: string }) {
             max={8}
             step={1}
             value={replicas}
-            disabled={busy}
+            disabled={busy || !canScaleTarget}
             aria-label={t("Scale replica slider")}
             className="block w-32"
             onChange={(event) => setReplicas(Number(event.target.value))}
@@ -150,7 +160,14 @@ export function StudioControls({ sessionId }: { sessionId: string }) {
         <Button
           type="button"
           variant="outline"
-          disabled={busy || !target || runningReplicas === 0 || runningReplicas === replicas}
+          disabled={
+            busy || !canScaleTarget || !target || runningReplicas === 0 || runningReplicas === replicas
+          }
+          title={
+            canScaleTarget
+              ? undefined
+              : t("This prepared service is not marked canScale in the assigned topology.")
+          }
           onClick={() => void send("SCALE")}
         >
           {t("Scale replicas")}
@@ -278,19 +295,30 @@ export function StudioControls({ sessionId }: { sessionId: string }) {
           ))}
         </div>
       </div>
-      {data.topology ? <PreparedLiveTopology
-        data={data} selected={target} onSelect={setService} busy={busy}
-        onCommand={send}
-      /> : <StudioObservability
-        data={data}
-        selected={target}
-        onSelect={setService}
-        busy={busy}
-        onQuickAction={(cmd) => {
-          setService(cmd.service);
-          void send(cmd.action, cmd.service, cmd.replicas).catch(() => undefined);
-        }}
-      />}
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="min-w-0 space-y-3">
+          {data.topology ? <PreparedLiveTopology
+            data={data} selected={target} onSelect={setService} busy={busy}
+            onCommand={send}
+          /> : <StudioObservability
+            data={data}
+            selected={target}
+            onSelect={setService}
+            busy={busy}
+            onQuickAction={(cmd) => {
+              setService(cmd.service);
+              void send(cmd.action, cmd.service, cmd.replicas).catch(() => undefined);
+            }}
+          />}
+        </div>
+        <LiveSandboxParity
+          data={data}
+          selected={target}
+          busy={busy}
+          onSelect={setService}
+          onCommand={send}
+        />
+      </div>
       {data.actions.length > 0 && (
         <ol className="space-y-2 text-sm">
           {data.actions.map((item) => (
