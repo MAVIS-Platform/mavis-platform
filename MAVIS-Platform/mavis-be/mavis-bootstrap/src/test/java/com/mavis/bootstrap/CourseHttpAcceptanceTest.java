@@ -274,6 +274,8 @@ class CourseHttpAcceptanceTest {
                 INSERT INTO runtime_configurations(project_id,source_snapshot_id,model_version_id,profile_id,profile,revision)
                 VALUES (?,?,?,'SPRING_BOOT_DOTNET_COMPOSE_V1','{"applications":{"orders":{"runtime":"dotnet8-linux-x64-glibc","containerPort":8080}},"studioTopology":{"version":1,"blocks":[{"service":"orders","label":"Orders","canScale":true}],"connections":[]}}'::jsonb,3)
                 """, reference, source, model);
+        assertEquals("freeze-topology", data(send("GET", workspace + "/course-setup",
+                lecturer, null, 200)).path("nextAction").asText());
         send("POST", workspace + "/course-labs/" + lab1 + "/freeze-topology", student, null, 403);
         send("POST", workspace + "/course-labs/" + lab1 + "/freeze-topology", foreignLecturer, null, 403);
         assertEquals(1, data(send("POST", workspace + "/course-labs/" + lab1 + "/freeze-topology",
@@ -283,6 +285,9 @@ class CourseHttpAcceptanceTest {
                 """, Integer.class, lab1));
         assertEquals(3, db.queryForObject("SELECT studio_topology_revision FROM assignments WHERE id = ?",
                 Integer.class, lab1));
+        JsonNode setupFrozen = data(send("GET", workspace + "/course-setup", lecturer, null, 200));
+        assertEquals("publish-quiz", setupFrozen.path("nextAction").asText());
+        assertEquals("READY", setupFrozen.path("labs").get(0).path("state").asText());
         UUID verifiedRuntime = id(db, """
                 INSERT INTO runtime_sessions(project_id, source_snapshot_id, model_version_id, scenario_status,
                                              execution_status, evidence_status, cleanup_status, trace_status,
