@@ -1643,7 +1643,7 @@ export function StudioWorkbench() {
 
       <p role="status" className="sr-only">{clipboardMessage}</p>
       {mode === "LIVE" ? (
-        <div className="flex min-h-0 flex-1 p-3">
+        <div className="flex min-h-0 w-full flex-1 p-3">
           <LiveStudioWorkbench
             sessions={liveSessions}
             sessionId={liveSessionId}

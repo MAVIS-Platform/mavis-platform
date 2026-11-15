@@ -483,6 +483,15 @@ async function main() {
     await page.reload();
     await page.getByRole("button",{name:"Snapshots (0)",exact:true}).click();
     assert.equal(await page.getByRole("button",{name:"Delete snapshot",exact:true}).count(),0);
+    await page.getByRole("button",{name:"Live (0)",exact:true}).click();
+    await page.getByTestId("live-workbench").waitFor();
+    const liveBox=await page.getByTestId("live-workbench").boundingBox();
+    assert.ok(liveBox && liveBox.width>1200,`Live workbench must fill the page; got ${liveBox?.width}`);
+    await page.getByText("No live Docker session selected",{exact:true}).waitFor();
+    await page.getByRole("region",{name:"Live block library",exact:true}).waitFor();
+    await page.getByRole("region",{name:"Live inspector",exact:true}).waitFor();
+    await page.getByRole("button",{name:/Service Telemetry & Impact/}).waitFor();
+    await page.screenshot({path:path.join(output,"live-empty.png"),fullPage:true,animations:"disabled"});
     assert.deepEqual(errors,[]);
     console.log("PASS Studio world-layout orbit, pointer cleanup, context-menu prevention and separate Stats panels");
   }finally{
