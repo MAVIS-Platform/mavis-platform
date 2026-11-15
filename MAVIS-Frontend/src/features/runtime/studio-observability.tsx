@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useApiQuery } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
 import { useLocale } from "@/lib/i18n/locale-context";
@@ -867,6 +867,32 @@ export function StudioObservability({
     moved: boolean;
   } | null>(null);
   const svg = useRef<SVGSVGElement>(null);
+  const activePointer = useRef<number | null>(null);
+  const endPointerInteraction = useCallback(() => {
+    const pointerId = activePointer.current;
+    activePointer.current = null;
+    cameraDrag.current = null;
+    nodeDrag.current = null;
+    setDraggingNode(null);
+    if (pointerId !== null && svg.current?.hasPointerCapture(pointerId)) {
+      svg.current.releasePointerCapture(pointerId);
+    }
+  }, []);
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.hidden) endPointerInteraction();
+    };
+    window.addEventListener("blur", endPointerInteraction);
+    window.addEventListener("pointerup", endPointerInteraction);
+    window.addEventListener("pointercancel", endPointerInteraction);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener("blur", endPointerInteraction);
+      window.removeEventListener("pointerup", endPointerInteraction);
+      window.removeEventListener("pointercancel", endPointerInteraction);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [endPointerInteraction]);
 
   const reference = useApiQuery(
     "model",
@@ -1000,8 +1026,9 @@ export function StudioObservability({
 
     data.services.forEach((name, index) => {
       const tier = serviceDepth.get(name) ?? 0;
-      const offset = customOffsets[name] ?? { x: 0, y: 0 };
-      const pinned = pinnedPositions[name];
+      const positionKey = view === "3D" ? "3D:" + name : name;
+      const offset = customOffsets[positionKey] ?? { x: 0, y: 0 };
+      const pinned = pinnedPositions[positionKey];
 
       if (view === "3D") {
         let wx = 0;
@@ -1027,12 +1054,11 @@ export function StudioObservability({
           wx = (loc.colIdx - (totalCols - 1) / 2) * spX;
           wz = (loc.rowIdx - (loc.rowCount - 1) / 2) * spZ;
         }
-        const proj = project3DPoint(wx, 0, wz);
-        const px = (pinned ? pinned.x : proj.x) + offset.x;
-        const py = (pinned ? pinned.y : proj.y) + offset.y;
+        const proj = project3DPoint((pinned ? pinned.x : wx) + offset.x, 0,
+          (pinned ? pinned.y : wz) + offset.y);
         raw.set(name, {
-          x: px,
-          y: py,
+          x: proj.x,
+          y: proj.y,
           z: proj.z,
           tier,
         });
@@ -1513,6 +1539,8 @@ export function StudioObservability({
           }
           role="group"
           aria-label={t("Runtime topology and impact")}
+          onContextMenu={(event) => event.preventDefault()}
+          onLostPointerCapture={endPointerInteraction}
           style={{
             ...(canvasOnly ? {} : { maxHeight: 560 }),
             touchAction: view === "3D" || draggingNode ? "none" : "auto",
@@ -1554,39 +1582,40 @@ export function StudioObservability({
               const worldY = (svgY - 330 - pan.y) / zoom + 330;
               setPinnedPositions((prev) => ({
                 ...prev,
-                [createdName]: {
-                  x: Math.round(worldX),
-                  y: Math.round(worldY),
+                [view === "3D" ? "3D:" + createdName : createdName]: {
+                  x: Math.round(view === "3D" ? (worldX-600)*Math.cos(camera.yaw)+((worldY-325)/0.5)*Math.sin(camera.yaw) : worldX),
+                  y: Math.round(view === "3D" ? -(worldX-600)*Math.sin(camera.yaw)+((worldY-325)/0.5)*Math.cos(camera.yaw) : worldY),
                 },
               }));
             }
           }}
           onPointerDown={(event) => {
+            if (activePointer.current !== null || ![0,1,2].includes(event.button)) return;
+            event.preventDefault();
+            activePointer.current = event.pointerId;
             cameraDrag.current = {
               x: event.clientX,
               y: event.clientY,
               mode:
-                view === "3D" && !event.shiftKey && event.button === 0 ? "ROTATE" : "PAN",
+                view === "3D" && (event.button === 2 || (event.button === 0 && !event.shiftKey)) ? "ROTATE" : "PAN",
             };
             event.currentTarget.setPointerCapture(event.pointerId);
           }}
-          onPointerUp={() => {
-            cameraDrag.current = null;
-            nodeDrag.current = null;
-            setDraggingNode(null);
-          }}
-          onPointerCancel={() => {
-            cameraDrag.current = null;
-            nodeDrag.current = null;
-            setDraggingNode(null);
-          }}
+          onPointerUp={endPointerInteraction}
+          onPointerCancel={endPointerInteraction}
           onPointerMove={(event) => {
+            if (event.buttons === 0) { endPointerInteraction(); return; }
+            if (activePointer.current !== event.pointerId) return;
             if (nodeDrag.current && svg.current) {
-              const rect = svg.current.getBoundingClientRect();
-              const scaleX = 1200 / Math.max(1, rect.width);
-              const scaleY = 660 / Math.max(1, rect.height);
-              const dx = ((event.clientX - nodeDrag.current.startX) * scaleX) / zoom;
-              const dy = ((event.clientY - nodeDrag.current.startY) * scaleY) / zoom;
+              const matrix = svg.current.getScreenCTM();
+              if (!matrix) return;
+              const inverse = matrix.inverse();
+              const start = new DOMPoint(nodeDrag.current.startX,nodeDrag.current.startY).matrixTransform(inverse);
+              const current = new DOMPoint(event.clientX,event.clientY).matrixTransform(inverse);
+              const screenDx = (current.x-start.x)/zoom;
+              const screenDy = (current.y-start.y)/zoom;
+              const dx = view === "3D" ? screenDx*Math.cos(camera.yaw)+(screenDy/0.5)*Math.sin(camera.yaw) : screenDx;
+              const dy = view === "3D" ? -screenDx*Math.sin(camera.yaw)+(screenDy/0.5)*Math.cos(camera.yaw) : screenDy;
               if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
                 nodeDrag.current.moved = true;
               }
@@ -1944,10 +1973,16 @@ export function StudioObservability({
                     aria-pressed={isSelected}
                     style={{ outline: "none" }}
                     onPointerDown={(event) => {
+                      if (event.button !== 0 || activePointer.current !== null) return;
+                      onSelect(name);
                       event.stopPropagation();
-                      const existing = customOffsets[name] ?? { x: 0, y: 0 };
+                      event.preventDefault();
+                      activePointer.current = event.pointerId;
+                      svg.current?.setPointerCapture(event.pointerId);
+                      const positionKey = view === "3D" ? "3D:" + name : name;
+                      const existing = customOffsets[positionKey] ?? { x: 0, y: 0 };
                       nodeDrag.current = {
-                        service: name,
+                        service: positionKey,
                         startX: event.clientX,
                         startY: event.clientY,
                         origX: existing.x,
@@ -2070,10 +2105,16 @@ export function StudioObservability({
                   aria-pressed={isSelected}
                   style={{ outline: "none" }}
                   onPointerDown={(event) => {
+                    if (event.button !== 0 || activePointer.current !== null) return;
+                    onSelect(name);
                     event.stopPropagation();
-                    const existing = customOffsets[name] ?? { x: 0, y: 0 };
+                    event.preventDefault();
+                    activePointer.current = event.pointerId;
+                    svg.current?.setPointerCapture(event.pointerId);
+                    const positionKey = name;
+                    const existing = customOffsets[positionKey] ?? { x: 0, y: 0 };
                     nodeDrag.current = {
-                      service: name,
+                      service: positionKey,
                       startX: event.clientX,
                       startY: event.clientY,
                       origX: existing.x,

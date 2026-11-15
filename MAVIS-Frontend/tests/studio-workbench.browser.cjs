@@ -54,6 +54,40 @@ async function main() {
     await page.screenshot({path:path.join(output,"initial.png"),fullPage:true,animations:"disabled"});
     const telemetry=page.getByRole("button",{name:/Service Telemetry & Impact/});
     await telemetry.waitFor();
+    const graph=page.locator('svg[data-studio-graph]').first();
+    const node=graph.getByRole("button",{name:"order-service",exact:true});
+    const anchor=()=>node.evaluate(element=>{
+      const label=element.querySelector(":scope > rect");
+      return {x:Number(label.getAttribute("x"))+Number(label.getAttribute("width"))/2,y:Number(label.getAttribute("y"))-10};
+    });
+    const world=(point,yaw)=>({x:(point.x-600)*Math.cos(yaw)+(point.y-325)/0.5*Math.sin(yaw),
+      z:-(point.x-600)*Math.sin(yaw)+(point.y-325)/0.5*Math.cos(yaw)});
+    const bounds=await node.boundingBox();
+    await page.mouse.move(bounds.x+bounds.width/2,bounds.y+bounds.height/2);
+    await page.mouse.down({button:"left"});
+    await page.mouse.move(bounds.x+bounds.width/2+40,bounds.y+bounds.height/2+15,{steps:5});
+    await page.mouse.up({button:"left"});
+    const initialWorld=world(await anchor(),0.78);
+    const movedBounds=await node.boundingBox();
+    await page.mouse.move(movedBounds.x+movedBounds.width/2,movedBounds.y+movedBounds.height/2);
+    await page.mouse.down({button:"right"});
+    await page.mouse.move(movedBounds.x+movedBounds.width/2+50,movedBounds.y+movedBounds.height/2,{steps:8});
+    await page.mouse.up({button:"right"});
+    const rotatedWorld=world(await anchor(),0.78-50*0.0085);
+    assert.ok(Math.abs(initialWorld.x-rotatedWorld.x)<0.01,"Orbit must retain the dragged node's world X");
+    assert.ok(Math.abs(initialWorld.z-rotatedWorld.z)<0.01,"Orbit must retain the dragged node's world Z");
+    assert.equal(await graph.evaluate(element=>element.dispatchEvent(new MouseEvent("contextmenu",{button:2,bubbles:true,cancelable:true}))),false);
+    const board=await graph.boundingBox();
+    await page.mouse.move(board.x+20,board.y+20);
+    await page.mouse.down({button:"right"});
+    await page.mouse.move(board.x+40,board.y+20);
+    await page.evaluate(()=>window.dispatchEvent(new Event("blur")));
+    const afterBlur=await anchor();
+    await page.mouse.move(board.x+100,board.y+30);
+    assert.deepEqual(await anchor(),afterBlur,"Blur must end orbit even while the mouse button remains down");
+    await page.mouse.up({button:"right"});
+    await page.mouse.move(board.x+150,board.y+40);
+    assert.deepEqual(await anchor(),afterBlur,"Released pointer must not keep rotating");
     await page.getByRole("button",{name:"Stats",exact:true}).click();
     await page.getByText("Server Cluster Overview (Admin POV)",{exact:true}).waitFor();
     assert.equal(await page.locator("main").isVisible(),false);
@@ -65,7 +99,7 @@ async function main() {
     assert.equal(await page.getByText("Server Cluster Overview (Admin POV)",{exact:true}).count(),0);
     await page.screenshot({path:path.join(output,"telemetry.png"),fullPage:true,animations:"disabled"});
     assert.deepEqual(errors,[]);
-    console.log("PASS Stats overview and Service Telemetry render in separate Workbench panels");
+    console.log("PASS Studio world-layout orbit, pointer cleanup, context-menu prevention and separate Stats panels");
   }finally{
     if(browser)await browser.close();
     await new Promise(resolve=>server.close(resolve));
