@@ -78,6 +78,19 @@ async function main() {
     assert.ok(Math.abs(initialWorld.z-rotatedWorld.z)<0.01,"Orbit must retain the dragged node's world Z");
     assert.equal(await graph.evaluate(element=>element.dispatchEvent(new MouseEvent("contextmenu",{button:2,bubbles:true,cancelable:true}))),false);
     const board=await graph.boundingBox();
+    const scene=graph.locator(":scope > g").first();
+    const sceneBeforePan=await scene.getAttribute("transform");
+    const nodeBeforePan=await anchor();
+    const screenBeforePan=await node.boundingBox();
+    await page.mouse.move(board.x+30,board.y+32);
+    await page.mouse.down({button:"left"});
+    await page.mouse.move(board.x+95,board.y+58,{steps:5});
+    await page.mouse.up({button:"left"});
+    assert.notEqual(await scene.getAttribute("transform"),sceneBeforePan,"Left drag must pan the canvas");
+    assert.deepEqual(await anchor(),nodeBeforePan,"Panning must not change the camera angle or projected layout");
+    const screenAfterPan=await node.boundingBox();
+    assert.ok(Math.abs(screenAfterPan.x-screenBeforePan.x-65)<1 && Math.abs(screenAfterPan.y-screenBeforePan.y-26)<1,
+      "Panning must follow the pointer in screen pixels");
     await page.mouse.move(board.x+20,board.y+20);
     await page.mouse.down({button:"right"});
     await page.mouse.move(board.x+40,board.y+20);
@@ -146,6 +159,13 @@ async function main() {
     assert.ok(await table.getByText("2",{exact:true}).isVisible(),"Inline scaling must update the table");
     await search.clear();
     await page.screenshot({path:path.join(output,"telemetry.png"),fullPage:true,animations:"disabled"});
+    const orderWire=graph.locator('[data-studio-edge-from="api-gateway"][data-studio-edge-to="order-service"]');
+    const orderLatency=orderWire.locator("[data-studio-wire-metric]");
+    const baselineLatency=Number((await orderLatency.textContent()).match(/\d+/)[0]);
+    const latencyInput=page.getByRole("spinbutton",{name:"Custom injected network latency ms"});
+    await latencyInput.fill("200");
+    assert.equal(await orderLatency.textContent(),`≈ ${baselineLatency+200} ms`);
+    await latencyInput.fill("0");
     const demand=page.getByRole("spinbutton",{name:"Custom incoming traffic req/s"});
     await demand.fill("1500");
     await graph.getByText("503 ✕",{exact:true}).waitFor();
@@ -215,8 +235,15 @@ async function main() {
     await dragWireTo(inventory.x+inventory.width/2,inventory.y+inventory.height/2);
     assert.equal(await graph.locator('[data-studio-edge-from="s3-storage-2"][data-studio-edge-to="inventory-service"]').count(),1);
     const nameInput=page.getByRole("textbox",{name:"Node name"});
+    const nodeHeading=page.getByRole("heading",{name:"s3-storage-2",exact:true}).getByRole("button");
+    assert.equal(await nameInput.count(),0,"The Inspector should not show a separate rename field");
+    await nodeHeading.dblclick();
+    await nameInput.fill("Cancelled name");
+    await nameInput.press("Escape");
+    assert.equal(await nameInput.count(),0);
+    await nodeHeading.dblclick();
     await nameInput.fill("orders-postgres");
-    await page.getByRole("button",{name:"Save name",exact:true}).click();
+    await nameInput.press("Enter");
     await page.getByText("A node already uses this name.",{exact:true}).waitFor();
     const storageName="Kho hóa đơn";
     await nameInput.fill(storageName);
@@ -228,10 +255,22 @@ async function main() {
     await page.getByRole("button",{name:"Save",exact:true}).click();
     await page.getByText("Snapshot nodes",{exact:true}).click();
     await page.getByText(storageName+" → order-service · HTTP",{exact:true}).waitFor();
+    await page.getByRole("heading",{name:storageName,exact:true}).getByRole("button").dblclick();
     await nameInput.fill("Kho mới");
     await nameInput.press("Enter");
     await graph.getByRole("button",{name:"Kho mới",exact:true}).waitFor();
     assert.ok(await page.getByText(storageName+" → order-service · HTTP",{exact:true}).isVisible(),"Captured names must remain unchanged");
+    const wirePoint=await wire.locator("[data-studio-wire-hit]").evaluate(path=>{
+      const point=path.getPointAtLength(path.getTotalLength()*0.48);
+      const screen=point.matrixTransform(path.getScreenCTM());
+      return {x:screen.x,y:screen.y};
+    });
+    await page.mouse.click(wirePoint.x,wirePoint.y);
+    assert.equal(await wire.getAttribute("aria-pressed"),"true","Clicking the wire must select it");
+    await graph.getByRole("button",{name:"Disconnect selected wire"}).click();
+    assert.equal(await wire.count(),0,"The selected wire must be removable from the canvas");
+    assert.equal(await graph.locator('[data-studio-edge-from="s3-storage-2"][data-studio-edge-to="inventory-service"]').count(),1);
+    assert.ok(await page.getByText(storageName+" → order-service · HTTP",{exact:true}).isVisible());
     assert.deepEqual(errors,[]);
     console.log("PASS Studio world-layout orbit, pointer cleanup, context-menu prevention and separate Stats panels");
   }finally{

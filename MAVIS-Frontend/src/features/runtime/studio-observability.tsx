@@ -862,6 +862,52 @@ function render3DSeNodeSculpture(
   );
 }
 
+function renderWireArrow(
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  color: string,
+  curved = false,
+) {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  if (Math.hypot(dx, dy) < 24) return null;
+
+  // Match the rendered cubic, whose two control points share the midpoint x.
+  const pointAt = (t: number) => ({
+    x: from.x + dx * (curved ? t * (1.5 - 1.5 * t + t * t) : t),
+    y: from.y + dy * (curved ? t * t * (3 - 2 * t) : t),
+  });
+  // Leave space for the icon and the label below the destination.
+  const clearance = dy < 0 ? 47 : 36;
+  let low = 0.5;
+  let high = 1;
+  for (let step = 0; step < 10; step++) {
+    const t = (low + high) / 2;
+    const point = pointAt(t);
+    if (Math.hypot(to.x - point.x, to.y - point.y) > clearance) low = t;
+    else high = t;
+  }
+  const point = pointAt(low);
+  const next = pointAt(low + 0.001);
+  const angle = (Math.atan2(next.y - point.y, next.x - point.x) * 180) / Math.PI;
+
+  return (
+    <path
+      data-studio-wire-arrow
+      d="M -5 -2.7 L 0 0 L -5 2.7"
+      transform={`translate(${point.x}, ${point.y}) rotate(${angle})`}
+      fill="none"
+      stroke={color}
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      opacity="0.85"
+      pointerEvents="none"
+      aria-hidden="true"
+    />
+  );
+}
+
 export function StudioObservability({
   data,
   selected,
@@ -870,7 +916,9 @@ export function StudioObservability({
   onQuickAction,
   onSpawnBlock,
   onConnect,
+  onDisconnect,
   nodeNames,
+  simulated = false,
   canvasOnly = false,
   defaultView = "2D",
 }: {
@@ -881,7 +929,9 @@ export function StudioObservability({
   onQuickAction?: (command: StudioQuickAction) => void;
   onSpawnBlock?: (presetKey: string) => string | undefined;
   onConnect?: (from: string, to: string) => void;
+  onDisconnect?: (from: string, to: string) => void;
   nodeNames?: Readonly<Record<string, string>>;
+  simulated?: boolean;
   canvasOnly?: boolean;
   defaultView?: "2D" | "3D";
 }) {
@@ -900,6 +950,7 @@ export function StudioObservability({
   const [draggedTool, setDraggedTool] = useState<DragPaletteItem | null>(null);
   const [dropTargetNode, setDropTargetNode] = useState<string | null>(null);
   const [traceId, setTraceId] = useState("");
+  const [selectedWire, setSelectedWire] = useState<{ from: string; to: string } | null>(null);
   const [exportError, setExportError] = useState(false);
 
   const cameraDrag = useRef<{ x: number; y: number; mode: "ROTATE" | "PAN" } | null>(null);
@@ -961,6 +1012,9 @@ export function StudioObservability({
     { enabled: Boolean(data.modelVersionId && data.projectId) },
   );
   const telemetry = data.telemetry;
+  const activeWire = selectedWire && telemetry?.interactions.some((edge) =>
+    edge.fromService === selectedWire.from && edge.toService === selectedWire.to,
+  ) ? selectedWire : null;
   const spansByTraceAndId = useMemo(() => new Map(
     telemetry?.spans.map((span) => [`${span.traceId}:${span.spanId}`, span]),
   ), [telemetry?.spans]);
@@ -1193,6 +1247,11 @@ export function StudioObservability({
   function graphPoint(clientX: number, clientY: number) {
     const matrix = graphContent.current?.getScreenCTM();
     return matrix ? new DOMPoint(clientX, clientY).matrixTransform(matrix.inverse()) : null;
+  }
+
+  function cutWire(from: string, to: string) {
+    setSelectedWire(null);
+    onDisconnect?.(from, to);
   }
 
   function renderConnectPort(name: string, x: number, y: number) {
@@ -1692,6 +1751,11 @@ export function StudioObservability({
               }));
             }
           }}
+          onPointerDownCapture={(event) => {
+            if (event.button === 0 && !(event.target as Element).closest("[data-studio-edge-from], [data-studio-cut-wire]")) {
+              setSelectedWire(null);
+            }
+          }}
           onPointerDown={(event) => {
             if (activePointer.current !== null || ![0,1,2].includes(event.button)) return;
             event.preventDefault();
@@ -1700,8 +1764,7 @@ export function StudioObservability({
             cameraDrag.current = {
               x: event.clientX,
               y: event.clientY,
-              mode:
-                view === "3D" && (event.button === 2 || (event.button === 0 && !event.shiftKey)) ? "ROTATE" : "PAN",
+              mode: view === "3D" && event.button === 2 ? "ROTATE" : "PAN",
             };
             event.currentTarget.setPointerCapture(event.pointerId);
           }}
@@ -1769,9 +1832,14 @@ export function StudioObservability({
                 pitch: 0.52,
               }));
             } else {
+              const matrix = svg.current?.getScreenCTM();
+              if (!matrix) return;
+              const inverse = matrix.inverse();
+              const origin = new DOMPoint(0, 0).matrixTransform(inverse);
+              const delta = new DOMPoint(dx, dy).matrixTransform(inverse);
               setPan((prev) => ({
-                x: Math.max(-3600, Math.min(3600, prev.x + dx * 1.15)),
-                y: Math.max(-2400, Math.min(2400, prev.y + dy * 1.15)),
+                x: Math.max(-3600, Math.min(3600, prev.x + delta.x - origin.x)),
+                y: Math.max(-2400, Math.min(2400, prev.y + delta.y - origin.y)),
               }));
             }
           }}
@@ -1786,28 +1854,6 @@ export function StudioObservability({
                 opacity="0.08"
               />
             </pattern>
-            <marker
-              id="studio-arrow-live"
-              viewBox="0 0 10 10"
-              refX="8"
-              refY="5"
-              markerWidth="6"
-              markerHeight="6"
-              orient="auto-start-reverse"
-            >
-              <path d="M 0 1 L 10 5 L 0 9 z" fill="var(--primary)" />
-            </marker>
-            <marker
-              id="studio-arrow-fault"
-              viewBox="0 0 10 10"
-              refX="8"
-              refY="5"
-              markerWidth="6"
-              markerHeight="6"
-              orient="auto-start-reverse"
-            >
-              <path d="M 0 1 L 10 5 L 0 9 z" fill="var(--destructive)" />
-            </marker>
           </defs>
 
           {/* Infinite Camera Viewport Transform (draw.io / Figma style proportional zoom & pan) */}
@@ -1937,8 +1983,8 @@ export function StudioObservability({
                   strokeDasharray={targetStopped ? "6 4" : "5 5"}
                   strokeWidth={targetStopped ? "2.2" : "1.5"}
                   opacity={targetStopped ? "0.9" : ".28"}
-                  markerEnd={targetStopped ? "url(#studio-arrow-fault)" : undefined}
                 />
+                {renderWireArrow(from, to, targetStopped ? "var(--destructive)" : "#64748b")}
                 {targetStopped && (
                   <g>
                     <rect
@@ -1979,6 +2025,13 @@ export function StudioObservability({
               const httpError = typeof status === "number" && status >= 400 && status <= 599;
               const edgeSevered = httpError || span?.spanStatus?.toUpperCase() === "ERROR";
               const faultLabel = httpError ? `${status} ✕` : "CALL FAILED";
+              const durationNs = span?.durationNanoseconds?.trim();
+              const durationMs = durationNs ? Number(durationNs) / 1_000_000 : NaN;
+              const latencyLabel = Number.isFinite(durationMs) && durationMs >= 0
+                ? `${simulated ? "≈ " : ""}${durationMs > 0 && durationMs < 0.1 ? "<0.1" : Number(durationMs.toFixed(durationMs < 10 ? 1 : 0))} ms`
+                : null;
+              const wireLabel = edgeSevered ? faultLabel : latencyLabel;
+              const badgeWidth = wireLabel ? Math.max(42, wireLabel.length * 6 + 12) : 0;
               const targetReplicas = resolveLiveReplicas(edge.toService);
               const mx = (from.x + to.x) / 2;
               const my = (from.y + to.y) / 2;
@@ -1992,48 +2045,79 @@ export function StudioObservability({
               const speedSec = Math.max(0.7, 2.2 / Math.max(1, Math.min(targetReplicas, 6))).toFixed(
                 2,
               );
-              const edgeColor = edgeSevered ? "#f43f5e" : "#64748b";
+              const wireSelected = activeWire?.from === edge.fromService && activeWire.to === edge.toService;
+              const wireName = `${nodeNames?.[edge.fromService] ?? edge.fromService} → ${nodeNames?.[edge.toService] ?? edge.toService}`;
+              const edgeColor = wireSelected ? "#7dd3fc" : edgeSevered ? "#f43f5e" : "#64748b";
               return (
                 <g
                   key={edge.traceId + index}
                   data-studio-edge-from={edge.fromService}
                   data-studio-edge-to={edge.toService}
-                  onClick={() => setTraceId(edge.traceId)}
-                  className="cursor-pointer"
+                  role={onDisconnect ? "button" : undefined}
+                  tabIndex={onDisconnect ? 0 : undefined}
+                  aria-label={onDisconnect ? wireName : undefined}
+                  aria-pressed={onDisconnect ? wireSelected : undefined}
+                  onPointerDown={(event) => {
+                    if (event.button === 0) event.stopPropagation();
+                  }}
+                  onClick={() => {
+                    if (onDisconnect) setSelectedWire({ from: edge.fromService, to: edge.toService });
+                    else setTraceId(edge.traceId);
+                  }}
+                  onKeyDown={(event) => {
+                    if (!onDisconnect) return;
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      setSelectedWire({ from: edge.fromService, to: edge.toService });
+                    } else if (wireSelected && (event.key === "Delete" || event.key === "Backspace")) {
+                      event.preventDefault();
+                      cutWire(edge.fromService, edge.toService);
+                    } else if (event.key === "Escape") {
+                      setSelectedWire(null);
+                    }
+                  }}
+                  className="group cursor-pointer"
                 >
-                  <title>{span?.operationName || `${edge.fromService} → ${edge.toService}`} · {edge.traceId}{httpError ? ` · HTTP ${status}` : ""}</title>
+                                    <title>
+                    {span?.operationName || wireName}
+                    {latencyLabel ? ` · ${simulated ? "Simulated latency" : "Trace duration"}: ${latencyLabel}` : ""}
+                    {typeof status === "number" ? ` · HTTP ${status}` : ""}
+                  </title>
+                  <path d={pathD} fill="none" stroke="transparent" strokeWidth="16"
+                    vectorEffect="non-scaling-stroke" pointerEvents="stroke" data-studio-wire-hit />
                   <path
                     d={pathD}
                     fill="none"
                     stroke={edgeColor}
+                    pointerEvents="none"
+                    className="group-hover:stroke-sky-300 group-focus-visible:stroke-sky-300"
                     strokeDasharray={edgeSevered ? "6 4" : undefined}
-                    strokeWidth={edgeSevered ? "2.0" : "1.5"}
-                    opacity={edgeSevered ? "0.9" : "0.6"}
-                    markerEnd={
-                      edgeSevered ? "url(#studio-arrow-fault)" : "url(#studio-arrow-live)"
-                    }
+                    strokeWidth={wireSelected ? "3" : edgeSevered ? "2.0" : "1.5"}
+                    opacity={wireSelected || edgeSevered ? "0.95" : "0.6"}
                   />
-                  {edgeSevered && (
-                    <g>
+                  {renderWireArrow(from, to, wireSelected || edgeSevered ? edgeColor : "#94a3b8", true)}
+                  {wireLabel && (
+                    <g data-studio-wire-metric>
                       <rect
-                        x={mx - (httpError ? 22 : 33)}
-                        y={my - 8}
-                        width={httpError ? 44 : 66}
-                        height="16"
+                        x={mx - badgeWidth / 2}
+                        y={my - 9}
+                        width={badgeWidth}
+                        height="18"
                         rx="8"
                         fill="#090d16"
-                        stroke="#f43f5e"
-                        strokeWidth="1.1"
+                        stroke={edgeSevered ? "#f43f5e" : wireSelected ? "#7dd3fc" : "#334155"}
+                        strokeWidth="1"
                       />
                       <text
                         x={mx}
-                        y={my + 3}
+                        y={my + 3.5}
                         textAnchor="middle"
-                        fill="#fda4af"
-                        fontSize="8.5"
-                        fontWeight="700"
+                        fill={edgeSevered ? "#fda4af" : "#e2e8f0"}
+                        fontFamily="monospace"
+                        fontSize="10"
+                        fontWeight="600"
                       >
-                        {faultLabel}
+                        {wireLabel}
                       </text>
                     </g>
                   )}
@@ -2046,7 +2130,7 @@ export function StudioObservability({
                     </>
                   )}
                   {!edgeSevered && (span || !onConnect) && (
-                    <circle r="3.8" fill="#38bdf8">
+                    <circle r="3.3" fill="#38bdf8" opacity="0.8" pointerEvents="none">
                       <animateMotion dur={`${speedSec}s`} repeatCount="indefinite" path={pathD} />
                     </circle>
                   )}
@@ -2306,6 +2390,37 @@ export function StudioObservability({
                 </g>
               );
             })}
+            {activeWire && (() => {
+              const from = positions.get(activeWire.from);
+              const to = positions.get(activeWire.to);
+              if (!from || !to) return null;
+              return (
+                <g
+                  data-studio-cut-wire
+                  role="button"
+                  tabIndex={0}
+                  aria-label={t("Disconnect selected wire")}
+                  transform={`translate(${(from.x + to.x) / 2}, ${(from.y + to.y) / 2 - 21})`}
+                  className="cursor-pointer"
+                  onPointerDown={(event) => {
+                    if (event.button === 0) event.stopPropagation();
+                  }}
+                  onClick={() => cutWire(activeWire.from, activeWire.to)}
+                  onKeyDown={(event) => {
+                    if (["Enter", " ", "Delete"].includes(event.key)) {
+                      event.preventDefault();
+                      cutWire(activeWire.from, activeWire.to);
+                    } else if (event.key === "Escape") {
+                      setSelectedWire(null);
+                    }
+                  }}
+                >
+                  <title>{t("Disconnect selected wire")}</title>
+                  <circle r="11" fill="#281520" stroke="#fda4af" strokeWidth="1.5" />
+                  <path d="m-3.5-3.5 7 7m0-7-7 7" stroke="#fda4af" strokeWidth="1.7" strokeLinecap="round" />
+                </g>
+              );
+            })()}
             {linkPreview && (() => {
               const from = positions.get(linkPreview.from);
               if (!from) return null;

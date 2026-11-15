@@ -583,6 +583,7 @@ export function StudioWorkbench() {
   );
   const [newNodeName, setNewNodeName] = useState("");
   const [nodeNames, setNodeNames] = useState<Record<string, string>>({});
+  const [editingName, setEditingName] = useState<string | null>(null);
   const [nameError, setNameError] = useState<{ service: string; message: string } | null>(null);
   const [nodeConfigs, setNodeConfigs] = useState<Record<string, NodeSimConfig>>({});
   const [extraEdges, setExtraEdges] = useState<Array<{ from: string; to: string; protocol: string }>>([]);
@@ -655,6 +656,7 @@ export function StudioWorkbench() {
     setBaselineReplicasMap(initialReps);
     setNodeConfigs({});
     setNodeNames({});
+    setEditingName(null);
     setNameError(null);
     setExtraEdges([]);
     setRemovedEdges([]);
@@ -703,13 +705,12 @@ export function StudioWorkbench() {
       ? prev : [...prev, { from, to, protocol }]);
   }
 
-  function toggleOutboundEdge(from: string, to: string) {
-    if (activeEdges.some((edge) => edge.from === from && edge.to === to)) {
-      setRemovedEdges((prev) => [...prev, `${from}->${to}`]);
-      setExtraEdges((prev) => prev.filter((edge) => edge.from !== from || edge.to !== to));
-    } else {
-      connectOutboundEdge(from, to);
+  function disconnectOutboundEdge(from: string, to: string) {
+    if (template.edges.some((edge) => edge.from === from && edge.to === to)) {
+      const key = `${from}->${to}`;
+      setRemovedEdges((prev) => prev.includes(key) ? prev : [...prev, key]);
     }
+    setExtraEdges((prev) => prev.filter((edge) => edge.from !== from || edge.to !== to));
   }
 
 
@@ -782,6 +783,7 @@ export function StudioWorkbench() {
       return;
     }
     setNodeNames((prev) => ({ ...prev, [service]: name }));
+    setEditingName(null);
     setNameError(null);
   }
 
@@ -989,7 +991,7 @@ export function StudioWorkbench() {
         spanKind: "CLIENT",
         spanStatus: failure ? "ERROR" : "OK",
         httpStatusCode,
-        durationNanoseconds: String((stopped ? 0 : Math.min(target.p95Now, simulatedTimeoutMs)) * 1_000_000),
+        durationNanoseconds: stopped ? null : String(Math.min(target.p95Now, simulatedTimeoutMs) * 1_000_000),
       };
     });
 
@@ -1163,30 +1165,6 @@ export function StudioWorkbench() {
           )}
         </div>
 
-        {/* CENTER TELEMETRY PILL BAR (Clean Monospace Engineering Bar) */}
-        <div className="hidden items-center gap-3 rounded-full border border-slate-800 bg-slate-950/90 px-3.5 py-0.5 text-[11px] lg:flex">
-          <div className="flex items-center gap-1.5">
-            <span className="font-mono text-[10px] uppercase text-slate-400">Traffic</span>
-            <span className="font-mono font-semibold text-slate-100">
-              {clusterRps.toLocaleString()} req/s
-            </span>
-          </div>
-          <div className="h-3 w-px bg-slate-800" />
-          <div className="flex items-center gap-1.5">
-            <span className="font-mono text-[10px] uppercase text-slate-400">RAM</span>
-            <span className="font-mono font-semibold text-slate-100">
-              {Math.round(totalRamMiB)} MiB
-            </span>
-            <div className="h-1.5 w-16 overflow-hidden rounded-full bg-slate-800">
-              <div
-                className="h-full rounded-full bg-sky-400/80 transition-all"
-                style={{ width: `${Math.min(100, Math.round((totalRamMiB / maxServerRamMiB) * 100))}%` }}
-              />
-            </div>
-            <span className="font-mono text-[10px] text-slate-500">/ {maxServerRamMiB}</span>
-          </div>
-        </div>
-
         <div className="flex items-center gap-1.5">
           {mode === "SANDBOX" && (
             <div className="hidden items-center gap-1 sm:flex">
@@ -1292,14 +1270,9 @@ export function StudioWorkbench() {
               <div className="flex min-h-0 flex-1 flex-col gap-3">
                 {/* Section A: 16-Component Functional Block Library (Smart 1/2/3/4 Column Auto-Grid) */}
                 <div className="flex min-h-0 flex-1 flex-col gap-2">
-                  <div className="flex items-center justify-between gap-1">
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                      3D Block Library ({STUDIO_COMPONENT_CATALOG.length})
-                    </p>
-                    <span className="rounded border border-slate-800 bg-slate-900 px-1.5 py-0.5 font-mono text-[9px] text-slate-400">
-                      {leftGridCols} col{leftGridCols > 1 ? "s" : ""}
-                    </span>
-                  </div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                    3D Block Library ({STUDIO_COMPONENT_CATALOG.length})
+                  </p>
 
                   {/* Search Input */}
                   <Input
@@ -1532,7 +1505,9 @@ export function StudioWorkbench() {
                 onQuickAction={applySandboxAction}
                 onSpawnBlock={addCustomBlock}
                 onConnect={connectOutboundEdge}
+                onDisconnect={disconnectOutboundEdge}
                 nodeNames={nodeNames}
+                simulated
                 canvasOnly
                 defaultView="3D"
               />
@@ -1612,28 +1587,15 @@ export function StudioWorkbench() {
                   </button>
                 </div>
 
-                {/* Cluster-wide KPI Summary Pills (Clean Monochrome Engineering Readouts, Zero Emojis) */}
-                <div className="flex items-center gap-2 font-mono text-[11px]">
-                  <span className="hidden rounded border border-slate-800 bg-slate-900 px-2 py-0.5 text-slate-400 sm:inline-block">
-                    REQ/S <strong className="text-slate-100">{clusterRps.toLocaleString()}</strong>
-                  </span>
-                  <span className="rounded border border-slate-800 bg-slate-900 px-2 py-0.5 text-slate-400">
-                    PODS <strong className="text-slate-100">{totalRunningPods}</strong>
-                  </span>
-                  <span className="rounded border border-slate-800 bg-slate-900 px-2 py-0.5 text-slate-400">
-                    CPU <strong className="text-slate-100">{avgCpu.toFixed(1)}%</strong>
-                  </span>
-                  <span className="rounded border border-slate-800 bg-slate-900 px-2 py-0.5 text-slate-400">
-                    RAM <strong className="text-slate-100">{Math.round(totalRamMiB)}M</strong>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setBottomCollapsed((prev) => !prev)}
-                    className="ml-1 rounded border border-slate-800 bg-slate-900 px-1.5 py-0.5 text-[10px] text-slate-400 hover:text-slate-100"
-                  >
-                    {bottomCollapsed ? "▲" : "▼"}
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  aria-label={bottomCollapsed ? t("Expand telemetry panel") : t("Collapse telemetry panel")}
+                  aria-expanded={!bottomCollapsed}
+                  onClick={() => setBottomCollapsed((prev) => !prev)}
+                  className="ml-1 rounded border border-slate-800 bg-slate-900 px-1.5 py-0.5 text-[10px] text-slate-400 hover:text-slate-100"
+                >
+                  {bottomCollapsed ? "▲" : "▼"}
+                </button>
               </div>
 
               {!bottomCollapsed && (
@@ -1646,7 +1608,7 @@ export function StudioWorkbench() {
                             Cluster Overview
                           </h2>
                           <p className="mt-0.5 text-xs text-slate-400">
-                            Sandbox · {healthyServicesCount}/{deploymentRows.length} services running · {totalRunningPods} pods · {activeEdges.length} links
+                            Sandbox · {healthyServicesCount}/{deploymentRows.length} services running · {activeEdges.length} links
                           </p>
                         </div>
                         <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
@@ -1662,12 +1624,13 @@ export function StudioWorkbench() {
 
                       <div>
                         <h3 className="mb-2 text-xs font-semibold text-slate-400">Traffic & reliability</h3>
-                        <dl className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-lg bg-slate-900/70 p-3 lg:grid-cols-4">
+                        <dl className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-lg bg-slate-900/70 p-3 lg:grid-cols-5">
                           {[
-                            ["Throughput", `${clusterRps.toLocaleString()} req/s`],
+                            ["Traffic", `${clusterRps.toLocaleString()} req/s`],
                             ["End-to-end p95", `${e2eP95} ms`],
                             ["5xx errors", `${clusterErrorRate}%`],
                             ["Estimated SLA", `${clusterSla}%`],
+                            ["Running pods", totalRunningPods.toLocaleString()],
                           ].map(([label, value]) => (
                             <div key={label}>
                               <dt className="text-[11px] text-slate-400">{label}</dt>
@@ -1683,7 +1646,7 @@ export function StudioWorkbench() {
                           {[
                             { label: "CPU allocation", value: totalVcpuAllocated, max: maxServerVcpu, units: "vCPU",
                               detail: `${avgCpu.toFixed(1)}% average load${peakCpuRow ? ` · Peak: ${nodeLabel(peakCpuRow.serviceName)} (${peakCpuRow.perPodCpu.toFixed(0)}%)` : ""}` },
-                            { label: "Memory usage", value: Math.round(totalRamMiB), max: maxServerRamMiB, units: "MiB",
+                            { label: "RAM usage", value: Math.round(totalRamMiB), max: maxServerRamMiB, units: "MiB",
                               detail: `${Math.max(0, maxServerRamMiB - Math.round(totalRamMiB))} MiB free` },
                           ].map(({ label, value, max, units, detail }) => (
                             <div key={label} className="space-y-1">
@@ -1904,9 +1867,52 @@ export function StudioWorkbench() {
                         {renderComponentIcon(selectedRow.serviceName, "size-4")}
                       </span>
                       <div className="min-w-0 flex-1">
-                        <h2 className="truncate font-mono text-sm font-semibold text-slate-100">
-                          {nodeLabel(selectedRow.serviceName)}
-                        </h2>
+                        {editingName === selectedRow.serviceName ? (
+                          <>
+                            <input
+                              autoFocus
+                              aria-label={t("Node name")}
+                              aria-invalid={nameError?.service === selectedRow.serviceName || undefined}
+                              maxLength={64}
+                              defaultValue={nodeLabel(selectedRow.serviceName)}
+                              onFocus={(event) => event.currentTarget.select()}
+                              onChange={() => setNameError(null)}
+                              onBlur={() => {
+                                setEditingName(null);
+                                setNameError(null);
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.nativeEvent.isComposing) return;
+                                if (event.key === "Enter") {
+                                  event.preventDefault();
+                                  renameNode(selectedRow.serviceName, event.currentTarget.value);
+                                } else if (event.key === "Escape") {
+                                  event.preventDefault();
+                                  setEditingName(null);
+                                  setNameError(null);
+                                }
+                              }}
+                              className="w-full rounded-sm bg-slate-950 px-1 font-mono text-sm font-semibold text-slate-100 outline outline-1 outline-sky-500"
+                            />
+                            {nameError?.service === selectedRow.serviceName && (
+                              <p role="alert" className="text-[11px] text-rose-300">{nameError.message}</p>
+                            )}
+                          </>
+                        ) : (
+                          <h2 className="font-mono text-sm font-semibold text-slate-100">
+                            <button
+                              type="button"
+                              title={t("Double-click to rename node")}
+                              onDoubleClick={() => setEditingName(selectedRow.serviceName)}
+                              onClick={(event) => {
+                                if (event.detail === 0) setEditingName(selectedRow.serviceName);
+                              }}
+                              className="block max-w-full cursor-text truncate text-left hover:text-sky-200"
+                            >
+                              {nodeLabel(selectedRow.serviceName)}
+                            </button>
+                          </h2>
+                        )}
                         <p className="font-mono text-[10.5px] text-slate-400">
                           CPU <strong className="text-slate-100">{selectedRow.perPodCpu.toFixed(1)}%</strong> · RAM{" "}
                           <strong className="text-slate-100">{Math.round(selectedRow.totalRam)}M</strong> · p95{" "}
@@ -1914,30 +1920,6 @@ export function StudioWorkbench() {
                         </p>
                       </div>
                     </div>
-
-                    <form
-                      key={JSON.stringify([selectedRow.serviceName, nodeLabel(selectedRow.serviceName)])}
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        renameNode(selectedRow.serviceName, String(new FormData(event.currentTarget).get("node-name") ?? ""));
-                      }}
-                      className="space-y-1"
-                    >
-                      <label htmlFor="studio-node-name" className="block text-[11px] text-slate-400">{t("Node name")}</label>
-                      <div className="flex gap-1.5">
-                        <input id="studio-node-name" name="node-name" maxLength={64}
-                          defaultValue={nodeLabel(selectedRow.serviceName)}
-                          aria-invalid={nameError?.service === selectedRow.serviceName || undefined}
-                          onChange={() => setNameError(null)}
-                          className="min-w-0 flex-1 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-100" />
-                        <button type="submit" className="rounded border border-slate-700 px-2 text-xs text-sky-200 hover:bg-slate-800">
-                          {t("Save name")}
-                        </button>
-                      </div>
-                      {nameError?.service === selectedRow.serviceName && (
-                        <p role="alert" className="text-[11px] text-rose-300">{nameError.message}</p>
-                      )}
-                    </form>
 
                     {/* Free-Form Replica / Pod Count Input + Quick Presets (No ×8 Cap!) */}
                     <div className="space-y-1.5 pt-0.5">
@@ -2101,36 +2083,6 @@ export function StudioWorkbench() {
                             className="w-14 bg-transparent text-right font-mono text-[11px] font-semibold text-slate-100 focus:outline-none"
                           />
                         </label>
-                      </div>
-                      <div className="grid grid-cols-4 gap-1">
-                        {(
-                          [
-                            ["S", "0.5C/256M", 0.5, 256],
-                            ["M", "1C/512M", 1, 512],
-                            ["L", "2C/1G", 2, 1024],
-                            ["XL", "4C/2G", 4, 2048],
-                          ] as const
-                        ).map(([tierKey, tierLabel, vcpu, ram]) => (
-                          <button
-                            key={tierKey}
-                            type="button"
-                            onClick={() =>
-                              updateNodeConfig(selectedRow.serviceName, {
-                                instanceTier: tierKey,
-                                vcpuPerPod: vcpu,
-                                ramPerPodMiB: ram,
-                              })
-                            }
-                            className={`h-6 rounded border font-mono text-[9.5px] font-semibold transition ${
-                              selectedRow.cfg.vcpuPerPod === vcpu &&
-                              selectedRow.cfg.ramPerPodMiB === ram
-                                ? "border-slate-200 bg-slate-100 text-slate-950"
-                                : "border-slate-800 bg-slate-950/80 text-slate-400 hover:border-slate-600 hover:text-slate-200"
-                            }`}
-                          >
-                            {tierLabel}
-                          </button>
-                        ))}
                       </div>
                     </div>
 
@@ -2460,7 +2412,7 @@ export function StudioWorkbench() {
                                   type="button"
                                   title={`Disconnect ${nodeLabel(selectedRow.serviceName)} → ${nodeLabel(target)}`}
                                   onClick={() =>
-                                    toggleOutboundEdge(selectedRow.serviceName, target)
+                                    disconnectOutboundEdge(selectedRow.serviceName, target)
                                   }
                                   className="text-slate-400 hover:text-rose-400"
                                 >
@@ -2477,7 +2429,7 @@ export function StudioWorkbench() {
                           value=""
                           onChange={(e) => {
                             if (e.target.value) {
-                              toggleOutboundEdge(selectedRow.serviceName, e.target.value);
+                              connectOutboundEdge(selectedRow.serviceName, e.target.value);
                             }
                           }}
                           className="h-6 w-full rounded border border-slate-800 bg-slate-950/90 px-1.5 font-sans text-[10px] text-slate-300"
