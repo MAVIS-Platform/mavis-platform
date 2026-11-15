@@ -30,6 +30,9 @@ const model={id:'model-1',projectId:'project-1',snapshotId:'source-1',revision:1
  {id:'payment-id',name:'payment',elementType:'SERVICE_CONTAINER',layer:'domain',description:'',evidence:[]}],
  edges:[{id:'orders-payment',from:'orders-id',to:'payment-id',protocol:'SERVICE_HTTP_CALL',originLayer:'STATIC',uncertain:false,evidence:[]}]};
 state.modelVersionId=model.id;state.projectId=model.projectId;state.serviceMappings={'orders':'orders-id','payment':'payment-id'};
+state.limits={memoryMiB:512,cpus:1,timeoutSeconds:300,services:{
+ orders:{runtime:'dotnet8-linux-x64-glibc',containerPort:8080,readinessPath:'/health'},
+ payment:{runtime:'java',containerPort:8080,readinessPath:'/health'}}};
 state.telemetry={observedAt:new Date().toISOString(),services:[
  {service:'orders',replicas:1,runningReplicas:1,stats:[{containerId:'orders-1',cpu:'1%',memory:'30MiB / 512MiB',network:'2kB / 1kB'}],logs:'CircuitBreaker fallback observed'},
  {service:'payment',replicas:1,runningReplicas:1,stats:[],logs:'ready'}],
@@ -137,6 +140,39 @@ async function main() {
       if (message.type() === "error") console.error(message.text());
     });
     await page.goto("http://127.0.0.1:" + server.address().port);
+    const parity = page.getByRole("region", { name: "Live capability parity", exact: true });
+    await parity.waitFor();
+    assert.equal(
+      await parity.getByRole("button", { name: "Apply scenario", exact: true }).isDisabled(),
+      true,
+      "simulated cluster scenarios must stay disabled in Live",
+    );
+    assert.equal(
+      await parity.getByRole("button", { name: "Scale orders to 16", exact: true }).isDisabled(),
+      true,
+      "BR-07 must keep 16/32 replicas unavailable in Live",
+    );
+    assert.equal(
+      await parity.getByRole("button", { name: "Scale orders to 4", exact: true }).isDisabled(),
+      false,
+      "a 1..8 replica preset backed by a real SCALE command must stay enabled",
+    );
+    assert.equal(
+      await parity.getByRole("button", { name: "Delete", exact: true }).isDisabled(),
+      true,
+      "Live keeps the prepared service definition; Delete stays disabled",
+    );
+    assert.equal(
+      await parity.getByRole("button", { name: "+ Custom block", exact: true }).isDisabled(),
+      true,
+      "Live cannot create services outside the approved profile",
+    );
+    assert.equal(await parity.getByLabel("Incoming Traffic (req/s)").isDisabled(), true);
+    assert.equal(await parity.getByLabel("Network / Query Lag (+ms)").isDisabled(), true);
+    await parity
+      .getByRole("heading", { name: "Hardware & Stress Simulation", exact: true })
+      .waitFor();
+    await parity.getByText("512 MiB", { exact: true }).waitFor();
     await page.getByRole("button", { name: "payment", exact: true }).click();
     await page
       .getByRole("heading", { name: "Worker verified impact paths", exact: true })
@@ -185,7 +221,7 @@ async function main() {
       await page.getByRole("button", { name: "Stop service", exact: true }).isDisabled(),
       true,
     );
-    await page.getByText("CONFIRMED", { exact: false }).waitFor();
+    await page.getByText(/SCALE orders → 4 · CONFIRMED/).waitFor();
     await finish.waitFor({ state: "visible" });
     await page.waitForFunction(
       () =>

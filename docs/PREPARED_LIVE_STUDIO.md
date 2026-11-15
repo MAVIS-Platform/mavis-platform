@@ -61,6 +61,8 @@ The command queue disables further changes until acknowledgement. Failed command
 
 This implementation activates prepared definitions. It does not generate new application code, rewrite arbitrary application configuration, or clone database contents. Sandbox-only controls such as simulated traffic, simulated resilience policies, arbitrary clone counts and local video evidence do not silently become Docker capabilities. Curated repositories can implement policies in their own code; Live reports their observed behavior.
 
+Live now exposes the full Sandbox control surface through a capability panel. Each control is labelled `REAL`, `PREPARED`, `OBSERVE` or `UNAVAILABLE` with a visible reason. Simulated cluster scenarios, custom blocks, hardware/stress inputs, arbitrary replica counts above 8, policy toggles and local video remain unavailable in Live and cannot queue a Docker command. See [Studio Live parity](STUDIO_LIVE_PARITY.md).
+
 Local verification includes backend topology validation and service authorization tests, Runner initialization tests, and browser tests for block activation and route connect/disconnect. A managed Docker test verifies activation of an initially stopped block with telemetry and cleanup. Production deployment and a real teacher/student account round-trip must be verified separately.
 
 ## Local verification on 15 November 2026

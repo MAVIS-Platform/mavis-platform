@@ -30,6 +30,8 @@ Trace spans can be filtered by service and trace identity. Before/After action d
 
 The Chaos Monkey control chooses one observed running service and requires confirmation before sending a real STOP action. Scale has both an integer input and a 1–8 slider.
 
+A Live capability panel now mirrors the Sandbox control surface. Controls backed by a real Docker command or observed telemetry are enabled; simulated scenarios, custom blocks, hardware/stress inputs, replicas above 8, policy toggles and local video are disabled with a visible reason. The panel never fabricates telemetry or queues an unsupported command. See [Studio Live parity](STUDIO_LIVE_PARITY.md).
+
 ## Frozen evidence
 
 Capture requires an explanation and observed telemetry. The browser captures the current graph as PNG. Java rejects a capture if a newer telemetry sample has replaced the displayed sample, validates the bounded PNG, and freezes the image, explanation, source/model identities, telemetry and actions under a SHA-256 digest.

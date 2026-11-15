@@ -271,6 +271,7 @@ public class RuntimeStudioService {
             session.getConfirmedServiceMappings() == null ? Set.of() : session.getConfirmedServiceMappings().keySet(), mapper);
         if (topology != null) result.set("topology", topology);
         result.set("serviceMappings", mapper.valueToTree(session.getConfirmedServiceMappings() == null ? java.util.Map.of() : session.getConfirmedServiceMappings()));
+        appendPinnedLimits(result, session);
         if (session.getConfirmedServiceMappings() != null)
             session.getConfirmedServiceMappings().keySet().stream().filter(name -> !"mavis-collector".equals(name)).sorted().forEach(services::add);
         return result.put("sessionId", session.getId().toString()).put("interactive", interactive)
@@ -287,6 +288,26 @@ public class RuntimeStudioService {
     private void save(RuntimeSession session, ObjectNode control) {
         session.setStudioControl(control);
         sessions.save(session);
+    }
+    /** Public, bounded profile facts for the Live inspector. Never expose environment values. */
+    private static void appendPinnedLimits(ObjectNode result, RuntimeSession session) {
+        JsonNode config = session.getScenarioConfig();
+        if (config == null || !config.path("profile").isObject()) return;
+        JsonNode profile = config.path("profile");
+        ObjectNode limits = result.putObject("limits");
+        limits.put("memoryMiB", profile.path("memoryMiB").asInt(512));
+        limits.put("cpus", profile.path("cpus").asDouble(1));
+        limits.put("timeoutSeconds", config.path("scenario").path("timeoutSeconds").asInt(300));
+        ObjectNode services = limits.putObject("services");
+        JsonNode applications = profile.path("applications");
+        if (!applications.isObject()) return;
+        applications.fields().forEachRemaining(entry -> {
+            if (!entry.getValue().isObject()) return;
+            services.putObject(entry.getKey())
+                .put("runtime", entry.getValue().path("runtime").asText(""))
+                .put("containerPort", entry.getValue().path("containerPort").asInt(0))
+                .put("readinessPath", entry.getValue().path("readinessPath").asText("/health"));
+        });
     }
     private static boolean changedReplicaState(String action, JsonNode result) {
         if (!result.path("replicasBefore").canConvertToInt() || !result.path("replicasAfter").canConvertToInt()) return false;
