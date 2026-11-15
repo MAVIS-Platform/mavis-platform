@@ -52,6 +52,19 @@ FROM information_schema.columns WHERE table_schema = current_schema()
 AND table_name = 'submission_snapshots' AND column_name = 'studio_evidence'),
 CASE WHEN to_regclass('submission_snapshots') IS NULL THEN 'partial' ELSE 'missing' END);
 """),
+    "V34__Assignment_Studio_Topology_Snapshot.sql": (34, """
+SELECT CASE
+    WHEN to_regclass('assignments') IS NULL THEN 'partial'
+    WHEN (SELECT count(*) FROM information_schema.columns WHERE table_schema = current_schema()
+          AND table_name = 'assignments' AND column_name IN ('studio_topology_snapshot','studio_topology_revision')) = 2
+         AND (SELECT data_type FROM information_schema.columns WHERE table_schema = current_schema()
+              AND table_name = 'assignments' AND column_name = 'studio_topology_snapshot') = 'jsonb'
+         AND (SELECT data_type FROM information_schema.columns WHERE table_schema = current_schema()
+              AND table_name = 'assignments' AND column_name = 'studio_topology_revision') = 'integer' THEN 'ready'
+    WHEN (SELECT count(*) FROM information_schema.columns WHERE table_schema = current_schema()
+          AND table_name = 'assignments' AND column_name IN ('studio_topology_snapshot','studio_topology_revision')) = 0 THEN 'missing'
+    ELSE 'partial' END;
+"""),
     "V26__Course_Lab_Access.sql": (26, COURSE_ACCESS_PROBE),
     "V27__Course_Quizzes.sql": (27, QUIZ_PROBE),
     "V28__Submission_Course_Quiz_Evidence.sql": (28, """
