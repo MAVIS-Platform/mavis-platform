@@ -110,7 +110,7 @@ export const elementSchema = z.object({
   elementType: z.string().optional(),
   parentId: z.string().nullable().optional(),
   technology: z.string().nullable().optional(),
-  properties: z.record(z.unknown()).optional(),
+  properties: z.record(z.string(), z.unknown()).optional(),
   description: z.string(),
   evidence: z.array(evidenceSchema),
 });
@@ -127,7 +127,7 @@ export const edgeSchema = z.object({
   underlyingEdgeIds: z.array(z.string()).optional(),
   evidenceCount: z.number().int().nonnegative().nullable().optional(),
   evidenceIds: z.array(z.string()).optional(),
-  properties: z.record(z.unknown()).optional(),
+  properties: z.record(z.string(), z.unknown()).optional(),
 });
 export const modelSchema = z
   .object({
@@ -157,7 +157,7 @@ export const runtimeConfigurationSchema = z.object({
   projectId: z.string(),
   snapshotId: z.string().nullable().optional(),
   modelId: z.string().nullable().optional(),
-  profile: z.record(z.unknown()).optional(),
+  profile: z.record(z.string(), z.unknown()).optional(),
   configured: z.boolean().optional(),
   profileId: z.string(),
   supported: z.boolean(),
@@ -280,7 +280,7 @@ export const assignmentSchema = z.object({
   requiredDiagramTypes: z.array(z.string()).optional(),
   ruleSetVersion: z.string().nullish(),
   requireRuntimeTrace: z.boolean().optional(),
-  aiPolicy: z.union([z.record(z.unknown()), z.string()]).nullish(),
+  aiPolicy: z.union([z.record(z.string(), z.unknown()), z.string()]).nullish(),
   labOrder: z.number().int().positive().nullish(),
   id: z.string(),
   workspaceId: z.string(),
@@ -329,7 +329,7 @@ export const submissionSchema = z
     diagramVersionId: z.string().optional(),
     diagramNotation: z.string().optional(),
     submissionNotes: z.string().optional(),
-    diagramLayout: z.record(z.unknown()).optional(),
+    diagramLayout: z.record(z.string(), z.unknown()).optional(),
     evaluationRunId: z.string().nullable().optional(),
     complianceScore: z.number().nullable().optional(),
     evidencePackageDigest: z
@@ -337,7 +337,7 @@ export const submissionSchema = z
       .regex(/^sha256:[a-f0-9]{64}$/)
       .optional(),
     courseQuizEvidence: courseQuizEvidenceSchema.nullish(),
-    studioEvidence:z.record(z.unknown()).nullish(),
+    studioEvidence:z.record(z.string(), z.unknown()).nullish(),
     studentSnapshots: z.array(studentSnapshotSchema).nullish(),
     id: z.string(),
     assignmentId: z.string(),
@@ -427,7 +427,7 @@ export const diagramSchema = z.object({
 export const evaluationSchema = z.object({
   id: z.string(),
   modelId: z.string(),
-  result: z.record(z.unknown()),
+  result: z.record(z.string(), z.unknown()),
 });
 
 export const runtimeStepResultSchema = z.object({

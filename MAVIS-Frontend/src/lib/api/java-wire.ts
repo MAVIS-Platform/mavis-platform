@@ -11,7 +11,7 @@ import {
   type Project,
 } from "@/types/domain";
 import { ApiError } from "@/lib/errors/api-error";
-export const object = z.record(z.unknown());
+export const object = z.record(z.string(), z.unknown());
 const nullableText = z.string().nullish();
 export const javaProject = z.object({
   id: z.string().uuid(),
@@ -268,9 +268,9 @@ export function modelView(metadata: unknown, graph: unknown, details: unknown) {
           // S2b: node metadata from the graph API (additive, nullable on the server). Parsed
           // leniently here and normalized by resolveNodeMetadata — a wrong type or blank value
           // becomes null instead of failing the whole graph or faking a display value.
-          protocol: z.unknown(),
-          transportAuthority: z.unknown(),
-          resolutionIssue: z.unknown(),
+          protocol: z.unknown().optional(),
+          transportAuthority: z.unknown().optional(),
+          resolutionIssue: z.unknown().optional(),
           status: nullableText.optional(),
           languageStack: nullableText.optional(),
         }),
