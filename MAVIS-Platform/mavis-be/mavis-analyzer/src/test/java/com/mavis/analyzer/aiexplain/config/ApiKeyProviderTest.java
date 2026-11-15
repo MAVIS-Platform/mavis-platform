@@ -26,26 +26,26 @@ class ApiKeyProviderTest {
     @Test
     @DisplayName("Ưu tiên lấy key từ cấu hình mavis.ai.api-key nếu có")
     void testResolveApiKey_FromConfiguredProperty() {
-        ReflectionTestUtils.setField(apiKeyProvider, "configuredApiKey", "  test-only-redacted-api-key  ");
+        ReflectionTestUtils.setField(apiKeyProvider, "configuredApiKey", "  test-only-api-key-fixture-1  ");
 
         Optional<String> resolved = apiKeyProvider.resolveApiKey();
 
         assertThat(resolved).isPresent();
-        assertThat(resolved.get()).isEqualTo("test-only-redacted-api-key");
+        assertThat(resolved.get()).isEqualTo("test-only-api-key-fixture-1");
     }
 
     @Test
     @DisplayName("Đọc tự động key từ file tạm theo đường dẫn keyFilePath dạng raw text")
     void testResolveApiKey_FromCustomFile_RawKey(@TempDir Path tempDir) throws IOException {
         Path keyFile = tempDir.resolve("API_KEY");
-        Files.writeString(keyFile, "test-only-redacted-api-key\n", StandardCharsets.UTF_8);
+        Files.writeString(keyFile, "test-only-api-key-fixture-3\n", StandardCharsets.UTF_8);
 
         ReflectionTestUtils.setField(apiKeyProvider, "keyFilePath", keyFile.toAbsolutePath().toString());
 
         Optional<String> resolved = apiKeyProvider.resolveApiKey();
 
         assertThat(resolved).isPresent();
-        assertThat(resolved.get()).isEqualTo("test-only-redacted-api-key");
+        assertThat(resolved.get()).isEqualTo("test-only-api-key-fixture-3");
     }
 
     @Test
@@ -54,7 +54,7 @@ class ApiKeyProviderTest {
         Path keyFile = tempDir.resolve("API_KEY.txt");
         String fileContent = "# File cấu hình bí mật\n" +
                 "\n" +
-                "API_KEY=\"test-only-redacted-api-key\"\n";
+                "API_KEY=\"test-only-api-key-fixture-2\"\n";
         Files.writeString(keyFile, fileContent, StandardCharsets.UTF_8);
 
         ReflectionTestUtils.setField(apiKeyProvider, "keyFilePath", keyFile.toAbsolutePath().toString());
@@ -62,7 +62,7 @@ class ApiKeyProviderTest {
         Optional<String> resolved = apiKeyProvider.resolveApiKey();
 
         assertThat(resolved).isPresent();
-        assertThat(resolved.get()).isEqualTo("test-only-redacted-api-key");
+        assertThat(resolved.get()).isEqualTo("test-only-api-key-fixture-2");
     }
 
     @Test
