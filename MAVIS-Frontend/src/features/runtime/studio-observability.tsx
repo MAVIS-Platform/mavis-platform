@@ -125,7 +125,7 @@ function getArchetypeTheme(
       iconBg: "#4c0519",
       accent: "#fb7185",
       badgeText: "CRASHED",
-      typeLabel: "503 FAULT",
+      typeLabel: "UNAVAILABLE",
     };
   }
   const lower = serviceName.toLowerCase();
@@ -206,6 +206,47 @@ function getArchetypeTheme(
   }
   return base;
 }
+
+const STUDIO_2D_SYMBOLS = [
+  { kind: "cdn", match: /cdn|cloudflare|cloudfront/, body: "M24 3a21 21 0 1 0 0 42 21 21 0 1 0 0-42Z", detail: "M3 24h42M8 12c8 5 24 5 32 0M8 36c8-5 24-5 32 0M24 3c-14 9-14 33 0 42 14-9 14-33 0-42Z", color: "#38bdf8" },
+  { kind: "waf", match: /waf|shield|firewall|fraud/, body: "M24 3 43 11v12c0 12-9 19-19 23C14 42 5 35 5 23V11Z", detail: "m15 24 6 6 12-13", color: "#38bdf8" },
+  { kind: "balancer", match: /load.?balancer|\blb\b/, body: "M24 3 45 24 24 45 3 24Z", detail: "M15 24h9m0 0 9-9m-9 9 9 9M11 24a2 2 0 1 0 4 0 2 2 0 1 0-4 0Z", color: "#38bdf8" },
+  { kind: "gateway", match: /gateway|ingress|proxy|nginx|bff|router/, body: "M5 43V17L24 4l19 13v26H33V22H15v21Z", detail: "M20 30h8m-4-4 4 4-4 4", color: "#7dd3fc" },
+  { kind: "worker", match: /worker|consumer|job|batch|cron/, body: "M19 3h10l2 7 6-2 7 7-3 6 5 3v7l-7 2 1 5-7 6-6-3-3 5h-8l-2-7-6 1-5-7 3-6-4-3v-8l7-2-1-6 7-4 5 3Z", detail: "M24 16a8 8 0 1 0 0 16 8 8 0 1 0 0-16Z", color: "#fbbf24" },
+  { kind: "auth", match: /auth|sso|oauth|iam|keycloak/, body: "M11 20h26a4 4 0 0 1 4 4v17a4 4 0 0 1-4 4H11a4 4 0 0 1-4-4V24a4 4 0 0 1 4-4Z", detail: "M14 20v-6a10 10 0 0 1 20 0v6M24 28a3 3 0 1 0 0 6 3 3 0 1 0 0-6Zm0 6v4", color: "#c4b5fd" },
+  { kind: "function", match: /lambda|serverless|\bfn\b/, body: "M29 3 9 27h13l-3 18 21-25H27Z", detail: "m29 13-11 11h9", color: "#fbbf24" },
+  { kind: "sql", match: /postgres|mysql|maria|sqlite|oracle|\b(?:db|sql)\b|database/, body: "M5 11C5 1 43 1 43 11v26c0 10-38 10-38 0Z", detail: "M5 11c0 10 38 10 38 0M5 24c0 10 38 10 38 0", color: "#34d399" },
+  { kind: "cache", match: /redis|memcache|cache/, body: "m4 12 20-8 20 8v7l-20 8-20-8Zm0 15 20 8 20-8v7l-20 8-20-8Z", detail: "m4 12 20 8 20-8", color: "#fda4af" },
+  { kind: "document", match: /mongo|dynamo|cassandra|nosql/, body: "M10 4h17l10 10v30H10Z", detail: "M27 4v10h10M16 24l-3 4 3 4m15-8 3 4-3 4m-6-10-3 12", color: "#6ee7b7" },
+  { kind: "object", match: /s3|bucket|blob|minio|storage/, body: "M5 11c0-10 38-10 38 0l-6 27c-2 7-24 7-26 0Z", detail: "M5 11c0 9 38 9 38 0m-24 9 5 4 5-4", color: "#34d399" },
+  { kind: "search", match: /elastic|opensearch|search|solr/, body: "M20 4a16 16 0 0 1 13 25l11 11-4 4-11-11A16 16 0 1 1 20 4Z", detail: "M20 10a10 10 0 1 0 0 20 10 10 0 1 0 0-20Z", color: "#fcd34d" },
+  { kind: "telemetry", match: /otel|prometheus|grafana|jaeger|metric|monitor|telemetry/, body: "M4 43V27h9v16Zm15 0V19h9v24Zm15 0V9h9v34Z", detail: "m4 19 10-7 9 1 15-10m-6 0h6v6", color: "#67e8f9" },
+  { kind: "queue", match: /rabbit|amqp|celery|bull|queue|\bmq\b/, body: "M4 11h40v26H4Z", detail: "m4 12 20 15 20-15M4 37l14-14m26 14L30 23", color: "#fdba74" },
+  { kind: "stream", match: /kafka|broker|stream|event/, body: "M4 11a7 7 0 0 1 7-7h26a7 7 0 0 1 7 7v26a7 7 0 0 1-7 7H11a7 7 0 0 1-7-7Z", detail: "M9 14h13l5 5h12M9 24h30M9 34h13l5-5h12", color: "#cbd5e1" },
+  { kind: "order", match: /order/, body: "M16 14h27l-6 19H20Z", detail: "M6 8h8l6 25M22 40a3 3 0 1 0 0 6 3 3 0 1 0 0-6Zm13 0a3 3 0 1 0 0 6 3 3 0 1 0 0-6Z", color: "#93c5fd" },
+  { kind: "payment", match: /payment|ledger|billing/, body: "M4 12a5 5 0 0 1 5-5h30a5 5 0 0 1 5 5v24a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5Z", detail: "M4 17h40M11 30h12m-12 5h6", color: "#a5b4fc" },
+  { kind: "inventory", match: /inventory/, body: "m4 13 20-9 20 9v22l-20 9-20-9Z", detail: "m4 13 20 10 20-10M24 23v21M14 9l20 10v9", color: "#a5b4fc" },
+  { kind: "service", match: /(?:)/, body: "M5 8h38v13H5Zm0 19h38v13H5Z", detail: "M11 14h1m5 0h1m6 0h13M11 33h1m5 0h1m6 0h13", color: "#a5b4fc" },
+];
+
+function render2DServiceSymbol(
+  name: string,
+  archetype: ReturnType<typeof classifyArchetype>,
+  isStopped: boolean,
+) {
+  const fallback = { DATABASE: "sql", GATEWAY: "gateway", QUEUE: "queue", SERVICE: "service" }[archetype];
+  const symbol = STUDIO_2D_SYMBOLS.find(({ kind, match }) => kind !== "service" && match.test(name.toLowerCase()))
+    ?? STUDIO_2D_SYMBOLS.find(({ kind }) => kind === fallback)!;
+  const color = isStopped ? "#fda4af" : symbol.color;
+  return (
+    <g transform="translate(-26 -35) scale(1.0833)" data-studio-symbol={symbol.kind} aria-hidden="true"
+      stroke={color} strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round">
+      <path d={symbol.body} fill="#101a2b" />
+      <path d={symbol.detail} fill="none" />
+    </g>
+  );
+}
+
 
 function renderIsoBox(
   cx: number,
@@ -828,6 +869,8 @@ export function StudioObservability({
   busy = false,
   onQuickAction,
   onSpawnBlock,
+  onConnect,
+  nodeNames,
   canvasOnly = false,
   defaultView = "2D",
 }: {
@@ -837,6 +880,8 @@ export function StudioObservability({
   busy?: boolean;
   onQuickAction?: (command: StudioQuickAction) => void;
   onSpawnBlock?: (presetKey: string) => string | undefined;
+  onConnect?: (from: string, to: string) => void;
+  nodeNames?: Readonly<Record<string, string>>;
   canvasOnly?: boolean;
   defaultView?: "2D" | "3D";
 }) {
@@ -867,6 +912,9 @@ export function StudioObservability({
     moved: boolean;
   } | null>(null);
   const svg = useRef<SVGSVGElement>(null);
+  const graphContent = useRef<SVGGElement>(null);
+  const linkSource = useRef<string | null>(null);
+  const [linkPreview, setLinkPreview] = useState<{ from: string; x: number; y: number; target: string | null } | null>(null);
   const activePointer = useRef<number | null>(null);
   const canvasRightGesture = useRef(false);
   const endPointerInteraction = useCallback(() => {
@@ -874,6 +922,8 @@ export function StudioObservability({
     activePointer.current = null;
     cameraDrag.current = null;
     nodeDrag.current = null;
+    linkSource.current = null;
+    setLinkPreview(null);
     setDraggingNode(null);
     if (pointerId !== null && svg.current?.hasPointerCapture(pointerId)) {
       svg.current.releasePointerCapture(pointerId);
@@ -911,6 +961,9 @@ export function StudioObservability({
     { enabled: Boolean(data.modelVersionId && data.projectId) },
   );
   const telemetry = data.telemetry;
+  const spansByTraceAndId = useMemo(() => new Map(
+    telemetry?.spans.map((span) => [`${span.traceId}:${span.spanId}`, span]),
+  ), [telemetry?.spans]);
   const modelId = data.serviceMappings?.[selected];
   const workerImpact = useApiQuery(
     "impact",
@@ -1005,7 +1058,9 @@ export function StudioObservability({
     };
   }, [camera.yaw]);
 
-  const positions = useMemo(() => {
+  const { positions, deckBounds } = useMemo(() => {
+    const deckBounds = { minX: -380, maxX: 380, minZ: -380, maxZ: 380 };
+    const deckPadding = 80;
     const raw = new Map<string, { x: number; y: number; z: number; tier: number }>();
     const total = Math.max(1, data.services.length);
 
@@ -1065,8 +1120,13 @@ export function StudioObservability({
           wx = (loc.colIdx - (totalCols - 1) / 2) * spX;
           wz = (loc.rowIdx - (loc.rowCount - 1) / 2) * spZ;
         }
-        const proj = project3DPoint((pinned ? pinned.x : wx) + offset.x, 0,
-          (pinned ? pinned.y : wz) + offset.y);
+        const nodeX = (pinned?.x ?? wx) + offset.x;
+        const nodeZ = (pinned?.y ?? wz) + offset.y;
+        deckBounds.minX = Math.min(deckBounds.minX, nodeX - deckPadding);
+        deckBounds.maxX = Math.max(deckBounds.maxX, nodeX + deckPadding);
+        deckBounds.minZ = Math.min(deckBounds.minZ, nodeZ - deckPadding);
+        deckBounds.maxZ = Math.max(deckBounds.maxZ, nodeZ + deckPadding);
+        const proj = project3DPoint(nodeX, 0, nodeZ);
         raw.set(name, {
           x: proj.x,
           y: proj.y,
@@ -1113,7 +1173,7 @@ export function StudioObservability({
       });
     });
 
-    return raw;
+    return { positions: raw, deckBounds };
   }, [
     data.services,
     serviceDepth,
@@ -1124,6 +1184,40 @@ export function StudioObservability({
     pinnedPositions,
     snapToGrid,
   ]);
+
+  function nodeAt(clientX: number, clientY: number) {
+    const node = document.elementFromPoint(clientX, clientY)?.closest("[data-studio-node]");
+    return node && svg.current?.contains(node) ? node.getAttribute("data-studio-node") : null;
+  }
+
+  function graphPoint(clientX: number, clientY: number) {
+    const matrix = graphContent.current?.getScreenCTM();
+    return matrix ? new DOMPoint(clientX, clientY).matrixTransform(matrix.inverse()) : null;
+  }
+
+  function renderConnectPort(name: string, x: number, y: number) {
+    if (!onConnect || busy) return null;
+    return (
+      <g
+        data-studio-connect-port={name}
+        className="cursor-crosshair opacity-65 hover:opacity-100"
+        onPointerDown={(event) => {
+          if (event.button !== 0 || activePointer.current !== null || !svg.current) return;
+          event.preventDefault();
+          event.stopPropagation();
+          activePointer.current = event.pointerId;
+          linkSource.current = name;
+          setLinkPreview({ from: name, x, y, target: null });
+          svg.current.setPointerCapture(event.pointerId);
+        }}
+      >
+        <title>{t("Drag to connect to another service")}</title>
+        <circle cx={x} cy={y} r="10" fill="transparent" />
+        <circle cx={x} cy={y} r="6" fill="#0b1220" stroke="#7dd3fc" strokeWidth="1.4" />
+        <path d={`M ${x - 2.5} ${y} h 5 M ${x} ${y - 2.5} v 5`} stroke="#7dd3fc" strokeWidth="1.3" />
+      </g>
+    );
+  }
 
   function resolveLiveReplicas(serviceName: string): number {
     const live = telemetry?.services.find((item) => item.service === serviceName);
@@ -1586,11 +1680,9 @@ export function StudioObservability({
             event.preventDefault();
             const createdName = onSpawnBlock(spawnArch);
             if (createdName && svg.current) {
-              const rect = svg.current.getBoundingClientRect();
-              const svgX = ((event.clientX - rect.left) / Math.max(1, rect.width)) * 1200;
-              const svgY = ((event.clientY - rect.top) / Math.max(1, rect.height)) * 660;
-              const worldX = (svgX - 600 - pan.x) / zoom + 600;
-              const worldY = (svgY - 330 - pan.y) / zoom + 330;
+              const point = graphPoint(event.clientX, event.clientY);
+              if (!point) return;
+              const { x: worldX, y: worldY } = point;
               setPinnedPositions((prev) => ({
                 ...prev,
                 [view === "3D" ? "3D:" + createdName : createdName]: {
@@ -1613,11 +1705,29 @@ export function StudioObservability({
             };
             event.currentTarget.setPointerCapture(event.pointerId);
           }}
-          onPointerUp={endPointerInteraction}
+          onPointerUp={(event) => {
+            if (event.pointerId !== activePointer.current) return;
+            const from = linkSource.current;
+            const to = from ? nodeAt(event.clientX, event.clientY) : null;
+            endPointerInteraction();
+            if (from && to && from !== to) onConnect?.(from, to);
+          }}
           onPointerCancel={endPointerInteraction}
           onPointerMove={(event) => {
             if (event.buttons === 0) { endPointerInteraction(); return; }
             if (activePointer.current !== event.pointerId) return;
+            if (linkSource.current) {
+              const point = graphPoint(event.clientX, event.clientY);
+              if (point) {
+                setLinkPreview({
+                  from: linkSource.current,
+                  x: point.x,
+                  y: point.y,
+                  target: nodeAt(event.clientX, event.clientY),
+                });
+              }
+              return;
+            }
             if (nodeDrag.current && svg.current) {
               const matrix = svg.current.getScreenCTM();
               if (!matrix) return;
@@ -1702,6 +1812,7 @@ export function StudioObservability({
 
           {/* Infinite Camera Viewport Transform (draw.io / Figma style proportional zoom & pan) */}
           <g
+            ref={graphContent}
             transform={`translate(${600 + pan.x}, ${330 + pan.y}) scale(${zoom}) translate(-600, -330)`}
           >
             {/* Infinite Studio Blueprint Grid (spans 10,800 × 10,800 world units when zoomed out) */}
@@ -1710,31 +1821,27 @@ export function StudioObservability({
           {/* 3D Top-Down Turntable Architecture Platform Deck (orbits 360° left-to-right, always viewed from above) */}
           {view === "3D" &&
             (() => {
-              const halfW = 380;
-              const halfD = 380;
-              const topCorners = [
-                project3DPoint(-halfW, 14, -halfD),
-                project3DPoint(halfW, 14, -halfD),
-                project3DPoint(halfW, 14, halfD),
-                project3DPoint(-halfW, 14, halfD),
+              const { minX, maxX, minZ, maxZ } = deckBounds;
+              const corners = [
+                { x: minX, z: minZ },
+                { x: maxX, z: minZ },
+                { x: maxX, z: maxZ },
+                { x: minX, z: maxZ },
               ];
-              const botCorners = [
-                project3DPoint(-halfW, 28, -halfD),
-                project3DPoint(halfW, 28, -halfD),
-                project3DPoint(halfW, 28, halfD),
-                project3DPoint(-halfW, 28, halfD),
-              ];
+              const topCorners = corners.map(({ x, z }) => project3DPoint(x, 14, z));
+              const botCorners = corners.map(({ x, z }) => project3DPoint(x, 28, z));
               const topPoly = topCorners.map((p) => `${p.x},${p.y}`).join(" ");
-              const div1A = project3DPoint(-halfW * 0.33, 14, -halfD);
-              const div1B = project3DPoint(-halfW * 0.33, 14, halfD);
-              const div2A = project3DPoint(halfW * 0.33, 14, -halfD);
-              const div2B = project3DPoint(halfW * 0.33, 14, halfD);
-              const crossA = project3DPoint(-halfW, 14, 0);
-              const crossB = project3DPoint(halfW, 14, 0);
+              const div1A = project3DPoint(-380 * 0.33, 14, minZ);
+              const div1B = project3DPoint(-380 * 0.33, 14, maxZ);
+              const div2A = project3DPoint(380 * 0.33, 14, minZ);
+              const div2B = project3DPoint(380 * 0.33, 14, maxZ);
+              const crossA = project3DPoint(minX, 14, 0);
+              const crossB = project3DPoint(maxX, 14, 0);
               return (
                 <g>
                   {/* Solid Top-Down Tabletop Surface (occludes back edges so view is ALWAYS unmistakably from above) */}
                   <polygon
+                    data-testid="studio-deck"
                     points={topPoly}
                     fill="#0a101d"
                     opacity="0.95"
@@ -1852,7 +1959,7 @@ export function StudioObservability({
                       fontSize="9"
                       fontWeight="700"
                     >
-                      {t("503 / CIRCUIT OPEN")}
+                      Unavailable
                     </text>
                   </g>
                 )}
@@ -1867,9 +1974,11 @@ export function StudioObservability({
               const from = positions.get(edge.fromService);
               const to = positions.get(edge.toService);
               if (!from || !to) return null;
-              const fromStopped = resolveLiveReplicas(edge.fromService) === 0;
-              const targetStopped = resolveLiveReplicas(edge.toService) === 0;
-              const edgeSevered = fromStopped || targetStopped;
+              const span = spansByTraceAndId.get(`${edge.traceId}:${edge.childSpanId}`);
+              const status = span?.httpStatusCode;
+              const httpError = typeof status === "number" && status >= 400 && status <= 599;
+              const edgeSevered = httpError || span?.spanStatus?.toUpperCase() === "ERROR";
+              const faultLabel = httpError ? `${status} ✕` : "CALL FAILED";
               const targetReplicas = resolveLiveReplicas(edge.toService);
               const mx = (from.x + to.x) / 2;
               const my = (from.y + to.y) / 2;
@@ -1887,10 +1996,12 @@ export function StudioObservability({
               return (
                 <g
                   key={edge.traceId + index}
+                  data-studio-edge-from={edge.fromService}
+                  data-studio-edge-to={edge.toService}
                   onClick={() => setTraceId(edge.traceId)}
                   className="cursor-pointer"
                 >
-                  <title>{edge.fromService + " → " + edge.toService + " · " + edge.traceId}</title>
+                  <title>{span?.operationName || `${edge.fromService} → ${edge.toService}`} · {edge.traceId}{httpError ? ` · HTTP ${status}` : ""}</title>
                   <path
                     d={pathD}
                     fill="none"
@@ -1905,9 +2016,9 @@ export function StudioObservability({
                   {edgeSevered && (
                     <g>
                       <rect
-                        x={mx - 22}
+                        x={mx - (httpError ? 22 : 33)}
                         y={my - 8}
-                        width="44"
+                        width={httpError ? 44 : 66}
                         height="16"
                         rx="8"
                         fill="#090d16"
@@ -1922,7 +2033,7 @@ export function StudioObservability({
                         fontSize="8.5"
                         fontWeight="700"
                       >
-                        503 ✕
+                        {faultLabel}
                       </text>
                     </g>
                   )}
@@ -1934,7 +2045,7 @@ export function StudioObservability({
                       <circle cx={qx2} cy={qy2} r="3" fill={edgeColor} opacity="0.65" />
                     </>
                   )}
-                  {!edgeSevered && (
+                  {!edgeSevered && (span || !onConnect) && (
                     <circle r="3.8" fill="#38bdf8">
                       <animateMotion dur={`${speedSec}s`} repeatCount="indefinite" path={pathD} />
                     </circle>
@@ -1953,12 +2064,14 @@ export function StudioObservability({
               const archetype = classifyArchetype(name, element?.elementType, element?.layer);
               const isAffected = affected.has(elId ?? "");
               const isSelected = selected === name;
-              const isDropTarget = dropTargetNode === name;
+              const isDropTarget = dropTargetNode === name ||
+                (linkPreview?.target === name && linkPreview.from !== name);
               const isStopped = live !== undefined && live.runningReplicas === 0;
               const activePods = Math.min(live?.runningReplicas ?? 0, 8);
+              const nodeName = nodeNames?.[name] ?? name;
+              const characters = Array.from(nodeName);
+              const displayName = characters.length > 20 ? characters.slice(0, 19).join("") + "…" : nodeName;
 
-              const cpuPercent = parseCpuPercent(live?.stats[0]?.cpu);
-              const ramInfo = parseRamMiB(live?.stats[0]?.memory);
 
               const theme = getArchetypeTheme(
                 archetype,
@@ -1967,11 +2080,10 @@ export function StudioObservability({
                 isDropTarget,
                 name,
               );
-              const strokeColor = theme.stroke;
 
               // Clean SE-Standard 3D Sculptures (NO base tray / pedestal) + Floating Pill Name Tag
               if (view === "3D") {
-                const labelWidth = Math.max(114, Math.min(172, name.length * 7 + 50));
+                const labelWidth = Math.max(114, Math.min(172, displayName.length * 7 + 50));
                 const pillBadgeText = isStopped
                   ? "0"
                   : `×${live ? live.runningReplicas : 1}`;
@@ -1981,7 +2093,8 @@ export function StudioObservability({
                     key={name}
                     role="button"
                     tabIndex={0}
-                    aria-label={name}
+                    aria-label={nodeName}
+                    data-studio-node={name}
                     aria-pressed={isSelected}
                     style={{ outline: "none" }}
                     onPointerDown={(event) => {
@@ -2035,6 +2148,7 @@ export function StudioObservability({
                     className="cursor-grab outline-none focus:outline-none active:cursor-grabbing"
                   >
                     {/* Pure 3D Software Engineering Sculpture (no base tray underneath) */}
+                    <title>{nodeName}</title>
                     {render3DSeNodeSculpture(
                       name,
                       archetype,
@@ -2082,7 +2196,7 @@ export function StudioObservability({
                       fontSize="11"
                       fontWeight="600"
                     >
-                      {name}
+                      {displayName}
                     </text>
                     {/* Compact Replica Count Badge inside the right end of the Pill */}
                     <rect
@@ -2103,17 +2217,19 @@ export function StudioObservability({
                     >
                       {pillBadgeText}
                     </text>
+                    {renderConnectPort(name, point.x + 29, point.y - 10)}
                   </g>
                 );
               }
 
-              // 2D Mode Distinct Archetype Silhouettes (Cylinder DB, Trapezoid Gateway, Flanged Pipe Queue, Rack Blade Service)
+              const labelWidth = Math.max(86, displayName.length * 6.5 + 34);
               return (
                 <g
                   key={name}
                   role="button"
                   tabIndex={0}
-                  aria-label={name}
+                  aria-label={nodeName}
+                  data-studio-node={name}
                   aria-pressed={isSelected}
                   style={{ outline: "none" }}
                   onPointerDown={(event) => {
@@ -2164,276 +2280,47 @@ export function StudioObservability({
                       onSelect(name);
                     }
                   }}
-                  className="cursor-grab outline-none focus:outline-none active:cursor-grabbing"
+                  className="group cursor-grab outline-none active:cursor-grabbing"
                 >
-                  {/* Drop Target / Selected Outer Glow Halo */}
-                  {(isDropTarget || isSelected || isStopped) && (
-                    <rect
-                      x={point.x - 88}
-                      y={point.y - 42}
-                      width="176"
-                      height="84"
-                      rx="14"
-                      fill={theme.stroke}
-                      opacity={isStopped ? "0.18" : "0.14"}
-                      stroke={theme.stroke}
-                      strokeWidth={isDropTarget ? "2.5" : "1.5"}
-                      strokeDasharray={isDropTarget ? "4 3" : undefined}
-                    />
-                  )}
-
-                  {/* DISTINCT 2D SILHOUETTE PER ARCHETYPE */}
-                  {archetype === "DATABASE" ? (
-                    <g>
-                      {/* Cylindrical Database Drum Body + Top Elliptical Platter Lid */}
-                      <path
-                        d={`M ${point.x - 80},${point.y - 24} L ${point.x - 80},${point.y + 24} A 80 14 0 0 0 ${point.x + 80},${point.y + 24} L ${point.x + 80},${point.y - 24} Z`}
-                        fill={theme.cardFill}
-                        stroke={strokeColor}
-                        strokeWidth={isSelected || isDropTarget ? 2.6 : 1.8}
-                      />
-                      <ellipse
-                        cx={point.x}
-                        cy={point.y - 24}
-                        rx="80"
-                        ry="13"
-                        fill={theme.iconBg}
-                        stroke={strokeColor}
-                        strokeWidth={isSelected || isDropTarget ? 2.4 : 1.6}
-                      />
-                      <path
-                        d={`M ${point.x - 80},${point.y + 2} A 80 11 0 0 0 ${point.x + 80},${point.y + 2}`}
-                        fill="none"
-                        stroke={strokeColor}
-                        strokeWidth="1"
-                        opacity="0.35"
-                      />
-                    </g>
-                  ) : archetype === "GATEWAY" ? (
-                    <g>
-                      {/* Trapezoid Load Balancer Shield (200Lab style) */}
-                      <polygon
-                        points={`${point.x - 64},${point.y - 36} ${point.x + 64},${point.y - 36} ${point.x + 86},${point.y + 34} ${point.x - 86},${point.y + 34}`}
-                        fill={theme.cardFill}
-                        stroke={strokeColor}
-                        strokeWidth={isSelected || isDropTarget ? 2.6 : 1.8}
-                        strokeLinejoin="round"
-                      />
-                      {/* Top Ingress Port & Bottom Fan-out Ports */}
-                      <rect
-                        x={point.x - 16}
-                        y={point.y - 40}
-                        width="32"
-                        height="5"
-                        rx="2.5"
-                        fill={theme.accent}
-                      />
-                      <circle cx={point.x - 36} cy={point.y + 34} r="3" fill={theme.accent} />
-                      <circle cx={point.x} cy={point.y + 34} r="3" fill={theme.accent} />
-                      <circle cx={point.x + 36} cy={point.y + 34} r="3" fill={theme.accent} />
-                    </g>
-                  ) : archetype === "QUEUE" ? (
-                    <g>
-                      {/* Flanged Message Broker Pipeline Capsule */}
-                      <rect
-                        x={point.x - 86}
-                        y={point.y - 20}
-                        width="8"
-                        height="40"
-                        rx="3"
-                        fill={theme.iconBg}
-                        stroke={strokeColor}
-                        strokeWidth="1.5"
-                      />
-                      <rect
-                        x={point.x + 78}
-                        y={point.y - 20}
-                        width="8"
-                        height="40"
-                        rx="3"
-                        fill={theme.iconBg}
-                        stroke={strokeColor}
-                        strokeWidth="1.5"
-                      />
-                      <rect
-                        x={point.x - 78}
-                        y={point.y - 34}
-                        width="156"
-                        height="68"
-                        rx="22"
-                        fill={theme.cardFill}
-                        stroke={strokeColor}
-                        strokeWidth={isSelected || isDropTarget ? 2.6 : 1.8}
-                      />
-                      {/* Kafka Topic Partition Vertical Slots */}
-                      <line x1={point.x + 62} y1={point.y - 18} x2={point.x + 62} y2={point.y - 2} stroke={theme.accent} strokeWidth="2" opacity="0.6" />
-                      <line x1={point.x + 67} y1={point.y - 18} x2={point.x + 67} y2={point.y - 2} stroke={theme.accent} strokeWidth="2" opacity="0.85" />
-                    </g>
-                  ) : (
-                    <g>
-                      {/* 19-Inch Server Rack Blade Chassis with Dual Mount Ears & LED Rails */}
-                      <rect
-                        x={point.x - 84}
-                        y={point.y - 26}
-                        width="6"
-                        height="52"
-                        rx="2"
-                        fill={theme.iconBg}
-                        stroke={strokeColor}
-                        strokeWidth="1.2"
-                      />
-                      <rect
-                        x={point.x + 78}
-                        y={point.y - 26}
-                        width="6"
-                        height="52"
-                        rx="2"
-                        fill={theme.iconBg}
-                        stroke={strokeColor}
-                        strokeWidth="1.2"
-                      />
-                      <rect
-                        x={point.x - 78}
-                        y={point.y - 34}
-                        width="156"
-                        height="68"
-                        rx="7"
-                        fill={theme.cardFill}
-                        stroke={strokeColor}
-                        strokeWidth={isSelected || isDropTarget ? 2.6 : 1.8}
-                      />
-                      {/* Dual Server Rack LED Columns */}
-                      <circle cx={point.x - 72} cy={point.y - 16} r="1.4" fill={theme.accent} opacity="0.85" />
-                      <circle cx={point.x - 72} cy={point.y - 10} r="1.4" fill={theme.accent} opacity="0.45" />
-                      <circle cx={point.x - 72} cy={point.y - 4} r="1.4" fill={theme.accent} opacity="0.85" />
-                      <circle cx={point.x + 72} cy={point.y - 16} r="1.4" fill={theme.accent} opacity="0.85" />
-                      <circle cx={point.x + 72} cy={point.y - 10} r="1.4" fill={theme.accent} opacity="0.45" />
-                      <circle cx={point.x + 72} cy={point.y - 4} r="1.4" fill={theme.accent} opacity="0.85" />
-                    </g>
-                  )}
-
-                  {/* Top-Left Floating Status Badge (CRASHED or Archetype Tag) like 200Lab */}
-                  <rect
-                    x={point.x - 66}
-                    y={point.y - 45}
-                    width={isStopped ? 64 : activePods > 1 ? 66 : 58}
-                    height="15"
-                    rx="4"
-                    fill={isStopped ? "#9f1239" : theme.iconBg}
-                    stroke={strokeColor}
-                    strokeWidth="1.1"
-                  />
-                  <text
-                    x={point.x - 66 + (isStopped ? 32 : activePods > 1 ? 33 : 29)}
-                    y={point.y - 35}
-                    textAnchor="middle"
-                    fill={isStopped ? "#fecdd3" : theme.accent}
-                    fontSize="8.5"
-                    fontWeight="800"
-                  >
-                    {isStopped ? "CRASHED" : activePods > 1 ? `×${activePods} CLUSTER` : theme.badgeText}
-                  </text>
-
-                  {/* Left Colored Icon Tile + Specific Functional Vector Icon per Component */}
-                  <rect
-                    x={point.x - 65}
-                    y={point.y - 21}
-                    width="24"
-                    height="24"
-                    rx="6"
-                    fill={theme.iconBg}
-                    stroke={theme.stroke}
-                    strokeWidth="1.1"
-                  />
-                  {renderNodeFunctionGlyph(
-                    name,
-                    archetype,
-                    point.x - 53,
-                    point.y - 9,
-                    theme.accent,
-                  )}
-
-                  {/* Service Name */}
-                  <text
-                    x={point.x + 8}
-                    y={point.y - 13}
-                    textAnchor="middle"
-                    fill="#f8fafc"
-                    fontSize="12"
-                    fontWeight="700"
-                  >
-                    {name}
-                  </text>
-
-                  {/* Running / Configured Replicas Status */}
-                  <text
-                    x={point.x + 8}
-                    y={point.y + 1}
-                    textAnchor="middle"
-                    fill={theme.accent}
-                    fontSize="10"
-                    fontWeight="600"
-                  >
-                    {live
-                      ? `${live.runningReplicas}/${live.replicas} ${t("running")}`
-                      : t("Waiting for telemetry")}
-                  </text>
-
-                  {/* Mini Embedded CPU (Cyan) & RAM (Emerald) Progress Bars inside the Node */}
-                  <rect
-                    x={point.x - 66}
-                    y={point.y + 10}
-                    width="62"
-                    height="4"
-                    rx="2"
-                    fill="#1e293b"
-                  />
-                  <rect
-                    x={point.x - 66}
-                    y={point.y + 10}
-                    width={Math.max(4, Math.round((cpuPercent / 100) * 62))}
-                    height="4"
-                    rx="2"
-                    fill={isStopped ? "#f43f5e" : "#38bdf8"}
-                  />
-                  <rect
-                    x={point.x + 4}
-                    y={point.y + 10}
-                    width="62"
-                    height="4"
-                    rx="2"
-                    fill="#1e293b"
-                  />
-                  <rect
-                    x={point.x + 4}
-                    y={point.y + 10}
-                    width={Math.max(4, Math.round((ramInfo.percent / 100) * 62))}
-                    height="4"
-                    rx="2"
-                    fill={isStopped ? "#f43f5e" : "#10b981"}
-                  />
-
-                  {/* Visual Replica Pod Cluster (1..8 Pods rendered inside/below the block) */}
-                  {Array.from({ length: activePods }, (_, i) => {
-                    const podX = point.x - 52 + i * 14.5;
-                    const podY = point.y + 22;
-                    return (
-                      <g key={i}>
-                        <rect
-                          x={podX - 4.5}
-                          y={podY - 3.5}
-                          width="9"
-                          height="6.5"
-                          rx="1.8"
-                          fill={theme.accent}
-                        />
-                        <circle cx={podX} cy={podY + 20} r="2.2" fill={theme.accent} />
-                      </g>
-                    );
-                  })}
+                  <title>{nodeName} · {live ? (isStopped ? t("Service stopped (Fault injected)") : t("running")) : t("Waiting for telemetry")}</title>
+                  <g transform={`translate(${point.x}, ${point.y})`}>
+                    <rect x="-74" y="-39" width="148" height="76" rx="12" fill="transparent"
+                      className="group-focus-visible:stroke-sky-300" strokeWidth="1.5" />
+                    {(isSelected || isDropTarget) && (
+                      <circle cy="-9" r="31" fill={theme.stroke} fillOpacity="0.12"
+                        stroke={theme.stroke} strokeOpacity="0.7"
+                        strokeDasharray={isDropTarget ? "4 3" : undefined} />
+                    )}
+                    {render2DServiceSymbol(name, archetype, isStopped)}
+                    <rect x={-labelWidth / 2} y="18" width={labelWidth} height="20" rx="10"
+                      fill="#0b1220" stroke={isSelected || isDropTarget || isStopped ? theme.stroke : "#334155"} />
+                    <text x="-13" y="31.5" textAnchor="middle" fill="#f8fafc" fontSize="11" fontWeight="600">
+                      {displayName}
+                    </text>
+                    <text x={labelWidth / 2 - 15} y="31.5" textAnchor="middle"
+                      fill={isStopped ? "#fda4af" : "#cbd5e1"} fontSize="9" fontWeight="600">
+                      {isStopped ? "×0" : live ? `×${live.runningReplicas}` : "—"}
+                    </text>
+                  </g>
+                  {renderConnectPort(name, point.x + 34, point.y - 9)}
                 </g>
               );
             })}
+            {linkPreview && (() => {
+              const from = positions.get(linkPreview.from);
+              if (!from) return null;
+              return <line
+                data-studio-link-preview
+                x1={from.x + (view === "3D" ? 29 : 34)}
+                y1={from.y - (view === "3D" ? 10 : 9)}
+                x2={linkPreview.x}
+                y2={linkPreview.y}
+                stroke="#7dd3fc"
+                strokeWidth="2"
+                strokeDasharray="5 4"
+                pointerEvents="none"
+              />;
+            })()}
           </g>
         </svg>
       </div>
@@ -2557,7 +2444,7 @@ export function StudioObservability({
                     <td className="pl-2 py-2">
                       {row.replicasNow === 0 ? (
                         <span className="font-semibold text-destructive">
-                          {t("Service stopped (Fault injected)")} · {t("503 / CIRCUIT OPEN")}
+                          {t("Service stopped (Fault injected)")}
                         </span>
                       ) : row.replicasNow > 1 ? (
                         <span>
@@ -2707,7 +2594,7 @@ export function StudioObservability({
                   className="block w-full break-all rounded border p-2 text-left text-sm"
                   onClick={() => setTraceId(span.traceId)}
                 >
-                  {span.runtimeService} · HTTP {span.httpStatusCode ?? "—"} ·{" "}
+                  {span.runtimeService} · {span.httpStatusCode != null && `HTTP ${span.httpStatusCode} · `}
                   {span.spanStatus ?? "UNSET"} · {span.traceId}
                   <span className="block text-xs text-muted-foreground">
                     {span.spanId} ·{" "}

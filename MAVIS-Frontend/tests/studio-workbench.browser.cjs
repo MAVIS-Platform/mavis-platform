@@ -100,6 +100,24 @@ async function main() {
     await page.mouse.move(board.x+100,board.y+100);
     assert.deepEqual(await anchor(),afterOutsideRelease,"Release outside canvas must end orbit");
     assert.ok(await page.evaluate(()=>window.canvasMenus.length>0&&window.canvasMenus.every(Boolean)),"Canvas-origin right gestures must suppress native context menus");
+    const deck=graph.getByTestId("studio-deck");
+    const originalDeck=await deck.getAttribute("points");
+    const dragStart=await node.boundingBox();
+    await page.mouse.move(dragStart.x+dragStart.width/2,dragStart.y+dragStart.height/2);
+    await page.mouse.down({button:"left"});
+    await page.mouse.move(board.x+board.width*0.94,board.y+board.height*0.86,{steps:10});
+    await page.waitForFunction(previous=>document.querySelector('[data-testid="studio-deck"]').getAttribute("points")!==previous,originalDeck);
+    const expandedDeck=await deck.getAttribute("points");
+    const corners=expandedDeck.split(" ").map(point=>point.split(",").map(Number));
+    const center=await anchor();
+    // Node anchors project at height 0. The tabletop is 14 units lower.
+    const tabletopY=center.y+14*0.866;
+    assert.ok(corners.every(([x,y],index)=>{
+      const [nextX,nextY]=corners[(index+1)%corners.length];
+      return (nextX-x)*(tabletopY-y)-(nextY-y)*(center.x-x)>0;
+    }),"Expanded tabletop must cover the dragged node before pointer release");
+    await page.mouse.up({button:"left"});
+    assert.equal(await deck.getAttribute("points"),expandedDeck,"Releasing the node must retain the expanded deck");
     const stats=page.getByRole("button",{name:"Stats",exact:true});
     assert.ok(await stats.evaluate(element=>element.parentElement.firstElementChild===element),"Stats must be the first dock tab");
     await stats.click();
@@ -128,6 +146,92 @@ async function main() {
     assert.ok(await table.getByText("2",{exact:true}).isVisible(),"Inline scaling must update the table");
     await search.clear();
     await page.screenshot({path:path.join(output,"telemetry.png"),fullPage:true,animations:"disabled"});
+    const demand=page.getByRole("spinbutton",{name:"Custom incoming traffic req/s"});
+    await demand.fill("1500");
+    await graph.getByText("503 ✕",{exact:true}).waitFor();
+    await page.getByRole("button",{name:"Rate Limiter",exact:true}).click();
+    await graph.getByText("429 ✕",{exact:true}).waitFor();
+    await demand.fill("240");
+    await page.getByRole("spinbutton",{name:"Custom injected network latency ms"}).fill("1500");
+    await graph.getByText("CALL FAILED",{exact:true}).waitFor();
+    assert.equal(await graph.getByText("503 ✕",{exact:true}).count(),0,"An upstream timeout has no HTTP response");
+    await page.getByRole("spinbutton",{name:"Custom injected network latency ms"}).fill("0");
+    await table.getByRole("button",{name:"Decrease replicas for orders-postgres"}).click();
+    await graph.getByText("CALL FAILED",{exact:true}).waitFor();
+    assert.equal(await graph.getByText("503 ✕",{exact:true}).count(),0,"An unavailable JDBC destination must not emit an HTTP status");
+    await page.getByRole("button",{name:"2D",exact:true}).click();
+    for(const label of ["CDN Edge","WAF","Load Balancer","Gateway","Service","Worker","Auth / SSO","Serverless","Postgres","Redis","MongoDB","S3 Store","Elastic","Kafka","RabbitMQ","OTel APM"]){
+      await page.getByRole("button",{name:"+ "+label,exact:true}).click();
+    }
+    const symbols=graph.locator("[data-studio-symbol]");
+    const silhouettes=await symbols.evaluateAll(nodes=>Object.fromEntries(nodes.map(node=>[
+      node.getAttribute("data-studio-symbol"),node.querySelector("path").getAttribute("d")
+    ])));
+    assert.equal(Object.keys(silhouettes).length,19,"Catalog and business services must all have a recognizable symbol");
+    assert.equal(new Set(Object.values(silhouettes)).size,19,"Function types must have distinct silhouettes");
+    const sql=graph.getByRole("button",{name:"orders-postgres",exact:true});
+    assert.equal(await sql.locator('[data-studio-symbol="sql"]').count(),1,"Storage role takes precedence over the business service name");
+    await sql.focus();
+    await page.keyboard.press("Enter");
+    assert.equal(await sql.getAttribute("aria-pressed"),"true","2D symbols must preserve keyboard selection");
+    await page.screenshot({path:path.join(output,"symbols-2d.png"),fullPage:true,animations:"disabled"});
+    const edgeCount=graph.locator("[data-studio-edge-from]");
+    const originalEdgeCount=await edgeCount.count();
+    const transfer=await page.evaluateHandle(()=>{
+      const value=new DataTransfer();
+      value.setData("application/x-mavis-studio-spawn","s3-storage");
+      return value;
+    });
+    const graphBounds=await graph.boundingBox();
+    await graph.dispatchEvent("drop",{dataTransfer:transfer,clientX:graphBounds.x+85,clientY:graphBounds.y+graphBounds.height-65});
+    const newNode=graph.getByRole("button",{name:"s3-storage-2",exact:true});
+    await newNode.waitFor();
+    assert.equal(await edgeCount.count(),originalEdgeCount,"Dropping a new block must leave it disconnected");
+    const originalNodeTransform=await newNode.locator(":scope > g[transform]").getAttribute("transform");
+    const wire=graph.locator('[data-studio-edge-from="s3-storage-2"][data-studio-edge-to="order-service"]');
+    const port=graph.locator('[data-studio-connect-port="s3-storage-2"]');
+    const orderNode=graph.getByRole("button",{name:"order-service",exact:true});
+    async function dragWireTo(x,y){
+      const box=await port.boundingBox();
+      await page.mouse.move(box.x+box.width/2,box.y+box.height/2);
+      await page.mouse.down({button:"left"});
+      await page.mouse.move(x,y,{steps:8});
+      await graph.locator("[data-studio-link-preview]").waitFor();
+      await page.mouse.up({button:"left"});
+      assert.equal(await graph.locator("[data-studio-link-preview]").count(),0);
+    }
+    await dragWireTo(graphBounds.x+20,graphBounds.y+graphBounds.height-15);
+    assert.equal(await edgeCount.count(),originalEdgeCount,"Releasing over blank canvas must cancel the connection");
+    const target=await orderNode.boundingBox();
+    await dragWireTo(target.x+target.width/2,target.y+target.height/2);
+    assert.equal(await wire.count(),1,"Dragging a port onto a node must add a directed wire");
+    await dragWireTo(target.x+target.width/2,target.y+target.height/2);
+    assert.equal(await wire.count(),1,"Repeating a connection must not remove it or add a duplicate");
+    assert.equal(await newNode.locator(":scope > g[transform]").getAttribute("transform"),originalNodeTransform,"Wiring must not move the source node");
+    await page.getByRole("button",{name:"3D",exact:true}).click();
+    assert.equal(await wire.count(),1,"Switching views must retain manually drawn wires");
+    const inventoryLabel=graph.getByRole("button",{name:"inventory-service",exact:true}).locator(":scope > rect").first();
+    const inventory=await inventoryLabel.boundingBox();
+    await dragWireTo(inventory.x+inventory.width/2,inventory.y+inventory.height/2);
+    assert.equal(await graph.locator('[data-studio-edge-from="s3-storage-2"][data-studio-edge-to="inventory-service"]').count(),1);
+    const nameInput=page.getByRole("textbox",{name:"Node name"});
+    await nameInput.fill("orders-postgres");
+    await page.getByRole("button",{name:"Save name",exact:true}).click();
+    await page.getByText("A node already uses this name.",{exact:true}).waitFor();
+    const storageName="Kho hóa đơn";
+    await nameInput.fill(storageName);
+    await nameInput.press("Enter");
+    await graph.getByRole("button",{name:storageName,exact:true}).waitFor();
+    assert.equal(await wire.count(),1,"Renaming must keep the existing wire");
+    await page.getByRole("button",{name:"2D",exact:true}).click();
+    assert.equal(await graph.getByRole("button",{name:storageName,exact:true}).locator('[data-studio-symbol="object"]').count(),1);
+    await page.getByRole("button",{name:"Save",exact:true}).click();
+    await page.getByText("Snapshot nodes",{exact:true}).click();
+    await page.getByText(storageName+" → order-service · HTTP",{exact:true}).waitFor();
+    await nameInput.fill("Kho mới");
+    await nameInput.press("Enter");
+    await graph.getByRole("button",{name:"Kho mới",exact:true}).waitFor();
+    assert.ok(await page.getByText(storageName+" → order-service · HTTP",{exact:true}).isVisible(),"Captured names must remain unchanged");
     assert.deepEqual(errors,[]);
     console.log("PASS Studio world-layout orbit, pointer cleanup, context-menu prevention and separate Stats panels");
   }finally{

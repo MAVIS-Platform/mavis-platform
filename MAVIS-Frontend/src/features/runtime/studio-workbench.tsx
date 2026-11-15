@@ -82,7 +82,7 @@ const STUDIO_TEMPLATES: SandboxTemplate[] = [
       { from: "api-gateway", to: "inventory-service", protocol: "HTTP" },
       { from: "order-service", to: "payment-service", protocol: "HTTP" },
       { from: "order-service", to: "inventory-service", protocol: "HTTP" },
-      { from: "order-service", to: "kafka-broker", protocol: "AMQP" },
+      { from: "order-service", to: "kafka-broker", protocol: "Kafka" },
       { from: "order-service", to: "orders-postgres", protocol: "JDBC" },
     ],
     layers: {
@@ -205,7 +205,7 @@ const LEFT_DOCK_ACTIONS = [
     id: "palette-stop",
     badge: "FAULT",
     label: "Stop Container",
-    sub: "Inject HTTP 503 Crash",
+    sub: "Stop service replicas",
     action: "STOP" as const,
     cardClass:
       "border-rose-500/40 bg-rose-500/10 hover:border-rose-400 hover:bg-rose-500/20",
@@ -495,6 +495,8 @@ type LocalSnapshot = {
   digest: string;
   imageData?: string;
   replicasByService: Record<string, number>;
+  nodeNames: Record<string, string>;
+  connections: Array<{ from: string; to: string; protocol: string }>;
   totalInstances: number;
   totalRamMiB: number;
 };
@@ -580,6 +582,8 @@ export function StudioWorkbench() {
     template.services[1] ?? "order-service",
   );
   const [newNodeName, setNewNodeName] = useState("");
+  const [nodeNames, setNodeNames] = useState<Record<string, string>>({});
+  const [nameError, setNameError] = useState<{ service: string; message: string } | null>(null);
   const [nodeConfigs, setNodeConfigs] = useState<Record<string, NodeSimConfig>>({});
   const [extraEdges, setExtraEdges] = useState<Array<{ from: string; to: string; protocol: string }>>([]);
   const [removedEdges, setRemovedEdges] = useState<string[]>([]);
@@ -650,6 +654,8 @@ export function StudioWorkbench() {
     setReplicasMap(initialReps);
     setBaselineReplicasMap(initialReps);
     setNodeConfigs({});
+    setNodeNames({});
+    setNameError(null);
     setExtraEdges([]);
     setRemovedEdges([]);
     setSelectedService(found.services[1] ?? found.services[0] ?? "");
@@ -681,18 +687,31 @@ export function StudioWorkbench() {
     });
   }
 
-  function toggleOutboundEdge(fromSvc: string, toSvc: string) {
-    if (!toSvc || fromSvc === toSvc) return;
-    const key = `${fromSvc}->${toSvc}`;
-    const existsInActive = activeEdges.some((e) => e.from === fromSvc && e.to === toSvc);
-    if (existsInActive) {
-      setRemovedEdges((prev) => [...prev, key]);
-      setExtraEdges((prev) => prev.filter((e) => !(e.from === fromSvc && e.to === toSvc)));
+  function connectOutboundEdge(from: string, to: string) {
+    if (from === to || !customServices.includes(from) || !customServices.includes(to)) return;
+    setRemovedEdges((prev) => prev.filter((key) => key !== `${from}->${to}`));
+    if (template.edges.some((edge) => edge.from === from && edge.to === to)) return;
+
+    const protocol = /postgres|mysql|mariadb|\bsql\b/i.test(to) ? "JDBC"
+      : /redis/i.test(to) ? "RESP"
+        : /mongo/i.test(to) ? "MongoDB"
+          : /kafka/i.test(to) ? "Kafka"
+            : /rabbit|amqp/i.test(to) ? "AMQP"
+              : /s3|bucket|elastic|opensearch/i.test(to) ? "HTTPS"
+                : "HTTP";
+    setExtraEdges((prev) => prev.some((edge) => edge.from === from && edge.to === to)
+      ? prev : [...prev, { from, to, protocol }]);
+  }
+
+  function toggleOutboundEdge(from: string, to: string) {
+    if (activeEdges.some((edge) => edge.from === from && edge.to === to)) {
+      setRemovedEdges((prev) => [...prev, `${from}->${to}`]);
+      setExtraEdges((prev) => prev.filter((edge) => edge.from !== from || edge.to !== to));
     } else {
-      setRemovedEdges((prev) => prev.filter((k) => k !== key));
-      setExtraEdges((prev) => [...prev, { from: fromSvc, to: toSvc, protocol: "HTTP" }]);
+      connectOutboundEdge(from, to);
     }
   }
+
 
   function applySandboxAction(cmd: StudioQuickAction) {
     const svc = cmd.service;
@@ -749,6 +768,23 @@ export function StudioWorkbench() {
     ]);
   }
 
+  function nodeLabel(service: string) {
+    return nodeNames[service] ?? service;
+  }
+
+  function renameNode(service: string, rawName: string) {
+    const name = rawName.trim();
+    const duplicate = customServices.some((other) =>
+      other !== service && nodeLabel(other).toLocaleLowerCase() === name.toLocaleLowerCase(),
+    );
+    if (!name || duplicate) {
+      setNameError({ service, message: t(!name ? "Enter a node name." : "A node already uses this name.") });
+      return;
+    }
+    setNodeNames((prev) => ({ ...prev, [service]: name }));
+    setNameError(null);
+  }
+
   function addCustomBlock(presetKey?: string) {
     const legacyMap: Record<string, string> = {
       SERVICE: "app-service",
@@ -758,7 +794,8 @@ export function StudioWorkbench() {
     };
     const resolvedKey = presetKey ? (legacyMap[presetKey] ?? presetKey) : "app-service";
     const preset = STUDIO_COMPONENT_CATALOG.find((item) => item.key === resolvedKey);
-    const baseSlug = newNodeName.trim() || preset?.key || resolvedKey;
+    const requestedName = newNodeName.trim();
+    const baseSlug = preset?.key || resolvedKey;
     const cleanBase = baseSlug.toLowerCase().replace(/[^a-z0-9-_]/g, "-");
     if (!cleanBase) return undefined;
     let clean = cleanBase;
@@ -768,6 +805,13 @@ export function StudioWorkbench() {
       suffix += 1;
     }
     setCustomServices((prev) => [...prev, clean]);
+    let label = requestedName || clean;
+    let labelSuffix = 2;
+    const usedNames = new Set(customServices.map((service) => nodeLabel(service).toLocaleLowerCase()));
+    while (usedNames.has(label.toLocaleLowerCase())) {
+      label = `${requestedName || clean} (${labelSuffix++})`;
+    }
+    setNodeNames((prev) => ({ ...prev, [clean]: label }));
     setReplicasMap((prev) => ({ ...prev, [clean]: 1 }));
     setBaselineReplicasMap((prev) => ({ ...prev, [clean]: 1 }));
     setSelectedService(clean);
@@ -777,8 +821,16 @@ export function StudioWorkbench() {
 
   function removeCustomBlock(svc: string) {
     if (customServices.length <= 2) return;
+    setExtraEdges((prev) => prev.filter((edge) => edge.from !== svc && edge.to !== svc));
+    setRemovedEdges((prev) => [...new Set([
+      ...prev,
+      ...template.edges.filter((edge) => edge.from === svc || edge.to === svc)
+        .map((edge) => `${edge.from}->${edge.to}`),
+    ])]);
     const next = customServices.filter((item) => item !== svc);
     setCustomServices(next);
+    setNodeNames((prev) => Object.fromEntries(Object.entries(prev).filter(([key]) => key !== svc)));
+    setNameError((prev) => prev?.service === svc ? null : prev);
     if (selectedService === svc) {
       setSelectedService(next[0] ?? "");
     }
@@ -789,34 +841,6 @@ export function StudioWorkbench() {
       ...template.edges.filter(
         (e) => customServices.includes(e.from) && customServices.includes(e.to),
       ),
-      ...customServices
-        .filter((s) => !template.services.includes(s))
-        .map((s) => {
-          const lower = s.toLowerCase();
-          const gatewayNode = customServices[0] ?? "api-gateway";
-          const primaryAppNode =
-            customServices.find(
-              (n) =>
-                !/(gateway|cdn|waf|lb|balancer|postgres|mysql|mongo|redis|s3|elastic|kafka|rabbit|otel)/.test(
-                  n.toLowerCase(),
-                ),
-            ) ?? gatewayNode;
-          if (/(cdn|waf|shield|firewall|load-balancer)/.test(lower)) {
-            return { from: s, to: gatewayNode, protocol: "HTTPS" };
-          }
-          if (
-            /(postgres|mysql|mongo|redis|cache|s3|storage|elastic|search|kafka|rabbit|mq|otel|monitor)/.test(
-              lower,
-            )
-          ) {
-            return { from: primaryAppNode, to: s, protocol: "TCP" };
-          }
-          return {
-            from: gatewayNode,
-            to: s,
-            protocol: "HTTP",
-          };
-        }),
       ...extraEdges.filter(
         (e) => customServices.includes(e.from) && customServices.includes(e.to),
       ),
@@ -829,98 +853,6 @@ export function StudioWorkbench() {
       return true;
     });
   }, [template, customServices, extraEdges, removedEdges]);
-
-  const sandboxStudioData: StudioData = useMemo(() => {
-    const nowIso = new Date().toISOString();
-    const interactions = activeEdges.map((edge, idx) => ({
-      traceId: `studio-trace-${idx + 1}`,
-      fromService: edge.from,
-      toService: edge.to,
-      parentSpanId: `span-${edge.from}-${idx}`,
-      childSpanId: `span-${edge.to}-${idx}`,
-    }));
-
-    const spans = customServices.flatMap((svc, idx) => {
-      const reps = replicasMap[svc] ?? 1;
-      const isDown = reps <= 0;
-      const durationMs = isDown ? 980 : Math.max(8, Math.round(46 / Math.sqrt(Math.max(1, reps))));
-      return [
-        {
-          traceId: `studio-trace-${(idx % Math.max(1, activeEdges.length)) + 1}`,
-          spanId: `span-${svc}-${idx}`,
-          parentSpanId: idx === 0 ? null : `span-${customServices[0]}-0`,
-          runtimeService: svc,
-          operationName: `HTTP GET /api/v1/${svc}/verify`,
-          spanKind: "SERVER",
-          spanStatus: isDown ? "ERROR" : "OK",
-          httpMethod: "GET",
-          httpStatusCode: isDown ? 503 : 200,
-          durationNanoseconds: String(durationMs * 1_000_000),
-        },
-      ];
-    });
-
-    const servicesTelemetry = customServices.map((svc) => {
-      const reps = replicasMap[svc] ?? 1;
-      const catalogMatch = STUDIO_COMPONENT_CATALOG.find((item) => svc.startsWith(item.key));
-      const baseCpuVal = template.baseCpu[svc] ?? catalogMatch?.baseCpu ?? 26.5;
-      const baseRamVal = template.baseRam[svc] ?? catalogMatch?.baseRam ?? 220;
-      const perPodCpu = reps <= 0 ? 0 : Math.max(4.2, baseCpuVal / Math.pow(reps, 0.68));
-      const perPodRam = reps <= 0 ? 0 : baseRamVal;
-      const stats = Array.from({ length: Math.max(0, reps) }, (_, podIdx) => ({
-        containerId: `${svc}-pod-${podIdx + 1}`,
-        cpu: `${perPodCpu.toFixed(1)}%`,
-        memory: `${Math.round(perPodRam)}MiB / 512MiB`,
-        network: `${Math.round(140 / Math.max(1, reps))}KB / ${Math.round(95 / Math.max(1, reps))}KB`,
-      }));
-      return {
-        service: svc,
-        replicas: Math.max(1, reps),
-        runningReplicas: reps,
-        containers: stats.map((s) => ({
-          id: s.containerId,
-          name: s.containerId,
-          state: "running",
-          status: "Up (healthy)",
-        })),
-        stats,
-        logs:
-          reps <= 0
-            ? `[WARN] ${svc}: CircuitBreaker OPEN — downstream container stopped (HTTP 503 fallback triggered)`
-            : `[INFO] ${svc}: Active cluster running ${reps} replica(s) — load balanced (~${Math.round(100 / reps)}%/pod)`,
-      };
-    });
-
-    return {
-      sessionId: `standalone-${template.id}`,
-      interactive: true,
-      services: customServices,
-      finishRequested: false,
-      executionStatus: "RUNNING",
-      cleanupStatus: "NOT_REQUIRED",
-      actions: actionsLog,
-      telemetry: {
-        observedAt: nowIso,
-        services: servicesTelemetry,
-        spans,
-        interactions,
-        warnings: customServices.some((s) => (replicasMap[s] ?? 1) === 0)
-          ? [
-              "Fault injection active: one or more services have 0 running replicas (503 / CIRCUIT OPEN).",
-            ]
-          : [],
-      },
-      snapshots: localSnapshots.map((snap) => ({
-        id: snap.id,
-        sessionId: `standalone-${template.id}`,
-        sourceSnapshotId: "standalone-source",
-        modelVersionId: "standalone-model",
-        capturedAt: snap.capturedAt,
-        explanation: snap.explanation,
-        digest: snap.digest,
-      })),
-    };
-  }, [template, customServices, activeEdges, replicasMap, actionsLog, localSnapshots]);
 
   const deploymentRows = useMemo(() => {
     return customServices.map((svc) => {
@@ -1019,10 +951,114 @@ export function StudioWorkbench() {
     });
   }, [customServices, baselineReplicasMap, replicasMap, nodeConfigs, template, activeEdges]);
 
+  const sandboxStudioData: StudioData = useMemo(() => {
+    const nowIso = new Date().toISOString();
+    const interactions = activeEdges.map((edge, idx) => ({
+      traceId: `studio-trace-${idx + 1}`,
+      fromService: edge.from,
+      toService: edge.to,
+      parentSpanId: `span-${edge.from}-${idx}`,
+      childSpanId: `span-${edge.to}-${idx}`,
+    }));
+
+    const rowsByService = new Map(deploymentRows.map((row) => [row.serviceName, row]));
+    const simulatedTimeoutMs = 1000;
+    const spans = activeEdges.flatMap((edge, index) => {
+      if ((replicasMap[edge.from] ?? 1) <= 0) return [];
+      const target = rowsByService.get(edge.to)!;
+      const isHttp = /^HTTPS?$/i.test(edge.protocol);
+      const stopped = target.replicasNow === 0;
+      const throttled = isHttp && !stopped && target.cfg.rateLimiter &&
+        target.demandRps > target.cfg.rateLimitRps;
+      const overloaded = !stopped && target.effectiveRps > target.maxCapacityRps;
+      const timedOut = !stopped && target.p95Now >= simulatedTimeoutMs;
+      const httpStatusCode = !isHttp || stopped ? null
+        : throttled ? 429
+          : overloaded ? 503
+            : timedOut ? null : 200;
+      const failure = stopped ? "Destination unavailable"
+        : throttled ? "Rate limit exceeded"
+          : overloaded ? "Destination overloaded"
+            : timedOut ? `Upstream timed out (simulated ${simulatedTimeoutMs} ms budget)` : null;
+      return {
+        traceId: `studio-trace-${index + 1}`,
+        spanId: interactions[index]!.childSpanId,
+        parentSpanId: interactions[index]!.parentSpanId,
+        runtimeService: edge.from,
+        operationName: `${edge.protocol} ${nodeNames[edge.from] ?? edge.from} → ${nodeNames[edge.to] ?? edge.to}${failure ? ` · ${failure}` : ""}`,
+        spanKind: "CLIENT",
+        spanStatus: failure ? "ERROR" : "OK",
+        httpStatusCode,
+        durationNanoseconds: String((stopped ? 0 : Math.min(target.p95Now, simulatedTimeoutMs)) * 1_000_000),
+      };
+    });
+
+    const servicesTelemetry = customServices.map((svc) => {
+      const reps = replicasMap[svc] ?? 1;
+      const catalogMatch = STUDIO_COMPONENT_CATALOG.find((item) => svc.startsWith(item.key));
+      const baseCpuVal = template.baseCpu[svc] ?? catalogMatch?.baseCpu ?? 26.5;
+      const baseRamVal = template.baseRam[svc] ?? catalogMatch?.baseRam ?? 220;
+      const perPodCpu = reps <= 0 ? 0 : Math.max(4.2, baseCpuVal / Math.pow(reps, 0.68));
+      const perPodRam = reps <= 0 ? 0 : baseRamVal;
+      const stats = Array.from({ length: Math.max(0, reps) }, (_, podIdx) => ({
+        containerId: `${svc}-pod-${podIdx + 1}`,
+        cpu: `${perPodCpu.toFixed(1)}%`,
+        memory: `${Math.round(perPodRam)}MiB / 512MiB`,
+        network: `${Math.round(140 / Math.max(1, reps))}KB / ${Math.round(95 / Math.max(1, reps))}KB`,
+      }));
+      return {
+        service: svc,
+        replicas: Math.max(1, reps),
+        runningReplicas: reps,
+        containers: stats.map((s) => ({
+          id: s.containerId,
+          name: s.containerId,
+          state: "running",
+          status: "Up (healthy)",
+        })),
+        stats,
+        logs:
+          reps <= 0
+            ? `[WARN] ${svc}: No running replicas`
+            : `[INFO] ${svc}: Active cluster running ${reps} replica(s) — load balanced (~${Math.round(100 / reps)}%/pod)`,
+      };
+    });
+
+    return {
+      sessionId: `standalone-${template.id}`,
+      interactive: true,
+      services: customServices,
+      finishRequested: false,
+      executionStatus: "RUNNING",
+      cleanupStatus: "NOT_REQUIRED",
+      actions: actionsLog,
+      telemetry: {
+        observedAt: nowIso,
+        services: servicesTelemetry,
+        spans,
+        interactions,
+        warnings: customServices.some((s) => (replicasMap[s] ?? 1) === 0)
+          ? [
+              "Fault injection active: one or more services have 0 running replicas.",
+            ]
+          : [],
+      },
+      snapshots: localSnapshots.map((snap) => ({
+        id: snap.id,
+        sessionId: `standalone-${template.id}`,
+        sourceSnapshotId: "standalone-source",
+        modelVersionId: "standalone-model",
+        capturedAt: snap.capturedAt,
+        explanation: snap.explanation,
+        digest: snap.digest,
+      })),
+    };
+  }, [template, customServices, activeEdges, replicasMap, actionsLog, localSnapshots, deploymentRows, nodeNames]);
+
   const selectedRow =
     deploymentRows.find((r) => r.serviceName === selectedService) ?? deploymentRows[0];
   const visibleServiceRows = deploymentRows.filter((row) =>
-    row.serviceName.toLowerCase().includes(serviceSearch.trim().toLowerCase()),
+    nodeLabel(row.serviceName).toLowerCase().includes(serviceSearch.trim().toLowerCase()),
   );
   const totalRunningPods = deploymentRows.reduce((s, r) => s + r.replicasNow, 0);
   const totalRamMiB = deploymentRows.reduce((s, r) => s + r.totalRam, 0);
@@ -1073,16 +1109,19 @@ export function StudioWorkbench() {
         capturedAt: new Date().toISOString(),
         explanation:
           snapshotNote.trim() ||
-          `${selectedService}: ${replicasMap[selectedService] ?? 1} pods (${totalRunningPods} total cluster pods)`,
+          `${nodeLabel(selectedService)}: ${replicasMap[selectedService] ?? 1} pods (${totalRunningPods} total cluster pods)`,
         digest: `sha256:${crypto.randomUUID().replace(/-/g, "")}`,
         ...(imageData ? { imageData } : {}),
-        replicasByService: { ...replicasMap },
+        replicasByService: Object.fromEntries(customServices.map((service) => [service, replicasMap[service] ?? 1])),
+        nodeNames: Object.fromEntries(customServices.map((service) => [service, nodeLabel(service)])),
+        connections: activeEdges.map((edge) => ({ ...edge })),
         totalInstances: totalRunningPods,
         totalRamMiB,
       };
       setLocalSnapshots((prev) => [...prev, snap]);
       setSnapshotNote("");
       setBottomTab("SNAPSHOTS");
+      setBottomCollapsed(false);
     } finally {
       setCapturing(false);
     }
@@ -1338,7 +1377,7 @@ export function StudioWorkbench() {
                     <Input
                       value={newNodeName}
                       onChange={(e) => setNewNodeName(e.target.value)}
-                      placeholder="Custom block name..."
+                      placeholder="Custom block name..." maxLength={64}
                       className="h-7 rounded-full border-slate-800 bg-slate-900/90 px-3 text-[11px]"
                     />
                     <Button
@@ -1393,7 +1432,7 @@ export function StudioWorkbench() {
 
                     <button
                       type="button"
-                      title="Kill primary DB (503 test)"
+                      title="Stop primary database"
                       onClick={() => {
                         const dbNode =
                           customServices.find((s) =>
@@ -1492,6 +1531,8 @@ export function StudioWorkbench() {
                 busy={false}
                 onQuickAction={applySandboxAction}
                 onSpawnBlock={addCustomBlock}
+                onConnect={connectOutboundEdge}
+                nodeNames={nodeNames}
                 canvasOnly
                 defaultView="3D"
               />
@@ -1641,7 +1682,7 @@ export function StudioWorkbench() {
                         <div className="grid gap-3 rounded-lg border border-slate-800 p-3">
                           {[
                             { label: "CPU allocation", value: totalVcpuAllocated, max: maxServerVcpu, units: "vCPU",
-                              detail: `${avgCpu.toFixed(1)}% average load${peakCpuRow ? ` · Peak: ${peakCpuRow.serviceName} (${peakCpuRow.perPodCpu.toFixed(0)}%)` : ""}` },
+                              detail: `${avgCpu.toFixed(1)}% average load${peakCpuRow ? ` · Peak: ${nodeLabel(peakCpuRow.serviceName)} (${peakCpuRow.perPodCpu.toFixed(0)}%)` : ""}` },
                             { label: "Memory usage", value: Math.round(totalRamMiB), max: maxServerRamMiB, units: "MiB",
                               detail: `${Math.max(0, maxServerRamMiB - Math.round(totalRamMiB))} MiB free` },
                           ].map(({ label, value, max, units, detail }) => (
@@ -1692,7 +1733,7 @@ export function StudioWorkbench() {
                                   <td className="px-2.5 py-1.5">
                                     <button
                                       type="button"
-                                      title={`${row.serviceName} · ${row.layer} · ${row.type}`}
+                                      title={`${nodeLabel(row.serviceName)} · ${row.layer} · ${row.type}`}
                                       aria-pressed={isSelected}
                                       onClick={() => {
                                         setSelectedService(row.serviceName);
@@ -1701,11 +1742,11 @@ export function StudioWorkbench() {
                                       className="flex items-center gap-2 font-medium text-sky-200 hover:underline"
                                     >
                                       {renderComponentIcon(row.serviceName, "size-3.5 shrink-0")}
-                                      {row.serviceName}
+                                      {nodeLabel(row.serviceName)}
                                     </button>
                                   </td>
                                   <td className={`px-2.5 py-1.5 ${isDown ? "text-rose-300" : row.bottleneckTarget ? "text-amber-300" : "text-emerald-300"}`}
-                                    title={row.bottleneckTarget ? `Bottleneck → ${row.bottleneckTarget}` : undefined}>
+                                    title={row.bottleneckTarget ? `Bottleneck → ${nodeLabel(row.bottleneckTarget)}` : undefined}>
                                     {isDown ? "Down" : row.bottleneckTarget ? "Bottleneck" : "Running"}
                                   </td>
                                   <td className="px-2.5 py-1.5 font-mono tabular-nums text-slate-200">{isDown ? "—" : `${row.perPodCpu.toFixed(1)}%`}</td>
@@ -1713,7 +1754,7 @@ export function StudioWorkbench() {
                                   <td className="px-2.5 py-1.5 font-mono tabular-nums text-slate-200">{isDown ? "—" : `${row.p95Now} ms`}</td>
                                   <td className="px-2.5 py-1.5">
                                     <div className="flex items-center gap-2">
-                                      <button type="button" aria-label={`Decrease replicas for ${row.serviceName}`}
+                                      <button type="button" aria-label={`Decrease replicas for ${nodeLabel(row.serviceName)}`}
                                         disabled={isDown}
                                         onClick={() => applySandboxAction({
                                           action: row.replicasNow <= 1 ? "STOP" : "SCALE",
@@ -1724,7 +1765,7 @@ export function StudioWorkbench() {
                                         −
                                       </button>
                                       <span className="min-w-6 text-center font-mono text-slate-200">{row.replicasNow}</span>
-                                      <button type="button" aria-label={`Increase replicas for ${row.serviceName}`}
+                                      <button type="button" aria-label={`Increase replicas for ${nodeLabel(row.serviceName)}`}
                                         disabled={row.replicasNow >= 256}
                                         onClick={() => applySandboxAction({
                                           action: "SCALE",
@@ -1737,7 +1778,7 @@ export function StudioWorkbench() {
                                       {customServices.length > 2 && (
                                         <button
                                           type="button"
-                                          aria-label={`Remove ${row.serviceName}`}
+                                          aria-label={`Remove ${nodeLabel(row.serviceName)}`}
                                           onClick={() => removeCustomBlock(row.serviceName)}
                                           className="grid size-6 place-items-center text-slate-400 hover:text-rose-400"
                                         >
@@ -1774,6 +1815,26 @@ export function StudioWorkbench() {
                           <p className="mt-1 truncate text-[11px] text-muted-foreground">
                             {snap.explanation}
                           </p>
+                          <details className="mt-1 text-[11px] text-slate-300">
+                            <summary className="cursor-pointer">{t("Snapshot nodes")}</summary>
+                            <ul className="mt-1 space-y-1">
+                              {Object.entries(snap.nodeNames).map(([id, name]) => (
+                                <li key={id} className="flex justify-between gap-2">
+                                  <span className="break-all">{name}</span>
+                                  <span className="shrink-0">×{snap.replicasByService[id]}</span>
+                                </li>
+                              ))}
+                            </ul>
+                            {snap.connections.length > 0 && (
+                              <ul aria-label={t("Snapshot connections")} className="mt-2 space-y-1 border-t border-slate-700 pt-2">
+                                {snap.connections.map(({ from, to, protocol }) => (
+                                  <li key={JSON.stringify([from, to])} className="break-words text-slate-400">
+                                    {snap.nodeNames[from]} → {snap.nodeNames[to]} · {protocol}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </details>
                         </div>
                       ))}
                     </div>
@@ -1823,7 +1884,7 @@ export function StudioWorkbench() {
                         }`}
                       >
                         {selectedRow.replicasNow === 0
-                          ? "CRASHED (503)"
+                          ? "STOPPED"
                           : `● ${selectedRow.replicasNow} POD(S)`}
                       </span>
                     </div>
@@ -1844,7 +1905,7 @@ export function StudioWorkbench() {
                       </span>
                       <div className="min-w-0 flex-1">
                         <h2 className="truncate font-mono text-sm font-semibold text-slate-100">
-                          {selectedRow.serviceName}
+                          {nodeLabel(selectedRow.serviceName)}
                         </h2>
                         <p className="font-mono text-[10.5px] text-slate-400">
                           CPU <strong className="text-slate-100">{selectedRow.perPodCpu.toFixed(1)}%</strong> · RAM{" "}
@@ -1853,6 +1914,30 @@ export function StudioWorkbench() {
                         </p>
                       </div>
                     </div>
+
+                    <form
+                      key={JSON.stringify([selectedRow.serviceName, nodeLabel(selectedRow.serviceName)])}
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        renameNode(selectedRow.serviceName, String(new FormData(event.currentTarget).get("node-name") ?? ""));
+                      }}
+                      className="space-y-1"
+                    >
+                      <label htmlFor="studio-node-name" className="block text-[11px] text-slate-400">{t("Node name")}</label>
+                      <div className="flex gap-1.5">
+                        <input id="studio-node-name" name="node-name" maxLength={64}
+                          defaultValue={nodeLabel(selectedRow.serviceName)}
+                          aria-invalid={nameError?.service === selectedRow.serviceName || undefined}
+                          onChange={() => setNameError(null)}
+                          className="min-w-0 flex-1 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-100" />
+                        <button type="submit" className="rounded border border-slate-700 px-2 text-xs text-sky-200 hover:bg-slate-800">
+                          {t("Save name")}
+                        </button>
+                      </div>
+                      {nameError?.service === selectedRow.serviceName && (
+                        <p role="alert" className="text-[11px] text-rose-300">{nameError.message}</p>
+                      )}
+                    </form>
 
                     {/* Free-Form Replica / Pod Count Input + Quick Presets (No ×8 Cap!) */}
                     <div className="space-y-1.5 pt-0.5">
@@ -2220,7 +2305,7 @@ export function StudioWorkbench() {
                         }`}
                       >
                         {selectedRow.replicasNow === 0
-                          ? "0% CAP (503)"
+                          ? "0% CAP"
                           : `${selectedRow.utilizationPct}% Saturation`}
                       </span>
                     </div>
@@ -2272,7 +2357,7 @@ export function StudioWorkbench() {
                         </span>
                       </div>
                       <div>
-                        <span className="block text-[9px] uppercase text-slate-500">Dropped / 429-503</span>
+                        <span className="block text-[9px] uppercase text-slate-500">Dropped requests</span>
                         <span
                           className={`font-semibold ${
                             selectedRow.droppedRps > 0 ? "text-rose-400" : "text-slate-300"
@@ -2287,8 +2372,8 @@ export function StudioWorkbench() {
                     {selectedRow.replicasNow === 0 ? (
                       <p className="text-[10.5px] text-rose-300">
                         <ShieldAlert className="mr-1 inline size-3.5" />
-                        <strong>503 Circuit Open:</strong> Callers (
-                        {selectedRow.inboundCallers.join(", ") || "Gateway"}) failing fast.
+                        <strong>No running replicas.</strong> Callers (
+                        {selectedRow.inboundCallers.map(nodeLabel).join(", ") || "none"}) cannot reach this service.
                       </p>
                     ) : (
                       <div className="space-y-1">
@@ -2316,7 +2401,7 @@ export function StudioWorkbench() {
                         {selectedRow.bottleneckTarget && (
                           <div className="flex items-center justify-between gap-1 rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-[10px] text-amber-200">
                             <span className="truncate">
-                              Downstream saturation: <strong>{selectedRow.bottleneckTarget}</strong>
+                              Downstream saturation: <strong>{nodeLabel(selectedRow.bottleneckTarget)}</strong>
                             </span>
                             <button
                               type="button"
@@ -2342,12 +2427,12 @@ export function StudioWorkbench() {
                         {selectedRow.inboundCallers.length > 0 ? (
                           selectedRow.inboundCallers.map((caller) => (
                             <button
-                              key={caller}
+                              key={nodeLabel(caller)}
                               type="button"
                               onClick={() => setSelectedService(caller)}
                               className="rounded border border-slate-700/80 bg-slate-800 px-1.5 py-0.5 text-slate-200 hover:border-slate-500"
                             >
-                              {caller}
+                              {nodeLabel(caller)}
                             </button>
                           ))
                         ) : (
@@ -2369,11 +2454,11 @@ export function StudioWorkbench() {
                                   onClick={() => setSelectedService(target)}
                                   className="hover:underline"
                                 >
-                                  {target}
+                                  {nodeLabel(target)}
                                 </button>
                                 <button
                                   type="button"
-                                  title={`Disconnect ${selectedRow.serviceName} → ${target}`}
+                                  title={`Disconnect ${nodeLabel(selectedRow.serviceName)} → ${nodeLabel(target)}`}
                                   onClick={() =>
                                     toggleOutboundEdge(selectedRow.serviceName, target)
                                   }
@@ -2406,7 +2491,7 @@ export function StudioWorkbench() {
                             )
                             .map((s) => (
                               <option key={s} value={s} className="bg-slate-950 text-slate-100">
-                                → {s}
+                                → {nodeLabel(s)}
                               </option>
                             ))}
                         </select>
@@ -2418,11 +2503,11 @@ export function StudioWorkbench() {
                   <div className="space-y-1.5 rounded-xl border border-slate-800/90 bg-slate-900/60 p-2">
                     <div className="rounded border border-slate-800 bg-slate-950 p-1.5 font-mono text-[9.5px] leading-relaxed text-slate-300">
                       <p className="truncate text-slate-400">
-                        $ docker logs --tail 2 {selectedRow.serviceName}
+                        $ docker logs --tail 2 {nodeLabel(selectedRow.serviceName)}
                       </p>
                       <p className="truncate text-slate-300">
                         {selectedRow.replicasNow === 0
-                          ? `[ERR] 503 CircuitBreaker OPEN — 0 pods running`
+                          ? `[ERR] Service unavailable — 0 pods running`
                           : `[OK] ${selectedRow.replicasNow} pod(s) · Tier=${selectedRow.cfg.instanceTier} · Load=${selectedRow.cfg.trafficMult}x`}
                       </p>
                     </div>
