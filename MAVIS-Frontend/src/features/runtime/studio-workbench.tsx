@@ -587,6 +587,7 @@ export function StudioWorkbench() {
     "ALL" | "EDGE" | "COMPUTE" | "DATA" | "INFRA"
   >("ALL");
   const [componentSearch, setComponentSearch] = useState("");
+  const [serviceSearch, setServiceSearch] = useState("");
   const [actionsLog, setActionsLog] = useState<StudioData["actions"]>([]);
   const [localSnapshots, setLocalSnapshots] = useState<LocalSnapshot[]>([]);
   const [snapshotNote, setSnapshotNote] = useState("");
@@ -1020,6 +1021,9 @@ export function StudioWorkbench() {
 
   const selectedRow =
     deploymentRows.find((r) => r.serviceName === selectedService) ?? deploymentRows[0];
+  const visibleServiceRows = deploymentRows.filter((row) =>
+    row.serviceName.toLowerCase().includes(serviceSearch.trim().toLowerCase()),
+  );
   const totalRunningPods = deploymentRows.reduce((s, r) => s + r.replicasNow, 0);
   const totalRamMiB = deploymentRows.reduce((s, r) => s + r.totalRam, 0);
   const avgCpu =
@@ -1480,7 +1484,7 @@ export function StudioWorkbench() {
           {/* CENTER COLUMN: TOP (FULL-BLEED 3D/2D CANVAS) + BOTTOM (TELEMETRY DOCK) */}
           <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
             {/* 2. CENTER INTERACTIVE 3D / 2D CANVAS (Full-Bleed Edge-to-Edge) */}
-            <main className={`${bottomTab === "STATS" && !bottomCollapsed ? "hidden" : "flex"} min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#070b14]`}>
+            <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#070b14]">
               <StudioObservability
                 data={sandboxStudioData}
                 selected={selectedService}
@@ -1507,12 +1511,28 @@ export function StudioWorkbench() {
 
             {/* 4. BOTTOM TELEMETRY & IMPACT DOCK: Strictly inside Center Column between Left & Right Sidebars */}
             <section
-              style={{ height: bottomCollapsed ? 36 : bottomTab === "STATS" ? undefined : bottomHeight,
-                flex: bottomTab === "STATS" && !bottomCollapsed ? "1 1 0%" : undefined }}
-              className="flex shrink-0 flex-col bg-[#0b101b]"
+              style={{ height: bottomCollapsed ? 36 : bottomHeight }}
+              className="flex min-h-0 max-h-[60%] shrink-0 flex-col bg-[#0b101b]"
             >
               <div className="flex h-9 shrink-0 items-center justify-between border-b border-slate-800 bg-slate-950/60 px-3">
                 <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    aria-pressed={!bottomCollapsed && bottomTab === "STATS"}
+                    onClick={() => {
+                      if (!bottomCollapsed && bottomTab === "STATS") {
+                        setBottomCollapsed(true);
+                      } else {
+                        setBottomCollapsed(false);
+                        setBottomTab("STATS");
+                      }
+                    }}
+                    className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition ${!bottomCollapsed && bottomTab === "STATS"
+                      ? "border border-slate-700 bg-slate-800 text-slate-100"
+                      : "text-slate-400 hover:text-slate-200"}`}
+                  >
+                    {t("Stats")}
+                  </button>
                   <button
                     type="button"
                     onClick={() => {
@@ -1549,23 +1569,6 @@ export function StudioWorkbench() {
                   >
                     Snapshots ({localSnapshots.length})
                   </button>
-                  <button
-                    type="button"
-                    aria-pressed={!bottomCollapsed && bottomTab === "STATS"}
-                    onClick={() => {
-                      if (!bottomCollapsed && bottomTab === "STATS") {
-                        setBottomCollapsed(true);
-                      } else {
-                        setBottomCollapsed(false);
-                        setBottomTab("STATS");
-                      }
-                    }}
-                    className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition ${!bottomCollapsed && bottomTab === "STATS"
-                      ? "border border-slate-700 bg-slate-800 text-slate-100"
-                      : "text-slate-400 hover:text-slate-200"}`}
-                  >
-                    {t("Stats")}
-                  </button>
                 </div>
 
                 {/* Cluster-wide KPI Summary Pills (Clean Monochrome Engineering Readouts, Zero Emojis) */}
@@ -1593,375 +1596,166 @@ export function StudioWorkbench() {
               </div>
 
               {!bottomCollapsed && (
-                <div className="flex-1 space-y-2.5 overflow-y-auto p-2.5">
-                  {bottomTab === "MATRIX" || bottomTab === "STATS" ? (
-                    <>
-                      {/* 1. WHOLE-SERVER ADMIN POV: 4-Card Cluster Host Overview */}
-                      {bottomTab === "STATS" && (
-                      <div className="space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                            Server Cluster Overview (Admin POV)
-                          </span>
-                          <span className="font-mono text-[10px] text-slate-500">
-                            Host: mavis-prod-cluster-01 · {activeEdges.length} Mesh Links
-                          </span>
+                <div data-testid="studio-dock-content" className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2.5">
+                  {bottomTab === "STATS" ? (
+                    <section className="mx-auto max-w-6xl space-y-4 px-1 py-1.5" aria-labelledby="studio-cluster-overview">
+                      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+                        <div>
+                          <h2 id="studio-cluster-overview" className="text-base font-semibold text-slate-100">
+                            Cluster Overview
+                          </h2>
+                          <p className="mt-0.5 text-xs text-slate-400">
+                            Sandbox · {healthyServicesCount}/{deploymentRows.length} services running · {totalRunningPods} pods · {activeEdges.length} links
+                          </p>
                         </div>
-                        <div
-                          style={{
-                            gridTemplateColumns: "repeat(auto-fill, minmax(215px, 1fr))",
-                          }}
-                          className="grid gap-2"
-                        >
-                          {/* Admin Card A: Cluster Availability & SLA */}
-                          <div className="rounded-xl border border-slate-800/90 bg-slate-900/60 p-2.5">
-                            <div className="flex items-center justify-between text-[10px]">
-                              <span className="font-medium uppercase text-slate-400">
-                                Cluster Health & SLA
-                              </span>
-                              <span
-                                className={`rounded-full px-2 py-0.5 font-mono text-[9.5px] font-semibold ${
-                                  downServicesCount > 0
-                                    ? "bg-rose-500/15 text-rose-300"
-                                    : bottleneckCount > 0
-                                      ? "bg-amber-500/15 text-amber-300"
-                                      : "bg-slate-800 text-emerald-400"
-                                }`}
-                              >
-                                {downServicesCount > 0
-                                  ? `${downServicesCount} DOWN (503)`
-                                  : bottleneckCount > 0
-                                    ? `${bottleneckCount} BOTTLENECK`
-                                    : "● HEALTHY"}
-                              </span>
-                            </div>
-                            <div className="mt-1 flex items-baseline justify-between font-mono">
-                              <span className="text-sm font-bold text-slate-100">
-                                {clusterSla}% SLA
-                              </span>
-                              <span className="text-[10.5px] text-slate-400">
-                                {healthyServicesCount}/{deploymentRows.length} APIs · {totalRunningPods} Pods
-                              </span>
-                            </div>
-                            <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-slate-800">
-                              <div
-                                className={`h-full rounded-full transition-all ${
-                                  downServicesCount > 0 ? "bg-rose-500" : "bg-sky-400/80"
-                                }`}
-                                style={{
-                                  width: `${Math.round(
-                                    (healthyServicesCount / Math.max(1, deploymentRows.length)) * 100,
-                                  )}%`,
-                                }}
-                              />
-                            </div>
-                          </div>
+                        <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                          downServicesCount ? "bg-rose-500/15 text-rose-300"
+                            : bottleneckCount ? "bg-amber-500/15 text-amber-300"
+                              : "bg-emerald-500/15 text-emerald-300"
+                        }`}>
+                          {downServicesCount ? `${downServicesCount} down`
+                            : bottleneckCount ? `${bottleneckCount} bottleneck(s)`
+                              : deploymentRows.length ? "Healthy" : "No services"}
+                        </span>
+                      </header>
 
-                          {/* Admin Card B: Whole-Server CPU & vCPU Allocation */}
-                          <div className="rounded-xl border border-slate-800/90 bg-slate-900/60 p-2.5">
-                            <div className="flex items-center justify-between text-[10px]">
-                              <span className="font-medium uppercase text-slate-400">
-                                Server CPU & vCPU Pool
-                              </span>
-                              <span className="font-mono text-slate-400">
-                                {totalVcpuAllocated.toFixed(1)} / {maxServerVcpu} vCPU
-                              </span>
+                      <div>
+                        <h3 className="mb-2 text-xs font-semibold text-slate-400">Traffic & reliability</h3>
+                        <dl className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-lg bg-slate-900/70 p-3 lg:grid-cols-4">
+                          {[
+                            ["Throughput", `${clusterRps.toLocaleString()} req/s`],
+                            ["End-to-end p95", `${e2eP95} ms`],
+                            ["5xx errors", `${clusterErrorRate}%`],
+                            ["Estimated SLA", `${clusterSla}%`],
+                          ].map(([label, value]) => (
+                            <div key={label}>
+                              <dt className="text-[11px] text-slate-400">{label}</dt>
+                              <dd className="mt-1 font-mono text-lg font-semibold tabular-nums text-slate-100">{value}</dd>
                             </div>
-                            <div className="mt-1 flex items-baseline justify-between font-mono">
-                              <span className="text-sm font-bold text-slate-100">
-                                {avgCpu.toFixed(1)}% Avg Load
-                              </span>
-                              <span className="truncate text-[10px] text-slate-500">
-                                Peak: {peakCpuRow?.serviceName ?? "n/a"} (
-                                {peakCpuRow ? `${peakCpuRow.perPodCpu.toFixed(0)}%` : "0%"})
-                              </span>
-                            </div>
-                            <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-slate-800">
-                              <div
-                                className={`h-full rounded-full transition-all ${
-                                  avgCpu > 75 ? "bg-amber-400" : "bg-sky-400/80"
-                                }`}
-                                style={{ width: `${Math.min(100, Math.round(avgCpu))}%` }}
-                              />
-                            </div>
-                          </div>
-
-                          {/* Admin Card C: Physical Host Memory Capacity */}
-                          <div className="rounded-xl border border-slate-800/90 bg-slate-900/60 p-2.5">
-                            <div className="flex items-center justify-between text-[10px]">
-                              <span className="font-medium uppercase text-slate-400">
-                                Host RAM Capacity
-                              </span>
-                              <span className="font-mono text-slate-400">
-                                {Math.round((totalRamMiB / maxServerRamMiB) * 100)}% Used
-                              </span>
-                            </div>
-                            <div className="mt-1 flex items-baseline justify-between font-mono">
-                              <span className="text-sm font-bold text-slate-100">
-                                {Math.round(totalRamMiB)} / {maxServerRamMiB} MiB
-                              </span>
-                              <span className="text-[10px] text-slate-500">
-                                Free: {Math.max(0, maxServerRamMiB - Math.round(totalRamMiB))}M
-                              </span>
-                            </div>
-                            <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-slate-800">
-                              <div
-                                className={`h-full rounded-full transition-all ${
-                                  totalRamMiB > 3400 ? "bg-rose-400" : "bg-sky-400/80"
-                                }`}
-                                style={{
-                                  width: `${Math.min(
-                                    100,
-                                    Math.round((totalRamMiB / maxServerRamMiB) * 100),
-                                  )}%`,
-                                }}
-                              />
-                            </div>
-                          </div>
-
-                          {/* Admin Card D: Global Traffic, E2E p95 Latency & 5xx Error Rate */}
-                          <div className="rounded-xl border border-slate-800/90 bg-slate-900/60 p-2.5">
-                            <div className="flex items-center justify-between text-[10px]">
-                              <span className="font-medium uppercase text-slate-400">
-                                Global Traffic & E2E p95
-                              </span>
-                              <span
-                                className={`font-mono font-semibold ${
-                                  clusterErrorRate > 1 ? "text-rose-400" : "text-slate-400"
-                                }`}
-                              >
-                                5xx: {clusterErrorRate}%
-                              </span>
-                            </div>
-                            <div className="mt-1 flex items-baseline justify-between font-mono">
-                              <span className="text-sm font-bold text-slate-100">
-                                {clusterRps.toLocaleString()} req/s
-                              </span>
-                              <span className="text-[10.5px] text-slate-400">
-                                E2E p95: <strong className="text-slate-200">{e2eP95}ms</strong>
-                              </span>
-                            </div>
-                            <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-slate-800">
-                              <div
-                                className={`h-full rounded-full transition-all ${
-                                  clusterErrorRate > 1 ? "bg-rose-500" : "bg-sky-400/80"
-                                }`}
-                                style={{
-                                  width: `${Math.min(100, Math.round((clusterRps / 6000) * 100))}%`,
-                                }}
-                              />
-                            </div>
-                          </div>
-                        </div>
+                          ))}
+                        </dl>
                       </div>
 
-                      )}
-                      {/* 2. PER-SERVICE / API TELEMETRY BREAKDOWN */}
-                      {bottomTab === "MATRIX" && (
-                      <div className="space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                            Per-Service / API Telemetry ({deploymentRows.length})
-                          </span>
-                          <span className="font-mono text-[10px] text-slate-500">
-                            Click any node card to inspect or scale inline (− / +)
-                          </span>
-                        </div>
-                        <div
-                          style={{
-                            gridTemplateColumns: "repeat(auto-fill, minmax(235px, 1fr))",
-                          }}
-                          className="grid gap-2"
-                        >
-                      {deploymentRows.map((row) => {
-                        const isSelected = row.serviceName === selectedService;
-                        const isDown = row.replicasNow === 0;
-                        const ramPct = Math.min(100, Math.round((row.perPodRam / 512) * 100));
-                        return (
-                          <div
-                            key={row.serviceName}
-                            onClick={() => setSelectedService(row.serviceName)}
-                            className={`group flex cursor-pointer flex-col justify-between rounded-xl border p-2.5 transition ${
-                              isDown
-                                ? "border-rose-500/50 bg-rose-950/15"
-                                : isSelected
-                                  ? "border-sky-400/70 bg-slate-900 ring-1 ring-sky-400/20"
-                                  : "border-slate-800/90 bg-slate-900/60 hover:border-slate-700"
-                            }`}
-                          >
-                            {/* Row 1: Functional Icon + Service Name + Layer/Type + Quick Scale & Replica Badge */}
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="flex min-w-0 items-center gap-2">
-                                <span
-                                  className={`flex size-7 shrink-0 items-center justify-center rounded-lg border border-slate-800 bg-slate-950 ${
-                                    isDown
-                                      ? "text-rose-400"
-                                      : row.type === "API_GATEWAY"
-                                        ? "text-sky-400/90"
-                                        : row.type === "DATABASE"
-                                          ? "text-emerald-400/90"
-                                          : "text-slate-300"
-                                  }`}
-                                >
-                                  {renderComponentIcon(row.serviceName, "size-3.5")}
-                                </span>
-                                <div className="min-w-0">
-                                  <p className="truncate font-mono text-xs font-semibold text-slate-100">
-                                    {row.serviceName}
-                                  </p>
-                                  <p className="truncate font-mono text-[9.5px] uppercase text-slate-500">
-                                    {row.layer} · {row.type.replace("_CONTAINER", "")}
-                                  </p>
-                                </div>
+                      <div>
+                        <h3 className="mb-2 text-xs font-semibold text-slate-400">Resource capacity</h3>
+                        <div className="grid gap-3 rounded-lg border border-slate-800 p-3">
+                          {[
+                            { label: "CPU allocation", value: totalVcpuAllocated, max: maxServerVcpu, units: "vCPU",
+                              detail: `${avgCpu.toFixed(1)}% average load${peakCpuRow ? ` · Peak: ${peakCpuRow.serviceName} (${peakCpuRow.perPodCpu.toFixed(0)}%)` : ""}` },
+                            { label: "Memory usage", value: Math.round(totalRamMiB), max: maxServerRamMiB, units: "MiB",
+                              detail: `${Math.max(0, maxServerRamMiB - Math.round(totalRamMiB))} MiB free` },
+                          ].map(({ label, value, max, units, detail }) => (
+                            <div key={label} className="space-y-1">
+                              <div className="flex flex-wrap justify-between gap-x-2 text-xs">
+                                <span className="font-medium text-slate-200">{label}</span>
+                                <span className="font-mono tabular-nums text-slate-300">{value} / {max} {units}</span>
                               </div>
-
-                              <div className="flex shrink-0 items-center gap-1">
-                                <button
-                                  type="button"
-                                  title="Decrease replicas"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    applySandboxAction({
-                                      action: row.replicasNow <= 1 ? "STOP" : "SCALE",
-                                      service: row.serviceName,
-                                      replicas: Math.max(0, row.replicasNow - 1),
-                                    });
-                                  }}
-                                  className="flex size-5 items-center justify-center rounded border border-slate-800 bg-slate-950 font-mono text-[11px] text-slate-400 hover:border-slate-600 hover:text-slate-100"
-                                >
-                                  −
-                                </button>
-                                <span
-                                  className={`rounded-md px-1.5 py-0.5 font-mono text-[10px] font-semibold ${
-                                    isDown
-                                      ? "bg-rose-500/20 text-rose-300"
-                                      : "border border-slate-700/80 bg-slate-800 text-slate-200"
-                                  }`}
-                                >
-                                  {isDown
-                                    ? "0 DOWN"
-                                    : row.replicasBefore !== row.replicasNow
-                                      ? `${row.replicasBefore}→×${row.replicasNow}`
-                                      : `×${row.replicasNow}`}
-                                </span>
-                                <button
-                                  type="button"
-                                  title="Increase replicas"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    applySandboxAction({
-                                      action: "SCALE",
-                                      service: row.serviceName,
-                                      replicas: Math.min(256, (row.replicasNow <= 0 ? 0 : row.replicasNow) + 1),
-                                    });
-                                  }}
-                                  className="flex size-5 items-center justify-center rounded border border-slate-800 bg-slate-950 font-mono text-[11px] text-slate-400 hover:border-slate-600 hover:text-slate-100"
-                                >
-                                  +
-                                </button>
-                                {customServices.length > 2 && (
-                                  <button
-                                    type="button"
-                                    aria-label={`Remove ${row.serviceName}`}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      removeCustomBlock(row.serviceName);
-                                    }}
-                                    className="ml-0.5 text-slate-500 opacity-60 transition hover:text-rose-400 group-hover:opacity-100"
-                                  >
-                                    <Trash2 className="size-3.5" />
-                                  </button>
-                                )}
+                              <div className="h-1.5 overflow-hidden rounded-full bg-slate-800" aria-hidden="true">
+                                <div
+                                  className={`h-full rounded-full ${value >= max ? "bg-rose-400" : "bg-sky-400"}`}
+                                  style={{ width: `${Math.min(100, (value / max) * 100)}%` }}
+                                />
                               </div>
+                              <p className="break-words text-[11px] text-slate-400">{detail}</p>
                             </div>
-
-                            {/* Row 2: Dual Metric Progress Bars (Unified Monochrome Numbers & Steel-Sky Bars) */}
-                            <div className="mt-2.5 grid grid-cols-2 gap-2.5">
-                              <div className="space-y-1">
-                                <div className="flex items-center justify-between font-mono text-[10px]">
-                                  <span className="text-slate-500">CPU/pod</span>
-                                  <span className="font-semibold text-slate-200">
-                                    {isDown ? "0%" : `${row.perPodCpu.toFixed(1)}%`}
-                                  </span>
-                                </div>
-                                <div className="h-1 w-full overflow-hidden rounded-full bg-slate-800">
-                                  <div
-                                    className={`h-full rounded-full transition-all ${
-                                      isDown
-                                        ? "bg-rose-500"
-                                        : row.perPodCpu > 75
-                                          ? "bg-amber-400"
-                                          : "bg-sky-400/80"
-                                    }`}
-                                    style={{
-                                      width: `${isDown ? 100 : Math.min(100, row.perPodCpu)}%`,
-                                    }}
-                                  />
-                                </div>
-                              </div>
-
-                              <div className="space-y-1">
-                                <div className="flex items-center justify-between font-mono text-[10px]">
-                                  <span className="text-slate-500">RAM</span>
-                                  <span className="font-semibold text-slate-200">
-                                    {isDown
-                                      ? "0 MiB"
-                                      : `${Math.round(row.perPodRam)}M (${Math.round(row.totalRam)}M)`}
-                                  </span>
-                                </div>
-                                <div className="h-1 w-full overflow-hidden rounded-full bg-slate-800">
-                                  <div
-                                    className={`h-full rounded-full transition-all ${
-                                      isDown ? "bg-rose-500/50" : "bg-sky-400/80"
-                                    }`}
-                                    style={{ width: `${isDown ? 0 : ramPct}%` }}
-                                  />
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Row 3: Latency, Topology Links & Scaling/Fault Diagnosis (Zero Emojis) */}
-                            <div className="mt-2 flex items-center justify-between border-t border-slate-800/80 pt-1.5 font-mono text-[10px]">
-                              <div className="flex items-center gap-2 text-slate-400">
-                                <span
-                                  className={
-                                    isDown
-                                      ? "font-semibold text-rose-400"
-                                      : "text-slate-300"
-                                  }
-                                >
-                                  p95: {row.p95Now}ms
-                                </span>
-                                <span className="text-slate-600">·</span>
-                                <span>
-                                  {row.inboundCount} in / {row.outboundCount} out
-                                </span>
-                              </div>
-                              <span
-                                className={`truncate font-medium ${
-                                  isDown
-                                    ? "text-rose-400"
-                                    : row.bottleneckTarget
-                                      ? "text-amber-300"
-                                      : "text-slate-400"
-                                }`}
-                              >
-                                {isDown
-                                  ? "503 Circuit Open"
-                                  : row.bottleneckTarget
-                                    ? `Bottleneck → ${row.bottleneckTarget}`
-                                    : row.replicasNow > 1
-                                      ? `Balanced (${Math.round(100 / row.replicasNow)}%/pod)`
-                                      : "● Baseline (100%/pod)"}
-                              </span>
-                            </div>
-                          </div>
-                        );
-                      })}
+                          ))}
                         </div>
                       </div>
-                      )}
-                    </>
+                    </section>
+                  ) : bottomTab === "MATRIX" ? (
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <h2 className="text-xs font-semibold text-slate-300">Per-Service / API Telemetry ({deploymentRows.length})</h2>
+                        <input
+                          aria-label="Search services"
+                          placeholder="Search services…"
+                          value={serviceSearch}
+                          onChange={(event) => setServiceSearch(event.target.value)}
+                          className="w-48 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-100"
+                        />
+                      </div>
+                      <div className="overflow-x-auto rounded-lg border border-slate-800">
+                        <table className="w-full whitespace-nowrap text-left text-xs">
+                          <thead className="bg-slate-900 text-[11px] text-slate-400">
+                            <tr>
+                              {["Service", "Status", "CPU / pod", "RAM total", "p95", "Replicas"].map((label) => (
+                                <th key={label} scope="col" className="px-2.5 py-2 font-medium">{label}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-800">
+                            {visibleServiceRows.map((row) => {
+                              const isDown = row.replicasNow === 0;
+                              const isSelected = row.serviceName === selectedService;
+                              return (
+                                <tr key={row.serviceName} className={isSelected ? "bg-sky-950/35" : "hover:bg-slate-900"}>
+                                  <td className="px-2.5 py-1.5">
+                                    <button
+                                      type="button"
+                                      title={`${row.serviceName} · ${row.layer} · ${row.type}`}
+                                      aria-pressed={isSelected}
+                                      onClick={() => {
+                                        setSelectedService(row.serviceName);
+                                        setRightCollapsed(false);
+                                      }}
+                                      className="flex items-center gap-2 font-medium text-sky-200 hover:underline"
+                                    >
+                                      {renderComponentIcon(row.serviceName, "size-3.5 shrink-0")}
+                                      {row.serviceName}
+                                    </button>
+                                  </td>
+                                  <td className={`px-2.5 py-1.5 ${isDown ? "text-rose-300" : row.bottleneckTarget ? "text-amber-300" : "text-emerald-300"}`}
+                                    title={row.bottleneckTarget ? `Bottleneck → ${row.bottleneckTarget}` : undefined}>
+                                    {isDown ? "Down" : row.bottleneckTarget ? "Bottleneck" : "Running"}
+                                  </td>
+                                  <td className="px-2.5 py-1.5 font-mono tabular-nums text-slate-200">{isDown ? "—" : `${row.perPodCpu.toFixed(1)}%`}</td>
+                                  <td className="px-2.5 py-1.5 font-mono tabular-nums text-slate-200">{Math.round(row.totalRam)} MiB</td>
+                                  <td className="px-2.5 py-1.5 font-mono tabular-nums text-slate-200">{isDown ? "—" : `${row.p95Now} ms`}</td>
+                                  <td className="px-2.5 py-1.5">
+                                    <div className="flex items-center gap-2">
+                                      <button type="button" aria-label={`Decrease replicas for ${row.serviceName}`}
+                                        disabled={isDown}
+                                        onClick={() => applySandboxAction({
+                                          action: row.replicasNow <= 1 ? "STOP" : "SCALE",
+                                          service: row.serviceName,
+                                          replicas: row.replicasNow - 1,
+                                        })}
+                                        className="size-6 rounded border border-slate-700 text-slate-200 hover:bg-slate-800 disabled:opacity-40">
+                                        −
+                                      </button>
+                                      <span className="min-w-6 text-center font-mono text-slate-200">{row.replicasNow}</span>
+                                      <button type="button" aria-label={`Increase replicas for ${row.serviceName}`}
+                                        disabled={row.replicasNow >= 256}
+                                        onClick={() => applySandboxAction({
+                                          action: "SCALE",
+                                          service: row.serviceName,
+                                          replicas: row.replicasNow + 1,
+                                        })}
+                                        className="size-6 rounded border border-slate-700 text-slate-200 hover:bg-slate-800 disabled:opacity-40">
+                                        +
+                                      </button>
+                                      {customServices.length > 2 && (
+                                        <button
+                                          type="button"
+                                          aria-label={`Remove ${row.serviceName}`}
+                                          onClick={() => removeCustomBlock(row.serviceName)}
+                                          className="grid size-6 place-items-center text-slate-400 hover:text-rose-400"
+                                        >
+                                          <Trash2 className="size-3.5" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                            {visibleServiceRows.length === 0 && (
+                              <tr><td colSpan={6} className="p-3 text-slate-400">No services found.</td></tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
                   ) : localSnapshots.length === 0 ? (
                     <p className="text-xs text-muted-foreground">No snapshots captured yet.</p>
                   ) : (
