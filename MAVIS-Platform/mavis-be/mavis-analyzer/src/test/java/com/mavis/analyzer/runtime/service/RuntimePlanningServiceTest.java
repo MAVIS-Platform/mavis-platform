@@ -277,6 +277,42 @@ class RuntimePlanningServiceTest {
     }
 
     @Test
+    void guidedStudioUsesFrozenLabTopologyBeforeTheReferenceProfile() {
+        var referenceProject = Project.builder().id(UUID.randomUUID()).build();
+        var reference = SourceSnapshot.builder().id(UUID.randomUUID())
+                .project(referenceProject).isPublished(true).build();
+        var assignment = new com.mavis.common.entity.Assignment();
+        assignment.setReferenceModel(ModelVersion.builder().sourceSnapshot(reference).build());
+        var frozen = json.createObjectNode().put("version",1);
+        frozen.putArray("blocks").addObject().put("service","orders-api").put("label","Frozen orders");
+        frozen.putArray("connections");
+        assignment.setStudioTopologySnapshot(frozen);
+        assignment.setStudioTopologyRevision(7);
+        var workspace = new com.mavis.common.entity.Workspace();
+        workspace.setCourseMode(true);
+        project.setWorkspace(workspace);
+        project.setProjectType("STUDENT_WORKING");
+        project.setAssignment(assignment);
+        project.setReferenceSnapshotId(reference.getId());
+        when(projects.findLockedById(projectId)).thenReturn(Optional.of(project));
+        when(configurations.findById(projectId)).thenReturn(Optional.of(savedConfig("orders-api")));
+        var serviceId=UUID.randomUUID().toString();
+        when(runtime.runComposePreflight(snapshotId)).thenReturn(PreflightCheckResponseDTO.builder()
+                .compatible(true).detectedServices(List.of("orders-api"))
+                .modelServiceNames(Map.of(serviceId,"orders-api"))
+                .recommendedServiceMappings(Map.of("orders-api",serviceId)).build());
+        var scenarioId=savedScenario("orders-api");
+        var sessionId=UUID.randomUUID();
+        when(runtime.createRuntimeSession(any())).thenReturn(RuntimeSessionResponseDTO.builder().id(sessionId).build());
+        when(runtime.approveAndStartSession(sessionId)).thenReturn(RuntimeSessionResponseDTO.builder().id(sessionId).build());
+
+        planningService.start(projectId,new StartRequest(snapshotId,scenarioId,1,1,true,null,List.of(),true));
+
+        verify(runtime).createRuntimeSession(org.mockito.ArgumentMatchers.argThat(request -> "Frozen orders".equals(request.getScenarioConfig()
+                .path("profile").path("studioTopology").path("blocks").get(0).path("label").asText())));
+    }
+
+    @Test
     @DisplayName("STEP 1 AUTO: sandbox secrets are generated or reused from the DB container and bound to the owning service")
     void testStart_ProvidesSandboxSecretsWithoutUserInput() {
         when(projects.findLockedById(projectId)).thenReturn(Optional.of(project));

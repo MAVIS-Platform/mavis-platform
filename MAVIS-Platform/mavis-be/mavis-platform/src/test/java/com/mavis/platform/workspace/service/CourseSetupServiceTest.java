@@ -68,6 +68,8 @@ class CourseSetupServiceTest {
                 .thenReturn(List.<Object[]>of(new Object[]{ true, OffsetDateTime.now().plusHours(3) }));
         when(jdbc.queryForObject(contains("FROM workspace_members"), eq(Integer.class), eq(workspaceId)))
                 .thenReturn(2);
+        lab.setStudioTopologySnapshot(mapper.createObjectNode().put("version", 1));
+        lab.setStudioTopologyRevision(4);
     }
 
     @Test void completePreparedCourseIsReadyToPreview() {

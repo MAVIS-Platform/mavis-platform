@@ -84,6 +84,7 @@ export type CourseSetupLab = {
   referenceReady: boolean;
   requiresRuntime: boolean;
   studioReady: boolean;
+  topologyFrozen: boolean;
   quizPublished: boolean;
   quizVersion: number;
   state: string;
@@ -118,6 +119,34 @@ export function useCourseSetup(workspaceId: string) {
     queryFn: ({ signal }) =>
       courseApi<CourseSetup>(`workspaces/${workspaceId}/course-setup`, { signal }),
     enabled: client.mode === "backend" && !!workspaceId,
+    refetchOnWindowFocus: true,
+  });
+}
+
+export type RuntimeSetupReadiness = {
+  configured: boolean;
+  preflightCompatible: boolean;
+  runnerReady: boolean;
+  revision: number;
+  prerequisites: string[];
+  warnings: string[];
+  applications: string[];
+  mappings: string[];
+  detectedServices: string[];
+  runnerIssues: string[];
+  topology: Record<string, unknown> | null;
+};
+
+export function useRuntimeSetupReadiness(projectId: string | null) {
+  const client = useApi();
+  return useQuery({
+    queryKey: ["api", "runtime-setup-readiness", projectId],
+    queryFn: ({ signal }) =>
+      courseApi<RuntimeSetupReadiness>(
+        `analyzer/projects/${projectId}/runtime-setup-readiness`,
+        { signal },
+      ),
+    enabled: client.mode === "backend" && !!projectId,
     refetchOnWindowFocus: true,
   });
 }
@@ -458,12 +487,45 @@ export function PublishCourseLab({
       void cache.invalidateQueries({ queryKey: ["api", "course-setup", workspaceId] });
     },
   });
+  const freeze = useMutation({
+    mutationFn: () =>
+      courseApi<Lab>(`workspaces/${workspaceId}/course-labs/${assignmentId}/freeze-topology`, {
+        method: "POST",
+      }),
+    onSuccess: () => {
+      void cache.invalidateQueries({ queryKey: roadmapKey(workspaceId) });
+      void cache.invalidateQueries({ queryKey: ["api", "course-setup", workspaceId] });
+    },
+  });
   const labPosition = position ?? publish.data?.position;
   if (labPosition)
     return (
-      <span className="text-sm font-medium">
-        Lab {labPosition} · {t("Published", "Đã công bố")}
-      </span>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm font-medium">
+          Lab {labPosition} · {t("Published", "Đã công bố")}
+        </span>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={freeze.isPending}
+          onClick={() => freeze.mutate()}
+        >
+          {freeze.isPending
+            ? t("Freezing…", "Đang đóng băng…")
+            : t("Freeze Studio topology", "Đóng băng topology Studio")}
+        </Button>
+        {freeze.isSuccess && (
+          <span role="status" className="text-xs text-success">
+            {t("Topology frozen", "Đã đóng băng topology")}
+          </span>
+        )}
+        {freeze.error && (
+          <span role="alert" className="text-xs text-destructive">
+            {freeze.error.message}
+          </span>
+        )}
+      </div>
     );
   return (
     <div className="space-y-1">

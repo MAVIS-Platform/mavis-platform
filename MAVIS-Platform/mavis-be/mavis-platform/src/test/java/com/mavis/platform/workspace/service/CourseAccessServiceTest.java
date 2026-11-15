@@ -1,14 +1,17 @@
 package com.mavis.platform.workspace.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mavis.common.entity.Assignment;
 import com.mavis.common.entity.ModelVersion;
 import com.mavis.common.entity.Project;
+import com.mavis.common.entity.RuntimeConfiguration;
 import com.mavis.common.entity.SourceSnapshot;
 import com.mavis.common.entity.User;
 import com.mavis.common.entity.Workspace;
 import com.mavis.common.exception.BusinessException;
 import com.mavis.common.exception.ErrorCode;
 import com.mavis.common.repository.AssignmentRepository;
+import com.mavis.common.repository.RuntimeConfigurationRepository;
 import com.mavis.common.repository.WorkspaceRepository;
 import com.mavis.common.security.AccessPolicyService;
 import com.mavis.common.security.CourseLabPolicy;
@@ -34,8 +37,10 @@ class CourseAccessServiceTest {
     private final AssignmentRepository assignments = mock(AssignmentRepository.class);
     private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
     private final LabReferenceArchive referenceArchive = mock(LabReferenceArchive.class);
+    private final RuntimeConfigurationRepository configurations = mock(RuntimeConfigurationRepository.class);
     private final CourseAccessService courses = new CourseAccessService(
-            access, workspaces, assignments, mock(CourseLabPolicy.class), jdbc, referenceArchive);
+            access, workspaces, assignments, mock(CourseLabPolicy.class), jdbc, referenceArchive,
+            configurations);
 
     @Test
     void publishesPinnedAssignmentOnceAndEnablesGuidedCourse() {
@@ -60,6 +65,39 @@ class CourseAccessServiceTest {
         verify(referenceArchive).resolve(source, true);
         verify(jdbc).update("INSERT INTO audit_logs(actor_id, action, target_type, target_id) VALUES (?, ?, ?, ?)",
                 teacherId, "COURSE_LAB_PUBLISHED", "ASSIGNMENT", assignmentId);
+    }
+
+    @Test
+    void publishFreezesPreparedStudioTopology() {
+        UUID teacherId = UUID.randomUUID();
+        when(access.requireCurrentActiveUser()).thenReturn(User.builder().id(teacherId).build());
+        when(workspaces.findLockedById(workspaceId)).thenReturn(Optional.of(workspace));
+        when(assignments.findLockedById(assignmentId)).thenReturn(Optional.of(assignment));
+        when(assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId))
+                .thenReturn(List.of());
+        var project = Project.builder().id(UUID.randomUUID()).workspace(workspace).status("ACTIVE")
+                .projectType("TEACHER_REFERENCE").isReferenceTemplate(true).build();
+        var source = SourceSnapshot.builder().id(UUID.randomUUID()).project(project)
+                .isPublished(true).sourceType("GITHUB_COMMIT").commitSha("1".repeat(40))
+                .artifactHash("a".repeat(64)).storagePath("reference.zip").build();
+        var model = ModelVersion.builder().id(UUID.randomUUID()).sourceSnapshot(source).build();
+        assignment.setReferenceModel(model);
+        var profile = new ObjectMapper().createObjectNode();
+        var topology = profile.putObject("studioTopology").put("version", 1);
+        topology.putArray("blocks").addObject().put("service", "orders");
+        topology.putArray("connections");
+        var configuration = new RuntimeConfiguration();
+        configuration.setProjectId(project.getId());
+        configuration.setSourceSnapshotId(source.getId());
+        configuration.setModelVersionId(model.getId());
+        configuration.setProfile(profile);
+        configuration.setRevision(5);
+        when(configurations.findById(project.getId())).thenReturn(Optional.of(configuration));
+
+        courses.publish(workspaceId, assignmentId);
+
+        assertEquals(1, assignment.getStudioTopologySnapshot().path("version").asInt());
+        assertEquals(Integer.valueOf(5), assignment.getStudioTopologyRevision());
     }
 
     @Test

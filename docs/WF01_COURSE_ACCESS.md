@@ -17,7 +17,9 @@ Các endpoint bên dưới dùng tiền tố `/api/v1` và nhận JWT ở backen
 |---|---|---|
 | GET | `/workspaces/{workspaceId}/course-roadmap` | `guided`, `enrollmentStatus`, `labs[]` với `assignmentId`, `position`, `title`, `state`, `reason` |
 | POST | `/workspaces/{workspaceId}/course-labs/seed-curated` | `CourseLabSeederService`: nhận `{ "preset": "STANDARD_DEMO" \| "FULL_CURRICULUM" }` (mặc định `STANDARD_DEMO`), khởi tạo idempotent nguồn mẫu `TEACHER_REFERENCE` đa service Spring Boot + C# ASP.NET Core (`inventory-service`, `Orders/Program.cs`, `Catalog/Program.cs`), ZIP + SHA-256, `ModelVersion`, 4 sơ đồ tĩnh (`C4/CONTEXT`, `DEPENDENCY_GRAPH/SERVICE`, `C4/CONTAINER`, `C4/COMPONENT`), `EvaluationRun`, chế độ `STANDARD_DEMO` (3 Lab: `java-04`, `java-07`, `csharp-13`) hoặc `FULL_CURRICULUM` (13 Lab: `java-01..12` + `csharp-13`), được mở khóa trực tiếp qua Next.js BFF `allowedBackendPath` (`COURSE_LABS_SEEDED_CURATED`) |
-| POST | `/workspaces/{workspaceId}/course-labs/{assignmentId}/publish` | Lab đã công bố. Gửi lại cùng assignment trả số Lab đã cấp |
+| POST | `/workspaces/{workspaceId}/course-labs/{assignmentId}/publish` | Lab đã công bố. Gửi lại cùng assignment trả số Lab đã cấp; nếu reference runtime profile đã có `studioTopology`, publish cũng đóng băng topology |
+| POST | `/workspaces/{workspaceId}/course-labs/{assignmentId}/freeze-topology` | Đóng băng `studioTopology` hiện tại của reference project vào Lab đã publish. Yêu cầu runtime config khớp source/model; lưu vào `assignments.studio_topology_snapshot` |
+| GET | `/analyzer/projects/{projectId}/runtime-setup-readiness` | Readiness thật của reference runtime: preflight, runner/image, applications, mappings, detected services, runner issues và topology |
 | GET | `/workspaces/{workspaceId}/course-passkey` | `active`, `expiresAt` |
 | POST | `/workspaces/{workspaceId}/course-passkey` | Gửi `{ "validHours": 24 }`. Nhận `code`, `expiresAt` một lần |
 | POST | `/workspaces/{workspaceId}/course-passkey/revoke` | Thu hồi mã đang cấp |
@@ -52,6 +54,17 @@ Checklist gồm các bước:
 8. Có ít nhất một Lab đủ điều kiện để xem trước luồng sinh viên.
 
 Frontend hiển thị checklist này tại `/roadmap` cho giảng viên (`CourseSetupPanel`). Mỗi bước còn thiếu có link trực tiếp tới `/assignments`, `/runtime-config?project=...`, hoặc khu vực Passkey. Trang Assignments cũng có link “Course setup checklist” và link “Configure runtime & Studio Live” theo reference project. Endpoint không tự suy ra topology; giảng viên vẫn xác nhận cấu hình đã chuẩn bị.
+
+Bước `studio` chỉ được coi là hoàn tất khi runtime readiness trả `runnerReady=true` và tất cả Lab cần runtime đã có topology đóng băng. Panel gọi `runtime-setup-readiness` để hiển thị preflight, runner/image, applications, mappings và warnings; nếu chưa ready, bước Studio bị hạ xuống `ACTION` dù profile có `studioTopology`.
+
+### Đóng băng topology theo Lab (V34)
+
+`V34__Assignment_Studio_Topology_Snapshot.sql` thêm:
+
+- `assignments.studio_topology_snapshot JSONB`
+- `assignments.studio_topology_revision INTEGER`
+
+Khi publish hoặc gọi `freeze-topology`, backend copy `studioTopology` từ runtime profile của reference project nếu profile khớp đúng `source_snapshot_id`/`model_version_id`. Phiên Guided Lab mới dùng snapshot này trước; chỉ fallback về profile hiện tại khi Lab chưa có snapshot (dữ liệu cũ). Vì vậy sửa reference profile sau khi freeze không làm thay đổi topology của Lab đã đóng băng.
 
 ## Nối kết quả WF-04 và thông báo
 

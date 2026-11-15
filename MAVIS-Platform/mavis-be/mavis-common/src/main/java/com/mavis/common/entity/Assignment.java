@@ -60,6 +60,13 @@ public class Assignment {
     @Column(name = "lab_order")
     private Integer labOrder;
 
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "studio_topology_snapshot")
+    private JsonNode studioTopologySnapshot;
+
+    @Column(name = "studio_topology_revision")
+    private Integer studioTopologyRevision;
+
     @Column(name = "due_at")
     private OffsetDateTime dueAt;
 

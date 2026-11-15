@@ -43,6 +43,12 @@ public class CourseAccessController {
         return ApiResponse.success(courses.publish(workspaceId, assignmentId));
     }
 
+    @PostMapping("/workspaces/{workspaceId}/course-labs/{assignmentId}/freeze-topology")
+    public ApiResponse<CourseAccessService.Lab> freezeTopology(
+            @PathVariable UUID workspaceId, @PathVariable UUID assignmentId) {
+        return ApiResponse.success(courses.freezeTopology(workspaceId, assignmentId));
+    }
+
     @PostMapping("/workspaces/{workspaceId}/course-labs/seed-curated")
     public ApiResponse<CourseAccessService.Roadmap> seedCurated(
             @PathVariable UUID workspaceId,

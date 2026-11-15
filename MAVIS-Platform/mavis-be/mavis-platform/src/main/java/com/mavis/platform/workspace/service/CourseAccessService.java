@@ -1,11 +1,14 @@
 package com.mavis.platform.workspace.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.mavis.common.entity.Assignment;
+import com.mavis.common.entity.RuntimeConfiguration;
 import com.mavis.common.entity.User;
 import com.mavis.common.entity.Workspace;
 import com.mavis.common.exception.BusinessException;
 import com.mavis.common.exception.ErrorCode;
 import com.mavis.common.repository.AssignmentRepository;
+import com.mavis.common.repository.RuntimeConfigurationRepository;
 import com.mavis.common.repository.WorkspaceRepository;
 import com.mavis.common.security.AccessPolicyService;
 import com.mavis.common.security.AuthorizationRequestCache;
@@ -38,6 +41,7 @@ public class CourseAccessService {
     private final CourseLabPolicy labs;
     private final JdbcTemplate jdbc;
     private final LabReferenceArchive referenceArchive;
+    private final RuntimeConfigurationRepository configurations;
 
     public record Lab(UUID assignmentId, int position, String title, String state, String reason) {}
     public record Roadmap(boolean guided, String enrollmentStatus, List<Lab> labs) {}
@@ -51,6 +55,8 @@ public class CourseAccessService {
                 .filter(value -> workspaceId.equals(value.getWorkspace().getId()))
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Lab not found"));
         if (assignment.getLabOrder() != null) {
+            copyTopologySnapshot(assignment);
+            assignments.save(assignment);
             return new Lab(assignmentId, assignment.getLabOrder(), assignment.getTitle(), "UNLOCKED", null);
         }
         var model = assignment.getReferenceModel();
@@ -71,9 +77,48 @@ public class CourseAccessService {
         int next = assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId)
                 .stream().mapToInt(Assignment::getLabOrder).max().orElse(0) + 1;
         assignment.setLabOrder(next);
+        copyTopologySnapshot(assignment);
         workspace.setCourseMode(true);
         audit("COURSE_LAB_PUBLISHED", "ASSIGNMENT", assignmentId);
         return new Lab(assignmentId, next, assignment.getTitle(), "UNLOCKED", null);
+    }
+
+    /**
+     * Copies the prepared topology from the reference runtime profile into the
+     * published Lab. A later edit of the reference profile cannot change this Lab.
+     */
+    public Lab freezeTopology(UUID workspaceId, UUID assignmentId) {
+        manage(workspaceId);
+        Assignment assignment = assignments.findLockedById(assignmentId)
+                .filter(value -> workspaceId.equals(value.getWorkspace().getId()))
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Lab not found"));
+        if (assignment.getLabOrder() == null) {
+            throw new BusinessException(ErrorCode.CONFLICT, "Publish the Lab before freezing its Studio topology");
+        }
+        copyTopologySnapshot(assignment);
+        if (assignment.getStudioTopologySnapshot() == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST,
+                    "The reference runtime profile has no prepared Studio topology for this source/model");
+        }
+        assignments.save(assignment);
+        audit("COURSE_LAB_TOPOLOGY_FROZEN", "ASSIGNMENT", assignmentId);
+        return new Lab(assignmentId, assignment.getLabOrder(), assignment.getTitle(), "UNLOCKED", null);
+    }
+
+    private void copyTopologySnapshot(Assignment assignment) {
+        var model = assignment.getReferenceModel();
+        var snapshot = model == null ? null : model.getSourceSnapshot();
+        if (model == null || snapshot == null || snapshot.getProject() == null) return;
+        RuntimeConfiguration configuration = configurations.findById(snapshot.getProject().getId()).orElse(null);
+        if (configuration == null
+                || !snapshot.getId().equals(configuration.getSourceSnapshotId())
+                || !model.getId().equals(configuration.getModelVersionId())
+                || configuration.getProfile() == null) return;
+        JsonNode topology = configuration.getProfile().get("studioTopology");
+        if (topology != null && topology.isObject()) {
+            assignment.setStudioTopologySnapshot(topology.deepCopy());
+            assignment.setStudioTopologyRevision(configuration.getRevision());
+        }
     }
 
     public Passkey issue(UUID workspaceId, int validHours) { return issue(workspaceId, validHours, null); }

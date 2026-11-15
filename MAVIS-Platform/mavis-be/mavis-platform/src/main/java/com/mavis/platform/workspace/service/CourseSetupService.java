@@ -66,6 +66,7 @@ public class CourseSetupService {
             boolean referenceReady,
             boolean requiresRuntime,
             boolean studioReady,
+            boolean topologyFrozen,
             boolean quizPublished,
             int quizVersion,
             String state) {}
@@ -105,11 +106,13 @@ public class CourseSetupService {
         List<LabSetup> labs = ordered.stream().map(lab -> labSetup(lab, reference)).toList();
         PasskeySetup passkey = passkey(workspaceId, workspace.getMaxStudents());
         boolean hasRuntimeLab = labs.stream().anyMatch(LabSetup::requiresRuntime);
+        long runtimeLabs = labs.stream().filter(LabSetup::requiresRuntime).count();
+        long frozenRuntimeLabs = labs.stream().filter(LabSetup::requiresRuntime).filter(LabSetup::topologyFrozen).count();
         boolean allPublished = !labs.isEmpty() && labs.stream().allMatch(LabSetup::published);
         boolean allQuizzes = !labs.isEmpty() && labs.stream().filter(LabSetup::published).allMatch(LabSetup::quizPublished);
         UUID preview = labs.stream()
                 .filter(lab -> lab.published() && lab.referenceReady())
-                .filter(lab -> !lab.requiresRuntime() || lab.studioReady())
+                .filter(lab -> !lab.requiresRuntime() || (lab.studioReady() && lab.topologyFrozen()))
                 .map(LabSetup::assignmentId)
                 .findFirst()
                 .orElse(null);
@@ -136,11 +139,17 @@ public class CourseSetupService {
                             : !reference.runtimeMatchesSource()
                             ? "Runtime profile targets a different source or model. Reconfigure it for the published reference."
                             : reference.applications().size() + " runtime applications are configured for the pinned source."));
+            boolean topologyReady = reference.topologyConfigured() && reference.runtimeMatchesSource();
             steps.add(new Step("studio",
-                    reference.topologyConfigured() && reference.runtimeMatchesSource() ? "DONE" : "ACTION",
-                    reference.topologyConfigured() && reference.runtimeMatchesSource()
-                            ? reference.blockCount() + " prepared blocks and " + reference.connectionCount() + " connections are configured."
-                            : "Add the prepared Studio Live topology for the reference project."));
+                    topologyReady && frozenRuntimeLabs == runtimeLabs ? "DONE"
+                            : topologyReady ? "PARTIAL" : "ACTION",
+                    !topologyReady
+                            ? "Add the prepared Studio Live topology for the reference project."
+                            : frozenRuntimeLabs == runtimeLabs
+                            ? "All " + runtimeLabs + " runtime Labs have a frozen Studio topology."
+                            : reference.blockCount() + " prepared blocks and " + reference.connectionCount()
+                            + " connections are configured, but " + (runtimeLabs - frozenRuntimeLabs)
+                            + " runtime Lab(s) still need a frozen topology. Publish the Lab, then freeze it from Assignments."));
         }
         steps.add(new Step("labs",
                 labs.isEmpty() ? "ACTION" : allPublished ? "DONE" : "PARTIAL",
@@ -173,6 +182,7 @@ public class CourseSetupService {
         else if (hasRuntimeLab && (!reference.runtimeConfigured() || !reference.runtimeMatchesSource())) nextAction = "configure-runtime";
         else if (hasRuntimeLab && !reference.topologyConfigured()) nextAction = "configure-studio";
         else if (!allPublished) nextAction = "publish-labs";
+        else if (hasRuntimeLab && frozenRuntimeLabs < runtimeLabs) nextAction = "freeze-topology";
         else if (!allQuizzes) nextAction = "publish-quiz";
         else if (!passkey.active()) nextAction = "issue-passkey";
         else nextAction = "open-lab";
@@ -245,13 +255,17 @@ public class CourseSetupService {
         boolean requiresRuntime = Boolean.TRUE.equals(lab.getRequireRuntimeTrace());
         boolean studioReady = referenceReady && reference.runtimeMatchesSource()
                 && reference.runtimeConfigured() && reference.topologyConfigured();
+        boolean topologyFrozen = lab.getStudioTopologySnapshot() != null
+                && lab.getStudioTopologySnapshot().isObject();
         int quizVersion = quizVersion(lab);
         String state = !published ? "DRAFT"
                 : requiresRuntime && !studioReady ? "NEEDS_STUDIO"
+                : requiresRuntime && !topologyFrozen ? "NEEDS_FREEZE"
                 : quizVersion == 0 ? "NEEDS_QUIZ"
                 : "READY";
         return new LabSetup(lab.getId(), published ? lab.getLabOrder() : 0, lab.getTitle(),
-                published, referenceReady, requiresRuntime, studioReady, quizVersion > 0, quizVersion, state);
+                published, referenceReady, requiresRuntime, studioReady, topologyFrozen,
+                quizVersion > 0, quizVersion, state);
     }
 
     private int quizVersion(Assignment lab) {
