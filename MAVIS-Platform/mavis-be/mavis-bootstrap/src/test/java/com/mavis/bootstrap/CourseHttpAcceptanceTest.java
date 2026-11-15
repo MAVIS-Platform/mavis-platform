@@ -263,6 +263,13 @@ class CourseHttpAcceptanceTest {
         UUID bundle = UUID.fromString(data(send("POST", analyzedModel + "/documents/freeze", student,
                 Map.of("diagramVersionIds", c4Diagrams), 200)).asText());
         db.update("UPDATE assignments SET require_runtime_trace = true WHERE id = ?", lab1);
+        send("GET", workspace + "/course-setup", student, null, 403);
+        send("GET", workspace + "/course-setup", foreignLecturer, null, 403);
+        JsonNode setup = data(send("GET", workspace + "/course-setup", lecturer, null, 200));
+        assertEquals(2, setup.path("labs").size());
+        assertEquals("configure-runtime", setup.path("nextAction").asText());
+        assertFalse(setup.path("reference").path("runtimeConfigured").asBoolean());
+        assertTrue(setup.path("steps").toString().contains("\"runtime\""));
         UUID verifiedRuntime = id(db, """
                 INSERT INTO runtime_sessions(project_id, source_snapshot_id, model_version_id, scenario_status,
                                              execution_status, evidence_status, cleanup_status, trace_status,
