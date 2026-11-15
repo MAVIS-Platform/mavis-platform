@@ -18,7 +18,7 @@ const NOTES = {
   panel: [620],
   policyOn: [490, 735],
   policyOff: [670, 465],
-  crash: [290, 135],
+  crash: [480, 155],
   play: [500, 750],
   pause: [580, 470],
   checkpoint: [830],
@@ -62,7 +62,7 @@ export function useStudioSound() {
     if (!enabledRef.current || volumeRef.current === 0 || document.hidden || typeof AudioContext === "undefined") return;
     const now = performance.now();
     if (sound === "crash") {
-      if (now - lastCrash.current < 220) return;
+      if (now - lastCrash.current < 320) return;
       lastCrash.current = now;
     } else if (now - lastNote.current < 65) return;
     lastNote.current = now;
@@ -86,13 +86,15 @@ export function useStudioSound() {
         NOTES[sound].forEach((frequency, index) => {
           const oscillator = context.createOscillator();
           const envelope = context.createGain();
-          const onset = start + index * 0.047;
-          oscillator.type = sound === "warning" || sound === "crash" ? "triangle" : "sine";
+          const crash = sound === "crash";
+          const onset = start + index * (crash ? 0.016 : 0.047);
+          const duration = crash ? (index === 0 ? 0.13 : 0.28) : 0.11;
+          oscillator.type = crash ? (index === 0 ? "triangle" : "sine") : sound === "warning" ? "triangle" : "sine";
           oscillator.frequency.setValueAtTime(frequency, onset);
-          if (sound === "crash") oscillator.frequency.exponentialRampToValueAtTime(frequency / 3, onset + 0.09);
+          if (crash) oscillator.frequency.exponentialRampToValueAtTime(index === 0 ? 90 : 58, onset + duration * 0.7);
           envelope.gain.setValueAtTime(0.001, onset);
-          envelope.gain.exponentialRampToValueAtTime(0.13, onset + 0.012);
-          envelope.gain.exponentialRampToValueAtTime(0.001, onset + 0.105);
+          envelope.gain.exponentialRampToValueAtTime(crash ? (index === 0 ? 0.27 : 0.43) : 0.13, onset + 0.012);
+          envelope.gain.exponentialRampToValueAtTime(0.001, onset + duration - 0.005);
           oscillator.connect(envelope);
           envelope.connect(master);
           oscillator.onended = () => {
@@ -100,7 +102,7 @@ export function useStudioSound() {
             envelope.disconnect();
           };
           oscillator.start(onset);
-          oscillator.stop(onset + 0.11);
+          oscillator.stop(onset + duration);
         });
       };
       if (context.state === "running") playNotes();

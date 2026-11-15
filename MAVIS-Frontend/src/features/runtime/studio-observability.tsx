@@ -552,6 +552,9 @@ function render3DSeNodeSculpture(
   // 4. API GATEWAY: 3D Twin-Pillar Arch Portal Gate (SE Gateway Arch)
   if (archetype === "GATEWAY" || n.includes("gateway") || n.includes("edge")) {
     const gy = cy - 2;
+    const headerY = gy - 22;
+    const headerHeight = 8;
+    const roofY = headerY - headerHeight;
     return (
       <g>
         {/* Left Gateway Pillar */}
@@ -559,10 +562,10 @@ function render3DSeNodeSculpture(
         {/* Right Gateway Pillar */}
         {renderIsoBox(cx + 18, gy + 4, 11, 6, 24, s, fill, 1.3, top)}
         {/* Top Bridging Gateway Arch Header */}
-        {renderIsoBox(cx, gy - 22, 34, 14, 8, a, fill, 1.6, top)}
-        {/* Bidirectional API Routing Glyph on Arch Roof */}
+        {renderIsoBox(cx, headerY, 34, 14, headerHeight, a, fill, 1.6, top)}
+        {/* API routing arrow centered on the roof */}
         <path
-          d={`M ${cx - 12},${gy - 22} L ${cx + 12},${gy - 22} M ${cx + 7},${gy - 25} L ${cx + 12},${gy - 22} L ${cx + 7},${gy - 19}`}
+          d={`M ${cx - 12},${roofY} L ${cx + 12},${roofY} M ${cx + 7},${roofY - 3} L ${cx + 12},${roofY} L ${cx + 7},${roofY + 3}`}
           stroke="#ffffff"
           strokeWidth="1.8"
           strokeLinecap="round"

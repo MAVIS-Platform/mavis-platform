@@ -515,14 +515,14 @@ type LocalSnapshot = {
 };
 
 const CLUSTER_SCENARIOS = [
-  { id: "FLASH_SALE", title: "Flash sale", detail: "Send 4× the current request rate to the gateway." },
-  { id: "DB_OUTAGE", title: "Database outage", detail: "Stop all replicas of a database node." },
-  { id: "SLOW_DB", title: "Slow database queries", detail: "Add 350 ms of latency to a running database." },
-  { id: "RATE_LIMIT", title: "Gateway throttling", detail: "Send at least 1,200 req/s with a ceiling of 600 req/s." },
-  { id: "POD_FAILURE", title: "Single pod failure", detail: "Remove one replica from the selected service." },
-  { id: "NETWORK_DELAY", title: "Slow upstream dependency", detail: "Add 700 ms of latency to a running dependency." },
-  { id: "CPU_PRESSURE", title: "CPU quota reduction", detail: "Halve the selected service's CPU per pod, down to 0.25 vCPU." },
-  { id: "SCALE_OUT", title: "Scale out a service", detail: "Double the selected service's replicas, up to 256." },
+  { id: "FLASH_SALE", icon: Flame, title: "Flash sale", detail: "Send 4× the current request rate to the gateway." },
+  { id: "DB_OUTAGE", icon: Database, title: "Database outage", detail: "Stop all replicas of a database node." },
+  { id: "SLOW_DB", icon: Database, title: "Slow database queries", detail: "Add 350 ms of latency to a running database." },
+  { id: "RATE_LIMIT", icon: Network, title: "Gateway throttling", detail: "Send at least 1,200 req/s with a ceiling of 600 req/s." },
+  { id: "POD_FAILURE", icon: Server, title: "Single pod failure", detail: "Remove one replica from the selected service." },
+  { id: "NETWORK_DELAY", icon: Activity, title: "Slow upstream dependency", detail: "Add 700 ms of latency to a running dependency." },
+  { id: "CPU_PRESSURE", icon: Cpu, title: "CPU quota reduction", detail: "Halve the selected service's CPU per pod, down to 0.25 vCPU." },
+  { id: "SCALE_OUT", icon: Layers, title: "Scale out a service", detail: "Double the selected service's replicas, up to 256." },
 ] as const;
 
 type NodeSimConfig = {
@@ -537,6 +537,17 @@ type NodeSimConfig = {
   autoScaleHpa: boolean;
   readCache: boolean;
   rateLimiter: boolean;
+};
+
+type NodeProfile = { layer: string; type: string; baseCpu: number; baseRam: number };
+
+type CopiedNode = {
+  id: string;
+  name: string;
+  profile: NodeProfile;
+  config: NodeSimConfig;
+  replicas: number;
+  baselineReplicas: number;
 };
 
 const DEFAULT_NODE_CONFIG: NodeSimConfig = {
@@ -556,6 +567,21 @@ const DEFAULT_NODE_CONFIG: NodeSimConfig = {
 function sandboxPodCapacity(config: NodeSimConfig) {
   return Math.max(80, Math.round(config.vcpuPerPod * (config.readCache ? 650 : 400)));
 }
+
+function sandboxProcessingProfile(service: string, type: string, baseCpu: number) {
+  if (/redis|memcache|cache/.test(service)) return { floor: 0.7, work: 2.4 };
+  if (/s3|bucket|blob|storage/.test(service)) return { floor: 8, work: 22 };
+  if (/fraud|risk/.test(service)) return { floor: 8, work: 36 };
+  if (type === "API_GATEWAY") return { floor: 2, work: 9 };
+  if (type === "DATABASE") return { floor: 4, work: 21 };
+  if (type === "MESSAGE_BROKER") return { floor: 2, work: 8 };
+  return { floor: 5, work: 16 + baseCpu * 0.45 };
+}
+
+const SANDBOX_TRANSPORT_MS: Readonly<Record<string, number>> = {
+  HTTP: 2, HTTPS: 3.5, GRPC: 1.5, JDBC: 2.4, RESP: 0.5,
+  KAFKA: 3, AMQP: 2.5, MONGODB: 2, TCP: 1,
+};
 
 function renderComponentIcon(keyOrName: string, className = "size-4") {
   const n = keyOrName.toLowerCase();
@@ -613,10 +639,16 @@ export function StudioWorkbench() {
   const [newNodeName, setNewNodeName] = useState("");
   const [clusterScenario, setClusterScenario] = useState<(typeof CLUSTER_SCENARIOS)[number]["id"]>("FLASH_SALE");
   const [scenarioMessage, setScenarioMessage] = useState("");
+  const [scenarioApplied, setScenarioApplied] = useState(false);
+  const scenario = CLUSTER_SCENARIOS.find(({ id }) => id === clusterScenario) ?? CLUSTER_SCENARIOS[0];
+  const ScenarioIcon = scenario.icon;
   const [nodeNames, setNodeNames] = useState<Record<string, string>>({});
   const [editingName, setEditingName] = useState<string | null>(null);
   const [nameError, setNameError] = useState<{ service: string; message: string } | null>(null);
   const [nodeConfigs, setNodeConfigs] = useState<Record<string, NodeSimConfig>>({});
+  const [nodeProfiles, setNodeProfiles] = useState<Record<string, NodeProfile>>({});
+  const copiedNode = useRef<CopiedNode | null>(null);
+  const [clipboardMessage, setClipboardMessage] = useState("");
   const [extraEdges, setExtraEdges] = useState<Array<{ from: string; to: string; protocol: string }>>([]);
   const [removedEdges, setRemovedEdges] = useState<string[]>([]);
   const [componentSearch, setComponentSearch] = useState("");
@@ -702,6 +734,7 @@ export function StudioWorkbench() {
     setReplicasMap(initialReps);
     setBaselineReplicasMap(initialReps);
     setNodeConfigs({});
+    setNodeProfiles({});
     setNodeNames({});
     setScenarioMessage("");
     setEditingName(null);
@@ -838,7 +871,7 @@ export function StudioWorkbench() {
     setNameError(null);
   }
 
-  function addCustomBlock(presetKey?: string, customName = "") {
+  function addCustomBlock(presetKey?: string, customName = "", copy?: CopiedNode) {
     const legacyMap: Record<string, string> = {
       SERVICE: "app-service",
       GATEWAY: "edge-gateway",
@@ -866,8 +899,16 @@ export function StudioWorkbench() {
       label = `${requestedName || clean} (${labelSuffix++})`;
     }
     setNodeNames((prev) => ({ ...prev, [clean]: label }));
-    setReplicasMap((prev) => ({ ...prev, [clean]: 1 }));
-    setBaselineReplicasMap((prev) => ({ ...prev, [clean]: 1 }));
+    setReplicasMap((prev) => ({ ...prev, [clean]: copy?.replicas ?? 1 }));
+    setBaselineReplicasMap((prev) => ({ ...prev, [clean]: copy?.baselineReplicas ?? 1 }));
+    if (copy) {
+      setNodeConfigs((prev) => ({ ...prev, [clean]: { ...copy.config } }));
+      setNodeProfiles((prev) => ({ ...prev, [clean]: { ...copy.profile } }));
+    } else {
+      // A previously removed block can reuse this ID.
+      setNodeConfigs((prev) => Object.fromEntries(Object.entries(prev).filter(([id]) => id !== clean)));
+      setNodeProfiles((prev) => Object.fromEntries(Object.entries(prev).filter(([id]) => id !== clean)));
+    }
     setSelectedService(clean);
     return clean;
   }
@@ -883,6 +924,7 @@ export function StudioWorkbench() {
     ])]);
     const next = customServices.filter((item) => item !== svc);
     setCustomServices(next);
+    setNodeProfiles((prev) => Object.fromEntries(Object.entries(prev).filter(([id]) => id !== svc)));
     setNodeNames((prev) => Object.fromEntries(Object.entries(prev).filter(([key]) => key !== svc)));
     setNameError((prev) => prev?.service === svc ? null : prev);
     if (selectedService === svc) {
@@ -914,8 +956,8 @@ export function StudioWorkbench() {
       const now = replicasMap[svc] ?? 1;
       const cfg = nodeConfigs[svc] ?? DEFAULT_NODE_CONFIG;
       const catalogMatch = STUDIO_COMPONENT_CATALOG.find((item) => svc.startsWith(item.key));
-      const baseCpuVal = template.baseCpu[svc] ?? catalogMatch?.baseCpu ?? 26.5;
-      const baseRamVal = template.baseRam[svc] ?? catalogMatch?.baseRam ?? 220;
+      const baseCpuVal = nodeProfiles[svc]?.baseCpu ?? template.baseCpu[svc] ?? catalogMatch?.baseCpu ?? 26.5;
+      const baseRamVal = nodeProfiles[svc]?.baseRam ?? template.baseRam[svc] ?? catalogMatch?.baseRam ?? 220;
 
       // Dynamic capacity & utilization physics driven by user-defined vCPU, RAM, and targetRps
       const podCapacityRps = sandboxPodCapacity(cfg);
@@ -957,15 +999,19 @@ export function StudioWorkbench() {
         });
       const queuePenaltyMs =
         utilizationPct > 80 ? Math.round(Math.pow(utilizationPct - 80, 1.38) * 1.6) : 0;
-      // Request processing approaches a fixed service cost as traffic per pod drops.
-      const baseP95 = 6 + (36 * Math.sqrt(rpsPerPod / 240)) / Math.sqrt(Math.max(0.5, cfg.vcpuPerPod));
-      const cachedP95 = cfg.readCache ? 4 + (baseP95 - 6) * 0.62 : baseP95;
-      const p95Now = now <= 0 ? 980 : Math.round((cachedP95 + queuePenaltyMs + cfg.injectedLatencyMs) * 10) / 10;
+      const type = nodeProfiles[svc]?.type ?? template.types[svc] ?? catalogMatch?.elementType ?? "SERVICE_CONTAINER";
+      const { floor, work } = sandboxProcessingProfile(svc, type, baseCpuVal);
+      const processingMs = work * Math.sqrt(rpsPerPod / 240) / Math.sqrt(Math.max(0.25, cfg.vcpuPerPod));
+      const p95Now = now <= 0 ? 980 : Math.round(
+        (floor + processingMs * (cfg.readCache ? 0.62 : 1) + queuePenaltyMs + cfg.injectedLatencyMs) * 10,
+      ) / 10;
 
       return {
         serviceName: svc,
-        layer: template.layers[svc] ?? catalogMatch?.layer ?? "domain",
-        type: template.types[svc] ?? catalogMatch?.elementType ?? "SERVICE_CONTAINER",
+        baseCpu: baseCpuVal,
+        baseRam: baseRamVal,
+        layer: nodeProfiles[svc]?.layer ?? template.layers[svc] ?? catalogMatch?.layer ?? "domain",
+        type,
         inboundCount: inbound.length,
         outboundCount: outbound.length,
         inboundCallers: inbound.map((e) => e.from),
@@ -991,7 +1037,7 @@ export function StudioWorkbench() {
         cfg,
       };
     });
-  }, [customServices, baselineReplicasMap, replicasMap, nodeConfigs, template, activeEdges]);
+  }, [customServices, baselineReplicasMap, replicasMap, nodeConfigs, nodeProfiles, template, activeEdges]);
 
   const sandboxStudioData: StudioData = useMemo(() => {
     const nowIso = new Date().toISOString();
@@ -1014,7 +1060,10 @@ export function StudioWorkbench() {
       const throttled = isHttp && !stopped && target.cfg.rateLimiter &&
         target.demandRps > target.cfg.rateLimitRps;
       const overloaded = !stopped && target.effectiveRps > target.maxCapacityRps;
-      const timedOut = !stopped && target.p95Now >= simulatedTimeoutMs;
+      const transportMs = SANDBOX_TRANSPORT_MS[edge.protocol.toUpperCase()] ?? 1;
+      const dispatchMs = Math.min(24, Math.max(0, source.utilizationPct - 70) * 0.18);
+      const roundTripMs = target.p95Now + transportMs + dispatchMs;
+      const timedOut = !stopped && roundTripMs >= simulatedTimeoutMs;
       // Sandbox has no rolling error window. An unhealthy downstream opens
       // the caller's circuit immediately and recovery closes it automatically.
       const circuitOpen = source.cfg.circuitBreaker && !throttled && (stopped || overloaded || timedOut);
@@ -1027,24 +1076,29 @@ export function StudioWorkbench() {
         : throttled ? "Rate limit exceeded"
           : overloaded ? "Destination overloaded"
             : timedOut ? `Upstream timed out (simulated ${simulatedTimeoutMs} ms budget)` : null;
+      const durationMs = circuitOpen ? 1 : stopped ? null : throttled || overloaded
+        ? transportMs + dispatchMs + 2
+        : Math.min(roundTripMs, simulatedTimeoutMs);
       return {
         traceId: `studio-trace-${index + 1}`,
         spanId: interactions[index]!.childSpanId,
         parentSpanId: interactions[index]!.parentSpanId,
         runtimeService: edge.from,
-        operationName: `${edge.protocol} ${nodeNames[edge.from] ?? edge.from} → ${nodeNames[edge.to] ?? edge.to}${failure ? ` · ${failure}` : ""}`,
+        operationName: `${edge.protocol} ${nodeNames[edge.from] ?? edge.from} → ${nodeNames[edge.to] ?? edge.to}${failure
+          ? ` · ${failure}`
+          : ` · Destination ≈ ${target.p95Now} ms · Transport ≈ ${transportMs} ms · Caller dispatch ≈ ${dispatchMs.toFixed(1)} ms`}`,
         spanKind: "CLIENT",
         spanStatus: failure ? "ERROR" : "OK",
         httpStatusCode, circuitOpen,
-        durationNanoseconds: circuitOpen ? "1000000" : stopped ? null : String(Math.round(Math.min(target.p95Now, simulatedTimeoutMs) * 1_000_000)),
+        durationNanoseconds: durationMs === null ? null : String(Math.round(durationMs * 1_000_000)),
       };
     });
 
     const servicesTelemetry = customServices.map((svc) => {
       const reps = replicasMap[svc] ?? 1;
       const catalogMatch = STUDIO_COMPONENT_CATALOG.find((item) => svc.startsWith(item.key));
-      const baseCpuVal = template.baseCpu[svc] ?? catalogMatch?.baseCpu ?? 26.5;
-      const baseRamVal = template.baseRam[svc] ?? catalogMatch?.baseRam ?? 220;
+      const baseCpuVal = nodeProfiles[svc]?.baseCpu ?? template.baseCpu[svc] ?? catalogMatch?.baseCpu ?? 26.5;
+      const baseRamVal = nodeProfiles[svc]?.baseRam ?? template.baseRam[svc] ?? catalogMatch?.baseRam ?? 220;
       const perPodCpu = reps <= 0 ? 0 : Math.max(4.2, baseCpuVal / Math.pow(reps, 0.68));
       const perPodRam = reps <= 0 ? 0 : baseRamVal;
       const stats = Array.from({ length: Math.max(0, reps) }, (_, podIdx) => ({
@@ -1100,7 +1154,7 @@ export function StudioWorkbench() {
         digest: snap.digest,
       })),
     };
-  }, [template, customServices, activeEdges, replicasMap, actionsLog, localSnapshots, deploymentRows, nodeNames]);
+  }, [template, customServices, activeEdges, replicasMap, actionsLog, localSnapshots, deploymentRows, nodeNames, nodeProfiles]);
 
   const previousFaults = useRef<Set<string> | null>(null);
   useEffect(() => {
@@ -1125,6 +1179,48 @@ export function StudioWorkbench() {
 
   const selectedRow =
     deploymentRows.find((r) => r.serviceName === selectedService) ?? deploymentRows[0];
+  function captureNodeCopy(service: string): CopiedNode | undefined {
+    const row = deploymentRows.find((item) => item.serviceName === service);
+    if (!row) return;
+    return {
+      id: service, name: nodeLabel(service),
+      profile: { type: row.type, layer: row.layer, baseCpu: row.baseCpu, baseRam: row.baseRam },
+      config: { ...row.cfg }, replicas: row.replicasNow, baselineReplicas: row.replicasBefore,
+    };
+  }
+
+  function pasteNode(copy: CopiedNode) {
+    return addCustomBlock(copy.id, `${Array.from(copy.name).slice(0, 54).join("")} copy`, copy);
+  }
+
+  useEffect(() => {
+    if (mode !== "SANDBOX") return;
+    function handleNodeShortcut(event: KeyboardEvent) {
+      if (event.defaultPrevented || event.repeat || event.isComposing ||
+        !(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return;
+      const target = event.target;
+      if (!(target instanceof Element) ||
+        (target !== document.body && !workspaceRef.current?.contains(target)) ||
+        target.closest("input, textarea, select, [contenteditable]:not([contenteditable=false]), [role=textbox]") ||
+        window.getSelection()?.isCollapsed === false) return;
+      const key = event.key.toLowerCase();
+      if (key === "c") {
+        const copy = captureNodeCopy(selectedService);
+        if (!copy) return;
+        event.preventDefault();
+        copiedNode.current = copy;
+        setClipboardMessage(`Copied ${copy.name}`);
+        playSound("select");
+      } else if (key === "v" && copiedNode.current) {
+        event.preventDefault();
+        const copy = copiedNode.current;
+        if (pasteNode(copy)) setClipboardMessage(`Pasted a copy of ${copy.name}`);
+      }
+    }
+    window.addEventListener("keydown", handleNodeShortcut);
+    return () => window.removeEventListener("keydown", handleNodeShortcut);
+  });
+
   const visibleServiceRows = deploymentRows.filter((row) =>
     nodeLabel(row.serviceName).toLowerCase().includes(serviceSearch.trim().toLowerCase()),
   );
@@ -1168,6 +1264,7 @@ export function StudioWorkbench() {
   const clusterSla = Number(Math.max(0, 100 - clusterErrorRate).toFixed(2));
 
   function applyClusterScenario() {
+    setScenarioApplied(false);
     const running = deploymentRows.filter((row) => row.replicasNow > 0);
     const gateway = running.find((row) => row.serviceName === selectedService && row.type === "API_GATEWAY")
       ?? running.find((row) => row.type === "API_GATEWAY");
@@ -1258,6 +1355,7 @@ export function StudioWorkbench() {
       });
     }
     setSelectedService(target.serviceName);
+    setScenarioApplied(true);
     setScenarioMessage(`${nodeLabel(target.serviceName)} · ${summary}.`);
   }
 
@@ -1507,6 +1605,7 @@ export function StudioWorkbench() {
         </div>
       </header>
 
+      <p role="status" className="sr-only">{clipboardMessage}</p>
       {mode === "LIVE" ? (
         <div className="flex-1 overflow-y-auto p-5">
           <div className="mx-auto max-w-6xl space-y-4 rounded-xl border bg-card p-4">
@@ -1552,38 +1651,54 @@ export function StudioWorkbench() {
               className="flex shrink-0 flex-col justify-between overflow-y-auto bg-[#0b101b] p-2.5"
             >
               <div className="flex min-h-0 flex-1 flex-col gap-3">
-                <section aria-labelledby="cluster-scenarios-title" className="shrink-0 space-y-2 rounded-lg border border-slate-700/80 bg-slate-900 p-2.5">
-                  <div className="flex flex-wrap items-center justify-between gap-1">
-                    <h2 id="cluster-scenarios-title" className="text-xs font-semibold text-slate-100">Cluster Scenarios</h2>
+                <section aria-labelledby="cluster-scenarios-title" className="shrink-0 overflow-hidden rounded-xl border border-slate-700 bg-slate-900/80">
+                  <header className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 bg-slate-900 p-2.5">
+                    <div className="flex items-center gap-2">
+                      <span className="grid size-6 shrink-0 place-items-center rounded-md bg-sky-500/15 text-sky-300">
+                        <Activity aria-hidden="true" className="size-3.5" />
+                      </span>
+                      <h2 id="cluster-scenarios-title" className="text-xs font-semibold text-slate-100">Cluster Scenarios</h2>
+                    </div>
                     <button type="button" onClick={() => switchTemplate(templateId)}
-                      className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-slate-100"
-                    >
-                      <RotateCcw className="size-3" /> Reset Cluster
+                      className="inline-flex min-h-6 items-center gap-1 rounded-md px-1.5 text-[10px] text-slate-400 hover:bg-slate-800 hover:text-slate-100">
+                      <RotateCcw aria-hidden="true" className="size-3" /> Reset Cluster
                     </button>
+                  </header>
+                  <div className="space-y-2.5 p-2.5">
+                    <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-2">
+                      <div className="flex items-center gap-2">
+                        <ScenarioIcon aria-hidden="true" className="size-4 shrink-0 text-sky-300" />
+                        <select
+                          aria-label="Cluster scenario"
+                          aria-describedby="cluster-scenario-impact"
+                          value={clusterScenario}
+                          onChange={(event) => {
+                            const next = CLUSTER_SCENARIOS.find(({ id }) => id === event.target.value);
+                            if (next && next.id !== clusterScenario) {
+                              playSound("setting");
+                              setClusterScenario(next.id);
+                              setScenarioMessage("");
+                            }
+                          }}
+                          className="min-h-7 min-w-0 flex-1 rounded-md border border-slate-700 bg-slate-950 px-2 text-xs font-medium text-slate-100"
+                        >
+                          {CLUSTER_SCENARIOS.map(({ id, title }) => <option key={id} value={id}>{title}</option>)}
+                        </select>
+                      </div>
+                      <p id="cluster-scenario-impact" className="mt-1.5 text-[11px] leading-relaxed text-slate-400">
+                        {scenario.detail}
+                      </p>
+                    </div>
+                    <button type="button" onClick={applyClusterScenario}
+                      className="flex min-h-8 w-full items-center justify-center gap-1.5 rounded-md bg-sky-300 px-2 py-1 text-xs font-semibold text-slate-950 hover:bg-sky-200">
+                      <Play aria-hidden="true" className="size-3" /> Apply scenario
+                    </button>
+                    <p role="status" hidden={!scenarioMessage} className={`rounded-md border px-2 py-1.5 text-[11px] leading-relaxed [overflow-wrap:anywhere] ${
+                      scenarioApplied ? "border-sky-500/25 bg-sky-500/10 text-sky-100" : "border-amber-400/25 bg-amber-400/10 text-amber-100"
+                    }`}>
+                      <strong className="mr-1">{scenarioApplied ? "Applied:" : "Cannot apply:"}</strong>{scenarioMessage}
+                    </p>
                   </div>
-                  <select
-                    aria-label="Cluster scenario"
-                    value={clusterScenario}
-                    onChange={(event) => {
-                      const next = CLUSTER_SCENARIOS.find(({ id }) => id === event.target.value);
-                      if (next && next.id !== clusterScenario) {
-                        playSound("setting");
-                        setClusterScenario(next.id);
-                      }
-                      setScenarioMessage("");
-                    }}
-                    className="h-7 w-full rounded-md border border-slate-700 bg-slate-950 px-2 text-xs text-slate-100"
-                  >
-                    {CLUSTER_SCENARIOS.map(({ id, title }) => <option key={id} value={id}>{title}</option>)}
-                  </select>
-                  <p className="text-[11px] text-slate-400">
-                    {CLUSTER_SCENARIOS.find(({ id }) => id === clusterScenario)?.detail}
-                  </p>
-                  <button type="button" onClick={applyClusterScenario}
-                    className="w-full rounded-md border border-sky-500/40 bg-sky-500/10 px-2 py-1 text-xs font-semibold text-sky-200 hover:bg-sky-500/20">
-                    Apply scenario
-                  </button>
-                  <p role="status" hidden={!scenarioMessage} className="break-words text-[11px] text-slate-300">{scenarioMessage}</p>
                 </section>
 
                 <section aria-labelledby="studio-library-title" className="flex min-h-0 flex-1 flex-col gap-3">
@@ -2254,7 +2369,7 @@ export function StudioWorkbench() {
                         ))}
                       </div>
                     </div>
-                    <div className="grid grid-cols-3 gap-1">
+                    <div className="grid grid-cols-4 gap-1">
                       <button
                         type="button"
                         disabled={selectedRow.replicasNow === 0}
@@ -2264,7 +2379,7 @@ export function StudioWorkbench() {
                             service: selectedRow.serviceName,
                           })
                         }
-                        className="h-6 rounded border border-rose-500/40 bg-rose-500/15 text-[11px] font-semibold text-rose-300 transition hover:bg-rose-500/25 disabled:opacity-40"
+                        className="h-6 rounded border border-amber-500/40 bg-amber-500/15 text-[11px] font-semibold text-amber-200 transition enabled:hover:bg-amber-500/25 disabled:opacity-40"
                       >
                         Stop
                       </button>
@@ -2277,16 +2392,29 @@ export function StudioWorkbench() {
                             service: selectedRow.serviceName,
                           })
                         }
-                        className="h-6 rounded border border-slate-700 bg-slate-800 text-[11px] font-semibold text-slate-200 transition hover:bg-slate-700 disabled:opacity-40"
+                        className="h-6 rounded border border-emerald-500/40 bg-emerald-500/15 text-[11px] font-semibold text-emerald-200 transition enabled:hover:bg-emerald-500/25 disabled:opacity-40"
                       >
                         Start
                       </button>
                       <button
                         type="button"
-                        onClick={() => addCustomBlock(selectedRow.serviceName)}
-                        className="h-6 rounded border border-slate-700 bg-slate-800 text-[11px] font-semibold text-slate-200 transition hover:bg-slate-700"
+                        title={t("Clone node · Ctrl+C then Ctrl+V")}
+                        aria-keyshortcuts="Control+C Control+V Meta+C Meta+V"
+                        onClick={() => {
+                          const copy = captureNodeCopy(selectedRow.serviceName);
+                          if (copy) pasteNode(copy);
+                        }}
+                        className="h-6 rounded border border-sky-500/40 bg-sky-500/15 text-[11px] font-semibold text-sky-200 transition enabled:hover:bg-sky-500/25"
                       >
                         + Clone
+                      </button>
+                      <button
+                        type="button"
+                        disabled={customServices.length <= 2}
+                        onClick={() => removeCustomBlock(selectedRow.serviceName)}
+                        className="h-6 rounded border border-red-500/40 bg-red-500/15 text-[11px] font-semibold text-red-200 transition enabled:hover:bg-red-500/25 disabled:opacity-40"
+                      >
+                        {t("Delete")}
                       </button>
                     </div>
                   </div>
@@ -2365,7 +2493,7 @@ export function StudioWorkbench() {
                             }}
                             className="h-6 w-20 rounded border border-slate-700 bg-slate-950 px-1.5 text-right font-mono text-[11px] font-semibold text-slate-100 focus:border-sky-400 focus:outline-none"
                           />
-                          <span className="font-mono text-[9.5px] text-slate-500">req/s</span>
+                          <span className="w-8 shrink-0 font-mono text-[9.5px] text-slate-500">req/s</span>
                         </div>
                       </div>
                       <div className="grid grid-cols-5 gap-1">
@@ -2412,9 +2540,9 @@ export function StudioWorkbench() {
                               const ms = Math.max(0, Math.min(30000, Number(e.target.value) || 0));
                               updateNodeConfig(selectedRow.serviceName, { injectedLatencyMs: ms });
                             }}
-                            className="h-6 w-16 rounded border border-slate-700 bg-slate-950 px-1.5 text-right font-mono text-[11px] font-semibold text-slate-100 focus:border-sky-400 focus:outline-none"
+                            className="h-6 w-20 rounded border border-slate-700 bg-slate-950 px-1.5 text-right font-mono text-[11px] font-semibold text-slate-100 focus:border-sky-400 focus:outline-none"
                           />
-                          <span className="font-mono text-[9.5px] text-slate-500">ms</span>
+                          <span className="w-8 shrink-0 font-mono text-[9.5px] text-slate-500">ms</span>
                         </div>
                       </div>
                       <div className="grid grid-cols-5 gap-1">
