@@ -52,6 +52,12 @@ async function main() {
     await page.addInitScript(()=>{
       window.studioAudioNotes=0;
       window.lastStudioAudioNote=0;
+      const createGain=AudioContext.prototype.createGain;
+      AudioContext.prototype.createGain=function(){
+        const gain=createGain.call(this);
+        window.studioAudioMaster ??= gain;
+        return gain;
+      };
       const create=AudioContext.prototype.createOscillator;
       AudioContext.prototype.createOscillator=function(){
         window.studioAudioNotes++;
@@ -193,12 +199,9 @@ async function main() {
     const demand=page.getByRole("spinbutton",{name:"Custom incoming traffic req/s"});
     await demand.fill("1500");
     await graph.getByText("503 ✕",{exact:true}).waitFor();
+    assert.equal(await orderWire.locator("[data-studio-wire-hint]").count(),0);
+    assert.ok(await page.getByText("Demand exceeds capacity",{exact:true}).isVisible());
     const replicasBeforeHint=await page.getByRole("spinbutton",{name:"Custom pod replica count"}).inputValue();
-    await orderWire.locator("[data-studio-wire-hint]").click();
-    assert.ok(await page.getByText("Connection hint",{exact:true}).isVisible());
-    await page.getByRole("button",{name:"Dismiss connection hint"}).click();
-    await page.locator("summary").filter({hasText:"Demand exceeds capacity"}).click();
-    await page.getByText(/Compare incoming demand with capacity/).waitFor();
     assert.equal(await page.getByRole("spinbutton",{name:"Custom pod replica count"}).inputValue(),replicasBeforeHint);
     assert.equal(await page.getByRole("button",{name:/^(Scale|Fix) ×/}).count(),0);
     await page.getByRole("button",{name:"Rate Limiter",exact:true}).click();
@@ -210,10 +213,15 @@ async function main() {
     await page.getByRole("spinbutton",{name:"Custom injected network latency ms"}).fill("0");
     await table.getByRole("button",{name:"Decrease replicas for orders-postgres"}).click();
     await stats.click();
-    const attention=page.getByRole("region",{name:"Services needing attention"});
-    await attention.getByRole("button",{name:"orders-postgres",exact:true}).click();
-    assert.ok(await page.getByRole("region",{name:"Load and capacity"}).getByText("Stopped",{exact:true}).isVisible());
+    assert.equal(await page.getByRole("region",{name:"Services needing attention"}).count(),0);
     await telemetry.click();
+    const databaseRow=table.getByRole("row").filter({hasText:"orders-postgres"});
+    assert.ok(await databaseRow.getByRole("cell",{name:"Down",exact:true}).isVisible());
+    const orderRow=table.getByRole("row").filter({hasText:"order-service"});
+    assert.ok(await orderRow.getByRole("cell",{name:"Bottleneck",exact:true}).isVisible());
+    assert.equal(await node.locator("[data-studio-node-label]").getAttribute("stroke"),"#fbbf24");
+    await databaseRow.getByRole("button",{name:"orders-postgres",exact:true}).click();
+    assert.ok(await page.getByRole("region",{name:"Load and capacity"}).getByText("Stopped",{exact:true}).isVisible());
     await graph.getByText("CALL FAILED",{exact:true}).waitFor();
     assert.equal(await graph.getByText("503 ✕",{exact:true}).count(),0,"An unavailable JDBC destination must not emit an HTTP status");
     await page.getByRole("button",{name:"2D",exact:true}).click();
@@ -396,10 +404,45 @@ async function main() {
     assert.equal(await sound.getAttribute("aria-pressed"),"false");
     await page.getByRole("button",{name:"+ Worker",exact:true}).click();
     assert.equal(await page.evaluate(()=>window.studioAudioNotes),3);
+    const volumeSettings=page.getByRole("button",{name:"Studio volume settings",exact:true});
+    await volumeSettings.click();
+    const volume=page.getByRole("slider",{name:"Effects volume"});
+    assert.equal(await volume.inputValue(),"40");
+    await volume.press("End");
+    for(let i=0;i<6;i++) await volume.press("ArrowLeft");
+    assert.equal(await volume.inputValue(),"70");
+    assert.equal(await page.evaluate(()=>window.studioAudioMaster.gain.value),0);
+    await volume.press("Escape");
+    await sound.click();
+    await page.waitForFunction(()=>Math.abs(window.studioAudioMaster.gain.value-.56)<.001 &&
+      window.studioAudioNotes===4 && performance.now()-window.lastStudioAudioNote>65);
+    await stats.click();
+    await page.waitForFunction(()=>window.studioAudioNotes===5);
+    await demand.fill("4000");
+    await page.waitForFunction(()=>window.studioAudioNotes===7);
+    await demand.fill("4200");
+    assert.equal(await page.evaluate(()=>window.studioAudioNotes),7,"An ongoing fault must not replay the crash sound");
+    await sound.click();
     await page.reload();
     assert.equal(await sound.getAttribute("aria-pressed"),"false");
+    await volumeSettings.click();
+    assert.equal(await volume.inputValue(),"70");
+    await volume.press("Escape");
     await page.getByRole("button",{name:"Snapshots (1)",exact:true}).click();
     await page.getByText("Grading evidence",{exact:true}).waitFor();
+    const library=page.getByRole("region",{name:"Block library"});
+    assert.equal(await library.getByRole("textbox",{name:"Custom block name"}).count(),0);
+    const blockSearch=library.getByRole("searchbox",{name:"Search blocks"});
+    await blockSearch.fill("redis");
+    assert.equal(await library.getByRole("button",{name:"+ Postgres",exact:true}).count(),0);
+    assert.equal(await library.getByRole("button",{name:"+ Redis",exact:true}).count(),1);
+    await blockSearch.clear();
+    await library.getByRole("button",{name:"Custom block",exact:true}).click();
+    await library.getByRole("textbox",{name:"Custom block name"}).fill("Kho bài tập");
+    await library.getByRole("combobox",{name:"Custom block type"}).selectOption("postgres-db");
+    await library.getByRole("button",{name:"Add block",exact:true}).click();
+    await graph.getByRole("button",{name:"Kho bài tập",exact:true}).waitFor();
+    assert.equal(await library.getByRole("textbox",{name:"Custom block name"}).count(),0);
     assert.deepEqual(errors,[]);
     console.log("PASS Studio world-layout orbit, pointer cleanup, context-menu prevention and separate Stats panels");
   }finally{

@@ -25,6 +25,7 @@ import {
   Plus,
   RotateCcw,
   Search,
+  SlidersHorizontal,
   Send,
   Server,
   ShieldCheck,
@@ -38,6 +39,7 @@ import {
 import { useApiQuery } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { SelectField } from "@/components/shared/forms";
 import { LocaleSwitchButton, useLocale } from "@/lib/i18n/locale-context";
 import { AppearanceSelector } from "@/components/appearance-selector";
@@ -589,7 +591,7 @@ function renderComponentIcon(keyOrName: string, className = "size-4") {
 }
 
 export function StudioWorkbench() {
-  const { soundEnabled, toggleSound, playSound } = useStudioSound();
+  const { soundEnabled, toggleSound, volume, changeVolume, playSound } = useStudioSound();
   const { t } = useLocale();
   const params = useSearchParams();
   const initialSessionId = params.get("session") ?? "";
@@ -611,21 +613,15 @@ export function StudioWorkbench() {
   const [newNodeName, setNewNodeName] = useState("");
   const [clusterScenario, setClusterScenario] = useState<(typeof CLUSTER_SCENARIOS)[number]["id"]>("FLASH_SALE");
   const [scenarioMessage, setScenarioMessage] = useState("");
-  const [wireHint, setWireHint] = useState<{ service: string; detail: string } | null>(null);
-  const wireHintRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (wireHint) wireHintRef.current?.scrollIntoView({ block: "nearest" });
-  }, [wireHint]);
   const [nodeNames, setNodeNames] = useState<Record<string, string>>({});
   const [editingName, setEditingName] = useState<string | null>(null);
   const [nameError, setNameError] = useState<{ service: string; message: string } | null>(null);
   const [nodeConfigs, setNodeConfigs] = useState<Record<string, NodeSimConfig>>({});
   const [extraEdges, setExtraEdges] = useState<Array<{ from: string; to: string; protocol: string }>>([]);
   const [removedEdges, setRemovedEdges] = useState<string[]>([]);
-  const [componentCategory, setComponentCategory] = useState<
-    "ALL" | "EDGE" | "COMPUTE" | "DATA" | "INFRA"
-  >("ALL");
   const [componentSearch, setComponentSearch] = useState("");
+  const [customBlockOpen, setCustomBlockOpen] = useState(false);
+  const [customBlockType, setCustomBlockType] = useState("app-service");
   const [serviceSearch, setServiceSearch] = useState("");
   const [actionsLog, setActionsLog] = useState<StudioData["actions"]>([]);
   const [localSnapshots, setLocalSnapshots] = useState<LocalSnapshot[]>([]);
@@ -646,6 +642,17 @@ export function StudioWorkbench() {
   const [bottomCollapsed, setBottomCollapsed] = useState(false);
   const workspaceRef = useRef<HTMLDivElement>(null);
   const leftGridCols = leftWidth >= 480 ? 4 : leftWidth >= 355 ? 3 : leftWidth >= 230 ? 2 : 1;
+  const blockQuery = componentSearch.trim().toLowerCase();
+  const blockGroups = ([
+    ["EDGE", "Edge & traffic"],
+    ["COMPUTE", "Compute & identity"],
+    ["DATA", "Data & storage"],
+    ["INFRA", "Messaging & observability"],
+  ] as const).map(([category, title]) => ({
+    category, title,
+    items: STUDIO_COMPONENT_CATALOG.filter((item) => item.category === category &&
+      [item.label, item.key, item.spec, title].some((text) => text.toLowerCase().includes(blockQuery))),
+  })).filter(({ items }) => items.length > 0);
 
   function startResize(
     axis: "left" | "right" | "bottom",
@@ -697,7 +704,6 @@ export function StudioWorkbench() {
     setNodeConfigs({});
     setNodeNames({});
     setScenarioMessage("");
-    setWireHint(null);
     setEditingName(null);
     setNameError(null);
     setExtraEdges([]);
@@ -766,7 +772,7 @@ export function StudioWorkbench() {
           ? Math.max(1, before || 1)
           : Math.max(1, Math.min(256, cmd.replicas ?? 2));
 
-    if (after !== before) playSound(after === 0 ? "warning" : "scale");
+    if (after !== before && after > 0) playSound("scale");
     setReplicasMap((prev) => ({ ...prev, [svc]: after }));
     setSelectedService(svc);
 
@@ -822,6 +828,7 @@ export function StudioWorkbench() {
       other !== service && nodeLabel(other).toLocaleLowerCase() === name.toLocaleLowerCase(),
     );
     if (!name || duplicate) {
+      playSound("blocked");
       setNameError({ service, message: t(!name ? "Enter a node name." : "A node already uses this name.") });
       return;
     }
@@ -831,7 +838,7 @@ export function StudioWorkbench() {
     setNameError(null);
   }
 
-  function addCustomBlock(presetKey?: string) {
+  function addCustomBlock(presetKey?: string, customName = "") {
     const legacyMap: Record<string, string> = {
       SERVICE: "app-service",
       GATEWAY: "edge-gateway",
@@ -840,7 +847,7 @@ export function StudioWorkbench() {
     };
     const resolvedKey = presetKey ? (legacyMap[presetKey] ?? presetKey) : "app-service";
     const preset = STUDIO_COMPONENT_CATALOG.find((item) => item.key === resolvedKey);
-    const requestedName = newNodeName.trim();
+    const requestedName = customName.trim();
     const baseSlug = preset?.key || resolvedKey;
     const cleanBase = baseSlug.toLowerCase().replace(/[^a-z0-9-_]/g, "-");
     if (!cleanBase) return undefined;
@@ -862,7 +869,6 @@ export function StudioWorkbench() {
     setReplicasMap((prev) => ({ ...prev, [clean]: 1 }));
     setBaselineReplicasMap((prev) => ({ ...prev, [clean]: 1 }));
     setSelectedService(clean);
-    setNewNodeName("");
     return clean;
   }
 
@@ -976,6 +982,10 @@ export function StudioWorkbench() {
         podCapacityRps,
         utilizationPct,
         droppedRps,
+        status: now === 0 ? "Down"
+          : effectiveRps > maxCapacityRps ? "Overloaded"
+            : droppedRps > 0 ? "Rate limited"
+              : bottleneckTarget || utilizationPct > 90 ? "Bottleneck" : "Running",
         p95Now,
         bottleneckTarget,
         cfg,
@@ -1092,6 +1102,27 @@ export function StudioWorkbench() {
     };
   }, [template, customServices, activeEdges, replicasMap, actionsLog, localSnapshots, deploymentRows, nodeNames]);
 
+  const previousFaults = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    if (mode !== "SANDBOX") {
+      previousFaults.current = null;
+      return;
+    }
+    const failedSpans = new Set(sandboxStudioData.telemetry?.spans
+      .filter((span) => span.spanStatus === "ERROR")
+      .map((span) => JSON.stringify([span.traceId, span.spanId])));
+    const faults = new Set([
+      ...deploymentRows.filter((row) => row.replicasNow === 0 || row.droppedRps > 0)
+        .map((row) => JSON.stringify(["node", row.serviceName])),
+      ...(sandboxStudioData.telemetry?.interactions ?? [])
+        .filter((edge) => failedSpans.has(JSON.stringify([edge.traceId, edge.childSpanId])))
+        .map((edge) => JSON.stringify(["wire", edge.fromService, edge.toService])),
+    ]);
+    const previous = previousFaults.current;
+    previousFaults.current = faults;
+    if (previous && [...faults].some((fault) => !previous.has(fault))) playSound("crash");
+  }, [mode, deploymentRows, sandboxStudioData.telemetry, playSound]);
+
   const selectedRow =
     deploymentRows.find((r) => r.serviceName === selectedService) ?? deploymentRows[0];
   const visibleServiceRows = deploymentRows.filter((row) =>
@@ -1112,8 +1143,7 @@ export function StudioWorkbench() {
   const clusterDemandRps = deploymentRows.reduce((sum, row) => sum + row.demandRps, 0);
   const clusterDroppedRps = deploymentRows.reduce((sum, row) => sum + row.droppedRps, 0);
   const servicesUnderPressure = deploymentRows
-    .filter((row) => row.replicasNow === 0 || row.droppedRps > 0 || row.utilizationPct > 90 || row.bottleneckTarget)
-    .sort((a, b) => Number(a.replicasNow > 0) - Number(b.replicasNow > 0) || b.droppedRps - a.droppedRps || b.utilizationPct - a.utilizationPct);
+    .filter((row) => row.replicasNow === 0 || row.droppedRps > 0 || row.utilizationPct > 90 || row.bottleneckTarget);
   const avgClusterP95 =
     healthyServicesCount > 0
       ? Math.round(
@@ -1214,10 +1244,11 @@ export function StudioWorkbench() {
     }
 
     if (!target) {
+      playSound("blocked");
       setScenarioMessage(unavailable);
       return;
     }
-    playSound(clusterScenario === "DB_OUTAGE" || clusterScenario === "POD_FAILURE" ? "warning" : "scenario");
+    if (replicas !== 0) playSound(clusterScenario === "POD_FAILURE" ? "warning" : "scenario");
     if (patch) updateNodeConfig(target.serviceName, patch);
     if (replicas !== undefined) {
       applySandboxAction({
@@ -1297,6 +1328,7 @@ export function StudioWorkbench() {
     if (!replay || replay.frames.length >= 39) return;
     const frame = captureEvidenceFrame("Manual checkpoint", performance.now() - replay.started);
     if (frame) {
+      playSound("checkpoint");
       replay.frames.push(frame);
       setRecordedSteps(replay.frames.length);
     }
@@ -1383,7 +1415,7 @@ export function StudioWorkbench() {
             <div className="hidden items-center gap-1 sm:flex">
               <button
                 type="button"
-                onClick={() => setLeftCollapsed((p) => !p)}
+                onClick={() => { playSound("panel"); setLeftCollapsed((p) => !p); }}
                 title="Ẩn/hiện thanh công cụ bên trái"
                 className={`h-7 rounded border px-2 text-[11px] font-medium transition ${
                   !leftCollapsed
@@ -1395,7 +1427,7 @@ export function StudioWorkbench() {
               </button>
               <button
                 type="button"
-                onClick={() => setRightCollapsed((p) => !p)}
+                onClick={() => { playSound("panel"); setRightCollapsed((p) => !p); }}
                 title="Ẩn/hiện thanh Inspector bên phải"
                 className={`h-7 rounded border px-2 text-[11px] font-medium transition ${
                   !rightCollapsed
@@ -1447,8 +1479,29 @@ export function StudioWorkbench() {
               soundEnabled ? "border-sky-500/60 text-sky-200" : "border-slate-700 text-slate-400 hover:text-slate-200"
             }`}
           >
-            {soundEnabled ? <Volume2 className="size-3.5" /> : <VolumeX className="size-3.5" />}
+            {soundEnabled && volume > 0 ? <Volume2 className="size-3.5" /> : <VolumeX className="size-3.5" />}
           </button>
+          <Popover>
+            <PopoverTrigger asChild>
+              <button type="button" aria-label={t("Studio volume settings")} title={t("Studio volume settings")}
+                className="inline-flex h-7 w-7 items-center justify-center rounded border border-slate-700 text-slate-400 hover:text-slate-200">
+                <SlidersHorizontal className="size-3.5" />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="end" sideOffset={8} className="z-[60] w-56 border-slate-700 bg-slate-950 p-3 text-slate-100">
+              <div className="flex justify-between text-xs">
+                <label htmlFor="studio-volume">{t("Effects volume")}</label>
+                <output htmlFor="studio-volume" className="text-slate-300">{volume}%</output>
+              </div>
+              <input id="studio-volume" type="range" min={0} max={100} step={5} value={volume}
+                onChange={(event) => changeVolume(Number(event.target.value))}
+                className="my-2 w-full accent-sky-400" />
+              <button type="button" disabled={!soundEnabled || volume === 0} onClick={() => playSound("capture")}
+                className="rounded border border-slate-700 px-2 py-1 text-xs text-sky-200 hover:bg-slate-800 disabled:opacity-40">
+                {t("Preview sound")}
+              </button>
+            </PopoverContent>
+          </Popover>
           <LocaleSwitchButton />
           <AppearanceSelector />
         </div>
@@ -1513,7 +1566,10 @@ export function StudioWorkbench() {
                     value={clusterScenario}
                     onChange={(event) => {
                       const next = CLUSTER_SCENARIOS.find(({ id }) => id === event.target.value);
-                      if (next) setClusterScenario(next.id);
+                      if (next && next.id !== clusterScenario) {
+                        playSound("setting");
+                        setClusterScenario(next.id);
+                      }
                       setScenarioMessage("");
                     }}
                     className="h-7 w-full rounded-md border border-slate-700 bg-slate-950 px-2 text-xs text-slate-100"
@@ -1530,105 +1586,77 @@ export function StudioWorkbench() {
                   <p role="status" hidden={!scenarioMessage} className="break-words text-[11px] text-slate-300">{scenarioMessage}</p>
                 </section>
 
-                {/* Section A: 16-Component Functional Block Library (Smart 1/2/3/4 Column Auto-Grid) */}
-                <div className="flex min-h-0 flex-1 flex-col gap-2">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                    3D Block Library ({STUDIO_COMPONENT_CATALOG.length})
-                  </p>
-
-                  {/* Search Input */}
-                  <Input
-                    value={componentSearch}
-                    onChange={(e) => setComponentSearch(e.target.value)}
-                    placeholder="Search functional blocks..."
-                    className="h-7 rounded-full border-slate-800 bg-slate-900/90 px-3 text-[11px]"
-                  />
-
-                  <div className="flex gap-1.5 pt-0.5">
-                    <Input
-                      value={newNodeName}
-                      onChange={(e) => setNewNodeName(e.target.value)}
-                      placeholder="Custom block name..." maxLength={64}
-                      className="h-7 rounded-full border-slate-800 bg-slate-900/90 px-3 text-[11px]"
-                    />
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="secondary"
-                      className="h-7 w-8 shrink-0 rounded-full border border-slate-800 bg-slate-900 p-0 text-slate-200 hover:bg-slate-800"
-                      onClick={() => addCustomBlock()}
-                    >
-                      <Plus className="size-3.5" />
-                    </Button>
+                <section aria-labelledby="studio-library-title" className="flex min-h-0 flex-1 flex-col gap-3">
+                  <div className="flex flex-wrap items-center justify-between gap-1">
+                    <h2 id="studio-library-title" className="text-xs font-semibold text-slate-100">Block library</h2>
+                    <button type="button" aria-expanded={customBlockOpen}
+                      onClick={() => {
+                        playSound("panel");
+                        setCustomBlockOpen((open) => !open);
+                      }}
+                      className="inline-flex items-center gap-1 rounded-md border border-slate-700 px-2 py-1 text-[11px] font-medium text-sky-200 hover:bg-slate-800">
+                      <Plus className="size-3" /> Custom block
+                    </button>
                   </div>
-
-                  {/* Category Filter Pills (Clean Monochrome Active State) */}
-                  <div className="flex flex-wrap gap-1">
-                    {(
-                      [
-                        ["ALL", "All"],
-                        ["EDGE", "Edge"],
-                        ["COMPUTE", "Compute"],
-                        ["DATA", "Data"],
-                        ["INFRA", "Infra"],
-                      ] as const
-                    ).map(([cat, label]) => (
-                      <button
-                        key={cat}
-                        type="button"
-                        onClick={() => setComponentCategory(cat)}
-                        className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold transition ${
-                          componentCategory === cat
-                            ? "bg-slate-100 text-slate-950"
-                            : "border border-slate-800 bg-slate-900/80 text-slate-400 hover:border-slate-600 hover:text-slate-200"
-                        }`}
-                      >
-                        {label}
-                      </button>
+                  {customBlockOpen && (
+                    <form className="space-y-2 rounded-lg border border-slate-700 bg-slate-900 p-2"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        if (newNodeName.trim() && addCustomBlock(customBlockType, newNodeName)) {
+                          setNewNodeName("");
+                          setCustomBlockOpen(false);
+                        }
+                      }}>
+                      <Input autoFocus aria-label="Custom block name" placeholder="Block name" value={newNodeName}
+                        onChange={(event) => setNewNodeName(event.target.value)} maxLength={64} required
+                        className="h-8 bg-slate-950 text-xs" />
+                      <div className="flex flex-wrap gap-2">
+                        <select aria-label="Custom block type" value={customBlockType} onChange={(event) => setCustomBlockType(event.target.value)}
+                          className="h-7 min-w-0 flex-1 rounded border border-slate-700 bg-slate-950 px-1.5 text-xs text-slate-100">
+                          {STUDIO_COMPONENT_CATALOG.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
+                        </select>
+                        <button type="submit" disabled={!newNodeName.trim()}
+                          className="rounded bg-slate-100 px-2 text-xs font-semibold text-slate-950 disabled:opacity-40">
+                          Add block
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                  <label className="relative block">
+                    <Search aria-hidden="true" className="pointer-events-none absolute left-2.5 top-2.5 size-3.5 text-slate-400" />
+                    <Input type="search" aria-label="Search blocks" placeholder="Search blocks…"
+                      value={componentSearch} onChange={(event) => setComponentSearch(event.target.value)}
+                      className="h-8 rounded-md border-slate-700 bg-slate-950 pl-8 text-xs" />
+                  </label>
+                  <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto pr-0.5">
+                    {blockGroups.map(({ category, title, items }) => (
+                      <section key={category} className="space-y-1 rounded-lg border border-slate-800 bg-slate-900/55 p-2">
+                        <h3 className="px-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">{title}</h3>
+                        <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${leftGridCols}, minmax(0, 1fr))` }}>
+                          {items.map((item) => (
+                            <button
+                              key={item.key}
+                              type="button"
+                              aria-label={`+ ${item.label}`}
+                              draggable
+                              title={`${item.label} (${item.spec})`}
+                              onDragStart={(event) => {
+                                event.dataTransfer.setData("application/x-mavis-studio-spawn", item.key);
+                                event.dataTransfer.effectAllowed = "copy";
+                              }}
+                              onClick={() => addCustomBlock(item.key)}
+                              className="flex min-h-8 min-w-0 cursor-grab items-center gap-1.5 rounded-md border border-slate-800 bg-slate-950/60 px-1.5 py-1 text-left text-[11px] font-medium leading-tight text-slate-200 hover:border-slate-600 hover:bg-slate-800 active:cursor-grabbing"
+                            >
+                              <span className={`shrink-0 ${item.iconClass}`}>{renderComponentIcon(item.key, "size-3.5")}</span>
+                              <span className="min-w-0 break-words">{item.label}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </section>
                     ))}
+                    {blockGroups.length === 0 && <p className="px-1 text-xs text-slate-400">No matching blocks.</p>}
                   </div>
-
-                  {/* Smart Auto-Distributing Functional Block Grid (1, 2, 3, or 4 columns as sidebar stretches) */}
-                  <div
-                    style={{
-                      gridTemplateColumns: `repeat(${leftGridCols}, minmax(0, 1fr))`,
-                    }}
-                    className="grid min-h-0 flex-1 content-start gap-1.5 overflow-y-auto pr-0.5"
-                  >
-                    {STUDIO_COMPONENT_CATALOG.filter((item) => {
-                      const matchesCat =
-                        componentCategory === "ALL" || item.category === componentCategory;
-                      const q = componentSearch.trim().toLowerCase();
-                      const matchesSearch =
-                        !q ||
-                        item.label.toLowerCase().includes(q) ||
-                        item.key.toLowerCase().includes(q) ||
-                        item.spec.toLowerCase().includes(q);
-                      return matchesCat && matchesSearch;
-                    }).map((item) => (
-                      <button
-                        key={item.key}
-                        type="button"
-                        draggable
-                        title={`${item.label} (${item.spec})`}
-                        onDragStart={(event) => {
-                          event.dataTransfer.setData("application/x-mavis-studio-spawn", item.key);
-                          event.dataTransfer.effectAllowed = "copy";
-                        }}
-                        onClick={() => addCustomBlock(item.key)}
-                        className={`flex cursor-grab items-center gap-2 rounded-full border px-3 py-2 text-left text-[11.5px] font-medium text-slate-200 transition active:cursor-grabbing ${item.cardClass}`}
-                      >
-                        <span className={`shrink-0 ${item.iconClass}`}>
-                          {renderComponentIcon(item.key, "size-3.5")}
-                        </span>
-                        <span className="truncate">+ {item.label}</span>
-                      </button>
-                    ))}
-                  </div>
-
-
-                </div>
-
+                </section>
               </div>
             </aside>
           )}
@@ -1657,14 +1685,10 @@ export function StudioWorkbench() {
                 onQuickAction={applySandboxAction}
                 onSpawnBlock={addCustomBlock}
                 onConnect={connectOutboundEdge}
-                onSound={playSound}
-                onInspectFault={(service, detail) => {
-                  setSelectedService(service);
-                  setRightCollapsed(false);
-                  setWireHint({ service, detail });
-                }}
                 onDisconnect={disconnectOutboundEdge}
+                onSound={playSound}
                 nodeNames={nodeNames}
+                nodeStatus={Object.fromEntries(deploymentRows.map((row) => [row.serviceName, row.status]))}
                 simulated
                 canvasOnly
                 defaultView="3D"
@@ -1694,6 +1718,7 @@ export function StudioWorkbench() {
                     type="button"
                     aria-pressed={!bottomCollapsed && bottomTab === "STATS"}
                     onClick={() => {
+                      playSound("panel");
                       if (!bottomCollapsed && bottomTab === "STATS") {
                         setBottomCollapsed(true);
                       } else {
@@ -1710,6 +1735,7 @@ export function StudioWorkbench() {
                   <button
                     type="button"
                     onClick={() => {
+                      playSound("panel");
                       if (!bottomCollapsed && bottomTab === "MATRIX") {
                         setBottomCollapsed(true);
                       } else {
@@ -1728,6 +1754,7 @@ export function StudioWorkbench() {
                   <button
                     type="button"
                     onClick={() => {
+                      playSound("panel");
                       if (!bottomCollapsed && bottomTab === "SNAPSHOTS") {
                         setBottomCollapsed(true);
                       } else {
@@ -1749,7 +1776,10 @@ export function StudioWorkbench() {
                   type="button"
                   aria-label={bottomCollapsed ? t("Expand telemetry panel") : t("Collapse telemetry panel")}
                   aria-expanded={!bottomCollapsed}
-                  onClick={() => setBottomCollapsed((prev) => !prev)}
+                  onClick={() => {
+                    playSound("panel");
+                    setBottomCollapsed((prev) => !prev);
+                  }}
                   className="ml-1 rounded border border-slate-800 bg-slate-900 px-1.5 py-0.5 text-[10px] text-slate-400 hover:text-slate-100"
                 >
                   {bottomCollapsed ? "▲" : "▼"}
@@ -1765,19 +1795,31 @@ export function StudioWorkbench() {
                           <h2 id="studio-cluster-overview" className="text-base font-semibold text-slate-100">
                             Cluster Overview
                           </h2>
-                          <p className="mt-0.5 text-xs text-slate-400">
-                            Sandbox · {healthyServicesCount}/{deploymentRows.length} services running · {activeEdges.length} links
-                          </p>
                         </div>
-                        <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                          downServicesCount ? "bg-rose-500/15 text-rose-300"
-                            : servicesUnderPressure.length ? "bg-amber-500/15 text-amber-300"
-                              : "bg-emerald-500/15 text-emerald-300"
-                        }`}>
-                          {downServicesCount ? `${downServicesCount} down`
-                            : servicesUnderPressure.length ? `${servicesUnderPressure.length} need attention`
-                              : deploymentRows.length ? "Healthy" : "No services"}
-                        </span>
+                        <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
+                          <dl className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                            {[
+                              ["Estimated 5xx", `${clusterErrorRate}%`],
+                              ["Estimated SLA", `${clusterSla}%`],
+                              ["Running pods", totalRunningPods.toLocaleString()],
+                              ["Services down", downServicesCount.toLocaleString()],
+                            ].map(([label, value]) => (
+                              <div key={label} className="flex items-baseline gap-2">
+                                <dt className="text-slate-400">{label}</dt>
+                                <dd className="font-semibold tabular-nums text-slate-200">{value}</dd>
+                              </div>
+                            ))}
+                          </dl>
+                          <span className={`shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ${
+                            downServicesCount ? "bg-rose-500/15 text-rose-300"
+                              : servicesUnderPressure.length ? "bg-amber-500/15 text-amber-300"
+                                : "bg-emerald-500/15 text-emerald-300"
+                          }`}>
+                            {downServicesCount ? `${downServicesCount} down`
+                              : servicesUnderPressure.length ? `${servicesUnderPressure.length} need attention`
+                                : deploymentRows.length ? "Healthy" : "No services"}
+                          </span>
+                        </div>
                       </header>
 
                       <section aria-label="Traffic & reliability">
@@ -1795,19 +1837,6 @@ export function StudioWorkbench() {
                                 {value.toLocaleString()} <span className="text-[11px] text-slate-400">{unit}</span>
                                 <span className="mt-1 block font-sans text-[11px] font-normal text-slate-400">{detail}</span>
                               </dd>
-                            </div>
-                          ))}
-                        </dl>
-                        <dl className="mt-2 flex flex-wrap gap-x-5 gap-y-1 rounded-md border border-slate-800 px-3 py-2 text-xs">
-                          {[
-                            ["Estimated 5xx", `${clusterErrorRate}%`],
-                            ["Estimated SLA", `${clusterSla}%`],
-                            ["Running pods", totalRunningPods.toLocaleString()],
-                            ["Services down", downServicesCount.toLocaleString()],
-                          ].map(([label, value]) => (
-                            <div key={label} className="flex items-baseline gap-2">
-                              <dt className="text-slate-400">{label}</dt>
-                              <dd className="font-semibold tabular-nums text-slate-200">{value}</dd>
                             </div>
                           ))}
                         </dl>
@@ -1838,34 +1867,6 @@ export function StudioWorkbench() {
                         </div>
                       </section>
 
-                      {servicesUnderPressure.length > 0 && (
-                        <section aria-label="Services needing attention" className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
-                          <h3 className="mb-2 text-xs font-semibold text-amber-200">Services needing attention</h3>
-                          <ul className="space-y-1">
-                            {servicesUnderPressure.slice(0, 3).map((row) => (
-                              <li key={row.serviceName} className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                                <button type="button" onClick={() => {
-                                  setSelectedService(row.serviceName);
-                                  setRightCollapsed(false);
-                                }} className="break-all font-semibold text-slate-100 hover:underline">
-                                  {nodeLabel(row.serviceName)}
-                                </button>
-                                <span className="text-slate-300">
-                                  {row.replicasNow === 0 ? "No running pods"
-                                    : row.droppedRps > 0 ? `${row.droppedRps.toLocaleString()} req/s dropped`
-                                      : row.utilizationPct > 90 ? `${row.utilizationPct}% of capacity`
-                                        : `Downstream: ${nodeLabel(row.bottleneckTarget ?? "")}`}
-                                </span>
-                              </li>
-                            ))}
-                          </ul>
-                          {servicesUnderPressure.length > 3 && (
-                            <button type="button" className="mt-2 text-xs text-sky-200 hover:underline" onClick={() => setBottomTab("MATRIX")}>
-                              View all services
-                            </button>
-                          )}
-                        </section>
-                      )}
                     </section>
                   ) : bottomTab === "MATRIX" ? (
                     <div className="space-y-2">
@@ -1891,6 +1892,7 @@ export function StudioWorkbench() {
                           <tbody className="divide-y divide-slate-800">
                             {visibleServiceRows.map((row) => {
                               const isDown = row.replicasNow === 0;
+                              const { status } = row;
                               const isSelected = row.serviceName === selectedService;
                               return (
                                 <tr key={row.serviceName} className={isSelected ? "bg-sky-950/35" : "hover:bg-slate-900"}>
@@ -1909,9 +1911,9 @@ export function StudioWorkbench() {
                                       {nodeLabel(row.serviceName)}
                                     </button>
                                   </td>
-                                  <td className={`px-2.5 py-1.5 ${isDown ? "text-rose-300" : row.bottleneckTarget ? "text-amber-300" : "text-emerald-300"}`}
+                                  <td className={`px-2.5 py-1.5 ${isDown || status === "Overloaded" ? "text-rose-300" : status === "Running" ? "text-emerald-300" : "text-amber-300"}`}
                                     title={row.bottleneckTarget ? `Bottleneck → ${nodeLabel(row.bottleneckTarget)}` : undefined}>
-                                    {isDown ? "Down" : row.bottleneckTarget ? "Bottleneck" : "Running"}
+                                    {status}
                                   </td>
                                   <td className="px-2.5 py-1.5 font-mono tabular-nums text-slate-200">{isDown ? "—" : `${row.perPodCpu.toFixed(1)}%`}</td>
                                   <td className="px-2.5 py-1.5 font-mono tabular-nums text-slate-200">{Math.round(row.totalRam)} MiB</td>
@@ -2016,7 +2018,7 @@ export function StudioWorkbench() {
                             {snap.explanation}
                           </p>
                           {snap.replay.length > 0 ? (
-                            <StudioEvidenceReplay frames={snap.replay} />
+                            <StudioEvidenceReplay frames={snap.replay} onSound={playSound} />
                           ) : (
                             <img src={snap.imageData} alt="Captured complete diagram"
                               className="my-2 max-h-72 w-full rounded-md border border-slate-700 object-contain" />
@@ -2169,18 +2171,17 @@ export function StudioWorkbench() {
                           <strong className="text-slate-100">{Math.round(selectedRow.totalRam)}M</strong> · p95{" "}
                           <strong className="text-slate-100">{selectedRow.p95Now}ms</strong>
                         </p>
+                        <p className="mt-0.5 flex flex-wrap items-baseline gap-x-1.5 text-[10.5px] text-slate-400">
+                          <strong className={
+                            selectedRow.status === "Down" || selectedRow.status === "Overloaded" ? "text-rose-300"
+                              : selectedRow.status === "Running" ? "text-emerald-300" : "text-amber-300"
+                          }>{selectedRow.status}</strong>
+                          <span>· Tier {selectedRow.cfg.instanceTier}</span>
+                          <span>· Load {selectedRow.cfg.trafficMult}×</span>
+                        </p>
                       </div>
                     </div>
 
-                    {wireHint?.service === selectedRow.serviceName && (
-                      <div ref={wireHintRef} role="status" className="rounded-lg border border-sky-500/40 bg-sky-500/10 p-2.5 text-xs text-slate-200">
-                        <div className="flex items-center justify-between gap-2">
-                          <strong>Connection hint</strong>
-                          <button type="button" aria-label="Dismiss connection hint" onClick={() => setWireHint(null)}>×</button>
-                        </div>
-                        <p className="mt-1">{wireHint.detail}</p>
-                      </div>
-                    )}
                     {/* Free-Form Replica / Pod Count Input + Quick Presets (No ×8 Cap!) */}
                     <div className="space-y-1.5 pt-0.5">
                       <div className="flex items-center justify-between gap-2 text-[10px] text-slate-400">
@@ -2459,7 +2460,7 @@ export function StudioWorkbench() {
                             aria-pressed={enabled}
                             title={description}
                             onClick={() => {
-                              playSound("select");
+                              playSound(enabled ? "policyOff" : "policyOn");
                               updateNodeConfig(selectedRow.serviceName, { [field]: !enabled });
                             }}
                             className={`flex items-center justify-between rounded border px-2 py-1 text-left text-[10px] font-medium transition ${
@@ -2554,7 +2555,7 @@ export function StudioWorkbench() {
                             <dt className="text-slate-400">{label}</dt>
                             <dd className="mt-1 break-words font-mono font-semibold text-slate-100">
                               {value}
-                              <span className="mt-0.5 block font-sans font-normal text-slate-400">{detail}</span>
+                              <span className="font-sans font-normal text-slate-400"> · {detail}</span>
                             </dd>
                           </div>
                         ))}
@@ -2564,31 +2565,21 @@ export function StudioWorkbench() {
                     {[
                       ...(selectedRow.replicasNow === 0 ? [{
                         title: "No running pods", critical: true,
-                        detail: "Check why this node stopped and decide how to restore it. Then check the calling services on the graph.",
                       }] : []),
                       ...(selectedRow.replicasNow > 0 && selectedRow.utilizationPct > 85 ? [{
                         title: selectedRow.utilizationPct > 100 ? "Demand exceeds capacity" : "Capacity is nearly full",
                         critical: selectedRow.utilizationPct > 100,
-                        detail: "Compare incoming demand with capacity. Adjust replicas or CPU per pod within the exercise limits, then check handled traffic, dropped requests and p95.",
                       }] : []),
                       ...(selectedRow.cfg.rateLimiter && selectedRow.demandRps > selectedRow.cfg.rateLimitRps ? [{
                         title: "Rate limit is rejecting requests", critical: true,
-                        detail: "Compare the request limit with the exercise target. Check available capacity before changing it.",
                       }] : []),
                       ...(selectedRow.bottleneckTarget ? [{
                         title: `Downstream pressure · ${nodeLabel(selectedRow.bottleneckTarget)}`, critical: false,
-                        detail: "Follow the wire to its destination. Inspect its load, running pods and latency before changing the caller.",
                       }] : []),
-                    ].map(({ title, detail, critical }) => (
-                      <details key={title} className={`rounded-lg border px-2.5 text-xs ${
+                    ].map(({ title, critical }) => (
+                      <p key={title} className={`rounded-lg border px-2.5 py-2 text-xs font-semibold ${
                         critical ? "border-rose-500/40 bg-rose-500/10 text-rose-200" : "border-amber-500/40 bg-amber-500/10 text-amber-200"
-                      }`}>
-                        <summary className="flex cursor-pointer list-none items-center justify-between gap-2 py-2 font-semibold">
-                          {title}
-                          <span aria-hidden="true" className="grid size-5 shrink-0 place-items-center rounded-full border border-current">?</span>
-                        </summary>
-                        <p className="pb-2 text-[11px] text-slate-200">{detail}</p>
-                      </details>
+                      }`}>{title}</p>
                     ))}
 
                     <div className="space-y-2 rounded-xl border border-slate-700/80 bg-slate-900 p-3 text-[11px]">
@@ -2670,19 +2661,6 @@ export function StudioWorkbench() {
                     </div>
                   </div>
 
-                  {/* Card 5: Live Container Log Tail & Snapshot Capture */}
-                  <div className="space-y-1.5 rounded-xl border border-slate-800/90 bg-slate-900/60 p-2">
-                    <div className="rounded border border-slate-800 bg-slate-950 p-1.5 font-mono text-[9.5px] leading-relaxed text-slate-300">
-                      <p className="truncate text-slate-400">
-                        $ docker logs --tail 2 {nodeLabel(selectedRow.serviceName)}
-                      </p>
-                      <p className="truncate text-slate-300">
-                        {selectedRow.replicasNow === 0
-                          ? `[ERR] Service unavailable — 0 pods running`
-                          : `[OK] ${selectedRow.replicasNow} pod(s) · Tier=${selectedRow.cfg.instanceTier} · Load=${selectedRow.cfg.trafficMult}x`}
-                      </p>
-                    </div>
-                  </div>
                 </div>
               )}
             </aside>

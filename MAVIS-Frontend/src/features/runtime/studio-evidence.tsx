@@ -96,7 +96,10 @@ export function downloadStudioEvidence(snapshot: {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function StudioEvidenceReplay({ frames }: { frames: EvidenceFrame[] }) {
+export function StudioEvidenceReplay({ frames, onSound }: {
+  frames: EvidenceFrame[];
+  onSound?: (sound: "play" | "pause" | "checkpoint") => void;
+}) {
   const [index, setIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
   const frame = frames[index];
@@ -117,11 +120,16 @@ export function StudioEvidenceReplay({ frames }: { frames: EvidenceFrame[] }) {
           onClick={() => {
             if (!isPlaying && index === frames.length - 1) setIndex(0);
             setPlaying(!isPlaying);
+            onSound?.(isPlaying ? "pause" : "play");
           }}>
           {isPlaying ? "Pause" : "Play replay"}
         </button>
         <input type="range" aria-label="Replay step" min={0} max={frames.length - 1} value={index}
           onChange={(event) => { setPlaying(false); setIndex(Number(event.target.value)); }}
+          onPointerUp={() => onSound?.("checkpoint")}
+          onKeyUp={(event) => {
+            if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) onSound?.("checkpoint");
+          }}
           className="min-w-0 flex-1" />
       </div>
       <p className="text-slate-200">Step {index + 1}/{frames.length} · {(frame.elapsedMs / 1000).toFixed(1)}s · {frame.label}</p>

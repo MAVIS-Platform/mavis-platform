@@ -232,12 +232,12 @@ const STUDIO_2D_SYMBOLS = [
 function render2DServiceSymbol(
   name: string,
   archetype: ReturnType<typeof classifyArchetype>,
-  isStopped: boolean,
+  statusColor?: string,
 ) {
   const fallback = { DATABASE: "sql", GATEWAY: "gateway", QUEUE: "queue", SERVICE: "service" }[archetype];
   const symbol = STUDIO_2D_SYMBOLS.find(({ kind, match }) => kind !== "service" && match.test(name.toLowerCase()))
     ?? STUDIO_2D_SYMBOLS.find(({ kind }) => kind === fallback)!;
-  const color = isStopped ? "#fda4af" : symbol.color;
+  const color = statusColor ?? symbol.color;
   return (
     <g transform="translate(-26 -35) scale(1.0833)" data-studio-symbol={symbol.kind} aria-hidden="true"
       stroke={color} strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round">
@@ -941,8 +941,8 @@ export function StudioObservability({
   onConnect,
   onDisconnect,
   onSound,
-  onInspectFault,
   nodeNames,
+  nodeStatus,
   simulated = false,
   canvasOnly = false,
   defaultView = "2D",
@@ -956,8 +956,8 @@ export function StudioObservability({
   onConnect?: (from: string, to: string) => void;
   onDisconnect?: (from: string, to: string) => void;
   onSound?: (sound: "select" | "place") => void;
-  onInspectFault?: (service: string, detail: string) => void;
   nodeNames?: Readonly<Record<string, string>>;
+  nodeStatus?: Readonly<Record<string, string>>;
   simulated?: boolean;
   canvasOnly?: boolean;
   defaultView?: "2D" | "3D";
@@ -2004,19 +2004,6 @@ export function StudioObservability({
                 ? `${simulated ? "≈ " : ""}${durationMs > 0 && durationMs < 0.1 ? "<0.1" : Number(durationMs.toFixed(durationMs < 10 ? 1 : 0))} ms`
                 : null;
               const wireLabel = edgeSevered ? faultLabel : latencyLabel;
-              const showFaultHint = edgeSevered && Boolean(onInspectFault);
-              const inspectFault = () => {
-                const service = span?.circuitOpen ? edge.fromService : edge.toService;
-                const target = nodeNames?.[edge.toService] ?? edge.toService;
-                const guidance = span?.circuitOpen
-                  ? `The caller is skipping this connection. Check whether ${target} is reachable and can handle the load.`
-                  : status === 429
-                    ? "Check the destination's rate limit against the traffic required by the exercise."
-                    : status === 503
-                      ? "Compare the destination's incoming demand with its maximum capacity. Decide what to change, then check dropped traffic and p95."
-                      : "Check whether the destination has running pods and whether the configured latency is causing a timeout.";
-                onInspectFault?.(service, guidance);
-              };
               const badgeWidth = wireLabel ? Math.max(42, wireLabel.length * 6 + 12) : 0;
               const targetReplicas = resolveLiveReplicas(edge.toService);
               const mx = (from.x + to.x) / 2;
@@ -2046,21 +2033,14 @@ export function StudioObservability({
                   onPointerDown={(event) => {
                     if (event.button === 0) event.stopPropagation();
                   }}
-                  onClick={(event) => {
-                    if ((event.target as Element).closest("[data-studio-wire-hint]")) {
-                      inspectFault();
-                      return;
-                    }
+                  onClick={() => {
                     if (!wireSelected) onSound?.("select");
                     if (onDisconnect) setSelectedWire({ from: edge.fromService, to: edge.toService });
                     else setTraceId(edge.traceId);
                   }}
                   onKeyDown={(event) => {
                     if (!onDisconnect) return;
-                    if (event.key === "?" && showFaultHint) {
-                      event.preventDefault();
-                      inspectFault();
-                    } else if (event.key === "Enter" || event.key === " ") {
+                    if (event.key === "Enter" || event.key === " ") {
                       event.preventDefault();
                       setSelectedWire({ from: edge.fromService, to: edge.toService });
                     } else if (wireSelected && (event.key === "Delete" || event.key === "Backspace")) {
@@ -2113,13 +2093,6 @@ export function StudioObservability({
                       >
                         {wireLabel}
                       </text>
-                      {showFaultHint && (
-                        <g data-studio-wire-hint className="cursor-help" transform={`translate(${mx + badgeWidth / 2 + 11} ${my})`}>
-                          <title>Inspect this connection fault</title>
-                          <circle r="8" fill="#291622" stroke="#fda4af" />
-                          <text y="3.5" textAnchor="middle" fill="#fda4af" fontSize="10" fontWeight="700">?</text>
-                        </g>
-                      )}
                     </g>
                   )}
                   {/* Static snapshot anchor dots (only in legacy non-canvasOnly mode) + Live animated motion pulse */}
@@ -2161,7 +2134,7 @@ export function StudioObservability({
               const { text: displayName, width: labelWidth, y: labelY, height: labelHeight } = getNodeLabel(nodeName, view);
 
 
-              const theme = getArchetypeTheme(
+              const baseTheme = getArchetypeTheme(
                 archetype,
                 isStopped || isAffected,
                 isSelected,
@@ -2169,6 +2142,15 @@ export function StudioObservability({
                 name,
               );
 
+              const status = nodeStatus?.[name];
+              const isCritical = isStopped || status === "Overloaded";
+              const isWarning = status === "Bottleneck" || status === "Rate limited";
+              const healthColor = isCritical ? "#f43f5e" : isWarning ? "#fbbf24" : undefined;
+              const healthTint = isCritical ? "#fda4af" : isWarning ? "#fde68a" : undefined;
+              const healthFill = isCritical ? "#881337" : isWarning ? "#422a0a" : undefined;
+              const theme = healthColor && healthTint && healthFill
+                ? { ...baseTheme, stroke: healthColor, accent: healthTint, iconBg: healthFill }
+                : baseTheme;
               // Clean SE-Standard 3D Sculptures (NO base tray / pedestal) + Floating Pill Name Tag
               if (view === "3D") {
                 const pillBadgeText = isStopped
@@ -2250,7 +2232,7 @@ export function StudioObservability({
                       rx="12"
                       fill="#0b111e"
                       fillOpacity="0.96"
-                      stroke={isStopped ? "#f43f5e" : isSelected ? "#38bdf8" : "#334155"}
+                      stroke={healthColor ?? (isSelected ? "#38bdf8" : "#334155")}
                       strokeOpacity={isSelected || isStopped ? "0.95" : "0.85"}
                       strokeWidth={isSelected || isStopped ? 1.6 : 1.1}
                     />
@@ -2261,7 +2243,7 @@ export function StudioObservability({
                       width="16"
                       height="16"
                       rx="8"
-                      fill={isStopped ? "#881337" : "#1e293b"}
+                      fill={healthFill ?? "#1e293b"}
                     />
                     {renderNodeFunctionGlyph(
                       name,
@@ -2287,13 +2269,13 @@ export function StudioObservability({
                       width="25"
                       height="16"
                       rx="8"
-                      fill={isStopped ? "#881337" : isSelected ? "#0c4a6e" : "#1e293b"}
+                      fill={healthFill ?? (isSelected ? "#0c4a6e" : "#1e293b")}
                     />
                     <text
                       x={point.x + labelWidth / 2 - 18.5}
                       y={point.y + 25}
                       textAnchor="middle"
-                      fill={isStopped ? "#fda4af" : isSelected ? "#7dd3fc" : "#cbd5e1"}
+                      fill={healthTint ?? (isSelected ? "#7dd3fc" : "#cbd5e1")}
                       fontSize="9.5"
                       fontWeight="600"
                     >
@@ -2372,14 +2354,14 @@ export function StudioObservability({
                         stroke={theme.stroke} strokeOpacity="0.7"
                         strokeDasharray={isDropTarget ? "4 3" : undefined} />
                     )}
-                    {render2DServiceSymbol(name, archetype, isStopped)}
+                    {render2DServiceSymbol(name, archetype, healthTint)}
                     <rect data-studio-node-label x={-labelWidth / 2} y={labelY} width={labelWidth} height={labelHeight} rx="10"
-                      fill="#0b1220" stroke={isSelected || isDropTarget || isStopped ? theme.stroke : "#334155"} />
+                      fill="#0b1220" stroke={healthColor ?? (isSelected || isDropTarget ? theme.stroke : "#334155")} />
                     <text x="-13" y="31.5" textAnchor="middle" fill="#f8fafc" fontSize="11" fontWeight="600">
                       {displayName}
                     </text>
                     <text x={labelWidth / 2 - 15} y="31.5" textAnchor="middle"
-                      fill={isStopped ? "#fda4af" : "#cbd5e1"} fontSize="9" fontWeight="600">
+                      fill={healthTint ?? "#cbd5e1"} fontSize="9" fontWeight="600">
                       {isStopped ? "×0" : live ? `×${live.runningReplicas}` : "—"}
                     </text>
                   </g>
