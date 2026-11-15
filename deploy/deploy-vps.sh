@@ -126,6 +126,12 @@ if [ -e "$studio_evidence_migration" ]; then
   compose "$prefix" "$tag" "$incoming/compose.production.yml" config --format json |
     python3 "$schema_tool" "$studio_evidence_migration" /opt/mavis/db-backups/wf03-before-v33.dump
 fi
+topology_migration="$incoming/V34__Assignment_Studio_Topology_Snapshot.sql"
+if [ -e "$topology_migration" ]; then
+  test -f "$studio_evidence_migration" && test -f "$schema_tool" || { echo "Incomplete Studio topology schema package"; exit 1; }
+  compose "$prefix" "$tag" "$incoming/compose.production.yml" config --format json |
+    python3 "$schema_tool" "$topology_migration" /opt/mavis/db-backups/wf03-before-v34.dump
+fi
 if ! compose "$prefix" "$tag" "$incoming/compose.production.yml" up -d --no-build --remove-orphans || ! healthy; then
   echo "Deployment failed; restoring previous images and Compose."
   compose "$old_prefix" "$old_tag" "$previous/compose.production.yml" up -d --no-build --remove-orphans
