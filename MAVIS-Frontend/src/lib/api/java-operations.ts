@@ -219,7 +219,7 @@ export async function executeJava(
         requiredDiagramTypes: z.array(z.string()).nullish(),
         ruleSetVersion: z.string().nullish(),
         requireRuntimeTrace: z.boolean().nullish(),
-        aiPolicy: z.union([z.record(z.unknown()), z.string()]).nullish(),
+        aiPolicy: z.union([z.record(z.string(), z.unknown()), z.string()]).nullish(),
         labOrder: z.number().int().positive().nullish(),
         referenceSource: assignmentReferenceSchema.nullish(),
       })
@@ -254,7 +254,7 @@ export async function executeJava(
           .regex(/^sha256:[a-f0-9]{64}$/)
           .optional(),
         courseQuizEvidence: courseQuizEvidenceSchema.nullish(),
-        studioEvidence:z.record(z.unknown()).nullish(),
+        studioEvidence:z.record(z.string(), z.unknown()).nullish(),
         studentSnapshots: z.array(studentSnapshotSchema).nullish(),
         sourceSnapshotId: z.string().uuid(),
         modelVersionId: z.string().uuid(),
@@ -285,7 +285,7 @@ export async function executeJava(
         .object({
           id: z.string().uuid(),
           modelVersionId: z.string().uuid(),
-          layoutJson: z.record(z.unknown()),
+          layoutJson: z.record(z.string(), z.unknown()),
         })
         .parse(await get(`analyzer/diagrams/${sub.diagramVersionId}`));
       if (diagram.id !== sub.diagramVersionId || diagram.modelVersionId !== sub.modelVersionId)
@@ -1062,8 +1062,8 @@ export async function executeJava(
           detectedServices: z.array(z.string()),
           securityWarnings: z.array(z.string()),
           recommendedProfile: z.string().nullish(),
-          servicePorts: z.record(z.number()).optional(),
-          serviceStacks: z.record(z.string()).optional(),
+          servicePorts: z.record(z.string(), z.number()).optional(),
+          serviceStacks: z.record(z.string(), z.string()).optional(),
           detectedEndpoints: z
             .array(
               z.object({
@@ -1106,17 +1106,17 @@ export async function executeJava(
         .extend({
           runnerIssues: z.array(z.string()).optional(),
           infrastructureServices: z.array(z.string()).optional(),
-          serviceHealthPaths: z.record(z.string()).optional(),
-          serviceHealthConfidence: z.record(z.string()).optional(),
-          serviceHealthReasons: z.record(z.string()).optional(),
+          serviceHealthPaths: z.record(z.string(), z.string()).optional(),
+          serviceHealthConfidence: z.record(z.string(), z.string()).optional(),
+          serviceHealthReasons: z.record(z.string(), z.string()).optional(),
           composeServices: z.array(z.string()).optional(),
           sandboxComposeYaml: z.string().nullable().optional(),
           sandboxComposeChanges: z.array(z.string()).optional(),
           unresolvableRunnerIssues: z.array(z.string()).optional(),
-          recommendedServiceMappings: z.record(z.string()).optional(),
-          modelServiceNames: z.record(z.string()).optional(),
+          recommendedServiceMappings: z.record(z.string(), z.string()).optional(),
+          modelServiceNames: z.record(z.string(), z.string()).optional(),
           localImageBuildAvailable: z.boolean().optional(),
-          serviceImageOverrides: z.record(z.string()).optional(),
+          serviceImageOverrides: z.record(z.string(), z.string()).optional(),
         })
         .parse(await post(`analyzer/runtime/preflight?snapshotId=${snapshot}`));
       return { ...result, recommendedProfile: result.recommendedProfile ?? null };
@@ -1568,7 +1568,7 @@ export async function executeJava(
             warnings: z.array(z.string()),
             truncated: z.boolean(),
           }),
-          serviceNames: z.record(z.string()).optional(),
+          serviceNames: z.record(z.string(), z.string()).optional(),
           adapterWarnings: z.array(z.string()),
         })
         .parse(await get(`analyzer/models/${modelId}/impact?targetServiceId=${targetId}`));
