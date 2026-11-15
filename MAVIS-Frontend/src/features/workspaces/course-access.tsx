@@ -61,6 +61,67 @@ export function useCourseRoadmap(workspaceId: string) {
   });
 }
 
+export type CourseSetupReference = {
+  projectId: string | null;
+  projectName: string | null;
+  modelId: string | null;
+  snapshotId: string | null;
+  modelRevision: number;
+  referenceReady: boolean;
+  runtimeConfigured: boolean;
+  runtimeMatchesSource: boolean;
+  runtimeRevision: number;
+  applications: string[];
+  blockCount: number;
+  connectionCount: number;
+  topologyConfigured: boolean;
+};
+export type CourseSetupLab = {
+  assignmentId: string;
+  position: number;
+  title: string;
+  published: boolean;
+  referenceReady: boolean;
+  requiresRuntime: boolean;
+  studioReady: boolean;
+  quizPublished: boolean;
+  quizVersion: number;
+  state: string;
+};
+export type CourseSetupStep = {
+  id: string;
+  state: "DONE" | "PARTIAL" | "ACTION" | "BLOCKED";
+  detail: string;
+};
+export type CourseSetup = {
+  workspaceId: string;
+  workspaceName: string;
+  status: string;
+  courseMode: boolean;
+  reference: CourseSetupReference;
+  labs: CourseSetupLab[];
+  passkey: {
+    active: boolean;
+    expiresAt: string | null;
+    maxStudents: number | null;
+    enrolledStudents: number;
+  };
+  steps: CourseSetupStep[];
+  nextAction: string;
+  previewAssignmentId: string | null;
+};
+
+export function useCourseSetup(workspaceId: string) {
+  const client = useApi();
+  return useQuery({
+    queryKey: ["api", "course-setup", workspaceId],
+    queryFn: ({ signal }) =>
+      courseApi<CourseSetup>(`workspaces/${workspaceId}/course-setup`, { signal }),
+    enabled: client.mode === "backend" && !!workspaceId,
+    refetchOnWindowFocus: true,
+  });
+}
+
 export function CourseEnrollment({
   destination = "workspaces",
 }: {
@@ -228,7 +289,11 @@ export function CourseRoadmap({
           </li>
         ))}
       </ol>
-      {canManage && active && <CoursePasskey workspaceId={workspaceId} />}
+      {canManage && active && (
+        <div id="course-passkey">
+          <CoursePasskey workspaceId={workspaceId} />
+        </div>
+      )}
     </DetailPanel>
   );
 }
@@ -257,6 +322,7 @@ function CoursePasskey({ workspaceId }: { workspaceId: string }) {
       setIssued(key ?? undefined);
       setCopied(false);
       void cache.invalidateQueries({ queryKey: passkeyKey(workspaceId) });
+      void cache.invalidateQueries({ queryKey: ["api", "course-setup", workspaceId] });
     },
   });
   return (
@@ -389,6 +455,7 @@ export function PublishCourseLab({
     onSuccess: () => {
       void cache.invalidateQueries({ queryKey: roadmapKey(workspaceId) });
       void cache.invalidateQueries({ queryKey: ["api", "assignments"] });
+      void cache.invalidateQueries({ queryKey: ["api", "course-setup", workspaceId] });
     },
   });
   const labPosition = position ?? publish.data?.position;
@@ -452,6 +519,7 @@ export function SeedCuratedCourseLabs({
       void cache.invalidateQueries({ queryKey: roadmapKey(workspaceId) });
       void cache.invalidateQueries({ queryKey: ["api", "assignments"] });
       void cache.invalidateQueries({ queryKey: ["api", "projects"] });
+      void cache.invalidateQueries({ queryKey: ["api", "course-setup", workspaceId] });
     },
     onSettled: () => setActivePreset(null),
   });

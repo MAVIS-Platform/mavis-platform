@@ -434,6 +434,26 @@ test("Stage 3 lecturer 1-click curated course lab seeder is wired on courses and
   assert.ok(assignments.includes("<SeedCuratedCourseLabs workspaceId={workspaceId}"));
 });
 
+test("lecturer course setup checklist links the reference runtime and Studio Live", () => {
+  const access = read("src/features/workspaces/course-access.tsx");
+  const course = read("src/features/courses/screens.tsx");
+  const assignments = read("src/features/assignments/screens.tsx");
+  const panel = read("src/features/courses/course-setup.tsx");
+  const { allowedBackendPath } = require("../src/lib/api/backend-path.ts");
+
+  assert.ok(access.includes("export function useCourseSetup"));
+  assert.ok(access.includes("course-setup"));
+  assert.match(panel, /Course setup/);
+  assert.match(panel, /Studio Live/);
+  assert.match(panel, /runtime-config\?project=/);
+  assert.ok(course.includes("<CourseSetupPanel workspaceId={workspaceId}"));
+  assert.ok(assignments.includes("runtime-config?project="));
+  assert.equal(
+    allowedBackendPath("workspaces/11111111-1111-1111-1111-111111111111/course-setup"),
+    true,
+  );
+});
+
 test("guided submission requires Studio evidence on the selected model", () => {
   const lab = read("src/features/courses/screens.tsx");
   const composer = read("src/features/submissions/composer.tsx");

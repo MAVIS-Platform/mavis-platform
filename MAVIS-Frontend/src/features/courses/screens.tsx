@@ -34,6 +34,7 @@ import { cn } from "@/lib/utils";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { getRuleName } from "@/features/architecture/three-e-content";
 import { CourseQuiz, useCourseQuiz } from "./course-quiz";
+import { CourseSetupPanel } from "./course-setup";
 import { CurriculumLibrary } from "./curriculum";
 import { Step2StaticImpact } from "./step2-static-impact";
 
@@ -279,6 +280,10 @@ export function CourseRoadmap() {
                 </div>
               </div>
             </section>
+          )}
+
+          {canManage && client.mode === "backend" && (
+            <CourseSetupPanel workspaceId={workspaceId} />
           )}
 
           <CourseLabRoadmap

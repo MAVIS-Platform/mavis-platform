@@ -24,6 +24,7 @@ Các endpoint bên dưới dùng tiền tố `/api/v1` và nhận JWT ở backen
 | POST | `/course-enrollments/redeem` | Gửi `{ "code": "…" }` và UUID `Idempotency-Key`. Nhận `workspaceId` để tải roadmap |
 | GET | `/assignments/{assignmentId}/reference-source` | ZIP của Lab. Backend đối chiếu SHA-256 của bản đã công bố khi tải |
 | POST | `/auth/logout` | Thu hồi JWT hiện tại đến khi token hết hạn. Gửi lại an toàn |
+| GET | `/workspaces/{workspaceId}/course-setup` | Checklist read-only cho giảng viên: workspace, reference source, runtime profile, Studio Live topology, Labs, quiz và Passkey. Trả `nextAction`, `previewAssignmentId`, trạng thái từng Lab và project tham chiếu |
 
 Roadmap trả `ENROLLED`, `IN_PROGRESS` hoặc `COMPLETED` cho sinh viên đã ghi danh. Danh sách Lab dùng `LOCKED`, `UNLOCKED` hoặc `PASSED`. Lab khóa có lý do `PREREQUISITE` hoặc `COURSE_ARCHIVED`. Sinh viên chưa ghi danh nhận HTTP 403 khi yêu cầu roadmap hoặc tài nguyên lớp.
 
@@ -34,6 +35,23 @@ Roadmap trả `ENROLLED`, `IN_PROGRESS` hoặc `COMPLETED` cho sinh viên đã g
 | 403 | Sai vai trò, ngoài lớp hoặc Lab chưa mở |
 | 404 | Đối tượng hoặc bản ZIP không tìm thấy |
 | 409 | Đã ghi danh với yêu cầu khác, lớp đã lưu trữ, nguồn thay đổi hoặc kết quả chấm cũ |
+
+## Checklist thiết lập khóa học cho giảng viên
+
+`GET /api/v1/workspaces/{workspaceId}/course-setup` tổng hợp trạng thái thật của một khóa học trước khi sinh viên mở Lab. Endpoint chỉ đọc và yêu cầu quyền giảng viên/quản trị viên.
+
+Checklist gồm các bước:
+
+1. Workspace đang `ACTIVE` và đã bật course mode.
+2. Reference project/model/snapshot đã được gắn và phân tích.
+3. Runtime profile có applications và trỏ đúng source/model đã công bố.
+4. `studioTopology` v1 có ít nhất một block; số connection được báo riêng.
+5. Các Lab đã publish theo thứ tự.
+6. Quiz có version cho từng Lab đã publish.
+7. Passkey còn hiệu lực.
+8. Có ít nhất một Lab đủ điều kiện để xem trước luồng sinh viên.
+
+Frontend hiển thị checklist này tại `/roadmap` cho giảng viên (`CourseSetupPanel`). Mỗi bước còn thiếu có link trực tiếp tới `/assignments`, `/runtime-config?project=...`, hoặc khu vực Passkey. Trang Assignments cũng có link “Course setup checklist” và link “Configure runtime & Studio Live” theo reference project. Endpoint không tự suy ra topology; giảng viên vẫn xác nhận cấu hình đã chuẩn bị.
 
 ## Nối kết quả WF-04 và thông báo
 
