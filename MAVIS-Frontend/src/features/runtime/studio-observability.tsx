@@ -448,12 +448,15 @@ function renderNodeFunctionGlyph(
   );
 }
 
+function sculptureScale(replicas: number) {
+  return 1 + 0.07 * Math.sqrt(Math.max(0, replicas - 1));
+}
+
 function render3DSeNodeSculpture(
   name: string,
   archetype: string,
   cx: number,
   cy: number,
-  activePods: number,
   isStopped: boolean,
   theme: { stroke: string; cardFill: string; iconBg: string; accent: string },
 ) {
@@ -462,7 +465,7 @@ function render3DSeNodeSculpture(
   const a = theme.accent;
   const fill = theme.cardFill;
   const top = theme.iconBg;
-  const hScale = isStopped ? 0 : Math.min(activePods, 6) * 2.2;
+  const hScale = isStopped ? 0 : 2.2;
 
   // 1. CDN EDGE: 3D Geodesic Network Sphere / Global POP Globe
   if (n.includes("cdn") || n.includes("cloudflare") || n.includes("cloudfront")) {
@@ -848,7 +851,7 @@ function render3DSeNodeSculpture(
 
   // 14. MICROSERVICE CONTAINER (Order / Payment / Inventory / App Service): Clean Single 3D Container Unit + Domain Emblem
   const cyBase = cy - 3;
-  const h = 15 + Math.min(activePods, 4) * 1.5;
+  const h = isStopped ? 15 : 16.5;
   const roofY = cyBase - h;
   return (
     <g>
@@ -862,11 +865,21 @@ function render3DSeNodeSculpture(
   );
 }
 
+function getNodeLabel(name: string, view: "2D" | "3D") {
+  const characters = Array.from(name);
+  const text = characters.length > 20 ? characters.slice(0, 19).join("") + "…" : name;
+  return view === "3D"
+    ? { text, width: Math.max(114, Math.min(172, text.length * 7 + 50)), y: 10, height: 24 }
+    : { text, width: Math.max(86, text.length * 6.5 + 34), y: 18, height: 20 };
+}
+
 function renderWireArrow(
   from: { x: number; y: number },
   to: { x: number; y: number },
+  label: ReturnType<typeof getNodeLabel>,
   color: string,
   curved = false,
+  scale = 1,
 ) {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
@@ -877,15 +890,25 @@ function renderWireArrow(
     x: from.x + dx * (curved ? t * (1.5 - 1.5 * t + t * t) : t),
     y: from.y + dy * (curved ? t * t * (3 - 2 * t) : t),
   });
-  // Leave space for the icon and the label below the destination.
-  const clearance = dy < 0 ? 47 : 36;
-  let low = 0.5;
-  let high = 1;
-  for (let step = 0; step < 10; step++) {
-    const t = (low + high) / 2;
+  const gap = 7;
+  function coversArrow(t: number) {
     const point = pointAt(t);
-    if (Math.hypot(to.x - point.x, to.y - point.y) > clearance) low = t;
-    else high = t;
+    const x = Math.abs(point.x - to.x);
+    const y = point.y - to.y;
+    const overlapsIcon = x <= 45 * scale && y >= 8 - 48 * scale && y <= label.y + gap;
+    const overlapsLabel = x <= label.width / 2 + gap && y >= label.y - gap && y <= label.y + label.height + gap;
+    return overlapsIcon || overlapsLabel;
+  }
+
+  // Follow the path back from its endpoint, then refine where it clears the node.
+  let low = 1;
+  while (low > 0 && coversArrow(low)) low = Math.max(0, low - 1 / 32);
+  if (low === 0 && coversArrow(low)) return null;
+  let high = Math.min(1, low + 1 / 32);
+  for (let step = 0; step < 8; step++) {
+    const t = (low + high) / 2;
+    if (coversArrow(t)) high = t;
+    else low = t;
   }
   const point = pointAt(low);
   const next = pointAt(low + 0.001);
@@ -917,6 +940,8 @@ export function StudioObservability({
   onSpawnBlock,
   onConnect,
   onDisconnect,
+  onSound,
+  onInspectFault,
   nodeNames,
   simulated = false,
   canvasOnly = false,
@@ -930,6 +955,8 @@ export function StudioObservability({
   onSpawnBlock?: (presetKey: string) => string | undefined;
   onConnect?: (from: string, to: string) => void;
   onDisconnect?: (from: string, to: string) => void;
+  onSound?: (sound: "select" | "place") => void;
+  onInspectFault?: (service: string, detail: string) => void;
   nodeNames?: Readonly<Record<string, string>>;
   simulated?: boolean;
   canvasOnly?: boolean;
@@ -1406,78 +1433,18 @@ export function StudioObservability({
     <div className={canvasOnly ? "relative flex h-full min-h-0 flex-1 flex-col overflow-hidden" : "space-y-4"}>
       {exportError && <p role="alert">{t("Could not export graph")}</p>}
 
-      {/* Top Studio Viewport & 360° Orbit Pill (in canvasOnly mode) */}
+      {/* Canvas view switch */}
       {canvasOnly ? (
         <div className="pointer-events-auto absolute top-2.5 right-3 z-10 inline-flex items-center gap-1 rounded-full border border-slate-700/80 bg-slate-950/85 p-1 shadow-md backdrop-blur-md">
-          {view === "3D" && (
-            <div className="flex items-center gap-0.5 border-r border-slate-800 pr-1">
-              <button
-                type="button"
-                title="Xoay trái 45° (hoặc giữ chuột kéo trên nền để xoay 360°)"
-                onClick={() => setCamera((c) => ({ ...c, yaw: c.yaw - Math.PI / 4 }))}
-                className="rounded-full px-2 py-0.5 font-mono text-[11px] text-slate-300 transition hover:bg-slate-800 hover:text-white"
-              >
-                ⟲
-              </button>
-              <button
-                type="button"
-                title="Góc xoay 360° hiện tại (Click để về góc chuẩn Isometric 45°)"
-                onClick={() => {
-                  setCamera({ yaw: 0.78, pitch: 0.52 });
-                  setPan({ x: 0, y: 0 });
-                  setZoom(1);
-                  setCustomOffsets({});
-                  setPinnedPositions({});
-                }}
-                className="rounded-full px-1.5 py-0.5 font-mono text-[10px] font-semibold text-slate-300 transition hover:bg-slate-800 hover:text-white"
-              >
-                {Math.round((((camera.yaw * 180) / Math.PI) % 360 + 360) % 360)}°
-              </button>
-              <button
-                type="button"
-                title="Xoay phải 45° (hoặc giữ chuột kéo trên nền để xoay 360°)"
-                onClick={() => setCamera((c) => ({ ...c, yaw: c.yaw + Math.PI / 4 }))}
-                className="rounded-full px-2 py-0.5 font-mono text-[11px] text-slate-300 transition hover:bg-slate-800 hover:text-white"
-              >
-                ⟳
-              </button>
-            </div>
-          )}
-          <div className="mr-1 flex items-center gap-0.5 border-r border-slate-700/80 pr-1.5">
-            <button
-              type="button"
-              title="Zoom out (Thu nhỏ góc nhìn như draw.io để mở rộng không gian)"
-              onClick={() => setZoom((z) => Math.max(0.22, Number((z * 0.85).toFixed(2))))}
-              className="rounded-full px-1.5 py-0.5 font-mono text-[11px] text-slate-300 transition hover:bg-slate-800 hover:text-white"
-            >
-              −
-            </button>
-            <button
-              type="button"
-              title="Tỷ lệ phóng to/thu nhỏ hiện tại (Click để đưa về 100% chính giữa)"
-              onClick={() => {
-                setZoom(1);
-                setPan({ x: 0, y: 0 });
-              }}
-              className="rounded-full px-1.5 py-0.5 font-mono text-[10px] font-semibold text-slate-300 transition hover:bg-slate-800 hover:text-white"
-            >
-              {Math.round(zoom * 100)}%
-            </button>
-            <button
-              type="button"
-              title="Zoom in (Phóng to góc nhìn)"
-              onClick={() => setZoom((z) => Math.min(2.5, Number((z * 1.18).toFixed(2))))}
-              className="rounded-full px-1.5 py-0.5 font-mono text-[11px] text-slate-300 transition hover:bg-slate-800 hover:text-white"
-            >
-              +
-            </button>
-          </div>
           {(["2D", "3D"] as const).map((mode) => (
             <button
               key={mode}
               type="button"
               aria-pressed={view === mode}
-              onClick={() => setView(mode)}
+              onClick={() => {
+                if (view !== mode) onSound?.("select");
+                setView(mode);
+              }}
               className={`rounded-full px-2.5 py-0.5 font-mono text-[11px] font-semibold transition ${
                 view === mode
                   ? "bg-slate-100 text-slate-950 shadow-xs"
@@ -1497,7 +1464,10 @@ export function StudioObservability({
               size="sm"
               variant={view === mode ? "default" : "outline"}
               aria-pressed={view === mode}
-              onClick={() => setView(mode)}
+              onClick={() => {
+                if (view !== mode) onSound?.("select");
+                setView(mode);
+              }}
             >
               {mode}
             </Button>
@@ -1772,8 +1742,10 @@ export function StudioObservability({
             if (event.pointerId !== activePointer.current) return;
             const from = linkSource.current;
             const to = from ? nodeAt(event.clientX, event.clientY) : null;
+            const moved = nodeDrag.current?.moved;
             endPointerInteraction();
             if (from && to && from !== to) onConnect?.(from, to);
+            else if (moved) onSound?.("place");
           }}
           onPointerCancel={endPointerInteraction}
           onPointerMove={(event) => {
@@ -1859,10 +1831,11 @@ export function StudioObservability({
           {/* Infinite Camera Viewport Transform (draw.io / Figma style proportional zoom & pan) */}
           <g
             ref={graphContent}
+            data-studio-scene
             transform={`translate(${600 + pan.x}, ${330 + pan.y}) scale(${zoom}) translate(-600, -330)`}
           >
             {/* Infinite Studio Blueprint Grid (spans 10,800 × 10,800 world units when zoomed out) */}
-            <rect x="-4800" y="-4800" width="10800" height="10800" fill="url(#studio-grid)" />
+            <rect data-studio-background x="-4800" y="-4800" width="10800" height="10800" fill="url(#studio-grid)" />
 
           {/* 3D Top-Down Turntable Architecture Platform Deck (orbits 360° left-to-right, always viewed from above) */}
           {view === "3D" &&
@@ -1984,7 +1957,7 @@ export function StudioObservability({
                   strokeWidth={targetStopped ? "2.2" : "1.5"}
                   opacity={targetStopped ? "0.9" : ".28"}
                 />
-                {renderWireArrow(from, to, targetStopped ? "var(--destructive)" : "#64748b")}
+                {renderWireArrow(from, to, getNodeLabel(nodeNames?.[edge.to] ?? edge.to, view), targetStopped ? "var(--destructive)" : "#64748b", false, view === "3D" ? sculptureScale(resolveLiveReplicas(edge.to)) : 1)}
                 {targetStopped && (
                   <g>
                     <rect
@@ -2024,13 +1997,26 @@ export function StudioObservability({
               const status = span?.httpStatusCode;
               const httpError = typeof status === "number" && status >= 400 && status <= 599;
               const edgeSevered = httpError || span?.spanStatus?.toUpperCase() === "ERROR";
-              const faultLabel = httpError ? `${status} ✕` : "CALL FAILED";
+              const faultLabel = span?.circuitOpen ? "CIRCUIT OPEN" : httpError ? `${status} ✕` : "CALL FAILED";
               const durationNs = span?.durationNanoseconds?.trim();
               const durationMs = durationNs ? Number(durationNs) / 1_000_000 : NaN;
               const latencyLabel = Number.isFinite(durationMs) && durationMs >= 0
                 ? `${simulated ? "≈ " : ""}${durationMs > 0 && durationMs < 0.1 ? "<0.1" : Number(durationMs.toFixed(durationMs < 10 ? 1 : 0))} ms`
                 : null;
               const wireLabel = edgeSevered ? faultLabel : latencyLabel;
+              const showFaultHint = edgeSevered && Boolean(onInspectFault);
+              const inspectFault = () => {
+                const service = span?.circuitOpen ? edge.fromService : edge.toService;
+                const target = nodeNames?.[edge.toService] ?? edge.toService;
+                const guidance = span?.circuitOpen
+                  ? `The caller is skipping this connection. Check whether ${target} is reachable and can handle the load.`
+                  : status === 429
+                    ? "Check the destination's rate limit against the traffic required by the exercise."
+                    : status === 503
+                      ? "Compare the destination's incoming demand with its maximum capacity. Decide what to change, then check dropped traffic and p95."
+                      : "Check whether the destination has running pods and whether the configured latency is causing a timeout.";
+                onInspectFault?.(service, guidance);
+              };
               const badgeWidth = wireLabel ? Math.max(42, wireLabel.length * 6 + 12) : 0;
               const targetReplicas = resolveLiveReplicas(edge.toService);
               const mx = (from.x + to.x) / 2;
@@ -2060,13 +2046,21 @@ export function StudioObservability({
                   onPointerDown={(event) => {
                     if (event.button === 0) event.stopPropagation();
                   }}
-                  onClick={() => {
+                  onClick={(event) => {
+                    if ((event.target as Element).closest("[data-studio-wire-hint]")) {
+                      inspectFault();
+                      return;
+                    }
+                    if (!wireSelected) onSound?.("select");
                     if (onDisconnect) setSelectedWire({ from: edge.fromService, to: edge.toService });
                     else setTraceId(edge.traceId);
                   }}
                   onKeyDown={(event) => {
                     if (!onDisconnect) return;
-                    if (event.key === "Enter" || event.key === " ") {
+                    if (event.key === "?" && showFaultHint) {
+                      event.preventDefault();
+                      inspectFault();
+                    } else if (event.key === "Enter" || event.key === " ") {
                       event.preventDefault();
                       setSelectedWire({ from: edge.fromService, to: edge.toService });
                     } else if (wireSelected && (event.key === "Delete" || event.key === "Backspace")) {
@@ -2076,9 +2070,9 @@ export function StudioObservability({
                       setSelectedWire(null);
                     }
                   }}
-                  className="group cursor-pointer"
+                  className="group cursor-pointer outline-none"
                 >
-                                    <title>
+                  <title>
                     {span?.operationName || wireName}
                     {latencyLabel ? ` · ${simulated ? "Simulated latency" : "Trace duration"}: ${latencyLabel}` : ""}
                     {typeof status === "number" ? ` · HTTP ${status}` : ""}
@@ -2090,12 +2084,12 @@ export function StudioObservability({
                     fill="none"
                     stroke={edgeColor}
                     pointerEvents="none"
-                    className="group-hover:stroke-sky-300 group-focus-visible:stroke-sky-300"
+                    className="group-hover:stroke-sky-300 group-focus-visible:stroke-sky-300 group-focus-visible:stroke-[3] group-focus-visible:opacity-100"
                     strokeDasharray={edgeSevered ? "6 4" : undefined}
                     strokeWidth={wireSelected ? "3" : edgeSevered ? "2.0" : "1.5"}
                     opacity={wireSelected || edgeSevered ? "0.95" : "0.6"}
                   />
-                  {renderWireArrow(from, to, wireSelected || edgeSevered ? edgeColor : "#94a3b8", true)}
+                  {renderWireArrow(from, to, getNodeLabel(nodeNames?.[edge.toService] ?? edge.toService, view), wireSelected || edgeSevered ? edgeColor : "#94a3b8", true, view === "3D" ? sculptureScale(targetReplicas) : 1)}
                   {wireLabel && (
                     <g data-studio-wire-metric>
                       <rect
@@ -2119,6 +2113,13 @@ export function StudioObservability({
                       >
                         {wireLabel}
                       </text>
+                      {showFaultHint && (
+                        <g data-studio-wire-hint className="cursor-help" transform={`translate(${mx + badgeWidth / 2 + 11} ${my})`}>
+                          <title>Inspect this connection fault</title>
+                          <circle r="8" fill="#291622" stroke="#fda4af" />
+                          <text y="3.5" textAnchor="middle" fill="#fda4af" fontSize="10" fontWeight="700">?</text>
+                        </g>
+                      )}
                     </g>
                   )}
                   {/* Static snapshot anchor dots (only in legacy non-canvasOnly mode) + Live animated motion pulse */}
@@ -2148,13 +2149,16 @@ export function StudioObservability({
               const archetype = classifyArchetype(name, element?.elementType, element?.layer);
               const isAffected = affected.has(elId ?? "");
               const isSelected = selected === name;
+              function selectNode() {
+                if (!isSelected) onSound?.("select");
+                onSelect(name);
+              }
               const isDropTarget = dropTargetNode === name ||
                 (linkPreview?.target === name && linkPreview.from !== name);
               const isStopped = live !== undefined && live.runningReplicas === 0;
-              const activePods = Math.min(live?.runningReplicas ?? 0, 8);
+              const scale = sculptureScale(live?.runningReplicas ?? 1);
               const nodeName = nodeNames?.[name] ?? name;
-              const characters = Array.from(nodeName);
-              const displayName = characters.length > 20 ? characters.slice(0, 19).join("") + "…" : nodeName;
+              const { text: displayName, width: labelWidth, y: labelY, height: labelHeight } = getNodeLabel(nodeName, view);
 
 
               const theme = getArchetypeTheme(
@@ -2167,7 +2171,6 @@ export function StudioObservability({
 
               // Clean SE-Standard 3D Sculptures (NO base tray / pedestal) + Floating Pill Name Tag
               if (view === "3D") {
-                const labelWidth = Math.max(114, Math.min(172, displayName.length * 7 + 50));
                 const pillBadgeText = isStopped
                   ? "0"
                   : `×${live ? live.runningReplicas : 1}`;
@@ -2183,7 +2186,7 @@ export function StudioObservability({
                     style={{ outline: "none" }}
                     onPointerDown={(event) => {
                       if (event.button !== 0 || activePointer.current !== null) return;
-                      onSelect(name);
+                      selectNode();
                       event.stopPropagation();
                       event.preventDefault();
                       activePointer.current = event.pointerId;
@@ -2201,7 +2204,7 @@ export function StudioObservability({
                       setDraggingNode(name);
                     }}
                     onClick={() => {
-                      onSelect(name);
+                      selectNode();
                     }}
                     onDragOver={(event) => {
                       if (busy) return;
@@ -2226,29 +2229,24 @@ export function StudioObservability({
                     onKeyDown={(event) => {
                       if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
-                        onSelect(name);
+                        selectNode();
                       }
                     }}
                     className="cursor-grab outline-none focus:outline-none active:cursor-grabbing"
                   >
                     {/* Pure 3D Software Engineering Sculpture (no base tray underneath) */}
                     <title>{nodeName}</title>
-                    {render3DSeNodeSculpture(
-                      name,
-                      archetype,
-                      point.x,
-                      point.y,
-                      activePods,
-                      isStopped,
-                      theme,
-                    )}
+                    <g data-studio-sculpture transform={`translate(${point.x} ${point.y + 8}) scale(${scale}) translate(${-point.x} ${-point.y - 8})`}>
+                      {render3DSeNodeSculpture(name, archetype, point.x, point.y, isStopped, theme)}
+                    </g>
 
                     {/* Sleek Floating Pill Name Tag directly below the 3D Sculpture */}
                     <rect
+                      data-studio-node-label
                       x={point.x - labelWidth / 2}
-                      y={point.y + 10}
+                      y={point.y + labelY}
                       width={labelWidth}
-                      height="24"
+                      height={labelHeight}
                       rx="12"
                       fill="#0b111e"
                       fillOpacity="0.96"
@@ -2301,12 +2299,11 @@ export function StudioObservability({
                     >
                       {pillBadgeText}
                     </text>
-                    {renderConnectPort(name, point.x + 29, point.y - 10)}
+                    {renderConnectPort(name, point.x + 29 * scale, point.y + 8 - 18 * scale)}
                   </g>
                 );
               }
 
-              const labelWidth = Math.max(86, displayName.length * 6.5 + 34);
               return (
                 <g
                   key={name}
@@ -2318,7 +2315,7 @@ export function StudioObservability({
                   style={{ outline: "none" }}
                   onPointerDown={(event) => {
                     if (event.button !== 0 || activePointer.current !== null) return;
-                    onSelect(name);
+                    selectNode();
                     event.stopPropagation();
                     event.preventDefault();
                     activePointer.current = event.pointerId;
@@ -2336,7 +2333,7 @@ export function StudioObservability({
                     setDraggingNode(name);
                   }}
                   onClick={() => {
-                    onSelect(name);
+                    selectNode();
                   }}
                   onDragOver={(event) => {
                     if (busy) return;
@@ -2361,7 +2358,7 @@ export function StudioObservability({
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") {
                       event.preventDefault();
-                      onSelect(name);
+                      selectNode();
                     }
                   }}
                   className="group cursor-grab outline-none active:cursor-grabbing"
@@ -2376,7 +2373,7 @@ export function StudioObservability({
                         strokeDasharray={isDropTarget ? "4 3" : undefined} />
                     )}
                     {render2DServiceSymbol(name, archetype, isStopped)}
-                    <rect x={-labelWidth / 2} y="18" width={labelWidth} height="20" rx="10"
+                    <rect data-studio-node-label x={-labelWidth / 2} y={labelY} width={labelWidth} height={labelHeight} rx="10"
                       fill="#0b1220" stroke={isSelected || isDropTarget || isStopped ? theme.stroke : "#334155"} />
                     <text x="-13" y="31.5" textAnchor="middle" fill="#f8fafc" fontSize="11" fontWeight="600">
                       {displayName}
@@ -2424,10 +2421,11 @@ export function StudioObservability({
             {linkPreview && (() => {
               const from = positions.get(linkPreview.from);
               if (!from) return null;
+              const scale = sculptureScale(resolveLiveReplicas(linkPreview.from));
               return <line
                 data-studio-link-preview
-                x1={from.x + (view === "3D" ? 29 : 34)}
-                y1={from.y - (view === "3D" ? 10 : 9)}
+                x1={from.x + (view === "3D" ? 29 * scale : 34)}
+                y1={from.y + (view === "3D" ? 8 - 18 * scale : -9)}
                 x2={linkPreview.x}
                 y2={linkPreview.y}
                 stroke="#7dd3fc"
@@ -2727,10 +2725,10 @@ export function StudioObservability({
   );
 }
 
-export async function captureStudioImage(svg: SVGSVGElement): Promise<string> {
+export async function captureStudioImage(svg: SVGSVGElement, wholeDiagram = false): Promise<string> {
   const styles = getComputedStyle(svg);
   const url = URL.createObjectURL(
-    new Blob([serializeStudioGraph(svg)], { type: "image/svg+xml;charset=utf-8" }),
+    new Blob([serializeStudioGraph(svg, wholeDiagram)], { type: "image/svg+xml;charset=utf-8" }),
   );
   try {
     const image = new Image();
@@ -2740,12 +2738,12 @@ export async function captureStudioImage(svg: SVGSVGElement): Promise<string> {
       image.src = url;
     });
     const canvas = document.createElement("canvas");
-    canvas.width = 1400;
-    canvas.height = 920;
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
     const context = canvas.getContext("2d");
     if (!context) throw new Error("Could not render Studio snapshot");
     context.fillStyle = styles.backgroundColor;
-    context.fillRect(0, 0, 1400, 920);
+    context.fillRect(0, 0, canvas.width, canvas.height);
     context.drawImage(image, 0, 0);
     return canvas.toDataURL("image/png");
   } finally {
@@ -2753,7 +2751,7 @@ export async function captureStudioImage(svg: SVGSVGElement): Promise<string> {
   }
 }
 
-function serializeStudioGraph(svg: SVGSVGElement): string {
+export function serializeStudioGraph(svg: SVGSVGElement, wholeDiagram = false): string {
   const clone = svg.cloneNode(true) as SVGSVGElement;
   const styles = getComputedStyle(svg);
   clone.setAttribute(
@@ -2762,6 +2760,39 @@ function serializeStudioGraph(svg: SVGSVGElement): string {
   );
   clone.setAttribute("width", "1400");
   clone.setAttribute("height", "920");
+  if (wholeDiagram) {
+    const scene = svg.querySelector<SVGGElement>("[data-studio-scene]");
+    const sceneClone = clone.querySelector<SVGGElement>("[data-studio-scene]");
+    if (scene && sceneClone) {
+      const boxes = Array.from(scene.children)
+        .filter((child): child is SVGGraphicsElement =>
+          child instanceof SVGGraphicsElement &&
+          !child.matches("[data-studio-background], [data-studio-link-preview], [data-studio-cut-wire]"),
+        )
+        .map((child) => child.getBBox())
+        .filter((box) => box.width || box.height);
+      if (boxes.length) {
+        const padding = 36;
+        const x = Math.min(...boxes.map((box) => box.x)) - padding;
+        const y = Math.min(...boxes.map((box) => box.y)) - padding;
+        const width = Math.max(...boxes.map((box) => box.x + box.width)) + padding - x;
+        const height = Math.max(...boxes.map((box) => box.y + box.height)) + padding - y;
+        const scale = Math.min(2, 1920 / Math.max(width, height));
+        clone.setAttribute("viewBox", `${x} ${y} ${width} ${height}`);
+        clone.setAttribute("width", String(Math.ceil(width * scale)));
+        clone.setAttribute("height", String(Math.ceil(height * scale)));
+        sceneClone.removeAttribute("transform");
+        const background = sceneClone.querySelector("[data-studio-background]");
+        if (background) {
+          for (const [key, value] of Object.entries({ x, y, width, height })) {
+            background.setAttribute(key, String(value));
+          }
+        }
+      }
+      sceneClone.querySelectorAll("[data-studio-cut-wire], [data-studio-link-preview], [data-studio-connect-port], circle:has(animateMotion)")
+        .forEach((element) => element.remove());
+    }
+  }
   clone.querySelectorAll("[fill],[stroke]").forEach((element) => {
     for (const attribute of ["fill", "stroke"]) {
       const variable = element.getAttribute(attribute)?.match(/^var\((--[\w-]+)\)$/);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
@@ -27,11 +27,11 @@ import {
   Search,
   Send,
   Server,
-  ShieldAlert,
   ShieldCheck,
   ShoppingCart,
-  Sparkles,
   Trash2,
+  Volume2,
+  VolumeX,
   Workflow,
   Zap,
 } from "lucide-react";
@@ -45,9 +45,18 @@ import type { Response } from "@/lib/api/contracts";
 import {
   StudioObservability,
   captureStudioImage,
+  serializeStudioGraph,
   type StudioQuickAction,
 } from "./studio-observability";
 import { StudioControls } from "./studio-controls";
+import { useStudioSound } from "./studio-sound";
+import {
+  downloadStudioEvidence,
+  loadStudioEvidence,
+  storeStudioEvidence,
+  StudioEvidenceReplay,
+  type EvidenceFrame,
+} from "./studio-evidence";
 
 type StudioData = Response<"studioState">;
 
@@ -493,13 +502,26 @@ type LocalSnapshot = {
   capturedAt: string;
   explanation: string;
   digest: string;
-  imageData?: string;
+  imageData: string;
+  frame: EvidenceFrame;
+  replay: EvidenceFrame[];
   replicasByService: Record<string, number>;
   nodeNames: Record<string, string>;
   connections: Array<{ from: string; to: string; protocol: string }>;
   totalInstances: number;
   totalRamMiB: number;
 };
+
+const CLUSTER_SCENARIOS = [
+  { id: "FLASH_SALE", title: "Flash sale", detail: "Send 4× the current request rate to the gateway." },
+  { id: "DB_OUTAGE", title: "Database outage", detail: "Stop all replicas of a database node." },
+  { id: "SLOW_DB", title: "Slow database queries", detail: "Add 350 ms of latency to a running database." },
+  { id: "RATE_LIMIT", title: "Gateway throttling", detail: "Send at least 1,200 req/s with a ceiling of 600 req/s." },
+  { id: "POD_FAILURE", title: "Single pod failure", detail: "Remove one replica from the selected service." },
+  { id: "NETWORK_DELAY", title: "Slow upstream dependency", detail: "Add 700 ms of latency to a running dependency." },
+  { id: "CPU_PRESSURE", title: "CPU quota reduction", detail: "Halve the selected service's CPU per pod, down to 0.25 vCPU." },
+  { id: "SCALE_OUT", title: "Scale out a service", detail: "Double the selected service's replicas, up to 256." },
+] as const;
 
 type NodeSimConfig = {
   instanceTier: "S" | "M" | "L" | "XL" | "CUSTOM";
@@ -523,11 +545,15 @@ const DEFAULT_NODE_CONFIG: NodeSimConfig = {
   trafficMult: 1,
   injectedLatencyMs: 0,
   rateLimitRps: 1200,
-  circuitBreaker: true,
+  circuitBreaker: false,
   autoScaleHpa: false,
   readCache: false,
   rateLimiter: false,
 };
+
+function sandboxPodCapacity(config: NodeSimConfig) {
+  return Math.max(80, Math.round(config.vcpuPerPod * (config.readCache ? 650 : 400)));
+}
 
 function renderComponentIcon(keyOrName: string, className = "size-4") {
   const n = keyOrName.toLowerCase();
@@ -563,6 +589,7 @@ function renderComponentIcon(keyOrName: string, className = "size-4") {
 }
 
 export function StudioWorkbench() {
+  const { soundEnabled, toggleSound, playSound } = useStudioSound();
   const { t } = useLocale();
   const params = useSearchParams();
   const initialSessionId = params.get("session") ?? "";
@@ -582,6 +609,13 @@ export function StudioWorkbench() {
     template.services[1] ?? "order-service",
   );
   const [newNodeName, setNewNodeName] = useState("");
+  const [clusterScenario, setClusterScenario] = useState<(typeof CLUSTER_SCENARIOS)[number]["id"]>("FLASH_SALE");
+  const [scenarioMessage, setScenarioMessage] = useState("");
+  const [wireHint, setWireHint] = useState<{ service: string; detail: string } | null>(null);
+  const wireHintRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (wireHint) wireHintRef.current?.scrollIntoView({ block: "nearest" });
+  }, [wireHint]);
   const [nodeNames, setNodeNames] = useState<Record<string, string>>({});
   const [editingName, setEditingName] = useState<string | null>(null);
   const [nameError, setNameError] = useState<{ service: string; message: string } | null>(null);
@@ -597,6 +631,11 @@ export function StudioWorkbench() {
   const [localSnapshots, setLocalSnapshots] = useState<LocalSnapshot[]>([]);
   const [snapshotNote, setSnapshotNote] = useState("");
   const [capturing, setCapturing] = useState(false);
+  const [recordedSteps, setRecordedSteps] = useState(0);
+  const [snapshotError, setSnapshotError] = useState("");
+  const replayCapture = useRef<{
+    started: number; frames: EvidenceFrame[]; lastCapture: unknown; lastScenario: string;
+  } | null>(null);
   const [liveSessionId, setLiveSessionId] = useState(initialSessionId);
   const [bottomTab, setBottomTab] = useState<"MATRIX" | "STATS" | "SNAPSHOTS">("MATRIX");
   const [leftWidth, setLeftWidth] = useState(286);
@@ -649,6 +688,7 @@ export function StudioWorkbench() {
 
   function switchTemplate(nextId: string) {
     const found = STUDIO_TEMPLATES.find((item) => item.id === nextId) ?? STUDIO_TEMPLATES[0]!;
+    playSound("select");
     setTemplateId(found.id);
     setCustomServices(found.services);
     const initialReps = Object.fromEntries(found.services.map((s) => [s, 1]));
@@ -656,6 +696,8 @@ export function StudioWorkbench() {
     setBaselineReplicasMap(initialReps);
     setNodeConfigs({});
     setNodeNames({});
+    setScenarioMessage("");
+    setWireHint(null);
     setEditingName(null);
     setNameError(null);
     setExtraEdges([]);
@@ -669,28 +711,27 @@ export function StudioWorkbench() {
   }
 
   function updateNodeConfig(svc: string, patch: Partial<NodeSimConfig>) {
-    setNodeConfigs((prev) => {
-      const current = prev[svc] ?? DEFAULT_NODE_CONFIG;
-      const next: NodeSimConfig = { ...current, ...patch };
-      if (patch.targetRps !== undefined && patch.trafficMult === undefined) {
-        next.trafficMult = Math.max(0.1, Number((patch.targetRps / 240).toFixed(2)));
-      } else if (patch.trafficMult !== undefined && patch.targetRps === undefined) {
-        next.targetRps = Math.round(patch.trafficMult * 240);
-      }
-      // If Auto-Scale HPA is enabled, dynamically compute required pods from targetRps & vCPU capacity
-      if (next.autoScaleHpa) {
-        const perPodCap = Math.max(100, next.vcpuPerPod * (next.readCache ? 650 : 400));
-        const neededPods = Math.max(1, Math.min(256, Math.ceil(next.targetRps / perPodCap)));
-        if ((replicasMap[svc] ?? 1) < neededPods) {
-          setReplicasMap((rm) => ({ ...rm, [svc]: neededPods }));
-        }
-      }
-      return { ...prev, [svc]: next };
-    });
+    const next = { ...getNodeConfig(svc), ...patch };
+    if (patch.targetRps !== undefined && patch.trafficMult === undefined) {
+      next.trafficMult = Math.max(0.1, Number((patch.targetRps / 240).toFixed(2)));
+    } else if (patch.trafficMult !== undefined && patch.targetRps === undefined) {
+      next.targetRps = Math.round(patch.trafficMult * 240);
+    }
+    setNodeConfigs((prev) => ({ ...prev, [svc]: next }));
+    if (next.autoScaleHpa) {
+      const demand = next.rateLimiter ? Math.min(next.targetRps, next.rateLimitRps) : next.targetRps;
+      const neededPods = Math.min(256, Math.max(1, Math.ceil(demand / sandboxPodCapacity(next))));
+      setReplicasMap((prev) => {
+        const current = prev[svc] ?? 1;
+        return current > 0 && current < neededPods ? { ...prev, [svc]: neededPods } : prev;
+      });
+    }
   }
 
   function connectOutboundEdge(from: string, to: string) {
     if (from === to || !customServices.includes(from) || !customServices.includes(to)) return;
+    if (activeEdges.some((edge) => edge.from === from && edge.to === to)) return;
+    playSound("connect");
     setRemovedEdges((prev) => prev.filter((key) => key !== `${from}->${to}`));
     if (template.edges.some((edge) => edge.from === from && edge.to === to)) return;
 
@@ -706,6 +747,7 @@ export function StudioWorkbench() {
   }
 
   function disconnectOutboundEdge(from: string, to: string) {
+    playSound("disconnect");
     if (template.edges.some((edge) => edge.from === from && edge.to === to)) {
       const key = `${from}->${to}`;
       setRemovedEdges((prev) => prev.includes(key) ? prev : [...prev, key]);
@@ -724,6 +766,7 @@ export function StudioWorkbench() {
           ? Math.max(1, before || 1)
           : Math.max(1, Math.min(256, cmd.replicas ?? 2));
 
+    if (after !== before) playSound(after === 0 ? "warning" : "scale");
     setReplicasMap((prev) => ({ ...prev, [svc]: after }));
     setSelectedService(svc);
 
@@ -782,6 +825,7 @@ export function StudioWorkbench() {
       setNameError({ service, message: t(!name ? "Enter a node name." : "A node already uses this name.") });
       return;
     }
+    if (name !== nodeLabel(service)) playSound("select");
     setNodeNames((prev) => ({ ...prev, [service]: name }));
     setEditingName(null);
     setNameError(null);
@@ -806,6 +850,7 @@ export function StudioWorkbench() {
       clean = `${cleanBase}-${suffix}`;
       suffix += 1;
     }
+    playSound("place");
     setCustomServices((prev) => [...prev, clean]);
     let label = requestedName || clean;
     let labelSuffix = 2;
@@ -823,6 +868,7 @@ export function StudioWorkbench() {
 
   function removeCustomBlock(svc: string) {
     if (customServices.length <= 2) return;
+    playSound("disconnect");
     setExtraEdges((prev) => prev.filter((edge) => edge.from !== svc && edge.to !== svc));
     setRemovedEdges((prev) => [...new Set([
       ...prev,
@@ -866,7 +912,7 @@ export function StudioWorkbench() {
       const baseRamVal = template.baseRam[svc] ?? catalogMatch?.baseRam ?? 220;
 
       // Dynamic capacity & utilization physics driven by user-defined vCPU, RAM, and targetRps
-      const podCapacityRps = Math.max(80, Math.round(cfg.vcpuPerPod * (cfg.readCache ? 650 : 400)));
+      const podCapacityRps = sandboxPodCapacity(cfg);
       const maxCapacityRps = Math.max(0, now) * podCapacityRps;
       const demandRps = Math.max(0, cfg.targetRps);
       const effectiveRps = cfg.rateLimiter ? Math.min(cfg.rateLimitRps, demandRps) : demandRps;
@@ -900,29 +946,15 @@ export function StudioWorkbench() {
         .find((ds) => {
           const dsReps = replicasMap[ds] ?? 1;
           const dsCfg = nodeConfigs[ds] ?? DEFAULT_NODE_CONFIG;
-          const dsCap = dsReps * Math.max(80, Math.round(dsCfg.vcpuPerPod * (dsCfg.readCache ? 650 : 400)));
+          const dsCap = dsReps * sandboxPodCapacity(dsCfg);
           return effectiveRps > dsCap * 0.85;
         });
-      const bottleneckRecommendedPods = bottleneckTarget
-        ? (() => {
-            const dsCfg = nodeConfigs[bottleneckTarget] ?? DEFAULT_NODE_CONFIG;
-            const dsPodCap = Math.max(80, Math.round(dsCfg.vcpuPerPod * (dsCfg.readCache ? 650 : 400)));
-            return Math.max(2, Math.min(256, Math.ceil(effectiveRps / (dsPodCap * 0.75))));
-          })()
-        : 0;
-      const selfRecommendedPods = Math.max(
-        1,
-        Math.min(256, Math.ceil(demandRps / (podCapacityRps * 0.75))),
-      );
-
       const queuePenaltyMs =
         utilizationPct > 80 ? Math.round(Math.pow(utilizationPct - 80, 1.38) * 1.6) : 0;
-      const baseP95 = Math.max(
-        6,
-        Math.round((42 * Math.sqrt(Math.max(0.2, rpsPerPod / 240))) / Math.sqrt(Math.max(0.5, cfg.vcpuPerPod))),
-      );
-      const cachedP95 = cfg.readCache ? Math.max(4, Math.round(baseP95 * 0.62)) : baseP95;
-      const p95Now = now <= 0 ? 980 : cachedP95 + queuePenaltyMs + cfg.injectedLatencyMs;
+      // Request processing approaches a fixed service cost as traffic per pod drops.
+      const baseP95 = 6 + (36 * Math.sqrt(rpsPerPod / 240)) / Math.sqrt(Math.max(0.5, cfg.vcpuPerPod));
+      const cachedP95 = cfg.readCache ? 4 + (baseP95 - 6) * 0.62 : baseP95;
+      const p95Now = now <= 0 ? 980 : Math.round((cachedP95 + queuePenaltyMs + cfg.injectedLatencyMs) * 10) / 10;
 
       return {
         serviceName: svc,
@@ -944,10 +976,8 @@ export function StudioWorkbench() {
         podCapacityRps,
         utilizationPct,
         droppedRps,
-        selfRecommendedPods,
         p95Now,
         bottleneckTarget,
-        bottleneckRecommendedPods,
         cfg,
       };
     });
@@ -967,6 +997,7 @@ export function StudioWorkbench() {
     const simulatedTimeoutMs = 1000;
     const spans = activeEdges.flatMap((edge, index) => {
       if ((replicasMap[edge.from] ?? 1) <= 0) return [];
+      const source = rowsByService.get(edge.from)!;
       const target = rowsByService.get(edge.to)!;
       const isHttp = /^HTTPS?$/i.test(edge.protocol);
       const stopped = target.replicasNow === 0;
@@ -974,11 +1005,15 @@ export function StudioWorkbench() {
         target.demandRps > target.cfg.rateLimitRps;
       const overloaded = !stopped && target.effectiveRps > target.maxCapacityRps;
       const timedOut = !stopped && target.p95Now >= simulatedTimeoutMs;
-      const httpStatusCode = !isHttp || stopped ? null
+      // Sandbox has no rolling error window. An unhealthy downstream opens
+      // the caller's circuit immediately and recovery closes it automatically.
+      const circuitOpen = source.cfg.circuitBreaker && !throttled && (stopped || overloaded || timedOut);
+      const httpStatusCode = !isHttp || stopped || circuitOpen ? null
         : throttled ? 429
           : overloaded ? 503
             : timedOut ? null : 200;
-      const failure = stopped ? "Destination unavailable"
+      const failure = circuitOpen ? "Circuit open at caller: upstream call skipped"
+        : stopped ? "Destination unavailable"
         : throttled ? "Rate limit exceeded"
           : overloaded ? "Destination overloaded"
             : timedOut ? `Upstream timed out (simulated ${simulatedTimeoutMs} ms budget)` : null;
@@ -990,8 +1025,8 @@ export function StudioWorkbench() {
         operationName: `${edge.protocol} ${nodeNames[edge.from] ?? edge.from} → ${nodeNames[edge.to] ?? edge.to}${failure ? ` · ${failure}` : ""}`,
         spanKind: "CLIENT",
         spanStatus: failure ? "ERROR" : "OK",
-        httpStatusCode,
-        durationNanoseconds: stopped ? null : String(Math.min(target.p95Now, simulatedTimeoutMs) * 1_000_000),
+        httpStatusCode, circuitOpen,
+        durationNanoseconds: circuitOpen ? "1000000" : stopped ? null : String(Math.round(Math.min(target.p95Now, simulatedTimeoutMs) * 1_000_000)),
       };
     });
 
@@ -1070,14 +1105,15 @@ export function StudioWorkbench() {
       : 0;
   const healthyServicesCount = deploymentRows.filter((r) => r.replicasNow > 0).length;
   const downServicesCount = deploymentRows.length - healthyServicesCount;
-  const bottleneckCount = deploymentRows.filter(
-    (r) => Boolean(r.bottleneckTarget) || r.utilizationPct > 90,
-  ).length;
   const totalVcpuAllocated = deploymentRows.reduce((sum, r) => sum + r.totalVcpu, 0);
   const maxServerVcpu = Math.max(16, Math.ceil(totalVcpuAllocated / 16) * 16);
   const maxServerRamMiB = Math.max(4096, Math.ceil(totalRamMiB / 4096) * 4096);
   const peakCpuRow = [...deploymentRows].sort((a, b) => b.perPodCpu - a.perPodCpu)[0];
-  const clusterRps = deploymentRows.reduce((sum, r) => sum + r.effectiveRps, 0);
+  const clusterDemandRps = deploymentRows.reduce((sum, row) => sum + row.demandRps, 0);
+  const clusterDroppedRps = deploymentRows.reduce((sum, row) => sum + row.droppedRps, 0);
+  const servicesUnderPressure = deploymentRows
+    .filter((row) => row.replicasNow === 0 || row.droppedRps > 0 || row.utilizationPct > 90 || row.bottleneckTarget)
+    .sort((a, b) => Number(a.replicasNow > 0) - Number(b.replicasNow > 0) || b.droppedRps - a.droppedRps || b.utilizationPct - a.utilizationPct);
   const avgClusterP95 =
     healthyServicesCount > 0
       ? Math.round(
@@ -1101,29 +1137,206 @@ export function StudioWorkbench() {
         : 0.02;
   const clusterSla = Number(Math.max(0, 100 - clusterErrorRate).toFixed(2));
 
+  function applyClusterScenario() {
+    const running = deploymentRows.filter((row) => row.replicasNow > 0);
+    const gateway = running.find((row) => row.serviceName === selectedService && row.type === "API_GATEWAY")
+      ?? running.find((row) => row.type === "API_GATEWAY");
+    const databaseCandidates = running.filter((row) =>
+      row.type === "DATABASE" && !/redis|cache|s3|storage|elastic|search/.test(row.serviceName),
+    );
+    const database = databaseCandidates.find((row) => row.serviceName === selectedService)
+      ?? databaseCandidates[0];
+    const dependency = running.find((row) => selectedRow?.outboundTargets.includes(row.serviceName))
+      ?? running.find((row) => activeEdges.some((edge) => edge.to === row.serviceName));
+    let target = selectedRow?.replicasNow ? selectedRow : undefined;
+    let patch: Partial<NodeSimConfig> | undefined;
+    let replicas: number | undefined;
+    let unavailable = "Select a running service to apply this scenario.";
+    let summary = "";
+
+    switch (clusterScenario) {
+      case "FLASH_SALE": {
+        target = gateway;
+        unavailable = "Add or start a gateway to apply this scenario.";
+        if (!target) break;
+        const demand = Math.min(1_000_000, Math.max(1, target.demandRps) * 4);
+        patch = { targetRps: demand };
+        summary = `incoming demand set to ${demand.toLocaleString()} req/s`;
+        break;
+      }
+      case "DB_OUTAGE":
+        target = database;
+        unavailable = "Add or start a database to apply this scenario.";
+        replicas = 0;
+        summary = "all database replicas stopped";
+        break;
+      case "SLOW_DB":
+        target = database;
+        unavailable = "Add or start a database to apply this scenario.";
+        patch = { injectedLatencyMs: 350 };
+        summary = "350 ms query delay";
+        break;
+      case "RATE_LIMIT":
+        target = gateway;
+        unavailable = "Add or start a gateway to apply this scenario.";
+        patch = { targetRps: Math.max(1200, target?.demandRps ?? 0), rateLimiter: true, rateLimitRps: 600 };
+        summary = "rate limit set to 600 req/s";
+        break;
+      case "POD_FAILURE":
+        if (!target) break;
+        replicas = target.replicasNow - 1;
+        summary = `one pod lost, ${replicas} remaining`;
+        break;
+      case "NETWORK_DELAY":
+        target = dependency;
+        unavailable = "Connect a running dependency to apply this scenario.";
+        patch = { injectedLatencyMs: 700 };
+        summary = "700 ms upstream delay";
+        break;
+      case "CPU_PRESSURE":
+        if (!target) break;
+        if (target.cfg.vcpuPerPod <= 0.25) {
+          setScenarioMessage(`${nodeLabel(target.serviceName)} is already at the 0.25 vCPU minimum.`);
+          return;
+        }
+        patch = { vcpuPerPod: Math.max(0.25, target.cfg.vcpuPerPod / 2), instanceTier: "CUSTOM" };
+        summary = `CPU quota reduced to ${patch.vcpuPerPod} vCPU per pod`;
+        break;
+      case "SCALE_OUT":
+        if (!target) break;
+        if (target.replicasNow >= 256) {
+          setScenarioMessage(`${nodeLabel(target.serviceName)} is already at the 256-pod limit.`);
+          return;
+        }
+        replicas = Math.min(256, target.replicasNow * 2);
+        summary = `scaled from ${target.replicasNow} to ${replicas} pods`;
+        break;
+    }
+
+    if (!target) {
+      setScenarioMessage(unavailable);
+      return;
+    }
+    playSound(clusterScenario === "DB_OUTAGE" || clusterScenario === "POD_FAILURE" ? "warning" : "scenario");
+    if (patch) updateNodeConfig(target.serviceName, patch);
+    if (replicas !== undefined) {
+      applySandboxAction({
+        action: replicas === 0 ? "STOP" : "SCALE",
+        service: target.serviceName,
+        replicas,
+      });
+    }
+    setSelectedService(target.serviceName);
+    setScenarioMessage(`${nodeLabel(target.serviceName)} · ${summary}.`);
+  }
+
+  useEffect(() => {
+    let current = true;
+    void loadStudioEvidence<LocalSnapshot>().then((saved) => {
+      if (!current || !saved.length) return;
+      setLocalSnapshots((existing) => [
+        ...new Map([...saved, ...existing].map((snapshot) => [snapshot.id, snapshot])).values(),
+      ].sort((a, b) => a.capturedAt.localeCompare(b.capturedAt)));
+    }).catch(() => {
+      if (current) setSnapshotError("Browser storage is unavailable. Download evidence before leaving Studio.");
+    });
+    return () => { current = false; };
+  }, []);
+
+  const captureEvidenceFrame = useCallback((label: string, elapsedMs = 0): EvidenceFrame | null => {
+    const graph = workspaceRef.current?.querySelector<SVGSVGElement>("svg[data-studio-graph]");
+    if (!graph) return null;
+    return {
+      elapsedMs, label, svg: serializeStudioGraph(graph, true),
+      totals: {
+        pods: totalRunningPods,
+        demandRps: clusterDemandRps,
+        handledRps: clusterDemandRps - clusterDroppedRps,
+        droppedRps: clusterDroppedRps,
+      },
+      nodes: deploymentRows.map((row) => ({
+        id: row.serviceName,
+        name: nodeNames[row.serviceName] ?? row.serviceName,
+        type: row.type,
+        replicas: row.replicasNow,
+        demandRps: row.demandRps,
+        capacityRps: row.maxCapacityRps,
+        droppedRps: row.droppedRps,
+        p95Ms: row.replicasNow ? row.p95Now : null,
+        configuration: { ...row.cfg },
+      })),
+      connections: activeEdges.map((edge) => ({ ...edge })),
+    };
+  }, [deploymentRows, activeEdges, nodeNames, totalRunningPods, clusterDemandRps, clusterDroppedRps]);
+
+  useEffect(() => {
+    const replay = replayCapture.current;
+    if (!replay || replay.lastCapture === captureEvidenceFrame) return;
+    const label = scenarioMessage && scenarioMessage !== replay.lastScenario ? scenarioMessage : "Configuration or topology changed";
+    replay.lastCapture = captureEvidenceFrame;
+    replay.lastScenario = scenarioMessage;
+    if (replay.frames.length >= 39) return;
+    const frame = captureEvidenceFrame(label, performance.now() - replay.started);
+    if (frame) {
+      replay.frames.push(frame);
+      setRecordedSteps(replay.frames.length);
+    }
+  }, [captureEvidenceFrame, scenarioMessage]);
+
+  function startReplay() {
+    const frame = captureEvidenceFrame("Initial state");
+    if (!frame) return;
+    playSound("capture");
+    replayCapture.current = { started: performance.now(), frames: [frame], lastCapture: captureEvidenceFrame, lastScenario: scenarioMessage };
+    setRecordedSteps(1);
+    setSnapshotError("");
+  }
+
+  function addReplayCheckpoint() {
+    const replay = replayCapture.current;
+    if (!replay || replay.frames.length >= 39) return;
+    const frame = captureEvidenceFrame("Manual checkpoint", performance.now() - replay.started);
+    if (frame) {
+      replay.frames.push(frame);
+      setRecordedSteps(replay.frames.length);
+    }
+  }
+
   async function captureLocalSnapshot() {
     const graph = workspaceRef.current?.querySelector<SVGSVGElement>("svg[data-studio-graph]");
+    const recording = replayCapture.current;
+    const frame = captureEvidenceFrame("Final state", recording ? performance.now() - recording.started : 0);
+    if (!graph || !frame) return;
+    const replay = recording ? [...recording.frames, frame] : [];
     setCapturing(true);
+    setSnapshotError("");
     try {
-      const imageData = graph ? await captureStudioImage(graph).catch(() => undefined) : undefined;
+      const imageData = await captureStudioImage(graph, true);
+      const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify({ frame, replay })));
+      const digest = "sha256:" + Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, "0")).join("");
       const snap: LocalSnapshot = {
-        id: `snap-${localSnapshots.length + 1}-${Date.now().toString(36)}`,
+        id: crypto.randomUUID(),
         capturedAt: new Date().toISOString(),
-        explanation:
-          snapshotNote.trim() ||
-          `${nodeLabel(selectedService)}: ${replicasMap[selectedService] ?? 1} pods (${totalRunningPods} total cluster pods)`,
-        digest: `sha256:${crypto.randomUUID().replace(/-/g, "")}`,
-        ...(imageData ? { imageData } : {}),
-        replicasByService: Object.fromEntries(customServices.map((service) => [service, replicasMap[service] ?? 1])),
-        nodeNames: Object.fromEntries(customServices.map((service) => [service, nodeLabel(service)])),
-        connections: activeEdges.map((edge) => ({ ...edge })),
-        totalInstances: totalRunningPods,
+        explanation: snapshotNote.trim() || `${template.name} · ${frame.nodes.length} nodes · ${frame.totals.pods} pods`,
+        digest, imageData, frame, replay,
+        replicasByService: Object.fromEntries(frame.nodes.map((node) => [node.id, node.replicas])),
+        nodeNames: Object.fromEntries(frame.nodes.map((node) => [node.id, node.name])),
+        connections: frame.connections,
+        totalInstances: frame.totals.pods,
         totalRamMiB,
       };
+      await storeStudioEvidence(snap).catch(() => {
+        setSnapshotError("Could not save in browser storage. Download evidence before leaving Studio.");
+      });
+      playSound("capture");
       setLocalSnapshots((prev) => [...prev, snap]);
+      replayCapture.current = null;
+      setRecordedSteps(0);
       setSnapshotNote("");
       setBottomTab("SNAPSHOTS");
       setBottomCollapsed(false);
+    } catch {
+      setSnapshotError("Could not capture the diagram. Try saving again.");
     } finally {
       setCapturing(false);
     }
@@ -1197,7 +1410,10 @@ export function StudioWorkbench() {
           <div className="inline-flex rounded-full border border-slate-800 bg-slate-900 p-0.5">
             <button
               type="button"
-              onClick={() => setMode("SANDBOX")}
+              onClick={() => {
+                if (mode !== "SANDBOX") playSound("select");
+                setMode("SANDBOX");
+              }}
               className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition ${
                 mode === "SANDBOX"
                   ? "bg-slate-100 text-slate-950 shadow-xs"
@@ -1208,7 +1424,10 @@ export function StudioWorkbench() {
             </button>
             <button
               type="button"
-              onClick={() => setMode("LIVE")}
+              onClick={() => {
+                if (mode !== "LIVE") playSound("select");
+                setMode("LIVE");
+              }}
               className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition ${
                 mode === "LIVE"
                   ? "bg-slate-100 text-slate-950 shadow-xs"
@@ -1218,6 +1437,18 @@ export function StudioWorkbench() {
               Live ({liveSessions.length})
             </button>
           </div>
+          <button
+            type="button"
+            aria-label={t("Studio sound effects")}
+            aria-pressed={soundEnabled}
+            title={soundEnabled ? t("Mute Studio sounds") : t("Enable Studio sounds")}
+            onClick={toggleSound}
+            className={`inline-flex h-7 w-7 items-center justify-center rounded border ${
+              soundEnabled ? "border-sky-500/60 text-sky-200" : "border-slate-700 text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            {soundEnabled ? <Volume2 className="size-3.5" /> : <VolumeX className="size-3.5" />}
+          </button>
           <LocaleSwitchButton />
           <AppearanceSelector />
         </div>
@@ -1268,6 +1499,37 @@ export function StudioWorkbench() {
               className="flex shrink-0 flex-col justify-between overflow-y-auto bg-[#0b101b] p-2.5"
             >
               <div className="flex min-h-0 flex-1 flex-col gap-3">
+                <section aria-labelledby="cluster-scenarios-title" className="shrink-0 space-y-2 rounded-lg border border-slate-700/80 bg-slate-900 p-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-1">
+                    <h2 id="cluster-scenarios-title" className="text-xs font-semibold text-slate-100">Cluster Scenarios</h2>
+                    <button type="button" onClick={() => switchTemplate(templateId)}
+                      className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-slate-100"
+                    >
+                      <RotateCcw className="size-3" /> Reset Cluster
+                    </button>
+                  </div>
+                  <select
+                    aria-label="Cluster scenario"
+                    value={clusterScenario}
+                    onChange={(event) => {
+                      const next = CLUSTER_SCENARIOS.find(({ id }) => id === event.target.value);
+                      if (next) setClusterScenario(next.id);
+                      setScenarioMessage("");
+                    }}
+                    className="h-7 w-full rounded-md border border-slate-700 bg-slate-950 px-2 text-xs text-slate-100"
+                  >
+                    {CLUSTER_SCENARIOS.map(({ id, title }) => <option key={id} value={id}>{title}</option>)}
+                  </select>
+                  <p className="text-[11px] text-slate-400">
+                    {CLUSTER_SCENARIOS.find(({ id }) => id === clusterScenario)?.detail}
+                  </p>
+                  <button type="button" onClick={applyClusterScenario}
+                    className="w-full rounded-md border border-sky-500/40 bg-sky-500/10 px-2 py-1 text-xs font-semibold text-sky-200 hover:bg-sky-500/20">
+                    Apply scenario
+                  </button>
+                  <p role="status" hidden={!scenarioMessage} className="break-words text-[11px] text-slate-300">{scenarioMessage}</p>
+                </section>
+
                 {/* Section A: 16-Component Functional Block Library (Smart 1/2/3/4 Column Auto-Grid) */}
                 <div className="flex min-h-0 flex-1 flex-col gap-2">
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
@@ -1281,6 +1543,24 @@ export function StudioWorkbench() {
                     placeholder="Search functional blocks..."
                     className="h-7 rounded-full border-slate-800 bg-slate-900/90 px-3 text-[11px]"
                   />
+
+                  <div className="flex gap-1.5 pt-0.5">
+                    <Input
+                      value={newNodeName}
+                      onChange={(e) => setNewNodeName(e.target.value)}
+                      placeholder="Custom block name..." maxLength={64}
+                      className="h-7 rounded-full border-slate-800 bg-slate-900/90 px-3 text-[11px]"
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      className="h-7 w-8 shrink-0 rounded-full border border-slate-800 bg-slate-900 p-0 text-slate-200 hover:bg-slate-800"
+                      onClick={() => addCustomBlock()}
+                    >
+                      <Plus className="size-3.5" />
+                    </Button>
+                  </div>
 
                   {/* Category Filter Pills (Clean Monochrome Active State) */}
                   <div className="flex flex-wrap gap-1">
@@ -1346,137 +1626,9 @@ export function StudioWorkbench() {
                     ))}
                   </div>
 
-                  <div className="flex gap-1.5 pt-0.5">
-                    <Input
-                      value={newNodeName}
-                      onChange={(e) => setNewNodeName(e.target.value)}
-                      placeholder="Custom block name..." maxLength={64}
-                      className="h-7 rounded-full border-slate-800 bg-slate-900/90 px-3 text-[11px]"
-                    />
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="secondary"
-                      className="h-7 w-8 shrink-0 rounded-full border border-slate-800 bg-slate-900 p-0 text-slate-200 hover:bg-slate-800"
-                      onClick={() => addCustomBlock()}
-                    >
-                      <Plus className="size-3.5" />
-                    </Button>
-                  </div>
+
                 </div>
 
-                {/* Section B: Compact Cluster Scenarios (Smart Auto-Grid + Unified Monochrome Slate Pills) */}
-                <div className="space-y-1.5 border-t border-slate-800/80 pt-2.5">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                    Cluster Scenarios
-                  </p>
-                  <div
-                    style={{
-                      gridTemplateColumns: `repeat(${Math.min(3, leftGridCols)}, minmax(0, 1fr))`,
-                    }}
-                    className="grid gap-1.5"
-                  >
-                    <button
-                      type="button"
-                      title="Spike cluster traffic 4×"
-                      onClick={() => {
-                        setNodeConfigs(() =>
-                          Object.fromEntries(
-                            customServices.map((s) => [
-                              s,
-                              {
-                                ...(nodeConfigs[s] ?? DEFAULT_NODE_CONFIG),
-                                targetRps: 2400,
-                                trafficMult: 10,
-                              },
-                            ]),
-                          ),
-                        );
-                        const gw = customServices[0];
-                        if (gw) {
-                          setReplicasMap((prev) => ({ ...prev, [gw]: 4 }));
-                        }
-                      }}
-                      className="flex items-center gap-1.5 rounded-full border border-slate-800 bg-slate-900/80 px-2.5 py-1.5 text-left text-[11px] font-medium text-slate-200 transition hover:border-slate-600 hover:bg-slate-800"
-                    >
-                      <Flame className="size-3.5 shrink-0 text-slate-400" />
-                      <span className="truncate">4× Surge</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      title="Stop primary database"
-                      onClick={() => {
-                        const dbNode =
-                          customServices.find((s) =>
-                            /(postgres|db|mongo|redis|sql|settlement)/.test(s.toLowerCase()),
-                          ) ?? customServices[customServices.length - 1];
-                        if (dbNode) {
-                          applySandboxAction({ action: "STOP", service: dbNode });
-                        }
-                      }}
-                      className="flex items-center gap-1.5 rounded-full border border-slate-800 bg-slate-900/80 px-2.5 py-1.5 text-left text-[11px] font-medium text-slate-200 transition hover:border-rose-500/60 hover:bg-slate-800"
-                    >
-                      <ShieldAlert className="size-3.5 shrink-0 text-rose-400/90" />
-                      <span className="truncate">DB Outage</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      title="Kill random active pod"
-                      onClick={() => {
-                        const running = customServices.filter((s) => (replicasMap[s] ?? 1) > 0);
-                        if (running.length > 0) {
-                          const pick =
-                            running[
-                              crypto.getRandomValues(new Uint32Array(1))[0]! % running.length
-                            ]!;
-                          applySandboxAction({ action: "STOP", service: pick });
-                        }
-                      }}
-                      className="flex items-center gap-1.5 rounded-full border border-slate-800 bg-slate-900/80 px-2.5 py-1.5 text-left text-[11px] font-medium text-slate-200 transition hover:border-slate-600 hover:bg-slate-800"
-                    >
-                      <Zap className="size-3.5 shrink-0 text-slate-400" />
-                      <span className="truncate">Chaos</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      title="Scale all ×4 + Enable Cache"
-                      onClick={() => {
-                        setReplicasMap(
-                          Object.fromEntries(customServices.map((s) => [s, 4])),
-                        );
-                        setNodeConfigs((prev) =>
-                          Object.fromEntries(
-                            customServices.map((s) => [
-                              s,
-                              {
-                                ...(prev[s] ?? DEFAULT_NODE_CONFIG),
-                                autoScaleHpa: true,
-                                readCache: true,
-                              },
-                            ]),
-                          ),
-                        );
-                      }}
-                      className="flex items-center gap-1.5 rounded-full border border-slate-800 bg-slate-900/80 px-2.5 py-1.5 text-left text-[11px] font-medium text-slate-200 transition hover:border-slate-600 hover:bg-slate-800"
-                    >
-                      <Sparkles className="size-3.5 shrink-0 text-slate-400" />
-                      <span className="truncate">×4 HA Scale</span>
-                    </button>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => switchTemplate(templateId)}
-                    title={t("Reset cluster")}
-                    className="flex w-full items-center justify-center gap-1.5 rounded-full border border-slate-800 bg-slate-900/80 px-2.5 py-1.5 text-[11px] font-medium text-slate-300 transition hover:border-slate-600 hover:bg-slate-800 hover:text-white"
-                  >
-                    <RotateCcw className="size-3.5" />
-                    Reset Cluster
-                  </button>
-                </div>
               </div>
             </aside>
           )}
@@ -1505,6 +1657,12 @@ export function StudioWorkbench() {
                 onQuickAction={applySandboxAction}
                 onSpawnBlock={addCustomBlock}
                 onConnect={connectOutboundEdge}
+                onSound={playSound}
+                onInspectFault={(service, detail) => {
+                  setSelectedService(service);
+                  setRightCollapsed(false);
+                  setWireHint({ service, detail });
+                }}
                 onDisconnect={disconnectOutboundEdge}
                 nodeNames={nodeNames}
                 simulated
@@ -1583,7 +1741,7 @@ export function StudioWorkbench() {
                         : "text-slate-400 hover:text-slate-200"
                     }`}
                   >
-                    Snapshots ({localSnapshots.length})
+                    Snapshots ({localSnapshots.length}){recordedSteps > 0 && " · REC"}
                   </button>
                 </div>
 
@@ -1613,58 +1771,101 @@ export function StudioWorkbench() {
                         </div>
                         <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
                           downServicesCount ? "bg-rose-500/15 text-rose-300"
-                            : bottleneckCount ? "bg-amber-500/15 text-amber-300"
+                            : servicesUnderPressure.length ? "bg-amber-500/15 text-amber-300"
                               : "bg-emerald-500/15 text-emerald-300"
                         }`}>
                           {downServicesCount ? `${downServicesCount} down`
-                            : bottleneckCount ? `${bottleneckCount} bottleneck(s)`
+                            : servicesUnderPressure.length ? `${servicesUnderPressure.length} need attention`
                               : deploymentRows.length ? "Healthy" : "No services"}
                         </span>
                       </header>
 
-                      <div>
-                        <h3 className="mb-2 text-xs font-semibold text-slate-400">Traffic & reliability</h3>
-                        <dl className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-lg bg-slate-900/70 p-3 lg:grid-cols-5">
+                      <section aria-label="Traffic & reliability">
+                        <h3 className="mb-2 text-xs font-semibold text-slate-200">Traffic & reliability</h3>
+                        <dl className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,140px),1fr))] gap-2">
                           {[
-                            ["Traffic", `${clusterRps.toLocaleString()} req/s`],
-                            ["End-to-end p95", `${e2eP95} ms`],
-                            ["5xx errors", `${clusterErrorRate}%`],
-                            ["Estimated SLA", `${clusterSla}%`],
-                            ["Running pods", totalRunningPods.toLocaleString()],
-                          ].map(([label, value]) => (
-                            <div key={label}>
-                              <dt className="text-[11px] text-slate-400">{label}</dt>
-                              <dd className="mt-1 font-mono text-lg font-semibold tabular-nums text-slate-100">{value}</dd>
+                            { label: "Incoming demand", value: clusterDemandRps, unit: "req/s", detail: "Sum across services" },
+                            { label: "Handled traffic", value: clusterDemandRps - clusterDroppedRps, unit: "req/s", detail: "Within simulated limits" },
+                            { label: "Dropped traffic", value: clusterDroppedRps, unit: "req/s", detail: "Stopped, throttled or overloaded", warning: clusterDroppedRps > 0 },
+                            { label: "Estimated E2E p95", value: downServicesCount ? "—" : e2eP95, unit: downServicesCount ? "" : "ms", detail: "Simulation estimate" },
+                          ].map(({ label, value, unit, detail, warning }) => (
+                            <div key={label} className="rounded-lg border border-slate-700/80 bg-slate-900 p-3">
+                              <dt className="text-xs font-medium text-slate-300">{label}</dt>
+                              <dd className={`mt-1 font-mono text-lg font-semibold tabular-nums ${warning ? "text-rose-300" : "text-slate-100"}`}>
+                                {value.toLocaleString()} <span className="text-[11px] text-slate-400">{unit}</span>
+                                <span className="mt-1 block font-sans text-[11px] font-normal text-slate-400">{detail}</span>
+                              </dd>
                             </div>
                           ))}
                         </dl>
-                      </div>
+                        <dl className="mt-2 flex flex-wrap gap-x-5 gap-y-1 rounded-md border border-slate-800 px-3 py-2 text-xs">
+                          {[
+                            ["Estimated 5xx", `${clusterErrorRate}%`],
+                            ["Estimated SLA", `${clusterSla}%`],
+                            ["Running pods", totalRunningPods.toLocaleString()],
+                            ["Services down", downServicesCount.toLocaleString()],
+                          ].map(([label, value]) => (
+                            <div key={label} className="flex items-baseline gap-2">
+                              <dt className="text-slate-400">{label}</dt>
+                              <dd className="font-semibold tabular-nums text-slate-200">{value}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                      </section>
 
-                      <div>
-                        <h3 className="mb-2 text-xs font-semibold text-slate-400">Resource capacity</h3>
-                        <div className="grid gap-3 rounded-lg border border-slate-800 p-3">
+                      <section aria-label="Resource capacity">
+                        <h3 className="mb-2 text-xs font-semibold text-slate-200">Resource capacity</h3>
+                        <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,230px),1fr))] gap-2">
                           {[
                             { label: "CPU allocation", value: totalVcpuAllocated, max: maxServerVcpu, units: "vCPU",
-                              detail: `${avgCpu.toFixed(1)}% average load${peakCpuRow ? ` · Peak: ${nodeLabel(peakCpuRow.serviceName)} (${peakCpuRow.perPodCpu.toFixed(0)}%)` : ""}` },
+                              detail: `${avgCpu.toFixed(1)}% average CPU load${peakCpuRow ? ` · Highest: ${nodeLabel(peakCpuRow.serviceName)}` : ""}` },
                             { label: "RAM usage", value: Math.round(totalRamMiB), max: maxServerRamMiB, units: "MiB",
-                              detail: `${Math.max(0, maxServerRamMiB - Math.round(totalRamMiB))} MiB free` },
+                              detail: `${Math.max(0, maxServerRamMiB - Math.round(totalRamMiB)).toLocaleString()} MiB free in simulated pool` },
                           ].map(({ label, value, max, units, detail }) => (
-                            <div key={label} className="space-y-1">
-                              <div className="flex flex-wrap justify-between gap-x-2 text-xs">
-                                <span className="font-medium text-slate-200">{label}</span>
-                                <span className="font-mono tabular-nums text-slate-300">{value} / {max} {units}</span>
+                            <div key={label} className="space-y-2 rounded-lg border border-slate-700/80 bg-slate-900 p-3">
+                              <div className="flex flex-wrap items-baseline justify-between gap-1.5">
+                                <span className="text-xs font-semibold text-slate-200">{label}</span>
+                                <span className="font-mono text-xs tabular-nums text-slate-300">
+                                  {value.toLocaleString()} / {max.toLocaleString()} {units}
+                                </span>
                               </div>
                               <div className="h-1.5 overflow-hidden rounded-full bg-slate-800" aria-hidden="true">
-                                <div
-                                  className={`h-full rounded-full ${value >= max ? "bg-rose-400" : "bg-sky-400"}`}
-                                  style={{ width: `${Math.min(100, (value / max) * 100)}%` }}
-                                />
+                                <div className="h-full rounded-full bg-sky-400" style={{ width: `${Math.min(100, (value / max) * 100)}%` }} />
                               </div>
                               <p className="break-words text-[11px] text-slate-400">{detail}</p>
                             </div>
                           ))}
                         </div>
-                      </div>
+                      </section>
+
+                      {servicesUnderPressure.length > 0 && (
+                        <section aria-label="Services needing attention" className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
+                          <h3 className="mb-2 text-xs font-semibold text-amber-200">Services needing attention</h3>
+                          <ul className="space-y-1">
+                            {servicesUnderPressure.slice(0, 3).map((row) => (
+                              <li key={row.serviceName} className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                                <button type="button" onClick={() => {
+                                  setSelectedService(row.serviceName);
+                                  setRightCollapsed(false);
+                                }} className="break-all font-semibold text-slate-100 hover:underline">
+                                  {nodeLabel(row.serviceName)}
+                                </button>
+                                <span className="text-slate-300">
+                                  {row.replicasNow === 0 ? "No running pods"
+                                    : row.droppedRps > 0 ? `${row.droppedRps.toLocaleString()} req/s dropped`
+                                      : row.utilizationPct > 90 ? `${row.utilizationPct}% of capacity`
+                                        : `Downstream: ${nodeLabel(row.bottleneckTarget ?? "")}`}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                          {servicesUnderPressure.length > 3 && (
+                            <button type="button" className="mt-2 text-xs text-sky-200 hover:underline" onClick={() => setBottomTab("MATRIX")}>
+                              View all services
+                            </button>
+                          )}
+                        </section>
+                      )}
                     </section>
                   ) : bottomTab === "MATRIX" ? (
                     <div className="space-y-2">
@@ -1760,10 +1961,46 @@ export function StudioWorkbench() {
                         </table>
                       </div>
                     </div>
-                  ) : localSnapshots.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">No snapshots captured yet.</p>
                   ) : (
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+                    <section aria-label="Cluster evidence" className="space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <h2 className="text-sm font-semibold text-slate-100">Cluster evidence</h2>
+                          <p className="text-xs text-slate-400">Capture the complete diagram or record simulation changes for review.</p>
+                        </div>
+                        {recordedSteps > 0 && (
+                          <span role="status" className="rounded-full bg-rose-500/15 px-2 py-1 text-xs text-rose-200">
+                            Recording · {recordedSteps} steps{recordedSteps >= 39 ? " · save to add the final step" : ""}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Input aria-label="Snapshot note" placeholder="Evidence note…" value={snapshotNote}
+                          maxLength={4000} onChange={(event) => setSnapshotNote(event.target.value)}
+                          className="h-8 min-w-36 flex-1 bg-slate-950 text-xs" />
+                        {recordedSteps > 0 ? (
+                          <button type="button" onClick={addReplayCheckpoint} disabled={capturing || recordedSteps >= 39}
+                            className="rounded border border-slate-700 px-2 text-xs text-slate-200 disabled:opacity-50">
+                            Add checkpoint
+                          </button>
+                        ) : (
+                          <button type="button" onClick={startReplay} disabled={capturing}
+                            className="rounded border border-sky-500/40 px-2 text-xs text-sky-200 disabled:opacity-50">
+                            Record replay
+                          </button>
+                        )}
+                        <button type="button" disabled={capturing} onClick={() => void captureLocalSnapshot()}
+                          className="flex items-center gap-1 rounded bg-slate-100 px-2 py-1.5 text-xs font-semibold text-slate-950 disabled:opacity-50">
+                          <Camera className="size-3" />
+                          {capturing ? "Saving…" : recordedSteps > 0 ? "Stop & save replay" : "Save snapshot"}
+                        </button>
+                      </div>
+                      {snapshotError && <p role="alert" className="text-xs text-rose-300">{snapshotError}</p>}
+                      {localSnapshots.length === 0 ? (
+                        <p className="text-xs text-slate-400">No snapshots captured yet.</p>
+                      ) : (
+                      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))] gap-2">
+
                       {localSnapshots.map((snap, i) => (
                         <div
                           key={snap.id}
@@ -1778,6 +2015,18 @@ export function StudioWorkbench() {
                           <p className="mt-1 truncate text-[11px] text-muted-foreground">
                             {snap.explanation}
                           </p>
+                          {snap.replay.length > 0 ? (
+                            <StudioEvidenceReplay frames={snap.replay} />
+                          ) : (
+                            <img src={snap.imageData} alt="Captured complete diagram"
+                              className="my-2 max-h-72 w-full rounded-md border border-slate-700 object-contain" />
+                          )}
+                          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs">
+                            <a href={snap.imageData} download={`mavis-${snap.id}.png`} className="text-sky-200 hover:underline">Download PNG</a>
+                            <button type="button" onClick={() => downloadStudioEvidence(snap)} className="text-sky-200 hover:underline">
+                              Download evidence
+                            </button>
+                          </div>
                           <details className="mt-1 text-[11px] text-slate-300">
                             <summary className="cursor-pointer">{t("Snapshot nodes")}</summary>
                             <ul className="mt-1 space-y-1">
@@ -1800,7 +2049,9 @@ export function StudioWorkbench() {
                           </details>
                         </div>
                       ))}
-                    </div>
+                      </div>
+                      )}
+                    </section>
                   )}
                 </div>
               )}
@@ -1921,6 +2172,15 @@ export function StudioWorkbench() {
                       </div>
                     </div>
 
+                    {wireHint?.service === selectedRow.serviceName && (
+                      <div ref={wireHintRef} role="status" className="rounded-lg border border-sky-500/40 bg-sky-500/10 p-2.5 text-xs text-slate-200">
+                        <div className="flex items-center justify-between gap-2">
+                          <strong>Connection hint</strong>
+                          <button type="button" aria-label="Dismiss connection hint" onClick={() => setWireHint(null)}>×</button>
+                        </div>
+                        <p className="mt-1">{wireHint.detail}</p>
+                      </div>
+                    )}
                     {/* Free-Form Replica / Pod Count Input + Quick Presets (No ×8 Cap!) */}
                     <div className="space-y-1.5 pt-0.5">
                       <div className="flex items-center justify-between gap-2 text-[10px] text-slate-400">
@@ -1946,7 +2206,7 @@ export function StudioWorkbench() {
                             aria-label="Custom pod replica count"
                             value={selectedRow.replicasNow}
                             onChange={(e) => {
-                              const val = Math.max(0, Math.min(256, Number(e.target.value) || 0));
+                              const val = Math.max(0, Math.min(256, Math.trunc(Number(e.target.value)) || 0));
                               applySandboxAction({
                                 action: val === 0 ? "STOP" : "SCALE",
                                 service: selectedRow.serviceName,
@@ -2185,20 +2445,23 @@ export function StudioWorkbench() {
                     <div className="grid grid-cols-2 gap-1.5">
                       {(
                         [
-                          ["circuitBreaker", "Circuit Breaker"],
-                          ["autoScaleHpa", "Auto-Scale HPA"],
-                          ["readCache", "L1 Read Cache"],
-                          ["rateLimiter", "Rate Limiter"],
+                          ["circuitBreaker", "Circuit Breaker", "Fail fast on unavailable, overloaded or timed-out dependencies."],
+                          ["autoScaleHpa", "Auto-Scale HPA", "Add pods when admitted traffic exceeds capacity."],
+                          ["readCache", "L1 Read Cache", "Simulate faster reads with lower CPU demand."],
+                          ["rateLimiter", "Rate Limiter", "Reject requests above the configured rate."],
                         ] as const
-                      ).map(([field, label]) => {
+                      ).map(([field, label, description]) => {
                         const enabled = selectedRow.cfg[field];
                         return (
                           <button
                             key={field}
                             type="button"
-                            onClick={() =>
-                              updateNodeConfig(selectedRow.serviceName, { [field]: !enabled })
-                            }
+                            aria-pressed={enabled}
+                            title={description}
+                            onClick={() => {
+                              playSound("select");
+                              updateNodeConfig(selectedRow.serviceName, { [field]: !enabled });
+                            }}
                             className={`flex items-center justify-between rounded border px-2 py-1 text-left text-[10px] font-medium transition ${
                               enabled
                                 ? "border-slate-600 bg-slate-800 text-slate-100"
@@ -2226,7 +2489,7 @@ export function StudioWorkbench() {
                           value={selectedRow.cfg.rateLimitRps}
                           onChange={(e) =>
                             updateNodeConfig(selectedRow.serviceName, {
-                              rateLimitRps: Math.max(50, Number(e.target.value) || 50),
+                              rateLimitRps: Math.max(50, Math.min(500000, Number(e.target.value) || 50)),
                             })
                           }
                           className="h-5 w-20 rounded border border-slate-700 bg-slate-950 px-1.5 text-right font-mono text-[10.5px] font-semibold text-slate-100"
@@ -2235,147 +2498,103 @@ export function StudioWorkbench() {
                     )}
                   </div>
 
-                  {/* Card 4: Live Quantitative Change Impact & Topology Blast Radius */}
-                  <div
-                    className={`space-y-2 rounded-xl border p-2.5 text-[11px] ${
-                      selectedRow.replicasNow === 0
-                        ? "border-rose-500/40 bg-rose-950/20"
-                        : "border-slate-800/90 bg-slate-900/60"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                        Live Change Impact & Capacity
-                      </p>
-                      <span
-                        className={`font-mono text-[10px] font-semibold ${
+                  <div className="space-y-2">
+                    <section aria-label="Load and capacity" className="space-y-2 rounded-xl border border-slate-700/80 bg-slate-900 p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-1">
+                        <h3 className="text-xs font-semibold text-slate-100">Load & capacity</h3>
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
                           selectedRow.replicasNow === 0 || selectedRow.utilizationPct > 100
-                            ? "text-rose-400"
+                            ? "bg-rose-500/15 text-rose-300"
                             : selectedRow.utilizationPct > 80
-                              ? "text-amber-300"
-                              : "text-emerald-400"
-                        }`}
-                      >
-                        {selectedRow.replicasNow === 0
-                          ? "0% CAP"
-                          : `${selectedRow.utilizationPct}% Saturation`}
-                      </span>
-                    </div>
-
-                    {/* Demand vs. Capacity Progress Bar */}
-                    <div className="space-y-1 font-mono text-[10px]">
-                      <div className="flex items-center justify-between text-slate-400">
-                        <span>
-                          Demand: <strong className="text-slate-100">{selectedRow.demandRps.toLocaleString()}</strong> req/s
-                        </span>
-                        <span>
-                          Max Cap: <strong className="text-slate-100">{selectedRow.maxCapacityRps.toLocaleString()}</strong> req/s
+                              ? "bg-amber-500/15 text-amber-200"
+                              : "bg-sky-500/10 text-sky-200"
+                        }`}>
+                          {selectedRow.replicasNow === 0 ? "Stopped" : `${selectedRow.utilizationPct}% of capacity`}
                         </span>
                       </div>
-                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
+                      <div className="grid grid-cols-2 gap-2 text-[11px]">
+                        <div className="min-w-0 rounded-md bg-slate-950/70 p-2">
+                          <p className="text-slate-400">Incoming demand</p>
+                          <p className="mt-1 break-words font-mono font-semibold text-slate-100">
+                            {selectedRow.demandRps.toLocaleString()} <span className="font-normal text-slate-400">req/s</span>
+                          </p>
+                        </div>
+                        <div className="min-w-0 rounded-md bg-slate-950/70 p-2">
+                          <p className="text-slate-400">Max capacity</p>
+                          <p className="mt-1 break-words font-mono text-slate-100">
+                            <strong>{selectedRow.maxCapacityRps.toLocaleString()}</strong> <span className="text-slate-400">req/s</span>
+                          </p>
+                        </div>
+                      </div>
+                      <div className="h-1.5 overflow-hidden rounded-full bg-slate-800" aria-hidden="true">
                         <div
-                          className={`h-full rounded-full transition-all ${
-                            selectedRow.replicasNow === 0 || selectedRow.utilizationPct > 100
-                              ? "bg-rose-500"
-                              : selectedRow.utilizationPct > 80
-                                ? "bg-amber-400"
-                                : "bg-sky-400/80"
-                          }`}
-                          style={{
-                            width: `${Math.min(100, selectedRow.utilizationPct)}%`,
-                          }}
+                          className={`h-full rounded-full ${selectedRow.utilizationPct > 100 ? "bg-rose-400" : selectedRow.utilizationPct > 80 ? "bg-amber-400" : "bg-sky-400"}`}
+                          style={{ width: `${selectedRow.replicasNow === 0 ? 0 : Math.min(100, selectedRow.utilizationPct)}%` }}
                         />
                       </div>
-                    </div>
-
-                    {/* Live Quantitative Impact Delta Matrix */}
-                    <div className="grid grid-cols-2 gap-1.5 rounded-lg border border-slate-800/90 bg-slate-950/70 p-2 font-mono text-[10px]">
-                      <div>
-                        <span className="block text-[9px] uppercase text-slate-500">Pods & vCPU</span>
-                        <span className="font-semibold text-slate-100">
-                          {selectedRow.replicasBefore}→×{selectedRow.replicasNow} ({selectedRow.totalVcpu.toFixed(1)}C)
+                      <p className="text-[11px] text-slate-400">
+                        {(selectedRow.demandRps - selectedRow.droppedRps).toLocaleString()} req/s handled
+                        {" · "}
+                        <span className={selectedRow.droppedRps ? "font-semibold text-rose-300" : undefined}>
+                          {selectedRow.droppedRps.toLocaleString()} req/s dropped
                         </span>
-                      </div>
-                      <div>
-                        <span className="block text-[9px] uppercase text-slate-500">Memory Pool</span>
-                        <span className="font-semibold text-slate-100">
-                          {selectedRow.perPodRam}M × {selectedRow.replicasNow} = {selectedRow.totalRam}M
-                        </span>
-                      </div>
-                      <div>
-                        <span className="block text-[9px] uppercase text-slate-500">p95 Latency</span>
-                        <span className="font-semibold text-slate-100">
-                          42ms → {selectedRow.p95Now}ms
-                        </span>
-                      </div>
-                      <div>
-                        <span className="block text-[9px] uppercase text-slate-500">Dropped requests</span>
-                        <span
-                          className={`font-semibold ${
-                            selectedRow.droppedRps > 0 ? "text-rose-400" : "text-slate-300"
-                          }`}
-                        >
-                          {selectedRow.droppedRps.toLocaleString()} req/s
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Actionable Auto-Fix Recommendations when Overloaded or Bottlenecked */}
-                    {selectedRow.replicasNow === 0 ? (
-                      <p className="text-[10.5px] text-rose-300">
-                        <ShieldAlert className="mr-1 inline size-3.5" />
-                        <strong>No running replicas.</strong> Callers (
-                        {selectedRow.inboundCallers.map(nodeLabel).join(", ") || "none"}) cannot reach this service.
                       </p>
-                    ) : (
-                      <div className="space-y-1">
-                        {selectedRow.utilizationPct > 85 &&
-                          selectedRow.selfRecommendedPods > selectedRow.replicasNow && (
-                            <div className="flex items-center justify-between gap-1 rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-[10px] text-amber-200">
-                              <span className="truncate">
-                                Overload ({selectedRow.utilizationPct}%): Need ×{selectedRow.selfRecommendedPods} pods
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  applySandboxAction({
-                                    action: "SCALE",
-                                    service: selectedRow.serviceName,
-                                    replicas: selectedRow.selfRecommendedPods,
-                                  })
-                                }
-                                className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[9.5px] font-semibold text-slate-950 hover:bg-white"
-                              >
-                                Scale ×{selectedRow.selfRecommendedPods}
-                              </button>
-                            </div>
-                          )}
-                        {selectedRow.bottleneckTarget && (
-                          <div className="flex items-center justify-between gap-1 rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-[10px] text-amber-200">
-                            <span className="truncate">
-                              Downstream saturation: <strong>{nodeLabel(selectedRow.bottleneckTarget)}</strong>
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                applySandboxAction({
-                                  action: "SCALE",
-                                  service: selectedRow.bottleneckTarget!,
-                                  replicas: selectedRow.bottleneckRecommendedPods,
-                                })
-                              }
-                              className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[9.5px] font-semibold text-slate-950 hover:bg-white"
-                            >
-                              Fix ×{selectedRow.bottleneckRecommendedPods}
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
+                    </section>
 
-                    <div className="space-y-1.5 border-t border-slate-800/80 pt-1.5 font-mono text-[10px]">
+                    <section aria-label="Current configuration" className="space-y-2 rounded-xl border border-slate-700/80 bg-slate-900 p-3">
+                      <h3 className="text-xs font-semibold text-slate-100">Current configuration</h3>
+                      <dl className="grid grid-cols-2 gap-2 text-[11px]">
+                        {[
+                          ["Running pods", selectedRow.replicasNow.toLocaleString(), `Baseline: ${selectedRow.replicasBefore}`],
+                          ["CPU allocated", `${selectedRow.totalVcpu.toFixed(1)} vCPU`, `${selectedRow.cfg.vcpuPerPod} vCPU per pod`],
+                          ["RAM usage", `${selectedRow.totalRam.toLocaleString()} MiB`, `${selectedRow.perPodRam} MiB per pod`],
+                          ["Estimated p95", selectedRow.replicasNow ? `${selectedRow.p95Now} ms` : "—", "Current simulation"],
+                        ].map(([label, value, detail]) => (
+                          <div key={label} className="min-w-0 rounded-md bg-slate-950/70 p-2">
+                            <dt className="text-slate-400">{label}</dt>
+                            <dd className="mt-1 break-words font-mono font-semibold text-slate-100">
+                              {value}
+                              <span className="mt-0.5 block font-sans font-normal text-slate-400">{detail}</span>
+                            </dd>
+                          </div>
+                        ))}
+                      </dl>
+                    </section>
+
+                    {[
+                      ...(selectedRow.replicasNow === 0 ? [{
+                        title: "No running pods", critical: true,
+                        detail: "Check why this node stopped and decide how to restore it. Then check the calling services on the graph.",
+                      }] : []),
+                      ...(selectedRow.replicasNow > 0 && selectedRow.utilizationPct > 85 ? [{
+                        title: selectedRow.utilizationPct > 100 ? "Demand exceeds capacity" : "Capacity is nearly full",
+                        critical: selectedRow.utilizationPct > 100,
+                        detail: "Compare incoming demand with capacity. Adjust replicas or CPU per pod within the exercise limits, then check handled traffic, dropped requests and p95.",
+                      }] : []),
+                      ...(selectedRow.cfg.rateLimiter && selectedRow.demandRps > selectedRow.cfg.rateLimitRps ? [{
+                        title: "Rate limit is rejecting requests", critical: true,
+                        detail: "Compare the request limit with the exercise target. Check available capacity before changing it.",
+                      }] : []),
+                      ...(selectedRow.bottleneckTarget ? [{
+                        title: `Downstream pressure · ${nodeLabel(selectedRow.bottleneckTarget)}`, critical: false,
+                        detail: "Follow the wire to its destination. Inspect its load, running pods and latency before changing the caller.",
+                      }] : []),
+                    ].map(({ title, detail, critical }) => (
+                      <details key={title} className={`rounded-lg border px-2.5 text-xs ${
+                        critical ? "border-rose-500/40 bg-rose-500/10 text-rose-200" : "border-amber-500/40 bg-amber-500/10 text-amber-200"
+                      }`}>
+                        <summary className="flex cursor-pointer list-none items-center justify-between gap-2 py-2 font-semibold">
+                          {title}
+                          <span aria-hidden="true" className="grid size-5 shrink-0 place-items-center rounded-full border border-current">?</span>
+                        </summary>
+                        <p className="pb-2 text-[11px] text-slate-200">{detail}</p>
+                      </details>
+                    ))}
+
+                    <div className="space-y-2 rounded-xl border border-slate-700/80 bg-slate-900 p-3 text-[11px]">
+                      <h3 className="text-xs font-semibold text-slate-100">Connections</h3>
                       <div className="flex flex-wrap items-center gap-1">
-                        <span className="text-slate-500">In:</span>
+                        <span className="text-slate-400">Called by:</span>
                         {selectedRow.inboundCallers.length > 0 ? (
                           selectedRow.inboundCallers.map((caller) => (
                             <button
@@ -2388,13 +2607,13 @@ export function StudioWorkbench() {
                             </button>
                           ))
                         ) : (
-                          <span className="text-slate-400">Ingress</span>
+                          <span className="text-slate-400">No incoming connections</span>
                         )}
                       </div>
 
                       <div className="space-y-1">
                         <div className="flex flex-wrap items-center gap-1">
-                          <span className="text-slate-500">Out:</span>
+                          <span className="text-slate-500">Calls:</span>
                           {selectedRow.outboundTargets.length > 0 ? (
                             selectedRow.outboundTargets.map((target) => (
                               <span
@@ -2421,7 +2640,7 @@ export function StudioWorkbench() {
                               </span>
                             ))
                           ) : (
-                            <span className="text-slate-400">Leaf / Store</span>
+                            <span className="text-slate-400">No outgoing connections</span>
                           )}
                         </div>
                         <select
@@ -2462,26 +2681,6 @@ export function StudioWorkbench() {
                           ? `[ERR] Service unavailable — 0 pods running`
                           : `[OK] ${selectedRow.replicasNow} pod(s) · Tier=${selectedRow.cfg.instanceTier} · Load=${selectedRow.cfg.trafficMult}x`}
                       </p>
-                    </div>
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                      Snapshot ({localSnapshots.length})
-                    </p>
-                    <div className="flex gap-1">
-                      <Input
-                        value={snapshotNote}
-                        onChange={(e) => setSnapshotNote(e.target.value)}
-                        placeholder="Note..."
-                        className="h-7 border-slate-800 bg-slate-950/90 text-[11px]"
-                      />
-                      <button
-                        type="button"
-                        disabled={capturing}
-                        onClick={() => void captureLocalSnapshot()}
-                        className="flex h-7 shrink-0 items-center gap-1 rounded bg-slate-100 px-2.5 text-[11px] font-semibold text-slate-950 transition hover:bg-white disabled:opacity-50"
-                      >
-                        <Camera className="size-3" />
-                        Save
-                      </button>
                     </div>
                   </div>
                 </div>

@@ -49,6 +49,16 @@ async function main() {
     browser=await require("playwright").chromium.launch({headless:true,channel:"chrome"});
     const page=await browser.newPage({viewport:{width:1440,height:1000}});
     await page.addInitScript(()=>localStorage.setItem("mavis.appearance","dark"));
+    await page.addInitScript(()=>{
+      window.studioAudioNotes=0;
+      window.lastStudioAudioNote=0;
+      const create=AudioContext.prototype.createOscillator;
+      AudioContext.prototype.createOscillator=function(){
+        window.studioAudioNotes++;
+        window.lastStudioAudioNote=performance.now();
+        return create.call(this);
+      };
+    });
     const errors=[];page.on("pageerror",error=>{errors.push(error.message);console.error("Browser error",error.message)});
     await page.goto("http://127.0.0.1:"+server.address().port);
     await page.screenshot({path:path.join(output,"initial.png"),fullPage:true,animations:"disabled"});
@@ -76,6 +86,16 @@ async function main() {
     const rotatedWorld=world(await anchor(),0.78-50*0.0085);
     assert.ok(Math.abs(initialWorld.x-rotatedWorld.x)<0.01,"Orbit must retain the dragged node's world X");
     assert.ok(Math.abs(initialWorld.z-rotatedWorld.z)<0.01,"Orbit must retain the dragged node's world Z");
+    const arrows=await graph.locator("[data-studio-wire-arrow]").evaluateAll(elements=>elements.map(arrow=>{
+      const edge=arrow.closest("[data-studio-edge-to]");
+      const graph=arrow.ownerSVGElement;
+      const label=[...graph.querySelectorAll("[data-studio-node]")].find(node=>
+        node.getAttribute("data-studio-node")===edge.getAttribute("data-studio-edge-to")
+      ).querySelector("[data-studio-node-label]").getBoundingClientRect();
+      const tip=new DOMPoint().matrixTransform(arrow.getScreenCTM());
+      return tip.x<label.left || tip.x>label.right || tip.y<label.top || tip.y>label.bottom;
+    }));
+    assert.ok(arrows.length>0 && arrows.every(Boolean),"Wire arrowheads must clear destination labels after orbit");
     assert.equal(await graph.evaluate(element=>element.dispatchEvent(new MouseEvent("contextmenu",{button:2,bubbles:true,cancelable:true}))),false);
     const board=await graph.boundingBox();
     const scene=graph.locator(":scope > g").first();
@@ -137,6 +157,10 @@ async function main() {
     const overview=page.getByRole("heading",{name:"Cluster Overview"});
     const dock=page.getByTestId("studio-dock-content");
     await overview.waitFor();
+    const overviewPanel=page.getByRole("region",{name:"Cluster Overview"});
+    for(const metric of ["Incoming demand","Handled traffic","Dropped traffic","Estimated E2E p95","CPU allocation","RAM usage"]){
+      assert.equal(await overviewPanel.getByText(metric,{exact:true}).count(),1);
+    }
     assert.equal(await page.locator("main").isVisible(),true,"Stats must leave the topology visible");
     assert.equal(await page.getByText("Per-Service / API Telemetry (6)",{exact:true}).count(),0);
     await dock.hover();
@@ -169,6 +193,14 @@ async function main() {
     const demand=page.getByRole("spinbutton",{name:"Custom incoming traffic req/s"});
     await demand.fill("1500");
     await graph.getByText("503 ✕",{exact:true}).waitFor();
+    const replicasBeforeHint=await page.getByRole("spinbutton",{name:"Custom pod replica count"}).inputValue();
+    await orderWire.locator("[data-studio-wire-hint]").click();
+    assert.ok(await page.getByText("Connection hint",{exact:true}).isVisible());
+    await page.getByRole("button",{name:"Dismiss connection hint"}).click();
+    await page.locator("summary").filter({hasText:"Demand exceeds capacity"}).click();
+    await page.getByText(/Compare incoming demand with capacity/).waitFor();
+    assert.equal(await page.getByRole("spinbutton",{name:"Custom pod replica count"}).inputValue(),replicasBeforeHint);
+    assert.equal(await page.getByRole("button",{name:/^(Scale|Fix) ×/}).count(),0);
     await page.getByRole("button",{name:"Rate Limiter",exact:true}).click();
     await graph.getByText("429 ✕",{exact:true}).waitFor();
     await demand.fill("240");
@@ -177,6 +209,11 @@ async function main() {
     assert.equal(await graph.getByText("503 ✕",{exact:true}).count(),0,"An upstream timeout has no HTTP response");
     await page.getByRole("spinbutton",{name:"Custom injected network latency ms"}).fill("0");
     await table.getByRole("button",{name:"Decrease replicas for orders-postgres"}).click();
+    await stats.click();
+    const attention=page.getByRole("region",{name:"Services needing attention"});
+    await attention.getByRole("button",{name:"orders-postgres",exact:true}).click();
+    assert.ok(await page.getByRole("region",{name:"Load and capacity"}).getByText("Stopped",{exact:true}).isVisible());
+    await telemetry.click();
     await graph.getByText("CALL FAILED",{exact:true}).waitFor();
     assert.equal(await graph.getByText("503 ✕",{exact:true}).count(),0,"An unavailable JDBC destination must not emit an HTTP status");
     await page.getByRole("button",{name:"2D",exact:true}).click();
@@ -252,7 +289,28 @@ async function main() {
     assert.equal(await wire.count(),1,"Renaming must keep the existing wire");
     await page.getByRole("button",{name:"2D",exact:true}).click();
     assert.equal(await graph.getByRole("button",{name:storageName,exact:true}).locator('[data-studio-symbol="object"]').count(),1);
-    await page.getByRole("button",{name:"Save",exact:true}).click();
+    await page.getByRole("button",{name:/^Snapshots/}).click();
+    await page.getByRole("textbox",{name:"Snapshot note"}).fill("Grading evidence");
+    await page.getByRole("button",{name:"Record replay",exact:true}).click();
+    await demand.fill("450");
+    await page.getByText("Recording · 2 steps",{exact:true}).waitFor();
+    await page.getByRole("button",{name:"Stop & save replay"}).click();
+    const replayDiagram=page.getByRole("img",{name:"Replay diagram"});
+    await replayDiagram.waitFor();
+    const exportedSvg=decodeURIComponent((await replayDiagram.getAttribute("src")).split(",").slice(1).join(","));
+    assert.match(exportedSvg,/data-studio-node="s3-storage-2"/);
+    assert.doesNotMatch(exportedSvg,/data-studio-scene="" transform=/);
+    assert.match(await page.getByRole("link",{name:"Download PNG"}).getAttribute("href"),/^data:image\/png;base64,/);
+    const [report]=await Promise.all([
+      page.waitForEvent("download"),
+      page.getByRole("button",{name:"Download evidence",exact:true}).click(),
+    ]);
+    assert.match(report.suggestedFilename(),/^mavis-evidence-.*\.html$/);
+    const reportText=fs.readFileSync(await report.path(),"utf8");
+    assert.match(reportText,/Grading evidence/);
+    assert.match(reportText,/Configuration or topology changed/);
+    await page.getByRole("button",{name:"Play replay",exact:true}).click();
+    await page.getByText(/Step 2\/3/).waitFor();
     await page.getByText("Snapshot nodes",{exact:true}).click();
     await page.getByText(storageName+" → order-service · HTTP",{exact:true}).waitFor();
     await page.getByRole("heading",{name:storageName,exact:true}).getByRole("button").dblclick();
@@ -271,6 +329,77 @@ async function main() {
     assert.equal(await wire.count(),0,"The selected wire must be removable from the canvas");
     assert.equal(await graph.locator('[data-studio-edge-from="s3-storage-2"][data-studio-edge-to="inventory-service"]').count(),1);
     assert.ok(await page.getByText(storageName+" → order-service · HTTP",{exact:true}).isVisible());
+    await page.getByRole("button",{name:"3D",exact:true}).click();
+    const database=graph.getByRole("button",{name:"orders-postgres",exact:true});
+    await database.focus();
+    await page.keyboard.press("Enter");
+    const replicaInput=page.getByRole("spinbutton",{name:"Custom pod replica count"});
+    const capacity=page.getByRole("region",{name:"Load and capacity"})
+      .getByText("Max capacity",{exact:true}).locator("..").locator("strong");
+    const sculpture=database.locator("[data-studio-sculpture]");
+    const databaseWire=graph.locator('[data-studio-edge-from="order-service"][data-studio-edge-to="orders-postgres"]');
+    await replicaInput.fill("32");
+    const width32=(await sculpture.boundingBox()).width;
+    const latency32=Number((await databaseWire.locator("[data-studio-wire-metric]").textContent()).match(/\d+/)[0]);
+    const capacity32=Number((await capacity.textContent()).replace(/\D/g,""));
+    for(const count of [54,256]){
+      await replicaInput.fill(String(count));
+      assert.equal(await replicaInput.inputValue(),String(count));
+      assert.ok((await sculpture.boundingBox()).width>width32,"3D sculpture must continue growing above 32 pods");
+      assert.ok(Number((await databaseWire.locator("[data-studio-wire-metric]").textContent()).match(/\d+/)[0])<latency32);
+      assert.equal(Number((await capacity.textContent()).replace(/\D/g,"")),capacity32*count/32);
+    }
+    const scenarios=page.getByRole("region",{name:"Cluster Scenarios"});
+    await scenarios.getByRole("button",{name:"Reset Cluster",exact:true}).click();
+    const scenario=scenarios.getByRole("combobox",{name:"Cluster scenario"});
+    const applyScenario=scenarios.getByRole("button",{name:"Apply scenario",exact:true});
+    await applyScenario.click();
+    assert.equal(await demand.inputValue(),"960","Flash sale should quadruple the gateway demand");
+    await scenario.selectOption("SLOW_DB");
+    await applyScenario.click();
+    assert.equal(await latencyInput.inputValue(),"350");
+    assert.match(await scenarios.getByRole("status").textContent(),/orders-postgres/);
+    await replicaInput.fill("4");
+    await scenario.selectOption("POD_FAILURE");
+    await applyScenario.click();
+    assert.equal(await replicaInput.inputValue(),"3","Losing one pod must leave the other replicas running");
+    await scenario.selectOption("DB_OUTAGE");
+    await applyScenario.click();
+    assert.equal(await replicaInput.inputValue(),"0");
+    await node.focus();
+    await page.keyboard.press("Enter");
+    for(const policy of ["Circuit Breaker","Auto-Scale HPA","L1 Read Cache","Rate Limiter"]){
+      assert.equal(await page.getByRole("button",{name:policy,exact:true}).getAttribute("aria-pressed"),"false");
+    }
+    await databaseWire.getByText("CALL FAILED",{exact:true}).waitFor();
+    const breaker=page.getByRole("button",{name:"Circuit Breaker",exact:true});
+    await breaker.click();
+    await databaseWire.getByText("CIRCUIT OPEN",{exact:true}).waitFor();
+    assert.match(await databaseWire.locator(":scope > title").textContent(),/1 ms/);
+    await breaker.click();
+    await databaseWire.getByText("CALL FAILED",{exact:true}).waitFor();
+    const capacityWithoutCache=Number(await capacity.textContent());
+    await page.getByRole("button",{name:"L1 Read Cache",exact:true}).click();
+    assert.ok(Number(await capacity.textContent())>capacityWithoutCache);
+    await demand.fill("1300");
+    assert.equal(await replicaInput.inputValue(),"1");
+    await page.getByRole("button",{name:"Auto-Scale HPA",exact:true}).click();
+    assert.equal(await replicaInput.inputValue(),"2");
+    const sound=page.getByRole("button",{name:"Studio sound effects",exact:true});
+    assert.equal(await sound.getAttribute("aria-pressed"),"false");
+    assert.equal(await page.evaluate(()=>window.studioAudioNotes),0);
+    await sound.click();
+    await page.waitForFunction(()=>window.studioAudioNotes===1 && performance.now()-window.lastStudioAudioNote>65);
+    await page.getByRole("button",{name:"+ Worker",exact:true}).click();
+    await page.waitForFunction(()=>window.studioAudioNotes>=3);
+    await sound.click();
+    assert.equal(await sound.getAttribute("aria-pressed"),"false");
+    await page.getByRole("button",{name:"+ Worker",exact:true}).click();
+    assert.equal(await page.evaluate(()=>window.studioAudioNotes),3);
+    await page.reload();
+    assert.equal(await sound.getAttribute("aria-pressed"),"false");
+    await page.getByRole("button",{name:"Snapshots (1)",exact:true}).click();
+    await page.getByText("Grading evidence",{exact:true}).waitFor();
     assert.deepEqual(errors,[]);
     console.log("PASS Studio world-layout orbit, pointer cleanup, context-menu prevention and separate Stats panels");
   }finally{

@@ -646,7 +646,7 @@ export const contracts = {
         stats:z.array(z.object({containerId:z.string().nullable(),cpu:z.string().nullable(),memory:z.string().nullable(),network:z.string().nullable()})),
         logs:z.string(),
       })),spans:z.array(z.object({
-        traceId:z.string(),spanId:z.string(),runtimeService:z.string(),operationName:z.string().nullable().optional(),spanStatus:z.string().nullable().optional(),
+        traceId:z.string(),spanId:z.string(),runtimeService:z.string(),operationName:z.string().nullable().optional(),circuitOpen:z.boolean().optional(),spanStatus:z.string().nullable().optional(),
         httpStatusCode:z.number().nullable().optional(),durationNanoseconds:z.string().nullable().optional(),
       })),interactions:z.array(z.object({traceId:z.string(),fromService:z.string(),toService:z.string(),parentSpanId:z.string(),childSpanId:z.string()})),
       warnings:z.array(z.string()).optional(),
