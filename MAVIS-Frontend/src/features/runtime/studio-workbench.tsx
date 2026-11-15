@@ -592,7 +592,7 @@ export function StudioWorkbench() {
   const [snapshotNote, setSnapshotNote] = useState("");
   const [capturing, setCapturing] = useState(false);
   const [liveSessionId, setLiveSessionId] = useState(initialSessionId);
-  const [bottomTab, setBottomTab] = useState<"MATRIX" | "SNAPSHOTS">("MATRIX");
+  const [bottomTab, setBottomTab] = useState<"MATRIX" | "STATS" | "SNAPSHOTS">("MATRIX");
   const [leftWidth, setLeftWidth] = useState(286);
   const [rightWidth, setRightWidth] = useState(268);
   const [bottomHeight, setBottomHeight] = useState(242);
@@ -1480,7 +1480,7 @@ export function StudioWorkbench() {
           {/* CENTER COLUMN: TOP (FULL-BLEED 3D/2D CANVAS) + BOTTOM (TELEMETRY DOCK) */}
           <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
             {/* 2. CENTER INTERACTIVE 3D / 2D CANVAS (Full-Bleed Edge-to-Edge) */}
-            <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#070b14]">
+            <main className={`${bottomTab === "STATS" && !bottomCollapsed ? "hidden" : "flex"} min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#070b14]`}>
               <StudioObservability
                 data={sandboxStudioData}
                 selected={selectedService}
@@ -1507,7 +1507,8 @@ export function StudioWorkbench() {
 
             {/* 4. BOTTOM TELEMETRY & IMPACT DOCK: Strictly inside Center Column between Left & Right Sidebars */}
             <section
-              style={{ height: bottomCollapsed ? 36 : bottomHeight }}
+              style={{ height: bottomCollapsed ? 36 : bottomTab === "STATS" ? undefined : bottomHeight,
+                flex: bottomTab === "STATS" && !bottomCollapsed ? "1 1 0%" : undefined }}
               className="flex shrink-0 flex-col bg-[#0b101b]"
             >
               <div className="flex h-9 shrink-0 items-center justify-between border-b border-slate-800 bg-slate-950/60 px-3">
@@ -1548,6 +1549,23 @@ export function StudioWorkbench() {
                   >
                     Snapshots ({localSnapshots.length})
                   </button>
+                  <button
+                    type="button"
+                    aria-pressed={!bottomCollapsed && bottomTab === "STATS"}
+                    onClick={() => {
+                      if (!bottomCollapsed && bottomTab === "STATS") {
+                        setBottomCollapsed(true);
+                      } else {
+                        setBottomCollapsed(false);
+                        setBottomTab("STATS");
+                      }
+                    }}
+                    className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition ${!bottomCollapsed && bottomTab === "STATS"
+                      ? "border border-slate-700 bg-slate-800 text-slate-100"
+                      : "text-slate-400 hover:text-slate-200"}`}
+                  >
+                    {t("Stats")}
+                  </button>
                 </div>
 
                 {/* Cluster-wide KPI Summary Pills (Clean Monochrome Engineering Readouts, Zero Emojis) */}
@@ -1576,9 +1594,10 @@ export function StudioWorkbench() {
 
               {!bottomCollapsed && (
                 <div className="flex-1 space-y-2.5 overflow-y-auto p-2.5">
-                  {bottomTab === "MATRIX" ? (
+                  {bottomTab === "MATRIX" || bottomTab === "STATS" ? (
                     <>
                       {/* 1. WHOLE-SERVER ADMIN POV: 4-Card Cluster Host Overview */}
+                      {bottomTab === "STATS" && (
                       <div className="space-y-1.5">
                         <div className="flex items-center justify-between">
                           <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-slate-400">
@@ -1736,7 +1755,9 @@ export function StudioWorkbench() {
                         </div>
                       </div>
 
+                      )}
                       {/* 2. PER-SERVICE / API TELEMETRY BREAKDOWN */}
+                      {bottomTab === "MATRIX" && (
                       <div className="space-y-1.5">
                         <div className="flex items-center justify-between">
                           <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-slate-400">
@@ -1939,6 +1960,7 @@ export function StudioWorkbench() {
                       })}
                         </div>
                       </div>
+                      )}
                     </>
                   ) : localSnapshots.length === 0 ? (
                     <p className="text-xs text-muted-foreground">No snapshots captured yet.</p>

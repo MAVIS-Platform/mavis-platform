@@ -15,6 +15,7 @@ interface LocaleContextValue {
 const STORAGE_KEY = "mavis.locale";
 
 export const EXACT_VI_DICTIONARY: Record<string, string> = {
+  "Stats": "Thống kê",
   "Runtime topology and impact": "Sơ đồ runtime và tác động thay đổi",
   "Static dependencies (dashed)": "Phụ thuộc tĩnh (nét đứt)",
   "Observed runtime (solid)": "Runtime đã quan sát (nét liền)",
