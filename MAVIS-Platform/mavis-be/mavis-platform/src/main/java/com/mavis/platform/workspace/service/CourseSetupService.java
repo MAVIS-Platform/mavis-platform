@@ -1,0 +1,293 @@
+package com.mavis.platform.workspace.service;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.mavis.common.entity.Assignment;
+import com.mavis.common.entity.ModelVersion;
+import com.mavis.common.entity.Project;
+import com.mavis.common.entity.RuntimeConfiguration;
+import com.mavis.common.entity.SourceSnapshot;
+import com.mavis.common.entity.Workspace;
+import com.mavis.common.exception.BusinessException;
+import com.mavis.common.exception.ErrorCode;
+import com.mavis.common.repository.AssignmentRepository;
+import com.mavis.common.repository.ModelVersionRepository;
+import com.mavis.common.repository.ProjectRepository;
+import com.mavis.common.repository.RuntimeConfigurationRepository;
+import com.mavis.common.repository.WorkspaceRepository;
+import com.mavis.common.security.AccessPolicyService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Objects;
+import java.util.UUID;
+
+/**
+ * Read-only, lecturer-facing view of everything required before a student can
+ * open a Lab. It points at the exact reference project/runtime profile instead
+ * of inferring or inventing a prepared Studio Live topology.
+ */
+@Service
+@RequiredArgsConstructor
+public class CourseSetupService {
+    private final AccessPolicyService access;
+    private final WorkspaceRepository workspaces;
+    private final AssignmentRepository assignments;
+    private final ProjectRepository projects;
+    private final ModelVersionRepository models;
+    private final RuntimeConfigurationRepository configurations;
+    private final JdbcTemplate jdbc;
+
+    public record ReferenceSetup(
+            UUID projectId,
+            String projectName,
+            UUID modelId,
+            UUID snapshotId,
+            int modelRevision,
+            boolean referenceReady,
+            boolean runtimeConfigured,
+            boolean runtimeMatchesSource,
+            int runtimeRevision,
+            List<String> applications,
+            int blockCount,
+            int connectionCount,
+            boolean topologyConfigured) {}
+
+    public record LabSetup(
+            UUID assignmentId,
+            int position,
+            String title,
+            boolean published,
+            boolean referenceReady,
+            boolean requiresRuntime,
+            boolean studioReady,
+            boolean quizPublished,
+            int quizVersion,
+            String state) {}
+
+    public record PasskeySetup(
+            boolean active,
+            OffsetDateTime expiresAt,
+            Integer maxStudents,
+            int enrolledStudents) {}
+
+    public record Step(String id, String state, String detail) {}
+
+    public record Setup(
+            UUID workspaceId,
+            String workspaceName,
+            String status,
+            boolean courseMode,
+            ReferenceSetup reference,
+            List<LabSetup> labs,
+            PasskeySetup passkey,
+            List<Step> steps,
+            String nextAction,
+            UUID previewAssignmentId) {}
+
+    @Transactional(readOnly = true)
+    public Setup setup(UUID workspaceId) {
+        access.requireWorkspaceLecturer(workspaceId);
+        Workspace workspace = workspaces.findById(workspaceId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Workspace not found"));
+
+        List<Assignment> ordered = new ArrayList<>(assignments.findByWorkspaceIdOrderByCreatedAtDesc(workspaceId));
+        ordered.sort(Comparator
+                .comparingInt((Assignment lab) -> lab.getLabOrder() == null ? Integer.MAX_VALUE : lab.getLabOrder())
+                .thenComparing(Assignment::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())));
+
+        ReferenceSetup reference = resolveReference(workspaceId, ordered);
+        List<LabSetup> labs = ordered.stream().map(lab -> labSetup(lab, reference)).toList();
+        PasskeySetup passkey = passkey(workspaceId, workspace.getMaxStudents());
+        boolean hasRuntimeLab = labs.stream().anyMatch(LabSetup::requiresRuntime);
+        boolean allPublished = !labs.isEmpty() && labs.stream().allMatch(LabSetup::published);
+        boolean allQuizzes = !labs.isEmpty() && labs.stream().filter(LabSetup::published).allMatch(LabSetup::quizPublished);
+        UUID preview = labs.stream()
+                .filter(lab -> lab.published() && lab.referenceReady())
+                .filter(lab -> !lab.requiresRuntime() || lab.studioReady())
+                .map(LabSetup::assignmentId)
+                .findFirst()
+                .orElse(null);
+
+        List<Step> steps = new ArrayList<>();
+        steps.add(new Step("workspace",
+                "ACTIVE".equals(workspace.getStatus()) ? "DONE" : "BLOCKED",
+                "ACTIVE".equals(workspace.getStatus())
+                        ? "Workspace is active."
+                        : "Reactivate the workspace before students can open Labs."));
+        steps.add(new Step("reference",
+                reference.referenceReady() ? "DONE" : "ACTION",
+                reference.referenceReady()
+                        ? "Reference model revision " + reference.modelRevision() + " is pinned to a published source snapshot."
+                        : "Attach and analyze a curated reference source."));
+        if (!hasRuntimeLab) {
+            steps.add(new Step("runtime", "DONE", "No Lab requires a runtime trace."));
+            steps.add(new Step("studio", "DONE", "No Lab requires Studio Live."));
+        } else {
+            steps.add(new Step("runtime",
+                    reference.runtimeConfigured() && reference.runtimeMatchesSource() ? "DONE" : "ACTION",
+                    !reference.runtimeConfigured()
+                            ? "Configure runtime applications for the reference project."
+                            : !reference.runtimeMatchesSource()
+                            ? "Runtime profile targets a different source or model. Reconfigure it for the published reference."
+                            : reference.applications().size() + " runtime applications are configured for the pinned source."));
+            steps.add(new Step("studio",
+                    reference.topologyConfigured() && reference.runtimeMatchesSource() ? "DONE" : "ACTION",
+                    reference.topologyConfigured() && reference.runtimeMatchesSource()
+                            ? reference.blockCount() + " prepared blocks and " + reference.connectionCount() + " connections are configured."
+                            : "Add the prepared Studio Live topology for the reference project."));
+        }
+        steps.add(new Step("labs",
+                labs.isEmpty() ? "ACTION" : allPublished ? "DONE" : "PARTIAL",
+                labs.isEmpty()
+                        ? "Seed curated Labs or create the first Lab."
+                        : labs.stream().filter(LabSetup::published).count() + "/" + labs.size() + " Labs are published."));
+        if (labs.isEmpty()) {
+            steps.add(new Step("quiz", "ACTION", "Publish a Lab before configuring its quiz."));
+        } else {
+            long published = labs.stream().filter(LabSetup::published).count();
+            long withQuiz = labs.stream().filter(LabSetup::published).filter(LabSetup::quizPublished).count();
+            steps.add(new Step("quiz",
+                    published > 0 && withQuiz == published ? "DONE" : withQuiz > 0 ? "PARTIAL" : "ACTION",
+                    withQuiz + "/" + published + " published Labs have a quiz."));
+        }
+        steps.add(new Step("passkey",
+                passkey.active() ? "DONE" : "ACTION",
+                passkey.active()
+                        ? "Passkey is active until " + passkey.expiresAt() + "."
+                        : "Issue a course Passkey so students can enroll."));
+        steps.add(new Step("preview",
+                preview != null ? "DONE" : "ACTION",
+                preview != null
+                        ? "Open a Lab to preview the student flow."
+                        : "Finish the previous steps to preview the student Lab."));
+
+        String nextAction;
+        if (labs.isEmpty()) nextAction = "seed-labs";
+        else if (!reference.referenceReady()) nextAction = "attach-source";
+        else if (hasRuntimeLab && (!reference.runtimeConfigured() || !reference.runtimeMatchesSource())) nextAction = "configure-runtime";
+        else if (hasRuntimeLab && !reference.topologyConfigured()) nextAction = "configure-studio";
+        else if (!allPublished) nextAction = "publish-labs";
+        else if (!allQuizzes) nextAction = "publish-quiz";
+        else if (!passkey.active()) nextAction = "issue-passkey";
+        else nextAction = "open-lab";
+
+        return new Setup(workspaceId, workspace.getName(), workspace.getStatus(), workspace.isCourseMode(),
+                reference, labs, passkey, steps, nextAction, preview);
+    }
+
+    private ReferenceSetup resolveReference(UUID workspaceId, List<Assignment> ordered) {
+        ModelVersion model = ordered.stream()
+                .map(Assignment::getReferenceModel)
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElse(null);
+        if (model == null) {
+            Project referenceProject = projects.findByWorkspaceId(workspaceId).stream()
+                    .filter(project -> "TEACHER_REFERENCE".equals(project.getProjectType())
+                            || Boolean.TRUE.equals(project.getIsReferenceTemplate()))
+                    .findFirst()
+                    .orElse(null);
+            if (referenceProject != null) {
+                model = models.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(referenceProject.getId())
+                        .orElse(null);
+            }
+            if (model == null && referenceProject != null) {
+                return emptyReference(referenceProject);
+            }
+        }
+        return model == null ? emptyReference(null) : reference(model);
+    }
+
+    private ReferenceSetup reference(ModelVersion model) {
+        Project project = model.getProject();
+        SourceSnapshot snapshot = model.getSourceSnapshot();
+        boolean referenceReady = project != null && !"DELETED".equals(project.getStatus())
+                && snapshot != null && Boolean.TRUE.equals(snapshot.getIsPublished())
+                && snapshot.getArtifactHash() != null && !snapshot.getArtifactHash().isBlank()
+                && snapshot.getStoragePath() != null && !snapshot.getStoragePath().isBlank();
+        RuntimeConfiguration configuration = project == null ? null
+                : configurations.findById(project.getId()).orElse(null);
+        JsonNode profile = configuration == null ? null : configuration.getProfile();
+        List<String> applications = objectKeys(profile == null ? null : profile.get("applications"));
+        JsonNode topology = profile == null ? null : profile.get("studioTopology");
+        int blockCount = arraySize(topology == null ? null : topology.get("blocks"));
+        int connectionCount = arraySize(topology == null ? null : topology.get("connections"));
+        boolean topologyConfigured = topology != null && topology.isObject()
+                && topology.path("version").asInt() == 1 && blockCount > 0;
+        boolean runtimeConfigured = configuration != null && !applications.isEmpty();
+        boolean matches = configuration != null && snapshot != null
+                && Objects.equals(configuration.getSourceSnapshotId(), snapshot.getId())
+                && Objects.equals(configuration.getModelVersionId(), model.getId());
+        return new ReferenceSetup(project == null ? null : project.getId(),
+                project == null ? null : project.getName(),
+                model.getId(), snapshot == null ? null : snapshot.getId(), model.getRevision(),
+                referenceReady, runtimeConfigured, matches,
+                configuration == null ? 0 : configuration.getRevision(),
+                applications, blockCount, connectionCount, topologyConfigured);
+    }
+
+    private static ReferenceSetup emptyReference(Project project) {
+        return new ReferenceSetup(project == null ? null : project.getId(),
+                project == null ? null : project.getName(), null, null, 0,
+                false, false, false, 0, List.of(), 0, 0, false);
+    }
+
+    private LabSetup labSetup(Assignment lab, ReferenceSetup fallback) {
+        boolean published = lab.getLabOrder() != null;
+        ReferenceSetup reference = lab.getReferenceModel() == null ? fallback : reference(lab.getReferenceModel());
+        boolean referenceReady = reference.referenceReady();
+        boolean requiresRuntime = Boolean.TRUE.equals(lab.getRequireRuntimeTrace());
+        boolean studioReady = referenceReady && reference.runtimeMatchesSource()
+                && reference.runtimeConfigured() && reference.topologyConfigured();
+        int quizVersion = quizVersion(lab);
+        String state = !published ? "DRAFT"
+                : requiresRuntime && !studioReady ? "NEEDS_STUDIO"
+                : quizVersion == 0 ? "NEEDS_QUIZ"
+                : "READY";
+        return new LabSetup(lab.getId(), published ? lab.getLabOrder() : 0, lab.getTitle(),
+                published, referenceReady, requiresRuntime, studioReady, quizVersion > 0, quizVersion, state);
+    }
+
+    private int quizVersion(Assignment lab) {
+        if (lab.getReferenceModel() == null) return 0;
+        Integer version = jdbc.queryForObject("""
+                SELECT coalesce(max(version), 0) FROM course_quizzes
+                WHERE assignment_id = ? AND reference_model_id = ?
+                """, Integer.class, lab.getId(), lab.getReferenceModel().getId());
+        return version == null ? 0 : version;
+    }
+
+    private PasskeySetup passkey(UUID workspaceId, Integer maxStudents) {
+        var key = jdbc.query("""
+                SELECT expires_at, revoked_at IS NULL AND expires_at > now() AS active
+                FROM course_passkeys WHERE workspace_id = ?
+                """, (rs, row) -> new Object[] {
+                        rs.getBoolean("active"),
+                        rs.getObject("expires_at", OffsetDateTime.class)
+                }, workspaceId).stream().findFirst().orElse(null);
+        Integer enrolled = jdbc.queryForObject("""
+                SELECT count(*) FROM workspace_members
+                WHERE workspace_id = ? AND member_role = 'STUDENT'
+                """, Integer.class, workspaceId);
+        return new PasskeySetup(key != null && Boolean.TRUE.equals(key[0]),
+                key == null ? null : (OffsetDateTime) key[1], maxStudents,
+                enrolled == null ? 0 : enrolled);
+    }
+
+    private static List<String> objectKeys(JsonNode node) {
+        if (node == null || !node.isObject()) return List.of();
+        List<String> keys = new ArrayList<>();
+        node.fieldNames().forEachRemaining(keys::add);
+        return keys;
+    }
+
+    private static int arraySize(JsonNode node) {
+        return node != null && node.isArray() ? node.size() : 0;
+    }
+}

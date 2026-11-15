@@ -61,6 +61,11 @@ export function Assignments() {
       {canManage && (
         <div className="flex flex-wrap items-center justify-end gap-2">
           {client.mode === "backend" && <SeedCuratedCourseLabs workspaceId={workspaceId} />}
+          <Button asChild variant="outline" size="sm">
+            <Link href={`/roadmap?workspace=${encodeURIComponent(workspaceId)}`}>
+              Course setup checklist
+            </Link>
+          </Button>
           <Button
             type="button"
             variant={showCreate ? "outline" : "default"}
@@ -140,6 +145,15 @@ export function Assignments() {
                     source={assignment.referenceSource}
                     assignmentId={assignment.id}
                   />
+                  {canManage && client.mode === "backend" && assignment.referenceSource?.projectId && (
+                    <Button asChild size="sm" variant="outline">
+                      <Link
+                        href={`/runtime-config?project=${encodeURIComponent(assignment.referenceSource.projectId)}`}
+                      >
+                        Configure runtime &amp; Studio Live
+                      </Link>
+                    </Button>
+                  )}
                   {canManage &&
                     client.mode === "backend" &&
                     (published || assignment.referenceSource) && (

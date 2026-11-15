@@ -3,6 +3,7 @@ package com.mavis.platform.workspace.controller;
 import com.mavis.common.dto.ApiResponse;
 import com.mavis.platform.workspace.service.CourseAccessService;
 import com.mavis.platform.workspace.service.CourseLabSeederService;
+import com.mavis.platform.workspace.service.CourseSetupService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -21,6 +22,7 @@ import java.util.UUID;
 public class CourseAccessController {
     private final CourseAccessService courses;
     private final CourseLabSeederService seeder;
+    private final CourseSetupService setup;
 
     public record IssueKey(@Min(1) @Max(168) int validHours, @Min(1) @Max(10000) Integer maxStudents) {}
     public record RedeemKey(@NotBlank @Pattern(regexp = "[A-Za-z0-9_-]{22}") String code) {}
@@ -29,6 +31,11 @@ public class CourseAccessController {
     @GetMapping("/workspaces/{workspaceId}/course-roadmap")
     public ApiResponse<CourseAccessService.Roadmap> roadmap(@PathVariable UUID workspaceId) {
         return ApiResponse.success(courses.roadmap(workspaceId));
+    }
+
+    @GetMapping("/workspaces/{workspaceId}/course-setup")
+    public ApiResponse<CourseSetupService.Setup> courseSetup(@PathVariable UUID workspaceId) {
+        return ApiResponse.success(setup.setup(workspaceId));
     }
 
     @PostMapping("/workspaces/{workspaceId}/course-labs/{assignmentId}/publish")
