@@ -137,3 +137,32 @@ export function StudioEvidenceReplay({ frames, onSound }: {
     </div>
   );
 }
+
+export async function deleteStudioEvidence(id: string) {
+  const database = await openEvidenceDatabase();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction("snapshots", "readwrite");
+      transaction.oncomplete = () => resolve();
+      transaction.onabort = () => reject(transaction.error);
+      transaction.objectStore("snapshots").delete(id);
+    });
+  } finally {
+    database.close();
+  }
+}
+
+export function StudioVideo({ blob, durationMs }: { blob: Blob; durationMs: number }) {
+  const [url, setUrl] = useState("");
+  useEffect(() => {
+    const source = URL.createObjectURL(blob);
+    setUrl(source);
+    return () => URL.revokeObjectURL(source);
+  }, [blob]);
+  return <div className="my-2 space-y-2">
+    <video aria-label="Recorded Studio video" controls src={url} className="max-h-72 w-full rounded-md" />
+    <p>{(durationMs / 1000).toFixed(1)} seconds recorded</p>
+    <a className="text-sky-200 hover:underline" href={url}
+      download={blob.type.includes("mp4") ? "mavis-recording.mp4" : "mavis-recording.webm"}>Download video</a>
+  </div>;
+}

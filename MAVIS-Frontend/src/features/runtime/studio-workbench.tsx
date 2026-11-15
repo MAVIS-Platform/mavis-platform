@@ -50,12 +50,15 @@ import {
   serializeStudioGraph,
   type StudioQuickAction,
 } from "./studio-observability";
+import { startStudioRecording } from "./studio-recording";
 import { StudioControls } from "./studio-controls";
 import { useStudioSound } from "./studio-sound";
 import {
   downloadStudioEvidence,
   loadStudioEvidence,
   storeStudioEvidence,
+  deleteStudioEvidence,
+  StudioVideo,
   StudioEvidenceReplay,
   type EvidenceFrame,
 } from "./studio-evidence";
@@ -505,6 +508,8 @@ type LocalSnapshot = {
   explanation: string;
   digest: string;
   imageData: string;
+  video?: Blob;
+  durationMs?: number;
   frame: EvidenceFrame;
   replay: EvidenceFrame[];
   replicasByService: Record<string, number>;
@@ -659,6 +664,8 @@ export function StudioWorkbench() {
   const [localSnapshots, setLocalSnapshots] = useState<LocalSnapshot[]>([]);
   const [snapshotNote, setSnapshotNote] = useState("");
   const [capturing, setCapturing] = useState(false);
+  const videoRecording = useRef<ReturnType<typeof startStudioRecording> | null>(null);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [recordedSteps, setRecordedSteps] = useState(0);
   const [snapshotError, setSnapshotError] = useState("");
   const replayCapture = useRef<{
@@ -1412,9 +1419,36 @@ export function StudioWorkbench() {
     }
   }, [captureEvidenceFrame, scenarioMessage]);
 
+  useEffect(() => {
+    if (!recordedSteps) return;
+    const started = performance.now();
+    const timer = window.setInterval(() => setRecordingSeconds(Math.floor((performance.now() - started) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, [recordedSteps > 0]);
+
+  useEffect(() => () => { void videoRecording.current?.stop(); }, []);
+
+  async function deleteSnapshot(id: string) {
+    try {
+      await deleteStudioEvidence(id);
+      setLocalSnapshots((saved) => saved.filter((snapshot) => snapshot.id !== id));
+    } catch {
+      setSnapshotError("Could not delete the snapshot. Try again.");
+    }
+  }
+
   function startReplay() {
     const frame = captureEvidenceFrame("Initial state");
     if (!frame) return;
+    const graph = workspaceRef.current?.querySelector<SVGSVGElement>("svg[data-studio-graph]");
+    if (!graph) return;
+    try {
+      videoRecording.current = startStudioRecording(graph);
+    } catch {
+      setSnapshotError("Video recording is unavailable in this browser.");
+      return;
+    }
+    setRecordingSeconds(0);
     playSound("capture");
     replayCapture.current = { started: performance.now(), frames: [frame], lastCapture: captureEvidenceFrame, lastScenario: scenarioMessage };
     setRecordedSteps(1);
@@ -1441,6 +1475,8 @@ export function StudioWorkbench() {
     setCapturing(true);
     setSnapshotError("");
     try {
+      const video = await videoRecording.current?.stop();
+      videoRecording.current = null;
       const imageData = await captureStudioImage(graph, true);
       const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify({ frame, replay })));
       const digest = "sha256:" + Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -1449,6 +1485,7 @@ export function StudioWorkbench() {
         capturedAt: new Date().toISOString(),
         explanation: snapshotNote.trim() || `${template.name} · ${frame.nodes.length} nodes · ${frame.totals.pods} pods`,
         digest, imageData, frame, replay,
+        ...(video ? { video: video.blob, durationMs: video.durationMs } : {}),
         replicasByService: Object.fromEntries(frame.nodes.map((node) => [node.id, node.replicas])),
         nodeNames: Object.fromEntries(frame.nodes.map((node) => [node.id, node.name])),
         connections: frame.connections,
@@ -2087,7 +2124,7 @@ export function StudioWorkbench() {
                         </div>
                         {recordedSteps > 0 && (
                           <span role="status" className="rounded-full bg-rose-500/15 px-2 py-1 text-xs text-rose-200">
-                            Recording · {recordedSteps} steps{recordedSteps >= 39 ? " · save to add the final step" : ""}
+                            Recording · {recordingSeconds}s
                           </span>
                         )}
                       </div>
@@ -2103,13 +2140,13 @@ export function StudioWorkbench() {
                         ) : (
                           <button type="button" onClick={startReplay} disabled={capturing}
                             className="rounded border border-sky-500/40 px-2 text-xs text-sky-200 disabled:opacity-50">
-                            Record replay
+                            Record video
                           </button>
                         )}
                         <button type="button" disabled={capturing} onClick={() => void captureLocalSnapshot()}
                           className="flex items-center gap-1 rounded bg-slate-100 px-2 py-1.5 text-xs font-semibold text-slate-950 disabled:opacity-50">
                           <Camera className="size-3" />
-                          {capturing ? "Saving…" : recordedSteps > 0 ? "Stop & save replay" : "Save snapshot"}
+                          {capturing ? "Saving…" : recordedSteps > 0 ? "Stop & save video" : "Save snapshot"}
                         </button>
                       </div>
                       {snapshotError && <p role="alert" className="text-xs text-rose-300">{snapshotError}</p>}
@@ -2132,13 +2169,17 @@ export function StudioWorkbench() {
                           <p className="mt-1 truncate text-[11px] text-muted-foreground">
                             {snap.explanation}
                           </p>
-                          {snap.replay.length > 0 ? (
+                          {snap.video ? (
+                            <StudioVideo blob={snap.video} durationMs={snap.durationMs ?? 0} />
+                          ) : snap.replay.length > 0 ? (
                             <StudioEvidenceReplay frames={snap.replay} onSound={playSound} />
                           ) : (
                             <img src={snap.imageData} alt="Captured complete diagram"
                               className="my-2 max-h-72 w-full rounded-md border border-slate-700 object-contain" />
                           )}
                           <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs">
+                            <button type="button" onClick={() => void deleteSnapshot(snap.id)}
+                              className="text-red-300 hover:text-red-200">Delete snapshot</button>
                             <a href={snap.imageData} download={`mavis-${snap.id}.png`} className="text-sky-200 hover:underline">Download PNG</a>
                             <button type="button" onClick={() => downloadStudioEvidence(snap)} className="text-sky-200 hover:underline">
                               Download evidence

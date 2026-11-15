@@ -299,15 +299,18 @@ async function main() {
     assert.equal(await graph.getByRole("button",{name:storageName,exact:true}).locator('[data-studio-symbol="object"]').count(),1);
     await page.getByRole("button",{name:/^Snapshots/}).click();
     await page.getByRole("textbox",{name:"Snapshot note"}).fill("Grading evidence");
-    await page.getByRole("button",{name:"Record replay",exact:true}).click();
+    await page.getByRole("button",{name:"Record video",exact:true}).click();
     await demand.fill("450");
-    await page.getByText("Recording · 2 steps",{exact:true}).waitFor();
-    await page.getByRole("button",{name:"Stop & save replay"}).click();
-    const replayDiagram=page.getByRole("img",{name:"Replay diagram"});
-    await replayDiagram.waitFor();
-    const exportedSvg=decodeURIComponent((await replayDiagram.getAttribute("src")).split(",").slice(1).join(","));
-    assert.match(exportedSvg,/data-studio-node="s3-storage-2"/);
-    assert.doesNotMatch(exportedSvg,/data-studio-scene="" transform=/);
+    await page.getByText("Recording · 3s",{exact:true}).waitFor();
+    await page.getByRole("button",{name:"Stop & save video"}).click();
+    const video=page.getByLabel("Recorded Studio video");
+    await video.waitFor();
+    await page.waitForFunction(()=>document.querySelector("video")?.readyState>=2);
+    const [recordingDownload]=await Promise.all([
+      page.waitForEvent("download"),
+      page.getByRole("link",{name:"Download video",exact:true}).click(),
+    ]);
+    assert.ok(fs.statSync(await recordingDownload.path()).size>1000);
     assert.match(await page.getByRole("link",{name:"Download PNG"}).getAttribute("href"),/^data:image\/png;base64,/);
     const [report]=await Promise.all([
       page.waitForEvent("download"),
@@ -317,8 +320,8 @@ async function main() {
     const reportText=fs.readFileSync(await report.path(),"utf8");
     assert.match(reportText,/Grading evidence/);
     assert.match(reportText,/Configuration or topology changed/);
-    await page.getByRole("button",{name:"Play replay",exact:true}).click();
-    await page.getByText(/Step 2\/3/).waitFor();
+    await video.evaluate(element=>element.play());
+    assert.equal(await video.evaluate(element=>element.paused),false);
     await page.getByText("Snapshot nodes",{exact:true}).click();
     await page.getByText(storageName+" → order-service · HTTP",{exact:true}).waitFor();
     await page.getByRole("heading",{name:storageName,exact:true}).getByRole("button").dblclick();
@@ -474,6 +477,12 @@ async function main() {
     const fraudLatency=await latencyOn("fraud-detector");
     assert.ok(redisLatency<sqlLatency && sqlLatency<fraudLatency,"Redis, SQL and fraud analysis must have distinct baseline latency");
     assert.match(await fintechEdge("settlement-db").locator(":scope > title").textContent(),/Destination.*Transport.*Caller dispatch/);
+    if (!await page.getByRole("button",{name:"Delete snapshot",exact:true}).isVisible()) await page.getByRole("button",{name:/^Snapshots/}).click();
+    await page.getByRole("button",{name:"Delete snapshot",exact:true}).click();
+    assert.equal(await page.getByText("Grading evidence",{exact:true}).count(),0);
+    await page.reload();
+    await page.getByRole("button",{name:"Snapshots (0)",exact:true}).click();
+    assert.equal(await page.getByRole("button",{name:"Delete snapshot",exact:true}).count(),0);
     assert.deepEqual(errors,[]);
     console.log("PASS Studio world-layout orbit, pointer cleanup, context-menu prevention and separate Stats panels");
   }finally{
