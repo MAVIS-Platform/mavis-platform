@@ -88,6 +88,18 @@ async function main() {
     await page.mouse.up({button:"right"});
     await page.mouse.move(board.x+150,board.y+40);
     assert.deepEqual(await anchor(),afterBlur,"Released pointer must not keep rotating");
+    await page.evaluate(()=>{
+      window.canvasMenus=[];
+      window.addEventListener("contextmenu",event=>window.canvasMenus.push(event.defaultPrevented));
+    });
+    await page.mouse.move(board.x+30,board.y+30);
+    await page.mouse.down({button:"right"});
+    await page.mouse.move(board.x-10,board.y+50,{steps:4});
+    await page.mouse.up({button:"right"});
+    const afterOutsideRelease=await anchor();
+    await page.mouse.move(board.x+100,board.y+100);
+    assert.deepEqual(await anchor(),afterOutsideRelease,"Release outside canvas must end orbit");
+    assert.ok(await page.evaluate(()=>window.canvasMenus.length>0&&window.canvasMenus.every(Boolean)),"Canvas-origin right gestures must suppress native context menus");
     await page.getByRole("button",{name:"Stats",exact:true}).click();
     await page.getByText("Server Cluster Overview (Admin POV)",{exact:true}).waitFor();
     assert.equal(await page.locator("main").isVisible(),false);

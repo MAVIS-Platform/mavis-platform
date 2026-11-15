@@ -868,6 +868,7 @@ export function StudioObservability({
   } | null>(null);
   const svg = useRef<SVGSVGElement>(null);
   const activePointer = useRef<number | null>(null);
+  const canvasRightGesture = useRef(false);
   const endPointerInteraction = useCallback(() => {
     const pointerId = activePointer.current;
     activePointer.current = null;
@@ -879,15 +880,25 @@ export function StudioObservability({
     }
   }, []);
   useEffect(() => {
+    const onPointerStart = () => { canvasRightGesture.current = false; };
+    const onContextMenu = (event: MouseEvent) => {
+      if (event.button === 2 && canvasRightGesture.current) {
+        event.preventDefault();
+      }
+    };
     const onVisibilityChange = () => {
       if (document.hidden) endPointerInteraction();
     };
     window.addEventListener("blur", endPointerInteraction);
+    window.addEventListener("pointerdown", onPointerStart, true);
+    window.addEventListener("contextmenu", onContextMenu, true);
     window.addEventListener("pointerup", endPointerInteraction);
     window.addEventListener("pointercancel", endPointerInteraction);
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       window.removeEventListener("blur", endPointerInteraction);
+      window.removeEventListener("pointerdown", onPointerStart, true);
+      window.removeEventListener("contextmenu", onContextMenu, true);
       window.removeEventListener("pointerup", endPointerInteraction);
       window.removeEventListener("pointercancel", endPointerInteraction);
       document.removeEventListener("visibilitychange", onVisibilityChange);
@@ -1593,6 +1604,7 @@ export function StudioObservability({
             if (activePointer.current !== null || ![0,1,2].includes(event.button)) return;
             event.preventDefault();
             activePointer.current = event.pointerId;
+            if (event.button === 2) canvasRightGesture.current = true;
             cameraDrag.current = {
               x: event.clientX,
               y: event.clientY,
