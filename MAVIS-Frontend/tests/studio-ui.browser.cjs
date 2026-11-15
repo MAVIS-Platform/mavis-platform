@@ -155,6 +155,16 @@ async function main() {
       exact: true,
     });
     assert.equal(await finish.isDisabled(), true);
+    assert.equal(
+      await page.getByRole("button", { name: "Start service", exact: true }).isDisabled(),
+      true,
+      "a service reported as running by Runner telemetry must not be startable again",
+    );
+    assert.equal(
+      await page.getByRole("button", { name: "Stop service", exact: true }).isDisabled(),
+      false,
+      "a service reported as running by Runner telemetry must remain stoppable",
+    );
     await page.getByLabel("Explain the observed behavior").fill("Baseline before scaling");
     await page.getByRole("button", { name: "Capture evidence snapshot", exact: true }).click();
     await page.getByRole("button", { name: "Download evidence", exact: true }).waitFor();

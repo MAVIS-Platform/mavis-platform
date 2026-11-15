@@ -36,6 +36,15 @@ Tất cả endpoint sử dụng tiền tố `/api/v1` và bảo vệ bằng JWT 
 | GET | `/analyzer/runtime/sessions/{sessionId}/sequence` | Trả `SequenceDiagramResponseDTO` (`steps[]`, `limitations[]`, không sinh reply giả) |
 | POST | `/analyzer/runtime/sessions/{sessionId}/ingest-receipt` | Tiếp nhận receipt chuẩn hóa từ Runner (trả `200`/`Receipt`) |
 | POST | `/analyzer/runtime/sessions/{sessionId}/ingest-receipt-ack` | Tiếp nhận receipt idempotent kèm `receiptDigest` và `persistenceStatus` (`ALREADY_COMMITTED`) |
+| GET | `/analyzer/runtime/sessions/{sessionId}/studio` | Trả trạng thái Studio, telemetry quan sát, lịch sử action và danh sách snapshot; UI dùng `telemetry.services[].runningReplicas` làm trạng thái ban đầu, sau đó ưu tiên kết quả action đã `CONFIRMED` |
+| POST | `/analyzer/runtime/sessions/{sessionId}/studio/actions` | Gửi action idempotent `START`, `STOP`, `SCALE`; `actionId` là UUID và `SCALE` chỉ nhận `replicas` từ 1 đến 8 |
+| POST | `/analyzer/runtime/sessions/{sessionId}/studio/snapshots` | Đóng băng ảnh PNG, giải thích và telemetry hiện tại thành evidence snapshot có digest |
+| GET | `/analyzer/runtime/sessions/{sessionId}/studio/snapshots/{snapshotId}` | Đọc snapshot bất biến thuộc đúng session và người dùng có quyền |
+| POST | `/analyzer/runtime/sessions/{sessionId}/studio/finish` | Kết thúc Studio sau khi có ít nhất một action được Runner xác nhận và tạo receipt HMAC |
+| GET | `/analyzer/runtime/sessions/{sessionId}/studio/receipt` | Đọc receipt Studio đã niêm phong để xuất/nộp minh chứng |
+| POST | `/analyzer/runtime/sessions/{sessionId}/studio/telemetry` | Runner gửi telemetry thực đã redaction; endpoint được bảo vệ bằng service authentication |
+| GET | `/analyzer/runtime/sessions/{sessionId}/studio/commands?resourceProject=...` | Runner poll các command đang chờ của đúng resource project |
+| POST | `/analyzer/runtime/sessions/{sessionId}/studio/ack` | Runner xác nhận kết quả action cùng Before/After thực tế; backend từ chối ack sai phạm vi |
 
 ## 3. Đối chiếu Ma trận Nghiệm thu BM04 (`Wf03AcceptanceMatrixTest` — **28 ca**)
 

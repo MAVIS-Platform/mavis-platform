@@ -43,9 +43,16 @@ export function StudioControls({ sessionId }: { sessionId: string }) {
     (item) => item.status === "PENDING" || item.status === "RUNNING",
   );
   const hasConfirmedAction = data.actions.some((item) => item.status === "CONFIRMED");
-  const runningReplicas = [...data.actions]
+  const lastConfirmedReplicas = [...data.actions]
     .reverse()
     .find((item) => item.service === target && item.status === "CONFIRMED")?.result?.replicasAfter;
+  // The first Studio render may not have an action history yet. Runner telemetry is
+  // the source of truth for that initial state; a confirmed action takes precedence
+  // while the next telemetry sample is still in flight.
+  const observedRunningReplicas = data.telemetry?.services.find(
+    (item) => item.service === target,
+  )?.runningReplicas;
+  const runningReplicas = lastConfirmedReplicas ?? observedRunningReplicas;
   const busy =
     state.isError ||
     action.isPending ||
