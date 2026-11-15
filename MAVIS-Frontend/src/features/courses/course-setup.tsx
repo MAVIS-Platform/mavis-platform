@@ -7,6 +7,7 @@ import { useLocale } from "@/lib/i18n/locale-context";
 import {
   SeedCuratedCourseLabs,
   useCourseSetup,
+  useRuntimeSetupReadiness,
   type CourseSetup,
   type CourseSetupLab,
 } from "@/features/workspaces/course-access";
@@ -36,6 +37,7 @@ const ACTION_LABELS: Record<string, { en: string; vi: string }> = {
 function stepHref(stepId: string, data: CourseSetup, workspaceId: string) {
   const workspace = `/assignments?workspace=${encodeURIComponent(workspaceId)}`;
   if (stepId === "workspace") return `/members?workspace=${encodeURIComponent(workspaceId)}`;
+  if (stepId === "studio" && data.nextAction === "freeze-topology") return workspace;
   if (stepId === "runtime" || stepId === "studio")
     return data.reference.projectId
       ? `/runtime-config?project=${encodeURIComponent(data.reference.projectId)}`
@@ -62,9 +64,15 @@ function stateVariant(state: string): "success" | "warning" | "secondary" | "des
 function labVariant(state: string): "success" | "warning" | "secondary" | "destructive" {
   return state === "READY"
     ? "success"
-    : state === "NEEDS_STUDIO" || state === "NEEDS_QUIZ"
+    : state === "NEEDS_STUDIO" || state === "NEEDS_FREEZE" || state === "NEEDS_QUIZ"
       ? "warning"
       : "secondary";
+}
+
+function stepActionLabel(stepId: string, data: CourseSetup) {
+  if (stepId === "studio" && data.nextAction === "freeze-topology")
+    return { en: "Freeze topology", vi: "Đóng băng topology" };
+  return ACTION_LABELS[stepId] ?? { en: "Open", vi: "Mở" };
 }
 
 function shortId(value: string | null) {
@@ -74,6 +82,7 @@ function shortId(value: string | null) {
 export function CourseSetupPanel({ workspaceId }: { workspaceId: string }) {
   const { t } = useLocale();
   const setup = useCourseSetup(workspaceId);
+  const readiness = useRuntimeSetupReadiness(setup.data?.reference.projectId ?? null);
 
   if (setup.isPending) {
     return (
@@ -96,8 +105,26 @@ export function CourseSetupPanel({ workspaceId }: { workspaceId: string }) {
   }
 
   const data = setup.data;
-  const done = data.steps.filter((step) => step.state === "DONE").length;
-  const next = data.steps.find((step) => step.state !== "DONE");
+  const runtimeReadiness = readiness.data;
+  const steps = data.steps.map((step) => {
+    if (step.id !== "studio" || !runtimeReadiness || runtimeReadiness.runnerReady) return step;
+    const reason = [...runtimeReadiness.prerequisites, ...runtimeReadiness.warnings]
+      .filter(Boolean)
+      .slice(0, 2)
+      .join(" · ");
+    return {
+      ...step,
+      state: step.state === "DONE" ? ("ACTION" as const) : step.state,
+      detail: reason
+        ? `${t("Runtime readiness is incomplete", "Runtime chưa sẵn sàng")}: ${reason}`
+        : t(
+            "Runtime readiness is incomplete. Recheck preflight, images and Runner.",
+            "Runtime chưa sẵn sàng. Kiểm tra preflight, image và Runner.",
+          ),
+    };
+  });
+  const done = steps.filter((step) => step.state === "DONE").length;
+  const next = steps.find((step) => step.state !== "DONE");
   const nextHref = next ? stepHref(next.id, data, workspaceId) : null;
 
   return (
@@ -114,16 +141,16 @@ export function CourseSetupPanel({ workspaceId }: { workspaceId: string }) {
             )}
           </p>
         </div>
-        <Badge variant={done === data.steps.length ? "success" : "secondary"}>
-          {done}/{data.steps.length} {t("steps done", "bước hoàn tất")}
+        <Badge variant={done === steps.length ? "success" : "secondary"}>
+          {done}/{steps.length} {t("steps done", "bước hoàn tất")}
         </Badge>
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
         <ol className="space-y-2" aria-label={t("Course setup steps", "Các bước thiết lập khóa học")}>
-          {data.steps.map((step) => {
+          {steps.map((step) => {
             const label = STEP_LABELS[step.id] ?? { en: step.id, vi: step.id };
-            const action = ACTION_LABELS[step.id] ?? { en: "Open", vi: "Mở" };
+            const action = stepActionLabel(step.id, data);
             const href = step.state === "DONE" ? null : stepHref(step.id, data, workspaceId);
             return (
               <li
@@ -196,6 +223,57 @@ export function CourseSetupPanel({ workspaceId }: { workspaceId: string }) {
 
           <div className="rounded-lg border p-3">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              {t("Runtime readiness", "Độ sẵn sàng runtime")}
+            </p>
+            {!data.reference.projectId ? (
+              <p className="mt-1 text-xs text-muted-foreground">
+                {t("Attach a reference project first.", "Gắn project tham chiếu trước.")}
+              </p>
+            ) : readiness.isPending ? (
+              <p className="mt-1 text-xs text-muted-foreground">
+                {t("Checking preflight and Runner…", "Đang kiểm tra preflight và Runner…")}
+              </p>
+            ) : readiness.isError || !runtimeReadiness ? (
+              <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                {t("Could not read runtime readiness.", "Không đọc được độ sẵn sàng runtime.")}
+              </p>
+            ) : (
+              <div className="mt-1 space-y-1 text-xs">
+                <p>
+                  Preflight:{" "}
+                  <span className={runtimeReadiness.preflightCompatible ? "text-success" : "text-amber-700 dark:text-amber-300"}>
+                    {runtimeReadiness.preflightCompatible
+                      ? t("compatible", "tương thích")
+                      : t("not compatible", "chưa tương thích")}
+                  </span>
+                </p>
+                <p>
+                  Runner / images:{" "}
+                  <span className={runtimeReadiness.runnerReady ? "text-success" : "text-amber-700 dark:text-amber-300"}>
+                    {runtimeReadiness.runnerReady
+                      ? t("ready", "sẵn sàng")
+                      : t("not ready", "chưa sẵn sàng")}
+                  </span>
+                </p>
+                <p className="text-muted-foreground">
+                  {runtimeReadiness.applications.length} apps · {runtimeReadiness.mappings.length} mappings ·{" "}
+                  {Array.isArray((runtimeReadiness.topology as { blocks?: unknown[] } | null)?.blocks)
+                    ? (runtimeReadiness.topology as { blocks: unknown[] }).blocks.length
+                    : 0}{" "}
+                  blocks
+                </p>
+                {runtimeReadiness.prerequisites.slice(0, 2).map((item) => (
+                  <p key={item} className="text-amber-700 dark:text-amber-300">{item}</p>
+                ))}
+                {runtimeReadiness.warnings.slice(0, 2).map((item) => (
+                  <p key={item} className="text-amber-700 dark:text-amber-300">{item}</p>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-lg border p-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {t("Enrollment", "Ghi danh")}
             </p>
             <p className="mt-1 text-sm font-medium">
@@ -244,7 +322,7 @@ export function CourseSetupPanel({ workspaceId }: { workspaceId: string }) {
           {nextHref && (
             <Button asChild size="sm">
               <Link href={nextHref}>
-                {t(ACTION_LABELS[next.id]?.en ?? "Open", ACTION_LABELS[next.id]?.vi ?? "Mở")}
+                {t(stepActionLabel(next.id, data).en, stepActionLabel(next.id, data).vi)}
               </Link>
             </Button>
           )}

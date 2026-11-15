@@ -55,7 +55,7 @@ class CourseAccessPostgresTest {
             });
             var policy = new CourseLabPolicy(jdbc);
             var courses = new CourseAccessService(access, workspaces, assignments, policy, jdbc,
-                    mock(LabReferenceArchive.class));
+                    mock(LabReferenceArchive.class), mock(com.mavis.common.repository.RuntimeConfigurationRepository.class));
             var progression = new CourseProgressionService(jdbc, workspaces);
             assertEquals(ErrorCode.BAD_REQUEST, assertThrows(BusinessException.class,
                     () -> progression.recordFinalizedResult(null, 0, true)).getErrorCode());

@@ -47,6 +47,7 @@ const setup = {
       referenceReady: true,
       requiresRuntime: true,
       studioReady: true,
+      topologyFrozen: true,
       quizPublished: true,
       quizVersion: 1,
       state: "READY",
@@ -71,6 +72,19 @@ const setup = {
   nextAction: "configure-studio",
   previewAssignmentId: "55555555-5555-5555-5555-555555555555",
 };
+const readiness = {
+  configured: true,
+  preflightCompatible: true,
+  runnerReady: true,
+  revision: 2,
+  prerequisites: [],
+  warnings: [],
+  applications: ["orders", "payment"],
+  mappings: ["orders", "payment"],
+  detectedServices: ["orders", "payment"],
+  runnerIssues: [],
+  topology: { version: 1, blocks: [{}, {}], connections: [{}] },
+};
 fs.writeFileSync(
   entry,
   `
@@ -80,7 +94,8 @@ import {QueryClient,QueryClientProvider} from '@tanstack/react-query';
 import {ApiContext} from '@/providers/app-context';
 import {LocaleProvider} from '@/lib/i18n/locale-context';
 import {CourseSetupPanel} from '@/features/courses/course-setup';
-globalThis.fetch=async()=>new Response(JSON.stringify({data:${JSON.stringify(setup)}}),{status:200,headers:{'content-type':'application/json'}});
+const readiness=${JSON.stringify(readiness)};
+globalThis.fetch=async(url)=>{const payload=String(url).includes("runtime-setup-readiness")?readiness:${JSON.stringify(setup)};return new Response(JSON.stringify({data:payload}),{status:200,headers:{'content-type':'application/json'}});};
 const api={mode:'backend',async execute(){return ${JSON.stringify(setup)}}};
 const client=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
 createRoot(document.getElementById('root')).render(<LocaleProvider><ApiContext.Provider value={api}><QueryClientProvider client={client}><div style={{padding:24,maxWidth:1200}}><CourseSetupPanel workspaceId="${setup.workspaceId}"/></div></QueryClientProvider></ApiContext.Provider></LocaleProvider>);
@@ -157,6 +172,7 @@ async function main() {
     assert.match(await studioLink.getAttribute("href"), /runtime-config\?project=22222222/);
     await page.getByText("Seed reference", { exact: true }).waitFor();
     await page.getByText("2 apps", { exact: true }).waitFor();
+    await page.getByText("Runner / images:", { exact: false }).waitFor();
     await page.getByText("Lab 1: Service Resilience", { exact: false }).waitFor();
     await page.getByText("READY", { exact: true }).waitFor();
     await page.getByText("Next:", { exact: true }).waitFor();

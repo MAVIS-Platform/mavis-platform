@@ -86,7 +86,7 @@ public class RuntimePlanningService {
   public StartRequest(UUID snapshotId,UUID scenarioId,int configurationRevision,int scenarioRevision,boolean approved,Map<String,String> environment){this(snapshotId,scenarioId,configurationRevision,scenarioRevision,approved,environment,List.of());}
   @Override public String toString(){return "RuntimeStartRequest[snapshotId="+snapshotId+",scenarioId="+scenarioId+",environment=[protected],infrastructureActions="+(infrastructureActions==null?0:infrastructureActions.size())+"]";}
  }
- public record ConfigurationView(UUID projectId,UUID snapshotId,UUID modelId,String profileId,JsonNode profile,int revision,boolean configured,boolean supported,boolean ready,List<String> prerequisites,boolean protectedInputsReady){}
+ public record ConfigurationView(UUID projectId,UUID snapshotId,UUID modelId,String profileId,JsonNode profile,int revision,boolean configured,boolean supported,boolean ready,List<String> prerequisites,List<String> warnings,boolean protectedInputsReady){}
  public record ScenarioView(UUID id,UUID projectId,String name,List<String> steps,int revision){}
  public record GenerateScenarioRequest(UUID snapshotId,UUID modelId,@Size(max=500) String goal,UUID repairSessionId){
   public GenerateScenarioRequest(UUID snapshotId,UUID modelId,String goal){this(snapshotId,modelId,goal,null);}
@@ -151,7 +151,7 @@ public class RuntimePlanningService {
   boolean imagesReady=runnerImagesConfigured()||profileHasPinnedRunnerImages(profileNode);
   if(!imagesReady)warnings.add("Sandbox runner images are not configured (MAVIS_RUNNER_COLLECTOR_IMAGE, MAVIS_RUNNER_SCENARIO_RUNNER_IMAGE); runs cannot start until an operator sets them");
   if(!environments.isConfigured())warnings.add("MAVIS_RUNTIME_ENVIRONMENT_KEY is not configured; changed environment values, generated sandbox secrets and request bodies cannot be delivered to the runner");
-  return new ConfigurationView(id,snapshot,c==null?null:c.getModelVersionId(),c==null?"SPRING_BOOT_DOTNET_COMPOSE_V1":c.getProfileId(),profileNode,c==null?0:c.getRevision(),c!=null,supported,c!=null&&supported&&enabled&&imagesReady,warnings,true);
+  return new ConfigurationView(id,snapshot,c==null?null:c.getModelVersionId(),c==null?"SPRING_BOOT_DOTNET_COMPOSE_V1":c.getProfileId(),profileNode,c==null?0:c.getRevision(),c!=null,supported,c!=null&&supported&&enabled&&imagesReady,warnings,warnings,true);
  }
 
  @Transactional
@@ -2171,15 +2171,20 @@ public class RuntimePlanningService {
    if(isGuidedStudentProject(guidedProject)) {
     profileCopy.remove("studioTopology");
     var assignment=guidedProject.getAssignment();
-    var model=assignment==null?null:assignment.getReferenceModel();
-    var reference=model==null?null:model.getSourceSnapshot();
-    if(reference!=null && reference.getProject()!=null && Boolean.TRUE.equals(reference.getIsPublished())
-        && java.util.Objects.equals(reference.getId(),guidedProject.getReferenceSnapshotId())) {
-     configurations.findById(reference.getProject().getId())
-         .filter(referenceConfig -> reference.getId().equals(referenceConfig.getSourceSnapshotId()))
-         .map(RuntimeConfiguration::getProfile)
-         .map(profile -> profile.get("studioTopology"))
-         .ifPresent(topology -> profileCopy.set("studioTopology",topology));
+    var frozen=assignment==null?null:assignment.getStudioTopologySnapshot();
+    if(frozen!=null && frozen.isObject()) {
+     profileCopy.set("studioTopology",frozen.deepCopy());
+    } else {
+     var model=assignment==null?null:assignment.getReferenceModel();
+     var reference=model==null?null:model.getSourceSnapshot();
+     if(reference!=null && reference.getProject()!=null && Boolean.TRUE.equals(reference.getIsPublished())
+         && java.util.Objects.equals(reference.getId(),guidedProject.getReferenceSnapshotId())) {
+      configurations.findById(reference.getProject().getId())
+          .filter(referenceConfig -> reference.getId().equals(referenceConfig.getSourceSnapshotId()))
+          .map(RuntimeConfiguration::getProfile)
+          .map(profile -> profile.get("studioTopology"))
+          .ifPresent(topology -> profileCopy.set("studioTopology",topology));
+     }
     }
    }
    Set<String> studioServices=new java.util.HashSet<>(confirmedMappings.keySet());

@@ -590,8 +590,8 @@ test("audit: graph layers retain explicit classification and resolved certainty"
 
 test("audit: legacy proxy permits documented reads/evaluation while excluding internal and arbitrary paths",()=>{
  const {allowedBackendPath}=require("../src/lib/api/backend-path.ts");
- for(const p of [`projects/${project}/snapshots`,`projects/${project}/jobs`,`analyzer/snapshots/${snapshot}`,`analyzer/models/${model}/elements`,`analyzer/models/${model}/elements/${node}`,`analyzer/models/${model}/evaluate`,`analyzer/evaluations/${job}/findings`,`assignments/${job}/reference-source`,"notifications","notifications/read-all",`notifications/${node}/read`]) assert.equal(allowedBackendPath(p),true,p);
- for(const p of ["admin/users",`analyzer/runtime/sessions/${job}/recovery-result`,"../admin/users",`projects/${project}/snapshots/extra`,"https://private",`analyzer/models/${model}/evaluate/extra`]) assert.equal(allowedBackendPath(p),false,p);
+ for(const p of [`projects/${project}/snapshots`,`projects/${project}/jobs`,`analyzer/snapshots/${snapshot}`,`analyzer/models/${model}/elements`,`analyzer/models/${model}/elements/${node}`,`analyzer/models/${model}/evaluate`,`analyzer/evaluations/${job}/findings`,`analyzer/projects/${project}/runtime-setup-readiness`,`assignments/${job}/reference-source`,"notifications","notifications/read-all",`notifications/${node}/read`]) assert.equal(allowedBackendPath(p),true,p);
+ for(const p of ["admin/users",`analyzer/runtime/sessions/${job}/recovery-result`,"../admin/users",`projects/${project}/snapshots/extra`,"https://private",`analyzer/models/${model}/evaluate/extra`,`analyzer/projects/${project}/runtime-setup-readiness/extra`]) assert.equal(allowedBackendPath(p),false,p);
 });
 
 test("audit: optional runtime failure cannot block submission; required runtime remains gated",()=>{
