@@ -578,6 +578,11 @@ class RuntimeStudioApiIntegrationTest extends ApiIntegrationContext {
                 }
                 Thread.sleep(500);
             }
+            if (observedBefore == null && !runnerProc.isAlive()) {
+                String output = new String(runnerProc.getInputStream().readAllBytes(),
+                        java.nio.charset.StandardCharsets.UTF_8);
+                org.junit.jupiter.api.Assertions.fail("Runner exited before telemetry: " + output);
+            }
             org.junit.jupiter.api.Assertions.assertNotNull(observedBefore, "Runner did not publish initial Studio telemetry in time");
 
             // Capture BEFORE snapshot
