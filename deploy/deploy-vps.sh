@@ -144,6 +144,12 @@ if [ -e "$quiz_authoring_migration" ]; then
   compose "$prefix" "$tag" "$incoming/compose.production.yml" config --format json |
     python3 "$schema_tool" "$quiz_authoring_migration" /opt/mavis/db-backups/quiz-before-v36.dump
 fi
+runtime_assignment_migration="$incoming/V37__Runtime_Session_Assignment.sql"
+if [ -e "$runtime_assignment_migration" ]; then
+  test -f "$quiz_authoring_migration" && test -f "$schema_tool" || { echo "Incomplete Runtime assignment schema package"; exit 1; }
+  compose "$prefix" "$tag" "$incoming/compose.production.yml" config --format json |
+    python3 "$schema_tool" "$runtime_assignment_migration" /opt/mavis/db-backups/runtime-before-v37.dump
+fi
 if ! compose "$prefix" "$tag" "$incoming/compose.production.yml" up -d --no-build --remove-orphans || ! healthy; then
   echo "Deployment failed; restoring previous images and Compose."
   compose "$old_prefix" "$old_tag" "$previous/compose.production.yml" up -d --no-build --remove-orphans

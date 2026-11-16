@@ -45,8 +45,9 @@ public class CourseAccessController {
 
     @PostMapping("/workspaces/{workspaceId}/course-labs/{assignmentId}/freeze-topology")
     public ApiResponse<CourseAccessService.Lab> freezeTopology(
-            @PathVariable UUID workspaceId, @PathVariable UUID assignmentId) {
-        return ApiResponse.success(courses.freezeTopology(workspaceId, assignmentId));
+            @PathVariable UUID workspaceId, @PathVariable UUID assignmentId,
+            @RequestParam(required = false) UUID sessionId) {
+        return ApiResponse.success(courses.freezeTopology(workspaceId, assignmentId, sessionId));
     }
 
     @PostMapping("/workspaces/{workspaceId}/course-labs/seed-curated")

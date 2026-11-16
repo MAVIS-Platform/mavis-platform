@@ -125,4 +125,20 @@ class CourseAccessServiceTest {
                 () -> courses.issue(workspaceId, 24)).getErrorCode());
         verifyNoInteractions(assignments, jdbc);
     }
+
+    @Test
+    void freezeRejectsSessionThatIsNotLinkedToTheLab() {
+        var runtimeSessions = mock(com.mavis.common.repository.RuntimeSessionRepository.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(courses, "runtimeSessions", runtimeSessions);
+        when(workspaces.findLockedById(workspaceId)).thenReturn(Optional.of(workspace));
+        assignment.setLabOrder(1);
+        when(assignments.findLockedById(assignmentId)).thenReturn(Optional.of(assignment));
+        var sessionId = UUID.randomUUID();
+        var session = com.mavis.common.entity.RuntimeSession.builder().id(sessionId).build();
+        when(runtimeSessions.findById(sessionId)).thenReturn(Optional.of(session));
+
+        assertThrows(BusinessException.class,
+                () -> courses.freezeTopology(workspaceId, assignmentId, sessionId));
+    }
+
 }

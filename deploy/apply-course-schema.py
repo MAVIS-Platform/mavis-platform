@@ -85,6 +85,17 @@ SELECT CASE WHEN bool_and(present) THEN 'ready'
             WHEN bool_or(present) THEN 'partial'
             ELSE 'missing' END FROM expected;
 """),
+    "V37__Runtime_Session_Assignment.sql": (37, """
+WITH expected(present) AS (VALUES
+    (EXISTS (SELECT FROM information_schema.columns WHERE table_schema = current_schema()
+             AND table_name = 'runtime_sessions' AND column_name = 'assignment_id'
+             AND data_type = 'uuid')),
+    (to_regclass('ix_runtime_sessions_assignment_created') IS NOT NULL)
+)
+SELECT CASE WHEN bool_and(present) THEN 'ready'
+            WHEN bool_or(present) THEN 'partial'
+            ELSE 'missing' END FROM expected;
+"""),
     "V36__Quiz_Authoring.sql": (36, """
 WITH expected(present) AS (VALUES
     (to_regclass('course_quiz_drafts') IS NOT NULL),

@@ -32,6 +32,8 @@ public class RuntimeSessionCreateRequest {
 
     private UUID modelVersionId;
 
+    private UUID assignmentId;
+
     private String profileVersionId;
 
     private String runConfigurationVersionId;

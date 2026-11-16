@@ -775,3 +775,24 @@ test("Studio Live authoring and standalone Studio carry project and return conte
   assert.match(live, /projectName/);
   assert.match(live, /project: projectId/);
 });
+
+test("Studio Live setup uses a visual prepared topology builder and Lab session context", () => {
+  const editor = read("src/features/runtime/prepared-topology-editor.tsx");
+  const studio = read("src/features/assignments/lab-studio-section.tsx");
+  const contract = read("src/lib/api/contracts.ts");
+  const domain = read("src/types/domain.ts");
+  const runtime = read("src/features/runtime/backend.tsx");
+
+  assert.ok(editor.includes("Add block"));
+  assert.ok(editor.includes("Add connection"));
+  assert.ok(editor.includes("Save prepared topology"));
+  assert.ok(editor.includes("Advanced JSON"));
+  assert.doesNotMatch(editor, /textarea[^>]*Prepared Studio topology JSON/);
+  assert.ok(studio.includes("PreparedTopologyEditor"));
+  assert.ok(studio.includes("verifiedSession"));
+  assert.ok(studio.includes("sessionId={verifiedSession"));
+  assert.ok(studio.includes("assignment: assignment.id"));
+  assert.match(contract, /assignmentId:\s*id\.optional\(\)/);
+  assert.match(domain, /assignmentId:\s*z\.string\(\)\.nullable\(\)\.optional\(\)/);
+  assert.match(runtime, /assignmentId \? \{ assignmentId \}/);
+});

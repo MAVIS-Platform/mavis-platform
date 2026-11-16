@@ -510,6 +510,8 @@ export async function executeJava(
         sourceSnapshotId: z.string().uuid(),
         modelVersionId: z.string().uuid().nullish(),
         enrichedModelVersionId: z.string().uuid().nullish(),
+        assignmentId: z.string().uuid().nullish(),
+        labTitle: z.string().nullish(),
         scenarioName: z.string().nullish(),
         profileName: z.string().nullish(),
         executionStatus: z.string().nullish(),
@@ -554,6 +556,10 @@ export async function executeJava(
       snapshotId: value.sourceSnapshotId,
       modelId: value.modelVersionId ?? null,
       enrichedModelId: value.enrichedModelVersionId ?? null,
+      ...(value.assignmentId !== undefined
+        ? { assignmentId: value.assignmentId ?? null }
+        : {}),
+      ...(value.labTitle !== undefined ? { labTitle: value.labTitle ?? null } : {}),
       scenarioName: value.scenarioName ?? null,
       profileName: value.profileName ?? null,
       executionStatus: value.executionStatus ?? "UNKNOWN",

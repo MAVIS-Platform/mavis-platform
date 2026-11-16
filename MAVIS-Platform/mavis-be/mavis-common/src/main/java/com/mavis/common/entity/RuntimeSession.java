@@ -49,6 +49,10 @@ public class RuntimeSession {
     private ModelVersion modelVersion;
 
     @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "assignment_id")
+    private Assignment assignment;
+
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "triggered_by")
     private User triggeredBy;
 

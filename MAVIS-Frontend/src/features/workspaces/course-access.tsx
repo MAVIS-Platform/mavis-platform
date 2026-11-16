@@ -649,10 +649,12 @@ export function PublishCourseLab({
   workspaceId,
   assignmentId,
   position,
+  sessionId,
 }: {
   workspaceId: string;
   assignmentId: string;
   position?: number | undefined;
+  sessionId?: string | undefined;
 }) {
   const t = useCourseText();
   const cache = useQueryClient();
@@ -669,9 +671,10 @@ export function PublishCourseLab({
   });
   const freeze = useMutation({
     mutationFn: () =>
-      courseApi<Lab>(`workspaces/${workspaceId}/course-labs/${assignmentId}/freeze-topology`, {
-        method: "POST",
-      }),
+      courseApi<Lab>(
+        `workspaces/${workspaceId}/course-labs/${assignmentId}/freeze-topology${sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ""}`,
+        { method: "POST" },
+      ),
     onSuccess: () => {
       void cache.invalidateQueries({ queryKey: roadmapKey(workspaceId) });
       void cache.invalidateQueries({ queryKey: ["api", "course-setup", workspaceId] });

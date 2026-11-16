@@ -126,7 +126,7 @@ import {
   type RuntimeDraftStep,
   type RuntimeInput,
 } from "./scenario-suggestions";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useApi, useApiMutation, useApiQuery, usePermission, useSelection } from "@/hooks/use-api";
 import { RequestState, ErrorState, EmptyState } from "@/components/shared/request-state";
@@ -1763,6 +1763,8 @@ function isValidJsonPayloadString(raw: string | undefined): boolean {
 
 function RuntimeScenariosView({ projectId }: { projectId: string }) {
   const router = useRouter();
+  const params = useSearchParams();
+  const assignmentId = params?.get("assignment") || "";
   const snapshots = useApiQuery("snapshots", { projectId });
   const models = useApiQuery("modelVersions", { projectId });
   const scenarios = useApiQuery("scenarios", { projectId });
@@ -2995,9 +2997,15 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
         configurationRevision: activeConfigRevision,
         scenarioRevision: saved.revision,
         approved: true,
+        ...(assignmentId ? { assignmentId } : {}),
         ...(Object.keys(boundedEnv).length > 0 ? { environment: boundedEnv } : {}),
       });
-      router.push(`/sessions?project=${projectId}&session=${session.id}`);
+      const next = new URLSearchParams({ project: projectId, session: session.id });
+      if (assignmentId) next.set("assignment", assignmentId);
+      if (params?.get("studio") === "1") next.set("studio", "1");
+      const returnTo = params?.get("returnTo");
+      if (returnTo) next.set("returnTo", returnTo);
+      router.push(`/sessions?${next.toString()}`);
     } catch (error) {
       setRunMessage(
         `Request failed: ${error instanceof Error ? error.message : String(error)}. Check sessions before retrying an execution request.`,

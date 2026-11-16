@@ -77,9 +77,11 @@ Hỗ trợ `SINGLE_CHOICE`, `MULTI_CHOICE`, `TRUE_FALSE`. Học sinh thấy radi
 - Khi chưa có reference source: card nhắc gắn/phân tích nguồn và nút chuyển sang **Reference source**.
 - Khi có source:
   - **Configure runtime & Studio Live** mở `/runtime-config?project=...`.
-  - **Start Live session** mở `/sessions?project=...&model=...&studio=1&returnTo=...` khi runtime profile đã configured; nếu chưa, nút bị disable kèm lý do.
-  - **Open MAVIS Studio** mở `/studio?project=...&model=...&returnTo=...`; Studio tự chọn project và session RUNNING mới nhất.
-  - Sau khi Lab publish, nút **Freeze Studio topology** dùng V34.
+  - **Prepared Live blocks and connections** là builder trực quan: thêm block, nhãn, `canScale`, `initiallyStopped`; thêm kết nối from/to/route-controller/protocol; xem JSON nâng cao; lưu vào `studioTopology`.
+  - **Start Live session** mở `/sessions?project=...&assignment=...&model=...&studio=1&returnTo=...` khi runtime profile đã configured; nếu chưa, nút bị disable kèm lý do.
+  - **Open MAVIS Studio** mở `/studio?project=...&assignment=...&model=...&returnTo=...`; Studio tự chọn project và session RUNNING mới nhất.
+  - Session được tạo từ Lab lưu `assignment_id` (V37), nên danh sách session có thể lọc đúng Lab.
+  - Sau khi Lab publish, nút **Freeze Studio topology** gửi `sessionId` của session đã xác minh; backend chỉ chấp nhận session đúng assignment/source/model và có bằng chứng Stop/Start/Scale.
 - `/studio` Live có project selector; nếu chưa chọn project thì hiển thị cảnh báo và không tạo phiên.
 - Exit Studio quay lại đúng `returnTo` thay vì trang admin.
 - `runnerReady` vẫn là điều kiện cấu hình profile; UI không tuyên bố đã chạy Docker thật.
@@ -129,8 +131,9 @@ Hỗ trợ `SINGLE_CHOICE`, `MULTI_CHOICE`, `TRUE_FALSE`. Học sinh thấy radi
 - **`runnerReady`** hiện là điều kiện cấu hình của profile (`ConfigurationView.ready()`), chưa phải health check Runner thật. UI ghi "Runner / images: ready" theo API và không nâng thành "đã chạy thật".
 - **THEORY completion** không được suy ra: giao diện chỉ hiển thị tài liệu, không đánh dấu hoàn thành giả.
 - **Submission v2** vẫn thuộc Phase 4 của big update; hiện tại submission cũ vẫn dùng model/diagram cho Lab legacy.
-- **Real Docker Runner/Studio đã PASS ngày 17/11/2026**: STOP/START payment và SCALE orders 1→2, Before/After snapshot, HMAC receipt, cleanup `CONFIRMED`, 0 orphan. Chưa nghiệm thu hai tài khoản trên staging.
+- **Real Docker Runner/Studio đã PASS ngày 17/11/2026**: STOP/START payment và SCALE orders 1→2, Before/After snapshot, HMAC receipt, cleanup `CONFIRMED`, 0 orphan. **Web production với hai tài khoản thật vẫn cần chạy.**
 - **`runnerReady`** không phải health check trực tiếp; Start Live session chỉ bật khi profile configured, không đảm bảo Docker đã chạy.
+- **V37** thêm `runtime_sessions.assignment_id`; session cũ không có assignment vẫn hợp lệ. Freeze topology có `sessionId` sẽ fail closed nếu session không khớp Lab/source/model hoặc chưa verified.
 
 ### Bằng chứng real Docker (17/11/2026)
 
@@ -146,7 +149,7 @@ Hỗ trợ `SINGLE_CHOICE`, `MULTI_CHOICE`, `TRUE_FALSE`. Học sinh thấy radi
 ```bash
 cd MAVIS-Frontend
 npm run typecheck
-npm test                 # 416/416 PASS
+npm test                 # 417/417 PASS
 npm run build            # PASS
 npm run start -- --hostname 127.0.0.1 --port 3092
 npm run test:routes -- http://127.0.0.1:3092   # 44 routes, 0 failure
@@ -168,7 +171,7 @@ Backend:
 ```bash
 cd MAVIS-Platform/mavis-be
 ./mvnw.cmd -pl mavis-platform -am -Dtest=CourseAuthoringServiceTest,CourseQuizServiceTest,QuizBankServiceTest -Dsurefire.failIfNoSpecifiedTests=false test
-# CourseAuthoring 14/14, CourseQuiz 8/8, QuizBank 2/2; full mavis-platform + mavis-common: 224 tests, 0 failure
+# CourseAuthoring 14/14, CourseQuiz 8/8, QuizBank 2/2, CourseAccess 6/6; full platform+common+analyzer: 674 tests, 0 failure, 14 environment skips
 ```
 
 Real Docker Runner và nghiệm thu staging vẫn là hạng mục môi trường riêng.

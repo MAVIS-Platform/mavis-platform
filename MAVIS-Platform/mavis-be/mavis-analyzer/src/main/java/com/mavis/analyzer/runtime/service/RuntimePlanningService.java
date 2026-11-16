@@ -81,8 +81,9 @@ public class RuntimePlanningService {
  public record ConfigurationRequest(@NotNull UUID snapshotId,@NotNull UUID modelId,@NotBlank String profileId,@NotNull JsonNode profile,@Min(0) int expectedRevision){}
  public record ScenarioRequest(@NotBlank @Size(max=100) String name,@NotEmpty @Size(max=30) List<@NotBlank @Size(max=10000) String> steps,@Min(0) int expectedRevision){}
  public record InfrastructureActionRequest(String action,String service,Integer replicas) {}
- public record StartRequest(@NotNull UUID snapshotId,@NotNull UUID scenarioId,@Min(1) int configurationRevision,@Min(1) int scenarioRevision,@AssertTrue boolean approved,@com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.WRITE_ONLY) Map<String,String> environment,List<InfrastructureActionRequest> infrastructureActions,boolean interactiveStudio){
-  public StartRequest(UUID snapshotId,UUID scenarioId,int configurationRevision,int scenarioRevision,boolean approved,Map<String,String> environment,List<InfrastructureActionRequest> actions){this(snapshotId,scenarioId,configurationRevision,scenarioRevision,approved,environment,actions,false);}
+ public record StartRequest(@NotNull UUID snapshotId,@NotNull UUID scenarioId,@Min(1) int configurationRevision,@Min(1) int scenarioRevision,@AssertTrue boolean approved,@com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.WRITE_ONLY) Map<String,String> environment,List<InfrastructureActionRequest> infrastructureActions,boolean interactiveStudio,UUID assignmentId){
+  public StartRequest(UUID snapshotId,UUID scenarioId,int configurationRevision,int scenarioRevision,boolean approved,Map<String,String> environment,List<InfrastructureActionRequest> actions,boolean interactiveStudio){this(snapshotId,scenarioId,configurationRevision,scenarioRevision,approved,environment,actions,interactiveStudio,null);}
+  public StartRequest(UUID snapshotId,UUID scenarioId,int configurationRevision,int scenarioRevision,boolean approved,Map<String,String> environment,List<InfrastructureActionRequest> actions){this(snapshotId,scenarioId,configurationRevision,scenarioRevision,approved,environment,actions,false,null);}
   public StartRequest(UUID snapshotId,UUID scenarioId,int configurationRevision,int scenarioRevision,boolean approved,Map<String,String> environment){this(snapshotId,scenarioId,configurationRevision,scenarioRevision,approved,environment,List.of());}
   @Override public String toString(){return "RuntimeStartRequest[snapshotId="+snapshotId+",scenarioId="+scenarioId+",environment=[protected],infrastructureActions="+(infrastructureActions==null?0:infrastructureActions.size())+"]";}
  }
@@ -2198,6 +2199,7 @@ public class RuntimePlanningService {
    .modelVersionId(c.getModelVersionId())
    .profileName(c.getProfileId())
    .scenarioName(s.getName())
+   .assignmentId(r.assignmentId())
    .scenarioConfig(config);
   if(!confirmedMappings.isEmpty())createBuilder.confirmedServiceMappings(confirmedMappings);
   var created=runtime.createRuntimeSession(createBuilder.build());

@@ -4,8 +4,10 @@ import Link from "next/link";
 import { Activity, ArrowRight, Lock } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useApiQuery } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { PublishCourseLab, useCourseSetup, useRuntimeSetupReadiness } from "@/features/workspaces/course-access";
+import { PreparedTopologyEditor } from "@/features/runtime/prepared-topology-editor";
 import type { Assignment } from "./requirements";
 
 export function LabStudioSection({
@@ -21,9 +23,22 @@ export function LabStudioSection({
   const projectId = assignment.referenceSource?.projectId ?? null;
   const readiness = useRuntimeSetupReadiness(projectId);
   const setup = useCourseSetup(workspaceId);
+  const runtimeConfig = useApiQuery(
+    "runtimeConfiguration",
+    { projectId: projectId ?? "" },
+    { enabled: Boolean(projectId) },
+  );
+  const sessions = useApiQuery(
+    "runtimeReadSessions",
+    { projectId: projectId ?? "" },
+    { enabled: Boolean(projectId) },
+  );
   const setupLab = setup.data?.labs?.find((item) => item.assignmentId === assignment.id);
   const published = setupLab?.published === true;
   const modelId = assignment.referenceSource?.modelId;
+  const verifiedSession = sessions.data?.find(
+    (session) => session.assignmentId === assignment.id && session.studioVerified,
+  ) ?? sessions.data?.find((session) => session.studioVerified);
   const returnTo = `/lab-authoring?${new URLSearchParams({
     workspace: workspaceId,
     assignment: assignment.id,
@@ -32,6 +47,7 @@ export function LabStudioSection({
   const sessionStartHref = projectId
     ? `/sessions?${new URLSearchParams({
         project: projectId,
+        assignment: assignment.id,
         ...(modelId ? { model: modelId } : {}),
         studio: "1",
         returnTo,
@@ -40,6 +56,7 @@ export function LabStudioSection({
   const studioHref = projectId
     ? `/studio?${new URLSearchParams({
         project: projectId,
+        assignment: assignment.id,
         ...(modelId ? { model: modelId } : {}),
         returnTo,
       })}`
@@ -119,6 +136,34 @@ export function LabStudioSection({
                 </p>
               </div>
             )}
+            {verifiedSession && (
+              <p role="status" className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-3 text-xs text-emerald-800 dark:text-emerald-200">
+                {t("Verified Studio session", "Phiên Studio đã xác minh")}:{" "}
+                <span className="font-mono">{verifiedSession.id.slice(0, 12)}…</span>
+                {verifiedSession.assignmentId === assignment.id
+                  ? ` · ${t("linked to this Lab", "đã liên kết với Lab này")}`
+                  : ` · ${t("select the Lab-linked session before freezing", "chọn phiên gắn với Lab trước khi đóng băng")}`}
+              </p>
+            )}
+            {projectId && runtimeConfig.data && (
+              <PreparedTopologyEditor
+                projectId={projectId}
+                configuration={runtimeConfig.data}
+                onSaved={() => {
+                  void runtimeConfig.refetch();
+                  void readiness.refetch();
+                  void setup.refetch();
+                }}
+              />
+            )}
+            {projectId && !runtimeConfig.data && !runtimeConfig.isPending && (
+              <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+                {t(
+                  "Save the runtime configuration first. Prepared topology is stored in the pinned runtime profile.",
+                  "Lưu cấu hình runtime trước. Prepared topology được lưu trong runtime profile đã ghim.",
+                )}
+              </p>
+            )}
             <div className="flex flex-wrap gap-2 border-t pt-4">
               <Button asChild variant="outline">
                 <Link href={`/runtime-config?project=${encodeURIComponent(projectId)}`}>
@@ -155,6 +200,7 @@ export function LabStudioSection({
                   workspaceId={workspaceId}
                   assignmentId={assignment.id}
                   position={setupLab?.position}
+                  sessionId={verifiedSession?.assignmentId === assignment.id ? verifiedSession.id : undefined}
                 />
               ) : (
                 <Button type="button" variant="outline" onClick={() => onNavigate("publish")}>

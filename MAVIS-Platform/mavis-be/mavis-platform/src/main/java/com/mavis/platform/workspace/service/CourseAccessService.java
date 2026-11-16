@@ -43,6 +43,9 @@ public class CourseAccessService {
     private final LabReferenceArchive referenceArchive;
     private final RuntimeConfigurationRepository configurations;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.mavis.common.repository.RuntimeSessionRepository runtimeSessions;
+
     public record Lab(UUID assignmentId, int position, String title, String state, String reason) {}
     public record Roadmap(boolean guided, String enrollmentStatus, List<Lab> labs) {}
     public record Passkey(String code, OffsetDateTime expiresAt) {}
@@ -88,12 +91,40 @@ public class CourseAccessService {
      * published Lab. A later edit of the reference profile cannot change this Lab.
      */
     public Lab freezeTopology(UUID workspaceId, UUID assignmentId) {
+        return freezeTopology(workspaceId, assignmentId, null);
+    }
+
+    public Lab freezeTopology(UUID workspaceId, UUID assignmentId, UUID sessionId) {
         manage(workspaceId);
         Assignment assignment = assignments.findLockedById(assignmentId)
                 .filter(value -> workspaceId.equals(value.getWorkspace().getId()))
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Lab not found"));
         if (assignment.getLabOrder() == null) {
             throw new BusinessException(ErrorCode.CONFLICT, "Publish the Lab before freezing its Studio topology");
+        }
+        if (sessionId != null) {
+            if (runtimeSessions == null) {
+                throw new BusinessException(ErrorCode.CONFLICT, "Studio session verification is unavailable");
+            }
+            var session = runtimeSessions.findById(sessionId)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Studio session not found"));
+            if (session.getAssignment() == null || !session.getAssignment().getId().equals(assignmentId)) {
+                throw new BusinessException(ErrorCode.CONFLICT, "Studio session does not belong to this Lab");
+            }
+            var referenceModel = assignment.getReferenceModel();
+            if (referenceModel == null || session.getModelVersion() == null
+                    || !referenceModel.getId().equals(session.getModelVersion().getId())) {
+                throw new BusinessException(ErrorCode.CONFLICT, "Studio session model does not match this Lab");
+            }
+            var referenceSnapshot = referenceModel.getSourceSnapshot();
+            if (referenceSnapshot != null && (session.getSourceSnapshot() == null
+                    || !referenceSnapshot.getId().equals(session.getSourceSnapshot().getId()))) {
+                throw new BusinessException(ErrorCode.CONFLICT, "Studio session source does not match this Lab");
+            }
+            if (!session.hasVerifiedStudioEvidence()) {
+                throw new BusinessException(ErrorCode.CONFLICT,
+                        "Studio session has no verified Stop/Start/Scale evidence");
+            }
         }
         copyTopologySnapshot(assignment);
         if (assignment.getStudioTopologySnapshot() == null) {

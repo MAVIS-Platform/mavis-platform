@@ -478,6 +478,8 @@ export const runtimeReadSchema = z.object({
   diagnostics: z.array(z.string()).optional(),
   capturedSpanCount: z.number().nullable().optional(),
   studioVerified: z.boolean().optional(),
+  assignmentId: z.string().nullable().optional(),
+  labTitle: z.string().nullable().optional(),
   infrastructureActions: z.array(runtimeActionEvidenceSchema).optional(),
   beforeAfterComparison: z.array(runtimeBeforeAfterComparisonSchema).nullish(),
   stepResults: z.array(runtimeStepResultSchema).optional(),

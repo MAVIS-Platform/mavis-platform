@@ -1674,6 +1674,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
       )
     : (list.data ?? []);
   const params = useSearchParams();
+  const assignmentId = params.get("assignment") ?? "";
   const requestedSession = params.get("session") ?? "";
   const selectedId =
     visible.find((s) => s.id === selected)?.id ||
@@ -2366,6 +2367,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
         configurationRevision: pinnedConfig.revision,
         scenarioRevision: savedScenario.revision,
         approved: true,
+        ...(assignmentId ? { assignmentId } : {}),
         interactiveStudio,
         infrastructureActions:
           !interactiveStudio && effService && effAction !== "OBSERVE"

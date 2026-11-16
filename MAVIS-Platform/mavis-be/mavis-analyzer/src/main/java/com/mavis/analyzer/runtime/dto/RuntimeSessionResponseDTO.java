@@ -66,6 +66,8 @@ public class RuntimeSessionResponseDTO {
     private UUID id;
     private UUID projectId;
     private UUID sourceSnapshotId;
+    private UUID assignmentId;
+    private String labTitle;
     private UUID triggeredById;
     private String triggeredByName;
     private String profileName;
@@ -242,6 +244,8 @@ public class RuntimeSessionResponseDTO {
                 .id(entity.getId())
                 .projectId(entity.getProject() != null ? entity.getProject().getId() : null)
                 .sourceSnapshotId(entity.getSourceSnapshot() != null ? entity.getSourceSnapshot().getId() : null)
+                .assignmentId(entity.getAssignment() != null ? entity.getAssignment().getId() : null)
+                .labTitle(entity.getAssignment() != null ? entity.getAssignment().getTitle() : null)
                 .modelVersionId(entity.getModelVersion() != null ? entity.getModelVersion().getId() : null)
                 .enrichedModelVersionId(resolvedEnrichedId)
                 .triggeredById(entity.getTriggeredBy() != null ? entity.getTriggeredBy().getId() : null)

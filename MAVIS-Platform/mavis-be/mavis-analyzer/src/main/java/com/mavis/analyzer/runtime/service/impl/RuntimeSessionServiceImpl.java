@@ -102,6 +102,9 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
     private RuntimeConfigurationRepository runtimeConfigurationRepository;
 
     @Autowired(required = false)
+    private com.mavis.common.repository.AssignmentRepository assignmentRepository;
+
+    @Autowired(required = false)
     private com.mavis.analyzer.runtime.service.RuntimeSessionEnvironmentService runtimeSessionEnvironmentService;
 
     @Autowired(required = false)
@@ -642,6 +645,32 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
 
         requireGuidedRuntimeSource(project, snapshot, pinnedModel);
 
+        com.mavis.common.entity.Assignment assignment = null;
+        UUID requestedAssignmentId = request.getAssignmentId();
+        if (requestedAssignmentId == null && project.getAssignment() != null) {
+            requestedAssignmentId = project.getAssignment().getId();
+        }
+        if (requestedAssignmentId != null) {
+            if (assignmentRepository == null) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "Lab-scoped Runtime is not configured");
+            }
+            final UUID assignmentLookupId = requestedAssignmentId;
+            assignment = assignmentRepository.findById(assignmentLookupId)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy Lab với ID: " + assignmentLookupId));
+            if (assignment.getWorkspace() == null || project.getWorkspace() == null
+                    || !assignment.getWorkspace().getId().equals(project.getWorkspace().getId())) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "Lab và project không thuộc cùng lớp");
+            }
+            if (assignment.getReferenceModel() == null
+                    || !assignment.getReferenceModel().getId().equals(pinnedModel.getId())) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "Lab reference model không khớp model đã chọn");
+            }
+            if (assignment.getReferenceModel().getSourceSnapshot() != null
+                    && !assignment.getReferenceModel().getSourceSnapshot().getId().equals(snapshot.getId())) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "Lab source snapshot không khớp snapshot đã chọn");
+            }
+        }
+
         // [WJ-01 / Chặng 11]: Suy ra & chuẩn hóa confirmedServiceMappings sang UUID thật của model_elements thuộc pinnedModel
         List<com.mavis.common.entity.ModelElement> elements = modelElementRepository.findByModelVersionId(pinnedModel.getId());
         List<com.mavis.common.entity.ModelElement> containerEls = elements == null ? List.of() : elements.stream()
@@ -911,6 +940,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                 .project(project)
                 .sourceSnapshot(snapshot)
                 .modelVersion(pinnedModel)
+                .assignment(assignment)
                 .triggeredBy(triggeredBy)
                 .profileName(request.getProfileName() != null && !request.getProfileName().isBlank()
                         ? request.getProfileName()

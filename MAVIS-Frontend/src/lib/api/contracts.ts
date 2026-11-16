@@ -686,6 +686,7 @@ export const contracts = {
       snapshotId: id,
       scenarioId: id,
       modelId: id.optional(),
+      assignmentId: id.optional(),
       scenarioName: z.string().optional(),
       steps: z
         .array(
