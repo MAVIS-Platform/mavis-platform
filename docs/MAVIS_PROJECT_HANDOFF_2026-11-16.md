@@ -41,6 +41,7 @@ https://github.com/MAVIS-Platform/mavis-studio-live-seed
   - Bốn lỗi tìm thấy và đã sửa: (1) GET Quiz draft/versions dùng `findLockedById` trong transaction read-only gây 500; (2) mất `assignment` khi đi từ Studio sang `/runtime-config` → `/scenarios`; (3) lưu runtime configuration làm rơi `studioTopology`; (4) ZIP tạo bởi Windows dùng dấu `\` bị giải nén thành file 0 byte.
   - Freeze với session chưa verified trả **409** `Studio session has no verified Stop/Start/Scale evidence`.
   - **Chưa đạt trên web:** Runner/Docker thật cho session web. Session được tạo và gắn Lab nhưng `execution_status=FAILED` vì chưa có Runner ngoài tiến trình backend; bằng chứng Docker thật hiện có là test API local, không phải web session.
+  - Ảnh nghiệm thu: `MAVIS-Frontend/.artifacts/e2e-local/{28-topology-saved,33-runtime-step3,36-lab-published,37-topology-frozen,40-student-lab,41-student-quiz-submitted}.png`.
 - **Real Docker + Runner Studio acceptance đã PASS ngày 17/11/2026** trên Docker Desktop Linux 29.1.5, .NET SDK 10.0.403, PostgreSQL 16 cô lập:
   - `RuntimeStudioApiIntegrationTest#realManagedDotnetRunnerAndDockerFullStackStudioFlow`: **1/1 PASS**.
   - STOP payment: error 0% → 100%; START: 100% → 0%; SCALE orders: 1 → 2 replica.
