@@ -129,8 +129,17 @@ Hỗ trợ `SINGLE_CHOICE`, `MULTI_CHOICE`, `TRUE_FALSE`. Học sinh thấy radi
 - **`runnerReady`** hiện là điều kiện cấu hình của profile (`ConfigurationView.ready()`), chưa phải health check Runner thật. UI ghi "Runner / images: ready" theo API và không nâng thành "đã chạy thật".
 - **THEORY completion** không được suy ra: giao diện chỉ hiển thị tài liệu, không đánh dấu hoàn thành giả.
 - **Submission v2** vẫn thuộc Phase 4 của big update; hiện tại submission cũ vẫn dùng model/diagram cho Lab legacy.
-- **Real Docker Runner/Studio và nghiệm thu hai tài khoản staging** chưa chạy trong phiên này. Phase 3 chỉ xác minh wiring UI/project/session; Docker thật cần môi trường Runner.
+- **Real Docker Runner/Studio đã PASS ngày 17/11/2026**: STOP/START payment và SCALE orders 1→2, Before/After snapshot, HMAC receipt, cleanup `CONFIRMED`, 0 orphan. Chưa nghiệm thu hai tài khoản trên staging.
 - **`runnerReady`** không phải health check trực tiếp; Start Live session chỉ bật khi profile configured, không đảm bảo Docker đã chạy.
+
+### Bằng chứng real Docker (17/11/2026)
+
+- `RuntimeStudioApiIntegrationTest#realManagedDotnetRunnerAndDockerFullStackStudioFlow`: **1/1 PASS**.
+- Docker Desktop Linux 29.1.5; .NET SDK 10.0.403; PostgreSQL 16 cô lập.
+- STOP payment: error rate 0% → 100%; START: 100% → 0%; SCALE orders: 1 → 2 replicas.
+- Receipt digest `sha256:7520f81270b3e1261845b6665ea978a36d6244db24d72f587d6e347662a1d50f`.
+- Evidence package digest `sha256:bc2ca437f9a306636ecf40c91c5e8d6863ab9dc5fa1129ddfe6f92a02d57cf81`.
+- Cleanup `CONFIRMED`; no `mavisrun-*` containers left.
 
 ## 9. Kiểm chứng đã chạy
 

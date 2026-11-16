@@ -1,7 +1,7 @@
 # Lab v2 Big Update — Theory, Quiz, Studio Live, Submission
 
 **Date:** 2026-11-17
-**Status:** Phase 1, Phase 2 and Studio Live wiring implemented; Submission v2 pending
+**Status:** Phase 1, Phase 2 and Studio Live wiring implemented; real Docker Studio acceptance PASS 17/11/2026; Submission v2 pending
 **Scope:** Lecturer Lab authoring + student Lab + quiz authoring + Studio Live wiring + submission/grading v2.
 
 ## 1. Decisions locked with the product owner
