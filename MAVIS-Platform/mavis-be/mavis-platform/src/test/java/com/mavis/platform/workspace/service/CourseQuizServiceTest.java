@@ -59,6 +59,34 @@ class CourseQuizServiceTest {
         verify(policy, never()).hasPassedCurrentQuiz(any(), any());
     }
 
+    @Test void draftReadsAssignmentWithoutTakingAWriteLock() throws Exception {
+        var workspaceId = UUID.randomUUID();
+        var labId = UUID.randomUUID();
+        var modelId = UUID.randomUUID();
+        var workspace = Workspace.builder().id(workspaceId).status("ACTIVE").build();
+        var lab = Assignment.builder().id(labId).workspace(workspace).labOrder(1)
+                .referenceModel(ModelVersion.builder().id(modelId).build()).build();
+        var assignments = mock(AssignmentRepository.class);
+        var access = mock(AccessPolicyService.class);
+        var policy = mock(CourseLabPolicy.class);
+        var jdbc = mock(JdbcTemplate.class);
+        var service = new CourseQuizService(assignments, access, policy, jdbc, new ObjectMapper());
+        when(assignments.findById(labId)).thenReturn(Optional.of(lab));
+        var row = mock(java.sql.ResultSet.class);
+        when(row.getString(1)).thenReturn("Lesson");
+        when(row.getInt(2)).thenReturn(80);
+        when(row.getString(3)).thenReturn("[{\"prompt\":\"Q\",\"options\":[\"A\",\"B\"],\"correctOption\":0}]");
+        when(jdbc.query(anyString(), any(RowMapper.class), eq(labId)))
+                .thenAnswer(call -> List.of(call.<RowMapper<?>>getArgument(1).mapRow(row, 0)));
+
+        var draft = service.draft(workspaceId, labId);
+
+        assertEquals(80, draft.passPercent());
+        assertEquals(1, draft.questions().size());
+        verify(assignments).findById(labId);
+        verify(assignments, never()).findLockedById(any());
+    }
+
     @Test void gradesAtTheExactThresholdWithoutRoundingUp() {
         assertTrue(CourseQuizService.passes(7, 10, 70));
         assertFalse(CourseQuizService.passes(16, 23, 70));

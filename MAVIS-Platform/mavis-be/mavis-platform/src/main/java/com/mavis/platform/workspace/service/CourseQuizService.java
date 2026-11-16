@@ -98,7 +98,7 @@ public class CourseQuizService {
     @Transactional(readOnly = true)
     public Draft draft(UUID workspaceId, UUID assignmentId) {
         access.requireWorkspaceLecturer(workspaceId);
-        var lab = labForAuthoring(workspaceId, assignmentId);
+        var lab = labForAuthoring(workspaceId, assignmentId, false);
         var draft = jdbc.query("""
                 SELECT lesson, pass_percent, questions::text FROM course_quiz_drafts WHERE assignment_id = ?
                 """, (rs, row) -> new Definition(0, rs.getString(1), rs.getInt(2),
@@ -145,7 +145,7 @@ public class CourseQuizService {
     @Transactional(readOnly = true)
     public List<Version> versions(UUID workspaceId, UUID assignmentId) {
         access.requireWorkspaceLecturer(workspaceId);
-        var lab = labForAuthoring(workspaceId, assignmentId);
+        var lab = labForAuthoring(workspaceId, assignmentId, false);
         return jdbc.query("""
                 SELECT version, lesson, pass_percent, published_at FROM course_quizzes
                 WHERE assignment_id = ? AND reference_model_id = ? ORDER BY version DESC
@@ -270,7 +270,11 @@ public class CourseQuizService {
     }
 
     private Assignment labForAuthoring(UUID workspaceId, UUID assignmentId) {
-        return assignments.findLockedById(assignmentId)
+        return labForAuthoring(workspaceId, assignmentId, true);
+    }
+
+    private Assignment labForAuthoring(UUID workspaceId, UUID assignmentId, boolean lock) {
+        return (lock ? assignments.findLockedById(assignmentId) : assignments.findById(assignmentId))
                 .filter(value -> workspaceId.equals(value.getWorkspace().getId()))
                 .filter(value -> value.getReferenceModel() != null
                         && "ACTIVE".equals(value.getWorkspace().getStatus()))

@@ -166,7 +166,7 @@ export function LabStudioSection({
             )}
             <div className="flex flex-wrap gap-2 border-t pt-4">
               <Button asChild variant="outline">
-                <Link href={`/runtime-config?project=${encodeURIComponent(projectId)}`}>
+                <Link href={`/runtime-config?project=${encodeURIComponent(projectId)}&assignment=${assignment.id}`}>
                   {t("Configure runtime & Studio Live", "Cấu hình runtime & Studio Live")}
                   <ArrowRight className="ml-1 size-4" aria-hidden="true" />
                 </Link>

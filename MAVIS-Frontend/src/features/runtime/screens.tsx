@@ -245,6 +245,8 @@ export function RuntimeConfiguration() {
 
 function RuntimeConfigurationView({ projectId }: { projectId: string }) {
   const router = useRouter();
+  const params = useSearchParams();
+  const assignmentId = params?.get("assignment") ?? "";
   const snapshots = useApiQuery("snapshots", { projectId });
   const config = useApiQuery("runtimeConfiguration", { projectId });
   const preflight = useApiMutation("runtimePreflight");
@@ -818,6 +820,9 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
             environmentVariables: envVars,
             secretValues,
             secretReferences: combinedSecretRefs,
+            ...(config.data?.profile?.["studioTopology"]
+              ? { studioTopology: config.data.profile["studioTopology"] }
+              : {}),
           },
         };
         let savedCfg: { revision: number };
@@ -842,7 +847,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
         return;
       }
     }
-    router.push(`/scenarios?project=${projectId}`);
+    router.push(`/scenarios?project=${projectId}${assignmentId ? `&assignment=${assignmentId}` : ""}`);
   };
 
   const isPreflightSecure = preflight.data
@@ -2839,6 +2844,9 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
             environmentVariables: mergedEnvVars,
             secretValues: stored.secretValues ?? {},
             secretReferences: mergedSecretRefs,
+            ...(rawProf["studioTopology"]
+              ? { studioTopology: rawProf["studioTopology"] }
+              : {}),
           },
         };
         if (
@@ -3052,7 +3060,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                   </Button>
                 )}
               <Link
-                href={`/runtime-config?project=${projectId}`}
+                href={`/runtime-config?project=${projectId}${assignmentId ? `&assignment=${assignmentId}` : ""}`}
                 className="text-amber-300 hover:underline font-medium"
               >
                 Open Step 1 →
@@ -3118,7 +3126,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                 </div>
                 <div className="flex items-center gap-3">
                   <Link
-                    href={`/runtime-config?project=${projectId}`}
+                    href={`/runtime-config?project=${projectId}${assignmentId ? `&assignment=${assignmentId}` : ""}`}
                     className="text-primary hover:underline font-medium"
                   >
                     ← Step 1

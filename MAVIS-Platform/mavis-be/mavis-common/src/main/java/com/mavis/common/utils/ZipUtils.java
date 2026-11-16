@@ -34,11 +34,12 @@ public final class ZipUtils {
                     java.util.zip.ZipEntry entry;
                     while((entry=stream.getNextEntry())!=null){
                         interrupted();if(++entries>10000)throw new IOException("Archive entry budget exceeded");
+                        boolean directory=entry.isDirectory()||entry.getName().endsWith("/")||entry.getName().endsWith("\\");
                         String relative=entry.getName().replace('\\','/');while(relative.startsWith("./"))relative=relative.substring(2);while(relative.endsWith("/"))relative=relative.substring(0,relative.length()-1);
                         if(relative.isEmpty()||relative.length()>1024||relative.startsWith("/")||relative.contains(":")||relative.chars().anyMatch(c->c<32)||relative.equalsIgnoreCase(SEAL)||relative.split("/",-1).length>32||Arrays.stream(relative.split("/",-1)).anyMatch(p->p.isEmpty()||p.equals(".")||p.equals(".."))||!seen.add(relative.toLowerCase(Locale.ROOT)))throw new IOException("Invalid or duplicate archive entry");
                         Path output=temporary.resolve(relative).normalize();if(!output.startsWith(temporary))throw new IOException("Archive path escaped scope");
                         for(Path parent=output.getParent();parent!=null&&!parent.equals(temporary);parent=parent.getParent()){directories.add(parent);if(directories.size()>20000)throw new IOException("Archive directory budget exceeded");}
-                        if(entry.isDirectory()){Files.createDirectories(output);continue;}
+                        if(directory){Files.createDirectories(output);continue;}
                         Files.createDirectories(output.getParent());long fileBytes=0;
                         try(var file=Files.newOutputStream(output,StandardOpenOption.CREATE_NEW,StandardOpenOption.WRITE,LinkOption.NOFOLLOW_LINKS)){
                             byte[] buffer=new byte[8192];int count;while((count=stream.read(buffer))!=-1){interrupted();fileBytes+=count;total+=count;if(fileBytes>MAX_FILE||total>MAX_TOTAL)throw new IOException("Archive decompression budget exceeded");file.write(buffer,0,count);}

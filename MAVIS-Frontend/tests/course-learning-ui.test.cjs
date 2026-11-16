@@ -782,6 +782,7 @@ test("Studio Live setup uses a visual prepared topology builder and Lab session 
   const contract = read("src/lib/api/contracts.ts");
   const domain = read("src/types/domain.ts");
   const runtime = read("src/features/runtime/backend.tsx");
+  const screens = read("src/features/runtime/screens.tsx");
 
   assert.ok(editor.includes("Add block"));
   assert.ok(editor.includes("Add connection"));
@@ -795,4 +796,9 @@ test("Studio Live setup uses a visual prepared topology builder and Lab session 
   assert.match(contract, /assignmentId:\s*id\.optional\(\)/);
   assert.match(domain, /assignmentId:\s*z\.string\(\)\.nullable\(\)\.optional\(\)/);
   assert.match(runtime, /assignmentId \? \{ assignmentId \}/);
+  assert.ok(studio.includes("&assignment=${assignment.id}"));
+  assert.ok(screens.includes('assignmentId ? `&assignment=${assignmentId}` : ""'));
+  assert.ok(screens.includes('studioTopology: config.data.profile["studioTopology"]') || screens.includes('studioTopology: config.data?.profile?.["studioTopology"]'));
+  assert.match(runtime, /studioTopology:\s*rawProfile\["studioTopology"\]/);
+  assert.match(screens, /studioTopology:\s*rawProf\["studioTopology"\]/);
 });

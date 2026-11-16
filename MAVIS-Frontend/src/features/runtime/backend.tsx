@@ -2133,6 +2133,9 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
           environmentVariables: mergedEnvVars,
           secretValues: stored.secretValues ?? {},
           secretReferences: mergedSecretRefs,
+          ...(rawProfile["studioTopology"]
+            ? { studioTopology: rawProfile["studioTopology"] }
+            : {}),
         },
       };
       let pinnedConfig: { revision: number };
