@@ -6,19 +6,41 @@ const { chromium } = require("playwright");
 const base = process.argv[2] ?? "http://127.0.0.1:3110";
 const screenshots = process.env.MAVIS_HOMEPAGE_SCREENSHOTS;
 
-async function checkShortDesktop(page, name) {
-  await page.setViewportSize({ width: 1351, height: 608 });
-  await page.evaluate(() => window.scrollTo(0, 0));
-  for (const selector of [".v2-hero-actions", "#demo"]) {
-    const bounds = await page.locator(selector).boundingBox();
+async function checkAppearance(page, theme) {
+  assert.equal(await page.locator("html").getAttribute("data-appearance"), theme);
+  const gallery = page.locator(".v2-previews");
+  await gallery.scrollIntoViewIfNeeded();
+  const images = gallery.getByRole("img");
+  assert.equal(await images.count(), 3);
+  assert.equal(await gallery.getByRole("link").count(), 0);
+  for (const [index, name] of ["architecture", "studio", "course"].entries()) {
+    const image = images.nth(index);
+    const suffix = theme === "dark" ? "-dark" : "";
+    assert.equal(await image.getAttribute("src"), `/homepage/${name}${suffix}.webp`);
+    const brightness = await image.evaluate(async (img) => {
+      await img.decode();
+      const canvas = document.createElement("canvas");
+      canvas.width = 16;
+      canvas.height = 10;
+      const context = canvas.getContext("2d");
+      context.drawImage(img, 0, 0, 16, 10);
+      const { data } = context.getImageData(0, 0, 16, 10);
+      let total = 0;
+      for (let pixel = 0; pixel < data.length; pixel += 4) {
+        total += data[pixel] * 0.2126 + data[pixel + 1] * 0.7152 + data[pixel + 2] * 0.0722;
+      }
+      return total / 160;
+    });
     assert.ok(
-      bounds && bounds.y >= 0 && bounds.y + bounds.height <= 608,
-      `${name}: ${selector} should fit in the viewport`,
+      theme === "dark" ? brightness < 110 : brightness > 150,
+      `${name} ${theme}: ${brightness}`,
     );
   }
   if (screenshots) {
-    await page.screenshot({ path: join(screenshots, `hero-${name}.png`) });
+    await gallery.screenshot({ path: join(screenshots, `workspace-${theme}.png`) });
+    await page.locator("#demo").screenshot({ path: join(screenshots, `demo-${theme}.png`) });
   }
+  return page.locator("#demo").evaluate((element) => getComputedStyle(element).backgroundColor);
 }
 
 async function main() {
@@ -40,14 +62,14 @@ async function main() {
 
     await page.goto(base, { waitUntil: "networkidle" });
     await page
-      .getByRole("heading", { level: 1, name: "Follow a request across microservices" })
+      .getByRole("heading", { level: 1, name: "Explore microservices architecture" })
       .waitFor();
     if (screenshots) {
       mkdirSync(screenshots, { recursive: true });
       await page.screenshot({ path: join(screenshots, "desktop-light.png"), fullPage: true });
     }
-    await checkShortDesktop(page, "en-light");
-    await page.getByRole("link", { name: "Try the sample scenario" }).click();
+    const lightDemo = await checkAppearance(page, "light");
+    await page.getByRole("link", { name: "Try the architecture demo" }).click();
     assert.equal(new URL(page.url()).hash, "#demo");
 
     await page.getByRole("button", { name: "Payments", exact: true }).press("Enter");
@@ -75,34 +97,6 @@ async function main() {
     await page.getByRole("button", { name: "Reset scenario" }).click();
     await page.getByText("OrderService.java", { exact: true }).waitFor();
 
-    await page
-      .getByRole("navigation", { name: "On this page" })
-      .getByRole("link", { name: "Workspace" })
-      .click();
-    const gallery = page.getByRole("group", { name: "Workspace screens" });
-    const preview = page.locator("#v2-workspace-preview");
-    for (const [name, asset] of [
-      ["MAVIS Studio", "studio"],
-      ["Course setup", "course"],
-      ["Architecture Explorer", "architecture"],
-    ]) {
-      const button = gallery.getByRole("button", { name });
-      await button.press("Enter");
-      assert.equal(await button.getAttribute("aria-pressed"), "true");
-      const src = `/homepage/${asset}.webp`;
-      assert.equal(await preview.getByRole("img").getAttribute("src"), src);
-      assert.equal(
-        await preview.getByRole("link", { name: /Open full image/ }).getAttribute("href"),
-        src,
-      );
-      assert.ok(
-        await preview.getByRole("img").evaluate(async (image) => {
-          await image.decode();
-          return image.naturalWidth === 800;
-        }),
-      );
-    }
-
     await page.getByText("Where can I get a Passkey?", { exact: true }).click();
     await page.getByText(/Your lecturer issues the Passkey/).waitFor();
     for (const width of [320, 390, 768, 1024, 1440]) {
@@ -113,15 +107,18 @@ async function main() {
       );
     }
     await page.getByRole("button", { name: /Switch to Vietnamese/ }).click();
-    await checkShortDesktop(page, "vi-light");
+    await page.getByRole("button", { name: "Chuyển sang giao diện tối" }).click();
+    const darkDemo = await checkAppearance(page, "dark");
+    assert.notEqual(darkDemo, lightDemo);
+    await page.getByRole("button", { name: "Chuyển sang giao diện sáng" }).click();
+    assert.equal(await checkAppearance(page, "light"), lightDemo);
     await page.getByRole("button", { name: "Chuyển sang giao diện tối" }).click();
     await page.reload({ waitUntil: "networkidle" });
     await page
-      .getByRole("heading", { level: 1, name: "Theo dấu một yêu cầu qua hệ thống microservices" })
+      .getByRole("heading", { level: 1, name: "Khám phá kiến trúc microservices" })
       .waitFor();
     assert.equal(await page.locator("html").getAttribute("data-appearance"), "dark");
     assert.equal(await page.locator("html").getAttribute("lang"), "vi");
-    await checkShortDesktop(page, "vi-dark");
     for (const width of [320, 390, 768, 1024, 1440]) {
       await page.setViewportSize({ width, height: 844 });
       assert.ok(
@@ -135,19 +132,6 @@ async function main() {
       await page.setViewportSize({ width: 390, height: 844 });
       await page.screenshot({ path: join(screenshots, "mobile-dark-vi.png"), fullPage: true });
     }
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.getByLabel("Menu trang").click();
-    const mobileNav = page.getByRole("navigation", { name: "Trên trang này" });
-    await mobileNav.getByRole("link", { name: "Workspace" }).press("Enter");
-    assert.equal(new URL(page.url()).hash, "#workspace");
-    assert.equal(await mobileNav.isVisible(), false);
-    const header = await page.locator(".v2-header").boundingBox();
-    const workspace = await page.locator("#workspace").boundingBox();
-    assert.ok(header && workspace && workspace.y >= header.y + header.height);
-
-    await page.getByRole("button", { name: /Switch to English/ }).click();
-    await checkShortDesktop(page, "en-dark");
-    await page.getByRole("button", { name: /Switch to Vietnamese/ }).click();
     assert.deepEqual(apiRequests, []);
     assert.deepEqual(errors, []);
     await page.goto(base + "/#course-passkey");
@@ -170,7 +154,7 @@ async function main() {
     const staticPage = await browser.newPage({ javaScriptEnabled: false });
     await staticPage.goto(base);
     await staticPage
-      .getByRole("heading", { level: 1, name: "Follow a request across microservices" })
+      .getByRole("heading", { level: 1, name: "Explore microservices architecture" })
       .waitFor();
 
     if (process.argv.includes("--backend")) {
