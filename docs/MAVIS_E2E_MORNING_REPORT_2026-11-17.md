@@ -59,6 +59,6 @@ Không stage: `course-outline.tsx`, `course-workspace-shell.tsx`, `lab-toc.tsx`,
 3. **T56**: nhận test accounts qua cơ chế credential được cấp (không gửi mật khẩu chat), sau đó chạy full flow production trong không gian test và cleanup dữ liệu test.
 
 ## Rủi ro
-- Studio v2 backend đã có guard nhưng chưa có bằng chứng web student end-to-end trong lượt này.
+- Studio v2 backend đã có guard nhưng Student Step 3 hiện chỉ mở assignment legacy, chưa có action tạo student runtime project/session. Vì vậy Studio Lab2 mới dừng ở runtime gate; chưa có student Studio submission thật.
 - Draft grade/409 stale, Passkey expiry, cross-workspace negative cases chưa test.
 - Local runner/docker chỉ chứng minh môi trường local, không chứng minh Runner production.

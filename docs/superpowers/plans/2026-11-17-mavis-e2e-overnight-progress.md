@@ -38,7 +38,7 @@ Baseline đầu phiên: HEAD `6c4bf1d`, branch `main`, upstream `origin/main`.
 - [x] T24 — PASS — theory-only nộp được bằng explanation, không chọn model/diagram/runtime.
 - [ ] T25–T33 — WORKING — chưa chạy lại toàn bộ Studio student path trong lượt này; bằng chứng Runner/Docker cũ chỉ là lịch sử, không dùng thay run mới.
 - [x] T34 — PASS — backend v2 theory-only: POST `/submissions` lưu theory evidence, quiz evidence, digest; thiếu explanation trả `THEORY_ANSWER_REQUIRED`.
-- [ ] T35 — WORKING — code yêu cầu Studio session thuộc student + verified + đúng assignment/source/model; chưa có run thật student Studio submit.
+- [ ] T35 — WORKING — backend guard đã có, nhưng Student Step 3 hiện không tạo được student runtime project/session; chỉ có link “Open Lab assignment” legacy. Không có student Studio submission thật để PASS.
 - [x] T36 — PASS — digest SHA-256 của assignment/mode/source/quiz/theory/studio/notes; response trả theoryEvidence và snapshot THEORY.
 - [x] T37 — PASS — form inline, không có selector diagram/model; lỗi submit hiển thị; nút disable khi thiếu Studio session.
 - [ ] T38 — WORKING — chưa có draft autosave; resubmit toggle giữ nội dung trong phiên.
@@ -53,7 +53,7 @@ Baseline đầu phiên: HEAD `6c4bf1d`, branch `main`, upstream `origin/main`.
 - [ ] T47 — WORKING — WIP UI sinh viên giữ nguyên, chưa hoàn thiện.
 - [ ] T48–T50 — TODO/partial — chưa chạy a11y/snapshot/route boundary đầy đủ.
 - [ ] T51 — WORKING — typecheck PASS, frontend 420 pass, focused backend 51 pass, migration 1 pass; chưa full CI suite.
-- [ ] T52 — WORKING — theory-only E2E local PASS tới unlock; Studio Lab student path chưa chạy lại.
+- [ ] T52 — WORKING — theory-only E2E local PASS tới unlock. Studio Lab2 đã publish, Quiz v1, runtime profile/topology sẵn; Student Step 3 thiếu action tạo/start student runtime session nên Studio E2E dừng tại đây.
 - [x] T53 — PASS — commit `5ba76f0` chỉ gồm backend/schema/contracts/UI v2/deploy; WIP khác giữ ngoài stage.
 - [x] T54 — PASS — push `5ba76f0`; run `43959961856` completed success đúng SHA.
 - [x] T55 — PASS — workflow `43959961856` verify/images/deploy success; production login page 200 (không phải nghiệm thu tài khoản).
