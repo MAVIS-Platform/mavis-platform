@@ -647,9 +647,6 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
 
         com.mavis.common.entity.Assignment assignment = null;
         UUID requestedAssignmentId = request.getAssignmentId();
-        if (requestedAssignmentId == null && project.getAssignment() != null) {
-            requestedAssignmentId = project.getAssignment().getId();
-        }
         if (requestedAssignmentId != null) {
             if (assignmentRepository == null) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "Lab-scoped Runtime is not configured");
