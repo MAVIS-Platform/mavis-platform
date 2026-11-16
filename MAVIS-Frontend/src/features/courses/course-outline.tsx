@@ -17,8 +17,13 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useLocale } from "@/lib/i18n/locale-context";
+import { ApiError } from "@/lib/errors/api-error";
 import { useApiQuery } from "@/hooks/use-api";
 import { useCourseAuthoring, useCourseRoadmap, usePublishedCourse } from "@/features/workspaces/course-access";
+
+export function isMissingCourseError(error: unknown) {
+  return error instanceof ApiError && error.status === 404;
+}
 
 type ItemType = "THEORY" | "QUIZ" | "ESSAY" | "STATIC_LAB" | "IMPACT_LAB" | "RUNTIME_LAB";
 
@@ -91,7 +96,10 @@ export function CourseOutline({
   const labs = new Map((roadmap.data?.labs ?? []).map((lab) => [lab.assignmentId, lab]));
   const assignmentById = new Map((assignments.data ?? []).map((assignment) => [assignment.id, assignment]));
 
-  if ((canManage && authoring.isError) || (!canManage && publishedQuery.isError)) {
+  const loadError =
+    (canManage && authoring.isError && !isMissingCourseError(authoring.error)) ||
+    (!canManage && publishedQuery.isError && !isMissingCourseError(publishedQuery.error));
+  if (loadError) {
     return (
       <section className="rounded-xl border bg-card p-4" role="alert">
         <p className="text-sm font-medium">{t("Could not load class content.", "Không tải được nội dung lớp.")}</p>
@@ -124,11 +132,18 @@ export function CourseOutline({
             : t("Your lecturer has not published course content yet.", "Giảng viên chưa công bố nội dung khóa học.")}
         </p>
         {canManage && (
-          <Button asChild className="mt-4" size="sm">
-            <Link href={`/assignments?workspace=${encodeURIComponent(workspaceId)}`}>
-              {t("Create the first Lab", "Tạo Lab đầu tiên")}
-            </Link>
-          </Button>
+          <div className="mt-4 flex flex-wrap justify-center gap-2">
+            <Button asChild size="sm" variant="outline">
+              <Link href={`/roadmap?workspace=${encodeURIComponent(workspaceId)}#course-builder`}>
+                {t("Open course authoring", "Mở soạn nội dung")}
+              </Link>
+            </Button>
+            <Button asChild size="sm">
+              <Link href={`/assignments?workspace=${encodeURIComponent(workspaceId)}`}>
+                {t("Create the first Lab", "Tạo Lab đầu tiên")}
+              </Link>
+            </Button>
+          </div>
         )}
       </section>
     );
