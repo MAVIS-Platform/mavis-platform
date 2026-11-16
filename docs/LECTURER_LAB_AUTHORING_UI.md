@@ -52,7 +52,7 @@ Backend chỉ cho sửa cấu trúc khi Course ở `DRAFT`. Course `PUBLISHED` h
 | **2. Theory** | Lesson Markdown + preview, repo mẫu (commit/snapshot/revision + ZIP), C1–C3 read-only và dependency graph; chọn module, thêm/sửa bài học. Nếu Course đã publish, bấm **Start new Course draft** trước khi sửa. |
 | **3. Reference source** | Import GitHub commit SHA hoặc ZIP, chạy phân tích, chọn model version rồi **Save source to Lab**. |
 | **4. Quiz** | Quiz Builder đầy đủ: soạn tay, import/export JSON/CSV, question bank, preview, version. Mặc định đạt **80%**. |
-| **5. Studio Live** | Xem runtime readiness, mở Runtime Configuration, công bố Lab rồi **Freeze Studio topology**. |
+| **5. Studio Live** | Xem runtime readiness, cấu hình runtime, **Start Live session** hoặc **Open MAVIS Studio**; công bố Lab rồi **Freeze Studio topology**. |
 | **6. Check & publish** | Checklist Lab thật (source, theory, Quiz, Studio, publish), nút publish/freeze, preview và Course Setup Panel đầy đủ. |
 
 4. Lab chưa publish không hiển thị với sinh viên.
@@ -71,6 +71,18 @@ Trong bước **4. Quiz** có các tab:
 - **Versions**: xem các phiên bản đã publish, ngưỡng đạt và thời điểm.
 
 Hỗ trợ `SINGLE_CHOICE`, `MULTI_CHOICE`, `TRUE_FALSE`. Học sinh thấy radio/checkbox tương ứng và explanation sau khi nộp.
+
+### Studio Live (Phase 3)
+
+- Khi chưa có reference source: card nhắc gắn/phân tích nguồn và nút chuyển sang **Reference source**.
+- Khi có source:
+  - **Configure runtime & Studio Live** mở `/runtime-config?project=...`.
+  - **Start Live session** mở `/sessions?project=...&model=...&studio=1&returnTo=...` khi runtime profile đã configured; nếu chưa, nút bị disable kèm lý do.
+  - **Open MAVIS Studio** mở `/studio?project=...&model=...&returnTo=...`; Studio tự chọn project và session RUNNING mới nhất.
+  - Sau khi Lab publish, nút **Freeze Studio topology** dùng V34.
+- `/studio` Live có project selector; nếu chưa chọn project thì hiển thị cảnh báo và không tạo phiên.
+- Exit Studio quay lại đúng `returnTo` thay vì trang admin.
+- `runnerReady` vẫn là điều kiện cấu hình profile; UI không tuyên bố đã chạy Docker thật.
 
 **Course tools** (seed curated Labs, Course setup checklist) nằm trong một panel riêng trên `/assignments`, không trộn với nút **Create a Lab**.
 
@@ -116,15 +128,16 @@ Hỗ trợ `SINGLE_CHOICE`, `MULTI_CHOICE`, `TRUE_FALSE`. Học sinh thấy radi
 - **Bộ lọc trạng thái bài nộp** chưa có trong API `assignmentSubmissions`; UI chỉ lọc theo Lab và tìm theo sinh viên. Không hiển thị filter giả.
 - **`runnerReady`** hiện là điều kiện cấu hình của profile (`ConfigurationView.ready()`), chưa phải health check Runner thật. UI ghi "Runner / images: ready" theo API và không nâng thành "đã chạy thật".
 - **THEORY completion** không được suy ra: giao diện chỉ hiển thị tài liệu, không đánh dấu hoàn thành giả.
-- **Submission v2 và Studio Live thật** vẫn thuộc Phase 3–4 của big update; hiện tại submission cũ vẫn dùng model/diagram cho Lab legacy.
-- **Nghiệm thu hai tài khoản trên staging** chưa chạy trong phiên này.
+- **Submission v2** vẫn thuộc Phase 4 của big update; hiện tại submission cũ vẫn dùng model/diagram cho Lab legacy.
+- **Real Docker Runner/Studio và nghiệm thu hai tài khoản staging** chưa chạy trong phiên này. Phase 3 chỉ xác minh wiring UI/project/session; Docker thật cần môi trường Runner.
+- **`runnerReady`** không phải health check trực tiếp; Start Live session chỉ bật khi profile configured, không đảm bảo Docker đã chạy.
 
 ## 9. Kiểm chứng đã chạy
 
 ```bash
 cd MAVIS-Frontend
 npm run typecheck
-npm test                 # 415/415 PASS
+npm test                 # 416/416 PASS
 npm run build            # PASS
 npm run start -- --hostname 127.0.0.1 --port 3092
 npm run test:routes -- http://127.0.0.1:3092   # 44 routes, 0 failure
@@ -139,6 +152,7 @@ Screenshot:
 - `.artifacts/lecturer-lms/lab-authoring.png`
 - `.artifacts/lecturer-lms/lab-theory.png`
 - `.artifacts/lecturer-lms/lab-quiz.png`
+- `.artifacts/lecturer-lms/lab-studio.png`
 
 Backend:
 
