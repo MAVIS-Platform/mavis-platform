@@ -8,7 +8,7 @@ Baseline đầu phiên: HEAD `6c4bf1d`, branch `main`, upstream `origin/main`.
 - Branch/SHA thực tế: `main` / commit task `5ba76f0`; baseline `6c4bf1d`.
 - Môi trường: local Windows, PostgreSQL 16 container port 55432, backend jar + managed .NET Runner, frontend port 3000, Chrome Playwright.
 - Actor/dataset: lecturer `hoangnt@fpt.edu.vn`; students `trietlmse181979`, `student2`…`student6`; workspace `a93d0eee-43db-41d6-89ee-8541d80739ed`; Lab1 `6b2951ab-1910-4b85-82f1-f900929951c2` (THEORY_QUIZ, published Lab1); Lab2 `0e0dc00d-9e28-4ea8-acea-bff90d5f15fa` (published Lab2); submission S6 `a666dcbd-b815-4b87-9578-1790b4488483`.
-- Process/tài nguyên thử đang giữ: backend PID trên 8080, frontend PID trên 3000, container `mavis-e2e-db` (55432), `mavis-mig-db` (15438), runner state `.e2e-runner-state`; runner containers đã cleanup.
+- Process/tài nguyên thử đang giữ: backend/frontend đã dừng; container `mavis-e2e-db` (55432) giữ dữ liệu local cho phiên sau; `mavis-mig-db` đã xóa; không còn container `mavisrun-*`.
 - Blocker: **T56 BLOCKED** — không có test account LECTURER/STUDENT trên production; không dùng SQL prod/OTP bypass.
 
 ## Task ledger
@@ -59,7 +59,7 @@ Baseline đầu phiên: HEAD `6c4bf1d`, branch `main`, upstream `origin/main`.
 - [x] T55 — PASS — workflow `43959961856` verify/images/deploy success; production login page 200 (không phải nghiệm thu tài khoản).
 - [ ] T56 — BLOCKED — thiếu test accounts production; không tạo user SQL production/không bypass OTP.
 - [ ] T57 — WORKING — đã tạo báo cáo sáng `docs/MAVIS_E2E_MORNING_REPORT_2026-11-17.md`; docs handoff gốc chưa cập nhật v2.
-- [ ] T58–T60 — WORKING — report đã viết; cần cleanup container/process local và chốt ledger.
+- [ ] T58–T60 — WORKING — report đã viết; đã dừng process và xóa mig-db/temp; giữ DB local có dữ liệu Lab1/Lab2 cho phiên sau. Cần chốt ledger cuối.
 
 ## Nhật ký bằng chứng theo task
 - T01: `git status --short --branch` main...origin/main; SHA `6c4bf1d`.
