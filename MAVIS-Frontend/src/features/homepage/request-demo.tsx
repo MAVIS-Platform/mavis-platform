@@ -41,7 +41,7 @@ export function RequestDemo() {
     <section className="v2-console" id="demo" tabIndex={-1} aria-labelledby="v2-demo-title">
       <div className="v2-console-head">
         <div>
-          <h2 id="v2-demo-title">{t("Request explorer", "Theo dấu yêu cầu")}</h2>
+          <h2 id="v2-demo-title">{t("Request explorer", "Theo dõi luồng yêu cầu")}</h2>
           <p>{t("Browser simulation", "Mô phỏng trong trình duyệt")}</p>
         </div>
         <button
@@ -134,7 +134,7 @@ export function RequestDemo() {
               {selected === "Orders"
                 ? t(
                     "Orders reserves inventory and calls Payments to authorize the order.",
-                    "Orders giữ hàng trong Inventory và gọi Payments để xác thực đơn.",
+                    "Orders gọi Inventory để giữ hàng và gọi Payments để xác thực thanh toán.",
                   )
                 : t(
                     "Select Orders to see where these dependencies come from.",
