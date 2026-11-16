@@ -13,16 +13,15 @@ C:/Users/nhuth/Desktop/MAVIS-Root/mavis-studio-live-seed
 https://github.com/MAVIS-Platform/mavis-studio-live-seed
 ```
 
-## 1. Trạng thái bàn giao
+## 1. Trạng thái bàn giao đã xác minh ngày 16/11/2026
 
-- Nhánh: `main`, commit `2de47f7b01f63f51bc62ebb3b2dec2e9cebf9ca9`.
-- Tại thời điểm viết, code đã ở `main`; tài liệu handoff này được tạo sau commit cuối và có thể đang là file chưa track. Chạy `git status --short --branch` và giữ nguyên tài liệu này trước khi làm.
-- Seed repo: commit `be7df9b24342eea0f0f8eda9cdb15fb293f5656f`, public.
-- CI gần nhất:
-  - `verify`: success.
-  - build `backend`, `frontend`, `worker`: success.
-  - `deploy`: fail lần đầu vì `ssh: connect to host ... port 22: Connection timed out`. Đã trigger rerun attempt 2. Trước khi kết luận deploy thành công, kiểm tra trạng thái run cuối; nếu vẫn timeout thì đó là blocker hạ tầng SSH, không phải code/V34.
-- Commit/deploy mới nhất trên `main` đã bao gồm V34 và các thay đổi Studio/course setup. Không giả định production đã chạy V34 cho đến khi deploy xanh.
+- Mốc code production đã xác nhận là main 612836d34ef7607e9c2c3807a8191974ffe8c213. Kiểm tra Git để biết các commit tài liệu hoặc code phát sinh sau mốc này.
+- Run #353 đã completed/success. Verify, build ba image và deploy đều xanh: https://github.com/MAVIS-Platform/mavis-platform/actions/runs/43848625455.
+- Log VPS xác nhận V35 schema already present và Deployment healthy đúng SHA. Website và /api/auth-config trả HTTP 200 sau deploy.
+- Lỗi #352 là probe V35 kiểm tra sai tên index; đã sửa theo unique constraint trong migration. Không kết luận thiếu SSH secret từ dòng retry chung. Đọc docs/DEPLOY_V35_CLAUDE_HANDOFF.md.
+- Context vận hành đầy đủ ở docs/MAVIS_PROJECT_INFRA_CONTEXT_2026-11-16.md. Đọc cùng file này trước khi sửa Git, VPS, DB hoặc CI.
+- Origin local đã chuyển sang HTTPS và bỏ core.sshCommand trỏ tới key /sessions đã mất. Fetch/push HTTPS hoạt động. Đây là cấu hình máy, không nằm trong commit.
+- Seed repo local ở mavis-studio-live-seed, mốc kiểm tra be7df9b. Có Desktop - Shortcut.lnk chưa track từ trước; không thêm vào commit task này.
 
 ## 2. Sản phẩm và phạm vi
 
@@ -48,9 +47,9 @@ Phần mở rộng **Prepared Live** đã được duyệt trong phiên làm vi�
 
 ## 3. Thứ tự đọc docs
 
-Đọc theo thứ tự mtime mới nhất trước; các tài liệu chính:
+Ultimate Docs mô tả scope gốc; phần mở rộng được duyệt được ghi riêng. Dùng trạng thái bàn giao mới nhất cho vận hành và xác minh lại bằng code/Git. Các tài liệu chính:
 
-1. `docs/MAVIS_PROJECT_HANDOFF_2026-11-16.md` (file này).
+1. `docs/MAVIS_PROJECT_HANDOFF_2026-11-16.md` (file này), cùng `docs/MAVIS_PROJECT_INFRA_CONTEXT_2026-11-16.md` về kiến trúc và hạ tầng.
 2. `docs/MAVIS_STUDIO_DEEPSEEK_HANDOFF.md` — bối cảnh Studio Live cũ, vị trí code, test.
 3. `docs/PREPARED_LIVE_STUDIO.md` — contract topology v1, route-controller, V34 freeze, readiness.
 4. `docs/STUDIO_LIVE_PARITY.md` — ma trận REAL/PREPARED/OBSERVE/UNAVAILABLE.
@@ -197,7 +196,7 @@ Các rule bảo vệ:
 - `mavis-platform/.../submission/service/impl/SubmissionReviewService.java` — per-snapshot grading/unlock.
 - `mavis-common/.../entity/Assignment.java` — `studioTopologySnapshot`, `studioTopologyRevision`.
 - `mavis-common/.../entity/RuntimeSession.java` — `hasVerifiedStudioEvidence`.
-- Migrations `V26..V34` ở `mavis-bootstrap/src/main/resources/db/migration/`.
+- Migrations `V26..V35` ở `mavis-bootstrap/src/main/resources/db/migration/`.
 
 ### Runner
 
@@ -213,8 +212,8 @@ Các rule bảo vệ:
 
 ### Deploy
 
-- `deploy/apply-course-schema.py` — V26..V34 probes.
-- `deploy/deploy-vps.sh` — backup/apply V26..V34 then deploy.
+- `deploy/apply-course-schema.py` — V26..V35 probes.
+- `deploy/deploy-vps.sh` — backup/apply V26..V35 then deploy.
 - `deploy/tests/test_course_schema.py` — schema tests.
 - `.github/workflows/deploy-production.yml` — verify, images, deploy.
 
@@ -307,7 +306,7 @@ Kết quả đã xác nhận ngày 16/11/2026: STOP payment 0%→100%, START 100
 python -B -m unittest discover -s deploy/tests -p "test_*.py" -v
 ```
 
-## 9. Bằng chứng test gần nhất
+## 9. Bằng chứng test lịch sử và mốc deploy cập nhật
 
 - Frontend: **400/400**, typecheck PASS, build PASS.
 - Backend platform: **175/175**.
@@ -317,13 +316,13 @@ python -B -m unittest discover -s deploy/tests -p "test_*.py" -v
 - PostgreSQL/migration/course-access: PASS.
 - Full-stack MockMvc Studio: PASS.
 - Real Docker + .NET Runner full-stack: PASS.
-- Deploy schema tests: **7/7 PASS**.
-- CI `verify` và image builds: success. Deploy: SSH timeout; rerun attempt 2 cần kiểm tra lại.
+- Deploy schema tests trong task sửa V35: **9/9 PASS** khi chạy với PostgreSQL 18 thử riêng, gồm regression retry SSH.
+- Run #353 tại 612836d đã success cả verify, images và deploy. Các số lượng test phần khác phía trên là báo cáo của phiên cũ; đối chiếu log CI nếu cần số hiện tại.
 
 ## 10. Khoảng trống và quyết định mở
 
 1. **Staging/two-account acceptance**: chưa chạy UI thật bằng hai tài khoản trên staging. Local HTTP acceptance và real Docker test dùng tài khoản/tài nguyên tạo trong test.
-2. **Deploy V34**: chưa xác nhận production vì SSH timeout. Kiểm tra run cuối; nếu host reachable, deploy sẽ áp V34 qua backup/probe.
+2. **Deploy schema**: đã xác nhận qua V35 tại run #353. Nghiệm thu hai tài khoản và nghiệp vụ thực tế tiếp tục là hạng mục riêng.
 3. **Theory artifact**: hiện theory là `course_quizzes.lesson` (text trong quiz), chưa phải Markdown document/version pin độc lập như FR-EDU-03 mô tả.
 4. **Course creation wizard**: chưa có một wizard duy nhất từ tạo workspace → source → runtime/Studio → publish → quiz → passkey; hiện là các trang + checklist.
 5. **Bulk publish/quiz**: Lab tự tạo vẫn publish/quiz từng Lab; seed thì một-click.
@@ -388,7 +387,7 @@ Bạn tiếp quản MAVIS Studio Live và luồng course/lab của giảng viên
 Workspace: C:/Users/nhuth/Desktop/MAVIS-Root/mavis-platform
 Repo phụ: C:/Users/nhuth/Desktop/MAVIS-Root/mavis-studio-live-seed
 Nhánh: main
-Commit bàn giao: 2de47f7b01f63f51bc62ebb3b2dec2e9cebf9ca9
+Mốc code production đã xác minh: 612836d34ef7607e9c2c3807a8191974ffe8c213; kiểm tra git log cho cập nhật sau đó.
 Seed repo commit: be7df9b24342eea0f0f8eda9cdb15fb293f5656f
 
 Đọc trước, theo thứ tự:
@@ -404,7 +403,7 @@ Seed repo commit: be7df9b24342eea0f0f8eda9cdb15fb293f5656f
 
 Sau đó:
 - chạy git status --short --branch, git log -1 --oneline, git ls-files --others --exclude-standard;
-- kiểm tra CI run mới nhất, đặc biệt deploy V34 (SSH timeout trước đó);
+- kiểm tra CI run mới nhất; mốc #353 đã deploy thành công qua V35;
 - chạy lại test liên quan trước khi sửa.
 
 Mục tiêu:
@@ -432,7 +431,7 @@ Bạn là agent mới của MAVIS. Trước khi sửa code, hãy đọc tài li�
 
 Cách tìm tài liệu mới nhất:
 - chạy `ls -lt --time-style=long-iso docs`
-- đọc các file có mtime mới nhất trước, nhưng chỉ đọc file liên quan tới câu hỏi hiện tại.
+- đọc trạng thái bàn giao mới nhất và đối chiếu scope Ultimate Docs, sau đó mở tài liệu liên quan tới câu hỏi hiện tại.
 - không đọc toàn bộ 80+ file docs theo thứ tự alphabet; dùng bản đồ dưới đây.
 
 Thứ tự đọc theo lớp:
@@ -482,7 +481,7 @@ Quy tắc đối chiếu:
 
 Khi được hỏi “nên đọc từ đâu”, trả lời đúng thứ tự:
 1. handoff doc;
-2. docs mtime mới nhất;
+2. context hạ tầng và trạng thái bàn giao đã xác minh;
 3. Ultimate context + WF01..WF04;
 4. PREPARED_LIVE_STUDIO + STUDIO_LIVE_PARITY + MAVIS_STUDIO_RUNTIME;
 5. code entry points;
