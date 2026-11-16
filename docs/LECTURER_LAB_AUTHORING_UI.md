@@ -51,14 +51,26 @@ Backend chỉ cho sửa cấu trúc khi Course ở `DRAFT`. Course `PUBLISHED` h
 | **1. Lab information** | Tên, hạn nộp, hướng dẫn/mục tiêu/tiêu chí. Chọn **Theory + Quiz** hoặc **Theory + Quiz + Studio**. Không còn chọn diagram/model. Lưu được **draft không cần nguồn tham chiếu**. |
 | **2. Theory** | Lesson Markdown + preview, repo mẫu (commit/snapshot/revision + ZIP), C1–C3 read-only và dependency graph; chọn module, thêm/sửa bài học. Nếu Course đã publish, bấm **Start new Course draft** trước khi sửa. |
 | **3. Reference source** | Import GitHub commit SHA hoặc ZIP, chạy phân tích, chọn model version rồi **Save source to Lab**. |
-| **4. Quiz** | Publish chapter Quiz bằng Curriculum Publisher; xem version/ngưỡng đạt và preview Quiz hiện hành. Mặc định mới **80%**. Soạn tay/import đầy đủ thuộc Phase 2. |
+| **4. Quiz** | Quiz Builder đầy đủ: soạn tay, import/export JSON/CSV, question bank, preview, version. Mặc định đạt **80%**. |
 | **5. Studio Live** | Xem runtime readiness, mở Runtime Configuration, công bố Lab rồi **Freeze Studio topology**. |
 | **6. Check & publish** | Checklist Lab thật (source, theory, Quiz, Studio, publish), nút publish/freeze, preview và Course Setup Panel đầy đủ. |
 
 4. Lab chưa publish không hiển thị với sinh viên.
 5. Sinh viên **không nộp diagram/model**: C1–C3 chỉ là nội dung lý thuyết; submission mới (lý thuyết + Quiz + Studio) thuộc Phase 4 của big update.
 6. Quiz Gate mặc định **80%** cho phiên bản mới; Quiz cũ giữ ngưỡng đã publish. Freeze topology dùng V34 và chỉ áp dụng cho Lab đã publish.
-6. Cấp Passkey trong **Setup** hoặc `/roadmap?workspace=...#course-passkey`.
+7. Cấp Passkey trong **Setup** hoặc `/roadmap?workspace=...#course-passkey`.
+
+### Quiz Builder (Phase 2)
+
+Trong bước **4. Quiz** có các tab:
+
+- **Questions**: thêm/sửa/xóa/duplicate/sắp xếp câu hỏi; chọn một hoặc nhiều đáp án đúng; nhập explanation và points.
+- **Preview**: xem đề và đáp án đúng như giảng viên.
+- **Import / Export**: nhập JSON hoặc CSV, tải file, xuất JSON/CSV; có báo lỗi theo từng câu. Có thể nạp một chapter curriculum vào draft để sửa tiếp.
+- **Question bank**: lưu câu hỏi tái sử dụng và thêm lại vào Quiz.
+- **Versions**: xem các phiên bản đã publish, ngưỡng đạt và thời điểm.
+
+Hỗ trợ `SINGLE_CHOICE`, `MULTI_CHOICE`, `TRUE_FALSE`. Học sinh thấy radio/checkbox tương ứng và explanation sau khi nộp.
 
 **Course tools** (seed curated Labs, Course setup checklist) nằm trong một panel riêng trên `/assignments`, không trộn với nút **Create a Lab**.
 
@@ -104,6 +116,7 @@ Backend chỉ cho sửa cấu trúc khi Course ở `DRAFT`. Course `PUBLISHED` h
 - **Bộ lọc trạng thái bài nộp** chưa có trong API `assignmentSubmissions`; UI chỉ lọc theo Lab và tìm theo sinh viên. Không hiển thị filter giả.
 - **`runnerReady`** hiện là điều kiện cấu hình của profile (`ConfigurationView.ready()`), chưa phải health check Runner thật. UI ghi "Runner / images: ready" theo API và không nâng thành "đã chạy thật".
 - **THEORY completion** không được suy ra: giao diện chỉ hiển thị tài liệu, không đánh dấu hoàn thành giả.
+- **Submission v2 và Studio Live thật** vẫn thuộc Phase 3–4 của big update; hiện tại submission cũ vẫn dùng model/diagram cho Lab legacy.
 - **Nghiệm thu hai tài khoản trên staging** chưa chạy trong phiên này.
 
 ## 9. Kiểm chứng đã chạy
@@ -111,7 +124,7 @@ Backend chỉ cho sửa cấu trúc khi Course ở `DRAFT`. Course `PUBLISHED` h
 ```bash
 cd MAVIS-Frontend
 npm run typecheck
-npm test                 # 412/412 PASS
+npm test                 # 415/415 PASS
 npm run build            # PASS
 npm run start -- --hostname 127.0.0.1 --port 3092
 npm run test:routes -- http://127.0.0.1:3092   # 44 routes, 0 failure
@@ -125,13 +138,14 @@ Screenshot:
 - `.artifacts/lecturer-lms/assignments.png`
 - `.artifacts/lecturer-lms/lab-authoring.png`
 - `.artifacts/lecturer-lms/lab-theory.png`
+- `.artifacts/lecturer-lms/lab-quiz.png`
 
 Backend:
 
 ```bash
 cd MAVIS-Platform/mavis-be
-./mvnw.cmd -pl mavis-platform -am -Dtest=CourseAuthoringServiceTest -Dsurefire.failIfNoSpecifiedTests=false test
-# 14/14 PASS; full mavis-platform + mavis-common: 221 tests, 0 failure
+./mvnw.cmd -pl mavis-platform -am -Dtest=CourseAuthoringServiceTest,CourseQuizServiceTest,QuizBankServiceTest -Dsurefire.failIfNoSpecifiedTests=false test
+# CourseAuthoring 14/14, CourseQuiz 8/8, QuizBank 2/2; full mavis-platform + mavis-common: 224 tests, 0 failure
 ```
 
 Real Docker Runner và nghiệm thu staging vẫn là hạng mục môi trường riêng.

@@ -1,7 +1,7 @@
 # Lab v2 Big Update — Theory, Quiz, Studio Live, Submission
 
 **Date:** 2026-11-17
-**Status:** Plan for approval
+**Status:** Phase 1 and Phase 2 implemented; Phase 3–4 pending
 **Scope:** Lecturer Lab authoring + student Lab + quiz authoring + Studio Live wiring + submission/grading v2.
 
 ## 1. Decisions locked with the product owner
