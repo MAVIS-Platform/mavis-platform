@@ -48,15 +48,16 @@ Backend chỉ cho sửa cấu trúc khi Course ở `DRAFT`. Course `PUBLISHED` h
 
 | Bước | Nội dung |
 |---|---|
-| **1. Lab information** | Tên, hạn nộp, hướng dẫn/mục tiêu/tiêu chí, yêu cầu runtime trace và góc nhìn kiến trúc. Lưu được **draft không cần nguồn tham chiếu**. |
-| **2. Theory** | Chọn module, thêm/sửa nội dung THEORY. Nếu Course đã publish, bấm **Start new Course draft** trước khi sửa. |
+| **1. Lab information** | Tên, hạn nộp, hướng dẫn/mục tiêu/tiêu chí. Chọn **Theory + Quiz** hoặc **Theory + Quiz + Studio**. Không còn chọn diagram/model. Lưu được **draft không cần nguồn tham chiếu**. |
+| **2. Theory** | Lesson Markdown + preview, repo mẫu (commit/snapshot/revision + ZIP), C1–C3 read-only và dependency graph; chọn module, thêm/sửa bài học. Nếu Course đã publish, bấm **Start new Course draft** trước khi sửa. |
 | **3. Reference source** | Import GitHub commit SHA hoặc ZIP, chạy phân tích, chọn model version rồi **Save source to Lab**. |
-| **4. Quiz** | Publish chapter Quiz bằng Curriculum Publisher; xem version/ngưỡng đạt và preview Quiz hiện hành. |
+| **4. Quiz** | Publish chapter Quiz bằng Curriculum Publisher; xem version/ngưỡng đạt và preview Quiz hiện hành. Mặc định mới **80%**. Soạn tay/import đầy đủ thuộc Phase 2. |
 | **5. Studio Live** | Xem runtime readiness, mở Runtime Configuration, công bố Lab rồi **Freeze Studio topology**. |
 | **6. Check & publish** | Checklist Lab thật (source, theory, Quiz, Studio, publish), nút publish/freeze, preview và Course Setup Panel đầy đủ. |
 
 4. Lab chưa publish không hiển thị với sinh viên.
-5. Quiz Gate mặc định 70% nếu chưa cấu hình khác. Freeze topology dùng V34 và chỉ áp dụng cho Lab đã publish.
+5. Sinh viên **không nộp diagram/model**: C1–C3 chỉ là nội dung lý thuyết; submission mới (lý thuyết + Quiz + Studio) thuộc Phase 4 của big update.
+6. Quiz Gate mặc định **80%** cho phiên bản mới; Quiz cũ giữ ngưỡng đã publish. Freeze topology dùng V34 và chỉ áp dụng cho Lab đã publish.
 6. Cấp Passkey trong **Setup** hoặc `/roadmap?workspace=...#course-passkey`.
 
 **Course tools** (seed curated Labs, Course setup checklist) nằm trong một panel riêng trên `/assignments`, không trộn với nút **Create a Lab**.
@@ -110,7 +111,7 @@ Backend chỉ cho sửa cấu trúc khi Course ở `DRAFT`. Course `PUBLISHED` h
 ```bash
 cd MAVIS-Frontend
 npm run typecheck
-npm test                 # 410/410 PASS
+npm test                 # 412/412 PASS
 npm run build            # PASS
 npm run start -- --hostname 127.0.0.1 --port 3092
 npm run test:routes -- http://127.0.0.1:3092   # 44 routes, 0 failure
@@ -123,6 +124,7 @@ Screenshot:
 - `.artifacts/lecturer-lms/lab-coc.png`
 - `.artifacts/lecturer-lms/assignments.png`
 - `.artifacts/lecturer-lms/lab-authoring.png`
+- `.artifacts/lecturer-lms/lab-theory.png`
 
 Backend:
 
