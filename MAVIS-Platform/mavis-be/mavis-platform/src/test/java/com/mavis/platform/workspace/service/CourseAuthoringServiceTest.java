@@ -2,6 +2,7 @@ package com.mavis.platform.workspace.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import org.springframework.jdbc.core.JdbcTemplate;
 import com.mavis.common.entity.CourseDefinition;
 import com.mavis.common.entity.CourseModule;
 import com.mavis.common.entity.CourseItem;
@@ -41,9 +42,10 @@ class CourseAuthoringServiceTest {
     private final CourseVersionRepository versions = mock(CourseVersionRepository.class);
     private final UserRepository users = mock(UserRepository.class);
     private final AssignmentRepository assignments = mock(AssignmentRepository.class);
+    private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
     private final ObjectMapper mapper = new ObjectMapper();
     private final CourseAuthoringService service = new CourseAuthoringService(
-            access, workspaces, courses, modules, items, versions, users, mapper, assignments);
+            access, workspaces, courses, modules, items, versions, users, mapper, assignments, jdbc);
     private Workspace workspace;
     private CourseDefinition course;
     private CourseModule module;
