@@ -18,6 +18,7 @@ import java.util.UUID;
 public class SubmissionExportBundleDTO {
     private JsonNode studioEvidence;
     private com.fasterxml.jackson.databind.JsonNode courseQuizEvidence;
+    private com.fasterxml.jackson.databind.JsonNode theoryEvidence;
     private com.fasterxml.jackson.databind.JsonNode studentSnapshots;
     private com.fasterxml.jackson.databind.JsonNode snapshotGrades;
     private String labOutcome;

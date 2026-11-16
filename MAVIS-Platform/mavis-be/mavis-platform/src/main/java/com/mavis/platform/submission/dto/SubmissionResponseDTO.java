@@ -33,6 +33,7 @@ public class SubmissionResponseDTO {
     private UUID submittedById;
     private String submittedByName;
     private String submittedByEmail;
+    private String labMode;
     private UUID sourceSnapshotId;
     private UUID modelVersionId;
     private Integer modelRevision;
@@ -42,6 +43,7 @@ public class SubmissionResponseDTO {
     private Double complianceScore;
     private UUID runtimeSessionId;
     private com.fasterxml.jackson.databind.JsonNode courseQuizEvidence;
+    private com.fasterxml.jackson.databind.JsonNode theoryEvidence;
     private com.fasterxml.jackson.databind.JsonNode studioEvidence;
     private com.fasterxml.jackson.databind.JsonNode studentSnapshots;
     private String scenarioStatus;
@@ -73,6 +75,7 @@ public class SubmissionResponseDTO {
                 .submittedById(s.getSubmittedBy() != null ? s.getSubmittedBy().getId() : null)
                 .submittedByName(s.getSubmittedBy() != null ? s.getSubmittedBy().getFullName() : null)
                 .submittedByEmail(s.getSubmittedBy() != null ? s.getSubmittedBy().getEmail() : null)
+                .labMode(s.getAssignment() != null ? s.getAssignment().getLabMode() : "LEGACY")
                 .sourceSnapshotId(s.getSourceSnapshot() != null ? s.getSourceSnapshot().getId() : null)
                 .modelVersionId(s.getModelVersion() != null ? s.getModelVersion().getId() : null)
                 .modelRevision(s.getModelVersion() != null ? s.getModelVersion().getRevision() : null)
@@ -82,6 +85,7 @@ public class SubmissionResponseDTO {
                 .complianceScore(complianceScore)
                 .runtimeSessionId(s.getRuntimeSession() != null ? s.getRuntimeSession().getId() : null)
                 .courseQuizEvidence(s.getCourseQuizEvidence())
+                .theoryEvidence(s.getTheoryEvidence())
                 .studioEvidence(studioSummary(s))
                 .studentSnapshots(s.getStudentSnapshots())
                 .scenarioStatus(scenarioStatus)

@@ -81,6 +81,7 @@ public class AssignmentServiceImpl implements AssignmentService {
                 .createdBy(currentUser)
                 .title(request.getTitle().trim())
                 .description(request.getDescription())
+                .labMode(normalizeLabMode(request.getLabMode()))
                 .requiredDiagramTypes(requiredDiagramTypesNode)
                 .ruleSetVersion(ruleSetVersion)
                 .requireRuntimeTrace(requireRuntimeTrace)
@@ -159,6 +160,9 @@ public class AssignmentServiceImpl implements AssignmentService {
 
         assignment.setTitle(request.getTitle().trim());
         assignment.setDescription(request.getDescription());
+        if (request.getLabMode() != null) {
+            assignment.setLabMode(normalizeLabMode(request.getLabMode()));
+        }
 
         if (request.getRequiredDiagramTypes() != null) {
             validateDiagramTypes(request.getRequiredDiagramTypes());
@@ -309,6 +313,17 @@ public class AssignmentServiceImpl implements AssignmentService {
         return objectMapper.valueToTree(rawAiPolicy);
     }
 
+    private String normalizeLabMode(String value) {
+        if (value == null || value.isBlank()) {
+            return "LEGACY";
+        }
+        String mode = value.trim().toUpperCase(java.util.Locale.ROOT);
+        if (!java.util.Set.of("LEGACY", "THEORY_QUIZ", "THEORY_QUIZ_STUDIO").contains(mode)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Lab mode không hợp lệ: " + value);
+        }
+        return mode;
+    }
+
     private void validateDiagramTypes(List<String> diagramTypes) {
         if (diagramTypes == null) {
             return;
@@ -364,6 +379,7 @@ public class AssignmentServiceImpl implements AssignmentService {
                 .createdByName(assignment.getCreatedBy() != null ? assignment.getCreatedBy().getFullName() : null)
                 .title(assignment.getTitle())
                 .description(assignment.getDescription())
+                .labMode(assignment.getLabMode() == null ? "LEGACY" : assignment.getLabMode())
                 .requiredDiagramTypes(diagramTypes)
                 .ruleSetVersion(assignment.getRuleSetVersion())
                 .requireRuntimeTrace(assignment.getRequireRuntimeTrace())

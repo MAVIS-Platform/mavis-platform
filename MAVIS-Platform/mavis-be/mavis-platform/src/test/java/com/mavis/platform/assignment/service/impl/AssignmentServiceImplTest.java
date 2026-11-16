@@ -38,6 +38,31 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class AssignmentServiceImplTest {
+    @Test void defaultsToLegacyAndAcceptsTheoryLabModes() {
+        when(workspaceRepository.findWithCreatorById(workspaceId)).thenReturn(Optional.of(workspace));
+        when(userRepository.findById(currentUserId)).thenReturn(Optional.of(currentUser));
+        when(assignmentRepository.save(any(Assignment.class))).thenAnswer(call -> {
+            Assignment a = call.getArgument(0);
+            a.setId(UUID.randomUUID());
+            return a;
+        });
+
+        var legacy = assignmentService.createAssignment(workspaceId,
+                AssignmentCreateRequest.builder().title("Legacy").build());
+        var theory = assignmentService.createAssignment(workspaceId,
+                AssignmentCreateRequest.builder().title("Theory").labMode("THEORY_QUIZ").build());
+        var studio = assignmentService.createAssignment(workspaceId,
+                AssignmentCreateRequest.builder().title("Studio").labMode("THEORY_QUIZ_STUDIO").build());
+
+        assertThat(legacy.getLabMode()).isEqualTo("LEGACY");
+        assertThat(theory.getLabMode()).isEqualTo("THEORY_QUIZ");
+        assertThat(studio.getLabMode()).isEqualTo("THEORY_QUIZ_STUDIO");
+        assertThatThrownBy(() -> assignmentService.createAssignment(workspaceId,
+                AssignmentCreateRequest.builder().title("Bad").labMode("DIAGRAM_ONLY").build()))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Lab mode");
+    }
+
     @Test void acceptsTheNineCurrentDiagramViewsAndGraphAsSeparateRequirements() {
         var types=List.of("C4_CONTEXT","C4_CONTAINER","C4_COMPONENT","UML_CLASS","UML_SEQUENCE","UML_PACKAGE","UML_DEPLOYMENT","UML_ACTIVITY","UML_STATE","DEPENDENCY_GRAPH");
         when(workspaceRepository.findWithCreatorById(workspaceId)).thenReturn(Optional.of(workspace));

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.*;
 
 import java.util.List;
@@ -21,16 +22,13 @@ public class SubmissionCreateRequest {
     @Schema(description = "ID của đề bài tập (Assignment)", example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
     private UUID assignmentId;
 
-    @NotNull(message = "ID dự án không được để trống")
-    @Schema(description = "ID của đồ án kiến trúc (Project)", example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
+    @Schema(description = "ID của đồ án kiến trúc (Project); bỏ trống cho Lab v2")
     private UUID projectId;
 
-    @NotNull(message = "ID phiên bản mô hình không được để trống")
-    @Schema(description = "ID của ModelVersion nộp bài", example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
+    @Schema(description = "ID của ModelVersion nộp bài; bỏ trống cho Lab v2")
     private UUID modelVersionId;
 
-    @NotNull(message = "ID bản vẽ kiến trúc không được để trống")
-    @Schema(description = "ID của DiagramVersion nộp bài", example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
+    @Schema(description = "ID của DiagramVersion nộp bài; bỏ trống cho Lab v2")
     private UUID diagramVersionId;
 
     @Schema(description = "ID kết quả chấm kiến trúc tự động (nếu có)")
@@ -45,6 +43,25 @@ public class SubmissionCreateRequest {
     @Valid
     @Schema(description = "Danh sách các Snapshot thực hành kèm giải thích lý thuyết của sinh viên")
     private List<StudentSnapshotItemDTO> studentSnapshots;
+
+    @Valid
+    @Schema(description = "Câu trả lời giải trình cho Lab v2")
+    private List<TheoryAnswerDTO> theoryAnswers;
+
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class TheoryAnswerDTO {
+        @Size(max = 64)
+        private String sectionId;
+        @Size(max = 255)
+        private String title;
+        @Size(max = 20000)
+        private String answer;
+    }
 
     @Getter
     @Setter

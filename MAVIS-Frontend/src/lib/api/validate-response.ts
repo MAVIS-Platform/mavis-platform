@@ -106,11 +106,15 @@ export function validateResponse<K extends Operation>(
       fail();
     if (
       ["submit", "feedback"].includes(operation) &&
+      request["modelId"] !== undefined &&
+      request["modelId"] !== null &&
       (!record(value["model"]) || value["model"]["id"] !== request["modelId"])
     )
       fail();
     if (
       operation === "submit" &&
+      request["snapshotId"] !== undefined &&
+      request["snapshotId"] !== null &&
       (!record(value["snapshot"]) ||
         value["snapshot"]["id"] !== request["snapshotId"] ||
         (request["runtimeSessionId"] === null

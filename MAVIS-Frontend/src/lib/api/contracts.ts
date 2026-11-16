@@ -813,6 +813,7 @@ export const contracts = {
       title: z.string().trim().min(1).max(255),
       description: z.string().max(10000).optional(),
       dueAt: z.string().datetime({ offset: true }).nullable(),
+      labMode: z.enum(["LEGACY", "THEORY_QUIZ", "THEORY_QUIZ_STUDIO"]).optional(),
       requiredDiagramTypes: z.array(z.string()).max(10),
       ruleSetVersion: z.string().trim().min(1).max(50).optional(),
       requireRuntimeTrace: z.boolean(),
@@ -832,6 +833,7 @@ export const contracts = {
       title: z.string().trim().min(1).max(255),
       description: z.string().max(10000),
       dueAt: z.string().datetime({ offset: true }).nullable(),
+      labMode: z.enum(["LEGACY", "THEORY_QUIZ", "THEORY_QUIZ_STUDIO"]).optional(),
       requiredDiagramTypes: z.array(z.string()).max(10),
       ruleSetVersion: z.string().trim().min(1).max(50).optional(),
       requireRuntimeTrace: z.boolean(),
@@ -858,13 +860,22 @@ export const contracts = {
     z.object({
       assignmentId: id,
       projectId: id.optional(),
-      modelId: id,
-      snapshotId: id,
+      modelId: id.optional(),
+      snapshotId: id.optional(),
       diagramVersionId: id.optional(),
       evaluationRunId: id.nullable().optional(),
       runtimeSessionId: id.nullable(),
       submissionNotes: z.string().max(5000).optional(),
       studentSnapshots: z.array(d.studentSnapshotSchema).optional(),
+      theoryAnswers: z
+        .array(
+          z.object({
+            sectionId: z.string().max(64).optional(),
+            title: z.string().max(255).optional(),
+            answer: z.string().max(20000),
+          }),
+        )
+        .optional(),
     }),
     d.submissionSchema,
     true,

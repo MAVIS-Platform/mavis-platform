@@ -22,6 +22,7 @@ public class AssignmentResponseDTO {
     private String createdByName;
     private String title;
     private String description;
+    private String labMode;
     private List<String> requiredDiagramTypes;
     private String ruleSetVersion;
     private Boolean requireRuntimeTrace;

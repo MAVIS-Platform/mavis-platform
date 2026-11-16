@@ -150,6 +150,12 @@ if [ -e "$runtime_assignment_migration" ]; then
   compose "$prefix" "$tag" "$incoming/compose.production.yml" config --format json |
     python3 "$schema_tool" "$runtime_assignment_migration" /opt/mavis/db-backups/runtime-before-v37.dump
 fi
+submission_v2_migration="$incoming/V38__Submission_V2_Lab_Mode.sql"
+if [ -e "$submission_v2_migration" ]; then
+  test -f "$runtime_assignment_migration" && test -f "$schema_tool" || { echo "Incomplete Submission v2 schema package"; exit 1; }
+  compose "$prefix" "$tag" "$incoming/compose.production.yml" config --format json |
+    python3 "$schema_tool" "$submission_v2_migration" /opt/mavis/db-backups/submission-v2-before-v38.dump
+fi
 if ! compose "$prefix" "$tag" "$incoming/compose.production.yml" up -d --no-build --remove-orphans || ! healthy; then
   echo "Deployment failed; restoring previous images and Compose."
   compose "$old_prefix" "$old_tag" "$previous/compose.production.yml" up -d --no-build --remove-orphans

@@ -88,6 +88,10 @@ public class SubmissionServiceImpl implements SubmissionService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Đã quá hạn nộp bài cho đề bài này");
         }
 
+        if (!"LEGACY".equalsIgnoreCase(assignment.getLabMode() == null ? "LEGACY" : assignment.getLabMode())) {
+            return submitTheoryV2(request, assignment, submitter, currentUserId);
+        }
+
         // 2. Kiểm tra dự án và quyền sở hữu
         Project project = projectRepository.findById(request.getProjectId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy dự án với ID: " + request.getProjectId()));
@@ -269,6 +273,160 @@ public class SubmissionServiceImpl implements SubmissionService {
         return SubmissionResponseDTO.fromEntity(submission, 0L);
     }
 
+    private SubmissionResponseDTO submitTheoryV2(SubmissionCreateRequest request, Assignment assignment,
+                                                  User submitter, UUID currentUserId) {
+        ModelVersion referenceModel = assignment.getReferenceModel();
+        if (referenceModel == null || referenceModel.getSourceSnapshot() == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Lab chưa có reference source đã phân tích");
+        }
+        SourceSnapshot sourceSnapshot = referenceModel.getSourceSnapshot();
+        Project referenceProject = referenceModel.getProject();
+        if (referenceProject == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Reference source không thuộc project hợp lệ");
+        }
+        boolean studioMode = "THEORY_QUIZ_STUDIO".equalsIgnoreCase(assignment.getLabMode());
+        if (studioMode && assignment.getLabOrder() == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Studio Lab phải được publish trước khi nộp");
+        }
+
+        JsonNode quizEvidence = null;
+        if (assignment.getWorkspace() != null && assignment.getWorkspace().isCourseMode()
+                && com.mavis.common.security.CourseLabPolicy.isStudent(submitter)) {
+            var pass = courseLabs.currentQuizPass(assignment, currentUserId)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.FORBIDDEN,
+                            "Pass the current Lab Quiz before submitting"));
+            quizEvidence = json.createObjectNode().put("status", "PASSED")
+                    .put("attemptId", pass.attemptId().toString()).put("quizVersion", pass.quizVersion())
+                    .put("correctCount", pass.correctCount()).put("questionCount", pass.questionCount())
+                    .put("passPercent", pass.passPercent()).put("submittedAt", pass.submittedAt().toString())
+                    .put("referenceModelId", referenceModel.getId().toString())
+                    .put("referenceSnapshotId", sourceSnapshot.getId().toString())
+                    .put("artifactHash", sourceSnapshot.getArtifactHash()).put("commitSha", sourceSnapshot.getCommitSha());
+        }
+
+        JsonNode theoryEvidence = theoryEvidence(request.getTheoryAnswers());
+        if (theoryEvidence.path("answers").isEmpty()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "THEORY_ANSWER_REQUIRED");
+        }
+
+        RuntimeSession runtimeSession = null;
+        JsonNode studioEvidence = null;
+        if (studioMode) {
+            if (request.getRuntimeSessionId() == null) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "STUDIO_SESSION_REQUIRED");
+            }
+            runtimeSession = runtimeSessionRepository.findById(request.getRuntimeSessionId())
+                    .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Studio session not found"));
+            if (runtimeSession.getAssignment() == null
+                    || !assignment.getId().equals(runtimeSession.getAssignment().getId())) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "Studio session does not belong to this Lab");
+            }
+            if (runtimeSession.getTriggeredBy() == null
+                    || !currentUserId.equals(runtimeSession.getTriggeredBy().getId())) {
+                throw new BusinessException(ErrorCode.FORBIDDEN, "Use your own Studio session as evidence");
+            }
+            if (runtimeSession.getSourceSnapshot() == null
+                    || !sourceSnapshot.getId().equals(runtimeSession.getSourceSnapshot().getId())
+                    || runtimeSession.getModelVersion() == null
+                    || !referenceModel.getId().equals(runtimeSession.getModelVersion().getId())) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST,
+                        "Studio session source/model does not match this Lab");
+            }
+            if (!runtimeSession.hasVerifiedStudioEvidence()) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "STUDIO_EVIDENCE_REQUIRED");
+            }
+            studioEvidence = freezeStudioEvidence(runtimeSession);
+            if (studioEvidence == null) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "STUDIO_EVIDENCE_REQUIRED");
+            }
+        }
+
+        ObjectMapper mapper = this.json != null ? this.json : new ObjectMapper();
+        var snapshots = new ArrayList<StudentSnapshotItemDTO>();
+        for (JsonNode answer : theoryEvidence.path("answers")) {
+            snapshots.add(StudentSnapshotItemDTO.builder()
+                    .snapshotId("THEORY_" + answer.path("sectionId").asText("THEORY"))
+                    .step("THEORY")
+                    .title(answer.path("title").asText("Theory explanation"))
+                    .writtenExplanation(answer.path("answer").asText())
+                    .build());
+        }
+        if (studioEvidence != null) {
+            int index = 1;
+            for (JsonNode captured : studioEvidence.path("snapshots")) {
+                snapshots.add(StudentSnapshotItemDTO.builder()
+                        .snapshotId("STUDIO_" + captured.path("id").asText("snapshot" + index))
+                        .step("STEP_4_RUNTIME")
+                        .title(captured.path("title").asText("Studio snapshot " + index))
+                        .writtenExplanation(captured.path("explanation").asText(""))
+                        .build());
+                index++;
+            }
+        }
+        JsonNode studentSnapshots = mapper.valueToTree(snapshots);
+        String digest = evidenceDigestV2(assignment, sourceSnapshot, quizEvidence, theoryEvidence,
+                studioEvidence, request.getSubmissionNotes());
+
+        SubmissionSnapshot submission = SubmissionSnapshot.builder()
+                .assignment(assignment)
+                .project(referenceProject)
+                .submittedBy(submitter)
+                .sourceSnapshot(sourceSnapshot)
+                .modelVersion(referenceModel)
+                .diagramVersion(null)
+                .runtimeSession(runtimeSession)
+                .courseQuizEvidence(quizEvidence)
+                .theoryEvidence(theoryEvidence)
+                .studentSnapshots(studentSnapshots)
+                .submissionNotes(request.getSubmissionNotes())
+                .evidencePackageDigest(digest)
+                .studioEvidence(studioEvidence)
+                .build();
+        submission = submissionSnapshotRepository.save(submission);
+        submissionSnapshotRepository.flush();
+        log.info("Nộp bài Lab v2 thành công: submissionId={}, mode={}", submission.getId(), assignment.getLabMode());
+        return SubmissionResponseDTO.fromEntity(submission, 0L);
+    }
+
+    private JsonNode theoryEvidence(List<SubmissionCreateRequest.TheoryAnswerDTO> answers) {
+        var root = (com.fasterxml.jackson.databind.node.ObjectNode) json.createObjectNode();
+        var array = root.putArray("answers");
+        if (answers != null) {
+            int count = 0;
+            for (var answer : answers) {
+                if (answer == null) continue;
+                String text = answer.getAnswer() == null ? "" : answer.getAnswer().trim();
+                if (text.isEmpty()) continue;
+                if (++count > 5 || text.length() > 20000) {
+                    throw new BusinessException(ErrorCode.BAD_REQUEST, "THEORY_ANSWER_INVALID");
+                }
+                String section = answer.getSectionId() == null || answer.getSectionId().isBlank()
+                        ? "THEORY" : answer.getSectionId().trim().toUpperCase(java.util.Locale.ROOT);
+                if (!section.matches("[A-Z0-9_]{1,64}")) {
+                    throw new BusinessException(ErrorCode.BAD_REQUEST, "THEORY_SECTION_INVALID");
+                }
+                array.addObject().put("sectionId", section)
+                        .put("title", answer.getTitle() == null || answer.getTitle().isBlank()
+                                ? "Theory explanation" : answer.getTitle().trim())
+                        .put("answer", text);
+            }
+        }
+        return root;
+    }
+
+    private String evidenceDigestV2(Assignment assignment, SourceSnapshot source, JsonNode quiz,
+                                    JsonNode theory, JsonNode studio, String notes) {
+        StringBuilder canonical = new StringBuilder()
+                .append(assignment.getId()).append('|').append(assignment.getLabMode()).append('|')
+                .append(source.getId()).append('|').append(source.getArtifactHash()).append('|')
+                .append(quiz == null ? "" : quiz.toString()).append('|')
+                .append(theory.toString()).append('|')
+                .append(studio == null ? "" : studio.path("receiptSignature").asText("")).append('|')
+                .append(notes == null ? "" : notes.trim());
+        return "sha256:" + com.mavis.common.utils.HashUtils.sha256Hex(
+                canonical.toString().getBytes(StandardCharsets.UTF_8));
+    }
+
     @Override
     @Transactional(readOnly = true)
     public List<SubmissionResponseDTO> getSubmissionsByAssignment(UUID assignmentId) {
@@ -372,6 +530,7 @@ public class SubmissionServiceImpl implements SubmissionService {
                 .reviewedAt(releasedReview.map(SubmissionReview::getUpdatedAt).orElse(null))
                 .runtimeSessionId(submission.getRuntimeSession() != null ? submission.getRuntimeSession().getId() : null)
                 .courseQuizEvidence(submission.getCourseQuizEvidence())
+                .theoryEvidence(submission.getTheoryEvidence())
                 .studentSnapshots(submission.getStudentSnapshots())
                 .snapshotGrades(releasedReview.map(SubmissionReview::getSnapshotGrades).orElse(null))
                 .labOutcome(releasedReview.map(SubmissionReview::getLabOutcome).orElse(null))

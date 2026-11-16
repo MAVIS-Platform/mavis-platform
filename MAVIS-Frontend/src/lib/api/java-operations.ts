@@ -216,6 +216,7 @@ export async function executeJava(
         title: z.string(),
         description: z.string().nullish(),
         dueAt: z.string().nullish(),
+        labMode: z.string().nullish(),
         requiredDiagramTypes: z.array(z.string()).nullish(),
         ruleSetVersion: z.string().nullish(),
         requireRuntimeTrace: z.boolean().nullish(),
@@ -230,6 +231,7 @@ export async function executeJava(
       dueAt: a.dueAt ?? "No deadline",
       requiredDiagramTypes: a.requiredDiagramTypes ?? [],
       requireRuntimeTrace: a.requireRuntimeTrace ?? false,
+      labMode: a.labMode ?? "LEGACY",
     };
   };
   const coursework = async (raw: unknown, includeDetails = true) => {
@@ -242,9 +244,10 @@ export async function executeJava(
         submittedAt: z.string(),
         assignmentTitle: z.string().nullish(),
         guidedLab: z.boolean().optional(),
+        labMode: z.string().nullish(),
         submittedByName: z.string().nullish(),
         submittedByEmail: z.string().nullish(),
-        diagramVersionId: z.string().uuid().optional(),
+        diagramVersionId: z.string().uuid().nullish(),
         diagramNotation: z.string().nullish(),
         submissionNotes: z.string().nullish(),
         evaluationRunId: z.string().uuid().nullish(),
@@ -254,6 +257,7 @@ export async function executeJava(
           .regex(/^sha256:[a-f0-9]{64}$/)
           .optional(),
         courseQuizEvidence: courseQuizEvidenceSchema.nullish(),
+        theoryEvidence: z.record(z.string(), z.unknown()).nullish(),
         studioEvidence:z.record(z.string(), z.unknown()).nullish(),
         studentSnapshots: z.array(studentSnapshotSchema).nullish(),
         sourceSnapshotId: z.string().uuid(),
@@ -261,24 +265,50 @@ export async function executeJava(
         runtimeSessionId: z.string().uuid().nullish(),
       })
       .parse(raw);
-    const [m, source, feedback, runtime] = await Promise.all([
-      model(sub.modelVersionId, includeDetails),
-      snapshot(sub.sourceSnapshotId),
-      get(`submissions/${sub.id}/feedbacks`),
-      includeDetails && sub.runtimeSessionId
-        ? get(`analyzer/runtime/sessions/${sub.runtimeSessionId}`).then(courseworkRuntime)
-        : Promise.resolve(null),
-    ]);
-    if (
-      m.id !== sub.modelVersionId ||
-      m.projectId !== sub.projectId ||
-      m.snapshotId !== sub.sourceSnapshotId ||
-      (runtime &&
-        (runtime.id !== sub.runtimeSessionId ||
-          runtime.snapshotId !== sub.sourceSnapshotId ||
-          runtime.projectId !== sub.projectId))
-    )
-      throw new ApiError("contract", 502);
+    const theoryOnly = Boolean(sub.labMode && sub.labMode !== "LEGACY");
+    let m: any;
+    let source: any;
+    let feedback: unknown;
+    let runtime: any = null;
+    if (theoryOnly) {
+      m = {
+        id: sub.modelVersionId,
+        projectId: sub.projectId,
+        snapshotId: sub.sourceSnapshotId,
+        revision: 1,
+        label: "Reference model",
+        elements: [],
+        edges: [],
+      };
+      source = {
+        id: sub.sourceSnapshotId,
+        projectId: sub.projectId,
+        name: "Reference source",
+        createdAt: sub.submittedAt,
+        validation: "valid",
+        evidenceComplete: true,
+      };
+      feedback = await get(`submissions/${sub.id}/feedbacks`).catch(() => []);
+    } else {
+      [m, source, feedback, runtime] = await Promise.all([
+        model(sub.modelVersionId, includeDetails),
+        snapshot(sub.sourceSnapshotId),
+        get(`submissions/${sub.id}/feedbacks`),
+        includeDetails && sub.runtimeSessionId
+          ? get(`analyzer/runtime/sessions/${sub.runtimeSessionId}`).then(courseworkRuntime)
+          : Promise.resolve(null),
+      ]);
+      if (
+        m.id !== sub.modelVersionId ||
+        m.projectId !== sub.projectId ||
+        m.snapshotId !== sub.sourceSnapshotId ||
+        (runtime &&
+          (runtime.id !== sub.runtimeSessionId ||
+            runtime.snapshotId !== sub.sourceSnapshotId ||
+            runtime.projectId !== sub.projectId))
+      )
+        throw new ApiError("contract", 502);
+    }
     let diagramLayout: Record<string, unknown> | undefined;
     if (includeDetails && sub.diagramVersionId) {
       const diagram = z
@@ -305,6 +335,7 @@ export async function executeJava(
       complianceScore: sub.complianceScore ?? null,
       ...(sub.evidencePackageDigest ? { evidencePackageDigest: sub.evidencePackageDigest } : {}),
       courseQuizEvidence: sub.courseQuizEvidence ?? null,
+      theoryEvidence: sub.theoryEvidence ?? null,
       studioEvidence:sub.studioEvidence??null,
       ...(sub.studentSnapshots ? { studentSnapshots: sub.studentSnapshots } : {}),
       id: sub.id,
@@ -312,7 +343,7 @@ export async function executeJava(
       studentId: sub.submittedById,
       submittedAt: sub.submittedAt,
       model: m,
-      snapshot: snapshotView(source),
+      snapshot: theoryOnly ? source : snapshotView(source),
       runtime,
       feedback: z
         .array(
@@ -985,6 +1016,16 @@ export async function executeJava(
     case "submission":
       return coursework(await get(`submissions/${id(input, "submissionId")}`));
     case "submit": {
+      if (Array.isArray(input["theoryAnswers"])) {
+        return coursework(
+          await post("submissions", {
+            assignmentId: id(input, "assignmentId"),
+            runtimeSessionId: input["runtimeSessionId"] ?? null,
+            submissionNotes: input["submissionNotes"],
+            theoryAnswers: input["theoryAnswers"],
+          }),
+        );
+      }
       const modelId = id(input, "modelId"),
         snapshotId = id(input, "snapshotId");
       const m = modelSummary(await get(`analyzer/models/${modelId}`));

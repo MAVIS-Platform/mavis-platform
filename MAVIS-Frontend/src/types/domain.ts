@@ -277,6 +277,7 @@ export const assignmentReferenceSchema = z.object({
 });
 export const assignmentSchema = z.object({
   referenceSource: assignmentReferenceSchema.nullish(),
+  labMode: z.string().nullish(),
   requiredDiagramTypes: z.array(z.string()).optional(),
   ruleSetVersion: z.string().nullish(),
   requireRuntimeTrace: z.boolean().optional(),
@@ -326,7 +327,7 @@ export const submissionSchema = z
     guidedLab: z.boolean().optional(),
     studentName: z.string().optional(),
     studentEmail: z.string().optional(),
-    diagramVersionId: z.string().optional(),
+    diagramVersionId: z.string().nullish(),
     diagramNotation: z.string().optional(),
     submissionNotes: z.string().optional(),
     diagramLayout: z.record(z.string(), z.unknown()).optional(),
@@ -337,6 +338,7 @@ export const submissionSchema = z
       .regex(/^sha256:[a-f0-9]{64}$/)
       .optional(),
     courseQuizEvidence: courseQuizEvidenceSchema.nullish(),
+    theoryEvidence: z.record(z.string(), z.unknown()).nullish(),
     studioEvidence:z.record(z.string(), z.unknown()).nullish(),
     studentSnapshots: z.array(studentSnapshotSchema).nullish(),
     id: z.string(),

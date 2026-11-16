@@ -81,6 +81,7 @@ class MigrationTest(unittest.TestCase):
             ("V35__Course_Composition_Draft.sql", 35, "course_definitions"),
             ("V36__Quiz_Authoring.sql", 36, "course_quiz_drafts"),
             ("V37__Runtime_Session_Assignment.sql", 37, "assignment_id"),
+            ("V38__Submission_V2_Lab_Mode.sql", 38, "theory_evidence"),
         ):
             registered, probe = module.MIGRATIONS[filename]
             self.assertEqual(registered, version)

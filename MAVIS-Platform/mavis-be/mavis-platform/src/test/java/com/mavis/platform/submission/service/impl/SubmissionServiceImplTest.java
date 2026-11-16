@@ -28,6 +28,53 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class SubmissionServiceImplTest {
+    @Test void theoryOnlyV2SubmitsWithoutDiagramOrStudentProject() {
+        assignment.setLabMode("THEORY_QUIZ");
+        assignment.setReferenceModel(modelVersion);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(student));
+        when(assignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));
+        when(submissionSnapshotRepository.save(any())).thenAnswer(call -> {
+            SubmissionSnapshot value = call.getArgument(0);
+            value.setId(UUID.randomUUID());
+            return value;
+        });
+        var request = SubmissionCreateRequest.builder()
+                .assignmentId(assignmentId)
+                .submissionNotes("The route controller isolates the payment dependency.")
+                .theoryAnswers(List.of(new SubmissionCreateRequest.TheoryAnswerDTO(
+                        "THEORY", "Theory explanation", "The sample repository calls payment through a prepared route.")))
+                .build();
+
+        var response = submissionService.submitAssignment(request);
+
+        assertThat(response.getDiagramVersionId()).isNull();
+        assertThat(response.getTheoryEvidence().path("answers").get(0).path("answer").asText())
+                .contains("prepared route");
+        assertThat(response.getStudentSnapshots().size()).isEqualTo(1);
+        assertThat(response.getStudentSnapshots().get(0).path("snapshotId").asText())
+                .isEqualTo("THEORY_THEORY");
+        assertThat(response.getEvidencePackageDigest()).matches("sha256:[a-f0-9]{64}");
+        verify(projectRepository, never()).findById(any());
+        verify(diagramVersionRepository, never()).findById(any());
+    }
+
+    @Test void theoryOnlyV2RejectsMissingExplanation() {
+        assignment.setLabMode("THEORY_QUIZ");
+        assignment.setReferenceModel(modelVersion);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(student));
+        when(assignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));
+
+        var request = SubmissionCreateRequest.builder()
+                .assignmentId(assignmentId)
+                .theoryAnswers(List.of(new SubmissionCreateRequest.TheoryAnswerDTO("THEORY", "Theory", "  ")))
+                .build();
+
+        assertThatThrownBy(() -> submissionService.submitAssignment(request))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("THEORY_ANSWER_REQUIRED");
+        verify(submissionSnapshotRepository, never()).save(any());
+    }
+
     @Test void c4ContainerDoesNotSatisfyAComponentRequirement() {
         assignment.setRequiredDiagramTypes(objectMapper.createArrayNode().add("C4_COMPONENT"));
         when(userRepository.findById(userId)).thenReturn(Optional.of(student));when(assignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));

@@ -36,6 +36,9 @@ export function LabInfoForm({
   const [requireRuntimeTrace, setRequireRuntimeTrace] = useState(
     assignment?.requireRuntimeTrace ?? false,
   );
+  const [labMode, setLabMode] = useState(
+    assignment?.labMode ?? (assignment?.requireRuntimeTrace ? "THEORY_QUIZ_STUDIO" : "THEORY_QUIZ"),
+  );
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -47,6 +50,7 @@ export function LabInfoForm({
       description: instructions,
       dueAt: due ? new Date(due).toISOString() : null,
       requireRuntimeTrace,
+      labMode,
       requiredDiagramTypes: [],
       clearReferenceSource: false,
     };
@@ -59,6 +63,7 @@ export function LabInfoForm({
           setInstructions("");
           setDue("");
           setRequireRuntimeTrace(false);
+          setLabMode("THEORY_QUIZ");
         }
         onSaved?.(saved);
       },
@@ -122,7 +127,10 @@ export function LabInfoForm({
           <button
             type="button"
             aria-pressed={!requireRuntimeTrace}
-            onClick={() => setRequireRuntimeTrace(false)}
+            onClick={() => {
+              setRequireRuntimeTrace(false);
+              setLabMode("THEORY_QUIZ");
+            }}
             className={`space-y-1 rounded-xl border p-4 text-left transition-colors ${
               !requireRuntimeTrace ? "border-primary bg-primary/5" : "hover:bg-muted/40"
             }`}
@@ -140,7 +148,10 @@ export function LabInfoForm({
           <button
             type="button"
             aria-pressed={requireRuntimeTrace}
-            onClick={() => setRequireRuntimeTrace(true)}
+            onClick={() => {
+              setRequireRuntimeTrace(true);
+              setLabMode("THEORY_QUIZ_STUDIO");
+            }}
             className={`space-y-1 rounded-xl border p-4 text-left transition-colors ${
               requireRuntimeTrace ? "border-primary bg-primary/5" : "hover:bg-muted/40"
             }`}

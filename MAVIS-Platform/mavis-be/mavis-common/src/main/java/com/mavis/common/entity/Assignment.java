@@ -38,6 +38,10 @@ public class Assignment {
     @Column(columnDefinition = "TEXT")
     private String description;
 
+    @Builder.Default
+    @Column(name = "lab_mode", nullable = false, length = 32)
+    private String labMode = "LEGACY";
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "required_diagram_types")
     private JsonNode requiredDiagramTypes;

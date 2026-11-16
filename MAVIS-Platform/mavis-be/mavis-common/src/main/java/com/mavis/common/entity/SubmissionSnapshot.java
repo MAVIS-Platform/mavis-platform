@@ -47,8 +47,12 @@ public class SubmissionSnapshot {
     private ModelVersion modelVersion;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "diagram_version_id", nullable = false)
+    @JoinColumn(name = "diagram_version_id")
     private DiagramVersion diagramVersion;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "theory_evidence", updatable = false)
+    private JsonNode theoryEvidence;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "evaluation_run_id")

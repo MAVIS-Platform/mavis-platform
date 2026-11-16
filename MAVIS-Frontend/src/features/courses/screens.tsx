@@ -41,6 +41,7 @@ import { CourseSetupPanel } from "./course-setup";
 import { CurriculumLibrary } from "./curriculum";
 import { Step2StaticImpact } from "./step2-static-impact";
 import { LabToc, type LabTocItem, type LabTocStep } from "./lab-toc";
+import { LabSubmissionV2 } from "./lab-submission-v2";
 
 type LearningStep = {
   id: 1 | 2 | 3 | 4;
@@ -644,6 +645,8 @@ export function LabWorkspace() {
                   runtimeSessionHref={labSessions[0] ? runtimeLink(labSessions[0].id) : null}
                   studioHref={studioReady ? runtimeLink(studioSession?.id ?? observedRuntime?.id) + "&studio=1" : null}
                   studioVerified={Boolean(studioSession)}
+                  studioSessionId={studioSession?.id}
+                  labMode={lab.labMode ?? "LEGACY"}
                   showQuiz={roadmap.data?.guided === true}
                   canAttemptQuiz={session.data?.user?.role === "student" && roadmap.data?.guided === true}
                   isStudent={!isLecturer}
@@ -907,6 +910,8 @@ function StepContent({
   runtimeSessionHref,
   studioHref,
   studioVerified,
+  studioSessionId,
+  labMode,
   requiresRuntime,
   moduleTitle,
   theoryItems,
@@ -932,6 +937,8 @@ function StepContent({
   runtimeSessionHref: string | null;
   studioHref: string | null;
   studioVerified: boolean;
+  studioSessionId?: string | undefined;
+  labMode: string;
   requiresRuntime: boolean;
 }) {
   const { t } = useLocale();
@@ -943,7 +950,9 @@ function StepContent({
   const sourceLink = projectId
     ? `/snapshots?${new URLSearchParams({ project: projectId })}`
     : `/assignments?${new URLSearchParams({ workspace: workspaceId, assignment: labId })}`;
-  const submitHref = `/assignments?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}#submission-composer`;
+  const submitHref = labMode !== "LEGACY"
+    ? "#lab-submit"
+    : `/assignments?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}#submission-composer`;
   const viewModelQuery = modelQuery ?? referenceModelQuery ?? null;
   const showingReferenceModel = !modelQuery && Boolean(referenceModelQuery);
   const current = learningSteps.find((item) => item.id === step)!;
@@ -1163,6 +1172,14 @@ function StepContent({
               sourceLink={sourceLink}
             />
           </div>
+          {canSubmitLab && labMode !== "LEGACY" && (
+            <LabSubmissionV2
+              workspaceId={workspaceId}
+              assignmentId={labId}
+              labMode={labMode}
+              runtimeSessionId={studioSessionId}
+            />
+          )}
           {showQuiz ? (
             <CourseQuiz workspaceId={workspaceId} labId={labId} canSubmit={canAttemptQuiz}
               runtimeStepHref={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=3`}

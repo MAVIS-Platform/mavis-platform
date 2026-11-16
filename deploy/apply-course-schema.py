@@ -85,6 +85,22 @@ SELECT CASE WHEN bool_and(present) THEN 'ready'
             WHEN bool_or(present) THEN 'partial'
             ELSE 'missing' END FROM expected;
 """),
+    "V38__Submission_V2_Lab_Mode.sql": (38, """
+WITH expected(present) AS (VALUES
+    (EXISTS (SELECT FROM information_schema.columns WHERE table_schema = current_schema()
+             AND table_name = 'assignments' AND column_name = 'lab_mode'
+             AND data_type = 'character varying' AND is_nullable = 'NO')),
+    (EXISTS (SELECT FROM information_schema.columns WHERE table_schema = current_schema()
+             AND table_name = 'submission_snapshots' AND column_name = 'theory_evidence'
+             AND data_type = 'jsonb' AND is_nullable = 'YES')),
+    (EXISTS (SELECT FROM information_schema.columns WHERE table_schema = current_schema()
+             AND table_name = 'submission_snapshots' AND column_name = 'diagram_version_id'
+             AND is_nullable = 'YES'))
+)
+SELECT CASE WHEN bool_and(present) THEN 'ready'
+            WHEN bool_or(present) THEN 'partial'
+            ELSE 'missing' END FROM expected;
+"""),
     "V37__Runtime_Session_Assignment.sql": (37, """
 WITH expected(present) AS (VALUES
     (EXISTS (SELECT FROM information_schema.columns WHERE table_schema = current_schema()

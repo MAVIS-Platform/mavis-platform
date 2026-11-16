@@ -23,6 +23,8 @@ public class AssignmentCreateRequest {
 
     private String description;
 
+    private String labMode;
+
     private List<String> requiredDiagramTypes;
 
     @Builder.Default
