@@ -57,14 +57,21 @@ function metric(value: unknown) {
 export function LiveStudioWorkbench({
   sessions,
   sessionId,
+  projectId,
+  projectName,
   onSelectSession,
   onSwitchToSandbox,
 }: {
   sessions: readonly SessionOption[];
   sessionId: string;
+  projectId?: string | undefined;
+  projectName?: string | undefined;
   onSelectSession: (id: string) => void;
   onSwitchToSandbox: () => void;
 }) {
+  const startHref = projectId
+    ? `/sessions?${new URLSearchParams({ project: projectId, studio: "1" })}`
+    : "/sessions?studio=1";
   const activeSessionId = sessionId || sessions[0]?.id || "";
   const studio = useStudioSession(activeSessionId);
   const {
@@ -184,7 +191,11 @@ export function LiveStudioWorkbench({
           </select>
         </label>
         <Button asChild size="sm">
-          <Link href="/sessions?studio=1">Prepare and start Live project</Link>
+          <Link href={startHref}>
+            {projectName
+              ? `Prepare and start ${projectName}`
+              : "Prepare and start Live project"}
+          </Link>
         </Button>
         <Button type="button" size="sm" variant="outline" onClick={onSwitchToSandbox}>
           Switch to Sandbox
@@ -261,7 +272,11 @@ export function LiveStudioWorkbench({
                     The Live workbench uses the same four-zone layout as Sandbox.
                   </p>
                   <Button asChild size="sm">
-                    <Link href="/sessions?studio=1">Prepare and start Live project</Link>
+                    <Link href={startHref}>
+                      {projectName
+                        ? `Prepare and start ${projectName}`
+                        : "Prepare and start Live project"}
+                    </Link>
                   </Button>
                 </div>
               </div>

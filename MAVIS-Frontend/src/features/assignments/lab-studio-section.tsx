@@ -23,6 +23,27 @@ export function LabStudioSection({
   const setup = useCourseSetup(workspaceId);
   const setupLab = setup.data?.labs?.find((item) => item.assignmentId === assignment.id);
   const published = setupLab?.published === true;
+  const modelId = assignment.referenceSource?.modelId;
+  const returnTo = `/lab-authoring?${new URLSearchParams({
+    workspace: workspaceId,
+    assignment: assignment.id,
+    tab: "studio",
+  })}`;
+  const sessionStartHref = projectId
+    ? `/sessions?${new URLSearchParams({
+        project: projectId,
+        ...(modelId ? { model: modelId } : {}),
+        studio: "1",
+        returnTo,
+      })}`
+    : "/sessions?studio=1";
+  const studioHref = projectId
+    ? `/studio?${new URLSearchParams({
+        project: projectId,
+        ...(modelId ? { model: modelId } : {}),
+        returnTo,
+      })}`
+    : "/studio";
 
   return (
     <div className="space-y-5">
@@ -90,11 +111,11 @@ export function LabStudioSection({
               <div className="grid gap-2 text-xs sm:grid-cols-2">
                 <p>
                   <span className="font-medium">{t("Applications", "Ứng dụng")}:</span>{" "}
-                  {readiness.data.applications.join(", ") || "—"}
+                  {(readiness.data.applications ?? []).join(", ") || "—"}
                 </p>
                 <p>
                   <span className="font-medium">{t("Mappings", "Ánh xạ")}:</span>{" "}
-                  {readiness.data.mappings.join(", ") || "—"}
+                  {(readiness.data.mappings ?? []).join(", ") || "—"}
                 </p>
               </div>
             )}
@@ -103,6 +124,30 @@ export function LabStudioSection({
                 <Link href={`/runtime-config?project=${encodeURIComponent(projectId)}`}>
                   {t("Configure runtime & Studio Live", "Cấu hình runtime & Studio Live")}
                   <ArrowRight className="ml-1 size-4" aria-hidden="true" />
+                </Link>
+              </Button>
+              {readiness.data?.configured ? (
+                <Button asChild>
+                  <Link href={sessionStartHref}>
+                    {t("Start Live session", "Bắt đầu phiên Live")}
+                    <ArrowRight className="ml-1 size-4" aria-hidden="true" />
+                  </Link>
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  disabled
+                  title={t(
+                    "Configure the runtime profile before starting a Live session.",
+                    "Cấu hình runtime profile trước khi bắt đầu phiên Live.",
+                  )}
+                >
+                  {t("Start Live session", "Bắt đầu phiên Live")}
+                </Button>
+              )}
+              <Button asChild variant="outline">
+                <Link href={studioHref}>
+                  {t("Open MAVIS Studio", "Mở MAVIS Studio")}
                 </Link>
               </Button>
               {published ? (
@@ -117,6 +162,12 @@ export function LabStudioSection({
                 </Button>
               )}
             </div>
+            <p className="text-xs leading-5 text-muted-foreground">
+              {t(
+                "Start Live session opens the Runtime sessions page with this reference project. Open MAVIS Studio selects the project and the newest running session automatically.",
+                "Bắt đầu phiên Live mở trang Phiên Runtime với project tham chiếu này. Mở MAVIS Studio sẽ chọn project và phiên đang chạy mới nhất tự động.",
+              )}
+            </p>
           </>
         )}
       </section>

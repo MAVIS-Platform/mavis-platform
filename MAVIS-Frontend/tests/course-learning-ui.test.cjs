@@ -755,3 +755,23 @@ test("BFF allows Quiz draft, publish, versions and question bank paths", () => {
   }
   assert.equal(allowedBackendPath(`workspaces/${workspace}/quiz-bank/unsafe`), false);
 });
+
+test("Studio Live authoring and standalone Studio carry project and return context", () => {
+  const studio = read("src/features/assignments/lab-studio-section.tsx");
+  const workbench = read("src/features/runtime/studio-workbench.tsx");
+  const live = read("src/features/runtime/live-studio-workbench.tsx");
+
+  assert.ok(studio.includes("Start Live session"));
+  assert.ok(studio.includes("Open MAVIS Studio"));
+  assert.match(studio, /\/sessions\?/);
+  assert.match(studio, /\/studio\?/);
+  assert.match(studio, /returnTo/);
+  assert.match(workbench, /Live project/);
+  assert.match(workbench, /Select a project/);
+  assert.match(workbench, /session\.projectId === projectId/);
+  assert.match(workbench, /executionStatus === "RUNNING"/);
+  assert.match(workbench, /requestedReturnTo/);
+  assert.match(live, /projectId/);
+  assert.match(live, /projectName/);
+  assert.match(live, /project: projectId/);
+});

@@ -36,7 +36,7 @@ import {
   Workflow,
   Zap,
 } from "lucide-react";
-import { useApiQuery } from "@/hooks/use-api";
+import { useApiQuery, useSelection } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -624,6 +624,19 @@ export function StudioWorkbench() {
   const { soundEnabled, toggleSound, volume, changeVolume, playSound } = useStudioSound();
   const { t } = useLocale();
   const params = useSearchParams();
+  const requestedReturnTo = params.get("returnTo");
+  const exitHref =
+    requestedReturnTo &&
+    requestedReturnTo.startsWith("/") &&
+    !requestedReturnTo.startsWith("//")
+      ? requestedReturnTo
+      : "/";
+  const selection = useSelection();
+  const projectId = selection.projectId;
+  const projectsQuery = useApiQuery("projects", {});
+  const projects = projectsQuery.data ?? [];
+  const project = projects.find((item) => item.id === projectId);
+  const previousProjectRef = useRef(projectId);
   const initialSessionId = params.get("session") ?? "";
   const [mode, setMode] = useState<"SANDBOX" | "LIVE">(initialSessionId ? "LIVE" : "SANDBOX");
   const [templateId, setTemplateId] = useState<string>(STUDIO_TEMPLATES[0]!.id);
@@ -728,8 +741,26 @@ export function StudioWorkbench() {
     window.addEventListener("pointerup", onPointerUp);
   }
 
-  const sessionsQuery = useApiQuery("runtimeReadSessions", { projectId: "*" });
-  const liveSessions = sessionsQuery.data ?? [];
+  const sessionsQuery = useApiQuery("runtimeReadSessions", { projectId: projectId || "*" });
+  const liveSessions = useMemo(
+    () =>
+      (sessionsQuery.data ?? []).filter(
+        (session) => !projectId || session.projectId === projectId,
+      ),
+    [sessionsQuery.data, projectId],
+  );
+
+  useEffect(() => {
+    if (previousProjectRef.current === projectId) return;
+    previousProjectRef.current = projectId;
+    setLiveSessionId("");
+  }, [projectId]);
+
+  useEffect(() => {
+    if (mode !== "LIVE" || liveSessionId || !liveSessions.length) return;
+    const running = liveSessions.find((session) => session.executionStatus === "RUNNING");
+    setLiveSessionId((running ?? liveSessions[0]!).id);
+  }, [mode, liveSessionId, liveSessions]);
 
   function switchTemplate(nextId: string) {
     const found = STUDIO_TEMPLATES.find((item) => item.id === nextId) ?? STUDIO_TEMPLATES[0]!;
@@ -1517,7 +1548,7 @@ export function StudioWorkbench() {
       <header className="flex h-10 shrink-0 items-center justify-between border-b border-slate-800 bg-[#0b101b] px-2.5">
         <div className="flex items-center gap-2">
           <Button asChild variant="outline" size="sm" className="h-7 gap-1 border-slate-800 bg-slate-900/90 px-2 text-xs text-slate-200 hover:bg-slate-800">
-            <Link href="/administration/health">
+            <Link href={exitHref}>
               <ArrowLeft className="size-3" />
               {t("Exit Studio")}
             </Link>
@@ -1643,10 +1674,34 @@ export function StudioWorkbench() {
 
       <p role="status" className="sr-only">{clipboardMessage}</p>
       {mode === "LIVE" ? (
-        <div className="flex min-h-0 w-full flex-1">
+        <div className="flex min-h-0 w-full flex-1 flex-col">
+          <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 bg-[#0b101b] px-3 py-1.5 text-[11px] text-slate-400">
+            <span className="font-semibold text-slate-200">{t("Live project", "Project Live")}</span>
+            <select
+              aria-label={t("Select Live project", "Chọn project Live")}
+              value={projectId}
+              onChange={(event) => selection.setProjectId(event.target.value)}
+              className="h-7 max-w-[320px] rounded border border-slate-700 bg-slate-950 px-2 text-[11px] text-slate-100"
+            >
+              <option value="">{t("Select a project", "Chọn một project")}</option>
+              {projects.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+            {project && <span className="truncate text-slate-500">{project.name}</span>}
+            {!projectId && (
+              <span className="text-amber-300">
+                {t("Select a project before starting a Live session.", "Chọn project trước khi bắt đầu phiên Live.")}
+              </span>
+            )}
+          </div>
           <LiveStudioWorkbench
             sessions={liveSessions}
             sessionId={liveSessionId}
+            projectId={projectId}
+            projectName={project?.name}
             onSelectSession={setLiveSessionId}
             onSwitchToSandbox={() => setMode("SANDBOX")}
           />

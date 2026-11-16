@@ -353,6 +353,18 @@ async function main() {
       animations: "disabled",
     });
 
+    await page.goto(base + "?view=authoring&workspace=ws-lms&assignment=a1&tab=studio", {
+      waitUntil: "networkidle",
+    });
+    await page.getByText("MAVIS Studio Live", { exact: true }).waitFor();
+    await page.getByText("Start Live session", { exact: true }).waitFor();
+    await page.getByText("Open MAVIS Studio", { exact: true }).waitFor();
+    await page.screenshot({
+      path: path.join(output, "lab-studio.png"),
+      fullPage: true,
+      animations: "disabled",
+    });
+
     await page.goto(base + "?view=class&empty=1", { waitUntil: "networkidle" });
     await page.getByText("No modules yet", { exact: true }).waitFor();
     assert.equal(
