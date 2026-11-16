@@ -18,7 +18,7 @@ https://github.com/MAVIS-Platform/mavis-studio-live-seed
 - **Mốc production mới nhất trên `origin/main`: `9f26918`** (`fix(frontend): restore homepage layout and match themes`, PR #100, 16/11 20:25 +0700). Run **#360** "Build and deploy production" completed/success: https://github.com/MAVIS-Platform/mavis-platform/actions/runs/43875618501.
 - Ngay trước đó `origin/main` có `72fca7f` (public homepage, PR #98) và `e1053e7` (refine homepage, PR #99). Cả ba commit chỉ chạm homepage/app shell/frontend tests, không đổi backend course/Runtime/Studio.
 - Mốc đã xác minh V35 vẫn là `612836d` + run **#353** success: https://github.com/MAVIS-Platform/mavis-platform/actions/runs/43848625455. `183c849` (docs infra + thêm `CourseAuthoringServiceTest` vào CI) có run **#354** success: https://github.com/MAVIS-Platform/mavis-platform/actions/runs/43851965673. Log VPS xác nhận V35 schema already present và Deployment healthy đúng SHA; website và `/api/auth-config` trả HTTP 200 sau deploy.
-- **Local `main` đang phân kỳ với origin**: HEAD `b955718` (`feat(assignments): refresh guided Lab authoring flow`) chưa push; `git rev-list --left-right --count origin/main...HEAD` trả **3 1** (thiếu 3 commit homepage, hơn 1 commit). Phải merge/rebase `origin/main` trước khi làm tiếp; không force-push.
+- **`main` đã đồng bộ và push lên origin** ngày 16/11/2026: merge `origin/main` (homepage PR #98–#100) vào các commit lecturer UI; `git rev-list --left-right --count origin/main...HEAD` trả **0 0** sau push. Không force-push.
 - Working tree chưa sạch: 3 test backend đang sửa (`RuntimeSetupControllerTest`, `CourseAccessServiceTest`, `CourseSetupServiceTest`) và mới có `docs/MAVIS_DEV_ENVIRONMENT_2026-11-16.md`, `scripts/bootstrap-dev-linux.sh`. Không dùng `git add .`; chỉ commit khi thuộc đúng task.
 - Test mới `exposesConfigurationReadyWithoutVerifyingRunnerHealth` ghi nhận `RuntimeSetupController.runnerReady` hiện chỉ phản chiếu `ConfigurationView.ready()` (profile đủ điều kiện), **không** gọi health Runner thật. Đây là điểm cần chốt contract, xem mục 10.
 - Lỗi #352 là probe V35 kiểm tra sai tên index; đã sửa theo unique constraint trong migration. Không kết luận thiếu SSH secret từ dòng retry chung. Đọc docs/DEPLOY_V35_CLAUDE_HANDOFF.md.
@@ -34,7 +34,7 @@ https://github.com/MAVIS-Platform/mavis-studio-live-seed
 - Lab Workspace theo bố cục Coursera: breadcrumb Lớp → Module → Lab, sidebar mục lục/tiến độ, lý thuyết lấy từ published Course snapshot, preview `preview=1` chỉ đọc (không tạo Quiz attempt/session/submission). Preview bỏ qua điều kiện roadmap `LOCKED`; `moveModule` giữ bất biến module tiên quyết đứng trước.
 - Trang giảng viên: `docs/LECTURER_LAB_AUTHORING_UI.md`. Screenshot fixture: `MAVIS-Frontend/tests/lecturer-lms.browser.cjs` và `.artifacts/lecturer-lms/{class-content,lab-coc}.png`.
 - Kiểm chứng trong phiên: frontend typecheck PASS, `npm test` **409/409**, build PASS, route smoke **43/43** trên server production port 3092, browser fixture PASS; backend `CourseAuthoringServiceTest` **14/14**, full `mavis-platform` + `mavis-common` **221 tests, 0 failure**. Chưa chạy real Docker Runner hay nghiệm thu hai tài khoản staging.
-- Các thay đổi UI/backend trên đang ở working tree local, chưa commit/push.
+- Các thay đổi UI/backend trên đã commit và push lên `origin/main`; CI run #361 được kích hoạt cho merge commit `9296fcf`. Các file test backend đang sửa dở của agent khác và `docs/MAVIS_DEV_ENVIRONMENT_2026-11-16.md`, `scripts/bootstrap-dev-linux.sh` vẫn để ngoài commit.
 
 ## 2. Sản phẩm và phạm vi
 
