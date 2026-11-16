@@ -142,10 +142,12 @@ export default async function FeaturePage({ params }: { params: Promise<{ screen
   return (
     <AppShell scope={config.scope} activeId={screen} pageTitle={config.title}>
       <PageContainer>
-        <SectionHeader
-          title={config.title}
-          actions={screen === "snapshots" ? <ImportSnapshotAction /> : undefined}
-        />
+        {screen !== "courses" && (
+          <SectionHeader
+            title={config.title}
+            actions={screen === "snapshots" ? <ImportSnapshotAction /> : undefined}
+          />
+        )}
         {config.selector === "project" && <ProjectSelector />}
         {config.selector === "workspace" && <WorkspaceSelector />}
         <Screen />

@@ -532,7 +532,8 @@ test("project navigation preserves every destination and keeps role menus intact
  const expected={"project-overview":"/project-overview",snapshots:"/snapshots","analysis-history":"/analysis-history",graph:"/architecture",diagrams:"/diagrams",model:"/model",compare:"/compare",impact:"/impact","runtime-config":"/runtime-config",scenarios:"/scenarios",sessions:"/sessions",explanations:"/explain"};
  const entries=projectNavigation.flatMap(g=>g.items);assert.equal(entries.length,12);assert.deepEqual(Object.fromEntries(entries.map(i=>[i.id,i.href])),expected);
  assert.deepEqual(projectNavigation.map(g=>g.label),["Project","Architecture","Analysis","Runtime","Insights"]);
- assert.equal(globalNavigation.student.flatMap(g=>g.items).filter(i=>i.href==="/").length,1);
+ assert.equal(globalNavigation.student.flatMap(g=>g.items).find(i=>i.id==="courses").href,"/courses");
+ assert.equal(globalNavigation.student.flatMap(g=>g.items).find(i=>i.id==="join-course").href,"/courses#course-passkey");
  assert.ok(globalNavigation.admin.flatMap(g=>g.items).some(i=>i.href==="/administration/users"));assert.equal(contextualNavigation("admin","project").length,0);
  assert.ok(globalNavigation.admin.flatMap(g=>g.items).some(i=>i.id==="studio"&&i.href==="/administration/studio"));
  for(const role of ["student","lecturer"])assert.ok(globalNavigation[role].flatMap(g=>g.items).some(i=>i.id==="studio"&&i.href==="/studio"));

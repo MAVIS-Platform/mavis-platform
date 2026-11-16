@@ -57,8 +57,8 @@ export const globalNavigation: Record<AppRole, readonly NavigationGroup[]> = {
     {
       label: "Learning",
       items: [
-        { id: "courses", label: "My Courses", icon: GraduationCap, href: "/" },
-        { id: "join-course", label: "Join Course", icon: KeyRound, href: "/#course-passkey" },
+        { id: "courses", label: "My Courses", icon: GraduationCap, href: "/courses" },
+        { id: "join-course", label: "Join Course", icon: KeyRound, href: "/courses#course-passkey" },
         { id: "studio", label: "MAVIS Studio", icon: Boxes, href: "/studio" },
       ],
     },
@@ -297,7 +297,7 @@ export function existingRouteContext(pathname: string) {
   if (pathname === "/workspaces") {
     return { scope: "global" as const, title: "My Workspaces", activeId: "workspaces" };
   }
-  if (pathname === "/courses" || pathname === "/") {
+  if (pathname === "/courses") {
     return { scope: "global" as const, title: "My Courses", activeId: "courses" };
   }
   if (pathname === "/roadmap") {

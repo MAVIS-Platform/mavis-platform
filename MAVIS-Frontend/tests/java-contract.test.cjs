@@ -860,10 +860,13 @@ test("login restoration validates routes, current resource access and role defau
  assert.equal(await loginDestination(next,"student",api),next);assert.deepEqual(calls[0],["project",{projectId:"project-1"}]);
  assert.equal(await loginDestination("/workspace-overview?workspace=workspace-1","lecturer",api),"/workspace-overview?workspace=workspace-1");
  assert.equal(await loginDestination("/workspace-overview?workspace=removed","lecturer",api),"/workspaces");
- const unavailable={execute:async()=>{throw new Error("forbidden");}};assert.equal(await loginDestination(next,"student",unavailable),"/");
+ const unavailable={execute:async()=>{throw new Error("forbidden");}};assert.equal(await loginDestination(next,"student",unavailable),"/courses");
  for(const next of [null,"https://outside.invalid","//outside.invalid","/%2f%2foutside.invalid","/auth/verify","/api/backend/projects","/_next/static/x","/missing-route","/login?next=/login"])
   assert.equal(await loginDestination(next,"lecturer",api),"/workspaces");
- assert.equal(await loginDestination("/administration/users","student",api),"/");
+ assert.equal(await loginDestination("/administration/users","student",api),"/courses");
+ assert.equal(await loginDestination(null,"student",api),"/courses");
+ assert.equal(await loginDestination("/courses?workspace=workspace-1","student",api),"/courses?workspace=workspace-1");
+ assert.equal(await loginDestination("/courses#course-passkey","student",api),"/courses#course-passkey");
  assert.equal(await loginDestination("/administration/users","admin",api),"/administration/users");
  assert.equal(await loginDestination(null,"admin",api),"/administration/health");
  assert.equal(await loginDestination("/profile","student",api),"/profile");

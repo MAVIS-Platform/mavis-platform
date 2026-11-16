@@ -53,6 +53,7 @@ import { cn } from "@/lib/utils";
 import { useApi, useApiMutation, useApiQuery, useSession, useSelection } from "@/hooks/use-api";
 import { RequireSession } from "@/features/auth/access";
 import { adminJobsReturnHref } from "@/lib/navigation/admin-job-review";
+import { defaultLoginDestination } from "@/lib/auth/login-destination";
 import { Breadcrumbs, ContextPanel, Header, Sidebar } from "@/components/layout/page";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Permission } from "@/lib/auth/permissions";
@@ -351,13 +352,7 @@ function ShellChrome({
         >
           <Link
             href={
-              live
-                ? `/import${navigationQuery}`
-                : role === "admin"
-                  ? "/administration/health"
-                  : role === "lecturer"
-                    ? "/workspaces"
-                    : "/"
+              live ? `/import${navigationQuery}` : defaultLoginDestination(role)
             }
             aria-label="MAVIS home"
             className="flex min-w-0 items-center gap-2.5 rounded-md"
@@ -495,7 +490,7 @@ function ShellChrome({
               items={[
                 {
                   label: "MAVIS",
-                  href: role === "admin" ? "/administration/health" : "/",
+                  href: defaultLoginDestination(role),
                   visibility: "sm",
                 },
                 ...(scope !== "global"
