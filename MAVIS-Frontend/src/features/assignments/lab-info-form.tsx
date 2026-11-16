@@ -8,8 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ErrorState } from "@/components/shared/request-state";
 import { useApiMutation } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
-import { DIAGRAM_REQUIREMENTS, type Assignment } from "./requirements";
-import { normalizeDiagramRequirements } from "@/lib/architecture/coursework-diagram-types";
+import type { Assignment } from "./requirements";
 
 export function LabInfoForm({
   workspaceId,
@@ -37,9 +36,6 @@ export function LabInfoForm({
   const [requireRuntimeTrace, setRequireRuntimeTrace] = useState(
     assignment?.requireRuntimeTrace ?? false,
   );
-  const [requiredDiagramTypes, setRequiredDiagramTypes] = useState<string[]>(
-    normalizeDiagramRequirements(assignment?.requiredDiagramTypes ?? []),
-  );
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -51,7 +47,7 @@ export function LabInfoForm({
       description: instructions,
       dueAt: due ? new Date(due).toISOString() : null,
       requireRuntimeTrace,
-      requiredDiagramTypes,
+      requiredDiagramTypes: [],
       clearReferenceSource: false,
     };
     const referenceModelId = assignment?.referenceSource?.modelId;
@@ -63,7 +59,6 @@ export function LabInfoForm({
           setInstructions("");
           setDue("");
           setRequireRuntimeTrace(false);
-          setRequiredDiagramTypes([]);
         }
         onSaved?.(saved);
       },
@@ -116,65 +111,57 @@ export function LabInfoForm({
         </label>
       </section>
 
-      <section className="space-y-4 rounded-xl border bg-card p-5" aria-labelledby="lab-requirements-heading">
+      <section className="space-y-4 rounded-xl border bg-card p-5" aria-labelledby="lab-mode-heading">
         <div className="flex items-center gap-2 border-b pb-2">
           <Rocket className="size-4 text-primary" aria-hidden="true" />
-          <h2 id="lab-requirements-heading" className="font-semibold">
-            {t("Student evidence requirements", "Yêu cầu minh chứng của sinh viên")}
+          <h2 id="lab-mode-heading" className="font-semibold">
+            {t("Lab mode", "Hình thức Lab")}
           </h2>
         </div>
-        <label className="flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors hover:bg-muted/40">
-          <input
-            className="mt-1 size-4 accent-primary"
-            type="checkbox"
-            checked={requireRuntimeTrace}
-            onChange={(event) => setRequireRuntimeTrace(event.target.checked)}
-          />
-          <span className="space-y-1">
-            <span className="block text-sm font-medium">
-              {t("Require a real runtime trace", "Yêu cầu trace runtime thật")}
+        <div className="grid gap-3 md:grid-cols-2">
+          <button
+            type="button"
+            aria-pressed={!requireRuntimeTrace}
+            onClick={() => setRequireRuntimeTrace(false)}
+            className={`space-y-1 rounded-xl border p-4 text-left transition-colors ${
+              !requireRuntimeTrace ? "border-primary bg-primary/5" : "hover:bg-muted/40"
+            }`}
+          >
+            <span className="block text-sm font-semibold">
+              {t("Theory + Quiz", "Lý thuyết + Quiz")}
             </span>
-            <span className="block text-xs text-muted-foreground">
+            <span className="block text-xs leading-5 text-muted-foreground">
               {t(
-                "Students must complete the Runtime/Studio evidence flow before submitting this Lab.",
-                "Sinh viên phải hoàn tất luồng minh chứng Runtime/Studio trước khi nộp Lab.",
+                "Lesson, sample repository and C1–C3 reference views plus the Quiz gate. No runtime session.",
+                "Bài học, repo mẫu và C1–C3 tham chiếu cùng Quiz gate. Không có phiên runtime.",
               )}
             </span>
-          </span>
-        </label>
-        <fieldset className="space-y-3 rounded-xl border p-4">
-          <legend className="px-1 text-sm font-medium">
-            {t("Required architecture views", "Các góc nhìn kiến trúc bắt buộc")}
-          </legend>
-          <p className="text-xs text-muted-foreground">
-            {t(
-              "Select the diagrams students must include. Leave all unchecked if any saved view is acceptable.",
-              "Chọn sơ đồ sinh viên cần nộp. Để trống nếu chấp nhận bất kỳ góc nhìn nào đã lưu.",
-            )}
-          </p>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {DIAGRAM_REQUIREMENTS.map((type) => (
-              <label
-                key={type.id}
-                className="flex min-h-10 items-center gap-2 rounded-lg border px-3 py-2 text-sm hover:bg-muted/40"
-              >
-                <input
-                  className="size-4 accent-primary"
-                  type="checkbox"
-                  checked={requiredDiagramTypes.includes(type.id)}
-                  onChange={(event) =>
-                    setRequiredDiagramTypes((current) =>
-                      event.target.checked
-                        ? [...current, type.id]
-                        : current.filter((value) => value !== type.id),
-                    )
-                  }
-                />
-                {type.label}
-              </label>
-            ))}
-          </div>
-        </fieldset>
+          </button>
+          <button
+            type="button"
+            aria-pressed={requireRuntimeTrace}
+            onClick={() => setRequireRuntimeTrace(true)}
+            className={`space-y-1 rounded-xl border p-4 text-left transition-colors ${
+              requireRuntimeTrace ? "border-primary bg-primary/5" : "hover:bg-muted/40"
+            }`}
+          >
+            <span className="block text-sm font-semibold">
+              {t("Theory + Quiz + Studio", "Lý thuyết + Quiz + Studio")}
+            </span>
+            <span className="block text-xs leading-5 text-muted-foreground">
+              {t(
+                "Adds a real MAVIS Studio Live practice and evidence step after the Quiz.",
+                "Thêm bước thực hành MAVIS Studio Live thật và minh chứng sau Quiz.",
+              )}
+            </span>
+          </button>
+        </div>
+        <p className="rounded-lg border bg-muted/30 p-3 text-xs leading-5 text-muted-foreground">
+          {t(
+            "Students do not submit diagrams or a model version. C1–C3 are read-only theory content linked to the sample repository.",
+            "Sinh viên không nộp diagram hay model version. C1–C3 là nội dung lý thuyết chỉ đọc gắn với repo mẫu.",
+          )}
+        </p>
       </section>
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">

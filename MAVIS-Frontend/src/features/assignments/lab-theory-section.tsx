@@ -2,13 +2,16 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { BookOpen, Plus, Save } from "lucide-react";
+import { ArrowRight, BookOpen, GitBranch, Library, Plus, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { MarkdownPreview } from "@/components/shared/markdown-preview";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { useCourseAuthoring } from "@/features/workspaces/course-access";
+import { AssignmentSourceDetails } from "./source-picker";
+import type { Assignment } from "./requirements";
 
 type TheoryItem = {
   id: string;
@@ -31,14 +34,57 @@ function bodyOf(item: TheoryItem) {
   return typeof item.content["body"] === "string" ? item.content["body"] : "";
 }
 
+function MarkdownEditor({
+  label,
+  value,
+  onChange,
+  t,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  t: (en: string, vi: string) => string;
+}) {
+  return (
+    <div className="grid gap-3 lg:grid-cols-2">
+      <label className="space-y-1 text-xs font-medium">
+        <span>{label}</span>
+        <Textarea
+          rows={10}
+          value={value}
+          placeholder={t(
+            "# Lesson heading\n\nWrite the lesson in Markdown.\n\n- Key idea\n- Example from the sample repository",
+            "# Tiêu đề bài học\n\nViết bài học bằng Markdown.\n\n- Ý chính\n- Ví dụ từ repo mẫu",
+          )}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      </label>
+      <div className="space-y-1 text-xs font-medium">
+        <span>{t("Preview", "Xem trước")}</span>
+        <div className="min-h-56 rounded-lg border bg-background p-4">
+          {value.trim() ? (
+            <MarkdownPreview markdown={value} />
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              {t("Markdown preview appears here.", "Bản xem trước Markdown hiện ở đây.")}
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function LabTheorySection({
   workspaceId,
   workspaceName,
-  assignmentId,
+  assignment,
+  onNavigate,
 }: {
   workspaceId: string;
   workspaceName: string;
-  assignmentId: string;
+  assignment: Assignment;
+  onNavigate: (tab: "source") => void;
 }) {
   const { t } = useLocale();
   const course = useCourseAuthoring(workspaceId);
@@ -51,10 +97,15 @@ export function LabTheorySection({
 
   const modules = (course.data?.modules as TheoryModule[] | undefined) ?? [];
   const linkedModule = modules.find((module) =>
-    module.items.some((item) => item.assignmentId === assignmentId),
+    module.items.some((item) => item.assignmentId === assignment.id),
   );
   const selectedModule =
     modules.find((module) => module.id === selectedModuleId) ?? linkedModule ?? modules[0];
+  const reference = assignment.referenceSource;
+  const referenceQuery =
+    reference?.projectId && reference?.modelId
+      ? new URLSearchParams({ project: reference.projectId, model: reference.modelId }).toString()
+      : null;
 
   useEffect(() => {
     if (selectedModule && selectedModule.id !== selectedModuleId) {
@@ -90,11 +141,7 @@ export function LabTheorySection({
             "Tạo bản nháp Course mới trước khi thêm hoặc sửa lý thuyết cho Lab. Phiên bản đã publish vẫn giữ nguyên cho sinh viên.",
           )}
         </p>
-        <Button
-          type="button"
-          disabled={course.startDraft.isPending}
-          onClick={() => course.startDraft.mutate()}
-        >
+        <Button type="button" disabled={course.startDraft.isPending} onClick={() => course.startDraft.mutate()}>
           {course.startDraft.isPending
             ? t("Starting draft…", "Đang tạo bản nháp…")
             : t("Start new Course draft", "Tạo bản nháp Course mới")}
@@ -109,12 +156,12 @@ export function LabTheorySection({
       <section className="space-y-4 rounded-xl border bg-card p-5">
         <div className="flex items-center gap-2">
           <BookOpen className="size-4 text-primary" aria-hidden="true" />
-          <h2 className="font-semibold">{t("Course structure required", "Cần cấu trúc khóa học")}</h2>
+          <h2 className="font-semibold">{t("Create the course structure first", "Tạo cấu trúc khóa học trước")}</h2>
         </div>
         <p className="text-sm text-muted-foreground">
           {t(
-            "The Lab needs a Course draft and at least one module before theory can be attached.",
-            "Lab cần một bản nháp Course và ít nhất một chương trước khi gắn lý thuyết.",
+            "Theory belongs to a module inside the Course. Create a Course draft, then add the first module and lesson here.",
+            "Lý thuyết nằm trong một chương của Course. Tạo bản nháp Course, sau đó thêm chương và bài học đầu tiên tại đây.",
           )}
         </p>
         <div className="flex flex-wrap items-end gap-2">
@@ -140,17 +187,24 @@ export function LabTheorySection({
   if (modules.length === 0) {
     return (
       <section className="space-y-4 rounded-xl border bg-card p-5">
-        <h2 className="font-semibold">{t("Add the first module", "Thêm chương đầu tiên")}</h2>
+        <div className="flex items-center gap-2">
+          <Library className="size-4 text-primary" aria-hidden="true" />
+          <h2 className="font-semibold">{t("Add the first module", "Thêm chương đầu tiên")}</h2>
+        </div>
         <p className="text-sm text-muted-foreground">
           {t(
-            "Theory lives inside a module. Create one module now; you can add more structure in Course authoring.",
-            "Lý thuyết nằm trong một chương. Tạo chương đầu tiên tại đây; có thể bổ sung cấu trúc trong Soạn nội dung.",
+            "A module is a chapter. Lessons, C1–C3 reference views and the Quiz live inside the module. Create one module now; you can add more in Course authoring.",
+            "Chương là nhóm nội dung. Bài học, C1–C3 tham chiếu và Quiz nằm trong chương. Tạo một chương tại đây; có thể thêm tiếp trong Soạn nội dung.",
           )}
         </p>
         <div className="flex flex-wrap items-end gap-2">
           <label className="min-w-64 flex-1 space-y-1 text-xs font-medium">
             <span>{t("Module title", "Tên chương")}</span>
-            <Input value={moduleTitle} onChange={(event) => setModuleTitle(event.target.value)} />
+            <Input
+              value={moduleTitle}
+              placeholder={t("e.g. Service boundaries", "Ví dụ: Ranh giới service")}
+              onChange={(event) => setModuleTitle(event.target.value)}
+            />
           </label>
           <Button
             type="button"
@@ -175,17 +229,14 @@ export function LabTheorySection({
 
   return (
     <div className="space-y-5">
-      <section className="space-y-4 rounded-xl border bg-card p-5">
+      <section className="rounded-xl border bg-card p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="flex items-center gap-2 font-semibold">
-              <BookOpen className="size-4 text-primary" aria-hidden="true" />
-              {t("Theory for this Lab", "Lý thuyết cho Lab này")}
-            </h2>
-            <p className="mt-1 text-sm text-muted-foreground">
+            <h2 className="font-semibold">{t("How theory works", "Lý thuyết hoạt động thế nào")}</h2>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
               {t(
-                "Students read this content in Step 2 before the Quiz. Only the published Course version is visible to students.",
-                "Sinh viên đọc nội dung này ở Bước 2 trước Quiz. Chỉ phiên bản Course đã publish mới hiển thị với sinh viên.",
+                "Theory = lesson content + sample repository + C1–C3 reference views. Students read this before the Quiz and do not submit diagrams.",
+                "Lý thuyết = nội dung bài học + repo mẫu + C1–C3 tham chiếu. Sinh viên đọc trước Quiz và không nộp diagram.",
               )}
             </p>
           </div>
@@ -194,6 +245,83 @@ export function LabTheorySection({
               {t("Open full course authoring", "Mở soạn nội dung đầy đủ")}
             </Link>
           </Button>
+        </div>
+      </section>
+
+      <section className="space-y-4 rounded-xl border bg-card p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="flex items-center gap-2 font-semibold">
+              <GitBranch className="size-4 text-primary" aria-hidden="true" />
+              {t("Sample repository", "Repo mẫu")}
+            </h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {t(
+                "The pinned reference repository students use to read C1–C3 and complete the Lab.",
+                "Repo tham chiếu đã ghim để sinh viên đọc C1–C3 và hoàn thành Lab.",
+              )}
+            </p>
+          </div>
+          {reference?.revision && (
+            <Badge variant="outline">
+              {t("Revision", "Revision")} {reference.revision}
+            </Badge>
+          )}
+        </div>
+        {reference ? (
+          <div className="space-y-3">
+            <AssignmentSourceDetails source={reference} assignmentId={assignment.id} />
+            <div className="flex flex-wrap gap-2">
+              {referenceQuery ? (
+                <>
+                  <Button asChild size="sm" variant="outline">
+                    <Link href={`/diagrams?${referenceQuery}&kind=CONTEXT`}>C1 System Context</Link>
+                  </Button>
+                  <Button asChild size="sm" variant="outline">
+                    <Link href={`/diagrams?${referenceQuery}&kind=CONTAINER`}>C2 Container</Link>
+                  </Button>
+                  <Button asChild size="sm" variant="outline">
+                    <Link href={`/diagrams?${referenceQuery}&kind=COMPONENT`}>C3 Component</Link>
+                  </Button>
+                  <Button asChild size="sm" variant="outline">
+                    <Link href={`/architecture?${referenceQuery}`}>
+                      {t("Dependency graph", "Đồ thị phụ thuộc")}
+                      <ArrowRight className="ml-1 size-3.5" aria-hidden="true" />
+                    </Link>
+                  </Button>
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  {t("Analyze the reference source to view C1–C3.", "Phân tích nguồn tham chiếu để xem C1–C3.")}
+                </p>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
+            <p className="text-sm text-amber-800 dark:text-amber-200">
+              {t(
+                "Attach and analyze the sample repository before students can read C1–C3.",
+                "Gắn và phân tích repo mẫu trước khi sinh viên đọc C1–C3.",
+              )}
+            </p>
+            <Button type="button" size="sm" variant="outline" onClick={() => onNavigate("source")}>
+              {t("Go to Reference source", "Mở Nguồn tham chiếu")}
+              <ArrowRight className="ml-1 size-3.5" aria-hidden="true" />
+            </Button>
+          </div>
+        )}
+      </section>
+
+      <section className="space-y-4 rounded-xl border bg-card p-5">
+        <div>
+          <h3 className="font-semibold">{t("Module and lessons", "Chương và bài học")}</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {t(
+              "Choose the module that contains this Lab, then write the lesson students read before the Quiz.",
+              "Chọn chương chứa Lab này, sau đó viết bài học sinh viên đọc trước Quiz.",
+            )}
+          </p>
         </div>
         <label className="block max-w-md space-y-1 text-xs font-medium">
           <span>{t("Module", "Chương")}</span>
@@ -209,29 +337,24 @@ export function LabTheorySection({
             ))}
           </select>
         </label>
-      </section>
 
-      <section className="space-y-3 rounded-xl border bg-card p-5">
-        <h3 className="font-semibold">{t("Existing theory", "Lý thuyết hiện có")}</h3>
         {theoryItems.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            {t("No theory item in this module yet.", "Chương này chưa có nội dung lý thuyết.")}
+            {t("No lesson in this module yet. Add the first lesson below.", "Chương này chưa có bài học. Thêm bài đầu tiên bên dưới.")}
           </p>
         ) : (
-          <ul className="space-y-3">
+          <ul className="space-y-4">
             {theoryItems.map((item) => (
-              <li key={item.id} className="space-y-2 rounded-lg border p-3">
+              <li key={item.id} className="space-y-3 rounded-lg border p-4">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="outline">{t("Theory", "Lý thuyết")}</Badge>
+                  <Badge variant="outline">{t("Lesson", "Bài học")}</Badge>
                   <span className="text-sm font-medium">{item.title}</span>
                 </div>
-                <Textarea
-                  aria-label={`${t("Theory content", "Nội dung lý thuyết")}: ${item.title}`}
-                  rows={4}
+                <MarkdownEditor
+                  label={t("Lesson content (Markdown)", "Nội dung bài học (Markdown)")}
                   value={bodies[item.id] ?? bodyOf(item)}
-                  onChange={(event) =>
-                    setBodies((current) => ({ ...current, [item.id]: event.target.value }))
-                  }
+                  onChange={(value) => setBodies((current) => ({ ...current, [item.id]: value }))}
+                  t={t}
                 />
                 <Button
                   type="button"
@@ -246,68 +369,60 @@ export function LabTheorySection({
                       title: item.title,
                       description: item.description ?? "",
                       required: item.required,
-                      assignmentId: item.assignmentId ?? assignmentId,
-                      content: { body: bodies[item.id] ?? bodyOf(item) },
+                      assignmentId: item.assignmentId ?? assignment.id,
+                      content: { body: bodies[item.id] ?? bodyOf(item), format: "markdown" },
                     })
                   }
                 >
                   <Save className="mr-1 size-3.5" aria-hidden="true" />
-                  {t("Save theory", "Lưu lý thuyết")}
+                  {t("Save lesson", "Lưu bài học")}
                 </Button>
               </li>
             ))}
           </ul>
         )}
         {course.updateItem.error && <p role="alert" className="text-sm text-destructive">{course.updateItem.error.message}</p>}
-      </section>
 
-      <section className="space-y-3 rounded-xl border bg-card p-5">
-        <h3 className="font-semibold">{t("Add theory", "Thêm lý thuyết")}</h3>
-        <div className="grid gap-3">
+        <div className="space-y-3 rounded-lg border border-dashed p-4">
+          <h4 className="text-sm font-semibold">{t("Add a lesson", "Thêm bài học")}</h4>
           <Input
-            aria-label={t("Theory title", "Tên lý thuyết")}
-            placeholder={t("Theory title", "Tên lý thuyết")}
+            aria-label={t("Lesson title", "Tên bài học")}
+            placeholder={t("Lesson title", "Tên bài học")}
             value={newTitle}
             onChange={(event) => setNewTitle(event.target.value)}
           />
-          <Textarea
-            aria-label={t("Theory content", "Nội dung lý thuyết")}
-            rows={5}
-            placeholder={t(
-              "Write the lesson students read before the Quiz.",
-              "Viết bài học sinh viên đọc trước khi làm Quiz.",
-            )}
+          <MarkdownEditor
+            label={t("Lesson content (Markdown)", "Nội dung bài học (Markdown)")}
             value={newBody}
-            onChange={(event) => setNewBody(event.target.value)}
+            onChange={setNewBody}
+            t={t}
           />
-          <div>
-            <Button
-              type="button"
-              size="sm"
-              disabled={course.addItem.isPending || !newTitle.trim() || !newBody.trim()}
-              onClick={() =>
-                course.addItem.mutate(
-                  {
-                    moduleId: selectedModule!.id,
-                    type: "THEORY",
-                    title: newTitle.trim(),
-                    assignmentId,
-                    required: true,
-                    content: { body: newBody.trim() },
+          <Button
+            type="button"
+            size="sm"
+            disabled={course.addItem.isPending || !newTitle.trim() || !newBody.trim()}
+            onClick={() =>
+              course.addItem.mutate(
+                {
+                  moduleId: selectedModule!.id,
+                  type: "THEORY",
+                  title: newTitle.trim(),
+                  assignmentId: assignment.id,
+                  required: true,
+                  content: { body: newBody.trim(), format: "markdown" },
+                },
+                {
+                  onSuccess: () => {
+                    setNewTitle("");
+                    setNewBody("");
                   },
-                  {
-                    onSuccess: () => {
-                      setNewTitle("");
-                      setNewBody("");
-                    },
-                  },
-                )
-              }
-            >
-              <Plus className="mr-1 size-4" aria-hidden="true" />
-              {t("Add theory", "Thêm lý thuyết")}
-            </Button>
-          </div>
+                },
+              )
+            }
+          >
+            <Plus className="mr-1 size-4" aria-hidden="true" />
+            {t("Add lesson", "Thêm bài học")}
+          </Button>
         </div>
         {course.addItem.error && <p role="alert" className="text-sm text-destructive">{course.addItem.error.message}</p>}
       </section>

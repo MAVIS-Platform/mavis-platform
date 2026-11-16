@@ -29,6 +29,7 @@ import {
   usePublishedCourse,
 } from "@/features/workspaces/course-access";
 import { DetailPanel, StatusBadge } from "@/components/shared/data";
+import { MarkdownPreview } from "@/components/shared/markdown-preview";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
@@ -1127,9 +1128,7 @@ function StepContent({
             {theoryItems && theoryItems.length > 0 ? (
               theoryItems.map((item) => (
                 <DetailPanel key={item.id} title={item.title}>
-                  <div className="whitespace-pre-wrap text-sm leading-7 text-muted-foreground">
-                    {String(item.content?.["body"] ?? "")}
-                  </div>
+                  <MarkdownPreview markdown={String(item.content?.["body"] ?? "")} />
                 </DetailPanel>
               ))
             ) : (

@@ -118,7 +118,7 @@ const roadmap = {
 const quiz = {
   version: 1,
   lesson: "Read the module theory before attempting the quiz.",
-  passPercent: 70,
+  passPercent: 80,
   passed: false,
   latestStatus: "NOT_ATTEMPTED",
   runtimeUnlocked: true,
@@ -301,8 +301,27 @@ async function main() {
     await page.getByText("Lab information", { exact: false }).first().waitFor();
     await page.getByText("Reference source", { exact: false }).first().waitFor();
     await page.getByText("Save Lab changes", { exact: true }).waitFor();
+    assert.equal(
+      await page.getByText("Required architecture views", { exact: true }).count(),
+      0,
+      "Lab v2 must not ask the lecturer to select diagrams",
+    );
     await page.screenshot({
       path: path.join(output, "lab-authoring.png"),
+      fullPage: true,
+      animations: "disabled",
+    });
+
+    await page.goto(base + "?view=authoring&workspace=ws-lms&assignment=a1&tab=theory", {
+      waitUntil: "networkidle",
+    });
+    await page.getByText("How theory works", { exact: true }).waitFor();
+    await page.getByText("Sample repository", { exact: true }).waitFor();
+    await page.getByText("C1 System Context", { exact: true }).waitFor();
+    await page.getByText("Lesson content (Markdown)", { exact: false }).first().waitFor();
+    await page.getByText("A service owns one reason to change.", { exact: true }).first().waitFor();
+    await page.screenshot({
+      path: path.join(output, "lab-theory.png"),
       fullPage: true,
       animations: "disabled",
     });

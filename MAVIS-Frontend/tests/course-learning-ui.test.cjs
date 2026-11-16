@@ -666,3 +666,35 @@ test("a missing Course draft is an empty state, not a class-content load error",
   assert.match(source, /isMissingCourseError\(authoring\.error\)/);
   assert.match(source, /isMissingCourseError\(publishedQuery\.error\)/);
 });
+
+test("Lab v2 info removes diagram submission and theory is lesson + repo + C1-C3", () => {
+  const info = read("src/features/assignments/lab-info-form.tsx");
+  const theory = read("src/features/assignments/lab-theory-section.tsx");
+
+  assert.doesNotMatch(info, /Required architecture views/);
+  assert.doesNotMatch(info, /DIAGRAM_REQUIREMENTS/);
+  assert.ok(info.includes("Theory + Quiz"));
+  assert.ok(info.includes("Theory + Quiz + Studio"));
+  assert.ok(info.includes("Students do not submit diagrams"));
+  assert.ok(theory.includes("MarkdownEditor"));
+  assert.ok(theory.includes("MarkdownPreview"));
+  assert.ok(theory.includes("Sample repository"));
+  assert.ok(theory.includes("C1 System Context"));
+  assert.ok(theory.includes("AssignmentSourceDetails"));
+});
+
+test("MarkdownPreview renders safe headings, emphasis and links without raw HTML", () => {
+  const React = require("react");
+  const { renderToStaticMarkup } = require("react-dom/server");
+  const { MarkdownPreview } = require("../src/components/shared/markdown-preview.tsx");
+  const html = renderToStaticMarkup(
+    React.createElement(MarkdownPreview, {
+      markdown: "# Lesson\n\n**Bold** and [docs](https://example.com).\n\n- One\n- Two\n\n<script>alert(1)</script>",
+    }),
+  );
+  assert.match(html, /<h1[^>]*>Lesson<\/h1>/);
+  assert.match(html, /<strong>Bold<\/strong>/);
+  assert.match(html, /href="https:\/\/example.com"/);
+  assert.match(html, /<li>One<\/li>/);
+  assert.doesNotMatch(html, /<script>/);
+});

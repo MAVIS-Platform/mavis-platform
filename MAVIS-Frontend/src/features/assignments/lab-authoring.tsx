@@ -244,7 +244,8 @@ export function LabAuthoring() {
               <LabTheorySection
                 workspaceId={workspaceId}
                 workspaceName={workspace?.name ?? "Course"}
-                assignmentId={assignment.id}
+                assignment={assignment}
+                onNavigate={navigate}
               />
             )}
             {tab === "source" && assignment && (
