@@ -71,7 +71,9 @@ export function Assignments() {
             variant={showCreate ? "outline" : "default"}
             onClick={() => setShowCreate((open) => !open)}
           >
-            {showCreate ? "Close create form" : "Create assignment"}
+            {showCreate
+              ? t("Close Lab authoring", "Đóng trình tạo Lab")
+              : t("Create a Lab", "Tạo Lab")}
           </Button>
         </div>
       )}

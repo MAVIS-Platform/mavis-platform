@@ -1909,8 +1909,8 @@ test("My Workspaces lists classes in sidebar and expands class details only for 
   const assignmentsHtml = renderComp(Assignments, "ws-swd");
   assert.match(assignmentsHtml, /Lab 1 Architecture/);
   assert.match(assignmentsHtml, /Lab 2 Sequence/);
-  assert.match(assignmentsHtml, /Create assignment/);
-  assert.doesNotMatch(assignmentsHtml, /Assignment title/, "Create assignment form stays closed until button is clicked");
+  assert.match(assignmentsHtml, /Create a Lab/);
+  assert.doesNotMatch(assignmentsHtml, /Assignment title/, "Lab authoring form stays closed until button is clicked");
   client.clear();
 });
 

@@ -82,6 +82,19 @@ test("guided Lab resumes a Runtime session scoped to its selected project and st
   assert.match(course, /Open Runtime session/);
 });
 
+test("lecturer Lab authoring uses the guided pinned-source draft workflow", () => {
+  const authoring = read("src/features/assignments/create.tsx");
+  const assignments = read("src/features/assignments/screens.tsx");
+
+  assert.ok(authoring.includes('t("Create a Lab", "Tạo Lab")'));
+  assert.ok(authoring.includes('t("Save Lab draft", "Lưu bản nháp Lab")'));
+  assert.match(authoring, /disabled=\{create\.isPending \|\| sourcePending \|\| !sourceModelId\}/);
+  assert.match(authoring, /referenceModelId:\s*sourceModelId/);
+  assert.ok(authoring.includes("publish it as the next Lab"));
+  assert.ok(authoring.includes("freeze Studio topology"));
+  assert.ok(assignments.includes('t("Create a Lab", "Tạo Lab")'));
+});
+
 test("assignment and submission screens preserve the selected Lab context", () => {
   const assignments = read("src/features/assignments/screens.tsx");
   const submissions = read("src/features/submissions/screens.tsx");
