@@ -3,13 +3,16 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, Lock } from "lucide-react";
+import { ArrowRight, CheckCircle2, Lock, XCircle } from "lucide-react";
 import { DetailPanel } from "@/components/shared/data";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { MarkdownPreview } from "@/components/shared/markdown-preview";
 import { api, ApiError } from "@/lib/mainflow-api";
 import { useLocale } from "@/lib/i18n/locale-context";
 
+type QuestionType = "SINGLE_CHOICE" | "MULTI_CHOICE" | "TRUE_FALSE";
+type Question = { id?: string; prompt: string; type?: QuestionType; options: string[]; points?: number };
 type Quiz = {
   version: number;
   lesson: string;
@@ -17,9 +20,15 @@ type Quiz = {
   passed: boolean;
   latestStatus: "PASSED" | "NEEDS_RETRY" | "NOT_ATTEMPTED" | null;
   runtimeUnlocked: boolean;
-  questions: { prompt: string; options: string[] }[];
+  questions: Question[];
 };
-type Result = { correctCount: number; totalQuestions: number; status: "PASSED" | "NEEDS_RETRY" };
+type QuestionResult = { id: string; correct: boolean; explanation: string };
+type Result = {
+  correctCount: number;
+  totalQuestions: number;
+  status: "PASSED" | "NEEDS_RETRY";
+  questionResults?: QuestionResult[];
+};
 
 export function useCourseQuiz(workspaceId: string, labId: string, enabled: boolean) {
   const path = `workspaces/${workspaceId}/course-labs/${labId}/quiz`;
@@ -70,33 +79,51 @@ export function CourseQuiz({
   );
 }
 
+function questionType(question: Question): QuestionType {
+  return question.type ?? "SINGLE_CHOICE";
+}
+
 function AttemptForm({ quiz, path, reload, canSubmit, runtimeStepHref, submissionHref, refreshReadiness }: {
   quiz: Quiz; path: string; reload: () => void; canSubmit: boolean; runtimeStepHref: string; refreshReadiness: () => void;
   submissionHref?: string | undefined;
 }) {
   const { t } = useLocale();
-  const [answers, setAnswers] = useState<Record<number, number>>({});
+  const [answers, setAnswers] = useState<Record<number, number[]>>({});
   const [attemptId, setAttemptId] = useState<string>();
   const submit = useMutation({
     mutationFn: (id: string) => api<Result>(`${path}/attempts`, {
       method: "POST",
-      body: JSON.stringify({ attemptId: id, version: quiz.version, answers: quiz.questions.map((_, i) => answers[i]) }),
+      body: JSON.stringify({
+        attemptId: id,
+        version: quiz.version,
+        selections: quiz.questions.map((_, index) => answers[index] ?? []),
+      }),
     }),
     onSuccess: (result) => { if (result.status === "PASSED") refreshReadiness(); },
   });
+  const answered = quiz.questions.every((_, index) => (answers[index]?.length ?? 0) > 0);
+
+  const toggle = (questionIndex: number, optionIndex: number, multi: boolean) => {
+    setAnswers((current) => {
+      const selected = current[questionIndex] ?? [];
+      const next = multi
+        ? selected.includes(optionIndex)
+          ? selected.filter((value) => value !== optionIndex)
+          : [...selected, optionIndex].sort((left, right) => left - right)
+        : [optionIndex];
+      return { ...current, [questionIndex]: next };
+    });
+    setAttemptId(undefined);
+    submit.reset();
+  };
 
   return (
     <div className="space-y-4">
-      <div className="whitespace-pre-wrap text-sm">
-        {quiz.lesson.split("\n").map((line, index) => (
-          <span key={index}>
-            {/^https:\/\/[^\s]+$/.test(line)
-              ? <a href={line} className="break-all text-primary underline" target="_blank" rel="noreferrer">{line}</a>
-              : line}
-            {"\n"}
-          </span>
-        ))}
-      </div>
+      {quiz.lesson && (
+        <div className="rounded-lg border bg-muted/20 p-3">
+          <MarkdownPreview markdown={quiz.lesson} />
+        </div>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
         <span>{t("Passing score", "Ngưỡng đạt")} {quiz.passPercent}%</span>
         <Badge variant={quiz.runtimeUnlocked ? "default" : (submit.data?.status ?? quiz.latestStatus) === "NEEDS_RETRY" ? "destructive" : "outline"}>
@@ -109,7 +136,22 @@ function AttemptForm({ quiz, path, reload, canSubmit, runtimeStepHref, submissio
                 : `NOT_PASSED (v${quiz.version})`}
         </Badge>
       </div>
-      {!canSubmit ? <p>{t("Preview for instructors", "Bản xem trước cho giảng viên")}</p> : quiz.runtimeUnlocked ? (
+
+      {!canSubmit ? (
+        <div className="space-y-3">
+          <p className="text-sm text-muted-foreground">{t("Preview for instructors — correct answers are hidden here.", "Bản xem trước cho giảng viên — đáp án đúng không hiển thị ở đây.")}</p>
+          <ol className="space-y-3">
+            {quiz.questions.map((question, index) => (
+              <li key={question.id ?? index} className="space-y-1 rounded-lg border p-3">
+                <p className="text-sm font-medium">{index + 1}. {question.prompt}</p>
+                <ul className="space-y-1 text-sm text-muted-foreground">
+                  {question.options.map((option, optionIndex) => <li key={optionIndex}>{option}</li>)}
+                </ul>
+              </li>
+            ))}
+          </ol>
+        </div>
+      ) : quiz.runtimeUnlocked ? (
         <div className="space-y-3 rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3">
           <p role="status" className="text-sm font-medium">
             PASSED (v{quiz.version}) · {t("Quiz passed", "Đã đạt Quiz")}
@@ -131,6 +173,7 @@ function AttemptForm({ quiz, path, reload, canSubmit, runtimeStepHref, submissio
       ) : (
         <form className="space-y-4" onSubmit={(event) => {
           event.preventDefault();
+          if (!answered) return;
           const id = attemptId ?? crypto.randomUUID();
           setAttemptId(id);
           submit.mutate(id);
@@ -148,34 +191,58 @@ function AttemptForm({ quiz, path, reload, canSubmit, runtimeStepHref, submissio
               )}
             </span>
           </div>
-          {quiz.questions.map((question, i) => (
-            <fieldset key={i} className="space-y-2 rounded-lg border p-3" disabled={submit.isPending || !!submit.data}>
-              <legend className="px-1 font-medium">{i + 1}. {question.prompt}</legend>
-              {question.options.map((option, j) => (
-                <label key={j} className="flex items-start gap-2">
-                  <input type="radio" name={`question-${i}`} required checked={answers[i] === j} onChange={() => {
-                    setAnswers({ ...answers, [i]: j });
-                    setAttemptId(undefined);
-                    submit.reset();
-                  }} />
-                  {option}
-                </label>
-              ))}
-            </fieldset>
-          ))}
+          {quiz.questions.map((question, index) => {
+            const type = questionType(question);
+            const multi = type === "MULTI_CHOICE";
+            return (
+              <fieldset key={question.id ?? index} className="space-y-2 rounded-lg border p-3" disabled={submit.isPending || !!submit.data}>
+                <legend className="px-1 font-medium">
+                  {index + 1}. {question.prompt}
+                  {multi && <span className="ml-2 text-xs font-normal text-muted-foreground">{t("Select all that apply", "Chọn tất cả đáp án đúng")}</span>}
+                </legend>
+                {question.options.map((option, optionIndex) => (
+                  <label key={optionIndex} className="flex items-start gap-2">
+                    <input
+                      type={multi ? "checkbox" : "radio"}
+                      name={`question-${index}`}
+                      required={!multi}
+                      checked={(answers[index] ?? []).includes(optionIndex)}
+                      onChange={() => toggle(index, optionIndex, multi)}
+                    />
+                    {option}
+                  </label>
+                ))}
+              </fieldset>
+            );
+          })}
           {submit.data ? (
-            <div className="space-y-2 rounded-xl border border-destructive/40 bg-destructive/5 p-3">
+            <div className="space-y-3 rounded-xl border border-destructive/40 bg-destructive/5 p-3">
               <p role="status" className="text-sm font-medium">
-                NEEDS_RETRY · {t("Try again", "Cần làm lại")} · {submit.data.correctCount}/{submit.data.totalQuestions}
+                {submit.data.status} · {submit.data.correctCount}/{submit.data.totalQuestions}
               </p>
-              <Button type="button" variant="outline" onClick={() => {
-                setAnswers({});
-                setAttemptId(undefined);
-                submit.reset();
-              }}>{t("Start a new attempt", "Bắt đầu lượt mới")}</Button>
+              {submit.data.questionResults && submit.data.questionResults.length > 0 && (
+                <ul className="space-y-2 text-sm">
+                  {submit.data.questionResults.map((result, index) => (
+                    <li key={`${result.id}-${index}`} className="rounded-md border bg-background p-2">
+                      <p className="flex items-center gap-2 font-medium">
+                        {result.correct ? <CheckCircle2 className="size-4 text-emerald-600" aria-hidden="true" /> : <XCircle className="size-4 text-destructive" aria-hidden="true" />}
+                        {t("Question", "Câu")} {index + 1}: {result.correct ? t("Correct", "Đúng") : t("Incorrect", "Sai")}
+                      </p>
+                      {result.explanation && <p className="mt-1 text-xs text-muted-foreground">{result.explanation}</p>}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {submit.data.status === "NEEDS_RETRY" && (
+                <Button type="button" variant="outline" onClick={() => {
+                  setAnswers({});
+                  setAttemptId(undefined);
+                  submit.reset();
+                }}>{t("Start a new attempt", "Bắt đầu lượt mới")}</Button>
+              )}
             </div>
           ) : (
-            <Button disabled={submit.isPending || Object.keys(answers).length !== quiz.questions.length}>
+            <Button disabled={submit.isPending || !answered}>
               {t("Submit Quiz", "Nộp Quiz")}
             </Button>
           )}

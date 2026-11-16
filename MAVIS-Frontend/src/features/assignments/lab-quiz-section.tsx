@@ -4,8 +4,8 @@ import { CircleHelp } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { CourseQuiz } from "@/features/courses/course-quiz";
-import { CurriculumPublisher } from "@/features/courses/curriculum";
 import { useCourseSetup } from "@/features/workspaces/course-access";
+import { QuizBuilder } from "./quiz-builder";
 
 export function LabQuizSection({
   workspaceId,
@@ -29,8 +29,8 @@ export function LabQuizSection({
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
               {t(
-                "Publish a curriculum chapter or review the current Quiz. A new content version starts a new gate for the Lab.",
-                "Công bố một bài giáo trình hoặc xem Quiz hiện hành. Nội dung mới sẽ tạo phiên bản gate mới cho Lab.",
+                "Write questions by hand or import JSON/CSV. Save a draft, preview the gate, then publish an immutable version.",
+                "Soạn câu hỏi bằng tay hoặc nhập JSON/CSV. Lưu nháp, xem trước gate rồi công bố phiên bản bất biến.",
               )}
             </p>
           </div>
@@ -40,7 +40,7 @@ export function LabQuizSection({
               : t("Not published", "Chưa công bố")}
           </Badge>
         </div>
-        <CurriculumPublisher workspaceId={workspaceId} assignmentId={assignmentId} />
+        <QuizBuilder workspaceId={workspaceId} assignmentId={assignmentId} />
       </section>
 
       <CourseQuiz

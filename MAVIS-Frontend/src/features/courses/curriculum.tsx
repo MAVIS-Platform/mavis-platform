@@ -12,7 +12,7 @@ import { api } from "@/lib/mainflow-api";
 
 type Source = { publisher: string; title: string; url: string };
 const phases = ["foundation", "lab", "advanced"] as const;
-type Chapter = {
+export type Chapter = {
   id: string;
   track: "Java" | "C#";
   phase: (typeof phases)[number];
@@ -24,7 +24,7 @@ type Chapter = {
   sources: Source[];
 };
 
-function useCurriculum(enabled = true) {
+export function useCurriculum(enabled = true) {
   return useQuery({
     queryKey: ["api", "course-curriculum"],
     queryFn: ({ signal }) => api<Chapter[]>("course-curriculum", { signal }),

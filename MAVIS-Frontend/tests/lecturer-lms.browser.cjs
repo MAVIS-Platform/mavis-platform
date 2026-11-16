@@ -122,7 +122,15 @@ const quiz = {
   passed: false,
   latestStatus: "NOT_ATTEMPTED",
   runtimeUnlocked: true,
-  questions: [{ prompt: "Which service owns the order lifecycle?", options: ["orders", "payment"] }],
+  questions: [{ id: "q1", prompt: "Which service owns the order lifecycle?", type: "SINGLE_CHOICE", options: ["orders", "payment"] }],
+};
+const quizDraft = {
+  lesson: "Read the module theory before attempting the quiz.",
+  passPercent: 80,
+  questions: [
+    { id: "q1", prompt: "Which service owns the order lifecycle?", type: "SINGLE_CHOICE", options: ["orders", "payment"], correctOption: 0, explanation: "Orders owns the order lifecycle.", points: 1 },
+    { id: "q2", prompt: "Select the resilience controls.", type: "MULTI_CHOICE", options: ["Stop", "Scale", "Delete database"], correctOptions: [0, 1], explanation: "Stop and Scale are supported.", points: 1 },
+  ],
 };
 
 fs.writeFileSync(
@@ -143,11 +151,16 @@ const draft=${JSON.stringify(draft)};
 const published=${JSON.stringify(published)};
 const roadmap=${JSON.stringify(roadmap)};
 const quiz=${JSON.stringify(quiz)};
+const quizDraft=${JSON.stringify(quizDraft)};
 globalThis.fetch=async(url)=>{
   const path=String(url);
   let payload={};
   if(globalThis.__mavisEmptyCourse && path.includes('/course')) return new Response(JSON.stringify({message:'Course draft not found'}),{status:404,headers:{'content-type':'application/json'}});
-  if(path.includes('course-roadmap')) payload=roadmap;
+  if(path.includes('course-curriculum')) payload=[];
+  else if(path.includes('/quiz/draft')) payload=quizDraft;
+  else if(path.includes('/quiz/versions')) payload=[];
+  else if(path.includes('quiz-bank')) payload=[];
+  else if(path.includes('course-roadmap')) payload=roadmap;
   else if(path.includes('/quiz')) payload=quiz;
   else if(path.includes('/course/published')) payload=published;
   else if(path.includes('/course/versions')) payload=[];
@@ -322,6 +335,20 @@ async function main() {
     await page.getByText("A service owns one reason to change.", { exact: true }).first().waitFor();
     await page.screenshot({
       path: path.join(output, "lab-theory.png"),
+      fullPage: true,
+      animations: "disabled",
+    });
+
+    await page.goto(base + "?view=authoring&workspace=ws-lms&assignment=a1&tab=quiz", {
+      waitUntil: "networkidle",
+    });
+    await page.getByText("Quiz builder", { exact: true }).waitFor();
+    await page.getByText("Import / Export", { exact: true }).waitFor();
+    await page.getByText("Question bank", { exact: true }).first().waitFor();
+    await page.getByText("Publish version", { exact: true }).waitFor();
+    await page.getByText("Select the resilience controls.", { exact: false }).first().waitFor();
+    await page.screenshot({
+      path: path.join(output, "lab-quiz.png"),
       fullPage: true,
       animations: "disabled",
     });

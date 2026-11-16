@@ -130,7 +130,7 @@ test("assignment authoring separates details, theory, source, quiz, studio and p
   assert.ok(info.includes("Instructions, learning goals and completion criteria"));
   assert.ok(theory.includes("THEORY"));
   assert.ok(source.includes("AssignmentSourcePicker"));
-  assert.ok(quiz.includes("CurriculumPublisher"));
+  assert.ok(quiz.includes("QuizBuilder"));
   assert.ok(studio.includes("runtime-config?project="));
   assert.ok(publish.includes("CourseSetupPanel"));
   assert.match(publish, /theoryReady/);
@@ -697,4 +697,61 @@ test("MarkdownPreview renders safe headings, emphasis and links without raw HTML
   assert.match(html, /href="https:\/\/example.com"/);
   assert.match(html, /<li>One<\/li>/);
   assert.doesNotMatch(html, /<script>/);
+});
+
+test("Quiz builder supports manual types, import/export, bank, versions and 80 percent", () => {
+  const builder = read("src/features/assignments/quiz-builder.tsx");
+  const quiz = read("src/features/courses/course-quiz.tsx");
+  const types = read("src/features/assignments/quiz-types.ts");
+
+  for (const label of ["Questions", "Preview", "Import / Export", "Question bank", "Versions"])
+    assert.ok(builder.includes(label), label);
+  assert.ok(builder.includes("SINGLE_CHOICE"));
+  assert.ok(builder.includes("MULTI_CHOICE"));
+  assert.ok(builder.includes("TRUE_FALSE"));
+  assert.ok(builder.includes("Publish version"));
+  assert.ok(builder.includes("parseQuizJson"));
+  assert.ok(builder.includes("parseQuizCsv"));
+  assert.ok(types.includes("DEFAULT_PASS_PERCENT = 80"));
+  assert.ok(quiz.includes("selections:"));
+  assert.ok(quiz.includes("Select all that apply"));
+  assert.ok(quiz.includes("questionResults"));
+});
+
+test("quiz import parser validates JSON and CSV into typed questions", () => {
+  const { parseQuizJson, parseQuizCsv, quizToCsv } = require("../src/features/assignments/quiz-types.ts");
+  const json = parseQuizJson(JSON.stringify({
+    lesson: "Boundaries",
+    passPercent: 80,
+    questions: [
+      { prompt: "Pick one", options: ["A", "B"], correctOption: 1, explanation: "B" },
+      { prompt: "Pick many", type: "MULTI_CHOICE", options: ["A", "B", "C"], correctOptions: [0, 2] },
+    ],
+  }));
+  assert.deepEqual(json.errors, []);
+  assert.equal(json.draft.questions.length, 2);
+  assert.equal(json.draft.questions[1].type, "MULTI_CHOICE");
+
+  const csv = parseQuizCsv('type,prompt,options,correct,explanation,points\nSINGLE_CHOICE,"Pick one","A|B",1,"Because B",1');
+  assert.deepEqual(csv.errors, []);
+  assert.equal(csv.draft.questions[0].correctOption, 1);
+  assert.match(quizToCsv(csv.draft.questions), /SINGLE_CHOICE/);
+});
+
+test("BFF allows Quiz draft, publish, versions and question bank paths", () => {
+  const { allowedBackendPath } = require("../src/lib/api/backend-path.ts");
+  const workspace = "11111111-1111-1111-1111-111111111111";
+  const lab = "22222222-2222-2222-2222-222222222222";
+  const question = "33333333-3333-3333-3333-333333333333";
+  for (const path of [
+    `workspaces/${workspace}/course-labs/${lab}/quiz/draft`,
+    `workspaces/${workspace}/course-labs/${lab}/quiz/draft/curriculum`,
+    `workspaces/${workspace}/course-labs/${lab}/quiz/publish`,
+    `workspaces/${workspace}/course-labs/${lab}/quiz/versions`,
+    `workspaces/${workspace}/quiz-bank/questions`,
+    `workspaces/${workspace}/quiz-bank/questions/${question}`,
+  ]) {
+    assert.equal(allowedBackendPath(path), true, path);
+  }
+  assert.equal(allowedBackendPath(`workspaces/${workspace}/quiz-bank/unsafe`), false);
 });
