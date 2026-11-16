@@ -136,7 +136,7 @@ Hỗ trợ `SINGLE_CHOICE`, `MULTI_CHOICE`, `TRUE_FALSE`. Học sinh thấy radi
 - **Real Docker Runner/Studio đã PASS ngày 17/11/2026**: STOP/START payment và SCALE orders 1→2, Before/After snapshot, HMAC receipt, cleanup `CONFIRMED`, 0 orphan. **Web production với hai tài khoản thật vẫn cần chạy.**
 - **`runnerReady`** không phải health check trực tiếp; Start Live session chỉ bật khi profile configured, không đảm bảo Docker đã chạy.
 - **V37** thêm `runtime_sessions.assignment_id`; session cũ không có assignment vẫn hợp lệ. Freeze topology có `sessionId` sẽ fail closed nếu session không khớp Lab/source/model hoặc chưa verified.
-- **Web self-test 17/11/2026 đã chạy** với backend local + PostgreSQL 16 + Chrome: lecturer tạo lớp/Lab/Theory/Quiz/Studio topology, publish Lab, freeze topology; student làm Quiz v3 và đạt `PASSED`. Session web được tạo và gắn `assignment_id` nhưng dừng ở `FAILED` vì chưa có Runner ngoài backend; vì vậy chưa có bằng chứng Stop/Start/Scale trên web. Bằng chứng Docker thật hiện có vẫn là test API local.
+- **Web self-test 17/11/2026 đã chạy** với backend local + PostgreSQL 16 + Chrome + `MAVIS.Runner` managed + Docker: lecturer tạo lớp/Lab/Theory/Quiz/Studio topology, publish Lab, freeze topology; student làm Quiz và đạt `PASSED`. Session web gắn `assignment_id` đã STOP/START/SCALE payment thật (1→2 container), Finish trả `COMPLETED / PASSED / CONFIRMED`, receipt HMAC `sha256:6fb1d01b…`, 0 container còn lại. Đây là nghiệm thu web local, chưa phải hai tài khoản trên production.
 - ZIP do Windows tạo với dấu `\` giờ được nhận là thư mục; trước đây bị giải nén thành file 0 byte và làm analysis thất bại.
 
 ### Bằng chứng real Docker (17/11/2026)
