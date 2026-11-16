@@ -1855,7 +1855,7 @@ test("reconcileModelDiff pairs identical elements across revisions with new UUID
 
 
 
-test("My Workspaces lists classes in sidebar and expands class details only for the selected class card", () => {
+test("My Workspaces is a compact LMS class list with tabs and a module outline", () => {
   const React = require("react");
   const { renderToStaticMarkup } = require("react-dom/server");
   const { QueryClient, QueryClientProvider } = require("@tanstack/react-query");
@@ -1885,24 +1885,62 @@ test("My Workspaces lists classes in sidebar and expands class details only for 
         ),
       ),
     );
-  client.setQueryData(["api", "assignments", { workspaceId: "ws-swd" }], [
+  const assignments = [
     { id: "a1", workspaceId: "ws-swd", title: "Lab 1 Architecture", instructions: "Analyze C4", dueAt: "No deadline", requiredDiagramTypes: [] },
     { id: "a2", workspaceId: "ws-swd", title: "Lab 2 Sequence", instructions: "Trace flow", dueAt: "No deadline", requiredDiagramTypes: [] },
-  ]);
+  ];
+  client.setQueryData(["api", "assignments", { workspaceId: "ws-swd" }], assignments);
+  const modules = [
+    {
+      id: "m1", title: "Foundations", description: "Core service design", position: 1, prerequisiteModuleId: null,
+      items: [
+        { id: "i1", type: "THEORY", title: "Service boundaries", description: "Why boundaries matter", position: 1, assignmentId: null, content: { body: "A service owns one reason to change." }, required: true },
+        { id: "i2", type: "QUIZ", title: "Boundary quiz", description: "", position: 2, assignmentId: "a1", content: {}, required: true },
+        { id: "i3", type: "RUNTIME_LAB", title: "Lab 1 Architecture", description: "", position: 3, assignmentId: "a1", content: {}, required: true },
+      ],
+    },
+  ];
+  client.setQueryData(["api", "course-authoring", "ws-swd"], {
+    id: "course-1", workspaceId: "ws-swd", title: "Software Architecture", description: "", status: "DRAFT", draftRevision: 4, publishedVersion: 1, modules,
+  });
+  client.setQueryData(["api", "course-versions", "ws-swd"], [{ version: 1, draftRevision: 3, snapshotDigest: "sha256:" + "a".repeat(64), publishedAt: "2026-11-16T00:00:00Z" }]);
+  client.setQueryData(["api", "course-published", "ws-swd"], {
+    courseId: "course-1", version: 1, draftRevision: 3, snapshotDigest: "sha256:" + "a".repeat(64), publishedAt: "2026-11-16T00:00:00Z",
+    snapshot: { title: "Software Architecture", description: "", modules },
+  });
+  client.setQueryData(["api", "course-roadmap", "ws-swd"], {
+    guided: true, enrollmentStatus: "IN_PROGRESS",
+    labs: [
+      { assignmentId: "a1", position: 1, title: "Lab 1 Architecture", state: "UNLOCKED", reason: null },
+      { assignmentId: "a2", position: 2, title: "Lab 2 Sequence", state: "LOCKED", reason: "PREREQUISITE" },
+    ],
+  });
   const rootHtml = renderComp(Workspaces, "");
-  assert.match(rootHtml, /Create a teaching workspace/);
-  assert.doesNotMatch(rootHtml, /Lớp SWD392/);
+  assert.match(rootHtml, /Create class/);
+  assert.match(rootHtml, /Lớp SWD392/);
+  assert.match(rootHtml, /Mobile Programming/);
+  assert.match(rootHtml, /Open class/);
+  assert.doesNotMatch(rootHtml, /Create a place for learning to take shape/, "Class list must not use the marketing hero");
+  assert.doesNotMatch(rootHtml, /Workspace code/, "Create class form stays closed until requested");
   const overviewHtml = renderComp(WorkspaceOverview, "ws-swd");
-  assert.match(overviewHtml, /Students enrolled/);
-  assert.match(overviewHtml, /Published assignments/);
+  assert.match(overviewHtml, /Class content/);
+  assert.match(overviewHtml, /Members/);
+  assert.match(overviewHtml, /Submissions/);
+  assert.match(overviewHtml, /Results/);
+  assert.match(overviewHtml, /Foundations/);
+  assert.match(overviewHtml, /Service boundaries/);
   assert.match(overviewHtml, /Lab 1 Architecture/);
-  assert.match(overviewHtml, /Rename/);
-  assert.match(overviewHtml, /Archive workspace/);
+  assert.match(overviewHtml, /Roadmap/);
+  assert.match(overviewHtml, /Authoring/);
+  assert.match(overviewHtml, /Setup/);
+  assert.doesNotMatch(overviewHtml, /Students enrolled/, "Overview must not be a KPI dashboard");
   assert.doesNotMatch(overviewHtml, /Add students in bulk/, "Overview must not include member management");
   const membersHtml = renderComp(WorkspaceMembers, "ws-swd");
   assert.match(membersHtml, /Add students in bulk/);
   assert.match(membersHtml, /Student A/);
-  assert.doesNotMatch(membersHtml, /Rename/, "Members screen must not include class rename/archive controls");
+  assert.match(membersHtml, /Class settings/, "Class rename/archive lives in a separate settings area");
+  assert.match(membersHtml, /Rename/);
+  assert.match(membersHtml, /Archive workspace/);
   const { WorkspaceSelector } = require("../src/features/workspaces/components.tsx");
   assert.equal(renderComp(WorkspaceSelector, "ws-swd"), "", "WorkspaceSelector hides when class is already selected");
   const { Assignments } = require("../src/features/assignments/screens.tsx");
@@ -2445,4 +2483,17 @@ test("Screen Guided Tour catalog covers all 28 screens with bilingual EN/VI step
    }
   }
  }
+});
+
+test("Teaching submissions use the class shell, Lab filter and LMS review table", () => {
+  const submissions = fs.readFileSync(
+    path.join(root, "src/features/submissions/screens.tsx"),
+    "utf8",
+  );
+
+  assert.match(submissions, /CourseWorkspaceShell/);
+  assert.match(submissions, /Assignment to review/);
+  assert.match(submissions, /Outcome/);
+  assert.match(submissions, /Open review/);
+  assert.match(submissions, /Back to class submissions|Quay lại bài nộp của lớp/);
 });

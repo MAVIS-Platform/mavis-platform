@@ -26,12 +26,12 @@ import {
   SeedCuratedCourseLabs,
   useCourseRoadmap,
   useCourseAuthoring,
+  usePublishedCourse,
 } from "@/features/workspaces/course-access";
-import { DetailPanel, StatusBadge, SummaryCard } from "@/components/shared/data";
+import { DetailPanel, StatusBadge } from "@/components/shared/data";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
-import { cn } from "@/lib/utils";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { getRuleName } from "@/features/architecture/three-e-content";
 import { CourseBuilder } from "./course-builder";
@@ -39,6 +39,7 @@ import { CourseQuiz, useCourseQuiz } from "./course-quiz";
 import { CourseSetupPanel } from "./course-setup";
 import { CurriculumLibrary } from "./curriculum";
 import { Step2StaticImpact } from "./step2-static-impact";
+import { LabToc, type LabTocItem, type LabTocStep } from "./lab-toc";
 
 type LearningStep = {
   id: 1 | 2 | 3 | 4;
@@ -96,6 +97,12 @@ const learningSteps: LearningStep[] = [
 
 function workspaceHref(workspaceId: string, extra = "") {
   return `?workspace=${encodeURIComponent(workspaceId)}${extra}`;
+}
+
+function stepForItemType(type: string): 1 | 2 | 3 | 4 {
+  if (type === "THEORY" || type === "QUIZ" || type === "ESSAY" || type === "IMPACT_LAB") return 2;
+  if (type === "RUNTIME_LAB") return 3;
+  return 1;
 }
 
 export function Courses() {
@@ -214,7 +221,7 @@ export function CourseRoadmap() {
   const workspaces = useApiQuery("workspaces", {});
   const workspace = workspaces.data?.find((item) => item.id === workspaceId);
   const canManage = workspace?.myRole === "LECTURER" || session.data?.user?.role === "admin";
-  const publishedCourse = useCourseAuthoring(workspaceId).published;
+  const publishedCourse = usePublishedCourse(workspaceId);
 
   useEffect(() => {
     if (workspaceId && workspaceId !== selection.workspaceId) selection.setWorkspaceId(workspaceId);
@@ -344,9 +351,20 @@ export function LabWorkspace() {
   const client = useApi();
   const roadmap = useCourseRoadmap(workspaceId);
   const isLecturer = workspace?.myRole === "LECTURER" || session.data?.user?.role === "admin";
+  const preview = Boolean(isLecturer && params.get("preview") !== "0");
+  const course = useCourseAuthoring(workspaceId, Boolean(isLecturer));
+  const publishedCourse = usePublishedCourse(workspaceId);
+  const courseModules = publishedCourse.data?.snapshot.modules ?? [];
+  const currentModule = courseModules.find((module) =>
+    module.items.some((item) => item.assignmentId === assignmentId),
+  );
+  const moduleItems = currentModule?.items ?? [];
+  const theoryItems = moduleItems.filter(
+    (item) => item.type === "THEORY" && typeof item.content?.["body"] === "string",
+  );
   const lab = assignments.data?.find((item) => item.id === assignmentId);
   const quiz = useCourseQuiz(workspaceId, assignmentId,
-    Boolean(lab && roadmap.data?.guided && session.data?.user?.role === "student"));
+    Boolean(lab && roadmap.data?.guided && (session.data?.user?.role === "student" || isLecturer)));
   const runtimeReady = !quiz.isError && quiz.data?.runtimeUnlocked === true;
   const requiresRuntime = lab?.requireRuntimeTrace === true;
   const displayedStep = !requiresRuntime && activeStep > 2 ? 2 : activeStep;
@@ -393,6 +411,55 @@ export function LabWorkspace() {
         }).toString()
       : null;
 
+  const applicableSteps = learningSteps.filter((step) => requiresRuntime || step.id <= 2);
+  const stepComplete: Record<1 | 2 | 3 | 4, boolean> = {
+    1: isLecturer ? Boolean(referenceModelQuery || model) : Boolean(model),
+    2: runtimeReady,
+    3: Boolean(observedRuntime),
+    4: Boolean(studioSession),
+  };
+  const completedSteps = applicableSteps.filter((step) => stepComplete[step.id]).length;
+  const progress = applicableSteps.length
+    ? Math.round((completedSteps / applicableSteps.length) * 100)
+    : 0;
+  const stepAvailable = (id: 1 | 2 | 3 | 4) =>
+    preview || id <= 2 || (id === 3 && runtimeReady) || (id === 4 && studioReady);
+  const stepReason = (id: 1 | 2 | 3 | 4) =>
+    id === 3
+      ? t("Pass the current Quiz to open Runtime.", "Đạt Quiz hiện tại để mở Runtime.")
+      : id === 4
+        ? t("Runtime evidence is required before Studio.", "Cần bằng chứng Runtime trước khi mở Studio.")
+        : undefined;
+  const labHref = (step: 1 | 2 | 3 | 4) =>
+    `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignmentId)}&step=${step}${preview ? "&preview=1" : ""}`;
+  const tocSteps: LabTocStep[] = applicableSteps.map((step) => {
+    const available = stepAvailable(step.id);
+    const state = stepComplete[step.id]
+      ? "complete"
+      : step.id === displayedStep
+        ? "current"
+        : available
+          ? "available"
+          : "locked";
+    return {
+      id: step.id,
+      label: t(step.shortTitle, step.shortTitleVi),
+      state,
+      ...(state === "locked" ? { reason: stepReason(step.id) } : {}),
+      ...(available ? { href: labHref(step.id) } : {}),
+    };
+  });
+  const tocItems: LabTocItem[] = moduleItems.map((item) => {
+    const step = stepForItemType(item.type);
+    return {
+      id: item.id,
+      title: item.title,
+      type: item.type,
+      current: item.assignmentId === assignmentId,
+      ...(stepAvailable(step) ? { href: labHref(step) } : {}),
+    };
+  });
+
   useEffect(() => {
     if (workspaceId && workspaceId !== selection.workspaceId) selection.setWorkspaceId(workspaceId);
   }, [selection, workspaceId]);
@@ -422,7 +489,7 @@ export function LabWorkspace() {
   if (client.mode === "backend") {
     if (roadmap.isError) return <ErrorState error={roadmap.error} onRetry={() => void roadmap.refetch()} />;
     if (!roadmap.data) return <LoadingState />;
-    if (roadmap.data.guided && !roadmap.data.labs.some(
+    if (!preview && roadmap.data.guided && !roadmap.data.labs.some(
       (item) => item.assignmentId === assignmentId && item.state !== "LOCKED",
     )) {
       return (
@@ -449,220 +516,214 @@ export function LabWorkspace() {
     >
       {workspace && lab && (
         <div className="space-y-5">
-          <header className="rounded-2xl border bg-card p-5">
+          <header className="rounded-xl border bg-card p-4 sm:p-5">
             <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <p className="text-xs text-muted-foreground">
-                  <Link className="hover:text-foreground" href="/">
-                    {t("Courses", "Khóa học")}
+              <div className="min-w-0 space-y-2">
+                <p className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-xs text-muted-foreground">
+                  <Link className="hover:text-foreground" href="/workspaces">
+                    {t("Classes", "Lớp học")}
                   </Link>
-                  {" / "}
+                  <span aria-hidden="true">/</span>
                   <Link
                     className="hover:text-foreground"
-                    href={`/roadmap?workspace=${encodeURIComponent(workspaceId)}`}
+                    href={`/workspace-overview?workspace=${encodeURIComponent(workspaceId)}`}
                   >
                     {workspace.name}
                   </Link>
-                  {" / Lab"}
+                  <span aria-hidden="true">/</span>
+                  <span>
+                    {t("Module", "Chương")} {currentModule?.position ?? "—"}:{" "}
+                    {currentModule?.title ?? t("Unassigned module", "Chưa gán chương")}
+                  </span>
+                  <span aria-hidden="true">/</span>
+                  <span className="text-foreground">{lab.title}</span>
                 </p>
-                <h1 className="mt-2 text-xl font-semibold">{lab.title}</h1>
-                <div className="mt-3 flex flex-wrap gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="text-xl font-semibold tracking-tight">{lab.title}</h1>
                   <Badge variant="outline">
-                    Lab revision {lab.referenceSource?.revision ?? "pending"}
+                    {t("Class", "Lớp")} {workspace.code || "—"}
                   </Badge>
-                  <Badge variant="secondary">Curated repository</Badge>
+                  {preview && <Badge variant="warning">{t("Preview", "Xem trước")}</Badge>}
+                </div>
+                <div className="flex flex-wrap gap-2">
                   <Badge variant="outline">
-                    {lab.referenceSource?.commitSha?.slice(0, 12) || "Commit pending"}
+                    {t("Revision", "Phiên bản")} {lab.referenceSource?.revision ?? "—"}
+                  </Badge>
+                  <Badge variant="secondary">{t("Curated repository", "Repo đã biên soạn")}</Badge>
+                  <Badge variant="outline" className="font-mono">
+                    {lab.referenceSource?.commitSha?.slice(0, 12) || t("Commit pending", "Chưa có commit")}
                   </Badge>
                 </div>
               </div>
-              <Button asChild variant="outline">
-                <Link href={`/roadmap?workspace=${encodeURIComponent(workspaceId)}`}>
-                  {t("Course roadmap", "Lộ trình khóa học")}
-                </Link>
-              </Button>
+              <div
+                aria-label={t("Lab actions", "Thao tác Lab")}
+                className="flex flex-wrap gap-2"
+              >
+                <Button asChild variant="outline" size="sm">
+                  <Link href={`/roadmap?workspace=${encodeURIComponent(workspaceId)}`}>
+                    {t("Course roadmap", "Lộ trình khóa học")}
+                  </Link>
+                </Button>
+                {!isLecturer && (
+                  <Button asChild size="sm">
+                    <Link
+                      href={`/assignments?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(lab.id)}`}
+                    >
+                      {runtimeReady
+                        ? t("Open assignment & submit", "Mở bài tập và nộp bài")
+                        : t("Open Lab assignment", "Mở bài tập Lab")}
+                    </Link>
+                  </Button>
+                )}
+                {isLecturer && (
+                  <Button asChild size="sm" variant="outline">
+                    <Link
+                      href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignmentId)}&step=${displayedStep}${preview ? "&preview=0" : "&preview=1"}`}
+                    >
+                      {preview
+                        ? t("Exit preview", "Thoát xem trước")
+                        : t("Preview as student", "Xem trước như sinh viên")}
+                    </Link>
+                  </Button>
+                )}
+                {isLecturer && (
+                  <Button asChild size="sm">
+                    <Link
+                      href={`/assignments?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(lab.id)}`}
+                    >
+                      {t("Manage Lab assignment", "Quản lý bài tập Lab")}
+                    </Link>
+                  </Button>
+                )}
+                {isLecturer && lab.referenceSource?.projectId && (
+                  <Button asChild size="sm" variant="outline">
+                    <Link
+                      href={`/runtime-config?project=${encodeURIComponent(lab.referenceSource.projectId)}`}
+                    >
+                      {t("Configure Studio", "Cấu hình Studio")}
+                    </Link>
+                  </Button>
+                )}
+              </div>
             </div>
+            {preview && (
+              <p role="status" className="mt-3 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs leading-5 text-amber-800 dark:text-amber-200">
+                {t(
+                  "Preview mode is read-only. Quiz attempts, runtime sessions and submissions are not created.",
+                  "Chế độ xem trước chỉ đọc. Không tạo lượt Quiz, phiên runtime hay bài nộp.",
+                )}
+              </p>
+            )}
           </header>
 
-          <nav
-            aria-label="Lab stages"
-            className="grid gap-2 rounded-2xl border bg-card p-3 md:grid-cols-4"
-          >
-            {learningSteps.filter((step) => requiresRuntime || step.id <= 2).map((step) => {
-              const Icon = step.icon;
-              const current = step.id === displayedStep;
-              const available = step.id <= 2 || (step.id === 3 && runtimeReady) || (step.id === 4 && studioReady);
-              return (
-                <Link
-                  key={step.id}
-                  aria-current={current ? "step" : undefined}
-                  aria-disabled={!available}
-                  tabIndex={available ? 0 : -1}
-                  href={
-                    available
-                      ? `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(lab.id)}&step=${step.id}`
-                      : "#"
-                  }
-                  className={cn(
-                    "flex min-w-0 items-center gap-3 rounded-xl px-3 py-3 text-sm transition-colors",
-                    current ? "bg-primary text-primary-foreground" : "hover:bg-muted",
-                    !available && "pointer-events-none opacity-50",
+          <div className="grid min-w-0 gap-5 lg:grid-cols-[280px_minmax(0,1fr)]">
+            <LabToc
+              steps={tocSteps}
+              activeStep={displayedStep}
+              moduleTitle={currentModule?.title}
+              items={tocItems}
+              progress={progress}
+              preview={preview}
+            />
+            <div className="min-w-0 space-y-5">
+              <main className="min-w-0 space-y-5">
+                <StepContent
+                  requiresRuntime={requiresRuntime}
+                  runtimeReady={runtimeReady}
+                  runtimeSessionHref={labSessions[0] ? runtimeLink(labSessions[0].id) : null}
+                  studioHref={studioReady ? runtimeLink(studioSession?.id ?? observedRuntime?.id) + "&studio=1" : null}
+                  studioVerified={Boolean(studioSession)}
+                  showQuiz={roadmap.data?.guided === true}
+                  canAttemptQuiz={session.data?.user?.role === "student" && roadmap.data?.guided === true}
+                  isStudent={!isLecturer}
+                  preview={preview}
+                  labTitle={lab.title}
+                  moduleTitle={currentModule?.title}
+                  theoryItems={theoryItems}
+                  hasActiveAnalysisJob={Boolean(
+                    jobs.data?.some((job) =>
+                      ["queued", "processing", "running"].includes(String(job.status)),
+                    ),
                   )}
-                >
-                  <span className="flex size-8 shrink-0 items-center justify-center rounded-full border border-current/20">
-                    <Icon className="size-4" aria-hidden="true" />
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block text-[10px] font-semibold uppercase tracking-wide opacity-70">
-                      Step {step.id}
-                    </span>
-                    <span className="block truncate font-medium">
-                      {t(step.shortTitle, step.shortTitleVi)}
-                    </span>
-                  </span>
-                </Link>
-              );
-            })}
-          </nav>
-
-          <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
-            <main className="min-w-0 space-y-5">
-              <StepContent
-                requiresRuntime={requiresRuntime}
-                runtimeReady={runtimeReady}
-                runtimeSessionHref={labSessions[0] ? runtimeLink(labSessions[0].id) : null}
-                studioHref={studioReady ? runtimeLink(studioSession?.id ?? observedRuntime?.id) + "&studio=1" : null}
-                studioVerified={Boolean(studioSession)}
-                showQuiz={roadmap.data?.guided === true}
-                canAttemptQuiz={session.data?.user?.role === "student" && roadmap.data?.guided === true}
-                isStudent={!isLecturer}
-                labTitle={lab.title}
-                hasActiveAnalysisJob={Boolean(
-                  jobs.data?.some((job) =>
-                    ["queued", "processing", "running"].includes(String(job.status)),
-                  ),
-                )}
-                step={displayedStep}
-                workspaceId={workspaceId}
-                labId={lab.id}
-                projectId={projectId}
-                modelQuery={modelQuery}
-                referenceModelQuery={referenceModelQuery}
-                snapshotId={lab.referenceSource?.snapshotId}
-                modelId={model?.id ?? lab.referenceSource?.modelId}
-                modelRevision={model?.revision ?? lab.referenceSource?.revision}
-              />
-            </main>
-            <aside className="space-y-5">
-              <DetailPanel
-                title={
-                  isLecturer
-                    ? t("Lecturer actions", "Thao tác giảng viên")
-                    : t("Lab actions", "Thao tác Lab")
-                }
-              >
-                <div className="space-y-3">
-                  <p className="text-xs leading-5 text-muted-foreground">
-                    {isLecturer
-                      ? t(
-                          "Update the published Lab or review immutable student snapshots.",
-                          "Cập nhật Lab đã công bố hoặc chấm các snapshot bất biến của sinh viên.",
-                        )
-                      : t(
-                          "Continue in the assignment workspace to select your own analyzed model, diagrams and runtime evidence.",
-                          "Tiếp tục trong không gian bài tập để chọn model đã phân tích, sơ đồ và bằng chứng runtime của bạn.",
-                        )}
-                  </p>
-                  <div className="grid gap-2">
-                    <Button asChild>
-                      <Link
-                        href={`/assignments?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(lab.id)}`}
+                  step={displayedStep}
+                  workspaceId={workspaceId}
+                  labId={lab.id}
+                  projectId={projectId}
+                  modelQuery={modelQuery}
+                  referenceModelQuery={referenceModelQuery}
+                  snapshotId={lab.referenceSource?.snapshotId}
+                  modelId={model?.id ?? lab.referenceSource?.modelId}
+                  modelRevision={model?.revision ?? lab.referenceSource?.revision}
+                />
+              </main>
+              <div className="grid gap-4 md:grid-cols-2">
+                <DetailPanel title={t("Lab readiness", "Mức sẵn sàng của Lab")}>
+                  <div className="space-y-3">
+                    {readiness.map((item, index) => (
+                      <div
+                        key={item.label}
+                        className="flex items-center justify-between gap-3 text-sm"
                       >
-                        {isLecturer
-                          ? t("Manage Lab assignment", "Quản lý bài tập Lab")
-                          : runtimeReady
-                            ? t("Open assignment & submit", "Mở bài tập và nộp bài")
-                            : t("Open Lab assignment", "Mở bài tập Lab")}
-                      </Link>
-                    </Button>
-                    <Button asChild variant="outline">
-                      <Link
-                        href={`/submissions?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(lab.id)}`}
-                      >
-                        {isLecturer
-                          ? t("Review Lab submissions", "Chấm bài nộp của Lab")
-                          : t("View submission history", "Xem lịch sử nộp bài")}
-                      </Link>
-                    </Button>
+                        <span className="flex items-center gap-2">
+                          <span className="flex size-6 items-center justify-center rounded-full border text-xs">
+                            {item.state === "READY" ? <Check className="size-3.5" /> : index + 1}
+                          </span>
+                          {item.label}
+                        </span>
+                        <Badge variant={item.state === "READY" || item.state === "VERIFIED" ? "success" : "outline"}>
+                          {item.state === "READY" ? t("Ready", "Sẵn sàng")
+                            : item.state === "VERIFIED" ? t("Verified", "Đã xác minh")
+                            : item.state === "PASSED" ? t("Passed", "Đã đạt")
+                            : item.state === "LOCKED" ? t("Locked", "Đang khóa")
+                            : item.state === "MISSING" ? t("Missing", "Còn thiếu")
+                            : t("In progress", "Chưa hoàn thành")}
+                        </Badge>
+                      </div>
+                    ))}
+                    <dl className="grid grid-cols-2 gap-2 border-t pt-3 text-xs">
+                      <div>
+                        <dt className="text-muted-foreground">
+                          {t("Runtime evidence", "Bằng chứng runtime")}
+                        </dt>
+                        <dd className="mt-1 font-medium">
+                          {lab.requireRuntimeTrace
+                            ? t("Required", "Bắt buộc")
+                            : t("Optional", "Tùy chọn")}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-muted-foreground">{t("Deadline", "Hạn nộp")}</dt>
+                        <dd className="mt-1 font-medium">
+                          {lab.dueAt || t("No deadline", "Không có hạn")}
+                        </dd>
+                      </div>
+                    </dl>
                   </div>
-                  <dl className="grid grid-cols-2 gap-3 border-t pt-3 text-xs">
+                </DetailPanel>
+                <DetailPanel title={t("Pinned learning context", "Ngữ cảnh học tập đã ghim")}>
+                  <dl className="space-y-3 text-xs">
                     <div>
-                      <dt className="text-muted-foreground">
-                        {t("Runtime evidence", "Bằng chứng runtime")}
-                      </dt>
+                      <dt className="text-muted-foreground">Reference project</dt>
                       <dd className="mt-1 font-medium">
-                        {lab.requireRuntimeTrace
-                          ? t("Required", "Bắt buộc")
-                          : t("Optional", "Tùy chọn")}
+                        {lab.referenceSource?.projectName || "Pending"}
                       </dd>
                     </div>
                     <div>
-                      <dt className="text-muted-foreground">{t("Deadline", "Hạn nộp")}</dt>
-                      <dd className="mt-1 font-medium">
-                        {lab.dueAt || t("No deadline", "Không có hạn")}
+                      <dt className="text-muted-foreground">Source snapshot</dt>
+                      <dd className="mt-1 break-all font-mono">
+                        {lab.referenceSource?.snapshotId || "Pending"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground">Model version</dt>
+                      <dd className="mt-1 break-all font-mono">
+                        {lab.referenceSource?.modelId || "Pending"}
                       </dd>
                     </div>
                   </dl>
-                </div>
-              </DetailPanel>
-              <DetailPanel title={t("Lab readiness", "Mức sẵn sàng của Lab")}>
-                <div className="space-y-3">
-                  {readiness.map((item, index) => (
-                    <div
-                      key={item.label}
-                      className="flex items-center justify-between gap-3 text-sm"
-                    >
-                      <span className="flex items-center gap-2">
-                        <span className="flex size-6 items-center justify-center rounded-full border text-xs">
-                          {item.state === "READY" ? <Check className="size-3.5" /> : index + 1}
-                        </span>
-                        {item.label}
-                      </span>
-                      <Badge variant={item.state === "READY" || item.state === "VERIFIED" ? "success" : "outline"}>
-                        {item.state === "READY" ? t("Ready", "Sẵn sàng")
-                          : item.state === "VERIFIED" ? t("Verified", "Đã xác minh")
-                          : item.state === "PASSED" ? t("Passed", "Đã đạt")
-                          : item.state === "LOCKED" ? t("Locked", "Đang khóa")
-                          : item.state === "MISSING" ? t("Missing", "Còn thiếu")
-                          : t("In progress", "Chưa hoàn thành")}
-                      </Badge>
-                    </div>
-                  ))}
-                </div>
-              </DetailPanel>
-              <DetailPanel title={t("Pinned learning context", "Ngữ cảnh học tập đã ghim")}>
-                <dl className="space-y-3 text-xs">
-                  <div>
-                    <dt className="text-muted-foreground">Reference project</dt>
-                    <dd className="mt-1 font-medium">
-                      {lab.referenceSource?.projectName || "Pending"}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-muted-foreground">Source snapshot</dt>
-                    <dd className="mt-1 break-all font-mono">
-                      {lab.referenceSource?.snapshotId || "Pending"}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-muted-foreground">Model version</dt>
-                    <dd className="mt-1 break-all font-mono">
-                      {lab.referenceSource?.modelId || "Pending"}
-                    </dd>
-                  </div>
-                </dl>
-              </DetailPanel>
-            </aside>
+                </DetailPanel>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -829,17 +890,22 @@ function StepContent({
   canAttemptQuiz,
   showQuiz,
   isStudent,
+  preview,
   hasActiveAnalysisJob,
   runtimeReady,
   runtimeSessionHref,
   studioHref,
   studioVerified,
   requiresRuntime,
+  moduleTitle,
+  theoryItems,
 }: {
   step: 1 | 2 | 3 | 4;
   workspaceId: string;
   labId: string;
   labTitle?: string | undefined;
+  moduleTitle?: string | undefined;
+  theoryItems?: Array<{ id: string; title: string; content: Record<string, unknown> }> | undefined;
   projectId: string;
   modelQuery: string | null;
   referenceModelQuery?: string | null | undefined;
@@ -849,6 +915,7 @@ function StepContent({
   canAttemptQuiz: boolean;
   showQuiz: boolean;
   isStudent?: boolean | undefined;
+  preview?: boolean | undefined;
   hasActiveAnalysisJob?: boolean | undefined;
   runtimeReady: boolean;
   runtimeSessionHref: string | null;
@@ -871,10 +938,11 @@ function StepContent({
   const current = learningSteps.find((item) => item.id === step)!;
   const Icon = current.icon;
   const next = step < 4 ? ((step + 1) as 2 | 3 | 4) : undefined;
-  const nextAvailable = next === 2 || (next === 3 && runtimeReady) || (next === 4 && Boolean(studioHref));
+  const nextAvailable = Boolean(preview) || next === 2 || (next === 3 && runtimeReady) || (next === 4 && Boolean(studioHref));
   const canSubmitFromStep4 = step === 4 && runtimeReady && studioVerified;
   const staticSubmission = step === 2 && !requiresRuntime;
-  const canSubmitLab = (staticSubmission && runtimeReady && isStudent) || canSubmitFromStep4;
+  const canSubmitLab = !preview && ((staticSubmission && runtimeReady && isStudent) || canSubmitFromStep4);
+  const previewParam = preview ? "&preview=1" : "";
 
   async function handleInitializeWorkspace() {
     if (!snapshotId || initializingWorkspace) return;
@@ -1046,22 +1114,39 @@ function StepContent({
       {step === 2 && (
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(18rem,0.6fr)]">
           <div className="space-y-5">
-            <DetailPanel title={t("Chapter lesson", "Bài học lý thuyết")}>
-              <div className="space-y-4 text-sm leading-6 text-muted-foreground">
-                <p>
-                  {t("Study the published lesson before taking the Quiz.", "Đọc bài học đã công bố trước khi làm Quiz.")}
-                </p>
-                <p>
-                  {t("Use the pinned analysis to see which services depend on the element you change.",
-                    "Dùng kết quả phân tích đã ghim để xem những service phụ thuộc vào phần tử bạn thay đổi.")}
-                </p>
-              </div>
-              <Button asChild variant="outline">
-                <Link href={modelQuery ? `/impact?${modelQuery}` : sourceLink}>
-                  {modelQuery ? t("Inspect static impact", "Xem tác động tĩnh") : t("Open Lab source", "Mở nguồn của Lab")}
-                </Link>
-              </Button>
-            </DetailPanel>
+            {theoryItems && theoryItems.length > 0 ? (
+              theoryItems.map((item) => (
+                <DetailPanel key={item.id} title={item.title}>
+                  <div className="whitespace-pre-wrap text-sm leading-7 text-muted-foreground">
+                    {String(item.content?.["body"] ?? "")}
+                  </div>
+                </DetailPanel>
+              ))
+            ) : (
+              <DetailPanel title={t("Chapter lesson", "Bài học lý thuyết")}>
+                <div className="space-y-4 text-sm leading-6 text-muted-foreground">
+                  <p>
+                    {t(
+                      moduleTitle
+                        ? `Study the published lesson in ${moduleTitle} before taking the Quiz.`
+                        : "Study the published lesson before taking the Quiz.",
+                      moduleTitle
+                        ? `Đọc bài học đã công bố trong chương ${moduleTitle} trước khi làm Quiz.`
+                        : "Đọc bài học đã công bố trước khi làm Quiz.",
+                    )}
+                  </p>
+                  <p>
+                    {t("Use the pinned analysis to see which services depend on the element you change.",
+                      "Dùng kết quả phân tích đã ghim để xem những service phụ thuộc vào phần tử bạn thay đổi.")}
+                  </p>
+                </div>
+                <Button asChild variant="outline">
+                  <Link href={modelQuery ? `/impact?${modelQuery}` : sourceLink}>
+                    {modelQuery ? t("Inspect static impact", "Xem tác động tĩnh") : t("Open Lab source", "Mở nguồn của Lab")}
+                  </Link>
+                </Button>
+              </DetailPanel>
+            )}
             <Step2StaticImpact
               projectId={projectId}
               modelId={modelId}
@@ -1097,7 +1182,26 @@ function StepContent({
         >
           <div className="flex items-start gap-3">
             <ShieldCheck className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
-            {step === 3 && runtimeReady ? (
+            {preview ? (
+              <div className="space-y-3">
+                <p className="text-sm leading-6 text-muted-foreground">
+                  {step === 3
+                    ? t(
+                        "Preview shows the Runtime gate. Starting a real session is disabled so no student evidence is created.",
+                        "Xem trước hiển thị điều kiện Runtime. Khởi chạy phiên thật bị tắt để không tạo bằng chứng sinh viên.",
+                      )
+                    : t(
+                        "Preview shows the Studio gate. Capturing evidence and submitting are disabled.",
+                        "Xem trước hiển thị điều kiện Studio. Chụp bằng chứng và nộp bài bị tắt.",
+                      )}
+                </p>
+                <Button asChild variant="outline">
+                  <Link href={projectId ? `/runtime-config?${new URLSearchParams({ project: projectId })}` : sourceLink}>
+                    {projectId ? t("Configure Runtime", "Cấu hình Runtime") : t("Open Lab assignment", "Mở bài tập Lab")}
+                  </Link>
+                </Button>
+              </div>
+            ) : step === 3 && runtimeReady ? (
               <div className="flex flex-wrap items-center gap-2">
                 {runtimeSessionHref && <Button asChild><Link href={runtimeSessionHref}>
                   {t("Open Runtime session", "Mở phiên Runtime")}
@@ -1140,7 +1244,7 @@ function StepContent({
             <span>{t("Previous step", "Bước trước")}</span>
           ) : (
             <Link
-              href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=${step - 1}`}
+              href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=${step - 1}${previewParam}`}
             >
               {t("Previous step", "Bước trước")}
             </Link>
@@ -1167,7 +1271,7 @@ function StepContent({
           <Button asChild={nextAvailable} disabled={!nextAvailable}>
             {nextAvailable ? (
               <Link
-                href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=${next}`}
+                href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=${next}${previewParam}`}
               >
                 {t("Next step", "Bước tiếp theo")} <ArrowRight />
               </Link>

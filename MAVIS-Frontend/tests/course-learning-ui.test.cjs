@@ -95,6 +95,76 @@ test("lecturer Lab authoring uses the guided pinned-source draft workflow", () =
   assert.ok(assignments.includes('t("Create a Lab", "Tạo Lab")'));
 });
 
+test("Course Builder edits structured theory items and starts a draft on the real endpoint", () => {
+  const builder = read("src/features/courses/course-builder.tsx");
+  const access = read("src/features/workspaces/course-access.tsx");
+
+  assert.ok(access.includes("`workspaces/${workspaceId}/course/draft`"), "startDraft must POST /course/draft");
+  assert.doesNotMatch(access, /course\/draft\/start/, "the non-existent /draft/start route must be gone");
+  assert.match(builder, /body: draft\.body/);
+  assert.match(builder, /prompt: draft\.prompt/);
+  assert.match(builder, /Theory content|Nội dung lý thuyết/);
+  assert.doesNotMatch(builder, /Structured activity content JSON/, "THEORY must not be edited as raw JSON");
+  assert.match(builder, /updateModule/);
+  assert.match(builder, /moveItem/);
+  assert.match(builder, /deleteItem/);
+  assert.match(builder, /RUNTIME_LAB/);
+});
+
+test("assignment authoring separates details, reference source, requirements and publishing", () => {
+  const authoring = read("src/features/assignments/create.tsx");
+
+  for (const label of [
+    "Lab details",
+    "Reference project and pinned analysis",
+    "Student evidence requirements",
+  ])
+    assert.ok(authoring.includes(label), label);
+  assert.match(authoring, /Xem trước như sinh viên|Preview as student/);
+  assert.match(authoring, /returnTo|preview=1/);
+});
+
+test("Coursera-style Lab table of contents shows progress, module items and lock reasons", () => {
+  const React = require("react");
+  const { renderToStaticMarkup } = require("react-dom/server");
+  const { LabToc } = require("../src/features/courses/lab-toc.tsx");
+  const html = renderToStaticMarkup(
+    React.createElement(LabToc, {
+      activeStep: 2,
+      progress: 25,
+      preview: true,
+      moduleTitle: "Foundations",
+      items: [
+        { id: "i1", title: "Service boundaries", type: "THEORY" },
+        { id: "i2", title: "Boundary quiz", type: "QUIZ" },
+      ],
+      steps: [
+        { id: 1, label: "Static architecture", state: "complete" },
+        { id: 2, label: "Theory and quiz", state: "current" },
+        { id: 3, label: "Runtime observation", state: "locked", reason: "Pass the current Quiz to open Runtime." },
+        { id: 4, label: "Studio receipt", state: "locked", reason: "Runtime evidence is required." },
+      ],
+    }),
+  );
+  assert.match(html, /Foundations/);
+  assert.match(html, /Service boundaries/);
+  assert.match(html, /Pass the current Quiz to open Runtime/);
+  assert.match(html, /role="progressbar"/);
+  assert.match(html, /aria-valuenow="25"/);
+  assert.match(html, /Preview/);
+});
+
+test("LabWorkspace uses a class-module-Lab breadcrumb, published theory and a read-only preview", () => {
+  const course = read("src/features/courses/screens.tsx");
+
+  assert.match(course, /LabToc/);
+  assert.match(course, /preview/i);
+  assert.match(course, /moduleItems/);
+  assert.match(course, /content\??\.(body|\["body"\])/);
+  assert.match(course, /t\("Class", "Lớp"\)/);
+  assert.match(course, /t\("Module", "Chương"\)/);
+});
+
 test("assignment and submission screens preserve the selected Lab context", () => {
   const assignments = read("src/features/assignments/screens.tsx");
   const submissions = read("src/features/submissions/screens.tsx");
@@ -277,7 +347,7 @@ test("Studio in the guided Lab requires observed traces on the current model", (
   const course = read("src/features/courses/screens.tsx");
   assert.match(course, /item\.projectId === projectId && item\.modelId === model\?\.id/);
   assert.match(course, /const studioReady = runtimeReady && Boolean\(observedRuntime\)/);
-  assert.match(course, /\(step\.id === 4 && studioReady\)/);
+  assert.match(course, /id === 4 && studioReady/);
 });
 
 test("static Guided Labs proceed from a passing Quiz to submission", () => {
@@ -455,11 +525,37 @@ test("Course builder exposes immutable publishing and BFF routes for structured 
   assert.ok(builder.includes("STATIC_LAB"));
   assert.ok(builder.includes("RUNTIME_LAB"));
   assert.ok(builder.includes("prerequisiteModuleId"));
-  assert.ok(builder.includes("Activity config must be a JSON object"));
-  for (const path of [`workspaces/${workspace}/course`, `workspaces/${workspace}/course/draft/start`,
-    `workspaces/${workspace}/course/modules`, `workspaces/${workspace}/course/publish`,
+  assert.ok(builder.includes('t("Theory content", "Nội dung lý thuyết")'));
+  const module = "22222222-2222-2222-2222-222222222222";
+  const item = "33333333-3333-3333-3333-333333333333";
+  for (const path of [`workspaces/${workspace}/course`, `workspaces/${workspace}/course/draft`,
+    `workspaces/${workspace}/course/draft/start`, `workspaces/${workspace}/course/modules`,
+    `workspaces/${workspace}/course/modules/${module}`,
+    `workspaces/${workspace}/course/modules/${module}/move`,
+    `workspaces/${workspace}/course/modules/${module}/items`,
+    `workspaces/${workspace}/course/modules/${module}/items/${item}`,
+    `workspaces/${workspace}/course/modules/${module}/items/${item}/move`,
+    `workspaces/${workspace}/course/publish`,
     `workspaces/${workspace}/course/versions/1`, `workspaces/${workspace}/course/published`]) assert.equal(allowedBackendPath(path), true, path);
   assert.equal(allowedBackendPath(`workspaces/${workspace}/course/draft/unsafe`), false);
+  assert.equal(allowedBackendPath(`workspaces/${workspace}/course/modules/${module}/unsafe`), false);
+});
+
+test("lecturer preview bypasses the roadmap lock and authoring keeps unsaved drafts", () => {
+  const course = read("src/features/courses/screens.tsx");
+  const builder = read("src/features/courses/course-builder.tsx");
+
+  assert.match(course, /!preview && roadmap\.data\.guided/);
+  assert.match(course, /type === "IMPACT_LAB"\) return 2/);
+  assert.match(builder, /score === undefined \|\| score === "" \? 10 : Number\(score\)/);
+  assert.doesNotMatch(builder, /course\.data\?\.draftRevision, course\.data\?\.title/);
+});
+
+test("BFF backend proxy exposes the mutation methods used by course authoring and grading", () => {
+  const route = read("app/api/backend/[...path]/route.ts");
+  for (const method of ["PUT", "PATCH", "DELETE"]) {
+    assert.match(route, new RegExp(`handler as ${method}`), method);
+  }
 });
 
 test("lecturer course setup checklist links the reference runtime and Studio Live", () => {

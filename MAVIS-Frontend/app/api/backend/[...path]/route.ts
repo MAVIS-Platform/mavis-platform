@@ -182,4 +182,10 @@ async function handler(request: NextRequest, context: { params: Promise<{ path: 
     );
   }
 }
-export { handler as GET, handler as POST };
+export {
+  handler as GET,
+  handler as POST,
+  handler as PUT,
+  handler as PATCH,
+  handler as DELETE,
+};

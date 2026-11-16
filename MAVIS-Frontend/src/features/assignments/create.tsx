@@ -51,9 +51,9 @@ export function CreateAssignment({
   const requiredCount = required.length;
   const sourceReady = Boolean(sourceModelId) && !sourcePending;
   const steps = [
-    { label: t("Lab details", "Thông tin Lab"), complete: Boolean(title.trim()), icon: ClipboardList },
-    { label: t("Reference version", "Phiên bản tham chiếu"), complete: sourceReady, icon: Layers3 },
-    { label: t("Review & save draft", "Kiểm tra và lưu nháp"), complete: Boolean(title.trim()) && sourceReady, icon: ShieldCheck },
+    { label: t("Lab details", "Thông tin Lab"), complete: Boolean(title.trim()), icon: ClipboardList, href: "#lab-details-heading" },
+    { label: t("Reference version", "Phiên bản tham chiếu"), complete: sourceReady, icon: Layers3, href: "#reference-heading" },
+    { label: t("Review & save draft", "Kiểm tra và lưu nháp"), complete: Boolean(title.trim()) && sourceReady, icon: ShieldCheck, href: "#runtime-requirements-heading" },
   ];
   if (
     session.data?.user?.role !== "admin" &&
@@ -86,12 +86,12 @@ export function CreateAssignment({
               {steps.map((step, index) => {
                 const Icon = step.icon;
                 return (
-                  <div key={step.label} className="flex items-center gap-2 border-b pb-3 sm:border-b-0 sm:border-r sm:pb-0 last:border-r-0">
+                  <a key={step.label} href={step.href} className="flex items-center gap-2 border-b pb-3 hover:text-foreground sm:border-b-0 sm:border-r sm:pb-0 last:border-r-0">
                     <span className={`grid size-7 shrink-0 place-items-center rounded-full ${step.complete ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300" : "bg-muted text-muted-foreground"}`}>
                       {step.complete ? <Check className="size-4" aria-hidden="true" /> : <Icon className="size-4" aria-hidden="true" />}
                     </span>
                     <span className="text-xs font-medium text-muted-foreground">{index + 1}. {step.label}</span>
-                  </div>
+                  </a>
                 );
               })}
             </div>
@@ -286,6 +286,15 @@ export function CreateAssignment({
             {t("Open Course setup checklist", "Mở checklist thiết lập khóa học")}
           </a>
         </Button>
+        {assignment && (
+          <Button type="button" variant="outline" size="sm" className="w-full" asChild>
+            <a
+              href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignment.id)}&step=1&preview=1`}
+            >
+              {t("Preview as student", "Xem trước như sinh viên")}
+            </a>
+          </Button>
+        )}
       </div>
     </aside>
   </div>

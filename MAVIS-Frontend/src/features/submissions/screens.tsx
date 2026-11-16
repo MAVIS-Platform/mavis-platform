@@ -10,6 +10,9 @@ import { WorkspaceSelector } from "@/features/workspaces/components";
 import { EmptyState, RequestState } from "@/components/shared/request-state";
 import { DataTable, StatusLabel } from "@/components/shared/data";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { CourseWorkspaceShell } from "@/features/courses/course-workspace-shell";
+import { useLocale } from "@/lib/i18n/locale-context";
 import { ArchitectureGraph, ElementDetailsPanel } from "@/features/architecture/components";
 import { TraceViewer, RuntimeSessionTimeline } from "@/features/runtime/components";
 import { SubmissionVersionHeader, FeedbackPanel } from "./components";
@@ -40,44 +43,67 @@ function MySubmissions() {
   );
 }
 function TeachingSubmissions() {
+  const { t } = useLocale();
   const { workspaceId } = useSelection();
   const params = useSearchParams();
+  const workspaces = useApiQuery("workspaces", {});
+  const workspace = workspaces.data?.find((item) => item.id === workspaceId);
   const [selected, setSelected] = useState("");
   const assignments = useApiQuery("assignments", { workspaceId }, { enabled: !!workspaceId });
   const requested = selected || params.get("assignment") || "";
   const assignment = assignments.data?.find((a) => a.id === requested) ?? assignments.data?.[0];
-  return (
+  const resultsView = params.get("view") === "results";
+  const body = workspaceId ? (
+    <RequestState
+      query={assignments}
+      empty={!assignments.data?.length}
+      emptyMessage={t(
+        "No Labs in this class. Create a Lab before reviewing submissions.",
+        "Lớp chưa có Lab. Hãy tạo Lab trước khi chấm bài nộp.",
+      )}
+    >
+      {assignment && (
+        <div className="space-y-4">
+          {resultsView && (
+            <p role="status" className="rounded-md border bg-muted/30 px-3 py-2 text-xs leading-5 text-muted-foreground">
+              {t(
+                "Results view shows each submission with its published review outcome. Status filtering is not available from the current API.",
+                "Chế độ Kết quả hiển thị từng bài nộp cùng kết quả chấm đã công bố. API hiện tại chưa hỗ trợ lọc theo trạng thái.",
+              )}
+            </p>
+          )}
+          <SelectField
+            label={t("Assignment to review", "Lab cần chấm")}
+            value={assignment.id}
+            onChange={setSelected}
+            options={(assignments.data ?? []).map((a) => ({ value: a.id, label: a.title }))}
+          />
+          <AssignmentSubmissionList
+            key={`${workspaceId}:${assignment.id}`}
+            workspaceId={workspaceId}
+            assignmentId={assignment.id}
+          />
+        </div>
+      )}
+    </RequestState>
+  ) : (
     <div className="space-y-4">
       <WorkspaceSelector />
-      {workspaceId ? (
-        <RequestState
-          query={assignments}
-          empty={!assignments.data?.length}
-          emptyMessage="No assignments in this workspace. Create an assignment before reviewing submissions."
-        >
-          {assignment && (
-            <div className="space-y-4">
-              <SelectField
-                label="Assignment to review"
-                value={assignment.id}
-                onChange={setSelected}
-                options={(assignments.data ?? []).map((a) => ({ value: a.id, label: a.title }))}
-              />
-              <AssignmentSubmissionList
-                key={`${workspaceId}:${assignment.id}`}
-                workspaceId={workspaceId}
-                assignmentId={assignment.id}
-              />
-            </div>
-          )}
-        </RequestState>
-      ) : (
-        <EmptyState
-          title="Choose a workspace"
-          description="Select a class to review its assignments and student submissions."
-        />
-      )}
+      <EmptyState
+        title={t("Choose a class", "Chọn một lớp")}
+        description={t(
+          "Select a class to review its Labs and student submissions.",
+          "Chọn lớp để chấm Lab và bài nộp của sinh viên.",
+        )}
+      />
     </div>
+  );
+  return workspace ? (
+    <CourseWorkspaceShell workspace={workspace} active="submissions">
+      {body}
+    </CourseWorkspaceShell>
+  ) : (
+    body
   );
 }
 function AssignmentSubmissionList({
@@ -99,6 +125,7 @@ function AssignmentSubmissionList({
   );
 }
 function SubmissionList({ rows }: { rows: import("@/types/domain").Submission[] }) {
+  const { t } = useLocale();
   const [search, setSearch] = useState(""),
     [page, setPage] = useState(1);
   const filtered = rows.filter((s) =>
@@ -146,15 +173,26 @@ function SubmissionList({ rows }: { rows: import("@/types/domain").Submission[] 
           { key: "model", label: "Frozen model", render: (s) => `Revision ${s.model.revision}` },
           {
             key: "review",
-            label: "Review result",
+            label: t("Outcome", "Kết quả"),
             render: (s) => <SubmissionResult submissionId={s.id} />,
           },
-          { key: "feedback", label: "Feedback", render: (s) => s.feedback.length },
+          { key: "feedback", label: t("Feedback", "Phản hồi"), render: (s) => s.feedback.length },
           {
             key: "date",
-            label: "Submitted",
+            label: t("Submitted", "Đã nộp"),
             render: (s) =>
-              s.submittedAt ? new Date(s.submittedAt).toLocaleString() : "Not submitted",
+              s.submittedAt ? new Date(s.submittedAt).toLocaleString() : t("Not submitted", "Chưa nộp"),
+          },
+          {
+            key: "action",
+            label: t("Action", "Thao tác"),
+            render: (s) => (
+              <Button asChild size="sm" variant="outline">
+                <Link href={`/submissions/${encodeURIComponent(s.id)}`}>
+                  {t("Open review", "Mở chấm")}
+                </Link>
+              </Button>
+            ),
           },
         ]}
       />
@@ -187,6 +225,8 @@ function SubmissionResult({ submissionId }: { submissionId: string }) {
 }
 
 export function SubmissionReview({ submissionId }: { submissionId: string }) {
+  const { t } = useLocale();
+  const selection = useSelection();
   const canReview = usePermission("submission:review");
   const query = useApiQuery(
     "submission",
@@ -198,6 +238,15 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
     <RequestState query={query}>
       {query.data && (
         <div className="min-w-0 space-y-6">
+          <Button asChild size="sm" variant="outline">
+            <Link
+              href={`/submissions?${selection.workspaceId ? `workspace=${encodeURIComponent(selection.workspaceId)}&` : ""}${
+                query.data.assignmentId ? `assignment=${encodeURIComponent(query.data.assignmentId)}` : ""
+              }`}
+            >
+              ← {t("Back to class submissions", "Quay lại bài nộp của lớp")}
+            </Link>
+          </Button>
           <GradingPanel
             key={query.data.id}
             submissionId={query.data.id}

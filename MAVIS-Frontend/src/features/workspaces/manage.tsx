@@ -6,113 +6,83 @@ import { Input } from "@/components/ui/input";
 import { ErrorState } from "@/components/shared/request-state";
 import { FormField, SelectField } from "@/components/shared/forms";
 import { Textarea } from "@/components/ui/textarea";
-import { BookOpenCheck, Landmark, UsersRound } from "lucide-react";
-export function CreateWorkspace() {
+import { useLocale } from "@/lib/i18n/locale-context";
+export function CreateWorkspace({ onClose }: { onClose?: () => void } = {}) {
   const session = useSession(),
     create = useApiMutation("createWorkspace");
+  const { t } = useLocale();
   const [code, setCode] = useState(""),
     [name, setName] = useState("");
   if (!["lecturer", "admin"].includes(session.data?.user?.role ?? "")) return null;
   return (
-    <section className="mb-7 overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-      <div className="grid lg:grid-cols-[minmax(0,1.15fr)_minmax(19rem,0.85fr)]">
-        <div className="relative overflow-hidden border-b border-border bg-gradient-to-br from-primary/10 via-card to-card px-6 py-7 sm:px-9 sm:py-9 lg:border-b-0 lg:border-r">
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute -right-16 -top-24 size-72 rounded-full border border-primary/10"
-          />
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute -right-5 -top-12 size-52 rounded-full border border-primary/10"
-          />
-          <div className="relative max-w-xl">
-            <div className="mb-7 flex size-12 items-center justify-center rounded-xl border border-primary/20 bg-background/80 text-primary shadow-sm">
-              <Landmark aria-hidden="true" className="size-6" />
-            </div>
-            <p className="mb-2 text-sm font-medium text-primary">Create a teaching workspace</p>
-            <h2 className="max-w-lg text-3xl font-semibold leading-tight tracking-tight text-foreground sm:text-4xl">
-              Create a place for learning to take shape.
-            </h2>
-            <p className="mt-4 max-w-lg text-sm leading-6 text-muted-foreground sm:text-base">
-              Set up a class space for your students, course materials, and architecture labs. You
-              can invite registered students and publish assignments after creation.
-            </p>
-            <div className="mt-8 flex flex-wrap gap-x-6 gap-y-3 border-t border-border/70 pt-5 text-sm text-muted-foreground">
-              <span className="inline-flex items-center gap-2">
-                <UsersRound aria-hidden="true" className="size-4 text-primary" />
-                Manage your class roster
-              </span>
-              <span className="inline-flex items-center gap-2">
-                <BookOpenCheck aria-hidden="true" className="size-4 text-primary" />
-                Organize coursework
-              </span>
-            </div>
-          </div>
+    <section className="rounded-xl border bg-card p-4 sm:p-5" aria-labelledby="create-class-title">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 id="create-class-title" className="font-semibold">
+            {t("Create a class", "Tạo lớp")}
+          </h2>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            {t(
+              "Use a short class code and the name students will recognize.",
+              "Dùng mã lớp ngắn và tên lớp sinh viên sẽ nhận ra.",
+            )}
+          </p>
         </div>
-
-        <div className="p-6 sm:p-8 lg:p-9">
-          <div className="mb-7">
-            <h3 className="text-lg font-semibold tracking-tight text-foreground">Class details</h3>
-            <p className="mt-1 text-sm leading-5 text-muted-foreground">
-              Choose a recognizable code and a name students will see.
-            </p>
-          </div>
-          <form
-            className="space-y-5"
-            onSubmit={(e) => {
-              e.preventDefault();
-              create.mutate(
-                { code, name },
-                {
-                  onSuccess: () => {
-                    setCode("");
-                    setName("");
-                  },
-                },
-              );
-            }}
-          >
-            <FormField
-              label="Workspace code"
-              hint="A short identifier for your class, up to 50 characters."
-            >
-              {(props) => (
-                <Input
-                  {...props}
-                  aria-label="Workspace code"
-                  placeholder="e.g. SE181070"
-                  required
-                  maxLength={50}
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                />
-              )}
-            </FormField>
-            <FormField
-              label="Workspace name"
-              hint="Use the course or cohort name students will recognize."
-            >
-              {(props) => (
-                <Input
-                  {...props}
-                  aria-label="Workspace name"
-                  placeholder="e.g. Software Architecture · Fall 2026"
-                  required
-                  maxLength={255}
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                />
-              )}
-            </FormField>
-            {create.error && <ErrorState error={create.error} />}
-            <div className="border-t border-border pt-5">
-              <Button type="submit" className="w-full sm:w-auto" disabled={create.isPending}>
-                {create.isPending ? "Creating class…" : "Create class"}
-              </Button>
-            </div>
-          </form>
-        </div>
+        {onClose && (
+          <Button type="button" size="sm" variant="ghost" onClick={onClose}>
+            {t("Cancel", "Hủy")}
+          </Button>
+        )}
       </div>
+      <form
+        className="mt-4 grid gap-3 md:grid-cols-[minmax(9rem,0.6fr)_minmax(0,1.4fr)_auto]"
+        onSubmit={(e) => {
+          e.preventDefault();
+          create.mutate(
+            { code, name },
+            {
+              onSuccess: () => {
+                setCode("");
+                setName("");
+                onClose?.();
+              },
+            },
+          );
+        }}
+      >
+        <FormField label={t("Class code", "Mã lớp")}>
+          {(props) => (
+            <Input
+              {...props}
+              aria-label="Workspace code"
+              placeholder="SE181070"
+              required
+              maxLength={50}
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+            />
+          )}
+        </FormField>
+        <FormField label={t("Class name", "Tên lớp")}>
+          {(props) => (
+            <Input
+              {...props}
+              aria-label="Workspace name"
+              placeholder={t("Software Architecture · Fall 2026", "Kiến trúc phần mềm · Kỳ 2026")}
+              required
+              maxLength={255}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          )}
+        </FormField>
+        <div className="flex items-end">
+          <Button type="submit" className="w-full md:w-auto" disabled={create.isPending}>
+            {create.isPending ? t("Creating class…", "Đang tạo lớp…") : t("Create class", "Tạo lớp")}
+          </Button>
+        </div>
+      </form>
+      {create.error && <ErrorState error={create.error} />}
     </section>
   );
 }

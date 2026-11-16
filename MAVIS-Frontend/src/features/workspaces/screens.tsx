@@ -3,231 +3,221 @@ import Link from "next/link";
 import { useState } from "react";
 import { useApiMutation, useApiQuery, useSession, useSelection } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { ErrorState, RequestState } from "@/components/shared/request-state";
 import { SearchInput, SelectField } from "@/components/shared/forms";
-import { DataTable, DetailPanel, StatusBadge, SummaryCard } from "@/components/shared/data";
+import { DataTable, DetailPanel, StatusBadge } from "@/components/shared/data";
 import { CreateWorkspace, WorkspaceControls } from "./manage";
 import { CourseEnrollment, CourseRoadmap } from "./course-access";
 import { ReferenceManagement } from "./reference-manage";
+import { CourseWorkspaceShell } from "@/features/courses/course-workspace-shell";
+import { CourseOutline } from "@/features/courses/course-outline";
+import { CourseBuilder } from "@/features/courses/course-builder";
+import { CourseSetupPanel } from "@/features/courses/course-setup";
+import { useLocale } from "@/lib/i18n/locale-context";
+
 export function Workspaces() {
+  const { t } = useLocale();
   const query = useApiQuery("workspaces", {});
   const session = useSession();
   const { workspaceId } = useSelection();
+  const [showCreate, setShowCreate] = useState(false);
   const canCreate = ["lecturer", "admin"].includes(session.data?.user?.role ?? "");
   const selected = query.data?.find((w) => w.id === workspaceId);
   if (workspaceId && selected) return <WorkspaceOverview />;
   return (
-    <>
-      <CreateWorkspace />
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">
+            {t("Classes", "Lớp học")}
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {canCreate
+              ? t(
+                  "Open a class to organize modules, Labs, students and grading.",
+                  "Mở một lớp để tổ chức chương, Lab, sinh viên và chấm điểm.",
+                )
+              : t("Classes you are enrolled in.", "Các lớp bạn đã ghi danh.")}
+          </p>
+        </div>
+        {canCreate && (
+          <Button
+            type="button"
+            variant={showCreate ? "outline" : "default"}
+            onClick={() => setShowCreate((open) => !open)}
+          >
+            {showCreate ? t("Close", "Đóng") : t("Create class", "Tạo lớp")}
+          </Button>
+        )}
+      </div>
+
+      {canCreate && showCreate && <CreateWorkspace onClose={() => setShowCreate(false)} />}
       {session.data?.user?.role === "student" && <CourseEnrollment />}
+
       <RequestState
         query={query}
         empty={!query.data?.length}
         emptyMessage={
           canCreate
-            ? "You have no teaching workspaces yet. Create a class above, then add students by their registered email."
-            : "You are not enrolled in a class yet. Ask your lecturer for a Passkey."
+            ? t(
+                "You have no classes yet. Create the first class above.",
+                "Bạn chưa có lớp nào. Hãy tạo lớp đầu tiên ở trên.",
+              )
+            : t(
+                "You are not enrolled in a class yet. Ask your lecturer for a Passkey.",
+                "Bạn chưa ghi danh lớp nào. Hãy xin Passkey từ giảng viên.",
+              )
         }
       >
-        {!canCreate && (
-          <p className="text-sm text-muted-foreground">
-            Select a class under My Workspaces in the left sidebar to view class information.
-          </p>
-        )}
+        <ul className="divide-y overflow-hidden rounded-xl border bg-card">
+          {query.data?.map((workspace) => {
+            const members = workspace.members ?? [];
+            const students = members.filter((member) => member.role.toUpperCase() === "STUDENT").length;
+            return (
+              <li
+                key={workspace.id}
+                className="flex flex-wrap items-center gap-4 px-4 py-3 transition-colors hover:bg-muted/30 sm:px-5"
+              >
+                <div className="min-w-0 flex-1 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="outline" className="font-mono">
+                      {workspace.code || t("Class", "Lớp")}
+                    </Badge>
+                    <Link
+                      className="truncate font-medium text-foreground hover:text-primary hover:underline"
+                      href={`/workspace-overview?workspace=${encodeURIComponent(workspace.id)}`}
+                    >
+                      {workspace.name}
+                    </Link>
+                    <StatusBadge
+                      status={workspace.status ?? "ACTIVE"}
+                      variant={workspace.status === "ARCHIVED" ? "secondary" : "default"}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {members.length} {t("members", "thành viên")} · {students}{" "}
+                    {t("students", "sinh viên")} · {workspace.myRole || t("Member", "Thành viên")}
+                    {workspace.description ? ` · ${workspace.description}` : ""}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button asChild size="sm">
+                    <Link href={`/workspace-overview?workspace=${encodeURIComponent(workspace.id)}`}>
+                      {t("Open class", "Mở lớp")}
+                    </Link>
+                  </Button>
+                  <Button asChild size="sm" variant="outline">
+                    <Link href={`/submissions?workspace=${encodeURIComponent(workspace.id)}`}>
+                      {t("Submissions", "Bài nộp")}
+                    </Link>
+                  </Button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
       </RequestState>
-    </>
+    </div>
   );
 }
+
 export function WorkspaceOverview() {
+  const { t } = useLocale();
   const { workspaceId } = useSelection();
   const session = useSession();
   const query = useApiQuery("workspaces", {});
-  const assignments = useApiQuery(
-    "assignments",
-    { workspaceId },
-    { enabled: Boolean(workspaceId) },
-  );
   const workspace = query.data?.find((w) => w.id === workspaceId);
   const canManage = workspace?.myRole === "LECTURER" || session.data?.user?.role === "admin";
-  const members = workspace?.members ?? [];
-  const studentCount = members.filter((m) => m.role.toUpperCase() === "STUDENT").length;
-  const lecturerCount = members.filter((m) => m.role.toUpperCase() === "LECTURER").length;
-  const assignmentList = assignments.data ?? [];
-  const withSourceCount = assignmentList.filter((a) => Boolean(a.referenceSource)).length;
-  const withDeadlineCount = assignmentList.filter(
-    (a) => a.dueAt && a.dueAt !== "No deadline",
-  ).length;
+  const [tab, setTab] = useState<"outline" | "authoring" | "setup">("outline");
+
+  const tabs = [
+    { id: "outline" as const, label: t("Roadmap", "Lộ trình") },
+    ...(canManage ? [{ id: "authoring" as const, label: t("Authoring", "Soạn nội dung") }] : []),
+    ...(canManage ? [{ id: "setup" as const, label: t("Setup", "Thiết lập") }] : []),
+  ];
+  const activeTab = canManage ? tab : "outline";
+
   return (
     <RequestState query={query} empty={!workspace}>
       {workspace && (
-        <div className="space-y-5">
-          <div className="flex flex-wrap items-start justify-between gap-3 rounded-xl border bg-card p-5 shadow-sm">
-            <div className="space-y-1">
-              <div className="flex flex-wrap items-center gap-2.5">
-                <h2 className="text-lg font-semibold text-foreground">{workspace.name}</h2>
-                {workspace.code && <StatusBadge status={workspace.code} preserveCase />}
-                <StatusBadge
-                  status={workspace.status ?? "ACTIVE"}
-                  variant={workspace.status === "ARCHIVED" ? "secondary" : "default"}
-                />
-              </div>
-              <p className="text-sm text-muted-foreground">
-                {workspace.description || "No class description added yet."}
-              </p>
-            </div>
-            {canManage && (
-              <div className="flex flex-wrap items-center gap-2">
-                <Button asChild size="sm">
+        <CourseWorkspaceShell
+          workspace={workspace}
+          active="content"
+          actions={
+            canManage ? (
+              <>
+                <Button asChild size="sm" variant="outline">
                   <Link href={`/assignments?workspace=${encodeURIComponent(workspace.id)}`}>
-                    Manage Assignments
+                    {t("Manage Labs", "Quản lý Lab")}
                   </Link>
                 </Button>
-              </div>
-            )}
+                <Button asChild size="sm">
+                  <Link href={`/submissions?workspace=${encodeURIComponent(workspace.id)}`}>
+                    {t("Review submissions", "Chấm bài nộp")}
+                  </Link>
+                </Button>
+              </>
+            ) : undefined
+          }
+        >
+          <div className="flex flex-wrap gap-1 border-b pb-2">
+            {tabs.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setTab(item.id)}
+                aria-pressed={activeTab === item.id}
+                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                  activeTab === item.id
+                    ? "bg-muted text-foreground"
+                    : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
           </div>
-          <CourseRoadmap
-            key={workspace.id}
-            workspaceId={workspace.id}
-            canManage={canManage}
-            active={workspace.status !== "ARCHIVED"}
-          />
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <SummaryCard
-              label="Class code"
-              value={workspace.code || "—"}
-              description={`Status: ${workspace.status ?? "ACTIVE"}`}
-            />
-            <SummaryCard
-              label="Students enrolled"
-              value={studentCount}
-              description={`${lecturerCount} lecturer(s) · ${members.length} total members`}
-            />
-            <SummaryCard
-              label="Published assignments"
-              value={assignmentList.length}
-              description={`${withSourceCount} with reference source attached`}
-            />
-            <SummaryCard
-              label="Scheduled deadlines"
-              value={withDeadlineCount}
-              description={`${assignmentList.length - withDeadlineCount} without deadline`}
-            />
-          </div>
-          <div className="grid gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
-            <DetailPanel title="Class assignments">
-              <DataTable
-                rows={assignmentList}
-                rowKey={(a) => a.id}
-                caption="Class assignments"
-                columns={[
-                  {
-                    key: "title",
-                    label: "Assignment",
-                    render: (a) => (
-                      <Link
-                        className="font-semibold text-primary hover:underline"
-                        href={`/assignments?workspace=${encodeURIComponent(workspace.id)}#assignment-${a.id}`}
-                      >
-                        {a.title}
-                      </Link>
-                    ),
-                  },
-                  { key: "due", label: "Deadline", render: (a) => a.dueAt },
-                  {
-                    key: "diagrams",
-                    label: "Required views",
-                    render: (a) => a.requiredDiagramTypes?.length || "Any",
-                  },
-                  {
-                    key: "source",
-                    label: "Reference source",
-                    render: (a) => (a.referenceSource ? "Attached" : "Student project"),
-                  },
-                  {
-                    key: "action",
-                    label: "Action",
-                    render: (a) => (
-                      <Button asChild size="sm" variant="outline">
-                        <Link
-                          href={`/assignments?workspace=${encodeURIComponent(workspace.id)}#assignment-${a.id}`}
-                        >
-                          {canManage ? "Review" : "Open & Submit →"}
-                        </Link>
-                      </Button>
-                    ),
-                  },
-                ]}
+
+          {activeTab === "outline" && (
+            <div className="space-y-6">
+              <CourseOutline
+                workspaceId={workspace.id}
+                canManage={canManage}
+                active={workspace.status !== "ARCHIVED"}
               />
-            </DetailPanel>
-            {canManage ? (
-              <DetailPanel title="Class settings">
-                <WorkspaceControls key={workspace.id} workspace={workspace} mode="overview" />
-              </DetailPanel>
-            ) : (
-              <DetailPanel title="How to complete & submit coursework">
-                <div className="space-y-4 text-sm">
-                  <div className="flex gap-3">
-                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
-                      1
-                    </div>
-                    <div>
-                      <p className="font-medium text-foreground">Open Assignment</p>
-                      <p className="text-muted-foreground">
-                        Click <strong>Open & Submit →</strong> on an assignment to read
-                        instructions, required diagram types, and any attached reference source.
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex gap-3">
-                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
-                      2
-                    </div>
-                    <div>
-                      <p className="font-medium text-foreground">
-                        Create & Analyze Coursework Project
-                      </p>
-                      <p className="text-muted-foreground">
-                        Create a project for the assignment, import your GitHub repository or ZIP
-                        (or clone the Lecturer&apos;s reference source), and run static analysis.
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex gap-3">
-                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
-                      3
-                    </div>
-                    <div>
-                      <p className="font-medium text-foreground">
-                        Review Architecture & Save Diagrams
-                      </p>
-                      <p className="text-muted-foreground">
-                        Inspect the Architecture Graph, C4/UML Diagrams, 3E Inspector, and Change
-                        Impact. Save your required diagram views.
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex gap-3">
-                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
-                      4
-                    </div>
-                    <div>
-                      <p className="font-medium text-foreground">Freeze & Submit</p>
-                      <p className="text-muted-foreground">
-                        Return to the assignment, select your Model Version and diagrams, and submit
-                        before the deadline.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </DetailPanel>
-            )}
-          </div>
-        </div>
+              {!canManage && (
+                <CourseRoadmap
+                  key={workspace.id}
+                  workspaceId={workspace.id}
+                  canManage={false}
+                  active={workspace.status !== "ARCHIVED"}
+                />
+              )}
+            </div>
+          )}
+
+          {activeTab === "authoring" && canManage && <CourseBuilder workspaceId={workspace.id} />}
+
+          {activeTab === "setup" && canManage && (
+            <div className="space-y-5">
+              <CourseSetupPanel workspaceId={workspace.id} />
+              <CourseRoadmap
+                key={workspace.id}
+                workspaceId={workspace.id}
+                canManage
+                active={workspace.status !== "ARCHIVED"}
+              />
+            </div>
+          )}
+        </CourseWorkspaceShell>
       )}
     </RequestState>
   );
 }
+
 export function WorkspaceMembers() {
+  const { t } = useLocale();
   const { workspaceId } = useSelection();
   const session = useSession();
   const query = useApiQuery("workspaces", {});
@@ -246,63 +236,80 @@ export function WorkspaceMembers() {
   });
   return (
     <RequestState query={query} empty={!workspace}>
-      <div className="space-y-4">
-        {workspace && canManage && (
-          <div className="rounded-xl border bg-card p-4">
-            <WorkspaceControls key={workspace.id} workspace={workspace} mode="members" />
+      {workspace && (
+        <CourseWorkspaceShell workspace={workspace} active="members">
+          <div className="space-y-4">
+            {canManage && (
+              <div className="rounded-xl border bg-card p-4">
+                <WorkspaceControls key={workspace.id} workspace={workspace} mode="members" />
+              </div>
+            )}
+            {canManage && (
+              <details className="rounded-xl border bg-card p-4">
+                <summary className="cursor-pointer text-sm font-medium">
+                  {t("Class settings", "Thiết lập lớp")}
+                </summary>
+                <WorkspaceControls key={`${workspace.id}-settings`} workspace={workspace} mode="overview" />
+              </details>
+            )}
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_12rem]">
+              <SearchInput
+                label={t("Filter members", "Lọc thành viên")}
+                value={search}
+                onChange={setSearch}
+              />
+              <SelectField
+                label={t("Role", "Vai trò")}
+                value={roleFilter}
+                onChange={setRoleFilter}
+                options={[
+                  { value: "ALL", label: t("All roles", "Tất cả vai trò") },
+                  { value: "STUDENT", label: t("Student", "Sinh viên") },
+                  { value: "LECTURER", label: t("Lecturer", "Giảng viên") },
+                ]}
+              />
+            </div>
+            {remove.error && <ErrorState error={remove.error} />}
+            <DataTable
+              rows={filteredMembers}
+              rowKey={(m) => m.id}
+              caption={t("Class members", "Thành viên lớp")}
+              columns={[
+                { key: "name", label: t("Name", "Họ tên"), render: (m) => m.name },
+                { key: "role", label: t("Role", "Vai trò"), render: (m) => m.role },
+                ...(canManage
+                  ? [
+                      {
+                        key: "actions",
+                        label: t("Actions", "Thao tác"),
+                        render: (m: { id: string; name: string; role: string }) =>
+                          workspace &&
+                          m.id !== workspace.createdById &&
+                          m.id !== session.data?.user?.id ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={remove.isPending}
+                              onClick={() => {
+                                if (window.confirm(`Remove ${m.name} from this class?`))
+                                  remove.mutate({ workspaceId: workspace.id, userId: m.id });
+                              }}
+                            >
+                              {t("Remove", "Xóa")}
+                            </Button>
+                          ) : null,
+                      },
+                    ]
+                  : []),
+              ]}
+            />
           </div>
-        )}
-        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_12rem]">
-          <SearchInput label="Filter members" value={search} onChange={setSearch} />
-          <SelectField
-            label="Role"
-            value={roleFilter}
-            onChange={setRoleFilter}
-            options={[
-              { value: "ALL", label: "All roles" },
-              { value: "STUDENT", label: "Student" },
-              { value: "LECTURER", label: "Lecturer" },
-            ]}
-          />
-        </div>
-        {remove.error && <ErrorState error={remove.error} />}
-        <DataTable
-          rows={filteredMembers}
-          rowKey={(m) => m.id}
-          caption="Workspace members"
-          columns={[
-            { key: "name", label: "Name", render: (m) => m.name },
-            { key: "role", label: "Role", render: (m) => m.role },
-            ...(canManage
-              ? [
-                  {
-                    key: "actions",
-                    label: "Actions",
-                    render: (m: { id: string; name: string; role: string }) =>
-                      workspace &&
-                      m.id !== workspace.createdById &&
-                      m.id !== session.data?.user?.id ? (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={remove.isPending}
-                          onClick={() => {
-                            if (window.confirm(`Remove ${m.name} from this class?`))
-                              remove.mutate({ workspaceId: workspace.id, userId: m.id });
-                          }}
-                        >
-                          Remove
-                        </Button>
-                      ) : null,
-                  },
-                ]
-              : []),
-          ]}
-        />
-      </div>
+        </CourseWorkspaceShell>
+      )}
     </RequestState>
   );
 }
+
 export function ReferenceVersions() {
   const { workspaceId } = useSelection();
   const query = useApiQuery(

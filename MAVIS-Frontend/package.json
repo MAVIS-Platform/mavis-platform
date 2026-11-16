@@ -15,7 +15,8 @@
     "test:three-e-ui": "node tests/three-e-ui.browser.cjs",
     "test:mainflow": "node scripts/check-mainflow.mjs",
     "format": "prettier --write .",
-    "test:course-setup": "node tests/course-setup.browser.cjs"
+    "test:course-setup": "node tests/course-setup.browser.cjs",
+    "test:lecturer-lms": "node tests/lecturer-lms.browser.cjs"
   },
   "overrides": {
     "rolldown": "1.2.1",
