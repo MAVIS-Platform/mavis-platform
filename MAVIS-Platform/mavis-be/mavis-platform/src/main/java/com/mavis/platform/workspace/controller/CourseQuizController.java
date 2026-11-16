@@ -34,6 +34,39 @@ public class CourseQuizController {
         return ApiResponse.success(quizzes.publish(workspaceId, assignmentId, request));
     }
 
+    @GetMapping("/draft")
+    public ApiResponse<CourseQuizService.Draft> draft(@PathVariable UUID workspaceId,
+                                                       @PathVariable UUID assignmentId) {
+        return ApiResponse.success(quizzes.draft(workspaceId, assignmentId));
+    }
+
+    @PutMapping("/draft")
+    public ApiResponse<CourseQuizService.Draft> saveDraft(@PathVariable UUID workspaceId,
+                                                           @PathVariable UUID assignmentId,
+                                                           @RequestBody CourseQuizService.Publish request) {
+        return ApiResponse.success(quizzes.saveDraft(workspaceId, assignmentId, request));
+    }
+
+    @PostMapping("/draft/curriculum")
+    public ApiResponse<CourseQuizService.Draft> importCurriculumDraft(
+            @PathVariable UUID workspaceId, @PathVariable UUID assignmentId,
+            @Valid @RequestBody PublishChapter request) {
+        return ApiResponse.success(quizzes.saveDraft(workspaceId, assignmentId,
+                curriculum.quizFor(request.chapterId())));
+    }
+
+    @PostMapping("/publish")
+    public ApiResponse<CourseQuizService.Quiz> publishDraft(@PathVariable UUID workspaceId,
+                                                             @PathVariable UUID assignmentId) {
+        return ApiResponse.success(quizzes.publishDraft(workspaceId, assignmentId));
+    }
+
+    @GetMapping("/versions")
+    public ApiResponse<java.util.List<CourseQuizService.Version>> versions(@PathVariable UUID workspaceId,
+                                                                            @PathVariable UUID assignmentId) {
+        return ApiResponse.success(quizzes.versions(workspaceId, assignmentId));
+    }
+
     @PostMapping("/curriculum")
     public ApiResponse<CourseQuizService.Quiz> publishChapter(@PathVariable UUID workspaceId,
             @PathVariable UUID assignmentId, @Valid @RequestBody PublishChapter request) {

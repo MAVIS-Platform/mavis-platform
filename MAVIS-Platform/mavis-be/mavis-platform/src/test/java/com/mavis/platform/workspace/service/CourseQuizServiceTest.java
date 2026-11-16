@@ -258,4 +258,27 @@ class CourseQuizServiceTest {
         assertEquals(1, snapshot.getCourseQuizEvidence().path("quizVersion").asInt());
         assertEquals("PASSED", snapshot.getCourseQuizEvidence().path("status").asText());
     }
+
+    @Test
+    void scoresMultipleChoiceAndTrueFalseAndNormalizesLegacyQuestions() {
+        var questions = List.of(
+                new CourseQuizService.Question("q1", "Pick both", "MULTI_CHOICE",
+                        List.of("A", "B", "C"), null, List.of(0, 2), "Both A and C", 2),
+                new CourseQuizService.Question("q2", "True?", "TRUE_FALSE",
+                        List.of("True", "False"), 0, null, "", 1),
+                new CourseQuizService.Question("Legacy?", List.of("Yes", "No"), 1)
+        );
+
+        assertEquals(3, CourseQuizService.scoreSelections(questions,
+                List.of(List.of(0, 2), List.of(0), List.of(1))));
+        assertEquals(2, CourseQuizService.scoreSelections(questions,
+                List.of(List.of(0), List.of(0), List.of(1))));
+        var normalized = CourseQuizService.normalizeQuestion(questions.get(2), 0);
+        assertEquals("SINGLE_CHOICE", normalized.type());
+        assertEquals("q1", normalized.id());
+        assertThrows(BusinessException.class, () -> CourseQuizService.normalizeQuestion(
+                new CourseQuizService.Question("q3", "Pick one", "MULTI_CHOICE",
+                        List.of("A", "B"), null, List.of(0, 0), "", 1), 0));
+    }
+
 }

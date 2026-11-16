@@ -85,6 +85,19 @@ SELECT CASE WHEN bool_and(present) THEN 'ready'
             WHEN bool_or(present) THEN 'partial'
             ELSE 'missing' END FROM expected;
 """),
+    "V36__Quiz_Authoring.sql": (36, """
+WITH expected(present) AS (VALUES
+    (to_regclass('course_quiz_drafts') IS NOT NULL),
+    (to_regclass('quiz_question_bank') IS NOT NULL),
+    (EXISTS (SELECT FROM information_schema.columns WHERE table_schema = current_schema()
+             AND table_name = 'course_quizzes' AND column_name = 'published_at'
+             AND data_type = 'timestamp with time zone')),
+    (to_regclass('idx_quiz_question_bank_workspace') IS NOT NULL)
+)
+SELECT CASE WHEN bool_and(present) THEN 'ready'
+            WHEN bool_or(present) THEN 'partial'
+            ELSE 'missing' END FROM expected;
+"""),
     "V26__Course_Lab_Access.sql": (26, COURSE_ACCESS_PROBE),
     "V27__Course_Quizzes.sql": (27, QUIZ_PROBE),
     "V28__Submission_Course_Quiz_Evidence.sql": (28, """
