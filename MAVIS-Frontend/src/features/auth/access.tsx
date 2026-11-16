@@ -3,6 +3,7 @@ import { useEffect, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { safeLoginRedirect } from "@/lib/auth/safe-login-redirect";
+import { defaultLoginDestination } from "@/lib/auth/login-destination";
 import { useApi, useSession } from "@/hooks/use-api";
 import { hasPermission, type Permission } from "@/lib/auth/permissions";
 import { LoadingState, ErrorState } from "@/components/shared/request-state";
@@ -70,9 +71,7 @@ export function RequireSession({
             href={
               session.data.user.role === "admin"
                 ? "/administration/users"
-                : session.data.user.role === "lecturer"
-                  ? "/workspaces"
-                  : "/"
+                : defaultLoginDestination(session.data.user.role)
             }
           >
             Return to your workspace

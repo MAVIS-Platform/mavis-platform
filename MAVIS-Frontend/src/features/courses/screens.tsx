@@ -113,6 +113,12 @@ export function Courses() {
   const query = useApiQuery("workspaces", {});
   const isStudent = session.data?.user?.role === "student";
 
+  useEffect(() => {
+    if (isStudent && window.location.hash === "#course-passkey") {
+      document.getElementById("course-passkey")?.focus();
+    }
+  }, [isStudent]);
+
   return (
     <div className="space-y-6">
       <div className="rounded-2xl border bg-card p-6">
@@ -138,7 +144,11 @@ export function Courses() {
         </div>
       </div>
 
-      {isStudent && <CourseEnrollment destination="roadmap" />}
+      {isStudent && (
+        <div id="course-passkey" tabIndex={-1} className="scroll-mt-6">
+          <CourseEnrollment destination="roadmap" />
+        </div>
+      )}
       {client.mode === "backend" && <CurriculumLibrary />}
 
       <RequestState
@@ -251,7 +261,7 @@ export function CourseRoadmap() {
                 </p>
               </div>
               <Button asChild variant="outline">
-                <Link href="/">{t("Back to courses", "Quay lại khóa học")}</Link>
+                <Link href="/courses">{t("Back to courses", "Quay lại khóa học")}</Link>
               </Button>
             </div>
           </div>

@@ -12,6 +12,15 @@ const nextConfig: NextConfig = {
     ],
   },
   distDir: process.env["MAVIS_NEXT_DIST_DIR"] ?? ".next",
+  async redirects() {
+    // Bookmarks from before the public homepage include project or class context.
+    return ["project", "workspace"].map((key) => ({
+      source: "/",
+      has: [{ type: "query" as const, key, value: ".+" }],
+      destination: "/courses",
+      permanent: false,
+    }));
+  },
   eslint: {
     ignoreDuringBuilds: true,
   },

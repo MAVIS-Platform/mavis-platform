@@ -2083,6 +2083,7 @@ export function LocaleProvider({ children }: { children: React.ReactNode }) {
       const saved = window.localStorage.getItem(STORAGE_KEY);
       if (saved === "vi" || saved === "en") {
         setLocaleState(saved);
+        document.documentElement.lang = saved;
       }
     } catch {
       // ignore storage errors

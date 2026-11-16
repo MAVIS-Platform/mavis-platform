@@ -37,7 +37,8 @@ async function main() {
       for (let layer = 0; layer < 5; layer++) decoded = decoded.replaceAll(String.fromCharCode(92, 34), String.fromCharCode(34));
       const errorChunk = /[0-9a-f]+:E\{[^}]*"digest"[^}]*\}/i.exec(decoded)?.[0];
       const boundary = /This page could not be displayed|Internal Server Error/.test(html);
-      const ok = response.status === 200 && !errorChunk && !boundary;
+      const publiclyRendered = route !== "/" || html.includes('id="home-title"');
+      const ok = response.status === 200 && !errorChunk && !boundary && publiclyRendered;
       results.push({ route, status: response.status, ok, durationMs: Math.round(performance.now() - started), errorChunk: errorChunk || null });
     } catch (error) {
       results.push({ route, ok: false, error: error.message });
