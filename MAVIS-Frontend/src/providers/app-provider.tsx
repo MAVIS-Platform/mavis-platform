@@ -19,6 +19,7 @@ export function AppProvider({
   mode: "mock" | "backend";
   mockScenario?: MockScenario;
 }) {
+  const pathname = usePathname();
   const [api] = useState<ApiAdapter>(() =>
     mode === "mock" ? new MockAdapter(mockScenario) : new BackendAdapter(),
   );
@@ -48,6 +49,9 @@ export function AppProvider({
     const recover = createSessionRecovery(queryClient, api);
     return queryClient;
   });
+
+  // The public homepage must render before workspace selection hydrates.
+  if (pathname === "/") return children;
 
   return (
     <ApiContext.Provider value={api}>

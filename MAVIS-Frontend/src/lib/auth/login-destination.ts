@@ -4,7 +4,11 @@ import { globalNavigation, projectNavigation, lecturerWorkspaceNavigation } from
 import { safeLoginRedirect } from "./safe-login-redirect";
 
 export function defaultLoginDestination(role: AppRole) {
-  return role === "admin" ? "/administration/health" : role === "lecturer" ? "/workspaces" : "/";
+  return role === "admin"
+    ? "/administration/health"
+    : role === "lecturer"
+      ? "/workspaces"
+      : "/courses";
 }
 
 export async function loginDestination(next: string | null, role: AppRole, api: ApiAdapter) {
