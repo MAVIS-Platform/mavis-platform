@@ -434,6 +434,21 @@ test("Stage 3 lecturer 1-click curated course lab seeder is wired on courses and
   assert.ok(assignments.includes("<SeedCuratedCourseLabs workspaceId={workspaceId}"));
 });
 
+test("Course builder exposes immutable publishing and BFF routes for structured roadmap content", () => {
+  const builder = read("src/features/courses/course-builder.tsx");
+  const { allowedBackendPath } = require("../src/lib/api/backend-path.ts");
+  const workspace = "11111111-1111-1111-1111-111111111111";
+  assert.ok(builder.includes("Publish course version"));
+  assert.ok(builder.includes("STATIC_LAB"));
+  assert.ok(builder.includes("RUNTIME_LAB"));
+  assert.ok(builder.includes("prerequisiteModuleId"));
+  assert.ok(builder.includes("Activity config must be a JSON object"));
+  for (const path of [`workspaces/${workspace}/course`, `workspaces/${workspace}/course/draft/start`,
+    `workspaces/${workspace}/course/modules`, `workspaces/${workspace}/course/publish`,
+    `workspaces/${workspace}/course/versions/1`, `workspaces/${workspace}/course/published`]) assert.equal(allowedBackendPath(path), true, path);
+  assert.equal(allowedBackendPath(`workspaces/${workspace}/course/draft/unsafe`), false);
+});
+
 test("lecturer course setup checklist links the reference runtime and Studio Live", () => {
   const access = read("src/features/workspaces/course-access.tsx");
   const course = read("src/features/courses/screens.tsx");
@@ -441,7 +456,9 @@ test("lecturer course setup checklist links the reference runtime and Studio Liv
   const panel = read("src/features/courses/course-setup.tsx");
   const { allowedBackendPath } = require("../src/lib/api/backend-path.ts");
 
-  assert.ok(access.includes("export function useCourseSetup"));
+  assert.ok(access.includes("export function useCourseAuthoring"));
+  assert.ok(course.includes("<CourseBuilder workspaceId={workspaceId}"));
+  assert.ok(access.includes("workspaces/${workspaceId}/course/publish"));
   assert.ok(access.includes("course-setup"));
   assert.match(panel, /Course setup/);
   assert.match(panel, /Studio Live/);

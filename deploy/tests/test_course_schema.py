@@ -22,6 +22,7 @@ class MigrationTest(unittest.TestCase):
             ("V32__Runtime_Studio_Control.sql", 32, "studio_control"),
             ("V33__Submission_Studio_Evidence.sql", 33, "studio_evidence"),
             ("V34__Assignment_Studio_Topology_Snapshot.sql", 34, "studio_topology_snapshot"),
+            ("V35__Course_Composition_Draft.sql", 35, "course_definitions"),
         ):
             registered, probe = module.MIGRATIONS[filename]
             self.assertEqual(registered, version)

@@ -19,6 +19,9 @@ public interface AssignmentRepository extends JpaRepository<Assignment, UUID> {
     @Query("select a from Assignment a where a.id = :id")
     Optional<Assignment> findLockedById(@Param("id") UUID id);
 
+    @Query("select (count(a) > 0) from Assignment a where a.id = :assignmentId and a.workspace.id = :workspaceId")
+    boolean existsByIdAndWorkspaceId(@Param("assignmentId") UUID assignmentId, @Param("workspaceId") UUID workspaceId);
+
     List<Assignment> findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(UUID workspaceId);
 
     List<Assignment> findByWorkspaceId(UUID workspaceId);

@@ -25,6 +25,7 @@ import {
   CourseRoadmap as CourseLabRoadmap,
   SeedCuratedCourseLabs,
   useCourseRoadmap,
+  useCourseAuthoring,
 } from "@/features/workspaces/course-access";
 import { DetailPanel, StatusBadge, SummaryCard } from "@/components/shared/data";
 import { Button } from "@/components/ui/button";
@@ -33,6 +34,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { getRuleName } from "@/features/architecture/three-e-content";
+import { CourseBuilder } from "./course-builder";
 import { CourseQuiz, useCourseQuiz } from "./course-quiz";
 import { CourseSetupPanel } from "./course-setup";
 import { CurriculumLibrary } from "./curriculum";
@@ -212,6 +214,7 @@ export function CourseRoadmap() {
   const workspaces = useApiQuery("workspaces", {});
   const workspace = workspaces.data?.find((item) => item.id === workspaceId);
   const canManage = workspace?.myRole === "LECTURER" || session.data?.user?.role === "admin";
+  const publishedCourse = useCourseAuthoring(workspaceId).published;
 
   useEffect(() => {
     if (workspaceId && workspaceId !== selection.workspaceId) selection.setWorkspaceId(workspaceId);
@@ -283,7 +286,25 @@ export function CourseRoadmap() {
           )}
 
           {canManage && client.mode === "backend" && (
+            <CourseBuilder workspaceId={workspaceId} />
+          )}
+
+          {canManage && client.mode === "backend" && (
             <CourseSetupPanel workspaceId={workspaceId} />
+          )}
+
+          {publishedCourse.data && (
+            <section className="rounded-2xl border bg-card p-5" aria-labelledby="published-course-roadmap">
+              <h2 id="published-course-roadmap" className="font-semibold">{t("Published Course roadmap", "Lộ trình Course đã publish")}</h2>
+              <div className="mt-3 rounded-md bg-muted/40 p-3 text-sm"><h3 className="font-medium">{publishedCourse.data.snapshot.title}</h3>{publishedCourse.data.snapshot.description && <p className="mt-1 text-muted-foreground">{publishedCourse.data.snapshot.description}</p>}<p className="mt-1 text-xs text-muted-foreground">v{publishedCourse.data.version} · {publishedCourse.data.snapshotDigest}</p></div>
+              <ol className="mt-4 space-y-4">
+                {publishedCourse.data.snapshot.modules.map((module) => <li key={module.id} className="rounded-xl border p-4">
+                  <h3 className="font-medium">{module.position}. {module.title}</h3>
+                  {module.description && <p className="mt-1 text-sm text-muted-foreground">{module.description}</p>}
+                  {module.items.length > 0 && <ol className="mt-3 space-y-1">{module.items.map((item) => <li key={item.id} className="rounded-lg border bg-background p-3 text-sm"><div className="flex flex-wrap items-center gap-2"><Badge variant="outline">{item.type.replaceAll("_", " ")}</Badge><span className="font-medium">{item.title}</span>{item.assignmentId && <Button asChild size="sm" variant="link" className="h-auto p-0"><Link href={`/lab?${new URLSearchParams({ workspace: workspaceId, assignment: item.assignmentId, step: item.type === "QUIZ" || item.type === "IMPACT_LAB" ? "2" : item.type === "RUNTIME_LAB" ? "3" : "1" })}`}>{t("Open activity", "Mở hoạt động")}</Link></Button>}</div>{item.type === "THEORY" && typeof item.content["body"] === "string" && <p className="mt-2 whitespace-pre-wrap text-muted-foreground">{item.content["body"]}</p>}{item.type === "ESSAY" && typeof item.content["prompt"] === "string" && <div className="mt-2 space-y-2"><p className="whitespace-pre-wrap">{item.content["prompt"]}</p><p className="text-xs text-muted-foreground">{t("Rubric-based lecturer review", "Giảng viên chấm theo rubric")}</p></div>}</li>)}</ol>}
+                </li>)}
+              </ol>
+            </section>
           )}
 
           <CourseLabRoadmap

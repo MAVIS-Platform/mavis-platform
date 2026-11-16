@@ -61,6 +61,90 @@ export function useCourseRoadmap(workspaceId: string) {
   });
 }
 
+export type AuthoringCourse = {
+  id: string;
+  workspaceId: string;
+  title: string;
+  description: string | null;
+  status: "DRAFT" | "PUBLISHED" | "ARCHIVED";
+  draftRevision: number;
+  publishedVersion: number;
+  modules: AuthoringModule[];
+};
+type AuthoringModule = {
+  id: string;
+  title: string;
+  description: string | null;
+  position: number;
+  prerequisiteModuleId: string | null;
+  items: AuthoringItem[];
+};
+type AuthoringItem = {
+  id: string;
+  type: "THEORY" | "QUIZ" | "ESSAY" | "STATIC_LAB" | "IMPACT_LAB" | "RUNTIME_LAB";
+  title: string;
+  description: string | null;
+  position: number;
+  assignmentId: string | null;
+  content: Record<string, unknown>;
+  required: boolean;
+};
+
+export function useCourseAuthoring(workspaceId: string) {
+  const client = useApi();
+  const cache = useQueryClient();
+  const query = useQuery({
+    queryKey: ["api", "course-authoring", workspaceId],
+    queryFn: ({ signal }) => courseApi<AuthoringCourse>(`workspaces/${workspaceId}/course`, { signal }),
+    enabled: client.mode === "backend" && Boolean(workspaceId),
+  });
+  const save = useMutation({
+    mutationFn: (body: { title: string; description: string }) => courseApi<AuthoringCourse>(
+      `workspaces/${workspaceId}/course/draft`, { method: "PUT", body: JSON.stringify(body) }),
+    onSuccess: (data) => cache.setQueryData(["api", "course-authoring", workspaceId], data),
+  });
+  const addModule = useMutation({
+    mutationFn: (body: { title: string; description?: string; prerequisiteModuleId?: string }) => courseApi<AuthoringCourse>(
+      `workspaces/${workspaceId}/course/modules`, { method: "POST", body: JSON.stringify(body) }),
+    onSuccess: (data) => cache.setQueryData(["api", "course-authoring", workspaceId], data),
+  });
+  const addItem = useMutation({
+    mutationFn: ({ moduleId, ...body }: { moduleId: string; type: AuthoringItem["type"]; title: string; description?: string; required?: boolean; assignmentId?: string; content?: Record<string, unknown> }) => courseApi<AuthoringCourse>(
+      `workspaces/${workspaceId}/course/modules/${moduleId}/items`, { method: "POST", body: JSON.stringify(body) }),
+    onSuccess: (data) => cache.setQueryData(["api", "course-authoring", workspaceId], data),
+  });
+  const publish = useMutation({
+    mutationFn: () => courseApi<{ courseId: string; version: number; snapshotDigest: string }>(
+      `workspaces/${workspaceId}/course/publish`, { method: "POST" }),
+    onSuccess: () => {
+      void cache.invalidateQueries({ queryKey: ["api", "course-authoring", workspaceId] });
+      void cache.invalidateQueries({ queryKey: ["api", "course-published", workspaceId] });
+      void cache.invalidateQueries({ queryKey: ["api", "course-versions", workspaceId] });
+    },
+  });
+  const versions = useQuery({
+    queryKey: ["api", "course-versions", workspaceId],
+    queryFn: ({ signal }) => courseApi<Array<{ version: number; draftRevision: number; snapshotDigest: string; publishedAt: string }>>(
+      `workspaces/${workspaceId}/course/versions`, { signal }),
+    enabled: client.mode === "backend" && Boolean(workspaceId),
+  });
+  const published = useQuery({
+    queryKey: ["api", "course-published", workspaceId],
+    queryFn: ({ signal }) => courseApi<{ courseId: string; version: number; draftRevision: number; snapshotDigest: string; publishedAt: string; snapshot: { title: string; description: string | null; modules: Array<{ id: string; title: string; description: string | null; position: number; prerequisiteModuleId: string | null; items: Array<{ id: string; type: string; title: string; description: string | null; position: number; assignmentId: string | null; content: Record<string, unknown>; required: boolean }> }> } }>(
+      `workspaces/${workspaceId}/course/published`, { signal }),
+    enabled: client.mode === "backend" && Boolean(workspaceId),
+  });
+  const startDraft = useMutation({
+    mutationFn: () => courseApi<AuthoringCourse>(`workspaces/${workspaceId}/course/draft/start`, { method: "POST" }),
+    onSuccess: (data) => {
+      cache.setQueryData(["api", "course-authoring", workspaceId], data);
+      void cache.invalidateQueries({ queryKey: ["api", "course-published", workspaceId] });
+      void cache.invalidateQueries({ queryKey: ["api", "course-versions", workspaceId] });
+    },
+  });
+  return { ...query, save, addModule, addItem, publish, versions, published, startDraft };
+}
+
 export type CourseSetupReference = {
   projectId: string | null;
   projectName: string | null;

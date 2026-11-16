@@ -132,6 +132,12 @@ if [ -e "$topology_migration" ]; then
   compose "$prefix" "$tag" "$incoming/compose.production.yml" config --format json |
     python3 "$schema_tool" "$topology_migration" /opt/mavis/db-backups/wf03-before-v34.dump
 fi
+course_composition_migration="$incoming/V35__Course_Composition_Draft.sql"
+if [ -e "$course_composition_migration" ]; then
+  test -f "$topology_migration" && test -f "$schema_tool" || { echo "Incomplete Course composition schema package"; exit 1; }
+  compose "$prefix" "$tag" "$incoming/compose.production.yml" config --format json |
+    python3 "$schema_tool" "$course_composition_migration" /opt/mavis/db-backups/course-before-v35.dump
+fi
 if ! compose "$prefix" "$tag" "$incoming/compose.production.yml" up -d --no-build --remove-orphans || ! healthy; then
   echo "Deployment failed; restoring previous images and Compose."
   compose "$old_prefix" "$old_tag" "$previous/compose.production.yml" up -d --no-build --remove-orphans

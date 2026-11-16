@@ -65,6 +65,22 @@ SELECT CASE
           AND table_name = 'assignments' AND column_name IN ('studio_topology_snapshot','studio_topology_revision')) = 0 THEN 'missing'
     ELSE 'partial' END;
 """),
+    "V35__Course_Composition_Draft.sql": (35, """
+WITH expected(present) AS (VALUES
+    (to_regclass('course_definitions') IS NOT NULL),
+    (to_regclass('course_versions') IS NOT NULL),
+    (to_regclass('course_modules') IS NOT NULL),
+    (to_regclass('course_items') IS NOT NULL),
+    (EXISTS (SELECT FROM information_schema.columns WHERE table_schema = current_schema()
+             AND table_name = 'course_definitions' AND column_name = 'published_version'
+             AND data_type = 'integer')),
+    (to_regclass('ix_course_modules_course_position') IS NOT NULL),
+    (to_regclass('ix_course_items_module_position') IS NOT NULL)
+)
+SELECT CASE WHEN bool_and(present) THEN 'ready'
+            WHEN bool_or(present) THEN 'partial'
+            ELSE 'missing' END FROM expected;
+"""),
     "V26__Course_Lab_Access.sql": (26, COURSE_ACCESS_PROBE),
     "V27__Course_Quizzes.sql": (27, QUIZ_PROBE),
     "V28__Submission_Course_Quiz_Evidence.sql": (28, """

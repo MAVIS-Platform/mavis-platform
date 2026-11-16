@@ -1,8 +1,9 @@
 # Tài liệu dự án MAVIS
 
-Cập nhật: 21/10/2026; baseline main c0121fe.
+Cập nhật: 16/11/2026; baseline main `2de47f7`.
 
-- [mavis-context.md](mavis-context.md): đọc đầu tiên; mục tiêu giáo dục, kiến trúc, data flow, owner, contract và bản đồ source.
+- **[MAVIS Project Handoff 2026-11-16](MAVIS_PROJECT_HANDOFF_2026-11-16.md): đọc đầu tiên nếu bạn chưa có ngữ cảnh. Tóm tắt trạng thái, kiến trúc, code map, test, gap và prompt bàn giao.**
+- [mavis-context.md](mavis-context.md): bối cảnh giáo dục, kiến trúc, data flow, owner, contract và bản đồ source.
 - [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md): code/test/acceptance riêng biệt; tiến độ cả 72 task V/T/N/F và PBI P01–P24.
 - [NEXT_TASKS.md](NEXT_TASKS.md): việc còn lại theo thứ tự, phạm vi từng bên, đầu vào/đầu ra và Definition of Done.
 - [DEVELOPMENT_RUNBOOK.md](DEVELOPMENT_RUNBOOK.md): môi trường, cấu hình, migrations, chạy/test và cập nhật tài liệu.
