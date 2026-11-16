@@ -74,8 +74,12 @@ WITH expected(present) AS (VALUES
     (EXISTS (SELECT FROM information_schema.columns WHERE table_schema = current_schema()
              AND table_name = 'course_definitions' AND column_name = 'published_version'
              AND data_type = 'integer')),
-    (to_regclass('ix_course_modules_course_position') IS NOT NULL),
-    (to_regclass('ix_course_items_module_position') IS NOT NULL)
+    (EXISTS (SELECT FROM pg_constraint
+             WHERE conrelid = to_regclass('course_modules')
+             AND conname = 'uq_course_module_position' AND contype = 'u')),
+    (EXISTS (SELECT FROM pg_constraint
+             WHERE conrelid = to_regclass('course_items')
+             AND conname = 'uq_course_item_position' AND contype = 'u'))
 )
 SELECT CASE WHEN bool_and(present) THEN 'ready'
             WHEN bool_or(present) THEN 'partial'

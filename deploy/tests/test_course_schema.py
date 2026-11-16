@@ -1,7 +1,10 @@
 import importlib.util
+import os
+import shutil
 from pathlib import Path
 import subprocess
 import tempfile
+import textwrap
 import unittest
 from unittest.mock import Mock, patch
 
@@ -12,6 +15,59 @@ spec.loader.exec_module(module)
 
 
 class MigrationTest(unittest.TestCase):
+    def test_ssh_retry_only_retries_transport_failures(self):
+        bash = shutil.which("bash")
+        if os.name == "nt":
+            bash = str(Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "Git/bin/bash.exe")
+        if not bash or not Path(bash).exists():
+            self.skipTest("Bash is needed to exercise the deployment retry function")
+        workflow = (script.parent.parent / ".github/workflows/deploy-production.yml").read_text(encoding="utf-8")
+        function = textwrap.dedent(workflow[workflow.index("          retry_ssh() {"):
+                                           workflow.index("          retry_scp() {")])
+        for failure, expected_attempts in ((1, 1), (255, 3), (0, 1)):
+            with self.subTest(failure=failure):
+                test = f"""
+                    attempts=0
+                    ssh_opts=()
+                    target=test-only
+                    ssh() {{ attempts=$((attempts+1)); return {failure}; }}
+                    sleep() {{ :; }}
+                """
+                result = subprocess.run([bash, "-c", textwrap.dedent(test) + function + """
+                    retry_ssh true test-command
+                    status=$?
+                    printf '%s %s' "$status" "$attempts"
+                """], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+                self.assertEqual(result.stdout.decode(), f"{failure} {expected_attempts}")
+
+    @unittest.skipUnless(os.environ.get("MAVIS_TEST_PG_CONTAINER"),
+                         "Set MAVIS_TEST_PG_CONTAINER to a disposable local PostgreSQL container")
+    def test_v35_real_migration_matches_its_readiness_probe(self):
+        container = os.environ["MAVIS_TEST_PG_CONTAINER"]
+        version, probe = module.MIGRATIONS["V35__Course_Composition_Draft.sql"]
+        self.assertEqual(version, 35)
+
+        def sql(query):
+            result = subprocess.run(
+                ["docker", "exec", "-i", container, "psql", "-U", "test_only",
+                 "-d", "test_only", "-XAtq", "-v", "ON_ERROR_STOP=1"],
+                input=query.encode(), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr.decode())
+            return result.stdout.decode().strip()
+
+        sql("""
+            CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+            CREATE TABLE workspaces (id uuid PRIMARY KEY);
+            CREATE TABLE assignments (id uuid PRIMARY KEY);
+            CREATE TABLE users (id uuid PRIMARY KEY);
+        """)
+        self.assertEqual(sql(probe), "missing")
+        migration = script.parent.parent / "MAVIS-Platform/mavis-be/mavis-bootstrap/src/main/resources/db/migration/V35__Course_Composition_Draft.sql"
+        sql("BEGIN;\n" + migration.read_text(encoding="utf-8-sig") + "\nCOMMIT;")
+        self.assertEqual(sql(probe), "ready")
+        self.assertEqual(sql(probe), "ready", "A deployment retry must recognize an applied V35")
+
     def test_each_quiz_migration_uses_its_own_probe_and_transaction_lock(self):
         for filename, version, marker in (
             ("V27__Course_Quizzes.sql", 27, "course_quiz_attempts"),

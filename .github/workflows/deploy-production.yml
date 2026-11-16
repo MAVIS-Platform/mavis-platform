@@ -187,13 +187,21 @@ jobs:
           incoming="/opt/mavis/incoming-$COMMIT"
           ssh_opts=(-i ~/.ssh/mavis_deploy -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=20 -o ConnectionAttempts=1 -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
           retry_ssh() {
-            local attempt
+            local attempt status
             for attempt in 1 2 3; do
-              if ssh "${ssh_opts[@]}" "$target" "$1"; then return 0; fi
+              if ssh "${ssh_opts[@]}" "$target" "$1"; then
+                return 0
+              else
+                status=$?
+              fi
+              if [ "$status" -ne 255 ]; then
+                echo "Remote deployment command failed (exit $status): $2" >&2
+                return "$status"
+              fi
               [ "$attempt" -lt 3 ] && sleep 10
             done
-            echo "SSH command failed after 3 attempts: $2" >&2
-            return 1
+            echo "SSH transport failed after 3 attempts: $2" >&2
+            return 255
           }
           retry_scp() {
             local attempt
