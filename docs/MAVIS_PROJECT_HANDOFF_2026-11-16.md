@@ -15,13 +15,26 @@ https://github.com/MAVIS-Platform/mavis-studio-live-seed
 
 ## 1. Trạng thái bàn giao đã xác minh ngày 16/11/2026
 
-- Mốc code production đã xác nhận là main 612836d34ef7607e9c2c3807a8191974ffe8c213. Kiểm tra Git để biết các commit tài liệu hoặc code phát sinh sau mốc này.
-- Run #353 đã completed/success. Verify, build ba image và deploy đều xanh: https://github.com/MAVIS-Platform/mavis-platform/actions/runs/43848625455.
-- Log VPS xác nhận V35 schema already present và Deployment healthy đúng SHA. Website và /api/auth-config trả HTTP 200 sau deploy.
+- **Mốc production mới nhất trên `origin/main`: `9f26918`** (`fix(frontend): restore homepage layout and match themes`, PR #100, 16/11 20:25 +0700). Run **#360** "Build and deploy production" completed/success: https://github.com/MAVIS-Platform/mavis-platform/actions/runs/43875618501.
+- Ngay trước đó `origin/main` có `72fca7f` (public homepage, PR #98) và `e1053e7` (refine homepage, PR #99). Cả ba commit chỉ chạm homepage/app shell/frontend tests, không đổi backend course/Runtime/Studio.
+- Mốc đã xác minh V35 vẫn là `612836d` + run **#353** success: https://github.com/MAVIS-Platform/mavis-platform/actions/runs/43848625455. `183c849` (docs infra + thêm `CourseAuthoringServiceTest` vào CI) có run **#354** success: https://github.com/MAVIS-Platform/mavis-platform/actions/runs/43851965673. Log VPS xác nhận V35 schema already present và Deployment healthy đúng SHA; website và `/api/auth-config` trả HTTP 200 sau deploy.
+- **Local `main` đang phân kỳ với origin**: HEAD `b955718` (`feat(assignments): refresh guided Lab authoring flow`) chưa push; `git rev-list --left-right --count origin/main...HEAD` trả **3 1** (thiếu 3 commit homepage, hơn 1 commit). Phải merge/rebase `origin/main` trước khi làm tiếp; không force-push.
+- Working tree chưa sạch: 3 test backend đang sửa (`RuntimeSetupControllerTest`, `CourseAccessServiceTest`, `CourseSetupServiceTest`) và mới có `docs/MAVIS_DEV_ENVIRONMENT_2026-11-16.md`, `scripts/bootstrap-dev-linux.sh`. Không dùng `git add .`; chỉ commit khi thuộc đúng task.
+- Test mới `exposesConfigurationReadyWithoutVerifyingRunnerHealth` ghi nhận `RuntimeSetupController.runnerReady` hiện chỉ phản chiếu `ConfigurationView.ready()` (profile đủ điều kiện), **không** gọi health Runner thật. Đây là điểm cần chốt contract, xem mục 10.
 - Lỗi #352 là probe V35 kiểm tra sai tên index; đã sửa theo unique constraint trong migration. Không kết luận thiếu SSH secret từ dòng retry chung. Đọc docs/DEPLOY_V35_CLAUDE_HANDOFF.md.
 - Context vận hành đầy đủ ở docs/MAVIS_PROJECT_INFRA_CONTEXT_2026-11-16.md. Đọc cùng file này trước khi sửa Git, VPS, DB hoặc CI.
 - Origin local đã chuyển sang HTTPS và bỏ core.sshCommand trỏ tới key /sessions đã mất. Fetch/push HTTPS hoạt động. Đây là cấu hình máy, không nằm trong commit.
 - Seed repo local ở mavis-studio-live-seed, mốc kiểm tra be7df9b. Có Desktop - Shortcut.lnk chưa track từ trước; không thêm vào commit task này.
+
+## 1b. Cập nhật refactor giao diện giảng viên (16/11/2026 tối)
+
+- Giao diện lớp học dùng `CourseWorkspaceShell` + `CourseOutline`: danh sách lớp gọn, bốn tab Nội dung lớp / Thành viên / Bài nộp / Kết quả, và lộ trình module → activity.
+- Course Builder soạn THEORY/ESSAY trực tiếp (không còn textarea JSON), thêm/sửa/sắp xếp/xóa activity trong bản nháp; API mới `PUT /course/modules/{id}`, `POST .../move`, `PUT/DELETE .../items/{id}`, `POST .../items/{id}/move`. Endpoint `startDraft` của frontend đã sửa từ `/course/draft/start` sang `/course/draft`.
+- BFF `app/api/backend/[...path]/route.ts` đã export thêm `PUT/PATCH/DELETE`; trước đó proxy chỉ có `GET/POST` nên lưu nháp, sửa/xóa course item và chấm điểm bằng PUT/DELETE bị `405`.
+- Lab Workspace theo bố cục Coursera: breadcrumb Lớp → Module → Lab, sidebar mục lục/tiến độ, lý thuyết lấy từ published Course snapshot, preview `preview=1` chỉ đọc (không tạo Quiz attempt/session/submission). Preview bỏ qua điều kiện roadmap `LOCKED`; `moveModule` giữ bất biến module tiên quyết đứng trước.
+- Trang giảng viên: `docs/LECTURER_LAB_AUTHORING_UI.md`. Screenshot fixture: `MAVIS-Frontend/tests/lecturer-lms.browser.cjs` và `.artifacts/lecturer-lms/{class-content,lab-coc}.png`.
+- Kiểm chứng trong phiên: frontend typecheck PASS, `npm test` **409/409**, build PASS, route smoke **43/43** trên server production port 3092, browser fixture PASS; backend `CourseAuthoringServiceTest` **14/14**, full `mavis-platform` + `mavis-common` **221 tests, 0 failure**. Chưa chạy real Docker Runner hay nghiệm thu hai tài khoản staging.
+- Các thay đổi UI/backend trên đang ở working tree local, chưa commit/push.
 
 ## 2. Sản phẩm và phạm vi
 
@@ -174,6 +187,7 @@ Các rule bảo vệ:
 - `submissions/composer.tsx`, `grading.tsx`, `frozen-artifacts.tsx` — nộp/chấm/bằng chứng.
 - `lib/api/backend-path.ts`, `contracts.ts`, `java-operations.ts` — BFF allowlist và contract.
 - `app/[screen]/page.tsx` — route `/roadmap`, `/assignments`, `/sessions`, `/studio`, `/lab`.
+- `homepage/public-homepage.tsx`, `homepage/homepage.css`, `homepage/request-demo.tsx`, `app/page.tsx` — public homepage và CTA demo (PR #98–#100), không thuộc flow course.
 
 ### Backend
 
@@ -318,19 +332,24 @@ python -B -m unittest discover -s deploy/tests -p "test_*.py" -v
 - Real Docker + .NET Runner full-stack: PASS.
 - Deploy schema tests trong task sửa V35: **9/9 PASS** khi chạy với PostgreSQL 18 thử riêng, gồm regression retry SSH.
 - Run #353 tại 612836d đã success cả verify, images và deploy. Các số lượng test phần khác phía trên là báo cáo của phiên cũ; đối chiếu log CI nếu cần số hiện tại.
+- Run #354 tại `183c849` success; CI regression list từ nay có `CourseAuthoringServiceTest`.
+- Run #360 tại `9f26918` success cả verify, build image và deploy production — đây là mốc production hiện tại.
+- Bằng chứng môi trường dev Linux 16/11/2026 (`docs/MAVIS_DEV_ENVIRONMENT_2026-11-16.md`): focused backend **35/35** (CourseAccess 5/5, CourseSetup 4/4, RuntimePlanning 24/24, RuntimeSetupController 2/2, đã gồm các test đang sửa trong working tree), `StudioInfrastructureActionTests` **7/7**, deploy unit **8** test (1 test PostgreSQL thật bị skip). Real Docker Runner **SKIPPED** vì container không có Docker CLI/socket — không tính là nghiệm thu Docker.
 
 ## 10. Khoảng trống và quyết định mở
 
 1. **Staging/two-account acceptance**: chưa chạy UI thật bằng hai tài khoản trên staging. Local HTTP acceptance và real Docker test dùng tài khoản/tài nguyên tạo trong test.
-2. **Deploy schema**: đã xác nhận qua V35 tại run #353. Nghiệm thu hai tài khoản và nghiệp vụ thực tế tiếp tục là hạng mục riêng.
-3. **Theory artifact**: hiện theory là `course_quizzes.lesson` (text trong quiz), chưa phải Markdown document/version pin độc lập như FR-EDU-03 mô tả.
-4. **Course creation wizard**: chưa có một wizard duy nhất từ tạo workspace → source → runtime/Studio → publish → quiz → passkey; hiện là các trang + checklist.
-5. **Bulk publish/quiz**: Lab tự tạo vẫn publish/quiz từng Lab; seed thì một-click.
-6. **Multiple reference projects**: checklist toàn cục lấy reference đầu tiên; trạng thái từng Lab có kiểm tra riêng nhưng `nextAction` có thể chưa bao quát mọi reference.
-7. **Quiz version đổi giữa phiên**: mỗi Studio action kiểm tra Quiz hiện hành; publish quiz version mới giữa phiên có thể khóa action tiếp theo. Cần quyết định policy.
-8. **Runner DLL stale**: nếu sửa Runner, rebuild DLL trước real Docker test; lỗi generic “Input could not be processed” thường là definition/DLL lệch.
-9. **.NET SDK**: `MAVIS.Worker/global.json` yêu cầu `10.0.403`; máy hiện có 10.0.204. Chạy `dotnet test` trong `MAVIS.Worker` có thể fail; real Docker test dùng DLL đã publish. CI dùng SDK theo global.json.
-10. **Tài liệu cũ**: `MAVIS_STUDIO_DEEPSEEK_HANDOFF.md` dòng “thay đổi local chưa track” đã cũ; code đã commit. `PREPARED_LIVE_STUDIO.md` từng ghi 22 test planning, thực tế hiện 24. Đối chiếu code trước khi tin số liệu cũ.
+2. **`runnerReady` semantics (ưu tiên)**: `RuntimeSetupController` trả `runnerReady = ConfigurationView.ready()`, tức chỉ là profile đủ điều kiện cấu hình; test mới `exposesConfigurationReadyWithoutVerifyingRunnerHealth` xác nhận controller không có Runner health client. Mục 4.3 lại coi `runnerReady=false` là "không chạy được". Cần tách `configurationReady` khỏi `runnerReady` thật hoặc gọi health Runner trước khi cho Lab vào trạng thái sẵn sàng.
+3. **Deploy schema**: đã xác nhận qua V35 tại run #353/#354 và deploy homepage tại run #360. Nghiệm thu hai tài khoản và nghiệp vụ thực tế tiếp tục là hạng mục riêng.
+4. **Theory artifact**: hiện theory là `course_quizzes.lesson` (text trong quiz), chưa phải Markdown document/version pin độc lập như FR-EDU-03 mô tả.
+5. **Course creation wizard**: chưa có một wizard duy nhất từ tạo workspace → source → runtime/Studio → publish → quiz → passkey; hiện là các trang + checklist.
+6. **Bulk publish/quiz**: Lab tự tạo vẫn publish/quiz từng Lab; seed thì một-click.
+7. **Multiple reference projects**: checklist toàn cục vẫn lấy reference của Lab đầu tiên (test mới `multipleReferenceProjectsUseFirstLabReferenceForGlobalSummary` ghi nhận hành vi này); trạng thái từng Lab đúng nhưng `nextAction`/summary có thể bỏ sót reference khác.
+8. **Quiz version đổi giữa phiên**: mỗi Studio action kiểm tra Quiz hiện hành; publish quiz version mới giữa phiên có thể khóa action tiếp theo. Cần quyết định policy.
+9. **Runner DLL stale**: nếu sửa Runner, rebuild DLL trước real Docker test; lỗi generic “Input could not be processed” thường là definition/DLL lệch.
+10. **.NET SDK**: `MAVIS.Worker/global.json` yêu cầu `10.0.403`; máy dev cũ có 10.0.204. Chạy `dotnet test` trong `MAVIS.Worker` có thể fail; real Docker test dùng DLL đã publish. CI dùng SDK theo global.json.
+11. **Docker verification trong môi trường dev hiện tại**: container Linux không có Docker CLI/socket, nên real Docker Runner/managed-Docker tests SKIPPED; chỉ unit/acceptance chạy được. Cần máy có Docker Engine để xác minh lifecycle/OTel/cleanup trước khi tin kết quả nghiệm thu Studio.
+12. **Tài liệu cũ**: `MAVIS_STUDIO_DEEPSEEK_HANDOFF.md` dòng “thay đổi local chưa track” đã cũ; code đã commit. `PREPARED_LIVE_STUDIO.md` từng ghi 22 test planning, thực tế hiện 24. Đối chiếu code trước khi tin số liệu cũ.
 
 ## 11. Kế hoạch nghiệm thu 99%
 
@@ -375,7 +394,7 @@ python -B -m unittest discover -s deploy/tests -p "test_*.py" -v
 
 - Conventional Commits: `feat(scope):`, `fix(scope):`, `docs:`, `test(scope):`, `refactor(scope):`, `chore(scope):`.
 - Merge commit cũng dùng subject Conventional, không dùng `Merge branch '...'` trần.
-- Không thêm `Co-Authored-By: Claude Code`; code được gán cho identity hiện tại `Nhwt <nhutlmao251@gmail.com>` (Nhwt666). Người dùng đã yêu cầu rõ quy tắc này.
+- Commit do Claude tạo dùng author `Claude <noreply@anthropic.com>` (liên kết GitHub `claude`) và kết thúc message bằng `Co-Authored-By: Claude Code <noreply@anthropic.com>`. Override theo từng commit bằng `git -c user.name="Claude" -c user.email="noreply@anthropic.com" commit ...`; không đổi `git config` global/repo. Commit tay của người dùng vẫn giữ identity `Nhwt <nhutlmao251@gmail.com>` (Nhwt666). Quy tắc cũ (gán mọi commit cho Nhwt666, không trailer Claude) đã được người dùng đổi ngày 16/11/2026.
 - Branch: `feat/...`, `fix/...`, `test/...`, `chore/...`.
 - Không push nếu người dùng chưa yêu cầu; không force-push rewrite lịch sử cũ nếu chưa xác nhận.
 
@@ -387,7 +406,8 @@ Bạn tiếp quản MAVIS Studio Live và luồng course/lab của giảng viên
 Workspace: C:/Users/nhuth/Desktop/MAVIS-Root/mavis-platform
 Repo phụ: C:/Users/nhuth/Desktop/MAVIS-Root/mavis-studio-live-seed
 Nhánh: main
-Mốc code production đã xác minh: 612836d34ef7607e9c2c3807a8191974ffe8c213; kiểm tra git log cho cập nhật sau đó.
+Mốc production trên origin/main: 9f26918 (run #360 success). Mốc đã xác minh V35 trước đó: 612836d (run #353).
+Local main có thể đang phân kỳ: HEAD b955718 chưa push và thiếu 3 commit homepage; chạy git rev-list --left-right --count origin/main...HEAD trước khi sửa.
 Seed repo commit: be7df9b24342eea0f0f8eda9cdb15fb293f5656f
 
 Đọc trước, theo thứ tự:
@@ -413,8 +433,8 @@ Mục tiêu:
 
 Quy tắc commit:
 - Conventional Commits, merge subject Conventional;
-- không thêm Co-Authored-By Claude;
-- identity Nhwt666.
+- commit do Claude tạo: author `Claude <noreply@anthropic.com>`, trailer `Co-Authored-By: Claude Code <noreply@anthropic.com>`;
+- commit tay của người dùng: identity Nhwt666.
 
 Khi tài liệu và code khác nhau, chỉ rõ chỗ lệch và kiểm tra bằng test. Không sửa ngoài scope nếu chưa xác nhận.
 ```
