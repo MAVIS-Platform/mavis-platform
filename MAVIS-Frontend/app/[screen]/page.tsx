@@ -19,6 +19,7 @@ import {
 } from "@/features/workspaces/screens";
 import { WorkspaceSelector } from "@/features/workspaces/components";
 import { Assignments } from "@/features/assignments/screens";
+import { LabAuthoring } from "@/features/assignments/lab-authoring";
 import { Submissions } from "@/features/submissions/screens";
 import { CourseRoadmap, Courses, LabWorkspace } from "@/features/courses/screens";
 import type { ComponentType } from "react";
@@ -97,6 +98,12 @@ const screens: Record<
     title: "Assignments",
     scope: "workspace",
     component: Assignments,
+    selector: "workspace",
+  },
+  "lab-authoring": {
+    title: "Lab Authoring",
+    scope: "workspace",
+    component: LabAuthoring,
     selector: "workspace",
   },
   references: {

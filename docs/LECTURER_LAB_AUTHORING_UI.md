@@ -38,23 +38,37 @@ Trong **Authoring**:
 
 Backend chỉ cho sửa cấu trúc khi Course ở `DRAFT`. Course `PUBLISHED` hoặc `ARCHIVED` trả `409`.
 
-## 3. Tạo Lab, lý thuyết, repo mẫu và Quiz
+## 3. Tạo Lab trong Lab Authoring workspace
 
-1. Vào **Class content → Roadmap** hoặc `/assignments?workspace=...`.
-2. Bấm **Create a Lab / Tạo Lab**.
-3. Điền thông tin Lab, hạn nộp, hướng dẫn; chọn **Reference version** đã phân tích (GitHub commit hoặc ZIP snapshot); chọn yêu cầu minh chứng và góc nhìn kiến trúc.
-4. Lưu nháp. Lab chưa publish không hiển thị với sinh viên.
-5. Công bố Lab bằng **Publish as lab**, sau đó cấu hình runtime và **Freeze Studio topology** cho Lab cần runtime.
-6. Công bố Quiz có phiên bản bằng Curriculum Publisher hoặc quiz tùy chỉnh. Quiz Gate mặc định 70% nếu chưa cấu hình khác.
-7. Cấp Passkey trong **Setup** hoặc `/roadmap?workspace=...#course-passkey`.
+`/assignments` giờ chỉ là danh sách Lab của lớp. Các thao tác công bố, freeze, Quiz, Studio và xem trước không còn nằm lẫn trong danh sách.
+
+1. Vào `/assignments?workspace=...`.
+2. Bấm **Create a Lab / Tạo Lab** để mở `/lab-authoring?workspace=...`.
+3. Làm theo sáu bước trong sidebar:
+
+| Bước | Nội dung |
+|---|---|
+| **1. Lab information** | Tên, hạn nộp, hướng dẫn/mục tiêu/tiêu chí, yêu cầu runtime trace và góc nhìn kiến trúc. Lưu được **draft không cần nguồn tham chiếu**. |
+| **2. Theory** | Chọn module, thêm/sửa nội dung THEORY. Nếu Course đã publish, bấm **Start new Course draft** trước khi sửa. |
+| **3. Reference source** | Import GitHub commit SHA hoặc ZIP, chạy phân tích, chọn model version rồi **Save source to Lab**. |
+| **4. Quiz** | Publish chapter Quiz bằng Curriculum Publisher; xem version/ngưỡng đạt và preview Quiz hiện hành. |
+| **5. Studio Live** | Xem runtime readiness, mở Runtime Configuration, công bố Lab rồi **Freeze Studio topology**. |
+| **6. Check & publish** | Checklist Lab thật (source, theory, Quiz, Studio, publish), nút publish/freeze, preview và Course Setup Panel đầy đủ. |
+
+4. Lab chưa publish không hiển thị với sinh viên.
+5. Quiz Gate mặc định 70% nếu chưa cấu hình khác. Freeze topology dùng V34 và chỉ áp dụng cho Lab đã publish.
+6. Cấp Passkey trong **Setup** hoặc `/roadmap?workspace=...#course-passkey`.
+
+**Course tools** (seed curated Labs, Course setup checklist) nằm trong một panel riêng trên `/assignments`, không trộn với nút **Create a Lab**.
 
 ## 4. Xem trước và công bố
 
-- Trong form sửa Lab có **Preview as student / Xem trước như sinh viên**. Nút mở `/lab?...&step=1&preview=1`.
+- Preview có ở header Lab Authoring và bước **Check & publish**; mở `/lab?...&step=1&preview=1`.
 - Preview là **read-only**:
   - Không tạo lượt Quiz.
   - Không tạo runtime session.
   - Không chụp snapshot, không nộp bài.
+- Preview bỏ qua điều kiện roadmap `LOCKED` để giảng viên xem được Lab chưa mở, nhưng vẫn hiển thị lý do khóa thật.
 - Giảng viên vẫn xem được breadcrumb, mục lục, tiến độ, lý thuyết đã publish, Quiz Gate và điều kiện mở khóa.
 - Nút **Exit preview / Thoát xem trước** quay lại chế độ soạn.
 
@@ -96,10 +110,10 @@ Backend chỉ cho sửa cấu trúc khi Course ở `DRAFT`. Course `PUBLISHED` h
 ```bash
 cd MAVIS-Frontend
 npm run typecheck
-npm test                 # 409/409 PASS
+npm test                 # 410/410 PASS
 npm run build            # PASS
 npm run start -- --hostname 127.0.0.1 --port 3092
-npm run test:routes -- http://127.0.0.1:3092   # 43 routes, 0 failure
+npm run test:routes -- http://127.0.0.1:3092   # 44 routes, 0 failure
 npm run test:lecturer-lms                      # PASS + screenshots
 ```
 
@@ -107,6 +121,8 @@ Screenshot:
 
 - `.artifacts/lecturer-lms/class-content.png`
 - `.artifacts/lecturer-lms/lab-coc.png`
+- `.artifacts/lecturer-lms/assignments.png`
+- `.artifacts/lecturer-lms/lab-authoring.png`
 
 Backend:
 

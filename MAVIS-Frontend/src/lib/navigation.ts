@@ -207,6 +207,7 @@ export const lecturerWorkspaceNavigation: readonly NavigationGroup[] = [
       },
       { id: "members", label: "Workspace Members", icon: Users, href: "/members" },
       { id: "assignments", label: "Assignments", icon: BookOpen, href: "/assignments" },
+      { id: "lab-authoring", label: "Lab Authoring", icon: BookOpen, href: "/lab-authoring" },
       {
         id: "assignment-submissions",
         label: "Assignment Submissions",

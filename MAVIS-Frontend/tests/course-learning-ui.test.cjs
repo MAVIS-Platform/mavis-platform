@@ -83,17 +83,24 @@ test("guided Lab resumes a Runtime session scoped to its selected project and st
   assert.match(course, /Open Runtime session/);
 });
 
-test("lecturer Lab authoring uses the guided pinned-source draft workflow", () => {
-  const authoring = read("src/features/assignments/create.tsx");
+test("lecturer Lab authoring is a dedicated workspace with ordered authoring steps", () => {
+  const authoring = read("src/features/assignments/lab-authoring.tsx");
+  const info = read("src/features/assignments/lab-info-form.tsx");
+  const source = read("src/features/assignments/lab-source-section.tsx");
+  const publish = read("src/features/assignments/lab-publish-section.tsx");
   const assignments = read("src/features/assignments/screens.tsx");
 
-  assert.ok(authoring.includes('t("Create a Lab", "Tạo Lab")'));
-  assert.ok(authoring.includes('t("Save Lab draft", "Lưu bản nháp Lab")'));
-  assert.match(authoring, /disabled=\{create\.isPending \|\| sourcePending \|\| !sourceModelId\}/);
-  assert.match(authoring, /referenceModelId:\s*sourceModelId/);
-  assert.ok(authoring.includes("publish it as the next Lab"));
-  assert.ok(authoring.includes("freeze Studio topology"));
+  for (const label of ["Lab information", "Theory", "Reference source", "Quiz", "Studio Live", "Check & publish"])
+    assert.ok(authoring.includes(label), label);
+  assert.ok(info.includes('t("Save Lab draft", "Lưu bản nháp Lab")'));
+  assert.ok(info.includes("Attach the reference source and publish it in the next steps."));
+  assert.match(source, /referenceModelId:\s*modelId/);
+  assert.match(publish, /Preview as student/);
+  assert.match(publish, /preview: "1"/);
   assert.ok(assignments.includes('t("Create a Lab", "Tạo Lab")'));
+  assert.match(assignments, /lab-authoring\?workspace=/);
+  assert.doesNotMatch(assignments, /CreateAssignment/);
+  assert.throws(() => read("src/features/assignments/create.tsx"), /ENOENT/);
 });
 
 test("Course Builder edits structured theory items and starts a draft on the real endpoint", () => {
@@ -112,17 +119,21 @@ test("Course Builder edits structured theory items and starts a draft on the rea
   assert.match(builder, /RUNTIME_LAB/);
 });
 
-test("assignment authoring separates details, reference source, requirements and publishing", () => {
-  const authoring = read("src/features/assignments/create.tsx");
+test("assignment authoring separates details, theory, source, quiz, studio and publishing", () => {
+  const info = read("src/features/assignments/lab-info-form.tsx");
+  const theory = read("src/features/assignments/lab-theory-section.tsx");
+  const source = read("src/features/assignments/lab-source-section.tsx");
+  const quiz = read("src/features/assignments/lab-quiz-section.tsx");
+  const studio = read("src/features/assignments/lab-studio-section.tsx");
+  const publish = read("src/features/assignments/lab-publish-section.tsx");
 
-  for (const label of [
-    "Lab details",
-    "Reference project and pinned analysis",
-    "Student evidence requirements",
-  ])
-    assert.ok(authoring.includes(label), label);
-  assert.match(authoring, /Xem trước như sinh viên|Preview as student/);
-  assert.match(authoring, /returnTo|preview=1/);
+  assert.ok(info.includes("Instructions, learning goals and completion criteria"));
+  assert.ok(theory.includes("THEORY"));
+  assert.ok(source.includes("AssignmentSourcePicker"));
+  assert.ok(quiz.includes("CurriculumPublisher"));
+  assert.ok(studio.includes("runtime-config?project="));
+  assert.ok(publish.includes("CourseSetupPanel"));
+  assert.match(publish, /theoryReady/);
 });
 
 test("Coursera-style Lab table of contents shows progress, module items and lock reasons", () => {
@@ -562,7 +573,7 @@ test("BFF backend proxy exposes the mutation methods used by course authoring an
 test("lecturer course setup checklist links the reference runtime and Studio Live", () => {
   const access = read("src/features/workspaces/course-access.tsx");
   const course = read("src/features/courses/screens.tsx");
-  const assignments = read("src/features/assignments/screens.tsx");
+  const studio = read("src/features/assignments/lab-studio-section.tsx");
   const panel = read("src/features/courses/course-setup.tsx");
   const { allowedBackendPath } = require("../src/lib/api/backend-path.ts");
 
@@ -574,7 +585,7 @@ test("lecturer course setup checklist links the reference runtime and Studio Liv
   assert.match(panel, /Studio Live/);
   assert.match(panel, /runtime-config\?project=/);
   assert.ok(course.includes("<CourseSetupPanel workspaceId={workspaceId}"));
-  assert.ok(assignments.includes("runtime-config?project="));
+  assert.ok(studio.includes("runtime-config?project="));
   assert.equal(
     allowedBackendPath("workspaces/11111111-1111-1111-1111-111111111111/course-setup"),
     true,
@@ -643,4 +654,15 @@ test("WF-04 released review state wins over legacy score fallback", () => {
     }),
     null,
   );
+});
+
+test("a missing Course draft is an empty state, not a class-content load error", () => {
+  const { ApiError } = require("../src/lib/errors/api-error.ts");
+  const { isMissingCourseError } = require("../src/features/courses/course-outline.tsx");
+  assert.equal(isMissingCourseError(new ApiError("not-found", 404)), true);
+  assert.equal(isMissingCourseError(new ApiError("server", 500)), false);
+  assert.equal(isMissingCourseError(new Error("network")), false);
+  const source = read("src/features/courses/course-outline.tsx");
+  assert.match(source, /isMissingCourseError\(authoring\.error\)/);
+  assert.match(source, /isMissingCourseError\(publishedQuery\.error\)/);
 });

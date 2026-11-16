@@ -135,6 +135,8 @@ import {ApiContext,SelectionContext} from '@/providers/app-context';
 import {LocaleProvider} from '@/lib/i18n/locale-context';
 import {LabWorkspace} from '@/features/courses/screens';
 import {WorkspaceOverview} from '@/features/workspaces/screens';
+import {Assignments} from '@/features/assignments/screens';
+import {LabAuthoring} from '@/features/assignments/lab-authoring';
 const workspace=${JSON.stringify(workspace)};
 const lab=${JSON.stringify(lab)};
 const draft=${JSON.stringify(draft)};
@@ -144,6 +146,7 @@ const quiz=${JSON.stringify(quiz)};
 globalThis.fetch=async(url)=>{
   const path=String(url);
   let payload={};
+  if(globalThis.__mavisEmptyCourse && path.includes('/course')) return new Response(JSON.stringify({message:'Course draft not found'}),{status:404,headers:{'content-type':'application/json'}});
   if(path.includes('course-roadmap')) payload=roadmap;
   else if(path.includes('/quiz')) payload=quiz;
   else if(path.includes('/course/published')) payload=published;
@@ -160,9 +163,11 @@ const api={mode:'backend',async execute(operation){
   return [];
 }};
 const params=new URLSearchParams(window.location.search);
+globalThis.__mavisEmptyCourse=params.get('empty')==='1';
 const selection={projectId:'',workspaceId:'ws-lms',setProjectId(){},setWorkspaceId(){}};
 const client=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
-const View=params.get('view')==='lab'?LabWorkspace:WorkspaceOverview;
+const view=params.get('view');
+const View=view==='lab'?LabWorkspace:view==='assignments'?Assignments:view==='authoring'?LabAuthoring:WorkspaceOverview;
 class Boundary extends React.Component{
   constructor(props){super(props);this.state={error:null,stack:''};}
   static getDerivedStateFromError(error){return {error};}
@@ -268,6 +273,47 @@ async function main() {
       fullPage: true,
       animations: "disabled",
     });
+
+    await page.goto(base + "?view=assignments&workspace=ws-lms", { waitUntil: "networkidle" });
+    try {
+      await page.getByText("Lab 1 Service resilience", { exact: false }).first().waitFor({ timeout: 8000 });
+    } catch (error) {
+      console.error("Assignments view errors:", errors);
+      console.error("Assignments view body:", await page.locator("body").innerText());
+      throw error;
+    }
+    await page.getByText("Create a Lab", { exact: true }).waitFor();
+    await page.getByText("Author", { exact: true }).first().waitFor();
+    assert.equal(
+      await page.getByText("1-Click Seed Curated Labs", { exact: false }).count(),
+      0,
+      "Course seeding must stay in the separate Course tools panel",
+    );
+    await page.screenshot({
+      path: path.join(output, "assignments.png"),
+      fullPage: true,
+      animations: "disabled",
+    });
+
+    await page.goto(base + "?view=authoring&workspace=ws-lms&assignment=a1&tab=info", {
+      waitUntil: "networkidle",
+    });
+    await page.getByText("Lab information", { exact: false }).first().waitFor();
+    await page.getByText("Reference source", { exact: false }).first().waitFor();
+    await page.getByText("Save Lab changes", { exact: true }).waitFor();
+    await page.screenshot({
+      path: path.join(output, "lab-authoring.png"),
+      fullPage: true,
+      animations: "disabled",
+    });
+
+    await page.goto(base + "?view=class&empty=1", { waitUntil: "networkidle" });
+    await page.getByText("No modules yet", { exact: true }).waitFor();
+    assert.equal(
+      await page.getByText("Could not load class content.", { exact: true }).count(),
+      0,
+      "A missing Course draft must render the empty state, not an error",
+    );
 
     assert.deepEqual(errors, []);
     console.log("PASS lecturer LMS class view and Coursera Lab view render with screenshots");

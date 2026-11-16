@@ -1,23 +1,24 @@
 "use client";
-import { isDeadlinePassed } from "@/features/submissions/submission-readiness";
-import { Badge } from "@/components/ui/badge";
-import { diagramTypeLabel } from "@/lib/architecture/coursework-diagram-types";
-import { AssignmentSourceDetails } from "./source-picker";
+
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { useApi, useApiQuery, useApiMutation, usePermission, useSelection } from "@/hooks/use-api";
-import { useLocale } from "@/lib/i18n/locale-context";
+import { BookOpen, Eye, Pencil, Plus, Settings2, Trash2 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ErrorState, RequestState } from "@/components/shared/request-state";
+import { DataTable } from "@/components/shared/data";
 import { DetailPanel } from "@/components/shared/data";
+import { ErrorState, RequestState } from "@/components/shared/request-state";
+import { useApi, useApiMutation, useApiQuery, usePermission, useSelection } from "@/hooks/use-api";
+import { useLocale } from "@/lib/i18n/locale-context";
+import { diagramTypeLabel } from "@/lib/architecture/coursework-diagram-types";
+import { isDeadlinePassed } from "@/features/submissions/submission-readiness";
 import { SubmissionComposer } from "@/features/submissions/composer";
-import { CreateAssignment } from "./create";
-import { PublishCourseLab, SeedCuratedCourseLabs, useCourseRoadmap } from "@/features/workspaces/course-access";
-import { CurriculumPublisher } from "@/features/courses/curriculum";
+import { SeedCuratedCourseLabs, useCourseRoadmap } from "@/features/workspaces/course-access";
 import { AssignmentInstructions } from "./assignment-instructions";
-import Link from "next/link";
+import { AssignmentSourceDetails } from "./source-picker";
 
-function formatDeadline(value: string | undefined): string {
+function formatDeadline(value: string | undefined) {
   if (!value || value === "No deadline") return "No deadline";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
@@ -28,6 +29,199 @@ function formatDeadline(value: string | undefined): string {
 }
 
 export function Assignments() {
+  const canManage = usePermission("workspace:manage");
+  return canManage ? <LecturerAssignments /> : <StudentAssignments />;
+}
+
+function LecturerAssignments() {
+  const { t } = useLocale();
+  const { workspaceId } = useSelection();
+  const query = useApiQuery("assignments", { workspaceId }, { enabled: Boolean(workspaceId) });
+  const roadmap = useCourseRoadmap(workspaceId);
+  const remove = useApiMutation("deleteAssignment");
+  const [showTools, setShowTools] = useState(false);
+  const labs = query.data ?? [];
+  const publishedLabs = labs.filter((lab) =>
+    roadmap.data?.labs.some((item) => item.assignmentId === lab.id),
+  ).length;
+
+  if (!workspaceId) return null;
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">{t("Labs", "Lab")}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {t(
+              "Create a Lab, then configure its theory, reference source, Quiz, Studio Live and publishing in one authoring workspace.",
+              "Tạo Lab, sau đó cấu hình lý thuyết, nguồn tham chiếu, Quiz, Studio Live và công bố trong một không gian soạn duy nhất.",
+            )}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {labs.length} {t("Labs", "Lab")} · {publishedLabs} {t("published", "đã công bố")} ·{" "}
+            {labs.length - publishedLabs} {t("draft", "bản nháp")}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" size="sm" onClick={() => setShowTools((open) => !open)}>
+            <Settings2 className="mr-1 size-4" aria-hidden="true" />
+            {t("Course tools", "Công cụ khóa học")}
+          </Button>
+          <Button asChild size="sm">
+            <Link href={`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}`}>
+              <Plus className="mr-1 size-4" aria-hidden="true" />
+              {t("Create a Lab", "Tạo Lab")}
+            </Link>
+          </Button>
+        </div>
+      </div>
+
+      {showTools && (
+        <section className="space-y-3 rounded-xl border bg-card p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="font-semibold">{t("Course tools", "Công cụ khóa học")}</h2>
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  "Seed a curated course or open the course-level setup checklist. These actions are separate from authoring one Lab.",
+                  "Khởi tạo khóa học mẫu hoặc mở checklist cấp khóa học. Các thao tác này tách khỏi việc soạn một Lab.",
+                )}
+              </p>
+            </div>
+            <Button asChild size="sm" variant="outline">
+              <Link href={`/roadmap?workspace=${encodeURIComponent(workspaceId)}`}>
+                {t("Course setup checklist", "Checklist thiết lập khóa học")}
+              </Link>
+            </Button>
+          </div>
+          <SeedCuratedCourseLabs workspaceId={workspaceId} />
+        </section>
+      )}
+
+      <RequestState
+        query={query}
+        empty={!labs.length}
+        emptyMessage={t(
+          "No Labs yet. Create the first Lab to start authoring.",
+          "Chưa có Lab. Hãy tạo Lab đầu tiên để bắt đầu soạn.",
+        )}
+      >
+        <DataTable
+          rows={labs}
+          rowKey={(lab) => lab.id}
+          caption={t("Class Labs", "Lab của lớp")}
+          columns={[
+            {
+              key: "title",
+              label: t("Lab", "Lab"),
+              render: (lab) => {
+                const position = roadmap.data?.labs.find((item) => item.assignmentId === lab.id)?.position;
+                return (
+                  <Link
+                    className="font-medium text-primary hover:underline"
+                    href={`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(lab.id)}&tab=info`}
+                  >
+                    {position ? `${position}. ` : ""}
+                    {lab.title}
+                  </Link>
+                );
+              },
+            },
+            {
+              key: "status",
+              label: t("Status", "Trạng thái"),
+              render: (lab) => {
+                const published = roadmap.data?.labs.some((item) => item.assignmentId === lab.id);
+                return (
+                  <Badge variant={published ? "success" : "secondary"}>
+                    {published ? t("Published", "Đã công bố") : t("Draft", "Bản nháp")}
+                  </Badge>
+                );
+              },
+            },
+            {
+              key: "source",
+              label: t("Reference source", "Nguồn tham chiếu"),
+              render: (lab) =>
+                lab.referenceSource
+                  ? t(`Pinned · r${lab.referenceSource.revision}`, `Đã ghim · r${lab.referenceSource.revision}`)
+                  : t("Missing", "Chưa gắn"),
+            },
+            {
+              key: "due",
+              label: t("Deadline", "Hạn nộp"),
+              render: (lab) => formatDeadline(lab.dueAt),
+            },
+            {
+              key: "actions",
+              label: t("Actions", "Thao tác"),
+              render: (lab) => {
+                const published = roadmap.data?.labs.some((item) => item.assignmentId === lab.id);
+                return (
+                  <div className="flex flex-wrap items-center gap-1">
+                    <Button asChild size="sm" variant="outline">
+                      <Link
+                        href={`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(lab.id)}&tab=info`}
+                      >
+                        <Pencil className="mr-1 size-3.5" aria-hidden="true" />
+                        {t("Author", "Soạn")}
+                      </Link>
+                    </Button>
+                    {published && (
+                      <Button asChild size="sm" variant="ghost">
+                        <Link
+                          href={`/lab?${new URLSearchParams({
+                            workspace: workspaceId,
+                            assignment: lab.id,
+                            step: "1",
+                            preview: "1",
+                          })}`}
+                        >
+                          <Eye className="mr-1 size-3.5" aria-hidden="true" />
+                          {t("Preview", "Xem trước")}
+                        </Link>
+                      </Button>
+                    )}
+                    <Button asChild size="sm" variant="ghost">
+                      <Link href={`/submissions?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(lab.id)}`}>
+                        {t("Submissions", "Bài nộp")}
+                      </Link>
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      disabled={remove.isPending || Boolean(published)}
+                      title={published ? t("Published Labs cannot be deleted here.", "Lab đã công bố không thể xóa tại đây.") : undefined}
+                      onClick={() => {
+                        if (
+                          window.confirm(
+                            t(
+                              "Delete this draft Lab? This cannot be undone.",
+                              "Xóa Lab nháp này? Không thể hoàn tác.",
+                            ),
+                          )
+                        )
+                          remove.mutate({ workspaceId, assignmentId: lab.id });
+                      }}
+                    >
+                      <Trash2 className="size-3.5" aria-hidden="true" />
+                      <span className="sr-only">{t("Delete", "Xóa")}</span>
+                    </Button>
+                  </div>
+                );
+              },
+            },
+          ]}
+        />
+        {remove.error && <ErrorState error={remove.error} />}
+      </RequestState>
+    </div>
+  );
+}
+
+function StudentAssignments() {
   const { t } = useLocale();
   const { workspaceId } = useSelection();
   const params = useSearchParams();
@@ -35,11 +229,6 @@ export function Assignments() {
   const query = useApiQuery("assignments", { workspaceId }, { enabled: Boolean(workspaceId) });
   const client = useApi();
   const roadmap = useCourseRoadmap(workspaceId);
-  const [showCreate, setShowCreate] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const canSubmit = usePermission("submission:create");
-  const canManage = usePermission("workspace:manage");
-  const remove = useApiMutation("deleteAssignment");
   const assignments = useMemo(() => {
     const rows = [...(query.data ?? [])];
     if (!requestedAssignmentId) return rows;
@@ -49,209 +238,116 @@ export function Assignments() {
   }, [query.data, requestedAssignmentId]);
 
   useEffect(() => {
-    if (!requestedAssignmentId || !query.data?.some((item) => item.id === requestedAssignmentId))
-      return;
+    if (!requestedAssignmentId || !query.data?.some((item) => item.id === requestedAssignmentId)) return;
     document
       .getElementById(`assignment-${requestedAssignmentId}`)
       ?.scrollIntoView({ block: "start", behavior: "smooth" });
   }, [query.data, requestedAssignmentId]);
 
-  return workspaceId ? (
-    <div className="space-y-5">
-      {canManage && (
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          {client.mode === "backend" && <SeedCuratedCourseLabs workspaceId={workspaceId} />}
-          <Button asChild variant="outline" size="sm">
-            <Link href={`/roadmap?workspace=${encodeURIComponent(workspaceId)}`}>
-              Course setup checklist
-            </Link>
-          </Button>
-          <Button
-            type="button"
-            variant={showCreate ? "outline" : "default"}
-            onClick={() => setShowCreate((open) => !open)}
-          >
-            {showCreate
-              ? t("Close Lab authoring", "Đóng trình tạo Lab")
-              : t("Create a Lab", "Tạo Lab")}
-          </Button>
-        </div>
+  if (!workspaceId) return null;
+
+  return (
+    <RequestState
+      query={query}
+      empty={!query.data?.length}
+      emptyMessage={t(
+        "Your lecturer has not published a Lab in this class yet.",
+        "Giảng viên chưa công bố Lab nào trong lớp này.",
       )}
-      {canManage && showCreate && (
-        <CreateAssignment
-          key={workspaceId}
-          workspaceId={workspaceId}
-          onSuccess={() => setShowCreate(false)}
-        />
-      )}
-      {roadmap.isError && (
-        <Button variant="outline" onClick={() => void roadmap.refetch()}>
-          {t("Retry loading lab roadmap", "Tải lại lộ trình Lab")}
-        </Button>
-      )}
-      <RequestState
-        query={query}
-        empty={!query.data?.length}
-        emptyMessage={
-          canSubmit
-            ? "Your lecturer has not published an assignment in this class yet."
-            : "No assignments in this class yet. Click Create assignment above to publish one."
-        }
-      >
-        <div className="space-y-4">
-          {assignments.map((assignment) => {
-            const published = roadmap.data?.labs.find((lab) => lab.assignmentId === assignment.id);
-            const overdue = isDeadlinePassed(assignment.dueAt);
-            return (
-              <div
-                key={assignment.id}
-                id={`assignment-${assignment.id}`}
-                className={
-                  assignment.id === requestedAssignmentId
-                    ? "scroll-mt-20 rounded-2xl ring-2 ring-primary/40 ring-offset-4 ring-offset-background"
-                    : "scroll-mt-20"
+    >
+      <div className="space-y-4">
+        {assignments.map((assignment) => {
+          const published = roadmap.data?.labs.find((lab) => lab.assignmentId === assignment.id);
+          const overdue = isDeadlinePassed(assignment.dueAt);
+          const locked = published?.state === "LOCKED";
+          const passed = published?.state === "PASSED";
+          return (
+            <div
+              key={assignment.id}
+              id={`assignment-${assignment.id}`}
+              className={
+                assignment.id === requestedAssignmentId
+                  ? "scroll-mt-20 rounded-2xl ring-2 ring-primary/40 ring-offset-4 ring-offset-background"
+                  : "scroll-mt-20"
+              }
+            >
+              <DetailPanel
+                title={assignment.title}
+                actions={
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <Badge variant={overdue ? "destructive" : "outline"}>
+                      {t("Due", "Hạn")} {formatDeadline(assignment.dueAt)}
+                    </Badge>
+                    <Badge variant={assignment.requireRuntimeTrace ? "warning" : "outline"}>
+                      {assignment.requireRuntimeTrace
+                        ? t("Runtime trace required", "Yêu cầu runtime trace")
+                        : t("Runtime trace optional", "Runtime trace tùy chọn")}
+                    </Badge>
+                  </div>
                 }
               >
-                <DetailPanel
-                  title={assignment.title}
-                  actions={
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <Badge variant={overdue ? "destructive" : "outline"}>
-                        Due {formatDeadline(assignment.dueAt)}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-xs font-medium text-muted-foreground">
+                    {t("Required diagrams:", "Sơ đồ bắt buộc:")}
+                  </span>
+                  {assignment.requiredDiagramTypes && assignment.requiredDiagramTypes.length > 0 ? (
+                    assignment.requiredDiagramTypes.map((type) => (
+                      <Badge key={type} variant="secondary">
+                        {diagramTypeLabel(type)}
                       </Badge>
-                      {assignment.requireRuntimeTrace ? (
-                        <Badge variant="warning">Runtime Trace Required</Badge>
-                      ) : (
-                        <Badge variant="outline">Runtime Trace Optional</Badge>
-                      )}
-                    </div>
-                  }
-                >
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="text-xs font-medium text-muted-foreground">
-                      Required diagrams:
-                    </span>
-                    {assignment.requiredDiagramTypes &&
-                    assignment.requiredDiagramTypes.length > 0 ? (
-                      assignment.requiredDiagramTypes.map((t) => (
-                        <Badge key={t} variant="secondary">
-                          {diagramTypeLabel(t)}
-                        </Badge>
-                      ))
-                    ) : (
-                      <Badge variant="outline">Any saved diagram</Badge>
-                    )}
-                  </div>
-                  <AssignmentInstructions>{assignment.instructions}</AssignmentInstructions>
-                  <AssignmentSourceDetails
-                    source={assignment.referenceSource}
-                    assignmentId={assignment.id}
-                  />
-                  {canManage && client.mode === "backend" && assignment.referenceSource?.projectId && (
-                    <Button asChild size="sm" variant="outline">
-                      <Link
-                        href={`/runtime-config?project=${encodeURIComponent(assignment.referenceSource.projectId)}`}
-                      >
-                        Configure runtime &amp; Studio Live
-                      </Link>
-                    </Button>
+                    ))
+                  ) : (
+                    <Badge variant="outline">{t("Any saved diagram", "Bất kỳ sơ đồ đã lưu")}</Badge>
                   )}
-                  {canManage &&
-                    client.mode === "backend" &&
-                    (published || assignment.referenceSource) && (
-                      <PublishCourseLab
-                        workspaceId={workspaceId}
-                        assignmentId={assignment.id}
-                        position={published?.position}
-                      />
-                    )}
-                  {published && client.mode === "backend" && (
-                    canManage ? <CurriculumPublisher workspaceId={workspaceId} assignmentId={assignment.id} />
-                      : published.state !== "LOCKED" && (
-                        <Button size="sm" variant="outline" asChild>
-                          <Link href={`/lab?${new URLSearchParams({ workspace: workspaceId, assignment: assignment.id, step: "2" })}`}>
-                            {t("Study and take the Quiz", "Học lý thuyết và làm Quiz")}
-                          </Link>
-                        </Button>
-                      )
-                  )}
-                  {canManage && (
-                    <div className="flex flex-wrap items-center gap-3">
-                      <Link
-                        className="text-sm text-primary underline"
-                        href={`/submissions?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignment.id)}`}
-                      >
-                        Review submissions for this assignment
-                      </Link>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() =>
-                          setEditingId((current) =>
-                            current === assignment.id ? null : assignment.id,
-                          )
-                        }
-                      >
-                        {editingId === assignment.id
-                          ? "Close edit"
-                          : "Edit assignment & reference source"}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={remove.isPending || Boolean(published)}
-                        onClick={() => {
-                          if (
-                            window.confirm(
-                              "Delete this assignment? Assignments with submissions cannot be deleted.",
-                            )
-                          )
-                            remove.mutate({ workspaceId, assignmentId: assignment.id });
-                        }}
-                      >
-                        Delete assignment
-                      </Button>
-                      {remove.error && <ErrorState error={remove.error} />}
-                    </div>
-                  )}
-                  {canManage && editingId === assignment.id && (
-                    <CreateAssignment
-                      key={assignment.id}
-                      workspaceId={workspaceId}
-                      assignment={assignment}
-                      onSuccess={() => setEditingId(null)}
-                    />
-                  )}
-                  <p className="text-xs text-muted-foreground">
-                    Required diagrams:{" "}
-                    {assignment.requiredDiagramTypes?.map(diagramTypeLabel).join(", ") ||
-                      "Any saved diagram"}{" "}
-                    · Runtime trace: {assignment.requireRuntimeTrace ? "Required" : "Optional"}
+                </div>
+                <AssignmentInstructions>{assignment.instructions}</AssignmentInstructions>
+                <AssignmentSourceDetails source={assignment.referenceSource} assignmentId={assignment.id} />
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button asChild>
+                    <Link
+                      href={`/lab?${new URLSearchParams({
+                        workspace: workspaceId,
+                        assignment: assignment.id,
+                        step: "1",
+                      })}`}
+                    >
+                      <BookOpen className="mr-1 size-4" aria-hidden="true" />
+                      {locked ? t("View Lab", "Xem Lab") : t("Open Lab", "Mở Lab")}
+                    </Link>
+                  </Button>
+                  <Button asChild variant="outline">
+                    <Link href={`/submissions?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignment.id)}`}>
+                      {t("My submissions", "Bài nộp của tôi")}
+                    </Link>
+                  </Button>
+                </div>
+                {passed && (
+                  <p role="status" className="text-sm text-success">
+                    {t("This Lab is complete. Your passing submission is in My Submissions.", "Lab đã hoàn thành. Bài đã đạt nằm trong Bài nộp của tôi.")}
                   </p>
-                  {canSubmit && published?.state === "PASSED" && (
-                    <div className="flex flex-wrap items-center gap-3" role="status">
-                      <span>{t("This Lab is complete. Your passing submission is in My Submissions.", "Lab đã hoàn thành. Bạn có thể xem bài đã đạt trong Bài nộp của tôi.")}</span>
-                      <Link className="text-primary underline" href={`/submissions?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignment.id)}`}>
-                        {t("View submissions", "Xem bài nộp")}
-                      </Link>
-                    </div>
-                  )}
-                  {canSubmit && published?.state !== "PASSED" && (client.mode !== "backend" || roadmap.isSuccess) && (
-                    <SubmissionComposer
-                      key={assignment.id}
-                      assignmentId={assignment.id}
-                      requirements={assignment}
-                      guided={roadmap.data?.guided ?? false}
-                      workspaceId={workspaceId}
-                    />
-                  )}
-                </DetailPanel>
-              </div>
-            );
-          })}
-        </div>
-      </RequestState>
-    </div>
-  ) : null;
+                )}
+                {!passed && locked && (
+                  <p role="status" className="text-sm text-muted-foreground">
+                    {t(
+                      "This Lab is locked until you pass the preceding Lab.",
+                      "Lab này bị khóa cho tới khi bạn đạt Lab trước.",
+                    )}
+                  </p>
+                )}
+                {!passed && !locked && (client.mode !== "backend" || roadmap.isSuccess) && (
+                  <SubmissionComposer
+                    key={assignment.id}
+                    assignmentId={assignment.id}
+                    requirements={assignment}
+                    guided={roadmap.data?.guided ?? false}
+                    workspaceId={workspaceId}
+                  />
+                )}
+              </DetailPanel>
+            </div>
+          );
+        })}
+      </div>
+    </RequestState>
+  );
 }
