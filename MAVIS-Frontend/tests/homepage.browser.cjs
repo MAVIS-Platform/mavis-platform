@@ -6,6 +6,21 @@ const { chromium } = require("playwright");
 const base = process.argv[2] ?? "http://127.0.0.1:3110";
 const screenshots = process.env.MAVIS_HOMEPAGE_SCREENSHOTS;
 
+async function checkShortDesktop(page, name) {
+  await page.setViewportSize({ width: 1351, height: 608 });
+  await page.evaluate(() => window.scrollTo(0, 0));
+  for (const selector of [".v2-hero-actions", "#demo"]) {
+    const bounds = await page.locator(selector).boundingBox();
+    assert.ok(
+      bounds && bounds.y >= 0 && bounds.y + bounds.height <= 608,
+      `${name}: ${selector} should fit in the viewport`,
+    );
+  }
+  if (screenshots) {
+    await page.screenshot({ path: join(screenshots, `hero-${name}.png`) });
+  }
+}
+
 async function main() {
   const browser = await chromium.launch({
     channel: process.env.MAVIS_TEST_BROWSER_CHANNEL || "chrome",
@@ -31,6 +46,7 @@ async function main() {
       mkdirSync(screenshots, { recursive: true });
       await page.screenshot({ path: join(screenshots, "desktop-light.png"), fullPage: true });
     }
+    await checkShortDesktop(page, "en-light");
     await page.getByRole("link", { name: "Try the sample scenario" }).click();
     assert.equal(new URL(page.url()).hash, "#demo");
 
@@ -50,10 +66,42 @@ async function main() {
     if (screenshots) {
       await page.locator("#demo").screenshot({ path: join(screenshots, "sample-impact.png") });
     }
+    await page.getByRole("button", { name: "Trace", exact: true }).click();
+    await page.getByRole("heading", { name: "Trace before the change" }).waitFor();
+    await page.getByText("503 · Unavailable", { exact: true }).waitFor();
+    await page.getByRole("button", { name: "Impact", exact: true }).click();
     await page.getByRole("button", { name: "Restore Payments" }).click();
     await page.getByText("200 · Succeeded", { exact: true }).waitFor();
     await page.getByRole("button", { name: "Reset scenario" }).click();
     await page.getByText("OrderService.java", { exact: true }).waitFor();
+
+    await page
+      .getByRole("navigation", { name: "On this page" })
+      .getByRole("link", { name: "Workspace" })
+      .click();
+    const gallery = page.getByRole("group", { name: "Workspace screens" });
+    const preview = page.locator("#v2-workspace-preview");
+    for (const [name, asset] of [
+      ["MAVIS Studio", "studio"],
+      ["Course setup", "course"],
+      ["Architecture Explorer", "architecture"],
+    ]) {
+      const button = gallery.getByRole("button", { name });
+      await button.press("Enter");
+      assert.equal(await button.getAttribute("aria-pressed"), "true");
+      const src = `/homepage/${asset}.webp`;
+      assert.equal(await preview.getByRole("img").getAttribute("src"), src);
+      assert.equal(
+        await preview.getByRole("link", { name: /Open full image/ }).getAttribute("href"),
+        src,
+      );
+      assert.ok(
+        await preview.getByRole("img").evaluate(async (image) => {
+          await image.decode();
+          return image.naturalWidth === 800;
+        }),
+      );
+    }
 
     await page.getByText("Where can I get a Passkey?", { exact: true }).click();
     await page.getByText(/Your lecturer issues the Passkey/).waitFor();
@@ -65,6 +113,7 @@ async function main() {
       );
     }
     await page.getByRole("button", { name: /Switch to Vietnamese/ }).click();
+    await checkShortDesktop(page, "vi-light");
     await page.getByRole("button", { name: "Chuyển sang giao diện tối" }).click();
     await page.reload({ waitUntil: "networkidle" });
     await page
@@ -72,6 +121,7 @@ async function main() {
       .waitFor();
     assert.equal(await page.locator("html").getAttribute("data-appearance"), "dark");
     assert.equal(await page.locator("html").getAttribute("lang"), "vi");
+    await checkShortDesktop(page, "vi-dark");
     for (const width of [320, 390, 768, 1024, 1440]) {
       await page.setViewportSize({ width, height: 844 });
       assert.ok(
@@ -85,6 +135,19 @@ async function main() {
       await page.setViewportSize({ width: 390, height: 844 });
       await page.screenshot({ path: join(screenshots, "mobile-dark-vi.png"), fullPage: true });
     }
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByLabel("Menu trang").click();
+    const mobileNav = page.getByRole("navigation", { name: "Trên trang này" });
+    await mobileNav.getByRole("link", { name: "Workspace" }).press("Enter");
+    assert.equal(new URL(page.url()).hash, "#workspace");
+    assert.equal(await mobileNav.isVisible(), false);
+    const header = await page.locator(".v2-header").boundingBox();
+    const workspace = await page.locator("#workspace").boundingBox();
+    assert.ok(header && workspace && workspace.y >= header.y + header.height);
+
+    await page.getByRole("button", { name: /Switch to English/ }).click();
+    await checkShortDesktop(page, "en-dark");
+    await page.getByRole("button", { name: /Switch to Vietnamese/ }).click();
     assert.deepEqual(apiRequests, []);
     assert.deepEqual(errors, []);
     await page.goto(base + "/#course-passkey");
