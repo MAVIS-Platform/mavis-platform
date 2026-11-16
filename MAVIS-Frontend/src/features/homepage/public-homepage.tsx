@@ -2,18 +2,22 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useState } from "react";
 import {
   ArrowDown,
   ArrowRight,
   ArrowUpRight,
   BookOpen,
   Check,
+  ChevronRight,
   ChevronDown,
   CodeXml,
   GraduationCap,
   Menu,
+  Network,
   Radio,
   Users,
+  Waypoints,
 } from "lucide-react";
 import { AppearanceSelector } from "@/components/appearance-selector";
 import { MavisLogo } from "@/components/mavis-logo";
@@ -65,6 +69,7 @@ const milestones = [
 const screens = [
   {
     image: "/homepage/architecture.webp",
+    icon: Network,
     title: ["Architecture Explorer", "Khám phá kiến trúc"],
     description: [
       "See how services relate and trace a dependency back to its source.",
@@ -77,6 +82,7 @@ const screens = [
   },
   {
     image: "/homepage/studio.webp",
+    icon: Waypoints,
     title: ["MAVIS Studio", "MAVIS Studio"],
     description: [
       "Inspect a request and compare evidence around a change in a prepared Lab.",
@@ -89,6 +95,7 @@ const screens = [
   },
   {
     image: "/homepage/course.webp",
+    icon: GraduationCap,
     title: ["Course setup", "Chuẩn bị lớp học"],
     description: [
       "Prepare reference material, check Lab readiness, and give students a Passkey.",
@@ -134,12 +141,14 @@ const questions = [
 
 export function PublicHomepage() {
   const { t } = useLocale();
+  const [screen, setScreen] = useState<(typeof screens)[number]>(screens[0]);
   const login = t("Sign in", "Đăng nhập");
   const trySample = t("Try the sample scenario", "Thử tình huống mẫu");
   const sections = [
     { href: "#demo", label: t("Explore", "Trải nghiệm") },
     { href: "#workflow", label: t("Learning path", "Lộ trình") },
-    { href: "#classroom", label: t("For classes", "Dành cho lớp học") },
+    { href: "#workspace", label: t("Workspace", "Workspace") },
+    { href: "#classroom", label: t("For classes", "Lớp học") },
   ];
 
   return (
@@ -173,7 +182,13 @@ export function PublicHomepage() {
               </summary>
               <nav aria-label={t("On this page", "Trên trang này")}>
                 {sections.map(({ href, label }) => (
-                  <a key={href} href={href}>
+                  <a
+                    key={href}
+                    href={href}
+                    onClick={(event) =>
+                      event.currentTarget.closest("details")?.removeAttribute("open")
+                    }
+                  >
                     {label}
                   </a>
                 ))}
@@ -184,32 +199,34 @@ export function PublicHomepage() {
       </header>
 
       <main id="main" tabIndex={-1}>
-        <section className="v2-container v2-hero" aria-labelledby="home-title">
-          <div className="v2-hero-copy">
-            <h1 id="home-title">
-              {t(
-                "Follow a request across microservices",
-                "Theo dấu một yêu cầu qua hệ thống microservices",
-              )}
-            </h1>
-            <p>
-              {t(
-                "Learn to read Java and C# architectures, find evidence in the source, and see what happens when a service stops.",
-                "Học cách đọc kiến trúc Java và C#, tìm bằng chứng trong mã nguồn và xem điều gì xảy ra khi một dịch vụ dừng.",
-              )}
-            </p>
-            <div className="v2-hero-actions">
-              <a className="v2-primary" href="#demo">
-                {trySample}
-                <ArrowDown aria-hidden="true" />
-              </a>
-              <Link id="course-passkey" className="v2-text-action" href={joinPath}>
-                {t("Have a Passkey? Join a class", "Có Passkey? Vào lớp")}
-                <ArrowRight aria-hidden="true" />
-              </Link>
+        <section className="v2-hero-surface" aria-labelledby="home-title">
+          <div className="v2-container v2-hero">
+            <div className="v2-hero-copy">
+              <h1 id="home-title">
+                {t(
+                  "Follow a request across microservices",
+                  "Theo dấu một yêu cầu qua hệ thống microservices",
+                )}
+              </h1>
+              <p>
+                {t(
+                  "Learn to read Java and C# architectures, find evidence in the source, and see what happens when a service stops.",
+                  "Học cách đọc kiến trúc Java và C#, tìm bằng chứng trong mã nguồn và xem điều gì xảy ra khi một dịch vụ dừng.",
+                )}
+              </p>
+              <div className="v2-hero-actions">
+                <a className="v2-primary" href="#demo">
+                  {trySample}
+                  <ArrowDown aria-hidden="true" />
+                </a>
+                <Link id="course-passkey" className="v2-text-action" href={joinPath}>
+                  {t("Have a Passkey? Join a class", "Có Passkey? Vào lớp")}
+                  <ArrowRight aria-hidden="true" />
+                </Link>
+              </div>
             </div>
+            <RequestDemo />
           </div>
-          <RequestDemo />
         </section>
 
         <section id="workflow" className="v2-lab" aria-labelledby="v2-lab-title">
@@ -237,14 +254,21 @@ export function PublicHomepage() {
                   </div>
                   <h3>{t(title[0], title[1])}</h3>
                   <p>{t(text[0], text[1])}</p>
-                  <strong>{t(result[0], result[1])}</strong>
+                  <strong>
+                    <ChevronRight aria-hidden="true" />
+                    {t(result[0], result[1])}
+                  </strong>
                 </li>
               ))}
             </ol>
           </div>
         </section>
 
-        <section className="v2-container v2-section v2-previews" aria-labelledby="v2-preview-title">
+        <section
+          id="workspace"
+          className="v2-container v2-section v2-previews"
+          aria-labelledby="v2-preview-title"
+        >
           <div className="v2-section-intro">
             <h2 id="v2-preview-title">
               {t("Inside the MAVIS workspace", "Bên trong workspace MAVIS")}
@@ -257,21 +281,53 @@ export function PublicHomepage() {
             </p>
           </div>
           <div className="v2-gallery">
-            {screens.map(({ image, title, description, alt }) => (
-              <figure key={image}>
-                <Image
-                  src={image}
-                  alt={t(alt[0], alt[1])}
-                  width={800}
-                  height={480}
-                  sizes="(max-width: 730px) 94vw, (max-width: 1200px) 31vw, 380px"
-                />
-                <figcaption>
-                  <h3>{t(title[0], title[1])}</h3>
-                  <p>{t(description[0], description[1])}</p>
-                </figcaption>
-              </figure>
-            ))}
+            <div className="v2-gallery-selector">
+              <div
+                className="v2-gallery-controls"
+                role="group"
+                aria-label={t("Workspace screens", "Màn hình workspace")}
+              >
+                {screens.map((option) => {
+                  const { image, icon: Icon, title } = option;
+                  return (
+                    <button
+                      key={image}
+                      type="button"
+                      aria-pressed={option === screen}
+                      aria-controls="v2-workspace-preview"
+                      onClick={() => setScreen(option)}
+                    >
+                      <Icon aria-hidden="true" />
+                      <span>{t(title[0], title[1])}</span>
+                      <ChevronRight aria-hidden="true" />
+                    </button>
+                  );
+                })}
+              </div>
+              <p aria-live="polite">{t(screen.description[0], screen.description[1])}</p>
+            </div>
+            <figure id="v2-workspace-preview">
+              <figcaption>
+                <span>{t(screen.title[0], screen.title[1])}</span>
+                <a
+                  className="v2-text-action"
+                  href={screen.image}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {t("Open full image", "Mở ảnh gốc")}
+                  <ArrowUpRight aria-hidden="true" />
+                  <span className="sr-only">{t(" (new tab)", " (tab mới)")}</span>
+                </a>
+              </figcaption>
+              <Image
+                src={screen.image}
+                alt={t(screen.alt[0], screen.alt[1])}
+                width={800}
+                height={480}
+                unoptimized
+              />
+            </figure>
           </div>
         </section>
 

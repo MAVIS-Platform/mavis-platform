@@ -30,7 +30,6 @@ export function RequestDemo() {
   const [stopped, setStopped] = useState(false);
   const { services, edges, request } = sampleScenario;
   const service = services[selected];
-  const observingFault = phase === "impact" && stopped;
 
   function reset() {
     select("Orders");
@@ -58,9 +57,9 @@ export function RequestDemo() {
 
       <div className="v2-request-row">
         <code>{request}</code>
-        <span className="v2-request-status" data-fault={observingFault} role="status">
+        <span className="v2-request-status" data-fault={stopped} role="status">
           <span aria-hidden="true" />
-          {observingFault
+          {stopped
             ? t("503 · Unavailable", "503 · Gián đoạn")
             : t("200 · Succeeded", "200 · Thành công")}
         </span>
@@ -78,7 +77,7 @@ export function RequestDemo() {
               d={path}
               vectorEffect="non-scaling-stroke"
               data-related={from === selected || to === selected}
-              data-fault={observingFault && to !== "Inventory"}
+              data-fault={stopped && to !== "Inventory"}
             />
           ))}
         </svg>
@@ -93,7 +92,7 @@ export function RequestDemo() {
               style={{ left: `${x}%`, top: `${y}%` }}
               aria-pressed={selected === name}
               onClick={() => select(name)}
-              data-stopped={observingFault && name === "Payments"}
+              data-stopped={stopped && name === "Payments"}
             >
               <Icon aria-hidden="true" />
               <span>{name}</span>
@@ -147,7 +146,11 @@ export function RequestDemo() {
         {phase === "trace" && (
           <>
             <div className="v2-panel-head">
-              <h3>{t("Example trace", "Trace minh họa")}</h3>
+              <h3>
+                {stopped
+                  ? t("Trace before the change", "Trace trước thay đổi")
+                  : t("Example trace", "Trace minh họa")}
+              </h3>
               <code>0–184 ms</code>
             </div>
             <ul
