@@ -508,7 +508,7 @@ class CourseHttpAcceptanceTest {
         send("GET", lockedQuiz, student, null, 403);
         assertEquals(1, data(send("POST", quiz, lecturer, definition, 200)).path("version").asInt());
         JsonNode publicQuiz = data(send("GET", quiz, student, null, 200));
-        assertEquals(70, publicQuiz.path("passPercent").asInt());
+        assertEquals(80, publicQuiz.path("passPercent").asInt());
         assertEquals("NOT_ATTEMPTED", publicQuiz.path("latestStatus").asText());
         assertFalse(publicQuiz.path("runtimeUnlocked").asBoolean());
         assertFalse(publicQuiz.path("questions").get(0).has("correctOption"));
