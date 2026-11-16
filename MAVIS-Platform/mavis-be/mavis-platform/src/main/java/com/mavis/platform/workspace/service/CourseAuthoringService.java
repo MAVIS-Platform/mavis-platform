@@ -265,18 +265,8 @@ public class CourseAuthoringService {
         access.requireWorkspaceLecturer(workspaceId);
         CourseDefinition course = requireCourse(workspaceId);
         requireDraft(course);
-        CourseModule module = modules.findById(moduleId)
-                .filter(candidate -> candidate.getCourse().getId().equals(course.getId()))
-                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Course module not found"));
-        if (request == null || request.type() == null || !ITEM_TYPES.contains(request.type().trim().toUpperCase())) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "Unsupported course item type");
-        }
-        if (request.title() == null || request.title().isBlank() || request.title().trim().length() > 255) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "Course item title is required and must be at most 255 characters");
-        }
-        if (request.assignmentId() != null && !assignments.existsByIdAndWorkspaceId(request.assignmentId(), workspaceId)) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "Linked Lab must belong to this Workspace");
-        }
+        CourseModule module = findModule(course, moduleId);
+        validateItemRequest(workspaceId, request);
         List<CourseItem> current = items.findByModuleIdOrderByPositionAsc(moduleId);
         CourseItem item = CourseItem.builder().module(module).itemType(request.type().trim().toUpperCase())
                 .title(request.title().trim()).description(request.description()).position(current.size() + 1)
@@ -285,6 +275,190 @@ public class CourseAuthoringService {
         items.save(item);
         bump(course);
         return view(course);
+    }
+
+    public CourseView updateModule(UUID workspaceId, UUID moduleId, ModuleRequest request) {
+        access.requireWorkspaceLecturer(workspaceId);
+        CourseDefinition course = requireCourse(workspaceId);
+        requireDraft(course);
+        CourseModule module = findModule(course, moduleId);
+        if (request == null || request.title() == null || request.title().isBlank()
+                || request.title().trim().length() > 255) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST,
+                    "Module title is required and must be at most 255 characters");
+        }
+        UUID prerequisite = request.prerequisiteModuleId();
+        if (prerequisite != null) {
+            CourseModule candidate = modules.findByCourseIdOrderByPositionAsc(course.getId()).stream()
+                    .filter(value -> value.getId().equals(prerequisite))
+                    .findFirst()
+                    .orElseThrow(() -> new BusinessException(ErrorCode.BAD_REQUEST,
+                            "Prerequisite must be an earlier module in this Course"));
+            if (candidate.getPosition() >= module.getPosition()) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST,
+                        "Prerequisite must be an earlier module in this Course");
+            }
+        }
+        module.setTitle(request.title().trim());
+        module.setDescription(request.description());
+        module.setPrerequisiteModuleId(prerequisite);
+        modules.save(module);
+        bump(course);
+        return view(course);
+    }
+
+    public CourseView moveModule(UUID workspaceId, UUID moduleId, String direction) {
+        access.requireWorkspaceLecturer(workspaceId);
+        CourseDefinition course = requireCourse(workspaceId);
+        requireDraft(course);
+        List<CourseModule> ordered = new java.util.ArrayList<>(modules.findByCourseIdOrderByPositionAsc(course.getId()));
+        int index = indexOfModule(ordered, moduleId);
+        int target = moveTarget(index, ordered.size(), direction);
+        if (target < 0) return view(course);
+        List<CourseModule> reordered = new java.util.ArrayList<>(ordered);
+        CourseModule moving = reordered.remove(index);
+        reordered.add(target, moving);
+        validateModuleOrder(reordered);
+        for (CourseModule module : ordered) {
+            module.setPosition(-module.getPosition());
+            modules.saveAndFlush(module);
+        }
+        int position = 1;
+        for (CourseModule module : reordered) {
+            module.setPosition(position++);
+            modules.saveAndFlush(module);
+        }
+        bump(course);
+        return view(course);
+    }
+
+    public CourseView updateItem(UUID workspaceId, UUID moduleId, UUID itemId, ItemRequest request) {
+        access.requireWorkspaceLecturer(workspaceId);
+        CourseDefinition course = requireCourse(workspaceId);
+        requireDraft(course);
+        findModule(course, moduleId);
+        validateItemRequest(workspaceId, request);
+        CourseItem item = items.findById(itemId)
+                .filter(candidate -> candidate.getModule().getId().equals(moduleId))
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Course item not found"));
+        applyItem(item, request);
+        items.save(item);
+        bump(course);
+        return view(course);
+    }
+
+    public CourseView moveItem(UUID workspaceId, UUID moduleId, UUID itemId, String direction) {
+        access.requireWorkspaceLecturer(workspaceId);
+        CourseDefinition course = requireCourse(workspaceId);
+        requireDraft(course);
+        findModule(course, moduleId);
+        List<CourseItem> ordered = new java.util.ArrayList<>(items.findByModuleIdOrderByPositionAsc(moduleId));
+        int index = -1;
+        for (int i = 0; i < ordered.size(); i++) {
+            if (ordered.get(i).getId().equals(itemId)) {
+                index = i;
+                break;
+            }
+        }
+        if (index < 0) throw new BusinessException(ErrorCode.NOT_FOUND, "Course item not found");
+        int target = moveTarget(index, ordered.size(), direction);
+        if (target < 0) return view(course);
+        CourseItem moving = ordered.get(index);
+        CourseItem neighbor = ordered.get(target);
+        int movingPosition = moving.getPosition();
+        int neighborPosition = neighbor.getPosition();
+        moving.setPosition(-movingPosition);
+        items.saveAndFlush(moving);
+        neighbor.setPosition(movingPosition);
+        items.saveAndFlush(neighbor);
+        moving.setPosition(neighborPosition);
+        items.saveAndFlush(moving);
+        bump(course);
+        return view(course);
+    }
+
+    public CourseView deleteItem(UUID workspaceId, UUID moduleId, UUID itemId) {
+        access.requireWorkspaceLecturer(workspaceId);
+        CourseDefinition course = requireCourse(workspaceId);
+        requireDraft(course);
+        findModule(course, moduleId);
+        CourseItem item = items.findById(itemId)
+                .filter(candidate -> candidate.getModule().getId().equals(moduleId))
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Course item not found"));
+        items.delete(item);
+        items.flush();
+        List<CourseItem> remaining = items.findByModuleIdOrderByPositionAsc(moduleId);
+        int position = 1;
+        for (CourseItem current : remaining) {
+            if (current.getPosition() != position) {
+                current.setPosition(position);
+                items.saveAndFlush(current);
+            }
+            position++;
+        }
+        bump(course);
+        return view(course);
+    }
+
+    private CourseModule findModule(CourseDefinition course, UUID moduleId) {
+        return modules.findById(moduleId)
+                .filter(candidate -> candidate.getCourse().getId().equals(course.getId()))
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Course module not found"));
+    }
+
+    private void validateItemRequest(UUID workspaceId, ItemRequest request) {
+        if (request == null || request.type() == null || !ITEM_TYPES.contains(request.type().trim().toUpperCase())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Unsupported course item type");
+        }
+        if (request.title() == null || request.title().isBlank() || request.title().trim().length() > 255) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST,
+                    "Course item title is required and must be at most 255 characters");
+        }
+        if (request.assignmentId() != null && !assignments.existsByIdAndWorkspaceId(request.assignmentId(), workspaceId)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Linked Lab must belong to this Workspace");
+        }
+    }
+
+    private void applyItem(CourseItem item, ItemRequest request) {
+        item.setItemType(request.type().trim().toUpperCase());
+        item.setTitle(request.title().trim());
+        item.setDescription(request.description());
+        item.setAssignmentId(request.assignmentId());
+        item.setContent(request.content() == null ? JsonNodeFactory.instance.objectNode() : request.content());
+        item.setRequired(request.required() == null || request.required());
+    }
+
+    private void validateModuleOrder(List<CourseModule> ordered) {
+        java.util.Map<UUID, Integer> indexById = new java.util.HashMap<>();
+        for (int i = 0; i < ordered.size(); i++) {
+            indexById.put(ordered.get(i).getId(), i);
+        }
+        for (int i = 0; i < ordered.size(); i++) {
+            UUID prerequisite = ordered.get(i).getPrerequisiteModuleId();
+            if (prerequisite == null) continue;
+            Integer prerequisiteIndex = indexById.get(prerequisite);
+            if (prerequisiteIndex == null || prerequisiteIndex >= i) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST,
+                        "Module prerequisite must remain before the module");
+            }
+        }
+    }
+
+    private int indexOfModule(List<CourseModule> ordered, UUID moduleId) {
+        for (int i = 0; i < ordered.size(); i++) {
+            if (ordered.get(i).getId().equals(moduleId)) return i;
+        }
+        throw new BusinessException(ErrorCode.NOT_FOUND, "Course module not found");
+    }
+
+    private int moveTarget(int index, int size, String direction) {
+        if ("UP".equalsIgnoreCase(direction)) {
+            return index > 0 ? index - 1 : -1;
+        }
+        if ("DOWN".equalsIgnoreCase(direction)) {
+            return index < size - 1 ? index + 1 : -1;
+        }
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "Direction must be UP or DOWN");
     }
 
     private CourseDefinition requireCourse(UUID workspaceId) {

@@ -160,4 +160,95 @@ class CourseAuthoringServiceTest {
         assertThrows(BusinessException.class, () -> service.addModule(workspaceId,
                 new CourseAuthoringService.ModuleRequest("New", null, null)));
     }
+
+    @Test
+    void updateModuleWritesEditableFieldsAndBumpsDraft() {
+        var result = service.updateModule(workspaceId, moduleId,
+                new CourseAuthoringService.ModuleRequest("  Advanced  ", "Deep dive", null));
+
+        assertEquals("Advanced", module.getTitle());
+        assertEquals("Deep dive", module.getDescription());
+        assertEquals(3, course.getDraftRevision());
+        assertTrue(result.modules().stream().anyMatch(view -> view.id().equals(moduleId)
+                && view.title().equals("Advanced")));
+        verify(modules).save(module);
+    }
+
+    @Test
+    void updateItemReplacesTheoryBodyAndKeepsModuleScope() {
+        CourseItem item = CourseItem.builder().id(UUID.randomUUID()).module(module).itemType("THEORY")
+                .title("Old").position(1).content(JsonNodeFactory.instance.objectNode().put("body", "old"))
+                .required(true).build();
+        when(items.findById(item.getId())).thenReturn(Optional.of(item));
+
+        service.updateItem(workspaceId, moduleId, item.getId(), new CourseAuthoringService.ItemRequest(
+                "THEORY", " New title ", "Description", null,
+                JsonNodeFactory.instance.objectNode().put("body", "new body"), false));
+
+        assertEquals("New title", item.getTitle());
+        assertEquals("new body", item.getContent().path("body").asText());
+        assertFalse(item.isRequired());
+        verify(items).save(item);
+    }
+
+    @Test
+    void moveItemSwapsPositionsThroughTemporarySlots() {
+        CourseItem first = CourseItem.builder().id(UUID.randomUUID()).module(module).itemType("THEORY")
+                .title("First").position(1).content(JsonNodeFactory.instance.objectNode()).required(true).build();
+        CourseItem second = CourseItem.builder().id(UUID.randomUUID()).module(module).itemType("THEORY")
+                .title("Second").position(2).content(JsonNodeFactory.instance.objectNode()).required(true).build();
+        when(items.findByModuleIdOrderByPositionAsc(moduleId)).thenReturn(new java.util.ArrayList<>(List.of(first, second)));
+
+        service.moveItem(workspaceId, moduleId, first.getId(), "DOWN");
+
+        assertEquals(2, first.getPosition());
+        assertEquals(1, second.getPosition());
+        verify(items, times(2)).saveAndFlush(first);
+        verify(items).saveAndFlush(second);
+    }
+
+    @Test
+    void deleteItemFlushesAndRenumbersRemainingItems() {
+        CourseItem first = CourseItem.builder().id(UUID.randomUUID()).module(module).itemType("THEORY")
+                .title("First").position(1).content(JsonNodeFactory.instance.objectNode()).required(true).build();
+        CourseItem second = CourseItem.builder().id(UUID.randomUUID()).module(module).itemType("THEORY")
+                .title("Second").position(2).content(JsonNodeFactory.instance.objectNode()).required(true).build();
+        CourseItem third = CourseItem.builder().id(UUID.randomUUID()).module(module).itemType("THEORY")
+                .title("Third").position(3).content(JsonNodeFactory.instance.objectNode()).required(true).build();
+        when(items.findById(second.getId())).thenReturn(Optional.of(second));
+        when(items.findByModuleIdOrderByPositionAsc(moduleId))
+                .thenReturn(new java.util.ArrayList<>(List.of(first, third)));
+
+        service.deleteItem(workspaceId, moduleId, second.getId());
+
+        verify(items).delete(second);
+        verify(items).flush();
+        assertEquals(1, first.getPosition());
+        assertEquals(2, third.getPosition());
+        verify(items).saveAndFlush(third);
+    }
+
+    @Test
+    void moveModuleRejectsBreakingPrerequisiteOrder() {
+        CourseModule second = CourseModule.builder().id(UUID.randomUUID()).course(course).title("Advanced")
+                .position(2).prerequisiteModuleId(moduleId).build();
+        when(modules.findByCourseIdOrderByPositionAsc(course.getId()))
+                .thenReturn(new java.util.ArrayList<>(List.of(module, second)));
+
+        assertThrows(BusinessException.class, () -> service.moveModule(workspaceId, second.getId(), "UP"));
+        verify(modules, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void publishedCourseRejectsItemUpdate() {
+        course.setStatus("PUBLISHED");
+        CourseItem item = CourseItem.builder().id(UUID.randomUUID()).module(module).itemType("THEORY")
+                .title("Old").position(1).content(JsonNodeFactory.instance.objectNode()).required(true).build();
+        when(items.findById(item.getId())).thenReturn(Optional.of(item));
+
+        assertThrows(BusinessException.class, () -> service.updateItem(workspaceId, moduleId, item.getId(),
+                new CourseAuthoringService.ItemRequest("THEORY", "New", null, null,
+                        JsonNodeFactory.instance.objectNode().put("body", "new"), true)));
+        verify(items, never()).save(any());
+    }
 }

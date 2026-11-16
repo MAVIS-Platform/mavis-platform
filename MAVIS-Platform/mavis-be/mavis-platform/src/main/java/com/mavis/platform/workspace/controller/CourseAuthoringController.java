@@ -20,6 +20,7 @@ public class CourseAuthoringController {
     public record ModuleBody(@NotBlank @Size(max = 255) String title, String description, UUID prerequisiteModuleId) {}
     public record ItemBody(@NotBlank String type, @NotBlank @Size(max = 255) String title, String description,
                            UUID assignmentId, com.fasterxml.jackson.databind.JsonNode content, Boolean required) {}
+    public record MoveBody(@NotBlank String direction) {}
 
     @GetMapping
     public ApiResponse<CourseAuthoringService.CourseView> get(@PathVariable UUID workspaceId) {
@@ -72,5 +73,40 @@ public class CourseAuthoringController {
         return ApiResponse.success(authoring.addItem(workspaceId, moduleId,
                 new CourseAuthoringService.ItemRequest(body.type(), body.title(), body.description(),
                         body.assignmentId(), body.content(), body.required())));
+    }
+
+    @PutMapping("/modules/{moduleId}")
+    public ApiResponse<CourseAuthoringService.CourseView> updateModule(
+            @PathVariable UUID workspaceId, @PathVariable UUID moduleId, @Valid @RequestBody ModuleBody body) {
+        return ApiResponse.success(authoring.updateModule(workspaceId, moduleId,
+                new CourseAuthoringService.ModuleRequest(body.title(), body.description(), body.prerequisiteModuleId())));
+    }
+
+    @PostMapping("/modules/{moduleId}/move")
+    public ApiResponse<CourseAuthoringService.CourseView> moveModule(
+            @PathVariable UUID workspaceId, @PathVariable UUID moduleId, @Valid @RequestBody MoveBody body) {
+        return ApiResponse.success(authoring.moveModule(workspaceId, moduleId, body.direction()));
+    }
+
+    @PutMapping("/modules/{moduleId}/items/{itemId}")
+    public ApiResponse<CourseAuthoringService.CourseView> updateItem(
+            @PathVariable UUID workspaceId, @PathVariable UUID moduleId, @PathVariable UUID itemId,
+            @Valid @RequestBody ItemBody body) {
+        return ApiResponse.success(authoring.updateItem(workspaceId, moduleId, itemId,
+                new CourseAuthoringService.ItemRequest(body.type(), body.title(), body.description(),
+                        body.assignmentId(), body.content(), body.required())));
+    }
+
+    @PostMapping("/modules/{moduleId}/items/{itemId}/move")
+    public ApiResponse<CourseAuthoringService.CourseView> moveItem(
+            @PathVariable UUID workspaceId, @PathVariable UUID moduleId, @PathVariable UUID itemId,
+            @Valid @RequestBody MoveBody body) {
+        return ApiResponse.success(authoring.moveItem(workspaceId, moduleId, itemId, body.direction()));
+    }
+
+    @DeleteMapping("/modules/{moduleId}/items/{itemId}")
+    public ApiResponse<CourseAuthoringService.CourseView> deleteItem(
+            @PathVariable UUID workspaceId, @PathVariable UUID moduleId, @PathVariable UUID itemId) {
+        return ApiResponse.success(authoring.deleteItem(workspaceId, moduleId, itemId));
     }
 }
