@@ -49,7 +49,7 @@ public class CourseQuizService {
     private Quiz publish(UUID workspaceId, UUID assignmentId, Publish request, boolean reuseMatchingVersion) {
         access.requireWorkspaceLecturer(workspaceId);
         var lab = lab(workspaceId, assignmentId, true);
-        int threshold = request.passPercent() == null ? 70 : request.passPercent();
+        int threshold = request.passPercent() == null ? 80 : request.passPercent();
         validateDefinition(request, threshold);
         String lesson = request.lesson().trim();
         String questions = encode(request.questions());

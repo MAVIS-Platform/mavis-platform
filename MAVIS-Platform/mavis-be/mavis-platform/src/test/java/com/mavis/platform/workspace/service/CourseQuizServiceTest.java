@@ -122,12 +122,12 @@ class CourseQuizServiceTest {
 
         // 1. Idempotent curriculum republish reuses v1 when content matches latest
         when(jdbc.queryForList(contains("SELECT version FROM course_quizzes"), eq(Integer.class),
-                eq(labId), eq(modelId), eq("Clean boundary lesson"), eq(70), anyString(), eq(labId)))
+                eq(labId), eq(modelId), eq("Clean boundary lesson"), eq(80), anyString(), eq(labId)))
                 .thenReturn(List.of(1));
 
         var reused = service.publishCurriculum(workspaceId, labId, request);
         assertEquals(1, reused.version());
-        assertEquals(70, reused.passPercent());
+        assertEquals(80, reused.passPercent());
         verify(jdbc, never()).update(contains("INSERT INTO course_quizzes"), any(), any(), any(), any(), any(), any());
 
         // 2. Modified publish inserts version 2 (max + 1)
