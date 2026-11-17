@@ -8,8 +8,14 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { MarkdownPreview } from "@/components/shared/markdown-preview";
+import { useApiQuery } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
-import { useCourseAuthoring } from "@/features/workspaces/course-access";
+import { ArchitectureGraph, ElementDetailsPanel } from "@/features/architecture/components";
+import { DiagramPreview } from "@/features/architecture/diagram-preview";
+import {
+  useCourseAuthoring,
+  useStudentLabContext,
+} from "@/features/workspaces/course-access";
 import { AssignmentSourceDetails } from "./source-picker";
 import type { Assignment } from "./requirements";
 
@@ -94,6 +100,8 @@ export function LabTheorySection({
   const [newTitle, setNewTitle] = useState("");
   const [newBody, setNewBody] = useState("");
   const [bodies, setBodies] = useState<Record<string, string>>({});
+  const [c4Tab, setC4Tab] = useState<"CONTEXT" | "CONTAINER" | "COMPONENT" | "GRAPH">("CONTEXT");
+  const [selectedGraphId, setSelectedGraphId] = useState<string | null>(null);
 
   const modules = (course.data?.modules as TheoryModule[] | undefined) ?? [];
   const linkedModule = modules.find((module) =>
@@ -102,10 +110,22 @@ export function LabTheorySection({
   const selectedModule =
     modules.find((module) => module.id === selectedModuleId) ?? linkedModule ?? modules[0];
   const reference = assignment.referenceSource;
-  const referenceQuery =
-    reference?.projectId && reference?.modelId
-      ? new URLSearchParams({ project: reference.projectId, model: reference.modelId }).toString()
-      : null;
+  const studentCtx = useStudentLabContext(
+    workspaceId,
+    assignment.id,
+    Boolean(reference?.projectId && reference?.modelId),
+  );
+  const modelQuery = useApiQuery(
+    "model",
+    {
+      projectId: reference?.projectId ?? "",
+      modelId: reference?.modelId ?? "",
+    },
+    { enabled: Boolean(reference?.projectId && reference?.modelId && c4Tab === "GRAPH") },
+  );
+  const refArch = studentCtx.data?.referenceArchitecture;
+  const activeDiagramMermaid =
+    refArch?.diagrams?.find((d) => d.level?.toUpperCase() === c4Tab)?.mermaidDsl ?? null;
 
   useEffect(() => {
     if (selectedModule && selectedModule.id !== selectedModuleId) {
@@ -241,7 +261,7 @@ export function LabTheorySection({
             </p>
           </div>
           <Button asChild size="sm" variant="outline">
-            <Link href={`/roadmap?workspace=${encodeURIComponent(workspaceId)}#course-builder`}>
+            <Link href={`/workspace-overview?workspace=${encodeURIComponent(workspaceId)}&view=course-authoring`}>
               {t("Open full course authoring", "Mở soạn nội dung đầy đủ")}
             </Link>
           </Button>
@@ -269,33 +289,78 @@ export function LabTheorySection({
           )}
         </div>
         {reference ? (
-          <div className="space-y-3">
+          <div className="space-y-4">
             <AssignmentSourceDetails source={reference} assignmentId={assignment.id} />
-            <div className="flex flex-wrap gap-2">
-              {referenceQuery ? (
-                <>
-                  <Button asChild size="sm" variant="outline">
-                    <Link href={`/diagrams?${referenceQuery}&kind=CONTEXT`}>C1 System Context</Link>
-                  </Button>
-                  <Button asChild size="sm" variant="outline">
-                    <Link href={`/diagrams?${referenceQuery}&kind=CONTAINER`}>C2 Container</Link>
-                  </Button>
-                  <Button asChild size="sm" variant="outline">
-                    <Link href={`/diagrams?${referenceQuery}&kind=COMPONENT`}>C3 Component</Link>
-                  </Button>
-                  <Button asChild size="sm" variant="outline">
-                    <Link href={`/architecture?${referenceQuery}`}>
-                      {t("Dependency graph", "Đồ thị phụ thuộc")}
-                      <ArrowRight className="ml-1 size-3.5" aria-hidden="true" />
-                    </Link>
-                  </Button>
-                </>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  {t("Analyze the reference source to view C1–C3.", "Phân tích nguồn tham chiếu để xem C1–C3.")}
-                </p>
-              )}
-            </div>
+            {reference.projectId && reference.modelId ? (
+              <div className="space-y-3 rounded-lg border bg-muted/15 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    {t(
+                      "Inline Reference C1–C3 & Dependency Graph Preview",
+                      "Xem trước C1–C3 & Đồ thị phụ thuộc ngay tại đây",
+                    )}
+                  </p>
+                  <div className="flex flex-wrap gap-1.5" role="tablist">
+                    {(
+                      [
+                        { id: "CONTEXT", label: "C1 System Context" },
+                        { id: "CONTAINER", label: "C2 Container" },
+                        { id: "COMPONENT", label: "C3 Component" },
+                        { id: "GRAPH", label: t("Dependency graph", "Đồ thị phụ thuộc") },
+                      ] as const
+                    ).map((item) => (
+                      <Button
+                        key={item.id}
+                        type="button"
+                        size="sm"
+                        variant={c4Tab === item.id ? "default" : "outline"}
+                        onClick={() => setC4Tab(item.id)}
+                      >
+                        {item.label}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+                {c4Tab !== "GRAPH" ? (
+                  activeDiagramMermaid ? (
+                    <DiagramPreview
+                      title={`C4 ${c4Tab}`}
+                      content={activeDiagramMermaid}
+                      format="MERMAID"
+                      style="clean"
+                    />
+                  ) : (
+                    <p className="rounded border border-dashed p-4 text-xs text-muted-foreground">
+                      {studentCtx.isPending
+                        ? t("Loading C4 diagram preview…", "Đang tải sơ đồ C4…")
+                        : t(
+                            "C4 Mermaid projection is unavailable for this level; switch to Dependency graph to inspect elements.",
+                            "Chưa có dữ liệu sơ đồ C4 cho cấp độ này; chuyển sang Đồ thị phụ thuộc để kiểm tra.",
+                          )}
+                    </p>
+                  )
+                ) : modelQuery.data ? (
+                  <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+                    <div className="min-w-0 overflow-x-auto">
+                      <ArchitectureGraph
+                        model={modelQuery.data}
+                        selectedId={selectedGraphId}
+                        onSelect={setSelectedGraphId}
+                      />
+                    </div>
+                    <ElementDetailsPanel model={modelQuery.data} selectedId={selectedGraphId} />
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    {t("Loading architectural model…", "Đang tải mô hình kiến trúc…")}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                {t("Analyze the reference source to view C1–C3.", "Phân tích nguồn tham chiếu để xem C1–C3.")}
+              </p>
+            )}
           </div>
         ) : (
           <div className="space-y-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">

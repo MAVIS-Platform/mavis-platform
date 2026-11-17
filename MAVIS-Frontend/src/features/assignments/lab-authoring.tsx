@@ -54,7 +54,8 @@ export function LabAuthoring() {
   const workspaceId = params?.get("workspace") || selection.workspaceId;
   const requestedAssignmentId = params?.get("assignment") || "";
   const [createdAssignmentId, setCreatedAssignmentId] = useState("");
-  const [tab, setTab] = useState<Tab>(isTab(params?.get("tab") ?? null) ? (params!.get("tab") as Tab) : "info");
+  const requestedTab = params?.get("tab") ?? params?.get("step") ?? null;
+  const [tab, setTab] = useState<Tab>(isTab(requestedTab) ? requestedTab : "info");
   const activeAssignmentId = requestedAssignmentId || createdAssignmentId;
 
   const workspaces = useApiQuery("workspaces", {});

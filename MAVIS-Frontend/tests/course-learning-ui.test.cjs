@@ -191,7 +191,8 @@ test("assignment authoring separates details, theory, source, quiz, studio and p
   assert.ok(theory.includes("THEORY"));
   assert.ok(source.includes("AssignmentSourcePicker"));
   assert.ok(quiz.includes("QuizBuilder"));
-  assert.ok(studio.includes("runtime-config?project="));
+  assert.ok(studio.includes("useAutoConfigureStudio"));
+  assert.ok(!studio.includes("runtime-config?project="));
   assert.ok(publish.includes("CourseSetupPanel"));
   assert.match(publish, /theoryReady/);
 });
@@ -742,7 +743,8 @@ test("lecturer course setup checklist links the reference runtime and Studio Liv
   assert.match(panel, /lab-authoring\?/);
   assert.ok(!panel.includes("runtime-config?project="));
   assert.ok(course.includes("<CourseSetupPanel workspaceId={workspaceId}"));
-  assert.ok(studio.includes("runtime-config?project="));
+  assert.ok(studio.includes("useAutoConfigureStudio"));
+  assert.ok(!studio.includes("runtime-config?project="));
   assert.equal(
     allowedBackendPath("workspaces/11111111-1111-1111-1111-111111111111/course-setup"),
     true,
@@ -931,16 +933,18 @@ test("BFF allows Quiz draft, publish, versions and question bank paths", () => {
   assert.equal(allowedBackendPath(`workspaces/${workspace}/quiz-bank/unsafe`), false);
 });
 
-test("Studio Live authoring and standalone Studio carry project and return context", () => {
+test("Studio Live authoring runs self-contained inline topology and playtest without external jumps", () => {
   const studio = read("src/features/assignments/lab-studio-section.tsx");
+  const theory = read("src/features/assignments/lab-theory-section.tsx");
   const workbench = read("src/features/runtime/studio-workbench.tsx");
   const live = read("src/features/runtime/live-studio-workbench.tsx");
 
-  assert.ok(studio.includes("Start Live session"));
-  assert.ok(studio.includes("Open MAVIS Studio"));
-  assert.match(studio, /\/sessions\?/);
-  assert.match(studio, /\/studio\?/);
-  assert.match(studio, /returnTo/);
+  assert.ok(studio.includes("useAutoConfigureStudio"));
+  assert.ok(studio.includes("LiveStudioWorkbench"));
+  assert.ok(!studio.includes("/sessions?"));
+  assert.ok(!studio.includes("/studio?"));
+  assert.ok(!theory.includes("/diagrams?"));
+  assert.ok(!theory.includes("/architecture?"));
   assert.match(workbench, /Live project/);
   assert.match(workbench, /Select a project/);
   assert.match(workbench, /session\.projectId === projectId/);
@@ -967,11 +971,7 @@ test("Studio Live setup uses a visual prepared topology builder and Lab session 
   assert.ok(studio.includes("PreparedTopologyEditor"));
   assert.ok(studio.includes("verifiedSession"));
   assert.ok(studio.includes("sessionId={verifiedSession"));
-  assert.ok(studio.includes("assignment: assignment.id"));
-  assert.match(contract, /assignmentId:\s*id\.optional\(\)/);
-  assert.match(domain, /assignmentId:\s*z\.string\(\)\.nullable\(\)\.optional\(\)/);
-  assert.match(runtime, /assignmentId \? \{ assignmentId \}/);
-  assert.ok(studio.includes("&assignment=${assignment.id}"));
+  assert.ok(studio.includes("useAutoConfigureStudio"));
   assert.ok(screens.includes('assignmentId ? `&assignment=${assignmentId}` : ""'));
   assert.ok(
     screens.includes('studioTopology: config.data.profile["studioTopology"]') ||
