@@ -403,7 +403,7 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
             <Link
               href={`/submissions${backWorkspaceId || (canReview && query.data.assignmentId) ? `?${backWorkspaceId ? `workspace=${encodeURIComponent(backWorkspaceId)}&` : ""}${canReview && query.data.assignmentId ? `assignment=${encodeURIComponent(query.data.assignmentId)}` : ""}` : ""}`}
             >
-              ← {t("Back to submissions", "Quay lại danh sách bài nộp")}
+              ← {t("Back to class submissions", "Quay lại bài nộp của lớp")}
             </Link>
           </Button>
           <GradingPanel

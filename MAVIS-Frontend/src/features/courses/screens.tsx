@@ -39,6 +39,7 @@ import { Badge } from "@/components/ui/badge";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { getRuleName } from "@/features/architecture/three-e-content";
 import { CourseBuilder } from "./course-builder";
+import { CourseOutline } from "./course-outline";
 import { CourseQuiz, useCourseQuiz } from "./course-quiz";
 import { CourseSetupPanel } from "./course-setup";
 import { CurriculumLibrary } from "./curriculum";
@@ -324,6 +325,7 @@ export function CourseRoadmap() {
   const workspace = workspaces.data?.find((item) => item.id === workspaceId);
   const canManage = workspace?.myRole === "LECTURER" || session.data?.user?.role === "admin";
   const publishedCourse = usePublishedCourse(workspaceId);
+  const [studentView, setStudentView] = useState<"roadmap" | "outline" | "curriculum">("roadmap");
 
   useEffect(() => {
     if (workspaceId && workspaceId !== selection.workspaceId) selection.setWorkspaceId(workspaceId);
@@ -398,89 +400,150 @@ export function CourseRoadmap() {
 
           {canManage && client.mode === "backend" && <CourseSetupPanel workspaceId={workspaceId} />}
 
-          {publishedCourse.data && (
-            <section
-              className="rounded-2xl border bg-card p-5"
-              aria-labelledby="published-course-roadmap"
-            >
-              <h2 id="published-course-roadmap" className="font-semibold">
-                {t("Published Course roadmap", "Lộ trình Course đã publish")}
-              </h2>
-              <div className="mt-3 rounded-md bg-muted/40 p-3 text-sm">
-                <h3 className="font-medium">{publishedCourse.data.snapshot.title}</h3>
-                {publishedCourse.data.snapshot.description && (
-                  <p className="mt-1 text-muted-foreground">
-                    {publishedCourse.data.snapshot.description}
-                  </p>
-                )}
-                <p className="mt-1 text-xs text-muted-foreground">
-                  v{publishedCourse.data.version} · {publishedCourse.data.snapshotDigest}
-                </p>
-              </div>
-              <ol className="mt-4 space-y-4">
-                {publishedCourse.data.snapshot.modules.map((module) => (
-                  <li key={module.id} className="rounded-xl border p-4">
-                    <h3 className="font-medium">
-                      {module.position}. {module.title}
-                    </h3>
-                    {module.description && (
-                      <p className="mt-1 text-sm text-muted-foreground">{module.description}</p>
+          {canManage ? (
+            <>
+              {publishedCourse.data && (
+                <section
+                  className="rounded-2xl border bg-card p-5"
+                  aria-labelledby="published-course-roadmap"
+                >
+                  <h2 id="published-course-roadmap" className="font-semibold">
+                    {t("Published Course roadmap", "Lộ trình Course đã publish")}
+                  </h2>
+                  <div className="mt-3 rounded-md bg-muted/40 p-3 text-sm">
+                    <h3 className="font-medium">{publishedCourse.data.snapshot.title}</h3>
+                    {publishedCourse.data.snapshot.description && (
+                      <p className="mt-1 text-muted-foreground">
+                        {publishedCourse.data.snapshot.description}
+                      </p>
                     )}
-                    {module.items.length > 0 && (
-                      <ol className="mt-3 space-y-1">
-                        {module.items.map((item) => (
-                          <li key={item.id} className="rounded-lg border bg-background p-3 text-sm">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <Badge variant="outline">{item.type.replaceAll("_", " ")}</Badge>
-                              <span className="font-medium">{item.title}</span>
-                              {item.assignmentId && (
-                                <Button asChild size="sm" variant="link" className="h-auto p-0">
-                                  <Link
-                                    href={`/lab?${new URLSearchParams({ workspace: workspaceId, assignment: item.assignmentId, step: item.type === "QUIZ" || item.type === "IMPACT_LAB" ? "2" : item.type === "RUNTIME_LAB" ? "3" : "1" })}`}
-                                  >
-                                    {t("Open activity", "Mở hoạt động")}
-                                  </Link>
-                                </Button>
-                              )}
-                            </div>
-                            {item.type === "THEORY" && typeof item.content["body"] === "string" && (
-                              <p className="mt-2 whitespace-pre-wrap text-muted-foreground">
-                                {item.content["body"]}
-                              </p>
-                            )}
-                            {item.type === "ESSAY" &&
-                              typeof item.content["prompt"] === "string" && (
-                                <div className="mt-2 space-y-2">
-                                  <p className="whitespace-pre-wrap">{item.content["prompt"]}</p>
-                                  <p className="text-xs text-muted-foreground">
-                                    {t(
-                                      "Rubric-based lecturer review",
-                                      "Giảng viên chấm theo rubric",
-                                    )}
-                                  </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      v{publishedCourse.data.version} · {publishedCourse.data.snapshotDigest}
+                    </p>
+                  </div>
+                  <ol className="mt-4 space-y-4">
+                    {publishedCourse.data.snapshot.modules.map((module) => (
+                      <li key={module.id} className="rounded-xl border p-4">
+                        <h3 className="font-medium">
+                          {module.position}. {module.title}
+                        </h3>
+                        {module.description && (
+                          <p className="mt-1 text-sm text-muted-foreground">{module.description}</p>
+                        )}
+                        {module.items.length > 0 && (
+                          <ol className="mt-3 space-y-1">
+                            {module.items.map((item) => (
+                              <li
+                                key={item.id}
+                                className="rounded-lg border bg-background p-3 text-sm"
+                              >
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Badge variant="outline">{item.type.replaceAll("_", " ")}</Badge>
+                                  <span className="font-medium">{item.title}</span>
+                                  {item.assignmentId && (
+                                    <Button asChild size="sm" variant="link" className="h-auto p-0">
+                                      <Link
+                                        href={`/lab?${new URLSearchParams({ workspace: workspaceId, assignment: item.assignmentId, step: item.type === "QUIZ" || item.type === "IMPACT_LAB" ? "2" : item.type === "RUNTIME_LAB" ? "3" : "1" })}`}
+                                      >
+                                        {t("Open activity", "Mở hoạt động")}
+                                      </Link>
+                                    </Button>
+                                  )}
                                 </div>
-                              )}
-                          </li>
-                        ))}
-                      </ol>
-                    )}
-                  </li>
-                ))}
-              </ol>
-            </section>
-          )}
-
-          <CourseLabRoadmap
-            workspaceId={workspaceId}
-            canManage={canManage}
-            active={workspace.status !== "ARCHIVED"}
-          />
-          {!canManage && (
-            <Button asChild variant="outline">
-              <Link href={`/assignments?workspace=${encodeURIComponent(workspaceId)}`}>
-                {t("View class assignments", "Xem bài tập của lớp")}
-              </Link>
-            </Button>
+                                {item.type === "THEORY" &&
+                                  typeof item.content["body"] === "string" && (
+                                    <p className="mt-2 whitespace-pre-wrap text-muted-foreground">
+                                      {item.content["body"]}
+                                    </p>
+                                  )}
+                                {item.type === "ESSAY" &&
+                                  typeof item.content["prompt"] === "string" && (
+                                    <div className="mt-2 space-y-2">
+                                      <p className="whitespace-pre-wrap">
+                                        {item.content["prompt"]}
+                                      </p>
+                                      <p className="text-xs text-muted-foreground">
+                                        {t(
+                                          "Rubric-based lecturer review",
+                                          "Giảng viên chấm theo rubric",
+                                        )}
+                                      </p>
+                                    </div>
+                                  )}
+                              </li>
+                            ))}
+                          </ol>
+                        )}
+                      </li>
+                    ))}
+                  </ol>
+                </section>
+              )}
+              <CourseLabRoadmap
+                workspaceId={workspaceId}
+                canManage={canManage}
+                active={workspace.status !== "ARCHIVED"}
+              />
+            </>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-card p-2">
+                <div
+                  className="flex flex-wrap gap-1.5"
+                  role="tablist"
+                  aria-label={t("Class sections", "Khu vực học tập")}
+                >
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={studentView === "roadmap" ? "default" : "ghost"}
+                    onClick={() => setStudentView("roadmap")}
+                  >
+                    {t("Lab Roadmap", "Lộ trình Bài Lab")}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={studentView === "outline" ? "default" : "ghost"}
+                    onClick={() => setStudentView("outline")}
+                  >
+                    {t("Module Outline", "Đề cương Chương mục")}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={studentView === "curriculum" ? "default" : "ghost"}
+                    onClick={() => setStudentView("curriculum")}
+                  >
+                    {t("Curriculum Library", "Giáo trình Tham khảo")}
+                  </Button>
+                </div>
+                <Button asChild size="sm" variant="outline">
+                  <Link href={`/submissions?workspace=${encodeURIComponent(workspaceId)}`}>
+                    {t("Submissions & Grades", "Bài nộp & Điểm")}
+                  </Link>
+                </Button>
+              </div>
+              {studentView === "roadmap" && (
+                <CourseLabRoadmap
+                  workspaceId={workspaceId}
+                  canManage={false}
+                  active={workspace.status !== "ARCHIVED"}
+                />
+              )}
+              {studentView === "outline" && (
+                <CourseOutline
+                  workspaceId={workspaceId}
+                  canManage={false}
+                  active={workspace.status !== "ARCHIVED"}
+                />
+              )}
+              {studentView === "curriculum" && (
+                <section className="rounded-2xl border bg-card p-5">
+                  <CurriculumLibrary />
+                </section>
+              )}
+            </div>
           )}
         </div>
       )}

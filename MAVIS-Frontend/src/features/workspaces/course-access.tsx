@@ -523,11 +523,14 @@ export function CourseRoadmap({
       {roadmap.data.enrollmentStatus && (
         <p className="text-sm font-medium">{statusLabels[roadmap.data.enrollmentStatus]}</p>
       )}
-      <div className="space-y-2" aria-label={t("Course progress", "Tiến độ khóa học")}>
-        <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-          <span>{t("Course progress", "Tiến độ khóa học")}</span>
+      <div
+        className="space-y-2 rounded-xl border bg-muted/20 p-3.5"
+        aria-label={t("Course progress", "Tiến độ khóa học")}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3 text-xs font-medium">
+          <span>{t("Course mastery progress", "Tiến độ hoàn thành khóa học")}</span>
           <span>
-            {passed}/{total} {t("Labs passed", "Lab đã đạt")}
+            {passed}/{total} {t("Labs passed", "Lab đã đạt")} ({progress}%)
           </span>
         </div>
         <div
@@ -535,7 +538,7 @@ export function CourseRoadmap({
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={progress}
-          className="h-2 overflow-hidden rounded-full bg-muted"
+          className="h-2.5 overflow-hidden rounded-full bg-muted"
         >
           <div
             className="h-full rounded-full bg-primary transition-[width]"
@@ -543,37 +546,93 @@ export function CourseRoadmap({
           />
         </div>
       </div>
-      <ol className="space-y-2">
-        {roadmap.data.labs.map((lab) => (
-          <li
-            key={lab.assignmentId}
-            className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3"
-          >
-            <div>
-              <p className="text-sm font-medium">
-                Lab {lab.position} · {lab.title}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {lab.state === "PASSED"
-                  ? t("Passed", "Đã đạt")
-                  : lab.state === "UNLOCKED"
-                    ? t("Available", "Đã mở")
-                    : lab.reason === "COURSE_ARCHIVED"
-                      ? t("Class archived", "Lớp đã lưu trữ")
-                      : t("Pass the preceding labs to unlock.", "Đạt các Lab trước để mở khóa.")}
-              </p>
-            </div>
-            {active && lab.state !== "LOCKED" && (
-              <Button variant="outline" size="sm" asChild>
-                <Link
-                  href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(lab.assignmentId)}&step=1`}
-                >
-                  {t("Open lab", "Mở Lab")}
-                </Link>
-              </Button>
-            )}
-          </li>
-        ))}
+      <ol className="space-y-2.5">
+        {roadmap.data.labs.map((lab) => {
+          const labOrder = String(lab.position).padStart(2, "0");
+          const stateBadge =
+            lab.state === "PASSED"
+              ? {
+                  label: t("PASSED", "ĐÃ ĐẠT"),
+                  cls: "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+                }
+              : lab.state === "UNLOCKED"
+                ? {
+                    label: t("UNLOCKED", "ĐANG MỞ"),
+                    cls: "border-primary/40 bg-primary/10 text-primary",
+                  }
+                : {
+                    label: t("LOCKED", "ĐANG KHÓA"),
+                    cls: "border-border bg-muted text-muted-foreground",
+                  };
+          return (
+            <li
+              key={lab.assignmentId}
+              className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-background p-3.5 transition-colors hover:border-primary/30"
+            >
+              <div className="flex min-w-0 items-start gap-3">
+                <span className="grid size-8 shrink-0 place-items-center rounded-lg border bg-muted/40 font-mono text-xs font-semibold">
+                  {labOrder}
+                </span>
+                <div className="min-w-0 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-semibold">
+                      Lab {lab.position} · {lab.title}
+                    </p>
+                    <span
+                      className={`inline-flex rounded border px-1.5 py-0.5 text-[10px] font-semibold tracking-wide ${stateBadge.cls}`}
+                    >
+                      {stateBadge.label}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {lab.state === "PASSED"
+                      ? t(
+                          "Passed — ready for review or re-inspection.",
+                          "Đã đạt — có thể vào xem lại kiến trúc và hồ sơ bài làm.",
+                        )
+                      : lab.state === "UNLOCKED"
+                        ? t(
+                            "Unlocked — complete Theory, Reverse BFS, Quiz Gate & Submit inside Lab.",
+                            "Đã mở — hoàn thành Lý thuyết, Lan truyền ngược, Quiz và Nộp bài trong Lab.",
+                          )
+                        : lab.reason === "COURSE_ARCHIVED"
+                          ? t("Class archived", "Lớp đã lưu trữ")
+                          : t(
+                              "Pass the preceding labs to unlock.",
+                              "Đạt các Lab trước để mở khóa.",
+                            )}
+                  </p>
+                </div>
+              </div>
+              {active && lab.state !== "LOCKED" && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    variant={lab.state === "PASSED" ? "outline" : "default"}
+                    size="sm"
+                    asChild
+                  >
+                    <Link
+                      href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(lab.assignmentId)}&step=1`}
+                    >
+                      {lab.state === "PASSED"
+                        ? t("Review Lab", "Xem lại Lab")
+                        : t("Enter Lab", "Vào làm Lab")}
+                    </Link>
+                  </Button>
+                  {!canManage && (
+                    <Button variant="ghost" size="sm" asChild>
+                      <Link
+                        href={`/submissions?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(lab.assignmentId)}`}
+                      >
+                        {t("Submissions", "Bài nộp")}
+                      </Link>
+                    </Button>
+                  )}
+                </div>
+              )}
+            </li>
+          );
+        })}
       </ol>
       {canManage && active && (
         <div id="course-passkey">

@@ -229,6 +229,14 @@ export function WorkspaceOverview() {
           }
         >
           <div className="space-y-4">
+            {activeTab === "outline" && !canManage && (
+              <CourseRoadmap
+                key={`student-roadmap-${workspace.id}`}
+                workspaceId={workspace.id}
+                canManage={false}
+                active={workspace.status !== "ARCHIVED"}
+              />
+            )}
             {activeTab === "outline" && (
               <CourseOutline
                 workspaceId={workspace.id}
