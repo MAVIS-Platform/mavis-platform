@@ -5,8 +5,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useLocale } from "@/lib/i18n/locale-context";
 import {
-  SeedCuratedCourseLabs,
-  useAutoConfigureStudio,
   useCourseSetup,
   useRuntimeSetupReadiness,
   type CourseSetup,
@@ -80,9 +78,6 @@ export function CourseSetupPanel({ workspaceId }: { workspaceId: string }) {
   const { t } = useLocale();
   const setup = useCourseSetup(workspaceId);
   const readiness = useRuntimeSetupReadiness(setup.data?.reference.projectId ?? null);
-  const targetStudioLabId =
-    setup.data?.previewAssignmentId ?? setup.data?.labs[0]?.assignmentId ?? "";
-  const autoStudio = useAutoConfigureStudio(workspaceId, targetStudioLabId);
 
   if (setup.isPending) {
     return (
@@ -145,46 +140,6 @@ export function CourseSetupPanel({ workspaceId }: { workspaceId: string }) {
           {done}/{steps.length} {t("steps done", "bước hoàn tất")}
         </Badge>
       </div>
-
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/20 p-3">
-        <div className="space-y-0.5">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            {t("Quick Class Bootstrapper", "Khởi tạo nhanh giáo trình & Studio")}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            {t(
-              "Seed curated Labs with auto-generated course modules, or 1-click prepare 2D Studio Live topology.",
-              "Khởi tạo nhanh bộ Lab kèm đề cương bài giảng, hoặc cấu hình tự động Studio 2D chỉ với 1 chạm.",
-            )}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <SeedCuratedCourseLabs workspaceId={workspaceId} />
-          {targetStudioLabId && (
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              disabled={autoStudio.isPending}
-              onClick={() => autoStudio.mutate()}
-            >
-              {autoStudio.isPending
-                ? t("Configuring Studio…", "Đang cấu hình Studio…")
-                : t("⚡ 1-Click Auto-Configure Studio", "⚡ Tự động cấu hình Studio")}
-            </Button>
-          )}
-        </div>
-      </div>
-      {autoStudio.isSuccess && (
-        <p role="status" className="mt-2 text-xs text-success">
-          {autoStudio.data.message}
-        </p>
-      )}
-      {autoStudio.error && (
-        <p role="alert" className="mt-2 text-xs text-destructive">
-          {autoStudio.error.message}
-        </p>
-      )}
 
       <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
         <ol className="space-y-2" aria-label={t("Course setup steps", "Các bước thiết lập khóa học")}>
@@ -356,17 +311,6 @@ export function CourseSetupPanel({ workspaceId }: { workspaceId: string }) {
         </div>
       )}
 
-      {data.labs.length === 0 && (
-        <div className="mt-4 rounded-lg border border-dashed p-3">
-          <p className="mb-2 text-xs text-muted-foreground">
-            {t(
-              "Start with a curated Lab set, then attach the seed repository or your own reference source.",
-              "Bắt đầu bằng bộ Lab mẫu, sau đó gắn repo seed hoặc nguồn tham chiếu của bạn.",
-            )}
-          </p>
-          <SeedCuratedCourseLabs workspaceId={workspaceId} />
-        </div>
-      )}
     </section>
   );
 }
