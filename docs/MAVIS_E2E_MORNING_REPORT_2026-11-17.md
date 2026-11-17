@@ -2,7 +2,7 @@
 
 ## SHA / trạng thái
 - Nhánh: `main`.
-- Commit triển khai chính: **`5ba76f0`** (Submission v2) + **`3b55766`** (student Studio session/submission flow).
+- Commit triển khai chính: **`5ba76f0`** (Submission v2) + **`3b55766`** (student Studio session/submission) + **`5972cd6`** (frozen topology T33).
 - Baseline đầu phiên: `6c4bf1d`.
 - GitHub Actions: run `43959961856` cho `5ba76f0` success; run `44000347337` cho `3b55766` success.
 - Migration mới: **V38__Submission_V2_Lab_Mode.sql**.
@@ -32,6 +32,8 @@
 - Grade GRADED 90/100, snapshot `THEORY_THEORY = 9.0`; `course_lab_results.passed=true`; roadmap: Lab1 `PASSED`, Lab2 `UNLOCKED`.
 - Review UI hiển thị nguyên văn giải trình “The orders service calls payment through the prepared route controller…”.
 - Studio student: session `45c2aee9-0403-44ac-96e8-9fa33795476c` (student6, assignment Lab2) STOP/START/SCALE payment 1→2, 2 snapshots, Finish `COMPLETED/PASSED/CONFIRMED`, receipt `sha256:a94f109029bc1…`.
+- Frozen topology T33: teacher freeze revision 3 (`orders`/`payment`, payment `canScale=true`), sau đó reference profile đổi label thành `B-orders`. Student session `754dcfb7-bde2-46f2-ad07-f73e42328f74` vẫn nhận frozen A (`label=orders`), có 2 snapshot và signed receipt; Finish `COMPLETED/CONFIRMED`.
+- Negative: missing frozen topology và frozen chứa service ngoài scope bị từ chối; teacher session, sai student, sai assignment, sai workspace bị từ chối trong unit test.
 - Studio submission `9deb7b8a-592c-4d09-85d3-a5d200c8b9bc` chứa theory + 2 Studio snapshots + receipt; grade `86.67`, các section 9.0/8.5/8.5; `course_lab_results` Lab2 passed=true.
 - Review UI hiển thị Theory explanation và 2 Studio snapshot 9.00/8.50; evidence package `sha256:1d1f9854…`.
 - Ảnh: `MAVIS-Frontend/.artifacts/e2e-local/{42-student-theory-submitted,52-student-studio-finished,60-review-v2}.png`.
@@ -62,6 +64,6 @@ Không stage: `course-outline.tsx`, `course-workspace-shell.tsx`, `lab-toc.tsx`,
 3. **T56**: nhận test accounts qua cơ chế credential được cấp (không gửi mật khẩu chat), sau đó chạy full flow production trong không gian test và cleanup dữ liệu test.
 
 ## Rủi ro
-- Studio v2 functional flow đã PASS; **T33 frozen topology inheritance chưa chứng minh**: student dùng student working model/config riêng, chưa copy frozen topology assignment. Không dùng teacher session.
+- Studio v2 functional flow và frozen topology inheritance đã PASS. Student dùng project/session riêng nhưng topology lấy từ assignment frozen; không dùng teacher session. Hai-student positive chưa chạy vì prerequisite; guard sai student đã unit-test.
 - Draft grade/409 stale, Passkey expiry, cross-workspace negative cases chưa test.
 - Local runner/docker chỉ chứng minh môi trường local, không chứng minh Runner production.
