@@ -477,6 +477,19 @@ export type StudentLabContext = {
   studioSessions: StudentLabStudioSession[];
   latestSubmission: { id: string; submittedAt?: string | null } | null;
   latestReview: StudentLabLatestReview | null;
+  studioExercise?: {
+    baselineRequests?: Array<{ method?: string; path?: string; expectedStatus?: number | null }>;
+    initialState?: { stoppedServices?: string[]; stoppedControllers?: string[] };
+    allowedActions?: string[];
+    successCriteria?: {
+      maxErrorRatePercent?: number | null;
+      maxP95Ms?: number | null;
+      requiredTraceEdge?: { from?: string; to?: string } | null;
+      minReplicas?: Array<{ service?: string; count?: number }>;
+    };
+    instructions?: string;
+    revision?: number;
+  } | null;
 };
 
 export function useStudentLabContext(workspaceId: string, assignmentId: string, enabled = true) {

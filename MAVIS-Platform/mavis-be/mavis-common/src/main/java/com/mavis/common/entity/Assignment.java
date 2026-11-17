@@ -71,6 +71,13 @@ public class Assignment {
     @Column(name = "studio_topology_revision")
     private Integer studioTopologyRevision;
 
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "studio_exercise_snapshot")
+    private JsonNode studioExerciseSnapshot;
+
+    @Column(name = "studio_exercise_revision")
+    private Integer studioExerciseRevision;
+
     @Column(name = "due_at")
     private OffsetDateTime dueAt;
 

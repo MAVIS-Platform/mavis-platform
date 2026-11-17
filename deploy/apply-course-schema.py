@@ -85,6 +85,26 @@ SELECT CASE WHEN bool_and(present) THEN 'ready'
             WHEN bool_or(present) THEN 'partial'
             ELSE 'missing' END FROM expected;
 """),
+    "V41__Lab_Studio_Exercise.sql": (41, """
+WITH expected(present) AS (VALUES
+    (to_regclass('lab_studio_exercises') IS NOT NULL),
+    (EXISTS (SELECT FROM information_schema.columns WHERE table_schema = current_schema()
+             AND table_name = 'lab_studio_exercises' AND column_name = 'baseline_requests'
+             AND data_type = 'jsonb')),
+    (EXISTS (SELECT FROM information_schema.columns WHERE table_schema = current_schema()
+             AND table_name = 'lab_studio_exercises' AND column_name = 'runtime_project_id'
+             AND data_type = 'uuid')),
+    (EXISTS (SELECT FROM information_schema.columns WHERE table_schema = current_schema()
+             AND table_name = 'assignments' AND column_name = 'studio_exercise_snapshot'
+             AND data_type = 'jsonb')),
+    (EXISTS (SELECT FROM information_schema.columns WHERE table_schema = current_schema()
+             AND table_name = 'assignments' AND column_name = 'studio_exercise_revision'
+             AND data_type = 'integer'))
+)
+SELECT CASE WHEN bool_and(present) THEN 'ready'
+            WHEN bool_or(present) THEN 'partial'
+            ELSE 'missing' END FROM expected;
+"""),
     "V40__Lab_Prerequisites.sql": (40, """
 WITH expected(present) AS (VALUES
     (to_regclass('lab_prerequisites') IS NOT NULL),

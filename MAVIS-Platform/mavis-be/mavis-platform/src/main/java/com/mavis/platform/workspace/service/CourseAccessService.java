@@ -1,6 +1,8 @@
 package com.mavis.platform.workspace.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.mavis.common.entity.Assignment;
 import com.mavis.common.entity.RuntimeConfiguration;
 import com.mavis.common.entity.User;
@@ -48,6 +50,9 @@ public class CourseAccessService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.mavis.common.repository.RuntimeSessionRepository runtimeSessions;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.mavis.common.repository.LabStudioExerciseRepository labStudioExercises;
+
     public record Lab(UUID assignmentId, int position, String title, String state, String reason) {}
     public record Roadmap(boolean guided, String enrollmentStatus, List<Lab> labs) {}
     public record Passkey(String code, OffsetDateTime expiresAt) {}
@@ -85,6 +90,7 @@ public class CourseAccessService {
                 .stream().mapToInt(Assignment::getLabOrder).max().orElse(0) + 1;
         assignment.setLabOrder(next);
         copyTopologySnapshot(assignment);
+        copyExerciseSnapshot(assignment);
         workspace.setCourseMode(true);
         audit("COURSE_LAB_PUBLISHED", "ASSIGNMENT", assignmentId);
         return new Lab(assignmentId, next, assignment.getTitle(), "UNLOCKED", null);
@@ -135,9 +141,31 @@ public class CourseAccessService {
             throw new BusinessException(ErrorCode.BAD_REQUEST,
                     "The reference runtime profile has no prepared Studio topology for this source/model");
         }
+        copyExerciseSnapshot(assignment);
         assignments.save(assignment);
         audit("COURSE_LAB_TOPOLOGY_FROZEN", "ASSIGNMENT", assignmentId);
         return new Lab(assignmentId, assignment.getLabOrder(), assignment.getTitle(), "UNLOCKED", null);
+    }
+
+    private void copyExerciseSnapshot(Assignment assignment) {
+        if (labStudioExercises == null) return;
+        labStudioExercises.findByAssignmentId(assignment.getId()).ifPresent(exercise -> {
+            ObjectNode snapshot = JsonNodeFactory.instance.objectNode();
+            snapshot.put("runtimeProjectId",
+                    exercise.getRuntimeProjectId() == null ? null : exercise.getRuntimeProjectId().toString());
+            snapshot.put("runtimeModelId",
+                    exercise.getRuntimeModelId() == null ? null : exercise.getRuntimeModelId().toString());
+            snapshot.put("runtimeSnapshotId",
+                    exercise.getRuntimeSnapshotId() == null ? null : exercise.getRuntimeSnapshotId().toString());
+            snapshot.set("baselineRequests", exercise.getBaselineRequests());
+            snapshot.set("initialState", exercise.getInitialState());
+            snapshot.set("allowedActions", exercise.getAllowedActions());
+            snapshot.set("successCriteria", exercise.getSuccessCriteria());
+            snapshot.put("instructions", exercise.getInstructions());
+            snapshot.put("revision", exercise.getRevision());
+            assignment.setStudioExerciseSnapshot(snapshot);
+            assignment.setStudioExerciseRevision(exercise.getRevision());
+        });
     }
 
     private void copyTopologySnapshot(Assignment assignment) {

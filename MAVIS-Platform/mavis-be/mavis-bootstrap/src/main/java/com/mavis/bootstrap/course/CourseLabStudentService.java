@@ -84,6 +84,7 @@ public class CourseLabStudentService {
     private final CourseQuizService courseQuizService;
     private final SubmissionService submissionService;
     private final SubmissionReviewService submissionReviewService;
+    private final com.mavis.common.repository.LabStudioExerciseRepository labStudioExercises;
     private final ObjectMapper json;
 
     public CourseLabStudentService(
@@ -107,6 +108,7 @@ public class CourseLabStudentService {
             CourseQuizService courseQuizService,
             SubmissionService submissionService,
             SubmissionReviewService submissionReviewService,
+            com.mavis.common.repository.LabStudioExerciseRepository labStudioExercises,
             ObjectMapper json) {
         this.access = access;
         this.courseLabs = courseLabs;
@@ -128,6 +130,7 @@ public class CourseLabStudentService {
         this.courseQuizService = courseQuizService;
         this.submissionService = submissionService;
         this.submissionReviewService = submissionReviewService;
+        this.labStudioExercises = labStudioExercises;
         this.json = json;
     }
 
@@ -196,7 +199,8 @@ public class CourseLabStudentService {
             CourseQuizService.Quiz quiz,
             List<RuntimeSessionResponseDTO> studioSessions,
             SubmissionResponseDTO latestSubmission,
-            SubmissionReviewService.View latestReview) {}
+            SubmissionReviewService.View latestReview,
+            JsonNode studioExercise) {}
 
     @Transactional(readOnly = true)
     public StudentLabContextView studentContext(UUID workspaceId, UUID assignmentId) {
@@ -234,7 +238,8 @@ public class CourseLabStudentService {
                 quiz,
                 studioSessions,
                 latestSubmission,
-                latestReview);
+                latestReview,
+                lab.getStudioExerciseSnapshot());
     }
 
     @Transactional(readOnly = true)
@@ -279,6 +284,21 @@ public class CourseLabStudentService {
         if (refModel == null || refModel.getSourceSnapshot() == null || refModel.getProject() == null) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Lab chưa được gắn kiến trúc tham chiếu hợp lệ");
         }
+        var exercise = labStudioExercises.findByAssignmentId(lab.getId()).orElse(null);
+        JsonNode frozenExercise = lab.getStudioExerciseSnapshot();
+        UUID runtimeModelId = frozenExercise != null && frozenExercise.hasNonNull("runtimeModelId")
+                ? UUID.fromString(frozenExercise.path("runtimeModelId").asText())
+                : exercise == null ? null : exercise.getRuntimeModelId();
+        ModelVersion runtimeModel = refModel;
+        if (runtimeModelId != null) {
+            runtimeModel = models.findById(runtimeModelId)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.BAD_REQUEST,
+                            "Studio runtime model not found for this Lab"));
+            if (runtimeModel.getProject() == null || runtimeModel.getSourceSnapshot() == null) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST,
+                        "Studio runtime source has no project or snapshot");
+            }
+        }
 
         for (RuntimeSessionResponseDTO existing : listStudioSessions(workspaceId, assignmentId)) {
             String exec = existing.getExecutionStatus() == null ? "" : existing.getExecutionStatus().toUpperCase(Locale.ROOT);
@@ -287,9 +307,9 @@ public class CourseLabStudentService {
             }
         }
 
-        StudentWorkspaceBundle working = ensureStudentWorkingProject(lab, actor, refModel);
-        JsonNode resolvedTopology = resolveStudioTopology(lab, refModel);
-        ObjectNode appsNode = resolveApplicationsNode(refModel, resolvedTopology);
+        StudentWorkspaceBundle working = ensureStudentWorkingProject(lab, actor, runtimeModel);
+        JsonNode resolvedTopology = resolveStudioTopology(lab, runtimeModel);
+        ObjectNode appsNode = resolveApplicationsNode(runtimeModel, resolvedTopology);
         Map<String, String> serviceMappings = buildServiceMappings(working.model(), appsNode);
 
         ObjectNode scenarioConfig = json.createObjectNode();
@@ -302,12 +322,30 @@ public class CourseLabStudentService {
         ObjectNode scenarioNode = scenarioConfig.putObject("scenario");
         ArrayNode stepsNode = scenarioNode.putArray("steps");
         String primaryService = appsNode.fieldNames().hasNext() ? appsNode.fieldNames().next() : "order-service";
-        stepsNode.addObject()
-                .put("id", "studio-smoke")
-                .put("service", primaryService)
-                .put("method", "GET")
-                .put("path", "/health")
-                .put("expectedStatus", 200);
+        JsonNode configuredBaseline = frozenExercise != null
+                ? frozenExercise.get("baselineRequests")
+                : exercise == null ? null : exercise.getBaselineRequests();
+        if (configuredBaseline != null && configuredBaseline.isArray() && !configuredBaseline.isEmpty()) {
+            int index = 0;
+            for (JsonNode request : configuredBaseline) {
+                if (!request.isObject()) continue;
+                stepsNode.addObject()
+                        .put("id", "studio-baseline-" + index)
+                        .put("service", primaryService)
+                        .put("method", request.path("method").asText("GET"))
+                        .put("path", request.path("path").asText("/health"))
+                        .put("expectedStatus", request.path("expectedStatus").asInt(200));
+                index++;
+            }
+        }
+        if (stepsNode.isEmpty()) {
+            stepsNode.addObject()
+                    .put("id", "studio-smoke")
+                    .put("service", primaryService)
+                    .put("method", "GET")
+                    .put("path", "/health")
+                    .put("expectedStatus", 200);
+        }
         scenarioNode.put("timeoutSeconds", 300);
         scenarioConfig.putArray("infrastructureActions");
 

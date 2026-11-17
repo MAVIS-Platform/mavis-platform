@@ -105,6 +105,9 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
     private com.mavis.common.repository.AssignmentRepository assignmentRepository;
 
     @Autowired(required = false)
+    private com.mavis.common.repository.LabStudioExerciseRepository labStudioExercises;
+
+    @Autowired(required = false)
     private com.mavis.analyzer.runtime.service.RuntimeSessionEnvironmentService runtimeSessionEnvironmentService;
 
     @Autowired(required = false)
@@ -658,21 +661,31 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                     || !assignment.getWorkspace().getId().equals(project.getWorkspace().getId())) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "Lab và project không thuộc cùng lớp");
             }
-            if (assignment.getReferenceModel() == null) {
+            if (assignment.getReferenceModel() == null && labStudioExercises == null) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "Lab chưa có reference model");
             }
+            var exercise = labStudioExercises == null ? null
+                    : labStudioExercises.findByAssignmentId(assignment.getId()).orElse(null);
+            boolean runtimeSource = exercise != null && exercise.getRuntimeModelId() != null
+                    && exercise.getRuntimeModelId().equals(pinnedModel.getId())
+                    && exercise.getRuntimeSnapshotId() != null
+                    && exercise.getRuntimeSnapshotId().equals(snapshot.getId());
             boolean studentWorking = "STUDENT_WORKING".equalsIgnoreCase(project.getProjectType())
                     && project.getAssignment() != null
                     && assignment.getId().equals(project.getAssignment().getId());
             if (studentWorking) {
-                var referenceSnapshot = assignment.getReferenceModel().getSourceSnapshot();
+                var referenceSnapshot = runtimeSource
+                        ? sourceSnapshotRepository.findById(exercise.getRuntimeSnapshotId()).orElse(null)
+                        : assignment.getReferenceModel() == null ? null
+                        : assignment.getReferenceModel().getSourceSnapshot();
                 if (referenceSnapshot == null || snapshot.getArtifactHash() == null
                         || !snapshot.getArtifactHash().equals(referenceSnapshot.getArtifactHash())) {
                     throw new BusinessException(ErrorCode.BAD_REQUEST,
                             "Lab source snapshot không khớp snapshot đã chọn");
                 }
-            } else {
-                if (!assignment.getReferenceModel().getId().equals(pinnedModel.getId())) {
+            } else if (!runtimeSource) {
+                if (assignment.getReferenceModel() == null
+                        || !assignment.getReferenceModel().getId().equals(pinnedModel.getId())) {
                     throw new BusinessException(ErrorCode.BAD_REQUEST, "Lab reference model không khớp model đã chọn");
                 }
                 if (assignment.getReferenceModel().getSourceSnapshot() != null
@@ -1762,10 +1775,28 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                 && "STUDENT_WORKING".equals(project.getProjectType());
     }
 
-    private static void requireGuidedRuntimeSource(Project project, SourceSnapshot snapshot, ModelVersion model) {
+    private void requireGuidedRuntimeSource(Project project, SourceSnapshot snapshot, ModelVersion model) {
         if (!isGuidedRuntime(project)) return;
 
         var lab = project.getAssignment();
+        var exercise = lab == null || labStudioExercises == null ? null
+                : labStudioExercises.findByAssignmentId(lab.getId()).orElse(null);
+        if (exercise != null && exercise.getRuntimeModelId() != null) {
+            boolean matches = model != null
+                    && exercise.getRuntimeModelId().equals(model.getId())
+                    && exercise.getRuntimeSnapshotId() != null
+                    && exercise.getRuntimeSnapshotId().equals(snapshot == null ? null : snapshot.getId())
+                    && snapshot != null && snapshot.getProject() != null
+                    && Objects.equals(project.getId(), snapshot.getProject().getId())
+                    && model.getSourceSnapshot() != null
+                    && snapshot.getId().equals(model.getSourceSnapshot().getId())
+                    && !"RUNTIME_ENRICHED".equalsIgnoreCase(model.getOrigin());
+            if (!matches) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST,
+                        "Runtime source does not match the Studio exercise");
+            }
+            return;
+        }
         var referenceModel = lab == null ? null : lab.getReferenceModel();
         var reference = referenceModel == null ? null : referenceModel.getSourceSnapshot();
         if (reference == null || !Boolean.TRUE.equals(reference.getIsPublished())

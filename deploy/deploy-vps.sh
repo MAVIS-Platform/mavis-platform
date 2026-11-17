@@ -168,6 +168,12 @@ if [ -e "$lab_prerequisites_migration" ]; then
   compose "$prefix" "$tag" "$incoming/compose.production.yml" config --format json |
     python3 "$schema_tool" "$lab_prerequisites_migration" /opt/mavis/db-backups/prerequisites-before-v40.dump
 fi
+studio_exercise_migration="$incoming/V41__Lab_Studio_Exercise.sql"
+if [ -e "$studio_exercise_migration" ]; then
+  test -f "$lab_prerequisites_migration" && test -f "$schema_tool" || { echo "Incomplete Studio exercise schema package"; exit 1; }
+  compose "$prefix" "$tag" "$incoming/compose.production.yml" config --format json |
+    python3 "$schema_tool" "$studio_exercise_migration" /opt/mavis/db-backups/studio-exercise-before-v41.dump
+fi
 if ! compose "$prefix" "$tag" "$incoming/compose.production.yml" up -d --no-build --remove-orphans || ! healthy; then
   echo "Deployment failed; restoring previous images and Compose."
   compose "$old_prefix" "$old_tag" "$previous/compose.production.yml" up -d --no-build --remove-orphans

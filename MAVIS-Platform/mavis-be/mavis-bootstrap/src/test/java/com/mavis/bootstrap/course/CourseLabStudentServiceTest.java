@@ -119,7 +119,8 @@ class CourseLabStudentServiceTest {
                 access, courseLabs, assignments, projects, snapshots, models, elements,
                 relationships, diagrams, evidences, evaluations, evaluationFindings,
                 runtimeConfigurations, runtimeSessions, runtimeSessionService, runtimeStudioService,
-                assignmentService, courseQuizService, submissionService, submissionReviewService, json);
+                assignmentService, courseQuizService, submissionService, submissionReviewService,
+                mock(com.mavis.common.repository.LabStudioExerciseRepository.class), json);
 
         workspaceId = UUID.randomUUID();
         labId = UUID.randomUUID();
