@@ -119,6 +119,63 @@ class SubmissionServiceImplTest {
         verify(submissionSnapshotRepository, never()).save(any());
     }
 
+    @Test void publishedLabEditDoesNotChangeFrozenV2SubmissionDigestOrExport() {
+        var labWorkspace = Workspace.builder().id(UUID.randomUUID()).courseMode(false).status("ACTIVE").build();
+        assignment.setWorkspace(labWorkspace);
+        assignment.setLabMode("THEORY_QUIZ");
+        assignment.setReferenceModel(modelVersion);
+        snapshot.setArtifactHash("sha256:" + "d".repeat(64));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(student));
+        when(assignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));
+
+        var savedHolder = new java.util.concurrent.atomic.AtomicReference<SubmissionSnapshot>();
+        when(submissionSnapshotRepository.save(any())).thenAnswer(call -> {
+            SubmissionSnapshot value = call.getArgument(0);
+            value.setId(UUID.randomUUID());
+            value.setSubmittedAt(OffsetDateTime.now());
+            savedHolder.set(value);
+            return value;
+        });
+
+        var request = SubmissionCreateRequest.builder()
+                .assignmentId(assignmentId)
+                .submissionNotes("Initial theory submission")
+                .theoryAnswers(List.of(new SubmissionCreateRequest.TheoryAnswerDTO(
+                        "THEORY", "Architecture boundaries", "Orders routes synchronously through route controller.")))
+                .build();
+        var submitted = submissionService.submitAssignment(request);
+
+        assignment.setTitle("Mutated Lab Title After Submission");
+        when(submissionSnapshotRepository.findWithDetailsById(submitted.getId())).thenReturn(Optional.of(savedHolder.get()));
+        when(feedbackCommentRepository.findBySubmissionIdOrderByCreatedAtAsc(submitted.getId())).thenReturn(List.of());
+
+        var bundle = submissionService.exportSubmissionBundle(submitted.getId());
+        assertThat(bundle.getEvidencePackageDigest()).isEqualTo(submitted.getEvidencePackageDigest());
+        assertThat(bundle.getTheoryEvidence()).isEqualTo(submitted.getTheoryEvidence());
+        assertThat(bundle.getStudentSnapshots()).isEqualTo(submitted.getStudentSnapshots());
+    }
+
+    @Test void foreignWorkspaceStudentCannotSubmitV2Lab() {
+        var labWorkspace = Workspace.builder().id(UUID.randomUUID()).courseMode(true).status("ACTIVE").build();
+        assignment.setWorkspace(labWorkspace);
+        assignment.setLabMode("THEORY_QUIZ");
+        assignment.setReferenceModel(modelVersion);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(student));
+        when(assignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));
+        doThrow(new BusinessException(com.mavis.common.exception.ErrorCode.FORBIDDEN, "Not a workspace member"))
+                .when(accessPolicyService).requireWorkspaceMember(labWorkspace.getId());
+
+        var request = SubmissionCreateRequest.builder()
+                .assignmentId(assignmentId)
+                .theoryAnswers(List.of(new SubmissionCreateRequest.TheoryAnswerDTO("THEORY", "Theory", "Answer")))
+                .build();
+
+        assertThatThrownBy(() -> submissionService.submitAssignment(request))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Not a workspace member");
+        verify(submissionSnapshotRepository, never()).save(any());
+    }
+
     @Test void c4ContainerDoesNotSatisfyAComponentRequirement() {
         assignment.setRequiredDiagramTypes(objectMapper.createArrayNode().add("C4_COMPONENT"));
         when(userRepository.findById(userId)).thenReturn(Optional.of(student));when(assignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));

@@ -117,7 +117,7 @@ Hỗ trợ `SINGLE_CHOICE`, `MULTI_CHOICE`, `TRUE_FALSE`. Học sinh thấy radi
 
 1. Vào **Submissions** của lớp, chọn Lab cần chấm.
 2. Bảng hiển thị sinh viên, Lab, model đã đóng băng, kết quả, phản hồi và thời điểm nộp.
-3. **Open review** mở màn hình chấm; quay lại bằng **Back to class submissions**.
+3. **Open review** mở màn hình chấm; quay lại bằng **Back to class submissions**. `GradeForm` hiển thị nguyên văn `writtenExplanation` của từng Snapshot/section ngay trên ô nhập điểm `0..10`, đồng thời giữ lại nháp điểm đang nhập nếu phiên làm mới gặp xung đột `409` và tự đồng bộ `expectedRevision`.
 4. Guided Lab vẫn yêu cầu điểm từng snapshot và mọi snapshot phải `> 5.0/10`; `summary` bắt buộc khi công bố. Auto-unlock do backend quyết định.
 
 ## 7. Ghi chú kỹ thuật
@@ -126,13 +126,15 @@ Hỗ trợ `SINGLE_CHOICE`, `MULTI_CHOICE`, `TRUE_FALSE`. Học sinh thấy radi
 - Sắp xếp module kiểm tra lại quan hệ tiên quyết: không cho đưa module có prerequisite lên trước module tiên quyết của nó.
 - Preview của giảng viên bỏ qua điều kiện roadmap `LOCKED` để xem được Lab chưa mở, nhưng vẫn không tạo Quiz attempt/session/submission.
 - `IMPACT_LAB` mở ở Bước 2 (Theory, impact và quiz); `RUNTIME_LAB` mở Bước 3; `STATIC_LAB` mở Bước 1.
+- `CourseAccessService.publish` là idempotent trên Lab đã publish: giữ nguyên `studioTopologySnapshot` / `studioTopologyRevision` đã đóng băng và chỉ làm mới khi giảng viên gọi rõ **Freeze topology**.
+- `CourseSetupService` tổng hợp độ sẵn sàng trên toàn bộ danh sách Lab & reference project thay vì chỉ kiểm tra reference đầu tiên.
 
 ## 8. Giới hạn contract hiện hành
 
 - **Bộ lọc trạng thái bài nộp** chưa có trong API `assignmentSubmissions`; UI chỉ lọc theo Lab và tìm theo sinh viên. Không hiển thị filter giả.
 - **`runnerReady`** hiện là điều kiện cấu hình của profile (`ConfigurationView.ready()`), chưa phải health check Runner thật. UI ghi "Runner / images: ready" theo API và không nâng thành "đã chạy thật".
 - **THEORY completion** không được suy ra: giao diện chỉ hiển thị tài liệu, không đánh dấu hoàn thành giả.
-- **Submission v2** vẫn thuộc Phase 4 của big update; hiện tại submission cũ vẫn dùng model/diagram cho Lab legacy.
+- **Submission v2 (`V38__Submission_V2_Lab_Mode.sql`: `THEORY_QUIZ`, `THEORY_QUIZ_STUDIO`)** đã hoàn thiện xuyên suốt DB/BE/FE (`lab-submission-v2.tsx`, `frozen-artifacts.tsx`, `grading.tsx`); Lab `LEGACY` vẫn giữ flow model/diagram cũ.
 - **Real Docker Runner/Studio đã PASS ngày 17/11/2026**: STOP/START payment và SCALE orders 1→2, Before/After snapshot, HMAC receipt, cleanup `CONFIRMED`, 0 orphan. **Web production với hai tài khoản thật vẫn cần chạy.**
 - **`runnerReady`** không phải health check trực tiếp; Start Live session chỉ bật khi profile configured, không đảm bảo Docker đã chạy.
 - **V37** thêm `runtime_sessions.assignment_id`; session cũ không có assignment vẫn hợp lệ. Freeze topology có `sessionId` sẽ fail closed nếu session không khớp Lab/source/model hoặc chưa verified.

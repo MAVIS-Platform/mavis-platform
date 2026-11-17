@@ -58,8 +58,10 @@ public class CourseAccessService {
                 .filter(value -> workspaceId.equals(value.getWorkspace().getId()))
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Lab not found"));
         if (assignment.getLabOrder() != null) {
-            copyTopologySnapshot(assignment);
-            assignments.save(assignment);
+            if (assignment.getStudioTopologySnapshot() == null) {
+                copyTopologySnapshot(assignment);
+                assignments.save(assignment);
+            }
             return new Lab(assignmentId, assignment.getLabOrder(), assignment.getTitle(), "UNLOCKED", null);
         }
         var model = assignment.getReferenceModel();

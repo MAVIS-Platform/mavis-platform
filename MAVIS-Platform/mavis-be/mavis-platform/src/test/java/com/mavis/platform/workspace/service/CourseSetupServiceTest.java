@@ -122,6 +122,54 @@ class CourseSetupServiceTest {
                 .filter(step -> step.id().equals("labs")).allMatch(step -> "ACTION".equals(step.state())));
     }
 
+    @Test void multiReferenceCoursePointsToSecondReferenceWhenItsRuntimeOrStudioIsIncomplete() {
+        UUID project2Id = UUID.randomUUID();
+        UUID snapshot2Id = UUID.randomUUID();
+        UUID model2Id = UUID.randomUUID();
+        UUID lab2Id = UUID.randomUUID();
+        var project2 = Project.builder().id(project2Id).workspace(workspace)
+                .name("Second reference").projectType("TEACHER_REFERENCE").isReferenceTemplate(true).status("ACTIVE").build();
+        var snapshot2 = SourceSnapshot.builder().id(snapshot2Id).project(project2)
+                .isPublished(true).artifactHash("b".repeat(64)).storagePath("ref2.zip").build();
+        var model2 = ModelVersion.builder().id(model2Id).project(project2)
+                .sourceSnapshot(snapshot2).revision(1).build();
+        var lab2 = Assignment.builder().id(lab2Id).workspace(workspace)
+                .title("Lab 2").labOrder(2).requireRuntimeTrace(true).referenceModel(model2)
+                .createdAt(OffsetDateTime.now().plusMinutes(1)).build();
+        when(assignments.findByWorkspaceIdOrderByCreatedAtDesc(workspaceId)).thenReturn(List.of(lab2, lab));
+        when(configurations.findById(project2Id)).thenReturn(Optional.empty());
+
+        var missingRuntime = setup.setup(workspaceId);
+
+        assertEquals("READY", missingRuntime.labs().get(0).state());
+        assertEquals("NEEDS_STUDIO", missingRuntime.labs().get(1).state());
+        assertEquals(project2Id, missingRuntime.reference().projectId());
+        assertEquals("configure-runtime", missingRuntime.nextAction());
+        assertEquals("ACTION", missingRuntime.steps().stream()
+                .filter(step -> step.id().equals("runtime")).findFirst().orElseThrow().state());
+        assertEquals("ACTION", missingRuntime.steps().stream()
+                .filter(step -> step.id().equals("studio")).findFirst().orElseThrow().state());
+
+        ObjectNode appsOnlyProfile = mapper.createObjectNode();
+        appsOnlyProfile.putObject("applications").putObject("orders").put("runtime", "dotnet8-linux-x64-glibc");
+        var appsOnlyConfig = new RuntimeConfiguration();
+        appsOnlyConfig.setProjectId(project2Id);
+        appsOnlyConfig.setSourceSnapshotId(snapshot2Id);
+        appsOnlyConfig.setModelVersionId(model2Id);
+        appsOnlyConfig.setProfile(appsOnlyProfile);
+        appsOnlyConfig.setRevision(1);
+        when(configurations.findById(project2Id)).thenReturn(Optional.of(appsOnlyConfig));
+
+        var missingTopology = setup.setup(workspaceId);
+
+        assertEquals(project2Id, missingTopology.reference().projectId());
+        assertEquals("configure-studio", missingTopology.nextAction());
+        assertEquals("DONE", missingTopology.steps().stream()
+                .filter(step -> step.id().equals("runtime")).findFirst().orElseThrow().state());
+        assertEquals("ACTION", missingTopology.steps().stream()
+                .filter(step -> step.id().equals("studio")).findFirst().orElseThrow().state());
+    }
+
     private RuntimeConfiguration configuration(boolean withTopology) {
         ObjectNode profile = mapper.createObjectNode();
         var applications = profile.putObject("applications");

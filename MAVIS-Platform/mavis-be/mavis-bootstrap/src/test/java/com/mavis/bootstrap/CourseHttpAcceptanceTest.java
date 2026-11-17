@@ -312,6 +312,7 @@ class CourseHttpAcceptanceTest {
         send("GET", "assignments/" + lab1 + "/reference-source", foreignStudent, null, 403);
         assertArrayEquals(Files.readAllBytes(zip),
                 send("GET", "assignments/" + lab1 + "/reference-source", student, null, 200).body());
+        checkSubmissionV2Flow(db, zip, teacher, lecturer, student, foreignStudent);
         db.update("UPDATE course_passkeys SET expires_at = now() - interval '1 minute' WHERE workspace_id = ?", classroom);
         send("POST", "course-enrollments/redeem", foreignStudent, Map.of("code", code), 400);
         send("POST", "auth/logout", student, null, 200);
@@ -542,6 +543,100 @@ class CourseHttpAcceptanceTest {
         assertFalse(republishedQuiz.path("passed").asBoolean());
         assertEquals("NOT_ATTEMPTED", republishedQuiz.path("latestStatus").asText());
         assertFalse(republishedQuiz.path("runtimeUnlocked").asBoolean());
+    }
+
+    private void checkSubmissionV2Flow(JdbcTemplate db, Path zip, UUID teacher, String lecturer,
+                                       String student, String foreignStudent) throws Exception {
+        UUID v2Classroom = workspace(db, "Theory V2 Course", teacher);
+        UUID ref2 = id(db, """
+                INSERT INTO projects(workspace_id, owner_id, name, project_type, is_reference_template)
+                VALUES (?, ?, 'Reference V2', 'TEACHER_REFERENCE', true) RETURNING id
+                """, v2Classroom, teacher);
+        UUID src2 = id(db, """
+                INSERT INTO source_snapshots(project_id,source_type,artifact_hash,storage_path,is_published)
+                VALUES (?,'ZIP_UPLOAD',?,?,true) RETURNING id
+                """, ref2, HashUtils.sha256Hex(zip), zip.toString());
+        UUID mod2 = id(db, """
+                INSERT INTO model_versions(project_id,source_snapshot_id) VALUES (?,?) RETURNING id
+                """, ref2, src2);
+        UUID lab3 = id(db, """
+                INSERT INTO assignments(workspace_id,created_by,reference_model_id,title,lab_mode)
+                VALUES (?,?,?,?,'THEORY_QUIZ') RETURNING id
+                """, v2Classroom, teacher, mod2, "Lab V2 Theory 1");
+        UUID lab4 = id(db, """
+                INSERT INTO assignments(workspace_id,created_by,reference_model_id,title,lab_mode)
+                VALUES (?,?,?,?,'THEORY_QUIZ') RETURNING id
+                """, v2Classroom, teacher, mod2, "Lab V2 Theory 2");
+
+        String v2Workspace = "workspaces/" + v2Classroom;
+        String v2Publish = v2Workspace + "/course-labs/";
+        assertEquals(1, data(send("POST", v2Publish + lab3 + "/publish", lecturer, null, 200)).path("position").asInt());
+        assertEquals(2, data(send("POST", v2Publish + lab4 + "/publish", lecturer, null, 200)).path("position").asInt());
+        String v2Code = data(send("POST", v2Workspace + "/course-passkey", lecturer, Map.of("validHours", 2), 200))
+                .path("code").asText();
+        assertEquals(v2Classroom.toString(), data(send("POST", "course-enrollments/redeem",
+                student, Map.of("code", v2Code), 200)).path("workspaceId").asText());
+
+        String v2Quiz = v2Workspace + "/course-labs/" + lab3 + "/quiz";
+        var quizDef = Map.of("lesson", "Bounded contexts and decoupling", "questions", List.of(
+                Map.of("prompt", "Why avoid shared database tables?", "options", List.of("Independent evolution", "Slower builds"), "correctOption", 0)));
+        assertEquals(1, data(send("POST", v2Quiz, lecturer, quizDef, 200)).path("version").asInt());
+        send("GET", v2Quiz, foreignStudent, null, 403);
+
+        var v2Submission = Map.of(
+                "assignmentId", lab3,
+                "submissionNotes", "Initial theory notes",
+                "theoryAnswers", List.of(Map.of(
+                        "sectionId", "THEORY",
+                        "title", "Theory explanation",
+                        "answer", "Services own isolated schemas and communicate over explicit APIs.")));
+        send("POST", "submissions", foreignStudent, v2Submission, 403);
+        send("POST", "submissions", student, v2Submission, 403);
+
+        assertEquals("PASSED", data(send("POST", v2Quiz + "/attempts", student,
+                Map.of("attemptId", UUID.randomUUID(), "version", 1, "answers", List.of(0)), 200)).path("status").asText());
+
+        JsonNode initialSub = data(send("POST", "submissions", student, v2Submission, 200));
+        assertTrue(initialSub.path("evidencePackageDigest").asText().startsWith("sha256:"));
+        assertEquals(1, initialSub.path("studentSnapshots").size());
+        assertEquals("THEORY_THEORY", initialSub.path("studentSnapshots").get(0).path("snapshotId").asText());
+
+        String firstReview = "submissions/" + initialSub.path("id").asText() + "/review";
+        send("PUT", firstReview, lecturer, Map.of("expectedRevision", 0, "status", "DRAFT",
+                "summary", "Private draft notes",
+                "snapshotGrades", List.of(Map.of("snapshotId", "THEORY_THEORY", "score", new java.math.BigDecimal("8.50")))), 200);
+        assertEquals("PENDING", data(send("GET", firstReview, student, null, 200)).path("status").asText());
+
+        JsonNode returned = data(send("PUT", firstReview, lecturer, Map.of("expectedRevision", 1, "status", "RETURNED",
+                "summary", "Clarify the fallback trade-off."), 200));
+        assertEquals("RETURNED", returned.path("status").asText());
+        send("GET", "assignments/" + lab4, student, null, 403);
+
+        var revisedV2Submission = Map.of(
+                "assignmentId", lab3,
+                "submissionNotes", "Revised theory notes",
+                "theoryAnswers", List.of(Map.of(
+                        "sectionId", "THEORY",
+                        "title", "Theory explanation",
+                        "answer", "Services own schemas and degrade safely via explicit HTTP fallback timeouts.")));
+        JsonNode resubmitted = data(send("POST", "submissions", student, revisedV2Submission, 200));
+        assertNotEquals(initialSub.path("id"), resubmitted.path("id"));
+        assertNotEquals(initialSub.path("evidencePackageDigest"), resubmitted.path("evidencePackageDigest"));
+
+        String secondReview = "submissions/" + resubmitted.path("id").asText() + "/review";
+        JsonNode graded = data(send("PUT", secondReview, lecturer, Map.of("expectedRevision", 0, "status", "GRADED",
+                "summary", "Accurate explanation of bounded contexts and fallback.",
+                "snapshotGrades", List.of(Map.of("snapshotId", "THEORY_THEORY", "score", new java.math.BigDecimal("9.00")))), 200));
+        assertEquals("PASSED", graded.path("labOutcome").asText());
+        send("GET", "assignments/" + lab4, student, null, 200);
+
+        String originalDigest = resubmitted.path("evidencePackageDigest").asText();
+        JsonNode originalTheory = resubmitted.path("theoryEvidence");
+        db.update("UPDATE assignments SET title = 'Edited Title After Freeze' WHERE id = ?", lab3);
+        assertEquals(2, data(send("POST", v2Quiz, lecturer, quizDef, 200)).path("version").asInt());
+        JsonNode reloaded = data(send("GET", "submissions/" + resubmitted.path("id").asText(), student, null, 200));
+        assertEquals(originalDigest, reloaded.path("evidencePackageDigest").asText());
+        assertEquals(originalTheory, reloaded.path("theoryEvidence"));
     }
 
     private HttpResponse<byte[]> send(String method, String path, String token, Map<String, ?> body,

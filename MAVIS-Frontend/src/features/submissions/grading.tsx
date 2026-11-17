@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useApiMutation, useApiQuery, usePermission } from "@/hooks/use-api";
 import { DetailPanel, StatusBadge } from "@/components/shared/data";
 import { ErrorState, RequestState } from "@/components/shared/request-state";
@@ -77,11 +77,7 @@ export function GradingPanel({
               )}
               {resolveSubmissionOutcome(query.data) && (
                 <Badge
-                  variant={
-                    resolveSubmissionOutcome(query.data) === "PASS"
-                      ? "success"
-                      : "warning"
-                  }
+                  variant={resolveSubmissionOutcome(query.data) === "PASS" ? "success" : "warning"}
                 >
                   {resolveSubmissionOutcome(query.data)}
                 </Badge>
@@ -89,7 +85,9 @@ export function GradingPanel({
             </div>
             {query.data.snapshotGrades && query.data.snapshotGrades.length > 0 && (
               <div className="space-y-1.5 rounded-lg border bg-muted/20 p-3 text-xs">
-                <p className="font-medium">{t("Per-snapshot grading results (> 5.0 / 10 required)")}</p>
+                <p className="font-medium">
+                  {t("Per-snapshot grading results (> 5.0 / 10 required)")}
+                </p>
                 {query.data.snapshotGrades.map((g, idx) => (
                   <div
                     key={`${g.snapshotId}-${idx}`}
@@ -126,14 +124,19 @@ export function GradingPanel({
                 {query.data.lecturerName} · {new Date(query.data.updatedAt).toLocaleString()}
               </p>
             )}
-            {canReview && !(guidedLab && query.data.status === "GRADED" && query.data.labOutcome === "PASSED") && (
-              <GradeForm
-                key={query.data.revision}
-                review={query.data}
-                studentSnapshots={studentSnapshots}
-                guidedLab={guidedLab}
-              />
-            )}
+            {canReview &&
+              !(
+                guidedLab &&
+                query.data.status === "GRADED" &&
+                query.data.labOutcome === "PASSED"
+              ) && (
+                <GradeForm
+                  key={submissionId}
+                  review={query.data}
+                  studentSnapshots={studentSnapshots}
+                  guidedLab={guidedLab}
+                />
+              )}
             <Button
               size="sm"
               variant="outline"
@@ -217,7 +220,7 @@ export function parseSnapshotGradeRows(rows: readonly EditableSnapshotGrade[]) {
   return { items, invalid, complete: rows.length > 0 && items.length === rows.length };
 }
 
-function GradeForm({
+export function GradeForm({
   review,
   studentSnapshots,
   guidedLab,
@@ -230,20 +233,35 @@ function GradeForm({
   const save = useApiMutation("gradeSubmission");
   const initialUseSnapshots = Boolean(
     (review.snapshotGrades && review.snapshotGrades.length > 0) ||
-      (studentSnapshots && studentSnapshots.length > 0),
+    (studentSnapshots && studentSnapshots.length > 0),
   );
   const [preferPerSnapshot, setUsePerSnapshot] = useState(initialUseSnapshots);
   const hasFrozenRows = Boolean(studentSnapshots?.length);
   const usePerSnapshot = guidedLab ? hasFrozenRows : preferPerSnapshot;
   const canPublish = !guidedLab || hasFrozenRows;
+  const [syncedRevision, setSyncedRevision] = useState(review.revision);
+  const [dirty, setDirty] = useState(false);
   const [snapshotRows, setSnapshotRows] = useState<EditableSnapshotGrade[]>(() =>
     buildInitialSnapshotGrades(review, studentSnapshots),
   );
   const [score, setScore] = useState(review.score === null ? "" : String(review.score));
   const [summary, setSummary] = useState(review.summary);
 
+  useEffect(() => {
+    if (review.revision !== syncedRevision) {
+      setSyncedRevision(review.revision);
+      if (!dirty) {
+        setSnapshotRows(buildInitialSnapshotGrades(review, studentSnapshots));
+        setScore(review.score === null ? "" : String(review.score));
+        setSummary(review.summary);
+      }
+    }
+  }, [review, studentSnapshots, syncedRevision, dirty]);
+
   const parsedSnapshots = parseSnapshotGradeRows(snapshotRows);
-  const allSnapshotsPassed = parsedSnapshots.items.every((item) => item.score > SNAPSHOT_PASS_EXCLUSIVE);
+  const allSnapshotsPassed = parsedSnapshots.items.every(
+    (item) => item.score > SNAPSHOT_PASS_EXCLUSIVE,
+  );
 
   const computedScale100 =
     usePerSnapshot && parsedSnapshots.complete
@@ -256,11 +274,7 @@ function GradeForm({
         )
       : null;
 
-  const value = usePerSnapshot
-    ? computedScale100
-    : score.trim() === ""
-      ? null
-      : Number(score);
+  const value = usePerSnapshot ? computedScale100 : score.trim() === "" ? null : Number(score);
   const valid = usePerSnapshot
     ? parsedSnapshots.complete
     : value === null ||
@@ -275,12 +289,21 @@ function GradeForm({
     : resolveSubmissionOutcome({ score: value });
 
   function submit(status: "DRAFT" | "RETURNED" | "GRADED") {
-    if (save.isPending || (usePerSnapshot && parsedSnapshots.invalid)
-        || (status === "GRADED" && (!valid || !canPublish))) return;
+    if (
+      save.isPending ||
+      (usePerSnapshot && parsedSnapshots.invalid) ||
+      (status === "GRADED" && (!valid || !canPublish))
+    )
+      return;
     if (status !== "DRAFT" && !summary.trim()) return;
     if (!usePerSnapshot) {
       if (status === "GRADED" && (value === null || value <= PASSING_SCORE)) return;
-      if (!guidedLab && status === "RETURNED" && (!valid || (value !== null && value > PASSING_SCORE))) return;
+      if (
+        !guidedLab &&
+        status === "RETURNED" &&
+        (!valid || (value !== null && value > PASSING_SCORE))
+      )
+        return;
     }
     if (
       status !== "DRAFT" &&
@@ -291,16 +314,23 @@ function GradeForm({
       )
     )
       return;
-    save.mutate({
-      submissionId: review.submissionId,
-      expectedRevision: review.revision,
-      status,
-      score: usePerSnapshot || (guidedLab && !hasFrozenRows) ? null : value,
-      summary,
-      ...(usePerSnapshot && parsedSnapshots.items.length > 0
-        ? { snapshotGrades: parsedSnapshots.items }
-        : {}),
-    });
+    save.mutate(
+      {
+        submissionId: review.submissionId,
+        expectedRevision: review.revision,
+        status,
+        score: usePerSnapshot || (guidedLab && !hasFrozenRows) ? null : value,
+        summary,
+        ...(usePerSnapshot && parsedSnapshots.items.length > 0
+          ? { snapshotGrades: parsedSnapshots.items }
+          : {}),
+      },
+      {
+        onSuccess: () => {
+          setDirty(false);
+        },
+      },
+    );
   }
 
   return (
@@ -312,20 +342,25 @@ function GradeForm({
           )}
         </p>
         {!guidedLab && (
-        <label className="flex items-center gap-2 text-xs font-medium">
-          <input
-            type="checkbox"
-            checked={usePerSnapshot}
-            onChange={(e) => setUsePerSnapshot(e.target.checked)}
-          />
-          <span>{t("Per-snapshot grading (0–10)")}</span>
-        </label>
+          <label className="flex items-center gap-2 text-xs font-medium">
+            <input
+              type="checkbox"
+              checked={usePerSnapshot}
+              onChange={(e) => {
+                setDirty(true);
+                setUsePerSnapshot(e.target.checked);
+              }}
+            />
+            <span>{t("Per-snapshot grading (0–10)")}</span>
+          </label>
         )}
       </div>
       {guidedLab && !hasFrozenRows && (
         <p role="status" className="text-sm text-muted-foreground">
-          {t("This submission has no frozen Snapshot list. Return it with instructions to resubmit.",
-            "Bài này thiếu danh sách Snapshot đã đóng băng. Hãy trả bài kèm hướng dẫn nộp lại.")}
+          {t(
+            "This submission has no frozen Snapshot list. Return it with instructions to resubmit.",
+            "Bài này thiếu danh sách Snapshot đã đóng băng. Hãy trả bài kèm hướng dẫn nộp lại.",
+          )}
         </p>
       )}
       {usePerSnapshot ? (
@@ -338,6 +373,9 @@ function GradeForm({
               num >= 0 &&
               num <= 10 &&
               /^\d+(\.\d{1,2})?$/.test(row.score.trim());
+            const writtenExplanation = studentSnapshots?.find(
+              (item) => item.snapshotId === row.snapshotId,
+            )?.writtenExplanation;
             return (
               <div
                 key={`${row.snapshotId}-${idx}`}
@@ -347,10 +385,17 @@ function GradeForm({
                   <span className="text-xs font-semibold">{row.title}</span>
                   {isValidCell && (
                     <Badge variant={num! > SNAPSHOT_PASS_EXCLUSIVE ? "success" : "warning"}>
-                      {num! > SNAPSHOT_PASS_EXCLUSIVE ? t("PASS (> 5.0)") : t("NEEDS REVISION (<= 5.0)")}
+                      {num! > SNAPSHOT_PASS_EXCLUSIVE
+                        ? t("PASS (> 5.0)")
+                        : t("NEEDS REVISION (<= 5.0)")}
                     </Badge>
                   )}
                 </div>
+                {writtenExplanation && (
+                  <p className="whitespace-pre-wrap rounded border bg-muted/30 p-2 text-xs text-foreground">
+                    {writtenExplanation}
+                  </p>
+                )}
                 <div className="grid gap-2 sm:grid-cols-[160px_minmax(0,1fr)]">
                   <Input
                     type="number"
@@ -360,22 +405,28 @@ function GradeForm({
                     aria-label={`${t("Score", "Điểm")} — ${row.title}`}
                     placeholder="0.0 – 10.0"
                     value={row.score}
-                    onChange={(e) =>
+                    onChange={(e) => {
+                      setDirty(true);
                       setSnapshotRows((prev) =>
-                        prev.map((item, i) => (i === idx ? { ...item, score: e.target.value } : item)),
-                      )
-                    }
+                        prev.map((item, i) =>
+                          i === idx ? { ...item, score: e.target.value } : item,
+                        ),
+                      );
+                    }}
                   />
                   <Input
                     aria-label={`${t("Snapshot comment (optional)")} — ${row.title}`}
                     placeholder={t("Snapshot comment (optional)")}
                     maxLength={2000}
                     value={row.comment}
-                    onChange={(e) =>
+                    onChange={(e) => {
+                      setDirty(true);
                       setSnapshotRows((prev) =>
-                        prev.map((item, i) => (i === idx ? { ...item, comment: e.target.value } : item)),
-                      )
-                    }
+                        prev.map((item, i) =>
+                          i === idx ? { ...item, comment: e.target.value } : item,
+                        ),
+                      );
+                    }}
                   />
                 </div>
               </div>
@@ -397,7 +448,10 @@ function GradeForm({
               max={100}
               step="0.01"
               value={score}
-              onChange={(e) => setScore(e.target.value)}
+              onChange={(e) => {
+                setDirty(true);
+                setScore(e.target.value);
+              }}
               className="max-w-48"
             />
           )}
@@ -409,7 +463,10 @@ function GradeForm({
             {...props}
             value={summary}
             maxLength={10000}
-            onChange={(e) => setSummary(e.target.value)}
+            onChange={(e) => {
+              setDirty(true);
+              setSummary(e.target.value);
+            }}
           />
         )}
       </FormField>

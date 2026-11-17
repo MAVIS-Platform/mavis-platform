@@ -1,6 +1,6 @@
 # Báo Cáo Tổng Hợp Kiểm Chứng & Nghiệm Thu Hội Đồng Kín 1.1 (`MAVIS Defense 1.1 Master Verification Report`)
 
-Báo cáo tổng hợp bằng chứng hoàn thiện, truy vết mã nguồn, lược đồ CSDL (`V26`–`V33`), CI/CD và kết quả chạy kiểm thử thực tế trên toàn bộ 4 luồng nghiệp vụ **WF-01 .. WF-04** của nền tảng **MAVIS**.
+Báo cáo tổng hợp bằng chứng hoàn thiện, truy vết mã nguồn, lược đồ CSDL (`V26`–`V38`), CI/CD và kết quả chạy kiểm thử thực tế trên toàn bộ 4 luồng nghiệp vụ **WF-01 .. WF-04** của nền tảng **MAVIS**.
 
 Tài liệu kỹ thuật từng workflow:
 - [`WF01_COURSE_ACCESS.md`](./WF01_COURSE_ACCESS.md) · Lớp học, Passkey & Khóa tuần tự (`C01`, `C05`)
@@ -24,8 +24,9 @@ Tài liệu kỹ thuật từng workflow:
 | **Đợt hoàn thiện Single-Branch #1** | `feat/mavis-final-100pct-all-workflows-polish` | `dca1892` -> `7086a14` | Sửa nhất quán `resolveSubmissionOutcome` trên `SubmissionResult` & `GradeForm` (`5.0/10` -> `NEEDS REVISION`), đóng vòng UX 1-click Guided Lab & Phân tích tĩnh (`#submission-composer`, xem trước `C1–C3 + Dependency Graph`), bổ sung `CourseLabSeederService`, mở rộng `Wf01`..`Wf04` lên **119 ca `@Test`** |
 | **Đợt hoàn thiện Argon 100% (Single-Branch #2)** | `feat/argon-complete-100pct-all-workflows-studio2d-curriculum` | `45f0c07` -> `5301f7c` | BFF `allowedBackendPath` mở `course-labs/seed-curated`, `CourseLabSeederService` hỗ trợ 2 preset `STANDARD_DEMO` (3 Lab: `java-04`, `java-07`, `csharp-13`) & `FULL_CURRICULUM` (13 Lab: `java-01..12` + `csharp-13`) kèm archive Java + `.NET Core` (`Orders/Program.cs`, `Catalog/Program.cs`, `inventory-service`), `SubmissionComposer` tự chọn dự án lớp & phiên Studio + nút 1-click `Run 5-Rule Static Evaluation`, **Interactive 2D Studio Topology Canvas** (`Stop/Start/Scale 1..8` trực tiếp trên node + stacked replica cards & stopped rose state + song ngữ EN/VI), giữ nguyên 100% commit đồng đội `a947667` / `a09673f` / `2351622` (`V31`), và mở rộng bộ acceptance test lên **120 ca `@Test`** (`F10-009` + `F10-010`) |
 | **Đợt hoàn thiện Studio Interactive & Full-Stack Docker Acceptance** | `feat/wf03-studio-session` | `7cb1f16` -> `58b59a6` | Bổ sung `V32__Runtime_Studio_Control.sql` (`studio_control` JSONB), `V33__Submission_Studio_Evidence.sql` (`studio_evidence`), `RuntimeStudioController` / `RuntimeStudioService`, 2D/3D Studio Observability + Worker Impact + PNG Before/After Snapshot comparison, chữ ký `HMAC-SHA256` trên `RunnerReceipt`, xoay vòng khóa (`mavis.runner.previous-service-key`), `/sync-outbox` recovery, và kiểm thử Full-Stack End-to-End với `.NET Runner` + Docker Linux Engine thật + PostgreSQL 18 (`V33`) |
+| **Đợt hoàn thiện Lab v2, Authoring, LMS UI & Chốt Backlog 17/11** | `main` (`6c4bf1d` -> hiện tại) | `5ba76f07` -> `7bddd59b` -> *(commit chốt)* | Bổ sung `V34`–`V38` (freeze topology, course draft/publish, quiz authoring 80%, `runtime_sessions.assignment_id`, `lab_mode` + `theory_evidence`), giao diện lớp LMS & Lab Coursera (`0859d50d`, `7bddd59b`), runner per-resource lock (`50d0bb60`), hoàn tất **`T09`** (`CourseAccessService.publish` không ghi đè frozen topology), **`T10`** (`CourseSetupService` kiểm tra đủ nhiều reference/Lab), **`T38`/`T41`/`T42`** (draft cục bộ cô lập theo user/lớp/Lab ở `lab-submission-v2.tsx`, `FrozenArtifacts` cho bài v2 không diagram, `GradeForm` hiển thị `writtenExplanation` & bảo toàn nháp qua refresh `409`), **`T36`/`T45`/`T46`** & **`T51`** (đăng ký `CourseSetupServiceTest`, `QuizBankServiceTest`, `PreparedStudioTopologyTest`, `RuntimeSetupControllerTest`, `ZipUtilsTest` vào CI) |
 
-> **Ghi chú đồng bộ Flyway (`V29`–`V33`):** Hệ thống đã tiếp nhận `V29__Submission_Evidence_Package_Digest.sql` (`a2119f0`), `V30__Submission_Snapshot_Grades_And_Explanations.sql` (`dfd0cb4`), `V31__WF01_Customer_Ready_Identity_And_Course.sql` (`a09673f`/`2351622`), **`V32__Runtime_Studio_Control.sql`** và **`V33__Submission_Studio_Evidence.sql`**. Toàn bộ chuỗi migration `V1..V33` được bảo toàn nguyên vẹn.
+> **Ghi chú đồng bộ Flyway (`V29`–`V38`):** Hệ thống đã tiếp nhận `V29` (`Evidence_Package_Digest`), `V30` (`Snapshot_Grades`), `V31` (`WF01_Customer_Ready_Identity_And_Course`), `V32` (`Runtime_Studio_Control`), `V33` (`Submission_Studio_Evidence`), **`V34__Assignment_Studio_Topology_Snapshot.sql`**, **`V35__Course_Composition_Draft.sql`**, **`V36__Quiz_Authoring.sql`**, **`V37__Runtime_Session_Assignment.sql`**, và **`V38__Submission_V2_Lab_Mode.sql`**. Toàn bộ chuỗi migration `V1..V38` được bảo toàn nguyên vẹn.
 
 ---
 
@@ -61,26 +62,28 @@ Tài liệu kỹ thuật từng workflow:
 
 ## 4. Kết Quả Vòng Kiểm Chứng Full-Stack Cuối Cùng
 
-Chạy trực tiếp trên nhánh `feat/argon-complete-100pct-all-workflows-studio2d-curriculum` (môi trường Windows 11, JDK 21, .NET 10, Node.js 25, Python 3):
+Chạy trực tiếp trên nhánh `main` sau đợt hoàn thiện `17/11/2026` (môi trường Windows 11, JDK 21, .NET 10, Node.js, Python 3):
 
-1. **Java Backend (`MAVIS-Platform/mavis-be` · profile `.github/workflows/deploy-production.yml` với `-pl mavis-bootstrap -am` bao gồm `CourseLabSeederServiceTest`):**
-   - `mavis-common`: **18/18 PASS** (`0` fail, `0` error, `0` skip)
-   - `mavis-platform`: **128/128 PASS** (`0` fail, `0` error, `0` skip — bao gồm `CourseLabSeederServiceTest` 3/3, `CourseQuizServiceTest` 7/7, `SubmissionServiceImplTest` 25/25, `SubmissionReviewServiceTest` 7/7, `AssignmentServiceImplTest` 14/14)
-   - `mavis-analyzer`: **219/219 PASS** (`0` fail, `0` error, `0` skip — bao gồm `RuntimePlanningServiceTest` 22/22, `RuntimeSessionServiceImplTest` 22/22, `RunnerReceiptIngestServiceImplTest` 17/17, `OtelTraceCorrelationServiceImplTest` 11/11)
-   - `mavis-bootstrap`: **147 executed PASS**, **6 skip có điều kiện PostgreSQL** (`MigrationUpgradeTest`, `SessionLogoutPostgresTest`, `CourseAccessPostgresTest`, `CourseHttpAcceptanceTest`, `ResourceDeletionPostgresTest`, `NotificationReadPostgresTest` tự động skip khi chưa đặt `MAVIS_MIGRATION_TEST_JDBC_URL`; tổng `153`, `0` fail, `0` error — bao gồm **120/120 PASS** của `Wf01` 30/30, `Wf02` 29/29, `Wf03` 28/28, `Wf04` 33/33)
-   - **Tổng kết BE CI Profile:** **512/512 test thực thi PASS** (`518` tổng, `6` conditional Postgres skip, `0` fail, `0` error; `01:07 min`).
+1. **Java Backend (`MAVIS-Platform/mavis-be` · profile `.github/workflows/deploy-production.yml` với `-pl mavis-bootstrap -am` chạy tất cả unit & acceptance matrix tests khi không bật Docker/PostgreSQL cục bộ):**
+   - `mavis-common`: **23/23 PASS** (`0` fail, `0` error, `0` skip — gồm `AccessPolicyServiceImplTest` 16/16, `GitHubRepositoryUrlsTest` 2/2, `ZipUtilsTest` 5/5)
+   - `mavis-platform`: **163/163 PASS** (`0` fail, `0` error, `0` skip — gồm `SubmissionServiceImplTest` 32/32, `SubmissionReviewServiceTest` 8/8, `CourseAuthoringServiceTest` 14/14, `CourseAccessServiceTest` 7/7, `CourseSetupServiceTest` 4/4, `CourseQuizServiceTest` 9/9, `QuizBankServiceTest` 2/2, `CourseLabSeederServiceTest` 3/3, `AssignmentServiceImplTest` 15/15)
+   - `mavis-analyzer`: **240/240 PASS** (`0` fail, `0` error, `0` skip — gồm `RuntimePlanningServiceTest` 25/25, `RuntimeSessionServiceImplTest` 22/22, `RunnerReceiptIngestServiceImplTest` 17/17, `OtelTraceCorrelationServiceImplTest` 11/11, `RuntimeStudioServiceTest` 9/9, `PreparedStudioTopologyTest` 4/4, `RuntimeSetupControllerTest` 1/1)
+   - `mavis-bootstrap`: **147 executed PASS**, **6 skip có điều kiện PostgreSQL** (`MigrationUpgradeTest`, `SessionLogoutPostgresTest`, `CourseAccessPostgresTest`, `CourseHttpAcceptanceTest`, `ResourceDeletionPostgresTest`, `NotificationReadPostgresTest` tự động skip khi chưa đặt `MAVIS_MIGRATION_TEST_JDBC_URL`; tổng `153`, `0` fail, `0` error — gồm **120/120 PASS** của `Wf01` 30/30, `Wf02` 29/29, `Wf03` 28/28, `Wf04` 33/33; `RuntimeStudioApiIntegrationTest` `3` test `@SpringBootTest` cần PostgreSQL nên chạy trong job `verify` của GitHub Actions với service container `postgres:16`/`postgres:18`).
+   - **Tổng kết BE (non-Postgres local CI subset):** **573/573 test thực thi PASS** (`579` tổng, `6` conditional Postgres skip, `0` fail, `0` error; `01:27 min`).
 2. **.NET Worker & Runner (`MAVIS.Worker/tests/MAVIS.Worker.Tests/MAVIS.Worker.Tests.csproj` · `--configuration Release`):**
-   - **240 PASS**, `3` skip có điều kiện nền tảng Linux/Docker daemon (`SourceFileAndRootSymlinksCannotEscapeScope`, `RealDockerSuccessAndCancellationUseManagedIdentityAndDurableAcknowledgement`, `LinkedStateRootIsRejectedWithoutChangingTarget`), tổng `243`, **`0` fail** (`6 s`).
+   - **246 PASS**, `5` skip có điều kiện nền tảng Linux/Docker daemon (`PreparedStudioActivatesMissingBlockAndConfirmsRealDockerChanges`, `LinkedStateRootIsRejectedWithoutChangingTarget`, `SourceFileAndRootSymlinksCannotEscapeScope`, `RealDockerSuccessAndCancellationUseManagedIdentityAndDurableAcknowledgement`, `InteractiveStudioProcessesStopStartScaleBeforeFinishingAndCleaning`), tổng `251`, **`0` fail** (`7 s`).
 3. **Python Deploy & Schema Migration Tests (`deploy/tests`):**
-   - **7/7 OK** (`0.015s`, chạy bằng `python -B -m unittest discover -s deploy/tests -p "test_*.py" -v`).
-4. **Next.js Frontend (`MAVIS-Frontend`):**
+   - **8 PASS + 1 skip PostgreSQL-only** (`test_v35_real_migration_matches_its_readiness_probe`), tổng **`9` OK** (`0.281s`, chạy bằng `python -B -m unittest discover -s deploy/tests -p "test_*.py" -v`).
+4. **Next.js Frontend (`MAVIS-Frontend` · sau `npm ci` đồng bộ Zod `4.6.7` và Next.js `15.5.29`):**
    - `node --check ../scripts/measure-wf01-roadmap.mjs`: **PASS**
-   - `npm run typecheck`: **PASS** (`tsc --noEmit --incremental false`)
-   - `npm test`: **390/390 PASS**, `0` fail, `0` skipped (`13451.6724 ms`)
-   - `npm run test:connected`: **3/3 PASS**, `0` fail, `0` skipped (`1756.9363 ms`)
+   - `npm run typecheck`: **PASS** (`tsc --noEmit --incremental false`, `0` lỗi)
+   - `npm test`: **427/427 PASS**, `0` fail, `0` skipped (`15906.1878 ms`)
+   - `npm run test:connected`: **3/3 PASS**, `0` fail, `0` skipped (`3703.3193 ms`)
    - `MAVIS_TEST_BROWSER_CHANNEL=chrome npm run test:three-e-ui`: **PASS** (`PASS: full 3E browser suite plus diagram dock regression; synthetic API only.`)
-   - `node tests/studio-ui.browser.cjs`: **PASS** (`PASS Studio UI actions, pending lock, measured results, finish and mobile layout`)
-   - `npm run build`: **PASS** (`Next.js 15.5.25`, compiled successfully in `7.5s`, `0` errors).
-5. **Nghiệm thu Full-Stack Thực tế trên Docker Linux Engine + `.NET Runner` + PostgreSQL 18 (`V33`):**
-   - `ManagedDockerRuntimeTests` (`MAVIS.Worker.Tests`): **2/2 PASS** trên Docker Engine thật (`InteractiveStudioProcessesStopStartScaleBeforeFinishingAndCleaning` và `RealDockerSuccessAndCancellationUseManagedIdentityAndDurableAcknowledgement`).
-   - `RuntimeStudioApiIntegrationTest` (`mavis-bootstrap`): **3/3 PASS** trên PostgreSQL `18.7` (`V1..V33`) kết hợp tiến trình `dotnet MAVIS.Runner.dll managed` và Docker Linux Engine thật (`sessionId`: `2d073f83-6123-4784-b509-facb31918575`, `resourceProject`: `mavisrun-369e0d552d5e446e89089c19c35b1779`, `receiptDigest`: `sha256:6ba4f802cb7b893534b68e6da81e74bf1814dcbd19d9523f6e647efb99e53a8c`, `submissionId`: `5de8f105-89c4-4061-b809-60d7dc613bdf`, `cleanupStatus`: `CONFIRMED` với `0` container/network mồ côi). Chi tiết đầy đủ tại [`MAVIS_STUDIO_AGENT_HANDOFF.md`](./MAVIS_STUDIO_AGENT_HANDOFF.md).
+   - `MAVIS_TEST_BROWSER_CHANNEL=chrome npm run test:course-setup`: **PASS**
+   - `MAVIS_TEST_BROWSER_CHANNEL=chrome npm run test:lecturer-lms`: **PASS**
+   - `npm run build`: **PASS** (`Next.js 15.5.29`, compiled successfully in `34.8s`, `0` errors).
+5. **Nghiệm thu Full-Stack Thực tế trên Docker Linux Engine + `.NET Runner` + PostgreSQL 16/18 (`V33`–`V38`):**
+   - `ManagedDockerRuntimeTests` (`MAVIS.Worker.Tests`): **2/2 PASS** trên Docker Engine thật (`InteractiveStudioProcessesStopStartScaleBeforeFinishingAndCleaning` và `RealDockerSuccessAndCancellationUseManagedIdentityAndDurableAcknowledgement`, ghi nhận trước đó trên môi trường Docker Linux).
+   - `RuntimeStudioApiIntegrationTest` (`mavis-bootstrap`): **3/3 PASS** trên PostgreSQL `18.7` (`V1..V33`) kết hợp tiến trình `dotnet MAVIS.Runner.dll managed` và Docker Linux Engine thật (`sessionId`: `2d073f83-6123-4784-b509-facb31918575`, `resourceProject`: `mavisrun-369e0d552d5e446e89089c19c35b1779`, `receiptDigest`: `sha256:6ba4f802cb7b893534b68e6da81e74bf1814dcbd19d9523f6e647efb99e53a8c`, `submissionId`: `5de8f105-89c4-4061-b809-60d7dc613bdf`, `cleanupStatus`: `CONFIRMED` với `0` container/network mồ côi).
+   - Phiên nghiệm thu web local đồng thời 2 sinh viên trên `V38` (`f9a5d13c`, `MAVIS_HANDOFF_WORK_REPORT_2026-11-17.md`): Lab 1 `THEORY_QUIZ` (`RETURNED` -> resubmit -> `GRADED 90/100` -> unlock Lab 2), Lab 2 `THEORY_QUIZ_STUDIO` với frozen topology A (`orders` revision 3, `86.67 PASSED` cho cả S1 & S2, `0` orphan `mavisrun-*`). Chi tiết đầy đủ tại [`MAVIS_HANDOFF_WORK_REPORT_2026-11-17.md`](./MAVIS_HANDOFF_WORK_REPORT_2026-11-17.md).
