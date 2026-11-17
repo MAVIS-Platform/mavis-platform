@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { ErrorState, RequestState } from "@/components/shared/request-state";
 import { SearchInput, SelectField } from "@/components/shared/forms";
 import { DataTable, DetailPanel, StatusBadge } from "@/components/shared/data";
-import { CreateWorkspace, WorkspaceControls } from "./manage";
+import { TeacherDashboard } from "./teacher-dashboard";
+import { WorkspaceControls } from "./manage";
 import {
   CoursePasskey,
   CourseRoadmap,
@@ -23,106 +24,14 @@ import { CourseSetupPanel } from "@/features/courses/course-setup";
 import { useLocale } from "@/lib/i18n/locale-context";
 
 export function Workspaces() {
-  const { t } = useLocale();
   const query = useApiQuery("workspaces", {});
   const session = useSession();
   const { workspaceId } = useSelection();
-  const [showCreate, setShowCreate] = useState(false);
   const canCreate = ["lecturer", "admin"].includes(session.data?.user?.role ?? "");
   const selected = query.data?.find((w) => w.id === workspaceId);
   if (workspaceId && selected) return <WorkspaceOverview />;
   if (session.data?.user && !canCreate) return <Courses />;
-  return (
-    <div className="space-y-6">
-      <header className="flex flex-wrap items-end justify-between gap-4 border-b border-border/70 pb-5">
-        <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
-          {canCreate
-            ? t(
-                "Open a class to organize modules, Labs, students and grading.",
-                "Mở một lớp để tổ chức chương, Lab, sinh viên và chấm điểm.",
-              )
-            : t("Classes you are enrolled in.", "Các lớp bạn đã ghi danh.")}
-        </p>
-        {canCreate && (
-          <Button
-            type="button"
-            variant={showCreate ? "outline" : "default"}
-            onClick={() => setShowCreate((open) => !open)}
-          >
-            {showCreate ? t("Close", "Đóng") : t("Create class", "Tạo lớp")}
-          </Button>
-        )}
-      </header>
-
-      {canCreate && showCreate && <CreateWorkspace onClose={() => setShowCreate(false)} />}
-
-      <RequestState
-        query={query}
-        empty={!query.data?.length}
-        emptyMessage={t(
-          "You have no classes yet. Create the first class above.",
-          "Bạn chưa có lớp nào. Hãy tạo lớp đầu tiên ở trên.",
-        )}
-      >
-        <ul className="divide-y divide-border/70 border-y border-border/70">
-            {query.data?.map((workspace) => {
-              const members = workspace.members ?? [];
-              const students = members.filter(
-                (member) => member.role.toUpperCase() === "STUDENT",
-              ).length;
-              const workspaceUrl = `/workspace-overview?workspace=${encodeURIComponent(workspace.id)}`;
-              return (
-                <li
-                  key={workspace.id}
-                  className="grid gap-x-6 gap-y-4 py-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:py-6"
-                >
-                  <div className="min-w-0 space-y-2">
-                    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-xs text-muted-foreground">
-                      <span className="font-mono font-medium tracking-wide text-primary">
-                        {workspace.code || t("CLASS", "LỚP")}
-                      </span>
-                      <span aria-hidden="true" className="text-border">
-                        /
-                      </span>
-                      <span>{workspace.myRole || t("Member", "Thành viên")}</span>
-                      <StatusBadge
-                        status={workspace.status ?? "ACTIVE"}
-                        variant={workspace.status === "ARCHIVED" ? "secondary" : "default"}
-                      />
-                    </div>
-                    <Link
-                      className="block w-fit max-w-full break-words text-lg font-semibold tracking-tight text-foreground decoration-primary decoration-2 underline-offset-4 hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:text-xl"
-                      href={workspaceUrl}
-                    >
-                      {workspace.name}
-                    </Link>
-                    <p className="text-sm text-muted-foreground">
-                      {members.length} {t("members", "thành viên")}{" "}
-                      <span aria-hidden="true">·</span> {students} {t("students", "sinh viên")}
-                    </p>
-                    {workspace.description && (
-                      <p className="max-w-3xl text-sm leading-6 text-foreground/75">
-                        {workspace.description}
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                    <Button asChild size="sm">
-                      <Link href={workspaceUrl}>{t("Open class", "Mở lớp")}</Link>
-                    </Button>
-                    <Button asChild size="sm" variant="outline">
-                      <Link href={`/submissions?workspace=${encodeURIComponent(workspace.id)}`}>
-                        {t("Submissions", "Bài nộp")}
-                      </Link>
-                    </Button>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-      </RequestState>
-    </div>
-  );
+  return <TeacherDashboard />;
 }
 
 export function WorkspaceOverview() {

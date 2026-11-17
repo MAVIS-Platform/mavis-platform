@@ -64,6 +64,7 @@ import { CurriculumLibrary } from "./curriculum";
 import { Step2StaticImpact } from "./step2-static-impact";
 import { LabToc, type LabTocItem, type LabTocStep } from "./lab-toc";
 import { LabSubmissionV2 } from "./lab-submission-v2";
+import { TeacherDashboard } from "@/features/workspaces/teacher-dashboard";
 
 type LearningStep = {
   id: 1 | 2 | 3 | 4;
@@ -247,7 +248,8 @@ export function Courses() {
   const selection = useSelection();
   const query = useApiQuery("workspaces", {});
   const submissions = useApiQuery("submissions", {});
-  const isStudent = session.data?.user?.role === "student";
+  const userRole = session.data?.user?.role;
+  const isStudent = userRole === "student";
   const [passkeyOpen, setPasskeyOpen] = useState(false);
   const [search, setSearch] = useState("");
 
@@ -296,6 +298,8 @@ export function Courses() {
       : null;
     return { total: list.length, passedCount, avgScore };
   }, [submissions.data]);
+
+  if (userRole === "lecturer" || userRole === "admin") return <TeacherDashboard />;
 
   return (
     <div className="space-y-6">
