@@ -534,26 +534,6 @@ function ShellChrome({
               ]}
             />
             <div className="flex shrink-0 items-center gap-1.5">
-              {!live && (
-                <Badge
-                  variant="outline"
-                  className={cn(
-                    "hidden sm:inline-flex items-center gap-1 font-semibold border",
-                    role === "student" &&
-                      "border-teal-500/40 bg-teal-500/10 text-teal-700 dark:text-teal-300",
-                    role === "lecturer" &&
-                      "border-indigo-500/40 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300",
-                    role === "admin" &&
-                      "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300",
-                  )}
-                >
-                  {role === "student"
-                    ? t("🎓 Student", "🎓 Sinh viên")
-                    : role === "lecturer"
-                      ? t("👨‍🏫 Lecturer", "👨‍🏫 Giảng viên")
-                      : t("🛡️ Admin", "🛡️ Quản trị viên")}
-                </Badge>
-              )}
               <LocaleSwitchButton />
               <AppearanceSelector />
               <NotificationBell />
