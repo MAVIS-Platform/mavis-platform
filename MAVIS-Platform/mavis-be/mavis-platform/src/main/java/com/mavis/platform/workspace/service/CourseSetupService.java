@@ -358,6 +358,30 @@ public class CourseSetupService {
                 enrolled == null ? 0 : enrolled);
     }
 
+    /**
+     * Internal container port declared by the analyzed compose service. Compose
+     * entries can be plain ("8080"), protocol-qualified ("8080/tcp") or mapped
+     * ("8080:8080"); the last segment is the port the process listens on.
+     */
+    private static int containerPort(ModelElement element) {
+        JsonNode ports = element.getProperties() == null ? null : element.getProperties().path("ports");
+        if (ports != null && ports.isArray()) {
+            for (JsonNode item : ports) {
+                String raw = item.asText("").trim();
+                if (raw.isEmpty()) continue;
+                String withoutProtocol = raw.split("/")[0];
+                String last = withoutProtocol.substring(withoutProtocol.lastIndexOf(':') + 1);
+                try {
+                    int port = Integer.parseInt(last);
+                    if (port >= 1 && port <= 65535) return port;
+                } catch (NumberFormatException ignored) {
+                    // Try the next declared port.
+                }
+            }
+        }
+        return 8080;
+    }
+
     private static boolean looksLikeConnectionController(String name) {
         for (String token : name.toLowerCase(java.util.Locale.ROOT).split("[-_.]")) {
             if (Set.of("route", "router", "gateway", "proxy", "edge", "ingress").contains(token)) return true;
@@ -412,6 +436,7 @@ public class CourseSetupService {
 
         Map<UUID, String> elementNameById = new HashMap<>();
         Map<String, String> runtimeByName = new HashMap<>();
+        Map<String, Integer> containerPortByName = new HashMap<>();
         Set<String> controllerNames = new LinkedHashSet<>();
         if (!containerElements.isEmpty()) {
             Set<String> names = new LinkedHashSet<>();
@@ -422,6 +447,7 @@ public class CourseSetupService {
                 String stack = el.getLanguageStack() == null ? "" : el.getLanguageStack().toLowerCase();
                 runtimeByName.put(svcName, stack.contains(".net") || stack.contains("dotnet") || stack.contains("c#")
                         ? "dotnet8-linux-x64-glibc" : "java");
+                containerPortByName.putIfAbsent(svcName, containerPort(el));
                 names.add(svcName);
             }
 
@@ -500,7 +526,6 @@ public class CourseSetupService {
             RuntimeConfiguration cfg = configurations.findById(refProjectId).orElse(null);
             ObjectNode profile = json.createObjectNode();
             ObjectNode apps = profile.putObject("applications");
-            int port = 8080;
             Set<String> applicationNames = new LinkedHashSet<>();
             for (JsonNode b : blocks) {
                 String svc = b.path("service").asText("");
@@ -512,7 +537,7 @@ public class CourseSetupService {
             for (String svc : applicationNames) {
                 apps.putObject(svc)
                         .put("runtime", runtimeByName.getOrDefault(svc, "java"))
-                        .put("containerPort", port++)
+                        .put("containerPort", containerPortByName.getOrDefault(svc, 8080))
                         .put("readinessPath", "/health");
             }
             ObjectNode mappingsNode = profile.putObject("serviceMappings");

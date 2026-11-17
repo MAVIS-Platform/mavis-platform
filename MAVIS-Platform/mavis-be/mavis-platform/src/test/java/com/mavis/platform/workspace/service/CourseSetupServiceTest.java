@@ -224,7 +224,7 @@ class CourseSetupServiceTest {
         verify(assignments).saveAndFlush(lab);
     }
 
-    @Test void autoConfigureCollapsesRoutingServiceIntoAConnectionController() {
+    @Test void autoConfigureCollapsesRoutingServiceIntoAConnectionController() throws Exception {
         var elements = mock(ModelElementRepository.class);
         var relationships = mock(ModelRelationshipRepository.class);
         org.springframework.test.util.ReflectionTestUtils.setField(setup, "elements", elements);
@@ -235,6 +235,9 @@ class CourseSetupServiceTest {
                 .elementType("SERVICE_CONTAINER").name("payment").languageStack("dotnet8").build();
         ModelElement route = ModelElement.builder().id(UUID.randomUUID()).modelVersion(model)
                 .elementType("SERVICE_CONTAINER").name("orders-payment-route").languageStack("dotnet8").build();
+        orders.setProperties(mapper.readTree("{\"ports\":[\"8080\"]}"));
+        payment.setProperties(mapper.readTree("{\"ports\":[\"8081:9090\"]}"));
+        route.setProperties(mapper.readTree("{\"ports\":[\"8080/tcp\"]}"));
         when(elements.findByModelVersionId(modelId)).thenReturn(List.of(orders, payment, route));
         when(relationships.findByModelVersionId(modelId)).thenReturn(List.of(
                 ModelRelationship.builder().sourceElement(orders).targetElement(route).relationType("HTTP").build(),
@@ -252,6 +255,11 @@ class CourseSetupServiceTest {
         assertEquals("orders", connection.path("from").asText());
         assertEquals("payment", connection.path("to").asText());
         assertEquals("orders-payment-route", connection.path("controllerService").asText());
+        verify(jdbc, atLeastOnce()).update(contains("INSERT INTO runtime_configurations"),
+                eq(projectId), eq(snapshotId), eq(modelId), argThat(profile ->
+                        profile.toString().contains("\"orders\":{\"runtime\":\"dotnet8-linux-x64-glibc\",\"containerPort\":8080")
+                                && profile.toString().contains("\"payment\":{\"runtime\":\"dotnet8-linux-x64-glibc\",\"containerPort\":9090")
+                                && profile.toString().contains("\"orders-payment-route\":{\"runtime\":\"dotnet8-linux-x64-glibc\",\"containerPort\":8080")));
     }
 
     private RuntimeConfiguration configuration(boolean withTopology) {
