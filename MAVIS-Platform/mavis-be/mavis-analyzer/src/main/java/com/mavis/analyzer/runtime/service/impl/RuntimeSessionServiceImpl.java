@@ -1782,13 +1782,12 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         var exercise = lab == null || labStudioExercises == null ? null
                 : labStudioExercises.findByAssignmentId(lab.getId()).orElse(null);
         if (exercise != null && exercise.getRuntimeModelId() != null) {
-            boolean matches = model != null
-                    && exercise.getRuntimeModelId().equals(model.getId())
-                    && exercise.getRuntimeSnapshotId() != null
+            boolean matches = exercise.getRuntimeSnapshotId() != null
                     && exercise.getRuntimeSnapshotId().equals(snapshot == null ? null : snapshot.getId())
                     && snapshot != null && snapshot.getProject() != null
                     && Objects.equals(project.getId(), snapshot.getProject().getId())
-                    && model.getSourceSnapshot() != null
+                    && Objects.equals(project.getReferenceSnapshotId(), snapshot.getId())
+                    && model != null && model.getSourceSnapshot() != null
                     && snapshot.getId().equals(model.getSourceSnapshot().getId())
                     && !"RUNTIME_ENRICHED".equalsIgnoreCase(model.getOrigin());
             if (!matches) {
