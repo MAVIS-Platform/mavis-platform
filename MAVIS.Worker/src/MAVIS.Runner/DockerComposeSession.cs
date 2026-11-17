@@ -51,10 +51,11 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             secrets ?? new Dictionary<string, string>());
         Stage = "ALLOCATE";
         RuntimeAllocation.RejectLinks(stateRoot);
-        RuntimeAllocation.RejectLinks(Path.Combine(stateRoot, "runner.lock"));
+        var leasePath = Path.Combine(stateRoot, "runner-" + ResourceProject + ".lock");
+        RuntimeAllocation.RejectLinks(leasePath);
         Directory.CreateDirectory(stateRoot);
-        // One local allocator at a time. Every invocation must use the same operator-managed state root.
-        _lease = new FileStream(Path.Combine(stateRoot, "runner.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+        // Sessions are independent resources; serialize only the same resource project.
+        _lease = new FileStream(leasePath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
         _directory = RuntimeAllocation.Reserve(Path.GetFullPath(stateRoot), ResourceProject, definition);
         AllocationReserved = true;
         if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(_directory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);

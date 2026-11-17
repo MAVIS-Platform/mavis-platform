@@ -101,7 +101,7 @@ public sealed class RuntimeAllocationTests : IDisposable
         Directory.CreateDirectory(Path.Combine(root, Project));
         var sentinel = Path.Combine(root, Project, "owner.txt");
         File.WriteAllText(sentinel, "active");
-        using var lease = new FileStream(Path.Combine(root, "runner.lock"), FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None);
+        using var lease = new FileStream(Path.Combine(root, "runner-" + Project + ".lock"), FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None);
         var docker = new NoEngine();
         var backend = new DockerComposeSession(Definition(), root, "receivers: {}", docker);
         await RuntimeSessionLifecycle.RunAsync(backend, 5);

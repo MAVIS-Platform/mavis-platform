@@ -12,8 +12,9 @@ public static class SessionRecovery
             if (current.Exists && (current.Attributes & FileAttributes.ReparsePoint) != 0) throw new ArgumentException("Linked recovery paths are not supported.");
         if (!File.Exists(Path.Combine(directory, "compose.yaml")) || !File.Exists(Path.Combine(directory, "override.json")))
             throw new ArgumentException("No recoverable session files exist at this location.");
-        RuntimeAllocation.RejectLinks(Path.Combine(stateRoot, "runner.lock"));
-        using var lease = new FileStream(Path.Combine(stateRoot, "runner.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+        var leasePath = Path.Combine(stateRoot, "runner-" + project + ".lock");
+        RuntimeAllocation.RejectLinks(leasePath);
+        using var lease = new FileStream(leasePath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
         RuntimeAllocation.RetainRecoveryReservation(Path.GetFullPath(stateRoot), project);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
         deadline.CancelAfter(TimeSpan.FromSeconds(30));
