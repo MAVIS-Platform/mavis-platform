@@ -3,6 +3,10 @@
 API_KEY
 API_KEY.txt
 .artifacts/
+.e2e-jdk-src/
+.e2e-jdk-src.zip
+.e2e-runner-state/
+.agents/
 
 # Generated review, document and browser QA artifacts (keep locally)
 /output/
