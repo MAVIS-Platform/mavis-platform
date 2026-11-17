@@ -2169,28 +2169,22 @@ public class RuntimePlanningService {
   if (!r.interactiveStudio()) {
    profileCopy.remove("studioTopology");
   } else {
-   if(isGuidedStudentProject(guidedProject)) {
+   boolean guidedStudentStudio=isGuidedStudentProject(guidedProject);
+   if(guidedStudentStudio) {
     profileCopy.remove("studioTopology");
     var assignment=guidedProject.getAssignment();
     var frozen=assignment==null?null:assignment.getStudioTopologySnapshot();
-    if(frozen!=null && frozen.isObject()) {
-     profileCopy.set("studioTopology",frozen.deepCopy());
-    } else {
-     var model=assignment==null?null:assignment.getReferenceModel();
-     var reference=model==null?null:model.getSourceSnapshot();
-     if(reference!=null && reference.getProject()!=null && Boolean.TRUE.equals(reference.getIsPublished())
-         && java.util.Objects.equals(reference.getId(),guidedProject.getReferenceSnapshotId())) {
-      configurations.findById(reference.getProject().getId())
-          .filter(referenceConfig -> reference.getId().equals(referenceConfig.getSourceSnapshotId()))
-          .map(RuntimeConfiguration::getProfile)
-          .map(profile -> profile.get("studioTopology"))
-          .ifPresent(topology -> profileCopy.set("studioTopology",topology));
-     }
+    if(frozen==null || !frozen.isObject()) {
+     throw new BusinessException(ErrorCode.BAD_REQUEST,"Lab Studio topology is not frozen; ask the lecturer to freeze it before students start Studio");
     }
+    profileCopy.set("studioTopology",frozen.deepCopy());
    }
    Set<String> studioServices=new java.util.HashSet<>(confirmedMappings.keySet());
    studioServices.removeIf(service -> !apps.has(service));
    var preparedTopology=PreparedStudioTopology.read(profileCopy,studioServices,json);
+   if(guidedStudentStudio && preparedTopology==null) {
+    throw new BusinessException(ErrorCode.BAD_REQUEST,"Lab Studio topology is missing or invalid for the confirmed services");
+   }
    if(preparedTopology!=null)profileCopy.set("studioTopology",preparedTopology);
   }
   var createBuilder=RuntimeSessionCreateRequest.builder()

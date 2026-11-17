@@ -58,6 +58,50 @@ class SubmissionServiceImplTest {
         verify(diagramVersionRepository, never()).findById(any());
     }
 
+    @Test void studioV2RejectsTeacherOrForeignWorkspaceSessions() {
+        assignment.setLabMode("THEORY_QUIZ_STUDIO");
+        assignment.setLabOrder(2);
+        assignment.setReferenceModel(modelVersion);
+        var labWorkspace = Workspace.builder().id(UUID.randomUUID()).status("ACTIVE").build();
+        assignment.setWorkspace(labWorkspace);
+        project.setWorkspace(labWorkspace);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(student));
+        when(assignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));
+        var request = SubmissionCreateRequest.builder()
+                .assignmentId(assignmentId)
+                .runtimeSessionId(runtimeSessionId)
+                .theoryAnswers(List.of(new SubmissionCreateRequest.TheoryAnswerDTO("THEORY", "Theory", "Answer")))
+                .build();
+
+        var teacher = User.builder().id(UUID.randomUUID()).build();
+        var teacherSession = RuntimeSession.builder().id(runtimeSessionId).assignment(assignment)
+                .project(project).sourceSnapshot(snapshot).modelVersion(modelVersion)
+                .triggeredBy(teacher).build();
+        when(runtimeSessionRepository.findById(runtimeSessionId)).thenReturn(Optional.of(teacherSession));
+        assertThatThrownBy(() -> submissionService.submitAssignment(request))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Use your own Studio session");
+
+        var wrongAssignment = Assignment.builder().id(UUID.randomUUID()).workspace(labWorkspace).build();
+        var wrongLabSession = RuntimeSession.builder().id(runtimeSessionId).assignment(wrongAssignment)
+                .project(project).sourceSnapshot(snapshot).modelVersion(modelVersion)
+                .triggeredBy(student).build();
+        when(runtimeSessionRepository.findById(runtimeSessionId)).thenReturn(Optional.of(wrongLabSession));
+        assertThatThrownBy(() -> submissionService.submitAssignment(request))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("does not belong to this Lab");
+
+        var otherWorkspace = Workspace.builder().id(UUID.randomUUID()).status("ACTIVE").build();
+        var foreignProject = Project.builder().id(UUID.randomUUID()).workspace(otherWorkspace).owner(student).build();
+        var foreignSession = RuntimeSession.builder().id(runtimeSessionId).assignment(assignment)
+                .project(foreignProject).sourceSnapshot(snapshot).modelVersion(modelVersion)
+                .triggeredBy(student).build();
+        when(runtimeSessionRepository.findById(runtimeSessionId)).thenReturn(Optional.of(foreignSession));
+        assertThatThrownBy(() -> submissionService.submitAssignment(request))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("different workspace");
+    }
+
     @Test void theoryOnlyV2RejectsMissingExplanation() {
         assignment.setLabMode("THEORY_QUIZ");
         assignment.setReferenceModel(modelVersion);

@@ -44,6 +44,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -240,7 +241,7 @@ class RuntimePlanningServiceTest {
     }
 
     @Test
-    void guidedStudioPinsTopologyFromThePublishedReferenceProject() {
+    void guidedStudioRejectsMissingFrozenTopologyEvenIfReferenceProfileHasTopology() {
         var referenceProject = Project.builder().id(UUID.randomUUID()).build();
         var reference = SourceSnapshot.builder().id(UUID.randomUUID())
                 .project(referenceProject).isPublished(true).build();
@@ -255,25 +256,57 @@ class RuntimePlanningServiceTest {
         var teacherConfig = savedConfig("orders-api");
         teacherConfig.setSourceSnapshotId(reference.getId());
         ((ObjectNode)teacherConfig.getProfile()).putObject("studioTopology").put("version",1)
-                .putArray("blocks").addObject().put("service","orders-api").put("label","Teacher orders");
+                .putArray("blocks").addObject().put("service","orders-api").put("label","Reference B");
         ((ObjectNode)teacherConfig.getProfile().path("studioTopology")).putArray("connections");
         when(projects.findLockedById(projectId)).thenReturn(Optional.of(project));
         when(configurations.findById(projectId)).thenReturn(Optional.of(savedConfig("orders-api")));
-        when(configurations.findById(referenceProject.getId())).thenReturn(Optional.of(teacherConfig));
+        lenient().when(configurations.findById(referenceProject.getId())).thenReturn(Optional.of(teacherConfig));
         var serviceId=UUID.randomUUID().toString();
         when(runtime.runComposePreflight(snapshotId)).thenReturn(PreflightCheckResponseDTO.builder()
                 .compatible(true).detectedServices(List.of("orders-api"))
                 .modelServiceNames(Map.of(serviceId,"orders-api"))
                 .recommendedServiceMappings(Map.of("orders-api",serviceId)).build());
         var scenarioId=savedScenario("orders-api");
-        var sessionId=UUID.randomUUID();
-        when(runtime.createRuntimeSession(any())).thenReturn(RuntimeSessionResponseDTO.builder().id(sessionId).build());
-        when(runtime.approveAndStartSession(sessionId)).thenReturn(RuntimeSessionResponseDTO.builder().id(sessionId).build());
 
-        planningService.start(projectId,new StartRequest(snapshotId,scenarioId,1,1,true,null,List.of(),true));
+        assertThatThrownBy(() -> planningService.start(projectId,
+                new StartRequest(snapshotId,scenarioId,1,1,true,null,List.of(),true)))
+                .isInstanceOf(com.mavis.common.exception.BusinessException.class)
+                .hasMessageContaining("not frozen");
+        verify(runtime, org.mockito.Mockito.never()).createRuntimeSession(any());
+    }
 
-        verify(runtime).createRuntimeSession(org.mockito.ArgumentMatchers.argThat(request -> "Teacher orders".equals(request.getScenarioConfig()
-                .path("profile").path("studioTopology").path("blocks").get(0).path("label").asText())));
+    @Test
+    void guidedStudioRejectsFrozenTopologyOutsideConfirmedServices() {
+        var referenceProject = Project.builder().id(UUID.randomUUID()).build();
+        var reference = SourceSnapshot.builder().id(UUID.randomUUID())
+                .project(referenceProject).isPublished(true).build();
+        var assignment = new com.mavis.common.entity.Assignment();
+        assignment.setReferenceModel(ModelVersion.builder().sourceSnapshot(reference).build());
+        var frozen = json.createObjectNode().put("version",1);
+        frozen.putArray("blocks").addObject().put("service","ghost").put("label","Outside");
+        frozen.putArray("connections");
+        assignment.setStudioTopologySnapshot(frozen);
+        assignment.setStudioTopologyRevision(8);
+        var workspace = new com.mavis.common.entity.Workspace();
+        workspace.setCourseMode(true);
+        project.setWorkspace(workspace);
+        project.setProjectType("STUDENT_WORKING");
+        project.setAssignment(assignment);
+        project.setReferenceSnapshotId(reference.getId());
+        when(projects.findLockedById(projectId)).thenReturn(Optional.of(project));
+        when(configurations.findById(projectId)).thenReturn(Optional.of(savedConfig("orders-api")));
+        var serviceId=UUID.randomUUID().toString();
+        when(runtime.runComposePreflight(snapshotId)).thenReturn(PreflightCheckResponseDTO.builder()
+                .compatible(true).detectedServices(List.of("orders-api"))
+                .modelServiceNames(Map.of(serviceId,"orders-api"))
+                .recommendedServiceMappings(Map.of("orders-api",serviceId)).build());
+        var scenarioId=savedScenario("orders-api");
+
+        assertThatThrownBy(() -> planningService.start(projectId,
+                new StartRequest(snapshotId,scenarioId,1,1,true,null,List.of(),true)))
+                .isInstanceOf(com.mavis.common.exception.BusinessException.class)
+                .hasMessageContaining("Invalid prepared Studio topology");
+        verify(runtime, org.mockito.Mockito.never()).createRuntimeSession(any());
     }
 
     @Test
@@ -288,6 +321,12 @@ class RuntimePlanningServiceTest {
         frozen.putArray("connections");
         assignment.setStudioTopologySnapshot(frozen);
         assignment.setStudioTopologyRevision(7);
+        var referenceConfigB = savedConfig("orders-api");
+        referenceConfigB.setSourceSnapshotId(reference.getId());
+        ((ObjectNode)referenceConfigB.getProfile()).putObject("studioTopology").put("version",1)
+                .putArray("blocks").addObject().put("service","orders-api").put("label","Reference B");
+        ((ObjectNode)referenceConfigB.getProfile().path("studioTopology")).putArray("connections");
+        lenient().when(configurations.findById(referenceProject.getId())).thenReturn(Optional.of(referenceConfigB));
         var workspace = new com.mavis.common.entity.Workspace();
         workspace.setCourseMode(true);
         project.setWorkspace(workspace);

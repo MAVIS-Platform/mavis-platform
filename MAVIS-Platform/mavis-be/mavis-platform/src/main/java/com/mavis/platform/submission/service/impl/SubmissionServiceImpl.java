@@ -325,6 +325,11 @@ public class SubmissionServiceImpl implements SubmissionService {
                     || !currentUserId.equals(runtimeSession.getTriggeredBy().getId())) {
                 throw new BusinessException(ErrorCode.FORBIDDEN, "Use your own Studio session as evidence");
             }
+            if (runtimeSession.getProject() == null || runtimeSession.getProject().getWorkspace() == null
+                    || assignment.getWorkspace() == null
+                    || !assignment.getWorkspace().getId().equals(runtimeSession.getProject().getWorkspace().getId())) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "Studio session belongs to a different workspace");
+            }
             var sessionSource = runtimeSession.getSourceSnapshot();
             var sessionModel = runtimeSession.getModelVersion();
             boolean sameSource = sessionSource != null
