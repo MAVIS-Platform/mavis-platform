@@ -15,7 +15,7 @@ interface LocaleContextValue {
 const STORAGE_KEY = "mavis.locale";
 
 export const EXACT_VI_DICTIONARY: Record<string, string> = {
-  "Stats": "Thống kê",
+  Stats: "Thống kê",
   "Runtime topology and impact": "Sơ đồ runtime và tác động thay đổi",
   "Static dependencies (dashed)": "Phụ thuộc tĩnh (nét đứt)",
   "Observed runtime (solid)": "Runtime đã quan sát (nét liền)",
@@ -25,13 +25,15 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Frozen Studio evidence": "Minh chứng Studio đã đóng băng",
   "Could not export graph": "Không thể xuất sơ đồ",
   "Worker verified impact paths": "Đường tác động đã được Worker xác minh",
-  "Worker impact is unavailable. Static reference paths are shown above.": "Worker tác động chưa sẵn sàng. Phía trên là các đường tham chiếu tĩnh.",
+  "Worker impact is unavailable. Static reference paths are shown above.":
+    "Worker tác động chưa sẵn sàng. Phía trên là các đường tham chiếu tĩnh.",
   "Download signed receipt": "Tải biên nhận có chữ ký",
   "Rotate left": "Xoay trái",
   "Rotate right": "Xoay phải",
   "Export graph": "Xuất sơ đồ",
   "Export snapshot image": "Xuất ảnh minh chứng",
-  "Dashed edges show static dependencies. Solid edges show captured trace interactions.": "Nét đứt là phụ thuộc tĩnh. Nét liền là tương tác đã ghi nhận từ trace.",
+  "Dashed edges show static dependencies. Solid edges show captured trace interactions.":
+    "Nét đứt là phụ thuộc tĩnh. Nét liền là tương tác đã ghi nhận từ trace.",
   "Waiting for observed telemetry from Runner.": "Đang chờ telemetry thực tế từ Runner.",
   "Static upstream impact": "Ảnh hưởng upstream từ phân tích tĩnh",
   "Direct callers": "Bên gọi trực tiếp",
@@ -55,7 +57,8 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Interactive Studio session": "Phiên Studio tương tác",
   "Start Studio session": "Khởi chạy phiên Studio",
   "Cancel Studio session": "Hủy phiên Studio",
-  "Request metrics require a replayable GET/HEAD workload.": "Số liệu request cần workload GET/HEAD có thể chạy lại.",
+  "Request metrics require a replayable GET/HEAD workload.":
+    "Số liệu request cần workload GET/HEAD có thể chạy lại.",
   "Finish Studio and save evidence": "Kết thúc Studio và lưu minh chứng",
   "Finishing Studio and cleaning up": "Đang kết thúc Studio và dọn tài nguyên",
   "Waiting for Runner confirmation": "Đang chờ Runner xác nhận",
@@ -69,16 +72,17 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Replicas (1–8)": "Số bản chạy (1–8)",
   "Action not confirmed": "Chưa xác nhận được thao tác",
   "Studio Action Palette": "Bảng công cụ kéo thả Studio",
-  "Drag an action block onto any service node on the 2D/3D canvas": "Kéo khối thao tác thả trực tiếp vào khối dịch vụ trên sơ đồ 2D/3D",
+  "Drag an action block onto any service node on the 2D/3D canvas":
+    "Kéo khối thao tác thả trực tiếp vào khối dịch vụ trên sơ đồ 2D/3D",
   "Drop onto a service node to execute": "Thả vào khối dịch vụ để thực thi",
   "Scale +1 Replica": "Tăng +1 Replica",
   "Scale ×4 Cluster": "Nhân rộng ×4 Cluster",
   "Scale ×8 Max Load": "Nhân rộng ×8 Tối đa",
   "Stop Container": "Dừng Container",
   "Restart Service": "Khởi động lại Dịch vụ",
-  "Layered": "Phân tầng",
-  "Circular": "Vòng tròn",
-  "Grid": "Lưới",
+  Layered: "Phân tầng",
+  Circular: "Vòng tròn",
+  Grid: "Lưới",
   "Snap to grid": "Bám lưới tọa độ",
   "Fit view": "Vừa khung hình",
   "Quick node controls": "Điều khiển nhanh trên khối",
@@ -86,9 +90,11 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Guided Lab Mission Checklist": "Lộ trình nhiệm vụ thực hành Lab",
   "Step 1: Capture baseline snapshot": "Bước 1: Chụp Snapshot Baseline ban đầu",
   "Step 2: Scale replicas (4 → 8) or inject fault": "Bước 2: Nhân rộng (4 → 8) hoặc gây lỗi",
-  "Step 3: Capture post-change snapshot & compare": "Bước 3: Chụp Snapshot sau thay đổi & đối chiếu",
+  "Step 3: Capture post-change snapshot & compare":
+    "Bước 3: Chụp Snapshot sau thay đổi & đối chiếu",
   "Step 4: Finish Studio & seal HMAC receipt": "Bước 4: Kết thúc Studio & ký biên nhận HMAC",
-  "Project Deployment & Scaling Impact Matrix": "Bảng thông số Triển khai & Tác động Nhân rộng Dự án",
+  "Project Deployment & Scaling Impact Matrix":
+    "Bảng thông số Triển khai & Tác động Nhân rộng Dự án",
   "Static Architecture Footprint": "Thông số Kiến trúc Tĩnh (Static AST/C4)",
   "Live Deployment & Scaling Delta": "Thông số Triển khai & Biến thiên Scaling (1..8)",
   "Total running instances": "Tổng số instance đang chạy",
@@ -102,19 +108,20 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Scaling & Fault Impact": "Tác động khi Scale / Lỗi",
   "503 / CIRCUIT OPEN": "503 / NGẮT MẠCH",
   "Load balanced across": "Cân bằng tải qua",
-  "instances": "instance",
+  instances: "instance",
   "Downstream bottleneck risk": "Cảnh báo nghẽn cổ chai downstream",
   "Single instance baseline": "Baseline 1 instance đơn lẻ",
   "Service stopped (Fault injected)": "Dịch vụ đã dừng (Đang tiêm lỗi)",
-  "Isometric": "Góc Isometric 3D",
+  Isometric: "Góc Isometric 3D",
   "Top-down": "Nhìn từ đỉnh",
-  "Elevation": "Mặt đứng 3D",
+  Elevation: "Mặt đứng 3D",
   "Tilt up": "Nghiêng lên",
   "Tilt down": "Nghiêng xuống",
   "Ingress / Edge Tier": "Tầng Cổng giao tiếp (Edge/Ingress)",
   "Core Service Tier": "Tầng Dịch vụ Nghiệp vụ (Core Services)",
   "Data & Downstream Tier": "Tầng Dữ liệu & Hạ tầng (Data/Downstream)",
-  "Manage your personal information and account security.": "Quản lý thông tin cá nhân và bảo mật tài khoản.",
+  "Manage your personal information and account security.":
+    "Quản lý thông tin cá nhân và bảo mật tài khoản.",
   "Profile summary": "Tóm tắt hồ sơ",
   "Personal Information": "Thông tin cá nhân",
   "Account Security": "Bảo mật tài khoản",
@@ -129,12 +136,14 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
     "Chức năng đổi mật khẩu yêu cầu tài khoản đăng nhập thực tế và không khả dụng trong bản xem trước mẫu.",
   "Confirm New Password": "Xác nhận mật khẩu mới",
   "Current Password is required.": "Vui lòng nhập mật khẩu hiện tại.",
-  "Current Password must be 100 characters or fewer.": "Mật khẩu hiện tại không được vượt quá 100 ký tự.",
+  "Current Password must be 100 characters or fewer.":
+    "Mật khẩu hiện tại không được vượt quá 100 ký tự.",
   "New Password is required.": "Vui lòng nhập mật khẩu mới.",
   "New Password must be 6–100 characters.": "Mật khẩu mới phải có từ 6 đến 100 ký tự.",
   "Confirm New Password is required.": "Vui lòng xác nhận mật khẩu mới.",
   "Use 6–100 characters.": "Sử dụng từ 6 đến 100 ký tự.",
-  "Current password is incorrect. Please try again.": "Mật khẩu hiện tại không đúng. Vui lòng thử lại.",
+  "Current password is incorrect. Please try again.":
+    "Mật khẩu hiện tại không đúng. Vui lòng thử lại.",
   "Show current password": "Hiện mật khẩu hiện tại",
   "Hide current password": "Ẩn mật khẩu hiện tại",
   "Show new password": "Hiện mật khẩu mới",
@@ -143,7 +152,8 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Hide confirm new password": "Ẩn mật khẩu xác nhận",
   "Some account statistics could not be loaded.": "Không thể tải một số thống kê tài khoản.",
   "Account ID copied.": "Đã sao chép mã tài khoản.",
-  "Unable to copy. Select the Account ID to copy it.": "Không thể sao chép. Vui lòng chọn mã tài khoản để sao chép.",
+  "Unable to copy. Select the Account ID to copy it.":
+    "Không thể sao chép. Vui lòng chọn mã tài khoản để sao chép.",
   "Save Changes": "Lưu thay đổi",
   Insights: "Thông tin chuyên sâu",
   "Meaning of this service": "Ý nghĩa của dịch vụ này",
@@ -176,13 +186,18 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   Start: "Khởi động",
   Scale: "Mở rộng (Scale)",
   "Insufficient telemetry samples": "Chưa đủ mẫu telemetry",
-  "Measured before/after workload comparison captured": "Đã thu thập so sánh hiệu năng trước/sau khi chạy tải",
-  "Complete the current step below before continuing": "Hoàn tất bước hiện tại bên dưới trước khi tiếp tục",
-  "Captured Snapshots & Written Theoretical Explanations": "Ảnh chụp thực hành & Giải thích lý thuyết bằng văn bản",
+  "Measured before/after workload comparison captured":
+    "Đã thu thập so sánh hiệu năng trước/sau khi chạy tải",
+  "Complete the current step below before continuing":
+    "Hoàn tất bước hiện tại bên dưới trước khi tiếp tục",
+  "Captured Snapshots & Written Theoretical Explanations":
+    "Ảnh chụp thực hành & Giải thích lý thuyết bằng văn bản",
   "Required before Guided Lab submission": "Bắt buộc trước khi nộp Guided Lab",
   "Optional snapshot theoretical notes": "Ghi chú giải thích lý thuyết (tùy chọn)",
-  "Snapshot 1 · Static C1–C3 Architecture & 3E Reasoning": "Snapshot 1 · Kiến trúc tĩnh C1–C3 & Lập luận 3E",
-  "Snapshot 2 · MAVIS Studio Runtime Stop/Scale Before-After Analysis": "Snapshot 2 · Phân tích Trước/Sau Stop/Scale trên MAVIS Studio",
+  "Snapshot 1 · Static C1–C3 Architecture & 3E Reasoning":
+    "Snapshot 1 · Kiến trúc tĩnh C1–C3 & Lập luận 3E",
+  "Snapshot 2 · MAVIS Studio Runtime Stop/Scale Before-After Analysis":
+    "Snapshot 2 · Phân tích Trước/Sau Stop/Scale trên MAVIS Studio",
   "Explain service boundaries, call-site evidence (3E), and dependency direction observed in C1–C3 views…":
     "Giải thích ranh giới dịch vụ, bằng chứng call-site (3E) và hướng phụ thuộc quan sát trong C1–C3…",
   "Explain observed OTel trace propagation and Stop/Start/Scale Before vs. After impact…":
@@ -195,8 +210,7 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
     "Danh sách Snapshot đã thay đổi. Hãy tải lại Lab và kiểm tra bằng chứng bắt buộc.",
   "Select a verified Studio receipt for the selected model version.":
     "Hãy chọn biên nhận Studio đã xác minh cho đúng phiên bản mô hình.",
-  "Pass the current Lab Quiz before submitting.":
-    "Hãy đạt Quiz hiện hành của Lab trước khi nộp.",
+  "Pass the current Lab Quiz before submitting.": "Hãy đạt Quiz hiện hành của Lab trước khi nộp.",
   "This Lab is already complete. View your passing submission in My Submissions.":
     "Lab đã hoàn thành. Bạn có thể xem bài đã đạt trong Bài nộp của tôi.",
   "Enter a grade for every frozen Snapshot before publishing.":
@@ -207,7 +221,8 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
     "Hãy trả bài kèm hướng dẫn nộp lại các Snapshot bắt buộc.",
   "This Lab result is finalized. Refresh the review to see the published grade.":
     "Kết quả Lab đã được chốt. Hãy tải lại trang để xem điểm đã công bố.",
-  "Per-snapshot grading results (> 5.0 / 10 required)": "Kết quả chấm từng Snapshot (bắt buộc > 5.0 / 10)",
+  "Per-snapshot grading results (> 5.0 / 10 required)":
+    "Kết quả chấm từng Snapshot (bắt buộc > 5.0 / 10)",
   "Apply the requested changes in your working project, save the new model/diagram revisions and submit again from the assignment. This submission remains unchanged.":
     "Thực hiện các chỉnh sửa theo yêu cầu trên dự án làm việc, lưu phiên bản mô hình/sơ đồ mới rồi nộp lại từ bài tập. Bản nộp này được giữ nguyên bất biến.",
   "Every required snapshot must score > 5.0 / 10 (5.01 or higher) with a mandatory overall summary to pass and unlock the next Lab; any snapshot <= 5.0 results in NEEDS REVISION.":
@@ -235,23 +250,39 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Email or password is incorrect.": "Email hoặc mật khẩu không đúng.",
   "Resend verification code": "Gửi lại mã xác minh",
   "Please verify your email before signing in.": "Vui lòng xác minh email trước khi đăng nhập.",
-  "Your account is locked. Please contact the administrator for assistance.": "Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên để được hỗ trợ.",
-  "The verification code is incorrect. Please try again.": "Mã xác minh không đúng. Vui lòng thử lại.",
-  "The verification code has expired. Please request a new code.": "Mã xác minh đã hết hạn. Vui lòng yêu cầu mã mới.",
-  "This verification code has already been used. Please request a new code.": "Mã xác minh này đã được sử dụng. Vui lòng yêu cầu mã mới.",
-  "The password reset code is invalid. Please check it and try again.": "Mã đặt lại mật khẩu không hợp lệ. Vui lòng kiểm tra và thử lại.",
-  "The password reset code has expired. Please request a new code.": "Mã đặt lại mật khẩu đã hết hạn. Vui lòng yêu cầu mã mới.",
-  "This password reset code has already been used. Please request a new code.": "Mã đặt lại mật khẩu này đã được sử dụng. Vui lòng yêu cầu mã mới.",
-  "Your password does not meet the requirements. Please review the password rules and try again.": "Mật khẩu chưa đáp ứng yêu cầu. Vui lòng xem quy tắc mật khẩu và thử lại.",
-  "Please check the information entered and try again.": "Vui lòng kiểm tra thông tin đã nhập và thử lại.",
-  "Email verification could not be completed. Please check your code or sign in if already verified.": "Không thể hoàn tất xác minh email. Vui lòng kiểm tra mã hoặc đăng nhập nếu đã xác minh.",
-  "We couldn't send the email right now. Please try again later.": "Hiện chưa thể gửi email. Vui lòng thử lại sau.",
-  "Unable to connect. Please check your internet connection and try again.": "Không thể kết nối. Vui lòng kiểm tra kết nối Internet và thử lại.",
+  "Your account is locked. Please contact the administrator for assistance.":
+    "Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên để được hỗ trợ.",
+  "The verification code is incorrect. Please try again.":
+    "Mã xác minh không đúng. Vui lòng thử lại.",
+  "The verification code has expired. Please request a new code.":
+    "Mã xác minh đã hết hạn. Vui lòng yêu cầu mã mới.",
+  "This verification code has already been used. Please request a new code.":
+    "Mã xác minh này đã được sử dụng. Vui lòng yêu cầu mã mới.",
+  "The password reset code is invalid. Please check it and try again.":
+    "Mã đặt lại mật khẩu không hợp lệ. Vui lòng kiểm tra và thử lại.",
+  "The password reset code has expired. Please request a new code.":
+    "Mã đặt lại mật khẩu đã hết hạn. Vui lòng yêu cầu mã mới.",
+  "This password reset code has already been used. Please request a new code.":
+    "Mã đặt lại mật khẩu này đã được sử dụng. Vui lòng yêu cầu mã mới.",
+  "Your password does not meet the requirements. Please review the password rules and try again.":
+    "Mật khẩu chưa đáp ứng yêu cầu. Vui lòng xem quy tắc mật khẩu và thử lại.",
+  "Please check the information entered and try again.":
+    "Vui lòng kiểm tra thông tin đã nhập và thử lại.",
+  "Email verification could not be completed. Please check your code or sign in if already verified.":
+    "Không thể hoàn tất xác minh email. Vui lòng kiểm tra mã hoặc đăng nhập nếu đã xác minh.",
+  "We couldn't send the email right now. Please try again later.":
+    "Hiện chưa thể gửi email. Vui lòng thử lại sau.",
+  "Unable to connect. Please check your internet connection and try again.":
+    "Không thể kết nối. Vui lòng kiểm tra kết nối Internet và thử lại.",
   "Something went wrong. Please try again later.": "Đã xảy ra lỗi. Vui lòng thử lại sau.",
-  "Too many requests. Please wait a moment before trying again.": "Có quá nhiều yêu cầu. Vui lòng đợi một lát rồi thử lại.",
-  "Too many requests. Please wait before requesting another code.": "Có quá nhiều yêu cầu. Vui lòng đợi trước khi yêu cầu mã mới.",
-  "If this email is registered, you will receive a password reset code.": "Nếu email này đã được đăng ký, bạn sẽ nhận được mã đặt lại mật khẩu.",
-  "If this email needs verification, you will receive a new code.": "Nếu email này cần xác minh, bạn sẽ nhận được mã mới.",
+  "Too many requests. Please wait a moment before trying again.":
+    "Có quá nhiều yêu cầu. Vui lòng đợi một lát rồi thử lại.",
+  "Too many requests. Please wait before requesting another code.":
+    "Có quá nhiều yêu cầu. Vui lòng đợi trước khi yêu cầu mã mới.",
+  "If this email is registered, you will receive a password reset code.":
+    "Nếu email này đã được đăng ký, bạn sẽ nhận được mã đặt lại mật khẩu.",
+  "If this email needs verification, you will receive a new code.":
+    "Nếu email này cần xác minh, bạn sẽ nhận được mã mới.",
   "Enter the six-digit code from your email.": "Nhập mã gồm 6 chữ số trong email của bạn.",
   "Enter exactly six digits.": "Vui lòng nhập đúng 6 chữ số.",
   "Use at least 6 characters.": "Sử dụng ít nhất 6 ký tự.",
@@ -262,12 +293,15 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "+ Add Step": "+ Thêm bước",
   "+ Explore": "+ Khám phá",
   "- Docker / Infrastructure & Connectivity:": "- Docker / Hạ tầng & Kết nối mạng:",
-  ". New revisions must branch from the latest revision (": ". Các bản sửa đổi mới phải được tạo từ bản mới nhất (",
+  ". New revisions must branch from the latest revision (":
+    ". Các bản sửa đổi mới phải được tạo từ bản mới nhất (",
   "1 Hop": "1 Hop",
   "1-Click Run Verification": "⚡ Chạy xác thực nhanh (1-Click Run)",
-  "1. Source Snapshot & Compose Preflight Check": "1. Chọn Bản chụp & Kiểm tra điều kiện Docker Compose (Preflight)",
+  "1. Source Snapshot & Compose Preflight Check":
+    "1. Chọn Bản chụp & Kiểm tra điều kiện Docker Compose (Preflight)",
   "2+ Hops": "2+ Hops",
-  "2. Service-to-Model Mapping & Protected Secret References": "2. Ánh xạ Container sang Mô hình & Biến môi trường bảo mật",
+  "2. Service-to-Model Mapping & Protected Secret References":
+    "2. Ánh xạ Container sang Mô hình & Biến môi trường bảo mật",
   "3. Execution Profile & Save Configuration": "3. Cấu hình Môi trường Thực thi & Lưu",
   "3E details": "Chi tiết 3E",
   "3E sections": "Các phần 3E",
@@ -320,14 +354,17 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "All types": "Tất cả các loại",
   "Allowed profile ID": "Mã Profile được phép",
   "Ambiguous architectural items": "Các thành phần kiến trúc cần xác nhận",
-  "An empty state explains what is missing and gives one useful next step.": "Trạng thái trống giải thích những gì còn thiếu và đưa ra bước tiếp theo hữu ích.",
-  "An unexpected display error occurred. Try loading the page again.": "Đã xảy ra lỗi hiển thị ngoài ý muốn. Vui lòng tải lại trang.",
+  "An empty state explains what is missing and gives one useful next step.":
+    "Trạng thái trống giải thích những gì còn thiếu và đưa ra bước tiếp theo hữu ích.",
+  "An unexpected display error occurred. Try loading the page again.":
+    "Đã xảy ra lỗi hiển thị ngoài ý muốn. Vui lòng tải lại trang.",
   Analysis: "Phân tích",
   "Analysis & Runtime": "Phân tích & Chạy thử Runtime",
   "Analysis & models": "Phân tích & mô hình",
   "Analysis History": "Lịch sử phân tích",
   "Analysis Jobs": "Tiến trình phân tích",
-  "Analysis and deletion history across your projects · newest activity first": "Lịch sử phân tích và xóa dữ liệu · hoạt động mới nhất trước",
+  "Analysis and deletion history across your projects · newest activity first":
+    "Lịch sử phân tích và xóa dữ liệu · hoạt động mới nhất trước",
   "Analysis completed successfully": "Phân tích hoàn tất thành công",
   "Analysis failed": "Phân tích thất bại",
   "Analysis history": "Lịch sử phân tích",
@@ -340,7 +377,8 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Analyze Source": "Phân tích mã nguồn",
   "Analyze Source Snapshot": "Phân tích bản chụp mã nguồn",
   "Analyze a snapshot first": "Hãy phân tích một bản chụp trước",
-  "Analyze another source or save a new revision to compare versions.": "Phân tích một mã nguồn khác hoặc lưu bản sửa đổi mới để so sánh phiên bản.",
+  "Analyze another source or save a new revision to compare versions.":
+    "Phân tích một mã nguồn khác hoặc lưu bản sửa đổi mới để so sánh phiên bản.",
   "Analyze impact →": "Phân tích tác động →",
   "Analyze latest snapshot": "Phân tích bản chụp mới nhất",
   "Analyze the same stored source and commit. A successful run creates a new revision; previous revisions are kept.":
@@ -352,7 +390,8 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Any saved diagram": "Bất kỳ sơ đồ nào đã lưu",
   Appearance: "Giao diện hiển thị",
   "Appearance preferences": "Tùy chọn giao diện",
-  "Application & Data Only (Excludes Compose)": "Tầng Ứng dụng & Dữ liệu (Không tính Docker Compose)",
+  "Application & Data Only (Excludes Compose)":
+    "Tầng Ứng dụng & Dữ liệu (Không tính Docker Compose)",
   "Application sidebar": "Thanh bên ứng dụng",
   Apply: "Áp dụng",
   "Approve and queue": "Phê duyệt & xếp hàng",
@@ -390,7 +429,8 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Assignment GitHub repository URL": "Đường dẫn kho GitHub bài tập",
   "Assignment Submissions": "Bài nộp bài tập",
   "Assignment commit SHA": "Mã commit SHA bài tập",
-  "Assignment coursework project in this class workspace": "Dự án bài tập trong không gian lớp học này",
+  "Assignment coursework project in this class workspace":
+    "Dự án bài tập trong không gian lớp học này",
   "Assignment instructions": "Hướng dẫn làm bài",
   "Assignment project & source version": "Dự án & phiên bản mã nguồn bài tập",
   "Assignment project ZIP": "File ZIP dự án bài tập",
@@ -411,7 +451,8 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Auto-detected scenario": "Kịch bản tự động nhận diện",
   Available: "Khả dụng",
   "Available runtime evidence": "Bằng chứng Runtime hiện có",
-  "Awaiting lecturer review. Inline feedback may be available below.": "Đang chờ giảng viên chấm bài. Nhận xét chi tiết sẽ hiển thị bên dưới.",
+  "Awaiting lecturer review. Inline feedback may be available below.":
+    "Đang chờ giảng viên chấm bài. Nhận xét chi tiết sẽ hiển thị bên dưới.",
   "Awaiting review": "Đang chờ đánh giá",
   Back: "Quay lại",
   "Back to Diagram View": "Quay lại xem sơ đồ",
@@ -419,7 +460,8 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Backend JVM memory": "Bộ nhớ JVM Backend",
   "Backend uptime": "Thời gian hoạt động Backend",
   "Balanced sandbox": "Cấu hình Sandbox cân bằng",
-  "Basis for this suggestion (document reference or your own assertion)": "Cơ sở cho đề xuất này (tham chiếu tài liệu hoặc khẳng định của bạn)",
+  "Basis for this suggestion (document reference or your own assertion)":
+    "Cơ sở cho đề xuất này (tham chiếu tài liệu hoặc khẳng định của bạn)",
   Blueprint: "Bản vẽ kỹ thuật",
   "Both directions": "Cả hai chiều",
   Branch: "Nhánh",
@@ -444,20 +486,24 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Change impact": "Tác động thay đổi",
   "Change integration configuration?": "Thay đổi cấu hình tích hợp?",
   Channel: "Kênh liên lạc",
-  "Check runtime eligibility (Compose Preflight)": "Kiểm tra tính tương thích Docker Compose (Preflight)",
-  "Check sidebar collapse, narrow layouts, keyboard focus, and evidence labels.": "Kiểm tra thu gọn thanh bên, bố cục hẹp, điều hướng bàn phím và nhãn bằng chứng.",
+  "Check runtime eligibility (Compose Preflight)":
+    "Kiểm tra tính tương thích Docker Compose (Preflight)",
+  "Check sidebar collapse, narrow layouts, keyboard focus, and evidence labels.":
+    "Kiểm tra thu gọn thanh bên, bố cục hẹp, điều hướng bàn phím và nhãn bằng chứng.",
   "Check your connection and try again.": "Vui lòng kiểm tra kết nối mạng và thử lại.",
   "Checking session…": "Đang kiểm tra phiên làm việc…",
   Choose: "Lựa chọn",
   "Choose a model": "Chọn một mô hình",
   "Choose a project": "Chọn một dự án",
-  "Choose a project from this class to prepare your submission.": "Chọn một dự án từ lớp học này để chuẩn bị nộp bài.",
+  "Choose a project from this class to prepare your submission.":
+    "Chọn một dự án từ lớp học này để chuẩn bị nộp bài.",
   "Choose a relationship": "Chọn một mối quan hệ",
   "Choose a service to calculate impact.": "Chọn một service để tính toán bán kính ảnh hưởng.",
   "Choose a workspace": "Chọn một không gian làm việc",
   "Choose an element": "Chọn một phần tử",
   "Choose an element to inspect": "Chọn một phần tử để kiểm tra",
-  "Choose from the 9 diagram views and Graph available in the workspace.": "Chọn từ 9 góc nhìn sơ đồ và Đồ thị có sẵn trong không gian làm việc.",
+  "Choose from the 9 diagram views and Graph available in the workspace.":
+    "Chọn từ 9 góc nhìn sơ đồ và Đồ thị có sẵn trong không gian làm việc.",
   "Choose one member relationship": "Chọn một mối quan hệ thành phần",
   "Choose sample role": "Chọn vai trò mẫu",
   "Class / Interface": "Class / Interface",
@@ -526,7 +572,8 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   Connections: "Kết nối",
   "Connections in selected group": "Các kết nối trong nhóm đã chọn",
   "Context Review": "Rà soát ngữ cảnh",
-  "Context incomplete · external callers require review": "Ngữ cảnh chưa hoàn chỉnh · cần kiểm tra các bên gọi ngoài",
+  "Context incomplete · external callers require review":
+    "Ngữ cảnh chưa hoàn chỉnh · cần kiểm tra các bên gọi ngoài",
   "Contextual detail panel": "Bảng chi tiết ngữ cảnh",
   "Contextual evidence": "Bằng chứng theo ngữ cảnh",
   "Contextual navigation": "Điều hướng theo ngữ cảnh",
@@ -534,7 +581,8 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   Copied: "Đã sao chép",
   Copy: "Sao chép",
   "Copy Account ID": "Sao chép ID tài khoản",
-  "Could not refresh this view. Showing the last loaded data.": "Không thể làm mới. Đang hiển thị dữ liệu đã tải trước đó.",
+  "Could not refresh this view. Showing the last loaded data.":
+    "Không thể làm mới. Đang hiển thị dữ liệu đã tải trước đó.",
   Coursework: "Học tập",
   "Coursework Project": "Dự án bài tập",
   "Coursework submissions": "Danh sách bài tập nộp",
@@ -570,7 +618,8 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Deadline (optional)": "Hạn nộp (tùy chọn)",
   "Declaration location recorded:": "Vị trí khai báo đã ghi nhận:",
   "Declared dependencies · not a Sequence": "Phụ thuộc đã khai báo · không phải Sơ đồ tuần tự",
-  "Declared dependencies · not a Sequence diagram": "Phụ thuộc đã khai báo · không phải Sơ đồ Tuần tự",
+  "Declared dependencies · not a Sequence diagram":
+    "Phụ thuộc đã khai báo · không phải Sơ đồ Tuần tự",
   "Deep AI Grounded Synthesis": "Tổng hợp sâu có đối sánh bằng chứng qua AI",
   "Define API request steps": "Định nghĩa các bước gọi HTTP API",
   "Defined in:": "Được định nghĩa tại:",
@@ -586,7 +635,8 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   Description: "Mô tả",
   "Description (optional)": "Mô tả (tùy chọn)",
   "Design foundation": "Nền tảng thiết kế",
-  "Design preview · All content is illustrative. No live system data.": "Bản xem trước thiết kế · Dữ liệu minh họa.",
+  "Design preview · All content is illustrative. No live system data.":
+    "Bản xem trước thiết kế · Dữ liệu minh họa.",
   Details: "Chi tiết",
   "Detected Services in Compose:": "Các Service phát hiện được trong Docker Compose:",
   "Diagnostic summary": "Tóm tắt kết quả phân tích",
@@ -658,10 +708,12 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Send verification code": "Gửi mã xác minh",
   Enabled: "Đã bật",
   "Enter a label to identify this snapshot.": "Nhập nhãn để nhận diện bản chụp này.",
-  "Enter a score between 0 and 100 with at most two decimal places.": "Nhập điểm từ 0 đến 100, tối đa hai chữ số thập phân.",
+  "Enter a score between 0 and 100 with at most two decimal places.":
+    "Nhập điểm từ 0 đến 100, tối đa hai chữ số thập phân.",
   "Enter fullscreen": "Toàn màn hình",
   "Enter verification code": "Nhập mã xác thực",
-  "Enter your current password and choose a new one.": "Nhập mật khẩu hiện tại và chọn mật khẩu mới.",
+  "Enter your current password and choose a new one.":
+    "Nhập mật khẩu hiện tại và chọn mật khẩu mới.",
   "Enter your display name": "Nhập tên hiển thị của bạn",
   "Enter your password": "Nhập mật khẩu của bạn",
   Environment: "Môi trường",
@@ -672,7 +724,8 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   Evidence: "Bằng chứng",
   "Evidence availability": "Tính khả dụng của bằng chứng",
   "Evidence has a visible origin": "Bằng chứng có nguồn gốc rõ ràng",
-  "Evidence is scoped to its source snapshot or recorded runtime session.": "Bằng chứng được giới hạn trong bản chụp nguồn hoặc phiên Runtime đã ghi nhận.",
+  "Evidence is scoped to its source snapshot or recorded runtime session.":
+    "Bằng chứng được giới hạn trong bản chụp nguồn hoặc phiên Runtime đã ghi nhận.",
   "Evidence kind": "Loại bằng chứng",
   "Evidence language": "Ngôn ngữ bằng chứng",
   "Evidence status": "Trạng thái bằng chứng",
@@ -687,13 +740,15 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Expand service internals": "Mở rộng thành phần bên trong Service",
   Explain: "Giải thích",
   "Explain selection": "Giải thích phần tử đã chọn",
-  "Explain the actor role or why this system is outside the project boundary": "Giải thích vai trò của Actor hoặc lý do hệ thống này nằm ngoài ranh giới dự án",
+  "Explain the actor role or why this system is outside the project boundary":
+    "Giải thích vai trò của Actor hoặc lý do hệ thống này nằm ngoài ranh giới dự án",
   "Explain this selection": "Giải thích phần tử đang chọn",
   Explanation: "Giải thích",
   Explanations: "Giải thích",
   "Explanations with context.": "Giải thích kiến trúc kèm ngữ cảnh mã nguồn.",
   Explore: "Khám phá",
-  "Explore application architecture, service internals and deployment dependencies.": "Khám phá kiến trúc ứng dụng, cấu trúc nội bộ Service và phụ thuộc triển khai.",
+  "Explore application architecture, service internals and deployment dependencies.":
+    "Khám phá kiến trúc ứng dụng, cấu trúc nội bộ Service và phụ thuộc triển khai.",
   "Explore cluster legend": "Khám phá chú giải cụm (Cluster)",
   "Explore model": "Khám phá mô hình",
   "Explore the architecture": "Khám phá kiến trúc",
@@ -733,7 +788,8 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Fit diagram": "Căn vừa sơ đồ",
   "Fit graph": "Căn vừa khung nhìn",
   "Fit graph — show the entire graph": "Căn vừa khung hình — hiển thị toàn bộ đồ thị",
-  "Flagged uncertain — verify the evidence.": "Được đánh dấu chưa chắc chắn — cần kiểm tra lại bằng chứng.",
+  "Flagged uncertain — verify the evidence.":
+    "Được đánh dấu chưa chắc chắn — cần kiểm tra lại bằng chứng.",
   "Flow summary": "Tóm tắt luồng xử lý",
   "Focus matches": "Tập trung vào các mục khớp",
   "Forgot password?": "Quên mật khẩu?",
@@ -746,7 +802,8 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Frozen model": "Mô hình đã chốt",
   "Frozen submitted diagrams": "Sơ đồ đã nộp (đã đóng băng)",
   "Full 40-character SHA": "Mã SHA đầy đủ 40 ký tự",
-  "Full Architecture (Source + Messaging + Deployment)": "Toàn bộ Kiến trúc (Code + Messaging + Docker Compose)",
+  "Full Architecture (Source + Messaging + Deployment)":
+    "Toàn bộ Kiến trúc (Code + Messaging + Docker Compose)",
   "Full Name": "Họ và tên",
   "Full name": "Họ và tên",
   Fullscreen: "Toàn màn hình",
@@ -762,7 +819,8 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Go to next page": "Sang trang tiếp theo",
   "Go to previous page": "Về trang trước",
   "Google quota measurements": "Đo lường hạn ngạch Google",
-  "Google sign-in could not load. Use email sign-in.": "Không thể tải đăng nhập Google. Vui lòng đăng nhập bằng email.",
+  "Google sign-in could not load. Use email sign-in.":
+    "Không thể tải đăng nhập Google. Vui lòng đăng nhập bằng email.",
   "Governance & Config": "Quản trị & Cấu hình",
   Graded: "Đã chấm điểm",
   "Graph Explorer": "Đồ thị Kiến trúc",
@@ -773,14 +831,16 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Graph options": "Tùy chọn hiển thị đồ thị",
   "Graph presentation": "Trình bày đồ thị",
   "Grounded explanation": "Giải thích có căn cứ mã nguồn",
-  "Grouped relationships between two elements; calls in both directions are not implied": "Các mối quan hệ được nhóm giữa hai phần tử; không ngụ ý lệnh gọi theo cả hai chiều",
+  "Grouped relationships between two elements; calls in both directions are not implied":
+    "Các mối quan hệ được nhóm giữa hai phần tử; không ngụ ý lệnh gọi theo cả hai chiều",
   "HTTP Scenario Steps": "Các bước gửi request HTTP",
   "Hide advanced options": "Ẩn tùy chọn nâng cao",
   "Hide datastores": "Ẩn kho dữ liệu",
   "Historical Revision": "Bản sửa đổi lịch sử",
   History: "Lịch sử",
   "How to complete & submit coursework": "Cách hoàn thành & nộp bài tập",
-  "I approve these pinned inputs for the dedicated Runner.": "Tôi phê duyệt các đầu vào đã ghim này cho Runner chuyên dụng.",
+  "I approve these pinned inputs for the dedicated Runner.":
+    "Tôi phê duyệt các đầu vào đã ghim này cho Runner chuyên dụng.",
   "Ignore as noise": "Bỏ qua thành phần nhiễu",
   "Illustrative dependency graph": "Đồ thị phụ thuộc minh họa",
   "Impact Analysis": "Phân tích tác động",
@@ -807,7 +867,8 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Inspect relationships as a list": "Kiểm tra các mối quan hệ dưới dạng danh sách",
   "Inspect sessions": "Kiểm tra các phiên chạy",
   "Inspect source evidence": "Xem bằng chứng mã nguồn chi tiết",
-  "Inspect the caller, receiver and configuration snippets attached to this selection.": "Kiểm tra đoạn code bên gọi (caller), bên nhận (receiver) và file cấu hình của phần tử đang chọn.",
+  "Inspect the caller, receiver and configuration snippets attached to this selection.":
+    "Kiểm tra đoạn code bên gọi (caller), bên nhận (receiver) và file cấu hình của phần tử đang chọn.",
   "Inspect:": "Kiểm tra:",
   "Inspector sidebar": "Thanh bên kiểm tra (Inspector)",
   Instructions: "Hướng dẫn",
@@ -825,14 +886,17 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Just imported": "Vừa nhập",
   "Just now": "Vừa xong",
   "Keep this dialog open": "Giữ hộp thoại này mở",
-  "Keep this dialog open until the import finishes.": "Vui lòng giữ hộp thoại này mở cho đến khi quá trình nhập hoàn tất.",
+  "Keep this dialog open until the import finishes.":
+    "Vui lòng giữ hộp thoại này mở cho đến khi quá trình nhập hoàn tất.",
   Keyboard: "Phím tắt bàn phím",
   "Keyboard shortcuts": "Phím tắt bàn phím",
   Kind: "Phân loại",
   Language: "Ngôn ngữ",
   Latest: "Mới nhất",
-  "Latest 50 analysis jobs · refresh every 30 seconds": "50 tiến trình phân tích gần nhất · tự động làm mới mỗi 30 giây",
-  "Latest 50 sessions · inspect before stopping a run": "50 phiên chạy gần nhất · kiểm tra trước khi dừng chạy",
+  "Latest 50 analysis jobs · refresh every 30 seconds":
+    "50 tiến trình phân tích gần nhất · tự động làm mới mỗi 30 giây",
+  "Latest 50 sessions · inspect before stopping a run":
+    "50 phiên chạy gần nhất · kiểm tra trước khi dừng chạy",
   "Latest Revision": "Bản sửa đổi mới nhất",
   Layer: "Tầng kiến trúc",
   "Learning & analysis": "Học tập & phân tích",
@@ -842,6 +906,11 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Join Course": "Tham gia khóa học",
   "Course Roadmap": "Lộ trình khóa học",
   "Lab Workspace": "Không gian thực hành",
+  "Learning Space": "Không gian học tập",
+  "My Classes": "Lớp học của tôi",
+  "Lab Roadmap & Course": "Lộ trình & Bài Lab",
+  "Submissions & Grades": "Bài nộp & Điểm số",
+  "Student Submission · read-only": "Bài nộp sinh viên · chỉ đọc",
   "Learning project": "Dự án học tập",
   Lecturer: "Giảng viên",
   "Lecturer review & grade": "Giảng viên đánh giá & Chấm điểm",
@@ -868,14 +937,17 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Logical Datastore": "Kho dữ liệu logic",
   "MAVIS home": "Trang chủ MAVIS",
   "MAVIS navigation": "Điều hướng MAVIS",
-  "MAVIS · Microservices Architecture Visualization": "MAVIS · Trực quan hóa Kiến trúc Microservices",
+  "MAVIS · Microservices Architecture Visualization":
+    "MAVIS · Trực quan hóa Kiến trúc Microservices",
   Manage: "Quản lý",
   "Manage access and teaching roles": "Quản lý quyền truy cập và vai trò giảng dạy",
-  "Manage access and teaching roles. Click Save at the end of a row to apply changes.": "Quản lý quyền truy cập và vai trò giảng dạy. Bấm Lưu ở cuối dòng để áp dụng.",
+  "Manage access and teaching roles. Click Save at the end of a row to apply changes.":
+    "Quản lý quyền truy cập và vai trò giảng dạy. Bấm Lưu ở cuối dòng để áp dụng.",
   "Manage integrations": "Quản lý tích hợp hệ thống",
   "Manage teaching references": "Quản lý dự án mẫu & Tài liệu giảng dạy",
   "Manage your account": "Quản lý tài khoản của bạn",
-  "Manage your account information and password.": "Quản lý thông tin tài khoản và mật khẩu của bạn.",
+  "Manage your account information and password.":
+    "Quản lý thông tin tài khoản và mật khẩu của bạn.",
   "Mapping status": "Trạng thái ánh xạ mô hình",
   "Mark all as read": "Đánh dấu tất cả đã đọc",
   "Mark as read": "Đánh dấu đã đọc",
@@ -915,7 +987,8 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "New Password": "Mật khẩu mới",
   "New coursework project name": "Tên dự án bài tập mới",
   "New element name": "Tên phần tử mới",
-  "New elements and connections can only be added to the latest revision.": "Phần tử và kết nối mới chỉ có thể được thêm vào bản sửa đổi mới nhất.",
+  "New elements and connections can only be added to the latest revision.":
+    "Phần tử và kết nối mới chỉ có thể được thêm vào bản sửa đổi mới nhất.",
   "New password (optional)": "Mật khẩu mới (tùy chọn)",
   "New password and confirmation do not match.": "Mật khẩu mới và mật khẩu xác nhận không khớp.",
   Next: "Tiếp tục",
@@ -927,14 +1000,16 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
     "Chưa có mô hình kiến trúc nào được tạo cho dự án này. Hãy chạy phân tích bản chụp mã nguồn để trích xuất kiến trúc, thành phần và sơ đồ.",
   "No architecture model revisions found": "Không tìm thấy phiên bản mô hình kiến trúc nào",
   "No architecture revisions yet.": "Chưa có phiên bản kiến trúc nào.",
-  "No assignments in this workspace. Create an assignment before reviewing submissions.": "Chưa có bài tập nào trong lớp học này. Hãy tạo bài tập trước khi chấm bài nộp.",
+  "No assignments in this workspace. Create an assignment before reviewing submissions.":
+    "Chưa có bài tập nào trong lớp học này. Hãy tạo bài tập trước khi chấm bài nộp.",
   "No class description added yet.": "Chưa có mô tả cho lớp học này.",
   "No confirmed actor interaction is recorded in this revision. HTTP endpoints identify interfaces, not human roles. Runtime traces can support service interactions but do not establish business actors or system ownership. Review and document the system boundary and confirmed actors before treating this as a complete context diagram.":
     "Chưa ghi nhận tương tác từ tác nhân (Actor) xác thực trong bản sửa đổi này. Các HTTP Endpoint chỉ xác định giao diện kết nối chứ không xác định vai trò người dùng. Dữ liệu Runtime Trace hỗ trợ xác minh giao tiếp giữa các Service nhưng không xác lập tác nhân nghiệp vụ. Hãy rà soát ranh giới hệ thống trước khi xem đây là sơ đồ Context hoàn chỉnh.",
   "No data available": "Không có dữ liệu",
   "No dependency paths": "Không có đường dẫn phụ thuộc",
   "No diff items match the current filter.": "Không có mục khác biệt nào khớp với bộ lọc hiện tại.",
-  "No direct AST code line recorded in this service (inferred from peer or configuration).": "Chưa ghi nhận dòng mã AST trực tiếp tại Service này (được suy ra từ Service đối tác hoặc tệp cấu hình).",
+  "No direct AST code line recorded in this service (inferred from peer or configuration).":
+    "Chưa ghi nhận dòng mã AST trực tiếp tại Service này (được suy ra từ Service đối tác hoặc tệp cấu hình).",
   "No direct Docker Compose declaration is available; this connection is recorded at code or API level.":
     "Không có khai báo trực tiếp trong Docker Compose; kết nối này được ghi nhận ở tầng Code hoặc API.",
   "No directly dependent services identified": "Không có service nào phụ thuộc trực tiếp (1 chặng)",
@@ -943,9 +1018,11 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "No elements available for this filter.": "Không có phần tử nào khớp với bộ lọc hiện tại.",
   "No elements match.": "Không có phần tử nào phù hợp.",
   "No evidence attached": "Chưa đính kèm bằng chứng",
-  "No evidence recorded for this selection.": "Chưa ghi nhận bằng chứng nào cho phần được chọn này.",
+  "No evidence recorded for this selection.":
+    "Chưa ghi nhận bằng chứng nào cho phần được chọn này.",
   "No feedback saved for this submission.": "Chưa có nhận xét nào được lưu cho bài nộp này.",
-  "No findings recorded for this evaluation.": "Không có phát hiện nào được ghi nhận cho lần đánh giá này.",
+  "No findings recorded for this evaluation.":
+    "Không có phát hiện nào được ghi nhận cho lần đánh giá này.",
   "No indirect service impact identified": "Không có service nào bị ảnh hưởng gián tiếp (2+ chặng)",
   "No items selected": "Chưa chọn mục nào",
   "No matching connections.": "Không có kết nối nào khớp bộ lọc.",
@@ -954,29 +1031,40 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "No model published": "Chưa có mô hình",
   "No notifications": "Không có thông báo mới",
   "No notifications yet": "Chưa có thông báo nào",
-  "No observed interactions recorded for this session.": "Không ghi nhận được tương tác nào trong phiên chạy này.",
+  "No observed interactions recorded for this session.":
+    "Không ghi nhận được tương tác nào trong phiên chạy này.",
   "No projects match the current filter.": "Không có dự án nào khớp với bộ lọc hiện tại.",
-  'No projects yet. Click "Import project source" to create and import your first project.': "Chưa có dự án nào. Nhấp vào “Nhập mã nguồn dự án” để tạo và nhập dự án đầu tiên của bạn.",
-  "No projects yet. Click “Import project source” to create and import your first project.": "Chưa có dự án nào. Nhấp vào “Nhập mã nguồn dự án” để tạo và nhập dự án đầu tiên của bạn.",
+  'No projects yet. Click "Import project source" to create and import your first project.':
+    "Chưa có dự án nào. Nhấp vào “Nhập mã nguồn dự án” để tạo và nhập dự án đầu tiên của bạn.",
+  "No projects yet. Click “Import project source” to create and import your first project.":
+    "Chưa có dự án nào. Nhấp vào “Nhập mã nguồn dự án” để tạo và nhập dự án đầu tiên của bạn.",
   "No recorded activity yet.": "Chưa có hoạt động được ghi nhận.",
-  "No recorded requests match this search.": "Không có yêu cầu đã ghi nhận nào khớp với tìm kiếm này.",
+  "No recorded requests match this search.":
+    "Không có yêu cầu đã ghi nhận nào khớp với tìm kiếm này.",
   "No records found": "Không tìm thấy bản ghi nào",
   "No reference source": "Chưa có mã nguồn tham chiếu",
-  "No relationships match these connection filters.": "Không có mối quan hệ nào khớp bộ lọc kết nối này.",
+  "No relationships match these connection filters.":
+    "Không có mối quan hệ nào khớp bộ lọc kết nối này.",
   "No results yet": "Chưa có kết quả nào",
   "Choose a source or adjust your filters.": "Chọn một nguồn hoặc điều chỉnh bộ lọc của bạn.",
   "No revisions yet": "Chưa có phiên bản mô hình",
   "No runtime trace attached": "Không đính kèm phiên chạy Runtime",
-  "No saved diagram documents for this model yet.": "Chưa có tài liệu sơ đồ nào được lưu cho mô hình này.",
-  "No sequence evidence is available for this scenario.": "Chưa có bằng chứng tuần tự nào cho kịch bản này.",
+  "No saved diagram documents for this model yet.":
+    "Chưa có tài liệu sơ đồ nào được lưu cho mô hình này.",
+  "No sequence evidence is available for this scenario.":
+    "Chưa có bằng chứng tuần tự nào cho kịch bản này.",
   "No services detected": "Không phát hiện service nào",
-  "No source file or snippet is recorded for this reference.": "Chưa có file hoặc đoạn code nào được ghi nhận cho tham chiếu này.",
+  "No source file or snippet is recorded for this reference.":
+    "Chưa có file hoặc đoạn code nào được ghi nhận cho tham chiếu này.",
   "No source snapshot yet": "Chưa có bản chụp mã nguồn nào",
   "No source snapshots imported yet.": "Chưa nhập bản chụp mã nguồn nào.",
-  "No students have submitted work for this assignment yet.": "Chưa có sinh viên nào nộp bài cho bài tập này.",
-  "No submitted work yet. Open an assignment in your workspace to submit a model version.": "Chưa có bài nộp nào. Hãy mở một bài tập trong lớp học của bạn để nộp phiên bản mô hình.",
+  "No students have submitted work for this assignment yet.":
+    "Chưa có sinh viên nào nộp bài cho bài tập này.",
+  "No submitted work yet. Open an assignment in your workspace to submit a model version.":
+    "Chưa có bài nộp nào. Hãy mở một bài tập trong lớp học của bạn để nộp phiên bản mô hình.",
   "No trace available": "Chưa có dữ liệu Trace",
-  "No verified remaining credit balance is available.": "Không có số dư tín dụng khả dụng đã xác minh.",
+  "No verified remaining credit balance is available.":
+    "Không có số dư tín dụng khả dụng đã xác minh.",
   "No visible connections": "Không có kết nối hiển thị",
   "No workspaces are available for this account yet. Open My Workspaces for class access information.":
     "Tài khoản này chưa có không gian làm việc nào. Mở Lớp học của tôi để xem thông tin truy cập lớp.",
@@ -987,19 +1075,24 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Not submitted": "Chưa nộp",
   Notices: "Thông báo chú ý",
   Notifications: "Thông báo",
-  "Notifications could not be loaded. Your other work is unaffected.": "Không thể tải thông báo. Các công việc khác của bạn không bị ảnh hưởng.",
+  "Notifications could not be loaded. Your other work is unaffected.":
+    "Không thể tải thông báo. Các công việc khác của bạn không bị ảnh hưởng.",
   "OBSERVED RUNTIME": "QUAN SÁT TỪ RUNTIME",
   "Observed Runtime": "Quan sát từ Runtime",
   "Observed interactions": "Các tương tác quan sát được",
   "Observed runtime": "Runtime quan sát được",
   "Observed trace": "Trace quan sát được",
-  "Showing calls recorded by OpenTelemetry for this session.": "Hiển thị các cuộc gọi do OpenTelemetry ghi nhận trong phiên này.",
-  "Waiting for OpenTelemetry evidence from the Runner.": "Đang chờ Runner gửi bằng chứng OpenTelemetry.",
+  "Showing calls recorded by OpenTelemetry for this session.":
+    "Hiển thị các cuộc gọi do OpenTelemetry ghi nhận trong phiên này.",
+  "Waiting for OpenTelemetry evidence from the Runner.":
+    "Đang chờ Runner gửi bằng chứng OpenTelemetry.",
   "This session has no recorded service calls.": "Phiên này chưa ghi nhận cuộc gọi dịch vụ nào.",
   "Trace evidence is partial.": "Bằng chứng trace mới ghi nhận được một phần.",
-  "One plain line per pair · select for direction, source & evidence": "Mỗi cặp hiển thị 1 đường nối gộp · Bấm vào đường nối hoặc node để xem chiều gọi, mã nguồn & bằng chứng",
+  "One plain line per pair · select for direction, source & evidence":
+    "Mỗi cặp hiển thị 1 đường nối gộp · Bấm vào đường nối hoặc node để xem chiều gọi, mã nguồn & bằng chứng",
   "One registered email per line": "Mỗi dòng một địa chỉ email đã đăng ký",
-  "One visual language for learning, exploring architecture, and reviewing evidence.": "Một ngôn ngữ trực quan thống nhất để học tập, khám phá kiến trúc và rà soát bằng chứng.",
+  "One visual language for learning, exploring architecture, and reviewing evidence.":
+    "Một ngôn ngữ trực quan thống nhất để học tập, khám phá kiến trúc và rà soát bằng chứng.",
   "Only grouped metadata is loaded for this relationship. Its individual evidence is not inferred from the group.":
     "Chỉ có siêu dữ liệu gom nhóm cho mối quan hệ này. Bằng chứng riêng lẻ không được suy diễn tự động từ nhóm.",
   Open: "Mở",
@@ -1019,9 +1112,11 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Opening diagrams": "Đang mở sơ đồ",
   "Opening graph": "Đang mở đồ thị",
   "Optional +": "Tùy chọn +",
-  "Optional project-wide usage and limits are separate from MAVIS token tracking.": "Mức sử dụng và giới hạn tùy chọn trên toàn dự án tách biệt với việc theo dõi token MAVIS.",
+  "Optional project-wide usage and limits are separate from MAVIS token tracking.":
+    "Mức sử dụng và giới hạn tùy chọn trên toàn dự án tách biệt với việc theo dõi token MAVIS.",
   "Optional question about this selection": "Câu hỏi tùy chọn về phần tử đang chọn này",
-  "Optional: Ask a specific architectural question about this target…": "Tùy chọn: Đặt câu hỏi kiến trúc cụ thể về mục tiêu này…",
+  "Optional: Ask a specific architectural question about this target…":
+    "Tùy chọn: Đặt câu hỏi kiến trúc cụ thể về mục tiêu này…",
   Origin: "Nguồn gốc",
   "Origin:": "Nguồn gốc:",
   "Outage Blast Radius Map": "Bản đồ bán kính ảnh hưởng sự cố",
@@ -1037,7 +1132,8 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   Pagination: "Phân trang",
   "Parent service container": "Container Service cha",
   Partial: "Hoàn tất một phần",
-  "Partial capture does not describe complete behavior": "Dữ liệu ghi nhận một phần không phản ánh toàn bộ hành vi",
+  "Partial capture does not describe complete behavior":
+    "Dữ liệu ghi nhận một phần không phản ánh toàn bộ hành vi",
   "Partial extraction completed": "Trích xuất một phần hoàn tất",
   Password: "Mật khẩu",
   "Passwords do not match.": "Mật khẩu xác nhận không khớp.",
@@ -1063,7 +1159,8 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Preparing diagram…": "Đang chuẩn bị sơ đồ…",
   Preview: "Bản xem trước",
   "Preview role": "Xem trước vai trò",
-  "Preview unavailable. Download the original submitted diagram below.": "Không thể xem trước. Tải xuống sơ đồ nộp gốc bên dưới.",
+  "Preview unavailable. Download the original submitted diagram below.":
+    "Không thể xem trước. Tải xuống sơ đồ nộp gốc bên dưới.",
   Previous: "Trước",
   "Previous slide": "Trang trước",
   "Previous steps": "Các bước trước",
@@ -1132,7 +1229,8 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Recommended actions": "Hành động đề xuất",
   "Reconnect to analysis": "Kết nối lại với phân tích",
   Record: "Bản ghi",
-  "Recorded MAVIS requests · all time since tracking began": "Các yêu cầu MAVIS đã ghi nhận · toàn bộ thời gian kể từ khi theo dõi",
+  "Recorded MAVIS requests · all time since tracking began":
+    "Các yêu cầu MAVIS đã ghi nhận · toàn bộ thời gian kể từ khi theo dõi",
   "Recorded model usage": "Mức sử dụng mô hình đã ghi nhận",
   "Recorded requests": "Yêu cầu đã ghi nhận",
   "Reference Source Versions": "Phiên bản mã nguồn tham chiếu",
@@ -1194,7 +1292,8 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Review Submissions": "Đánh giá bài nộp",
   "Review analysis jobs": "Rà soát các tiến trình phân tích",
   "Review and queue a runtime session": "Rà soát và xếp hàng phiên chạy Runtime",
-  "Review controls only. Role preview does not grant access.": "Chỉ xem trước giao diện. Chế độ xem trước vai trò không cấp quyền truy cập.",
+  "Review controls only. Role preview does not grant access.":
+    "Chỉ xem trước giao diện. Chế độ xem trước vai trò không cấp quyền truy cập.",
   "Review feedback": "Xem lại phản hồi",
   "Review new revision": "Rà soát phiên bản mới",
   "Review notes": "Ghi chú đánh giá",
@@ -1209,7 +1308,8 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Role code": "Mã vai trò",
   "Role permissions & quick access": "Quyền hạn vai trò & truy cập nhanh",
   "Run Scenario in Sandbox": "Chạy kịch bản trong Sandbox",
-  "Run preflight above to auto-detect service containers from docker-compose.yml.": "Chạy kiểm tra điều kiện (Preflight) ở trên để tự động nhận diện các container từ docker-compose.yml.",
+  "Run preflight above to auto-detect service containers from docker-compose.yml.":
+    "Chạy kiểm tra điều kiện (Preflight) ở trên để tự động nhận diện các container từ docker-compose.yml.",
   "Run runtime session": "Chạy phiên Runtime",
   Running: "Đang thực thi",
   "Running sessions": "Các phiên đang chạy",
@@ -1232,7 +1332,8 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Runtime observation": "Quan sát từ Runtime",
   "Runtime observations": "Quan sát thực thi (Runtime Trace)",
   "Runtime session": "Phiên chạy Runtime",
-  "Runtime session completed. Recorded connections are available for inspection.": "Phiên Runtime đã hoàn tất. Các kết nối ghi nhận được đã sẵn sàng để kiểm tra.",
+  "Runtime session completed. Recorded connections are available for inspection.":
+    "Phiên Runtime đã hoàn tất. Các kết nối ghi nhận được đã sẵn sàng để kiểm tra.",
   "Runtime sessions": "Phiên chạy Runtime",
   "Runtime span:": "Runtime Span:",
   "Runtime-Enriched Model Active:": "Đang mở Mô hình đã làm giàu từ Runtime:",
@@ -1251,7 +1352,8 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   Saved: "Đã lưu",
   "Saved Scenarios": "Các kịch bản đã lưu",
   "Saved evidence context": "Ngữ cảnh bằng chứng đã lưu",
-  "Saved evidence could not be loaded. Any previews below remain model context only.": "Không thể tải bằng chứng đã lưu. Các bản xem trước bên dưới chỉ mang tính tham khảo theo ngữ cảnh mô hình.",
+  "Saved evidence could not be loaded. Any previews below remain model context only.":
+    "Không thể tải bằng chứng đã lưu. Các bản xem trước bên dưới chỉ mang tính tham khảo theo ngữ cảnh mô hình.",
   "Saved scenario": "Kịch bản đã lưu",
   "Saved scenarios": "Các kịch bản đã lưu",
   "Saved snippets are source evidence. Metadata previews are reconstructions. Static evidence does not prove runtime execution.":
@@ -1288,16 +1390,21 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Security Warnings / Prerequisites:": "Cảnh báo bảo mật / Điều kiện tiên quyết:",
   "See the connections.": "Xem các mối liên kết.",
   Select: "Chọn",
-  "Select a class to review its assignments and student submissions.": "Chọn một lớp học để xem danh sách bài tập và bài nộp của sinh viên.",
-  "Select a class under My Workspaces in the left sidebar to view class information.": "Hãy chọn một lớp học trong mục Lớp học của tôi ở thanh bên trái để xem thông tin chi tiết.",
+  "Select a class to review its assignments and student submissions.":
+    "Chọn một lớp học để xem danh sách bài tập và bài nộp của sinh viên.",
+  "Select a class under My Workspaces in the left sidebar to view class information.":
+    "Hãy chọn một lớp học trong mục Lớp học của tôi ở thanh bên trái để xem thông tin chi tiết.",
   "Select a model version": "Chọn một phiên bản mô hình",
   "Select a pair": "Chọn một cặp phần tử",
   "Select a project": "Chọn một dự án",
-  "Select a project to check source eligibility and inspect its runtime sessions.": "Chọn một dự án để kiểm tra điều kiện mã nguồn và rà soát các phiên Runtime.",
-  "Select a project to configure runtime execution.": "Chọn một dự án để cấu hình thực thi Runtime.",
+  "Select a project to check source eligibility and inspect its runtime sessions.":
+    "Chọn một dự án để kiểm tra điều kiện mã nguồn và rà soát các phiên Runtime.",
+  "Select a project to configure runtime execution.":
+    "Chọn một dự án để cấu hình thực thi Runtime.",
   "Select a service or relationship.": "Chọn một service hoặc mối quan hệ.",
   "Select a workspace": "Chọn một không gian làm việc",
-  "Select an element and request an explanation grounded in its evidence.": "Chọn một phần tử và yêu cầu giải thích có đối chiếu bằng chứng mã nguồn.",
+  "Select an element and request an explanation grounded in its evidence.":
+    "Chọn một phần tử và yêu cầu giải thích có đối chiếu bằng chứng mã nguồn.",
   "Select an element on the graph": "Chọn một phần tử trên đồ thị",
   "Select artifacts to include": "Chọn các tài liệu đính kèm vào bài nộp",
   "Select or search classifiers…": "Chọn hoặc tìm kiếm Classifier…",
@@ -1313,7 +1420,8 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Selected project": "Dự án đang chọn",
   "Selected relationship": "Mối quan hệ đã chọn",
   "Selected service": "Service đang chọn - Chủ thể",
-  "Selected source, model and evidence details.": "Chi tiết mã nguồn, mô hình và bằng chứng đã chọn.",
+  "Selected source, model and evidence details.":
+    "Chi tiết mã nguồn, mô hình và bằng chứng đã chọn.",
   "Selected workspace": "Không gian làm việc đang chọn",
   "Selection details & relationships": "Chi tiết phần tử & Danh sách quan hệ",
   Send: "Gửi",
@@ -1332,7 +1440,8 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   Session: "Phiên chạy",
   Sessions: "Danh sách phiên chạy",
   "Set as target": "Chọn làm tâm điểm",
-  "Set resource limits and discover services": "Thiết lập tài nguyên & nhận diện service từ Compose",
+  "Set resource limits and discover services":
+    "Thiết lập tài nguyên & nhận diện service từ Compose",
   Settings: "Cài đặt",
   "Show advanced options": "Hiện tùy chọn nâng cao",
   "Show all": "Hiển thị tất cả",
@@ -1344,7 +1453,8 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Sign in options": "Tùy chọn đăng nhập",
   "Sign in required": "Yêu cầu đăng nhập",
   "Sign in to continue": "Đăng nhập để tiếp tục",
-  "Sign in to continue exploring your architecture.": "Đăng nhập để tiếp tục khám phá kiến trúc của bạn.",
+  "Sign in to continue exploring your architecture.":
+    "Đăng nhập để tiếp tục khám phá kiến trúc của bạn.",
   "Sign in to edit your profile.": "Đăng nhập để chỉnh sửa hồ sơ của bạn.",
   "Sign in to view your profile.": "Đăng nhập để xem hồ sơ của bạn.",
   "Sign in with email": "Đăng nhập bằng Email",
@@ -1360,10 +1470,12 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Soft delete · history retained": "Xóa mềm · giữ nguyên lịch sử",
   "Solid (Source-inferred call)": "Nét liền (Lệnh gọi suy luận từ mã nguồn)",
   "Solid (Static Code Dependency)": "Nét liền (Phụ thuộc mã nguồn tĩnh)",
-  "Something went wrong on our end. You can try refreshing or head back home.": "Đã xảy ra sự cố từ phía hệ thống. Bạn có thể thử làm mới hoặc quay lại trang chủ.",
+  "Something went wrong on our end. You can try refreshing or head back home.":
+    "Đã xảy ra sự cố từ phía hệ thống. Bạn có thể thử làm mới hoặc quay lại trang chủ.",
   "Something went wrong. Please try again.": "Đã xảy ra lỗi. Vui lòng thử lại.",
   Source: "Mã nguồn",
-  "Source Code Evidence (Class / Controller / Client)": "Bằng chứng Mã nguồn (Class / Controller / Client)",
+  "Source Code Evidence (Class / Controller / Client)":
+    "Bằng chứng Mã nguồn (Class / Controller / Client)",
   "Source Snapshots": "Bản chụp mã nguồn",
   "Source analysis. Runtime evidence.": "Phân tích mã nguồn. Bằng chứng Runtime.",
   "Source and configuration": "Mã nguồn & Cấu hình (Static)",
@@ -1396,7 +1508,8 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Step 2: Scenarios": "Bước 2: Kịch bản chạy thử",
   "Step 2: Test Scenarios": "Bước 2: Kịch bản Kiểm thử",
   "Step 3: Run & Trace": "Bước 3: Chạy & Xem kết quả Trace",
-  "Stop active analysis/runtime work and resolve cleanup before deleting this item.": "Cần dừng phân tích/runtime và xử lý việc dọn dẹp còn tồn trước khi xóa.",
+  "Stop active analysis/runtime work and resolve cleanup before deleting this item.":
+    "Cần dừng phân tích/runtime và xử lý việc dọn dẹp còn tồn trước khi xóa.",
   "Stop session": "Dừng phiên chạy",
   "Storage free": "Dung lượng trống",
   "Strict Confirmed HTTP Calls": "Chỉ kết nối HTTP đã xác nhận",
@@ -1458,42 +1571,52 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Technology stack": "Ngăn xếp công nghệ (Tech Stack)",
   "Technology stack (optional)": "Ngăn xếp công nghệ (tùy chọn)",
   "The architecture model has been updated with": "Mô hình kiến trúc đã được cập nhật với",
-  "The branch list is truncated. You can pin a commit SHA for an unlisted branch.": "Danh sách nhánh bị giới hạn. Bạn có thể ghim trực tiếp mã Commit SHA cho nhánh chưa hiển thị.",
-  "The saved version could not load. Retry before saving.": "Không thể tải phiên bản đã lưu. Vui lòng thử lại trước khi lưu.",
+  "The branch list is truncated. You can pin a commit SHA for an unlisted branch.":
+    "Danh sách nhánh bị giới hạn. Bạn có thể ghim trực tiếp mã Commit SHA cho nhánh chưa hiển thị.",
+  "The saved version could not load. Retry before saving.":
+    "Không thể tải phiên bản đã lưu. Vui lòng thử lại trước khi lưu.",
   Theme: "Chủ đề giao diện",
   "There are no items to display.": "Không có mục nào để hiển thị.",
-  "There are no unread updates in this view.": "Không có thông báo chưa đọc nào trong chế độ xem này.",
+  "There are no unread updates in this view.":
+    "Không có thông báo chưa đọc nào trong chế độ xem này.",
   "This action cannot be undone.": "Thao tác này không thể hoàn tác.",
-  "This frozen submission does not contain a runtime session.": "Bản chốt bài nộp này không bao gồm phiên chạy thử Runtime.",
-  "This is taking longer than usual. You can continue using the navigation while this view loads.": "Quá trình tải đang lâu hơn thường lệ. Bạn vẫn có thể sử dụng thanh điều hướng trong lúc chờ.",
+  "This frozen submission does not contain a runtime session.":
+    "Bản chốt bài nộp này không bao gồm phiên chạy thử Runtime.",
+  "This is taking longer than usual. You can continue using the navigation while this view loads.":
+    "Quá trình tải đang lâu hơn thường lệ. Bạn vẫn có thể sử dụng thanh điều hướng trong lúc chờ.",
   "This line groups source relationships, not a single call or observed traffic. Choose an individual relationship for its source evidence and 3E.":
     "Đường nối này gom nhóm các mối quan hệ trong mã nguồn, không đại diện cho một lệnh gọi đơn lẻ hay lưu lượng thực tế. Hãy chọn từng mối quan hệ bên dưới để xem bằng chứng mã nguồn và phân tích 3E.",
   "This model has not been evaluated yet.": "Mô hình này chưa được đánh giá.",
   "This page could not be displayed": "Không thể hiển thị trang này",
   "This page didn't load": "Trang này không tải được",
-  "This project does not have an analyzed model version yet.": "Dự án này chưa có phiên bản mô hình được phân tích.",
+  "This project does not have an analyzed model version yet.":
+    "Dự án này chưa có phiên bản mô hình được phân tích.",
   "This snapshot has dependent revisions or protected records. Delete the dependent data only through its own supported workflow, or retain this snapshot.":
     "Bản chụp này có revision phụ thuộc hoặc dữ liệu được bảo vệ. Cần giữ bản chụp hoặc xử lý dữ liệu phụ thuộc qua chức năng tương ứng.",
-  "This snippet supports the suggestion, not the business role.": "Đoạn mã này hỗ trợ đề xuất, không phản ánh vai trò nghiệp vụ.",
+  "This snippet supports the suggestion, not the business role.":
+    "Đoạn mã này hỗ trợ đề xuất, không phản ánh vai trò nghiệp vụ.",
   Time: "Thời gian",
   "Timed out": "Quá thời gian chờ",
   Timeline: "Dòng thời gian",
   "Timeout (seconds)": "Thời gian chờ tối đa (giây)",
   Title: "Tiêu đề",
   "Toggle Sidebar": "Đóng / Mở thanh bên",
-  "Toggle language between English and Vietnamese": "Chuyển đổi ngôn ngữ giữa Tiếng Anh và Tiếng Việt",
+  "Toggle language between English and Vietnamese":
+    "Chuyển đổi ngôn ngữ giữa Tiếng Anh và Tiếng Việt",
   "Toggle navigation": "Bật/Tắt thanh điều hướng",
   Tokens: "Số token",
   Topology: "Cấu trúc mạng",
   "Total analysis runs": "Tổng số lần phân tích",
   "Total blast radius": "Tổng bán kính ảnh hưởng",
-  "Trace a relationship from its source to its supporting evidence.": "Truy vết mối quan hệ từ mã nguồn đến bằng chứng đối sánh.",
+  "Trace a relationship from its source to its supporting evidence.":
+    "Truy vết mối quan hệ từ mã nguồn đến bằng chứng đối sánh.",
   "Trace it to the source": "Truy vết tới mã nguồn (Source Evidence)",
   "Trace quality": "Chất lượng Trace",
   "Trace to source evidence": "Truy vết về mã nguồn",
   "Trace:": "Truy vết:",
   "Try again": "Thử lại",
-  "Try clearing the filters or refresh to check for new records.": "Thử xóa bộ lọc hoặc làm mới để kiểm tra các bản ghi mới.",
+  "Try clearing the filters or refresh to check for new records.":
+    "Thử xóa bộ lọc hoặc làm mới để kiểm tra các bản ghi mới.",
   Type: "Loại",
   "Type, source, resolution or ID": "Loại giao thức, nguồn, trạng thái hoặc ID",
   "Type:": "Loại:",
@@ -1516,7 +1639,8 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Update the password you use to sign in.": "Cập nhật mật khẩu bạn dùng để đăng nhập.",
   Updated: "Cập nhật",
   "Updated At": "Thời gian cập nhật",
-  "Updates about your work and account will appear here.": "Các cập nhật về công việc và tài khoản của bạn sẽ hiển thị tại đây.",
+  "Updates about your work and account will appear here.":
+    "Các cập nhật về công việc và tài khoản của bạn sẽ hiển thị tại đây.",
   Updating: "Đang cập nhật",
   "Updating...": "Đang cập nhật...",
   "Updating…": "Đang cập nhật…",
@@ -1525,10 +1649,13 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   Uptime: "Thời gian hoạt động",
   "Usage by model": "Mức sử dụng theo mô hình",
   "Usage logs": "Nhật ký sử dụng",
-  "Usage logs are unavailable. Check the usage storage and apply migration V23.": "Nhật ký sử dụng không khả dụng. Kiểm tra bộ lưu trữ mức sử dụng và áp dụng migration V23.",
-  "Use a GitHub repository root URL: https://github.com/owner/repository": "Sử dụng URL gốc của kho mã nguồn GitHub: https://github.com/owner/repository",
+  "Usage logs are unavailable. Check the usage storage and apply migration V23.":
+    "Nhật ký sử dụng không khả dụng. Kiểm tra bộ lưu trữ mức sử dụng và áp dụng migration V23.",
+  "Use a GitHub repository root URL: https://github.com/owner/repository":
+    "Sử dụng URL gốc của kho mã nguồn GitHub: https://github.com/owner/repository",
   "Use selected graph item": "Sử dụng mục đang chọn trên đồ thị",
-  "Use the verified account provided for your workspace.": "Sử dụng tài khoản đã xác minh được cung cấp cho không gian làm việc của bạn.",
+  "Use the verified account provided for your workspace.":
+    "Sử dụng tài khoản đã xác minh được cung cấp cho không gian làm việc của bạn.",
   User: "Người dùng",
   "User Account List": "Danh sách tài khoản người dùng",
   "User Management": "Quản lý người dùng",
@@ -1578,13 +1705,17 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
     "Bạn chưa có lớp học (Workspace) giảng dạy nào. Hãy tạo lớp học ở phía trên, sau đó thêm sinh viên bằng email đã đăng ký.",
   "You have not been added to a class yet. Ask your lecturer to add your registered account email. Students can view assignments and submit work after joining a class.":
     "Bạn chưa được thêm vào lớp học nào. Vui lòng nhờ giảng viên thêm email tài khoản của bạn vào lớp. Sinh viên có thể xem bài tập và nộp bài sau khi tham gia lớp học.",
-  "Your account does not have permission to view this page.": "Tài khoản của bạn không có quyền xem trang này.",
+  "Your account does not have permission to view this page.":
+    "Tài khoản của bạn không có quyền xem trang này.",
   "Your activity inbox": "Hộp thư hoạt động của bạn",
   "Your architecture projects": "Các dự án kiến trúc của bạn",
-  "Your session is unavailable or has expired. Sign in to continue.": "Phiên làm việc đã hết hạn hoặc không khả dụng. Vui lòng đăng nhập lại.",
-  "Your session is unavailable. Sign in to continue.": "Phiên làm việc của bạn đã hết hạn hoặc không khả dụng. Đăng nhập để tiếp tục.",
+  "Your session is unavailable or has expired. Sign in to continue.":
+    "Phiên làm việc đã hết hạn hoặc không khả dụng. Vui lòng đăng nhập lại.",
+  "Your session is unavailable. Sign in to continue.":
+    "Phiên làm việc của bạn đã hết hạn hoặc không khả dụng. Đăng nhập để tiếp tục.",
   "Your workspace awaits": "Không gian làm việc của bạn",
-  "Your workspace will appear here when the data is ready.": "Không gian làm việc sẽ hiển thị tại đây khi dữ liệu sẵn sàng.",
+  "Your workspace will appear here when the data is ready.":
+    "Không gian làm việc sẽ hiển thị tại đây khi dữ liệu sẵn sàng.",
   "You’re all caught up": "Bạn đã xem hết thông báo",
   "ZIP archive (up to 100 MB)": "Tệp nén ZIP (tối đa 100 MB)",
   "ZIP upload": "Tải lên file ZIP",
@@ -1620,7 +1751,8 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "relationships verified via OpenTelemetry traces are highlighted in solid emerald green on the graph. Click any green edge to inspect its runtime trace evidence.":
     "mối quan hệ đã được xác thực qua OpenTelemetry Trace đang được tô nổi bật bằng màu xanh ngọc đậm trên đồ thị. Nhấp vào cạnh màu xanh để xem bằng chứng Runtime Trace.",
   running: "đang chạy",
-  "to inspect infrastructure and source evidence": "để kiểm tra bằng chứng cấu hình hạ tầng và mã nguồn",
+  "to inspect infrastructure and source evidence":
+    "để kiểm tra bằng chứng cấu hình hạ tầng và mã nguồn",
   "underlying relationships": "mối quan hệ cơ sở",
   "visible connections ·": "kết nối hiển thị ·",
   "⚡ Fill Sample Steps": "⚡ Điền nhanh kịch bản mẫu",
@@ -1667,7 +1799,8 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   Regenerate: "Tạo lại kịch bản",
   "Generating...": "Đang tạo...",
   "Generating…": "Đang tạo…",
-  "Synthesizing end-to-end test flow & variable bindings...": "Đang tổng hợp luồng kiểm thử toàn trình & liên kết biến...",
+  "Synthesizing end-to-end test flow & variable bindings...":
+    "Đang tổng hợp luồng kiểm thử toàn trình & liên kết biến...",
   "Service Chain": "Chuỗi gọi Service",
   "Confirm & Run in Step 3": "Xác nhận & Chạy ở Bước 3",
   "Confirm & Run in Step 3 →": "Xác nhận & Chạy ở Bước 3 →",
@@ -1700,19 +1833,24 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Read-Only Smoke & Health Flow (GET only)": "Luồng Kiểm tra Nhanh & Sức khỏe (Chỉ gọi GET)",
   "Edge-Case, Status & Compensation Flow": "Luồng Ngoại lệ, Trạng thái & Hoàn tác",
   "Custom Focus (Describe your own flow...)": "Tùy chỉnh luồng kiểm thử (Tự mô tả luồng...)",
-  "Describe a custom flow or edge case to test and press Enter...": "Mô tả luồng nghiệp vụ hoặc trường hợp biên cần kiểm thử rồi nhấn Enter...",
+  "Describe a custom flow or edge case to test and press Enter...":
+    "Mô tả luồng nghiệp vụ hoặc trường hợp biên cần kiểm thử rồi nhấn Enter...",
   "Auto-generated Architecture Verification Scenario": "Kịch bản Xác thực Kiến trúc Tự động",
   "End-to-End Business Journey Verification": "Kịch bản Xác thực Luồng Nghiệp vụ Toàn trình",
   "Auth & User Identity Verification Scenario": "Kịch bản Xác thực & Định danh Người dùng",
   "Catalog & Inventory Verification Scenario": "Kịch bản Xác thực Danh mục & Kho hàng",
-  "Order, Cart, Coupon Checkout & Payment Scenario": "Kịch bản Giỏ hàng, Mã giảm giá, Đặt hàng & Thanh toán",
+  "Order, Cart, Coupon Checkout & Payment Scenario":
+    "Kịch bản Giỏ hàng, Mã giảm giá, Đặt hàng & Thanh toán",
   "Payment & Billing Verification Scenario": "Kịch bản Xác thực Thanh toán & Hóa đơn",
   "Notification & Messaging Verification Scenario": "Kịch bản Xác thực Thông báo & Sự kiện",
   "Read-Only Smoke & Health Verification Scenario": "Kịch bản Kiểm tra Nhanh & Sức khỏe (Chỉ đọc)",
   "Admin & Compensating Workflow Scenario": "Kịch bản Quản trị & Luồng Hoàn tác",
-  "Checkout Fulfillment with Inventory and Payment Verification": "Hoàn tất Đặt hàng kèm Xác minh Tồn kho và Thanh toán",
-  "Authenticated Checkout with Coupon and Inventory Deduction": "Đặt hàng có Xác thực kèm Mã giảm giá và Trừ tồn kho",
-  "Customer Checkout with Coupon and Inventory Deduction": "Khách đặt hàng kèm Mã giảm giá và Trừ tồn kho",
+  "Checkout Fulfillment with Inventory and Payment Verification":
+    "Hoàn tất Đặt hàng kèm Xác minh Tồn kho và Thanh toán",
+  "Authenticated Checkout with Coupon and Inventory Deduction":
+    "Đặt hàng có Xác thực kèm Mã giảm giá và Trừ tồn kho",
+  "Customer Checkout with Coupon and Inventory Deduction":
+    "Khách đặt hàng kèm Mã giảm giá và Trừ tồn kho",
   "Project Workspace": "Không gian làm việc dự án",
   INSIGHTS: "THÔNG TIN CHI TIẾT",
   PROJECT: "DỰ ÁN",
@@ -1729,12 +1867,16 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Enter a repository URL first": "Nhập đường dẫn kho trước",
   "Loading branches…": "Đang tải danh sách nhánh…",
   "Branches unavailable": "Không có sẵn danh sách nhánh",
-  "Leave empty for the latest commit on the selected branch. A SHA overrides the branch selection.": "Để trống để lấy commit mới nhất trên nhánh đã chọn. SHA sẽ ghi đè lựa chọn nhánh.",
-  "Choose a non-empty ZIP up to 100 MB.": "Vui lòng chọn tệp ZIP hợp lệ không rỗng và tối đa 100 MB.",
+  "Leave empty for the latest commit on the selected branch. A SHA overrides the branch selection.":
+    "Để trống để lấy commit mới nhất trên nhánh đã chọn. SHA sẽ ghi đè lựa chọn nhánh.",
+  "Choose a non-empty ZIP up to 100 MB.":
+    "Vui lòng chọn tệp ZIP hợp lệ không rỗng và tối đa 100 MB.",
   "Select a ZIP file containing project source code (e.g. Java, Spring, microservices). Maximum file size is 100 MB.":
     "Chọn tệp ZIP chứa mã nguồn dự án (ví dụ Java, Spring, microservices). Dung lượng tối đa 100 MB.",
-  "Snapshot imported. Retry analysis will reuse this snapshot and the same request key.": "Đã nhập bản chụp. Thử lại phân tích sẽ tái sử dụng bản chụp này cùng mã yêu cầu tương ứng.",
-  "Project created. Retry will import into the same project; its name and repository are now fixed.": "Đã tạo dự án. Thử lại sẽ nhập vào cùng dự án; tên và kho lưu trữ hiện đã được cố định.",
+  "Snapshot imported. Retry analysis will reuse this snapshot and the same request key.":
+    "Đã nhập bản chụp. Thử lại phân tích sẽ tái sử dụng bản chụp này cùng mã yêu cầu tương ứng.",
+  "Project created. Retry will import into the same project; its name and repository are now fixed.":
+    "Đã tạo dự án. Thử lại sẽ nhập vào cùng dự án; tên và kho lưu trữ hiện đã được cố định.",
   "Retry import & analyze": "Thử lại nhập & phân tích",
   "Import & analyze": "Nhập & phân tích",
   "Worker:": "Worker:",
@@ -1758,7 +1900,8 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Open Standalone MAVIS Studio": "Mở MAVIS Studio độc lập",
   "Open MAVIS Studio": "Mở MAVIS Studio",
   "Exit Studio": "Thoát Studio về Web",
-  "Drag onto any 3D/2D block or click to apply to": "Kéo thả vào khối 3D/2D hoặc bấm để áp dụng cho",
+  "Drag onto any 3D/2D block or click to apply to":
+    "Kéo thả vào khối 3D/2D hoặc bấm để áp dụng cho",
   "3D Block Library (Add Node)": "Thư viện khối 3D (Thêm Node)",
   "Resilience & Chaos": "Tiêm lỗi & Chaos Monkey",
   "Chaos Monkey (Kill Random)": "Chaos Monkey (Dừng ngẫu nhiên)",
@@ -1770,7 +1913,10 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
 };
 
 export const PATTERN_REPLACEMENTS: Array<[RegExp, string]> = [
-  [/^Full End-to-End Architecture Flow \((\d+) services?\)$/i, "Luồng Kiến trúc Toàn trình End-to-End ($1 service)"],
+  [
+    /^Full End-to-End Architecture Flow \((\d+) services?\)$/i,
+    "Luồng Kiến trúc Toàn trình End-to-End ($1 service)",
+  ],
   [/^(.+) Workflow \((.+)\)$/i, "Luồng nghiệp vụ $1 ($2)"],
   [/^(\d+) steps? · (\d+) services?$/i, "$1 bước · $2 service"],
   [/^Flow Groups \((\d+) groups? · (\d+) steps?\)$/i, "Nhóm Luồng Nghiệp vụ ($1 nhóm · $2 bước)"],
@@ -1781,10 +1927,22 @@ export const PATTERN_REPLACEMENTS: Array<[RegExp, string]> = [
     /^Automatically synthesized (\d+) causal test steps covering (\d+) of (\d+) runnable services discovered in Step 1\. Review and confirm below before running\.$/i,
     "Đã tự động tổng hợp $1 bước kiểm thử theo trình tự nhân quả, bao phủ $2/$3 service chạy được phát hiện ở Bước 1. Vui lòng xem lại và xác nhận bên dưới trước khi chạy.",
   ],
-  [/^Entry\/upstream call ([A-Z]+) (\/\S*) on ([A-Za-z0-9_.-]+) to fan out cross-service OpenTelemetry traces\.$/i, "Gọi đầu vào $1 $2 trên $3 để lan tỏa OpenTelemetry trace liên service."],
-  [/^Verify ([A-Z]+) (\/\S*) on ([A-Za-z0-9_.-]+) to capture cross-service OpenTelemetry traces\.$/i, "Xác minh $1 $2 trên $3 để thu thập OpenTelemetry trace liên service."],
-  [/^Verify ([A-Z]+) (\/\S*) on ([A-Za-z0-9_.-]+) \(detected from (.+)\)\.$/i, "Xác minh $1 $2 trên $3 (phát hiện từ $4)."],
-  [/^Ensure end-to-end trace coverage reaches ([A-Za-z0-9_.-]+)\.?$/i, "Đảm bảo độ phủ trace toàn trình đi tới $1."],
+  [
+    /^Entry\/upstream call ([A-Z]+) (\/\S*) on ([A-Za-z0-9_.-]+) to fan out cross-service OpenTelemetry traces\.$/i,
+    "Gọi đầu vào $1 $2 trên $3 để lan tỏa OpenTelemetry trace liên service.",
+  ],
+  [
+    /^Verify ([A-Z]+) (\/\S*) on ([A-Za-z0-9_.-]+) to capture cross-service OpenTelemetry traces\.$/i,
+    "Xác minh $1 $2 trên $3 để thu thập OpenTelemetry trace liên service.",
+  ],
+  [
+    /^Verify ([A-Z]+) (\/\S*) on ([A-Za-z0-9_.-]+) \(detected from (.+)\)\.$/i,
+    "Xác minh $1 $2 trên $3 (phát hiện từ $4).",
+  ],
+  [
+    /^Ensure end-to-end trace coverage reaches ([A-Za-z0-9_.-]+)\.?$/i,
+    "Đảm bảo độ phủ trace toàn trình đi tới $1.",
+  ],
   [
     /^Showing (\d+) extracted\/designed classifiers in the selected scope\. Missing client or model types require inspecting this revision\'s extracted metadata; they are not invented from field names\.$/i,
     "Đang hiển thị $1 Classifier được trích xuất/thiết kế trong phạm vi đã chọn. Các kiểu dữ liệu chưa rõ cần được kiểm tra từ siêu dữ liệu của phiên bản này chứ không tự suy diễn từ tên trường.",
@@ -1838,7 +1996,10 @@ export const PATTERN_REPLACEMENTS: Array<[RegExp, string]> = [
   [/^(\d+) finding\(s\)$/i, "$1 phát hiện quy tắc"],
   [/^(\d+) code reference\(s\)$/i, "$1 vị trí trong code"],
   [/^(\d+) saved · (\d+) preview(?:s)?$/i, "$1 đã lưu · $2 xem trước"],
-  [/^(\d+) elements within the potential blast radius$/i, "$1 phần tử nằm trong bán kính ảnh hưởng"],
+  [
+    /^(\d+) elements within the potential blast radius$/i,
+    "$1 phần tử nằm trong bán kính ảnh hưởng",
+  ],
 
   // Time ago
   [/^(\d+) second(?:s)? ago$/i, "$1 giây trước"],
@@ -1866,7 +2027,10 @@ export const PATTERN_REPLACEMENTS: Array<[RegExp, string]> = [
   [/^Source evidence for both sides \((.+)\):$/i, "Bằng chứng mã nguồn ở cả 2 đầu ($1):"],
   [/^Class \/ Component in (.+):$/i, "Class / Component trong $1:"],
   [/^Source evidence in (.+):$/i, "Đoạn code bằng chứng trong $1:"],
-  [/^Impacted if (.+) changes \((\d+)\)$/i, "Các phần tử bị ảnh hưởng nếu $1 gặp sự cố / thay đổi ($2)"],
+  [
+    /^Impacted if (.+) changes \((\d+)\)$/i,
+    "Các phần tử bị ảnh hưởng nếu $1 gặp sự cố / thay đổi ($2)",
+  ],
   [/^Downstream dependencies of (.+) \((\d+)\)$/i, "Các phần tử hạ nguồn mà $1 phụ thuộc vào ($2)"],
   [/^Relationship · (.+) → (.+) \((.+)\)$/i, "Mối quan hệ · $1 → $2 ($3)"],
   [/^Relationship · (.+) · (.+)$/i, "Mối quan hệ · $1 · $2"],
@@ -1886,8 +2050,14 @@ const SCENARIO_PROSE_RULES: Array<[RegExp, string]> = [
   [/\bEnd-to-end business journey\b/gi, "Hành trình nghiệp vụ toàn trình"],
   [/\bregister\/login to obtain\b/gi, "đăng ký/đăng nhập để lấy"],
   [/\bregisters?\/logs? in to obtain\b/gi, "đăng ký/đăng nhập để lấy"],
-  [/\bseeds? a sellable product so checkout has a valid catalog item and stock\b/gi, "Khởi tạo sản phẩm có thể bán để bước đặt hàng có mặt hàng và tồn kho hợp lệ"],
-  [/\bresponse provides product id and SKU for later reference\b/gi, "phản hồi trả về ID sản phẩm và mã SKU để tham chiếu ở các bước sau"],
+  [
+    /\bseeds? a sellable product so checkout has a valid catalog item and stock\b/gi,
+    "Khởi tạo sản phẩm có thể bán để bước đặt hàng có mặt hàng và tồn kho hợp lệ",
+  ],
+  [
+    /\bresponse provides product id and SKU for later reference\b/gi,
+    "phản hồi trả về ID sản phẩm và mã SKU để tham chiếu ở các bước sau",
+  ],
   [/\bseeds? a product in the catalog\b/gi, "khởi tạo sản phẩm trong danh mục"],
   [/\bseeds? an admin coupon\b/gi, "tạo mã giảm giá từ quản trị"],
   [/\bcreates? a user shipping address\b/gi, "tạo địa chỉ giao hàng của người dùng"],
@@ -1896,7 +2066,10 @@ const SCENARIO_PROSE_RULES: Array<[RegExp, string]> = [
   [/\bpreviews? coupon\b/gi, "kiểm tra thử mã giảm giá"],
   [/\bperforms? a customer checkout via the API Gateway\b/gi, "thực hiện đặt hàng qua API Gateway"],
   [/\bperforms? checkout\b/gi, "thực hiện đặt hàng (checkout)"],
-  [/\bwhich orchestrates order creation and payment charge across\b/gi, "điều phối việc tạo đơn hàng và thu phí thanh toán qua"],
+  [
+    /\bwhich orchestrates order creation and payment charge across\b/gi,
+    "điều phối việc tạo đơn hàng và thu phí thanh toán qua",
+  ],
   [/\bwhich triggers\b/gi, "kích hoạt"],
   [/\bthat triggers\b/gi, "kích hoạt"],
   [/\bthen verifies state across services\b/gi, "sau đó xác minh trạng thái trên các service"],
@@ -1905,13 +2078,22 @@ const SCENARIO_PROSE_RULES: Array<[RegExp, string]> = [
   [/\bthen verify order state and inventory\b/gi, "sau đó xác minh trạng thái đơn hàng và tồn kho"],
   [/\bverif(?:y|ies) order state and inventory\b/gi, "xác minh trạng thái đơn hàng và tồn kho"],
   [/\(order,\s*product stock,\s*payment\)/gi, "(đơn hàng, tồn kho sản phẩm, thanh toán)"],
-  [/\bThis exercise triggers cross-service orchestration and message flows\b/gi, "Kịch bản này kích hoạt điều phối liên service và luồng thông điệp"],
+  [
+    /\bThis exercise triggers cross-service orchestration and message flows\b/gi,
+    "Kịch bản này kích hoạt điều phối liên service và luồng thông điệp",
+  ],
   [/\border-events\s*(?:->|→)\s*stock listener\b/gi, "sự kiện đơn hàng → bộ lắng nghe tồn kho"],
-  [/\band validates end-to-end state transitions\b/gi, "đồng thời kiểm chứng chuyển đổi trạng thái toàn trình"],
+  [
+    /\band validates end-to-end state transitions\b/gi,
+    "đồng thời kiểm chứng chuyển đổi trạng thái toàn trình",
+  ],
   [/\bvalidates end-to-end state transitions\b/gi, "kiểm chứng chuyển đổi trạng thái toàn trình"],
   [/\bThis exercises\b/gi, "Kịch bản này kiểm thử"],
   [/\bfan-out via gateway-driven calls\b/gi, "lan tỏa qua các lệnh gọi từ Gateway"],
-  [/\band creates cross-service OpenTelemetry spans across the critical\b/gi, "và sinh các span OpenTelemetry liên service trên các luồng trọng yếu"],
+  [
+    /\band creates cross-service OpenTelemetry spans across the critical\b/gi,
+    "và sinh các span OpenTelemetry liên service trên các luồng trọng yếu",
+  ],
   [/\border\/coupon\/inventory paths\b/gi, "đơn hàng / mã giảm giá / tồn kho"],
   [
     /\bCheck wishlists \(empty by default\) to exercise read-only wishlist endpoint and broaden trace coverage across\b/gi,
@@ -1973,7 +2155,13 @@ const SCENARIO_PROSE_RULES: Array<[RegExp, string]> = [
 ];
 
 function translateScenarioProseToVi(text: string): string {
-  if (text.length < 10 || text.startsWith("/") || text.startsWith("{") || /^[A-Za-z0-9_.-]+$/.test(text) || !SCENARIO_PROSE_GUARD.test(text)) {
+  if (
+    text.length < 10 ||
+    text.startsWith("/") ||
+    text.startsWith("{") ||
+    /^[A-Za-z0-9_.-]+$/.test(text) ||
+    !SCENARIO_PROSE_GUARD.test(text)
+  ) {
     return text;
   }
   let out = text;
@@ -2142,7 +2330,15 @@ let isApplyingDomTranslation = false;
 function shouldSkipElement(el: Element | null): boolean {
   if (!el) return true;
   const tag = el.tagName;
-  if (tag === "SCRIPT" || tag === "STYLE" || tag === "CODE" || tag === "PRE" || tag === "TEXTAREA" || tag === "SVG" || tag === "PATH") {
+  if (
+    tag === "SCRIPT" ||
+    tag === "STYLE" ||
+    tag === "CODE" ||
+    tag === "PRE" ||
+    tag === "TEXTAREA" ||
+    tag === "SVG" ||
+    tag === "PATH"
+  ) {
     return true;
   }
   if (el.closest("code, pre, script, style, textarea, [data-no-translate]")) {
@@ -2180,7 +2376,10 @@ function applyDomTranslation(root: Node, locale: Locale) {
 
     if (root instanceof Element || root instanceof Document) {
       const container = root instanceof Document ? root.body : root;
-      const elements = [...(root instanceof Element ? [root] : []), ...(container?.querySelectorAll?.("[placeholder], [title], [aria-label]") ?? [])];
+      const elements = [
+        ...(root instanceof Element ? [root] : []),
+        ...(container?.querySelectorAll?.("[placeholder], [title], [aria-label]") ?? []),
+      ];
       elements?.forEach((el) => {
         if (shouldSkipElement(el)) return;
         let attrMap = originalAttrMap.get(el);
@@ -2230,12 +2429,14 @@ function AutoDomTranslator({ locale }: { locale: Locale }) {
       for (const record of records) {
         if (record.type === "characterData") {
           const tracked = originalTextMap.get(record.target);
-          if (!tracked || record.target.nodeValue !== tracked.lastRendered) pending.add(record.target);
+          if (!tracked || record.target.nodeValue !== tracked.lastRendered)
+            pending.add(record.target);
         } else if (record.type === "attributes" && record.target instanceof Element) {
           const attribute = record.attributeName;
           if (!attribute) continue;
           const tracked = originalAttrMap.get(record.target)?.get(attribute);
-          if (!tracked || record.target.getAttribute(attribute) !== tracked.lastRendered) pending.add(record.target);
+          if (!tracked || record.target.getAttribute(attribute) !== tracked.lastRendered)
+            pending.add(record.target);
         } else {
           record.addedNodes.forEach((node) => pending.add(node));
         }
@@ -2275,7 +2476,10 @@ function AutoDomTranslator({ locale }: { locale: Locale }) {
 
 export function LocaleSwitchButton() {
   const { locale, toggleLocale } = useLocale();
-  const label = locale === "vi" ? "Chuyển sang Tiếng Anh (Switch to English)" : "Chuyển sang Tiếng Việt (Switch to Vietnamese)";
+  const label =
+    locale === "vi"
+      ? "Chuyển sang Tiếng Anh (Switch to English)"
+      : "Chuyển sang Tiếng Việt (Switch to Vietnamese)";
   return (
     <button
       type="button"
