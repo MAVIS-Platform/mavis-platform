@@ -13,11 +13,16 @@ export function AssignmentSourcePicker({
   title,
   initial,
   onChange,
+  onVersionChange,
 }: {
   workspaceId: string;
   title: string;
   initial?: Assignment["referenceSource"];
   onChange: (modelId: string, pending: boolean) => void;
+  onVersionChange?: (
+    version: { modelId: string; projectId: string; snapshotId: string },
+    pending: boolean,
+  ) => void;
 }) {
   const api = useApi(),
     cache = useQueryClient();
@@ -143,7 +148,8 @@ export function AssignmentSourcePicker({
   const pending = (mode !== "existing" || !!projectId) && !modelId;
   useEffect(() => {
     onChange(modelId, busy || pending);
-  }, [modelId, busy, pending, onChange]);
+    onVersionChange?.({ modelId, projectId, snapshotId }, busy || pending);
+  }, [modelId, busy, pending, onChange, onVersionChange, projectId, snapshotId]);
   const imported = snapshots.data?.find((s) => s.id === snapshotId);
   function changeMode(next: string) {
     setMode(next);

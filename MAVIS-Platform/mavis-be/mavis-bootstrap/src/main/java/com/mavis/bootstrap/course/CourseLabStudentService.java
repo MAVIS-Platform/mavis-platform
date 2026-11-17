@@ -87,6 +87,9 @@ public class CourseLabStudentService {
     private final com.mavis.common.repository.LabStudioExerciseRepository labStudioExercises;
     private final ObjectMapper json;
 
+    @org.springframework.beans.factory.annotation.Value("${mavis.runtime.max-active-studio-sessions:2}")
+    private int maxActiveStudioSessions;
+
     public CourseLabStudentService(
             AccessPolicyService access,
             CourseLabPolicy courseLabs,
@@ -305,6 +308,12 @@ public class CourseLabStudentService {
             if (ACTIVE_SESSION_STATUSES.contains(exec) && existing.getCancelRequestedAt() == null) {
                 return existing;
             }
+        }
+        long activeSessions = runtimeSessions.countByExecutionStatusIn(ACTIVE_SESSION_STATUSES);
+        if (activeSessions >= Math.max(1, maxActiveStudioSessions)) {
+            throw new BusinessException(ErrorCode.CONFLICT, "STUDIO_CAPACITY_FULL",
+                    "The shared Runner is running " + activeSessions
+                            + " Live sessions. Finish or cancel one before starting another.");
         }
 
         StudentWorkspaceBundle working = ensureStudentWorkingProject(lab, actor, runtimeModel);

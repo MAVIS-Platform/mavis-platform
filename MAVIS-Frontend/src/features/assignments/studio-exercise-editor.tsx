@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ClipboardList, Plus, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useApiQuery } from "@/hooks/use-api";
 import { api } from "@/lib/mainflow-api";
 import { useLocale } from "@/lib/i18n/locale-context";
+import { AssignmentSourcePicker } from "./source-picker";
 
 type BaselineRequest = { method: "GET" | "HEAD"; path: string; expectedStatus: number | null };
 type TraceEdge = { from: string; to: string };
@@ -68,16 +69,24 @@ const EMPTY: Form = {
 export function StudioExerciseEditor({
   workspaceId,
   assignmentId,
+  labTitle,
   applications,
 }: {
   workspaceId: string;
   assignmentId: string;
+  labTitle: string;
   applications: string[];
 }) {
   const { t } = useLocale();
   const cache = useQueryClient();
   const [form, setForm] = useState<Form>(EMPTY);
   const [error, setError] = useState("");
+  const [imported, setImported] = useState<{
+    modelId: string;
+    projectId: string;
+    snapshotId: string;
+  } | null>(null);
+  const [importPending, setImportPending] = useState(false);
   const versions = useApiQuery("referenceVersions", { workspaceId });
   const exercise = useQuery({
     queryKey: ["api", "studio-exercise", workspaceId, assignmentId],
@@ -122,9 +131,31 @@ export function StudioExerciseEditor({
     [versions.data, form.runtimeModelId],
   );
 
+  const onImportVersion = useCallback(
+    (version: { modelId: string; projectId: string; snapshotId: string }, pending: boolean) => {
+      setImportPending(pending);
+      if (!version.modelId) {
+        setImported(null);
+        return;
+      }
+      setImported(version);
+      void cache.invalidateQueries({ queryKey: ["api", "referenceVersions", workspaceId] });
+    },
+    [cache, workspaceId],
+  );
+
   const save = useMutation({
     mutationFn: () => {
-      if (!selectedVersion) {
+      const source = imported?.modelId
+        ? imported
+        : selectedVersion
+          ? {
+              modelId: selectedVersion.model.id,
+              projectId: selectedVersion.model.projectId,
+              snapshotId: selectedVersion.snapshot.id,
+            }
+          : null;
+      if (!source) {
         throw new Error(t("Choose the deployable Studio repository.", "Hãy chọn repo Studio có thể deploy."));
       }
       const edge =
@@ -140,9 +171,9 @@ export function StudioExerciseEditor({
         {
           method: "PUT",
           body: JSON.stringify({
-            runtimeProjectId: selectedVersion.model.projectId,
-            runtimeModelId: selectedVersion.model.id,
-            runtimeSnapshotId: selectedVersion.snapshot.id,
+            runtimeProjectId: source.projectId,
+            runtimeModelId: source.modelId,
+            runtimeSnapshotId: source.snapshotId,
             baselineRequests: form.baselineRequests.map((request) => ({
               method: request.method,
               path: request.path.trim(),
@@ -208,6 +239,29 @@ export function StudioExerciseEditor({
             ))}
           </select>
         </label>
+
+        <details className="rounded-md border border-dashed p-3">
+          <summary className="cursor-pointer text-xs font-medium">
+            {t("Import a new deployable repository", "Nhập repo deploy mới")}
+          </summary>
+          <div className="pt-3">
+            <AssignmentSourcePicker
+              workspaceId={workspaceId}
+              title={`${labTitle} · Studio runtime`}
+              onChange={() => undefined}
+              onVersionChange={onImportVersion}
+            />
+            {imported && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                {t("Imported runtime source", "Nguồn runtime đã nhập")}:{" "}
+                <span className="font-mono">{imported.modelId.slice(0, 8)}</span>
+                {importPending
+                  ? ` · ${t("analysis is still running", "phân tích vẫn đang chạy")}`
+                  : ""}
+              </p>
+            )}
+          </div>
+        </details>
 
         <section className="space-y-2">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">

@@ -17,6 +17,7 @@ import {
 } from "@/features/workspaces/course-access";
 import { PreparedTopologyEditor } from "@/features/runtime/prepared-topology-editor";
 import { LiveStudioWorkbench } from "@/features/runtime/live-studio-workbench";
+import { StudioExerciseEditor } from "./studio-exercise-editor";
 import type { Assignment } from "./requirements";
 
 export function LabStudioSection({
@@ -180,6 +181,13 @@ export function LabStudioSection({
                   : ` · ${t("available as fallback verified trace", "dự phòng nếu chưa có phiên riêng của Lab")}`}
               </p>
             )}
+            <StudioExerciseEditor
+              workspaceId={workspaceId}
+              assignmentId={assignment.id}
+              labTitle={assignment.title}
+              applications={readiness.data?.applications ?? []}
+            />
+
             {projectId && runtimeConfig.data && (
               <PreparedTopologyEditor
                 projectId={projectId}
