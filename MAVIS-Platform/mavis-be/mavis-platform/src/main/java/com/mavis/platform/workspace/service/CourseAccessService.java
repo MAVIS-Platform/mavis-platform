@@ -112,6 +112,12 @@ public class CourseAccessService {
         if (assignment.getLabOrder() == null) {
             throw new BusinessException(ErrorCode.CONFLICT, "Publish the Lab before freezing its Studio topology");
         }
+        if (Boolean.TRUE.equals(assignment.getRequireRuntimeTrace())
+                && assignment.getStudioExerciseSnapshot() != null
+                && sessionId == null) {
+            throw new BusinessException(ErrorCode.CONFLICT, "STUDIO_VALIDATION_REQUIRED",
+                    "Run a verified Studio validation session before freezing this Lab's exercise");
+        }
         if (sessionId != null) {
             if (runtimeSessions == null) {
                 throw new BusinessException(ErrorCode.CONFLICT, "Studio session verification is unavailable");

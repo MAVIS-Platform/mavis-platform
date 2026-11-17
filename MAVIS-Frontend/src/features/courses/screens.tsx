@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowRight,
@@ -2115,6 +2115,32 @@ function StepContent({
     selectedStudioSessionId && studioSessions.some((s) => s.id === selectedStudioSessionId)
       ? selectedStudioSessionId
       : (studioSessionId ?? studioSessions[0]?.id ?? "");
+  const autoStarted = useRef(false);
+
+  useEffect(() => {
+    if (autoStarted.current) return;
+    if (
+      client.mode !== "backend" ||
+      step !== 4 ||
+      !isStudent ||
+      preview ||
+      !requiresRuntime ||
+      !runtimeReady ||
+      activeStudioSessionId
+    )
+      return;
+    autoStarted.current = true;
+    startStudio.mutate();
+  }, [
+    client.mode,
+    step,
+    isStudent,
+    preview,
+    requiresRuntime,
+    runtimeReady,
+    activeStudioSessionId,
+    startStudio,
+  ]);
 
   const studioStateQuery = useApiQuery(
     "studioState",

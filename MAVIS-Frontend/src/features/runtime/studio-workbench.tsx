@@ -632,7 +632,13 @@ export function StudioWorkbench() {
       ? requestedReturnTo
       : "/";
   const selection = useSelection();
-  const projectId = selection.projectId;
+  const requestedProjectId = params.get("project") ?? "";
+  useEffect(() => {
+    if (requestedProjectId && requestedProjectId !== selection.projectId) {
+      selection.setProjectId(requestedProjectId);
+    }
+  }, [requestedProjectId, selection]);
+  const projectId = requestedProjectId || selection.projectId;
   const projectsQuery = useApiQuery("projects", {});
   const projects = projectsQuery.data ?? [];
   const project = projects.find((item) => item.id === projectId);

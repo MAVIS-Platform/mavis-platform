@@ -175,6 +175,20 @@ class CourseAccessServiceTest {
     }
 
     @Test
+    void freezeRequiresValidationSessionForAStudioExercise() {
+        when(workspaces.findLockedById(workspaceId)).thenReturn(Optional.of(workspace));
+        assignment.setLabOrder(1);
+        assignment.setRequireRuntimeTrace(true);
+        assignment.setStudioExerciseSnapshot(new ObjectMapper().createObjectNode());
+        when(assignments.findLockedById(assignmentId)).thenReturn(Optional.of(assignment));
+
+        var error = assertThrows(BusinessException.class,
+                () -> courses.freezeTopology(workspaceId, assignmentId));
+
+        assertEquals("STUDIO_VALIDATION_REQUIRED", error.getStableCode());
+    }
+
+    @Test
     void republishPreservesFrozenTopologyUntilExplicitFreeze() {
         UUID teacherId = UUID.randomUUID();
         when(access.requireCurrentActiveUser()).thenReturn(User.builder().id(teacherId).build());
