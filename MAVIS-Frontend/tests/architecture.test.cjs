@@ -1985,6 +1985,11 @@ test("My Workspaces is a compact LMS class list with tabs and a module outline",
   assert.doesNotMatch(overviewHtml, /Students enrolled/, "Overview must not be a KPI dashboard");
   assert.doesNotMatch(overviewHtml, /Add students in bulk/, "Overview must not include member management");
   const membersHtml = renderComp(WorkspaceMembers, "ws-swd");
+  assert.doesNotMatch(membersHtml, /Class sections/, "lecturer nested navigation replaces the class tabs");
+  client.setQueryData(["api", "session", {}], { user: { id: "u2", name: "Student A", email: "student@example.com", role: "student" } });
+  const studentMembersHtml = renderComp(WorkspaceMembers, "ws-swd");
+  assert.match(studentMembersHtml, /Class sections/, "students retain class tabs without the lecturer menu");
+  client.setQueryData(["api", "session", {}], { user: { id: "u1", name: "Lecturer", email: "lec@example.com", role: "lecturer" } });
   assert.match(membersHtml, /Add students in bulk/);
   assert.match(membersHtml, /Student A/);
   assert.match(membersHtml, /Class settings/, "Class rename/archive lives in a separate settings area");

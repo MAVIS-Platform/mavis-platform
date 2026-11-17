@@ -221,7 +221,7 @@ globalThis.fetch=async(url)=>{
 };
 const api={mode:'backend',async execute(operation){
   if(operation==='workspaces') return [workspace];
-  if(operation==='session') return {user:{id:'u1',name:'Lecturer',email:'lec@example.com',role:'lecturer'}};
+  if(operation==='session') return {user:{id:'u1',name:fixtureRole==='admin'?'Administrator':'Lecturer',email:'lec@example.com',role:fixtureRole}};
   if(operation==='notifications') return {items:[],unreadCount:0};
   if(operation==='assignments') return [lab];
   if(operation==='projects') return [];
@@ -229,6 +229,8 @@ const api={mode:'backend',async execute(operation){
   return [];
 }};
 const params=new URLSearchParams(window.location.search);
+const fixtureRole=params.get('role')||'lecturer';
+const fixtureWorkspace=fixtureRole==='admin'?{...workspace,myRole:'ADMIN'}:workspace;
 globalThis.__mavisEmptyCourse=params.get('empty')==='1';
 const selection={projectId:'',workspaceId:'ws-lms',setProjectId(){},setWorkspaceId(){}};
 const client=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
@@ -237,7 +239,7 @@ const view=params.get('view')==='results'?'submissions':params.get('view')||rout
 const Screen=view==='lab'?LabWorkspace:view==='assignments'?Assignments:view==='authoring'?LabAuthoring:view==='members'?WorkspaceMembers:view==='submissions'?Submissions:WorkspaceOverview;
 const classScreen=['class','course-authoring','course-setup','assignments','authoring','members','submissions'].includes(view);
 const activeId=view==='assignments'?'assignments':view==='authoring'?'lab-authoring':view==='members'?'members':view==='submissions'?'assignment-submissions':view==='course-authoring'?'course-authoring':view==='course-setup'?'course-setup':'workspace-overview';
-const content=classScreen?React.createElement(AppShell,{role:'lecturer',scope:'workspace',activeId,selectedWorkspaceId:'ws-lms',workspaces:[workspace],pageTitle:'Workspace Overview'},React.createElement(Screen)):React.createElement(Screen);
+const content=classScreen?React.createElement(AppShell,{role:fixtureRole,scope:'workspace',activeId,selectedWorkspaceId:'ws-lms',workspaces:[fixtureWorkspace],pageTitle:'Workspace Overview'},React.createElement(Screen)):React.createElement(Screen);
 class Boundary extends React.Component{
   constructor(props){super(props);this.state={error:null,stack:''};}
   static getDerivedStateFromError(error){return {error};}
@@ -356,6 +358,15 @@ async function main() {
     await page.getByRole("link", { name: "Assignment Submissions", exact: true }).click();
     await page.waitForURL(/submissions\?workspace=ws-lms/);
     assert.equal(await page.getByRole("navigation", { name: "Class sections" }).count(), 0);
+    const adminPage = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    await adminPage.goto(base + "?view=submissions&role=admin", { waitUntil: "networkidle" });
+    try {
+      await adminPage.getByRole("navigation", { name: "Class sections" }).waitFor({ timeout: 8000 });
+    } catch (error) {
+      console.error("Admin submissions body:", await adminPage.locator("body").innerText());
+      throw error;
+    }
+    await adminPage.close();
     await page.screenshot({
       path: path.join(output, "class-content.png"),
       fullPage: true,

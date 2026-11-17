@@ -3,7 +3,7 @@ import { FrozenArtifacts } from "./frozen-artifacts";
 import { StudioSubmissionEvidence } from "./studio-evidence";
 import { useState } from "react";
 import Link from "next/link";
-import { useApiQuery, usePermission, useSelection } from "@/hooks/use-api";
+import { useApiQuery, usePermission, useSelection, useSession } from "@/hooks/use-api";
 import { useSearchParams } from "next/navigation";
 import { SelectField, SearchInput, Pagination } from "@/components/shared/forms";
 import { WorkspaceSelector } from "@/features/workspaces/components";
@@ -19,7 +19,8 @@ import { SubmissionVersionHeader, FeedbackPanel } from "./components";
 import { GradingPanel, resolveSubmissionOutcome } from "./grading";
 export function Submissions() {
   const canReview = usePermission("submission:review");
-  return canReview ? <TeachingSubmissions /> : <MySubmissions />;
+  const isLecturer = useSession().data?.user?.role === "lecturer";
+  return canReview ? <TeachingSubmissions isLecturer={isLecturer} /> : <MySubmissions />;
 }
 function MySubmissions() {
   const { t } = useLocale();
@@ -83,9 +84,8 @@ function MySubmissions() {
     list
   );
 }
-function TeachingSubmissions() {
+function TeachingSubmissions({ isLecturer }: { isLecturer: boolean }) {
   const { t } = useLocale();
-  const canReview = usePermission("submission:review");
   const { workspaceId } = useSelection();
   const params = useSearchParams();
   const workspaces = useApiQuery("workspaces", {});
@@ -144,7 +144,7 @@ function TeachingSubmissions() {
     </div>
   );
   return workspace ? (
-    <CourseWorkspaceShell workspace={workspace} active="submissions" showTabs={!canReview}>
+    <CourseWorkspaceShell workspace={workspace} active="submissions" showTabs={!isLecturer}>
       {body}
     </CourseWorkspaceShell>
   ) : (

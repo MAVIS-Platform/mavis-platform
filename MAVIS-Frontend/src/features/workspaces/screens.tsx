@@ -225,7 +225,11 @@ export function WorkspaceMembers() {
   return (
     <RequestState query={query} empty={!workspace}>
       {workspace && (
-        <CourseWorkspaceShell workspace={workspace} active="members" showTabs={false}>
+        <CourseWorkspaceShell
+          workspace={workspace}
+          active="members"
+          showTabs={session.data?.user?.role !== "lecturer"}
+        >
           <div className="space-y-4">
             {canManage && (
               <div className="rounded-xl border bg-card p-4">
