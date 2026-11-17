@@ -325,10 +325,18 @@ public class SubmissionServiceImpl implements SubmissionService {
                     || !currentUserId.equals(runtimeSession.getTriggeredBy().getId())) {
                 throw new BusinessException(ErrorCode.FORBIDDEN, "Use your own Studio session as evidence");
             }
-            if (runtimeSession.getSourceSnapshot() == null
-                    || !sourceSnapshot.getId().equals(runtimeSession.getSourceSnapshot().getId())
-                    || runtimeSession.getModelVersion() == null
-                    || !referenceModel.getId().equals(runtimeSession.getModelVersion().getId())) {
+            var sessionSource = runtimeSession.getSourceSnapshot();
+            var sessionModel = runtimeSession.getModelVersion();
+            boolean sameSource = sessionSource != null
+                    && (sourceSnapshot.getId().equals(sessionSource.getId())
+                        || (sourceSnapshot.getArtifactHash() != null
+                            && sourceSnapshot.getArtifactHash().equals(sessionSource.getArtifactHash())));
+            boolean sameModel = sessionModel != null
+                    && (referenceModel.getId().equals(sessionModel.getId())
+                        || (sameSource && runtimeSession.getProject() != null
+                            && sessionModel.getProject() != null
+                            && runtimeSession.getProject().getId().equals(sessionModel.getProject().getId())));
+            if (!sameSource || !sameModel) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST,
                         "Studio session source/model does not match this Lab");
             }

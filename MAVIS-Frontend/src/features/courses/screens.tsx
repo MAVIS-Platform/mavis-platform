@@ -1222,7 +1222,7 @@ function StepContent({
                       )}
                 </p>
                 <Button asChild variant="outline">
-                  <Link href={projectId ? `/runtime-config?${new URLSearchParams({ project: projectId })}` : sourceLink}>
+                  <Link href={projectId ? `/runtime-config?${new URLSearchParams({ project: projectId, assignment: labId })}` : sourceLink}>
                     {projectId ? t("Configure Runtime", "Cấu hình Runtime") : t("Open Lab assignment", "Mở bài tập Lab")}
                   </Link>
                 </Button>
@@ -1233,13 +1233,21 @@ function StepContent({
                   {t("Open Runtime session", "Mở phiên Runtime")}
                 </Link></Button>}
                 <Button asChild variant={runtimeSessionHref ? "outline" : "default"}>
-                  <Link href={projectId ? `/runtime-config?${new URLSearchParams({ project: projectId })}` : sourceLink}>
+                  <Link href={projectId ? `/runtime-config?${new URLSearchParams({ project: projectId, assignment: labId })}` : sourceLink}>
                     {projectId ? t("Configure Runtime", "Cấu hình Runtime") : t("Open Lab assignment", "Mở bài tập Lab")}
                   </Link>
                 </Button>
               </div>
             ) : step === 4 && studioHref ? (
               <div className="space-y-3">
+                {studioVerified && labMode !== "LEGACY" && (
+                  <LabSubmissionV2
+                    workspaceId={workspaceId}
+                    assignmentId={labId}
+                    labMode={labMode}
+                    runtimeSessionId={studioSessionId}
+                  />
+                )}
                 <p>{studioVerified
                   ? t("This Lab has verified Studio evidence.", "Lab đã có minh chứng Studio được xác minh.")
                   : t("Choose a service action in Runtime Sessions and run the experiment.", "Chọn thao tác dịch vụ ở trang Phiên Runtime và chạy thực nghiệm.")}</p>

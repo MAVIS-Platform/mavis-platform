@@ -658,13 +658,27 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                     || !assignment.getWorkspace().getId().equals(project.getWorkspace().getId())) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "Lab và project không thuộc cùng lớp");
             }
-            if (assignment.getReferenceModel() == null
-                    || !assignment.getReferenceModel().getId().equals(pinnedModel.getId())) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "Lab reference model không khớp model đã chọn");
+            if (assignment.getReferenceModel() == null) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "Lab chưa có reference model");
             }
-            if (assignment.getReferenceModel().getSourceSnapshot() != null
-                    && !assignment.getReferenceModel().getSourceSnapshot().getId().equals(snapshot.getId())) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "Lab source snapshot không khớp snapshot đã chọn");
+            boolean studentWorking = "STUDENT_WORKING".equalsIgnoreCase(project.getProjectType())
+                    && project.getAssignment() != null
+                    && assignment.getId().equals(project.getAssignment().getId());
+            if (studentWorking) {
+                var referenceSnapshot = assignment.getReferenceModel().getSourceSnapshot();
+                if (referenceSnapshot == null || snapshot.getArtifactHash() == null
+                        || !snapshot.getArtifactHash().equals(referenceSnapshot.getArtifactHash())) {
+                    throw new BusinessException(ErrorCode.BAD_REQUEST,
+                            "Lab source snapshot không khớp snapshot đã chọn");
+                }
+            } else {
+                if (!assignment.getReferenceModel().getId().equals(pinnedModel.getId())) {
+                    throw new BusinessException(ErrorCode.BAD_REQUEST, "Lab reference model không khớp model đã chọn");
+                }
+                if (assignment.getReferenceModel().getSourceSnapshot() != null
+                        && !assignment.getReferenceModel().getSourceSnapshot().getId().equals(snapshot.getId())) {
+                    throw new BusinessException(ErrorCode.BAD_REQUEST, "Lab source snapshot không khớp snapshot đã chọn");
+                }
             }
         }
 
@@ -711,8 +725,16 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         }
 
         User triggeredBy = null;
-        if (request.getTriggeredById() != null) {
-            triggeredBy = userRepository.findById(request.getTriggeredById()).orElse(null);
+        UUID triggerId = request.getTriggeredById();
+        if (triggerId == null) {
+            try {
+                triggerId = com.mavis.common.utils.SecurityUtils.getCurrentUserId();
+            } catch (RuntimeException ignored) {
+                triggerId = null;
+            }
+        }
+        if (triggerId != null) {
+            triggeredBy = userRepository.findById(triggerId).orElse(null);
         }
 
         JsonNode rawScenarioConfig = request.getScenarioConfig();
