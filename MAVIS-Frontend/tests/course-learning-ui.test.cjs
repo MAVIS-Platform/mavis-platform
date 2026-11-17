@@ -1169,3 +1169,19 @@ test("FE-02 Student Submissions eliminate ReadOnlyDrawio iframe/.drawio and isol
     ["sub-a"],
   );
 });
+
+test("ADM-V2 Enterprise Control Center removes /administration/studio links and wires 1-click user/session controls", () => {
+  const adminScreens = read("src/features/administration/screens.tsx");
+  const adminOps = read("src/features/administration/operations.tsx");
+  const runtimeBackend = read("src/features/runtime/backend.tsx");
+  const nav = read("src/lib/navigation.ts");
+
+  assert.doesNotMatch(adminScreens, /administration\/studio/);
+  assert.doesNotMatch(adminOps, /administration\/studio/);
+  assert.doesNotMatch(runtimeBackend, /administration\/studio/);
+  assert.doesNotMatch(nav, /administration\/studio/);
+  assert.ok(adminScreens.includes("createAccount"));
+  assert.ok(adminScreens.includes("Activate"));
+  assert.ok(adminOps.includes("forceStopRuntimeSession"));
+  assert.ok(adminScreens.includes("actorName"));
+});

@@ -798,14 +798,21 @@ test("project navigation preserves every destination and keeps role menus intact
     globalNavigation.student.flatMap((g) => g.items).find((i) => i.id === "join-course").href,
     "/courses#course-passkey",
   );
-  assert.ok(
-    globalNavigation.admin.flatMap((g) => g.items).some((i) => i.href === "/administration/users"),
-  );
-  assert.equal(contextualNavigation("admin", "project").length, 0);
-  assert.ok(
+  assert.deepEqual(
     globalNavigation.admin
       .flatMap((g) => g.items)
-      .some((i) => i.id === "studio" && i.href === "/administration/studio"),
+      .map((i) => ({ id: i.id, href: i.href })),
+    [
+      { id: "health", href: "/administration/health" },
+      { id: "users", href: "/administration/users" },
+      { id: "profiles", href: "/administration/profiles" },
+      { id: "audit", href: "/administration/audit" },
+    ],
+  );
+  assert.equal(contextualNavigation("admin", "project").length, 0);
+  assert.equal(
+    globalNavigation.admin.flatMap((g) => g.items).some((i) => i.href === "/administration/studio"),
+    false,
   );
   for (const role of ["student", "lecturer"])
     assert.ok(

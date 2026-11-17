@@ -86,63 +86,17 @@ export const globalNavigation: Record<AppRole, readonly NavigationGroup[]> = {
   ],
   admin: [
     {
-      label: "Monitoring",
+      label: "System Administration",
       items: [
         { id: "health", label: "System Health", icon: Activity, href: "/administration/health" },
-        { id: "jobs", label: "Analysis Jobs", icon: ListChecks, href: "/administration/jobs" },
-        { id: "usage", label: "Platform Usage", icon: LayoutGrid, href: "/administration/usage" },
-      ],
-    },
-    {
-      label: "User Management",
-      items: [
-        { id: "users", label: "User Account List", icon: Users, href: "/administration/users" },
-      ],
-    },
-    {
-      label: "Integrations",
-      items: [
-        {
-          id: "integrations",
-          label: "Integration Management",
-          icon: Plug,
-          href: "/administration/integrations",
-        },
-      ],
-    },
-    {
-      label: "Audit",
-      items: [
-        { id: "audit", label: "Audit Records", icon: ScrollText, href: "/administration/audit" },
-      ],
-    },
-    {
-      label: "Runtime Administration",
-      items: [
-        {
-          id: "studio",
-          label: "MAVIS Studio",
-          icon: Boxes,
-          href: "/administration/studio",
-        },
-        {
-          id: "runtime-summary",
-          label: "Runtime Summary",
-          icon: Server,
-          href: "/administration/runtime-summary",
-        },
+        { id: "users", label: "Accounts & Roles", icon: Users, href: "/administration/users" },
         {
           id: "profiles",
-          label: "Runtime Execution Profiles",
+          label: "Runtime & Quotas",
           icon: ShieldCheck,
           href: "/administration/profiles",
         },
-        {
-          id: "admin-sessions",
-          label: "Runtime Sessions",
-          icon: Play,
-          href: "/administration/admin-sessions",
-        },
+        { id: "audit", label: "Audit & Jobs", icon: ScrollText, href: "/administration/audit" },
       ],
     },
   ],
@@ -365,7 +319,7 @@ export function existingRouteContext(pathname: string) {
   if (pathname === "/submissions") {
     return { scope: "global" as const, title: "My Submissions", activeId: "submissions" };
   }
-  if (pathname === "/studio" || pathname === "/administration/studio") {
+  if (pathname === "/studio") {
     return { scope: "global" as const, title: "MAVIS Studio", activeId: "studio" };
   }
   return { scope: "global" as const, title: "My Courses", activeId: "courses" };

@@ -2664,11 +2664,8 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
             refresh={() => void list.refetch()}
           >
             <span className="text-sm text-muted-foreground">
-              Latest 50 sessions · inspect before stopping a run
+              Latest 50 sessions · inspect or force-stop active runs
             </span>
-            <Button asChild size="sm" variant="outline">
-              <Link href="/administration/studio">Open Standalone MAVIS Studio</Link>
-            </Button>
           </AdminToolbar>
           <div className="grid gap-3 rounded-xl border bg-card p-4 sm:grid-cols-[2fr_1fr]">
             <SearchInput label="Search session or scenario" value={search} onChange={setSearch} />
