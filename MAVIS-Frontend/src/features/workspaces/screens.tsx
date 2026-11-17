@@ -4,6 +4,13 @@ import { useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import {
   BookOpen,
+  CheckCircle2,
+  Clock3,
+  Layers,
+  Network,
+  ShieldCheck,
+  Building2,
+  Compass,
   ClipboardCheck,
   Plus,
   Search,
@@ -80,7 +87,7 @@ export function Workspaces() {
   );
   if (workspaceId && selected) return <WorkspaceOverview />;
   return (
-    <div className="space-y-6">
+    <div className={canCreate ? "space-y-8 rounded-lg bg-background p-6 md:p-8" : "space-y-6"}>
       {canCreate ? (
         <div className="space-y-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -100,40 +107,22 @@ export function Workspaces() {
             </Button>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="flex items-center gap-3 rounded-xl border bg-card p-4">
-              <span className="grid size-10 place-items-center rounded-lg bg-primary/10 text-primary">
-                <BookOpen className="size-5" aria-hidden="true" />
-              </span>
-              <div>
-                <p className="text-2xl font-semibold tabular-nums">{activeCount}</p>
-                <p className="text-xs text-muted-foreground">{t("Active classes", "Lớp đang hoạt động")}</p>
-              </div>
+          <div className="flex flex-wrap items-center gap-5 rounded-lg border border-blue-200 bg-blue-50/80 px-6 py-6 dark:border-blue-900 dark:bg-blue-950/30">
+            <span className="grid size-12 shrink-0 place-items-center rounded-full bg-[#0056d2] text-white"><ClipboardCheck className="size-6" aria-hidden="true" /></span>
+            <div className="min-w-0 flex-1">
+              <p className="text-lg font-semibold">{submissions.isSuccess ? pendingReviews : "—"} {t("submissions are waiting for your review", "bài nộp đang chờ bạn chấm")}</p>
+              <p className="mt-1 text-sm text-muted-foreground">{(query.data ?? []).filter((w) => pendingByWorkspace.has(w.id)).map((w) => w.name + " · " + pendingByWorkspace.get(w.id) + " " + t("submission(s)", "bài nộp")).join(" · ") || t("Your classes are up to date.", "Các lớp đã được cập nhật.")}</p>
             </div>
-            <div className="flex items-center gap-3 rounded-xl border bg-card p-4">
-              <span className="grid size-10 place-items-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-                <Users className="size-5" aria-hidden="true" />
-              </span>
-              <div>
-                <p className="text-2xl font-semibold tabular-nums">{totalStudents}</p>
-                <p className="text-xs text-muted-foreground">{t("Total students", "Tổng sinh viên")}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3 rounded-xl border bg-card p-4">
-              <span className="grid size-10 place-items-center rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400">
-                <ClipboardCheck className="size-5" aria-hidden="true" />
-              </span>
-              <div>
-                <p className="text-2xl font-semibold tabular-nums">
-                  {submissions.isSuccess ? pendingReviews : "—"}
-                </p>
-                <p className="text-xs text-muted-foreground">{t("Pending submissions", "Bài nộp chờ chấm")}</p>
-              </div>
+            <Button asChild variant="outline" className="border-[#0056d2] bg-background text-[#0056d2]"><Link href="/submissions">{t("Review submissions", "Chấm bài nộp")}</Link></Button>
+            <div className="flex gap-8 border-l border-blue-200 pl-8">
+              <div><p className="text-3xl font-semibold text-[#0056d2]">{activeCount}</p><p className="text-xs text-muted-foreground">{t("Active classes", "Lớp đang hoạt động")}</p></div>
+              <div><p className="text-3xl font-semibold text-[#0056d2]">{totalStudents}</p><p className="text-xs text-muted-foreground">{t("Students", "Sinh viên")}</p></div>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="relative w-full sm:max-w-md">
+            <h2 className="text-2xl font-semibold">{t("Your classes", "Các lớp của bạn")}</h2>
+            <div className="relative order-last w-full sm:order-none sm:ml-auto sm:max-w-xs">
               <Search
                 className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
                 aria-hidden="true"
@@ -149,7 +138,7 @@ export function Workspaces() {
             <div
               role="group"
               aria-label={t("Filter classes", "Lọc lớp")}
-              className="inline-flex rounded-lg border bg-card p-0.5"
+              className="inline-flex gap-3"
             >
               {(
                 [
@@ -165,8 +154,8 @@ export function Workspaces() {
                   onClick={() => setStatusFilter(id)}
                   className={
                     statusFilter === id
-                      ? "rounded-md bg-foreground px-3 py-1.5 text-sm text-background"
-                      : "rounded-md px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground"
+                      ? "rounded-full bg-[#0056d2] px-4 py-2 text-sm text-white"
+                      : "rounded-full border px-4 py-2 text-sm text-muted-foreground hover:text-foreground"
                   }
                 >
                   {label}
@@ -262,8 +251,11 @@ export function Workspaces() {
             })}
           </div>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2">
-            {visibleWorkspaces.map((workspace) => {
+          <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+            {visibleWorkspaces.map((workspace, index) => {
+              const colors = ["#0056d2", "#7b2cbf", "#0b807c", "#c54108", "#254cda", "#bd1960"];
+              const CoverIcon = [Building2, Compass, Network, Layers, ShieldCheck, Network][index % 6] ?? Building2;
+              const pending = pendingByWorkspace.get(workspace.id) ?? 0;
               const members = workspace.members ?? [];
               const students = members.filter(
                 (member) => member.role.toUpperCase() === "STUDENT",
@@ -273,23 +265,26 @@ export function Workspaces() {
               return (
                 <article
                   key={workspace.id}
-                  className="flex flex-col gap-3 rounded-xl border bg-card p-4 transition-colors hover:border-primary/30"
+                  className="flex min-h-[350px] flex-col overflow-hidden rounded-lg border bg-card transition-shadow hover:shadow-md"
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="rounded-md bg-primary/10 px-2 py-0.5 font-mono text-xs font-semibold tracking-wide text-primary">
+                  <div className="relative flex h-28 shrink-0 items-start justify-between gap-2 overflow-hidden p-3" style={{ backgroundColor: colors[index % colors.length] }}>
+                    <CoverIcon className="pointer-events-none absolute -right-3 -bottom-3 size-32 -rotate-12 text-white/15" aria-hidden="true" />
+                    <span className="relative rounded bg-white px-2 py-1 text-xs font-semibold text-slate-900">
                       {workspace.code || t("CLASS", "LỚP")}
                     </span>
                     {archived ? (
                       <span className="text-xs text-muted-foreground">{t("Archived", "Lưu trữ")}</span>
                     ) : (
-                      <span className="inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
+                      <span className="relative inline-flex items-center gap-1 rounded bg-white/95 px-2 py-1 text-xs text-emerald-700">
                         <span className="size-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
                         {t("Active", "Đang hoạt động")}
                       </span>
                     )}
                   </div>
+                  <div className="flex flex-1 flex-col gap-3 p-5">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">{t("Lecturer", "Giảng viên")}</p>
                   <Link
-                    className="truncate text-2xl font-semibold tracking-tight text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="truncate text-xl font-semibold tracking-tight text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     href={workspaceUrl}
                   >
                     {workspace.name}
@@ -312,15 +307,16 @@ export function Workspaces() {
                             : "inline-flex items-center gap-1"
                         }
                       >
-                        <ClipboardCheck className="size-3.5" aria-hidden="true" />
-                        {pendingByWorkspace.get(workspace.id) ?? 0}{" "}
-                        {t("pending submissions", "bài chờ chấm")}
+                        {pending > 0 ? <Clock3 className="size-3.5" aria-hidden="true" /> : <CheckCircle2 className="size-3.5" aria-hidden="true" />}
+                        {pending > 0 ? pending + " " + t("to grade", "bài chờ chấm") : t("Up to date", "Đã cập nhật")}
                       </span>
                     )}
                   </div>
-                  <Button asChild className="mt-auto w-full">
-                    <Link href={workspaceUrl}>{t("Open class", "Mở lớp")}</Link>
-                  </Button>
+                  <div className="mt-auto grid grid-cols-2 gap-3 border-t pt-4">
+                  <Button asChild className="bg-[#0056d2] text-white hover:bg-[#0046ad]"><Link href={workspaceUrl}>{t("Open class", "Mở lớp")}</Link></Button>
+                  <Button asChild variant="outline" className="border-[#0056d2] text-[#0056d2]"><Link href={"/submissions?workspace=" + encodeURIComponent(workspace.id)}>{t("Submissions", "Bài nộp")}</Link></Button>
+                  </div>
+                  </div>
                 </article>
               );
             })}
@@ -329,19 +325,11 @@ export function Workspaces() {
                 {t("No class matches this search or filter.", "Không có lớp nào khớp tìm kiếm hoặc bộ lọc.")}
               </p>
             )}
-            {canCreate && (
-              <button
-                type="button"
-                onClick={() => setShowCreate(true)}
-                className="flex min-h-40 flex-col items-center justify-center gap-2 rounded-xl border border-dashed text-sm text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
-              >
-                <Plus className="size-5" aria-hidden="true" />
-                {t("Create class", "Tạo lớp")}
-              </button>
-            )}
+
           </div>
         )}
       </RequestState>
+      {canCreate && <footer className="border-t pt-8 text-center text-sm text-muted-foreground">© MAVIS — Architecture Learning &amp; Analysis</footer>}
     </div>
   );
 }
