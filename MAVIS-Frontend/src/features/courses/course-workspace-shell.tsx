@@ -77,8 +77,8 @@ export function CourseWorkspaceShell({
         className={cn(
           "overflow-hidden rounded-2xl p-5 shadow-lg sm:p-6",
           isStudent
-            ? "bg-gradient-to-r from-blue-900 via-blue-700 to-teal-700 text-white"
-            : "bg-gradient-to-r from-indigo-950 via-indigo-700 to-purple-700 text-white",
+            ? "bg-gradient-to-r from-emerald-950 via-emerald-800 to-teal-600 text-white"
+            : "bg-gradient-to-r from-emerald-950 via-emerald-700 to-teal-600 text-white",
         )}
       >
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -134,7 +134,7 @@ export function CourseWorkspaceShell({
                   className={cn(
                     "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
                     isCurrent
-                      ? "bg-white text-indigo-950 shadow-sm"
+                      ? "bg-white text-emerald-950 shadow-sm"
                       : "text-white/80 hover:bg-white/15 hover:text-white",
                   )}
                 >
