@@ -32,6 +32,7 @@ import {
 import { CourseWorkspaceShell } from "@/features/courses/course-workspace-shell";
 import { AssignmentInstructions } from "./assignment-instructions";
 import { AssignmentSourceDetails } from "./source-picker";
+import { ImportLabButton } from "./lab-transfer";
 
 function formatDeadline(value: string | undefined) {
   if (!value || value === "No deadline") return "No deadline";
@@ -108,7 +109,8 @@ function LecturerAssignments() {
             {labs.length - inClassCount} {t("not in class", "chưa vào lớp")}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-start gap-2">
+          <ImportLabButton workspaceId={workspaceId} />
           <Button type="button" variant="outline" size="sm" onClick={() => setShowTools((open) => !open)}>
             <Settings2 className="mr-1 size-4" aria-hidden="true" />
             {t("Course tools", "Công cụ khóa học")}

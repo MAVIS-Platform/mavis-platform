@@ -13,6 +13,7 @@ import {
   useRuntimeSetupReadiness,
 } from "@/features/workspaces/course-access";
 import type { Assignment } from "./requirements";
+import { ExportLabButton } from "./lab-transfer";
 
 type Tab = "info" | "theory" | "source" | "quiz" | "studio" | "publish";
 
@@ -178,6 +179,11 @@ export function LabPublishSection({
               position={setupLab?.position}
             />
           )}
+          <ExportLabButton
+            workspaceId={workspaceId}
+            assignmentId={assignment.id}
+            title={assignment.title}
+          />
         </div>
       </section>
 

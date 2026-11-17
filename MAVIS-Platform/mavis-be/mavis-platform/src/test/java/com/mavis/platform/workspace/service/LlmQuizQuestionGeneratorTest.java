@@ -7,10 +7,10 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-class GeminiQuizQuestionGeneratorTest {
+class LlmQuizQuestionGeneratorTest {
 
-    private final GeminiQuizQuestionGenerator generator =
-            new GeminiQuizQuestionGenerator(new ObjectMapper());
+    private final LlmQuizQuestionGenerator generator =
+            new LlmQuizQuestionGenerator(new ObjectMapper());
 
     @Test
     void parsesSingleAndMultipleChoiceQuestionsAndSkipsInvalidOnes() {

@@ -29,15 +29,15 @@ import java.util.Optional;
 /**
  * Generates Quiz questions from theory through the configured LLM provider.
  *
- * <p>Key resolution mirrors the analyzer AI explanation provider: application property, then
- * {@code MAVIS_AI_API_KEY}, then a local {@code API_KEY} file. Keys are never logged. When no key
- * is available this component throws {@code AI_NOT_CONFIGURED}; it does not fall back to fabricated
- * questions.</p>
+ * <p>Supports OpenAI keys ({@code sk-...}) and Google Gemini keys. Key resolution mirrors the
+ * analyzer AI explanation provider: application property, then {@code MAVIS_AI_API_KEY}, then a
+ * local {@code API_KEY} file. Keys are never logged. When no key is available this component throws
+ * {@code AI_NOT_CONFIGURED}; it does not fall back to fabricated questions.</p>
  */
 @Component
 @RequiredArgsConstructor
 @Slf4j
-public class GeminiQuizQuestionGenerator implements QuizQuestionGenerator {
+public class LlmQuizQuestionGenerator implements QuizQuestionGenerator {
 
     private static final String DEFAULT_GEMINI_URL =
             "https://generativelanguage.googleapis.com/v1beta/models/";
@@ -59,6 +59,9 @@ public class GeminiQuizQuestionGenerator implements QuizQuestionGenerator {
 
     @Value("${mavis.ai.quiz-model:gemini-2.5-flash}")
     private String model;
+
+    @Value("${mavis.ai.quiz-openai-model:gpt-4.1-mini}")
+    private String openAiModel;
 
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(10))
@@ -82,7 +85,7 @@ public class GeminiQuizQuestionGenerator implements QuizQuestionGenerator {
         String prompt = buildPrompt(theory, count, vietnamese);
         String responseText;
         try {
-            responseText = send(apiKey, prompt);
+            responseText = apiKey.startsWith("sk-") ? sendOpenAi(apiKey, prompt) : sendGemini(apiKey, prompt);
         } catch (IOException | InterruptedException error) {
             if (error instanceof InterruptedException) Thread.currentThread().interrupt();
             log.warn("Quiz question generation call failed: {}", error.getMessage());
@@ -120,7 +123,35 @@ public class GeminiQuizQuestionGenerator implements QuizQuestionGenerator {
         return prompt.toString();
     }
 
-    private String send(String apiKey, String prompt) throws IOException, InterruptedException {
+    private String sendOpenAi(String apiKey, String prompt) throws IOException, InterruptedException {
+        ObjectNode request = json.createObjectNode();
+        request.put("model", openAiModel);
+        request.putObject("response_format").put("type", "json_object");
+        ArrayNode messages = request.putArray("messages");
+        messages.addObject().put("role", "system")
+                .put("content", "You author graded software architecture quizzes. Return only the requested JSON object.");
+        messages.addObject().put("role", "user").put("content", prompt);
+
+        HttpRequest httpRequest = HttpRequest.newBuilder()
+                .uri(URI.create("https://api.openai.com/v1/chat/completions"))
+                .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer " + apiKey)
+                .timeout(Duration.ofSeconds(40))
+                .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(request), StandardCharsets.UTF_8))
+                .build();
+
+        HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            throw new IOException("OpenAI HTTP status " + response.statusCode());
+        }
+        JsonNode content = json.readTree(response.body()).path("choices").path(0).path("message").path("content");
+        if (content.isMissingNode() || content.asText().isBlank()) {
+            throw new IOException("OpenAI response missing message content");
+        }
+        return content.asText();
+    }
+
+    private String sendGemini(String apiKey, String prompt) throws IOException, InterruptedException {
         boolean hasCustomUrl = customEndpointUrl != null && !customEndpointUrl.isBlank();
         String targetUrl = hasCustomUrl
                 ? customEndpointUrl
