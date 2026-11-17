@@ -238,11 +238,14 @@ export async function executeJava(
     const sub = z
       .object({
         id: z.string().uuid(),
+        workspaceId: z.string().uuid().nullish(),
+        workspaceName: z.string().nullish(),
         assignmentId: z.string().uuid(),
         projectId: z.string().uuid(),
         submittedById: z.string().uuid(),
         submittedAt: z.string(),
         assignmentTitle: z.string().nullish(),
+        labOrder: z.number().int().nullish(),
         guidedLab: z.boolean().optional(),
         labMode: z.string().nullish(),
         submittedByName: z.string().nullish(),
@@ -323,7 +326,14 @@ export async function executeJava(
       diagramLayout = diagram.layoutJson;
     }
     return {
+      workspaceId: sub.workspaceId ?? null,
+      workspaceName: sub.workspaceName ?? null,
       assignmentTitle: sub.assignmentTitle ?? "",
+      labOrder: sub.labOrder ?? null,
+      labMode:
+        sub.labMode === "THEORY_QUIZ" || sub.labMode === "THEORY_QUIZ_STUDIO"
+          ? sub.labMode
+          : "LEGACY",
       guidedLab: sub.guidedLab ?? false,
       studentName: sub.submittedByName ?? "",
       studentEmail: sub.submittedByEmail ?? "",
@@ -999,10 +1009,17 @@ export async function executeJava(
         }),
       );
     }
-    case "submissions":
+    case "submissions": {
+      const workspaceId =
+        typeof input["workspaceId"] === "string" && input["workspaceId"].trim()
+          ? id(input, "workspaceId")
+          : null;
       return Promise.all(
-        list.parse(await get("submissions/me")).map((row) => coursework(row, false)),
+        list
+          .parse(await get(workspaceId ? `submissions/me?workspaceId=${workspaceId}` : "submissions/me"))
+          .map((row) => coursework(row, false)),
       );
+    }
     case "assignmentSubmissions": {
       const workspaceId = id(input, "workspaceId"),
         assignmentId = id(input, "assignmentId");

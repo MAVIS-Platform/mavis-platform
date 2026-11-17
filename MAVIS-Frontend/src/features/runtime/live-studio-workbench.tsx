@@ -61,13 +61,19 @@ export function LiveStudioWorkbench({
   projectName,
   onSelectSession,
   onSwitchToSandbox,
+  onStartSession,
+  starting,
+  hideSwitchToSandbox,
 }: {
   sessions: readonly SessionOption[];
   sessionId: string;
   projectId?: string | undefined;
   projectName?: string | undefined;
   onSelectSession: (id: string) => void;
-  onSwitchToSandbox: () => void;
+  onSwitchToSandbox?: (() => void) | undefined;
+  onStartSession?: (() => void) | undefined;
+  starting?: boolean | undefined;
+  hideSwitchToSandbox?: boolean | undefined;
 }) {
   const startHref = projectId
     ? `/sessions?${new URLSearchParams({ project: projectId, studio: "1" })}`
@@ -168,7 +174,10 @@ export function LiveStudioWorkbench({
   ] as const;
 
   return (
-    <div data-testid="live-workbench" className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden bg-[#070b12] text-slate-100">
+    <div
+      data-testid="live-workbench"
+      className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden bg-[#070b12] text-slate-100"
+    >
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 bg-[#0b101b] px-3 py-2 pr-2">
         <label className="flex min-w-0 items-center gap-1.5 text-[11px] text-slate-400">
           <span className="shrink-0 font-semibold text-slate-200">LIVE</span>
@@ -190,16 +199,26 @@ export function LiveStudioWorkbench({
             )}
           </select>
         </label>
-        <Button asChild size="sm">
-          <Link href={startHref}>
-            {projectName
-              ? `Prepare and start ${projectName}`
-              : "Prepare and start Live project"}
-          </Link>
-        </Button>
-        <Button type="button" size="sm" variant="outline" onClick={onSwitchToSandbox}>
-          Switch to Sandbox
-        </Button>
+        {onStartSession ? (
+          <Button type="button" size="sm" disabled={starting} onClick={onStartSession}>
+            {starting
+              ? "Starting Studio session…"
+              : projectName
+                ? `Start ${projectName}`
+                : "Start Studio session"}
+          </Button>
+        ) : (
+          <Button asChild size="sm">
+            <Link href={startHref}>
+              {projectName ? `Prepare and start ${projectName}` : "Prepare and start Live project"}
+            </Link>
+          </Button>
+        )}
+        {!hideSwitchToSandbox && onSwitchToSandbox && (
+          <Button type="button" size="sm" variant="outline" onClick={onSwitchToSandbox}>
+            Switch to Sandbox
+          </Button>
+        )}
         <div className="ml-auto flex items-center gap-2">
           <Button
             type="button"
@@ -271,13 +290,19 @@ export function LiveStudioWorkbench({
                     Start one from the Lab runtime workspace or select an existing session above.
                     The Live workbench uses the same four-zone layout as Sandbox.
                   </p>
-                  <Button asChild size="sm">
-                    <Link href={startHref}>
-                      {projectName
-                        ? `Prepare and start ${projectName}`
-                        : "Prepare and start Live project"}
-                    </Link>
-                  </Button>
+                  {onStartSession ? (
+                    <Button type="button" size="sm" disabled={starting} onClick={onStartSession}>
+                      {starting ? "Starting Studio session…" : "Start Studio Live session"}
+                    </Button>
+                  ) : (
+                    <Button asChild size="sm">
+                      <Link href={startHref}>
+                        {projectName
+                          ? `Prepare and start ${projectName}`
+                          : "Prepare and start Live project"}
+                      </Link>
+                    </Button>
+                  )}
                 </div>
               </div>
             )}

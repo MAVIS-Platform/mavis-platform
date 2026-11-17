@@ -323,7 +323,11 @@ export type SnapshotGradeItem = z.infer<typeof snapshotGradeSchema>;
 
 export const submissionSchema = z
   .object({
+    workspaceId: z.string().nullable().optional(),
+    workspaceName: z.string().nullable().optional(),
     assignmentTitle: z.string().optional(),
+    labOrder: z.number().int().nullable().optional(),
+    labMode: z.enum(["LEGACY", "THEORY_QUIZ", "THEORY_QUIZ_STUDIO"]).optional(),
     guidedLab: z.boolean().optional(),
     studentName: z.string().optional(),
     studentEmail: z.string().optional(),

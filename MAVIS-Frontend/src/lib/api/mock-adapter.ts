@@ -793,12 +793,24 @@ export class MockAdapter implements ApiAdapter {
                 model: s.model,
               }))
           : [];
-      case "submissions":
-        return this.scenario === "empty"
-          ? []
-          : this.submissions.filter(
-              (s) => this.user?.role === "lecturer" || s.studentId === this.user?.id,
-            );
+      case "submissions": {
+        const p = contracts.submissions.input.parse(raw);
+        const visible =
+          this.scenario === "empty"
+            ? []
+            : this.submissions.filter(
+                (s) => this.user?.role === "lecturer" || s.studentId === this.user?.id,
+              );
+        if (!p.workspaceId) return visible;
+        const classAssignmentIds = new Set(
+          this.courseworkAssignments
+            .filter((a) => a.workspaceId === p.workspaceId)
+            .map((a) => a.id),
+        );
+        return visible.filter(
+          (s) => s.workspaceId === p.workspaceId || classAssignmentIds.has(s.assignmentId),
+        );
+      }
       case "submission":
         return this.find(
           this.submissions,

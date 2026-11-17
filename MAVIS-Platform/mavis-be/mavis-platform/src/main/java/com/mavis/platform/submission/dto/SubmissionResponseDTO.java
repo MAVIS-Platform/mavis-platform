@@ -25,9 +25,12 @@ public class SubmissionResponseDTO {
     }
 
     private UUID id;
+    private UUID workspaceId;
+    private String workspaceName;
     private UUID assignmentId;
     private boolean guidedLab;
     private String assignmentTitle;
+    private Integer labOrder;
     private UUID projectId;
     private String projectName;
     private UUID submittedById;
@@ -65,17 +68,23 @@ public class SubmissionResponseDTO {
 
         String scenarioStatus = s.getRuntimeSession() != null ? s.getRuntimeSession().getScenarioStatus() : null;
 
+        var assignment = s.getAssignment();
+        var workspace = assignment != null ? assignment.getWorkspace() : null;
+
         return SubmissionResponseDTO.builder()
                 .id(s.getId())
-                .assignmentId(s.getAssignment() != null ? s.getAssignment().getId() : null)
-                .guidedLab(s.getAssignment() != null && s.getAssignment().getLabOrder() != null)
-                .assignmentTitle(s.getAssignment() != null ? s.getAssignment().getTitle() : null)
+                .workspaceId(workspace != null ? workspace.getId() : null)
+                .workspaceName(workspace != null ? workspace.getName() : null)
+                .assignmentId(assignment != null ? assignment.getId() : null)
+                .guidedLab(assignment != null && assignment.getLabOrder() != null)
+                .assignmentTitle(assignment != null ? assignment.getTitle() : null)
+                .labOrder(assignment != null ? assignment.getLabOrder() : null)
                 .projectId(s.getProject() != null ? s.getProject().getId() : null)
                 .projectName(s.getProject() != null ? s.getProject().getName() : null)
                 .submittedById(s.getSubmittedBy() != null ? s.getSubmittedBy().getId() : null)
                 .submittedByName(s.getSubmittedBy() != null ? s.getSubmittedBy().getFullName() : null)
                 .submittedByEmail(s.getSubmittedBy() != null ? s.getSubmittedBy().getEmail() : null)
-                .labMode(s.getAssignment() != null ? s.getAssignment().getLabMode() : "LEGACY")
+                .labMode(assignment != null && assignment.getLabMode() != null ? assignment.getLabMode() : "LEGACY")
                 .sourceSnapshotId(s.getSourceSnapshot() != null ? s.getSourceSnapshot().getId() : null)
                 .modelVersionId(s.getModelVersion() != null ? s.getModelVersion().getId() : null)
                 .modelRevision(s.getModelVersion() != null ? s.getModelVersion().getRevision() : null)

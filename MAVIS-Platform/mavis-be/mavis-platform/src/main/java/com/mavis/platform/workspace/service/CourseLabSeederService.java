@@ -132,13 +132,24 @@ public class CourseLabSeederService {
 
         boolean fullCurriculum = PRESET_FULL_CURRICULUM.equalsIgnoreCase(preset == null ? "" : preset.trim());
         List<Assignment> existingLabs = assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId);
+        upgradeExistingLabsIfSafe(existingLabs);
 
         if (!fullCurriculum && !existingLabs.isEmpty()) {
             ensureCourseMode(workspace);
+            existingLabs.stream()
+                    .map(Assignment::getReferenceModel)
+                    .filter(java.util.Objects::nonNull)
+                    .findFirst()
+                    .ifPresent(ref -> ensureReferenceRuntimeSetup(ref, java.util.Map.of()));
             return courses.roadmap(workspaceId);
         }
         if (fullCurriculum && existingLabs.size() >= 13) {
             ensureCourseMode(workspace);
+            existingLabs.stream()
+                    .map(Assignment::getReferenceModel)
+                    .filter(java.util.Objects::nonNull)
+                    .findFirst()
+                    .ifPresent(ref -> ensureReferenceRuntimeSetup(ref, java.util.Map.of()));
             return courses.roadmap(workspaceId);
         }
 
@@ -147,6 +158,7 @@ public class CourseLabSeederService {
                 .filter(java.util.Objects::nonNull)
                 .findFirst()
                 .orElseGet(() -> seedReferenceModel(workspaceId, workspace, lecturer));
+        ensureReferenceRuntimeSetup(refModel, java.util.Map.of());
 
         ensureCourseMode(workspace);
 
@@ -166,17 +178,22 @@ public class CourseLabSeederService {
             if (existingTitles.contains(spec.title())) {
                 continue;
             }
-            Assignment lab = assignments.saveAndFlush(Assignment.builder()
+            Assignment.AssignmentBuilder labBuilder = Assignment.builder()
                     .workspace(workspace)
                     .createdBy(lecturer)
                     .title(spec.title())
                     .description(spec.description())
+                    .labMode(spec.requireRuntimeTrace() ? "THEORY_QUIZ_STUDIO" : "THEORY_QUIZ")
                     .requiredDiagramTypes(json.valueToTree(spec.requiredDiagramTypes()))
                     .ruleSetVersion("SWD_DEFAULT_V1")
                     .requireRuntimeTrace(spec.requireRuntimeTrace())
                     .referenceModel(refModel)
-                    .labOrder(++nextOrder)
-                    .build());
+                    .labOrder(++nextOrder);
+            if (spec.requireRuntimeTrace()) {
+                labBuilder.studioTopologySnapshot(buildDefaultStudioTopology())
+                        .studioTopologyRevision(1);
+            }
+            Assignment lab = assignments.saveAndFlush(labBuilder.build());
             quizzes.publishCurriculum(workspaceId, lab.getId(), curriculum.quizFor(spec.curriculumCode()));
         }
 
@@ -309,7 +326,113 @@ public class CourseLabSeederService {
                 .summaryMetrics(metrics)
                 .build());
 
+        java.util.Map<String, UUID> serviceIds = new java.util.LinkedHashMap<>();
+        serviceIds.put("api-gateway", gateway.getId());
+        serviceIds.put("order-service", orderService.getId());
+        serviceIds.put("payment-service", paymentService.getId());
+        serviceIds.put("inventory-service", inventoryService.getId());
+        ensureReferenceRuntimeSetup(refModel, serviceIds);
+
         return refModel;
+    }
+
+    private void upgradeExistingLabsIfSafe(List<Assignment> existingLabs) {
+        if (existingLabs == null || existingLabs.isEmpty()) {
+            return;
+        }
+        for (Assignment existing : existingLabs) {
+            boolean changed = false;
+            String mode = existing.getLabMode();
+            if (mode == null || mode.isBlank() || "LEGACY".equalsIgnoreCase(mode)) {
+                Integer legacyDiagramCount = jdbc.queryForObject("""
+                        SELECT count(*) FROM submission_snapshots
+                        WHERE assignment_id = ? AND diagram_version_id IS NOT NULL
+                        """, Integer.class, existing.getId());
+                if (legacyDiagramCount == null || legacyDiagramCount == 0) {
+                    existing.setLabMode(Boolean.TRUE.equals(existing.getRequireRuntimeTrace())
+                            ? "THEORY_QUIZ_STUDIO" : "THEORY_QUIZ");
+                    changed = true;
+                }
+            }
+            if (Boolean.TRUE.equals(existing.getRequireRuntimeTrace()) && existing.getStudioTopologySnapshot() == null) {
+                existing.setStudioTopologySnapshot(buildDefaultStudioTopology());
+                existing.setStudioTopologyRevision(1);
+                changed = true;
+            }
+            if (changed) {
+                assignments.saveAndFlush(existing);
+            }
+        }
+    }
+
+    private void ensureReferenceRuntimeSetup(ModelVersion refModel, java.util.Map<String, UUID> knownServiceIds) {
+        if (refModel == null || refModel.getProject() == null || refModel.getSourceSnapshot() == null
+                || refModel.getProject().getId() == null) {
+            return;
+        }
+        UUID refProjectId = refModel.getProject().getId();
+        Integer cfgCount = jdbc.queryForObject(
+                "SELECT count(*) FROM runtime_configurations WHERE project_id = ?",
+                Integer.class, refProjectId);
+        if (cfgCount == null || cfgCount == 0) {
+            java.util.Map<String, UUID> serviceMap = new java.util.LinkedHashMap<>(knownServiceIds);
+            if (serviceMap.isEmpty()) {
+                for (ModelElement el : elements.findByModelVersionId(refModel.getId())) {
+                    if ("SERVICE_CONTAINER".equals(el.getElementType()) && el.getName() != null && el.getId() != null) {
+                        serviceMap.putIfAbsent(el.getName(), el.getId());
+                    }
+                }
+            }
+            ObjectNode profile = json.createObjectNode();
+            ObjectNode apps = profile.putObject("applications");
+            apps.putObject("api-gateway").put("runtime", "java").put("containerPort", 8080);
+            apps.putObject("order-service").put("runtime", "java").put("containerPort", 8081);
+            apps.putObject("payment-service").put("runtime", "java").put("containerPort", 8082);
+            apps.putObject("inventory-service").put("runtime", "java").put("containerPort", 8083);
+            ObjectNode mappings = profile.putObject("serviceMappings");
+            serviceMap.forEach((name, id) -> {
+                if (id != null) mappings.put(name, id.toString());
+            });
+            profile.set("studioTopology", buildDefaultStudioTopology());
+            jdbc.update("""
+                    INSERT INTO runtime_configurations (project_id, source_snapshot_id, model_version_id, profile_id, profile, revision)
+                    VALUES (?, ?, ?, 'SPRING_BOOT_DOTNET_COMPOSE_V1', CAST(? AS jsonb), 1)
+                    ON CONFLICT (project_id) DO NOTHING
+                    """, refProjectId, refModel.getSourceSnapshot().getId(), refModel.getId(), profile.toString());
+        }
+
+        Integer scnCount = jdbc.queryForObject(
+                "SELECT count(*) FROM runtime_scenarios WHERE project_id = ?",
+                Integer.class, refProjectId);
+        if (scnCount == null || scnCount == 0) {
+            ArrayNode steps = json.createArrayNode();
+            steps.addObject().put("id", "order-checkout").put("service", "order-service")
+                    .put("method", "POST").put("path", "/api/orders").put("expectedStatus", 200);
+            steps.addObject().put("id", "inventory-health").put("service", "inventory-service")
+                    .put("method", "GET").put("path", "/api/inventory/health").put("expectedStatus", 200);
+            jdbc.update("""
+                    INSERT INTO runtime_scenarios (id, project_id, name, steps, revision)
+                    VALUES (?, ?, 'Curated Resilience Check', CAST(? AS jsonb), 1)
+                    """, UUID.randomUUID(), refProjectId, steps.toString());
+        }
+    }
+
+    public ObjectNode buildDefaultStudioTopology() {
+        ObjectNode topology = json.createObjectNode().put("version", 1);
+        ArrayNode blocks = topology.putArray("blocks");
+        for (String[] item : List.of(
+                new String[]{"api-gateway", "API Gateway"},
+                new String[]{"order-service", "Order Service"},
+                new String[]{"payment-service", "Payment Service"},
+                new String[]{"inventory-service", "Inventory Service"})) {
+            blocks.addObject()
+                    .put("service", item[0])
+                    .put("label", item[1])
+                    .put("canScale", true)
+                    .put("initiallyStopped", false);
+        }
+        topology.putArray("connections");
+        return topology;
     }
 
     private List<LabSeedSpec> buildLabSpecs(boolean fullCurriculum) {

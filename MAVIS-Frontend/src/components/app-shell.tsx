@@ -120,11 +120,12 @@ function ManagedShellChrome(props: AppShellProps) {
   const selection = useSelection();
   const pathname = usePathname();
   const route = existingRouteContext(pathname);
-  const scope =
+  const rawScope =
     (pathname === "/submissions" && role === "lecturer") ||
     (pathname === "/workspaces" && Boolean(selection.workspaceId) && !onPreviewNavigate)
       ? "workspace"
       : (props.scope ?? route.scope);
+  const scope = role === "student" && rawScope === "project" ? "workspace" : rawScope;
   const projectQuery = useApiQuery(
     "projects",
     {},
@@ -221,11 +222,13 @@ function ShellChrome({
   const pathname = usePathname();
   const params = useSearchParams();
   const route = existingRouteContext(pathname);
-  const scope =
+  const rawShellScope =
     (pathname === "/submissions" && role === "lecturer") ||
     (pathname === "/workspaces" && Boolean(selectedWorkspaceId) && !onPreviewNavigate)
       ? "workspace"
       : (scopeOverride ?? route.scope);
+  const scope =
+    !live && role === "student" && rawShellScope === "project" ? "workspace" : rawShellScope;
   const activeId =
     pathname === "/submissions" && role === "lecturer"
       ? "assignment-submissions"
@@ -267,7 +270,7 @@ function ShellChrome({
           !["/design-system", "/login"].includes(item.href)
         )
           return { ...item, href: `${item.href}${navigationQuery}` };
-        return scope === "review" && contextName
+        return scope === "review" && contextName && !item.href
           ? { ...item, href: `/submissions/${encodeURIComponent(contextName)}#${item.id}` }
           : item;
       }),
@@ -309,7 +312,7 @@ function ShellChrome({
       ),
     })),
   );
-  const groups = decorateGroups(contextualNavigation(role, scope));
+  const groups = decorateGroups(contextualNavigation(role, scope, live));
   const projectGroups = useProjectNavigation(
     role,
     activeId,
@@ -538,10 +541,14 @@ function ShellChrome({
                           scope === "project"
                             ? role === "admin"
                               ? adminJobsReturnHref(new URLSearchParams(navigationQuery))
-                              : `/project-overview${navigationQuery}`
+                              : role === "student"
+                                ? `/roadmap${navigationQuery}`
+                                : `/project-overview${navigationQuery}`
                             : scope === "review"
                               ? `/submissions${navigationQuery}`
-                              : `/workspaces${navigationQuery}`,
+                              : role === "student"
+                                ? `/courses${navigationQuery}`
+                                : `/workspaces${navigationQuery}`,
                         visibility: "lg" as const,
                       },
                     ]

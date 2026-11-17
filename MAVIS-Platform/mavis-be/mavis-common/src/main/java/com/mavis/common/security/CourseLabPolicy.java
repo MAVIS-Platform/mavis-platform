@@ -95,6 +95,24 @@ public class CourseLabPolicy {
         }
     }
 
+    public boolean canReadReferenceProject(Project project, User student) {
+        if (project == null || student == null || student.getId() == null
+                || project.getWorkspace() == null
+                || !"ACTIVE".equalsIgnoreCase(project.getWorkspace().getStatus())
+                || "DELETED".equalsIgnoreCase(project.getStatus())
+                || !(Boolean.TRUE.equals(project.getIsReferenceTemplate())
+                     || "TEACHER_REFERENCE".equalsIgnoreCase(project.getProjectType()))) {
+            return false;
+        }
+        UUID workspaceId = project.getWorkspace().getId();
+        return Boolean.TRUE.equals(jdbc.queryForObject("""
+                SELECT EXISTS (
+                    SELECT 1 FROM workspace_members m
+                    WHERE m.workspace_id = ? AND m.user_id = ? AND m.member_role = 'STUDENT'
+                )
+                """, Boolean.class, workspaceId, student.getId()));
+    }
+
     public static boolean isStudent(User user) {
         return user.getRole() != null && "STUDENT".equalsIgnoreCase(user.getRole().getCode());
     }

@@ -17,6 +17,12 @@ public interface SubmissionService {
      */
     List<SubmissionResponseDTO> getMySubmissions();
 
+    default List<SubmissionResponseDTO> getMySubmissions(UUID workspaceId) {
+        return getMySubmissions().stream()
+                .filter(s -> workspaceId == null || workspaceId.equals(s.getWorkspaceId()))
+                .toList();
+    }
+
     SubmissionResponseDTO submitAssignment(SubmissionCreateRequest request);
 
     /**

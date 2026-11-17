@@ -41,20 +41,22 @@ test("course learning routes are registered in the shared authenticated shell", 
   assert.match(home, /<PublicHomepage\s*\/>/);
 });
 
-test("student navigation follows Course to Roadmap to Lab and submissions", () => {
+test("student navigation locks class sidebar to 3 clean course items and preserves student destinations", () => {
   const navigation = read("src/lib/navigation.ts");
 
   for (const label of [
     "My Courses",
     "Join Course",
     "Course Roadmap",
-    "Lab Workspace",
     "My Submissions",
     "Free Studio Sandbox",
+    "My Classes",
+    "Lab Roadmap & Course",
+    "Submissions & Grades",
   ])
     assert.ok(navigation.includes(label), label);
   assert.match(navigation, /href:\s*"\/roadmap"/);
-  assert.match(navigation, /href:\s*"\/lab"/);
+  assert.match(navigation, /href:\s*"\/submissions"/);
   assert.match(navigation, /href:\s*"\/courses"/);
 });
 
@@ -80,15 +82,15 @@ test("student class outline uses published roadmap and markdown activities with 
   assert.ok(shell.includes('tab === "content" || tab === "submissions"'));
 });
 
-test("student submissions are scoped by selected class roster and retain class navigation", () => {
+test("student submissions are scoped by selected class workspaceId and retain class navigation", () => {
   const submissions = read("src/features/submissions/screens.tsx");
-  assert.ok(submissions.includes("idsInSelectedClass.has(submission.studentId)"));
+  assert.ok(submissions.includes("submission.workspaceId === workspaceId"));
   assert.ok(
     submissions.includes('<CourseWorkspaceShell workspace={workspace} active="submissions">'),
   );
 });
 
-test("Lab UI keeps unavailable progress gates honest and deep-links real assignment data", () => {
+test("Lab UI keeps unavailable progress gates honest and runs 4-step V2 workflow inside /lab", () => {
   const course = read("src/features/courses/screens.tsx");
   const access = read("src/features/workspaces/course-access.tsx");
   const quiz = read("src/features/courses/course-quiz.tsx");
@@ -100,21 +102,27 @@ test("Lab UI keeps unavailable progress gates honest and deep-links real assignm
   assert.match(access, /\/lab\?workspace=.*&assignment=.*&step=1/s);
   assert.match(
     course,
-    /state: model \? "READY" : referenceSnapshotId \? "IN PROGRESS" : "MISSING"/,
+    /state:\s*activeModelId\s*\?\s*"READY"\s*:\s*referenceSnapshotId\s*\?\s*"IN PROGRESS"\s*:\s*"MISSING"/,
   );
   assert.match(course, /job\.status === "completed" && job\.analysisState !== "PARTIAL"/);
-  assert.match(course, /<CourseQuiz workspaceId=\{workspaceId\} labId=\{labId\}/);
+  assert.match(course, /<CourseQuiz\s+workspaceId=\{workspaceId\}\s+labId=\{labId\}/);
   assert.match(quiz, /queryKey: \["api", "course-quiz", workspaceId, labId\]/);
   assert.match(quiz, /api<Result>\(`\$\{path\}\/attempts`/);
-  assert.match(course, /\/assignments\?workspace=.*&assignment=/s);
   assert.match(course, /\/submissions\?workspace=.*&assignment=/s);
+  assert.ok(course.includes("useStudentLabContext("));
+  assert.ok(course.includes("useStudentLabStudioSessions("));
 });
 
-test("guided Lab resumes a Runtime session scoped to its selected project and static model", () => {
+test("guided Lab embeds LiveStudioWorkbench directly in Step 4 without external /sessions redirect", () => {
   const course = read("src/features/courses/screens.tsx");
-  assert.match(course, /item\.projectId === projectId && item\.modelId === model\?\.id/);
-  assert.match(course, /sessionId \? \{ session: sessionId \}/);
-  assert.match(course, /Open Runtime session/);
+  const stepContentSource = course.slice(course.indexOf("function StepContent("));
+  assert.ok(course.includes("<LiveStudioWorkbench"));
+  assert.ok(course.includes("useStartLabStudioSession("));
+  assert.ok(course.includes("useBootstrapLabStudio("));
+  assert.ok(!stepContentSource.includes("href={`/sessions?"));
+  assert.ok(!stepContentSource.includes("href={`/diagrams?"));
+  assert.ok(!stepContentSource.includes("href={`/architecture?"));
+  assert.ok(!stepContentSource.includes("href={`/assignments?"));
 });
 
 test("lecturer Lab authoring is a dedicated workspace with ordered authoring steps", () => {
@@ -246,7 +254,7 @@ test("assignment and submission screens preserve the selected Lab context", () =
   assert.ok(assignments.includes('params?.get("assignment")'));
   assert.ok(assignments.includes("scrollIntoView"));
   assert.ok(assignments.includes("ring-2 ring-primary/40"));
-  assert.ok(submissions.includes("submission.assignmentId === assignmentId"));
+  assert.ok(submissions.includes("submission.assignmentId !== assignmentId"));
   assert.ok(submissions.includes("No snapshot has been submitted for this Lab yet"));
 });
 
@@ -296,13 +304,13 @@ test("new Course and Lab surfaces expose direct Vietnamese copy", () => {
     "Khóa học của tôi",
     "Lộ trình học tập",
     "Thao tác Lab",
-    "Mở bài tập và nộp bài",
-    "Bằng chứng runtime",
+    "Bài nộp & Điểm",
+    "Thực nghiệm Studio Live & Nộp bài",
   ])
     assert.ok(course.includes(text), text);
 });
 
-test("Guided Lab Step 1 exposes read-only C1-C3 quick views, pinned IDs, and 5-rule severity separation", () => {
+test("Guided Lab Step 1 exposes inline C1-C3 & Dependency Graph views, pinned IDs, and 5-rule 3E evaluation", () => {
   const course = read("src/features/courses/screens.tsx");
   assert.ok(
     course.includes(
@@ -312,10 +320,9 @@ test("Guided Lab Step 1 exposes read-only C1-C3 quick views, pinned IDs, and 5-r
   assert.ok(course.includes("C1 System Context"));
   assert.ok(course.includes("C2 Container"));
   assert.ok(course.includes("C3 Component"));
-  assert.ok(course.includes("kind=CONTEXT"));
-  assert.ok(course.includes("kind=CONTAINER"));
-  assert.ok(course.includes("kind=COMPONENT"));
-  assert.ok(course.includes("Service Dependency Graph (Read-Only)"));
+  assert.ok(course.includes("Service Dependency Graph"));
+  assert.ok(course.includes("DiagramPreview"));
+  assert.ok(course.includes("ArchitectureGraph"));
   assert.ok(course.includes("sourceSnapshotId"));
   assert.ok(course.includes("modelVersionId"));
   assert.ok(course.includes("Model Revision"));
@@ -462,12 +469,13 @@ test("Stage 4 Reverse BFS terminates safely on cyclic dependencies, reports unaf
   assert.equal(diamondImpact.indirectImpactCount, 1);
 });
 
-test("Stage 4 Step 2 UI integrates Reverse BFS Explorer, C1-C3 Back-Links, and explicit Quiz/Runtime Gate state", () => {
+test("Stage 4 Step 2 UI integrates Reverse BFS Explorer, inline Step 1 Back-Links, and explicit Step 3 Quiz Gate", () => {
   const course = read("src/features/courses/screens.tsx");
   const step2 = read("src/features/courses/step2-static-impact.tsx");
   const quiz = read("src/features/courses/course-quiz.tsx");
 
   assert.ok(course.includes("<Step2StaticImpact"));
+  assert.ok(course.includes("onOpenC1C3View="));
   assert.ok(course.includes("runtimeStepHref="));
   assert.ok(step2.includes("computeArchitectureImpact"));
   assert.ok(step2.includes("Cycle Detected & Safely Terminated"));
@@ -486,18 +494,17 @@ test("Stage 4 Step 2 UI integrates Reverse BFS Explorer, C1-C3 Back-Links, and e
   assert.ok(quiz.includes("Step 3 Live Docker Runtime is locked until you score at least"));
 });
 
-test("Studio in the guided Lab requires observed traces on the current model", () => {
+test("Studio in the guided Lab unlocks Step 4 after Quiz Gate and embeds simulated sandbox bootstrap", () => {
   const course = read("src/features/courses/screens.tsx");
-  assert.match(course, /item\.projectId === projectId && item\.modelId === model\?\.id/);
-  assert.match(course, /const studioReady = runtimeReady && Boolean\(observedRuntime\)/);
-  assert.match(course, /id === 4 && studioReady/);
+  assert.match(course, /id === 4 && runtimeReady/);
+  assert.ok(course.includes("Start Studio Live Session"));
+  assert.ok(course.includes("Activate Simulated Sandbox Telemetry"));
 });
 
-test("static Guided Labs proceed from a passing Quiz to submission", () => {
+test("static Guided Labs unlock Step 4 LabSubmissionV2 immediately after passing Quiz Gate", () => {
   const lab = read("src/features/courses/screens.tsx");
   const quiz = read("src/features/courses/course-quiz.tsx");
-  assert.match(lab, /!requiresRuntime && activeStep > 2 \? 2 : activeStep/);
-  assert.match(lab, /submissionHref=\{staticSubmission \? submitHref : undefined\}/);
+  assert.match(lab, /submissionHref=\{!requiresRuntime \? submitHref : undefined\}/);
   assert.match(quiz, /href=\{submissionHref \?\? runtimeStepHref\}/);
 });
 
@@ -624,14 +631,24 @@ test("WF-04 per-snapshot submission explanations, > 5.0/10 grading rule, and SR-
   assert.ok(grading.includes("At least one snapshot scored <= 5.0 / 10"));
 });
 
-test("Stage 1 reference views, 1-click workspace init, Step 4 submit bridge, and composer 1-click analysis", () => {
+test("Stage 1 reference views, Step 4 submit bridge, and student BFF endpoints are wired", () => {
   const course = read("src/features/courses/screens.tsx");
   const composer = read("src/features/submissions/composer.tsx");
+  const { allowedBackendPath } = require("../src/lib/api/backend-path.ts");
+  const ws = "11111111-1111-1111-1111-111111111111";
+  const labId = "22222222-2222-2222-2222-222222222222";
+  const sessId = "33333333-3333-3333-3333-333333333333";
 
   assert.ok(course.includes("const referenceModelQuery ="));
-  assert.ok(course.includes("Initialize & Analyze My Lab Workspace"));
-  assert.ok(course.includes("Proceed to Submit Lab"));
-  assert.ok(course.includes("#submission-composer"));
+  assert.ok(course.includes("Jump to Submission Box"));
+  assert.equal(allowedBackendPath(`workspaces/${ws}/course-labs/${labId}/student-context`), true);
+  assert.equal(allowedBackendPath(`workspaces/${ws}/course-labs/${labId}/studio-sessions`), true);
+  assert.equal(
+    allowedBackendPath(
+      `workspaces/${ws}/course-labs/${labId}/studio-sessions/${sessId}/bootstrap-studio`,
+    ),
+    true,
+  );
   assert.ok(composer.includes('id="submission-composer"'));
   assert.ok(
     composer.includes(
@@ -696,7 +713,7 @@ test("lecturer preview bypasses the roadmap lock and authoring keeps unsaved dra
   const course = read("src/features/courses/screens.tsx");
   const builder = read("src/features/courses/course-builder.tsx");
 
-  assert.match(course, /!preview && roadmap\.data\.guided/);
+  assert.match(course, /!preview &&\s*roadmap\.data\.guided/);
   assert.match(course, /type === "IMPACT_LAB"\) return 2/);
   assert.match(builder, /score === undefined \|\| score === "" \? 10 : Number\(score\)/);
   assert.doesNotMatch(builder, /course\.data\?\.draftRevision, course\.data\?\.title/);
@@ -731,10 +748,15 @@ test("lecturer course setup checklist links the reference runtime and Studio Liv
   );
 });
 
-test("guided submission requires Studio evidence on the selected model", () => {
+test("guided submission attaches verified Studio session when required and renders LabSubmissionV2 in Step 4", () => {
   const lab = read("src/features/courses/screens.tsx");
+  const subV2 = read("src/features/courses/lab-submission-v2.tsx");
   const composer = read("src/features/submissions/composer.tsx");
-  assert.match(lab, /canSubmitFromStep4 = step === 4 && runtimeReady && studioVerified/);
+  assert.ok(lab.includes("runtimeSessionId={verifiedSessionForSubmit}"));
+  assert.match(
+    subV2,
+    /canSubmit\s*=\s*answer\.trim\(\)\.length > 0 && \(!studio \|\| Boolean\(runtimeSessionId\)\)/,
+  );
   assert.match(composer, /s\.studioVerified && s\.snapshotId === model\.snapshotId/);
   assert.match(composer, /stage3Ready && selectedRuntime\?\.studioVerified === true/);
 });
@@ -1075,4 +1097,70 @@ test("GradeForm renders student snapshot explanations and preserves dirty draft 
 
   assert.ok(html.includes("Theory explanation"));
   assert.ok(html.includes("Orders route controller delegates cleanly to payment."));
+});
+
+test("FE-02 Student Submissions eliminate ReadOnlyDrawio iframe/.drawio and isolate classes strictly by workspaceId", () => {
+  const React = require("react");
+  const { renderToStaticMarkup } = require("react-dom/server");
+  const { FrozenArtifacts } = require("../src/features/submissions/frozen-artifacts.tsx");
+  const { filterStudentSubmissions } = require("../src/features/submissions/screens.tsx");
+  const frozenSource = read("src/features/submissions/frozen-artifacts.tsx");
+  const screensSource = read("src/features/submissions/screens.tsx");
+  const componentsSource = read("src/features/submissions/components.tsx");
+
+  assert.doesNotMatch(frozenSource, /ReadOnlyDrawio|submission-viewer\.html|\.drawio/);
+  assert.match(screensSource, /showLegacyTechnicalPanels\s*=\s*canReview\s*&&\s*!isV2Submission/);
+  assert.match(componentsSource, /if\s*\(!canReview\)\s*\{?\s*return/);
+
+  const legacyDrawioHtml = renderToStaticMarkup(
+    React.createElement(FrozenArtifacts, {
+      submission: {
+        id: "sub-legacy",
+        assignmentId: "lab-legacy",
+        assignmentTitle: "Legacy Lab",
+        studentId: "stu-1",
+        studentName: "Student 1",
+        model: { id: "mod-1", revision: 1, elements: [], edges: [] },
+        snapshot: { id: "snap-1", digest: "sha256:snap" },
+        diagramVersionId: "diag-1",
+        diagramLayout: {
+          artifacts: [
+            {
+              notation: "C4_CONTAINER",
+              layoutJson: { drawioXml: "<mxfile><diagram>legacy</diagram></mxfile>" },
+            },
+          ],
+        },
+        feedback: [],
+        submittedAt: "2026-11-17T10:00:00Z",
+      },
+    }),
+  );
+  assert.ok(!legacyDrawioHtml.includes("submission-viewer.html"));
+  assert.ok(!legacyDrawioHtml.includes(".drawio"));
+  assert.ok(legacyDrawioHtml.includes("Download diagram JSON"));
+
+  const subClassA = {
+    id: "sub-a",
+    assignmentId: "lab-1",
+    workspaceId: "ws-a",
+    studentId: "stu-1",
+    model: { id: "m1", revision: 1, elements: [], edges: [] },
+    snapshot: { id: "s1", digest: "d1" },
+    diagramVersionId: null,
+    diagramLayout: null,
+    feedback: [],
+    submittedAt: "2026-11-17T10:00:00Z",
+  };
+  const subClassB = {
+    ...subClassA,
+    id: "sub-b",
+    assignmentId: "lab-2",
+    workspaceId: "ws-b",
+  };
+  const filtered = filterStudentSubmissions([subClassA, subClassB], "ws-a", "");
+  assert.deepEqual(
+    filtered.map((s) => s.id),
+    ["sub-a"],
+  );
 });

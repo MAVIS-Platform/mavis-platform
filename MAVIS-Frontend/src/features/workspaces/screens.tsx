@@ -15,7 +15,6 @@ import { CourseOutline } from "@/features/courses/course-outline";
 import { CourseBuilder } from "@/features/courses/course-builder";
 import { CourseSetupPanel } from "@/features/courses/course-setup";
 import { useLocale } from "@/lib/i18n/locale-context";
-import { CurriculumLibrary } from "@/features/courses/curriculum";
 
 export function Workspaces() {
   const { t } = useLocale();
@@ -49,17 +48,7 @@ export function Workspaces() {
       </header>
 
       {canCreate && showCreate && <CreateWorkspace onClose={() => setShowCreate(false)} />}
-      {session.data?.user?.role === "student" && <CourseEnrollment />}
-      {session.data?.user?.role === "student" && (
-        <details className="border-t pt-4">
-          <summary className="w-fit cursor-pointer text-sm font-medium text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-            {t("Reference materials: Java and C#", "Tài liệu tham khảo: Java và C#")}
-          </summary>
-          <div className="mt-4">
-            <CurriculumLibrary />
-          </div>
-        </details>
-      )}
+      {session.data?.user?.role === "student" && <CourseEnrollment destination="roadmap" />}
 
       <RequestState
         query={query}
@@ -71,67 +60,129 @@ export function Workspaces() {
                 "Bạn chưa có lớp nào. Hãy tạo lớp đầu tiên ở trên.",
               )
             : t(
-                "You are not enrolled in a class yet. Ask your lecturer for a Passkey.",
-                "Bạn chưa ghi danh lớp nào. Hãy xin Passkey từ giảng viên.",
+                "You are not enrolled in a class yet. Enter your Passkey above to join.",
+                "Bạn chưa ghi danh lớp nào. Nhập Passkey ở trên để tham gia.",
               )
         }
       >
-        <ul className="divide-y divide-border/70 border-y border-border/70">
-          {query.data?.map((workspace) => {
-            const members = workspace.members ?? [];
-            const students = members.filter(
-              (member) => member.role.toUpperCase() === "STUDENT",
-            ).length;
-            const workspaceUrl = `/workspace-overview?workspace=${encodeURIComponent(workspace.id)}`;
-            return (
-              <li
-                key={workspace.id}
-                className="grid gap-x-6 gap-y-4 py-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:py-6"
-              >
-                <div className="min-w-0 space-y-2">
-                  <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-xs text-muted-foreground">
-                    <span className="font-mono font-medium tracking-wide text-primary">
-                      {workspace.code || t("CLASS", "LỚP")}
-                    </span>
-                    <span aria-hidden="true" className="text-border">
-                      /
-                    </span>
-                    <span>{workspace.myRole || t("Member", "Thành viên")}</span>
-                    <StatusBadge
-                      status={workspace.status ?? "ACTIVE"}
-                      variant={workspace.status === "ARCHIVED" ? "secondary" : "default"}
-                    />
-                  </div>
-                  <Link
-                    className="block w-fit max-w-full break-words text-lg font-semibold tracking-tight text-foreground decoration-primary decoration-2 underline-offset-4 hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:text-xl"
-                    href={workspaceUrl}
-                  >
-                    {workspace.name}
-                  </Link>
-                  <p className="text-sm text-muted-foreground">
-                    {members.length} {t("members", "thành viên")} <span aria-hidden="true">·</span>{" "}
-                    {students} {t("students", "sinh viên")}
-                  </p>
-                  {workspace.description && (
-                    <p className="max-w-3xl text-sm leading-6 text-foreground/75">
-                      {workspace.description}
-                    </p>
-                  )}
-                </div>
-                <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                  <Button asChild size="sm">
-                    <Link href={workspaceUrl}>{t("Open class", "Mở lớp")}</Link>
-                  </Button>
-                  <Button asChild size="sm" variant="outline">
-                    <Link href={`/submissions?workspace=${encodeURIComponent(workspace.id)}`}>
-                      {t("Submissions", "Bài nộp")}
+        {!canCreate ? (
+          <div className="grid gap-4 md:grid-cols-2">
+            {query.data?.map((workspace) => {
+              const members = workspace.members ?? [];
+              const students = members.filter(
+                (member) => member.role.toUpperCase() === "STUDENT",
+              ).length;
+              const lecturers = members
+                .filter((member) => member.role.toUpperCase() === "LECTURER")
+                .map((member) => member.name);
+              const roadmapUrl = `/roadmap?workspace=${encodeURIComponent(workspace.id)}`;
+              return (
+                <article
+                  key={workspace.id}
+                  className="flex flex-col justify-between gap-4 rounded-2xl border bg-card p-5 transition-colors hover:border-primary/40"
+                >
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                      <span className="rounded bg-primary/10 px-2 py-0.5 font-mono font-semibold text-primary">
+                        {workspace.code || t("CLASS", "LỚP")}
+                      </span>
+                      <StatusBadge
+                        status={workspace.status ?? "ACTIVE"}
+                        variant={workspace.status === "ARCHIVED" ? "secondary" : "default"}
+                      />
+                    </div>
+                    <Link
+                      className="block w-fit max-w-full break-words text-lg font-semibold tracking-tight text-foreground hover:text-primary hover:underline"
+                      href={roadmapUrl}
+                    >
+                      {workspace.name}
                     </Link>
-                  </Button>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+                    {workspace.description && (
+                      <p className="line-clamp-2 text-sm text-muted-foreground">
+                        {workspace.description}
+                      </p>
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                      {lecturers.length
+                        ? `${t("Lecturer", "Giảng viên")}: ${lecturers.join(", ")} · `
+                        : ""}
+                      {students} {t("students", "sinh viên")}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 border-t pt-3">
+                    <Button asChild size="sm">
+                      <Link href={roadmapUrl}>
+                        {t("Enter class & Lab roadmap", "Vào lớp & Lộ trình Lab")}
+                      </Link>
+                    </Button>
+                    <Button asChild size="sm" variant="outline">
+                      <Link href={`/submissions?workspace=${encodeURIComponent(workspace.id)}`}>
+                        {t("Submissions & Grades", "Bài nộp & Điểm")}
+                      </Link>
+                    </Button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        ) : (
+          <ul className="divide-y divide-border/70 border-y border-border/70">
+            {query.data?.map((workspace) => {
+              const members = workspace.members ?? [];
+              const students = members.filter(
+                (member) => member.role.toUpperCase() === "STUDENT",
+              ).length;
+              const workspaceUrl = `/workspace-overview?workspace=${encodeURIComponent(workspace.id)}`;
+              return (
+                <li
+                  key={workspace.id}
+                  className="grid gap-x-6 gap-y-4 py-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:py-6"
+                >
+                  <div className="min-w-0 space-y-2">
+                    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-xs text-muted-foreground">
+                      <span className="font-mono font-medium tracking-wide text-primary">
+                        {workspace.code || t("CLASS", "LỚP")}
+                      </span>
+                      <span aria-hidden="true" className="text-border">
+                        /
+                      </span>
+                      <span>{workspace.myRole || t("Member", "Thành viên")}</span>
+                      <StatusBadge
+                        status={workspace.status ?? "ACTIVE"}
+                        variant={workspace.status === "ARCHIVED" ? "secondary" : "default"}
+                      />
+                    </div>
+                    <Link
+                      className="block w-fit max-w-full break-words text-lg font-semibold tracking-tight text-foreground decoration-primary decoration-2 underline-offset-4 hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:text-xl"
+                      href={workspaceUrl}
+                    >
+                      {workspace.name}
+                    </Link>
+                    <p className="text-sm text-muted-foreground">
+                      {members.length} {t("members", "thành viên")}{" "}
+                      <span aria-hidden="true">·</span> {students} {t("students", "sinh viên")}
+                    </p>
+                    {workspace.description && (
+                      <p className="max-w-3xl text-sm leading-6 text-foreground/75">
+                        {workspace.description}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                    <Button asChild size="sm">
+                      <Link href={workspaceUrl}>{t("Open class", "Mở lớp")}</Link>
+                    </Button>
+                    <Button asChild size="sm" variant="outline">
+                      <Link href={`/submissions?workspace=${encodeURIComponent(workspace.id)}`}>
+                        {t("Submissions", "Bài nộp")}
+                      </Link>
+                    </Button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </RequestState>
     </div>
   );
@@ -178,6 +229,14 @@ export function WorkspaceOverview() {
           }
         >
           <div className="space-y-4">
+            {activeTab === "outline" && !canManage && (
+              <CourseRoadmap
+                key={`student-roadmap-${workspace.id}`}
+                workspaceId={workspace.id}
+                canManage={false}
+                active={workspace.status !== "ARCHIVED"}
+              />
+            )}
             {activeTab === "outline" && (
               <CourseOutline
                 workspaceId={workspace.id}

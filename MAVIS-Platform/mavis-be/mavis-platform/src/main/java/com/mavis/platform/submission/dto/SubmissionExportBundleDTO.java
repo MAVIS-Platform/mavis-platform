@@ -24,10 +24,14 @@ public class SubmissionExportBundleDTO {
     private String labOutcome;
 
     private UUID submissionId;
+    private UUID workspaceId;
+    private String workspaceName;
     private UUID projectId;
     private String projectName;
     private UUID assignmentId;
     private String assignmentTitle;
+    private Integer labOrder;
+    private String labMode;
     private UUID submittedById;
     private String submittedByName;
     private UUID sourceSnapshotId;

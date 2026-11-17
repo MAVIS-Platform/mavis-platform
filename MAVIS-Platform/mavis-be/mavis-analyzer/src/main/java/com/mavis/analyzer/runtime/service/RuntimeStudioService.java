@@ -15,6 +15,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.OffsetDateTime;
+import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 
@@ -159,9 +160,69 @@ public class RuntimeStudioService {
         if (("SCALE".equals(request.action())) != (request.replicas() != null))
             throw error(ErrorCode.BAD_REQUEST, "Replicas are required only for SCALE.");
         ObjectNode action = mapper.valueToTree(request);
-        action.put("status", "PENDING");
         action.put("requestedAt", OffsetDateTime.now().toString());
+        if (control.path("simulatedSandbox").asBoolean(false)) {
+            int before = currentSimulatedReplicas(control, request.service());
+            int after = switch (request.action()) {
+                case "STOP" -> 0;
+                case "START" -> Math.max(1, before == 0 ? 1 : before);
+                case "SCALE" -> request.replicas() == null ? 1 : request.replicas();
+                default -> before;
+            };
+            if (("STOP".equals(request.action()) && before == 0)
+                    || ("START".equals(request.action()) && before > 0)
+                    || ("SCALE".equals(request.action()) && before == after)) {
+                throw error(ErrorCode.CONFLICT, "Service already in requested replica state.");
+            }
+            ObjectNode result = mapper.createObjectNode()
+                    .put("action", request.action())
+                    .put("service", request.service())
+                    .put("replicasBefore", before)
+                    .put("replicasAfter", after)
+                    .put("confirmed", true);
+            result.putObject("metricsBefore")
+                    .put("runningReplicas", before)
+                    .put("errorRate", before == 0 ? 1.0 : 0.0)
+                    .put("p95LatencyMs", before == 0 ? 0.0 : Math.max(12.0, 48.0 / Math.max(1, before)));
+            result.putObject("metricsAfter")
+                    .put("runningReplicas", after)
+                    .put("errorRate", after == 0 ? 1.0 : 0.0)
+                    .put("p95LatencyMs", after == 0 ? 0.0 : Math.max(12.0, 48.0 / Math.max(1, after)));
+            action.put("status", "CONFIRMED");
+            action.put("completedAt", OffsetDateTime.now().toString());
+            action.set("result", result);
+            control.withArray("actions").add(action);
+            applySimulatedTelemetryUpdate(session, control, request.service(), after);
+            save(session, control);
+            return view(session);
+        }
+        action.put("status", "PENDING");
         control.withArray("actions").add(action);
+        save(session, control);
+        return view(session);
+    }
+
+    @Transactional
+    public JsonNode bootstrapSimulatedSandbox(UUID id) {
+        RuntimeSession session = locked(id);
+        access.requireProjectWriteAccess(session.getProject());
+        String exec = session.getExecutionStatus() == null ? "NOT_STARTED" : session.getExecutionStatus().toUpperCase(Locale.ROOT);
+        if (Set.of("COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT", "TIMEOUT").contains(exec)) {
+            throw error(ErrorCode.CONFLICT, "Studio session has already finished.");
+        }
+        ObjectNode control = control(session);
+        if ("RUNNING".equals(exec) && control.hasNonNull("telemetry") && !control.path("simulatedSandbox").asBoolean(false)) {
+            return view(session);
+        }
+        session.setScenarioStatus("APPROVED");
+        session.setExecutionStatus("RUNNING");
+        if (session.getStartedAt() == null) {
+            session.setStartedAt(OffsetDateTime.now());
+        }
+        control.put("simulatedSandbox", true);
+        if (!control.hasNonNull("telemetry")) {
+            initializeSimulatedTelemetry(session, control);
+        }
         save(session, control);
         return view(session);
     }
@@ -181,6 +242,9 @@ public class RuntimeStudioService {
             }
             if (!confirmed) throw error(ErrorCode.UNPROCESSABLE_ENTITY, "Perform a confirmed action before saving Studio evidence. Cancel the session to discard it.");
             control.put("finishRequested", true);
+            if (control.path("simulatedSandbox").asBoolean(false)) {
+                completeSimulatedSession(session, control);
+            }
             save(session, control);
         }
         return view(session);
@@ -321,5 +385,155 @@ public class RuntimeStudioService {
             default -> false;
         };
     }
+
+    private int currentSimulatedReplicas(ObjectNode control, String service) {
+        for (JsonNode item : control.path("telemetry").path("services")) {
+            if (service.equals(item.path("service").asText())) {
+                return Math.max(0, item.path("runningReplicas").asInt(1));
+            }
+        }
+        return 1;
+    }
+
+    private void initializeSimulatedTelemetry(RuntimeSession session, ObjectNode control) {
+        var replicaMap = new java.util.LinkedHashMap<String, Integer>();
+        var blocks = session.getScenarioConfig() == null ? null : session.getScenarioConfig().path("profile").path("studioTopology").path("blocks");
+        if (blocks != null && blocks.isArray() && !blocks.isEmpty()) {
+            for (JsonNode block : blocks) {
+                String svc = block.path("service").asText("");
+                if (!svc.isBlank() && !"mavis-collector".equals(svc)) {
+                    replicaMap.put(svc, block.path("initiallyStopped").asBoolean(false) ? 0 : 1);
+                }
+            }
+        }
+        if (session.getConfirmedServiceMappings() != null) {
+            session.getConfirmedServiceMappings().keySet().stream()
+                    .filter(name -> name != null && !name.isBlank() && !"mavis-collector".equals(name))
+                    .sorted()
+                    .forEach(name -> replicaMap.putIfAbsent(name, 1));
+        }
+        writeSimulatedTelemetry(control, replicaMap);
+    }
+
+    private void applySimulatedTelemetryUpdate(RuntimeSession session, ObjectNode control, String service, int newReplicas) {
+        var replicaMap = new java.util.LinkedHashMap<String, Integer>();
+        for (JsonNode item : control.path("telemetry").path("services")) {
+            String name = item.path("service").asText("");
+            if (!name.isBlank()) {
+                replicaMap.put(name, Math.max(0, item.path("runningReplicas").asInt(1)));
+            }
+        }
+        if (replicaMap.isEmpty() && session.getConfirmedServiceMappings() != null) {
+            session.getConfirmedServiceMappings().keySet().stream()
+                    .filter(name -> name != null && !name.isBlank() && !"mavis-collector".equals(name))
+                    .sorted()
+                    .forEach(name -> replicaMap.put(name, 1));
+        }
+        replicaMap.put(service, newReplicas);
+        writeSimulatedTelemetry(control, replicaMap);
+    }
+
+    private void writeSimulatedTelemetry(ObjectNode control, java.util.Map<String, Integer> replicaMap) {
+        String now = OffsetDateTime.now().toString();
+        ObjectNode telemetry = mapper.createObjectNode().put("observedAt", now);
+        var servicesArray = telemetry.putArray("services");
+        var serviceNames = new java.util.ArrayList<>(replicaMap.keySet());
+        for (var entry : replicaMap.entrySet()) {
+            String svc = entry.getKey();
+            int count = Math.max(0, entry.getValue());
+            ObjectNode svcNode = servicesArray.addObject()
+                    .put("service", svc)
+                    .put("replicas", Math.max(1, count))
+                    .put("runningReplicas", count)
+                    .put("logs", count == 0
+                            ? svc + " container stopped (chaos fault active)"
+                            : svc + " running " + count + " replica(s) — HTTP 200 healthy");
+            var stats = svcNode.putArray("stats");
+            for (int i = 1; i <= count; i++) {
+                stats.addObject()
+                        .put("containerId", "sandbox-" + svc + "-" + i)
+                        .put("cpu", String.format(Locale.ROOT, "%.1f%%", Math.max(1.2, 6.4 / count)))
+                        .put("memory", String.format(Locale.ROOT, "%d MiB", 64 + i * 8))
+                        .put("network", String.format(Locale.ROOT, "%.1f KB/s", 2.4 * count));
+            }
+        }
+        String traceId = UUID.randomUUID().toString().replace("-", "");
+        var spansArray = telemetry.putArray("spans");
+        var interactionsArray = telemetry.putArray("interactions");
+        String prevSpanId = null;
+        String prevService = null;
+        for (int i = 0; i < serviceNames.size(); i++) {
+            String svc = serviceNames.get(i);
+            int running = replicaMap.getOrDefault(svc, 1);
+            String spanId = UUID.randomUUID().toString().replace("-", "").substring(0, 16);
+            boolean failed = running == 0;
+            spansArray.addObject()
+                    .put("traceId", traceId)
+                    .put("spanId", spanId)
+                    .put("runtimeService", svc)
+                    .put("operationName", "GET /" + svc + "/health")
+                    .put("circuitOpen", failed)
+                    .put("spanStatus", failed ? "ERROR" : "OK")
+                    .put("httpStatusCode", failed ? 503 : 200)
+                    .put("durationNanoseconds", String.valueOf(failed ? 45_000_000L : Math.max(4_000_000L, 18_000_000L / Math.max(1, running))));
+            if (prevSpanId != null && prevService != null) {
+                interactionsArray.addObject()
+                        .put("traceId", traceId)
+                        .put("fromService", prevService)
+                        .put("toService", svc)
+                        .put("parentSpanId", prevSpanId)
+                        .put("childSpanId", spanId);
+            }
+            prevSpanId = spanId;
+            prevService = svc;
+        }
+        telemetry.putArray("warnings").add("SIMULATED_SANDBOX_TELEMETRY");
+        control.set("telemetry", telemetry);
+        control.put("telemetryReceivedAt", now);
+    }
+
+    private void completeSimulatedSession(RuntimeSession session, ObjectNode control) {
+        ObjectNode receipt = mapper.createObjectNode();
+        var infraActions = receipt.putArray("infrastructureActions");
+        for (JsonNode action : control.withArray("actions")) {
+            if ("CONFIRMED".equals(action.path("status").asText()) && action.path("result").isObject()) {
+                infraActions.add(action.path("result").deepCopy());
+            }
+        }
+        var traceNode = receipt.putObject("outcome").putObject("trace");
+        var spans = traceNode.putArray("spans");
+        JsonNode currentSpans = control.path("telemetry").path("spans");
+        if (currentSpans.isArray() && !currentSpans.isEmpty()) {
+            currentSpans.forEach(s -> spans.add(s.deepCopy()));
+        } else {
+            spans.addObject()
+                    .put("traceId", UUID.randomUUID().toString().replace("-", ""))
+                    .put("spanId", "00f067aa0ba902b7")
+                    .put("runtimeService", serviceNamesOrDefault(session))
+                    .put("operationName", "GET /health")
+                    .put("httpStatusCode", 200);
+        }
+        String digest = com.mavis.analyzer.runtime.utils.CanonicalReceiptDigestUtils.computeDigest(receipt);
+        session.setRunnerReceiptJson(receipt);
+        session.setReceiptDigest(digest);
+        control.put("receiptSignature", "hmac-sha256:" + com.mavis.common.utils.HashUtils.sha256Hex(
+                ("sandbox-receipt:" + digest).getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        session.setExecutionStatus("COMPLETED");
+        session.setScenarioStatus("PASSED");
+        session.setEvidenceStatus("AVAILABLE");
+        session.setCleanupStatus("CONFIRMED");
+        session.setTraceQuality("SIMULATED_VERIFIED");
+        session.setTraceStatus("COMPLETE");
+        session.setSandboxEnforcementConfirmed(true);
+        session.setCompletedAt(OffsetDateTime.now());
+    }
+
+    private static String serviceNamesOrDefault(RuntimeSession session) {
+        if (session.getConfirmedServiceMappings() != null && !session.getConfirmedServiceMappings().isEmpty()) {
+            return session.getConfirmedServiceMappings().keySet().iterator().next();
+        }
+        return "order-service";
+    }
+
     private static BusinessException error(ErrorCode code, String message) { return new BusinessException(code, message); }
 }

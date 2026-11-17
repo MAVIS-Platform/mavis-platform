@@ -9,11 +9,9 @@ import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/shared/data";
 import { DetailPanel } from "@/components/shared/data";
 import { ErrorState, RequestState } from "@/components/shared/request-state";
-import { useApi, useApiMutation, useApiQuery, usePermission, useSelection } from "@/hooks/use-api";
+import { useApiMutation, useApiQuery, usePermission, useSelection } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
-import { diagramTypeLabel } from "@/lib/architecture/coursework-diagram-types";
 import { isDeadlinePassed } from "@/features/submissions/submission-readiness";
-import { SubmissionComposer } from "@/features/submissions/composer";
 import { SeedCuratedCourseLabs, useCourseRoadmap } from "@/features/workspaces/course-access";
 import { AssignmentInstructions } from "./assignment-instructions";
 import { AssignmentSourceDetails } from "./source-picker";
@@ -64,7 +62,12 @@ function LecturerAssignments() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={() => setShowTools((open) => !open)}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setShowTools((open) => !open)}
+          >
             <Settings2 className="mr-1 size-4" aria-hidden="true" />
             {t("Course tools", "Công cụ khóa học")}
           </Button>
@@ -116,7 +119,9 @@ function LecturerAssignments() {
               key: "title",
               label: t("Lab", "Lab"),
               render: (lab) => {
-                const position = roadmap.data?.labs.find((item) => item.assignmentId === lab.id)?.position;
+                const position = roadmap.data?.labs.find(
+                  (item) => item.assignmentId === lab.id,
+                )?.position;
                 return (
                   <Link
                     className="font-medium text-primary hover:underline"
@@ -145,7 +150,10 @@ function LecturerAssignments() {
               label: t("Reference source", "Nguồn tham chiếu"),
               render: (lab) =>
                 lab.referenceSource
-                  ? t(`Pinned · r${lab.referenceSource.revision}`, `Đã ghim · r${lab.referenceSource.revision}`)
+                  ? t(
+                      `Pinned · r${lab.referenceSource.revision}`,
+                      `Đã ghim · r${lab.referenceSource.revision}`,
+                    )
                   : t("Missing", "Chưa gắn"),
             },
             {
@@ -184,7 +192,9 @@ function LecturerAssignments() {
                       </Button>
                     )}
                     <Button asChild size="sm" variant="ghost">
-                      <Link href={`/submissions?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(lab.id)}`}>
+                      <Link
+                        href={`/submissions?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(lab.id)}`}
+                      >
                         {t("Submissions", "Bài nộp")}
                       </Link>
                     </Button>
@@ -193,7 +203,14 @@ function LecturerAssignments() {
                       size="sm"
                       variant="ghost"
                       disabled={remove.isPending || Boolean(published)}
-                      title={published ? t("Published Labs cannot be deleted here.", "Lab đã công bố không thể xóa tại đây.") : undefined}
+                      title={
+                        published
+                          ? t(
+                              "Published Labs cannot be deleted here.",
+                              "Lab đã công bố không thể xóa tại đây.",
+                            )
+                          : undefined
+                      }
                       onClick={() => {
                         if (
                           window.confirm(
@@ -227,7 +244,6 @@ function StudentAssignments() {
   const params = useSearchParams();
   const requestedAssignmentId = params?.get("assignment") || "";
   const query = useApiQuery("assignments", { workspaceId }, { enabled: Boolean(workspaceId) });
-  const client = useApi();
   const roadmap = useCourseRoadmap(workspaceId);
   const assignments = useMemo(() => {
     const rows = [...(query.data ?? [])];
@@ -238,7 +254,8 @@ function StudentAssignments() {
   }, [query.data, requestedAssignmentId]);
 
   useEffect(() => {
-    if (!requestedAssignmentId || !query.data?.some((item) => item.id === requestedAssignmentId)) return;
+    if (!requestedAssignmentId || !query.data?.some((item) => item.id === requestedAssignmentId))
+      return;
     document
       .getElementById(`assignment-${requestedAssignmentId}`)
       ?.scrollIntoView({ block: "start", behavior: "smooth" });
@@ -280,50 +297,51 @@ function StudentAssignments() {
                     </Badge>
                     <Badge variant={assignment.requireRuntimeTrace ? "warning" : "outline"}>
                       {assignment.requireRuntimeTrace
-                        ? t("Runtime trace required", "Yêu cầu runtime trace")
-                        : t("Runtime trace optional", "Runtime trace tùy chọn")}
+                        ? t("THEORY_QUIZ_STUDIO", "THEORY_QUIZ_STUDIO")
+                        : t("THEORY_QUIZ", "THEORY_QUIZ")}
                     </Badge>
                   </div>
                 }
               >
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="text-xs font-medium text-muted-foreground">
-                    {t("Required diagrams:", "Sơ đồ bắt buộc:")}
-                  </span>
-                  {assignment.requiredDiagramTypes && assignment.requiredDiagramTypes.length > 0 ? (
-                    assignment.requiredDiagramTypes.map((type) => (
-                      <Badge key={type} variant="secondary">
-                        {diagramTypeLabel(type)}
-                      </Badge>
-                    ))
-                  ) : (
-                    <Badge variant="outline">{t("Any saved diagram", "Bất kỳ sơ đồ đã lưu")}</Badge>
-                  )}
-                </div>
                 <AssignmentInstructions>{assignment.instructions}</AssignmentInstructions>
-                <AssignmentSourceDetails source={assignment.referenceSource} assignmentId={assignment.id} />
+                <AssignmentSourceDetails
+                  source={assignment.referenceSource}
+                  assignmentId={assignment.id}
+                />
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button asChild>
+                  {!locked && (
+                    <Button asChild>
+                      <Link
+                        href={`/lab?${new URLSearchParams({
+                          workspace: workspaceId,
+                          assignment: assignment.id,
+                          step: "1",
+                        })}`}
+                      >
+                        <BookOpen className="mr-1 size-4" aria-hidden="true" />
+                        {passed ? t("Review Lab", "Xem lại Lab") : t("Enter Lab", "Vào làm Lab")}
+                      </Link>
+                    </Button>
+                  )}
+                  <Button asChild variant="outline">
                     <Link
-                      href={`/lab?${new URLSearchParams({
-                        workspace: workspaceId,
-                        assignment: assignment.id,
-                        step: "1",
-                      })}`}
+                      href={`/submissions?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignment.id)}`}
                     >
-                      <BookOpen className="mr-1 size-4" aria-hidden="true" />
-                      {locked ? t("View Lab", "Xem Lab") : t("Open Lab", "Mở Lab")}
+                      {t("Submissions & Grades", "Bài nộp & Điểm")}
                     </Link>
                   </Button>
-                  <Button asChild variant="outline">
-                    <Link href={`/submissions?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignment.id)}`}>
-                      {t("My submissions", "Bài nộp của tôi")}
+                  <Button asChild variant="ghost">
+                    <Link href={`/roadmap?workspace=${encodeURIComponent(workspaceId)}`}>
+                      {t("Back to Lab Roadmap", "Quay lại Lộ trình Lab")}
                     </Link>
                   </Button>
                 </div>
                 {passed && (
                   <p role="status" className="text-sm text-success">
-                    {t("This Lab is complete. Your passing submission is in My Submissions.", "Lab đã hoàn thành. Bài đã đạt nằm trong Bài nộp của tôi.")}
+                    {t(
+                      "This Lab is complete. Your passing submission is in Submissions & Grades.",
+                      "Lab đã hoàn thành. Bài đã đạt nằm trong Bài nộp & Điểm.",
+                    )}
                   </p>
                 )}
                 {!passed && locked && (
@@ -333,15 +351,6 @@ function StudentAssignments() {
                       "Lab này bị khóa cho tới khi bạn đạt Lab trước.",
                     )}
                   </p>
-                )}
-                {!passed && !locked && (client.mode !== "backend" || roadmap.isSuccess) && (
-                  <SubmissionComposer
-                    key={assignment.id}
-                    assignmentId={assignment.id}
-                    requirements={assignment}
-                    guided={roadmap.data?.guided ?? false}
-                    workspaceId={workspaceId}
-                  />
                 )}
               </DetailPanel>
             </div>
