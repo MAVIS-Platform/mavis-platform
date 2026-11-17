@@ -50,11 +50,40 @@ test("student navigation follows Course to Roadmap to Lab and submissions", () =
     "Course Roadmap",
     "Lab Workspace",
     "My Submissions",
+    "Free Studio Sandbox",
   ])
     assert.ok(navigation.includes(label), label);
   assert.match(navigation, /href:\s*"\/roadmap"/);
   assert.match(navigation, /href:\s*"\/lab"/);
   assert.match(navigation, /href:\s*"\/courses"/);
+});
+
+test("student course landing prioritizes joined classes, defers curriculum and keeps Passkey deep-link", () => {
+  const course = read("src/features/courses/screens.tsx");
+  const curriculum = read("src/features/courses/curriculum.tsx");
+  const nav = read("src/lib/navigation.ts");
+  assert.ok(course.includes('id="course-passkey"'));
+  assert.ok(course.includes('aria-controls="course-passkey-form"'));
+  assert.ok(course.includes("Continue learning"));
+  assert.ok(course.includes("Reference materials: Java and C#"));
+  assert.match(curriculum, /useCurriculum\(open\)/);
+  assert.match(nav, /\/courses#course-passkey/);
+});
+
+test("student class outline uses published roadmap and markdown activities with a legacy roadmap fallback", () => {
+  const outline = read("src/features/courses/course-outline.tsx");
+  const shell = read("src/features/courses/course-workspace-shell.tsx");
+  assert.ok(outline.includes("usePublishedCourse(workspaceId)"));
+  assert.ok(outline.includes("legacyLabs.length > 0"));
+  assert.ok(outline.includes("<MarkdownPreview"));
+  assert.ok(outline.includes("Pass the preceding Labs to unlock this activity."));
+  assert.ok(shell.includes('tab === "content" || tab === "submissions"'));
+});
+
+test("student submissions are scoped by selected class roster and retain class navigation", () => {
+  const submissions = read("src/features/submissions/screens.tsx");
+  assert.ok(submissions.includes("idsInSelectedClass.has(submission.studentId)"));
+  assert.ok(submissions.includes('<CourseWorkspaceShell workspace={workspace} active="submissions">'));
 });
 
 test("Lab UI keeps unavailable progress gates honest and deep-links real assignment data", () => {

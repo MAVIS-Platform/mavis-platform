@@ -19,7 +19,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { useApi, useApiMutation, useApiQuery, useSelection, useSession } from "@/hooks/use-api";
-import { ErrorState, LoadingState, RequestState } from "@/components/shared/request-state";
+import { ErrorState, EmptyState, LoadingState, RequestState } from "@/components/shared/request-state";
 import {
   CourseEnrollment,
   CourseRoadmap as CourseLabRoadmap,
@@ -114,112 +114,145 @@ export function Courses() {
   const selection = useSelection();
   const query = useApiQuery("workspaces", {});
   const isStudent = session.data?.user?.role === "student";
+  const [passkeyOpen, setPasskeyOpen] = useState(false);
 
   useEffect(() => {
     if (isStudent && window.location.hash === "#course-passkey") {
-      document.getElementById("course-passkey")?.focus();
+      setPasskeyOpen(true);
+      requestAnimationFrame(() => {
+        const form = document.getElementById("course-passkey");
+        form?.focus();
+        form?.scrollIntoView({ block: "center" });
+      });
     }
   }, [isStudent]);
 
   return (
-    <div className="space-y-6">
-      <div className="rounded-2xl border bg-card p-6">
-        <div className="flex flex-wrap items-start justify-between gap-5">
-          <div className="max-w-2xl space-y-2">
-            <Badge variant="outline">{t("Course learning portal", "Cổng học tập khóa học")}</Badge>
-            <h1 className="text-2xl font-semibold tracking-tight">
-              {t("My Courses", "Khóa học của tôi")}
-            </h1>
-            <p className="text-sm leading-6 text-muted-foreground">
-              {t(
-                "Continue a curated microservices lab, review your progress, or join a class with an enrollment key. Course labs use lecturer-published source revisions; external source import is not available in this learning flow.",
-                "Tiếp tục Lab microservices đã được biên soạn, xem tiến độ hoặc tham gia lớp bằng mã. Lab sử dụng phiên bản mã nguồn do giảng viên công bố; luồng học tập không cho nhập mã nguồn ngoài.",
-              )}
-            </p>
-          </div>
-          <Button asChild size="sm">
-            <Link href="/studio">
-              <Play className="mr-1.5 size-3.5" />
-              {t("Open MAVIS Studio Workbench", "Mở MAVIS Studio độc lập")}
-            </Link>
+    <div className="space-y-5">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight">{t("My Courses", "Khóa học của tôi")}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {t("Your enrolled classes and next learning activity.", "Các lớp đã tham gia và hoạt động học tiếp theo.")}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {isStudent && (
+            <Button type="button" aria-expanded={passkeyOpen} aria-controls="course-passkey-form"
+              onClick={() => setPasskeyOpen((open) => !open)}>
+              {passkeyOpen ? t("Close", "Đóng") : t("Join a class", "Tham gia lớp")}
+            </Button>
+          )}
+          <Button asChild size="sm" variant="outline">
+            <Link href="/studio">{t("Open free Studio Sandbox", "Mở Sandbox Studio tự do")}</Link>
           </Button>
         </div>
-      </div>
+      </header>
 
       {isStudent && (
-        <div id="course-passkey" tabIndex={-1} className="scroll-mt-6">
-          <CourseEnrollment destination="roadmap" />
+        <section id="course-passkey-form" className={passkeyOpen ? "scroll-mt-6" : "hidden"}>
+          <div id="course-passkey" tabIndex={-1} className="scroll-mt-6">
+            <CourseEnrollment destination="roadmap" />
+          </div>
+        </section>
+      )}
+
+      <RequestState query={query} empty={false}>
+        {!query.data?.length ? (
+          <EmptyState
+            title={t("No classes yet", "Chưa có lớp học")}
+            description={t(
+              "Ask your lecturer for a Passkey, then join the class to see its lessons and Labs here.",
+              "Hãy xin Passkey từ giảng viên và tham gia lớp để xem bài học cùng Lab tại đây.",
+            )}
+            action={isStudent ? (
+              <Button type="button" onClick={() => setPasskeyOpen(true)}>
+                {t("Join a class", "Tham gia lớp")}
+              </Button>
+            ) : undefined}
+          />
+        ) : (
+          <div className="divide-y overflow-hidden rounded-lg border bg-card">
+            {query.data?.map((workspace) => {
+              const memberCount = workspace.members.length;
+              const isLecturer = workspace.myRole === "LECTURER" || session.data?.user?.role === "admin";
+              const lecturerNames = workspace.members
+                .filter((member) => member.role.toUpperCase() === "LECTURER")
+                .map((member) => member.name);
+              return (
+                <StudentCourseRow key={workspace.id} workspace={workspace} memberCount={memberCount}
+                  lecturerNames={lecturerNames} isLecturer={isLecturer}
+                  onOpen={() => selection.setWorkspaceId(workspace.id)} />
+              );
+            })}
+          </div>
+        )}
+      </RequestState>
+
+      {client.mode === "backend" && (
+        <details className="border-t pt-4">
+          <summary className="w-fit cursor-pointer text-sm font-medium text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            {t("Reference materials: Java and C#", "Tài liệu tham khảo: Java và C#")}
+          </summary>
+          <div className="mt-4"><CurriculumLibrary /></div>
+        </details>
+      )}
+    </div>
+  );
+}
+
+function StudentCourseRow({
+  workspace, memberCount, lecturerNames, isLecturer, onOpen,
+}: {
+  workspace: import("@/lib/api/contracts").Response<"workspaces">[number];
+  memberCount: number;
+  lecturerNames: string[];
+  isLecturer: boolean;
+  onOpen: () => void;
+}) {
+  const { t } = useLocale();
+  const roadmap = useCourseRoadmap(workspace.id);
+  const labs = roadmap.data?.labs ?? [];
+  const passed = labs.filter((lab) => lab.state === "PASSED").length;
+  const nextLab = labs.find((lab) => lab.state === "UNLOCKED");
+  const roadmapHref = `/roadmap?workspace=${encodeURIComponent(workspace.id)}`;
+  return (
+    <article className="flex flex-wrap items-center gap-x-6 gap-y-3 px-4 py-4 sm:px-5">
+      <div className="min-w-0 flex-1 basis-64">
+        <div className="flex flex-wrap items-center gap-2">
+          {workspace.code && <Badge variant="outline" className="font-mono">{workspace.code}</Badge>}
+          <StatusBadge status={workspace.status || "ACTIVE"} />
+        </div>
+        <h2 className="mt-2 break-words text-base font-semibold">{workspace.name}</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {t("Lecturer", "Giảng viên")}: {lecturerNames.length ? lecturerNames.join(", ") : t("Not listed", "Chưa có thông tin")}
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {memberCount} {t("members", "thành viên")} · {workspace.myRole || t("Member", "Thành viên")}
+        </p>
+        {nextLab && <p className="mt-1 text-sm text-muted-foreground">{t("Continue with", "Tiếp tục với")} {nextLab.title}</p>}
+      </div>
+      {roadmap.data?.guided && (
+        <div className="w-full max-w-xs sm:w-44">
+          <div className="flex justify-between gap-2 text-xs text-muted-foreground">
+            <span>{t("Lab results", "Kết quả Lab")}</span>
+            <span>{passed}/{labs.length}</span>
+          </div>
+          <div role="progressbar" aria-label={t("Labs passed", "Lab đã đạt")} aria-valuemin={0}
+            aria-valuemax={labs.length || 1} aria-valuenow={passed} className="mt-2 h-1.5 overflow-hidden rounded bg-muted">
+            <div className="h-full bg-primary" style={{ width: `${labs.length ? (passed / labs.length) * 100 : 0}%` }} />
+          </div>
         </div>
       )}
-      {client.mode === "backend" && <CurriculumLibrary />}
-
-      <RequestState
-        query={query}
-        empty={!query.data?.length}
-        emptyMessage={t(
-          "No course classes are available for this account yet.",
-          "Tài khoản này chưa có lớp học nào.",
-        )}
-      >
-        <div className="grid gap-5 lg:grid-cols-2">
-          {query.data?.map((workspace) => {
-            const memberCount = workspace.members.length;
-            const isLecturer =
-              workspace.myRole === "LECTURER" || session.data?.user?.role === "admin";
-            return (
-              <article key={workspace.id} className="rounded-2xl border bg-card p-5">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant="secondary">{workspace.code || t("Course class", "Lớp học")}</Badge>
-                      <StatusBadge status={workspace.status || "ACTIVE"} />
-                    </div>
-                    <h2 className="mt-3 text-lg font-semibold">{workspace.name}</h2>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {workspace.description || t("Microservices architecture learning", "Học kiến trúc microservices")}
-                    </p>
-                  </div>
-                  <BookOpen className="size-6 text-primary" aria-hidden="true" />
-                </div>
-                <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <p className="text-xs text-muted-foreground">{t("Role", "Vai trò")}</p>
-                    <p className="mt-1 font-medium">
-                      {workspace.myRole || session.data?.user?.role || t("Member", "Thành viên")}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">{t("Members", "Thành viên")}</p>
-                    <p className="mt-1 font-medium">{memberCount}</p>
-                  </div>
-                </div>
-                <div className="mt-5 flex flex-wrap gap-2">
-                  <Button asChild onClick={() => selection.setWorkspaceId(workspace.id)}>
-                    <Link href={`/roadmap${workspaceHref(workspace.id)}`}>
-                      {isLecturer
-                        ? t("Manage course", "Quản lý khóa học")
-                        : t("Open roadmap", "Mở lộ trình")}
-                      <ArrowRight aria-hidden="true" />
-                    </Link>
-                  </Button>
-                  <Button
-                    asChild
-                    variant="outline"
-                    onClick={() => selection.setWorkspaceId(workspace.id)}
-                  >
-                    <Link href={`/submissions?workspace=${encodeURIComponent(workspace.id)}`}>
-                      {isLecturer
-                        ? t("Review submissions", "Chấm bài nộp")
-                        : t("My submissions", "Bài nộp của tôi")}
-                    </Link>
-                  </Button>
-                </div>
-              </article>
-            );
-          })}
-        </div>
-      </RequestState>
-    </div>
+      <div className="flex shrink-0 gap-2">
+        <Button asChild onClick={onOpen}>
+          <Link href={roadmapHref}>{isLecturer ? t("Manage course", "Quản lý khóa học") : nextLab ? t("Continue learning", "Tiếp tục học") : t("View class content", "Xem nội dung lớp")}</Link>
+        </Button>
+        <Button asChild size="sm" variant="outline" onClick={onOpen}>
+          <Link href={`/submissions?workspace=${encodeURIComponent(workspace.id)}`}>{t("My submissions", "Bài nộp của tôi")}</Link>
+        </Button>
+      </div>
+    </article>
   );
 }
 
@@ -628,7 +661,7 @@ export function LabWorkspace() {
             )}
           </header>
 
-          <div className="grid min-w-0 gap-5 lg:grid-cols-[280px_minmax(0,1fr)]">
+      <div className="grid min-w-0 gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
             <LabToc
               steps={tocSteps}
               activeStep={displayedStep}
@@ -638,8 +671,7 @@ export function LabWorkspace() {
               preview={preview}
             />
             <div className="min-w-0 space-y-5">
-              <main className="min-w-0 space-y-5">
-                <StepContent
+              <StepContent
                   requiresRuntime={requiresRuntime}
                   runtimeReady={runtimeReady}
                   runtimeSessionHref={labSessions[0] ? runtimeLink(labSessions[0].id) : null}
@@ -669,7 +701,6 @@ export function LabWorkspace() {
                   modelId={model?.id ?? lab.referenceSource?.modelId}
                   modelRevision={model?.revision ?? lab.referenceSource?.revision}
                 />
-              </main>
               <div className="grid gap-4 md:grid-cols-2">
                 <DetailPanel title={t("Lab readiness", "Mức sẵn sàng của Lab")}>
                   <div className="space-y-3">

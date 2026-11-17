@@ -68,11 +68,15 @@ export function LabToc({
 }) {
   const { t } = useLocale();
   return (
-    <aside aria-label={t("Lab contents", "Mục lục bài Lab")} className="space-y-4 rounded-xl border bg-card p-4">
-      <div className="flex items-center justify-between gap-2">
+    <details aria-label={t("Lab contents", "Mục lục bài Lab")} open className="group rounded-lg border bg-card p-4 lg:sticky lg:top-4 lg:max-h-[calc(100svh-2rem)] lg:overflow-y-auto">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 [&::-webkit-details-marker]:hidden">
         <h2 className="text-sm font-semibold">{t("Lab contents", "Mục lục bài Lab")}</h2>
-        {preview && <Badge variant="warning">{t("Preview", "Xem trước")}</Badge>}
-      </div>
+        <span className="flex items-center gap-2">
+          {preview && <Badge variant="warning">{t("Preview", "Xem trước")}</Badge>}
+          <span className="text-xs text-muted-foreground lg:hidden">{t("Open", "Mở")}</span>
+        </span>
+      </summary>
+      <div className="mt-4 space-y-4">
 
       <div className="space-y-1.5">
         <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
@@ -162,6 +166,7 @@ export function LabToc({
           )}
         </div>
       )}
-    </aside>
+      </div>
+    </details>
   );
 }

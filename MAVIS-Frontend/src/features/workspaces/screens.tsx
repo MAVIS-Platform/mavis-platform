@@ -15,6 +15,7 @@ import { CourseOutline } from "@/features/courses/course-outline";
 import { CourseBuilder } from "@/features/courses/course-builder";
 import { CourseSetupPanel } from "@/features/courses/course-setup";
 import { useLocale } from "@/lib/i18n/locale-context";
+import { CurriculumLibrary } from "@/features/courses/curriculum";
 
 export function Workspaces() {
   const { t } = useLocale();
@@ -54,6 +55,14 @@ export function Workspaces() {
 
       {canCreate && showCreate && <CreateWorkspace onClose={() => setShowCreate(false)} />}
       {session.data?.user?.role === "student" && <CourseEnrollment />}
+      {session.data?.user?.role === "student" && (
+        <details className="border-t pt-4">
+          <summary className="w-fit cursor-pointer text-sm font-medium text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            {t("Reference materials: Java and C#", "Tài liệu tham khảo: Java và C#")}
+          </summary>
+          <div className="mt-4"><CurriculumLibrary /></div>
+        </details>
+      )}
 
       <RequestState
         query={query}
@@ -180,20 +189,12 @@ export function WorkspaceOverview() {
           </div>
 
           {activeTab === "outline" && (
-            <div className="space-y-6">
+            <div className="space-y-4">
               <CourseOutline
                 workspaceId={workspace.id}
                 canManage={canManage}
                 active={workspace.status !== "ARCHIVED"}
               />
-              {!canManage && (
-                <CourseRoadmap
-                  key={workspace.id}
-                  workspaceId={workspace.id}
-                  canManage={false}
-                  active={workspace.status !== "ARCHIVED"}
-                />
-              )}
             </div>
           )}
 

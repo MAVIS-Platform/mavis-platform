@@ -22,25 +22,50 @@ export function Submissions() {
   return canReview ? <TeachingSubmissions /> : <MySubmissions />;
 }
 function MySubmissions() {
+  const { t } = useLocale();
   const params = useSearchParams();
+  const selection = useSelection();
   const assignmentId = params?.get("assignment") || "";
+  const workspaceId = params?.get("workspace") || selection.workspaceId;
+  const workspaces = useApiQuery("workspaces", {});
   const query = useApiQuery("submissions", {});
-  const rows = assignmentId
-    ? (query.data ?? []).filter((submission) => submission.assignmentId === assignmentId)
-    : (query.data ?? []);
-  return (
-    <RequestState
-      query={query}
-      empty={!rows.length}
-      emptyMessage={
-        assignmentId
-          ? "No snapshot has been submitted for this Lab yet. Open the assignment to prepare your first submission."
-          : "No submitted work yet. Open an assignment in your workspace to submit a model version."
-      }
-    >
-      <SubmissionList rows={rows} />
-    </RequestState>
+  const idsInSelectedClass = new Set(
+    (workspaces.data?.find((item) => item.id === workspaceId)?.members ?? []).map((member) => member.id),
   );
+  const rows = (query.data ?? []).filter((submission) =>
+    (!assignmentId || submission.assignmentId === assignmentId) &&
+    (!workspaceId || idsInSelectedClass.has(submission.studentId)),
+  );
+  const workspace = workspaces.data?.find((item) => item.id === workspaceId);
+  const list = (
+    <div className="space-y-4">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight">{t("My Submissions", "Bài nộp của tôi")}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {t("Review submission status and published feedback for your work.", "Theo dõi trạng thái và phản hồi đã công bố cho bài làm của bạn.")}
+          </p>
+        </div>
+        {workspace && (
+          <Button asChild size="sm" variant="outline">
+            <Link href={`/workspace-overview?workspace=${encodeURIComponent(workspace.id)}`}>
+              {t("Back to class", "Quay lại lớp")}
+            </Link>
+          </Button>
+        )}
+      </header>
+      <RequestState
+        query={query}
+        empty={!rows.length}
+        emptyMessage={assignmentId
+          ? "No snapshot has been submitted for this Lab yet. Open the assignment to prepare your first submission."
+          : "No submitted work yet. Open an assignment in your workspace to submit a model version."}
+      >
+        <SubmissionList rows={rows} />
+      </RequestState>
+    </div>
+  );
+  return workspace ? <CourseWorkspaceShell workspace={workspace} active="submissions">{list}</CourseWorkspaceShell> : list;
 }
 function TeachingSubmissions() {
   const { t } = useLocale();

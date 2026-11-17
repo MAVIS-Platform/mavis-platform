@@ -20,6 +20,7 @@ import { useLocale } from "@/lib/i18n/locale-context";
 import { ApiError } from "@/lib/errors/api-error";
 import { useApiQuery } from "@/hooks/use-api";
 import { useCourseAuthoring, useCourseRoadmap, usePublishedCourse } from "@/features/workspaces/course-access";
+import { MarkdownPreview } from "@/components/shared/markdown-preview";
 
 export function isMissingCourseError(error: unknown) {
   return error instanceof ApiError && error.status === 404;
@@ -120,8 +121,43 @@ export function CourseOutline({
   }
 
   if (modules.length === 0) {
+    const legacyLabs = roadmap.data?.labs ?? [];
+    if (!canManage && legacyLabs.length > 0) {
+      return (
+        <section aria-labelledby="legacy-course-content" className="space-y-3">
+          <div>
+            <h2 id="legacy-course-content" className="font-semibold">{t("Class content", "Nội dung lớp")}</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {t("This class uses its published Lab roadmap.", "Lớp này sử dụng lộ trình Lab đã công bố.")}
+            </p>
+          </div>
+          <ol className="divide-y rounded-lg border bg-card">
+            {legacyLabs.map((lab) => (
+              <li key={lab.assignmentId} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                <div className="min-w-0">
+                  <p className="font-medium">{lab.position}. {lab.title}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {lab.state === "PASSED" ? t("Lab passed", "Đã đạt Lab")
+                      : lab.state === "UNLOCKED" ? t("Ready to continue", "Có thể tiếp tục học")
+                        : lab.reason === "COURSE_ARCHIVED" ? t("Class archived", "Lớp đã lưu trữ")
+                          : t("Complete the preceding Lab to unlock this one.", "Hoàn thành Lab trước để mở khóa bài này.")}
+                  </p>
+                </div>
+                {lab.state !== "LOCKED" && (
+                  <Button asChild size="sm" variant="outline">
+                    <Link href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(lab.assignmentId)}&step=1`}>
+                      {lab.state === "PASSED" ? t("Review Lab", "Xem lại Lab") : t("Continue learning", "Tiếp tục học")}
+                    </Link>
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ol>
+        </section>
+      );
+    }
     return (
-      <section className="rounded-xl border border-dashed bg-card p-6 text-center">
+      <section className="rounded-lg border border-dashed bg-card p-6 text-center">
         <h2 className="font-semibold">{t("No modules yet", "Chưa có chương/module")}</h2>
         <p className="mx-auto mt-1 max-w-lg text-sm text-muted-foreground">
           {canManage
@@ -174,8 +210,15 @@ export function CourseOutline({
       <ol className="space-y-3">
         {modules.map((module) => (
           <li key={module.id}>
-            <details open className="group rounded-xl border bg-card">
-              <summary className="flex cursor-pointer list-none flex-wrap items-center gap-3 px-4 py-3">
+            <details
+              open={
+                canManage
+                  ? undefined
+                  : module.position === 1 || module.items.some((item) => item.assignmentId && labs.get(item.assignmentId)?.state === "UNLOCKED")
+              }
+              className="group border-b last:border-b-0"
+            >
+              <summary className="flex cursor-pointer list-none flex-wrap items-center gap-3 py-3">
                 <span className="grid size-8 shrink-0 place-items-center rounded-lg border bg-muted/40 text-sm font-semibold">
                   {module.position}
                 </span>
@@ -224,8 +267,8 @@ export function CourseOutline({
                       ? `/roadmap?workspace=${encodeURIComponent(workspaceId)}#course-builder`
                       : null;
                   return (
-                    <li key={item.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
-                      <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted/50 text-muted-foreground">
+                    <li key={item.id} className="flex flex-wrap items-center gap-3 py-3">
+                      <span className="grid size-8 shrink-0 place-items-center rounded-md bg-muted/50 text-muted-foreground">
                         <Icon className="size-4" aria-hidden="true" />
                       </span>
                       <div className="min-w-0 flex-1">
@@ -241,6 +284,26 @@ export function CourseOutline({
                         {(item.description || (assignment?.title && assignment.title !== item.title)) && (
                           <p className="truncate text-xs text-muted-foreground">
                             {item.description || assignment?.title}
+                          </p>
+                        )}
+                        {item.type === "THEORY" && typeof item.content?.["body"] === "string" && (
+                          <details className="mt-2 text-sm">
+                            <summary className="w-fit cursor-pointer text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                              {t("Read lesson", "Đọc bài học")}
+                            </summary>
+                            <div className="mt-3 max-w-3xl">
+                              <MarkdownPreview markdown={String(item.content["body"])} />
+                            </div>
+                          </details>
+                        )}
+                        {item.type === "ESSAY" && typeof item.content?.["prompt"] === "string" && (
+                          <p className="mt-2 text-sm text-muted-foreground">{String(item.content["prompt"])}</p>
+                        )}
+                        {lockedForStudent && (
+                          <p className="mt-1 text-xs text-warning">
+                            {lab?.reason === "COURSE_ARCHIVED"
+                              ? t("This class is archived; learning access is unavailable.", "Lớp đã lưu trữ nên không thể tiếp tục học.")
+                              : t("Pass the preceding Labs to unlock this activity.", "Đạt các Lab trước để mở hoạt động này.")}
                           </p>
                         )}
                       </div>

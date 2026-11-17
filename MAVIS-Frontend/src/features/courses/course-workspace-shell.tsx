@@ -39,6 +39,10 @@ export function CourseWorkspaceShell({
   const members = workspace.members ?? [];
   const students = members.filter((member) => member.role.toUpperCase() === "STUDENT").length;
   const lecturers = members.filter((member) => member.role.toUpperCase() === "LECTURER").length;
+  const isStudent = workspace.myRole?.toUpperCase() === "STUDENT";
+  const visibleTabs = (Object.keys(TAB_LABELS) as CourseWorkspaceTab[]).filter(
+    (tab) => !isStudent || tab === "content" || tab === "submissions",
+  );
 
   return (
     <div className="space-y-5">
@@ -71,7 +75,7 @@ export function CourseWorkspaceShell({
           {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
         </div>
         <nav aria-label={t("Class sections", "Các mục của lớp")} className="mt-4 flex flex-wrap gap-1">
-          {(Object.keys(TAB_LABELS) as CourseWorkspaceTab[]).map((tab) => {
+          {visibleTabs.map((tab) => {
             const label = TAB_LABELS[tab];
             return (
               <Link

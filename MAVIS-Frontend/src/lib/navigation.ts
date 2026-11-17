@@ -59,7 +59,7 @@ export const globalNavigation: Record<AppRole, readonly NavigationGroup[]> = {
       items: [
         { id: "courses", label: "My Courses", icon: GraduationCap, href: "/courses" },
         { id: "join-course", label: "Join Course", icon: KeyRound, href: "/courses#course-passkey" },
-        { id: "studio", label: "MAVIS Studio", icon: Boxes, href: "/studio" },
+        { id: "studio", label: "Free Studio Sandbox", icon: Boxes, href: "/studio" },
       ],
     },
     {
