@@ -66,6 +66,8 @@ export const analysisStateSchema = z.enum([
 export const analysisJobSchema = z.object({
   id: z.string(),
   projectId: z.string(),
+  projectName: z.string().nullable().optional(),
+  workspaceName: z.string().nullable().optional(),
   snapshotId: z.string(),
   status: z.enum([
     "queued",
@@ -345,6 +347,12 @@ export const submissionSchema = z
     theoryEvidence: z.record(z.string(), z.unknown()).nullish(),
     studioEvidence:z.record(z.string(), z.unknown()).nullish(),
     studentSnapshots: z.array(studentSnapshotSchema).nullish(),
+    reviewStatus: z.string().nullable().optional(),
+    reviewScore: z.number().nullable().optional(),
+    labOutcome: z.string().nullable().optional(),
+    reviewSummary: z.string().nullable().optional(),
+    gradedByName: z.string().nullable().optional(),
+    gradedAt: z.string().nullable().optional(),
     id: z.string(),
     assignmentId: z.string(),
     studentId: z.string(),
@@ -410,6 +418,9 @@ export const auditSchema = z.object({
   at: z.string(),
   action: z.string(),
   actorId: z.string(),
+  actorName: z.string().nullable().optional(),
+  actorEmail: z.string().nullable().optional(),
+  details: z.string().nullable().optional(),
   resourceId: z.string(),
 });
 

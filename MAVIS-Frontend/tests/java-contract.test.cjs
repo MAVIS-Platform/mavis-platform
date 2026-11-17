@@ -489,7 +489,12 @@ test("mutation invalidation excludes unrelated IDs and uses submission response 
  assert.equal(queryMatchesScope(["api","models",{projectId:project}],scope),true);
  assert.equal(queryMatchesScope(["api","submissions",{}],scope),true);
  assert.equal(queryMatchesScope(["other","submissions",{}],scope),false);
- assert.deepEqual(mutationInvalidations.gradeSubmission,["submissionReview"]);
+ assert.deepEqual(mutationInvalidations.gradeSubmission, [
+   "submissionReview",
+   "assignmentSubmissions",
+   "submissions",
+   "submission",
+ ]);
 });
 
 

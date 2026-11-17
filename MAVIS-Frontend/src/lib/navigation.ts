@@ -207,36 +207,50 @@ export const lecturerWorkspaceNavigation: readonly NavigationGroup[] = [
     items: [
       {
         id: "workspace-overview",
-        label: "Workspace Overview",
+        label: "Overview & Setup",
         icon: LayoutGrid,
         href: "/workspace-overview",
       },
-      { id: "members", label: "Workspace Members", icon: Users, href: "/members" },
-      { id: "assignments", label: "Assignments", icon: BookOpen, href: "/assignments" },
-      { id: "lab-authoring", label: "Lab Authoring", icon: BookOpen, href: "/lab-authoring" },
-      {
-        id: "assignment-submissions",
-        label: "Assignment Submissions",
-        icon: ClipboardCheck,
-        href: "/submissions",
-      },
-      {
-        id: "workspace-results",
-        label: "Results",
-        icon: ClipboardCheck,
-        href: "/submissions?view=results",
-      },
       {
         id: "course-authoring",
-        label: "Course Authoring",
+        label: "Curriculum & Materials",
         icon: GraduationCap,
         href: "/workspace-overview?view=course-authoring",
       },
       {
-        id: "course-setup",
-        label: "Course Setup",
-        icon: Settings2,
-        href: "/workspace-overview?view=course-setup",
+        id: "assignments",
+        label: "Lab & Quiz Studio",
+        icon: BookOpen,
+        href: "/assignments",
+      },
+      { id: "lab-authoring", label: "Lab Authoring", icon: BookOpen, href: "/lab-authoring" },
+      {
+        id: "assignment-submissions",
+        label: "Grading & Gradebook",
+        icon: ClipboardCheck,
+        href: "/submissions",
+      },
+      { id: "members", label: "Students & Access", icon: Users, href: "/members" },
+    ],
+  },
+];
+
+export const lecturerReviewNavigation: readonly NavigationGroup[] = [
+  {
+    label: "Grading · SpeedGrader",
+    items: [
+      { id: "review", label: "Submission Review", icon: ClipboardCheck },
+      {
+        id: "submissions",
+        label: "Submissions Queue",
+        icon: ListChecks,
+        href: "/submissions",
+      },
+      {
+        id: "workspace-overview",
+        label: "Class Overview",
+        icon: LayoutGrid,
+        href: "/workspace-overview",
       },
     ],
   },
@@ -301,10 +315,11 @@ export function contextualNavigation(
   if (role === "student" && (scope === "workspace" || scope === "project")) {
     return studentWorkspaceNavigation;
   }
-  if (role === "lecturer" && scope === "project") return projectNavigation;
-  if (role === "lecturer" && scope === "workspace") return lecturerWorkspaceNavigation;
+  if (role === "lecturer" && (scope === "workspace" || scope === "project")) {
+    return lecturerWorkspaceNavigation;
+  }
   if (role === "lecturer" && scope === "review") {
-    return submissionReviewNavigation;
+    return lecturerReviewNavigation;
   }
   return [];
 }

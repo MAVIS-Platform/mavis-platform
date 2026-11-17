@@ -281,6 +281,16 @@ export function useCourseAuthoring(workspaceId: string, enabled = true) {
         },
       ).then(keepCourse),
   });
+  const deleteModule = useMutation({
+    mutationFn: ({ moduleId }: { moduleId: string }) =>
+      courseApi<AuthoringCourse>(`workspaces/${workspaceId}/course/modules/${moduleId}`, {
+        method: "DELETE",
+      }).then(keepCourse),
+    onSuccess: () => {
+      void cache.invalidateQueries({ queryKey: ["api", "course-published", workspaceId] });
+      void cache.invalidateQueries({ queryKey: ["api", "course-roadmap", workspaceId] });
+    },
+  });
   const startDraft = useMutation({
     mutationFn: () =>
       courseApi<AuthoringCourse>(`workspaces/${workspaceId}/course/draft`, { method: "POST" }),
@@ -297,6 +307,7 @@ export function useCourseAuthoring(workspaceId: string, enabled = true) {
     addItem,
     updateModule,
     moveModule,
+    deleteModule,
     updateItem,
     moveItem,
     deleteItem,
@@ -536,6 +547,78 @@ export function useBootstrapLabStudio(workspaceId: string, assignmentId: string)
         queryKey: ["api", "student-lab-studio-sessions", workspaceId, assignmentId],
       });
     },
+  });
+}
+
+export type AutoConfigureStudioResult = {
+  assignmentId: string;
+  projectId: string;
+  topologyRevision: number;
+  containerCount: number;
+  linkCount: number;
+  message: string;
+};
+
+export function useAutoConfigureStudio(workspaceId: string, assignmentId: string) {
+  const cache = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      courseApi<AutoConfigureStudioResult>(
+        `workspaces/${workspaceId}/course-labs/${assignmentId}/auto-configure-studio`,
+        { method: "POST" },
+      ),
+    onSuccess: () => {
+      void cache.invalidateQueries({ queryKey: ["api", "assignments"] });
+      void cache.invalidateQueries({ queryKey: ["api", "course-setup", workspaceId] });
+      void cache.invalidateQueries({ queryKey: ["api", "course-authoring", workspaceId] });
+      void cache.invalidateQueries({
+        queryKey: ["api", "student-lab-context", workspaceId, assignmentId],
+      });
+    },
+  });
+}
+
+export type GradebookLab = {
+  assignmentId: string;
+  title: string;
+  labOrder: number | null;
+  labMode: string;
+};
+
+export type GradebookCell = {
+  assignmentId: string;
+  quizBestScore: number | null;
+  quizPassed: boolean;
+  submissionId: string | null;
+  submittedAt: string | null;
+  reviewStatus: string | null;
+  reviewScore: number | null;
+  labOutcome: string | null;
+};
+
+export type GradebookStudent = {
+  studentId: string;
+  fullName: string;
+  email: string;
+  passedLabs: number;
+  averageScore: number | null;
+  cells: GradebookCell[];
+};
+
+export type WorkspaceGradebook = {
+  workspaceId: string;
+  workspaceName: string;
+  labs: GradebookLab[];
+  students: GradebookStudent[];
+};
+
+export function useWorkspaceGradebook(workspaceId: string, enabled = true) {
+  const client = useApi();
+  return useQuery({
+    queryKey: ["api", "workspace-gradebook", workspaceId],
+    queryFn: ({ signal }) =>
+      courseApi<WorkspaceGradebook>(`workspaces/${workspaceId}/gradebook`, { signal }),
+    enabled: client.mode === "backend" && Boolean(workspaceId) && enabled,
   });
 }
 
@@ -825,7 +908,7 @@ export function CourseRoadmap({
   );
 }
 
-function CoursePasskey({ workspaceId }: { workspaceId: string }) {
+export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
   const t = useCourseText();
   const cache = useQueryClient();
   const path = `workspaces/${workspaceId}/course-passkey`;
@@ -1085,6 +1168,9 @@ export function SeedCuratedCourseLabs({
       void cache.invalidateQueries({ queryKey: ["api", "assignments"] });
       void cache.invalidateQueries({ queryKey: ["api", "projects"] });
       void cache.invalidateQueries({ queryKey: ["api", "course-setup", workspaceId] });
+      void cache.invalidateQueries({ queryKey: ["api", "course-authoring", workspaceId] });
+      void cache.invalidateQueries({ queryKey: ["api", "course-published", workspaceId] });
+      void cache.invalidateQueries({ queryKey: ["api", "course-versions", workspaceId] });
     },
     onSettled: () => setActivePreset(null),
   });

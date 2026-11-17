@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { useLocale } from "@/lib/i18n/locale-context";
 import {
   SeedCuratedCourseLabs,
+  useAutoConfigureStudio,
   useCourseSetup,
   useRuntimeSetupReadiness,
   type CourseSetup,
@@ -36,14 +37,14 @@ const ACTION_LABELS: Record<string, { en: string; vi: string }> = {
 
 function stepHref(stepId: string, data: CourseSetup, workspaceId: string) {
   const workspace = `/assignments?workspace=${encodeURIComponent(workspaceId)}`;
+  const targetLabId = data.previewAssignmentId ?? data.labs[0]?.assignmentId ?? null;
   if (stepId === "workspace") return `/members?workspace=${encodeURIComponent(workspaceId)}`;
-  if (stepId === "studio" && data.nextAction === "freeze-topology") return workspace;
-  if (stepId === "runtime" || stepId === "studio")
-    return data.reference.projectId
-      ? `/runtime-config?project=${encodeURIComponent(data.reference.projectId)}`
+  if (stepId === "runtime" || stepId === "studio") {
+    return targetLabId
+      ? `/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(targetLabId)}&step=studio`
       : workspace;
-  if (stepId === "passkey")
-    return `/roadmap?workspace=${encodeURIComponent(workspaceId)}#course-passkey`;
+  }
+  if (stepId === "passkey") return "#class-passkey";
   if (stepId === "preview")
     return data.previewAssignmentId
       ? `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(data.previewAssignmentId)}&step=1`
@@ -83,6 +84,9 @@ export function CourseSetupPanel({ workspaceId }: { workspaceId: string }) {
   const { t } = useLocale();
   const setup = useCourseSetup(workspaceId);
   const readiness = useRuntimeSetupReadiness(setup.data?.reference.projectId ?? null);
+  const targetStudioLabId =
+    setup.data?.previewAssignmentId ?? setup.data?.labs[0]?.assignmentId ?? "";
+  const autoStudio = useAutoConfigureStudio(workspaceId, targetStudioLabId);
 
   if (setup.isPending) {
     return (
@@ -145,6 +149,46 @@ export function CourseSetupPanel({ workspaceId }: { workspaceId: string }) {
           {done}/{steps.length} {t("steps done", "bước hoàn tất")}
         </Badge>
       </div>
+
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/20 p-3">
+        <div className="space-y-0.5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {t("Quick Class Bootstrapper", "Khởi tạo nhanh giáo trình & Studio")}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "Seed curated Labs with auto-generated course modules, or 1-click prepare 2D Studio Live topology.",
+              "Khởi tạo nhanh bộ Lab kèm đề cương bài giảng, hoặc cấu hình tự động Studio 2D chỉ với 1 chạm.",
+            )}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <SeedCuratedCourseLabs workspaceId={workspaceId} />
+          {targetStudioLabId && (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={autoStudio.isPending}
+              onClick={() => autoStudio.mutate()}
+            >
+              {autoStudio.isPending
+                ? t("Configuring Studio…", "Đang cấu hình Studio…")
+                : t("⚡ 1-Click Auto-Configure Studio", "⚡ Tự động cấu hình Studio")}
+            </Button>
+          )}
+        </div>
+      </div>
+      {autoStudio.isSuccess && (
+        <p role="status" className="mt-2 text-xs text-success">
+          {autoStudio.data.message}
+        </p>
+      )}
+      {autoStudio.error && (
+        <p role="alert" className="mt-2 text-xs text-destructive">
+          {autoStudio.error.message}
+        </p>
+      )}
 
       <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
         <ol className="space-y-2" aria-label={t("Course setup steps", "Các bước thiết lập khóa học")}>

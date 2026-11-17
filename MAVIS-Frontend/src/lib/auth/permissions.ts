@@ -21,6 +21,7 @@ export function operationPermission(operation: Operation): Permission | undefine
   if (
     [
       "accounts",
+      "createAccount",
       "setAccountLock",
       "setAccountRole",
       "integrations",
@@ -32,6 +33,7 @@ export function operationPermission(operation: Operation): Permission | undefine
       "platformSummary",
       "adminHealth",
       "adminAiUsage",
+      "forceStopRuntimeSession",
     ].includes(operation)
   )
     return "admin:manage";

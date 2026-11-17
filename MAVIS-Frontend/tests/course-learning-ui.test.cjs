@@ -738,8 +738,9 @@ test("lecturer course setup checklist links the reference runtime and Studio Liv
   assert.ok(access.includes("workspaces/${workspaceId}/course/publish"));
   assert.ok(access.includes("course-setup"));
   assert.match(panel, /Course setup/);
-  assert.match(panel, /Studio Live/);
-  assert.match(panel, /runtime-config\?project=/);
+  assert.match(panel, /Auto-Configure Studio|Studio Live/);
+  assert.match(panel, /lab-authoring\?/);
+  assert.ok(!panel.includes("runtime-config?project="));
   assert.ok(course.includes("<CourseSetupPanel workspaceId={workspaceId}"));
   assert.ok(studio.includes("runtime-config?project="));
   assert.equal(
