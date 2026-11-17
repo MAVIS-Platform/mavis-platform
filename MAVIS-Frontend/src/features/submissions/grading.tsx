@@ -475,11 +475,11 @@ export function GradeForm({
             )}
           </FormField>
           <div className="flex flex-wrap gap-1.5">
-            {["100", "85", "70", "50"].map((preset) => (
+            {["100", "90", "80", "70", "50"].map((preset) => (
               <button
                 key={preset}
                 type="button"
-                className="rounded border px-2 py-0.5 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+                className="rounded-lg border px-2.5 py-1 text-xs font-semibold text-muted-foreground transition-colors hover:border-indigo-400 hover:bg-indigo-50 hover:text-indigo-700 dark:hover:bg-indigo-950/30 dark:hover:text-indigo-300"
                 onClick={() => {
                   setDirty(true);
                   setScore(preset);
@@ -582,6 +582,7 @@ export function GradeForm({
           {t("Return for changes")}
         </Button>
         <Button
+          className="bg-emerald-600 text-white hover:bg-emerald-700"
           disabled={
             save.isPending ||
             !canPublish ||
@@ -592,7 +593,7 @@ export function GradeForm({
           }
           onClick={() => submit("GRADED")}
         >
-          {t("Publish grade")}
+          {t("Publish grade", "Công bố điểm")}
         </Button>
       </div>
       {save.error && <ErrorState error={save.error} />}

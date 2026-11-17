@@ -41,23 +41,27 @@ test("course learning routes are registered in the shared authenticated shell", 
   assert.match(home, /<PublicHomepage\s*\/>/);
 });
 
-test("student navigation locks class sidebar to 3 clean course items and preserves student destinations", () => {
+test("student navigation locks class sidebar to 3 clean course items and preserves all-role destinations", () => {
   const navigation = read("src/lib/navigation.ts");
 
   for (const label of [
     "My Courses",
-    "Join Course",
-    "Course Roadmap",
-    "My Submissions",
+    "My Grades & Submissions",
     "Free Studio Sandbox",
     "My Classes",
-    "Lab Roadmap & Course",
-    "Submissions & Grades",
+    "Grading & Gradebook",
+    "MAVIS Studio",
+    "Admin Control Center",
+    "Users & Roles",
+    "Runtime & Quotas",
+    "Audit & Jobs",
   ])
     assert.ok(navigation.includes(label), label);
-  assert.match(navigation, /href:\s*"\/roadmap"/);
-  assert.match(navigation, /href:\s*"\/submissions"/);
   assert.match(navigation, /href:\s*"\/courses"/);
+  assert.match(navigation, /href:\s*"\/submissions"/);
+  assert.match(navigation, /href:\s*"\/studio"/);
+  assert.match(navigation, /href:\s*"\/workspaces"/);
+  assert.match(navigation, /href:\s*"\/administration\/health"/);
 });
 
 test("student course landing prioritizes joined classes, defers curriculum and keeps Passkey deep-link", () => {
@@ -69,7 +73,7 @@ test("student course landing prioritizes joined classes, defers curriculum and k
   assert.ok(course.includes("Continue learning"));
   assert.ok(course.includes("Reference materials: Java and C#"));
   assert.match(curriculum, /useCurriculum\(open\)/);
-  assert.match(nav, /\/courses#course-passkey/);
+  assert.ok(nav.includes('href: "/courses"') && nav.includes('href: "/submissions"') && nav.includes('href: "/studio"'));
 });
 
 test("student class outline uses published roadmap and markdown activities with a legacy roadmap fallback", () => {
@@ -324,9 +328,10 @@ test("Guided Lab Step 1 exposes inline C1-C3 & Dependency Graph views, pinned ID
   assert.ok(course.includes("Service Dependency Graph"));
   assert.ok(course.includes("DiagramPreview"));
   assert.ok(course.includes("ArchitectureGraph"));
-  assert.ok(course.includes("sourceSnapshotId"));
-  assert.ok(course.includes("modelVersionId"));
-  assert.ok(course.includes("Model Revision"));
+  assert.doesNotMatch(course, />sourceSnapshotId</);
+  assert.doesNotMatch(course, />modelVersionId</);
+  assert.doesNotMatch(course, /"Pinned learning context"/);
+  assert.doesNotMatch(course, /"Lab readiness"/);
   assert.ok(course.includes("StaticEvaluationSummary"));
   assert.ok(course.includes("Missing Call-Site / Evidence Grounding"));
 });

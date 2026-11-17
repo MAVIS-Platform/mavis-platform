@@ -20,11 +20,14 @@ import {
   CourseEnrollment,
   CoursePasskey,
   CourseRoadmap,
+  SeedCuratedCourseLabs,
   useCourseAuthoring,
   useCourseRoadmap,
+  useWorkspaceGradebook,
 } from "./course-access";
 import { ReferenceManagement } from "./reference-manage";
 import { CourseWorkspaceShell } from "@/features/courses/course-workspace-shell";
+import { CourseRoadmap as CourseRoadmapScreen } from "@/features/courses/screens";
 import { CourseOutline } from "@/features/courses/course-outline";
 import { CourseBuilder } from "@/features/courses/course-builder";
 import { CourseSetupPanel } from "@/features/courses/course-setup";
@@ -366,7 +369,8 @@ export function WorkspaceOverview() {
 
   return (
     <RequestState query={query} empty={!workspace}>
-      {workspace && (
+      {workspace && !canManage && <CourseRoadmapScreen />}
+      {workspace && canManage && (
         <CourseWorkspaceShell
           workspace={workspace}
           active={activeTab === "authoring" ? "authoring" : "content"}
@@ -440,10 +444,43 @@ export function WorkspaceOverview() {
             )}
             {activeTab === "outline" && canManage && (
               <div className="space-y-5">
-                <CourseSetupPanel workspaceId={workspace.id} />
-                <div id="class-passkey">
-                  <CoursePasskey workspaceId={workspace.id} />
-                </div>
+                <section
+                  aria-label={t("Quick Class Setup Bar", "Thiết Lập Nhanh Lớp Học")}
+                  className="grid gap-4 lg:grid-cols-2"
+                >
+                  <div id="class-passkey" className="rounded-2xl border bg-card p-1 shadow-sm">
+                    <CoursePasskey workspaceId={workspace.id} />
+                  </div>
+                  <div className="flex flex-col justify-between gap-3 rounded-2xl border bg-card p-5 shadow-sm">
+                    <div className="space-y-1">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-indigo-600 dark:text-indigo-400">
+                        {t("Quick Lab & Studio Bootstrap", "Khởi Tạo Nhanh Lab & Studio")}
+                      </p>
+                      <h2 className="text-base font-semibold">
+                        {t(
+                          "1-Click Curated Labs & Curriculum",
+                          "Tạo Nhanh Bộ Lab Mẫu & Đề Cương",
+                        )}
+                      </h2>
+                      <p className="text-xs text-muted-foreground">
+                        {t(
+                          "Seed ready-to-teach Java & C# Labs or manage individual Labs in the Lab Library.",
+                          "Khởi tạo bộ bài Lab Java & C# hoàn chỉnh hoặc vào Kho Lab để chỉnh sửa từng bài.",
+                        )}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <SeedCuratedCourseLabs workspaceId={workspace.id} />
+                      <Button asChild size="sm" variant="outline">
+                        <Link
+                          href={`/workspace-overview?workspace=${encodeURIComponent(workspace.id)}&view=course-setup`}
+                        >
+                          {t("Full Setup Checklist", "Checklist Chi Tiết")}
+                        </Link>
+                      </Button>
+                    </div>
+                  </div>
+                </section>
                 <CourseOutline
                   workspaceId={workspace.id}
                   canManage
@@ -490,6 +527,11 @@ export function WorkspaceMembers() {
   const [roleFilter, setRoleFilter] = useState("ALL");
   const workspace = query.data?.find((w) => w.id === workspaceId);
   const canManage = workspace?.myRole === "LECTURER" || session.data?.user?.role === "admin";
+  const gradebook = useWorkspaceGradebook(workspaceId ?? "", Boolean(workspaceId && canManage));
+  const studentStatsById = new Map(
+    (gradebook.data?.students ?? []).map((entry) => [entry.studentId, entry]),
+  );
+  const totalLabs = gradebook.data?.labs.length ?? 0;
   const filteredMembers = (workspace?.members ?? []).filter((m) => {
     const matchesSearch =
       !search.trim() ||
@@ -545,6 +587,65 @@ export function WorkspaceMembers() {
               columns={[
                 { key: "name", label: t("Name", "Họ tên"), render: (m) => m.name },
                 { key: "role", label: t("Role", "Vai trò"), render: (m) => m.role },
+                {
+                  key: "progress",
+                  label: t("Learning Progress", "Tiến Độ Học Tập"),
+                  render: (m) => {
+                    if (m.role.toUpperCase() !== "STUDENT") {
+                      return <span className="text-xs text-muted-foreground">—</span>;
+                    }
+                    const stats = studentStatsById.get(m.id);
+                    const passed = stats?.passedLabs ?? 0;
+                    const pct = totalLabs > 0 ? Math.round((passed / totalLabs) * 100) : 0;
+                    return (
+                      <div className="min-w-36 space-y-1">
+                        <div className="flex justify-between text-[11px] font-medium">
+                          <span className="text-emerald-700 dark:text-emerald-400">
+                            {passed}/{totalLabs} Labs
+                          </span>
+                          <span className="text-muted-foreground">{pct}%</span>
+                        </div>
+                        <div
+                          role="progressbar"
+                          aria-label={t("Student Lab progress", "Tiến độ Lab sinh viên")}
+                          aria-valuemin={0}
+                          aria-valuemax={totalLabs || 1}
+                          aria-valuenow={passed}
+                          className="h-1.5 w-full overflow-hidden rounded-full bg-muted"
+                        >
+                          <div
+                            className="h-full rounded-full bg-emerald-500 transition-all"
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  },
+                },
+                {
+                  key: "avgScore",
+                  label: t("Average Score", "Điểm Trung Bình"),
+                  render: (m) => {
+                    if (m.role.toUpperCase() !== "STUDENT") {
+                      return <span className="text-xs text-muted-foreground">—</span>;
+                    }
+                    const stats = studentStatsById.get(m.id);
+                    if (stats?.averageScore == null) {
+                      return <span className="text-xs text-muted-foreground">—</span>;
+                    }
+                    return (
+                      <span
+                        className={
+                          stats.averageScore > 50
+                            ? "font-semibold text-emerald-700 dark:text-emerald-400"
+                            : "font-semibold text-amber-700 dark:text-amber-400"
+                        }
+                      >
+                        {stats.averageScore}/100
+                      </span>
+                    );
+                  },
+                },
                 ...(canManage
                   ? [
                       {

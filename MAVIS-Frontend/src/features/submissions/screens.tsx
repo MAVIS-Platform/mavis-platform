@@ -227,6 +227,50 @@ function TeachingSubmissions() {
             {t("Class Gradebook Matrix", "Bảng điểm ma trận lớp")}
           </Button>
         </div>
+        <div
+          className="flex flex-wrap gap-1.5 rounded-xl border bg-muted/30 p-1"
+          role="group"
+          aria-label={t("Quick grading filters", "Lọc nhanh bài nộp")}
+        >
+          {[
+            { id: "ALL", status: "ALL", outcome: "ALL", label: t("All", "Tất cả") },
+            {
+              id: "PENDING",
+              status: "PENDING",
+              outcome: "ALL",
+              label: t("Pending Review", "Chờ chấm"),
+            },
+            {
+              id: "GRADED",
+              status: "GRADED",
+              outcome: "ALL",
+              label: t("Graded", "Đã chấm"),
+            },
+            {
+              id: "REVISION",
+              status: "ALL",
+              outcome: "NEEDS_REVISION",
+              label: t("Needs Revision", "Cần sửa"),
+            },
+          ].map((pill) => {
+            const active =
+              reviewStatusFilter === pill.status && outcomeFilter === pill.outcome;
+            return (
+              <Button
+                key={pill.id}
+                type="button"
+                size="sm"
+                variant={active ? "default" : "ghost"}
+                onClick={() => {
+                  setReviewStatusFilter(pill.status);
+                  setOutcomeFilter(pill.outcome);
+                }}
+              >
+                {pill.label}
+              </Button>
+            );
+          })}
+        </div>
       </div>
 
       {viewMode === "gradebook" ? (
@@ -596,13 +640,24 @@ function SubmissionList({ rows }: { rows: import("@/types/domain").Submission[] 
           {
             key: "action",
             label: t("Action", "Thao tác"),
-            render: (s) => (
-              <Button asChild size="sm" variant="outline">
-                <Link href={`/submissions/${encodeURIComponent(s.id)}`}>
-                  {t("Open review", "Mở chấm")}
-                </Link>
-              </Button>
-            ),
+            render: (s) => {
+              const isPending =
+                !s.reviewStatus || s.reviewStatus === "PENDING" || s.reviewStatus === "DRAFT";
+              return (
+                <Button
+                  asChild
+                  size="sm"
+                  variant={isPending ? "default" : "outline"}
+                  className={isPending ? "bg-indigo-600 text-white hover:bg-indigo-700" : ""}
+                >
+                  <Link href={`/submissions/${encodeURIComponent(s.id)}`}>
+                    {isPending
+                      ? t("Grade Now", "Chấm Điểm Ngay")
+                      : t("Open review", "Xem & Sửa Điểm")}
+                  </Link>
+                </Button>
+              );
+            },
           },
         ]}
       />

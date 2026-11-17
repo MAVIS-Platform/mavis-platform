@@ -210,18 +210,31 @@ function AttemptForm({
           </ol>
         </div>
       ) : quiz.runtimeUnlocked ? (
-        <div className="space-y-3 rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3">
-          <p role="status" className="text-sm font-medium">
-            PASSED (v{quiz.version}) · {t("Quiz passed", "Đã đạt Quiz")}
-          </p>
-          <Button asChild className="w-full sm:w-auto">
-            <Link href={submissionHref ?? runtimeStepHref}>
-              {submissionHref
-                ? t("Proceed to Submit Lab", "Chuyển sang Nộp bài Lab")
-                : t("Proceed to Step 3: Live Runtime", "Tiếp tục Bước 3: Live Runtime")}
-              <ArrowRight />
-            </Link>
-          </Button>
+        <div className="space-y-3 rounded-2xl border border-emerald-400 bg-emerald-50/90 p-5 text-emerald-950 shadow-sm dark:border-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-100">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="space-y-1">
+              <p className="text-base font-bold">
+                {t(
+                  "CONGRATULATIONS! YOU PASSED THE QUIZ GATE",
+                  "CHÚC MỪNG! BẠN ĐÃ VƯỢT QUA QUIZ GATE",
+                )}
+              </p>
+              <p role="status" className="text-sm font-medium opacity-90">
+                PASSED (v{quiz.version}) · {t("Quiz passed · Step 4 unlocked!", "Đã đạt Quiz · Bước 4 đã mở khóa!")}
+              </p>
+            </div>
+            <Button
+              asChild
+              className="w-full bg-emerald-600 text-white hover:bg-emerald-700 sm:w-auto"
+            >
+              <Link href={submissionHref ?? runtimeStepHref}>
+                {submissionHref
+                  ? t("Proceed to Submit Lab", "Chuyển sang Bước 4: Studio & Nộp Bài")
+                  : t("Proceed to Step 3: Live Runtime", "Tiếp tục Bước 3: Live Runtime")}
+                <ArrowRight />
+              </Link>
+            </Button>
+          </div>
         </div>
       ) : submit.data?.status === "PASSED" ? (
         <div className="space-y-2">
@@ -290,16 +303,25 @@ function AttemptForm({
             );
           })}
           {submit.data ? (
-            <div className="space-y-3 rounded-xl border border-destructive/40 bg-destructive/5 p-3">
-              <p role="status" className="text-sm font-medium">
-                {submit.data.status} · {submit.data.correctCount}/{submit.data.totalQuestions}
-              </p>
+            <div className="space-y-4 rounded-2xl border border-rose-300 bg-rose-50/90 p-5 text-rose-950 shadow-sm dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-100">
+              <div className="space-y-1">
+                <p className="text-base font-bold">
+                  {t("QUIZ NEEDS ANOTHER ATTEMPT", "CHƯA ĐẠT QUIZ GATE — HÃY THỬ LẠI")}
+                </p>
+                <p role="status" className="text-sm font-medium opacity-90">
+                  {submit.data.status} · {submit.data.correctCount}/{submit.data.totalQuestions} (
+                  {Math.round(
+                    (submit.data.correctCount / Math.max(submit.data.totalQuestions, 1)) * 100,
+                  )}
+                  %)
+                </p>
+              </div>
               {submit.data.questionResults && submit.data.questionResults.length > 0 && (
                 <ul className="space-y-2 text-sm">
                   {submit.data.questionResults.map((result, index) => (
                     <li
                       key={`${result.id}-${index}`}
-                      className="rounded-md border bg-background p-2"
+                      className="rounded-lg border bg-background/95 p-3 text-foreground"
                     >
                       <p className="flex items-center gap-2 font-medium">
                         {result.correct ? (
@@ -317,19 +339,18 @@ function AttemptForm({
                   ))}
                 </ul>
               )}
-              {submit.data.status === "NEEDS_RETRY" && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setAnswers({});
-                    setAttemptId(undefined);
-                    submit.reset();
-                  }}
-                >
-                  {t("Start a new attempt", "Bắt đầu lượt mới")}
-                </Button>
-              )}
+              <Button
+                type="button"
+                variant="outline"
+                className="bg-background text-foreground"
+                onClick={() => {
+                  setAnswers({});
+                  setAttemptId(undefined);
+                  submit.reset();
+                }}
+              >
+                {t("Start a new attempt", "Làm Lại Lượt Mới")}
+              </Button>
             </div>
           ) : (
             <Button disabled={submit.isPending || !answered}>{t("Submit Quiz", "Nộp Quiz")}</Button>

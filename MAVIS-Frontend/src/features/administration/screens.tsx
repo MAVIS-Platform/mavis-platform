@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { AdminRuntimeSummary, AdminToolbar, PageResults, Notice } from "./operations";
+import { AdminCommandHeader, AdminRuntimeSummary, AdminToolbar, PageResults, Notice } from "./operations";
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Plus } from "lucide-react";
@@ -83,6 +83,11 @@ export function Accounts() {
   const activePage = Math.min(page, Math.max(1, Math.ceil(rows.length / 10)));
   return (
     <div className="space-y-5">
+      <AdminCommandHeader
+        active="users"
+        refreshing={query.isFetching}
+        onRefresh={() => void query.refetch()}
+      />
       <AdminToolbar
         fetching={query.isFetching}
         updatedAt={query.dataUpdatedAt}
@@ -91,7 +96,11 @@ export function Accounts() {
         <p className="text-sm text-muted-foreground">
           Manage access, pending activations, and teaching roles with 1-click updates.
         </p>
-        <Button size="sm" onClick={() => setShowCreate((open) => !open)}>
+        <Button
+          size="sm"
+          className="bg-emerald-600 text-white hover:bg-emerald-700"
+          onClick={() => setShowCreate((open) => !open)}
+        >
           <Plus className="mr-1 size-4" aria-hidden="true" />
           {showCreate ? "Close form" : "+ Create Account"}
         </Button>
@@ -150,6 +159,32 @@ export function Accounts() {
           label="Pending verification"
           value={query.data?.filter((a) => a.status === "PENDING_VERIFICATION").length ?? "—"}
         />
+      </div>
+      <div className="flex flex-wrap gap-1.5 rounded-xl border bg-muted/30 p-1.5">
+        {[
+          { label: "All Users", r: "all", s: "all" },
+          { label: "Lecturers", r: "lecturer", s: "all" },
+          { label: "Students", r: "student", s: "all" },
+          { label: "Pending Activation", r: "all", s: "PENDING_VERIFICATION" },
+          { label: "Locked", r: "all", s: "LOCKED" },
+        ].map((pill) => {
+          const activePill = role === pill.r && state === pill.s;
+          return (
+            <Button
+              key={pill.label}
+              type="button"
+              size="sm"
+              variant={activePill ? "default" : "ghost"}
+              onClick={() => {
+                setRole(pill.r);
+                setState(pill.s);
+                setPage(1);
+              }}
+            >
+              {pill.label}
+            </Button>
+          );
+        })}
       </div>
       <div className="grid gap-3 rounded-xl border bg-card p-4 sm:grid-cols-[2fr_1fr_1fr]">
         <SearchInput
@@ -403,6 +438,11 @@ export function RuntimeProfiles() {
   const [tab, setTab] = useState<"profiles" | "sessions" | "quotas">("profiles");
   return (
     <div className="space-y-5">
+      <AdminCommandHeader
+        active="profiles"
+        refreshing={q.isFetching}
+        onRefresh={() => void q.refetch()}
+      />
       <div className="flex flex-wrap gap-2" role="tablist" aria-label="Runtime Governance Sections">
         <Button
           type="button"
@@ -1064,6 +1104,11 @@ export function AuditRecords() {
   const activePage = Math.min(page, Math.max(1, Math.ceil(rows.length / 10)));
   return (
     <div className="space-y-5">
+      <AdminCommandHeader
+        active="audit"
+        refreshing={q.isFetching}
+        onRefresh={() => void q.refetch()}
+      />
       <div className="flex flex-wrap gap-2" role="tablist" aria-label="Audit and Jobs Views">
         <Button
           type="button"
