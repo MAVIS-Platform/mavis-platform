@@ -12,6 +12,7 @@ import {
   Library,
   Plus,
   Save,
+  Sparkles,
   Trash2,
   Upload,
 } from "lucide-react";
@@ -56,7 +57,7 @@ function download(name: string, content: string, type: string) {
 }
 
 export function QuizBuilder({ workspaceId, assignmentId }: { workspaceId: string; assignmentId: string }) {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const cache = useQueryClient();
   const draftPath = `workspaces/${workspaceId}/course-labs/${assignmentId}/quiz/draft`;
   const publishPath = `workspaces/${workspaceId}/course-labs/${assignmentId}/quiz/publish`;
@@ -87,6 +88,7 @@ export function QuizBuilder({ workspaceId, assignmentId }: { workspaceId: string
   const [importText, setImportText] = useState("");
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [chapterId, setChapterId] = useState("");
+  const [aiCount, setAiCount] = useState(5);
   const hydrated = useRef(false);
 
   useEffect(() => {
@@ -146,6 +148,29 @@ export function QuizBuilder({ workspaceId, assignmentId }: { workspaceId: string
     onSuccess: () => {
       setMessage(t("Question saved to the bank.", "Đã lưu câu hỏi vào ngân hàng."));
       void cache.invalidateQueries({ queryKey: ["api", "quiz-bank", workspaceId] });
+    },
+  });
+  const generateFromTheory = useMutation({
+    mutationFn: () =>
+      api<{ providerMode: string; sourceTheoryItems: number; questions: QuizQuestion[] }>(
+        `${draftPath}/generate`,
+        {
+          method: "POST",
+          body: JSON.stringify({ count: aiCount, locale }),
+        },
+      ),
+    onSuccess: (result) => {
+      const incoming = result.questions ?? [];
+      const kept = questions.filter((question) => question.prompt.trim());
+      setQuestions([...kept, ...incoming]);
+      setSelected(kept.length);
+      setTab("questions");
+      setMessage(
+        t(
+          `Generated ${incoming.length} question(s) from ${result.sourceTheoryItems} theory item(s). Review and edit them before saving or publishing.`,
+          `Đã tạo ${incoming.length} câu hỏi từ ${result.sourceTheoryItems} mục lý thuyết. Hãy kiểm tra và sửa trước khi lưu hoặc công bố.`,
+        ),
+      );
     },
   });
   const deleteBank = useMutation({
@@ -247,8 +272,8 @@ export function QuizBuilder({ workspaceId, assignmentId }: { workspaceId: string
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
             {t(
-              "Write questions by hand or import JSON/CSV, preview the gate, save a draft and publish an immutable version.",
-              "Soạn câu hỏi bằng tay hoặc nhập JSON/CSV, xem trước gate, lưu nháp và công bố phiên bản bất biến.",
+              "Generate questions from the Lab theory, write them by hand or import JSON/CSV, preview the gate, save a draft and publish an immutable version.",
+              "Tạo câu hỏi từ lý thuyết của Lab, soạn tay hoặc nhập JSON/CSV, xem trước gate, lưu nháp và công bố phiên bản bất biến.",
             )}
           </p>
         </div>
@@ -528,6 +553,48 @@ export function QuizBuilder({ workspaceId, assignmentId }: { workspaceId: string
 
       {tab === "import" && (
         <div className="space-y-4">
+          <div className="space-y-2 rounded-lg border border-primary/20 bg-primary/5 p-3">
+            <h3 className="flex items-center gap-2 text-sm font-semibold">
+              <Sparkles className="size-4 text-primary" aria-hidden="true" />
+              {t("Generate from theory", "Tạo câu hỏi từ lý thuyết")}
+            </h3>
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "Builds questions from the theory you added to this Lab, so they stay tied to the lesson and the sample repository. Treat the output as a draft: review every question, then edit or keep it before saving.",
+                "Tạo câu hỏi từ phần lý thuyết bạn đã thêm cho Lab, để câu hỏi bám sát bài học và repo mẫu. Kết quả chỉ là bản nháp: hãy kiểm tra từng câu, sửa hoặc giữ lại trước khi lưu.",
+              )}
+            </p>
+            <div className="flex flex-wrap items-end gap-2">
+              <label className="space-y-1 text-xs font-medium">
+                <span>{t("Questions", "Số câu hỏi")}</span>
+                <Input
+                  className="w-24"
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={aiCount}
+                  onChange={(event) => setAiCount(Math.min(20, Math.max(1, Number(event.target.value) || 1)))}
+                />
+              </label>
+              <Button
+                type="button"
+                size="sm"
+                disabled={generateFromTheory.isPending}
+                onClick={() => generateFromTheory.mutate()}
+              >
+                <Sparkles className="mr-1 size-4" aria-hidden="true" />
+                {generateFromTheory.isPending
+                  ? t("Generating…", "Đang tạo…")
+                  : t("Generate from theory", "Tạo từ lý thuyết")}
+              </Button>
+            </div>
+            {generateFromTheory.error && (
+              <p role="alert" className="text-xs text-destructive">
+                {generateFromTheory.error.message}
+              </p>
+            )}
+          </div>
+
           <div className="space-y-2">
             <h3 className="font-semibold">{t("Import questions", "Nhập câu hỏi")}</h3>
             <p className="text-xs text-muted-foreground">

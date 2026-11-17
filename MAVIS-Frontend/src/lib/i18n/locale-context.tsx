@@ -842,6 +842,8 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Join Course": "Tham gia khóa học",
   "Course Roadmap": "Lộ trình khóa học",
   "Lab Workspace": "Không gian thực hành",
+  "Lab Library": "Kho Lab",
+  "Lab Creation": "Tạo Lab",
   "Learning project": "Dự án học tập",
   Lecturer: "Giảng viên",
   "Lecturer review & grade": "Giảng viên đánh giá & Chấm điểm",

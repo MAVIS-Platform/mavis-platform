@@ -38,7 +38,7 @@ const TAB_LABELS: Record<Tab, { en: string; vi: string; icon: LucideIcon }> = {
   source: { en: "Reference source", vi: "Nguồn tham chiếu", icon: GitBranch },
   quiz: { en: "Quiz", vi: "Quiz", icon: CircleHelp },
   studio: { en: "Studio Live", vi: "Studio Live", icon: Activity },
-  publish: { en: "Check & publish", vi: "Kiểm tra & công bố", icon: Rocket },
+  publish: { en: "Check & add to class", vi: "Kiểm tra & thêm vào lớp", icon: Rocket },
 };
 
 function isTab(value: string | null): value is Tab {
@@ -117,10 +117,10 @@ export function LabAuthoring() {
             </Link>
             <span>/</span>
             <Link className="hover:text-foreground" href={`/assignments?workspace=${encodeURIComponent(workspaceId)}`}>
-              {t("Labs", "Lab")}
+              {t("Lab Library", "Kho Lab")}
             </Link>
             <span>/</span>
-            <span className="text-foreground">{assignment ? t("Lab authoring", "Soạn Lab") : t("Create a Lab", "Tạo Lab")}</span>
+            <span className="text-foreground">{assignment ? t("Lab Creation", "Tạo Lab") : t("Create a Lab", "Tạo Lab")}</span>
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">
@@ -143,7 +143,7 @@ export function LabAuthoring() {
           <Button asChild size="sm" variant="outline">
             <Link href={`/assignments?workspace=${encodeURIComponent(workspaceId)}`}>
               <ArrowLeft className="mr-1 size-4" aria-hidden="true" />
-              {t("Back to Labs", "Về danh sách Lab")}
+              {t("Back to Lab Library", "Về Kho Lab")}
             </Link>
           </Button>
           {assignment && setupLab?.published && (
@@ -173,10 +173,10 @@ export function LabAuthoring() {
   if (!canManage) {
     return (
       <section className="rounded-xl border bg-card p-5" role="alert">
-        <p className="font-medium">{t("Lab authoring is available to lecturers.", "Chỉ giảng viên được soạn Lab.")}</p>
+        <p className="font-medium">{t("Lab Creation is available to lecturers.", "Chỉ giảng viên được tạo Lab.")}</p>
         <Button asChild className="mt-3" size="sm" variant="outline">
           <Link href={`/assignments?workspace=${encodeURIComponent(workspaceId)}`}>
-            {t("Open class Labs", "Mở danh sách Lab")}
+            {t("Open Lab Library", "Mở Kho Lab")}
           </Link>
         </Button>
       </section>
@@ -193,7 +193,7 @@ export function LabAuthoring() {
       <div className="space-y-5">
         {header}
         <div className="grid gap-5 lg:grid-cols-[260px_minmax(0,1fr)]">
-          <nav aria-label={t("Lab authoring steps", "Các bước soạn Lab")} className="space-y-1 rounded-xl border bg-card p-3">
+          <nav aria-label={t("Lab creation steps", "Các bước tạo Lab")} className="space-y-1 rounded-xl border bg-card p-3">
             {navItems.map((item, index) => {
               const meta = TAB_LABELS[item.id];
               const Icon = meta.icon;

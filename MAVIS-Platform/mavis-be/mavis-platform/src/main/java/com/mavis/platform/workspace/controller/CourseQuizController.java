@@ -2,6 +2,7 @@ package com.mavis.platform.workspace.controller;
 
 import com.mavis.common.dto.ApiResponse;
 import com.mavis.platform.workspace.service.CourseCurriculum;
+import com.mavis.platform.workspace.service.CourseQuizGenerationService;
 import com.mavis.platform.workspace.service.CourseQuizService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -18,6 +19,7 @@ import java.util.UUID;
 public class CourseQuizController {
     private final CourseQuizService quizzes;
     private final CourseCurriculum curriculum;
+    private final CourseQuizGenerationService generation;
 
     public record PublishChapter(@NotBlank String chapterId) {}
 
@@ -45,6 +47,13 @@ public class CourseQuizController {
                                                            @PathVariable UUID assignmentId,
                                                            @RequestBody CourseQuizService.Publish request) {
         return ApiResponse.success(quizzes.saveDraft(workspaceId, assignmentId, request));
+    }
+
+    @PostMapping("/generate")
+    public ApiResponse<CourseQuizGenerationService.Generated> generate(
+            @PathVariable UUID workspaceId, @PathVariable UUID assignmentId,
+            @RequestBody(required = false) CourseQuizGenerationService.Request request) {
+        return ApiResponse.success(generation.generate(workspaceId, assignmentId, request));
     }
 
     @PostMapping("/draft/curriculum")

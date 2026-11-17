@@ -685,7 +685,7 @@ export function PublishCourseLab({
     return (
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm font-medium">
-          Lab {labPosition} · {t("Published", "Đã công bố")}
+          {t(`In class · Lab ${labPosition}`, `Trong lớp · Lab ${labPosition}`)}
         </span>
         <Button
           type="button"
@@ -720,21 +720,21 @@ export function PublishCourseLab({
           if (
             window.confirm(
               t(
-                "Publish this assignment as the next lab? Students will follow the published order and use its assigned source.",
-                "Công bố assignment này làm Lab tiếp theo? Sinh viên sẽ học theo thứ tự công bố và sử dụng nguồn đã gán.",
+                "Add this Lab to the end of the class sequence? Students unlock it after the preceding Lab and use its pinned source.",
+                "Thêm Lab này vào cuối thứ tự lớp? Sinh viên mở Lab sau khi đạt Lab trước và dùng nguồn đã ghim.",
               ),
             )
           )
             publish.mutate();
         }}
       >
-        {t("Publish as lab", "Công bố Lab")}
+        {t("Add to class", "Thêm vào lớp")}
       </Button>
       {publish.error && (
         <p role="alert" className="text-sm text-destructive">
           {t(
-            "Could not publish. Check the assigned source and class status.",
-            "Chưa thể công bố. Hãy kiểm tra nguồn mẫu và trạng thái lớp.",
+            "Could not add this Lab to the class. Check the pinned source and class status.",
+            "Chưa thể thêm Lab vào lớp. Hãy kiểm tra nguồn đã ghim và trạng thái lớp.",
           )}
         </p>
       )}

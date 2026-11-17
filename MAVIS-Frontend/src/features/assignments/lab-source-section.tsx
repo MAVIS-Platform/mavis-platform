@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { GitBranch, Save } from "lucide-react";
+import Link from "next/link";
+import { ArrowUpRight, GitBranch, Network, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useApiMutation } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
@@ -22,6 +23,9 @@ export function LabSourceSection({
 
   const dueAt =
     assignment.dueAt && assignment.dueAt !== "No deadline" ? assignment.dueAt : null;
+  const reference = assignment.referenceSource;
+  const referenceProject = reference?.projectId;
+  const referenceModel = reference?.modelId;
   const canSave = Boolean(modelId) && !sourcePending && !save.isPending;
 
   const saveSource = () => {
@@ -93,6 +97,62 @@ export function LabSourceSection({
           source={assignment.referenceSource}
           assignmentId={assignment.id}
         />
+      )}
+
+      {referenceProject && referenceModel && (
+        <section className="space-y-3 rounded-xl border bg-card p-5">
+          <div>
+            <h3 className="font-semibold">{t("Generated architecture views", "Sơ đồ kiến trúc được tạo tự động")}</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {t(
+                "C1–C3 are generated from the pinned analysis of this repository, so students read the theory next to the same architecture the Lab is based on.",
+                "C1–C3 được tạo từ phân tích đã ghim của repo này, để sinh viên đọc lý thuyết cùng kiến trúc mà Lab đang dựa trên.",
+              )}
+            </p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {[
+              { kind: "CONTEXT", label: "C1 System Context", hint: t("System, actors and external systems", "Hệ thống, tác nhân và hệ thống ngoài") },
+              { kind: "CONTAINER", label: "C2 Container", hint: t("Services, databases and their connections", "Service, database và kết nối") },
+              { kind: "COMPONENT", label: "C3 Component", hint: t("Components inside a container", "Thành phần bên trong container") },
+            ].map((view) => (
+              <Button key={view.kind} asChild variant="outline" className="h-auto justify-between py-2.5">
+                <Link
+                  href={`/diagrams?${new URLSearchParams({
+                    project: referenceProject,
+                    model: referenceModel,
+                    kind: view.kind,
+                  })}`}
+                >
+                  <span className="text-left">
+                    <span className="block text-sm font-medium">{view.label}</span>
+                    <span className="block text-xs font-normal text-muted-foreground">{view.hint}</span>
+                  </span>
+                  <ArrowUpRight className="ml-2 size-4 shrink-0" aria-hidden="true" />
+                </Link>
+              </Button>
+            ))}
+            <Button asChild variant="outline" className="h-auto justify-between py-2.5">
+              <Link
+                href={`/architecture?${new URLSearchParams({
+                  project: referenceProject,
+                  model: referenceModel,
+                })}`}
+              >
+                <span className="text-left">
+                  <span className="flex items-center gap-1.5 text-sm font-medium">
+                    <Network className="size-3.5" aria-hidden="true" />
+                    {t("Dependency graph", "Đồ thị phụ thuộc")}
+                  </span>
+                  <span className="block text-xs font-normal text-muted-foreground">
+                    {t("Module and class dependencies from the analysis", "Phụ thuộc module và lớp từ phân tích")}
+                  </span>
+                </span>
+                <ArrowUpRight className="ml-2 size-4 shrink-0" aria-hidden="true" />
+              </Link>
+            </Button>
+          </div>
+        </section>
       )}
     </div>
   );

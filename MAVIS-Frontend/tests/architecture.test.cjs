@@ -583,7 +583,7 @@ test("lecturer sidebar expands the selected class and marks its class destinatio
  assert.ok(html.includes('href="/assignments?workspace=class-1"'));
  assert.ok(html.includes('aria-current="page"'));
  assert.match(html,/class="[^"]*bg-muted[^\"]*" aria-current="location" aria-label="SE180711 · FA" href="\/workspaces\?workspace=class-1"/);
- assert.match(html,/class="[^"]*bg-sidebar-accent[^\"]*" aria-current="location" aria-label="Assignments" href="\/assignments\?workspace=class-1"/);
+ assert.match(html,/class="[^"]*bg-sidebar-accent[^\"]*" aria-current="location" aria-label="Lab Library" href="\/assignments\?workspace=class-1"/);
 });
 
 test("student sidebar omits lecturer-only class destinations",()=>{
@@ -592,7 +592,7 @@ test("student sidebar omits lecturer-only class destinations",()=>{
  const hooks={useApi:()=>({mode:"backend"}),useApiQuery:op=>({data:op==="workspaces"?[workspace]:[],isSuccess:true,isPending:false,isFetching:false,isError:false,error:null,refetch(){}}),useSession:()=>({data:{user:{id:"student-1",name:"Learner",role:"student"}}}),useSelection:()=>({projectId:"",workspaceId:"class-1"}),useApiMutation:()=>({isPending:false})};
  const {AppShell}=loadRoutedComponent("src/components/app-shell.tsx",{"@/hooks/use-api":hooks,"next/navigation":{usePathname:()=>"/workspaces",useSearchParams:()=>new URLSearchParams("workspace=class-1"),useRouter:()=>({push(){},replace(){},refresh(){}})},"@/features/auth/access":{RequireSession:({children})=>children},"@tanstack/react-query":{useQueryClient:()=>({})}});
  const html=renderToStaticMarkup(React.createElement(ThemeProvider,null,React.createElement(AppShell,{role:"student",scope:"workspace",activeId:"workspaces"},"Class list")));
- assert.ok(!html.includes("Workspace Members"));assert.ok(!html.includes("Lab Authoring"));
+ assert.ok(!html.includes("Workspace Members"));assert.ok(!html.includes("Lab Creation"));
 });
 
 test("collapsed class sidebar keeps child destinations available as labeled links",()=>{
@@ -601,7 +601,7 @@ test("collapsed class sidebar keeps child destinations available as labeled link
  const hooks={useApi:()=>({mode:"backend"}),useApiQuery:op=>({data:op==="workspaces"?[workspace]:[],isSuccess:true,isPending:false,isFetching:false,isError:false,error:null,refetch(){}}),useSession:()=>({data:{user:{id:"teacher-1",name:"Lecturer",role:"lecturer"}}}),useSelection:()=>({projectId:"",workspaceId:"class-1"}),useApiMutation:()=>({isPending:false})};
  const {AppShell}=loadRoutedComponent("src/components/app-shell.tsx",{"@/hooks/use-api":hooks,"next/navigation":{usePathname:()=>"/assignments",useSearchParams:()=>new URLSearchParams("workspace=class-1"),useRouter:()=>({push(){},replace(){},refresh(){}})},"@/features/auth/access":{RequireSession:({children})=>children},"@tanstack/react-query":{useQueryClient:()=>({})}});
  const html=renderToStaticMarkup(React.createElement(ThemeProvider,null,React.createElement(AppShell,{role:"lecturer",scope:"workspace",activeId:"assignments"},"Assignments content")));
- assert.ok(html.includes('href="/lab-authoring?workspace=class-1"'));assert.ok(html.includes('aria-label="Lab Authoring"'));
+ assert.ok(html.includes('href="/lab-authoring?workspace=class-1"'));assert.ok(html.includes('aria-label="Lab Creation"'));
 });
 
 test("project sidebar renders active group controls and removes only the obsolete footer",()=>{

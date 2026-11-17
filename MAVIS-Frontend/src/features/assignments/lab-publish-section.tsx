@@ -99,11 +99,11 @@ export function LabPublishSection({
     },
     {
       id: "publish",
-      label: t("Published Lab", "Lab đã công bố"),
+      label: t("In class", "Trong lớp"),
       done: published,
       detail: published
-        ? t(`Lab ${setupLab?.position ?? ""} is in the course sequence.`, `Lab ${setupLab?.position ?? ""} đã vào thứ tự khóa học.`)
-        : t("Publish the Lab into the course sequence.", "Công bố Lab vào thứ tự khóa học."),
+        ? t(`Lab ${setupLab?.position ?? ""} is in the class sequence.`, `Lab ${setupLab?.position ?? ""} đã vào thứ tự lớp.`)
+        : t("Add the Lab to the class sequence.", "Thêm Lab vào thứ tự lớp."),
       tab: "publish",
     },
   ];
@@ -115,17 +115,17 @@ export function LabPublishSection({
           <div>
             <h2 className="flex items-center gap-2 font-semibold">
               <Rocket className="size-4 text-primary" aria-hidden="true" />
-              {t("Check and publish", "Kiểm tra và công bố")}
+              {t("Check and add to class", "Kiểm tra và thêm vào lớp")}
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
               {t(
-                "These conditions come from the current Lab, reference source, Quiz and Studio configuration.",
-                "Các điều kiện này lấy từ Lab hiện tại, nguồn tham chiếu, Quiz và cấu hình Studio.",
+                "The Lab is already saved in your Lab Library. These checks decide whether it is ready to open in this class; adding it appends it to the class sequence and unlocks it after the preceding Lab.",
+                "Lab đã được lưu trong Kho Lab. Các kiểm tra này quyết định Lab đã sẵn sàng mở trong lớp chưa; thêm vào lớp sẽ nối Lab vào cuối thứ tự và mở khóa sau Lab trước.",
               )}
             </p>
           </div>
           <Badge variant={published ? "success" : "secondary"}>
-            {published ? t("Published", "Đã công bố") : t("Draft", "Bản nháp")}
+            {published ? t("In class", "Trong lớp") : t("Not in class", "Chưa vào lớp")}
           </Badge>
         </div>
 

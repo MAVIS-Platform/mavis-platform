@@ -119,7 +119,7 @@ test("lecturer Lab authoring is a dedicated workspace with ordered authoring ste
   const publish = read("src/features/assignments/lab-publish-section.tsx");
   const assignments = read("src/features/assignments/screens.tsx");
 
-  for (const label of ["Lab information", "Theory", "Reference source", "Quiz", "Studio Live", "Check & publish"])
+  for (const label of ["Lab information", "Theory", "Reference source", "Quiz", "Studio Live", "Check & add to class"])
     assert.ok(authoring.includes(label), label);
   assert.ok(info.includes('t("Save Lab draft", "Lưu bản nháp Lab")'));
   assert.ok(info.includes("Attach the reference source and publish it in the next steps."));
@@ -777,12 +777,31 @@ test("BFF allows Quiz draft, publish, versions and question bank paths", () => {
     `workspaces/${workspace}/course-labs/${lab}/quiz/draft/curriculum`,
     `workspaces/${workspace}/course-labs/${lab}/quiz/publish`,
     `workspaces/${workspace}/course-labs/${lab}/quiz/versions`,
+    `workspaces/${workspace}/course-labs/${lab}/quiz/generate`,
     `workspaces/${workspace}/quiz-bank/questions`,
     `workspaces/${workspace}/quiz-bank/questions/${question}`,
   ]) {
     assert.equal(allowedBackendPath(path), true, path);
   }
   assert.equal(allowedBackendPath(`workspaces/${workspace}/quiz-bank/unsafe`), false);
+});
+
+test("Lab Library is the class-facing lab store and Quiz can be generated from Lab theory", () => {
+  const navigation = read("src/lib/navigation.ts");
+  const assignments = read("src/features/assignments/screens.tsx");
+  const authoring = read("src/features/assignments/lab-authoring.tsx");
+  const quiz = read("src/features/assignments/quiz-builder.tsx");
+
+  assert.match(navigation, /label: "Lab Library"/);
+  assert.match(navigation, /label: "Lab Creation"/);
+  assert.doesNotMatch(navigation, /label: "Lab Authoring"/);
+  assert.ok(assignments.includes("Library draft"));
+  assert.ok(assignments.includes("In class"));
+  assert.ok(assignments.includes("<PublishCourseLab"));
+  assert.ok(authoring.includes("Back to Lab Library"));
+  assert.ok(quiz.includes("${draftPath}/generate"));
+  assert.ok(quiz.includes("Generate from theory"));
+  assert.ok(quiz.includes("sourceTheoryItems"));
 });
 
 test("Studio Live authoring and standalone Studio carry project and return context", () => {

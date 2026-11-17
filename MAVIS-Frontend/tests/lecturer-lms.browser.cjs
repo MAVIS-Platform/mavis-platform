@@ -340,7 +340,7 @@ async function main() {
       fullPage: true,
       animations: "disabled",
     });
-    await page.getByRole("link", { name: "Assignments", exact: true }).click();
+    await page.getByRole("link", { name: "Lab Library", exact: true }).click();
     await page.waitForURL(/assignments\?workspace=ws-lms/);
     try {
       await page.getByText("Create a Lab", { exact: true }).waitFor({ timeout: 8000 });
@@ -349,7 +349,7 @@ async function main() {
       console.error("Assignments from sidebar body:", await page.locator("body").innerText());
       throw error;
     }
-    await page.getByRole("link", { name: "Lab Authoring", exact: true }).click();
+    await page.getByRole("link", { name: "Lab Creation", exact: true }).click();
     await page.waitForURL(/lab-authoring\?workspace=ws-lms/);
     await page.getByText("Lab information", { exact: false }).first().waitFor();
     await page.getByRole("link", { name: "Workspace Members", exact: true }).click();

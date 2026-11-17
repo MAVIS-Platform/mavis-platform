@@ -95,13 +95,13 @@ const screens: Record<
     selector: "workspace",
   },
   assignments: {
-    title: "Assignments",
+    title: "Lab Library",
     scope: "workspace",
     component: Assignments,
     selector: "workspace",
   },
   "lab-authoring": {
-    title: "Lab Authoring",
+    title: "Lab Creation",
     scope: "workspace",
     component: LabAuthoring,
     selector: "workspace",
