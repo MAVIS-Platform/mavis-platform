@@ -59,6 +59,15 @@ export function Workspaces() {
   const pendingReviews = (submissions.data ?? []).filter(
     (submission) => !submission.reviewStatus || submission.reviewStatus === "PENDING",
   ).length;
+  const pendingByWorkspace = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const submission of submissions.data ?? []) {
+      if (!submission.workspaceId) continue;
+      if (submission.reviewStatus && submission.reviewStatus !== "PENDING") continue;
+      counts.set(submission.workspaceId, (counts.get(submission.workspaceId) ?? 0) + 1);
+    }
+    return counts;
+  }, [submissions.data]);
   const activeCount = (query.data ?? []).filter(
     (workspace) => (workspace.status ?? "ACTIVE") !== "ARCHIVED",
   ).length;
@@ -267,14 +276,9 @@ export function Workspaces() {
                   className="flex flex-col gap-3 rounded-xl border bg-card p-4 transition-colors hover:border-primary/30"
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <div className="flex min-w-0 items-center gap-2 text-xs">
-                      <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] font-medium">
-                        {workspace.code || t("CLASS", "LỚP")}
-                      </span>
-                      <span className="truncate text-muted-foreground">
-                        {workspace.myRole || t("Member", "Thành viên")}
-                      </span>
-                    </div>
+                    <span className="rounded-md bg-primary/10 px-2 py-0.5 font-mono text-xs font-semibold tracking-wide text-primary">
+                      {workspace.code || t("CLASS", "LỚP")}
+                    </span>
                     {archived ? (
                       <span className="text-xs text-muted-foreground">{t("Archived", "Lưu trữ")}</span>
                     ) : (
@@ -285,31 +289,38 @@ export function Workspaces() {
                     )}
                   </div>
                   <Link
-                    className="truncate text-xl font-semibold tracking-tight text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="truncate text-2xl font-semibold tracking-tight text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     href={workspaceUrl}
                   >
                     {workspace.name}
                   </Link>
-                  <p className="flex items-center gap-1.5 text-xs tabular-nums text-muted-foreground">
-                    <Users className="size-3.5" aria-hidden="true" />
-                    {members.length} {t("members", "thành viên")} · {students}{" "}
-                    {t("students", "sinh viên")}
-                  </p>
                   {workspace.description && (
                     <p className="line-clamp-1 text-xs text-muted-foreground">
                       {workspace.description}
                     </p>
                   )}
-                  <div className="mt-auto flex gap-2 pt-1">
-                    <Button asChild className="flex-1">
-                      <Link href={workspaceUrl}>{t("Open class", "Mở lớp")}</Link>
-                    </Button>
-                    <Button asChild variant="outline" className="flex-1">
-                      <Link href={`/submissions?workspace=${encodeURIComponent(workspace.id)}`}>
-                        {t("Submissions", "Bài nộp")}
-                      </Link>
-                    </Button>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs tabular-nums text-muted-foreground">
+                    <span className="inline-flex items-center gap-1">
+                      <Users className="size-3.5" aria-hidden="true" />
+                      {students} {t("students", "sinh viên")}
+                    </span>
+                    {submissions.isSuccess && (
+                      <span
+                        className={
+                          (pendingByWorkspace.get(workspace.id) ?? 0) > 0
+                            ? "inline-flex items-center gap-1 text-amber-600 dark:text-amber-400"
+                            : "inline-flex items-center gap-1"
+                        }
+                      >
+                        <ClipboardCheck className="size-3.5" aria-hidden="true" />
+                        {pendingByWorkspace.get(workspace.id) ?? 0}{" "}
+                        {t("pending submissions", "bài chờ chấm")}
+                      </span>
+                    )}
                   </div>
+                  <Button asChild className="mt-auto w-full">
+                    <Link href={workspaceUrl}>{t("Open class", "Mở lớp")}</Link>
+                  </Button>
                 </article>
               );
             })}
