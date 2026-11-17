@@ -1,12 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import {
   BookOpen,
   ClipboardCheck,
   GraduationCap,
   LayoutGrid,
+  Library,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -19,6 +21,8 @@ export type CourseWorkspaceTab =
   | "content"
   | "authoring"
   | "assignments"
+  | "theory-library"
+  | "lab-authoring"
   | "submissions"
   | "members"
   | "results";
@@ -29,7 +33,9 @@ const TAB_LABELS: Record<
 > = {
   content: { en: "Overview & Setup", vi: "Tổng quan & Khởi tạo", icon: LayoutGrid },
   authoring: { en: "Curriculum & Materials", vi: "Đề cương & Học liệu", icon: GraduationCap },
-  assignments: { en: "Labs & Quiz Studio", vi: "Thiết kế Lab & Quiz", icon: BookOpen },
+  "theory-library": { en: "Theory Library", vi: "Thư viện lý thuyết", icon: Library },
+  assignments: { en: "Lab Library", vi: "Thư viện Lab", icon: BookOpen },
+  "lab-authoring": { en: "Lab Creation", vi: "Tạo Lab", icon: BookOpen },
   submissions: { en: "Grading & Gradebook", vi: "Chấm bài & Bảng điểm", icon: ClipboardCheck },
   members: { en: "Students & Access", vi: "Sinh viên & Phân quyền", icon: Users },
 };
@@ -43,6 +49,8 @@ function tabHref(workspaceId: string, tab: Exclude<CourseWorkspaceTab, "results"
   const workspace = encodeURIComponent(workspaceId);
   if (tab === "content") return `/workspace-overview?workspace=${workspace}`;
   if (tab === "authoring") return `/workspace-overview?workspace=${workspace}&view=course-authoring`;
+  if (tab === "theory-library") return `/theory-library?workspace=${workspace}`;
+  if (tab === "lab-authoring") return `/lab-authoring?workspace=${workspace}`;
   if (tab === "assignments") return `/assignments?workspace=${workspace}`;
   if (tab === "members") return `/members?workspace=${workspace}`;
   return `/submissions?workspace=${workspace}`;
@@ -62,11 +70,12 @@ export function CourseWorkspaceShell({
   children: ReactNode;
 }) {
   const { t } = useLocale();
+  const pathname = usePathname();
   const members = workspace.members ?? [];
   const students = members.filter((member) => member.role.toUpperCase() === "STUDENT").length;
   const lecturers = members.filter((member) => member.role.toUpperCase() === "LECTURER").length;
   const isStudent = workspace.myRole?.toUpperCase() === "STUDENT";
-  const normalizedActive = active === "results" ? "submissions" : active;
+  const normalizedActive = pathname === "/theory-library" ? "theory-library" : pathname === "/lab-authoring" ? "lab-authoring" : active === "results" ? "submissions" : active;
   const visibleTabs = (Object.keys(TAB_LABELS) as Array<Exclude<CourseWorkspaceTab, "results">>).filter(
     (tab) => !isStudent || tab === "content" || tab === "submissions",
   );
