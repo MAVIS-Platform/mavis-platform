@@ -1,18 +1,23 @@
 "use client";
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
-import {
-  Activity,
-  Database,
-  HardDrive,
-  Server,
-  RefreshCw,
-  ArrowUpRight,
-  AlertTriangle,
-  CheckCircle2,
-} from "lucide-react";
 import { useApiMutation, useApiQuery } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { useLocale } from "@/lib/i18n/locale-context";
+import {
+  Activity,
+  AlertTriangle,
+  ArrowUpRight,
+  CheckCircle2,
+  Database,
+  HardDrive,
+  RefreshCw,
+  ScrollText,
+  Server,
+  ShieldCheck,
+  Users,
+} from "lucide-react";
 import {
   DetailPanel,
   StatusBadge,
@@ -78,6 +83,183 @@ export function Notice({ children }: { children: ReactNode }) {
   );
 }
 const bytes = (n: number) => `${(n / 1024 / 1024 / 1024).toFixed(1)} GB`;
+
+export function AdminCommandHeader({
+  active,
+  onRefresh,
+  refreshing,
+}: {
+  active: "health" | "users" | "profiles" | "audit";
+  onRefresh?: () => void;
+  refreshing?: boolean;
+}) {
+  const { t } = useLocale();
+  const health = useApiQuery("adminHealth", {}, { refreshMs: 30000 });
+  const counts = useApiQuery("platformSummary", {});
+  const isUp = health.data?.status === "UP";
+  const isDegraded = health.data?.status === "DEGRADED";
+  const pendingOrLocked =
+    (counts.data?.pendingVerificationUsers ?? 0) + (counts.data?.lockedUsers ?? 0);
+
+  const tabs: Array<{
+    id: "health" | "users" | "profiles" | "audit";
+    href: string;
+    label: string;
+    icon: typeof Activity;
+  }> = [
+    {
+      id: "health",
+      href: "/administration/health",
+      label: t("System & Inventory", "Hệ Thống & Tài Nguyên"),
+      icon: Activity,
+    },
+    {
+      id: "users",
+      href: "/administration/users",
+      label: t("Users & Roles", "Người Dùng & Phân Quyền"),
+      icon: Users,
+    },
+    {
+      id: "profiles",
+      href: "/administration/profiles",
+      label: t("Runtime & Quotas", "Runtime & Hạn Mức"),
+      icon: ShieldCheck,
+    },
+    {
+      id: "audit",
+      href: "/administration/audit",
+      label: t("Audit & Jobs", "Nhật Ký & Tác Vụ"),
+      icon: ScrollText,
+    },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <section className="overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-900 to-teal-800 p-6 text-white shadow-lg">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="space-y-1.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-medium text-teal-100">
+                <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
+                {t("Enterprise Governance", "Quản Trị Hệ Thống Doanh Nghiệp")}
+              </span>
+              <Badge
+                className={
+                  isUp
+                    ? "border-emerald-300/40 bg-emerald-500/25 text-emerald-100"
+                    : isDegraded
+                      ? "border-amber-300/40 bg-amber-500/25 text-amber-100"
+                      : "border-white/25 bg-white/15 text-white"
+                }
+              >
+                {isUp
+                  ? t("System Healthy", "Hệ Thống Ổn Định")
+                  : isDegraded
+                    ? t("Attention Required", "Cần Kiểm Tra")
+                    : t("Checking Status", "Đang Kiểm Tra")}
+              </Badge>
+            </div>
+            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
+              {t("MAVIS Control Center", "Trung Tâm Quản Trị MAVIS")}
+            </h1>
+            <p className="text-sm text-slate-200/90">
+              {t(
+                "Monitor platform health, provision Lecturer & Student accounts, govern execution profiles, and audit security jobs.",
+                "Giám sát sức khỏe hệ thống, cấp tài khoản Giảng viên/Sinh viên, cấu hình Runtime & hạn mức AI.",
+              )}
+            </p>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={Boolean(refreshing || health.isFetching)}
+            onClick={() => {
+              void health.refetch();
+              void counts.refetch();
+              onRefresh?.();
+            }}
+            className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+          >
+            <RefreshCw
+              className={`mr-1.5 h-4 w-4 ${refreshing || health.isFetching ? "animate-spin" : ""}`}
+            />
+            {t("Refresh", "Làm mới")}
+          </Button>
+        </div>
+
+        <nav
+          aria-label={t("Admin Control Center Sections", "Khu vực quản trị")}
+          className="mt-5 flex flex-wrap gap-1.5 rounded-xl bg-black/25 p-1.5 backdrop-blur-sm"
+        >
+          {tabs.map((tab) => {
+            const Icon = tab.icon;
+            const current = active === tab.id;
+            return (
+              <Link
+                key={tab.id}
+                href={tab.href}
+                aria-current={current ? "page" : undefined}
+                className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-semibold transition-colors sm:text-sm ${
+                  current
+                    ? "bg-white text-slate-900 shadow-sm"
+                    : "text-white/80 hover:bg-white/15 hover:text-white"
+                }`}
+              >
+                <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                {tab.label}
+              </Link>
+            );
+          })}
+        </nav>
+      </section>
+
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-2xl bg-gradient-to-br from-indigo-600 to-indigo-800 p-4 text-white shadow-sm">
+          <p className="text-xs font-medium text-indigo-100">
+            {t("Total Accounts", "Tổng Tài Khoản")}
+          </p>
+          <p className="mt-1.5 text-2xl font-bold">{counts.data?.users ?? "—"}</p>
+          <p className="mt-1 text-[11px] text-indigo-100/85">
+            {counts.data?.activeLecturers ?? 0} {t("lecturers", "giảng viên")} ·{" "}
+            {counts.data?.activeStudents ?? 0} {t("students", "sinh viên")}
+          </p>
+        </div>
+        <div className="rounded-2xl bg-gradient-to-br from-rose-600 to-rose-800 p-4 text-white shadow-sm">
+          <p className="text-xs font-medium text-rose-100">
+            {t("Pending & Locked", "Chờ Duyệt & Đang Khóa")}
+          </p>
+          <p className="mt-1.5 text-2xl font-bold">
+            {counts.data ? pendingOrLocked : "—"}
+          </p>
+          <p className="mt-1 text-[11px] text-rose-100/85">
+            {counts.data?.pendingVerificationUsers ?? 0} {t("pending", "chờ kích hoạt")} ·{" "}
+            {counts.data?.lockedUsers ?? 0} {t("locked", "bị khóa")}
+          </p>
+        </div>
+        <div className="rounded-2xl bg-gradient-to-br from-sky-600 to-sky-800 p-4 text-white shadow-sm">
+          <p className="text-xs font-medium text-sky-100">
+            {t("Guided Labs & Projects", "Bài Lab & Dự Án")}
+          </p>
+          <p className="mt-1.5 text-2xl font-bold">{counts.data?.totalGuidedLabs ?? "—"}</p>
+          <p className="mt-1 text-[11px] text-sky-100/85">
+            {counts.data?.projects ?? 0} {t("registered repositories", "dự án trên nền tảng")}
+          </p>
+        </div>
+        <div className="rounded-2xl bg-gradient-to-br from-emerald-600 to-emerald-800 p-4 text-white shadow-sm">
+          <p className="text-xs font-medium text-emerald-100">
+            {t("Running Sessions", "Phiên Thực Hành Đang Chạy")}
+          </p>
+          <p className="mt-1.5 text-2xl font-bold">{counts.data?.runningSessions ?? "—"}</p>
+          <p className="mt-1 text-[11px] text-emerald-100/85">
+            {counts.data?.analysisJobs ?? 0} {t("analysis jobs tracked", "tác vụ phân tích")}
+          </p>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 export function SystemHealth() {
   const health = useApiQuery("adminHealth", {}, { refreshMs: 30000 });
   const counts = useApiQuery("platformSummary", {});
@@ -91,6 +273,14 @@ export function SystemHealth() {
   };
   return (
     <div className="space-y-6">
+      <AdminCommandHeader
+        active="health"
+        refreshing={health.isFetching}
+        onRefresh={() => {
+          void health.refetch();
+          void counts.refetch();
+        }}
+      />
       <AdminToolbar
         fetching={health.isFetching}
         updatedAt={health.dataUpdatedAt}

@@ -76,10 +76,6 @@ function stepActionLabel(stepId: string, data: CourseSetup) {
   return ACTION_LABELS[stepId] ?? { en: "Open", vi: "Mở" };
 }
 
-function shortId(value: string | null) {
-  return value ? value.slice(0, 8) : "—";
-}
-
 export function CourseSetupPanel({ workspaceId }: { workspaceId: string }) {
   const { t } = useLocale();
   const setup = useCourseSetup(workspaceId);
@@ -233,90 +229,77 @@ export function CourseSetupPanel({ workspaceId }: { workspaceId: string }) {
         </ol>
 
         <aside className="space-y-3">
-          <div className="rounded-lg border p-3">
+          <div className="rounded-xl border bg-muted/20 p-3.5">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              {t("Reference", "Tham chiếu")}
+              {t("Reference Repository", "Kho Mã Nguồn Tham Chiếu")}
             </p>
-            <p className="mt-1 text-sm font-medium">
-              {data.reference.projectName ?? t("No reference project", "Chưa có project tham chiếu")}
+            <p className="mt-1 text-sm font-semibold">
+              {data.reference.projectName ??
+                t("No reference repository attached", "Chưa gắn project tham chiếu")}
             </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {t("Revision", "Phiên bản")} {data.reference.modelRevision || "—"} · Snapshot{" "}
-              {shortId(data.reference.snapshotId)}
-            </p>
-            <div className="mt-2 flex flex-wrap gap-1">
-              <Badge variant="outline">
-                {data.reference.applications.length} {t("apps", "ứng dụng")}
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              <Badge variant={data.reference.projectId ? "success" : "secondary"}>
+                {data.reference.projectId
+                  ? t("Architecture Grounded", "Đã liên kết kiến trúc")
+                  : t("Needs Source", "Cần gắn nguồn")}
               </Badge>
-              <Badge variant="outline">
-                {data.reference.blockCount} {t("blocks", "block")}
-              </Badge>
-              <Badge variant="outline">
-                {data.reference.connectionCount} {t("connections", "kết nối")}
-              </Badge>
+              {data.reference.applications.length > 0 && (
+                <Badge variant="outline">
+                  {data.reference.applications.length} {t("services detected", "dịch vụ")}
+                </Badge>
+              )}
             </div>
             {data.reference.runtimeConfigured && !data.reference.runtimeMatchesSource && (
               <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
                 {t(
-                  "The runtime profile targets another source or model.",
-                  "Runtime profile đang trỏ tới nguồn hoặc model khác.",
+                  "Click 1-Click Auto-Configure Studio to sync topology with the latest source.",
+                  "Nhấn Tự động cấu hình Studio để đồng bộ topology mới nhất.",
                 )}
               </p>
             )}
           </div>
 
-          <div className="rounded-lg border p-3">
+          <div className="rounded-xl border bg-muted/20 p-3.5">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              {t("Runtime readiness", "Độ sẵn sàng runtime")}
+              {t("2D Studio Live Readiness", "Trạng Thái 2D Studio Live")}
             </p>
             {!data.reference.projectId ? (
               <p className="mt-1 text-xs text-muted-foreground">
-                {t("Attach a reference project first.", "Gắn project tham chiếu trước.")}
+                {t("Attach a reference repository first.", "Gắn mã nguồn tham chiếu trước.")}
               </p>
             ) : readiness.isPending ? (
               <p className="mt-1 text-xs text-muted-foreground">
-                {t("Checking preflight and Runner…", "Đang kiểm tra preflight và Runner…")}
+                {t("Checking Studio configuration…", "Đang kiểm tra cấu hình Studio…")}
               </p>
             ) : readiness.isError || !runtimeReadiness ? (
               <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
-                {t("Could not read runtime readiness.", "Không đọc được độ sẵn sàng runtime.")}
+                {t("Could not check Studio status.", "Chưa đọc được trạng thái Studio.")}
               </p>
             ) : (
-              <div className="mt-1 space-y-1 text-xs">
-                <p>
-                  Preflight:{" "}
-                  <span className={runtimeReadiness.preflightCompatible ? "text-success" : "text-amber-700 dark:text-amber-300"}>
-                    {runtimeReadiness.preflightCompatible
-                      ? t("compatible", "tương thích")
-                      : t("not compatible", "chưa tương thích")}
-                  </span>
-                </p>
-                <p>
-                  Runner / images:{" "}
-                  <span className={runtimeReadiness.runnerReady ? "text-success" : "text-amber-700 dark:text-amber-300"}>
-                    {runtimeReadiness.runnerReady
-                      ? t("ready", "sẵn sàng")
-                      : t("not ready", "chưa sẵn sàng")}
-                  </span>
-                </p>
-                <p className="text-muted-foreground">
-                  {runtimeReadiness.applications.length} apps · {runtimeReadiness.mappings.length} mappings ·{" "}
-                  {Array.isArray((runtimeReadiness.topology as { blocks?: unknown[] } | null)?.blocks)
-                    ? (runtimeReadiness.topology as { blocks: unknown[] }).blocks.length
-                    : 0}{" "}
-                  blocks
-                </p>
+              <div className="mt-1.5 space-y-1.5 text-xs">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge
+                    variant={
+                      runtimeReadiness.preflightCompatible && runtimeReadiness.runnerReady
+                        ? "success"
+                        : "warning"
+                    }
+                  >
+                    {runtimeReadiness.preflightCompatible && runtimeReadiness.runnerReady
+                      ? t("Ready for Students", "Sẵn sàng cho Sinh viên")
+                      : t("Setup Incomplete", "Cần hoàn tất cấu hình")}
+                  </Badge>
+                </div>
                 {runtimeReadiness.prerequisites.slice(0, 2).map((item) => (
-                  <p key={item} className="text-amber-700 dark:text-amber-300">{item}</p>
-                ))}
-                {runtimeReadiness.warnings.slice(0, 2).map((item) => (
-                  <p key={item} className="text-amber-700 dark:text-amber-300">{item}</p>
+                  <p key={item} className="text-amber-700 dark:text-amber-300">
+                    {item}
+                  </p>
                 ))}
               </div>
             )}
           </div>
 
-          <div className="rounded-lg border p-3">
+          <div className="rounded-xl border bg-muted/20 p-3.5">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {t("Enrollment", "Ghi danh")}
             </p>

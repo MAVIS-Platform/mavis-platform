@@ -795,8 +795,8 @@ test("project navigation preserves every destination and keeps role menus intact
     "/courses",
   );
   assert.equal(
-    globalNavigation.student.flatMap((g) => g.items).find((i) => i.id === "join-course").href,
-    "/courses#course-passkey",
+    globalNavigation.student.flatMap((g) => g.items).find((i) => i.id === "submissions").href,
+    "/submissions",
   );
   assert.deepEqual(
     globalNavigation.admin
@@ -1003,7 +1003,7 @@ test("project groups persist independently, restore active routes and tolerate d
   assert.doesNotThrow(() => render().toggle("Runtime", true));
 });
 
-test("lecturer sidebar expands the selected class and marks its class destination current", () => {
+test("lecturer sidebar shows flat class links without nested submenu trees and marks active class", () => {
   const React = require("react"),
     { renderToStaticMarkup } = require("react-dom/server"),
     { ThemeProvider } = require("../src/components/theme-provider.tsx");
@@ -1033,7 +1033,7 @@ test("lecturer sidebar expands the selected class and marks its class destinatio
   const { AppShell } = loadRoutedComponent("src/components/app-shell.tsx", {
     "@/hooks/use-api": hooks,
     "next/navigation": {
-      usePathname: () => "/assignments",
+      usePathname: () => "/workspace-overview",
       useSearchParams: () => new URLSearchParams("workspace=class-1"),
       useRouter: () => ({ push() {}, replace() {}, refresh() {} }),
     },
@@ -1046,22 +1046,15 @@ test("lecturer sidebar expands the selected class and marks its class destinatio
       null,
       React.createElement(
         AppShell,
-        { role: "lecturer", scope: "workspace", activeId: "assignments" },
-        "Assignments content",
+        { role: "lecturer", scope: "workspace", activeId: "workspace-overview" },
+        "Class content",
       ),
     ),
   );
-  assert.ok(html.includes('aria-label="Collapse SE180711 · FA menu"'));
-  assert.ok(html.includes('href="/assignments?workspace=class-1"'));
-  assert.ok(html.includes('aria-current="page"'));
-  assert.match(
-    html,
-    /class="[^"]*bg-muted[^\"]*" aria-current="location" aria-label="SE180711 · FA" href="\/workspaces\?workspace=class-1"/,
-  );
-  assert.match(
-    html,
-    /class="[^"]*bg-sidebar-accent[^\"]*" aria-current="location" aria-label="Labs &amp; Quiz Studio" href="\/assignments\?workspace=class-1"/,
-  );
+  assert.ok(!html.includes('aria-label="Collapse SE180711 · FA menu"'));
+  assert.ok(html.includes('href="/workspace-overview?workspace=class-1"'));
+  assert.ok(html.includes("👨‍🏫 Lecturer"));
+  assert.ok(html.includes("Sign out"));
 });
 
 test("student sidebar omits lecturer-only class destinations", () => {
@@ -1116,7 +1109,7 @@ test("student sidebar omits lecturer-only class destinations", () => {
   assert.ok(!html.includes("Lab Creation"));
 });
 
-test("collapsed class sidebar keeps child destinations available as labeled links", () => {
+test("flat sidebar links remain accessible when collapsed without child tree clutter", () => {
   const React = require("react"),
     { renderToStaticMarkup } = require("react-dom/server"),
     { ThemeProvider } = require("../src/components/theme-provider.tsx");
@@ -1164,8 +1157,8 @@ test("collapsed class sidebar keeps child destinations available as labeled link
       ),
     ),
   );
-  assert.ok(html.includes('href="/assignments?workspace=class-1"'));
-  assert.ok(html.includes('aria-label="Labs &amp; Quiz Studio"'));
+  assert.ok(html.includes('href="/workspace-overview?workspace=class-1"'));
+  assert.ok(html.includes('href="/submissions?workspace=class-1"'));
 });
 
 test("non-live project sidebar never exposes legacy projectNavigation to lecturer or student", () => {
@@ -1197,10 +1190,9 @@ test("non-live project sidebar never exposes legacy projectNavigation to lecture
   assert.ok(!html.includes("Architecture Diagrams"));
   assert.ok(!html.includes("Change Impact Analysis"));
   assert.ok(!html.includes("Runtime Configuration"));
-  assert.ok(html.includes("Workspaces"));
   assert.ok(html.includes("Project content"));
   assert.ok(html.includes("MAVIS home"));
-  assert.ok(html.includes("Workspaces"));
+  assert.ok(html.includes("Teaching"));
 
   const studentHtml = renderToStaticMarkup(
     React.createElement(
@@ -5161,7 +5153,7 @@ test("My Workspaces is a compact LMS class list with tabs and a module outline",
   assert.match(rootHtml, /Create class/);
   assert.match(rootHtml, /Lớp SWD392/);
   assert.match(rootHtml, /Mobile Programming/);
-  assert.match(rootHtml, /Open<\/a>/);
+  assert.match(rootHtml, /Open class/);
   assert.doesNotMatch(
     rootHtml,
     /Create a place for learning to take shape/,

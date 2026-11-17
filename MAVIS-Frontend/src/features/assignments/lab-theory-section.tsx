@@ -294,6 +294,44 @@ export function LabTheorySection({
   const [bodies, setBodies] = useState<Record<string, string>>({});
   const [c4Tab, setC4Tab] = useState<"CONTEXT" | "CONTAINER" | "COMPONENT" | "GRAPH">("CONTEXT");
   const [selectedGraphId, setSelectedGraphId] = useState<string | null>(null);
+  const [syncStatus, setSyncStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const isPublished = course.data?.status === "PUBLISHED";
+  const savingBusy =
+    syncStatus === "saving" ||
+    course.startDraft.isPending ||
+    course.updateItem.isPending ||
+    course.addItem.isPending ||
+    course.publish.isPending;
+
+  async function saveWithAutoPublish(
+    task: (
+      activeCourse: NonNullable<typeof course.data>,
+      activeModule: TheoryModule,
+    ) => Promise<void>,
+  ) {
+    if (!selectedModule || !course.data) return;
+    setSyncStatus("saving");
+    try {
+      if (isPublished) {
+        const draft = await course.startDraft.mutateAsync();
+        const draftModules = (draft.modules as TheoryModule[] | undefined) ?? [];
+        const matchedModule =
+          draftModules.find(
+            (m) =>
+              m.id === selectedModule.id ||
+              (m.position === selectedModule.position && m.title === selectedModule.title),
+          ) ?? draftModules[0];
+        if (!matchedModule) throw new Error("Module not found in draft");
+        await task(draft, matchedModule);
+        await course.publish.mutateAsync();
+      } else {
+        await task(course.data, selectedModule);
+      }
+      setSyncStatus("saved");
+    } catch {
+      setSyncStatus("idle");
+    }
+  }
 
   const modules = (course.data?.modules as TheoryModule[] | undefined) ?? [];
   const availableLessons = modules.flatMap((module) =>
@@ -347,29 +385,6 @@ export function LabTheorySection({
 
   if (course.isPending) {
     return <p className="text-sm text-muted-foreground">{t("Loading course structure…", "Đang tải cấu trúc khóa học…")}</p>;
-  }
-
-  if (course.data?.status === "PUBLISHED") {
-    return (
-      <section className="space-y-4 rounded-xl border bg-card p-5">
-        <div className="flex items-center gap-2">
-          <BookOpen className="size-4 text-primary" aria-hidden="true" />
-          <h2 className="font-semibold">{t("Published Course is immutable", "Course đã publish là bất biến")}</h2>
-        </div>
-        <p className="text-sm text-muted-foreground">
-          {t(
-            "Start a new Course draft before adding or editing theory for this Lab. The published version stays unchanged for students.",
-            "Tạo bản nháp Course mới trước khi thêm hoặc sửa lý thuyết cho Lab. Phiên bản đã publish vẫn giữ nguyên cho sinh viên.",
-          )}
-        </p>
-        <Button type="button" disabled={course.startDraft.isPending} onClick={() => course.startDraft.mutate()}>
-          {course.startDraft.isPending
-            ? t("Starting draft…", "Đang tạo bản nháp…")
-            : t("Start new Course draft", "Tạo bản nháp Course mới")}
-        </Button>
-        {course.startDraft.error && <p role="alert" className="text-sm text-destructive">{course.startDraft.error.message}</p>}
-      </section>
-    );
   }
 
   if (!course.data) {
@@ -610,14 +625,24 @@ export function LabTheorySection({
       </section>
 
       <section className="space-y-4 rounded-xl border bg-card p-5">
-        <div>
-          <h3 className="font-semibold">{t("Module and lessons", "Chương và bài học")}</h3>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {t(
-              "Choose the module that contains this Lab, then write the lesson students read before the Quiz.",
-              "Chọn chương chứa Lab này, sau đó viết bài học sinh viên đọc trước Quiz.",
-            )}
-          </p>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className="font-semibold">{t("Module and lessons", "Chương và bài học")}</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {t(
+                "Choose the module that contains this Lab, then edit or add the Markdown lesson students read before the Quiz.",
+                "Chọn chương chứa Lab này, chỉnh sửa hoặc thêm bài học Markdown ngay tại đây.",
+              )}
+            </p>
+          </div>
+          {isPublished && (
+            <Badge variant="success">
+              {t(
+                "Live Course · Edits auto-publish cleanly",
+                "Đang xuất bản · Lưu là tự động cập nhật",
+              )}
+            </Badge>
+          )}
         </div>
         <label className="block max-w-md space-y-1 text-xs font-medium">
           <span>{t("Module", "Chương")}</span>
@@ -656,28 +681,48 @@ export function LabTheorySection({
                   type="button"
                   size="sm"
                   variant="outline"
-                  disabled={course.updateItem.isPending}
+                  disabled={savingBusy}
                   onClick={() =>
-                    course.updateItem.mutate({
-                      moduleId: selectedModule!.id,
-                      itemId: item.id,
-                      type: "THEORY",
-                      title: item.title,
-                      description: item.description ?? "",
-                      required: item.required,
-                      assignmentId: item.assignmentId ?? assignment.id,
-                      content: { body: bodies[item.id] ?? bodyOf(item), format: "markdown" },
+                    void saveWithAutoPublish(async (_draft, mod) => {
+                      const targetItem =
+                        mod.items.find(
+                          (it) =>
+                            it.id === item.id ||
+                            (it.type === "THEORY" &&
+                              (it.assignmentId === item.assignmentId || it.title === item.title)),
+                        ) ?? item;
+                      await course.updateItem.mutateAsync({
+                        moduleId: mod.id,
+                        itemId: targetItem.id,
+                        type: "THEORY",
+                        title: item.title,
+                        description: item.description ?? "",
+                        required: item.required,
+                        assignmentId: item.assignmentId ?? assignment.id,
+                        content: { body: bodies[item.id] ?? bodyOf(item), format: "markdown" },
+                      });
                     })
                   }
                 >
                   <Save className="mr-1 size-3.5" aria-hidden="true" />
-                  {t("Save lesson", "Lưu bài học")}
+                  {savingBusy
+                    ? t("Saving & Publishing…", "Đang lưu & cập nhật…")
+                    : t("Save lesson", "Lưu bài học")}
                 </Button>
               </li>
             ))}
           </ul>
         )}
-        {course.updateItem.error && <p role="alert" className="text-sm text-destructive">{course.updateItem.error.message}</p>}
+        {syncStatus === "saved" && !course.updateItem.isError && !course.addItem.isError && (
+          <p role="status" className="text-xs font-medium text-emerald-700 dark:text-emerald-400">
+            {t("Lesson saved and published to students.", "Đã lưu và cập nhật bài học cho sinh viên.")}
+          </p>
+        )}
+        {(course.updateItem.error || course.startDraft.error || course.publish.error) && (
+          <p role="alert" className="text-sm text-destructive">
+            {(course.updateItem.error ?? course.startDraft.error ?? course.publish.error)?.message}
+          </p>
+        )}
 
         <div className="grid gap-3 lg:grid-cols-2">
           <div className="space-y-3 rounded-lg border p-4">
@@ -908,24 +953,20 @@ export function LabTheorySection({
                 type="button"
                 size="sm"
                 variant="outline"
-                disabled={course.addItem.isPending || !newTitle.trim() || !newBody.trim()}
+                disabled={savingBusy || !newTitle.trim() || !newBody.trim()}
                 onClick={() =>
-                  course.addItem.mutate(
-                    {
-                      moduleId: selectedModule!.id,
+                  void saveWithAutoPublish(async (_draft, mod) => {
+                    await course.addItem.mutateAsync({
+                      moduleId: mod.id,
                       type: "THEORY",
                       title: newTitle.trim(),
                       assignmentId: assignment.id,
                       required: true,
                       content: { body: newBody.trim(), format: "markdown" },
-                    },
-                    {
-                      onSuccess: () => {
-                        setNewTitle("");
-                        setNewBody("");
-                      },
-                    },
-                  )
+                    });
+                    setNewTitle("");
+                    setNewBody("");
+                  })
                 }
               >
                 <Plus className="mr-1 size-4" aria-hidden="true" />

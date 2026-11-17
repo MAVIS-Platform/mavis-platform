@@ -72,29 +72,44 @@ export function CourseWorkspaceShell({
   );
 
   return (
-    <div className="space-y-5">
-      <header className="border-b pb-4">
+    <div className="space-y-6">
+      <header
+        className={cn(
+          "overflow-hidden rounded-2xl p-5 shadow-lg sm:p-6",
+          isStudent
+            ? "bg-gradient-to-r from-blue-900 via-blue-700 to-teal-700 text-white"
+            : "bg-gradient-to-r from-indigo-950 via-indigo-700 to-purple-700 text-white",
+        )}
+      >
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0 space-y-2">
-            <p className="text-xs text-muted-foreground">
-              <Link className="hover:text-foreground" href="/workspaces">
+            <p className="text-xs text-white/75">
+              <Link className="hover:text-white hover:underline" href="/workspaces">
                 {t("Classes", "Lớp học")}
               </Link>
               <span aria-hidden="true"> / </span>
-              <span>{workspace.code || t("Class", "Lớp")}</span>
+              <span className="font-mono font-semibold text-white">
+                {workspace.code || t("Class", "Lớp")}
+              </span>
             </p>
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">{workspace.name}</h1>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <h1 className="text-xl font-bold tracking-tight sm:text-2xl">{workspace.name}</h1>
               {workspace.code && (
-                <Badge variant="outline" className="font-mono">
+                <Badge className="border-white/25 bg-white/15 font-mono text-white hover:bg-white/20">
                   {workspace.code}
                 </Badge>
               )}
-              <Badge variant={workspace.status === "ARCHIVED" ? "secondary" : "success"}>
+              <Badge
+                className={
+                  workspace.status === "ARCHIVED"
+                    ? "border-slate-300/30 bg-slate-800/50 text-slate-200"
+                    : "border-emerald-300/30 bg-emerald-500/25 text-emerald-100"
+                }
+              >
                 {workspace.status ?? "ACTIVE"}
               </Badge>
             </div>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-white/80">
               {members.length} {t("members", "thành viên")} · {students}{" "}
               {t("students", "sinh viên")} · {lecturers} {t("lecturers", "giảng viên")} ·{" "}
               {workspace.myRole || t("Member", "Thành viên")}
@@ -105,7 +120,7 @@ export function CourseWorkspaceShell({
         {showTabs && (
           <nav
             aria-label={t("Class sections", "Các mục của lớp")}
-            className="mt-4 flex flex-wrap gap-1"
+            className="mt-5 flex flex-wrap gap-1.5 rounded-xl bg-black/20 p-1.5 backdrop-blur-sm"
           >
             {visibleTabs.map((tab) => {
               const label = (isStudent ? STUDENT_TAB_LABELS[tab] : undefined) ?? TAB_LABELS[tab];
@@ -117,10 +132,10 @@ export function CourseWorkspaceShell({
                   href={tabHref(workspace.id, tab)}
                   aria-current={isCurrent ? "page" : undefined}
                   className={cn(
-                    "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                    "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
                     isCurrent
-                      ? "bg-primary/10 text-primary"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                      ? "bg-white text-indigo-950 shadow-sm"
+                      : "text-white/80 hover:bg-white/15 hover:text-white",
                   )}
                 >
                   <Icon className="size-3.5" aria-hidden="true" />
