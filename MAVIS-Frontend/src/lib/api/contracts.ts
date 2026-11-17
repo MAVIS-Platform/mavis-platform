@@ -850,7 +850,7 @@ export const contracts = {
     z.object({ workspaceId: id }),
     z.array(z.object({ id, workspaceId: id, snapshot: d.snapshotSchema, model: d.modelSchema })),
   ),
-  submissions: contract(nothing, z.array(d.submissionSchema)),
+  submissions: contract(z.object({ workspaceId: id.optional() }), z.array(d.submissionSchema)),
   assignmentSubmissions: contract(
     z.object({ workspaceId: id, assignmentId: id }),
     z.array(d.submissionSchema),

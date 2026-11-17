@@ -921,6 +921,39 @@ class SubmissionServiceImplTest {
     }
 
     @Test
+    void personalListingIncludesWorkspaceAndLabMetadataAndFiltersByWorkspace() {
+        student.setRole(Role.builder().code("STUDENT").build());
+        when(accessPolicyService.requireCurrentActiveUser()).thenReturn(student);
+
+        UUID wsAId = UUID.randomUUID();
+        UUID wsBId = UUID.randomUUID();
+        Workspace wsA = Workspace.builder().id(wsAId).name("SWP490-A").build();
+        Workspace wsB = Workspace.builder().id(wsBId).name("SWP490-B").build();
+        Assignment labA = Assignment.builder().id(UUID.randomUUID()).workspace(wsA)
+                .title("Lab 01 Static").labOrder(1).labMode("THEORY_QUIZ").build();
+        Assignment labB = Assignment.builder().id(UUID.randomUUID()).workspace(wsB)
+                .title("Lab 02 Studio").labOrder(2).labMode("THEORY_QUIZ_STUDIO").build();
+
+        SubmissionSnapshot subA = SubmissionSnapshot.builder()
+                .id(UUID.randomUUID()).assignment(labA).project(project).submittedBy(student)
+                .sourceSnapshot(snapshot).modelVersion(modelVersion).evidencePackageDigest("sha256:" + "a".repeat(64)).build();
+        SubmissionSnapshot subB = SubmissionSnapshot.builder()
+                .id(UUID.randomUUID()).assignment(labB).project(project).submittedBy(student)
+                .sourceSnapshot(snapshot).modelVersion(modelVersion).evidencePackageDigest("sha256:" + "b".repeat(64)).build();
+
+        when(submissionSnapshotRepository.findVisibleTo(userId, false)).thenReturn(List.of(subA, subB));
+        when(feedbackCommentRepository.countFeedbacksBySubmissionIds(anyList())).thenReturn(List.of());
+
+        List<SubmissionResponseDTO> filtered = submissionService.getMySubmissions(wsAId);
+        assertThat(filtered).hasSize(1);
+        assertThat(filtered.get(0).getWorkspaceId()).isEqualTo(wsAId);
+        assertThat(filtered.get(0).getWorkspaceName()).isEqualTo("SWP490-A");
+        assertThat(filtered.get(0).getAssignmentTitle()).isEqualTo("Lab 01 Static");
+        assertThat(filtered.get(0).getLabOrder()).isEqualTo(1);
+        assertThat(filtered.get(0).getLabMode()).isEqualTo("THEORY_QUIZ");
+    }
+
+    @Test
     void rejectsResubmissionAfterGuidedLabPasses() {
         var workspace = Workspace.builder().id(UUID.randomUUID()).courseMode(true).status("ACTIVE").build();
         student.setRole(Role.builder().code("STUDENT").build());

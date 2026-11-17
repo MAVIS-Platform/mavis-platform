@@ -49,9 +49,22 @@ public class SubmissionServiceImpl implements SubmissionService {
     @Override
     @Transactional(readOnly = true)
     public List<SubmissionResponseDTO> getMySubmissions() {
+        return getMySubmissions(null);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<SubmissionResponseDTO> getMySubmissions(UUID workspaceId) {
         User user = accessPolicyService.requireCurrentActiveUser();
         boolean admin = user.getRole()!=null && "SYSTEM_ADMIN".equalsIgnoreCase(user.getRole().getCode());
-        return mapToResponseListWithFeedbackCount(submissionSnapshotRepository.findVisibleTo(user.getId(), admin));
+        List<SubmissionResponseDTO> all = mapToResponseListWithFeedbackCount(
+                submissionSnapshotRepository.findVisibleTo(user.getId(), admin));
+        if (workspaceId == null) {
+            return all;
+        }
+        return all.stream()
+                .filter(s -> workspaceId.equals(s.getWorkspaceId()))
+                .toList();
     }
 
     @Override
@@ -518,13 +531,20 @@ public class SubmissionServiceImpl implements SubmissionService {
             markdownReport += "\n## Lecturer review\n- Status: " + review.getStatus() + "\n- Lecturer score /100: " + review.getScore() + "\n\n" + review.getSummary() + "\n";
         }
 
+        var assignment = submission.getAssignment();
+        var workspace = assignment != null ? assignment.getWorkspace() : null;
+
         return com.mavis.platform.submission.dto.SubmissionExportBundleDTO.builder()
                 .studioEvidence(submission.getStudioEvidence())
                 .submissionId(submission.getId())
+                .workspaceId(workspace != null ? workspace.getId() : null)
+                .workspaceName(workspace != null ? workspace.getName() : null)
                 .projectId(project != null ? project.getId() : null)
                 .projectName(project != null ? project.getName() : null)
-                .assignmentId(submission.getAssignment() != null ? submission.getAssignment().getId() : null)
-                .assignmentTitle(submission.getAssignment() != null ? submission.getAssignment().getTitle() : null)
+                .assignmentId(assignment != null ? assignment.getId() : null)
+                .assignmentTitle(assignment != null ? assignment.getTitle() : null)
+                .labOrder(assignment != null ? assignment.getLabOrder() : null)
+                .labMode(assignment != null && assignment.getLabMode() != null ? assignment.getLabMode() : "LEGACY")
                 .submittedById(submission.getSubmittedBy() != null ? submission.getSubmittedBy().getId() : null)
                 .submittedByName(submission.getSubmittedBy() != null ? submission.getSubmittedBy().getFullName() : null)
                 .sourceSnapshotId(submission.getSourceSnapshot() != null ? submission.getSourceSnapshot().getId() : null)

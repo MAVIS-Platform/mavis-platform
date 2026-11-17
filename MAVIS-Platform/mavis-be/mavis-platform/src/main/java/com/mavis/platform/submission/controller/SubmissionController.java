@@ -22,8 +22,10 @@ public class SubmissionController {
     private final FeedbackCommentService feedbackCommentService;
 
     @GetMapping({"/api/v1/submissions/me", "/api/v1/submissions"})
-    public ApiResponse<List<SubmissionResponseDTO>> getMySubmissions() {
-        return ApiResponse.success(submissionService.getMySubmissions());
+    public ApiResponse<List<SubmissionResponseDTO>> getMySubmissions(@RequestParam(required = false) UUID workspaceId) {
+        return ApiResponse.success(workspaceId != null
+                ? submissionService.getMySubmissions(workspaceId)
+                : submissionService.getMySubmissions());
     }
 
     @PostMapping("/api/v1/submissions")
