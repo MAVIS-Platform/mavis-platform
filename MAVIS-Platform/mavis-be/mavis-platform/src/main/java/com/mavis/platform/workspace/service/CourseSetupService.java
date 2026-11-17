@@ -65,6 +65,9 @@ public class CourseSetupService {
     @Autowired(required = false)
     private ObjectMapper objectMapper;
 
+    @Autowired(required = false)
+    private com.mavis.common.repository.LabStudioExerciseRepository labStudioExercises;
+
     public record AutoConfigureStudioResult(
             UUID assignmentId,
             int blockCount,
@@ -379,6 +382,12 @@ public class CourseSetupService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Lab not found"));
 
         ModelVersion refModel = lab.getReferenceModel();
+        if (labStudioExercises != null) {
+            var exercise = labStudioExercises.findByAssignmentId(lab.getId()).orElse(null);
+            if (exercise != null && exercise.getRuntimeModelId() != null) {
+                refModel = models.findById(exercise.getRuntimeModelId()).orElse(refModel);
+            }
+        }
         ObjectMapper json = objectMapper != null ? objectMapper : new ObjectMapper();
         ObjectNode topology = json.createObjectNode().put("version", 1);
         ArrayNode blocks = topology.putArray("blocks");
@@ -395,12 +404,16 @@ public class CourseSetupService {
                 : List.of();
 
         Map<UUID, String> elementNameById = new HashMap<>();
+        Map<String, String> runtimeByName = new HashMap<>();
         if (!containerElements.isEmpty()) {
             Set<String> seenServices = new LinkedHashSet<>();
             for (ModelElement el : containerElements) {
                 if (el.getName() == null || el.getName().isBlank()) continue;
                 String svcName = el.getName().trim();
                 elementNameById.put(el.getId(), svcName);
+                String stack = el.getLanguageStack() == null ? "" : el.getLanguageStack().toLowerCase();
+                runtimeByName.put(svcName, stack.contains(".net") || stack.contains("dotnet") || stack.contains("c#")
+                        ? "dotnet8-linux-x64-glibc" : "java");
                 if (seenServices.add(svcName)) {
                     blocks.addObject()
                             .put("service", svcName)
@@ -450,7 +463,10 @@ public class CourseSetupService {
             for (JsonNode b : blocks) {
                 String svc = b.path("service").asText("");
                 if (!svc.isBlank()) {
-                    apps.putObject(svc).put("runtime", "java").put("containerPort", port++);
+                    apps.putObject(svc)
+                            .put("runtime", runtimeByName.getOrDefault(svc, "java"))
+                            .put("containerPort", port++)
+                            .put("readinessPath", "/health");
                 }
             }
             ObjectNode mappingsNode = profile.putObject("serviceMappings");
@@ -486,7 +502,7 @@ public class CourseSetupService {
                 ArrayNode steps = json.createArrayNode();
                 String primaryService = blocks.isEmpty() ? "order-service" : blocks.get(0).path("service").asText("order-service");
                 steps.addObject().put("id", "auto-health-check").put("service", primaryService)
-                        .put("method", "GET").put("path", "/actuator/health").put("expectedStatus", 200);
+                        .put("method", "GET").put("path", "/health").put("expectedStatus", 200);
                 jdbc.update("""
                         INSERT INTO runtime_scenarios (id, project_id, name, steps, revision)
                         VALUES (?, ?, 'Auto-Configured Studio Scenario', CAST(? AS jsonb), 1)
