@@ -302,7 +302,7 @@ test("new Course and Lab surfaces expose direct Vietnamese copy", () => {
   const course = read("src/features/courses/screens.tsx");
 
   for (const text of [
-    "Khóa học của tôi",
+    "Lớp học của tôi",
     "Lộ trình học tập",
     "Thao tác Lab",
     "Bài nộp & Điểm",

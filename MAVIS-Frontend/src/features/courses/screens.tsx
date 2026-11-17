@@ -231,6 +231,13 @@ function stepForItemType(type: string): 1 | 2 | 3 | 4 {
   return 1;
 }
 
+function shortDate(value?: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(date);
+}
+
 export function Courses() {
   const { t } = useLocale();
   const client = useApi();
@@ -257,8 +264,8 @@ export function Courses() {
     <div className="space-y-5">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">
-            {t("My Courses", "Khóa học của tôi")}
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {t("My Classes", "Lớp học của tôi")}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {t(
@@ -309,7 +316,13 @@ export function Courses() {
             }
           />
         ) : (
-          <div className="divide-y overflow-hidden rounded-lg border bg-card">
+          <div className="overflow-hidden rounded-lg border bg-card">
+            <div className="hidden items-center gap-6 border-b bg-muted/30 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground md:grid md:grid-cols-[minmax(0,1fr)_11rem_15rem]">
+              <span>{t("Class", "Lớp")}</span>
+              <span>{t("Progress", "Tiến độ")}</span>
+              <span className="text-right">{t("Actions", "Thao tác")}</span>
+            </div>
+            <div className="divide-y">
             {query.data?.map((workspace) => {
               const memberCount = workspace.members.length;
               const isLecturer =
@@ -328,6 +341,7 @@ export function Courses() {
                 />
               );
             })}
+            </div>
           </div>
         )}
       </RequestState>
@@ -366,7 +380,7 @@ function StudentCourseRow({
   const nextLab = labs.find((lab) => lab.state === "UNLOCKED");
   const roadmapHref = `/roadmap?workspace=${encodeURIComponent(workspace.id)}`;
   return (
-    <article className="flex flex-wrap items-center gap-x-6 gap-y-3 px-4 py-4 sm:px-5">
+    <article className="grid gap-x-6 gap-y-3 px-4 py-4 md:grid-cols-[minmax(0,1fr)_11rem_15rem] md:items-center sm:px-5">
       <div className="min-w-0 flex-1 basis-64">
         <div className="flex flex-wrap items-center gap-2">
           {workspace.code && (
@@ -392,7 +406,7 @@ function StudentCourseRow({
         )}
       </div>
       {roadmap.data?.guided && (
-        <div className="w-full max-w-xs sm:w-44">
+        <div className="w-full">
           <div className="flex justify-between gap-2 text-xs text-muted-foreground">
             <span>{t("Lab results", "Kết quả Lab")}</span>
             <span>
@@ -414,7 +428,7 @@ function StudentCourseRow({
           </div>
         </div>
       )}
-      <div className="flex shrink-0 gap-2">
+      <div className="flex shrink-0 gap-2 md:justify-end">
         <Button asChild onClick={onOpen}>
           <Link href={roadmapHref}>
             {isLecturer
@@ -446,6 +460,50 @@ export function CourseRoadmap() {
   const canManage = workspace?.myRole === "LECTURER" || session.data?.user?.role === "admin";
   const publishedCourse = usePublishedCourse(workspaceId);
   const [studentView, setStudentView] = useState<"roadmap" | "outline" | "curriculum">("roadmap");
+  const studentRoadmap = useCourseRoadmap(workspaceId);
+  const studentAssignmentsQuery = useApiQuery(
+    "assignments",
+    { workspaceId },
+    { enabled: Boolean(workspaceId) && !canManage },
+  );
+  const studentSubmissionsQuery = useApiQuery(
+    "submissions",
+    { workspaceId },
+    { enabled: Boolean(workspaceId) && !canManage },
+  );
+  const studentLabs = useMemo(() => studentRoadmap.data?.labs ?? [], [studentRoadmap.data]);
+  const assignmentById = useMemo(
+    () => new Map((studentAssignmentsQuery.data ?? []).map((item) => [item.id, item])),
+    [studentAssignmentsQuery.data],
+  );
+  const upcomingDeadlines = useMemo(
+    () =>
+      studentLabs
+        .map((lab) => ({ lab, dueAt: assignmentById.get(lab.assignmentId)?.dueAt }))
+        .filter(
+          (row): row is { lab: (typeof studentLabs)[number]; dueAt: string } =>
+            typeof row.dueAt === "string" && row.dueAt !== "No deadline",
+        )
+        .sort((left, right) => new Date(left.dueAt).getTime() - new Date(right.dueAt).getTime())
+        .slice(0, 3),
+    [studentLabs, assignmentById],
+  );
+  const latestResult = useMemo(
+    () =>
+      [...(studentSubmissionsQuery.data ?? [])]
+        .filter((item) => item.reviewScore != null || item.labOutcome || item.reviewStatus)
+        .sort(
+          (left, right) =>
+            new Date(right.gradedAt ?? right.submittedAt).getTime() -
+            new Date(left.gradedAt ?? left.submittedAt).getTime(),
+        )[0],
+    [studentSubmissionsQuery.data],
+  );
+  const passedLabs = studentLabs.filter((lab) => lab.state === "PASSED").length;
+  const nextStudentLab = studentLabs.find((lab) => lab.state === "UNLOCKED");
+  const lecturerNames = (workspace?.members ?? [])
+    .filter((member) => member.role.toUpperCase() === "LECTURER")
+    .map((member) => member.name);
 
   useEffect(() => {
     if (workspaceId && workspaceId !== selection.workspaceId) selection.setWorkspaceId(workspaceId);
@@ -458,27 +516,41 @@ export function CourseRoadmap() {
       emptyMessage={t("Select a course to view its roadmap.", "Chọn một khóa học để xem lộ trình.")}
     >
       {workspace && (
-        <div className="space-y-6">
-          <div className="rounded-2xl border bg-card p-6">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                  {workspace.code || t("Course", "Khóa học")} /{" "}
-                  {t("Learning roadmap", "Lộ trình học tập")}
-                </p>
-                <h1 className="mt-2 text-2xl font-semibold">{workspace.name}</h1>
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-                  {t(
-                    "Labs unlock in sequence. Complete the required evidence package and receive a passing lecturer review before the next Lab becomes available.",
-                    "Các Lab mở theo thứ tự. Hoàn thành bộ bằng chứng bắt buộc và đạt đánh giá của giảng viên để mở Lab tiếp theo.",
-                  )}
-                </p>
+        <div className="space-y-5">
+          {canManage ? (
+            <div className="rounded-xl border bg-card p-5">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                    {workspace.code || t("Course", "Khóa học")} /{" "}
+                    {t("Learning roadmap", "Lộ trình học tập")}
+                  </p>
+                  <h1 className="mt-2 text-2xl font-semibold">{workspace.name}</h1>
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+                    {t(
+                      "Labs unlock in sequence. Complete the required evidence package and receive a passing lecturer review before the next Lab becomes available.",
+                      "Các Lab mở theo thứ tự. Hoàn thành bộ bằng chứng bắt buộc và đạt đánh giá của giảng viên để mở Lab tiếp theo.",
+                    )}
+                  </p>
+                </div>
+                <Button asChild variant="outline">
+                  <Link href="/courses">{t("Back to courses", "Quay lại khóa học")}</Link>
+                </Button>
               </div>
-              <Button asChild variant="outline">
-                <Link href="/courses">{t("Back to courses", "Quay lại khóa học")}</Link>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-3">
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                  {workspace.code || t("Class", "Lớp")} · {t("Learning roadmap", "Lộ trình học tập")}
+                </p>
+                <h1 className="truncate text-xl font-semibold tracking-tight">{workspace.name}</h1>
+              </div>
+              <Button asChild size="sm" variant="ghost">
+                <Link href="/courses">{t("All classes", "Tất cả lớp")}</Link>
               </Button>
             </div>
-          </div>
+          )}
 
           {canManage && (
             <section className="rounded-2xl border bg-card p-5" aria-labelledby="course-controls">
@@ -606,63 +678,164 @@ export function CourseRoadmap() {
               />
             </>
           ) : (
-            <div className="space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-card p-2">
-                <div
-                  className="flex flex-wrap gap-1.5"
-                  role="tablist"
-                  aria-label={t("Class sections", "Khu vực học tập")}
-                >
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={studentView === "roadmap" ? "default" : "ghost"}
-                    onClick={() => setStudentView("roadmap")}
+            <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_20rem]">
+              <div className="min-w-0 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-2">
+                  <div
+                    className="flex flex-wrap gap-1"
+                    role="tablist"
+                    aria-label={t("Class sections", "Khu vực học tập")}
                   >
-                    {t("Lab Roadmap", "Lộ trình Bài Lab")}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={studentView === "outline" ? "default" : "ghost"}
-                    onClick={() => setStudentView("outline")}
-                  >
-                    {t("Module Outline", "Đề cương Chương mục")}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={studentView === "curriculum" ? "default" : "ghost"}
-                    onClick={() => setStudentView("curriculum")}
-                  >
-                    {t("Curriculum Library", "Giáo trình Tham khảo")}
+                    {(
+                      [
+                        ["roadmap", t("Lab Roadmap", "Lộ trình Bài Lab")],
+                        ["outline", t("Module Outline", "Đề cương Chương mục")],
+                        ["curriculum", t("Curriculum Library", "Giáo trình Tham khảo")],
+                      ] as const
+                    ).map(([id, label]) => (
+                      <button
+                        key={id}
+                        type="button"
+                        role="tab"
+                        aria-selected={studentView === id}
+                        onClick={() => setStudentView(id)}
+                        className={
+                          studentView === id
+                            ? "border-b-2 border-primary px-3 py-2 text-sm font-medium text-foreground"
+                            : "border-b-2 border-transparent px-3 py-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+                        }
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <Button asChild size="sm" variant="outline">
+                    <Link href={`/submissions?workspace=${encodeURIComponent(workspaceId)}`}>
+                      {t("Submissions & Grades", "Bài nộp & Điểm")}
+                    </Link>
                   </Button>
                 </div>
-                <Button asChild size="sm" variant="outline">
-                  <Link href={`/submissions?workspace=${encodeURIComponent(workspaceId)}`}>
-                    {t("Submissions & Grades", "Bài nộp & Điểm")}
-                  </Link>
-                </Button>
+                {studentView === "roadmap" && (
+                  <CourseLabRoadmap
+                    workspaceId={workspaceId}
+                    canManage={false}
+                    active={workspace.status !== "ARCHIVED"}
+                  />
+                )}
+                {studentView === "outline" && (
+                  <CourseOutline
+                    workspaceId={workspaceId}
+                    canManage={false}
+                    active={workspace.status !== "ARCHIVED"}
+                  />
+                )}
+                {studentView === "curriculum" && (
+                  <section className="rounded-lg border bg-card p-4">
+                    <CurriculumLibrary />
+                  </section>
+                )}
               </div>
-              {studentView === "roadmap" && (
-                <CourseLabRoadmap
-                  workspaceId={workspaceId}
-                  canManage={false}
-                  active={workspace.status !== "ARCHIVED"}
-                />
-              )}
-              {studentView === "outline" && (
-                <CourseOutline
-                  workspaceId={workspaceId}
-                  canManage={false}
-                  active={workspace.status !== "ARCHIVED"}
-                />
-              )}
-              {studentView === "curriculum" && (
-                <section className="rounded-2xl border bg-card p-5">
-                  <CurriculumLibrary />
+
+              <aside className="space-y-3" aria-label={t("Class summary", "Tóm tắt lớp")}>
+                <section className="rounded-lg border bg-card p-4">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      {t("Progress", "Tiến độ")}
+                    </p>
+                    <p className="text-xs tabular-nums text-muted-foreground">
+                      {passedLabs}/{studentLabs.length} {t("labs", "Lab")}
+                    </p>
+                  </div>
+                  <div
+                    role="progressbar"
+                    aria-label={t("Labs passed", "Lab đã đạt")}
+                    aria-valuemin={0}
+                    aria-valuemax={studentLabs.length || 1}
+                    aria-valuenow={passedLabs}
+                    className="mt-2 h-1.5 overflow-hidden rounded bg-muted"
+                  >
+                    <div
+                      className="h-full bg-primary"
+                      style={{ width: `${studentLabs.length ? (passedLabs / studentLabs.length) * 100 : 0}%` }}
+                    />
+                  </div>
+                  <p className="mt-3 text-sm">
+                    {nextStudentLab ? (
+                      <>
+                        {t("Next", "Tiếp theo")}:{" "}
+                        <span className="font-medium">{nextStudentLab.title}</span>
+                      </>
+                    ) : studentLabs.length ? (
+                      t("All Labs passed.", "Đã đạt tất cả Lab.")
+                    ) : (
+                      t("No Labs published yet.", "Chưa có Lab nào được công bố.")
+                    )}
+                  </p>
                 </section>
-              )}
+
+                <section className="rounded-lg border bg-card p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    {t("Upcoming deadlines", "Hạn nộp gần")}
+                  </p>
+                  {upcomingDeadlines.length === 0 ? (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {t("No published deadline.", "Chưa có hạn nộp.")}
+                    </p>
+                  ) : (
+                    <ul className="mt-1 divide-y text-sm">
+                      {upcomingDeadlines.map(({ lab, dueAt }) => (
+                        <li key={lab.assignmentId} className="flex items-baseline justify-between gap-3 py-2">
+                          <span className="min-w-0 truncate">{lab.title}</span>
+                          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                            {shortDate(dueAt)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+
+                <section className="rounded-lg border bg-card p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    {t("Latest result", "Kết quả mới nhất")}
+                  </p>
+                  {latestResult ? (
+                    <div className="mt-2 space-y-1 text-sm">
+                      <p className="truncate font-medium">
+                        {latestResult.assignmentTitle || t("Lab submission", "Bài nộp Lab")}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {latestResult.reviewScore != null ? `${latestResult.reviewScore}/100 · ` : ""}
+                        {latestResult.labOutcome ||
+                          latestResult.reviewStatus ||
+                          t("Submitted", "Đã nộp")}
+                        {latestResult.gradedAt ? ` · ${shortDate(latestResult.gradedAt)}` : ""}
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {t("No graded submission yet.", "Chưa có bài được chấm.")}
+                    </p>
+                  )}
+                  <Link
+                    className="mt-2 inline-block text-xs text-primary hover:underline"
+                    href={`/submissions?workspace=${encodeURIComponent(workspaceId)}`}
+                  >
+                    {t("Open submissions & grades", "Mở bài nộp & điểm")}
+                  </Link>
+                </section>
+
+                <section className="rounded-lg border bg-card p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    {t("Teaching team", "Giảng viên")}
+                  </p>
+                  <p className="mt-2 text-sm">
+                    {lecturerNames.length
+                      ? lecturerNames.join(", ")
+                      : t("Not listed", "Chưa có thông tin")}
+                  </p>
+                </section>
+              </aside>
             </div>
           )}
         </div>
