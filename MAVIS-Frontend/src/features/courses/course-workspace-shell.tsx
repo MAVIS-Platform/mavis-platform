@@ -2,6 +2,14 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
+import {
+  BookOpen,
+  ClipboardCheck,
+  GraduationCap,
+  LayoutGrid,
+  Users,
+  type LucideIcon,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { cn } from "@/lib/utils";
@@ -15,12 +23,15 @@ export type CourseWorkspaceTab =
   | "members"
   | "results";
 
-const TAB_LABELS: Record<Exclude<CourseWorkspaceTab, "results">, { en: string; vi: string }> = {
-  content: { en: "Overview & Setup", vi: "Tổng quan & Khởi tạo" },
-  authoring: { en: "Curriculum & Materials", vi: "Đề cương & Học liệu" },
-  assignments: { en: "Labs & Quiz Studio", vi: "Thiết kế Lab & Quiz" },
-  submissions: { en: "Grading & Gradebook", vi: "Chấm bài & Bảng điểm" },
-  members: { en: "Students & Access", vi: "Sinh viên & Phân quyền" },
+const TAB_LABELS: Record<
+  Exclude<CourseWorkspaceTab, "results">,
+  { en: string; vi: string; icon: LucideIcon }
+> = {
+  content: { en: "Overview & Setup", vi: "Tổng quan & Khởi tạo", icon: LayoutGrid },
+  authoring: { en: "Curriculum & Materials", vi: "Đề cương & Học liệu", icon: GraduationCap },
+  assignments: { en: "Labs & Quiz Studio", vi: "Thiết kế Lab & Quiz", icon: BookOpen },
+  submissions: { en: "Grading & Gradebook", vi: "Chấm bài & Bảng điểm", icon: ClipboardCheck },
+  members: { en: "Students & Access", vi: "Sinh viên & Phân quyền", icon: Users },
 };
 
 const STUDENT_TAB_LABELS: Partial<Record<CourseWorkspaceTab, { en: string; vi: string }>> = {
@@ -113,6 +124,7 @@ export function CourseWorkspaceShell({
           >
             {visibleTabs.map((tab) => {
               const label = (isStudent ? STUDENT_TAB_LABELS[tab] : undefined) ?? TAB_LABELS[tab];
+              const Icon = TAB_LABELS[tab].icon;
               const isCurrent = normalizedActive === tab;
               return (
                 <Link
@@ -120,12 +132,13 @@ export function CourseWorkspaceShell({
                   href={tabHref(workspace.id, tab)}
                   aria-current={isCurrent ? "page" : undefined}
                   className={cn(
-                    "rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
+                    "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
                     isCurrent
                       ? "bg-white text-indigo-950 shadow-sm"
                       : "text-white/80 hover:bg-white/15 hover:text-white",
                   )}
                 >
+                  <Icon className="size-3.5" aria-hidden="true" />
                   {t(label.en, label.vi)}
                 </Link>
               );

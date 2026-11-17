@@ -833,7 +833,6 @@ test("lecturer workspace navigation exposes unified class command destinations w
     "workspace-overview": "/workspace-overview",
     "course-authoring": "/workspace-overview?view=course-authoring",
     assignments: "/assignments",
-    "lab-authoring": "/lab-authoring",
     "assignment-submissions": "/submissions",
     members: "/members",
   });

@@ -908,6 +908,7 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Lab Workspace": "Không gian thực hành",
   "Lab Library": "Kho Lab",
   "Lab Creation": "Tạo Lab",
+  "Labs & Quiz Studio": "Thiết kế Lab & Quiz",
   "Learning Space": "Không gian học tập",
   "My Classes": "Lớp học của tôi",
   "Lab Roadmap & Course": "Lộ trình & Bài Lab",

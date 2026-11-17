@@ -95,7 +95,7 @@ const screens: Record<
     selector: "workspace",
   },
   assignments: {
-    title: "Lab Library",
+    title: "Labs & Quiz Studio",
     scope: "workspace",
     component: Assignments,
     selector: "workspace",

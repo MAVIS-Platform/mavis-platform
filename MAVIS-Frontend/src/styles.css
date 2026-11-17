@@ -240,7 +240,7 @@
   --drawer-width: min(20rem, calc(100vw - 2rem));
   --detail-width: 22.5rem;
   --filter-width: 14rem;
-  --content-max: 75rem;
+  --content-max: 90rem;
   --reading-max: 45rem;
   --form-max: 40rem;
   --control-height: 2.75rem;

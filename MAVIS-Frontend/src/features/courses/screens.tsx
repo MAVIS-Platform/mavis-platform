@@ -365,7 +365,7 @@ export function Courses() {
         <section className="grid gap-4 sm:grid-cols-3">
           <div className="rounded-2xl border bg-card p-4 shadow-sm">
             <div className="flex items-center justify-between text-xs font-medium text-muted-foreground">
-              <span>{t("Enrolled Classes", "Lớp Đã Tham Gia")}</span>
+              <span>{t("Enrolled Classes", "Lớp học của tôi")}</span>
               <BookOpen className="h-4 w-4 text-blue-600" aria-hidden="true" />
             </div>
             <p className="mt-2 text-2xl font-bold tracking-tight">{workspaces.length}</p>
