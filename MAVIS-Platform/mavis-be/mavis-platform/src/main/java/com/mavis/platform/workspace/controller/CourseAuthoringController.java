@@ -75,11 +75,17 @@ public class CourseAuthoringController {
                         body.assignmentId(), body.content(), body.required())));
     }
 
-    @PutMapping("/modules/{moduleId}")
+    @RequestMapping(value = "/modules/{moduleId}", method = {RequestMethod.PUT, RequestMethod.PATCH})
     public ApiResponse<CourseAuthoringService.CourseView> updateModule(
             @PathVariable UUID workspaceId, @PathVariable UUID moduleId, @Valid @RequestBody ModuleBody body) {
         return ApiResponse.success(authoring.updateModule(workspaceId, moduleId,
                 new CourseAuthoringService.ModuleRequest(body.title(), body.description(), body.prerequisiteModuleId())));
+    }
+
+    @DeleteMapping("/modules/{moduleId}")
+    public ApiResponse<CourseAuthoringService.CourseView> deleteModule(
+            @PathVariable UUID workspaceId, @PathVariable UUID moduleId) {
+        return ApiResponse.success(authoring.deleteModule(workspaceId, moduleId));
     }
 
     @PostMapping("/modules/{moduleId}/move")

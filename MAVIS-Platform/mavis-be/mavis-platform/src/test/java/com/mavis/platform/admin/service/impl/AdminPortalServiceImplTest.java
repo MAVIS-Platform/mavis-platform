@@ -228,4 +228,25 @@ class AdminPortalServiceImplTest {
             org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes();
         }
     }
+
+    @Test
+    @DisplayName("Admin tạo nhanh tài khoản LECTURER ở trạng thái ACTIVE ngay lập tức")
+    void createUserCreatesActiveAccountAndRecordsAudit() {
+        var req = new com.mavis.platform.admin.dto.AdminCreateUserRequest(
+                "newlec@mavis.edu.vn", "Lecturer New", "StrongPass123", "LECTURER");
+        when(userRepository.existsByEmail("newlec@mavis.edu.vn")).thenReturn(false);
+        when(roleRepository.findByCode("LECTURER")).thenReturn(Optional.of(lecturerRole));
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> {
+            User u = inv.getArgument(0);
+            u.setId(UUID.randomUUID());
+            return u;
+        });
+
+        AdminUserResponseDTO created = adminPortalService.createUser(req);
+
+        assertThat(created.getEmail()).isEqualTo("newlec@mavis.edu.vn");
+        assertThat(created.getRoleCode()).isEqualTo("LECTURER");
+        assertThat(created.getStatus()).isEqualTo("ACTIVE");
+        verify(auditLogService).recordAuditLog(eq("ADMIN_CREATE_USER"), eq("USER"), any(UUID.class), anyMap());
+    }
 }

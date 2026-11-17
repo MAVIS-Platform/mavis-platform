@@ -1,7 +1,12 @@
 package com.mavis.platform.workspace.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.mavis.common.entity.Assignment;
+import com.mavis.common.entity.ModelElement;
+import com.mavis.common.entity.ModelRelationship;
 import com.mavis.common.entity.ModelVersion;
 import com.mavis.common.entity.Project;
 import com.mavis.common.entity.RuntimeConfiguration;
@@ -10,12 +15,15 @@ import com.mavis.common.entity.Workspace;
 import com.mavis.common.exception.BusinessException;
 import com.mavis.common.exception.ErrorCode;
 import com.mavis.common.repository.AssignmentRepository;
+import com.mavis.common.repository.ModelElementRepository;
+import com.mavis.common.repository.ModelRelationshipRepository;
 import com.mavis.common.repository.ModelVersionRepository;
 import com.mavis.common.repository.ProjectRepository;
 import com.mavis.common.repository.RuntimeConfigurationRepository;
 import com.mavis.common.repository.WorkspaceRepository;
 import com.mavis.common.security.AccessPolicyService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,8 +31,13 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -42,6 +55,23 @@ public class CourseSetupService {
     private final ModelVersionRepository models;
     private final RuntimeConfigurationRepository configurations;
     private final JdbcTemplate jdbc;
+
+    @Autowired(required = false)
+    private ModelElementRepository elements;
+
+    @Autowired(required = false)
+    private ModelRelationshipRepository relationships;
+
+    @Autowired(required = false)
+    private ObjectMapper objectMapper;
+
+    public record AutoConfigureStudioResult(
+            UUID assignmentId,
+            int blockCount,
+            int connectionCount,
+            int topologyRevision,
+            boolean studioFrozen,
+            Setup setup) {}
 
     public record ReferenceSetup(
             UUID projectId,
@@ -334,5 +364,151 @@ public class CourseSetupService {
 
     private static int arraySize(JsonNode node) {
         return node != null && node.isArray() ? node.size() : 0;
+    }
+
+    @Transactional
+    public AutoConfigureStudioResult autoConfigureStudio(UUID workspaceId, UUID assignmentId) {
+        access.requireWorkspaceLecturer(workspaceId);
+        Workspace workspace = workspaces.findById(workspaceId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Workspace not found"));
+        if (!"ACTIVE".equals(workspace.getStatus())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "Workspace is archived");
+        }
+        Assignment lab = assignments.findLockedById(assignmentId)
+                .filter(a -> a.getWorkspace() != null && workspaceId.equals(a.getWorkspace().getId()))
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Lab not found"));
+
+        ModelVersion refModel = lab.getReferenceModel();
+        ObjectMapper json = objectMapper != null ? objectMapper : new ObjectMapper();
+        ObjectNode topology = json.createObjectNode().put("version", 1);
+        ArrayNode blocks = topology.putArray("blocks");
+        ArrayNode connections = topology.putArray("connections");
+        Map<String, UUID> serviceMappings = new LinkedHashMap<>();
+
+        List<ModelElement> containerElements = (refModel != null && elements != null)
+                ? elements.findByModelVersionId(refModel.getId()).stream()
+                        .filter(el -> "SERVICE_CONTAINER".equalsIgnoreCase(el.getElementType())
+                                || "DATABASE".equalsIgnoreCase(el.getElementType())
+                                || "MESSAGE_BROKER".equalsIgnoreCase(el.getElementType())
+                                || "API_GATEWAY".equalsIgnoreCase(el.getElementType()))
+                        .toList()
+                : List.of();
+
+        Map<UUID, String> elementNameById = new HashMap<>();
+        if (!containerElements.isEmpty()) {
+            Set<String> seenServices = new LinkedHashSet<>();
+            for (ModelElement el : containerElements) {
+                if (el.getName() == null || el.getName().isBlank()) continue;
+                String svcName = el.getName().trim();
+                elementNameById.put(el.getId(), svcName);
+                if (seenServices.add(svcName)) {
+                    blocks.addObject()
+                            .put("service", svcName)
+                            .put("label", svcName)
+                            .put("canScale", true)
+                            .put("initiallyStopped", false);
+                    if (el.getId() != null) {
+                        serviceMappings.put(svcName, el.getId());
+                    }
+                }
+            }
+            if (refModel != null && relationships != null) {
+                for (ModelRelationship rel : relationships.findByModelVersionId(refModel.getId())) {
+                    if (rel.getSourceElement() == null || rel.getTargetElement() == null) continue;
+                    String fromName = elementNameById.get(rel.getSourceElement().getId());
+                    String toName = elementNameById.get(rel.getTargetElement().getId());
+                    if (fromName != null && toName != null && !fromName.equals(toName)) {
+                        connections.addObject()
+                                .put("from", fromName)
+                                .put("to", toName)
+                                .put("controllerService", fromName)
+                                .put("protocol", rel.getRelationType() != null ? rel.getRelationType() : "HTTP")
+                                .put("initiallyStopped", false);
+                    }
+                }
+            }
+        } else {
+            for (String svc : List.of("api-gateway", "order-service", "payment-service", "inventory-service")) {
+                blocks.addObject()
+                        .put("service", svc)
+                        .put("label", svc)
+                        .put("canScale", true)
+                        .put("initiallyStopped", false);
+            }
+            connections.addObject().put("from", "api-gateway").put("to", "order-service")
+                    .put("controllerService", "api-gateway").put("protocol", "HTTP").put("initiallyStopped", false);
+            connections.addObject().put("from", "order-service").put("to", "payment-service")
+                    .put("controllerService", "order-service").put("protocol", "FEIGN_CALL").put("initiallyStopped", false);
+        }
+
+        if (refModel != null && refModel.getProject() != null && refModel.getSourceSnapshot() != null) {
+            UUID refProjectId = refModel.getProject().getId();
+            RuntimeConfiguration cfg = configurations.findById(refProjectId).orElse(null);
+            ObjectNode profile = json.createObjectNode();
+            ObjectNode apps = profile.putObject("applications");
+            int port = 8080;
+            for (JsonNode b : blocks) {
+                String svc = b.path("service").asText("");
+                if (!svc.isBlank()) {
+                    apps.putObject(svc).put("runtime", "java").put("containerPort", port++);
+                }
+            }
+            ObjectNode mappingsNode = profile.putObject("serviceMappings");
+            serviceMappings.forEach((k, v) -> mappingsNode.put(k, v.toString()));
+            profile.set("studioTopology", topology.deepCopy());
+
+            int nextCfgRevision = cfg != null ? cfg.getRevision() + 1 : 1;
+            if (cfg == null) {
+                jdbc.update("""
+                        INSERT INTO runtime_configurations (project_id, source_snapshot_id, model_version_id, profile_id, profile, revision)
+                        VALUES (?, ?, ?, 'SPRING_BOOT_DOTNET_COMPOSE_V1', CAST(? AS jsonb), 1)
+                        ON CONFLICT (project_id) DO UPDATE SET
+                          source_snapshot_id = EXCLUDED.source_snapshot_id,
+                          model_version_id = EXCLUDED.model_version_id,
+                          profile = EXCLUDED.profile,
+                          revision = runtime_configurations.revision + 1
+                        """, refProjectId, refModel.getSourceSnapshot().getId(), refModel.getId(), profile.toString());
+            } else {
+                cfg.setSourceSnapshotId(refModel.getSourceSnapshot().getId());
+                cfg.setModelVersionId(refModel.getId());
+                if (cfg.getProfileId() == null || cfg.getProfileId().isBlank()) {
+                    cfg.setProfileId("SPRING_BOOT_DOTNET_COMPOSE_V1");
+                }
+                cfg.setProfile(profile);
+                cfg.setRevision(nextCfgRevision);
+                configurations.save(cfg);
+            }
+
+            Integer scnCount = jdbc.queryForObject(
+                    "SELECT count(*) FROM runtime_scenarios WHERE project_id = ?",
+                    Integer.class, refProjectId);
+            if (scnCount == null || scnCount == 0) {
+                ArrayNode steps = json.createArrayNode();
+                String primaryService = blocks.isEmpty() ? "order-service" : blocks.get(0).path("service").asText("order-service");
+                steps.addObject().put("id", "auto-health-check").put("service", primaryService)
+                        .put("method", "GET").put("path", "/actuator/health").put("expectedStatus", 200);
+                jdbc.update("""
+                        INSERT INTO runtime_scenarios (id, project_id, name, steps, revision)
+                        VALUES (?, ?, 'Auto-Configured Studio Scenario', CAST(? AS jsonb), 1)
+                        """, UUID.randomUUID(), refProjectId, steps.toString());
+            }
+        }
+
+        int nextTopoRev = (lab.getStudioTopologyRevision() != null ? lab.getStudioTopologyRevision() : 0) + 1;
+        lab.setStudioTopologySnapshot(topology.deepCopy());
+        lab.setStudioTopologyRevision(nextTopoRev);
+        lab.setRequireRuntimeTrace(true);
+        if ("LEGACY".equalsIgnoreCase(lab.getLabMode() == null ? "LEGACY" : lab.getLabMode())) {
+            lab.setLabMode("THEORY_QUIZ_STUDIO");
+        }
+        assignments.saveAndFlush(lab);
+
+        return new AutoConfigureStudioResult(
+                lab.getId(),
+                blocks.size(),
+                connections.size(),
+                nextTopoRev,
+                true,
+                setup(workspaceId));
     }
 }

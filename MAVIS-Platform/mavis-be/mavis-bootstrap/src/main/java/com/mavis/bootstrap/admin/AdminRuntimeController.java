@@ -1,6 +1,9 @@
 package com.mavis.bootstrap.admin;
 import com.mavis.common.config.PlatformRuntimeSettings;
 import com.mavis.common.dto.ApiResponse;
+import com.mavis.common.entity.RuntimeSession;
+import com.mavis.common.exception.BusinessException;
+import com.mavis.common.exception.ErrorCode;
 import com.mavis.common.repository.*;
 import com.mavis.common.security.AccessPolicyService;
 import com.mavis.analyzer.aiexplain.config.ApiKeyProvider;
@@ -13,6 +16,7 @@ import jakarta.validation.constraints.*;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.domain.*;
+import java.time.OffsetDateTime;
 import java.util.*;
 import java.nio.charset.StandardCharsets;
 @RestController @RequestMapping("/api/v1/admin")
@@ -29,5 +33,37 @@ public class AdminRuntimeController {
  @PatchMapping({"/profiles/{id}","/runner-profiles/{id}"}) public ApiResponse<?> profile(@PathVariable String id,@Valid @RequestBody ProfileUpdate r){policy.requireSystemAdmin();return ApiResponse.success(settings.updateProfile(id,r.enabled(),r.expectedRevision(),r.memoryMiB(),r.cpus(),r.timeoutSeconds(),n->record("CONFIGURE_RUNNER_PROFILE","RUNNER_PROFILE",id,Map.of("enabled",n.enabled(),"revision",n.revision(),"memoryMiB",n.memoryMiB(),"cpus",n.cpus(),"timeoutSeconds",n.timeoutSeconds()))));}
  private void record(String action,String type,String id,Map<String,Object> values){var details=new HashMap<>(values);details.put("configurationId",id);details.put("persistence","PROCESS_LOCAL");audit.recordAuditLog(action,type,UUID.nameUUIDFromBytes((type+":"+id).getBytes(StandardCharsets.UTF_8)),details);}
  @GetMapping("/runtime-sessions") @Transactional(readOnly=true) public ApiResponse<?> sessions(){policy.requireSystemAdmin();return ApiResponse.success(sessions.findAll(PageRequest.of(0,50,Sort.by(Sort.Direction.DESC,"createdAt"))).stream().map(RuntimeSessionResponseDTO::fromEntity).toList());}
- @GetMapping("/jobs") @Transactional(readOnly=true) public ApiResponse<?> jobs(){policy.requireSystemAdmin();return ApiResponse.success(jobs.findAll(PageRequest.of(0,50,Sort.by(Sort.Direction.DESC,"startedAt"))).stream().map(j->JobResponseDTO.builder().jobId(j.getId()).projectId(j.getProject().getId()).sourceSnapshotId(j.getSourceSnapshot().getId()).jobType(j.getJobType()).status(j.getStatus()).resultManifest(j.getResultManifest()).errorDiagnostics(j.getErrorDiagnostics()).startedAt(j.getStartedAt()).completedAt(j.getCompletedAt()).build()).toList());}
+ @PostMapping("/runtime-sessions/{sessionId}/force-stop") @Transactional
+ public ApiResponse<?> forceStopSession(@PathVariable UUID sessionId) {
+  policy.requireSystemAdmin();
+  RuntimeSession session = sessions.findById(sessionId)
+          .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Runtime session not found"));
+  String previousStatus = session.getExecutionStatus();
+  session.setExecutionStatus("STOPPED");
+  session.setCleanupStatus("FORCE_STOPPED_BY_ADMIN");
+  if (session.getCompletedAt() == null) {
+   session.setCompletedAt(OffsetDateTime.now());
+  }
+  RuntimeSession saved = sessions.saveAndFlush(session);
+  audit.recordAuditLog("ADMIN_FORCE_STOP_RUNTIME_SESSION", "RUNTIME_SESSION", sessionId,
+          Map.of("previousStatus", previousStatus == null ? "UNKNOWN" : previousStatus, "newStatus", "STOPPED"));
+  return ApiResponse.success("Đã dừng khẩn cấp phiên Runtime", RuntimeSessionResponseDTO.fromEntity(saved));
+ }
+ @GetMapping("/jobs") @Transactional(readOnly=true) public ApiResponse<?> jobs(){policy.requireSystemAdmin();return ApiResponse.success(jobs.findAll(PageRequest.of(0,50,Sort.by(Sort.Direction.DESC,"startedAt"))).stream().map(j->{
+  var project = j.getProject();
+  var workspace = project != null ? project.getWorkspace() : null;
+  Map<String,Object> row = new LinkedHashMap<>();
+  row.put("jobId", j.getId());
+  row.put("projectId", project != null ? project.getId() : null);
+  row.put("projectName", project != null ? project.getName() : null);
+  row.put("workspaceName", workspace != null ? workspace.getName() : null);
+  row.put("sourceSnapshotId", j.getSourceSnapshot() != null ? j.getSourceSnapshot().getId() : null);
+  row.put("jobType", j.getJobType());
+  row.put("status", j.getStatus());
+  row.put("resultManifest", j.getResultManifest());
+  row.put("errorDiagnostics", j.getErrorDiagnostics());
+  row.put("startedAt", j.getStartedAt());
+  row.put("completedAt", j.getCompletedAt());
+  return row;
+ }).toList());}
 }

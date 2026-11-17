@@ -456,13 +456,28 @@ public class SubmissionServiceImpl implements SubmissionService {
     @Override
     @Transactional(readOnly = true)
     public List<SubmissionResponseDTO> getSubmissionsByAssignment(UUID assignmentId) {
-        log.debug("Lấy danh sách bài nộp theo assignmentId: {}", assignmentId);
+        return getSubmissionsByAssignment(assignmentId, null, null);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<SubmissionResponseDTO> getSubmissionsByAssignment(UUID assignmentId, String reviewStatus, String labOutcome) {
+        log.debug("Lấy danh sách bài nộp theo assignmentId: {}, reviewStatus={}, labOutcome={}", assignmentId, reviewStatus, labOutcome);
         Assignment assignment = assignmentRepository.findById(assignmentId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Assignment not found"));
         if (assignment.getWorkspace() == null) throw new BusinessException(ErrorCode.FORBIDDEN, "Assignment workspace required");
         accessPolicyService.requireWorkspaceLecturer(assignment.getWorkspace().getId());
         List<SubmissionSnapshot> submissions = submissionSnapshotRepository.findByAssignmentIdOrderBySubmittedAtDesc(assignmentId);
-        return mapToResponseListWithFeedbackCount(submissions);
+        List<SubmissionResponseDTO> mapped = mapToResponseListWithFeedbackCount(submissions, true);
+        if ((reviewStatus == null || reviewStatus.isBlank()) && (labOutcome == null || labOutcome.isBlank())) {
+            return mapped;
+        }
+        return mapped.stream()
+                .filter(s -> reviewStatus == null || reviewStatus.isBlank()
+                        || reviewStatus.trim().equalsIgnoreCase(s.getReviewStatus()))
+                .filter(s -> labOutcome == null || labOutcome.isBlank()
+                        || labOutcome.trim().equalsIgnoreCase(s.getLabOutcome()))
+                .toList();
     }
 
     @Override
@@ -472,7 +487,7 @@ public class SubmissionServiceImpl implements SubmissionService {
         accessPolicyService.requireProjectReadAccess(projectRepository.findById(projectId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Project not found")));
         List<SubmissionSnapshot> submissions = submissionSnapshotRepository.findByProjectIdOrderBySubmittedAtDesc(projectId);
-        return mapToResponseListWithFeedbackCount(submissions);
+        return mapToResponseListWithFeedbackCount(submissions, false);
     }
 
     @Override
@@ -484,7 +499,11 @@ public class SubmissionServiceImpl implements SubmissionService {
 
         requireSubmissionReadAccess(accessPolicyService, submission);
         long feedbackCount = feedbackCommentRepository.countBySubmissionId(submissionId);
-        return SubmissionResponseDTO.fromEntity(submission, feedbackCount);
+        SubmissionReview review = submissionReviewRepository.findBySubmissionId(submissionId).orElse(null);
+        User actor = accessPolicyService.requireCurrentActiveUser();
+        boolean revealDraft = actor != null && actor.getRole() != null
+                && !"STUDENT".equalsIgnoreCase(actor.getRole().getCode());
+        return SubmissionResponseDTO.fromEntity(submission, feedbackCount, review, revealDraft);
     }
 
     @Override
@@ -734,6 +753,12 @@ public class SubmissionServiceImpl implements SubmissionService {
     }
 
     private List<SubmissionResponseDTO> mapToResponseListWithFeedbackCount(List<SubmissionSnapshot> submissions) {
+        return mapToResponseListWithFeedbackCount(submissions, false);
+    }
+
+    private List<SubmissionResponseDTO> mapToResponseListWithFeedbackCount(
+            List<SubmissionSnapshot> submissions,
+            boolean revealDraft) {
         if (submissions.isEmpty()) {
             return Collections.emptyList();
         }
@@ -747,8 +772,22 @@ public class SubmissionServiceImpl implements SubmissionService {
             feedbackCounts.put(subId, count);
         }
 
+        Map<UUID, SubmissionReview> reviewsBySubmission = new HashMap<>();
+        List<SubmissionReview> reviews = submissionReviewRepository.findBySubmissionIdIn(submissionIds);
+        if (reviews != null) {
+            for (SubmissionReview review : reviews) {
+                if (review != null && review.getSubmission() != null && review.getSubmission().getId() != null) {
+                    reviewsBySubmission.put(review.getSubmission().getId(), review);
+                }
+            }
+        }
+
         return submissions.stream()
-                .map(s -> SubmissionResponseDTO.fromEntity(s, feedbackCounts.getOrDefault(s.getId(), 0L)))
+                .map(s -> SubmissionResponseDTO.fromEntity(
+                        s,
+                        feedbackCounts.getOrDefault(s.getId(), 0L),
+                        reviewsBySubmission.get(s.getId()),
+                        revealDraft))
                 .collect(Collectors.toList());
     }
 

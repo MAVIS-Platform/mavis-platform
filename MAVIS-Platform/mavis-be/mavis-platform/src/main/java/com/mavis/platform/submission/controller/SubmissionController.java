@@ -38,9 +38,12 @@ public class SubmissionController {
 
     @GetMapping("/api/v1/assignments/{assignmentId}/submissions")
     @Operation(summary = "Lấy danh sách bài nộp của một đề bài (Giảng viên chấm bài)",
-            description = "Tối ưu hóa 8-way EntityGraph để nạp toàn bộ danh sách bài nộp của lớp học chỉ với 1 câu query duy nhất")
-    public ApiResponse<List<SubmissionResponseDTO>> getSubmissionsByAssignment(@PathVariable UUID assignmentId) {
-        List<SubmissionResponseDTO> submissions = submissionService.getSubmissionsByAssignment(assignmentId);
+            description = "Tối ưu hóa 8-way EntityGraph + batch review để nạp toàn bộ danh sách bài nộp của lớp học")
+    public ApiResponse<List<SubmissionResponseDTO>> getSubmissionsByAssignment(
+            @PathVariable UUID assignmentId,
+            @RequestParam(required = false) String reviewStatus,
+            @RequestParam(required = false) String labOutcome) {
+        List<SubmissionResponseDTO> submissions = submissionService.getSubmissionsByAssignment(assignmentId, reviewStatus, labOutcome);
         return ApiResponse.success("Lấy danh sách bài nộp thành công", submissions);
     }
 

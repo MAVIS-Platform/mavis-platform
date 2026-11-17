@@ -251,4 +251,23 @@ class CourseAuthoringServiceTest {
                         JsonNodeFactory.instance.objectNode().put("body", "new"), true)));
         verify(items, never()).save(any());
     }
+
+    @Test
+    void deleteModuleClearsPrerequisitesDeletesItemsAndResequencesPositions() {
+        CourseModule second = CourseModule.builder().id(UUID.randomUUID()).course(course).title("Second")
+                .position(2).prerequisiteModuleId(moduleId).build();
+        CourseItem item = CourseItem.builder().id(UUID.randomUUID()).module(module).itemType("THEORY")
+                .title("Item").position(1).content(JsonNodeFactory.instance.objectNode()).required(true).build();
+        when(modules.findByCourseIdOrderByPositionAsc(course.getId()))
+                .thenReturn(new java.util.ArrayList<>(List.of(module, second)))
+                .thenReturn(new java.util.ArrayList<>(List.of(second)));
+        when(items.findByModuleIdOrderByPositionAsc(moduleId)).thenReturn(List.of(item));
+
+        service.deleteModule(workspaceId, moduleId);
+
+        assertNull(second.getPrerequisiteModuleId());
+        verify(items).deleteAll(List.of(item));
+        verify(modules).delete(module);
+        assertEquals(1, second.getPosition());
+    }
 }
