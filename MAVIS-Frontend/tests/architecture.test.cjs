@@ -798,14 +798,21 @@ test("project navigation preserves every destination and keeps role menus intact
     globalNavigation.student.flatMap((g) => g.items).find((i) => i.id === "join-course").href,
     "/courses#course-passkey",
   );
-  assert.ok(
-    globalNavigation.admin.flatMap((g) => g.items).some((i) => i.href === "/administration/users"),
-  );
-  assert.equal(contextualNavigation("admin", "project").length, 0);
-  assert.ok(
+  assert.deepEqual(
     globalNavigation.admin
       .flatMap((g) => g.items)
-      .some((i) => i.id === "studio" && i.href === "/administration/studio"),
+      .map((i) => ({ id: i.id, href: i.href })),
+    [
+      { id: "health", href: "/administration/health" },
+      { id: "users", href: "/administration/users" },
+      { id: "profiles", href: "/administration/profiles" },
+      { id: "audit", href: "/administration/audit" },
+    ],
+  );
+  assert.equal(contextualNavigation("admin", "project").length, 0);
+  assert.equal(
+    globalNavigation.admin.flatMap((g) => g.items).some((i) => i.href === "/administration/studio"),
+    false,
   );
   for (const role of ["student", "lecturer"])
     assert.ok(
@@ -815,19 +822,22 @@ test("project navigation preserves every destination and keeps role menus intact
     );
 });
 
-test("lecturer workspace navigation exposes every class destination without adding them to student navigation", () => {
-  const { lecturerWorkspaceNavigation, globalNavigation } = require("../src/lib/navigation.ts");
+test("lecturer workspace navigation exposes unified class command destinations without adding them to student navigation", () => {
+  const {
+    lecturerWorkspaceNavigation,
+    globalNavigation,
+    contextualNavigation,
+  } = require("../src/lib/navigation.ts");
   const destinations = lecturerWorkspaceNavigation.flatMap((group) => group.items);
   assert.deepEqual(Object.fromEntries(destinations.map((item) => [item.id, item.href])), {
     "workspace-overview": "/workspace-overview",
-    members: "/members",
+    "course-authoring": "/workspace-overview?view=course-authoring",
     assignments: "/assignments",
     "lab-authoring": "/lab-authoring",
     "assignment-submissions": "/submissions",
-    "workspace-results": "/submissions?view=results",
-    "course-authoring": "/workspace-overview?view=course-authoring",
-    "course-setup": "/workspace-overview?view=course-setup",
+    members: "/members",
   });
+  assert.deepEqual(contextualNavigation("lecturer", "project"), lecturerWorkspaceNavigation);
   assert.ok(
     globalNavigation.lecturer
       .flatMap((group) => group.items)
@@ -1050,7 +1060,7 @@ test("lecturer sidebar expands the selected class and marks its class destinatio
   );
   assert.match(
     html,
-    /class="[^"]*bg-sidebar-accent[^\"]*" aria-current="location" aria-label="Assignments" href="\/assignments\?workspace=class-1"/,
+    /class="[^"]*bg-sidebar-accent[^\"]*" aria-current="location" aria-label="Lab &amp; Quiz Studio" href="\/assignments\?workspace=class-1"/,
   );
 });
 
@@ -1158,7 +1168,7 @@ test("collapsed class sidebar keeps child destinations available as labeled link
   assert.ok(html.includes('aria-label="Lab Authoring"'));
 });
 
-test("project sidebar renders active group controls and never exposes projectNavigation to student", () => {
+test("non-live project sidebar never exposes legacy projectNavigation to lecturer or student", () => {
   const React = require("react"),
     { renderToStaticMarkup } = require("react-dom/server"),
     { ThemeProvider } = require("../src/components/theme-provider.tsx");
@@ -1184,17 +1194,11 @@ test("project sidebar renders active group controls and never exposes projectNav
       ),
     ),
   );
-  assert.ok(html.includes('aria-expanded="true"'));
-  assert.ok(html.includes("Architecture Graph Explorer"));
-  assert.ok(html.includes("Project Overview"));
+  assert.ok(!html.includes("Architecture Diagrams"));
+  assert.ok(!html.includes("Change Impact Analysis"));
+  assert.ok(!html.includes("Runtime Configuration"));
+  assert.ok(html.includes("Workspaces"));
   assert.ok(html.includes("Project content"));
-  for (const obsolete of [
-    "Design foundation",
-    "Stage 1",
-    "Source analysis. Runtime evidence.",
-    "Explanations with context.",
-  ])
-    assert.ok(!html.includes(obsolete), obsolete);
   assert.ok(html.includes("MAVIS home"));
   assert.ok(html.includes("Workspaces"));
 
@@ -5165,40 +5169,46 @@ test("My Workspaces is a compact LMS class list with tabs and a module outline",
   );
   assert.doesNotMatch(rootHtml, /Workspace code/, "Create class form stays closed until requested");
   const overviewHtml = renderComp(WorkspaceOverview, "ws-swd");
-  assert.doesNotMatch(overviewHtml, /Class content/);
-  assert.doesNotMatch(overviewHtml, /aria-label="Class sections"/);
+  assert.match(overviewHtml, /aria-label="Class sections"/);
+  assert.match(overviewHtml, /Overview &amp; Setup/);
+  assert.match(overviewHtml, /Curriculum &amp; Materials/);
+  assert.match(overviewHtml, /Labs &amp; Quiz Studio/);
+  assert.match(overviewHtml, /Grading &amp; Gradebook/);
+  assert.match(overviewHtml, /Students &amp; Access/);
+  assert.match(overviewHtml, /Enrolled Students/);
+  assert.match(overviewHtml, /Class Passkey/);
   assert.match(overviewHtml, /Foundations/);
   assert.match(overviewHtml, /Service boundaries/);
   assert.match(overviewHtml, /Lab 1 Architecture/);
-  assert.doesNotMatch(overviewHtml, /Authoring/);
-  assert.doesNotMatch(overviewHtml, /Setup/);
   const authoringHtml = renderComp(WorkspaceOverview, "ws-swd", "view=course-authoring");
+  assert.match(authoringHtml, /Delete module/);
+  assert.match(authoringHtml, /aria-label="Curriculum Inspector"/);
   assert.doesNotMatch(authoringHtml, /id="course-outline-title"/);
   const setupHtml = renderComp(WorkspaceOverview, "ws-swd", "view=course-setup");
   assert.match(setupHtml, /Loading course setup/);
   assert.doesNotMatch(setupHtml, /id="course-outline-title"/);
   const unknownViewHtml = renderComp(WorkspaceOverview, "ws-swd", "view=unknown");
   assert.match(unknownViewHtml, /Foundations/);
-  assert.doesNotMatch(overviewHtml, /Students enrolled/, "Overview must not be a KPI dashboard");
   assert.doesNotMatch(
     overviewHtml,
     /Add students in bulk/,
     "Overview must not include member management",
   );
   const membersHtml = renderComp(WorkspaceMembers, "ws-swd");
-  assert.doesNotMatch(
+  assert.match(
     membersHtml,
     /Class sections/,
-    "lecturer nested navigation replaces the class tabs",
+    "lecturer class view shows unified 5-tab navigation",
   );
+  assert.match(membersHtml, /Students &amp; Access/);
   client.setQueryData(["api", "session", {}], {
     user: { id: "u2", name: "Student A", email: "student@example.com", role: "student" },
   });
   const studentMembersHtml = renderComp(WorkspaceMembers, "ws-swd");
   assert.match(
     studentMembersHtml,
-    /Class sections/,
-    "students retain class tabs without the lecturer menu",
+    /aria-label="Class sections"/,
+    "members view keeps class tabs available across roles",
   );
   client.setQueryData(["api", "session", {}], {
     user: { id: "u1", name: "Lecturer", email: "lec@example.com", role: "lecturer" },

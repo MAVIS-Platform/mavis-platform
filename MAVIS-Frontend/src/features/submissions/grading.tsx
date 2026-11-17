@@ -429,6 +429,23 @@ export function GradeForm({
                     }}
                   />
                 </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {["9.5", "8.0", "6.5", "4.0"].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      className="rounded border px-2 py-0.5 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+                      onClick={() => {
+                        setDirty(true);
+                        setSnapshotRows((prev) =>
+                          prev.map((item, i) => (i === idx ? { ...item, score: preset } : item)),
+                        );
+                      }}
+                    >
+                      {preset}/10
+                    </button>
+                  ))}
+                </div>
               </div>
             );
           })}
@@ -439,24 +456,62 @@ export function GradeForm({
           )}
         </div>
       ) : guidedLab ? null : (
-        <FormField label={t("Lecturer score (out of 100)")}>
-          {(props) => (
-            <Input
-              {...props}
-              type="number"
-              min={0}
-              max={100}
-              step="0.01"
-              value={score}
-              onChange={(e) => {
-                setDirty(true);
-                setScore(e.target.value);
-              }}
-              className="max-w-48"
-            />
-          )}
-        </FormField>
+        <div className="space-y-2">
+          <FormField label={t("Lecturer score (out of 100)")}>
+            {(props) => (
+              <Input
+                {...props}
+                type="number"
+                min={0}
+                max={100}
+                step="0.01"
+                value={score}
+                onChange={(e) => {
+                  setDirty(true);
+                  setScore(e.target.value);
+                }}
+                className="max-w-48"
+              />
+            )}
+          </FormField>
+          <div className="flex flex-wrap gap-1.5">
+            {["100", "85", "70", "50"].map((preset) => (
+              <button
+                key={preset}
+                type="button"
+                className="rounded border px-2 py-0.5 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+                onClick={() => {
+                  setDirty(true);
+                  setScore(preset);
+                }}
+              >
+                {preset}/100
+              </button>
+            ))}
+          </div>
+        </div>
       )}
+      <div className="space-y-1.5">
+        <div className="flex flex-wrap gap-1.5">
+          {[
+            "Good C4 boundaries and accurate 3E evidence.",
+            "Needs clearer service separation and container links.",
+            "Studio Live scale/stop proof incomplete — please re-verify.",
+          ].map((template) => (
+            <button
+              key={template}
+              type="button"
+              className="rounded border bg-muted/30 px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
+              onClick={() => {
+                setDirty(true);
+                setSummary((prev) => (prev.trim() ? `${prev.trim()}\n${template}` : template));
+              }}
+            >
+              + {template}
+            </button>
+          ))}
+        </div>
+      </div>
       <FormField label={t("Overall review / changes requested")}>
         {(props) => (
           <Textarea

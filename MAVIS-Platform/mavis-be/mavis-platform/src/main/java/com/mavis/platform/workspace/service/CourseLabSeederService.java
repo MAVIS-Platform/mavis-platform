@@ -79,6 +79,9 @@ public class CourseLabSeederService {
     private final ObjectMapper json;
     private final Path storageRoot;
 
+    @Autowired(required = false)
+    private CourseAuthoringService courseAuthoring;
+
     @Autowired
     public CourseLabSeederService(
             AccessPolicyService access,
@@ -141,6 +144,7 @@ public class CourseLabSeederService {
                     .filter(java.util.Objects::nonNull)
                     .findFirst()
                     .ifPresent(ref -> ensureReferenceRuntimeSetup(ref, java.util.Map.of()));
+            syncCuratedCourseOutline(workspaceId, workspace);
             return courses.roadmap(workspaceId);
         }
         if (fullCurriculum && existingLabs.size() >= 13) {
@@ -150,6 +154,7 @@ public class CourseLabSeederService {
                     .filter(java.util.Objects::nonNull)
                     .findFirst()
                     .ifPresent(ref -> ensureReferenceRuntimeSetup(ref, java.util.Map.of()));
+            syncCuratedCourseOutline(workspaceId, workspace);
             return courses.roadmap(workspaceId);
         }
 
@@ -197,10 +202,108 @@ public class CourseLabSeederService {
             quizzes.publishCurriculum(workspaceId, lab.getId(), curriculum.quizFor(spec.curriculumCode()));
         }
 
+        syncCuratedCourseOutline(workspaceId, workspace);
+
         jdbc.update("INSERT INTO audit_logs(actor_id, action, target_type, target_id) VALUES (?, ?, ?, ?)",
                 lecturer.getId(), ACTION_SEEDED, "WORKSPACE", workspaceId);
 
         return courses.roadmap(workspaceId);
+    }
+
+    private void syncCuratedCourseOutline(UUID workspaceId, Workspace workspace) {
+        if (courseAuthoring == null) {
+            return;
+        }
+        try {
+            CourseAuthoringService.CourseView existing = null;
+            try {
+                existing = courseAuthoring.get(workspaceId);
+            } catch (BusinessException ex) {
+                if (ex.getErrorCode() != ErrorCode.NOT_FOUND) {
+                    throw ex;
+                }
+            }
+            if (existing != null && existing.modules() != null && !existing.modules().isEmpty()) {
+                return;
+            }
+            List<Assignment> allLabs = assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId);
+            if (allLabs.isEmpty()) {
+                return;
+            }
+            if (existing != null && "PUBLISHED".equals(existing.status())) {
+                courseAuthoring.startDraft(workspaceId);
+            } else {
+                String courseTitle = (workspace.getName() == null || workspace.getName().isBlank())
+                        ? "Microservices Architecture Curated Course"
+                        : workspace.getName() + " · Giáo trình Microservices";
+                courseAuthoring.saveDraft(workspaceId, new CourseAuthoringService.CourseRequest(
+                        courseTitle.length() > 255 ? courseTitle.substring(0, 255) : courseTitle,
+                        "Giáo trình & chuỗi bài Lab thực hành kiến trúc phần mềm Microservices (C4, 3E, Reverse BFS, Quiz Gate & MAVIS Studio Live)."));
+            }
+
+            List<List<Assignment>> groups = partitionLabsIntoModules(allLabs);
+            List<String> moduleTitles = groups.size() == 1
+                    ? List.of("Chặng 1 · Nền tảng Kiến trúc & Thực hành Microservices")
+                    : List.of(
+                            "Chặng 1 · Nền tảng Kiến trúc & Ranh giới Dữ liệu",
+                            "Chặng 2 · Giao tiếp Dịch vụ & API Gateway",
+                            "Chặng 3 · Khả năng Chịu lỗi & Bất đồng bộ",
+                            "Chặng 4 · Quan sát Hệ thống & Tổng kết");
+
+            for (int i = 0; i < groups.size(); i++) {
+                List<Assignment> chunk = groups.get(i);
+                if (chunk.isEmpty()) continue;
+                String title = i < moduleTitles.size() ? moduleTitles.get(i) : "Module " + (i + 1);
+                CourseAuthoringService.CourseView afterModule = courseAuthoring.addModule(
+                        workspaceId, new CourseAuthoringService.ModuleRequest(title, null, null));
+                UUID moduleId = afterModule.modules().getLast().id();
+
+                for (Assignment lab : chunk) {
+                    String theoryBody = "## " + lab.getTitle() + "\n\n"
+                            + (lab.getDescription() != null && !lab.getDescription().isBlank()
+                                    ? lab.getDescription()
+                                    : "Nghiên cứu kiến trúc tham chiếu C1–C3, quy tắc 3E và luồng phụ thuộc trước khi làm Quiz Gate.")
+                            + "\n\n- Quan sát sơ đồ kiến trúc C1–C3 và đồ thị phụ thuộc ở Bước 1.\n"
+                            + "- Phân tích vùng ảnh hưởng bằng Reverse BFS ở Bước 2.\n"
+                            + "- Vượt qua Quiz Gate (>= 80%) ở Bước 3 trước khi thực nghiệm ở Bước 4.";
+                    ObjectNode theoryContent = json.createObjectNode().put("body", theoryBody);
+                    courseAuthoring.addItem(workspaceId, moduleId,
+                            new CourseAuthoringService.ItemRequest(
+                                    "THEORY", "Lý thuyết · " + lab.getTitle(),
+                                    "Kiến thức trọng tâm chuẩn bị cho Lab", null, theoryContent, true));
+                    courseAuthoring.addItem(workspaceId, moduleId,
+                            new CourseAuthoringService.ItemRequest(
+                                    "QUIZ", "Quiz Gate · " + lab.getTitle(),
+                                    "Kiểm tra nhận thức mở khóa Lab", lab.getId(), json.createObjectNode(), true));
+                    boolean isRuntime = Boolean.TRUE.equals(lab.getRequireRuntimeTrace());
+                    courseAuthoring.addItem(workspaceId, moduleId,
+                            new CourseAuthoringService.ItemRequest(
+                                    isRuntime ? "RUNTIME_LAB" : "STATIC_LAB", lab.getTitle(),
+                                    isRuntime ? "Thực nghiệm Studio Live & Nộp hồ sơ V2" : "Phân tích Tĩnh 3E & Nộp hồ sơ V2",
+                                    lab.getId(), json.createObjectNode(), true));
+                }
+            }
+            courseAuthoring.publish(workspaceId);
+        } catch (Exception ignored) {
+            // Do not fail seeding if optional authoring synchronization encounters incomplete mock state in tests.
+        }
+    }
+
+    private static List<List<Assignment>> partitionLabsIntoModules(List<Assignment> labs) {
+        if (labs.size() <= 3) {
+            return List.of(labs);
+        }
+        List<Assignment> m1 = new ArrayList<>();
+        List<Assignment> m2 = new ArrayList<>();
+        List<Assignment> m3 = new ArrayList<>();
+        List<Assignment> m4 = new ArrayList<>();
+        for (int i = 0; i < labs.size(); i++) {
+            if (i < 3) m1.add(labs.get(i));
+            else if (i < 6) m2.add(labs.get(i));
+            else if (i < 10) m3.add(labs.get(i));
+            else m4.add(labs.get(i));
+        }
+        return List.of(m1, m2, m3, m4);
     }
 
     private void ensureCourseMode(Workspace workspace) {

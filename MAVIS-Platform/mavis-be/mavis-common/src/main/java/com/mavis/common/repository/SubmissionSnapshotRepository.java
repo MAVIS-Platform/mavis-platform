@@ -25,6 +25,9 @@ public interface SubmissionSnapshotRepository extends JpaRepository<SubmissionSn
     })
     List<SubmissionSnapshot> findByAssignmentIdOrderBySubmittedAtDesc(UUID assignmentId);
 
+    @EntityGraph(attributePaths = {"assignment", "submittedBy"})
+    List<SubmissionSnapshot> findByAssignmentIdInOrderBySubmittedAtDesc(Collection<UUID> assignmentIds);
+
     @EntityGraph(attributePaths = {
             "assignment", "project", "submittedBy", "sourceSnapshot",
             "modelVersion", "diagramVersion", "evaluationRun", "runtimeSession"

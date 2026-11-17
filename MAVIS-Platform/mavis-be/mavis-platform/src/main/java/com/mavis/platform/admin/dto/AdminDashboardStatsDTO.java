@@ -14,6 +14,12 @@ public class AdminDashboardStatsDTO {
     private long totalUsers;
     private long runningRuntimeSessions;
     private String healthStatus;
+    private String liveHealthStatus;
+    private long activeLecturers;
+    private long activeStudents;
+    private long pendingVerificationUsers;
+    private long lockedUsers;
+    private long totalGuidedLabs;
     private long totalWorkspaces;
     private long totalProjects;
     private long totalSnapshots;

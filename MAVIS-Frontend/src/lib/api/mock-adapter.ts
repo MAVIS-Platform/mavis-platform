@@ -864,6 +864,28 @@ export class MockAdapter implements ApiAdapter {
       }
       case "accounts":
         return this.accounts;
+      case "createAccount": {
+        const p = contracts.createAccount.input.parse(raw);
+        const acc = {
+          id: crypto.randomUUID(),
+          name: p.fullName,
+          email: p.email,
+          role: p.role,
+          locked: false,
+          status: "ACTIVE",
+          createdAt: new Date().toISOString(),
+        };
+        this.accounts.push(acc);
+        this.record("createAccount", acc.id);
+        return acc;
+      }
+      case "forceStopRuntimeSession": {
+        const p = contracts.forceStopRuntimeSession.input.parse(raw);
+        const s = this.find(this.sessions, (item) => item.id === p.sessionId);
+        s.status = "terminated";
+        this.record("forceStopRuntimeSession", s.id);
+        return { sessionId: s.id, executionStatus: "STOPPED" };
+      }
       case "setAccountRole": {
         const p=contracts.setAccountRole.input.parse(raw), account=this.find(this.accounts,a=>a.id===p.accountId);
         account.role=p.role; this.record("setAccountRole",account.id); return account;

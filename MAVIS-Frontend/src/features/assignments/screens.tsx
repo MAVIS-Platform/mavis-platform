@@ -13,6 +13,7 @@ import { useApiMutation, useApiQuery, usePermission, useSelection } from "@/hook
 import { useLocale } from "@/lib/i18n/locale-context";
 import { isDeadlinePassed } from "@/features/submissions/submission-readiness";
 import { SeedCuratedCourseLabs, useCourseRoadmap } from "@/features/workspaces/course-access";
+import { CourseWorkspaceShell } from "@/features/courses/course-workspace-shell";
 import { AssignmentInstructions } from "./assignment-instructions";
 import { AssignmentSourceDetails } from "./source-picker";
 
@@ -34,6 +35,8 @@ export function Assignments() {
 function LecturerAssignments() {
   const { t } = useLocale();
   const { workspaceId } = useSelection();
+  const workspacesQuery = useApiQuery("workspaces", {});
+  const workspace = workspacesQuery.data?.find((item) => item.id === workspaceId);
   const query = useApiQuery("assignments", { workspaceId }, { enabled: Boolean(workspaceId) });
   const roadmap = useCourseRoadmap(workspaceId);
   const remove = useApiMutation("deleteAssignment");
@@ -45,11 +48,11 @@ function LecturerAssignments() {
 
   if (!workspaceId) return null;
 
-  return (
+  const content = (
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">{t("Labs", "Lab")}</h1>
+          <h2 className="text-lg font-semibold tracking-tight">{t("Labs", "Danh sách Lab")}</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             {t(
               "Create a Lab, then configure its theory, reference source, Quiz, Studio Live and publishing in one authoring workspace.",
@@ -84,7 +87,7 @@ function LecturerAssignments() {
         <section className="space-y-3 rounded-xl border bg-card p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <h2 className="font-semibold">{t("Course tools", "Công cụ khóa học")}</h2>
+              <h3 className="font-semibold">{t("Course tools", "Công cụ khóa học")}</h3>
               <p className="text-xs text-muted-foreground">
                 {t(
                   "Seed a curated course or open the course-level setup checklist. These actions are separate from authoring one Lab.",
@@ -93,8 +96,8 @@ function LecturerAssignments() {
               </p>
             </div>
             <Button asChild size="sm" variant="outline">
-              <Link href={`/roadmap?workspace=${encodeURIComponent(workspaceId)}`}>
-                {t("Course setup checklist", "Checklist thiết lập khóa học")}
+              <Link href={`/workspace-overview?workspace=${encodeURIComponent(workspaceId)}`}>
+                {t("Overview & Setup", "Tổng quan & Khởi tạo")}
               </Link>
             </Button>
           </div>
@@ -235,6 +238,14 @@ function LecturerAssignments() {
         {remove.error && <ErrorState error={remove.error} />}
       </RequestState>
     </div>
+  );
+
+  return workspace ? (
+    <CourseWorkspaceShell workspace={workspace} active="assignments">
+      {content}
+    </CourseWorkspaceShell>
+  ) : (
+    content
   );
 }
 

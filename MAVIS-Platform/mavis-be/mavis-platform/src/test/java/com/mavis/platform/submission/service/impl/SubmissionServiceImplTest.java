@@ -1048,4 +1048,58 @@ class SubmissionServiceImplTest {
         assertThat(dto.getStudentSnapshots().get(0).path("snapshotId").asText()).isEqualTo("STEP_1_STATIC");
         assertThat(dto.getEvidencePackageDigest()).matches("^sha256:[a-f0-9]{64}$");
     }
+
+    @Test
+    @DisplayName("LEC-BE-01: Batch-enriches reviewStatus/reviewScore/labOutcome and filters by status/outcome")
+    void getSubmissionsByAssignmentBatchEnrichesAndFiltersReviews() {
+        var workspace = Workspace.builder().id(UUID.randomUUID()).name("SE1819").status("ACTIVE").build();
+        assignment.setWorkspace(workspace);
+        var gradedId = UUID.randomUUID();
+        var returnedId = UUID.randomUUID();
+
+        var gradedSub = SubmissionSnapshot.builder()
+                .id(gradedId).assignment(assignment).submittedBy(student)
+                .submittedAt(OffsetDateTime.now()).build();
+        var returnedSub = SubmissionSnapshot.builder()
+                .id(returnedId).assignment(assignment).submittedBy(student)
+                .submittedAt(OffsetDateTime.now().minusMinutes(5)).build();
+
+        var lecturer = User.builder().id(UUID.randomUUID()).fullName("Dr. Triet").build();
+        var gradedReview = new SubmissionReview();
+        gradedReview.setSubmission(gradedSub);
+        gradedReview.setLecturer(lecturer);
+        gradedReview.setStatus("GRADED");
+        gradedReview.setScore(java.math.BigDecimal.valueOf(92.5));
+        gradedReview.setLabOutcome("PASSED");
+        gradedReview.setSummary("Clean separation of concerns");
+        gradedReview.setUpdatedAt(OffsetDateTime.now());
+
+        var returnedReview = new SubmissionReview();
+        returnedReview.setSubmission(returnedSub);
+        returnedReview.setLecturer(lecturer);
+        returnedReview.setStatus("RETURNED");
+        returnedReview.setScore(java.math.BigDecimal.valueOf(40.0));
+        returnedReview.setLabOutcome("NEEDS_REVISION");
+        returnedReview.setSummary("Fix Reverse BFS explanation");
+        returnedReview.setUpdatedAt(OffsetDateTime.now());
+
+        when(assignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));
+        when(submissionSnapshotRepository.findByAssignmentIdOrderBySubmittedAtDesc(assignmentId))
+                .thenReturn(List.of(gradedSub, returnedSub));
+        when(feedbackCommentRepository.countFeedbacksBySubmissionIds(anyList())).thenReturn(List.of());
+        when(submissionReviewRepository.findBySubmissionIdIn(anyList()))
+                .thenReturn(List.of(gradedReview, returnedReview));
+
+        List<SubmissionResponseDTO> all = submissionService.getSubmissionsByAssignment(assignmentId, null, null);
+        assertThat(all).hasSize(2);
+        assertThat(all.get(0).getReviewStatus()).isEqualTo("GRADED");
+        assertThat(all.get(0).getReviewScore()).isEqualTo(92.5);
+        assertThat(all.get(0).getLabOutcome()).isEqualTo("PASSED");
+        assertThat(all.get(0).getGradedByName()).isEqualTo("Dr. Triet");
+
+        List<SubmissionResponseDTO> returnedOnly = submissionService.getSubmissionsByAssignment(assignmentId, "RETURNED", "NEEDS_REVISION");
+        assertThat(returnedOnly).hasSize(1);
+        assertThat(returnedOnly.get(0).getId()).isEqualTo(returnedId);
+        verify(submissionReviewRepository, times(2)).findBySubmissionIdIn(anyList());
+    }
 }

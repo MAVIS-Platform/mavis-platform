@@ -1,13 +1,22 @@
 "use client";
 
-import Link from "next/link";
-import { Activity, ArrowRight, Lock } from "lucide-react";
+import { useState } from "react";
+import { Activity, Lock, Play, Sparkles } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ErrorState } from "@/components/shared/request-state";
 import { useApiQuery } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
-import { PublishCourseLab, useCourseSetup, useRuntimeSetupReadiness } from "@/features/workspaces/course-access";
+import {
+  PublishCourseLab,
+  useAutoConfigureStudio,
+  useBootstrapLabStudio,
+  useCourseSetup,
+  useRuntimeSetupReadiness,
+  useStartLabStudioSession,
+} from "@/features/workspaces/course-access";
 import { PreparedTopologyEditor } from "@/features/runtime/prepared-topology-editor";
+import { LiveStudioWorkbench } from "@/features/runtime/live-studio-workbench";
 import type { Assignment } from "./requirements";
 
 export function LabStudioSection({
@@ -23,6 +32,9 @@ export function LabStudioSection({
   const projectId = assignment.referenceSource?.projectId ?? null;
   const readiness = useRuntimeSetupReadiness(projectId);
   const setup = useCourseSetup(workspaceId);
+  const autoStudio = useAutoConfigureStudio(workspaceId, assignment.id);
+  const startStudio = useStartLabStudioSession(workspaceId, assignment.id);
+  const bootstrapStudio = useBootstrapLabStudio(workspaceId, assignment.id);
   const runtimeConfig = useApiQuery(
     "runtimeConfiguration",
     { projectId: projectId ?? "" },
@@ -33,34 +45,19 @@ export function LabStudioSection({
     { projectId: projectId ?? "" },
     { enabled: Boolean(projectId) },
   );
+  const [selectedSessionId, setSelectedSessionId] = useState("");
+  const [showPlaytest, setShowPlaytest] = useState(false);
   const setupLab = setup.data?.labs?.find((item) => item.assignmentId === assignment.id);
   const published = setupLab?.published === true;
-  const modelId = assignment.referenceSource?.modelId;
-  const verifiedSession = sessions.data?.find(
-    (session) => session.assignmentId === assignment.id && session.studioVerified,
-  ) ?? sessions.data?.find((session) => session.studioVerified);
-  const returnTo = `/lab-authoring?${new URLSearchParams({
-    workspace: workspaceId,
-    assignment: assignment.id,
-    tab: "studio",
-  })}`;
-  const sessionStartHref = projectId
-    ? `/sessions?${new URLSearchParams({
-        project: projectId,
-        assignment: assignment.id,
-        ...(modelId ? { model: modelId } : {}),
-        studio: "1",
-        returnTo,
-      })}`
-    : "/sessions?studio=1";
-  const studioHref = projectId
-    ? `/studio?${new URLSearchParams({
-        project: projectId,
-        assignment: assignment.id,
-        ...(modelId ? { model: modelId } : {}),
-        returnTo,
-      })}`
-    : "/studio";
+  const sessionList = sessions.data ?? [];
+  const verifiedSession =
+    sessionList.find((session) => session.assignmentId === assignment.id && session.studioVerified) ??
+    sessionList.find((session) => session.studioVerified);
+  const activeSessionId =
+    selectedSessionId ||
+    sessionList.find((session) => session.assignmentId === assignment.id)?.id ||
+    sessionList[0]?.id ||
+    "";
 
   return (
     <div className="space-y-5">
@@ -69,12 +66,12 @@ export function LabStudioSection({
           <div>
             <h2 className="flex items-center gap-2 font-semibold">
               <Activity className="size-4 text-primary" aria-hidden="true" />
-              {t("MAVIS Studio Live", "MAVIS Studio Live")}
+              {t("MAVIS Studio Live · Self-Contained Editor & Playtest", "MAVIS Studio Live · Cấu hình & Chạy thử trực tiếp")}
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
               {t(
-                "Prepare the runtime profile on the pinned reference project, then freeze its topology into this Lab.",
-                "Chuẩn bị runtime profile trên project tham chiếu đã ghim, sau đó đóng băng topology vào Lab này.",
+                "Auto-configure the runtime profile and 2D topology right here, refine blocks/links, and playtest without leaving Lab Authoring.",
+                "Tự động cấu hình runtime profile và topology 2D ngay tại đây, tinh chỉnh block/kết nối và chạy thử không cần rời trang Soạn Lab.",
               )}
             </p>
           </div>
@@ -95,6 +92,48 @@ export function LabStudioSection({
           </div>
         ) : (
           <>
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/25 bg-primary/5 p-4">
+              <div className="space-y-1">
+                <p className="flex items-center gap-1.5 text-sm font-semibold">
+                  <Sparkles className="size-4 text-primary" aria-hidden="true" />
+                  {t(
+                    "Auto-Configure & Freeze 2D Studio Topology (1-Click)",
+                    "Tự động cấu hình & Đóng băng Topology Studio 2D (1 chạm)",
+                  )}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    "Extracts services and edges from the reference model, creates runtime profile & scenario, and freezes the 2D Studio sandbox for students.",
+                    "Trích xuất các service và luồng gọi từ model chuẩn, tạo runtime profile & kịch bản mặc định, và đóng băng sandbox 2D cho sinh viên.",
+                  )}
+                </p>
+              </div>
+              <Button
+                type="button"
+                disabled={autoStudio.isPending}
+                onClick={() =>
+                  autoStudio.mutate(undefined, {
+                    onSuccess: () => {
+                      void runtimeConfig.refetch();
+                      void readiness.refetch();
+                      void setup.refetch();
+                    },
+                  })
+                }
+              >
+                {autoStudio.isPending
+                  ? t("Configuring & Freezing…", "Đang cấu hình & đóng băng…")
+                  : t("⚡ 1-Click Auto-Configure Studio", "⚡ Tự động cấu hình Studio")}
+              </Button>
+            </div>
+            {autoStudio.isSuccess && (
+              <p role="status" className="text-xs text-success">
+                {autoStudio.data.message} · {autoStudio.data.containerCount}{" "}
+                {t("containers", "container")} · {autoStudio.data.linkCount} {t("links", "liên kết")}
+              </p>
+            )}
+            {autoStudio.error && <ErrorState error={autoStudio.error} />}
+
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-lg border p-3 text-sm">
                 <p className="text-xs text-muted-foreground">{t("Runtime profile", "Runtime profile")}</p>
@@ -118,12 +157,6 @@ export function LabStudioSection({
                 </p>
               </div>
             </div>
-            <p className="text-xs leading-5 text-muted-foreground">
-              {t(
-                "Runner/images ready reflects the profile configuration returned by the API. It is not a live Runner health check.",
-                "Runner/image sẵn sàng phản ánh cấu hình profile do API trả về. Đây không phải kiểm tra health Runner trực tiếp.",
-              )}
-            </p>
             {readiness.data && (
               <div className="grid gap-2 text-xs sm:grid-cols-2">
                 <p>
@@ -142,7 +175,7 @@ export function LabStudioSection({
                 <span className="font-mono">{verifiedSession.id.slice(0, 12)}…</span>
                 {verifiedSession.assignmentId === assignment.id
                   ? ` · ${t("linked to this Lab", "đã liên kết với Lab này")}`
-                  : ` · ${t("select the Lab-linked session before freezing", "chọn phiên gắn với Lab trước khi đóng băng")}`}
+                  : ` · ${t("available as fallback verified trace", "dự phòng nếu chưa có phiên riêng của Lab")}`}
               </p>
             )}
             {projectId && runtimeConfig.data && (
@@ -159,41 +192,22 @@ export function LabStudioSection({
             {projectId && !runtimeConfig.data && !runtimeConfig.isPending && (
               <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
                 {t(
-                  "Save the runtime configuration first. Prepared topology is stored in the pinned runtime profile.",
-                  "Lưu cấu hình runtime trước. Prepared topology được lưu trong runtime profile đã ghim.",
+                  "Click 1-Click Auto-Configure Studio above to initialize the runtime profile and 2D topology.",
+                  "Nhấn Tự động cấu hình Studio ở trên để khởi tạo runtime profile và topology 2D.",
                 )}
               </p>
             )}
-            <div className="flex flex-wrap gap-2 border-t pt-4">
-              <Button asChild variant="outline">
-                <Link href={`/runtime-config?project=${encodeURIComponent(projectId)}&assignment=${assignment.id}`}>
-                  {t("Configure runtime & Studio Live", "Cấu hình runtime & Studio Live")}
-                  <ArrowRight className="ml-1 size-4" aria-hidden="true" />
-                </Link>
-              </Button>
-              {readiness.data?.configured ? (
-                <Button asChild>
-                  <Link href={sessionStartHref}>
-                    {t("Start Live session", "Bắt đầu phiên Live")}
-                    <ArrowRight className="ml-1 size-4" aria-hidden="true" />
-                  </Link>
-                </Button>
-              ) : (
-                <Button
-                  type="button"
-                  disabled
-                  title={t(
-                    "Configure the runtime profile before starting a Live session.",
-                    "Cấu hình runtime profile trước khi bắt đầu phiên Live.",
-                  )}
-                >
-                  {t("Start Live session", "Bắt đầu phiên Live")}
-                </Button>
-              )}
-              <Button asChild variant="outline">
-                <Link href={studioHref}>
-                  {t("Open MAVIS Studio", "Mở MAVIS Studio")}
-                </Link>
+
+            <div className="flex flex-wrap items-center gap-2 border-t pt-4">
+              <Button
+                type="button"
+                variant={showPlaytest ? "secondary" : "outline"}
+                onClick={() => setShowPlaytest((open) => !open)}
+              >
+                <Play className="mr-1.5 size-4" aria-hidden="true" />
+                {showPlaytest
+                  ? t("Hide Inline Studio Playtest", "Ẩn khung chạy thử Studio")
+                  : t("Playtest 2D Studio Inline", "Chạy thử Studio 2D trực tiếp")}
               </Button>
               {published ? (
                 <PublishCourseLab
@@ -208,12 +222,64 @@ export function LabStudioSection({
                 </Button>
               )}
             </div>
-            <p className="text-xs leading-5 text-muted-foreground">
-              {t(
-                "Start Live session opens the Runtime sessions page with this reference project. Open MAVIS Studio selects the project and the newest running session automatically.",
-                "Bắt đầu phiên Live mở trang Phiên Runtime với project tham chiếu này. Mở MAVIS Studio sẽ chọn project và phiên đang chạy mới nhất tự động.",
-              )}
-            </p>
+
+            {showPlaytest && (
+              <div className="space-y-3 rounded-xl border bg-muted/15 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    {t("Inline Studio Playtest Sandbox", "Khung chạy thử Studio ngay trong Soạn Lab")}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={startStudio.isPending}
+                      onClick={() =>
+                        startStudio.mutate(undefined, {
+                          onSuccess: (created) => {
+                            if (created?.id) setSelectedSessionId(created.id);
+                          },
+                        })
+                      }
+                    >
+                      {startStudio.isPending
+                        ? t("Starting session…", "Đang khởi tạo phiên…")
+                        : t("New Playtest Session", "Khởi tạo phiên thử mới")}
+                    </Button>
+                    {activeSessionId && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={bootstrapStudio.isPending}
+                        onClick={() => bootstrapStudio.mutate(activeSessionId)}
+                      >
+                        {bootstrapStudio.isPending
+                          ? t("Loading 2D Sandbox…", "Đang nạp Sandbox 2D…")
+                          : t("Initialize Simulated Topology", "Nạp Topology mô phỏng")}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                {startStudio.error && <ErrorState error={startStudio.error} />}
+                {bootstrapStudio.error && <ErrorState error={bootstrapStudio.error} />}
+                <LiveStudioWorkbench
+                  sessions={sessionList}
+                  sessionId={activeSessionId}
+                  projectId={projectId}
+                  onSelectSession={setSelectedSessionId}
+                  onStartSession={() =>
+                    startStudio.mutate(undefined, {
+                      onSuccess: (created) => {
+                        if (created?.id) setSelectedSessionId(created.id);
+                      },
+                    })
+                  }
+                  starting={startStudio.isPending}
+                  hideSwitchToSandbox
+                />
+              </div>
+            )}
           </>
         )}
       </section>

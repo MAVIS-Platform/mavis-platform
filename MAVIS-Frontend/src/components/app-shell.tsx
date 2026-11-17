@@ -125,7 +125,12 @@ function ManagedShellChrome(props: AppShellProps) {
     (pathname === "/workspaces" && Boolean(selection.workspaceId) && !onPreviewNavigate)
       ? "workspace"
       : (props.scope ?? route.scope);
-  const scope = role === "student" && rawScope === "project" ? "workspace" : rawScope;
+  const scope =
+    role === "student" || role === "lecturer"
+      ? rawScope === "project"
+        ? "workspace"
+        : rawScope
+      : rawScope;
   const projectQuery = useApiQuery(
     "projects",
     {},
@@ -228,7 +233,9 @@ function ShellChrome({
       ? "workspace"
       : (scopeOverride ?? route.scope);
   const scope =
-    !live && role === "student" && rawShellScope === "project" ? "workspace" : rawShellScope;
+    !live && (role === "student" || role === "lecturer") && rawShellScope === "project"
+      ? "workspace"
+      : rawShellScope;
   const activeId =
     pathname === "/submissions" && role === "lecturer"
       ? "assignment-submissions"
@@ -323,14 +330,10 @@ function ShellChrome({
     pathname === "/workspaces" || pathname === "/workspace-overview"
       ? params.get("view") === "course-authoring"
         ? "course-authoring"
-        : params.get("view") === "course-setup"
-          ? "course-setup"
-          : "workspace-overview"
-      : pathname === "/submissions" && params.get("view") === "results"
-        ? "workspace-results"
-        : pathname === "/submissions" && role === "lecturer"
-          ? "assignment-submissions"
-          : route.activeId;
+        : "workspace-overview"
+      : pathname === "/submissions" && role === "lecturer"
+        ? "assignment-submissions"
+        : route.activeId;
   const activeWorkspaceNavId =
     selectedWorkspaceId && workspaces.some((w) => w.id === selectedWorkspaceId)
       ? `workspace:${selectedWorkspaceId}:${activeWorkspaceDestination}`

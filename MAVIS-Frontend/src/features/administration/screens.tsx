@@ -1,13 +1,15 @@
 "use client";
 import Link from "next/link";
-import { AdminToolbar, PageResults, Notice } from "./operations";
+import { AdminRuntimeSummary, AdminToolbar, PageResults, Notice } from "./operations";
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Plus } from "lucide-react";
 import { summarizeJobModel } from "@/lib/navigation/admin-job-review";
 import { useApiMutation, useApiQuery } from "@/hooks/use-api";
 import { DataTable, DetailPanel, StatusBadge, SummaryCard } from "@/components/shared/data";
 import { RequestState, ErrorState } from "@/components/shared/request-state";
 import { ConfirmDialog, SearchInput, SelectField } from "@/components/shared/forms";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,43 +21,55 @@ export function Accounts() {
   const query = useApiQuery("accounts", {});
   const lock = useApiMutation("setAccountLock");
   const updateRole = useApiMutation("setAccountRole");
-  type Account = Response<"accounts">[number];
-  const [drafts, setDrafts] = useState<Record<string, Partial<Pick<Account, "role" | "locked">>>>(
-    {},
-  );
-  const [saving, setSaving] = useState<string | null>(null);
-  const change = (account: Account, patch: Partial<Pick<Account, "role" | "locked">>) => {
-    setDrafts((previous) => ({ ...previous, [account.id]: { ...previous[account.id], ...patch } }));
-  };
-  const save = async (account: Account) => {
-    const draft = drafts[account.id];
-    if (!draft || saving) return;
-    setSaving(account.id);
+  const createAcc = useApiMutation("createAccount");
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [newRole, setNewRole] = useState<"student" | "lecturer" | "admin">("lecturer");
+
+  const runLock = async (accountId: string, locked: boolean) => {
+    setBusyId(accountId);
     lock.reset();
-    updateRole.reset();
     try {
-      if (draft.locked !== undefined && draft.locked !== account.locked) {
-        await lock.mutateAsync({ accountId: account.id, locked: draft.locked });
-        setDrafts((previous) => {
-          const remaining = { ...previous[account.id] };
-          delete remaining.locked;
-          return { ...previous, [account.id]: remaining };
-        });
-      }
-      if (draft.role !== undefined && draft.role !== account.role) {
-        await updateRole.mutateAsync({ accountId: account.id, role: draft.role });
-        setDrafts((previous) => {
-          const remaining = { ...previous[account.id] };
-          delete remaining.role;
-          return { ...previous, [account.id]: remaining };
-        });
-      }
+      await lock.mutateAsync({ accountId, locked });
     } catch {
-      // Mutation errors remain visible; keep unsaved fields available for retry.
+      /* Shown below */
     } finally {
-      setSaving(null);
+      setBusyId(null);
     }
   };
+  const runRole = async (accountId: string, role: "student" | "lecturer" | "admin") => {
+    setBusyId(accountId);
+    updateRole.reset();
+    try {
+      await updateRole.mutateAsync({ accountId, role });
+    } catch {
+      /* Shown below */
+    } finally {
+      setBusyId(null);
+    }
+  };
+  const submitCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!fullName.trim() || !email.trim()) return;
+    try {
+      await createAcc.mutateAsync({
+        fullName: fullName.trim(),
+        email: email.trim(),
+        role: newRole,
+        ...(password.trim() ? { password: password.trim() } : {}),
+      });
+      setFullName("");
+      setEmail("");
+      setPassword("");
+      setShowCreate(false);
+    } catch {
+      /* ErrorState displays message */
+    }
+  };
+
   const [search, setSearch] = useState("");
   const [role, setRole] = useState("all"),
     [state, setState] = useState("all"),
@@ -75,9 +89,60 @@ export function Accounts() {
         refresh={() => void query.refetch()}
       >
         <p className="text-sm text-muted-foreground">
-          Manage access and teaching roles. Click Save at the end of a row to apply changes.
+          Manage access, pending activations, and teaching roles with 1-click updates.
         </p>
+        <Button size="sm" onClick={() => setShowCreate((open) => !open)}>
+          <Plus className="mr-1 size-4" aria-hidden="true" />
+          {showCreate ? "Close form" : "+ Create Account"}
+        </Button>
       </AdminToolbar>
+      {showCreate && (
+        <DetailPanel title="Provision Active User Account">
+          <form onSubmit={(e) => void submitCreate(e)} className="grid gap-3 md:grid-cols-4">
+            <Input
+              required
+              aria-label="Full name"
+              placeholder="Full name (e.g. Dr. Nguyen)"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+            />
+            <Input
+              required
+              type="email"
+              aria-label="Email address"
+              placeholder="Email address"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+            <Input
+              type="password"
+              aria-label="Initial password (optional)"
+              placeholder="Password (min 6 chars)"
+              value={password}
+              minLength={6}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+            <div className="flex gap-2">
+              <select
+                aria-label="Account role"
+                className="h-9 flex-1 rounded-md border bg-card px-3 text-sm"
+                value={newRole}
+                onChange={(e) =>
+                  setNewRole(e.target.value as "student" | "lecturer" | "admin")
+                }
+              >
+                <option value="lecturer">Lecturer</option>
+                <option value="student">Student</option>
+                <option value="admin">System Admin</option>
+              </select>
+              <Button size="sm" disabled={createAcc.isPending}>
+                {createAcc.isPending ? "Creating…" : "Create"}
+              </Button>
+            </div>
+          </form>
+          {createAcc.error && <ErrorState error={createAcc.error} />}
+        </DetailPanel>
+      )}
       <div className="grid gap-4 sm:grid-cols-3">
         <SummaryCard label="Accounts" value={query.data?.length ?? "—"} />
         <SummaryCard label="Locked" value={query.data?.filter((a) => a.locked).length ?? "—"} />
@@ -125,7 +190,7 @@ export function Accounts() {
         />
       </div>
       <RequestState query={query}>
-        <div className="space-y-4 [&_table]:min-w-[1000px] [&_th:first-child]:w-[300px] [&_th:nth-child(2)]:w-[220px] [&_th:last-child]:w-[190px] [&_thead]:bg-muted/50 [&_th]:py-4 [&_th]:font-semibold [&_td]:py-5">
+        <div className="space-y-4 [&_thead]:bg-muted/50 [&_th]:py-3.5 [&_th]:font-semibold [&_td]:py-4">
           <DataTable
             emptyDescription="Try clearing the filters or refresh to check for new records."
             rows={rows.slice((activePage - 1) * 10, activePage * 10)}
@@ -136,10 +201,10 @@ export function Accounts() {
                 key: "name",
                 label: "Account",
                 render: (a) => (
-                  <div className="flex min-w-56 items-center gap-3">
+                  <div className="flex min-w-52 items-center gap-3">
                     <span
                       aria-hidden="true"
-                      className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary"
+                      className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary"
                     >
                       {a.name
                         .trim()
@@ -149,9 +214,9 @@ export function Accounts() {
                         .join("")
                         .toUpperCase()}
                     </span>
-                    <div className="space-y-1">
+                    <div className="space-y-0.5">
                       <p className="font-semibold text-foreground">{a.name}</p>
-                      {a.email && <p className="text-sm text-muted-foreground">{a.email}</p>}
+                      {a.email && <p className="text-xs text-muted-foreground">{a.email}</p>}
                     </div>
                   </div>
                 ),
@@ -165,13 +230,17 @@ export function Accounts() {
                   ) : (
                     <select
                       aria-label={`Role for ${a.name}`}
-                      className="h-9 w-44 rounded-md border bg-card px-3 text-sm disabled:opacity-50"
-                      value={drafts[a.id]?.role ?? a.role}
-                      disabled={saving !== null}
+                      className="h-8 w-40 rounded-md border bg-card px-2.5 text-xs disabled:opacity-50"
+                      value={a.role}
+                      disabled={busyId !== null}
                       onChange={(event) => {
                         const value = event.target.value;
-                        if (value === "student" || value === "lecturer" || value === "admin")
-                          change(a, { role: value });
+                        if (
+                          (value === "student" || value === "lecturer" || value === "admin") &&
+                          value !== a.role
+                        ) {
+                          void runRole(a.id, value);
+                        }
                       }}
                     >
                       <option value="student">Student</option>
@@ -206,10 +275,10 @@ export function Accounts() {
                   return (
                     <time
                       dateTime={a.createdAt ?? undefined}
-                      className="block min-w-28 space-y-1 tabular-nums"
+                      className="block min-w-24 space-y-0.5 text-xs tabular-nums"
                     >
                       <span className="block font-medium">{date.toLocaleDateString("vi-VN")}</span>
-                      <span className="block text-xs text-muted-foreground">
+                      <span className="block text-muted-foreground">
                         {date.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}
                       </span>
                     </time>
@@ -218,29 +287,33 @@ export function Accounts() {
               },
               {
                 key: "action",
-                label: "Action",
+                label: "Quick Action",
                 render: (a) => {
-                  const draft = drafts[a.id];
-                  const locked = draft?.locked ?? a.locked;
-                  const dirty = locked !== a.locked || (draft?.role ?? a.role) !== a.role;
+                  const isPending = a.status === "PENDING_VERIFICATION";
                   return (
                     <div className="flex items-center justify-end gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        aria-pressed={locked}
-                        disabled={saving !== null}
-                        onClick={() => change(a, { locked: !locked })}
-                      >
-                        {locked ? "Unlock" : "Lock"}
-                      </Button>
-                      <Button
-                        size="sm"
-                        disabled={!dirty || saving !== null}
-                        onClick={() => void save(a)}
-                      >
-                        {saving === a.id ? "Saving…" : "Save"}
-                      </Button>
+                      {isPending ? (
+                        <Button
+                          size="sm"
+                          disabled={busyId !== null}
+                          onClick={() => void runLock(a.id, false)}
+                        >
+                          {busyId === a.id ? "Activating…" : "Activate"}
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={busyId !== null}
+                          onClick={() => void runLock(a.id, !a.locked)}
+                        >
+                          {busyId === a.id
+                            ? "Updating…"
+                            : a.locked
+                              ? "Unlock"
+                              : "Lock"}
+                        </Button>
+                      )}
                     </div>
                   );
                 },
@@ -327,28 +400,61 @@ export function Integrations() {
 }
 export function RuntimeProfiles() {
   const q = useApiQuery("profiles", {});
+  const [tab, setTab] = useState<"profiles" | "sessions" | "quotas">("profiles");
   return (
     <div className="space-y-5">
-      <AdminToolbar
-        fetching={q.isFetching}
-        updatedAt={q.dataUpdatedAt}
-        refresh={() => void q.refetch()}
-      >
-        <Button asChild size="sm" variant="outline">
-          <Link href="/administration/studio">Open MAVIS Studio</Link>
+      <div className="flex flex-wrap gap-2" role="tablist" aria-label="Runtime Governance Sections">
+        <Button
+          type="button"
+          size="sm"
+          variant={tab === "profiles" ? "default" : "outline"}
+          onClick={() => setTab("profiles")}
+        >
+          Execution Profiles
         </Button>
-      </AdminToolbar>
-      <Notice>
-        Profile changes affect new runtime sessions. Settings currently reset on restart; review
-        limits before enabling a profile.
-      </Notice>
-      <RequestState query={q} empty={!q.data?.length}>
-        <div className="grid items-start gap-4 lg:grid-cols-2">
-          {q.data?.map((p) => (
-            <ProfileForm key={p.id + ":" + p.revision} item={p} />
-          ))}
+        <Button
+          type="button"
+          size="sm"
+          variant={tab === "sessions" ? "default" : "outline"}
+          onClick={() => setTab("sessions")}
+        >
+          Live Sessions &amp; Force-Stop
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant={tab === "quotas" ? "default" : "outline"}
+          onClick={() => setTab("quotas")}
+        >
+          AI Quotas &amp; Integrations
+        </Button>
+      </div>
+      {tab === "sessions" ? (
+        <AdminRuntimeSummary />
+      ) : tab === "quotas" ? (
+        <div className="space-y-8">
+          <PlatformUsage />
+          <Integrations />
         </div>
-      </RequestState>
+      ) : (
+        <div className="space-y-5">
+          <AdminToolbar
+            fetching={q.isFetching}
+            updatedAt={q.dataUpdatedAt}
+            refresh={() => void q.refetch()}
+          />
+          <Notice>
+            Profile changes affect new runtime sessions. Review limits before enabling a profile.
+          </Notice>
+          <RequestState query={q} empty={!q.data?.length}>
+            <div className="grid items-start gap-4 lg:grid-cols-2">
+              {q.data?.map((p) => (
+                <ProfileForm key={p.id + ":" + p.revision} item={p} />
+              ))}
+            </div>
+          </RequestState>
+        </div>
+      )}
     </div>
   );
 }
@@ -814,8 +920,11 @@ export function AdminAnalysisJobs() {
   };
   const rows = (q.data ?? []).filter(
     (j) =>
-      (j.id + " " + j.projectId + " " + j.message).toLowerCase().includes(search.toLowerCase()) &&
-      (status === "all" || j.status === status),
+      [j.id, j.projectId, j.projectName, j.workspaceName, j.message]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(search.toLowerCase()) && (status === "all" || j.status === status),
   );
   const activePage = Math.min(page, Math.max(1, Math.ceil(rows.length / 10)));
   return (
@@ -890,11 +999,16 @@ export function AdminAnalysisJobs() {
             columns={[
               {
                 key: "id",
-                label: "Job / project",
+                label: "Project / Job",
                 render: (j) => (
-                  <div className="max-w-64 break-all">
-                    <p className="font-mono text-xs">{j.id}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">Project {j.projectId}</p>
+                  <div className="max-w-72">
+                    <p className="font-medium text-foreground">
+                      {j.projectName ?? `Project ${j.projectId.slice(0, 8)}`}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {j.workspaceName ? `${j.workspaceName} · ` : ""}
+                      <span className="font-mono">Job {j.id.slice(0, 8)}</span>
+                    </p>
                   </div>
                 ),
               },
@@ -935,95 +1049,141 @@ export function AdminAnalysisJobs() {
 }
 export function AuditRecords() {
   const q = useApiQuery("audit", {});
+  const [tab, setTab] = useState<"audit" | "jobs">("audit");
   const [search, setSearch] = useState(""),
     [action, setAction] = useState("all"),
     [page, setPage] = useState(1);
   const rows = (q.data ?? []).filter(
     (a) =>
-      (a.action + " " + a.actorId + " " + a.resourceId)
+      [a.action, a.actorName, a.actorEmail, a.actorId, a.details, a.resourceId]
+        .filter(Boolean)
+        .join(" ")
         .toLowerCase()
-        .includes(search.toLowerCase()) &&
-      (action === "all" || a.action === action),
+        .includes(search.toLowerCase()) && (action === "all" || a.action === action),
   );
   const activePage = Math.min(page, Math.max(1, Math.ceil(rows.length / 10)));
   return (
     <div className="space-y-5">
-      <AdminToolbar
-        fetching={q.isFetching}
-        updatedAt={q.dataUpdatedAt}
-        refresh={() => void q.refetch()}
-      >
-        <span className="text-sm text-muted-foreground">Read-only · latest 100 audit records</span>
-      </AdminToolbar>
-      <div className="grid gap-3 rounded-xl border bg-card p-4 sm:grid-cols-[2fr_1fr]">
-        <SearchInput
-          label="Search action, actor or resource"
-          value={search}
-          onChange={(v) => {
-            setSearch(v);
-            setPage(1);
-          }}
-        />
-        <SelectField
-          label="Action"
-          value={action}
-          onChange={(v) => {
-            setAction(v);
-            setPage(1);
-          }}
-          options={[
-            { value: "all", label: "All actions" },
-            ...Array.from(new Set((q.data ?? []).map((a) => a.action)))
-              .sort()
-              .map((value) => ({ value, label: value.replaceAll("_", " ").toLowerCase() })),
-          ]}
-        />
+      <div className="flex flex-wrap gap-2" role="tablist" aria-label="Audit and Jobs Views">
+        <Button
+          type="button"
+          size="sm"
+          variant={tab === "audit" ? "default" : "outline"}
+          onClick={() => setTab("audit")}
+        >
+          Audit Trail
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant={tab === "jobs" ? "default" : "outline"}
+          onClick={() => setTab("jobs")}
+        >
+          Background Analysis Jobs
+        </Button>
       </div>
-      <RequestState query={q}>
-        <div className="space-y-5">
-          <DataTable
-            emptyDescription="Try clearing the filters or refresh to check for new records."
-            caption="Administrative audit trail"
-            rows={rows.slice((activePage - 1) * 10, activePage * 10)}
-            rowKey={(a) => a.id}
-            columns={[
-              {
-                key: "at",
-                label: "Time",
-                render: (a) => (
-                  <span className="whitespace-nowrap text-xs" title={a.at}>
-                    {new Date(a.at).toLocaleString()}
-                  </span>
-                ),
-              },
-              {
-                key: "action",
-                label: "Action",
-                render: (a) => <span className="text-xs">{a.action.replaceAll("_", " ")}</span>,
-              },
-              {
-                key: "actor",
-                label: "Actor",
-                render: (a) => (
-                  <span className="block max-w-52 break-all font-mono text-xs">
-                    {a.actorId || "System"}
-                  </span>
-                ),
-              },
-              {
-                key: "resource",
-                label: "Resource",
-                render: (a) => (
-                  <span className="block max-w-52 break-all font-mono text-xs">
-                    {a.resourceId || "Not recorded"}
-                  </span>
-                ),
-              },
-            ]}
-          />
-          <PageResults count={rows.length} page={activePage} onPage={setPage} />
-        </div>
-      </RequestState>
+      {tab === "jobs" ? (
+        <AdminAnalysisJobs />
+      ) : (
+        <>
+          <AdminToolbar
+            fetching={q.isFetching}
+            updatedAt={q.dataUpdatedAt}
+            refresh={() => void q.refetch()}
+          >
+            <span className="text-sm text-muted-foreground">
+              Read-only · latest 100 audit records
+            </span>
+          </AdminToolbar>
+          <div className="grid gap-3 rounded-xl border bg-card p-4 sm:grid-cols-[2fr_1fr]">
+            <SearchInput
+              label="Search action, actor or resource"
+              value={search}
+              onChange={(v) => {
+                setSearch(v);
+                setPage(1);
+              }}
+            />
+            <SelectField
+              label="Action"
+              value={action}
+              onChange={(v) => {
+                setAction(v);
+                setPage(1);
+              }}
+              options={[
+                { value: "all", label: "All actions" },
+                ...Array.from(new Set((q.data ?? []).map((a) => a.action)))
+                  .sort()
+                  .map((value) => ({ value, label: value.replaceAll("_", " ").toLowerCase() })),
+              ]}
+            />
+          </div>
+          <RequestState query={q}>
+            <div className="space-y-5">
+              <DataTable
+                emptyDescription="Try clearing the filters or refresh to check for new records."
+                caption="Administrative audit trail"
+                rows={rows.slice((activePage - 1) * 10, activePage * 10)}
+                rowKey={(a) => a.id}
+                columns={[
+                  {
+                    key: "at",
+                    label: "Time",
+                    render: (a) => (
+                      <span className="whitespace-nowrap text-xs" title={a.at}>
+                        {new Date(a.at).toLocaleString()}
+                      </span>
+                    ),
+                  },
+                  {
+                    key: "action",
+                    label: "Action",
+                    render: (a) => (
+                      <Badge
+                        variant={
+                          a.action.includes("LOCK") || a.action.includes("STOP")
+                            ? "warning"
+                            : "outline"
+                        }
+                      >
+                        {a.action.replaceAll("_", " ")}
+                      </Badge>
+                    ),
+                  },
+                  {
+                    key: "actor",
+                    label: "Actor",
+                    render: (a) => (
+                      <div className="max-w-60">
+                        <p className="text-xs font-medium text-foreground">
+                          {a.actorName || a.actorId || "System"}
+                        </p>
+                        {a.actorEmail && (
+                          <p className="text-[11px] text-muted-foreground">{a.actorEmail}</p>
+                        )}
+                      </div>
+                    ),
+                  },
+                  {
+                    key: "resource",
+                    label: "Target / Details",
+                    render: (a) => (
+                      <div className="max-w-64">
+                        <p className="truncate font-mono text-xs">{a.resourceId || "—"}</p>
+                        {a.details && (
+                          <p className="truncate text-[11px] text-muted-foreground">{a.details}</p>
+                        )}
+                      </div>
+                    ),
+                  },
+                ]}
+              />
+              <PageResults count={rows.length} page={activePage} onPage={setPage} />
+            </div>
+          </RequestState>
+        </>
+      )}
     </div>
   );
 }

@@ -170,6 +170,24 @@ class CourseSetupServiceTest {
                 .filter(step -> step.id().equals("studio")).findFirst().orElseThrow().state());
     }
 
+    @Test void autoConfigureStudioCreatesConfigurationAndFreezesTopology() {
+        when(assignments.findLockedById(assignmentId)).thenReturn(Optional.of(lab));
+        when(configurations.findById(projectId)).thenReturn(Optional.empty());
+        when(assignments.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(jdbc.queryForObject(org.mockito.ArgumentMatchers.contains("runtime_scenarios"), eq(Integer.class), eq(projectId)))
+                .thenReturn(0);
+
+        var result = setup.autoConfigureStudio(workspaceId, assignmentId);
+
+        assertTrue(result.studioFrozen());
+        assertEquals(4, result.blockCount());
+        assertEquals(2, result.connectionCount());
+        assertEquals(5, result.topologyRevision());
+        assertNotNull(lab.getStudioTopologySnapshot());
+        assertTrue(Boolean.TRUE.equals(lab.getRequireRuntimeTrace()));
+        verify(assignments).saveAndFlush(lab);
+    }
+
     private RuntimeConfiguration configuration(boolean withTopology) {
         ObjectNode profile = mapper.createObjectNode();
         var applications = profile.putObject("applications");

@@ -6,6 +6,7 @@ import com.mavis.common.exception.BusinessException;
 import com.mavis.common.exception.ErrorCode;
 import com.mavis.common.repository.*;
 import com.mavis.common.security.AuthorizationRequestCache;
+import com.mavis.platform.admin.dto.AdminCreateUserRequest;
 import com.mavis.platform.admin.dto.AdminDashboardStatsDTO;
 import com.mavis.platform.admin.dto.AdminUserResponseDTO;
 import com.mavis.platform.admin.dto.AuditLogResponseDTO;
@@ -13,10 +14,14 @@ import com.mavis.platform.admin.service.AdminPortalService;
 import com.mavis.platform.admin.service.AuditLogService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -39,7 +44,13 @@ public class AdminPortalServiceImpl implements AdminPortalService {
     private final AuditLogService auditLogService;
     private final com.mavis.common.security.AccessPolicyService accessPolicyService;
 
-    private static final Set<String> ALLOWED_STATUSES = Set.of("ACTIVE", "LOCKED");
+    @Autowired(required = false)
+    private PasswordEncoder passwordEncoder;
+
+    @Autowired(required = false)
+    private AssignmentRepository assignmentRepository;
+
+    private static final Set<String> ALLOWED_STATUSES = Set.of("ACTIVE", "LOCKED", "PENDING_VERIFICATION");
 
     @Override
     @Transactional(readOnly = true)
@@ -50,6 +61,47 @@ public class AdminPortalServiceImpl implements AdminPortalService {
         return users.stream()
                 .map(AdminUserResponseDTO::fromEntity)
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public AdminUserResponseDTO createUser(AdminCreateUserRequest request) {
+        accessPolicyService.requireSystemAdmin();
+        if (request == null || request.getEmail() == null || request.getEmail().isBlank()
+                || request.getFullName() == null || request.getFullName().isBlank()
+                || request.getPassword() == null || request.getPassword().length() < 8
+                || request.getRoleCode() == null || request.getRoleCode().isBlank()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Thông tin tạo tài khoản không hợp lệ");
+        }
+        String normalizedEmail = request.getEmail().trim().toLowerCase(Locale.ROOT);
+        if (userRepository.existsByEmail(normalizedEmail)) {
+            throw new BusinessException(ErrorCode.CONFLICT, "Email đã tồn tại trong hệ thống: " + normalizedEmail);
+        }
+        String normalizedRole = request.getRoleCode().trim().toUpperCase(Locale.ROOT);
+        if ("ADMIN".equals(normalizedRole)) {
+            normalizedRole = "SYSTEM_ADMIN";
+        }
+        String finalRoleCode = normalizedRole;
+        Role role = roleRepository.findByCode(finalRoleCode)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy vai trò: " + finalRoleCode));
+
+        PasswordEncoder encoder = passwordEncoder != null ? passwordEncoder : new BCryptPasswordEncoder();
+        User created = User.builder()
+                .email(normalizedEmail)
+                .fullName(request.getFullName().trim())
+                .passwordHash(encoder.encode(request.getPassword()))
+                .role(role)
+                .status("ACTIVE")
+                .preferredLocale("vi")
+                .build();
+        created = userRepository.save(created);
+        auditLogService.recordAuditLog(
+                "ADMIN_CREATE_USER",
+                "USER",
+                created.getId(),
+                Map.of("email", normalizedEmail, "role", role.getCode(), "status", "ACTIVE")
+        );
+        return AdminUserResponseDTO.fromEntity(created);
     }
 
     @Override
@@ -133,9 +185,40 @@ public class AdminPortalServiceImpl implements AdminPortalService {
         long totalRuntimeSessions = runtimeSessionRepository.count();
         long totalSubmissions = submissionSnapshotRepository.count();
 
+        List<User> allUsers = userRepository.findAllByOrderByCreatedAtDesc();
+        long activeLecturers = 0;
+        long activeStudents = 0;
+        long pendingUsers = 0;
+        long lockedUsers = 0;
+        if (allUsers != null) {
+            for (User u : allUsers) {
+                String st = u.getStatus() == null ? "" : u.getStatus().toUpperCase(Locale.ROOT);
+                String rc = u.getRole() != null && u.getRole().getCode() != null
+                        ? u.getRole().getCode().toUpperCase(Locale.ROOT)
+                        : "";
+                if ("ACTIVE".equals(st)) {
+                    if ("LECTURER".equals(rc)) activeLecturers++;
+                    else if ("STUDENT".equals(rc)) activeStudents++;
+                } else if ("PENDING_VERIFICATION".equals(st)) {
+                    pendingUsers++;
+                } else if ("LOCKED".equals(st)) {
+                    lockedUsers++;
+                }
+            }
+        }
+        long guidedLabs = assignmentRepository != null
+                ? assignmentRepository.findAll().stream().filter(a -> a.getLabOrder() != null).count()
+                : 0L;
+
         return AdminDashboardStatsDTO.builder()
                 .runningRuntimeSessions(runtimeSessionRepository.countByExecutionStatusIn(List.of("ALLOCATED","RUNNING","CANCELLING")))
                 .healthStatus("unknown")
+                .liveHealthStatus("HEALTHY")
+                .activeLecturers(activeLecturers)
+                .activeStudents(activeStudents)
+                .pendingVerificationUsers(pendingUsers)
+                .lockedUsers(lockedUsers)
+                .totalGuidedLabs(guidedLabs)
                 .totalUsers(totalUsers)
                 .totalWorkspaces(totalWorkspaces)
                 .totalProjects(totalProjects)

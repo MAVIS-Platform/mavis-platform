@@ -11,7 +11,7 @@ import {
   AlertTriangle,
   CheckCircle2,
 } from "lucide-react";
-import { useApiQuery } from "@/hooks/use-api";
+import { useApiMutation, useApiQuery } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
 import {
   DetailPanel,
@@ -20,7 +20,7 @@ import {
   SummaryCard,
   DataTable,
 } from "@/components/shared/data";
-import { RequestState } from "@/components/shared/request-state";
+import { ErrorState, RequestState } from "@/components/shared/request-state";
 import { Pagination } from "@/components/shared/forms";
 
 export function AdminToolbar({
@@ -100,13 +100,8 @@ export function SystemHealth() {
         }}
       >
         <span className="text-sm text-muted-foreground">
-          Live checks · refresh every 30 seconds
+          Live infrastructure checks · refresh every 30 seconds
         </span>
-        <Button asChild size="sm">
-          <Link href="/administration/studio">
-            Open MAVIS Studio <ArrowUpRight className="size-4" />
-          </Link>
-        </Button>
       </AdminToolbar>
       <RequestState query={health}>
         {data && (
@@ -224,8 +219,8 @@ export function SystemHealth() {
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Button asChild variant="outline" size="sm">
-              <Link href="/administration/studio">
-                Open MAVIS Studio <ArrowUpRight className="size-4" />
+              <Link href="/administration/users">
+                Manage accounts <ArrowUpRight className="size-4" />
               </Link>
             </Button>
             <Button asChild variant="ghost" size="sm">
@@ -240,9 +235,20 @@ export function SystemHealth() {
           {counts.data && (
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <SummaryCard label="Projects" value={counts.data.projects} />
-              <SummaryCard label="Accounts" value={counts.data.users} />
-              <SummaryCard label="Analysis jobs" value={counts.data.analysisJobs} />
-              <SummaryCard label="Running sessions" value={counts.data.runningSessions} />
+              <SummaryCard label="Total Accounts" value={counts.data.users} />
+              <SummaryCard label="Active Lecturers" value={counts.data.activeLecturers ?? "—"} />
+              <SummaryCard label="Active Students" value={counts.data.activeStudents ?? "—"} />
+              <SummaryCard
+                label="Pending Verification"
+                value={counts.data.pendingVerificationUsers ?? "—"}
+              />
+              <SummaryCard label="Locked Accounts" value={counts.data.lockedUsers ?? "—"} />
+              <SummaryCard label="Guided Labs" value={counts.data.totalGuidedLabs ?? "—"} />
+              <SummaryCard
+                label="Running Sessions"
+                value={counts.data.runningSessions}
+                description={`${counts.data.analysisJobs} analysis jobs recorded`}
+              />
             </div>
           )}
         </RequestState>
@@ -252,9 +258,14 @@ export function SystemHealth() {
 }
 export function AdminRuntimeSummary() {
   const q = useApiQuery("runtimeReadSessions", { projectId: "*" }, { refreshMs: 30000 });
+  const forceStop = useApiMutation("forceStopRuntimeSession");
   const [page, setPage] = useState(1);
   const rows = q.data ?? [],
     active = rows.filter((r) => ["RUNNING", "ALLOCATED", "CANCELLING"].includes(r.executionStatus));
+  const stoppable = (status: string) =>
+    ["NOT_STARTED", "PENDING", "READY_FOR_DISPATCH", "APPROVED", "ALLOCATED", "RUNNING"].includes(
+      status,
+    );
   return (
     <div className="space-y-5">
       <AdminToolbar
@@ -262,17 +273,13 @@ export function AdminRuntimeSummary() {
         updatedAt={q.dataUpdatedAt}
         refresh={() => void q.refetch()}
       >
-        <Button asChild size="sm">
-          <Link href="/administration/studio">
-            Open MAVIS Studio <ArrowUpRight className="size-4" />
-          </Link>
-        </Button>
         <Button asChild variant="outline" size="sm">
           <Link href="/administration/admin-sessions">
-            Inspect sessions <ArrowUpRight className="size-4" />
+            Inspect session details <ArrowUpRight className="size-4" />
           </Link>
         </Button>
       </AdminToolbar>
+      {forceStop.error && <ErrorState error={forceStop.error} />}
       <RequestState query={q}>
         <div className="space-y-5">
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -328,6 +335,31 @@ export function AdminRuntimeSummary() {
                   key: "cleanup",
                   label: "Cleanup",
                   render: (r) => <StatusLabel status={r.cleanupStatus} />,
+                },
+                {
+                  key: "actions",
+                  label: "Actions",
+                  render: (r) =>
+                    stoppable(r.executionStatus) ? (
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        disabled={forceStop.isPending}
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              `Force-stop runtime session ${r.id.slice(0, 8)} (${r.scenarioName ?? "session"})?`,
+                            )
+                          ) {
+                            forceStop.mutate({ sessionId: r.id });
+                          }
+                        }}
+                      >
+                        Force Stop
+                      </Button>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    ),
                 },
               ]}
             />

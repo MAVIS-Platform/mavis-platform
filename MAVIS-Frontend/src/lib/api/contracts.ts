@@ -852,7 +852,12 @@ export const contracts = {
   ),
   submissions: contract(z.object({ workspaceId: id.optional() }), z.array(d.submissionSchema)),
   assignmentSubmissions: contract(
-    z.object({ workspaceId: id, assignmentId: id }),
+    z.object({
+      workspaceId: id,
+      assignmentId: id,
+      reviewStatus: z.string().optional(),
+      labOutcome: z.string().optional(),
+    }),
     z.array(d.submissionSchema),
   ),
   submission: contract(z.object({ submissionId: id }), d.submissionSchema),
@@ -902,12 +907,23 @@ export const contracts = {
     true,
   ),
   accounts: contract(nothing, z.array(d.accountSchema)),
+  createAccount: contract(
+    z.object({
+      fullName: z.string().trim().min(1).max(120),
+      email: z.string().trim().email(),
+      password: z.string().min(6).max(128).optional(),
+      role: z.enum(["student", "lecturer", "admin"]),
+    }),
+    d.accountSchema,
+    true,
+  ),
   setAccountLock: contract(z.object({ accountId: id, locked: z.boolean() }), d.accountSchema, true),
   setAccountRole: contract(
     z.object({ accountId: id, role: z.enum(["student", "lecturer", "admin"]) }),
     d.accountSchema,
     true,
   ),
+  forceStopRuntimeSession: contract(z.object({ sessionId: id }), z.record(z.string(), z.unknown()), true),
   integrations: contract(nothing, z.array(d.integrationSchema)),
   configureIntegration: contract(
     z.object({
@@ -1056,11 +1072,17 @@ export const contracts = {
     nothing,
     z.object({
       health: z.enum(["available", "degraded", "unknown"]),
+      liveHealthStatus: z.string().optional(),
       message: z.string(),
       projects: z.number().int().nonnegative(),
       users: z.number().int().nonnegative(),
       runningSessions: z.number().int().nonnegative(),
       analysisJobs: z.number().int().nonnegative(),
+      activeLecturers: z.number().int().nonnegative().optional(),
+      activeStudents: z.number().int().nonnegative().optional(),
+      pendingVerificationUsers: z.number().int().nonnegative().optional(),
+      lockedUsers: z.number().int().nonnegative().optional(),
+      totalGuidedLabs: z.number().int().nonnegative().optional(),
     }),
   ),
 } as const;

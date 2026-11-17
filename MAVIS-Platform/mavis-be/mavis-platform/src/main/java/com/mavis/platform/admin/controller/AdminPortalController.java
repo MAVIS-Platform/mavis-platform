@@ -28,6 +28,14 @@ public class AdminPortalController {
         return ApiResponse.success("Lấy danh sách người dùng thành công", users);
     }
 
+    @PostMapping("/users")
+    @Operation(summary = "Admin tạo nhanh tài khoản kích hoạt sẵn",
+            description = "Tạo tài khoản LECTURER / STUDENT / SYSTEM_ADMIN ở trạng thái ACTIVE ngay lập tức và ghi AuditLog")
+    public ApiResponse<AdminUserResponseDTO> createUser(@Valid @RequestBody AdminCreateUserRequest request) {
+        AdminUserResponseDTO created = adminPortalService.createUser(request);
+        return ApiResponse.success("Tạo tài khoản người dùng thành công", created);
+    }
+
     @PatchMapping("/users/{userId}/status")
     @Operation(summary = "Cập nhật trạng thái tài khoản (ACTIVE, LOCKED)",
             description = "Khóa hoặc mở khóa tài khoản người dùng và tự động ghi AuditLog theo BR-65")

@@ -1,5 +1,6 @@
 package com.mavis.platform.submission.dto;
 
+import com.mavis.common.entity.SubmissionReview;
 import com.mavis.common.entity.SubmissionSnapshot;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.*;
@@ -54,8 +55,22 @@ public class SubmissionResponseDTO {
     private String submissionNotes;
     private String evidencePackageDigest;
     private OffsetDateTime submittedAt;
+    private String reviewStatus;
+    private Double reviewScore;
+    private String labOutcome;
+    private String reviewSummary;
+    private String gradedByName;
+    private OffsetDateTime gradedAt;
 
     public static SubmissionResponseDTO fromEntity(SubmissionSnapshot s, Long feedbackCount) {
+        return fromEntity(s, feedbackCount, null, false);
+    }
+
+    public static SubmissionResponseDTO fromEntity(
+            SubmissionSnapshot s,
+            Long feedbackCount,
+            SubmissionReview review,
+            boolean revealDraft) {
         if (s == null) return null;
 
         Double complianceScore = null;
@@ -70,6 +85,23 @@ public class SubmissionResponseDTO {
 
         var assignment = s.getAssignment();
         var workspace = assignment != null ? assignment.getWorkspace() : null;
+
+        boolean visibleReview = review != null && (revealDraft || !"DRAFT".equalsIgnoreCase(review.getStatus()));
+        String reviewStatus = visibleReview && review.getStatus() != null ? review.getStatus() : "PENDING";
+        Double reviewScore = visibleReview && review.getScore() != null ? review.getScore().doubleValue() : null;
+        String labOutcome = "PENDING";
+        if (visibleReview) {
+            if (review.getLabOutcome() != null && !review.getLabOutcome().isBlank()) {
+                labOutcome = review.getLabOutcome();
+            } else if ("RETURNED".equalsIgnoreCase(reviewStatus)) {
+                labOutcome = "NEEDS_REVISION";
+            } else if ("GRADED".equalsIgnoreCase(reviewStatus) && reviewScore != null) {
+                labOutcome = reviewScore > 50.0 ? "PASSED" : "NEEDS_REVISION";
+            }
+        }
+        String reviewSummary = visibleReview ? review.getSummary() : null;
+        String gradedByName = visibleReview && review.getLecturer() != null ? review.getLecturer().getFullName() : null;
+        OffsetDateTime gradedAt = visibleReview ? review.getUpdatedAt() : null;
 
         return SubmissionResponseDTO.builder()
                 .id(s.getId())
@@ -102,6 +134,12 @@ public class SubmissionResponseDTO {
                 .submissionNotes(s.getSubmissionNotes())
                 .evidencePackageDigest(s.getEvidencePackageDigest())
                 .submittedAt(s.getSubmittedAt())
+                .reviewStatus(reviewStatus)
+                .reviewScore(reviewScore)
+                .labOutcome(labOutcome)
+                .reviewSummary(reviewSummary)
+                .gradedByName(gradedByName)
+                .gradedAt(gradedAt)
                 .build();
     }
 }

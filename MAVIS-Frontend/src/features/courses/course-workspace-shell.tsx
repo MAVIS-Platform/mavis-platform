@@ -7,20 +7,33 @@ import { useLocale } from "@/lib/i18n/locale-context";
 import { cn } from "@/lib/utils";
 import type { Response } from "@/lib/api/contracts";
 
-export type CourseWorkspaceTab = "content" | "members" | "submissions" | "results";
+export type CourseWorkspaceTab =
+  | "content"
+  | "authoring"
+  | "assignments"
+  | "submissions"
+  | "members"
+  | "results";
 
-const TAB_LABELS: Record<CourseWorkspaceTab, { en: string; vi: string }> = {
-  content: { en: "Class content", vi: "Nội dung lớp" },
-  members: { en: "Members", vi: "Thành viên" },
-  submissions: { en: "Submissions", vi: "Bài nộp" },
-  results: { en: "Results", vi: "Kết quả" },
+const TAB_LABELS: Record<Exclude<CourseWorkspaceTab, "results">, { en: string; vi: string }> = {
+  content: { en: "Overview & Setup", vi: "Tổng quan & Khởi tạo" },
+  authoring: { en: "Curriculum & Materials", vi: "Đề cương & Học liệu" },
+  assignments: { en: "Labs & Quiz Studio", vi: "Thiết kế Lab & Quiz" },
+  submissions: { en: "Grading & Gradebook", vi: "Chấm bài & Bảng điểm" },
+  members: { en: "Students & Access", vi: "Sinh viên & Phân quyền" },
 };
 
-function tabHref(workspaceId: string, tab: CourseWorkspaceTab) {
+const STUDENT_TAB_LABELS: Partial<Record<CourseWorkspaceTab, { en: string; vi: string }>> = {
+  content: { en: "Class content", vi: "Nội dung lớp" },
+  submissions: { en: "Submissions", vi: "Bài nộp" },
+};
+
+function tabHref(workspaceId: string, tab: Exclude<CourseWorkspaceTab, "results">) {
   const workspace = encodeURIComponent(workspaceId);
   if (tab === "content") return `/workspace-overview?workspace=${workspace}`;
+  if (tab === "authoring") return `/workspace-overview?workspace=${workspace}&view=course-authoring`;
+  if (tab === "assignments") return `/assignments?workspace=${workspace}`;
   if (tab === "members") return `/members?workspace=${workspace}`;
-  if (tab === "results") return `/submissions?workspace=${workspace}&view=results`;
   return `/submissions?workspace=${workspace}`;
 }
 
@@ -42,7 +55,8 @@ export function CourseWorkspaceShell({
   const students = members.filter((member) => member.role.toUpperCase() === "STUDENT").length;
   const lecturers = members.filter((member) => member.role.toUpperCase() === "LECTURER").length;
   const isStudent = workspace.myRole?.toUpperCase() === "STUDENT";
-  const visibleTabs = (Object.keys(TAB_LABELS) as CourseWorkspaceTab[]).filter(
+  const normalizedActive = active === "results" ? "submissions" : active;
+  const visibleTabs = (Object.keys(TAB_LABELS) as Array<Exclude<CourseWorkspaceTab, "results">>).filter(
     (tab) => !isStudent || tab === "content" || tab === "submissions",
   );
 
@@ -83,15 +97,16 @@ export function CourseWorkspaceShell({
             className="mt-4 flex flex-wrap gap-1"
           >
             {visibleTabs.map((tab) => {
-              const label = TAB_LABELS[tab];
+              const label = (isStudent ? STUDENT_TAB_LABELS[tab] : undefined) ?? TAB_LABELS[tab];
+              const isCurrent = normalizedActive === tab;
               return (
                 <Link
                   key={tab}
                   href={tabHref(workspace.id, tab)}
-                  aria-current={active === tab ? "page" : undefined}
+                  aria-current={isCurrent ? "page" : undefined}
                   className={cn(
                     "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-                    active === tab
+                    isCurrent
                       ? "bg-primary/10 text-primary"
                       : "text-muted-foreground hover:bg-muted hover:text-foreground",
                   )}
