@@ -1,11 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Activity, Lock, Play, Sparkles } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/shared/request-state";
 import { useApiQuery } from "@/hooks/use-api";
+import { api } from "@/lib/mainflow-api";
 import { useLocale } from "@/lib/i18n/locale-context";
 import {
   PublishCourseLab,
@@ -30,7 +32,16 @@ export function LabStudioSection({
   onNavigate: (tab: "publish") => void;
 }) {
   const { t } = useLocale();
-  const projectId = assignment.referenceSource?.projectId ?? null;
+  const exercise = useQuery({
+    queryKey: ["api", "studio-exercise", workspaceId, assignment.id],
+    queryFn: ({ signal }) =>
+      api<{ runtimeProjectId: string | null } | null>(
+        `workspaces/${workspaceId}/course-labs/${assignment.id}/studio-exercise`,
+        { signal },
+      ),
+    retry: false,
+  });
+  const projectId = exercise.data?.runtimeProjectId ?? assignment.referenceSource?.projectId ?? null;
   const readiness = useRuntimeSetupReadiness(projectId);
   const setup = useCourseSetup(workspaceId);
   const autoStudio = useAutoConfigureStudio(workspaceId, assignment.id);
