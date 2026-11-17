@@ -9,7 +9,6 @@ import { SearchInput, SelectField } from "@/components/shared/forms";
 import { DataTable, DetailPanel, StatusBadge } from "@/components/shared/data";
 import { CreateWorkspace, WorkspaceControls } from "./manage";
 import {
-  CourseEnrollment,
   CoursePasskey,
   CourseRoadmap,
   useCourseAuthoring,
@@ -17,6 +16,7 @@ import {
 } from "./course-access";
 import { ReferenceManagement } from "./reference-manage";
 import { CourseWorkspaceShell } from "@/features/courses/course-workspace-shell";
+import { Courses } from "@/features/courses/screens";
 import { CourseOutline } from "@/features/courses/course-outline";
 import { CourseBuilder } from "@/features/courses/course-builder";
 import { CourseSetupPanel } from "@/features/courses/course-setup";
@@ -31,6 +31,7 @@ export function Workspaces() {
   const canCreate = ["lecturer", "admin"].includes(session.data?.user?.role ?? "");
   const selected = query.data?.find((w) => w.id === workspaceId);
   if (workspaceId && selected) return <WorkspaceOverview />;
+  if (session.data?.user && !canCreate) return <Courses />;
   return (
     <div className="space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-4 border-b border-border/70 pb-5">
@@ -54,85 +55,16 @@ export function Workspaces() {
       </header>
 
       {canCreate && showCreate && <CreateWorkspace onClose={() => setShowCreate(false)} />}
-      {session.data?.user?.role === "student" && <CourseEnrollment destination="roadmap" />}
 
       <RequestState
         query={query}
         empty={!query.data?.length}
-        emptyMessage={
-          canCreate
-            ? t(
-                "You have no classes yet. Create the first class above.",
-                "Bạn chưa có lớp nào. Hãy tạo lớp đầu tiên ở trên.",
-              )
-            : t(
-                "You are not enrolled in a class yet. Enter your Passkey above to join.",
-                "Bạn chưa ghi danh lớp nào. Nhập Passkey ở trên để tham gia.",
-              )
-        }
+        emptyMessage={t(
+          "You have no classes yet. Create the first class above.",
+          "Bạn chưa có lớp nào. Hãy tạo lớp đầu tiên ở trên.",
+        )}
       >
-        {!canCreate ? (
-          <div className="grid gap-4 md:grid-cols-2">
-            {query.data?.map((workspace) => {
-              const members = workspace.members ?? [];
-              const students = members.filter(
-                (member) => member.role.toUpperCase() === "STUDENT",
-              ).length;
-              const lecturers = members
-                .filter((member) => member.role.toUpperCase() === "LECTURER")
-                .map((member) => member.name);
-              const roadmapUrl = `/roadmap?workspace=${encodeURIComponent(workspace.id)}`;
-              return (
-                <article
-                  key={workspace.id}
-                  className="flex flex-col justify-between gap-4 rounded-2xl border bg-card p-5 transition-colors hover:border-primary/40"
-                >
-                  <div className="space-y-2">
-                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                      <span className="rounded bg-primary/10 px-2 py-0.5 font-mono font-semibold text-primary">
-                        {workspace.code || t("CLASS", "LỚP")}
-                      </span>
-                      <StatusBadge
-                        status={workspace.status ?? "ACTIVE"}
-                        variant={workspace.status === "ARCHIVED" ? "secondary" : "default"}
-                      />
-                    </div>
-                    <Link
-                      className="block w-fit max-w-full break-words text-lg font-semibold tracking-tight text-foreground hover:text-primary hover:underline"
-                      href={roadmapUrl}
-                    >
-                      {workspace.name}
-                    </Link>
-                    {workspace.description && (
-                      <p className="line-clamp-2 text-sm text-muted-foreground">
-                        {workspace.description}
-                      </p>
-                    )}
-                    <p className="text-xs text-muted-foreground">
-                      {lecturers.length
-                        ? `${t("Lecturer", "Giảng viên")}: ${lecturers.join(", ")} · `
-                        : ""}
-                      {students} {t("students", "sinh viên")}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2 border-t pt-3">
-                    <Button asChild size="sm">
-                      <Link href={roadmapUrl}>
-                        {t("Enter class & Lab roadmap", "Vào lớp & Lộ trình Lab")}
-                      </Link>
-                    </Button>
-                    <Button asChild size="sm" variant="outline">
-                      <Link href={`/submissions?workspace=${encodeURIComponent(workspace.id)}`}>
-                        {t("Submissions & Grades", "Bài nộp & Điểm")}
-                      </Link>
-                    </Button>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        ) : (
-          <ul className="divide-y divide-border/70 border-y border-border/70">
+        <ul className="divide-y divide-border/70 border-y border-border/70">
             {query.data?.map((workspace) => {
               const members = workspace.members ?? [];
               const students = members.filter(
@@ -188,7 +120,6 @@ export function Workspaces() {
               );
             })}
           </ul>
-        )}
       </RequestState>
     </div>
   );
