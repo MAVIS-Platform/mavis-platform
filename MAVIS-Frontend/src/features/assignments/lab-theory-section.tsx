@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, BookOpen, GitBranch, Library, Plus, Save } from "lucide-react";
+import { ArrowRight, BookOpen, GitBranch, Library, Plus, Save, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -39,6 +39,67 @@ type TheoryModule = {
 function bodyOf(item: TheoryItem) {
   return typeof item.content["body"] === "string" ? item.content["body"] : "";
 }
+
+const LESSON_TEMPLATES = [
+  {
+    en: "Concept",
+    vi: "Khái niệm",
+    titleEn: "Concept — <topic>",
+    titleVi: "Khái niệm — <chủ đề>",
+    body: [
+      "## Why it matters",
+      "",
+      "Explain the architectural idea and the problem it solves.",
+      "",
+      "## Where it appears in the sample repository",
+      "",
+      "- Point to the service, module or boundary students should inspect.",
+      "",
+      "## Common mistakes",
+      "",
+      "- Describe a trap students usually fall into.",
+      "",
+      "## Check your understanding",
+      "",
+      "- Write one question students should be able to answer.",
+    ].join("\n"),
+  },
+  {
+    en: "Guided analysis",
+    vi: "Phân tích dẫn dắt",
+    titleEn: "Guided analysis — <topic>",
+    titleVi: "Phân tích dẫn dắt — <chủ đề>",
+    body: [
+      "## Goal",
+      "",
+      "State what students observe in the reference architecture.",
+      "",
+      "## Steps",
+      "",
+      "1. Open C1 and list the external actors.",
+      "2. Open C2 and trace the request path for one use case.",
+      "3. Open C3 and identify the component that owns the decision.",
+      "",
+      "## What to record",
+      "",
+      "- The boundary you found, the dependency direction, and the evidence.",
+    ].join("\n"),
+  },
+  {
+    en: "Checklist",
+    vi: "Checklist",
+    titleEn: "Review checklist — <topic>",
+    titleVi: "Checklist rà soát — <chủ đề>",
+    body: [
+      "## Before the Quiz",
+      "",
+      "- [ ] I can explain the service boundary in my own words.",
+      "- [ ] I can point to the call path in C2.",
+      "- [ ] I know which dependency is synchronous and which is asynchronous.",
+      "- [ ] I know what evidence the Lab will ask me to capture.",
+    ].join("\n"),
+  },
+] as const;
 
 function MarkdownEditor({
   label,
@@ -99,11 +160,18 @@ export function LabTheorySection({
   const [selectedModuleId, setSelectedModuleId] = useState("");
   const [newTitle, setNewTitle] = useState("");
   const [newBody, setNewBody] = useState("");
+  const [sourceItemId, setSourceItemId] = useState("");
   const [bodies, setBodies] = useState<Record<string, string>>({});
   const [c4Tab, setC4Tab] = useState<"CONTEXT" | "CONTAINER" | "COMPONENT" | "GRAPH">("CONTEXT");
   const [selectedGraphId, setSelectedGraphId] = useState<string | null>(null);
 
   const modules = (course.data?.modules as TheoryModule[] | undefined) ?? [];
+  const availableLessons = modules.flatMap((module) =>
+    module.items
+      .filter((item) => item.type === "THEORY" && item.assignmentId !== assignment.id)
+      .map((item) => ({ item, moduleTitle: module.title })),
+  );
+  const selectedSource = availableLessons.find(({ item }) => item.id === sourceItemId);
   const linkedModule = modules.find((module) =>
     module.items.some((item) => item.assignmentId === assignment.id),
   );
@@ -448,46 +516,161 @@ export function LabTheorySection({
         )}
         {course.updateItem.error && <p role="alert" className="text-sm text-destructive">{course.updateItem.error.message}</p>}
 
-        <div className="space-y-3 rounded-lg border border-dashed p-4">
-          <h4 className="text-sm font-semibold">{t("Add a lesson", "Thêm bài học")}</h4>
-          <Input
-            aria-label={t("Lesson title", "Tên bài học")}
-            placeholder={t("Lesson title", "Tên bài học")}
-            value={newTitle}
-            onChange={(event) => setNewTitle(event.target.value)}
-          />
-          <MarkdownEditor
-            label={t("Lesson content (Markdown)", "Nội dung bài học (Markdown)")}
-            value={newBody}
-            onChange={setNewBody}
-            t={t}
-          />
-          <Button
-            type="button"
-            size="sm"
-            disabled={course.addItem.isPending || !newTitle.trim() || !newBody.trim()}
-            onClick={() =>
-              course.addItem.mutate(
-                {
-                  moduleId: selectedModule!.id,
-                  type: "THEORY",
-                  title: newTitle.trim(),
-                  assignmentId: assignment.id,
-                  required: true,
-                  content: { body: newBody.trim(), format: "markdown" },
-                },
-                {
-                  onSuccess: () => {
-                    setNewTitle("");
-                    setNewBody("");
+        <div className="grid gap-3 lg:grid-cols-2">
+          <div className="space-y-3 rounded-lg border p-4">
+            <div>
+              <h4 className="text-sm font-semibold">{t("Use a ready-made lesson", "Dùng bài học có sẵn")}</h4>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                {t(
+                  "Pick theory already in this class's curriculum — seeded lessons or content another Lab uses — and attach a copy to this Lab.",
+                  "Chọn lý thuyết đã có trong giáo trình của lớp — bài seed hoặc nội dung Lab khác đang dùng — và gắn bản sao vào Lab này.",
+                )}
+              </p>
+            </div>
+            {availableLessons.length === 0 ? (
+              <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+                {t(
+                  "This curriculum has no other theory lesson yet. Write one on the right, or seed a curriculum first.",
+                  "Giáo trình chưa có bài lý thuyết nào khác. Hãy soạn bên phải hoặc seed giáo trình trước.",
+                )}
+              </p>
+            ) : (
+              <>
+                <select
+                  className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                  value={sourceItemId}
+                  aria-label={t("Ready-made lesson", "Bài học có sẵn")}
+                  onChange={(event) => setSourceItemId(event.target.value)}
+                >
+                  <option value="">{t("Choose a lesson…", "Chọn bài học…")}</option>
+                  {availableLessons.map(({ item, moduleTitle }) => (
+                    <option key={item.id} value={item.id}>
+                      {moduleTitle} · {item.title}
+                    </option>
+                  ))}
+                </select>
+                {selectedSource && (
+                  <div className="max-h-40 space-y-1 overflow-y-auto rounded-md bg-muted/30 p-3 text-xs">
+                    <p className="font-medium">{selectedSource.item.title}</p>
+                    <p className="whitespace-pre-wrap text-muted-foreground">
+                      {bodyOf(selectedSource.item).slice(0, 500) || t("No lesson body yet.", "Bài học chưa có nội dung.")}
+                      {bodyOf(selectedSource.item).length > 500 ? "…" : ""}
+                    </p>
+                  </div>
+                )}
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={!selectedSource || course.addItem.isPending}
+                  onClick={() => {
+                    if (!selectedSource) return;
+                    course.addItem.mutate(
+                      {
+                        moduleId: selectedModule!.id,
+                        type: "THEORY",
+                        title: selectedSource.item.title,
+                        description: selectedSource.item.description ?? "",
+                        assignmentId: assignment.id,
+                        required: true,
+                        content: {
+                          body: bodyOf(selectedSource.item),
+                          format: "markdown",
+                        },
+                      },
+                      { onSuccess: () => setSourceItemId("") },
+                    );
+                  }}
+                >
+                  <BookOpen className="mr-1 size-4" aria-hidden="true" />
+                  {t("Use this lesson", "Dùng bài học này")}
+                </Button>
+              </>
+            )}
+          </div>
+
+          <div className="space-y-3 rounded-lg border border-dashed p-4">
+            <div>
+              <h4 className="text-sm font-semibold">{t("Write a custom lesson", "Tự soạn bài học")}</h4>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                {t(
+                  "Start from a structure, write Markdown yourself, or import a .md/.txt file. The lesson is linked to this Lab only.",
+                  "Bắt đầu từ khung có sẵn, tự viết Markdown hoặc nhập tệp .md/.txt. Bài học chỉ gắn với Lab này.",
+                )}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {LESSON_TEMPLATES.map((template) => (
+                <Button
+                  key={template.en}
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setNewTitle(t(template.titleEn, template.titleVi));
+                    setNewBody(template.body);
+                  }}
+                >
+                  {t(template.en, template.vi)}
+                </Button>
+              ))}
+              <label className="inline-flex cursor-pointer items-center rounded-md border px-3 py-1.5 text-sm transition-colors hover:bg-muted">
+                <Upload className="mr-1 size-3.5" aria-hidden="true" />
+                {t("Import Markdown", "Nhập Markdown")}
+                <input
+                  className="sr-only"
+                  type="file"
+                  accept=".md,.markdown,.txt,text/markdown,text/plain"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (!file) return;
+                    void file.text().then((text) => {
+                      setNewBody(text);
+                      if (!newTitle.trim()) setNewTitle(file.name.replace(/\.(md|markdown|txt)$/i, ""));
+                    });
+                    event.target.value = "";
+                  }}
+                />
+              </label>
+            </div>
+            <Input
+              aria-label={t("Lesson title", "Tên bài học")}
+              placeholder={t("Lesson title", "Tên bài học")}
+              value={newTitle}
+              onChange={(event) => setNewTitle(event.target.value)}
+            />
+            <MarkdownEditor
+              label={t("Lesson content (Markdown)", "Nội dung bài học (Markdown)")}
+              value={newBody}
+              onChange={setNewBody}
+              t={t}
+            />
+            <Button
+              type="button"
+              size="sm"
+              disabled={course.addItem.isPending || !newTitle.trim() || !newBody.trim()}
+              onClick={() =>
+                course.addItem.mutate(
+                  {
+                    moduleId: selectedModule!.id,
+                    type: "THEORY",
+                    title: newTitle.trim(),
+                    assignmentId: assignment.id,
+                    required: true,
+                    content: { body: newBody.trim(), format: "markdown" },
                   },
-                },
-              )
-            }
-          >
-            <Plus className="mr-1 size-4" aria-hidden="true" />
-            {t("Add lesson", "Thêm bài học")}
-          </Button>
+                  {
+                    onSuccess: () => {
+                      setNewTitle("");
+                      setNewBody("");
+                    },
+                  },
+                )
+              }
+            >
+              <Plus className="mr-1 size-4" aria-hidden="true" />
+              {t("Add lesson", "Thêm bài học")}
+            </Button>
+          </div>
         </div>
         {course.addItem.error && <p role="alert" className="text-sm text-destructive">{course.addItem.error.message}</p>}
       </section>

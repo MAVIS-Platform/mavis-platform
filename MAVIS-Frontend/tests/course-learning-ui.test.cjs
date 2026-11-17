@@ -944,9 +944,9 @@ test("Lab Library is the class-facing lab store and Quiz can be generated from L
   const transfer = read("src/features/assignments/lab-transfer.tsx");
   const publish = read("src/features/assignments/lab-publish-section.tsx");
 
-  assert.match(navigation, /label: "Lab Library"/);
-  assert.match(navigation, /label: "Lab Creation"/);
+  assert.match(navigation, /label: "Labs & Quiz Studio"/);
   assert.doesNotMatch(navigation, /label: "Lab Authoring"/);
+  assert.doesNotMatch(navigation, /id: "lab-authoring"/);
   assert.ok(assignments.includes("Library draft"));
   assert.ok(assignments.includes("In class"));
   assert.ok(assignments.includes("<PublishCourseLab"));

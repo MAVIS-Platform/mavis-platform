@@ -833,7 +833,6 @@ test("lecturer workspace navigation exposes unified class command destinations w
     "workspace-overview": "/workspace-overview",
     "course-authoring": "/workspace-overview?view=course-authoring",
     assignments: "/assignments",
-    "lab-authoring": "/lab-authoring",
     "assignment-submissions": "/submissions",
     members: "/members",
   });
@@ -1060,7 +1059,7 @@ test("lecturer sidebar expands the selected class and marks its class destinatio
   );
   assert.match(
     html,
-    /class="[^"]*bg-sidebar-accent[^\"]*" aria-current="location" aria-label="Lab Library" href="\/assignments\?workspace=class-1"/,
+    /class="[^"]*bg-sidebar-accent[^\"]*" aria-current="location" aria-label="Labs &amp; Quiz Studio" href="\/assignments\?workspace=class-1"/,
   );
 });
 
@@ -1164,8 +1163,8 @@ test("collapsed class sidebar keeps child destinations available as labeled link
       ),
     ),
   );
-  assert.ok(html.includes('href="/lab-authoring?workspace=class-1"'));
-  assert.ok(html.includes('aria-label="Lab Creation"'));
+  assert.ok(html.includes('href="/assignments?workspace=class-1"'));
+  assert.ok(html.includes('aria-label="Labs &amp; Quiz Studio"'));
 });
 
 test("non-live project sidebar never exposes legacy projectNavigation to lecturer or student", () => {

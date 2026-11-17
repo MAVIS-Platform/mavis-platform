@@ -173,11 +173,10 @@ export const lecturerWorkspaceNavigation: readonly NavigationGroup[] = [
       },
       {
         id: "assignments",
-        label: "Lab Library",
+        label: "Labs & Quiz Studio",
         icon: BookOpen,
         href: "/assignments",
       },
-      { id: "lab-authoring", label: "Lab Creation", icon: BookOpen, href: "/lab-authoring" },
       {
         id: "assignment-submissions",
         label: "Grading & Gradebook",
