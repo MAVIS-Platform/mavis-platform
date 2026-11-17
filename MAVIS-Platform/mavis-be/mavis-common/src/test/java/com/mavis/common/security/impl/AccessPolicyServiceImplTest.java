@@ -46,6 +46,9 @@ class AccessPolicyServiceImplTest {
     @Mock
     private WorkspaceMemberRepository workspaceMemberRepository;
 
+    @Mock
+    private com.mavis.common.security.CourseLabPolicy courseLabs;
+
     @InjectMocks
     private AccessPolicyServiceImpl accessPolicyService;
 
@@ -358,5 +361,44 @@ class AccessPolicyServiceImplTest {
     @Test void deletedProjectsCannotBeModified(){
         var project=Project.builder().id(UUID.randomUUID()).status("DELETED").owner(currentUser).build();
         assertThatThrownBy(()->accessPolicyService.requireProjectWriteAccess(project)).isInstanceOf(BusinessException.class).hasMessageContaining("Project not found");
+    }
+
+    @Test
+    @DisplayName("BE-01: Enrolled student in courseMode can read TEACHER_REFERENCE project but cannot modify it")
+    void enrolledCourseStudentReadsTeacherReferenceReadOnlyAndOutsiderBlocked() {
+        User lecturer = User.builder().id(UUID.randomUUID()).role(lecturerRole).build();
+        Workspace courseWorkspace = Workspace.builder()
+                .id(UUID.randomUUID())
+                .status("ACTIVE")
+                .courseMode(true)
+                .createdBy(lecturer)
+                .build();
+        Project refProject = Project.builder()
+                .id(UUID.randomUUID())
+                .name("Reference Repo")
+                .owner(lecturer)
+                .workspace(courseWorkspace)
+                .projectType("TEACHER_REFERENCE")
+                .isReferenceTemplate(true)
+                .status("ACTIVE")
+                .build();
+
+        when(userRepository.findWithRoleById(currentUserId)).thenReturn(Optional.of(currentUser));
+        when(workspaceMemberRepository.findByWorkspaceIdAndUserId(courseWorkspace.getId(), currentUserId))
+                .thenReturn(Optional.of(WorkspaceMember.builder().memberRole("STUDENT").build()));
+        when(courseLabs.canReadReferenceProject(refProject, currentUser)).thenReturn(true);
+
+        assertThat(accessPolicyService.canReadProject(refProject)).isTrue();
+        accessPolicyService.requireProjectReadAccess(refProject);
+
+        assertThatThrownBy(() -> accessPolicyService.requireProjectWriteAccess(refProject))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN));
+
+        when(courseLabs.canReadReferenceProject(refProject, currentUser)).thenReturn(false);
+        assertThat(accessPolicyService.canReadProject(refProject)).isFalse();
+        assertThatThrownBy(() -> accessPolicyService.requireProjectReadAccess(refProject))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN));
     }
 }
