@@ -2,7 +2,13 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
-import { Search } from "lucide-react";
+import {
+  BookOpen,
+  ClipboardCheck,
+  Plus,
+  Search,
+  Users,
+} from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useApiMutation, useApiQuery, useSession, useSelection } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
@@ -31,25 +37,29 @@ export function Workspaces() {
   const { workspaceId } = useSelection();
   const [showCreate, setShowCreate] = useState(false);
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "archived">("all");
   const canCreate = ["lecturer", "admin"].includes(session.data?.user?.role ?? "");
+  const submissions = useApiQuery("submissions", {}, { enabled: canCreate });
   const selected = query.data?.find((w) => w.id === workspaceId);
   const visibleWorkspaces = useMemo(() => {
     const term = search.trim().toLowerCase();
-    const rows = query.data ?? [];
-    if (!term) return rows;
-    return rows.filter(
-      (workspace) =>
+    return (query.data ?? []).filter((workspace) => {
+      const archived = (workspace.status ?? "ACTIVE") === "ARCHIVED";
+      if (statusFilter === "active" && archived) return false;
+      if (statusFilter === "archived" && !archived) return false;
+      return (
+        !term ||
         workspace.name.toLowerCase().includes(term) ||
-        (workspace.code ?? "").toLowerCase().includes(term),
-    );
-  }, [query.data, search]);
+        (workspace.code ?? "").toLowerCase().includes(term)
+      );
+    });
+  }, [query.data, search, statusFilter]);
+  const pendingReviews = (submissions.data ?? []).filter(
+    (submission) => !submission.reviewStatus || submission.reviewStatus === "PENDING",
+  ).length;
   const activeCount = (query.data ?? []).filter(
     (workspace) => (workspace.status ?? "ACTIVE") !== "ARCHIVED",
   ).length;
-  const totalMembers = (query.data ?? []).reduce(
-    (sum, workspace) => sum + (workspace.members?.length ?? 0),
-    0,
-  );
   const totalStudents = (query.data ?? []).reduce(
     (sum, workspace) =>
       sum +
@@ -60,48 +70,107 @@ export function Workspaces() {
   if (workspaceId && selected) return <WorkspaceOverview />;
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-end justify-between gap-3 border-b pb-4">
-        <div>
-          <p className="max-w-2xl text-sm text-muted-foreground">
-            {canCreate
-              ? t(
-                  "Open a class to organize modules, Labs, students and grading.",
-                  "Mở một lớp để tổ chức chương, Lab, sinh viên và chấm điểm.",
-                )
-              : t("Classes you are enrolled in.", "Các lớp bạn đã ghi danh.")}
-          </p>
-          <p className="mt-1 text-xs tabular-nums text-muted-foreground">
-            {query.data?.length ?? 0} {t("classes", "lớp")} · {activeCount} {t("active", "đang hoạt động")} ·{" "}
-            {totalMembers} {t("members", "thành viên")} · {totalStudents} {t("students", "sinh viên")}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {(query.data?.length ?? 0) > 0 && (
-            <div className="relative">
+      {canCreate ? (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <p className="max-w-2xl text-sm text-muted-foreground">
+              {t(
+                "Open a class to organize modules, Labs, students and grading.",
+                "Mở một lớp để tổ chức chương, Lab, sinh viên và chấm điểm.",
+              )}
+            </p>
+            <Button
+              type="button"
+              variant={showCreate ? "outline" : "default"}
+              onClick={() => setShowCreate((open) => !open)}
+            >
+              <Plus className="mr-1 size-4" aria-hidden="true" />
+              {showCreate ? t("Close", "Đóng") : t("Create class", "Tạo lớp")}
+            </Button>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="flex items-center gap-3 rounded-xl border bg-card p-4">
+              <span className="grid size-10 place-items-center rounded-lg bg-primary/10 text-primary">
+                <BookOpen className="size-5" aria-hidden="true" />
+              </span>
+              <div>
+                <p className="text-2xl font-semibold tabular-nums">{activeCount}</p>
+                <p className="text-xs text-muted-foreground">{t("Active classes", "Lớp đang hoạt động")}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 rounded-xl border bg-card p-4">
+              <span className="grid size-10 place-items-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                <Users className="size-5" aria-hidden="true" />
+              </span>
+              <div>
+                <p className="text-2xl font-semibold tabular-nums">{totalStudents}</p>
+                <p className="text-xs text-muted-foreground">{t("Total students", "Tổng sinh viên")}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 rounded-xl border bg-card p-4">
+              <span className="grid size-10 place-items-center rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                <ClipboardCheck className="size-5" aria-hidden="true" />
+              </span>
+              <div>
+                <p className="text-2xl font-semibold tabular-nums">
+                  {submissions.isSuccess ? pendingReviews : "—"}
+                </p>
+                <p className="text-xs text-muted-foreground">{t("Pending submissions", "Bài nộp chờ chấm")}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="relative w-full sm:max-w-md">
               <Search
                 className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
                 aria-hidden="true"
               />
               <Input
-                className="h-9 w-full pl-8 sm:w-64"
+                className="h-9 w-full pl-8"
                 value={search}
                 placeholder={t("Search by class name or code", "Tìm theo tên hoặc mã lớp")}
                 aria-label={t("Search classes", "Tìm lớp")}
                 onChange={(event) => setSearch(event.target.value)}
               />
             </div>
-          )}
-          {canCreate && (
-            <Button
-              type="button"
-              variant={showCreate ? "outline" : "default"}
-              onClick={() => setShowCreate((open) => !open)}
+            <div
+              role="group"
+              aria-label={t("Filter classes", "Lọc lớp")}
+              className="inline-flex rounded-lg border bg-card p-0.5"
             >
-              {showCreate ? t("Close", "Đóng") : t("Create class", "Tạo lớp")}
-            </Button>
-          )}
+              {(
+                [
+                  ["all", t("All", "Tất cả")],
+                  ["active", t("Active", "Đang hoạt động")],
+                  ["archived", t("Archived", "Lưu trữ")],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  aria-pressed={statusFilter === id}
+                  onClick={() => setStatusFilter(id)}
+                  className={
+                    statusFilter === id
+                      ? "rounded-md bg-foreground px-3 py-1.5 text-sm text-background"
+                      : "rounded-md px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground"
+                  }
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
-      </header>
+      ) : (
+        <header className="flex flex-wrap items-end justify-between gap-3 border-b pb-4">
+          <p className="max-w-2xl text-sm text-muted-foreground">
+            {t("Classes you are enrolled in.", "Các lớp bạn đã ghi danh.")}
+          </p>
+        </header>
+      )}
 
       {canCreate && showCreate && <CreateWorkspace onClose={() => setShowCreate(false)} />}
       {session.data?.user?.role === "student" && <CourseEnrollment destination="roadmap" />}
@@ -182,75 +251,80 @@ export function Workspaces() {
             })}
           </div>
         ) : (
-          <div className="overflow-hidden rounded-lg border bg-card">
-            <div className="hidden items-center gap-4 border-b bg-muted/30 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground md:grid md:grid-cols-[minmax(0,1fr)_7rem_9rem_7rem_15rem]">
-              <span>{t("Class", "Lớp")}</span>
-              <span>{t("Role", "Vai trò")}</span>
-              <span>{t("Members", "Thành viên")}</span>
-              <span>{t("Status", "Trạng thái")}</span>
-              <span className="text-right">{t("Actions", "Thao tác")}</span>
-            </div>
-            {visibleWorkspaces.length === 0 ? (
-              <p className="p-4 text-sm text-muted-foreground">
-                {t("No class matches this search.", "Không có lớp nào khớp tìm kiếm.")}
-              </p>
-            ) : (
-              <ul className="divide-y">
-                {visibleWorkspaces.map((workspace) => {
-                  const members = workspace.members ?? [];
-                  const students = members.filter(
-                    (member) => member.role.toUpperCase() === "STUDENT",
-                  ).length;
-                  const workspaceUrl = `/workspace-overview?workspace=${encodeURIComponent(workspace.id)}`;
-                  return (
-                    <li
-                      key={workspace.id}
-                      className="grid gap-x-4 gap-y-2 px-4 py-3 md:grid-cols-[minmax(0,1fr)_7rem_9rem_7rem_15rem] md:items-center"
-                    >
-                      <div className="min-w-0">
-                        <Link
-                          className="font-mono text-xs font-semibold tracking-wide text-primary hover:underline"
-                          href={workspaceUrl}
-                        >
-                          {workspace.code || t("CLASS", "LỚP")}
-                        </Link>
-                        <Link
-                          className="block truncate text-[15px] font-semibold tracking-tight text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          href={workspaceUrl}
-                        >
-                          {workspace.name}
-                        </Link>
-                        {workspace.description && (
-                          <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
-                            {workspace.description}
-                          </p>
-                        )}
-                      </div>
-                      <span className="hidden text-xs text-muted-foreground md:block">
+          <div className="grid gap-4 md:grid-cols-2">
+            {visibleWorkspaces.map((workspace) => {
+              const members = workspace.members ?? [];
+              const students = members.filter(
+                (member) => member.role.toUpperCase() === "STUDENT",
+              ).length;
+              const archived = (workspace.status ?? "ACTIVE") === "ARCHIVED";
+              const workspaceUrl = `/workspace-overview?workspace=${encodeURIComponent(workspace.id)}`;
+              return (
+                <article
+                  key={workspace.id}
+                  className="flex flex-col gap-3 rounded-xl border bg-card p-4 transition-colors hover:border-primary/30"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2 text-xs">
+                      <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] font-medium">
+                        {workspace.code || t("CLASS", "LỚP")}
+                      </span>
+                      <span className="truncate text-muted-foreground">
                         {workspace.myRole || t("Member", "Thành viên")}
                       </span>
-                      <span className="text-xs tabular-nums text-muted-foreground">
-                        {members.length} {t("members", "thành viên")} · {students}{" "}
-                        {t("students", "sinh viên")}
+                    </div>
+                    {archived ? (
+                      <span className="text-xs text-muted-foreground">{t("Archived", "Lưu trữ")}</span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
+                        <span className="size-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
+                        {t("Active", "Đang hoạt động")}
                       </span>
-                      <StatusBadge
-                        status={workspace.status ?? "ACTIVE"}
-                        variant={workspace.status === "ARCHIVED" ? "secondary" : "default"}
-                      />
-                      <div className="flex flex-wrap items-center gap-2 md:justify-end">
-                        <Button asChild size="sm">
-                          <Link href={workspaceUrl}>{t("Open", "Mở")}</Link>
-                        </Button>
-                        <Button asChild size="sm" variant="outline">
-                          <Link href={`/submissions?workspace=${encodeURIComponent(workspace.id)}`}>
-                            {t("Submissions", "Bài nộp")}
-                          </Link>
-                        </Button>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
+                    )}
+                  </div>
+                  <Link
+                    className="truncate text-xl font-semibold tracking-tight text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    href={workspaceUrl}
+                  >
+                    {workspace.name}
+                  </Link>
+                  <p className="flex items-center gap-1.5 text-xs tabular-nums text-muted-foreground">
+                    <Users className="size-3.5" aria-hidden="true" />
+                    {members.length} {t("members", "thành viên")} · {students}{" "}
+                    {t("students", "sinh viên")}
+                  </p>
+                  {workspace.description && (
+                    <p className="line-clamp-1 text-xs text-muted-foreground">
+                      {workspace.description}
+                    </p>
+                  )}
+                  <div className="mt-auto flex gap-2 pt-1">
+                    <Button asChild className="flex-1">
+                      <Link href={workspaceUrl}>{t("Open class", "Mở lớp")}</Link>
+                    </Button>
+                    <Button asChild variant="outline" className="flex-1">
+                      <Link href={`/submissions?workspace=${encodeURIComponent(workspace.id)}`}>
+                        {t("Submissions", "Bài nộp")}
+                      </Link>
+                    </Button>
+                  </div>
+                </article>
+              );
+            })}
+            {visibleWorkspaces.length === 0 && (
+              <p className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground md:col-span-2">
+                {t("No class matches this search or filter.", "Không có lớp nào khớp tìm kiếm hoặc bộ lọc.")}
+              </p>
+            )}
+            {canCreate && (
+              <button
+                type="button"
+                onClick={() => setShowCreate(true)}
+                className="flex min-h-40 flex-col items-center justify-center gap-2 rounded-xl border border-dashed text-sm text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+              >
+                <Plus className="size-5" aria-hidden="true" />
+                {t("Create class", "Tạo lớp")}
+              </button>
             )}
           </div>
         )}

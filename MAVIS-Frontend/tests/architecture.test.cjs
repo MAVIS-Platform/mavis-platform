@@ -5161,7 +5161,7 @@ test("My Workspaces is a compact LMS class list with tabs and a module outline",
   assert.match(rootHtml, /Create class/);
   assert.match(rootHtml, /Lớp SWD392/);
   assert.match(rootHtml, /Mobile Programming/);
-  assert.match(rootHtml, /Open<\/a>/);
+  assert.match(rootHtml, /Open class/);
   assert.doesNotMatch(
     rootHtml,
     /Create a place for learning to take shape/,
