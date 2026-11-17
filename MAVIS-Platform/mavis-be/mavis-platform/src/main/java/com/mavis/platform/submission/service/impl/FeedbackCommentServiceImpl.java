@@ -84,7 +84,7 @@ public class FeedbackCommentServiceImpl implements FeedbackCommentService {
         log.debug("Lấy toàn bộ nhận xét của bài nộp: {}", submissionId);
         var submission = submissionSnapshotRepository.findWithDetailsById(submissionId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy bài nộp với ID: " + submissionId));
-        accessPolicyService.requireProjectReadAccess(submission.getProject());
+        SubmissionServiceImpl.requireSubmissionReadAccess(accessPolicyService, submission);
 
         List<FeedbackComment> comments = feedbackCommentRepository.findBySubmissionIdOrderByCreatedAtAsc(submissionId);
         return comments.stream()

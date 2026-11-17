@@ -149,10 +149,20 @@ class SubmissionServiceImplTest {
         when(submissionSnapshotRepository.findWithDetailsById(submitted.getId())).thenReturn(Optional.of(savedHolder.get()));
         when(feedbackCommentRepository.findBySubmissionIdOrderByCreatedAtAsc(submitted.getId())).thenReturn(List.of());
 
+        var detail = submissionService.getSubmissionById(submitted.getId());
+        assertThat(detail.getEvidencePackageDigest()).isEqualTo(submitted.getEvidencePackageDigest());
+
         var bundle = submissionService.exportSubmissionBundle(submitted.getId());
         assertThat(bundle.getEvidencePackageDigest()).isEqualTo(submitted.getEvidencePackageDigest());
         assertThat(bundle.getTheoryEvidence()).isEqualTo(submitted.getTheoryEvidence());
         assertThat(bundle.getStudentSnapshots()).isEqualTo(submitted.getStudentSnapshots());
+
+        User otherStudent = User.builder().id(UUID.randomUUID()).build();
+        when(accessPolicyService.requireCurrentActiveUser()).thenReturn(otherStudent);
+        doThrow(new BusinessException(com.mavis.common.exception.ErrorCode.FORBIDDEN, "Only lecturer"))
+                .when(accessPolicyService).requireWorkspaceLecturer(labWorkspace.getId());
+        assertThatThrownBy(() -> submissionService.getSubmissionById(submitted.getId()))
+                .isInstanceOf(BusinessException.class);
     }
 
     @Test void foreignWorkspaceStudentCannotSubmitV2Lab() {

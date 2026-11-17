@@ -637,6 +637,10 @@ class CourseHttpAcceptanceTest {
         JsonNode reloaded = data(send("GET", "submissions/" + resubmitted.path("id").asText(), student, null, 200));
         assertEquals(originalDigest, reloaded.path("evidencePackageDigest").asText());
         assertEquals(originalTheory, reloaded.path("theoryEvidence"));
+        send("GET", "submissions/" + resubmitted.path("id").asText(), foreignStudent, null, 403);
+        assertEquals(originalDigest, data(send("GET", "submissions/" + resubmitted.path("id").asText() + "/export",
+                student, null, 200)).path("evidencePackageDigest").asText());
+        send("GET", "submissions/" + resubmitted.path("id").asText() + "/feedbacks", student, null, 200);
     }
 
     private HttpResponse<byte[]> send(String method, String path, String token, Map<String, ?> body,

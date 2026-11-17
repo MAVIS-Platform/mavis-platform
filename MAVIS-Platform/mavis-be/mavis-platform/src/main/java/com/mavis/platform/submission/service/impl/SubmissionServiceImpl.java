@@ -469,7 +469,7 @@ public class SubmissionServiceImpl implements SubmissionService {
         SubmissionSnapshot submission = submissionSnapshotRepository.findWithDetailsById(submissionId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy bài nộp với ID: " + submissionId));
 
-        accessPolicyService.requireProjectReadAccess(submission.getProject());
+        requireSubmissionReadAccess(accessPolicyService, submission);
         long feedbackCount = feedbackCommentRepository.countBySubmissionId(submissionId);
         return SubmissionResponseDTO.fromEntity(submission, feedbackCount);
     }
@@ -482,7 +482,7 @@ public class SubmissionServiceImpl implements SubmissionService {
         SubmissionSnapshot submission = submissionSnapshotRepository.findWithDetailsById(submissionId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy bài nộp với ID: " + submissionId));
 
-        accessPolicyService.requireProjectReadAccess(submission.getProject());
+        requireSubmissionReadAccess(accessPolicyService, submission);
         // Kiểm tra quyền đọc
         Project project = submission.getProject();
         // Lấy danh sách feedbacks
@@ -730,5 +730,28 @@ public class SubmissionServiceImpl implements SubmissionService {
         return submissions.stream()
                 .map(s -> SubmissionResponseDTO.fromEntity(s, feedbackCounts.getOrDefault(s.getId(), 0L)))
                 .collect(Collectors.toList());
+    }
+
+    static void requireSubmissionReadAccess(com.mavis.common.security.AccessPolicyService accessPolicyService,
+                                            SubmissionSnapshot submission) {
+        Assignment assignment = submission.getAssignment();
+        boolean v2Lab = assignment != null && assignment.getLabMode() != null
+                && !"LEGACY".equalsIgnoreCase(assignment.getLabMode());
+        if (v2Lab) {
+            User actor = accessPolicyService.requireCurrentActiveUser();
+            UUID currentUserId = actor != null ? actor.getId() : SecurityUtils.getCurrentUserId();
+            if (currentUserId != null && submission.getSubmittedBy() != null
+                    && currentUserId.equals(submission.getSubmittedBy().getId())) {
+                if (assignment.getWorkspace() != null) {
+                    accessPolicyService.requireWorkspaceMember(assignment.getWorkspace().getId());
+                }
+                return;
+            }
+            if (assignment.getWorkspace() != null) {
+                accessPolicyService.requireWorkspaceLecturer(assignment.getWorkspace().getId());
+                return;
+            }
+        }
+        accessPolicyService.requireProjectReadAccess(submission.getProject());
     }
 }
