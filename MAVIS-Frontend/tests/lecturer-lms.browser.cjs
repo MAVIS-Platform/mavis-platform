@@ -332,9 +332,15 @@ async function main() {
     await page
       .getByRole("button", { name: /Collapse SWD392 · Software Architecture menu/ })
       .waitFor();
-    await page.getByRole("link", { name: "Course Setup" }).click();
-    await page.waitForURL(/view=course-setup&workspace=ws-lms/);
-    await page.getByText("Course setup", { exact: true }).waitFor();
+    await page
+      .getByRole("navigation", { name: "Global navigation" })
+      .getByRole("link", { name: "Overview & Setup", exact: true })
+      .click();
+    await page.waitForURL(/workspace-overview\?workspace=ws-lms/);
+    await page
+      .getByRole("heading", { name: "Software Architecture", exact: true })
+      .first()
+      .waitFor();
     await page.screenshot({
       path: path.join(output, "class-course-setup.png"),
       fullPage: true,
@@ -352,12 +358,22 @@ async function main() {
     await page.getByRole("link", { name: "Lab Creation", exact: true }).click();
     await page.waitForURL(/lab-authoring\?workspace=ws-lms/);
     await page.getByText("Lab information", { exact: false }).first().waitFor();
-    await page.getByRole("link", { name: "Workspace Members", exact: true }).click();
+    await page
+      .getByRole("navigation", { name: "Global navigation" })
+      .getByRole("link", { name: "Students & Access", exact: true })
+      .click();
     await page.waitForURL(/members\?workspace=ws-lms/);
     await page.getByText("Student A", { exact: true }).waitFor();
-    await page.getByRole("link", { name: "Assignment Submissions", exact: true }).click();
+    await page
+      .getByRole("navigation", { name: "Global navigation" })
+      .getByRole("link", { name: "Grading & Gradebook", exact: true })
+      .click();
     await page.waitForURL(/submissions\?workspace=ws-lms/);
-    assert.equal(await page.getByRole("navigation", { name: "Class sections" }).count(), 0);
+    assert.equal(
+      await page.getByRole("navigation", { name: "Class sections" }).count(),
+      1,
+      "Grading keeps the class section tabs visible",
+    );
     const adminPage = await browser.newPage({ viewport: { width: 1280, height: 900 } });
     await adminPage.goto(base + "?view=submissions&role=admin", { waitUntil: "networkidle" });
     try {
@@ -375,9 +391,11 @@ async function main() {
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.getByRole("button", { name: "Open navigation" }).click();
-    await page.getByRole("link", { name: "Results", exact: true }).click();
-    await page.waitForURL(/submissions\?view=results&workspace=ws-lms/);
-    await page.getByText("Results view shows each submission", { exact: false }).waitFor();
+    await page
+      .getByRole("navigation", { name: "Global navigation" })
+      .getByRole("link", { name: "Grading & Gradebook", exact: true })
+      .click();
+    await page.waitForURL(/submissions\?workspace=ws-lms/);
     await page.screenshot({
       path: path.join(output, "class-sidebar-mobile.png"),
       fullPage: true,
@@ -480,11 +498,15 @@ async function main() {
     });
 
     await page.goto(base + "?view=class&empty=1", { waitUntil: "networkidle" });
-    await page.getByText("No modules yet", { exact: true }).waitFor();
     assert.equal(
       await page.getByText("Could not load class content.", { exact: true }).count(),
       0,
-      "A missing Course draft must render the empty state, not an error",
+      "A missing Course draft must not render an error",
+    );
+    assert.equal(
+      await page.getByText("No modules yet", { exact: true }).count(),
+      0,
+      "The empty module placeholder is intentionally removed",
     );
 
     assert.deepEqual(errors, []);

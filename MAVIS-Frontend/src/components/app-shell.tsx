@@ -764,7 +764,7 @@ function NavigationGroups({
               const expanded = expandedGroups?.[item.id] ?? activeId.startsWith(`${item.id}:`);
               return (
                 <li key={item.id}>
-                  <div className="flex items-center gap-1">
+                  <div className={cn("flex items-center gap-1", isWorkspace && "mb-0.5")}>
                     <div className="min-w-0 flex-1">
                       <NavigationEntry
                         item={item}
@@ -804,8 +804,8 @@ function NavigationGroups({
                       <CollapsibleContent>
                         <ul
                           className={cn(
-                            "space-y-1",
-                            !collapsed && "ml-3 border-l border-border/70 pl-2",
+                            "space-y-0.5",
+                            !collapsed && "ml-4 border-l border-border/50 pl-2",
                           )}
                         >
                           {item.children.map((child) => (
@@ -889,22 +889,34 @@ function NavigationEntry({
   currentKind: "page" | "location";
 }) {
   const { t } = useLocale();
+  const workspaceDepth = item.id.startsWith("workspace:") ? item.id.split(":").length - 1 : 0;
+  const isWorkspaceRoot = workspaceDepth === 1 && Boolean(item.children?.length);
+  const isWorkspaceChild = workspaceDepth >= 2;
   const className = cn(
-    "flex min-h-9 w-full items-center gap-2.5 rounded-md px-2 text-left text-xs leading-5 transition-colors",
-    collapsed && "justify-center px-0",
+    "flex w-full items-center gap-2.5 text-left transition-colors",
+    collapsed && "min-h-9 justify-center rounded-md px-0",
+    !collapsed && "rounded-md px-2",
     !collapsed &&
-      item.id.startsWith("workspace:") &&
-      "ml-2 w-[calc(100%-0.5rem)] border-l border-border/60 pl-4",
+      (isWorkspaceRoot
+        ? "min-h-10 px-2.5 text-[13px] font-semibold"
+        : isWorkspaceChild
+          ? "min-h-8 text-xs"
+          : "min-h-9 text-xs leading-5"),
     active
-      ? item.children
-        ? "bg-muted font-semibold text-foreground border-l-primary"
-        : "bg-sidebar-accent font-semibold text-sidebar-accent-foreground ring-1 ring-inset ring-primary/20"
-      : "text-muted-foreground hover:bg-accent hover:text-foreground",
+      ? isWorkspaceRoot
+        ? "bg-muted text-foreground"
+        : "bg-sidebar-accent font-semibold text-sidebar-accent-foreground"
+      : isWorkspaceRoot
+        ? "text-foreground/85 hover:bg-accent/50"
+        : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
     !preview && !item.href && "cursor-not-allowed",
   );
   const content = (
     <>
-      <item.icon className="size-4 shrink-0" aria-hidden="true" />
+      <item.icon
+        className={cn("shrink-0", isWorkspaceChild ? "size-3.5" : "size-4")}
+        aria-hidden="true"
+      />
       {!collapsed && (
         <>
           <span className="min-w-0 flex-1">{t(item.label)}</span>

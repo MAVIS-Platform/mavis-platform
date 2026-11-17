@@ -156,33 +156,7 @@ export function CourseOutline({
         </section>
       );
     }
-    return (
-      <section className="rounded-lg border border-dashed bg-card p-6 text-center">
-        <h2 className="font-semibold">{t("No modules yet", "Chưa có chương/module")}</h2>
-        <p className="mx-auto mt-1 max-w-lg text-sm text-muted-foreground">
-          {canManage
-            ? t(
-                "Create the first module in Authoring, then publish the Course version students will follow.",
-                "Tạo chương đầu tiên trong Soạn nội dung, sau đó công bố phiên bản Course để sinh viên học.",
-              )
-            : t("Your lecturer has not published course content yet.", "Giảng viên chưa công bố nội dung khóa học.")}
-        </p>
-        {canManage && (
-          <div className="mt-4 flex flex-wrap justify-center gap-2">
-            <Button asChild size="sm" variant="outline">
-              <Link href={`/roadmap?workspace=${encodeURIComponent(workspaceId)}#course-builder`}>
-                {t("Open course authoring", "Mở soạn nội dung")}
-              </Link>
-            </Button>
-            <Button asChild size="sm">
-              <Link href={`/assignments?workspace=${encodeURIComponent(workspaceId)}`}>
-                {t("Create the first Lab", "Tạo Lab đầu tiên")}
-              </Link>
-            </Button>
-          </div>
-        )}
-      </section>
-    );
+    return null;
   }
 
   return (
