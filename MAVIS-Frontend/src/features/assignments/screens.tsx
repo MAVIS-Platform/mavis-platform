@@ -203,7 +203,7 @@ function LecturerAssignments() {
             {t("No Labs match this filter.", "Không có Lab nào khớp bộ lọc này.")}
           </p>
         ) : (
-          <ul className="divide-y overflow-hidden rounded-xl border bg-card">
+          <ul className="grid gap-4 md:grid-cols-2">
             {visible.map(({ lab, inClass, setupLab, sourceReady, quizPublished, readyForClass }) => {
               const creatorHref = `/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(lab.id)}&tab=info`;
               const previewHref = `/lab?${new URLSearchParams({
@@ -214,29 +214,29 @@ function LecturerAssignments() {
               })}`;
               const mode =
                 lab.labMode === "THEORY_QUIZ_STUDIO"
-                  ? t("Theory + Quiz + Studio", "Lý thuyết + Quiz + Studio")
+                  ? t("2D Studio Lab", "Lab Thực Hành 2D Studio")
                   : lab.labMode === "THEORY_QUIZ"
-                    ? t("Theory + Quiz", "Lý thuyết + Quiz")
+                    ? t("Theory & Quiz", "Lab Lý Thuyết & Quiz")
                     : t("Legacy Lab", "Lab cũ");
               return (
-                <li key={lab.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
-                  <div className="flex min-w-0 flex-1 items-start gap-3">
+                <li
+                  key={lab.id}
+                  className="flex flex-col justify-between gap-4 rounded-xl border border-slate-200 bg-card p-5 shadow-sm transition-all hover:border-indigo-400 dark:border-slate-800"
+                >
+                  <div className="flex min-w-0 items-start gap-3">
                     <span
                       className={cn(
-                        "mt-0.5 grid size-9 shrink-0 place-items-center rounded-md border text-sm font-semibold tabular-nums",
+                        "mt-0.5 grid size-10 shrink-0 place-items-center rounded-xl border text-sm font-bold tabular-nums",
                         inClass
-                          ? "border-primary/30 bg-primary/5 text-primary"
+                          ? "border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300"
                           : "bg-muted/40 text-muted-foreground",
                       )}
                       aria-hidden="true"
                     >
-                      {inClass ? inClass.position : "–"}
+                      {inClass ? `L${inClass.position}` : "–"}
                     </span>
-                    <div className="min-w-0 space-y-1">
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                        <Link className="truncate font-medium hover:underline" href={creatorHref}>
-                          {lab.title}
-                        </Link>
+                    <div className="min-w-0 flex-1 space-y-1.5">
+                      <div className="flex flex-wrap items-center gap-1.5">
                         {inClass ? (
                           <Badge variant="success">{t("In class", "Trong lớp")}</Badge>
                         ) : (
@@ -244,34 +244,40 @@ function LecturerAssignments() {
                         )}
                         <Badge variant="outline">{mode}</Badge>
                       </div>
-                      <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                      <Link
+                        className="block line-clamp-2 text-base font-semibold leading-snug hover:text-indigo-600 hover:underline"
+                        href={creatorHref}
+                      >
+                        {lab.title}
+                      </Link>
+                      <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                         <span className="inline-flex items-center gap-1">
                           <GitBranch className="size-3.5" aria-hidden="true" />
                           {sourceReady
-                            ? t(`Source pinned · r${lab.referenceSource?.revision}`, `Nguồn đã ghim · r${lab.referenceSource?.revision}`)
+                            ? t("Source ready", "Nguồn đã sẵn sàng")
                             : t("No reference source", "Chưa gắn nguồn")}
                         </span>
                         <span className="inline-flex items-center gap-1">
                           <CircleHelp className="size-3.5" aria-hidden="true" />
                           {quizPublished
-                            ? t(`Quiz published · v${setupLab?.quizVersion}`, `Quiz đã công bố · v${setupLab?.quizVersion}`)
+                            ? t(`Quiz v${setupLab?.quizVersion} live`, `Quiz v${setupLab?.quizVersion} đã mở`)
                             : t("Quiz not published", "Quiz chưa công bố")}
                         </span>
                         <span>
-                          {t("Deadline", "Hạn nộp")}: {formatDeadline(lab.dueAt)}
+                          {t("Due", "Hạn")}: {formatDeadline(lab.dueAt)}
                         </span>
                       </p>
                     </div>
                   </div>
-                  <div className="flex flex-wrap items-center gap-1.5 sm:justify-end">
-                    <Button asChild size="sm" variant="outline">
+                  <div className="flex flex-wrap items-center gap-1.5 border-t pt-3">
+                    <Button asChild size="sm" className="bg-indigo-600 text-white hover:bg-indigo-700">
                       <Link href={creatorHref}>
                         <Pencil className="mr-1 size-3.5" aria-hidden="true" />
-                        {t("Edit in Lab Creation", "Sửa trong Tạo Lab")}
+                        {t("Edit in Lab Creation", "Chỉnh sửa & Cấu hình")}
                       </Link>
                     </Button>
                     {inClass ? (
-                      <Button asChild size="sm" variant="ghost">
+                      <Button asChild size="sm" variant="outline">
                         <Link href={previewHref}>
                           <Eye className="mr-1 size-3.5" aria-hidden="true" />
                           {t("Preview", "Xem trước")}

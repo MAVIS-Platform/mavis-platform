@@ -12,6 +12,7 @@ import { WorkspaceControls } from "./manage";
 import {
   CoursePasskey,
   CourseRoadmap,
+  SeedCuratedCourseLabs,
   useCourseAuthoring,
   useCourseRoadmap,
 } from "./course-access";
@@ -142,10 +143,43 @@ export function WorkspaceOverview() {
             )}
             {activeTab === "outline" && canManage && (
               <div className="space-y-5">
-                <CourseSetupPanel workspaceId={workspace.id} />
-                <div id="class-passkey">
-                  <CoursePasskey workspaceId={workspace.id} />
-                </div>
+                <section
+                  aria-label={t("Quick Class Setup Bar", "Thiết Lập Nhanh Lớp Học")}
+                  className="grid gap-4 lg:grid-cols-2"
+                >
+                  <div id="class-passkey" className="rounded-2xl border bg-card p-1 shadow-sm">
+                    <CoursePasskey workspaceId={workspace.id} />
+                  </div>
+                  <div className="flex flex-col justify-between gap-3 rounded-2xl border bg-card p-5 shadow-sm">
+                    <div className="space-y-1">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-indigo-600 dark:text-indigo-400">
+                        {t("Quick Lab & Studio Bootstrap", "Khởi Tạo Nhanh Lab & Studio")}
+                      </p>
+                      <h2 className="text-base font-semibold">
+                        {t(
+                          "1-Click Curated Labs & Curriculum",
+                          "Tạo Nhanh Bộ Lab Mẫu & Đề Cương",
+                        )}
+                      </h2>
+                      <p className="text-xs text-muted-foreground">
+                        {t(
+                          "Seed ready-to-teach Java & C# Labs or manage individual Labs in the Lab Library.",
+                          "Khởi tạo bộ bài Lab Java & C# hoàn chỉnh hoặc vào Kho Lab để chỉnh sửa từng bài.",
+                        )}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <SeedCuratedCourseLabs workspaceId={workspace.id} />
+                      <Button asChild size="sm" variant="outline">
+                        <Link
+                          href={`/workspace-overview?workspace=${encodeURIComponent(workspace.id)}&view=course-setup`}
+                        >
+                          {t("Full Setup Checklist", "Checklist Chi Tiết")}
+                        </Link>
+                      </Button>
+                    </div>
+                  </div>
+                </section>
                 <CourseOutline
                   workspaceId={workspace.id}
                   canManage
