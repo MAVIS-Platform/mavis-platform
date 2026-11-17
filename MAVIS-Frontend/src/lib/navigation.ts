@@ -60,26 +60,26 @@ export const globalNavigation: Record<AppRole, readonly NavigationGroup[]> = {
       items: [
         { id: "courses", label: "My Courses", icon: GraduationCap, href: "/courses" },
         {
-          id: "join-course",
-          label: "Join Course",
-          icon: KeyRound,
-          href: "/courses#course-passkey",
+          id: "submissions",
+          label: "My Grades & Submissions",
+          icon: ClipboardCheck,
+          href: "/submissions",
         },
         { id: "studio", label: "Free Studio Sandbox", icon: Boxes, href: "/studio" },
-      ],
-    },
-    {
-      label: "Progress",
-      items: [
-        { id: "submissions", label: "My Submissions", icon: ClipboardCheck, href: "/submissions" },
       ],
     },
   ],
   lecturer: [
     {
-      label: "Workspaces",
+      label: "Teaching",
       items: [
-        { id: "workspaces", label: "My Workspaces", icon: Users, href: "/workspaces" },
+        { id: "workspaces", label: "My Classes", icon: Users, href: "/workspaces" },
+        {
+          id: "submissions",
+          label: "Grading & Gradebook",
+          icon: ClipboardCheck,
+          href: "/submissions",
+        },
         { id: "studio", label: "MAVIS Studio", icon: Boxes, href: "/studio" },
       ],
     },
@@ -88,8 +88,8 @@ export const globalNavigation: Record<AppRole, readonly NavigationGroup[]> = {
     {
       label: "System Administration",
       items: [
-        { id: "health", label: "System Health", icon: Activity, href: "/administration/health" },
-        { id: "users", label: "Accounts & Roles", icon: Users, href: "/administration/users" },
+        { id: "health", label: "Admin Control Center", icon: Activity, href: "/administration/health" },
+        { id: "users", label: "Users & Roles", icon: Users, href: "/administration/users" },
         {
           id: "profiles",
           label: "Runtime & Quotas",

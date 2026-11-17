@@ -43,7 +43,6 @@ import {
   contextualNavigation,
   existingRouteContext,
   globalNavigation,
-  lecturerWorkspaceNavigation,
   roleLabels,
   type AppRole,
   type NavigationGroup,
@@ -245,7 +244,6 @@ function ShellChrome({
   const context = contextName ?? (scope === "project" ? "Select a project" : "Select a workspace");
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [expandedWorkspaceMenus, setExpandedWorkspaceMenus] = useState<Record<string, boolean>>({});
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [detailsInline, setDetailsInline] = useState(false);
   const contentContainer = useRef<HTMLDivElement>(null);
@@ -286,7 +284,10 @@ function ShellChrome({
     globalNavigation[role].map((group) => ({
       ...group,
       items: group.items.flatMap((item) =>
-        item.id === "workspaces" && !live && !onPreviewNavigate && workspaces.length > 0
+        (item.id === "workspaces" || (role === "student" && item.id === "courses")) &&
+        !live &&
+        !onPreviewNavigate &&
+        workspaces.length > 0
           ? [
               item,
               ...workspaces.map((w) => ({
@@ -296,23 +297,10 @@ function ShellChrome({
                     ? `${w.code} · ${w.name}`
                     : w.name,
                 icon: BookOpen,
-                href: `/workspaces?workspace=${encodeURIComponent(w.id)}`,
-                ...(role === "lecturer"
-                  ? {
-                      children: (lecturerWorkspaceNavigation[0]?.items ?? []).flatMap(
-                        (destination) =>
-                          destination.href
-                            ? [
-                                {
-                                  ...destination,
-                                  id: `workspace:${w.id}:${destination.id}`,
-                                  href: `${destination.href}${destination.href.includes("?") ? "&" : "?"}workspace=${encodeURIComponent(w.id)}`,
-                                },
-                              ]
-                            : [],
-                      ),
-                    }
-                  : {}),
+                href:
+                  role === "student"
+                    ? `/roadmap?workspace=${encodeURIComponent(w.id)}`
+                    : `/workspace-overview?workspace=${encodeURIComponent(w.id)}`,
               })),
             ]
           : [item],
@@ -326,18 +314,12 @@ function ShellChrome({
     groups.find((group) => group.items.some((item) => item.id === activeId))?.label,
     scope === "project" && !live,
   );
-  const activeWorkspaceDestination =
-    pathname === "/workspaces" || pathname === "/workspace-overview"
-      ? params.get("view") === "course-authoring"
-        ? "course-authoring"
-        : "workspace-overview"
-      : pathname === "/submissions" && role === "lecturer"
-        ? "assignment-submissions"
-        : route.activeId;
   const activeWorkspaceNavId =
     selectedWorkspaceId && workspaces.some((w) => w.id === selectedWorkspaceId)
-      ? `workspace:${selectedWorkspaceId}:${activeWorkspaceDestination}`
-      : "workspaces";
+      ? `workspace:${selectedWorkspaceId}`
+      : role === "student"
+        ? "courses"
+        : "workspaces";
   const activeItem = [...globalGroups, ...groups]
     .flatMap((group) => group.items)
     .find((item) => item.id === activeId);
@@ -425,24 +407,16 @@ function ShellChrome({
             currentKind={scope === "global" ? "page" : "location"}
             activeId={
               scope === "global"
-                ? activeId === "workspaces"
+                ? activeId === "workspaces" || (role === "student" && activeId === "courses")
                   ? activeWorkspaceNavId
                   : activeId
-                : role === "student"
-                  ? "projects"
-                  : activeWorkspaceNavId
+                : selectedWorkspaceId && (role === "student" || role === "lecturer")
+                  ? activeWorkspaceNavId
+                  : activeId
             }
             preview={Boolean(onPreviewNavigate)}
             onNavigate={navigatePreview}
             label="Global navigation"
-            expandedGroups={{
-              Workspaces: Boolean(selectedWorkspaceId),
-              ...expandedWorkspaceMenus,
-            }}
-            onToggleGroup={(id, open) =>
-              setExpandedWorkspaceMenus((menus) => ({ ...menus, [id]: open }))
-            }
-            collapsibleGroupLabels={["Workspaces"]}
           />
           {groups.length > 0 && !(role === "lecturer" && scope === "workspace") && (
             <div className="mt-5 border-t pt-5">
@@ -559,21 +533,41 @@ function ShellChrome({
                 { label: title },
               ]}
             />
-            <div className="flex shrink-0 items-center gap-1">
+            <div className="flex shrink-0 items-center gap-1.5">
+              {!live && (
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    "hidden sm:inline-flex items-center gap-1 font-semibold border",
+                    role === "student" &&
+                      "border-teal-500/40 bg-teal-500/10 text-teal-700 dark:text-teal-300",
+                    role === "lecturer" &&
+                      "border-indigo-500/40 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300",
+                    role === "admin" &&
+                      "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+                  )}
+                >
+                  {role === "student"
+                    ? t("🎓 Student", "🎓 Sinh viên")
+                    : role === "lecturer"
+                      ? t("👨‍🏫 Lecturer", "👨‍🏫 Giảng viên")
+                      : t("🛡️ Admin", "🛡️ Quản trị viên")}
+                </Badge>
+              )}
               <LocaleSwitchButton />
               <AppearanceSelector />
               <NotificationBell />
               {!live && (
                 <>
-                  <div className="mx-2 h-6 border-l" />
+                  <div className="mx-1.5 h-6 border-l" />
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button
                         variant="ghost"
-                        className="h-11 gap-2 rounded-xl px-2"
+                        className="h-10 gap-2 rounded-xl px-2"
                         aria-label="Profile menu"
                       >
-                        <span className="flex size-8 items-center justify-center rounded-full border bg-secondary">
+                        <span className="relative flex size-8 items-center justify-center rounded-full border bg-secondary">
                           <span className="text-xs font-semibold text-primary">
                             {displayName
                               .split(" ")
@@ -583,6 +577,10 @@ function ShellChrome({
                               .join("")
                               .toUpperCase()}
                           </span>
+                          <span
+                            aria-hidden="true"
+                            className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border-2 border-background bg-emerald-500"
+                          />
                         </span>
                         <span className="hidden text-left lg:block">
                           <span className="block max-w-36 truncate text-xs font-medium">
@@ -626,6 +624,17 @@ function ShellChrome({
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="hidden sm:inline-flex gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    disabled={signOutPending || Boolean(onPreviewNavigate)}
+                    onClick={() => onSignOut?.()}
+                  >
+                    <LogOut className="size-3.5" aria-hidden="true" />
+                    <span>{signOutPending ? t("Signing out…", "Đang đăng xuất…") : t("Sign out", "Đăng xuất")}</span>
+                  </Button>
                 </>
               )}
             </div>
