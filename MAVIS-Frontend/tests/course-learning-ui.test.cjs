@@ -938,6 +938,8 @@ test("BFF allows Quiz draft, publish, versions and question bank paths", () => {
     `workspaces/${workspace}/course-labs/${lab}/theory-assets`,
     `workspaces/${workspace}/course-labs/${lab}/theory-assets/${question}`,
     `workspaces/${workspace}/course-labs/${lab}/theory-assets/generate`,
+    `workspaces/${workspace}/lab-prerequisites`,
+    `workspaces/${workspace}/course-labs/${lab}/prerequisites`,
     `workspaces/${workspace}/quiz-bank/questions`,
     `workspaces/${workspace}/quiz-bank/questions/${question}`,
   ]) {
@@ -973,6 +975,10 @@ test("Lab Library is the class-facing lab store and Quiz can be generated from L
   assert.ok(theory.includes("/theory-assets"));
   assert.ok(theory.includes("AI draft from evidence"));
   assert.ok(theory.includes("Save to library & attach"));
+  const prerequisites = read("src/features/assignments/lab-prerequisites-dialog.tsx");
+  assert.ok(assignments.includes("LabPrerequisitesDialog"));
+  assert.ok(prerequisites.includes("lab-prerequisites"));
+  assert.ok(prerequisites.includes("/prerequisites"));
 });
 
 test("Theory Library is a standalone workspace screen with editing and course publishing", () => {

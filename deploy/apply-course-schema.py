@@ -85,6 +85,23 @@ SELECT CASE WHEN bool_and(present) THEN 'ready'
             WHEN bool_or(present) THEN 'partial'
             ELSE 'missing' END FROM expected;
 """),
+    "V40__Lab_Prerequisites.sql": (40, """
+WITH expected(present) AS (VALUES
+    (to_regclass('lab_prerequisites') IS NOT NULL),
+    (EXISTS (SELECT FROM information_schema.columns WHERE table_schema = current_schema()
+             AND table_name = 'lab_prerequisites' AND column_name = 'assignment_id'
+             AND data_type = 'uuid' AND is_nullable = 'NO')),
+    (EXISTS (SELECT FROM information_schema.columns WHERE table_schema = current_schema()
+             AND table_name = 'lab_prerequisites' AND column_name = 'prerequisite_assignment_id'
+             AND data_type = 'uuid' AND is_nullable = 'NO')),
+    (EXISTS (SELECT FROM pg_constraint
+             WHERE conrelid = to_regclass('lab_prerequisites')
+             AND conname = 'chk_lab_prerequisite_not_self' AND contype = 'c'))
+)
+SELECT CASE WHEN bool_and(present) THEN 'ready'
+            WHEN bool_or(present) THEN 'partial'
+            ELSE 'missing' END FROM expected;
+"""),
     "V39__Theory_Library.sql": (39, """
 WITH expected(present) AS (VALUES
     (to_regclass('theory_assets') IS NOT NULL),

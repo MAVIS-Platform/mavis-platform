@@ -33,6 +33,8 @@ import { CourseWorkspaceShell } from "@/features/courses/course-workspace-shell"
 import { AssignmentInstructions } from "./assignment-instructions";
 import { AssignmentSourceDetails } from "./source-picker";
 import { ImportLabButton } from "./lab-transfer";
+import { LabPrerequisitesDialog } from "./lab-prerequisites-dialog";
+import type { Assignment } from "./requirements";
 
 function formatDeadline(value: string | undefined) {
   if (!value || value === "No deadline") return "No deadline";
@@ -64,6 +66,7 @@ function LecturerAssignments() {
   const [showTools, setShowTools] = useState(false);
   const [filter, setFilter] = useState<LibraryFilter>("all");
   const [search, setSearch] = useState("");
+  const [prerequisiteLab, setPrerequisiteLab] = useState<Assignment | null>(null);
   const labs = query.data ?? [];
 
   const rows = useMemo(() => {
@@ -276,6 +279,15 @@ function LecturerAssignments() {
                         {t("Edit in Lab Creation", "Chỉnh sửa & Cấu hình")}
                       </Link>
                     </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setPrerequisiteLab(lab)}
+                    >
+                      <GitBranch className="mr-1 size-3.5" aria-hidden="true" />
+                      {t("Prerequisites", "Điều kiện")}
+                    </Button>
                     {inClass ? (
                       <Button asChild size="sm" variant="outline">
                         <Link href={previewHref}>
@@ -330,6 +342,15 @@ function LecturerAssignments() {
         )}
         {remove.error && <ErrorState error={remove.error} />}
       </RequestState>
+      <LabPrerequisitesDialog
+        workspaceId={workspaceId}
+        lab={prerequisiteLab}
+        labs={labs}
+        open={Boolean(prerequisiteLab)}
+        onOpenChange={(open) => {
+          if (!open) setPrerequisiteLab(null);
+        }}
+      />
     </div>
   );
 

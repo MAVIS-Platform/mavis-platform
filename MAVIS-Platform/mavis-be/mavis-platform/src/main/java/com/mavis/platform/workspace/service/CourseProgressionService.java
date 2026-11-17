@@ -49,12 +49,24 @@ public class CourseProgressionService {
                 WHERE w.status = 'ACTIVE' AND m.member_role = 'STUDENT'
                 AND u.status = 'ACTIVE' AND student_role.code = 'STUDENT'
                 AND NOT EXISTS (
-                    SELECT 1 FROM assignments prior
-                    WHERE prior.workspace_id = w.id AND prior.lab_order < a.lab_order
+                    SELECT 1 FROM lab_prerequisites lp
+                    WHERE lp.assignment_id = a.id
                     AND NOT EXISTS (
                         SELECT 1 FROM course_lab_results completed
-                        WHERE completed.assignment_id = prior.id AND completed.student_id = s.submitted_by
-                        AND completed.passed
+                        WHERE completed.assignment_id = lp.prerequisite_assignment_id
+                        AND completed.student_id = s.submitted_by AND completed.passed
+                    )
+                )
+                AND (
+                    EXISTS (SELECT 1 FROM lab_prerequisites configured WHERE configured.assignment_id = a.id)
+                    OR NOT EXISTS (
+                        SELECT 1 FROM assignments prior
+                        WHERE prior.workspace_id = w.id AND prior.lab_order < a.lab_order
+                        AND NOT EXISTS (
+                            SELECT 1 FROM course_lab_results completed
+                            WHERE completed.assignment_id = prior.id AND completed.student_id = s.submitted_by
+                            AND completed.passed
+                        )
                     )
                 )
                 AND s.id = ? AND r.revision = ? AND r.status = 'GRADED' AND btrim(r.summary) <> ''

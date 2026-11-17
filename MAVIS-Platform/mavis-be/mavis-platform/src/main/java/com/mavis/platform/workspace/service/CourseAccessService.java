@@ -25,7 +25,9 @@ import java.security.SecureRandom;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -255,15 +257,30 @@ public class CourseAccessService {
         boolean student = CourseLabPolicy.isStudent(actor);
         var passed = student ? labs.passedAssignments(workspaceId, actor.getId()) : Set.<UUID>of();
         var assignmentsInOrder = assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId);
+        Map<UUID, List<UUID>> explicitPrerequisites = new HashMap<>();
+        jdbc.query("""
+                SELECT lp.assignment_id, lp.prerequisite_assignment_id
+                FROM lab_prerequisites lp
+                JOIN assignments a ON a.id = lp.assignment_id
+                WHERE a.workspace_id = ?
+                """, (rs, row) -> new Object[]{rs.getObject(1, UUID.class), rs.getObject(2, UUID.class)},
+                workspaceId)
+                .forEach(row -> explicitPrerequisites
+                        .computeIfAbsent((UUID) row[0], key -> new ArrayList<>())
+                        .add((UUID) row[1]));
         List<Lab> result = new ArrayList<>();
-        boolean nextOpen = "ACTIVE".equals(workspace.getStatus());
-        for (var assignment : assignmentsInOrder) {
+        for (int index = 0; index < assignmentsInOrder.size(); index++) {
+            var assignment = assignmentsInOrder.get(index);
             boolean completed = passed.contains(assignment.getId());
-            String state = !student ? "UNLOCKED" : completed ? "PASSED" : nextOpen ? "UNLOCKED" : "LOCKED";
+            List<UUID> required = explicitPrerequisites.get(assignment.getId());
+            boolean unlocked = required != null && !required.isEmpty()
+                    ? required.stream().allMatch(passed::contains)
+                    : index == 0 || passed.contains(assignmentsInOrder.get(index - 1).getId());
+            String state = !student ? "UNLOCKED" : completed ? "PASSED"
+                    : ("ACTIVE".equals(workspace.getStatus()) && unlocked) ? "UNLOCKED" : "LOCKED";
             String reason = "LOCKED".equals(state)
                     ? "ACTIVE".equals(workspace.getStatus()) ? "PREREQUISITE" : "COURSE_ARCHIVED" : null;
             result.add(new Lab(assignment.getId(), assignment.getLabOrder(), assignment.getTitle(), state, reason));
-            nextOpen = nextOpen && completed;
         }
         if (!student) return new Roadmap(true, null, result);
         boolean started = !passed.isEmpty() || Boolean.TRUE.equals(jdbc.queryForObject("""
