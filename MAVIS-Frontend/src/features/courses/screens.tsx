@@ -56,6 +56,13 @@ import { ArchitectureGraph, ElementDetailsPanel } from "@/features/architecture/
 import { DiagramPreview } from "@/features/architecture/diagram-preview";
 import { LiveStudioWorkbench } from "@/features/runtime/live-studio-workbench";
 import type { ArchitecturalModel } from "@/types/domain";
+
+function shortDate(value?: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(date);
+}
 import { CourseBuilder } from "./course-builder";
 import { CourseOutline } from "./course-outline";
 import { CourseQuiz, useCourseQuiz } from "./course-quiz";
@@ -815,6 +822,36 @@ function StudentCourseDetail({
       sub.workspaceId === workspaceId ||
       (!sub.workspaceId && classAssignmentIds.has(sub.assignmentId)),
   );
+  const upcomingDeadlines = useMemo(() => {
+    const assignmentsById = new Map((assignmentsQuery.data ?? []).map((item) => [item.id, item]));
+    return labs
+      .map((lab) => ({ lab, dueAt: assignmentsById.get(lab.assignmentId)?.dueAt }))
+      .filter(
+        (row): row is { lab: (typeof labs)[number]; dueAt: string } =>
+          typeof row.dueAt === "string" && row.dueAt !== "No deadline",
+      )
+      .sort((left, right) => new Date(left.dueAt).getTime() - new Date(right.dueAt).getTime())
+      .slice(0, 3);
+  }, [labs, assignmentsQuery.data]);
+  const latestResult = useMemo(() => {
+    const classIds = new Set((assignmentsQuery.data ?? []).map((item) => item.id));
+    return [...(submissionsQuery.data ?? [])]
+      .filter(
+        (sub) =>
+          sub.workspaceId === workspaceId ||
+          (!sub.workspaceId && classIds.has(sub.assignmentId)),
+      )
+      .filter((sub) => sub.reviewScore != null || sub.labOutcome || sub.reviewStatus)
+      .sort(
+        (left, right) =>
+          new Date(right.gradedAt ?? right.submittedAt).getTime() -
+          new Date(left.gradedAt ?? left.submittedAt).getTime(),
+      )[0];
+  }, [submissionsQuery.data, assignmentsQuery.data, workspaceId]);
+  const lecturerNames = (workspace.members ?? [])
+    .filter((member) => member.role.toUpperCase() === "LECTURER")
+    .map((member) => member.name);
+  const nextLab = labs.find((lab) => lab.state === "UNLOCKED");
   const stepDescriptions: Array<{ step: 1 | 2 | 3 | 4; label: string; hint: string }> = [
     {
       step: 1,
@@ -936,6 +973,8 @@ function StudentCourseDetail({
         )}
       </div>
 
+      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_18rem]">
+        <div className="min-w-0 space-y-6">
       {activeTab === "player" && (
         <div className="space-y-6">
           <div className="grid gap-6 lg:grid-cols-[340px_minmax(0,1fr)] lg:items-start">
@@ -1253,6 +1292,106 @@ function StudentCourseDetail({
           <CurriculumLibrary />
         </section>
       )}
+        </div>
+
+        <aside className="space-y-3 xl:sticky xl:top-6" aria-label={t("Class summary", "Tóm tắt lớp")}>
+          <section className="rounded-xl border bg-card p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              {t("Progress", "Tiến độ")}
+            </p>
+            <div className="mt-2 flex items-baseline justify-between gap-2">
+              <span className="text-2xl font-semibold tabular-nums">
+                {passedCount}
+                <span className="text-sm font-normal text-muted-foreground">/{labs.length}</span>
+              </span>
+              <span className="text-xs tabular-nums text-muted-foreground">{progressPercent}%</span>
+            </div>
+            <div
+              role="progressbar"
+              aria-label={t("Labs passed", "Lab đã đạt")}
+              aria-valuemin={0}
+              aria-valuemax={labs.length || 1}
+              aria-valuenow={passedCount}
+              className="mt-2 h-1.5 overflow-hidden rounded bg-muted"
+            >
+              <div
+                className="h-full rounded bg-emerald-500"
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
+            <p className="mt-3 text-sm">
+              {nextLab ? (
+                <>
+                  {t("Next", "Tiếp theo")}: <span className="font-medium">{nextLab.title}</span>
+                </>
+              ) : labs.length ? (
+                t("All Labs passed.", "Đã đạt tất cả Lab.")
+              ) : (
+                t("No Labs published yet.", "Chưa có Lab nào được công bố.")
+              )}
+            </p>
+          </section>
+
+          <section className="rounded-xl border bg-card p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              {t("Upcoming deadlines", "Hạn nộp gần")}
+            </p>
+            {upcomingDeadlines.length === 0 ? (
+              <p className="mt-2 text-xs text-muted-foreground">
+                {t("No published deadline.", "Chưa có hạn nộp.")}
+              </p>
+            ) : (
+              <ul className="mt-1 divide-y text-sm">
+                {upcomingDeadlines.map(({ lab, dueAt }) => (
+                  <li key={lab.assignmentId} className="flex items-baseline justify-between gap-3 py-2">
+                    <span className="min-w-0 truncate">{lab.title}</span>
+                    <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                      {shortDate(dueAt)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className="rounded-xl border bg-card p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              {t("Latest result", "Kết quả mới nhất")}
+            </p>
+            {latestResult ? (
+              <div className="mt-2 space-y-1 text-sm">
+                <p className="truncate font-medium">
+                  {latestResult.assignmentTitle || t("Lab submission", "Bài nộp Lab")}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {latestResult.reviewScore != null ? `${latestResult.reviewScore}/100 · ` : ""}
+                  {latestResult.labOutcome || latestResult.reviewStatus || t("Submitted", "Đã nộp")}
+                  {latestResult.gradedAt ? ` · ${shortDate(latestResult.gradedAt)}` : ""}
+                </p>
+              </div>
+            ) : (
+              <p className="mt-2 text-xs text-muted-foreground">
+                {t("No graded submission yet.", "Chưa có bài được chấm.")}
+              </p>
+            )}
+            <Link
+              className="mt-2 inline-block text-xs text-primary hover:underline"
+              href={`/submissions?workspace=${encodeURIComponent(workspaceId)}`}
+            >
+              {t("Open submissions & grades", "Mở bài nộp & điểm")}
+            </Link>
+          </section>
+
+          <section className="rounded-xl border bg-card p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              {t("Teaching team", "Giảng viên")}
+            </p>
+            <p className="mt-2 text-sm">
+              {lecturerNames.length ? lecturerNames.join(", ") : t("Not listed", "Chưa có thông tin")}
+            </p>
+          </section>
+        </aside>
+      </div>
     </div>
   );
 }
