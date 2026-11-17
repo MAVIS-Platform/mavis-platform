@@ -358,6 +358,13 @@ public class CourseSetupService {
                 enrolled == null ? 0 : enrolled);
     }
 
+    private static boolean looksLikeConnectionController(String name) {
+        for (String token : name.toLowerCase(java.util.Locale.ROOT).split("[-_.]")) {
+            if (Set.of("route", "router", "gateway", "proxy", "edge", "ingress").contains(token)) return true;
+        }
+        return false;
+    }
+
     private static List<String> objectKeys(JsonNode node) {
         if (node == null || !node.isObject()) return List.of();
         List<String> keys = new ArrayList<>();
@@ -405,8 +412,9 @@ public class CourseSetupService {
 
         Map<UUID, String> elementNameById = new HashMap<>();
         Map<String, String> runtimeByName = new HashMap<>();
+        Set<String> controllerNames = new LinkedHashSet<>();
         if (!containerElements.isEmpty()) {
-            Set<String> seenServices = new LinkedHashSet<>();
+            Set<String> names = new LinkedHashSet<>();
             for (ModelElement el : containerElements) {
                 if (el.getName() == null || el.getName().isBlank()) continue;
                 String svcName = el.getName().trim();
@@ -414,44 +422,77 @@ public class CourseSetupService {
                 String stack = el.getLanguageStack() == null ? "" : el.getLanguageStack().toLowerCase();
                 runtimeByName.put(svcName, stack.contains(".net") || stack.contains("dotnet") || stack.contains("c#")
                         ? "dotnet8-linux-x64-glibc" : "java");
-                if (seenServices.add(svcName)) {
-                    blocks.addObject()
-                            .put("service", svcName)
-                            .put("label", svcName)
-                            .put("canScale", true)
-                            .put("initiallyStopped", false);
-                    if (el.getId() != null) {
-                        serviceMappings.put(svcName, el.getId());
-                    }
-                }
+                names.add(svcName);
             }
+
+            // A prepared connection controller must be a real service that is not itself a
+            // block. Collapse routing/gateway services that sit between two blocks into the
+            // connection they carry instead of emitting an invalid self-controlled edge.
+            List<String[]> edges = new ArrayList<>();
             if (refModel != null && relationships != null) {
                 for (ModelRelationship rel : relationships.findByModelVersionId(refModel.getId())) {
                     if (rel.getSourceElement() == null || rel.getTargetElement() == null) continue;
                     String fromName = elementNameById.get(rel.getSourceElement().getId());
                     String toName = elementNameById.get(rel.getTargetElement().getId());
                     if (fromName != null && toName != null && !fromName.equals(toName)) {
+                        edges.add(new String[] { fromName, toName,
+                                rel.getRelationType() != null ? rel.getRelationType() : "HTTP" });
+                    }
+                }
+            }
+            for (String name : names) {
+                if (!looksLikeConnectionController(name)) continue;
+                boolean inbound = edges.stream().anyMatch(edge -> edge[1].equals(name) && !edge[0].equals(name));
+                boolean outbound = edges.stream().anyMatch(edge -> edge[0].equals(name) && !edge[1].equals(name));
+                if (inbound && outbound) controllerNames.add(name);
+            }
+
+            Set<String> seenServices = new LinkedHashSet<>();
+            for (ModelElement el : containerElements) {
+                if (el.getName() == null || el.getName().isBlank()) continue;
+                String svcName = el.getName().trim();
+                if (!seenServices.add(svcName)) continue;
+                if (el.getId() != null) serviceMappings.put(svcName, el.getId());
+                if (controllerNames.contains(svcName)) continue;
+                blocks.addObject()
+                        .put("service", svcName)
+                        .put("label", svcName)
+                        .put("canScale", true)
+                        .put("initiallyStopped", false);
+            }
+
+            Set<String> seenConnections = new LinkedHashSet<>();
+            for (String controller : controllerNames) {
+                for (String[] inbound : edges) {
+                    if (!inbound[1].equals(controller)) continue;
+                    for (String[] outbound : edges) {
+                        if (!outbound[0].equals(controller)) continue;
+                        String from = inbound[0];
+                        String to = outbound[1];
+                        if (from.equals(to) || controllerNames.contains(from) || controllerNames.contains(to)) continue;
+                        if (!seenConnections.add(from + "->" + to + "@" + controller)) continue;
                         connections.addObject()
-                                .put("from", fromName)
-                                .put("to", toName)
-                                .put("controllerService", fromName)
-                                .put("protocol", rel.getRelationType() != null ? rel.getRelationType() : "HTTP")
+                                .put("from", from)
+                                .put("to", to)
+                                .put("controllerService", controller)
+                                .put("protocol", outbound[2])
                                 .put("initiallyStopped", false);
                     }
                 }
             }
         } else {
-            for (String svc : List.of("api-gateway", "order-service", "payment-service", "inventory-service")) {
+            for (String svc : List.of("order-service", "payment-service", "inventory-service")) {
                 blocks.addObject()
                         .put("service", svc)
                         .put("label", svc)
                         .put("canScale", true)
                         .put("initiallyStopped", false);
             }
-            connections.addObject().put("from", "api-gateway").put("to", "order-service")
-                    .put("controllerService", "api-gateway").put("protocol", "HTTP").put("initiallyStopped", false);
+            controllerNames.add("api-gateway");
             connections.addObject().put("from", "order-service").put("to", "payment-service")
-                    .put("controllerService", "order-service").put("protocol", "FEIGN_CALL").put("initiallyStopped", false);
+                    .put("controllerService", "api-gateway").put("protocol", "FEIGN_CALL").put("initiallyStopped", false);
+            connections.addObject().put("from", "order-service").put("to", "inventory-service")
+                    .put("controllerService", "api-gateway").put("protocol", "FEIGN_CALL").put("initiallyStopped", false);
         }
 
         if (refModel != null && refModel.getProject() != null && refModel.getSourceSnapshot() != null) {
@@ -460,14 +501,19 @@ public class CourseSetupService {
             ObjectNode profile = json.createObjectNode();
             ObjectNode apps = profile.putObject("applications");
             int port = 8080;
+            Set<String> applicationNames = new LinkedHashSet<>();
             for (JsonNode b : blocks) {
                 String svc = b.path("service").asText("");
-                if (!svc.isBlank()) {
-                    apps.putObject(svc)
-                            .put("runtime", runtimeByName.getOrDefault(svc, "java"))
-                            .put("containerPort", port++)
-                            .put("readinessPath", "/health");
-                }
+                if (!svc.isBlank()) applicationNames.add(svc);
+            }
+            // Connection controllers are real services too: they must be started and
+            // mapped even though they are not draggable blocks.
+            applicationNames.addAll(controllerNames);
+            for (String svc : applicationNames) {
+                apps.putObject(svc)
+                        .put("runtime", runtimeByName.getOrDefault(svc, "java"))
+                        .put("containerPort", port++)
+                        .put("readinessPath", "/health");
             }
             ObjectNode mappingsNode = profile.putObject("serviceMappings");
             serviceMappings.forEach((k, v) -> mappingsNode.put(k, v.toString()));

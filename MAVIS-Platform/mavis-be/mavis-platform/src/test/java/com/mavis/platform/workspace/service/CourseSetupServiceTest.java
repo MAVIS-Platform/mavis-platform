@@ -3,12 +3,16 @@ package com.mavis.platform.workspace.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.mavis.common.entity.Assignment;
+import com.mavis.common.entity.ModelElement;
+import com.mavis.common.entity.ModelRelationship;
 import com.mavis.common.entity.ModelVersion;
 import com.mavis.common.entity.Project;
 import com.mavis.common.entity.RuntimeConfiguration;
 import com.mavis.common.entity.SourceSnapshot;
 import com.mavis.common.entity.Workspace;
 import com.mavis.common.repository.AssignmentRepository;
+import com.mavis.common.repository.ModelElementRepository;
+import com.mavis.common.repository.ModelRelationshipRepository;
 import com.mavis.common.repository.ModelVersionRepository;
 import com.mavis.common.repository.ProjectRepository;
 import com.mavis.common.repository.RuntimeConfigurationRepository;
@@ -212,12 +216,42 @@ class CourseSetupServiceTest {
         var result = setup.autoConfigureStudio(workspaceId, assignmentId);
 
         assertTrue(result.studioFrozen());
-        assertEquals(4, result.blockCount());
+        assertEquals(3, result.blockCount());
         assertEquals(2, result.connectionCount());
         assertEquals(5, result.topologyRevision());
         assertNotNull(lab.getStudioTopologySnapshot());
         assertTrue(Boolean.TRUE.equals(lab.getRequireRuntimeTrace()));
         verify(assignments).saveAndFlush(lab);
+    }
+
+    @Test void autoConfigureCollapsesRoutingServiceIntoAConnectionController() {
+        var elements = mock(ModelElementRepository.class);
+        var relationships = mock(ModelRelationshipRepository.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(setup, "elements", elements);
+        org.springframework.test.util.ReflectionTestUtils.setField(setup, "relationships", relationships);
+        ModelElement orders = ModelElement.builder().id(UUID.randomUUID()).modelVersion(model)
+                .elementType("SERVICE_CONTAINER").name("orders").languageStack("dotnet8").build();
+        ModelElement payment = ModelElement.builder().id(UUID.randomUUID()).modelVersion(model)
+                .elementType("SERVICE_CONTAINER").name("payment").languageStack("dotnet8").build();
+        ModelElement route = ModelElement.builder().id(UUID.randomUUID()).modelVersion(model)
+                .elementType("SERVICE_CONTAINER").name("orders-payment-route").languageStack("dotnet8").build();
+        when(elements.findByModelVersionId(modelId)).thenReturn(List.of(orders, payment, route));
+        when(relationships.findByModelVersionId(modelId)).thenReturn(List.of(
+                ModelRelationship.builder().sourceElement(orders).targetElement(route).relationType("HTTP").build(),
+                ModelRelationship.builder().sourceElement(route).targetElement(payment).relationType("HTTP").build()));
+        when(assignments.findLockedById(assignmentId)).thenReturn(Optional.of(lab));
+        when(configurations.findById(projectId)).thenReturn(Optional.empty());
+        when(assignments.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(jdbc.queryForObject(contains("runtime_scenarios"), eq(Integer.class), eq(projectId))).thenReturn(0);
+
+        var result = setup.autoConfigureStudio(workspaceId, assignmentId);
+
+        assertEquals(2, result.blockCount());
+        assertEquals(1, result.connectionCount());
+        var connection = lab.getStudioTopologySnapshot().path("connections").get(0);
+        assertEquals("orders", connection.path("from").asText());
+        assertEquals("payment", connection.path("to").asText());
+        assertEquals("orders-payment-route", connection.path("controllerService").asText());
     }
 
     private RuntimeConfiguration configuration(boolean withTopology) {
