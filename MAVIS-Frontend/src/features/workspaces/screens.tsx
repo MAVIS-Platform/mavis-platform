@@ -15,6 +15,7 @@ import {
   SeedCuratedCourseLabs,
   useCourseAuthoring,
   useCourseRoadmap,
+  useWorkspaceGradebook,
 } from "./course-access";
 import { ReferenceManagement } from "./reference-manage";
 import { CourseWorkspaceShell } from "@/features/courses/course-workspace-shell";
@@ -226,6 +227,11 @@ export function WorkspaceMembers() {
   const [roleFilter, setRoleFilter] = useState("ALL");
   const workspace = query.data?.find((w) => w.id === workspaceId);
   const canManage = workspace?.myRole === "LECTURER" || session.data?.user?.role === "admin";
+  const gradebook = useWorkspaceGradebook(workspaceId ?? "", Boolean(workspaceId && canManage));
+  const studentStatsById = new Map(
+    (gradebook.data?.students ?? []).map((entry) => [entry.studentId, entry]),
+  );
+  const totalLabs = gradebook.data?.labs.length ?? 0;
   const filteredMembers = (workspace?.members ?? []).filter((m) => {
     const matchesSearch =
       !search.trim() ||
@@ -281,6 +287,65 @@ export function WorkspaceMembers() {
               columns={[
                 { key: "name", label: t("Name", "Họ tên"), render: (m) => m.name },
                 { key: "role", label: t("Role", "Vai trò"), render: (m) => m.role },
+                {
+                  key: "progress",
+                  label: t("Learning Progress", "Tiến Độ Học Tập"),
+                  render: (m) => {
+                    if (m.role.toUpperCase() !== "STUDENT") {
+                      return <span className="text-xs text-muted-foreground">—</span>;
+                    }
+                    const stats = studentStatsById.get(m.id);
+                    const passed = stats?.passedLabs ?? 0;
+                    const pct = totalLabs > 0 ? Math.round((passed / totalLabs) * 100) : 0;
+                    return (
+                      <div className="min-w-36 space-y-1">
+                        <div className="flex justify-between text-[11px] font-medium">
+                          <span className="text-emerald-700 dark:text-emerald-400">
+                            {passed}/{totalLabs} Labs
+                          </span>
+                          <span className="text-muted-foreground">{pct}%</span>
+                        </div>
+                        <div
+                          role="progressbar"
+                          aria-label={t("Student Lab progress", "Tiến độ Lab sinh viên")}
+                          aria-valuemin={0}
+                          aria-valuemax={totalLabs || 1}
+                          aria-valuenow={passed}
+                          className="h-1.5 w-full overflow-hidden rounded-full bg-muted"
+                        >
+                          <div
+                            className="h-full rounded-full bg-emerald-500 transition-all"
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  },
+                },
+                {
+                  key: "avgScore",
+                  label: t("Average Score", "Điểm Trung Bình"),
+                  render: (m) => {
+                    if (m.role.toUpperCase() !== "STUDENT") {
+                      return <span className="text-xs text-muted-foreground">—</span>;
+                    }
+                    const stats = studentStatsById.get(m.id);
+                    if (stats?.averageScore == null) {
+                      return <span className="text-xs text-muted-foreground">—</span>;
+                    }
+                    return (
+                      <span
+                        className={
+                          stats.averageScore > 50
+                            ? "font-semibold text-emerald-700 dark:text-emerald-400"
+                            : "font-semibold text-amber-700 dark:text-amber-400"
+                        }
+                      >
+                        {stats.averageScore}/100
+                      </span>
+                    );
+                  },
+                },
                 ...(canManage
                   ? [
                       {
