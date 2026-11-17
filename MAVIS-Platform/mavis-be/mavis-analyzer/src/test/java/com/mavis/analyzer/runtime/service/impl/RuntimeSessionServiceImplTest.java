@@ -731,6 +731,11 @@ class RuntimeSessionServiceImplTest {
                 .put("containerPort", 8080)
                 .put("readinessPath", "/")
                 .put("allowClientErrorReadiness", true);
+        ObjectNode topology = profile.putObject("studioTopology").put("version", 1);
+        topology.putArray("blocks").addObject()
+                .put("service", "order-service").put("label", "Order service")
+                .put("canScale", true).put("initiallyStopped", true);
+        topology.putArray("connections");
 
         ObjectNode scenario = scenarioConfig.putObject("scenario");
         ArrayNode steps = scenario.putArray("steps");
@@ -771,6 +776,8 @@ class RuntimeSessionServiceImplTest {
         assertThat(exportedStep.path("bodyReference").asText()).isEqualTo("ORDER_SERVICE_BODY_1");
         assertThat(exportedStep.has("rationale")).isFalse();
         assertThat(exported.getProfile().has("serviceImageOverrides")).isFalse();
+        assertThat(exported.getProfile().path("studioTopology").path("blocks").get(0)
+                .path("initiallyStopped").asBoolean()).isTrue();
     }
 
     @Test

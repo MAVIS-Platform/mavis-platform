@@ -60,7 +60,10 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
     // MAVIS.Runner reads the run definition with UnmappedMemberHandling.Disallow; export only the members its records declare.
     private static final List<String> RUNNER_PROFILE_FIELDS = List.of("collectorImage", "instrumentationVolume", "applications",
             "memoryMiB", "cpus", "timeoutSeconds", "approvedForLocalPoc", "scenarioRunnerImage",
-            "dotnetInstrumentationVersion", "javaInstrumentationVersion", "environmentBindings");
+            "dotnetInstrumentationVersion", "javaInstrumentationVersion", "environmentBindings",
+            // Required by the Runner to apply initially stopped blocks/connections and to
+            // validate interactive Studio actions against the prepared topology.
+            "studioTopology");
     private static final List<String> RUNNER_STEP_FIELDS = List.of("id", "service", "method", "path", "expectedStatus", "jsonBody",
             "headers", "secretHeaders", "extract", "environmentVariables", "bodyReference", "envHeaders", "allowClientError");
     private static final Pattern EXCERPT_MAPPING_PATTERN = Pattern.compile("@(GetMapping|PostMapping|PutMapping|DeleteMapping|PatchMapping|RequestMapping)\\s*(?:\\(\\s*\"([^\"]*)\"\\s*\\))?");
