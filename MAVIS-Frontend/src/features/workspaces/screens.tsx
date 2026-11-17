@@ -89,34 +89,34 @@ export function Workspaces() {
   return (
     <div className={canCreate ? "space-y-8 rounded-lg bg-background p-6 md:p-8" : "space-y-6"}>
       {canCreate ? (
-        <div className="space-y-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <p className="max-w-2xl text-sm text-muted-foreground">
-              {t(
-                "Open a class to organize modules, Labs, students and grading.",
-                "Mở một lớp để tổ chức chương, Lab, sinh viên và chấm điểm.",
-              )}
-            </p>
-            <Button
-              type="button"
-              variant={showCreate ? "outline" : "default"}
-              onClick={() => setShowCreate((open) => !open)}
-            >
-              <Plus className="mr-1 size-4" aria-hidden="true" />
-              {showCreate ? t("Close", "Đóng") : t("Create class", "Tạo lớp")}
-            </Button>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-5 rounded-lg border border-blue-200 bg-blue-50/80 px-6 py-6 dark:border-blue-900 dark:bg-blue-950/30">
-            <span className="grid size-12 shrink-0 place-items-center rounded-full bg-[#0056d2] text-white"><ClipboardCheck className="size-6" aria-hidden="true" /></span>
-            <div className="min-w-0 flex-1">
-              <p className="text-lg font-semibold">{submissions.isSuccess ? pendingReviews : "—"} {t("submissions are waiting for your review", "bài nộp đang chờ bạn chấm")}</p>
-              <p className="mt-1 text-sm text-muted-foreground">{(query.data ?? []).filter((w) => pendingByWorkspace.has(w.id)).map((w) => w.name + " · " + pendingByWorkspace.get(w.id) + " " + t("submission(s)", "bài nộp")).join(" · ") || t("Your classes are up to date.", "Các lớp đã được cập nhật.")}</p>
+        <div className="space-y-7">
+          <header className="relative isolate overflow-hidden rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-50 via-background to-indigo-50 px-6 py-8 dark:border-blue-900 dark:from-blue-950/40 dark:to-indigo-950/30 md:px-8">
+            <div className="pointer-events-none absolute -right-12 -top-24 size-72 rounded-full border-[40px] border-blue-500/5" aria-hidden="true" />
+            <div className="relative flex flex-wrap items-center justify-between gap-6">
+              <div className="max-w-2xl">
+                <p className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-blue-600 dark:text-blue-400"><span className="h-1 w-6 rounded-full bg-blue-600" />{t("Your teaching space", "Không gian giảng dạy")}</p>
+                <h2 className="text-3xl font-semibold tracking-tight md:text-4xl">{t("A great class starts here.", "Khởi đầu cho một lớp học tuyệt vời.")}</h2>
+                <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">{t("Open a class to organize modules, Labs, students and grading.", "Mở một lớp để tổ chức chương, Lab, sinh viên và chấm điểm.")}</p>
+              </div>
+              <Button type="button" className="h-12 rounded-xl bg-[#0056d2] px-6 text-white shadow-lg shadow-blue-600/15 hover:bg-[#0046ad]" onClick={() => setShowCreate((open) => !open)}>
+                <Plus className="mr-2 size-4" aria-hidden="true" />{showCreate ? t("Close", "Đóng") : t("Create class", "Tạo lớp")}
+              </Button>
             </div>
-            <Button asChild variant="outline" className="border-[#0056d2] bg-background text-[#0056d2]"><Link href="/submissions">{t("Review submissions", "Chấm bài nộp")}</Link></Button>
-            <div className="flex gap-8 border-l border-blue-200 pl-8">
-              <div><p className="text-3xl font-semibold text-[#0056d2]">{activeCount}</p><p className="text-xs text-muted-foreground">{t("Active classes", "Lớp đang hoạt động")}</p></div>
-              <div><p className="text-3xl font-semibold text-[#0056d2]">{totalStudents}</p><p className="text-xs text-muted-foreground">{t("Students", "Sinh viên")}</p></div>
+          </header>
+
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto]">
+            <div className="flex flex-wrap items-center gap-4 rounded-xl border bg-card p-5 shadow-sm">
+              <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-950/40"><ClipboardCheck className="size-6" aria-hidden="true" /></span>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{t("Needs your attention", "Cần bạn xem xét")}</p>
+                <p className="mt-1 text-lg font-semibold">{submissions.isSuccess ? pendingReviews : "—"} {t("submissions to review", "bài nộp chờ chấm")}</p>
+                <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{(query.data ?? []).filter((w) => pendingByWorkspace.has(w.id)).map((w) => w.name + " · " + pendingByWorkspace.get(w.id) + " " + t("submission(s)", "bài nộp")).join(" · ") || t("Your classes are up to date.", "Các lớp đã được cập nhật.")}</p>
+              </div>
+              <Button asChild variant="outline" className="rounded-lg border-blue-200 text-[#0056d2] hover:bg-blue-50"><Link href="/submissions">{t("Review submissions", "Chấm bài nộp")}<span className="ml-2" aria-hidden="true">→</span></Link></Button>
+            </div>
+            <div className="grid grid-cols-2 divide-x rounded-xl border bg-card p-5 shadow-sm lg:min-w-72">
+              <div className="pr-6"><BookOpen className="mb-3 size-4 text-blue-600" aria-hidden="true" /><p className="text-3xl font-semibold tracking-tight">{activeCount}</p><p className="mt-1 text-xs text-muted-foreground">{t("Active classes", "Lớp đang hoạt động")}</p></div>
+              <div className="pl-6"><Users className="mb-3 size-4 text-teal-600" aria-hidden="true" /><p className="text-3xl font-semibold tracking-tight">{totalStudents}</p><p className="mt-1 text-xs text-muted-foreground">{t("Students", "Sinh viên")}</p></div>
             </div>
           </div>
 
