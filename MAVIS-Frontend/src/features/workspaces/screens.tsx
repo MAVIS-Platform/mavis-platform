@@ -1,7 +1,9 @@
 "use client";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { Search } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { useApiMutation, useApiQuery, useSession, useSelection } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
 import { ErrorState, RequestState } from "@/components/shared/request-state";
@@ -28,29 +30,77 @@ export function Workspaces() {
   const session = useSession();
   const { workspaceId } = useSelection();
   const [showCreate, setShowCreate] = useState(false);
+  const [search, setSearch] = useState("");
   const canCreate = ["lecturer", "admin"].includes(session.data?.user?.role ?? "");
   const selected = query.data?.find((w) => w.id === workspaceId);
+  const visibleWorkspaces = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    const rows = query.data ?? [];
+    if (!term) return rows;
+    return rows.filter(
+      (workspace) =>
+        workspace.name.toLowerCase().includes(term) ||
+        (workspace.code ?? "").toLowerCase().includes(term),
+    );
+  }, [query.data, search]);
+  const activeCount = (query.data ?? []).filter(
+    (workspace) => (workspace.status ?? "ACTIVE") !== "ARCHIVED",
+  ).length;
+  const totalMembers = (query.data ?? []).reduce(
+    (sum, workspace) => sum + (workspace.members?.length ?? 0),
+    0,
+  );
+  const totalStudents = (query.data ?? []).reduce(
+    (sum, workspace) =>
+      sum +
+      (workspace.members ?? []).filter((member) => member.role.toUpperCase() === "STUDENT")
+        .length,
+    0,
+  );
   if (workspaceId && selected) return <WorkspaceOverview />;
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-end justify-between gap-4 border-b border-border/70 pb-5">
-        <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
-          {canCreate
-            ? t(
-                "Open a class to organize modules, Labs, students and grading.",
-                "Mở một lớp để tổ chức chương, Lab, sinh viên và chấm điểm.",
-              )
-            : t("Classes you are enrolled in.", "Các lớp bạn đã ghi danh.")}
-        </p>
-        {canCreate && (
-          <Button
-            type="button"
-            variant={showCreate ? "outline" : "default"}
-            onClick={() => setShowCreate((open) => !open)}
-          >
-            {showCreate ? t("Close", "Đóng") : t("Create class", "Tạo lớp")}
-          </Button>
-        )}
+      <header className="flex flex-wrap items-end justify-between gap-3 border-b pb-4">
+        <div>
+          <p className="max-w-2xl text-sm text-muted-foreground">
+            {canCreate
+              ? t(
+                  "Open a class to organize modules, Labs, students and grading.",
+                  "Mở một lớp để tổ chức chương, Lab, sinh viên và chấm điểm.",
+                )
+              : t("Classes you are enrolled in.", "Các lớp bạn đã ghi danh.")}
+          </p>
+          <p className="mt-1 text-xs tabular-nums text-muted-foreground">
+            {query.data?.length ?? 0} {t("classes", "lớp")} · {activeCount} {t("active", "đang hoạt động")} ·{" "}
+            {totalMembers} {t("members", "thành viên")} · {totalStudents} {t("students", "sinh viên")}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {(query.data?.length ?? 0) > 0 && (
+            <div className="relative">
+              <Search
+                className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <Input
+                className="h-9 w-full pl-8 sm:w-64"
+                value={search}
+                placeholder={t("Search by class name or code", "Tìm theo tên hoặc mã lớp")}
+                aria-label={t("Search classes", "Tìm lớp")}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+            </div>
+          )}
+          {canCreate && (
+            <Button
+              type="button"
+              variant={showCreate ? "outline" : "default"}
+              onClick={() => setShowCreate((open) => !open)}
+            >
+              {showCreate ? t("Close", "Đóng") : t("Create class", "Tạo lớp")}
+            </Button>
+          )}
+        </div>
       </header>
 
       {canCreate && showCreate && <CreateWorkspace onClose={() => setShowCreate(false)} />}
@@ -132,62 +182,77 @@ export function Workspaces() {
             })}
           </div>
         ) : (
-          <ul className="divide-y divide-border/70 border-y border-border/70">
-            {query.data?.map((workspace) => {
-              const members = workspace.members ?? [];
-              const students = members.filter(
-                (member) => member.role.toUpperCase() === "STUDENT",
-              ).length;
-              const workspaceUrl = `/workspace-overview?workspace=${encodeURIComponent(workspace.id)}`;
-              return (
-                <li
-                  key={workspace.id}
-                  className="grid gap-x-6 gap-y-4 py-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:py-6"
-                >
-                  <div className="min-w-0 space-y-2">
-                    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-xs text-muted-foreground">
-                      <span className="font-mono font-medium tracking-wide text-primary">
-                        {workspace.code || t("CLASS", "LỚP")}
+          <div className="overflow-hidden rounded-lg border bg-card">
+            <div className="hidden items-center gap-4 border-b bg-muted/30 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground md:grid md:grid-cols-[minmax(0,1fr)_7rem_9rem_7rem_15rem]">
+              <span>{t("Class", "Lớp")}</span>
+              <span>{t("Role", "Vai trò")}</span>
+              <span>{t("Members", "Thành viên")}</span>
+              <span>{t("Status", "Trạng thái")}</span>
+              <span className="text-right">{t("Actions", "Thao tác")}</span>
+            </div>
+            {visibleWorkspaces.length === 0 ? (
+              <p className="p-4 text-sm text-muted-foreground">
+                {t("No class matches this search.", "Không có lớp nào khớp tìm kiếm.")}
+              </p>
+            ) : (
+              <ul className="divide-y">
+                {visibleWorkspaces.map((workspace) => {
+                  const members = workspace.members ?? [];
+                  const students = members.filter(
+                    (member) => member.role.toUpperCase() === "STUDENT",
+                  ).length;
+                  const workspaceUrl = `/workspace-overview?workspace=${encodeURIComponent(workspace.id)}`;
+                  return (
+                    <li
+                      key={workspace.id}
+                      className="grid gap-x-4 gap-y-2 px-4 py-3 md:grid-cols-[minmax(0,1fr)_7rem_9rem_7rem_15rem] md:items-center"
+                    >
+                      <div className="min-w-0">
+                        <Link
+                          className="font-mono text-xs font-semibold tracking-wide text-primary hover:underline"
+                          href={workspaceUrl}
+                        >
+                          {workspace.code || t("CLASS", "LỚP")}
+                        </Link>
+                        <Link
+                          className="block truncate text-[15px] font-semibold tracking-tight text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          href={workspaceUrl}
+                        >
+                          {workspace.name}
+                        </Link>
+                        {workspace.description && (
+                          <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
+                            {workspace.description}
+                          </p>
+                        )}
+                      </div>
+                      <span className="hidden text-xs text-muted-foreground md:block">
+                        {workspace.myRole || t("Member", "Thành viên")}
                       </span>
-                      <span aria-hidden="true" className="text-border">
-                        /
+                      <span className="text-xs tabular-nums text-muted-foreground">
+                        {members.length} {t("members", "thành viên")} · {students}{" "}
+                        {t("students", "sinh viên")}
                       </span>
-                      <span>{workspace.myRole || t("Member", "Thành viên")}</span>
                       <StatusBadge
                         status={workspace.status ?? "ACTIVE"}
                         variant={workspace.status === "ARCHIVED" ? "secondary" : "default"}
                       />
-                    </div>
-                    <Link
-                      className="block w-fit max-w-full break-words text-lg font-semibold tracking-tight text-foreground decoration-primary decoration-2 underline-offset-4 hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:text-xl"
-                      href={workspaceUrl}
-                    >
-                      {workspace.name}
-                    </Link>
-                    <p className="text-sm text-muted-foreground">
-                      {members.length} {t("members", "thành viên")}{" "}
-                      <span aria-hidden="true">·</span> {students} {t("students", "sinh viên")}
-                    </p>
-                    {workspace.description && (
-                      <p className="max-w-3xl text-sm leading-6 text-foreground/75">
-                        {workspace.description}
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                    <Button asChild size="sm">
-                      <Link href={workspaceUrl}>{t("Open class", "Mở lớp")}</Link>
-                    </Button>
-                    <Button asChild size="sm" variant="outline">
-                      <Link href={`/submissions?workspace=${encodeURIComponent(workspace.id)}`}>
-                        {t("Submissions", "Bài nộp")}
-                      </Link>
-                    </Button>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
+                      <div className="flex flex-wrap items-center gap-2 md:justify-end">
+                        <Button asChild size="sm">
+                          <Link href={workspaceUrl}>{t("Open", "Mở")}</Link>
+                        </Button>
+                        <Button asChild size="sm" variant="outline">
+                          <Link href={`/submissions?workspace=${encodeURIComponent(workspace.id)}`}>
+                            {t("Submissions", "Bài nộp")}
+                          </Link>
+                        </Button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
         )}
       </RequestState>
     </div>
