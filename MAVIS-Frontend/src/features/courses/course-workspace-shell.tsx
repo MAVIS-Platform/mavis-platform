@@ -28,11 +28,13 @@ export function CourseWorkspaceShell({
   workspace,
   active,
   actions,
+  showTabs = true,
   children,
 }: {
   workspace: Response<"workspaces">[number];
   active: CourseWorkspaceTab;
   actions?: ReactNode;
+  showTabs?: boolean;
   children: ReactNode;
 }) {
   const { t } = useLocale();
@@ -68,32 +70,38 @@ export function CourseWorkspaceShell({
               </Badge>
             </div>
             <p className="text-xs text-muted-foreground">
-              {members.length} {t("members", "thành viên")} · {students} {t("students", "sinh viên")} ·{" "}
-              {lecturers} {t("lecturers", "giảng viên")} · {workspace.myRole || t("Member", "Thành viên")}
+              {members.length} {t("members", "thành viên")} · {students}{" "}
+              {t("students", "sinh viên")} · {lecturers} {t("lecturers", "giảng viên")} ·{" "}
+              {workspace.myRole || t("Member", "Thành viên")}
             </p>
           </div>
           {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
         </div>
-        <nav aria-label={t("Class sections", "Các mục của lớp")} className="mt-4 flex flex-wrap gap-1">
-          {visibleTabs.map((tab) => {
-            const label = TAB_LABELS[tab];
-            return (
-              <Link
-                key={tab}
-                href={tabHref(workspace.id, tab)}
-                aria-current={active === tab ? "page" : undefined}
-                className={cn(
-                  "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-                  active === tab
-                    ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                )}
-              >
-                {t(label.en, label.vi)}
-              </Link>
-            );
-          })}
-        </nav>
+        {showTabs && (
+          <nav
+            aria-label={t("Class sections", "Các mục của lớp")}
+            className="mt-4 flex flex-wrap gap-1"
+          >
+            {visibleTabs.map((tab) => {
+              const label = TAB_LABELS[tab];
+              return (
+                <Link
+                  key={tab}
+                  href={tabHref(workspace.id, tab)}
+                  aria-current={active === tab ? "page" : undefined}
+                  className={cn(
+                    "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                    active === tab
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                  )}
+                >
+                  {t(label.en, label.vi)}
+                </Link>
+              );
+            })}
+          </nav>
+        )}
       </header>
       {children}
     </div>

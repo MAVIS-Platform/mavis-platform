@@ -39,6 +39,7 @@ export type NavigationItem = {
   // Only existing screen implementations have an href. Planned screens never
   // point at nonexistent routes. These are UI routes, not backend contracts.
   href?: string;
+  children?: readonly NavigationItem[];
 };
 
 export type NavigationGroup = {
@@ -213,6 +214,24 @@ export const lecturerWorkspaceNavigation: readonly NavigationGroup[] = [
         label: "Assignment Submissions",
         icon: ClipboardCheck,
         href: "/submissions",
+      },
+      {
+        id: "workspace-results",
+        label: "Results",
+        icon: ClipboardCheck,
+        href: "/submissions?view=results",
+      },
+      {
+        id: "course-authoring",
+        label: "Course Authoring",
+        icon: GraduationCap,
+        href: "/workspace-overview?view=course-authoring",
+      },
+      {
+        id: "course-setup",
+        label: "Course Setup",
+        icon: Settings2,
+        href: "/workspace-overview?view=course-setup",
       },
     ],
   },

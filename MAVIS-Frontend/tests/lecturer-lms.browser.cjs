@@ -111,9 +111,7 @@ const published = {
 const roadmap = {
   guided: true,
   enrollmentStatus: "IN_PROGRESS",
-  labs: [
-    { assignmentId: "a1", position: 1, title: lab.title, state: "UNLOCKED", reason: null },
-  ],
+  labs: [{ assignmentId: "a1", position: 1, title: lab.title, state: "UNLOCKED", reason: null }],
 };
 const quiz = {
   version: 1,
@@ -122,14 +120,63 @@ const quiz = {
   passed: false,
   latestStatus: "NOT_ATTEMPTED",
   runtimeUnlocked: true,
-  questions: [{ id: "q1", prompt: "Which service owns the order lifecycle?", type: "SINGLE_CHOICE", options: ["orders", "payment"] }],
+  questions: [
+    {
+      id: "q1",
+      prompt: "Which service owns the order lifecycle?",
+      type: "SINGLE_CHOICE",
+      options: ["orders", "payment"],
+    },
+  ],
+};
+const courseSetup = {
+  workspaceId: "ws-lms",
+  workspaceName: workspace.name,
+  status: "ACTIVE",
+  courseMode: true,
+  reference: {
+    projectId: null,
+    projectName: null,
+    modelId: null,
+    snapshotId: null,
+    modelRevision: 0,
+    referenceReady: false,
+    runtimeConfigured: false,
+    runtimeMatchesSource: false,
+    runtimeRevision: 0,
+    applications: [],
+    blockCount: 0,
+    connectionCount: 0,
+    topologyConfigured: false,
+  },
+  labs: [],
+  passkey: { active: false, expiresAt: null, maxStudents: null, enrolledStudents: 0 },
+  steps: [{ id: "reference", state: "ACTION", detail: "Attach a reference source" }],
+  nextAction: "attach-reference",
+  previewAssignmentId: null,
 };
 const quizDraft = {
   lesson: "Read the module theory before attempting the quiz.",
   passPercent: 80,
   questions: [
-    { id: "q1", prompt: "Which service owns the order lifecycle?", type: "SINGLE_CHOICE", options: ["orders", "payment"], correctOption: 0, explanation: "Orders owns the order lifecycle.", points: 1 },
-    { id: "q2", prompt: "Select the resilience controls.", type: "MULTI_CHOICE", options: ["Stop", "Scale", "Delete database"], correctOptions: [0, 1], explanation: "Stop and Scale are supported.", points: 1 },
+    {
+      id: "q1",
+      prompt: "Which service owns the order lifecycle?",
+      type: "SINGLE_CHOICE",
+      options: ["orders", "payment"],
+      correctOption: 0,
+      explanation: "Orders owns the order lifecycle.",
+      points: 1,
+    },
+    {
+      id: "q2",
+      prompt: "Select the resilience controls.",
+      type: "MULTI_CHOICE",
+      options: ["Stop", "Scale", "Delete database"],
+      correctOptions: [0, 1],
+      explanation: "Stop and Scale are supported.",
+      points: 1,
+    },
   ],
 };
 
@@ -142,9 +189,12 @@ import {QueryClient,QueryClientProvider} from '@tanstack/react-query';
 import {ApiContext,SelectionContext} from '@/providers/app-context';
 import {LocaleProvider} from '@/lib/i18n/locale-context';
 import {LabWorkspace} from '@/features/courses/screens';
-import {WorkspaceOverview} from '@/features/workspaces/screens';
+import {WorkspaceOverview,WorkspaceMembers} from '@/features/workspaces/screens';
+import {Submissions} from '@/features/submissions/screens';
 import {Assignments} from '@/features/assignments/screens';
 import {LabAuthoring} from '@/features/assignments/lab-authoring';
+import {AppShell} from '@/components/app-shell';
+import {ThemeProvider} from '@/components/theme-provider';
 const workspace=${JSON.stringify(workspace)};
 const lab=${JSON.stringify(lab)};
 const draft=${JSON.stringify(draft)};
@@ -152,11 +202,13 @@ const published=${JSON.stringify(published)};
 const roadmap=${JSON.stringify(roadmap)};
 const quiz=${JSON.stringify(quiz)};
 const quizDraft=${JSON.stringify(quizDraft)};
+const courseSetup=${JSON.stringify(courseSetup)};
 globalThis.fetch=async(url)=>{
   const path=String(url);
   let payload={};
   if(globalThis.__mavisEmptyCourse && path.includes('/course')) return new Response(JSON.stringify({message:'Course draft not found'}),{status:404,headers:{'content-type':'application/json'}});
   if(path.includes('course-curriculum')) payload=[];
+  else if(path.endsWith('/course-setup')) payload=courseSetup;
   else if(path.includes('/quiz/draft')) payload=quizDraft;
   else if(path.includes('/quiz/versions')) payload=[];
   else if(path.includes('quiz-bank')) payload=[];
@@ -170,6 +222,7 @@ globalThis.fetch=async(url)=>{
 const api={mode:'backend',async execute(operation){
   if(operation==='workspaces') return [workspace];
   if(operation==='session') return {user:{id:'u1',name:'Lecturer',email:'lec@example.com',role:'lecturer'}};
+  if(operation==='notifications') return {items:[],unreadCount:0};
   if(operation==='assignments') return [lab];
   if(operation==='projects') return [];
   if(operation==='model') return {id:'ref-model',projectId:'ref-project',snapshotId:'ref-snapshot',revision:3,label:'Reference model',elements:[{id:'orders',name:'orders',layer:'domain',elementType:'SERVICE_CONTAINER',description:'',evidence:[]},{id:'payment',name:'payment',layer:'domain',elementType:'SERVICE_CONTAINER',description:'',evidence:[]}],edges:[{id:'orders-payment',from:'orders',to:'payment',protocol:'HTTP',evidence:[],uncertain:false}]};
@@ -179,15 +232,19 @@ const params=new URLSearchParams(window.location.search);
 globalThis.__mavisEmptyCourse=params.get('empty')==='1';
 const selection={projectId:'',workspaceId:'ws-lms',setProjectId(){},setWorkspaceId(){}};
 const client=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
-const view=params.get('view');
-const View=view==='lab'?LabWorkspace:view==='assignments'?Assignments:view==='authoring'?LabAuthoring:WorkspaceOverview;
+const routeView=window.location.pathname==='/assignments'?'assignments':window.location.pathname==='/lab-authoring'?'authoring':window.location.pathname==='/members'?'members':window.location.pathname==='/submissions'?'submissions':'class';
+const view=params.get('view')==='results'?'submissions':params.get('view')||routeView;
+const Screen=view==='lab'?LabWorkspace:view==='assignments'?Assignments:view==='authoring'?LabAuthoring:view==='members'?WorkspaceMembers:view==='submissions'?Submissions:WorkspaceOverview;
+const classScreen=['class','course-authoring','course-setup','assignments','authoring','members','submissions'].includes(view);
+const activeId=view==='assignments'?'assignments':view==='authoring'?'lab-authoring':view==='members'?'members':view==='submissions'?'assignment-submissions':view==='course-authoring'?'course-authoring':view==='course-setup'?'course-setup':'workspace-overview';
+const content=classScreen?React.createElement(AppShell,{role:'lecturer',scope:'workspace',activeId,selectedWorkspaceId:'ws-lms',workspaces:[workspace],pageTitle:'Workspace Overview'},React.createElement(Screen)):React.createElement(Screen);
 class Boundary extends React.Component{
   constructor(props){super(props);this.state={error:null,stack:''};}
   static getDerivedStateFromError(error){return {error};}
   componentDidCatch(error,info){this.setState({stack:info.componentStack});console.error('BOUNDARY',error.message,info.componentStack);}
   render(){return this.state.error?React.createElement('pre',null,String(this.state.error),'\\n',this.state.stack):this.props.children;}
 }
-createRoot(document.getElementById('root')).render(<Boundary><LocaleProvider><ApiContext.Provider value={api}><QueryClientProvider client={client}><SelectionContext.Provider value={selection}><View/></SelectionContext.Provider></QueryClientProvider></ApiContext.Provider></LocaleProvider></Boundary>);
+createRoot(document.getElementById('root')).render(<Boundary><ThemeProvider><LocaleProvider><ApiContext.Provider value={api}><QueryClientProvider client={client}><SelectionContext.Provider value={selection}>{content}</SelectionContext.Provider></QueryClientProvider></ApiContext.Provider></LocaleProvider></ThemeProvider></Boundary>);
 `,
 );
 
@@ -259,20 +316,63 @@ async function main() {
 
     await page.goto(base + "?view=class", { waitUntil: "networkidle" });
     try {
-      await page.getByRole("heading", { name: "Software Architecture", exact: true }).first().waitFor({ timeout: 8000 });
+      await page
+        .getByRole("heading", { name: "Software Architecture", exact: true })
+        .first()
+        .waitFor({ timeout: 8000 });
     } catch (error) {
       console.error("Class view errors:", errors);
       console.error("Class view body:", await page.locator("body").innerText());
       throw error;
     }
-    await page.getByText("Class content", { exact: true }).waitFor();
     await page.getByText("Foundations", { exact: true }).waitFor();
-    await page.getByText("Service boundaries", { exact: true }).waitFor();
+    await page.getByText("Service boundaries", { exact: true }).waitFor({ state: "attached" });
+    await page
+      .getByRole("button", { name: /Collapse SWD392 · Software Architecture menu/ })
+      .waitFor();
+    await page.getByRole("link", { name: "Course Setup" }).click();
+    await page.waitForURL(/view=course-setup&workspace=ws-lms/);
+    await page.getByText("Course setup", { exact: true }).waitFor();
+    await page.screenshot({
+      path: path.join(output, "class-course-setup.png"),
+      fullPage: true,
+      animations: "disabled",
+    });
+    await page.getByRole("link", { name: "Assignments", exact: true }).click();
+    await page.waitForURL(/assignments\?workspace=ws-lms/);
+    try {
+      await page.getByText("Create a Lab", { exact: true }).waitFor({ timeout: 8000 });
+    } catch (error) {
+      console.error("Assignments from sidebar errors:", errors);
+      console.error("Assignments from sidebar body:", await page.locator("body").innerText());
+      throw error;
+    }
+    await page.getByRole("link", { name: "Lab Authoring", exact: true }).click();
+    await page.waitForURL(/lab-authoring\?workspace=ws-lms/);
+    await page.getByText("Lab information", { exact: false }).first().waitFor();
+    await page.getByRole("link", { name: "Workspace Members", exact: true }).click();
+    await page.waitForURL(/members\?workspace=ws-lms/);
+    await page.getByText("Student A", { exact: true }).waitFor();
+    await page.getByRole("link", { name: "Assignment Submissions", exact: true }).click();
+    await page.waitForURL(/submissions\?workspace=ws-lms/);
+    assert.equal(await page.getByRole("navigation", { name: "Class sections" }).count(), 0);
     await page.screenshot({
       path: path.join(output, "class-content.png"),
       fullPage: true,
       animations: "disabled",
     });
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole("button", { name: "Open navigation" }).click();
+    await page.getByRole("link", { name: "Results", exact: true }).click();
+    await page.waitForURL(/submissions\?view=results&workspace=ws-lms/);
+    await page.getByText("Results view shows each submission", { exact: false }).waitFor();
+    await page.screenshot({
+      path: path.join(output, "class-sidebar-mobile.png"),
+      fullPage: true,
+      animations: "disabled",
+    });
+    assert.ok((await page.locator("body").evaluate((element) => element.scrollWidth)) <= 390);
 
     await page.goto(base + "?view=lab&workspace=ws-lms&assignment=a1&step=2&preview=1", {
       waitUntil: "networkidle",
@@ -289,7 +389,10 @@ async function main() {
 
     await page.goto(base + "?view=assignments&workspace=ws-lms", { waitUntil: "networkidle" });
     try {
-      await page.getByText("Lab 1 Service resilience", { exact: false }).first().waitFor({ timeout: 8000 });
+      await page
+        .getByText("Lab 1 Service resilience", { exact: false })
+        .first()
+        .waitFor({ timeout: 8000 });
     } catch (error) {
       console.error("Assignments view errors:", errors);
       console.error("Assignments view body:", await page.locator("body").innerText());

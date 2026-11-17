@@ -539,6 +539,17 @@ test("project navigation preserves every destination and keeps role menus intact
  for(const role of ["student","lecturer"])assert.ok(globalNavigation[role].flatMap(g=>g.items).some(i=>i.id==="studio"&&i.href==="/studio"));
 });
 
+test("lecturer workspace navigation exposes every class destination without adding them to student navigation",()=>{
+ const {lecturerWorkspaceNavigation,globalNavigation}=require("../src/lib/navigation.ts");
+ const destinations=lecturerWorkspaceNavigation.flatMap(group=>group.items);
+ assert.deepEqual(Object.fromEntries(destinations.map(item=>[item.id,item.href])),{
+  "workspace-overview":"/workspace-overview",members:"/members",assignments:"/assignments","lab-authoring":"/lab-authoring","assignment-submissions":"/submissions","workspace-results":"/submissions?view=results","course-authoring":"/workspace-overview?view=course-authoring","course-setup":"/workspace-overview?view=course-setup"
+ });
+ assert.ok(globalNavigation.lecturer.flatMap(group=>group.items).some(item=>item.id==="workspaces"&&item.href==="/workspaces"));
+ assert.ok(globalNavigation.lecturer.flatMap(group=>group.items).some(item=>item.id==="studio"&&item.href==="/studio"));
+ assert.equal(globalNavigation.student.flatMap(group=>group.items).some(item=>["members","assignments","lab-authoring","course-setup"].includes(item.id)),false);
+});
+
 test("status presentation uses sentence case while retaining data, styling and localized wording",()=>{
  const {formatStatusLabel,translatedStatusLabel}=require("../src/lib/status-label.ts");
  for(const [raw,expected] of [["ready","Ready"],["NOT CHECKED","Not checked"],["Not Checked","Not checked"],["not checked","Not checked"],["COMPLETED","Completed"],["Sẵn sàng","Sẵn sàng"],["hoàn tất","Hoàn tất"],["READY_FOR_DISPATCH","Ready_for_dispatch"],["ResolvedSymbol","ResolvedSymbol"],["  running! ","  Running! "],["200","200"],["",""]])assert.equal(formatStatusLabel(raw),expected);
@@ -560,6 +571,35 @@ test("project groups persist independently, restore active routes and tolerate d
  stored.set("mavis.project-sidebar.groups.student",JSON.stringify({Analysis:false,Runtime:true}));active="compare";activeGroup="Analysis";nav=render();assert.equal(nav.groups.Analysis,true);effects.forEach(fn=>fn());nav=render();assert.equal(nav.groups.Runtime,true);assert.equal(nav.groups.Analysis,true);
  role="lecturer";nav=render();assert.equal(nav.groups.Runtime,undefined);effects.forEach(fn=>fn());nav=render();assert.equal(nav.groups.Analysis,true);
  blocked=true;effects=[];render();effects.forEach(fn=>fn());assert.doesNotThrow(()=>render().toggle("Runtime",true));
+});
+
+test("lecturer sidebar expands the selected class and marks its class destination current",()=>{
+ const React=require("react"),{renderToStaticMarkup}=require("react-dom/server"),{ThemeProvider}=require("../src/components/theme-provider.tsx");
+ const workspace={id:"class-1",code:"SE180711",name:"FA",status:"ACTIVE",myRole:"LECTURER",members:[]};
+ const hooks={useApi:()=>({mode:"backend"}),useApiQuery:op=>({data:op==="workspaces"?[workspace]:[],isSuccess:true,isPending:false,isFetching:false,isError:false,error:null,refetch(){}}),useSession:()=>({data:{user:{id:"teacher-1",name:"Lecturer",role:"lecturer"}}}),useSelection:()=>({projectId:"",workspaceId:"class-1"}),useApiMutation:()=>({isPending:false})};
+ const {AppShell}=loadRoutedComponent("src/components/app-shell.tsx",{"@/hooks/use-api":hooks,"next/navigation":{usePathname:()=>"/assignments",useSearchParams:()=>new URLSearchParams("workspace=class-1"),useRouter:()=>({push(){},replace(){},refresh(){}})},"@/features/auth/access":{RequireSession:({children})=>children},"@tanstack/react-query":{useQueryClient:()=>({})}});
+ const html=renderToStaticMarkup(React.createElement(ThemeProvider,null,React.createElement(AppShell,{role:"lecturer",scope:"workspace",activeId:"assignments"},"Assignments content")));
+ assert.ok(html.includes('aria-label="Collapse SE180711 · FA menu"'));
+ assert.ok(html.includes('href="/assignments?workspace=class-1"'));
+ assert.ok(html.includes('aria-current="page"'));
+});
+
+test("student sidebar omits lecturer-only class destinations",()=>{
+ const React=require("react"),{renderToStaticMarkup}=require("react-dom/server"),{ThemeProvider}=require("../src/components/theme-provider.tsx");
+ const workspace={id:"class-1",code:"SE180711",name:"FA",status:"ACTIVE",myRole:"STUDENT",members:[]};
+ const hooks={useApi:()=>({mode:"backend"}),useApiQuery:op=>({data:op==="workspaces"?[workspace]:[],isSuccess:true,isPending:false,isFetching:false,isError:false,error:null,refetch(){}}),useSession:()=>({data:{user:{id:"student-1",name:"Learner",role:"student"}}}),useSelection:()=>({projectId:"",workspaceId:"class-1"}),useApiMutation:()=>({isPending:false})};
+ const {AppShell}=loadRoutedComponent("src/components/app-shell.tsx",{"@/hooks/use-api":hooks,"next/navigation":{usePathname:()=>"/workspaces",useSearchParams:()=>new URLSearchParams("workspace=class-1"),useRouter:()=>({push(){},replace(){},refresh(){}})},"@/features/auth/access":{RequireSession:({children})=>children},"@tanstack/react-query":{useQueryClient:()=>({})}});
+ const html=renderToStaticMarkup(React.createElement(ThemeProvider,null,React.createElement(AppShell,{role:"student",scope:"workspace",activeId:"workspaces"},"Class list")));
+ assert.ok(!html.includes("Workspace Members"));assert.ok(!html.includes("Lab Authoring"));
+});
+
+test("collapsed class sidebar keeps child destinations available as labeled links",()=>{
+ const React=require("react"),{renderToStaticMarkup}=require("react-dom/server"),{ThemeProvider}=require("../src/components/theme-provider.tsx");
+ const workspace={id:"class-1",code:"SE180711",name:"FA",status:"ACTIVE",myRole:"LECTURER",members:[]};
+ const hooks={useApi:()=>({mode:"backend"}),useApiQuery:op=>({data:op==="workspaces"?[workspace]:[],isSuccess:true,isPending:false,isFetching:false,isError:false,error:null,refetch(){}}),useSession:()=>({data:{user:{id:"teacher-1",name:"Lecturer",role:"lecturer"}}}),useSelection:()=>({projectId:"",workspaceId:"class-1"}),useApiMutation:()=>({isPending:false})};
+ const {AppShell}=loadRoutedComponent("src/components/app-shell.tsx",{"@/hooks/use-api":hooks,"next/navigation":{usePathname:()=>"/assignments",useSearchParams:()=>new URLSearchParams("workspace=class-1"),useRouter:()=>({push(){},replace(){},refresh(){}})},"@/features/auth/access":{RequireSession:({children})=>children},"@tanstack/react-query":{useQueryClient:()=>({})}});
+ const html=renderToStaticMarkup(React.createElement(ThemeProvider,null,React.createElement(AppShell,{role:"lecturer",scope:"workspace",activeId:"assignments"},"Assignments content")));
+ assert.ok(html.includes('href="/lab-authoring?workspace=class-1"'));assert.ok(html.includes('aria-label="Lab Authoring"'));
 });
 
 test("project sidebar renders active group controls and removes only the obsolete footer",()=>{
@@ -1870,8 +1910,11 @@ test("My Workspaces is a compact LMS class list with tabs and a module outline",
   client.setQueryData(["api", "session", {}], { user: { id: "u1", name: "Lecturer", email: "lec@example.com", role: "lecturer" } });
   client.setQueryData(["api", "workspaces", {}], classes);
   const api = { mode: "backend", execute: () => { throw Error("Unexpected request"); } };
-  const renderComp = (Comp, workspaceId) =>
-    renderToStaticMarkup(
+  const renderComp = (Comp, workspaceId, search = "") => {
+    const RoutedComp = Comp === WorkspaceOverview
+      ? loadRoutedComponent("src/features/workspaces/screens.tsx", { "next/navigation": { useSearchParams: () => new URLSearchParams(search) } }).WorkspaceOverview
+      : Comp;
+    return renderToStaticMarkup(
       React.createElement(
         QueryClientProvider,
         { client },
@@ -1881,11 +1924,12 @@ test("My Workspaces is a compact LMS class list with tabs and a module outline",
           React.createElement(
             SelectionContext.Provider,
             { value: { projectId: "", workspaceId, setProjectId() {}, setWorkspaceId() {} } },
-            React.createElement(Comp),
+            React.createElement(RoutedComp),
           ),
         ),
       ),
     );
+  };
   const assignments = [
     { id: "a1", workspaceId: "ws-swd", title: "Lab 1 Architecture", instructions: "Analyze C4", dueAt: "No deadline", requiredDiagramTypes: [] },
     { id: "a2", workspaceId: "ws-swd", title: "Lab 2 Sequence", instructions: "Trace flow", dueAt: "No deadline", requiredDiagramTypes: [] },
@@ -1924,16 +1968,20 @@ test("My Workspaces is a compact LMS class list with tabs and a module outline",
   assert.doesNotMatch(rootHtml, /Create a place for learning to take shape/, "Class list must not use the marketing hero");
   assert.doesNotMatch(rootHtml, /Workspace code/, "Create class form stays closed until requested");
   const overviewHtml = renderComp(WorkspaceOverview, "ws-swd");
-  assert.match(overviewHtml, /Class content/);
-  assert.match(overviewHtml, /Members/);
-  assert.match(overviewHtml, /Submissions/);
-  assert.match(overviewHtml, /Results/);
+  assert.doesNotMatch(overviewHtml, /Class content/);
+  assert.doesNotMatch(overviewHtml, /aria-label="Class sections"/);
   assert.match(overviewHtml, /Foundations/);
   assert.match(overviewHtml, /Service boundaries/);
   assert.match(overviewHtml, /Lab 1 Architecture/);
-  assert.match(overviewHtml, /Roadmap/);
-  assert.match(overviewHtml, /Authoring/);
-  assert.match(overviewHtml, /Setup/);
+  assert.doesNotMatch(overviewHtml, /Authoring/);
+  assert.doesNotMatch(overviewHtml, /Setup/);
+  const authoringHtml = renderComp(WorkspaceOverview, "ws-swd", "view=course-authoring");
+  assert.doesNotMatch(authoringHtml, /id="course-outline-title"/);
+  const setupHtml = renderComp(WorkspaceOverview, "ws-swd", "view=course-setup");
+  assert.match(setupHtml, /Loading course setup/);
+  assert.doesNotMatch(setupHtml, /id="course-outline-title"/);
+  const unknownViewHtml = renderComp(WorkspaceOverview, "ws-swd", "view=unknown");
+  assert.match(unknownViewHtml, /Foundations/);
   assert.doesNotMatch(overviewHtml, /Students enrolled/, "Overview must not be a KPI dashboard");
   assert.doesNotMatch(overviewHtml, /Add students in bulk/, "Overview must not include member management");
   const membersHtml = renderComp(WorkspaceMembers, "ws-swd");

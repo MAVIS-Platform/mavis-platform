@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { useApiMutation, useApiQuery, useSession, useSelection } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
@@ -139,18 +140,18 @@ export function Workspaces() {
 export function WorkspaceOverview() {
   const { t } = useLocale();
   const { workspaceId } = useSelection();
+  const params = useSearchParams();
   const session = useSession();
   const query = useApiQuery("workspaces", {});
   const workspace = query.data?.find((w) => w.id === workspaceId);
   const canManage = workspace?.myRole === "LECTURER" || session.data?.user?.role === "admin";
-  const [tab, setTab] = useState<"outline" | "authoring" | "setup">("outline");
-
-  const tabs = [
-    { id: "outline" as const, label: t("Roadmap", "Lộ trình") },
-    ...(canManage ? [{ id: "authoring" as const, label: t("Authoring", "Soạn nội dung") }] : []),
-    ...(canManage ? [{ id: "setup" as const, label: t("Setup", "Thiết lập") }] : []),
-  ];
-  const activeTab = canManage ? tab : "outline";
+  const requestedView = params.get("view");
+  const activeTab =
+    canManage && requestedView === "course-authoring"
+      ? "authoring"
+      : canManage && requestedView === "course-setup"
+        ? "setup"
+        : "outline";
 
   return (
     <RequestState query={query} empty={!workspace}>
@@ -158,6 +159,7 @@ export function WorkspaceOverview() {
         <CourseWorkspaceShell
           workspace={workspace}
           active="content"
+          showTabs={session.data?.user?.role !== "lecturer"}
           actions={
             canManage ? (
               <>
@@ -175,47 +177,27 @@ export function WorkspaceOverview() {
             ) : undefined
           }
         >
-          <div className="flex flex-wrap gap-1 border-b pb-2">
-            {tabs.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setTab(item.id)}
-                aria-pressed={activeTab === item.id}
-                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                  activeTab === item.id
-                    ? "bg-muted text-foreground"
-                    : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-                }`}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
-
-          {activeTab === "outline" && (
-            <div className="space-y-4">
+          <div className="space-y-4">
+            {activeTab === "outline" && (
               <CourseOutline
                 workspaceId={workspace.id}
                 canManage={canManage}
                 active={workspace.status !== "ARCHIVED"}
               />
-            </div>
-          )}
-
-          {activeTab === "authoring" && canManage && <CourseBuilder workspaceId={workspace.id} />}
-
-          {activeTab === "setup" && canManage && (
-            <div className="space-y-5">
-              <CourseSetupPanel workspaceId={workspace.id} />
-              <CourseRoadmap
-                key={workspace.id}
-                workspaceId={workspace.id}
-                canManage
-                active={workspace.status !== "ARCHIVED"}
-              />
-            </div>
-          )}
+            )}
+            {activeTab === "authoring" && canManage && <CourseBuilder workspaceId={workspace.id} />}
+            {activeTab === "setup" && canManage && (
+              <div className="space-y-5">
+                <CourseSetupPanel workspaceId={workspace.id} />
+                <CourseRoadmap
+                  key={workspace.id}
+                  workspaceId={workspace.id}
+                  canManage
+                  active={workspace.status !== "ARCHIVED"}
+                />
+              </div>
+            )}
+          </div>
         </CourseWorkspaceShell>
       )}
     </RequestState>
@@ -243,7 +225,7 @@ export function WorkspaceMembers() {
   return (
     <RequestState query={query} empty={!workspace}>
       {workspace && (
-        <CourseWorkspaceShell workspace={workspace} active="members">
+        <CourseWorkspaceShell workspace={workspace} active="members" showTabs={false}>
           <div className="space-y-4">
             {canManage && (
               <div className="rounded-xl border bg-card p-4">

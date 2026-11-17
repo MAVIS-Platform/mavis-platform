@@ -30,20 +30,28 @@ function MySubmissions() {
   const workspaces = useApiQuery("workspaces", {});
   const query = useApiQuery("submissions", {});
   const idsInSelectedClass = new Set(
-    (workspaces.data?.find((item) => item.id === workspaceId)?.members ?? []).map((member) => member.id),
+    (workspaces.data?.find((item) => item.id === workspaceId)?.members ?? []).map(
+      (member) => member.id,
+    ),
   );
-  const rows = (query.data ?? []).filter((submission) =>
-    (!assignmentId || submission.assignmentId === assignmentId) &&
-    (!workspaceId || idsInSelectedClass.has(submission.studentId)),
+  const rows = (query.data ?? []).filter(
+    (submission) =>
+      (!assignmentId || submission.assignmentId === assignmentId) &&
+      (!workspaceId || idsInSelectedClass.has(submission.studentId)),
   );
   const workspace = workspaces.data?.find((item) => item.id === workspaceId);
   const list = (
     <div className="space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">{t("My Submissions", "Bài nộp của tôi")}</h1>
+          <h1 className="text-xl font-semibold tracking-tight">
+            {t("My Submissions", "Bài nộp của tôi")}
+          </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {t("Review submission status and published feedback for your work.", "Theo dõi trạng thái và phản hồi đã công bố cho bài làm của bạn.")}
+            {t(
+              "Review submission status and published feedback for your work.",
+              "Theo dõi trạng thái và phản hồi đã công bố cho bài làm của bạn.",
+            )}
           </p>
         </div>
         {workspace && (
@@ -57,18 +65,27 @@ function MySubmissions() {
       <RequestState
         query={query}
         empty={!rows.length}
-        emptyMessage={assignmentId
-          ? "No snapshot has been submitted for this Lab yet. Open the assignment to prepare your first submission."
-          : "No submitted work yet. Open an assignment in your workspace to submit a model version."}
+        emptyMessage={
+          assignmentId
+            ? "No snapshot has been submitted for this Lab yet. Open the assignment to prepare your first submission."
+            : "No submitted work yet. Open an assignment in your workspace to submit a model version."
+        }
       >
         <SubmissionList rows={rows} />
       </RequestState>
     </div>
   );
-  return workspace ? <CourseWorkspaceShell workspace={workspace} active="submissions">{list}</CourseWorkspaceShell> : list;
+  return workspace ? (
+    <CourseWorkspaceShell workspace={workspace} active="submissions">
+      {list}
+    </CourseWorkspaceShell>
+  ) : (
+    list
+  );
 }
 function TeachingSubmissions() {
   const { t } = useLocale();
+  const canReview = usePermission("submission:review");
   const { workspaceId } = useSelection();
   const params = useSearchParams();
   const workspaces = useApiQuery("workspaces", {});
@@ -90,7 +107,10 @@ function TeachingSubmissions() {
       {assignment && (
         <div className="space-y-4">
           {resultsView && (
-            <p role="status" className="rounded-md border bg-muted/30 px-3 py-2 text-xs leading-5 text-muted-foreground">
+            <p
+              role="status"
+              className="rounded-md border bg-muted/30 px-3 py-2 text-xs leading-5 text-muted-foreground"
+            >
               {t(
                 "Results view shows each submission with its published review outcome. Status filtering is not available from the current API.",
                 "Chế độ Kết quả hiển thị từng bài nộp cùng kết quả chấm đã công bố. API hiện tại chưa hỗ trợ lọc theo trạng thái.",
@@ -124,7 +144,7 @@ function TeachingSubmissions() {
     </div>
   );
   return workspace ? (
-    <CourseWorkspaceShell workspace={workspace} active="submissions">
+    <CourseWorkspaceShell workspace={workspace} active="submissions" showTabs={!canReview}>
       {body}
     </CourseWorkspaceShell>
   ) : (
@@ -206,7 +226,9 @@ function SubmissionList({ rows }: { rows: import("@/types/domain").Submission[] 
             key: "date",
             label: t("Submitted", "Đã nộp"),
             render: (s) =>
-              s.submittedAt ? new Date(s.submittedAt).toLocaleString() : t("Not submitted", "Chưa nộp"),
+              s.submittedAt
+                ? new Date(s.submittedAt).toLocaleString()
+                : t("Not submitted", "Chưa nộp"),
           },
           {
             key: "action",
@@ -266,7 +288,9 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
           <Button asChild size="sm" variant="outline">
             <Link
               href={`/submissions?${selection.workspaceId ? `workspace=${encodeURIComponent(selection.workspaceId)}&` : ""}${
-                query.data.assignmentId ? `assignment=${encodeURIComponent(query.data.assignmentId)}` : ""
+                query.data.assignmentId
+                  ? `assignment=${encodeURIComponent(query.data.assignmentId)}`
+                  : ""
               }`}
             >
               ← {t("Back to class submissions", "Quay lại bài nộp của lớp")}
@@ -281,7 +305,11 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
           <section id="review" className="scroll-mt-24">
             <SubmissionVersionHeader submission={query.data} />
             <FrozenArtifacts submission={query.data} />
-            <StudioSubmissionEvidence key={query.data.id} submissionId={query.data.id} available={Boolean(query.data.studioEvidence)}/>
+            <StudioSubmissionEvidence
+              key={query.data.id}
+              submissionId={query.data.id}
+              available={Boolean(query.data.studioEvidence)}
+            />
           </section>
           <div
             id="submitted-graph"

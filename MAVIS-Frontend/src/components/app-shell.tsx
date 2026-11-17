@@ -43,6 +43,7 @@ import {
   contextualNavigation,
   existingRouteContext,
   globalNavigation,
+  lecturerWorkspaceNavigation,
   roleLabels,
   type AppRole,
   type NavigationGroup,
@@ -218,6 +219,7 @@ function ShellChrome({
 }) {
   const { t } = useLocale();
   const pathname = usePathname();
+  const params = useSearchParams();
   const route = existingRouteContext(pathname);
   const scope =
     (pathname === "/submissions" && role === "lecturer") ||
@@ -233,6 +235,7 @@ function ShellChrome({
   const context = contextName ?? (scope === "project" ? "Select a project" : "Select a workspace");
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [expandedWorkspaceMenus, setExpandedWorkspaceMenus] = useState<Record<string, boolean>>({});
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [detailsInline, setDetailsInline] = useState(false);
   const contentContainer = useRef<HTMLDivElement>(null);
@@ -284,6 +287,22 @@ function ShellChrome({
                     : w.name,
                 icon: BookOpen,
                 href: `/workspaces?workspace=${encodeURIComponent(w.id)}`,
+                ...(role === "lecturer"
+                  ? {
+                      children: (lecturerWorkspaceNavigation[0]?.items ?? []).flatMap(
+                        (destination) =>
+                          destination.href
+                            ? [
+                                {
+                                  ...destination,
+                                  id: `workspace:${w.id}:${destination.id}`,
+                                  href: `${destination.href}${destination.href.includes("?") ? "&" : "?"}workspace=${encodeURIComponent(w.id)}`,
+                                },
+                              ]
+                            : [],
+                      ),
+                    }
+                  : {}),
               })),
             ]
           : [item],
@@ -297,9 +316,21 @@ function ShellChrome({
     groups.find((group) => group.items.some((item) => item.id === activeId))?.label,
     scope === "project" && !live,
   );
+  const activeWorkspaceDestination =
+    pathname === "/workspaces" || pathname === "/workspace-overview"
+      ? params.get("view") === "course-authoring"
+        ? "course-authoring"
+        : params.get("view") === "course-setup"
+          ? "course-setup"
+          : "workspace-overview"
+      : pathname === "/submissions" && params.get("view") === "results"
+        ? "workspace-results"
+        : pathname === "/submissions" && role === "lecturer"
+          ? "assignment-submissions"
+          : route.activeId;
   const activeWorkspaceNavId =
     selectedWorkspaceId && workspaces.some((w) => w.id === selectedWorkspaceId)
-      ? `workspace:${selectedWorkspaceId}`
+      ? `workspace:${selectedWorkspaceId}:${activeWorkspaceDestination}`
       : "workspaces";
   const activeItem = [...globalGroups, ...groups]
     .flatMap((group) => group.items)
@@ -351,9 +382,7 @@ function ShellChrome({
           )}
         >
           <Link
-            href={
-              live ? `/import${navigationQuery}` : defaultLoginDestination(role)
-            }
+            href={live ? `/import${navigationQuery}` : defaultLoginDestination(role)}
             aria-label="MAVIS home"
             className="flex min-w-0 items-center gap-2.5 rounded-md"
           >
@@ -400,8 +429,16 @@ function ShellChrome({
             preview={Boolean(onPreviewNavigate)}
             onNavigate={navigatePreview}
             label="Global navigation"
+            expandedGroups={{
+              Workspaces: Boolean(selectedWorkspaceId),
+              ...expandedWorkspaceMenus,
+            }}
+            onToggleGroup={(id, open) =>
+              setExpandedWorkspaceMenus((menus) => ({ ...menus, [id]: open }))
+            }
+            collapsibleGroupLabels={["Workspaces"]}
           />
-          {groups.length > 0 && (
+          {groups.length > 0 && !(role === "lecturer" && scope === "workspace") && (
             <div className="mt-5 border-t pt-5">
               {!isCollapsed && (
                 <div className="mb-4 px-2">
@@ -692,6 +729,7 @@ function NavigationGroups({
   currentKind = "page",
   expandedGroups,
   onToggleGroup,
+  collapsibleGroupLabels,
 }: {
   groups: readonly NavigationGroup[];
   collapsed: boolean;
@@ -702,6 +740,7 @@ function NavigationGroups({
   currentKind?: "page" | "location";
   expandedGroups?: Record<string, boolean>;
   onToggleGroup?: (group: string, open: boolean) => void;
+  collapsibleGroupLabels?: readonly string[];
 }) {
   const { t } = useLocale();
   return (
@@ -709,21 +748,84 @@ function NavigationGroups({
       {groups.map((group) => {
         const items = (
           <ul className="space-y-1">
-            {group.items.map((item) => (
-              <li key={item.id}>
-                <NavigationEntry
-                  item={item}
-                  collapsed={collapsed}
-                  active={activeId === item.id}
-                  preview={preview}
-                  onNavigate={onNavigate}
-                  currentKind={currentKind}
-                />
-              </li>
-            ))}
+            {group.items.map((item) => {
+              const isWorkspace =
+                item.id.startsWith("workspace:") && Boolean(item.children?.length);
+              const expanded = expandedGroups?.[item.id] ?? activeId.startsWith(`${item.id}:`);
+              return (
+                <li key={item.id}>
+                  <div className="flex items-center gap-1">
+                    <div className="min-w-0 flex-1">
+                      <NavigationEntry
+                        item={item}
+                        collapsed={collapsed}
+                        active={activeId === item.id || activeId.startsWith(`${item.id}:`)}
+                        preview={preview}
+                        onNavigate={onNavigate}
+                        currentKind={currentKind}
+                      />
+                    </div>
+                    {isWorkspace && !collapsed && (
+                      <Collapsible
+                        open={expanded}
+                        onOpenChange={(open) => onToggleGroup?.(item.id, open)}
+                      >
+                        <CollapsibleTrigger asChild>
+                          <button
+                            type="button"
+                            aria-label={`${expanded ? t("Collapse") : t("Expand")} ${t(item.label)} menu`}
+                            aria-expanded={expanded}
+                            className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            <ChevronDown
+                              aria-hidden="true"
+                              className={cn(
+                                "size-3.5 transition-transform motion-reduce:transition-none",
+                                !expanded && "-rotate-90",
+                              )}
+                            />
+                          </button>
+                        </CollapsibleTrigger>
+                      </Collapsible>
+                    )}
+                  </div>
+                  {item.children && (
+                    <Collapsible open={expanded}>
+                      <CollapsibleContent>
+                        <ul
+                          className={cn(
+                            "space-y-1",
+                            !collapsed && "ml-3 border-l border-border/70 pl-2",
+                          )}
+                        >
+                          {item.children.map((child) => (
+                            <li key={child.id}>
+                              <NavigationEntry
+                                item={child}
+                                collapsed={collapsed}
+                                active={activeId === child.id}
+                                preview={preview}
+                                onNavigate={onNavigate}
+                                currentKind={currentKind}
+                              />
+                            </li>
+                          ))}
+                        </ul>
+                      </CollapsibleContent>
+                    </Collapsible>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         );
-        if (!collapsed && onToggleGroup && group.label !== "Project") {
+        if (
+          !collapsed &&
+          onToggleGroup &&
+          (collapsibleGroupLabels
+            ? collapsibleGroupLabels.includes(group.label)
+            : group.label !== "Project")
+        ) {
           return (
             <Collapsible
               key={group.label}
