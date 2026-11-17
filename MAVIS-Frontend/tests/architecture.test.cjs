@@ -832,6 +832,7 @@ test("lecturer workspace navigation exposes unified class command destinations w
   assert.deepEqual(Object.fromEntries(destinations.map((item) => [item.id, item.href])), {
     "workspace-overview": "/workspace-overview",
     "course-authoring": "/workspace-overview?view=course-authoring",
+    "theory-library": "/theory-library",
     assignments: "/assignments",
     "assignment-submissions": "/submissions",
     members: "/members",

@@ -20,6 +20,7 @@ import {
 import { WorkspaceSelector } from "@/features/workspaces/components";
 import { Assignments } from "@/features/assignments/screens";
 import { LabAuthoring } from "@/features/assignments/lab-authoring";
+import { TheoryLibrary } from "@/features/workspaces/theory-library";
 import { Submissions } from "@/features/submissions/screens";
 import { CourseRoadmap, Courses, LabWorkspace } from "@/features/courses/screens";
 import type { ComponentType } from "react";
@@ -104,6 +105,12 @@ const screens: Record<
     title: "Lab Creation",
     scope: "workspace",
     component: LabAuthoring,
+    selector: "workspace",
+  },
+  "theory-library": {
+    title: "Theory Library",
+    scope: "workspace",
+    component: TheoryLibrary,
     selector: "workspace",
   },
   references: {

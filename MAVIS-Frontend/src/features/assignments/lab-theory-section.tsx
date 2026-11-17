@@ -469,6 +469,36 @@ export function LabTheorySection({
         </div>
       </section>
 
+      {course.data?.status === "DRAFT" && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
+          <span>
+            {t(
+              "Theory changes live in the Course draft. Students read them after you publish a new course version.",
+              "Thay đổi lý thuyết nằm trong bản nháp Course. Sinh viên đọc sau khi công bố phiên bản mới.",
+            )}
+          </span>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={course.publish.isPending}
+            onClick={() => course.publish.mutate()}
+          >
+            {course.publish.isPending
+              ? t("Publishing…", "Đang công bố…")
+              : t("Publish course version", "Công bố phiên bản Course")}
+          </Button>
+        </div>
+      )}
+      {course.publish.isSuccess && (
+        <p role="status" className="text-xs text-success">
+          {t(
+            `Published course version ${course.publish.data.version}.`,
+            `Đã công bố Course phiên bản ${course.publish.data.version}.`,
+          )}
+        </p>
+      )}
+
       <section className="space-y-4 rounded-xl border bg-card p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>

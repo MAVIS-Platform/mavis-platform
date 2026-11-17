@@ -970,6 +970,21 @@ test("Lab Library is the class-facing lab store and Quiz can be generated from L
   assert.ok(theory.includes("Save to library & attach"));
 });
 
+test("Theory Library is a standalone workspace screen with editing and course publishing", () => {
+  const screen = read("src/features/workspaces/theory-library.tsx");
+  const page = read("app/[screen]/page.tsx");
+  const navigation = read("src/lib/navigation.ts");
+
+  assert.match(page, /"theory-library"/);
+  assert.match(navigation, /id: "theory-library"[\s\S]*?href: "\/theory-library"/);
+  assert.ok(screen.includes("theory-assets"));
+  assert.ok(screen.includes("New lesson"));
+  assert.ok(screen.includes("Edit theory lesson"));
+  assert.ok(screen.includes("Delete lesson"));
+  assert.ok(screen.includes("Publish course version"));
+  assert.ok(screen.includes("MarkdownPreview"));
+});
+
 test("Studio Live authoring runs self-contained inline topology and playtest without external jumps", () => {
   const studio = read("src/features/assignments/lab-studio-section.tsx");
   const theory = read("src/features/assignments/lab-theory-section.tsx");
