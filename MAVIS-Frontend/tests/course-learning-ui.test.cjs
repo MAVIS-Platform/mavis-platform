@@ -105,7 +105,7 @@ test("Lab UI keeps unavailable progress gates honest and deep-links real assignm
     /state: model \? "READY" : referenceSnapshotId \? "IN PROGRESS" : "MISSING"/,
   );
   assert.match(course, /job\.status === "completed" && job\.analysisState !== "PARTIAL"/);
-  assert.match(course, /<CourseQuiz workspaceId=\{workspaceId\} labId=\{labId\}/);
+  assert.match(course, /<CourseQuiz\s+workspaceId=\{workspaceId\}\s+labId=\{labId\}/);
   assert.match(quiz, /queryKey: \["api", "course-quiz", workspaceId, labId\]/);
   assert.match(quiz, /api<Result>\(`\$\{path\}\/attempts`/);
   assert.match(course, /\/assignments\?workspace=.*&assignment=/s);
@@ -698,7 +698,7 @@ test("lecturer preview bypasses the roadmap lock and authoring keeps unsaved dra
   const course = read("src/features/courses/screens.tsx");
   const builder = read("src/features/courses/course-builder.tsx");
 
-  assert.match(course, /!preview && roadmap\.data\.guided/);
+  assert.match(course, /!preview &&\s*roadmap\.data\.guided/);
   assert.match(course, /type === "IMPACT_LAB"\) return 2/);
   assert.match(builder, /score === undefined \|\| score === "" \? 10 : Number\(score\)/);
   assert.doesNotMatch(builder, /course\.data\?\.draftRevision, course\.data\?\.title/);
