@@ -4,7 +4,7 @@ Kế hoạch: [master](2026-11-17-mavis-e2e-overnight-master.md).
 Baseline đầu phiên: HEAD `6c4bf1d`, branch `main`, upstream `origin/main`.
 
 ## Checkpoint đang thực thi
-- Task tiếp theo: **T35/T52** (Studio v2 student E2E), sau đó T51/T57/T60.
+- Task tiếp theo: **T57/T60** (docs source-of-truth + cleanup) và T33 frozen-topology inheritance nếu muốn siết đúng thiết kế.
 - Branch/SHA thực tế: `main` / commit task `5ba76f0`; baseline `6c4bf1d`.
 - Môi trường: local Windows, PostgreSQL 16 container port 55432, backend jar + managed .NET Runner, frontend port 3000, Chrome Playwright.
 - Actor/dataset: lecturer `hoangnt@fpt.edu.vn`; students `trietlmse181979`, `student2`…`student6`; workspace `a93d0eee-43db-41d6-89ee-8541d80739ed`; Lab1 `6b2951ab-1910-4b85-82f1-f900929951c2` (THEORY_QUIZ, published Lab1); Lab2 `0e0dc00d-9e28-4ea8-acea-bff90d5f15fa` (published Lab2); submission S6 `a666dcbd-b815-4b87-9578-1790b4488483`.
@@ -38,7 +38,7 @@ Baseline đầu phiên: HEAD `6c4bf1d`, branch `main`, upstream `origin/main`.
 - [x] T24 — PASS — theory-only nộp được bằng explanation, không chọn model/diagram/runtime.
 - [ ] T25–T33 — WORKING — chưa chạy lại toàn bộ Studio student path trong lượt này; bằng chứng Runner/Docker cũ chỉ là lịch sử, không dùng thay run mới.
 - [x] T34 — PASS — backend v2 theory-only: POST `/submissions` lưu theory evidence, quiz evidence, digest; thiếu explanation trả `THEORY_ANSWER_REQUIRED`.
-- [ ] T35 — WORKING — backend guard đã có, nhưng Student Step 3 hiện không tạo được student runtime project/session; chỉ có link “Open Lab assignment” legacy. Không có student Studio submission thật để PASS.
+- [x] T35 — PASS — student project/session thật, submission `9deb7b8a-592c-4d09-85d3-a5d200c8b9bc` chứa theory + 2 Studio snapshots + Studio receipt; guard ownership/source hash hoạt động.
 - [x] T36 — PASS — digest SHA-256 của assignment/mode/source/quiz/theory/studio/notes; response trả theoryEvidence và snapshot THEORY.
 - [x] T37 — PASS — form inline, không có selector diagram/model; lỗi submit hiển thị; nút disable khi thiếu Studio session.
 - [ ] T38 — WORKING — chưa có draft autosave; resubmit toggle giữ nội dung trong phiên.
@@ -52,11 +52,11 @@ Baseline đầu phiên: HEAD `6c4bf1d`, branch `main`, upstream `origin/main`.
 - [ ] T46 — TODO — negative cross-workspace/role chưa test.
 - [ ] T47 — WORKING — WIP UI sinh viên giữ nguyên, chưa hoàn thiện.
 - [ ] T48–T50 — TODO/partial — chưa chạy a11y/snapshot/route boundary đầy đủ.
-- [ ] T51 — WORKING — typecheck PASS, frontend 420 pass, focused backend 51 pass, migration 1 pass; chưa full CI suite.
-- [ ] T52 — WORKING — theory-only E2E local PASS tới unlock. Studio Lab2 đã publish, Quiz v1, runtime profile/topology sẵn; Student Step 3 thiếu action tạo/start student runtime session nên Studio E2E dừng tại đây.
+- [x] T51 — PASS — typecheck PASS, frontend 420 pass, backend focused 37+46 pass, migration 1 pass; CI run `44000347337` cho `3b55766` success.
+- [x] T52 — PASS (functional) — theory-only E2E tới unlock; Studio E2E student thật: Quiz → own session → STOP/START/SCALE → 2 snapshots → Finish COMPLETED/PASSED/CONFIRMED → submit v2 → grade 86.67, mọi section >5. Còn thiếu kế thừa frozen topology (T33).
 - [x] T53 — PASS — commit `5ba76f0` chỉ gồm backend/schema/contracts/UI v2/deploy; WIP khác giữ ngoài stage.
-- [x] T54 — PASS — push `5ba76f0`; run `43959961856` completed success đúng SHA.
-- [x] T55 — PASS — workflow `43959961856` verify/images/deploy success; production login page 200 (không phải nghiệm thu tài khoản).
+- [x] T54 — PASS — `5ba76f0` run success; Studio commit `3b55766` run `44000347337` completed success.
+- [x] T55 — PASS — workflow `44000347337` verify/images/deploy success; production login page 200 (không phải nghiệm thu tài khoản).
 - [ ] T56 — BLOCKED — thiếu test accounts production; không tạo user SQL production/không bypass OTP.
 - [ ] T57 — WORKING — đã tạo báo cáo sáng `docs/MAVIS_E2E_MORNING_REPORT_2026-11-17.md`; docs handoff gốc chưa cập nhật v2.
 - [ ] T58–T60 — WORKING — report đã viết; đã dừng process và xóa mig-db/temp; giữ DB local có dữ liệu Lab1/Lab2 cho phiên sau. Cần chốt ledger cuối.

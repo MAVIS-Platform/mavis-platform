@@ -2,9 +2,9 @@
 
 ## SHA / trạng thái
 - Nhánh: `main`.
-- Commit triển khai chính: **`5ba76f0`** — `feat(lab): add theory submission v2 with return and resubmit flow`.
+- Commit triển khai chính: **`5ba76f0`** (Submission v2) + **`3b55766`** (student Studio session/submission flow).
 - Baseline đầu phiên: `6c4bf1d`.
-- GitHub Actions run `43959961856` cho `5ba76f0`: **completed success** (verify/images/deploy theo workflow hiện hành).
+- GitHub Actions: run `43959961856` cho `5ba76f0` success; run `44000347337` cho `3b55766` success.
 - Migration mới: **V38__Submission_V2_Lab_Mode.sql**.
 
 ## Đã hoàn thành trong lượt này
@@ -31,7 +31,10 @@
 - Review RETURNED revision 1 với lý do; student resubmit `a666dcbd-b815-4b87-9578-1790b4488483`.
 - Grade GRADED 90/100, snapshot `THEORY_THEORY = 9.0`; `course_lab_results.passed=true`; roadmap: Lab1 `PASSED`, Lab2 `UNLOCKED`.
 - Review UI hiển thị nguyên văn giải trình “The orders service calls payment through the prepared route controller…”.
-- Ảnh: `MAVIS-Frontend/.artifacts/e2e-local/{42-student-theory-submitted,60-review-v2}.png`.
+- Studio student: session `45c2aee9-0403-44ac-96e8-9fa33795476c` (student6, assignment Lab2) STOP/START/SCALE payment 1→2, 2 snapshots, Finish `COMPLETED/PASSED/CONFIRMED`, receipt `sha256:a94f109029bc1…`.
+- Studio submission `9deb7b8a-592c-4d09-85d3-a5d200c8b9bc` chứa theory + 2 Studio snapshots + receipt; grade `86.67`, các section 9.0/8.5/8.5; `course_lab_results` Lab2 passed=true.
+- Review UI hiển thị Theory explanation và 2 Studio snapshot 9.00/8.50; evidence package `sha256:1d1f9854…`.
+- Ảnh: `MAVIS-Frontend/.artifacts/e2e-local/{42-student-theory-submitted,52-student-studio-finished,60-review-v2}.png`.
 
 ## Lệnh và kết quả mới
 - Frontend: `npm run typecheck` PASS; `npm test` **420 pass, 0 fail**; `npm run build` PASS.
@@ -54,11 +57,11 @@
 Không stage: `course-outline.tsx`, `course-workspace-shell.tsx`, `lab-toc.tsx`, `submissions/screens.tsx`, `workspaces/screens.tsx`, `navigation.ts`, `tests/course-learning-ui.test.cjs`, fixture observed-sequence, ba backend test `RuntimeSetupControllerTest`, `CourseAccessServiceTest`, `CourseSetupServiceTest`, docs/bootstrap chưa tracked. `courses/screens.tsx` chỉ stage 6 hunk v2, phần còn lại vẫn unstaged.
 
 ## Còn thiếu / ba bước tiếp theo
-1. **T35/T52 Studio v2**: chạy student Studio Lab thật (student session → STOP/START/SCALE → Finish → submit v2 → grade) để xác minh nhánh `THEORY_QUIZ_STUDIO`.
+1. **T33**: siết student session kế thừa frozen topology assignment và test negative teacher-session/cross-assignment.
 2. **T51/T57**: chạy full regression CI mở rộng và cập nhật docs nguồn sự thật; thêm test UI cho form v2/returned state.
 3. **T56**: nhận test accounts qua cơ chế credential được cấp (không gửi mật khẩu chat), sau đó chạy full flow production trong không gian test và cleanup dữ liệu test.
 
 ## Rủi ro
-- Studio v2 backend đã có guard nhưng Student Step 3 hiện chỉ mở assignment legacy, chưa có action tạo student runtime project/session. Vì vậy Studio Lab2 mới dừng ở runtime gate; chưa có student Studio submission thật.
+- Studio v2 functional flow đã PASS; **T33 frozen topology inheritance chưa chứng minh**: student dùng student working model/config riêng, chưa copy frozen topology assignment. Không dùng teacher session.
 - Draft grade/409 stale, Passkey expiry, cross-workspace negative cases chưa test.
 - Local runner/docker chỉ chứng minh môi trường local, không chứng minh Runner production.
