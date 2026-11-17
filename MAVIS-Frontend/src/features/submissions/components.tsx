@@ -13,7 +13,52 @@ import type { Submission } from "@/types/domain";
 import { useLocale } from "@/lib/i18n/locale-context";
 export function SubmissionVersionHeader({ submission }: { submission: Submission }) {
   const { t } = useLocale();
+  const canReview = usePermission("submission:review");
   const quiz = submission.courseQuizEvidence;
+  const labLabel = `${submission.labOrder ? `Lab ${String(submission.labOrder).padStart(2, "0")} · ` : ""}${submission.assignmentTitle || submission.assignmentId}`;
+
+  if (!canReview) {
+    return (
+      <DetailPanel title={t("Submission Dossier", "Hồ sơ bài nộp")}>
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusBadge
+            status={t("Frozen submitted dossier · read-only", "Hồ sơ đã khóa · chỉ đọc")}
+            variant="source"
+          />
+          {submission.labMode && <StatusBadge status={submission.labMode} variant="outline" />}
+          {submission.runtime?.studioVerified && (
+            <StatusBadge
+              status={t("Studio Live Verified", "Đã xác minh Studio Live")}
+              variant="success"
+            />
+          )}
+        </div>
+        <p className="text-sm font-medium">
+          {submission.workspaceName ? `${submission.workspaceName} · ` : ""}
+          {labLabel}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          {submission.studentName || submission.studentId} · {t("Submitted", "Đã nộp")}{" "}
+          {submission.submittedAt}
+          {submission.complianceScore !== null && submission.complianceScore !== undefined
+            ? ` · ${t("Compliance", "Tuân thủ 3E")}: ${submission.complianceScore}`
+            : ""}
+        </p>
+        {submission.submissionNotes && (
+          <p className="whitespace-pre-wrap text-sm">{submission.submissionNotes}</p>
+        )}
+        {quiz && (
+          <p className="text-sm">
+            {t("Lab Quiz passed", "Đã đạt Quiz của Lab")} · {quiz.correctCount}/{quiz.questionCount}
+            {" · "}
+            {t("Version", "Phiên bản")} {quiz.quizVersion}
+          </p>
+        )}
+        <SubmissionExport submissionId={submission.id} />
+      </DetailPanel>
+    );
+  }
+
   return (
     <DetailPanel title="Submitted snapshot">
       <StatusBadge status="Frozen submitted results · read-only" variant="source" />
@@ -39,20 +84,28 @@ export function SubmissionVersionHeader({ submission }: { submission: Submission
       {quiz && (
         <p className="text-sm">
           {t("Lab Quiz passed", "Đã đạt Quiz của Lab")} · {quiz.correctCount}/{quiz.questionCount}
-          {" · "}{t("Version", "Phiên bản")} {quiz.quizVersion}
+          {" · "}
+          {t("Version", "Phiên bản")} {quiz.quizVersion}
         </p>
       )}
       <SubmissionExport submissionId={submission.id} />
       <p className="text-xs text-muted-foreground">
         {submission.runtime ? (
-          <Link className="underline" href={`/sessions?${new URLSearchParams({
-            project: submission.runtime.projectId, session: submission.runtime.id,
-          })}`}>
+          <Link
+            className="underline"
+            href={`/sessions?${new URLSearchParams({
+              project: submission.runtime.projectId,
+              session: submission.runtime.id,
+            })}`}
+          >
             {submission.runtime.studioVerified
               ? t("Verified Studio evidence", "Minh chứng Studio đã xác minh")
-              : t("Runtime evidence", "Minh chứng Runtime")} · {submission.runtime.id.slice(0, 8)}
+              : t("Runtime evidence", "Minh chứng Runtime")}{" "}
+            · {submission.runtime.id.slice(0, 8)}
           </Link>
-        ) : t("No runtime evidence attached", "Chưa đính kèm minh chứng Runtime")}
+        ) : (
+          t("No runtime evidence attached", "Chưa đính kèm minh chứng Runtime")
+        )}
       </p>
     </DetailPanel>
   );
@@ -96,7 +149,10 @@ export function FeedbackPanel({
       )}
       {canReview && (
         <>
-          <p className="text-xs text-muted-foreground">Inline feedback is visible to the student immediately. Use the private grading draft above for notes you are not ready to publish.</p>
+          <p className="text-xs text-muted-foreground">
+            Inline feedback is visible to the student immediately. Use the private grading draft
+            above for notes you are not ready to publish.
+          </p>
           {(() => {
             const elementNameById = new Map(
               submission.model.elements.map((e) => [e.id, e.name] as const),

@@ -41,20 +41,22 @@ test("course learning routes are registered in the shared authenticated shell", 
   assert.match(home, /<PublicHomepage\s*\/>/);
 });
 
-test("student navigation follows Course to Roadmap to Lab and submissions", () => {
+test("student navigation locks class sidebar to 3 clean course items and preserves student destinations", () => {
   const navigation = read("src/lib/navigation.ts");
 
   for (const label of [
     "My Courses",
     "Join Course",
     "Course Roadmap",
-    "Lab Workspace",
     "My Submissions",
     "Free Studio Sandbox",
+    "My Classes",
+    "Lab Roadmap & Course",
+    "Submissions & Grades",
   ])
     assert.ok(navigation.includes(label), label);
   assert.match(navigation, /href:\s*"\/roadmap"/);
-  assert.match(navigation, /href:\s*"\/lab"/);
+  assert.match(navigation, /href:\s*"\/submissions"/);
   assert.match(navigation, /href:\s*"\/courses"/);
 });
 
@@ -80,9 +82,9 @@ test("student class outline uses published roadmap and markdown activities with 
   assert.ok(shell.includes('tab === "content" || tab === "submissions"'));
 });
 
-test("student submissions are scoped by selected class roster and retain class navigation", () => {
+test("student submissions are scoped by selected class workspaceId and retain class navigation", () => {
   const submissions = read("src/features/submissions/screens.tsx");
-  assert.ok(submissions.includes("idsInSelectedClass.has(submission.studentId)"));
+  assert.ok(submissions.includes("submission.workspaceId === workspaceId"));
   assert.ok(
     submissions.includes('<CourseWorkspaceShell workspace={workspace} active="submissions">'),
   );
@@ -246,7 +248,7 @@ test("assignment and submission screens preserve the selected Lab context", () =
   assert.ok(assignments.includes('params?.get("assignment")'));
   assert.ok(assignments.includes("scrollIntoView"));
   assert.ok(assignments.includes("ring-2 ring-primary/40"));
-  assert.ok(submissions.includes("submission.assignmentId === assignmentId"));
+  assert.ok(submissions.includes("submission.assignmentId !== assignmentId"));
   assert.ok(submissions.includes("No snapshot has been submitted for this Lab yet"));
 });
 
@@ -1075,4 +1077,70 @@ test("GradeForm renders student snapshot explanations and preserves dirty draft 
 
   assert.ok(html.includes("Theory explanation"));
   assert.ok(html.includes("Orders route controller delegates cleanly to payment."));
+});
+
+test("FE-02 Student Submissions eliminate ReadOnlyDrawio iframe/.drawio and isolate classes strictly by workspaceId", () => {
+  const React = require("react");
+  const { renderToStaticMarkup } = require("react-dom/server");
+  const { FrozenArtifacts } = require("../src/features/submissions/frozen-artifacts.tsx");
+  const { filterStudentSubmissions } = require("../src/features/submissions/screens.tsx");
+  const frozenSource = read("src/features/submissions/frozen-artifacts.tsx");
+  const screensSource = read("src/features/submissions/screens.tsx");
+  const componentsSource = read("src/features/submissions/components.tsx");
+
+  assert.doesNotMatch(frozenSource, /ReadOnlyDrawio|submission-viewer\.html|\.drawio/);
+  assert.match(screensSource, /showLegacyTechnicalPanels\s*=\s*canReview\s*&&\s*!isV2Submission/);
+  assert.match(componentsSource, /if\s*\(!canReview\)\s*\{?\s*return/);
+
+  const legacyDrawioHtml = renderToStaticMarkup(
+    React.createElement(FrozenArtifacts, {
+      submission: {
+        id: "sub-legacy",
+        assignmentId: "lab-legacy",
+        assignmentTitle: "Legacy Lab",
+        studentId: "stu-1",
+        studentName: "Student 1",
+        model: { id: "mod-1", revision: 1, elements: [], edges: [] },
+        snapshot: { id: "snap-1", digest: "sha256:snap" },
+        diagramVersionId: "diag-1",
+        diagramLayout: {
+          artifacts: [
+            {
+              notation: "C4_CONTAINER",
+              layoutJson: { drawioXml: "<mxfile><diagram>legacy</diagram></mxfile>" },
+            },
+          ],
+        },
+        feedback: [],
+        submittedAt: "2026-11-17T10:00:00Z",
+      },
+    }),
+  );
+  assert.ok(!legacyDrawioHtml.includes("submission-viewer.html"));
+  assert.ok(!legacyDrawioHtml.includes(".drawio"));
+  assert.ok(legacyDrawioHtml.includes("Download diagram JSON"));
+
+  const subClassA = {
+    id: "sub-a",
+    assignmentId: "lab-1",
+    workspaceId: "ws-a",
+    studentId: "stu-1",
+    model: { id: "m1", revision: 1, elements: [], edges: [] },
+    snapshot: { id: "s1", digest: "d1" },
+    diagramVersionId: null,
+    diagramLayout: null,
+    feedback: [],
+    submittedAt: "2026-11-17T10:00:00Z",
+  };
+  const subClassB = {
+    ...subClassA,
+    id: "sub-b",
+    assignmentId: "lab-2",
+    workspaceId: "ws-b",
+  };
+  const filtered = filterStudentSubmissions([subClassA, subClassB], "ws-a", "");
+  assert.deepEqual(
+    filtered.map((s) => s.id),
+    ["sub-a"],
+  );
 });

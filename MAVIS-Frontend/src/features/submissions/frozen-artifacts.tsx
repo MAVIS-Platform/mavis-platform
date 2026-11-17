@@ -1,5 +1,4 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
 import { DiagramPreview } from "@/features/architecture/diagram-preview";
 import { DetailPanel } from "@/components/shared/data";
 import { Button } from "@/components/ui/button";
@@ -33,60 +32,6 @@ function projectionDsl(payload: Record<string, unknown>): string | null {
       return from && to ? [`${from} -->|"${label(e["label"] ?? e["type"] ?? "")}"| ${to}`] : [];
     }),
   ].join("\n");
-}
-function ReadOnlyDrawio({ xml, title }: { xml: string; title: string }) {
-  const frame = useRef<HTMLIFrameElement>(null),
-    [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
-  useEffect(() => {
-    setStatus("loading");
-    let timer = window.setTimeout(() => setStatus("error"), 12000);
-    const receive = (event: MessageEvent) => {
-      if (event.source !== frame.current?.contentWindow || event.origin !== "null") return;
-      if (event.data?.type === "mavis-submission-ready")
-        frame.current?.contentWindow?.postMessage({ type: "mavis-submission-load", xml }, "*");
-      if (event.data?.type === "mavis-submission-rendered") {
-        window.clearTimeout(timer);
-        setStatus("ready");
-      }
-      if (event.data?.type === "mavis-submission-error") {
-        window.clearTimeout(timer);
-        setStatus("error");
-      }
-    };
-    window.addEventListener("message", receive);
-    return () => {
-      window.clearTimeout(timer);
-      window.removeEventListener("message", receive);
-    };
-  }, [xml]);
-  return (
-    <div className="min-w-0 space-y-2">
-      <p className="text-xs text-muted-foreground">
-        Frozen submitted diagram · read-only
-        {status === "loading" ? " · Loading local preview…" : ""}
-      </p>
-      {status === "error" && (
-        <p role="status" className="rounded-lg border p-3 text-sm text-muted-foreground">
-          Preview unavailable. Download the original submitted diagram below.
-        </p>
-      )}
-      <iframe
-        ref={frame}
-        key={xml}
-        sandbox="allow-scripts"
-        title={title}
-        src="/submission-viewer.html"
-        className={`w-full rounded-lg border bg-white ${status === "error" ? "hidden" : "h-[440px] sm:h-[560px]"}`}
-      />
-      <Button
-        size="sm"
-        variant="outline"
-        onClick={() => downloadArtifact(title + ".drawio", xml, "application/xml")}
-      >
-        Download submitted draw.io
-      </Button>
-    </div>
-  );
 }
 function SubmissionEvidenceHeader({ submission }: { submission: Submission }) {
   return (
@@ -171,7 +116,6 @@ export function FrozenArtifacts({ submission }: { submission: Submission }) {
       </p>
       {artifacts.map((artifact, index) => {
         const payload = artifact.layoutJson ?? {},
-          xml = payload["drawioXml"],
           dsl = payload["mermaidDsl"] ?? payload["mermaid"] ?? projectionDsl(payload);
         return (
           <section key={index} className="space-y-3 rounded-xl border p-4">
@@ -179,9 +123,7 @@ export function FrozenArtifacts({ submission }: { submission: Submission }) {
               {artifact.notation} · {String(payload["viewId"] ?? artifact.level ?? "")}{" "}
               {payload["documentRevision"] ? `· revision ${payload["documentRevision"]}` : ""}
             </h3>
-            {typeof xml === "string" ? (
-              <ReadOnlyDrawio xml={xml} title={`Submitted ${artifact.notation} ${index + 1}`} />
-            ) : typeof dsl === "string" ? (
+            {typeof dsl === "string" ? (
               <DiagramPreview
                 title={artifact.notation}
                 content={dsl}
@@ -190,8 +132,8 @@ export function FrozenArtifacts({ submission }: { submission: Submission }) {
               />
             ) : (
               <p className="text-sm text-muted-foreground">
-                This generated projection is preserved as model/layout JSON. Download its exact
-                payload below.
+                Frozen architecture snapshot preserved as JSON evidence. Download its exact payload
+                below.
               </p>
             )}
             <Button
