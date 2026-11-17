@@ -106,6 +106,38 @@ class CourseSetupServiceTest {
                 .filter(step -> step.id().equals("studio")).allMatch(step -> "ACTION".equals(step.state())));
     }
 
+    @Test void multipleReferenceProjectsSurfaceTheReferenceThatStillNeedsConfiguration() {
+        UUID secondProjectId = UUID.randomUUID();
+        UUID secondSnapshotId = UUID.randomUUID();
+        UUID secondModelId = UUID.randomUUID();
+        Project secondProject = Project.builder().id(secondProjectId).workspace(workspace)
+                .name("Second reference").projectType("TEACHER_REFERENCE")
+                .isReferenceTemplate(true).status("ACTIVE").build();
+        SourceSnapshot secondSnapshot = SourceSnapshot.builder().id(secondSnapshotId).project(secondProject)
+                .isPublished(true).artifactHash("b".repeat(64)).storagePath("second-reference.zip").build();
+        ModelVersion secondModel = ModelVersion.builder().id(secondModelId).project(secondProject)
+                .sourceSnapshot(secondSnapshot).revision(8).build();
+        Assignment secondLab = Assignment.builder().id(UUID.randomUUID()).workspace(workspace)
+                .title("Lab 2").labOrder(2).requireRuntimeTrace(true).referenceModel(secondModel)
+                .createdAt(OffsetDateTime.now().plusSeconds(1)).build();
+        secondLab.setStudioTopologySnapshot(mapper.createObjectNode().put("version", 1));
+        secondLab.setStudioTopologyRevision(8);
+        when(assignments.findByWorkspaceIdOrderByCreatedAtDesc(workspaceId)).thenReturn(List.of(secondLab, lab));
+        when(jdbc.queryForObject(contains("FROM course_quizzes"), eq(Integer.class), eq(secondLab.getId()), eq(secondModelId)))
+                .thenReturn(1);
+        when(configurations.findById(secondProjectId)).thenReturn(Optional.empty());
+
+        var result = setup.setup(workspaceId);
+
+        assertEquals(secondProjectId, result.reference().projectId());
+        assertEquals("READY", result.labs().get(0).state());
+        assertEquals("NEEDS_STUDIO", result.labs().get(1).state());
+        assertTrue(result.steps().stream().filter(step -> step.id().equals("studio"))
+                .allMatch(step -> "ACTION".equals(step.state())));
+        assertEquals("configure-runtime", result.nextAction());
+        assertEquals(assignmentId, result.previewAssignmentId());
+    }
+
     @Test void emptyCourseStartsWithSeedingAndReferenceFallback() {
         when(assignments.findByWorkspaceIdOrderByCreatedAtDesc(workspaceId)).thenReturn(List.of());
         when(projects.findByWorkspaceId(workspaceId)).thenReturn(List.of(project));

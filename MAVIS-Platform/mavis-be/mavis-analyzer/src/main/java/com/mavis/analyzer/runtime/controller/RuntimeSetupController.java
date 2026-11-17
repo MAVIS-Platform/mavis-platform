@@ -1,6 +1,7 @@
 package com.mavis.analyzer.runtime.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.mavis.analyzer.runtime.service.RunnerHealthProbe;
 import com.mavis.analyzer.runtime.service.RuntimePlanningService;
 import com.mavis.common.dto.ApiResponse;
 import lombok.RequiredArgsConstructor;
@@ -19,6 +20,7 @@ import java.util.UUID;
 @RequestMapping("/api/v1/analyzer/projects/{projectId}")
 public class RuntimeSetupController {
     private final RuntimePlanningService planning;
+    private final RunnerHealthProbe runnerHealth;
 
     public record Readiness(
             boolean configured,
@@ -36,17 +38,20 @@ public class RuntimeSetupController {
     @GetMapping("/runtime-setup-readiness")
     public ApiResponse<Readiness> readiness(@PathVariable UUID projectId) {
         var view = planning.configuration(projectId);
+        var health = runnerHealth.probe();
         JsonNode profile = view.profile();
         JsonNode topology = profile != null && profile.path("studioTopology").isObject()
                 ? profile.path("studioTopology") : null;
+        List<String> runnerIssues = new ArrayList<>(textArray(profile == null ? null : profile.get("runnerIssues")));
+        runnerIssues.addAll(health.issues());
         return ApiResponse.success(new Readiness(
-                view.configured(), view.supported(), view.ready(), view.revision(),
+                view.configured(), view.supported(), view.ready() && health.ready(), view.revision(),
                 view.prerequisites() == null ? List.of() : view.prerequisites(),
                 view.warnings() == null ? List.of() : view.warnings(),
                 fieldNames(profile == null ? null : profile.get("applications")),
                 fieldNames(profile == null ? null : profile.get("serviceMappings")),
                 textArray(profile == null ? null : profile.get("detectedServices")),
-                textArray(profile == null ? null : profile.get("runnerIssues")),
+                runnerIssues,
                 topology));
     }
 

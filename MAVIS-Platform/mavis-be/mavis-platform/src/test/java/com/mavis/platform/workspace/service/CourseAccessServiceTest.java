@@ -101,6 +101,39 @@ class CourseAccessServiceTest {
     }
 
     @Test
+    void republishKeepsTheFrozenTopologySnapshot() {
+        UUID teacherId = UUID.randomUUID();
+        when(access.requireCurrentActiveUser()).thenReturn(User.builder().id(teacherId).build());
+        when(workspaces.findLockedById(workspaceId)).thenReturn(Optional.of(workspace));
+        when(assignments.findLockedById(assignmentId)).thenReturn(Optional.of(assignment));
+        assignment.setLabOrder(1);
+        assignment.setStudioTopologySnapshot(new ObjectMapper().createObjectNode()
+                .put("version", 1).put("marker", "frozen-v1"));
+        assignment.setStudioTopologyRevision(5);
+
+        var project = Project.builder().id(UUID.randomUUID()).workspace(workspace).status("ACTIVE")
+                .projectType("TEACHER_REFERENCE").isReferenceTemplate(true).build();
+        var source = SourceSnapshot.builder().id(UUID.randomUUID()).project(project).isPublished(true).build();
+        var model = ModelVersion.builder().id(UUID.randomUUID()).sourceSnapshot(source).build();
+        assignment.setReferenceModel(model);
+        var profile = new ObjectMapper().createObjectNode();
+        profile.putObject("studioTopology").put("version", 1).put("marker", "edited-after-freeze");
+        var configuration = new RuntimeConfiguration();
+        configuration.setProjectId(project.getId());
+        configuration.setSourceSnapshotId(source.getId());
+        configuration.setModelVersionId(model.getId());
+        configuration.setProfile(profile);
+        configuration.setRevision(6);
+        when(configurations.findById(project.getId())).thenReturn(Optional.of(configuration));
+
+        courses.publish(workspaceId, assignmentId);
+
+        assertEquals("frozen-v1", assignment.getStudioTopologySnapshot().path("marker").asText());
+        assertEquals(Integer.valueOf(5), assignment.getStudioTopologyRevision());
+        verify(assignments, never()).save(assignment);
+    }
+
+    @Test
     void refusesUnpinnedReferenceAndPasskeyBeforePublishing() {
         when(workspaces.findLockedById(workspaceId)).thenReturn(Optional.of(workspace));
         when(assignments.findLockedById(assignmentId)).thenReturn(Optional.of(assignment));
