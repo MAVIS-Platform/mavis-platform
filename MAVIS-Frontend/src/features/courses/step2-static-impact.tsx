@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { useApiQuery } from "@/hooks/use-api";
 import { computeArchitectureImpact, type ImpactScopeMode } from "@/lib/architecture/reverse-bfs";
 import { useLocale } from "@/lib/i18n/locale-context";
+import type { ArchitecturalModel } from "@/types/domain";
 
 /**
  * Step 2 interactive Reverse BFS impact explorer and C1-C3 reference view back-links
@@ -19,11 +20,15 @@ export function Step2StaticImpact({
   modelId,
   modelQuery,
   sourceLink,
+  inlineModel,
+  onOpenC1C3View,
 }: {
   projectId: string;
   modelId?: string | undefined;
   modelQuery: string | null;
   sourceLink: string;
+  inlineModel?: ArchitecturalModel | undefined;
+  onOpenC1C3View?: ((view: "CONTEXT" | "CONTAINER" | "COMPONENT" | "GRAPH") => void) | undefined;
 }) {
   const { t } = useLocale();
   const [selectedTargetId, setSelectedTargetId] = useState<string>("");
@@ -32,9 +37,9 @@ export function Step2StaticImpact({
   const modelQueryResult = useApiQuery(
     "model",
     { modelId: modelId ?? "", ...(projectId ? { projectId } : {}) },
-    { enabled: Boolean(modelId) },
+    { enabled: !inlineModel && Boolean(modelId) },
   );
-  const model = modelQueryResult.data;
+  const model = inlineModel ?? modelQueryResult.data;
 
   const activeTargetId = useMemo(() => {
     if (!model || model.elements.length === 0) return "";
@@ -63,16 +68,59 @@ export function Step2StaticImpact({
   return (
     <div className="space-y-5">
       <DetailPanel
-        title={t("Reference Architecture Views (Back-Links)", "Sơ đồ kiến trúc tham chiếu (Liên kết nhanh)")}
+        title={t(
+          "Reference Architecture Views (Back-Links)",
+          "Sơ đồ kiến trúc tham chiếu (Liên kết nhanh)",
+        )}
       >
         <p className="text-sm leading-6 text-muted-foreground">
-          {t(
-            "Jump back to C1-C3 read-only views or the full Change Impact workspace using this Lab's pinned model revision.",
-            "Mở lại các góc nhìn chỉ đọc C1-C3 hoặc trang phân tích tác động đầy đủ theo đúng revision mô hình đã ghim của Lab.",
-          )}
+          {onOpenC1C3View
+            ? t(
+                "Switch directly back to any Step 1 C1-C3 diagram or Dependency Graph view inside this Lab.",
+                "Chuyển nhanh về các góc nhìn C1-C3 hoặc Đồ thị phụ thuộc ở Bước 1 ngay trong Lab này.",
+              )
+            : t(
+                "Jump back to C1-C3 read-only views or the full Change Impact workspace using this Lab's pinned model revision.",
+                "Mở lại các góc nhìn chỉ đọc C1-C3 hoặc trang phân tích tác động đầy đủ theo đúng revision mô hình đã ghim của Lab.",
+              )}
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
-          {modelQuery ? (
+          {onOpenC1C3View ? (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => onOpenC1C3View("CONTEXT")}
+              >
+                C1 System Context
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => onOpenC1C3View("CONTAINER")}
+              >
+                C2 Container
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => onOpenC1C3View("COMPONENT")}
+              >
+                C3 Component
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => onOpenC1C3View("GRAPH")}
+              >
+                {t("Service Dependency Graph", "Đồ thị phụ thuộc Service")}
+              </Button>
+            </>
+          ) : modelQuery ? (
             <>
               <Button asChild variant="outline" size="sm">
                 <Link href={`/diagrams?${modelQuery}&kind=CONTEXT`}>C1 System Context</Link>
@@ -106,10 +154,7 @@ export function Step2StaticImpact({
       </DetailPanel>
 
       <DetailPanel
-        title={t(
-          "Reverse BFS Static Impact Explorer",
-          "Khám phá tác động tĩnh theo Reverse BFS",
-        )}
+        title={t("Reverse BFS Static Impact Explorer", "Khám phá tác động tĩnh theo Reverse BFS")}
       >
         {!modelId ? (
           <p className="text-sm text-muted-foreground">
@@ -155,7 +200,9 @@ export function Step2StaticImpact({
                   value={scope}
                   onChange={(event) => setScope(event.target.value as ImpactScopeMode)}
                 >
-                  <option value="all">{t("All architectural nodes", "Tất cả nút kiến trúc")}</option>
+                  <option value="all">
+                    {t("All architectural nodes", "Tất cả nút kiến trúc")}
+                  </option>
                   <option value="source">{t("Source code only", "Chỉ từ mã nguồn")}</option>
                   <option value="components">
                     {t("Include internal components", "Bao gồm thành phần nội bộ")}
@@ -223,7 +270,10 @@ export function Step2StaticImpact({
               <div>
                 <h4 className="mb-1.5 flex items-center gap-1.5 font-semibold text-foreground">
                   <GitBranch className="size-3.5" aria-hidden="true" />
-                  {t("Impacted Upstream Chains (Reverse BFS)", "Chuỗi ảnh hưởng ngược dòng (Reverse BFS)")}
+                  {t(
+                    "Impacted Upstream Chains (Reverse BFS)",
+                    "Chuỗi ảnh hưởng ngược dòng (Reverse BFS)",
+                  )}
                 </h4>
                 {impact.upstreamImpacted.length === 0 ? (
                   <p className="text-muted-foreground">
@@ -266,7 +316,10 @@ export function Step2StaticImpact({
                 </h4>
                 {impact.unaffectedElements.length === 0 ? (
                   <p className="text-muted-foreground">
-                    {t("All other projected elements lie upstream of this target.", "Tất cả phần tử khác đều nằm ở nhánh gọi ngược dòng.")}
+                    {t(
+                      "All other projected elements lie upstream of this target.",
+                      "Tất cả phần tử khác đều nằm ở nhánh gọi ngược dòng.",
+                    )}
                   </p>
                 ) : (
                   <div className="flex flex-wrap gap-1.5">

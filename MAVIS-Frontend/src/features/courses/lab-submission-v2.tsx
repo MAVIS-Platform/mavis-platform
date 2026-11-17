@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { useApiMutation, useApiQuery, useSession } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { DetailPanel } from "@/components/shared/data";
+import { Badge } from "@/components/ui/badge";
+import type { StudentLabLatestReview } from "@/features/workspaces/course-access";
 
 export function labSubmissionDraftKey(
   userId: string | null | undefined,
@@ -22,18 +24,20 @@ export function LabSubmissionV2({
   assignmentId,
   labMode,
   runtimeSessionId,
+  initialReview,
 }: {
   workspaceId: string;
   assignmentId: string;
   labMode: string;
   runtimeSessionId?: string | undefined;
+  initialReview?: StudentLabLatestReview | null | undefined;
 }) {
   const { t } = useLocale();
   const cache = useQueryClient();
   const session = useSession();
   const userId = session.data?.user?.id;
   const draftKey = labSubmissionDraftKey(userId, workspaceId, assignmentId);
-  const submissions = useApiQuery("submissions", {});
+  const submissions = useApiQuery("submissions", { workspaceId });
   const submit = useApiMutation("submit");
   const [answer, setAnswer] = useState("");
   const [revising, setRevising] = useState(false);
@@ -57,12 +61,13 @@ export function LabSubmissionV2({
     { submissionId: latest?.id ?? "" },
     { enabled: Boolean(latest) },
   );
+  const activeReview = review.data ?? initialReview;
   const canSubmit = answer.trim().length > 0 && (!studio || Boolean(runtimeSessionId));
 
   if (latest && !revising) {
     return (
       <div id="lab-submit">
-        <DetailPanel title={t("Submission", "Bài nộp")}>
+        <DetailPanel title={t("Submission & Lecturer Review", "Bài nộp & Kết quả chấm")}>
           <div className="space-y-2 rounded-lg border bg-emerald-500/5 p-3 text-sm">
             <p className="flex items-center gap-2 font-medium text-emerald-700 dark:text-emerald-300">
               <CheckCircle2 className="size-4" aria-hidden="true" />
@@ -73,19 +78,25 @@ export function LabSubmissionV2({
                 {latest.evidencePackageDigest}
               </p>
             )}
-            {review.data && review.data.status !== "PENDING" && review.data.status !== "DRAFT" && (
-              <div className="rounded-md border bg-background p-3 text-xs">
-                <p className="font-medium">
-                  {review.data.status === "RETURNED"
-                    ? t("Returned for revision", "Trả lại để sửa")
-                    : t("Published result", "Kết quả đã công bố")}
-                  {review.data.score !== null && ` · ${review.data.score}/100`}
-                </p>
-                {review.data.summary && (
-                  <p className="mt-1 whitespace-pre-wrap">{review.data.summary}</p>
-                )}
-              </div>
-            )}
+            {activeReview &&
+              activeReview.status !== "PENDING" &&
+              activeReview.status !== "DRAFT" && (
+                <div className="space-y-2 rounded-md border bg-background p-3 text-xs">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant={activeReview.status === "RETURNED" ? "warning" : "success"}>
+                      {activeReview.status === "RETURNED"
+                        ? t("Returned for revision", "Trả lại để sửa")
+                        : t("Published result", "Kết quả đã công bố")}
+                    </Badge>
+                    {activeReview.score !== null && (
+                      <span className="font-semibold">{activeReview.score}/100</span>
+                    )}
+                  </div>
+                  {activeReview.summary && (
+                    <p className="whitespace-pre-wrap">{activeReview.summary}</p>
+                  )}
+                </div>
+              )}
             <div className="flex flex-wrap gap-2">
               <Button asChild size="sm" variant="outline">
                 <Link href={`/submissions?workspace=${encodeURIComponent(workspaceId)}`}>
@@ -192,6 +203,9 @@ export function LabSubmissionV2({
                     setRevising(false);
                     void cache.invalidateQueries({ queryKey: ["api", "submissions"] });
                     void cache.invalidateQueries({ queryKey: ["api", "submission"] });
+                    void cache.invalidateQueries({
+                      queryKey: ["api", "student-lab-context", workspaceId, assignmentId],
+                    });
                   },
                 },
               )

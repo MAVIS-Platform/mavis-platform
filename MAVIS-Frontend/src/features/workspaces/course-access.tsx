@@ -12,6 +12,7 @@ import { useApi } from "@/hooks/use-api";
 import { ApiError as ProxyError, api } from "@/lib/mainflow-api";
 import { ApiError, fromStatus } from "@/lib/errors/api-error";
 import { useLocale } from "@/lib/i18n/locale-context";
+import type { Response } from "@/lib/api/contracts";
 
 type Lab = {
   assignmentId: string;
@@ -356,6 +357,187 @@ export type CourseSetup = {
   nextAction: string;
   previewAssignmentId: string | null;
 };
+
+export type StudentLabReferenceDiagram = {
+  id: string;
+  notation: string;
+  level: string;
+  layoutJson: Record<string, unknown> | null;
+  mermaidDsl: string | null;
+};
+
+export type StudentLabReferenceElement = {
+  id: string;
+  elementType: string;
+  name: string;
+  scope: string;
+  languageStack: string | null;
+  parentElementId: string | null;
+  status: string | null;
+};
+
+export type StudentLabReferenceRelationship = {
+  id: string;
+  sourceElementId: string;
+  sourceName: string | null;
+  targetElementId: string;
+  targetName: string | null;
+  relationType: string;
+  originLayer: string | null;
+};
+
+export type StudentLabReferenceEvidence = {
+  id: string;
+  relationshipId: string;
+  locator: string | null;
+  sourceType: string | null;
+  excerpt: string | null;
+  adapterVersion: string | null;
+};
+
+export type StudentLabReferenceFinding = {
+  id: string;
+  ruleId: string;
+  severity: string;
+  status: string;
+  message: string;
+};
+
+export type StudentLabReferenceEvaluation = {
+  id: string;
+  ruleSetVersion: string | null;
+  summaryMetrics: Record<string, unknown> | null;
+  findings: StudentLabReferenceFinding[];
+};
+
+export type StudentLabReferenceArchitecture = {
+  projectId: string;
+  snapshotId: string;
+  modelVersionId: string;
+  revision: number | null;
+  diagrams: StudentLabReferenceDiagram[];
+  elements: StudentLabReferenceElement[];
+  relationships: StudentLabReferenceRelationship[];
+  evidences: StudentLabReferenceEvidence[];
+  evaluation: StudentLabReferenceEvaluation | null;
+};
+
+export type StudentLabStudioSession = {
+  id: string;
+  projectId: string;
+  sourceSnapshotId: string;
+  assignmentId: string | null;
+  scenarioName: string | null;
+  executionStatus: string | null;
+  traceStatus: string | null;
+  capturedSpanCount: number | null;
+  studioVerified: boolean;
+  createdAt: string | null;
+};
+
+export type StudentLabLatestReview = {
+  submissionId: string;
+  revision: number;
+  status: string;
+  score: number | null;
+  summary: string | null;
+  lecturerName: string | null;
+  updatedAt: string | null;
+  snapshotGrades?: Array<{
+    snapshotId: string;
+    title?: string;
+    score: number;
+    comment?: string | null;
+  }> | null;
+  labOutcome?: "PENDING" | "PASSED" | "NEEDS_REVISION" | null;
+};
+
+export type StudentLabContext = {
+  assignment: Response<"assignments">[number] & { description?: string | null };
+  referenceArchitecture: StudentLabReferenceArchitecture | null;
+  quiz: {
+    version: number;
+    lesson: string;
+    passPercent: number;
+    passed: boolean;
+    latestStatus: "PASSED" | "NEEDS_RETRY" | "NOT_ATTEMPTED" | null;
+    runtimeUnlocked: boolean;
+  } | null;
+  studioSessions: StudentLabStudioSession[];
+  latestSubmission: { id: string; submittedAt?: string | null } | null;
+  latestReview: StudentLabLatestReview | null;
+};
+
+export function useStudentLabContext(workspaceId: string, assignmentId: string, enabled = true) {
+  const client = useApi();
+  return useQuery({
+    queryKey: ["api", "student-lab-context", workspaceId, assignmentId],
+    queryFn: ({ signal }) =>
+      courseApi<StudentLabContext>(
+        `workspaces/${workspaceId}/course-labs/${assignmentId}/student-context`,
+        { signal },
+      ),
+    enabled: client.mode === "backend" && enabled && Boolean(workspaceId && assignmentId),
+    retry: false,
+  });
+}
+
+export function useStudentLabStudioSessions(
+  workspaceId: string,
+  assignmentId: string,
+  enabled = true,
+) {
+  const client = useApi();
+  return useQuery({
+    queryKey: ["api", "student-lab-studio-sessions", workspaceId, assignmentId],
+    queryFn: ({ signal }) =>
+      courseApi<StudentLabStudioSession[]>(
+        `workspaces/${workspaceId}/course-labs/${assignmentId}/studio-sessions`,
+        { signal },
+      ),
+    enabled: client.mode === "backend" && enabled && Boolean(workspaceId && assignmentId),
+    retry: false,
+  });
+}
+
+export function useStartLabStudioSession(workspaceId: string, assignmentId: string) {
+  const cache = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      courseApi<StudentLabStudioSession>(
+        `workspaces/${workspaceId}/course-labs/${assignmentId}/studio-sessions`,
+        { method: "POST" },
+      ),
+    onSuccess: () => {
+      void cache.invalidateQueries({
+        queryKey: ["api", "student-lab-context", workspaceId, assignmentId],
+      });
+      void cache.invalidateQueries({
+        queryKey: ["api", "student-lab-studio-sessions", workspaceId, assignmentId],
+      });
+    },
+  });
+}
+
+export function useBootstrapLabStudio(workspaceId: string, assignmentId: string) {
+  const cache = useQueryClient();
+  return useMutation({
+    mutationFn: (sessionId: string) =>
+      courseApi<{ session: StudentLabStudioSession; studio: Record<string, unknown> }>(
+        `workspaces/${workspaceId}/course-labs/${assignmentId}/studio-sessions/${sessionId}/bootstrap-studio`,
+        { method: "POST" },
+      ),
+    onSuccess: (_data, sessionId) => {
+      void cache.invalidateQueries({ queryKey: ["api", "studioState", { sessionId }] });
+      void cache.invalidateQueries({
+        queryKey: ["api", "student-lab-context", workspaceId, assignmentId],
+      });
+      void cache.invalidateQueries({
+        queryKey: ["api", "student-lab-studio-sessions", workspaceId, assignmentId],
+      });
+    },
+  });
+}
 
 export function useCourseSetup(workspaceId: string) {
   const client = useApi();
