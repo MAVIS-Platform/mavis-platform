@@ -348,7 +348,7 @@ async function main() {
     });
     await page
       .getByRole("navigation", { name: "Global navigation" })
-      .getByRole("link", { name: "Labs & Quiz Studio", exact: true })
+      .getByRole("link", { name: "Lab Library", exact: true })
       .click();
     await page.waitForURL(/assignments\?workspace=ws-lms/);
     try {

@@ -43,6 +43,7 @@ import {
   contextualNavigation,
   existingRouteContext,
   globalNavigation,
+  lecturerWorkspaceNavigation,
   roleLabels,
   type AppRole,
   type NavigationGroup,
@@ -290,18 +291,31 @@ function ShellChrome({
         workspaces.length > 0
           ? [
               item,
-              ...workspaces.map((w) => ({
-                id: `workspace:${w.id}`,
-                label:
-                  w.code && !w.name.toLowerCase().includes(w.code.toLowerCase())
-                    ? `${w.code} · ${w.name}`
-                    : w.name,
-                icon: BookOpen,
-                href:
-                  role === "student"
-                    ? `/roadmap?workspace=${encodeURIComponent(w.id)}`
-                    : `/workspace-overview?workspace=${encodeURIComponent(w.id)}`,
-              })),
+              ...workspaces.map((w) => {
+                const entry: NavigationItem = {
+                  id: `workspace:${w.id}`,
+                  label:
+                    w.code && !w.name.toLowerCase().includes(w.code.toLowerCase())
+                      ? `${w.code} · ${w.name}`
+                      : w.name,
+                  icon: BookOpen,
+                  href:
+                    role === "student"
+                      ? `/roadmap?workspace=${encodeURIComponent(w.id)}`
+                      : `/workspace-overview?workspace=${encodeURIComponent(w.id)}`,
+                };
+                if (role !== "lecturer") return entry;
+                return {
+                  ...entry,
+                  children: (lecturerWorkspaceNavigation[0]?.items ?? [])
+                    .filter((destination) => Boolean(destination.href))
+                    .map((destination) => ({
+                      ...destination,
+                      id: `workspace:${w.id}:${destination.id}`,
+                      href: `${destination.href!}${destination.href!.includes("?") ? "&" : "?"}workspace=${encodeURIComponent(w.id)}`,
+                    })),
+                };
+              }),
             ]
           : [item],
       ),
@@ -314,9 +328,25 @@ function ShellChrome({
     groups.find((group) => group.items.some((item) => item.id === activeId))?.label,
     scope === "project" && !live,
   );
+  const activeWorkspaceDestination =
+    pathname === "/workspace-overview"
+      ? params.get("view") === "course-authoring"
+        ? "course-authoring"
+        : "workspace-overview"
+      : pathname === "/theory-library"
+        ? "theory-library"
+        : pathname === "/assignments"
+          ? "assignments"
+          : pathname === "/lab-authoring"
+            ? "lab-authoring"
+            : pathname === "/submissions" && role === "lecturer"
+              ? "assignment-submissions"
+              : pathname === "/members"
+                ? "members"
+                : route.activeId;
   const activeWorkspaceNavId =
     selectedWorkspaceId && workspaces.some((w) => w.id === selectedWorkspaceId)
-      ? `workspace:${selectedWorkspaceId}`
+      ? `workspace:${selectedWorkspaceId}:${activeWorkspaceDestination}`
       : role === "student"
         ? "courses"
         : "workspaces";

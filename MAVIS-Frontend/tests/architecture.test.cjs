@@ -834,6 +834,7 @@ test("lecturer workspace navigation exposes unified class command destinations w
     "course-authoring": "/workspace-overview?view=course-authoring",
     "theory-library": "/theory-library",
     assignments: "/assignments",
+    "lab-authoring": "/lab-authoring",
     "assignment-submissions": "/submissions",
     members: "/members",
   });
@@ -1003,7 +1004,7 @@ test("project groups persist independently, restore active routes and tolerate d
   assert.doesNotThrow(() => render().toggle("Runtime", true));
 });
 
-test("lecturer sidebar shows flat class links without nested submenu trees and marks active class", () => {
+test("lecturer sidebar nests class destinations and keeps both lab menus", () => {
   const React = require("react"),
     { renderToStaticMarkup } = require("react-dom/server"),
     { ThemeProvider } = require("../src/components/theme-provider.tsx");
@@ -1051,8 +1052,11 @@ test("lecturer sidebar shows flat class links without nested submenu trees and m
       ),
     ),
   );
-  assert.ok(!html.includes('aria-label="Collapse SE180711 · FA menu"'));
+  assert.ok(html.includes('aria-label="Collapse SE180711 · FA menu"'));
   assert.ok(html.includes('href="/workspace-overview?workspace=class-1"'));
+  assert.ok(html.includes('aria-label="Lab Library" href="/assignments?workspace=class-1"'));
+  assert.ok(html.includes('aria-label="Lab Creation" href="/lab-authoring?workspace=class-1"'));
+  assert.ok(html.includes('aria-label="Theory Library" href="/theory-library?workspace=class-1"'));
   assert.ok(!html.includes("👨‍🏫 Lecturer"));
   assert.ok(html.includes("Sign out"));
 });
