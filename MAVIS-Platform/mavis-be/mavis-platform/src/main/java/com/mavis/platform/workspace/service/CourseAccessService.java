@@ -53,6 +53,9 @@ public class CourseAccessService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.mavis.common.repository.LabStudioExerciseRepository labStudioExercises;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.mavis.common.repository.SourceSnapshotRepository sourceSnapshots;
+
     public record Lab(UUID assignmentId, int position, String title, String state, String reason) {}
     public record Roadmap(boolean guided, String enrollmentStatus, List<Lab> labs) {}
     public record Passkey(String code, OffsetDateTime expiresAt) {}
@@ -127,15 +130,31 @@ public class CourseAccessService {
             if (session.getAssignment() == null || !session.getAssignment().getId().equals(assignmentId)) {
                 throw new BusinessException(ErrorCode.CONFLICT, "Studio session does not belong to this Lab");
             }
-            var referenceModel = assignment.getReferenceModel();
-            if (referenceModel == null || session.getModelVersion() == null
-                    || !referenceModel.getId().equals(session.getModelVersion().getId())) {
-                throw new BusinessException(ErrorCode.CONFLICT, "Studio session model does not match this Lab");
-            }
-            var referenceSnapshot = referenceModel.getSourceSnapshot();
-            if (referenceSnapshot != null && (session.getSourceSnapshot() == null
-                    || !referenceSnapshot.getId().equals(session.getSourceSnapshot().getId()))) {
-                throw new BusinessException(ErrorCode.CONFLICT, "Studio session source does not match this Lab");
+            var exercise = labStudioExercises == null ? null
+                    : labStudioExercises.findByAssignmentId(assignmentId).orElse(null);
+            if (exercise != null && exercise.getRuntimeSnapshotId() != null) {
+                // Guided sessions run on a cloned STUDENT_WORKING model/snapshot, so compare the
+                // artifact identity of the exercise runtime snapshot instead of object ids.
+                var runtimeSnapshot = sourceSnapshots == null ? null
+                        : sourceSnapshots.findById(exercise.getRuntimeSnapshotId()).orElse(null);
+                if (session.getModelVersion() == null
+                        || runtimeSnapshot == null
+                        || session.getSourceSnapshot() == null
+                        || !java.util.Objects.equals(runtimeSnapshot.getArtifactHash(),
+                                session.getSourceSnapshot().getArtifactHash())) {
+                    throw new BusinessException(ErrorCode.CONFLICT, "Studio session source does not match this Lab");
+                }
+            } else {
+                var referenceModel = assignment.getReferenceModel();
+                if (referenceModel == null || session.getModelVersion() == null
+                        || !referenceModel.getId().equals(session.getModelVersion().getId())) {
+                    throw new BusinessException(ErrorCode.CONFLICT, "Studio session model does not match this Lab");
+                }
+                var referenceSnapshot = referenceModel.getSourceSnapshot();
+                if (referenceSnapshot != null && (session.getSourceSnapshot() == null
+                        || !referenceSnapshot.getId().equals(session.getSourceSnapshot().getId()))) {
+                    throw new BusinessException(ErrorCode.CONFLICT, "Studio session source does not match this Lab");
+                }
             }
             if (!session.hasVerifiedStudioEvidence()) {
                 throw new BusinessException(ErrorCode.CONFLICT,
