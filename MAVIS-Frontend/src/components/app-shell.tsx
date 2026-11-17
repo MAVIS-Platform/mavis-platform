@@ -886,7 +886,9 @@ function NavigationEntry({
       item.id.startsWith("workspace:") &&
       "ml-2 w-[calc(100%-0.5rem)] border-l border-border/60 pl-4",
     active
-      ? "bg-sidebar-accent font-semibold text-sidebar-accent-foreground ring-1 ring-inset ring-primary/20"
+      ? item.children
+        ? "bg-muted font-semibold text-foreground border-l-primary"
+        : "bg-sidebar-accent font-semibold text-sidebar-accent-foreground ring-1 ring-inset ring-primary/20"
       : "text-muted-foreground hover:bg-accent hover:text-foreground",
     !preview && !item.href && "cursor-not-allowed",
   );

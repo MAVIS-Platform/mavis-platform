@@ -582,6 +582,8 @@ test("lecturer sidebar expands the selected class and marks its class destinatio
  assert.ok(html.includes('aria-label="Collapse SE180711 · FA menu"'));
  assert.ok(html.includes('href="/assignments?workspace=class-1"'));
  assert.ok(html.includes('aria-current="page"'));
+ assert.match(html,/class="[^"]*bg-muted[^\"]*" aria-current="location" aria-label="SE180711 · FA" href="\/workspaces\?workspace=class-1"/);
+ assert.match(html,/class="[^"]*bg-sidebar-accent[^\"]*" aria-current="location" aria-label="Assignments" href="\/assignments\?workspace=class-1"/);
 });
 
 test("student sidebar omits lecturer-only class destinations",()=>{
