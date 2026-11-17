@@ -928,6 +928,11 @@ test("BFF allows Quiz draft, publish, versions and question bank paths", () => {
     `workspaces/${workspace}/course-labs/${lab}/quiz/generate`,
     `workspaces/${workspace}/course-labs/${lab}/export`,
     `workspaces/${workspace}/course-labs/import`,
+    `workspaces/${workspace}/theory-assets`,
+    `workspaces/${workspace}/theory-assets/${lab}`,
+    `workspaces/${workspace}/course-labs/${lab}/theory-assets`,
+    `workspaces/${workspace}/course-labs/${lab}/theory-assets/${question}`,
+    `workspaces/${workspace}/course-labs/${lab}/theory-assets/generate`,
     `workspaces/${workspace}/quiz-bank/questions`,
     `workspaces/${workspace}/quiz-bank/questions/${question}`,
   ]) {
@@ -943,6 +948,7 @@ test("Lab Library is the class-facing lab store and Quiz can be generated from L
   const quiz = read("src/features/assignments/quiz-builder.tsx");
   const transfer = read("src/features/assignments/lab-transfer.tsx");
   const publish = read("src/features/assignments/lab-publish-section.tsx");
+  const theory = read("src/features/assignments/lab-theory-section.tsx");
 
   assert.match(navigation, /label: "Labs & Quiz Studio"/);
   assert.doesNotMatch(navigation, /label: "Lab Authoring"/);
@@ -958,6 +964,10 @@ test("Lab Library is the class-facing lab store and Quiz can be generated from L
   assert.ok(publish.includes("ExportLabButton"));
   assert.ok(transfer.includes("course-labs/${assignmentId}/export"));
   assert.ok(transfer.includes("course-labs/import"));
+  assert.ok(theory.includes("Theory library"));
+  assert.ok(theory.includes("/theory-assets"));
+  assert.ok(theory.includes("AI draft from evidence"));
+  assert.ok(theory.includes("Save to library & attach"));
 });
 
 test("Studio Live authoring runs self-contained inline topology and playtest without external jumps", () => {
