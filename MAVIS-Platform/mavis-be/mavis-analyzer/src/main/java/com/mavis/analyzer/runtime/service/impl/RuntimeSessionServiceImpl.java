@@ -674,7 +674,9 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                     && project.getAssignment() != null
                     && assignment.getId().equals(project.getAssignment().getId());
             if (studentWorking) {
-                var referenceSnapshot = runtimeSource
+                // A Studio Lab runs on the exercise runtime repository even when the Lab's
+                // reference source (C1-C3) points at a different project.
+                var referenceSnapshot = exercise != null && exercise.getRuntimeSnapshotId() != null
                         ? sourceSnapshotRepository.findById(exercise.getRuntimeSnapshotId()).orElse(null)
                         : assignment.getReferenceModel() == null ? null
                         : assignment.getReferenceModel().getSourceSnapshot();
@@ -1782,12 +1784,20 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         var exercise = lab == null || labStudioExercises == null ? null
                 : labStudioExercises.findByAssignmentId(lab.getId()).orElse(null);
         if (exercise != null && exercise.getRuntimeModelId() != null) {
-            boolean matches = exercise.getRuntimeSnapshotId() != null
-                    && exercise.getRuntimeSnapshotId().equals(snapshot == null ? null : snapshot.getId())
+            // Guided sessions run on a cloned STUDENT_WORKING snapshot, so the session snapshot id
+            // differs from the exercise runtime snapshot id. Match the pinned runtime snapshot by
+            // identity on the project and by artifact hash on the cloned snapshot instead.
+            UUID runtimeSnapshotId = exercise.getRuntimeSnapshotId();
+            var runtimeSnapshot = runtimeSnapshotId == null ? null
+                    : sourceSnapshotRepository.findById(runtimeSnapshotId).orElse(null);
+            boolean matches = runtimeSnapshot != null
                     && snapshot != null && snapshot.getProject() != null
                     && Objects.equals(project.getId(), snapshot.getProject().getId())
-                    && Objects.equals(project.getReferenceSnapshotId(), snapshot.getId())
-                    && model != null && model.getSourceSnapshot() != null
+                    && Objects.equals(project.getReferenceSnapshotId(), runtimeSnapshotId)
+                    && Objects.equals(runtimeSnapshot.getArtifactHash(), snapshot.getArtifactHash())
+                    && model != null && model.getProject() != null
+                    && Objects.equals(project.getId(), model.getProject().getId())
+                    && model.getSourceSnapshot() != null
                     && snapshot.getId().equals(model.getSourceSnapshot().getId())
                     && !"RUNTIME_ENRICHED".equalsIgnoreCase(model.getOrigin());
             if (!matches) {
