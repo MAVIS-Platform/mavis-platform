@@ -154,7 +154,12 @@ export default async function FeaturePage({ params }: { params: Promise<{ screen
       </AppShell>
     );
   return (
-    <AppShell scope={config.scope} activeId={screen} pageTitle={config.title}>
+    <AppShell
+      scope={config.scope}
+      activeId={screen}
+      pageTitle={config.title}
+      contentVariant={screen === "workspaces" ? "workspace" : "standard"}
+    >
       <PageContainer>
         {screen !== "courses" && (
           <SectionHeader
