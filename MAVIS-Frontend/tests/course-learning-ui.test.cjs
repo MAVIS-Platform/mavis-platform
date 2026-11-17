@@ -37,7 +37,7 @@ test("course learning routes are registered in the shared authenticated shell", 
   assert.match(routes, /courses:\s*\{[^}]*component:\s*Courses/s);
   assert.match(routes, /roadmap:\s*\{[^}]*component:\s*CourseRoadmap/s);
   assert.match(routes, /lab:\s*\{[^}]*component:\s*LabWorkspace/s);
-  assert.match(routes, /<AppShell scope=\{config.scope\} activeId=\{screen\}/);
+  assert.match(routes, /<AppShell\s+scope=\{config\.scope\}\s+activeId=\{screen\}/);
   assert.match(home, /<PublicHomepage\s*\/>/);
 });
 
