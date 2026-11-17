@@ -328,9 +328,10 @@ test("Guided Lab Step 1 exposes inline C1-C3 & Dependency Graph views, pinned ID
   assert.ok(course.includes("Service Dependency Graph"));
   assert.ok(course.includes("DiagramPreview"));
   assert.ok(course.includes("ArchitectureGraph"));
-  assert.ok(course.includes("sourceSnapshotId"));
-  assert.ok(course.includes("modelVersionId"));
-  assert.ok(course.includes("Model Revision"));
+  assert.doesNotMatch(course, />sourceSnapshotId</);
+  assert.doesNotMatch(course, />modelVersionId</);
+  assert.doesNotMatch(course, /"Pinned learning context"/);
+  assert.doesNotMatch(course, /"Lab readiness"/);
   assert.ok(course.includes("StaticEvaluationSummary"));
   assert.ok(course.includes("Missing Call-Site / Evidence Grounding"));
 });

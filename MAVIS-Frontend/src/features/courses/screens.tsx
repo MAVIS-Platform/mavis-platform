@@ -1557,18 +1557,19 @@ export function LabWorkspace() {
                   <Badge variant="outline">
                     {t("Class", "Lớp")} {workspace.code || "—"}
                   </Badge>
-                  {lab.labMode && <Badge variant="secondary">{lab.labMode}</Badge>}
+                  <Badge variant="secondary">
+                    {requiresRuntime
+                      ? t("2D Studio Practice Lab", "Lab Thực Hành 2D Studio")
+                      : t("Theory & Quiz Lab", "Lab Lý Thuyết & Quiz")}
+                  </Badge>
                   {preview && <Badge variant="warning">{t("Preview", "Xem trước")}</Badge>}
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <Badge variant="outline">
-                    {t("Revision", "Phiên bản")}{" "}
-                    {activeModelRevision ?? lab.referenceSource?.revision ?? "—"}
+                  <Badge variant="secondary">
+                    {t("Guided 4-Step Learning", "Học & Thực Hành 4 Bước")}
                   </Badge>
-                  <Badge variant="secondary">{t("Curated repository", "Repo đã biên soạn")}</Badge>
-                  <Badge variant="outline" className="font-mono">
-                    {lab.referenceSource?.commitSha?.slice(0, 12) ||
-                      t("Commit pending", "Chưa có commit")}
+                  <Badge variant="outline">
+                    {t("Reference Repository Included", "Kèm Mã Nguồn Tham Chiếu")}
                   </Badge>
                 </div>
               </div>
@@ -1602,15 +1603,6 @@ export function LabWorkspace() {
                       href={`/assignments?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(lab.id)}`}
                     >
                       {t("Manage Lab assignment", "Quản lý bài tập Lab")}
-                    </Link>
-                  </Button>
-                )}
-                {isLecturer && lab.referenceSource?.projectId && (
-                  <Button asChild size="sm" variant="outline">
-                    <Link
-                      href={`/runtime-config?project=${encodeURIComponent(lab.referenceSource.projectId)}`}
-                    >
-                      {t("Configure Studio", "Cấu hình Studio")}
                     </Link>
                   </Button>
                 )}
@@ -1669,6 +1661,22 @@ export function LabWorkspace() {
             })}
           </nav>
 
+          {(() => {
+            const activeMeta = learningSteps.find((s) => s.id === displayedStep) ?? learningSteps[0];
+            if (!activeMeta) return null;
+            return (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-blue-200 bg-blue-50/70 px-4 py-2.5 text-xs text-blue-950 dark:border-blue-800/60 dark:bg-blue-950/30 dark:text-blue-100">
+                <p>
+                  <span className="font-semibold">
+                    {t(`Step ${activeMeta.id}/4`, `Bước ${activeMeta.id}/4`)} ·{" "}
+                    {t(activeMeta.title, activeMeta.titleVi)}:
+                  </span>{" "}
+                  {t(activeMeta.description, activeMeta.descriptionVi)}
+                </p>
+              </div>
+            );
+          })()}
+
           <div className="grid min-w-0 gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
             <LabToc
               steps={tocSteps}
@@ -1724,84 +1732,6 @@ export function LabWorkspace() {
                 }}
                 studentContext={studentContext.data}
               />
-              <div className="grid gap-4 md:grid-cols-2">
-                <DetailPanel title={t("Lab readiness", "Mức sẵn sàng của Lab")}>
-                  <div className="space-y-3">
-                    {readiness.map((item, index) => (
-                      <div
-                        key={item.label}
-                        className="flex items-center justify-between gap-3 text-sm"
-                      >
-                        <span className="flex items-center gap-2">
-                          <span className="flex size-6 items-center justify-center rounded-full border text-xs">
-                            {item.state === "READY" ? <Check className="size-3.5" /> : index + 1}
-                          </span>
-                          {item.label}
-                        </span>
-                        <Badge
-                          variant={
-                            item.state === "READY" || item.state === "VERIFIED"
-                              ? "success"
-                              : "outline"
-                          }
-                        >
-                          {item.state === "READY"
-                            ? t("Ready", "Sẵn sàng")
-                            : item.state === "VERIFIED"
-                              ? t("Verified", "Đã xác minh")
-                              : item.state === "PASSED"
-                                ? t("Passed", "Đã đạt")
-                                : item.state === "LOCKED"
-                                  ? t("Locked", "Đang khóa")
-                                  : item.state === "MISSING"
-                                    ? t("Missing", "Còn thiếu")
-                                    : t("In progress", "Chưa hoàn thành")}
-                        </Badge>
-                      </div>
-                    ))}
-                    <dl className="grid grid-cols-2 gap-2 border-t pt-3 text-xs">
-                      <div>
-                        <dt className="text-muted-foreground">
-                          {t("Runtime evidence", "Bằng chứng runtime")}
-                        </dt>
-                        <dd className="mt-1 font-medium">
-                          {lab.requireRuntimeTrace
-                            ? t("Required", "Bắt buộc")
-                            : t("Optional", "Tùy chọn")}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt className="text-muted-foreground">{t("Deadline", "Hạn nộp")}</dt>
-                        <dd className="mt-1 font-medium">
-                          {lab.dueAt || t("No deadline", "Không có hạn")}
-                        </dd>
-                      </div>
-                    </dl>
-                  </div>
-                </DetailPanel>
-                <DetailPanel title={t("Pinned learning context", "Ngữ cảnh học tập đã ghim")}>
-                  <dl className="space-y-3 text-xs">
-                    <div>
-                      <dt className="text-muted-foreground">Reference project</dt>
-                      <dd className="mt-1 font-medium">
-                        {lab.referenceSource?.projectName || "Pending"}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-muted-foreground">Source snapshot</dt>
-                      <dd className="mt-1 break-all font-mono">
-                        {lab.referenceSource?.snapshotId || "Pending"}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-muted-foreground">Model version</dt>
-                      <dd className="mt-1 break-all font-mono">
-                        {lab.referenceSource?.modelId || "Pending"}
-                      </dd>
-                    </div>
-                  </dl>
-                </DetailPanel>
-              </div>
             </div>
           </div>
         </div>
@@ -2214,25 +2144,6 @@ function StepContent({
                 {t("Loading architectural model…", "Đang tải mô hình kiến trúc…")}
               </p>
             )}
-
-            <dl className="grid gap-3 rounded-xl border bg-muted/20 p-3 text-xs sm:grid-cols-3">
-              <div>
-                <dt className="text-muted-foreground">sourceSnapshotId</dt>
-                <dd className="mt-1 break-all font-mono text-foreground">
-                  {snapshotId || "Pending"}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">modelVersionId</dt>
-                <dd className="mt-1 break-all font-mono text-foreground">{modelId || "Pending"}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Model Revision</dt>
-                <dd className="mt-1 font-mono text-foreground">
-                  {modelRevision !== undefined ? `r${modelRevision}` : "Pending"}
-                </dd>
-              </div>
-            </dl>
           </div>
 
           {referenceArchitecture?.evaluation?.findings &&
@@ -2381,6 +2292,32 @@ function StepContent({
                     </p>
                   ) : (
                     <div className="space-y-4">
+                      <div className="grid gap-2 rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 text-xs text-emerald-950 dark:border-emerald-800/60 dark:bg-emerald-950/20 sm:grid-cols-3">
+                        <div className="rounded-lg bg-background/80 px-3 py-2">
+                          <span className="font-semibold">
+                            4.1 {t("Start Studio Session", "Khởi tạo Phiên Studio")}
+                          </span>
+                          <p className="mt-0.5 text-muted-foreground">
+                            {t("Launch live topology canvas", "Mở topology dịch vụ tương tác")}
+                          </p>
+                        </div>
+                        <div className="rounded-lg bg-background/80 px-3 py-2">
+                          <span className="font-semibold">
+                            4.2 {t("Operate & Finish Studio", "Thực hành & Finish Studio")}
+                          </span>
+                          <p className="mt-0.5 text-muted-foreground">
+                            {t("Seal runtime observation receipt", "Ghi nhận thao tác và biên nhận")}
+                          </p>
+                        </div>
+                        <div className="rounded-lg bg-background/80 px-3 py-2">
+                          <span className="font-semibold">
+                            4.3 {t("Explain & Submit", "Giải trình & Nộp bài")}
+                          </span>
+                          <p className="mt-0.5 text-muted-foreground">
+                            {t("Summarize findings below", "Nộp giải trình ở khung bên dưới")}
+                          </p>
+                        </div>
+                      </div>
                       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/20 p-3.5">
                         <div className="space-y-1 text-xs">
                           <div className="flex flex-wrap items-center gap-2">

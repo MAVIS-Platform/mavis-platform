@@ -68,16 +68,27 @@ export function LabSubmissionV2({
     return (
       <div id="lab-submit">
         <DetailPanel title={t("Submission & Lecturer Review", "Bài nộp & Kết quả chấm")}>
-          <div className="space-y-2 rounded-lg border bg-emerald-500/5 p-3 text-sm">
-            <p className="flex items-center gap-2 font-medium text-emerald-700 dark:text-emerald-300">
-              <CheckCircle2 className="size-4" aria-hidden="true" />
-              {t("Submitted", "Đã nộp")} · {new Date(latest.submittedAt).toLocaleString()}
-            </p>
-            {latest.evidencePackageDigest && (
-              <p className="break-all font-mono text-xs text-muted-foreground">
-                {latest.evidencePackageDigest}
+          <div className="space-y-3 rounded-xl border border-emerald-300/70 bg-emerald-500/5 p-4 text-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="flex items-center gap-2 font-semibold text-emerald-700 dark:text-emerald-300">
+                <CheckCircle2 className="size-4" aria-hidden="true" />
+                {t("Submitted", "Đã nộp")} · {new Date(latest.submittedAt).toLocaleString()}
               </p>
-            )}
+              <div className="flex flex-wrap items-center gap-2">
+                {latest.evidencePackageDigest && (
+                  <Badge variant="outline" className="text-[11px]">
+                    {t("Evidence Sealed", "Đã niêm phong bằng chứng")}
+                  </Badge>
+                )}
+                {(!activeReview ||
+                  activeReview.status === "PENDING" ||
+                  activeReview.status === "DRAFT") && (
+                  <Badge variant="secondary">
+                    {t("Pending Lecturer Review", "Đang chờ Giảng viên chấm")}
+                  </Badge>
+                )}
+              </div>
+            </div>
             {activeReview &&
               activeReview.status !== "PENDING" &&
               activeReview.status !== "DRAFT" && (
