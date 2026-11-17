@@ -400,6 +400,17 @@ export function LabTheorySection({
             "Lý thuyết nằm trong một chương của Course. Tạo bản nháp Course, sau đó thêm chương và bài học đầu tiên tại đây.",
           )}
         </p>
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "Theory Library is the reusable lesson source. This step attaches a library lesson (or a custom one) to this Lab.",
+            "Theory Library là nơi lưu bài giảng dùng lại. Bước này gắn một bài trong thư viện (hoặc bài tự soạn) vào Lab hiện tại.",
+          )}
+        </p>
+        <Button asChild type="button" size="sm" variant="outline">
+          <Link href={`/theory-library?workspace=${encodeURIComponent(workspaceId)}`}>
+            {t("Open Theory Library", "Mở Thư viện lý thuyết")}
+          </Link>
+        </Button>
         <div className="flex flex-wrap items-end gap-2">
           <label className="min-w-64 flex-1 space-y-1 text-xs font-medium">
             <span>{t("Course title", "Tên khóa học")}</span>

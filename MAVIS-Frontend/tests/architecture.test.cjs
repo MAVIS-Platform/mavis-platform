@@ -5168,7 +5168,8 @@ test("My Workspaces is a compact LMS class list with tabs and a module outline",
   assert.match(overviewHtml, /aria-label="Class sections"/);
   assert.match(overviewHtml, /Overview &amp; Setup/);
   assert.match(overviewHtml, /Curriculum &amp; Materials/);
-  assert.match(overviewHtml, /Labs &amp; Quiz Studio/);
+  assert.match(overviewHtml, /Lab Library/);
+  assert.match(overviewHtml, /Lab Creation/);
   assert.match(overviewHtml, /Grading &amp; Gradebook/);
   assert.match(overviewHtml, /Students &amp; Access/);
   assert.match(overviewHtml, /Enrolled Students/);

@@ -34,7 +34,7 @@ type Tab = "info" | "theory" | "source" | "quiz" | "studio" | "publish";
 
 const TAB_LABELS: Record<Tab, { en: string; vi: string; icon: LucideIcon }> = {
   info: { en: "Lab information", vi: "Thông tin Lab", icon: Info },
-  theory: { en: "Theory", vi: "Lý thuyết", icon: BookOpen },
+  theory: { en: "Lab theory", vi: "Lý thuyết Lab", icon: BookOpen },
   source: { en: "Reference source", vi: "Nguồn tham chiếu", icon: GitBranch },
   quiz: { en: "Quiz", vi: "Quiz", icon: CircleHelp },
   studio: { en: "Studio Live", vi: "Studio Live", icon: Activity },
