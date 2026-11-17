@@ -134,38 +134,40 @@ export function LabStudioSection({
             )}
             {autoStudio.error && <ErrorState error={autoStudio.error} />}
 
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="rounded-lg border p-3 text-sm">
-                <p className="text-xs text-muted-foreground">{t("Runtime profile", "Runtime profile")}</p>
-                <p className="mt-1 font-medium">{readiness.data?.configured ? t("Configured", "Đã cấu hình") : t("Not configured", "Chưa cấu hình")}</p>
+            {readiness.data?.configured &&
+            readiness.data?.preflightCompatible &&
+            readiness.data?.runnerReady ? (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-300 bg-emerald-50/70 p-4 text-sm text-emerald-950 dark:border-emerald-800/60 dark:bg-emerald-950/20 dark:text-emerald-100">
+                <div className="space-y-0.5">
+                  <p className="font-semibold">
+                    {t(
+                      "2D Studio Live is Ready for Students",
+                      "Studio Live 2D đã sẵn sàng cho Sinh viên",
+                    )}
+                  </p>
+                  <p className="text-xs opacity-85">
+                    {readiness.data.applications?.length ?? 0}{" "}
+                    {t("interactive services prepared", "dịch vụ tương tác đã chuẩn bị")}
+                    {setupLab?.topologyFrozen
+                      ? ` · ${t("Topology locked & ready", "Topology đã đóng băng an toàn")}`
+                      : ""}
+                  </p>
+                </div>
+                <Badge variant="success">{t("Ready", "Sẵn sàng")}</Badge>
               </div>
-              <div className="rounded-lg border p-3 text-sm">
-                <p className="text-xs text-muted-foreground">{t("Preflight", "Preflight")}</p>
-                <p className="mt-1 font-medium">{readiness.data?.preflightCompatible ? t("Compatible", "Tương thích") : t("Not compatible", "Chưa tương thích")}</p>
-              </div>
-              <div className="rounded-lg border p-3 text-sm">
-                <p className="text-xs text-muted-foreground">{t("Runner / images", "Runner / image")}</p>
-                <p className="mt-1 font-medium">{readiness.data?.runnerReady ? t("Configuration ready", "Cấu hình sẵn sàng") : t("Not ready", "Chưa sẵn sàng")}</p>
-              </div>
-              <div className="rounded-lg border p-3 text-sm">
-                <p className="text-xs text-muted-foreground">{t("Prepared topology", "Topology đã chuẩn bị")}</p>
-                <p className="mt-1 font-medium">
-                  {Array.isArray((readiness.data?.topology as { blocks?: unknown[] } | null)?.blocks)
-                    ? (readiness.data?.topology as { blocks: unknown[] }).blocks.length
-                    : 0}{" "}
-                  {t("blocks", "block")}
+            ) : (
+              <div className="rounded-xl border border-amber-300/80 bg-amber-50/70 p-4 text-xs text-amber-950 dark:border-amber-800/60 dark:bg-amber-950/20 dark:text-amber-100">
+                <p className="font-semibold">
+                  {t(
+                    "Studio Topology Needs Initialization",
+                    "Studio 2D Cần Được Khởi Tạo Cấu Hình",
+                  )}
                 </p>
-              </div>
-            </div>
-            {readiness.data && (
-              <div className="grid gap-2 text-xs sm:grid-cols-2">
-                <p>
-                  <span className="font-medium">{t("Applications", "Ứng dụng")}:</span>{" "}
-                  {(readiness.data.applications ?? []).join(", ") || "—"}
-                </p>
-                <p>
-                  <span className="font-medium">{t("Mappings", "Ánh xạ")}:</span>{" "}
-                  {(readiness.data.mappings ?? []).join(", ") || "—"}
+                <p className="mt-1 opacity-85">
+                  {t(
+                    "Click 'Auto-Configure Studio' above or customize services and edges in the visual editor below.",
+                    "Nhấn nút 'Tự động cấu hình Studio' ở trên hoặc tự thiết kế dịch vụ ở trình chỉnh sửa trực quan bên dưới.",
+                  )}
                 </p>
               </div>
             )}
