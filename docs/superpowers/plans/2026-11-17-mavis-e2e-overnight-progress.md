@@ -4,7 +4,7 @@ Kế hoạch: [master](2026-11-17-mavis-e2e-overnight-master.md).
 Baseline đầu phiên: HEAD `6c4bf1d`, branch `main`, upstream `origin/main`.
 
 ## Checkpoint đang thực thi
-- Task tiếp theo: **T57/T60** và kiểm chứng CI cho `5972cd6`; các case còn thiếu ở Prior 2 (draft grade/409, Passkey, cross-workspace, published edits).
+- Task tiếp theo: **T57/T60**; Priority 2 còn lại chỉ là chạy/tham chiếu test draft/stale hiện có; Passkey expired, cross-workspace HTTP, published-edit immutability đã kiểm mới.
 - Branch/SHA thực tế: `main` / commit task `5ba76f0`; baseline `6c4bf1d`.
 - Môi trường: local Windows, PostgreSQL 16 container port 55432, backend jar + managed .NET Runner, frontend port 3000, Chrome Playwright.
 - Actor/dataset: lecturer `hoangnt@fpt.edu.vn`; students `trietlmse181979`, `student2`…`student6`; workspace `a93d0eee-43db-41d6-89ee-8541d80739ed`; Lab1 `6b2951ab-1910-4b85-82f1-f900929951c2` (THEORY_QUIZ, published Lab1); Lab2 `0e0dc00d-9e28-4ea8-acea-bff90d5f15fa` (published Lab2); submission S6 `a666dcbd-b815-4b87-9578-1790b4488483`.
@@ -55,7 +55,7 @@ Baseline đầu phiên: HEAD `6c4bf1d`, branch `main`, upstream `origin/main`.
 - [x] T51 — PASS — typecheck PASS, frontend 420 pass, backend focused 37+46 pass, migration 1 pass; CI run `44000347337` cho `3b55766` success.
 - [x] T52 — PASS (functional) — theory-only E2E tới unlock; Studio E2E student thật: Quiz → own session → STOP/START/SCALE → 2 snapshots → Finish COMPLETED/PASSED/CONFIRMED → submit v2 → grade 86.67, mọi section >5. Còn thiếu kế thừa frozen topology (T33).
 - [x] T53 — PASS — commit `5ba76f0` chỉ gồm backend/schema/contracts/UI v2/deploy; WIP khác giữ ngoài stage.
-- [x] T54 — PASS — `3b55766` run `44000347337` success; T33 commit `5972cd6` đã push, chờ run mới.
+- [x] T54 — PASS — `5972cd6` run `44017814873` success; `75b1d0b` run `44017843290` success; runner-lock fix `50d0bb6` đã push, chờ run mới.
 - [x] T55 — PASS — workflow `44000347337` verify/images/deploy success; production login page 200 (không phải nghiệm thu tài khoản).
 - [ ] T56 — BLOCKED — thiếu test accounts production; không tạo user SQL production/không bypass OTP.
 - [ ] T57 — WORKING — đã tạo báo cáo sáng `docs/MAVIS_E2E_MORNING_REPORT_2026-11-17.md`; docs handoff gốc chưa cập nhật v2.
