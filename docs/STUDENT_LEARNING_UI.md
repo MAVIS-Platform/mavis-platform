@@ -28,9 +28,9 @@ Guided Lab luôn dùng source snapshot, assignment, model và topology đã đư
 
 ## 4. Nộp bài và kết quả
 
-Nút chuyển sang nộp bài chỉ mở khi các bằng chứng bắt buộc của Lab đã đủ. `SubmissionComposer` giữ workspace, assignment, project, model và session; các snapshot Studio đã xác minh được đưa vào payload. Nếu gửi lỗi, nội dung đang soạn vẫn ở trong form để thử lại.
+Nút chuyển sang nộp bài chỉ mở khi các bằng chứng bắt buộc của Lab đã đủ. Với Lab v2 (`THEORY_QUIZ` và `THEORY_QUIZ_STUDIO`), `LabSubmissionV2` (`lab-submission-v2.tsx`) cho phép nộp giải trình ngay trong Lab mà không cần chọn model hay diagram, tự gắn phiên Studio đã xác minh (nếu Lab yêu cầu runtime), lưu nháp cục bộ theo khóa `(userId, workspaceId, assignmentId)` qua reload trình duyệt, tự xóa nháp khi nộp thành công và nạp lại nội dung cũ khi bấm **Sửa và nộp lại** (**Revise and resubmit**). Với Lab legacy, `SubmissionComposer` giữ workspace, assignment, project, model và session; các snapshot Studio đã xác minh được đưa vào payload. Nếu gửi lỗi, nội dung đang soạn vẫn ở trong form để thử lại.
 
-Màn hình **Bài nộp của tôi** có thể lọc theo lớp và Lab khi URL có `workspace` hoặc `assignment`. Sinh viên chỉ đọc bài nộp của mình và review đã công bố. Bản review nháp của giảng viên không được hiển thị.
+Màn hình **Bài nộp của tôi** có thể lọc theo lớp và Lab khi URL có `workspace` hoặc `assignment`, và trang chi tiết bài nộp (`FrozenArtifacts`) hiển thị đầy đủ gói chứng từ SHA-256, Quiz Gate proof cùng giải trình từng phần ngay cả khi bài v2 không có sơ đồ đính kèm (`diagramVersionId = null`). Sinh viên chỉ đọc bài nộp của mình và review đã công bố. Bản review nháp của giảng viên không được hiển thị.
 
 Kết quả cần phân biệt: chưa nộp, đã nộp/chờ chấm, cần sửa và đạt. Với Guided Lab, backend chấm từng snapshot; mọi snapshot phải đạt nghiêm ngặt lớn hơn `5.0/10` và review phải có summary để chuyển PASSED. Điểm trung bình không được dùng để vượt quy tắc này. Trạng thái NEEDS_REVISION dẫn người học quay lại đúng Lab để nộp lại; Lab kế tiếp chỉ mở khi backend xác nhận PASSED.
 

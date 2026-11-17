@@ -12,6 +12,7 @@ import { useApi } from "@/hooks/use-api";
 import { ApiError as ProxyError, api } from "@/lib/mainflow-api";
 import { ApiError, fromStatus } from "@/lib/errors/api-error";
 import { useLocale } from "@/lib/i18n/locale-context";
+import type { Response } from "@/lib/api/contracts";
 
 type Lab = {
   assignmentId: string;
@@ -123,8 +124,8 @@ export function usePublishedCourse(workspaceId: string) {
   const client = useApi();
   return useQuery({
     queryKey: ["api", "course-published", workspaceId],
-    queryFn: ({ signal }) => courseApi<PublishedCourse>(
-      `workspaces/${workspaceId}/course/published`, { signal }),
+    queryFn: ({ signal }) =>
+      courseApi<PublishedCourse>(`workspaces/${workspaceId}/course/published`, { signal }),
     enabled: client.mode === "backend" && Boolean(workspaceId),
   });
 }
@@ -134,27 +135,51 @@ export function useCourseAuthoring(workspaceId: string, enabled = true) {
   const cache = useQueryClient();
   const query = useQuery({
     queryKey: ["api", "course-authoring", workspaceId],
-    queryFn: ({ signal }) => courseApi<AuthoringCourse>(`workspaces/${workspaceId}/course`, { signal }),
+    queryFn: ({ signal }) =>
+      courseApi<AuthoringCourse>(`workspaces/${workspaceId}/course`, { signal }),
     enabled: client.mode === "backend" && Boolean(workspaceId) && enabled,
   });
   const save = useMutation({
-    mutationFn: (body: { title: string; description: string }) => courseApi<AuthoringCourse>(
-      `workspaces/${workspaceId}/course/draft`, { method: "PUT", body: JSON.stringify(body) }),
+    mutationFn: (body: { title: string; description: string }) =>
+      courseApi<AuthoringCourse>(`workspaces/${workspaceId}/course/draft`, {
+        method: "PUT",
+        body: JSON.stringify(body),
+      }),
     onSuccess: (data) => cache.setQueryData(["api", "course-authoring", workspaceId], data),
   });
   const addModule = useMutation({
-    mutationFn: (body: { title: string; description?: string; prerequisiteModuleId?: string }) => courseApi<AuthoringCourse>(
-      `workspaces/${workspaceId}/course/modules`, { method: "POST", body: JSON.stringify(body) }),
+    mutationFn: (body: { title: string; description?: string; prerequisiteModuleId?: string }) =>
+      courseApi<AuthoringCourse>(`workspaces/${workspaceId}/course/modules`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
     onSuccess: (data) => cache.setQueryData(["api", "course-authoring", workspaceId], data),
   });
   const addItem = useMutation({
-    mutationFn: ({ moduleId, ...body }: { moduleId: string; type: AuthoringItem["type"]; title: string; description?: string; required?: boolean; assignmentId?: string; content?: Record<string, unknown> }) => courseApi<AuthoringCourse>(
-      `workspaces/${workspaceId}/course/modules/${moduleId}/items`, { method: "POST", body: JSON.stringify(body) }),
+    mutationFn: ({
+      moduleId,
+      ...body
+    }: {
+      moduleId: string;
+      type: AuthoringItem["type"];
+      title: string;
+      description?: string;
+      required?: boolean;
+      assignmentId?: string;
+      content?: Record<string, unknown>;
+    }) =>
+      courseApi<AuthoringCourse>(`workspaces/${workspaceId}/course/modules/${moduleId}/items`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
     onSuccess: (data) => cache.setQueryData(["api", "course-authoring", workspaceId], data),
   });
   const publish = useMutation({
-    mutationFn: () => courseApi<{ courseId: string; version: number; snapshotDigest: string }>(
-      `workspaces/${workspaceId}/course/publish`, { method: "POST" }),
+    mutationFn: () =>
+      courseApi<{ courseId: string; version: number; snapshotDigest: string }>(
+        `workspaces/${workspaceId}/course/publish`,
+        { method: "POST" },
+      ),
     onSuccess: () => {
       void cache.invalidateQueries({ queryKey: ["api", "course-authoring", workspaceId] });
       void cache.invalidateQueries({ queryKey: ["api", "course-published", workspaceId] });
@@ -163,14 +188,21 @@ export function useCourseAuthoring(workspaceId: string, enabled = true) {
   });
   const versions = useQuery({
     queryKey: ["api", "course-versions", workspaceId],
-    queryFn: ({ signal }) => courseApi<Array<{ version: number; draftRevision: number; snapshotDigest: string; publishedAt: string }>>(
-      `workspaces/${workspaceId}/course/versions`, { signal }),
+    queryFn: ({ signal }) =>
+      courseApi<
+        Array<{
+          version: number;
+          draftRevision: number;
+          snapshotDigest: string;
+          publishedAt: string;
+        }>
+      >(`workspaces/${workspaceId}/course/versions`, { signal }),
     enabled: client.mode === "backend" && Boolean(workspaceId) && enabled,
   });
   const published = useQuery({
     queryKey: ["api", "course-published", workspaceId],
-    queryFn: ({ signal }) => courseApi<PublishedCourse>(
-      `workspaces/${workspaceId}/course/published`, { signal }),
+    queryFn: ({ signal }) =>
+      courseApi<PublishedCourse>(`workspaces/${workspaceId}/course/published`, { signal }),
     enabled: client.mode === "backend" && Boolean(workspaceId) && enabled,
   });
   const keepCourse = (data: AuthoringCourse) => {
@@ -178,19 +210,33 @@ export function useCourseAuthoring(workspaceId: string, enabled = true) {
     return data;
   };
   const updateModule = useMutation({
-    mutationFn: ({ moduleId, ...body }: { moduleId: string; title: string; description?: string; prerequisiteModuleId?: string }) =>
+    mutationFn: ({
+      moduleId,
+      ...body
+    }: {
+      moduleId: string;
+      title: string;
+      description?: string;
+      prerequisiteModuleId?: string;
+    }) =>
       courseApi<AuthoringCourse>(`workspaces/${workspaceId}/course/modules/${moduleId}`, {
-        method: "PUT", body: JSON.stringify(body),
+        method: "PUT",
+        body: JSON.stringify(body),
       }).then(keepCourse),
   });
   const moveModule = useMutation({
     mutationFn: ({ moduleId, direction }: { moduleId: string; direction: "UP" | "DOWN" }) =>
       courseApi<AuthoringCourse>(`workspaces/${workspaceId}/course/modules/${moduleId}/move`, {
-        method: "POST", body: JSON.stringify({ direction }),
+        method: "POST",
+        body: JSON.stringify({ direction }),
       }).then(keepCourse),
   });
   const updateItem = useMutation({
-    mutationFn: ({ moduleId, itemId, ...body }: {
+    mutationFn: ({
+      moduleId,
+      itemId,
+      ...body
+    }: {
       moduleId: string;
       itemId: string;
       type: AuthoringItem["type"];
@@ -200,24 +246,44 @@ export function useCourseAuthoring(workspaceId: string, enabled = true) {
       assignmentId?: string;
       content?: Record<string, unknown>;
     }) =>
-      courseApi<AuthoringCourse>(`workspaces/${workspaceId}/course/modules/${moduleId}/items/${itemId}`, {
-        method: "PUT", body: JSON.stringify(body),
-      }).then(keepCourse),
+      courseApi<AuthoringCourse>(
+        `workspaces/${workspaceId}/course/modules/${moduleId}/items/${itemId}`,
+        {
+          method: "PUT",
+          body: JSON.stringify(body),
+        },
+      ).then(keepCourse),
   });
   const moveItem = useMutation({
-    mutationFn: ({ moduleId, itemId, direction }: { moduleId: string; itemId: string; direction: "UP" | "DOWN" }) =>
-      courseApi<AuthoringCourse>(`workspaces/${workspaceId}/course/modules/${moduleId}/items/${itemId}/move`, {
-        method: "POST", body: JSON.stringify({ direction }),
-      }).then(keepCourse),
+    mutationFn: ({
+      moduleId,
+      itemId,
+      direction,
+    }: {
+      moduleId: string;
+      itemId: string;
+      direction: "UP" | "DOWN";
+    }) =>
+      courseApi<AuthoringCourse>(
+        `workspaces/${workspaceId}/course/modules/${moduleId}/items/${itemId}/move`,
+        {
+          method: "POST",
+          body: JSON.stringify({ direction }),
+        },
+      ).then(keepCourse),
   });
   const deleteItem = useMutation({
     mutationFn: ({ moduleId, itemId }: { moduleId: string; itemId: string }) =>
-      courseApi<AuthoringCourse>(`workspaces/${workspaceId}/course/modules/${moduleId}/items/${itemId}`, {
-        method: "DELETE",
-      }).then(keepCourse),
+      courseApi<AuthoringCourse>(
+        `workspaces/${workspaceId}/course/modules/${moduleId}/items/${itemId}`,
+        {
+          method: "DELETE",
+        },
+      ).then(keepCourse),
   });
   const startDraft = useMutation({
-    mutationFn: () => courseApi<AuthoringCourse>(`workspaces/${workspaceId}/course/draft`, { method: "POST" }),
+    mutationFn: () =>
+      courseApi<AuthoringCourse>(`workspaces/${workspaceId}/course/draft`, { method: "POST" }),
     onSuccess: (data) => {
       cache.setQueryData(["api", "course-authoring", workspaceId], data);
       void cache.invalidateQueries({ queryKey: ["api", "course-published", workspaceId] });
@@ -292,6 +358,187 @@ export type CourseSetup = {
   previewAssignmentId: string | null;
 };
 
+export type StudentLabReferenceDiagram = {
+  id: string;
+  notation: string;
+  level: string;
+  layoutJson: Record<string, unknown> | null;
+  mermaidDsl: string | null;
+};
+
+export type StudentLabReferenceElement = {
+  id: string;
+  elementType: string;
+  name: string;
+  scope: string;
+  languageStack: string | null;
+  parentElementId: string | null;
+  status: string | null;
+};
+
+export type StudentLabReferenceRelationship = {
+  id: string;
+  sourceElementId: string;
+  sourceName: string | null;
+  targetElementId: string;
+  targetName: string | null;
+  relationType: string;
+  originLayer: string | null;
+};
+
+export type StudentLabReferenceEvidence = {
+  id: string;
+  relationshipId: string;
+  locator: string | null;
+  sourceType: string | null;
+  excerpt: string | null;
+  adapterVersion: string | null;
+};
+
+export type StudentLabReferenceFinding = {
+  id: string;
+  ruleId: string;
+  severity: string;
+  status: string;
+  message: string;
+};
+
+export type StudentLabReferenceEvaluation = {
+  id: string;
+  ruleSetVersion: string | null;
+  summaryMetrics: Record<string, unknown> | null;
+  findings: StudentLabReferenceFinding[];
+};
+
+export type StudentLabReferenceArchitecture = {
+  projectId: string;
+  snapshotId: string;
+  modelVersionId: string;
+  revision: number | null;
+  diagrams: StudentLabReferenceDiagram[];
+  elements: StudentLabReferenceElement[];
+  relationships: StudentLabReferenceRelationship[];
+  evidences: StudentLabReferenceEvidence[];
+  evaluation: StudentLabReferenceEvaluation | null;
+};
+
+export type StudentLabStudioSession = {
+  id: string;
+  projectId: string;
+  sourceSnapshotId: string;
+  assignmentId: string | null;
+  scenarioName: string | null;
+  executionStatus: string | null;
+  traceStatus: string | null;
+  capturedSpanCount: number | null;
+  studioVerified: boolean;
+  createdAt: string | null;
+};
+
+export type StudentLabLatestReview = {
+  submissionId: string;
+  revision: number;
+  status: string;
+  score: number | null;
+  summary: string | null;
+  lecturerName: string | null;
+  updatedAt: string | null;
+  snapshotGrades?: Array<{
+    snapshotId: string;
+    title?: string;
+    score: number;
+    comment?: string | null;
+  }> | null;
+  labOutcome?: "PENDING" | "PASSED" | "NEEDS_REVISION" | null;
+};
+
+export type StudentLabContext = {
+  assignment: Response<"assignments">[number] & { description?: string | null };
+  referenceArchitecture: StudentLabReferenceArchitecture | null;
+  quiz: {
+    version: number;
+    lesson: string;
+    passPercent: number;
+    passed: boolean;
+    latestStatus: "PASSED" | "NEEDS_RETRY" | "NOT_ATTEMPTED" | null;
+    runtimeUnlocked: boolean;
+  } | null;
+  studioSessions: StudentLabStudioSession[];
+  latestSubmission: { id: string; submittedAt?: string | null } | null;
+  latestReview: StudentLabLatestReview | null;
+};
+
+export function useStudentLabContext(workspaceId: string, assignmentId: string, enabled = true) {
+  const client = useApi();
+  return useQuery({
+    queryKey: ["api", "student-lab-context", workspaceId, assignmentId],
+    queryFn: ({ signal }) =>
+      courseApi<StudentLabContext>(
+        `workspaces/${workspaceId}/course-labs/${assignmentId}/student-context`,
+        { signal },
+      ),
+    enabled: client.mode === "backend" && enabled && Boolean(workspaceId && assignmentId),
+    retry: false,
+  });
+}
+
+export function useStudentLabStudioSessions(
+  workspaceId: string,
+  assignmentId: string,
+  enabled = true,
+) {
+  const client = useApi();
+  return useQuery({
+    queryKey: ["api", "student-lab-studio-sessions", workspaceId, assignmentId],
+    queryFn: ({ signal }) =>
+      courseApi<StudentLabStudioSession[]>(
+        `workspaces/${workspaceId}/course-labs/${assignmentId}/studio-sessions`,
+        { signal },
+      ),
+    enabled: client.mode === "backend" && enabled && Boolean(workspaceId && assignmentId),
+    retry: false,
+  });
+}
+
+export function useStartLabStudioSession(workspaceId: string, assignmentId: string) {
+  const cache = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      courseApi<StudentLabStudioSession>(
+        `workspaces/${workspaceId}/course-labs/${assignmentId}/studio-sessions`,
+        { method: "POST" },
+      ),
+    onSuccess: () => {
+      void cache.invalidateQueries({
+        queryKey: ["api", "student-lab-context", workspaceId, assignmentId],
+      });
+      void cache.invalidateQueries({
+        queryKey: ["api", "student-lab-studio-sessions", workspaceId, assignmentId],
+      });
+    },
+  });
+}
+
+export function useBootstrapLabStudio(workspaceId: string, assignmentId: string) {
+  const cache = useQueryClient();
+  return useMutation({
+    mutationFn: (sessionId: string) =>
+      courseApi<{ session: StudentLabStudioSession; studio: Record<string, unknown> }>(
+        `workspaces/${workspaceId}/course-labs/${assignmentId}/studio-sessions/${sessionId}/bootstrap-studio`,
+        { method: "POST" },
+      ),
+    onSuccess: (_data, sessionId) => {
+      void cache.invalidateQueries({ queryKey: ["api", "studioState", { sessionId }] });
+      void cache.invalidateQueries({
+        queryKey: ["api", "student-lab-context", workspaceId, assignmentId],
+      });
+      void cache.invalidateQueries({
+        queryKey: ["api", "student-lab-studio-sessions", workspaceId, assignmentId],
+      });
+    },
+  });
+}
+
 export function useCourseSetup(workspaceId: string) {
   const client = useApi();
   return useQuery({
@@ -322,10 +569,9 @@ export function useRuntimeSetupReadiness(projectId: string | null) {
   return useQuery({
     queryKey: ["api", "runtime-setup-readiness", projectId],
     queryFn: ({ signal }) =>
-      courseApi<RuntimeSetupReadiness>(
-        `analyzer/projects/${projectId}/runtime-setup-readiness`,
-        { signal },
-      ),
+      courseApi<RuntimeSetupReadiness>(`analyzer/projects/${projectId}/runtime-setup-readiness`, {
+        signal,
+      }),
     enabled: client.mode === "backend" && !!projectId,
     refetchOnWindowFocus: true,
   });
@@ -334,7 +580,7 @@ export function useRuntimeSetupReadiness(projectId: string | null) {
 export function CourseEnrollment({
   destination = "workspaces",
 }: {
-  destination?: "workspaces" | "roadmap";
+  destination?: "workspaces" | "roadmap" | "workspace-overview";
 }) {
   const t = useCourseText();
   const client = useApi();
@@ -359,7 +605,13 @@ export function CourseEnrollment({
   if (client.mode !== "backend") return null;
   const status = redeem.error instanceof ApiError ? redeem.error.status : undefined;
   return (
-    <DetailPanel title={t("Join a class", "Tham gia lớp học")}>
+    <DetailPanel title={t("Join a class with Passkey", "Tham gia lớp bằng Passkey")}>
+      <p className="text-xs text-muted-foreground">
+        {t(
+          "Enter the 22-character Passkey issued by your Lecturer to enroll immediately.",
+          "Nhập mã Passkey gồm 22 ký tự do Giảng viên cấp để ghi danh ngay vào lớp học.",
+        )}
+      </p>
       <form
         className="flex flex-wrap items-end gap-3"
         onSubmit={(event) => {
@@ -369,26 +621,33 @@ export function CourseEnrollment({
           redeem.mutate(id);
         }}
       >
-        <FormField label="Passkey">
-          {(props) => (
-            <Input
-              {...props}
-              required
-              pattern="[A-Za-z0-9_\-]{22}"
-              maxLength={22}
-              autoComplete="off"
-              spellCheck={false}
-              disabled={redeem.isPending}
-              value={code}
-              onChange={(event) => {
-                setCode(event.target.value.trim());
-                setRequestId(undefined);
-                redeem.reset();
-              }}
-            />
-          )}
-        </FormField>
-        <Button disabled={redeem.isPending}>
+        <div className="min-w-[260px] flex-1 max-w-md">
+          <FormField
+            label={`Passkey (${code.length}/22)`}
+            hint={t("Spaces are removed automatically.", "Khoảng trắng sẽ được tự động loại bỏ.")}
+          >
+            {(props) => (
+              <Input
+                {...props}
+                required
+                className="font-mono tracking-wider"
+                placeholder="XXXXXXXXXXXXXXXXXXXXXX"
+                pattern="[A-Za-z0-9_\-]{22}"
+                maxLength={22}
+                autoComplete="off"
+                spellCheck={false}
+                disabled={redeem.isPending}
+                value={code}
+                onChange={(event) => {
+                  setCode(event.target.value.replace(/\s+/g, "").slice(0, 22));
+                  setRequestId(undefined);
+                  redeem.reset();
+                }}
+              />
+            )}
+          </FormField>
+        </div>
+        <Button disabled={redeem.isPending || code.length !== 22}>
           {redeem.isPending ? t("Joining…", "Đang tham gia…") : t("Join class", "Vào lớp")}
         </Button>
       </form>
@@ -396,8 +655,8 @@ export function CourseEnrollment({
         <p role="alert" className="text-sm text-destructive">
           {status === 409
             ? t(
-                "Check My Workspaces. You may already be enrolled.",
-                "Hãy kiểm tra Lớp của tôi. Bạn có thể đã ghi danh.",
+                "Check My Classes. You may already be enrolled.",
+                "Hãy kiểm tra Lớp học của tôi. Bạn có thể đã ghi danh vào lớp này.",
               )
             : status === 400 || status === 422
               ? t(
@@ -446,11 +705,14 @@ export function CourseRoadmap({
       {roadmap.data.enrollmentStatus && (
         <p className="text-sm font-medium">{statusLabels[roadmap.data.enrollmentStatus]}</p>
       )}
-      <div className="space-y-2" aria-label={t("Course progress", "Tiến độ khóa học")}>
-        <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-          <span>{t("Course progress", "Tiến độ khóa học")}</span>
+      <div
+        className="space-y-2 rounded-xl border bg-muted/20 p-3.5"
+        aria-label={t("Course progress", "Tiến độ khóa học")}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3 text-xs font-medium">
+          <span>{t("Course mastery progress", "Tiến độ hoàn thành khóa học")}</span>
           <span>
-            {passed}/{total} {t("Labs passed", "Lab đã đạt")}
+            {passed}/{total} {t("Labs passed", "Lab đã đạt")} ({progress}%)
           </span>
         </div>
         <div
@@ -458,7 +720,7 @@ export function CourseRoadmap({
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={progress}
-          className="h-2 overflow-hidden rounded-full bg-muted"
+          className="h-2.5 overflow-hidden rounded-full bg-muted"
         >
           <div
             className="h-full rounded-full bg-primary transition-[width]"
@@ -466,37 +728,93 @@ export function CourseRoadmap({
           />
         </div>
       </div>
-      <ol className="space-y-2">
-        {roadmap.data.labs.map((lab) => (
-          <li
-            key={lab.assignmentId}
-            className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3"
-          >
-            <div>
-              <p className="text-sm font-medium">
-                Lab {lab.position} · {lab.title}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {lab.state === "PASSED"
-                  ? t("Passed", "Đã đạt")
-                  : lab.state === "UNLOCKED"
-                    ? t("Available", "Đã mở")
-                    : lab.reason === "COURSE_ARCHIVED"
-                      ? t("Class archived", "Lớp đã lưu trữ")
-                      : t("Pass the preceding labs to unlock.", "Đạt các Lab trước để mở khóa.")}
-              </p>
-            </div>
-            {active && lab.state !== "LOCKED" && (
-              <Button variant="outline" size="sm" asChild>
-                <Link
-                  href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(lab.assignmentId)}&step=1`}
-                >
-                  {t("Open lab", "Mở Lab")}
-                </Link>
-              </Button>
-            )}
-          </li>
-        ))}
+      <ol className="space-y-2.5">
+        {roadmap.data.labs.map((lab) => {
+          const labOrder = String(lab.position).padStart(2, "0");
+          const stateBadge =
+            lab.state === "PASSED"
+              ? {
+                  label: t("PASSED", "ĐÃ ĐẠT"),
+                  cls: "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+                }
+              : lab.state === "UNLOCKED"
+                ? {
+                    label: t("UNLOCKED", "ĐANG MỞ"),
+                    cls: "border-primary/40 bg-primary/10 text-primary",
+                  }
+                : {
+                    label: t("LOCKED", "ĐANG KHÓA"),
+                    cls: "border-border bg-muted text-muted-foreground",
+                  };
+          return (
+            <li
+              key={lab.assignmentId}
+              className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-background p-3.5 transition-colors hover:border-primary/30"
+            >
+              <div className="flex min-w-0 items-start gap-3">
+                <span className="grid size-8 shrink-0 place-items-center rounded-lg border bg-muted/40 font-mono text-xs font-semibold">
+                  {labOrder}
+                </span>
+                <div className="min-w-0 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-semibold">
+                      Lab {lab.position} · {lab.title}
+                    </p>
+                    <span
+                      className={`inline-flex rounded border px-1.5 py-0.5 text-[10px] font-semibold tracking-wide ${stateBadge.cls}`}
+                    >
+                      {stateBadge.label}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {lab.state === "PASSED"
+                      ? t(
+                          "Passed — ready for review or re-inspection.",
+                          "Đã đạt — có thể vào xem lại kiến trúc và hồ sơ bài làm.",
+                        )
+                      : lab.state === "UNLOCKED"
+                        ? t(
+                            "Unlocked — complete Theory, Reverse BFS, Quiz Gate & Submit inside Lab.",
+                            "Đã mở — hoàn thành Lý thuyết, Lan truyền ngược, Quiz và Nộp bài trong Lab.",
+                          )
+                        : lab.reason === "COURSE_ARCHIVED"
+                          ? t("Class archived", "Lớp đã lưu trữ")
+                          : t(
+                              "Pass the preceding labs to unlock.",
+                              "Đạt các Lab trước để mở khóa.",
+                            )}
+                  </p>
+                </div>
+              </div>
+              {active && lab.state !== "LOCKED" && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    variant={lab.state === "PASSED" ? "outline" : "default"}
+                    size="sm"
+                    asChild
+                  >
+                    <Link
+                      href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(lab.assignmentId)}&step=1`}
+                    >
+                      {lab.state === "PASSED"
+                        ? t("Review Lab", "Xem lại Lab")
+                        : t("Enter Lab", "Vào làm Lab")}
+                    </Link>
+                  </Button>
+                  {!canManage && (
+                    <Button variant="ghost" size="sm" asChild>
+                      <Link
+                        href={`/submissions?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(lab.assignmentId)}`}
+                      >
+                        {t("Submissions", "Bài nộp")}
+                      </Link>
+                    </Button>
+                  )}
+                </div>
+              )}
+            </li>
+          );
+        })}
       </ol>
       {canManage && active && (
         <div id="course-passkey">
@@ -751,7 +1069,9 @@ export function SeedCuratedCourseLabs({
 }) {
   const t = useCourseText();
   const cache = useQueryClient();
-  const [activePreset, setActivePreset] = useState<"STANDARD_DEMO" | "FULL_CURRICULUM" | null>(null);
+  const [activePreset, setActivePreset] = useState<"STANDARD_DEMO" | "FULL_CURRICULUM" | null>(
+    null,
+  );
   const seed = useMutation({
     mutationFn: (preset: "STANDARD_DEMO" | "FULL_CURRICULUM") => {
       setActivePreset(preset);

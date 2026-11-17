@@ -41,20 +41,22 @@ test("course learning routes are registered in the shared authenticated shell", 
   assert.match(home, /<PublicHomepage\s*\/>/);
 });
 
-test("student navigation follows Course to Roadmap to Lab and submissions", () => {
+test("student navigation locks class sidebar to 3 clean course items and preserves student destinations", () => {
   const navigation = read("src/lib/navigation.ts");
 
   for (const label of [
     "My Courses",
     "Join Course",
     "Course Roadmap",
-    "Lab Workspace",
     "My Submissions",
     "Free Studio Sandbox",
+    "My Classes",
+    "Lab Roadmap & Course",
+    "Submissions & Grades",
   ])
     assert.ok(navigation.includes(label), label);
   assert.match(navigation, /href:\s*"\/roadmap"/);
-  assert.match(navigation, /href:\s*"\/lab"/);
+  assert.match(navigation, /href:\s*"\/submissions"/);
   assert.match(navigation, /href:\s*"\/courses"/);
 });
 
@@ -80,13 +82,15 @@ test("student class outline uses published roadmap and markdown activities with 
   assert.ok(shell.includes('tab === "content" || tab === "submissions"'));
 });
 
-test("student submissions are scoped by selected class roster and retain class navigation", () => {
+test("student submissions are scoped by selected class workspaceId and retain class navigation", () => {
   const submissions = read("src/features/submissions/screens.tsx");
-  assert.ok(submissions.includes("idsInSelectedClass.has(submission.studentId)"));
-  assert.ok(submissions.includes('<CourseWorkspaceShell workspace={workspace} active="submissions">'));
+  assert.ok(submissions.includes("submission.workspaceId === workspaceId"));
+  assert.ok(
+    submissions.includes('<CourseWorkspaceShell workspace={workspace} active="submissions">'),
+  );
 });
 
-test("Lab UI keeps unavailable progress gates honest and deep-links real assignment data", () => {
+test("Lab UI keeps unavailable progress gates honest and runs 4-step V2 workflow inside /lab", () => {
   const course = read("src/features/courses/screens.tsx");
   const access = read("src/features/workspaces/course-access.tsx");
   const quiz = read("src/features/courses/course-quiz.tsx");
@@ -96,20 +100,29 @@ test("Lab UI keeps unavailable progress gates honest and deep-links real assignm
   assert.ok(access.includes("course-roadmap"));
   assert.ok(access.includes('state: "LOCKED" | "UNLOCKED" | "PASSED"'));
   assert.match(access, /\/lab\?workspace=.*&assignment=.*&step=1/s);
-  assert.match(course, /state: model \? "READY" : referenceSnapshotId \? "IN PROGRESS" : "MISSING"/);
+  assert.match(
+    course,
+    /state:\s*activeModelId\s*\?\s*"READY"\s*:\s*referenceSnapshotId\s*\?\s*"IN PROGRESS"\s*:\s*"MISSING"/,
+  );
   assert.match(course, /job\.status === "completed" && job\.analysisState !== "PARTIAL"/);
-  assert.match(course, /<CourseQuiz workspaceId=\{workspaceId\} labId=\{labId\}/);
+  assert.match(course, /<CourseQuiz\s+workspaceId=\{workspaceId\}\s+labId=\{labId\}/);
   assert.match(quiz, /queryKey: \["api", "course-quiz", workspaceId, labId\]/);
   assert.match(quiz, /api<Result>\(`\$\{path\}\/attempts`/);
-  assert.match(course, /\/assignments\?workspace=.*&assignment=/s);
   assert.match(course, /\/submissions\?workspace=.*&assignment=/s);
+  assert.ok(course.includes("useStudentLabContext("));
+  assert.ok(course.includes("useStudentLabStudioSessions("));
 });
 
-test("guided Lab resumes a Runtime session scoped to its selected project and static model", () => {
+test("guided Lab embeds LiveStudioWorkbench directly in Step 4 without external /sessions redirect", () => {
   const course = read("src/features/courses/screens.tsx");
-  assert.match(course, /item\.projectId === projectId && item\.modelId === model\?\.id/);
-  assert.match(course, /sessionId \? \{ session: sessionId \}/);
-  assert.match(course, /Open Runtime session/);
+  const stepContentSource = course.slice(course.indexOf("function StepContent("));
+  assert.ok(course.includes("<LiveStudioWorkbench"));
+  assert.ok(course.includes("useStartLabStudioSession("));
+  assert.ok(course.includes("useBootstrapLabStudio("));
+  assert.ok(!stepContentSource.includes("href={`/sessions?"));
+  assert.ok(!stepContentSource.includes("href={`/diagrams?"));
+  assert.ok(!stepContentSource.includes("href={`/architecture?"));
+  assert.ok(!stepContentSource.includes("href={`/assignments?"));
 });
 
 test("lecturer Lab authoring is a dedicated workspace with ordered authoring steps", () => {
@@ -119,7 +132,14 @@ test("lecturer Lab authoring is a dedicated workspace with ordered authoring ste
   const publish = read("src/features/assignments/lab-publish-section.tsx");
   const assignments = read("src/features/assignments/screens.tsx");
 
-  for (const label of ["Lab information", "Theory", "Reference source", "Quiz", "Studio Live", "Check & add to class"])
+  for (const label of [
+    "Lab information",
+    "Theory",
+    "Reference source",
+    "Quiz",
+    "Studio Live",
+    "Check & add to class",
+  ])
     assert.ok(authoring.includes(label), label);
   assert.ok(info.includes('t("Save Lab draft", "Lưu bản nháp Lab")'));
   assert.ok(info.includes("Attach the reference source and publish it in the next steps."));
@@ -136,12 +156,23 @@ test("Course Builder edits structured theory items and starts a draft on the rea
   const builder = read("src/features/courses/course-builder.tsx");
   const access = read("src/features/workspaces/course-access.tsx");
 
-  assert.ok(access.includes("`workspaces/${workspaceId}/course/draft`"), "startDraft must POST /course/draft");
-  assert.doesNotMatch(access, /course\/draft\/start/, "the non-existent /draft/start route must be gone");
+  assert.ok(
+    access.includes("`workspaces/${workspaceId}/course/draft`"),
+    "startDraft must POST /course/draft",
+  );
+  assert.doesNotMatch(
+    access,
+    /course\/draft\/start/,
+    "the non-existent /draft/start route must be gone",
+  );
   assert.match(builder, /body: draft\.body/);
   assert.match(builder, /prompt: draft\.prompt/);
   assert.match(builder, /Theory content|Nội dung lý thuyết/);
-  assert.doesNotMatch(builder, /Structured activity content JSON/, "THEORY must not be edited as raw JSON");
+  assert.doesNotMatch(
+    builder,
+    /Structured activity content JSON/,
+    "THEORY must not be edited as raw JSON",
+  );
   assert.match(builder, /updateModule/);
   assert.match(builder, /moveItem/);
   assert.match(builder, /deleteItem/);
@@ -182,8 +213,18 @@ test("Coursera-style Lab table of contents shows progress, module items and lock
       steps: [
         { id: 1, label: "Static architecture", state: "complete" },
         { id: 2, label: "Theory and quiz", state: "current" },
-        { id: 3, label: "Runtime observation", state: "locked", reason: "Pass the current Quiz to open Runtime." },
-        { id: 4, label: "Studio receipt", state: "locked", reason: "Runtime evidence is required." },
+        {
+          id: 3,
+          label: "Runtime observation",
+          state: "locked",
+          reason: "Pass the current Quiz to open Runtime.",
+        },
+        {
+          id: 4,
+          label: "Studio receipt",
+          state: "locked",
+          reason: "Runtime evidence is required.",
+        },
       ],
     }),
   );
@@ -213,7 +254,7 @@ test("assignment and submission screens preserve the selected Lab context", () =
   assert.ok(assignments.includes('params?.get("assignment")'));
   assert.ok(assignments.includes("scrollIntoView"));
   assert.ok(assignments.includes("ring-2 ring-primary/40"));
-  assert.ok(submissions.includes("submission.assignmentId === assignmentId"));
+  assert.ok(submissions.includes("submission.assignmentId !== assignmentId"));
   assert.ok(submissions.includes("No snapshot has been submitted for this Lab yet"));
 });
 
@@ -229,10 +270,7 @@ test("WF-04 submission UI exposes every evidence gate and the sealed package dig
     "Step 4 · MAVIS Studio RuntimeReceipt",
   ])
     assert.ok(composer.includes(gate), gate);
-  assert.match(
-    composer,
-    /const requiresStudio = guided && requiresRuntime/,
-  );
+  assert.match(composer, /const requiresStudio = guided && requiresRuntime/);
   assert.match(composer, /useCourseQuiz\(workspaceId, assignmentId, guided\)/);
   assert.match(composer, /guided && !stage2Ready/);
   assert.match(composer, /requiresStudio && !stage4Ready/);
@@ -241,7 +279,10 @@ test("WF-04 submission UI exposes every evidence gate and the sealed package dig
     /\.\.\.\(interactiveStudio\s*\? capturedStudioSnapshots\.map/,
     "guided interactive Studio captures must be included in the C04 submission payload",
   );
-  assert.match(composer, /staticExplanation\.trim\(\)\.length > 0\s+&& \(!requiresStudio \|\| \(interactiveStudio \? capturedStudioSnapshots\.length > 0 : runtimeExplanation\.trim\(\)\.length > 0\)\)/);
+  assert.match(
+    composer,
+    /staticExplanation\.trim\(\)\.length > 0\s+&& \(!requiresStudio \|\| \(interactiveStudio \? capturedStudioSnapshots\.length > 0 : runtimeExplanation\.trim\(\)\.length > 0\)\)/,
+  );
   assert.ok(frozen.includes("Evidence package SHA-256"));
   assert.match(contract, /evidencePackageDigest:\s*z\s*\.string\(\)\s*\.regex/);
 });
@@ -263,22 +304,25 @@ test("new Course and Lab surfaces expose direct Vietnamese copy", () => {
     "Khóa học của tôi",
     "Lộ trình học tập",
     "Thao tác Lab",
-    "Mở bài tập và nộp bài",
-    "Bằng chứng runtime",
+    "Bài nộp & Điểm",
+    "Thực nghiệm Studio Live & Nộp bài",
   ])
     assert.ok(course.includes(text), text);
 });
 
-test("Guided Lab Step 1 exposes read-only C1-C3 quick views, pinned IDs, and 5-rule severity separation", () => {
+test("Guided Lab Step 1 exposes inline C1-C3 & Dependency Graph views, pinned IDs, and 5-rule 3E evaluation", () => {
   const course = read("src/features/courses/screens.tsx");
-  assert.ok(course.includes("Read-Only Structural Views (C1–C3 + Dependency Graph) · Static source evidence only (not runtime trace)"));
+  assert.ok(
+    course.includes(
+      "Read-Only Structural Views (C1–C3 + Dependency Graph) · Static source evidence only (not runtime trace)",
+    ),
+  );
   assert.ok(course.includes("C1 System Context"));
   assert.ok(course.includes("C2 Container"));
   assert.ok(course.includes("C3 Component"));
-  assert.ok(course.includes("kind=CONTEXT"));
-  assert.ok(course.includes("kind=CONTAINER"));
-  assert.ok(course.includes("kind=COMPONENT"));
-  assert.ok(course.includes("Service Dependency Graph (Read-Only)"));
+  assert.ok(course.includes("Service Dependency Graph"));
+  assert.ok(course.includes("DiagramPreview"));
+  assert.ok(course.includes("ArchitectureGraph"));
   assert.ok(course.includes("sourceSnapshotId"));
   assert.ok(course.includes("modelVersionId"));
   assert.ok(course.includes("Model Revision"));
@@ -311,10 +355,42 @@ test("Stage 4 Reverse BFS terminates safely on cyclic dependencies, reports unaf
       node("aud", "audit-isolated"),
     ],
     edges: [
-      { id: "e1", from: "gw", to: "ord", protocol: "SERVICE_HTTP_CALL", originLayer: "STATIC", uncertain: false, evidence: [] },
-      { id: "e2", from: "ord", to: "pay", protocol: "SERVICE_HTTP_CALL", originLayer: "STATIC", uncertain: false, evidence: [] },
-      { id: "e3", from: "pay", to: "ord", protocol: "SERVICE_HTTP_CALL", originLayer: "STATIC", uncertain: false, evidence: [] },
-      { id: "e4", from: "inv", to: "ord", protocol: "SERVICE_HTTP_CALL", originLayer: "STATIC", uncertain: false, evidence: [] },
+      {
+        id: "e1",
+        from: "gw",
+        to: "ord",
+        protocol: "SERVICE_HTTP_CALL",
+        originLayer: "STATIC",
+        uncertain: false,
+        evidence: [],
+      },
+      {
+        id: "e2",
+        from: "ord",
+        to: "pay",
+        protocol: "SERVICE_HTTP_CALL",
+        originLayer: "STATIC",
+        uncertain: false,
+        evidence: [],
+      },
+      {
+        id: "e3",
+        from: "pay",
+        to: "ord",
+        protocol: "SERVICE_HTTP_CALL",
+        originLayer: "STATIC",
+        uncertain: false,
+        evidence: [],
+      },
+      {
+        id: "e4",
+        from: "inv",
+        to: "ord",
+        protocol: "SERVICE_HTTP_CALL",
+        originLayer: "STATIC",
+        uncertain: false,
+        evidence: [],
+      },
     ],
   };
 
@@ -324,10 +400,11 @@ test("Stage 4 Reverse BFS terminates safely on cyclic dependencies, reports unaf
   assert.ok(impact.cycleNodeNames.includes("payment-service"));
   assert.equal(impact.directImpactCount, 1);
   assert.equal(impact.indirectImpactCount, 2);
-  assert.deepEqual(
-    impact.upstreamImpacted.map((e) => e.name).sort(),
-    ["gateway", "inventory-service", "order-service"],
-  );
+  assert.deepEqual(impact.upstreamImpacted.map((e) => e.name).sort(), [
+    "gateway",
+    "inventory-service",
+    "order-service",
+  ]);
   assert.equal(impact.isolatedCount, 1);
   assert.deepEqual(
     impact.unaffectedElements.map((e) => ({ name: e.name, isolated: e.isolated })),
@@ -347,10 +424,42 @@ test("Stage 4 Reverse BFS terminates safely on cyclic dependencies, reports unaf
       node("d", "user-db", "DATABASE"),
     ],
     edges: [
-      { id: "d1", from: "a", to: "b", protocol: "SERVICE_HTTP_CALL", originLayer: "STATIC", uncertain: false, evidence: [] },
-      { id: "d2", from: "a", to: "c", protocol: "SERVICE_HTTP_CALL", originLayer: "STATIC", uncertain: false, evidence: [] },
-      { id: "d3", from: "b", to: "d", protocol: "DATABASE_ACCESS", originLayer: "STATIC", uncertain: false, evidence: [] },
-      { id: "d4", from: "c", to: "d", protocol: "DATABASE_ACCESS", originLayer: "STATIC", uncertain: false, evidence: [] },
+      {
+        id: "d1",
+        from: "a",
+        to: "b",
+        protocol: "SERVICE_HTTP_CALL",
+        originLayer: "STATIC",
+        uncertain: false,
+        evidence: [],
+      },
+      {
+        id: "d2",
+        from: "a",
+        to: "c",
+        protocol: "SERVICE_HTTP_CALL",
+        originLayer: "STATIC",
+        uncertain: false,
+        evidence: [],
+      },
+      {
+        id: "d3",
+        from: "b",
+        to: "d",
+        protocol: "DATABASE_ACCESS",
+        originLayer: "STATIC",
+        uncertain: false,
+        evidence: [],
+      },
+      {
+        id: "d4",
+        from: "c",
+        to: "d",
+        protocol: "DATABASE_ACCESS",
+        originLayer: "STATIC",
+        uncertain: false,
+        evidence: [],
+      },
     ],
   };
 
@@ -360,12 +469,13 @@ test("Stage 4 Reverse BFS terminates safely on cyclic dependencies, reports unaf
   assert.equal(diamondImpact.indirectImpactCount, 1);
 });
 
-test("Stage 4 Step 2 UI integrates Reverse BFS Explorer, C1-C3 Back-Links, and explicit Quiz/Runtime Gate state", () => {
+test("Stage 4 Step 2 UI integrates Reverse BFS Explorer, inline Step 1 Back-Links, and explicit Step 3 Quiz Gate", () => {
   const course = read("src/features/courses/screens.tsx");
   const step2 = read("src/features/courses/step2-static-impact.tsx");
   const quiz = read("src/features/courses/course-quiz.tsx");
 
   assert.ok(course.includes("<Step2StaticImpact"));
+  assert.ok(course.includes("onOpenC1C3View="));
   assert.ok(course.includes("runtimeStepHref="));
   assert.ok(step2.includes("computeArchitectureImpact"));
   assert.ok(step2.includes("Cycle Detected & Safely Terminated"));
@@ -384,18 +494,17 @@ test("Stage 4 Step 2 UI integrates Reverse BFS Explorer, C1-C3 Back-Links, and e
   assert.ok(quiz.includes("Step 3 Live Docker Runtime is locked until you score at least"));
 });
 
-test("Studio in the guided Lab requires observed traces on the current model", () => {
+test("Studio in the guided Lab unlocks Step 4 after Quiz Gate and embeds simulated sandbox bootstrap", () => {
   const course = read("src/features/courses/screens.tsx");
-  assert.match(course, /item\.projectId === projectId && item\.modelId === model\?\.id/);
-  assert.match(course, /const studioReady = runtimeReady && Boolean\(observedRuntime\)/);
-  assert.match(course, /id === 4 && studioReady/);
+  assert.match(course, /id === 4 && runtimeReady/);
+  assert.ok(course.includes("Start Studio Live Session"));
+  assert.ok(course.includes("Activate Simulated Sandbox Telemetry"));
 });
 
-test("static Guided Labs proceed from a passing Quiz to submission", () => {
+test("static Guided Labs unlock Step 4 LabSubmissionV2 immediately after passing Quiz Gate", () => {
   const lab = read("src/features/courses/screens.tsx");
   const quiz = read("src/features/courses/course-quiz.tsx");
-  assert.match(lab, /!requiresRuntime && activeStep > 2 \? 2 : activeStep/);
-  assert.match(lab, /submissionHref=\{staticSubmission \? submitHref : undefined\}/);
+  assert.match(lab, /submissionHref=\{!requiresRuntime \? submitHref : undefined\}/);
   assert.match(quiz, /href=\{submissionHref \?\? runtimeStepHref\}/);
 });
 
@@ -408,7 +517,9 @@ test("WF-04 per-snapshot submission explanations, > 5.0/10 grading rule, and SR-
 
   assert.ok(composer.includes("Captured Snapshots & Written Theoretical Explanations"));
   assert.ok(composer.includes("Snapshot 1 · Static C1–C3 Architecture & 3E Reasoning"));
-  assert.ok(composer.includes("Snapshot 2 · MAVIS Studio Runtime Stop/Scale Before-After Analysis"));
+  assert.ok(
+    composer.includes("Snapshot 2 · MAVIS Studio Runtime Stop/Scale Before-After Analysis"),
+  );
   assert.ok(composer.includes("(guided && !hasWrittenExplanation)"));
 
   assert.ok(grading.includes("const SNAPSHOT_PASS_EXCLUSIVE = 5.0"));
@@ -442,7 +553,12 @@ test("WF-04 per-snapshot submission explanations, > 5.0/10 grading rule, and SR-
     summary: "One snapshot at exact 5.0 threshold.",
     snapshotGrades: [
       { snapshotId: "STEP_1_STATIC", title: "Static C1-C3", score: 8.5, comment: "Solid" },
-      { snapshotId: "STEP_4_RUNTIME", title: "Runtime Studio", score: 5.0, comment: "Missing trace link" },
+      {
+        snapshotId: "STEP_4_RUNTIME",
+        title: "Runtime Studio",
+        score: 5.0,
+        comment: "Missing trace link",
+      },
     ],
   });
   assert.equal(failReview.labOutcome, "NEEDS_REVISION");
@@ -471,10 +587,7 @@ test("WF-04 per-snapshot submission explanations, > 5.0/10 grading rule, and SR-
       status: "GRADED",
       score: 65.5,
       labOutcome: "PASSED",
-      snapshotGrades: [
-        { score: 5.1 },
-        { score: 8.0 },
-      ],
+      snapshotGrades: [{ score: 5.1 }, { score: 8.0 }],
     }),
     "PASS",
   );
@@ -484,10 +597,7 @@ test("WF-04 per-snapshot submission explanations, > 5.0/10 grading rule, and SR-
       status: "GRADED",
       score: 70,
       labOutcome: "NEEDS_REVISION",
-      snapshotGrades: [
-        { score: 9.0 },
-        { score: 5.0 },
-      ],
+      snapshotGrades: [{ score: 9.0 }, { score: 5.0 }],
     }),
     "NEEDS REVISION",
   );
@@ -495,10 +605,7 @@ test("WF-04 per-snapshot submission explanations, > 5.0/10 grading rule, and SR-
     resolveSubmissionOutcome({
       status: "GRADED",
       score: 70,
-      snapshotGrades: [
-        { score: 9.0 },
-        { score: 5.0 },
-      ],
+      snapshotGrades: [{ score: 9.0 }, { score: 5.0 }],
     }),
     "NEEDS REVISION",
   );
@@ -507,10 +614,7 @@ test("WF-04 per-snapshot submission explanations, > 5.0/10 grading rule, and SR-
     resolveSubmissionOutcome({
       status: "GRADED",
       score: 72,
-      snapshotGrades: [
-        { score: 4.9 },
-        { score: 9.5 },
-      ],
+      snapshotGrades: [{ score: 4.9 }, { score: 9.5 }],
     }),
     "NEEDS REVISION",
   );
@@ -519,10 +623,7 @@ test("WF-04 per-snapshot submission explanations, > 5.0/10 grading rule, and SR-
       status: "GRADED",
       score: 60,
       labOutcome: "PASSED",
-      snapshotGrades: [
-        { score: 5.1 },
-        { score: 6.9 },
-      ],
+      snapshotGrades: [{ score: 5.1 }, { score: 6.9 }],
     }),
     "PASS",
   );
@@ -530,16 +631,30 @@ test("WF-04 per-snapshot submission explanations, > 5.0/10 grading rule, and SR-
   assert.ok(grading.includes("At least one snapshot scored <= 5.0 / 10"));
 });
 
-test("Stage 1 reference views, 1-click workspace init, Step 4 submit bridge, and composer 1-click analysis", () => {
+test("Stage 1 reference views, Step 4 submit bridge, and student BFF endpoints are wired", () => {
   const course = read("src/features/courses/screens.tsx");
   const composer = read("src/features/submissions/composer.tsx");
+  const { allowedBackendPath } = require("../src/lib/api/backend-path.ts");
+  const ws = "11111111-1111-1111-1111-111111111111";
+  const labId = "22222222-2222-2222-2222-222222222222";
+  const sessId = "33333333-3333-3333-3333-333333333333";
 
   assert.ok(course.includes("const referenceModelQuery ="));
-  assert.ok(course.includes("Initialize & Analyze My Lab Workspace"));
-  assert.ok(course.includes("Proceed to Submit Lab"));
-  assert.ok(course.includes("#submission-composer"));
+  assert.ok(course.includes("Jump to Submission Box"));
+  assert.equal(allowedBackendPath(`workspaces/${ws}/course-labs/${labId}/student-context`), true);
+  assert.equal(allowedBackendPath(`workspaces/${ws}/course-labs/${labId}/studio-sessions`), true);
+  assert.equal(
+    allowedBackendPath(
+      `workspaces/${ws}/course-labs/${labId}/studio-sessions/${sessId}/bootstrap-studio`,
+    ),
+    true,
+  );
   assert.ok(composer.includes('id="submission-composer"'));
-  assert.ok(composer.includes("(guided || useReferenceSnapshot) && requirements?.referenceSource?.snapshotId"));
+  assert.ok(
+    composer.includes(
+      "(guided || useReferenceSnapshot) && requirements?.referenceSource?.snapshotId",
+    ),
+  );
   assert.ok(composer.includes("Run Static Analysis Now"));
 });
 
@@ -553,7 +668,10 @@ test("Stage 3 lecturer 1-click curated course lab seeder is wired on courses and
   assert.ok(access.includes("course-labs/seed-curated"));
   assert.ok(access.includes("STANDARD_DEMO"));
   assert.ok(access.includes("FULL_CURRICULUM"));
-  assert.equal(allowedBackendPath("workspaces/11111111-1111-1111-1111-111111111111/course-labs/seed-curated"), true);
+  assert.equal(
+    allowedBackendPath("workspaces/11111111-1111-1111-1111-111111111111/course-labs/seed-curated"),
+    true,
+  );
   assert.ok(course.includes("<SeedCuratedCourseLabs workspaceId={workspaceId}"));
   assert.ok(assignments.includes("<SeedCuratedCourseLabs workspaceId={workspaceId}"));
 });
@@ -569,24 +687,33 @@ test("Course builder exposes immutable publishing and BFF routes for structured 
   assert.ok(builder.includes('t("Theory content", "Nội dung lý thuyết")'));
   const module = "22222222-2222-2222-2222-222222222222";
   const item = "33333333-3333-3333-3333-333333333333";
-  for (const path of [`workspaces/${workspace}/course`, `workspaces/${workspace}/course/draft`,
-    `workspaces/${workspace}/course/draft/start`, `workspaces/${workspace}/course/modules`,
+  for (const path of [
+    `workspaces/${workspace}/course`,
+    `workspaces/${workspace}/course/draft`,
+    `workspaces/${workspace}/course/draft/start`,
+    `workspaces/${workspace}/course/modules`,
     `workspaces/${workspace}/course/modules/${module}`,
     `workspaces/${workspace}/course/modules/${module}/move`,
     `workspaces/${workspace}/course/modules/${module}/items`,
     `workspaces/${workspace}/course/modules/${module}/items/${item}`,
     `workspaces/${workspace}/course/modules/${module}/items/${item}/move`,
     `workspaces/${workspace}/course/publish`,
-    `workspaces/${workspace}/course/versions/1`, `workspaces/${workspace}/course/published`]) assert.equal(allowedBackendPath(path), true, path);
+    `workspaces/${workspace}/course/versions/1`,
+    `workspaces/${workspace}/course/published`,
+  ])
+    assert.equal(allowedBackendPath(path), true, path);
   assert.equal(allowedBackendPath(`workspaces/${workspace}/course/draft/unsafe`), false);
-  assert.equal(allowedBackendPath(`workspaces/${workspace}/course/modules/${module}/unsafe`), false);
+  assert.equal(
+    allowedBackendPath(`workspaces/${workspace}/course/modules/${module}/unsafe`),
+    false,
+  );
 });
 
 test("lecturer preview bypasses the roadmap lock and authoring keeps unsaved drafts", () => {
   const course = read("src/features/courses/screens.tsx");
   const builder = read("src/features/courses/course-builder.tsx");
 
-  assert.match(course, /!preview && roadmap\.data\.guided/);
+  assert.match(course, /!preview &&\s*roadmap\.data\.guided/);
   assert.match(course, /type === "IMPACT_LAB"\) return 2/);
   assert.match(builder, /score === undefined \|\| score === "" \? 10 : Number\(score\)/);
   assert.doesNotMatch(builder, /course\.data\?\.draftRevision, course\.data\?\.title/);
@@ -621,14 +748,18 @@ test("lecturer course setup checklist links the reference runtime and Studio Liv
   );
 });
 
-test("guided submission requires Studio evidence on the selected model", () => {
+test("guided submission attaches verified Studio session when required and renders LabSubmissionV2 in Step 4", () => {
   const lab = read("src/features/courses/screens.tsx");
+  const subV2 = read("src/features/courses/lab-submission-v2.tsx");
   const composer = read("src/features/submissions/composer.tsx");
-  assert.match(lab, /canSubmitFromStep4 = step === 4 && runtimeReady && studioVerified/);
+  assert.ok(lab.includes("runtimeSessionId={verifiedSessionForSubmit}"));
+  assert.match(
+    subV2,
+    /canSubmit\s*=\s*answer\.trim\(\)\.length > 0 && \(!studio \|\| Boolean\(runtimeSessionId\)\)/,
+  );
   assert.match(composer, /s\.studioVerified && s\.snapshotId === model\.snapshotId/);
   assert.match(composer, /stage3Ready && selectedRuntime\?\.studioVerified === true/);
 });
-
 
 test("lecturer grading uses frozen Snapshot rows and preserves matching draft grades", () => {
   const { buildInitialSnapshotGrades } = require("../src/features/submissions/grading.tsx");
@@ -718,7 +849,8 @@ test("MarkdownPreview renders safe headings, emphasis and links without raw HTML
   const { MarkdownPreview } = require("../src/components/shared/markdown-preview.tsx");
   const html = renderToStaticMarkup(
     React.createElement(MarkdownPreview, {
-      markdown: "# Lesson\n\n**Bold** and [docs](https://example.com).\n\n- One\n- Two\n\n<script>alert(1)</script>",
+      markdown:
+        "# Lesson\n\n**Bold** and [docs](https://example.com).\n\n- One\n- Two\n\n<script>alert(1)</script>",
     }),
   );
   assert.match(html, /<h1[^>]*>Lesson<\/h1>/);
@@ -748,20 +880,33 @@ test("Quiz builder supports manual types, import/export, bank, versions and 80 p
 });
 
 test("quiz import parser validates JSON and CSV into typed questions", () => {
-  const { parseQuizJson, parseQuizCsv, quizToCsv } = require("../src/features/assignments/quiz-types.ts");
-  const json = parseQuizJson(JSON.stringify({
-    lesson: "Boundaries",
-    passPercent: 80,
-    questions: [
-      { prompt: "Pick one", options: ["A", "B"], correctOption: 1, explanation: "B" },
-      { prompt: "Pick many", type: "MULTI_CHOICE", options: ["A", "B", "C"], correctOptions: [0, 2] },
-    ],
-  }));
+  const {
+    parseQuizJson,
+    parseQuizCsv,
+    quizToCsv,
+  } = require("../src/features/assignments/quiz-types.ts");
+  const json = parseQuizJson(
+    JSON.stringify({
+      lesson: "Boundaries",
+      passPercent: 80,
+      questions: [
+        { prompt: "Pick one", options: ["A", "B"], correctOption: 1, explanation: "B" },
+        {
+          prompt: "Pick many",
+          type: "MULTI_CHOICE",
+          options: ["A", "B", "C"],
+          correctOptions: [0, 2],
+        },
+      ],
+    }),
+  );
   assert.deepEqual(json.errors, []);
   assert.equal(json.draft.questions.length, 2);
   assert.equal(json.draft.questions[1].type, "MULTI_CHOICE");
 
-  const csv = parseQuizCsv('type,prompt,options,correct,explanation,points\nSINGLE_CHOICE,"Pick one","A|B",1,"Because B",1');
+  const csv = parseQuizCsv(
+    'type,prompt,options,correct,explanation,points\nSINGLE_CHOICE,"Pick one","A|B",1,"Because B",1',
+  );
   assert.deepEqual(csv.errors, []);
   assert.equal(csv.draft.questions[0].correctOption, 1);
   assert.match(quizToCsv(csv.draft.questions), /SINGLE_CHOICE/);
@@ -846,7 +991,195 @@ test("Studio Live setup uses a visual prepared topology builder and Lab session 
   assert.match(runtime, /assignmentId \? \{ assignmentId \}/);
   assert.ok(studio.includes("&assignment=${assignment.id}"));
   assert.ok(screens.includes('assignmentId ? `&assignment=${assignmentId}` : ""'));
-  assert.ok(screens.includes('studioTopology: config.data.profile["studioTopology"]') || screens.includes('studioTopology: config.data?.profile?.["studioTopology"]'));
+  assert.ok(
+    screens.includes('studioTopology: config.data.profile["studioTopology"]') ||
+      screens.includes('studioTopology: config.data?.profile?.["studioTopology"]'),
+  );
   assert.match(runtime, /studioTopology:\s*rawProfile\["studioTopology"\]/);
   assert.match(screens, /studioTopology:\s*rawProf\["studioTopology"\]/);
+});
+
+test("submission v2 draft keys isolate user, workspace and assignment and clear on submit", () => {
+  const { labSubmissionDraftKey } = require("../src/features/courses/lab-submission-v2.tsx");
+  const source = read("src/features/courses/lab-submission-v2.tsx");
+
+  const a = labSubmissionDraftKey("u1", "w1", "lab1");
+  const b = labSubmissionDraftKey("u2", "w1", "lab1");
+  const c = labSubmissionDraftKey("u1", "w2", "lab1");
+  const d = labSubmissionDraftKey("u1", "w1", "lab2");
+  assert.equal(new Set([a, b, c, d]).size, 4);
+  assert.equal(labSubmissionDraftKey(undefined, "w1", "lab1"), "mavis:lab-v2-draft:anon:w1:lab1");
+
+  assert.match(source, /window\.localStorage\.getItem\(draftKey\)/);
+  assert.match(source, /window\.localStorage\.setItem\(draftKey,\s*next\)/);
+  assert.match(source, /onSuccess:[\s\S]*window\.localStorage\.removeItem\(draftKey\)/);
+});
+
+test("FrozenArtifacts renders digest, quiz proof and snapshot explanations for Lab v2 without diagram layout", () => {
+  const React = require("react");
+  const { renderToStaticMarkup } = require("react-dom/server");
+  const { FrozenArtifacts } = require("../src/features/submissions/frozen-artifacts.tsx");
+
+  const html = renderToStaticMarkup(
+    React.createElement(FrozenArtifacts, {
+      submission: {
+        id: "sub-v2",
+        assignmentId: "lab-1",
+        assignmentTitle: "Lab V2",
+        studentId: "stu-1",
+        studentName: "Student 1",
+        model: { id: "mod-1", revision: 1, elements: [], edges: [] },
+        snapshot: { id: "snap-1", digest: "sha256:snap" },
+        diagramVersionId: null,
+        diagramLayout: null,
+        evidencePackageDigest: "sha256:" + "e".repeat(64),
+        courseQuizEvidence: {
+          status: "PASSED",
+          correctCount: 4,
+          questionCount: 4,
+          passPercent: 80,
+          quizVersion: 1,
+        },
+        studentSnapshots: [
+          {
+            snapshotId: "THEORY_THEORY",
+            step: "THEORY",
+            title: "Theory explanation",
+            writtenExplanation: "Isolated databases preserve service autonomy.",
+          },
+        ],
+        feedback: [],
+        submittedAt: "2026-11-17T10:00:00Z",
+      },
+    }),
+  );
+
+  assert.ok(html.includes("Frozen Lab evidence"));
+  assert.ok(html.includes("Evidence package SHA-256:"));
+  assert.ok(html.includes("Course Quiz Gate Proof"));
+  assert.ok(html.includes("Submitted Snapshots &amp; Theoretical Explanations"));
+  assert.ok(html.includes("Isolated databases preserve service autonomy."));
+  assert.ok(html.includes("No diagram artifact required for this Lab mode."));
+});
+
+test("GradeForm renders student snapshot explanations and preserves dirty draft across review revision sync", () => {
+  const React = require("react");
+  const { renderToStaticMarkup } = require("react-dom/server");
+  const { QueryClient, QueryClientProvider } = require("@tanstack/react-query");
+  const { LocaleProvider } = require("../src/lib/i18n/locale-context.tsx");
+  const { ApiContext } = require("../src/providers/app-context.ts");
+  const { GradeForm } = require("../src/features/submissions/grading.tsx");
+  const source = read("src/features/submissions/grading.tsx");
+
+  assert.match(source, /<GradeForm\s+key=\{submissionId\}/);
+  assert.match(source, /if\s*\(review\.revision\s*!==\s*syncedRevision\)/);
+  assert.match(source, /if\s*\(!dirty\)/);
+  assert.match(source, /expectedRevision:\s*review\.revision/);
+
+  const html = renderToStaticMarkup(
+    React.createElement(
+      LocaleProvider,
+      null,
+      React.createElement(
+        QueryClientProvider,
+        { client: new QueryClient() },
+        React.createElement(
+          ApiContext.Provider,
+          { value: {} },
+          React.createElement(GradeForm, {
+            guidedLab: true,
+            review: {
+              submissionId: "sub-1",
+              revision: 2,
+              status: "PENDING",
+              score: null,
+              summary: "",
+              lecturerId: null,
+              lecturerName: null,
+              updatedAt: null,
+              snapshotGrades: [],
+              labOutcome: "PENDING",
+            },
+            studentSnapshots: [
+              {
+                snapshotId: "THEORY_THEORY",
+                step: "THEORY",
+                title: "Theory explanation",
+                writtenExplanation: "Orders route controller delegates cleanly to payment.",
+              },
+            ],
+          }),
+        ),
+      ),
+    ),
+  );
+
+  assert.ok(html.includes("Theory explanation"));
+  assert.ok(html.includes("Orders route controller delegates cleanly to payment."));
+});
+
+test("FE-02 Student Submissions eliminate ReadOnlyDrawio iframe/.drawio and isolate classes strictly by workspaceId", () => {
+  const React = require("react");
+  const { renderToStaticMarkup } = require("react-dom/server");
+  const { FrozenArtifacts } = require("../src/features/submissions/frozen-artifacts.tsx");
+  const { filterStudentSubmissions } = require("../src/features/submissions/screens.tsx");
+  const frozenSource = read("src/features/submissions/frozen-artifacts.tsx");
+  const screensSource = read("src/features/submissions/screens.tsx");
+  const componentsSource = read("src/features/submissions/components.tsx");
+
+  assert.doesNotMatch(frozenSource, /ReadOnlyDrawio|submission-viewer\.html|\.drawio/);
+  assert.match(screensSource, /showLegacyTechnicalPanels\s*=\s*canReview\s*&&\s*!isV2Submission/);
+  assert.match(componentsSource, /if\s*\(!canReview\)\s*\{?\s*return/);
+
+  const legacyDrawioHtml = renderToStaticMarkup(
+    React.createElement(FrozenArtifacts, {
+      submission: {
+        id: "sub-legacy",
+        assignmentId: "lab-legacy",
+        assignmentTitle: "Legacy Lab",
+        studentId: "stu-1",
+        studentName: "Student 1",
+        model: { id: "mod-1", revision: 1, elements: [], edges: [] },
+        snapshot: { id: "snap-1", digest: "sha256:snap" },
+        diagramVersionId: "diag-1",
+        diagramLayout: {
+          artifacts: [
+            {
+              notation: "C4_CONTAINER",
+              layoutJson: { drawioXml: "<mxfile><diagram>legacy</diagram></mxfile>" },
+            },
+          ],
+        },
+        feedback: [],
+        submittedAt: "2026-11-17T10:00:00Z",
+      },
+    }),
+  );
+  assert.ok(!legacyDrawioHtml.includes("submission-viewer.html"));
+  assert.ok(!legacyDrawioHtml.includes(".drawio"));
+  assert.ok(legacyDrawioHtml.includes("Download diagram JSON"));
+
+  const subClassA = {
+    id: "sub-a",
+    assignmentId: "lab-1",
+    workspaceId: "ws-a",
+    studentId: "stu-1",
+    model: { id: "m1", revision: 1, elements: [], edges: [] },
+    snapshot: { id: "s1", digest: "d1" },
+    diagramVersionId: null,
+    diagramLayout: null,
+    feedback: [],
+    submittedAt: "2026-11-17T10:00:00Z",
+  };
+  const subClassB = {
+    ...subClassA,
+    id: "sub-b",
+    assignmentId: "lab-2",
+    workspaceId: "ws-b",
+  };
+  const filtered = filterStudentSubmissions([subClassA, subClassB], "ws-a", "");
+  assert.deepEqual(
+    filtered.map((s) => s.id),
+    ["sub-a"],
+  );
 });

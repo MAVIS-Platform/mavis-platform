@@ -102,12 +102,28 @@ public class CourseSetupService {
                 .comparingInt((Assignment lab) -> lab.getLabOrder() == null ? Integer.MAX_VALUE : lab.getLabOrder())
                 .thenComparing(Assignment::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())));
 
-        ReferenceSetup reference = resolveReference(workspaceId, ordered);
-        List<LabSetup> labs = ordered.stream().map(lab -> labSetup(lab, reference)).toList();
+        ReferenceSetup fallbackReference = resolveReference(workspaceId, ordered);
+        List<ReferenceSetup> labReferences = ordered.stream()
+                .map(lab -> lab.getReferenceModel() == null ? fallbackReference : reference(lab.getReferenceModel()))
+                .toList();
+        ReferenceSetup reference = selectPrimaryReference(ordered, labReferences, fallbackReference);
+        List<LabSetup> labs = ordered.stream().map(lab -> labSetup(lab, fallbackReference)).toList();
         PasskeySetup passkey = passkey(workspaceId, workspace.getMaxStudents());
         boolean hasRuntimeLab = labs.stream().anyMatch(LabSetup::requiresRuntime);
         long runtimeLabs = labs.stream().filter(LabSetup::requiresRuntime).count();
         long frozenRuntimeLabs = labs.stream().filter(LabSetup::requiresRuntime).filter(LabSetup::topologyFrozen).count();
+        boolean allReferencesReady = labs.isEmpty() ? reference.referenceReady() : labs.stream().allMatch(LabSetup::referenceReady);
+        boolean anyReferenceReady = labs.isEmpty() ? reference.referenceReady() : labs.stream().anyMatch(LabSetup::referenceReady);
+        boolean allRuntimeConfigured = true;
+        boolean allRuntimeMatchesSource = true;
+        boolean allTopologiesConfigured = true;
+        for (int i = 0; i < ordered.size(); i++) {
+            if (!Boolean.TRUE.equals(ordered.get(i).getRequireRuntimeTrace())) continue;
+            ReferenceSetup labRef = labReferences.get(i);
+            if (!labRef.runtimeConfigured()) allRuntimeConfigured = false;
+            if (!labRef.runtimeMatchesSource()) allRuntimeMatchesSource = false;
+            if (!labRef.topologyConfigured()) allTopologiesConfigured = false;
+        }
         boolean allPublished = !labs.isEmpty() && labs.stream().allMatch(LabSetup::published);
         boolean allQuizzes = !labs.isEmpty() && labs.stream().filter(LabSetup::published).allMatch(LabSetup::quizPublished);
         UUID preview = labs.stream()
@@ -124,8 +140,8 @@ public class CourseSetupService {
                         ? "Workspace is active."
                         : "Reactivate the workspace before students can open Labs."));
         steps.add(new Step("reference",
-                reference.referenceReady() ? "DONE" : "ACTION",
-                reference.referenceReady()
+                allReferencesReady ? "DONE" : anyReferenceReady ? "PARTIAL" : "ACTION",
+                allReferencesReady
                         ? "Reference model revision " + reference.modelRevision() + " is pinned to a published source snapshot."
                         : "Attach and analyze a curated reference source."));
         if (!hasRuntimeLab) {
@@ -133,13 +149,13 @@ public class CourseSetupService {
             steps.add(new Step("studio", "DONE", "No Lab requires Studio Live."));
         } else {
             steps.add(new Step("runtime",
-                    reference.runtimeConfigured() && reference.runtimeMatchesSource() ? "DONE" : "ACTION",
-                    !reference.runtimeConfigured()
+                    allRuntimeConfigured && allRuntimeMatchesSource ? "DONE" : "ACTION",
+                    !allRuntimeConfigured
                             ? "Configure runtime applications for the reference project."
-                            : !reference.runtimeMatchesSource()
+                            : !allRuntimeMatchesSource
                             ? "Runtime profile targets a different source or model. Reconfigure it for the published reference."
                             : reference.applications().size() + " runtime applications are configured for the pinned source."));
-            boolean topologyReady = reference.topologyConfigured() && reference.runtimeMatchesSource();
+            boolean topologyReady = allTopologiesConfigured && allRuntimeMatchesSource;
             steps.add(new Step("studio",
                     topologyReady && frozenRuntimeLabs == runtimeLabs ? "DONE"
                             : topologyReady ? "PARTIAL" : "ACTION",
@@ -178,9 +194,9 @@ public class CourseSetupService {
 
         String nextAction;
         if (labs.isEmpty()) nextAction = "seed-labs";
-        else if (!reference.referenceReady()) nextAction = "attach-source";
-        else if (hasRuntimeLab && (!reference.runtimeConfigured() || !reference.runtimeMatchesSource())) nextAction = "configure-runtime";
-        else if (hasRuntimeLab && !reference.topologyConfigured()) nextAction = "configure-studio";
+        else if (!allReferencesReady) nextAction = "attach-source";
+        else if (hasRuntimeLab && (!allRuntimeConfigured || !allRuntimeMatchesSource)) nextAction = "configure-runtime";
+        else if (hasRuntimeLab && !allTopologiesConfigured) nextAction = "configure-studio";
         else if (!allPublished) nextAction = "publish-labs";
         else if (hasRuntimeLab && frozenRuntimeLabs < runtimeLabs) nextAction = "freeze-topology";
         else if (!allQuizzes) nextAction = "publish-quiz";
@@ -189,6 +205,21 @@ public class CourseSetupService {
 
         return new Setup(workspaceId, workspace.getName(), workspace.getStatus(), workspace.isCourseMode(),
                 reference, labs, passkey, steps, nextAction, preview);
+    }
+
+    private static ReferenceSetup selectPrimaryReference(
+            List<Assignment> ordered,
+            List<ReferenceSetup> labReferences,
+            ReferenceSetup fallback) {
+        for (int i = 0; i < ordered.size(); i++) {
+            ReferenceSetup ref = labReferences.get(i);
+            boolean requiresRuntime = Boolean.TRUE.equals(ordered.get(i).getRequireRuntimeTrace());
+            if (!ref.referenceReady()) return ref;
+            if (requiresRuntime && (!ref.runtimeConfigured() || !ref.runtimeMatchesSource() || !ref.topologyConfigured())) {
+                return ref;
+            }
+        }
+        return fallback;
     }
 
     private ReferenceSetup resolveReference(UUID workspaceId, List<Assignment> ordered) {

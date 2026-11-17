@@ -119,6 +119,73 @@ class SubmissionServiceImplTest {
         verify(submissionSnapshotRepository, never()).save(any());
     }
 
+    @Test void publishedLabEditDoesNotChangeFrozenV2SubmissionDigestOrExport() {
+        var labWorkspace = Workspace.builder().id(UUID.randomUUID()).courseMode(false).status("ACTIVE").build();
+        assignment.setWorkspace(labWorkspace);
+        assignment.setLabMode("THEORY_QUIZ");
+        assignment.setReferenceModel(modelVersion);
+        snapshot.setArtifactHash("sha256:" + "d".repeat(64));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(student));
+        when(assignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));
+
+        var savedHolder = new java.util.concurrent.atomic.AtomicReference<SubmissionSnapshot>();
+        when(submissionSnapshotRepository.save(any())).thenAnswer(call -> {
+            SubmissionSnapshot value = call.getArgument(0);
+            value.setId(UUID.randomUUID());
+            value.setSubmittedAt(OffsetDateTime.now());
+            savedHolder.set(value);
+            return value;
+        });
+
+        var request = SubmissionCreateRequest.builder()
+                .assignmentId(assignmentId)
+                .submissionNotes("Initial theory submission")
+                .theoryAnswers(List.of(new SubmissionCreateRequest.TheoryAnswerDTO(
+                        "THEORY", "Architecture boundaries", "Orders routes synchronously through route controller.")))
+                .build();
+        var submitted = submissionService.submitAssignment(request);
+
+        assignment.setTitle("Mutated Lab Title After Submission");
+        when(submissionSnapshotRepository.findWithDetailsById(submitted.getId())).thenReturn(Optional.of(savedHolder.get()));
+        when(feedbackCommentRepository.findBySubmissionIdOrderByCreatedAtAsc(submitted.getId())).thenReturn(List.of());
+
+        var detail = submissionService.getSubmissionById(submitted.getId());
+        assertThat(detail.getEvidencePackageDigest()).isEqualTo(submitted.getEvidencePackageDigest());
+
+        var bundle = submissionService.exportSubmissionBundle(submitted.getId());
+        assertThat(bundle.getEvidencePackageDigest()).isEqualTo(submitted.getEvidencePackageDigest());
+        assertThat(bundle.getTheoryEvidence()).isEqualTo(submitted.getTheoryEvidence());
+        assertThat(bundle.getStudentSnapshots()).isEqualTo(submitted.getStudentSnapshots());
+
+        User otherStudent = User.builder().id(UUID.randomUUID()).build();
+        when(accessPolicyService.requireCurrentActiveUser()).thenReturn(otherStudent);
+        doThrow(new BusinessException(com.mavis.common.exception.ErrorCode.FORBIDDEN, "Only lecturer"))
+                .when(accessPolicyService).requireWorkspaceLecturer(labWorkspace.getId());
+        assertThatThrownBy(() -> submissionService.getSubmissionById(submitted.getId()))
+                .isInstanceOf(BusinessException.class);
+    }
+
+    @Test void foreignWorkspaceStudentCannotSubmitV2Lab() {
+        var labWorkspace = Workspace.builder().id(UUID.randomUUID()).courseMode(true).status("ACTIVE").build();
+        assignment.setWorkspace(labWorkspace);
+        assignment.setLabMode("THEORY_QUIZ");
+        assignment.setReferenceModel(modelVersion);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(student));
+        when(assignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));
+        doThrow(new BusinessException(com.mavis.common.exception.ErrorCode.FORBIDDEN, "Not a workspace member"))
+                .when(accessPolicyService).requireWorkspaceMember(labWorkspace.getId());
+
+        var request = SubmissionCreateRequest.builder()
+                .assignmentId(assignmentId)
+                .theoryAnswers(List.of(new SubmissionCreateRequest.TheoryAnswerDTO("THEORY", "Theory", "Answer")))
+                .build();
+
+        assertThatThrownBy(() -> submissionService.submitAssignment(request))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Not a workspace member");
+        verify(submissionSnapshotRepository, never()).save(any());
+    }
+
     @Test void c4ContainerDoesNotSatisfyAComponentRequirement() {
         assignment.setRequiredDiagramTypes(objectMapper.createArrayNode().add("C4_COMPONENT"));
         when(userRepository.findById(userId)).thenReturn(Optional.of(student));when(assignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));
@@ -851,6 +918,39 @@ class SubmissionServiceImplTest {
         when(submissionSnapshotRepository.findVisibleTo(userId,false)).thenReturn(List.of());assertThat(submissionService.getMySubmissions()).isEmpty();
         student.setRole(Role.builder().code("SYSTEM_ADMIN").build());when(submissionSnapshotRepository.findVisibleTo(userId,true)).thenReturn(List.of());assertThat(submissionService.getMySubmissions()).isEmpty();
         verify(submissionSnapshotRepository).findVisibleTo(userId,false);verify(submissionSnapshotRepository).findVisibleTo(userId,true);
+    }
+
+    @Test
+    void personalListingIncludesWorkspaceAndLabMetadataAndFiltersByWorkspace() {
+        student.setRole(Role.builder().code("STUDENT").build());
+        when(accessPolicyService.requireCurrentActiveUser()).thenReturn(student);
+
+        UUID wsAId = UUID.randomUUID();
+        UUID wsBId = UUID.randomUUID();
+        Workspace wsA = Workspace.builder().id(wsAId).name("SWP490-A").build();
+        Workspace wsB = Workspace.builder().id(wsBId).name("SWP490-B").build();
+        Assignment labA = Assignment.builder().id(UUID.randomUUID()).workspace(wsA)
+                .title("Lab 01 Static").labOrder(1).labMode("THEORY_QUIZ").build();
+        Assignment labB = Assignment.builder().id(UUID.randomUUID()).workspace(wsB)
+                .title("Lab 02 Studio").labOrder(2).labMode("THEORY_QUIZ_STUDIO").build();
+
+        SubmissionSnapshot subA = SubmissionSnapshot.builder()
+                .id(UUID.randomUUID()).assignment(labA).project(project).submittedBy(student)
+                .sourceSnapshot(snapshot).modelVersion(modelVersion).evidencePackageDigest("sha256:" + "a".repeat(64)).build();
+        SubmissionSnapshot subB = SubmissionSnapshot.builder()
+                .id(UUID.randomUUID()).assignment(labB).project(project).submittedBy(student)
+                .sourceSnapshot(snapshot).modelVersion(modelVersion).evidencePackageDigest("sha256:" + "b".repeat(64)).build();
+
+        when(submissionSnapshotRepository.findVisibleTo(userId, false)).thenReturn(List.of(subA, subB));
+        when(feedbackCommentRepository.countFeedbacksBySubmissionIds(anyList())).thenReturn(List.of());
+
+        List<SubmissionResponseDTO> filtered = submissionService.getMySubmissions(wsAId);
+        assertThat(filtered).hasSize(1);
+        assertThat(filtered.get(0).getWorkspaceId()).isEqualTo(wsAId);
+        assertThat(filtered.get(0).getWorkspaceName()).isEqualTo("SWP490-A");
+        assertThat(filtered.get(0).getAssignmentTitle()).isEqualTo("Lab 01 Static");
+        assertThat(filtered.get(0).getLabOrder()).isEqualTo(1);
+        assertThat(filtered.get(0).getLabMode()).isEqualTo("THEORY_QUIZ");
     }
 
     @Test

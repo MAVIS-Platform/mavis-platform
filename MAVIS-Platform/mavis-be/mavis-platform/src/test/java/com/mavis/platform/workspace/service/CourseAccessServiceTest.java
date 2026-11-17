@@ -141,4 +141,128 @@ class CourseAccessServiceTest {
                 () -> courses.freezeTopology(workspaceId, assignmentId, sessionId));
     }
 
+    @Test
+    void republishPreservesFrozenTopologyUntilExplicitFreeze() {
+        UUID teacherId = UUID.randomUUID();
+        when(access.requireCurrentActiveUser()).thenReturn(User.builder().id(teacherId).build());
+        when(workspaces.findLockedById(workspaceId)).thenReturn(Optional.of(workspace));
+        when(assignments.findLockedById(assignmentId)).thenReturn(Optional.of(assignment));
+        when(assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId))
+                .thenReturn(List.of());
+        var project = Project.builder().id(UUID.randomUUID()).workspace(workspace).status("ACTIVE")
+                .projectType("TEACHER_REFERENCE").isReferenceTemplate(true).build();
+        var source = SourceSnapshot.builder().id(UUID.randomUUID()).project(project)
+                .isPublished(true).sourceType("GITHUB_COMMIT").commitSha("1".repeat(40))
+                .artifactHash("a".repeat(64)).storagePath("reference.zip").build();
+        var model = ModelVersion.builder().id(UUID.randomUUID()).sourceSnapshot(source).build();
+        assignment.setReferenceModel(model);
+
+        var mapper = new ObjectMapper();
+        var initialProfile = mapper.createObjectNode();
+        var initialTopology = initialProfile.putObject("studioTopology").put("version", 1);
+        initialTopology.putArray("blocks").addObject().put("service", "orders");
+        initialTopology.putArray("connections");
+        var configuration = new RuntimeConfiguration();
+        configuration.setProjectId(project.getId());
+        configuration.setSourceSnapshotId(source.getId());
+        configuration.setModelVersionId(model.getId());
+        configuration.setProfile(initialProfile);
+        configuration.setRevision(5);
+        when(configurations.findById(project.getId())).thenReturn(Optional.of(configuration));
+
+        courses.publish(workspaceId, assignmentId);
+        assertEquals(Integer.valueOf(5), assignment.getStudioTopologyRevision());
+        assertEquals("orders", assignment.getStudioTopologySnapshot().path("blocks").get(0).path("service").asText());
+
+        var updatedProfile = mapper.createObjectNode();
+        var updatedTopology = updatedProfile.putObject("studioTopology").put("version", 1);
+        updatedTopology.putArray("blocks").addObject().put("service", "B-orders");
+        updatedTopology.putArray("connections");
+        configuration.setProfile(updatedProfile);
+        configuration.setRevision(9);
+
+        courses.publish(workspaceId, assignmentId);
+        assertEquals(Integer.valueOf(5), assignment.getStudioTopologyRevision());
+        assertEquals("orders", assignment.getStudioTopologySnapshot().path("blocks").get(0).path("service").asText());
+
+        courses.freezeTopology(workspaceId, assignmentId);
+        assertEquals(Integer.valueOf(9), assignment.getStudioTopologyRevision());
+        assertEquals("B-orders", assignment.getStudioTopologySnapshot().path("blocks").get(0).path("service").asText());
+    }
+
+    @Test
+    void freezeRejectsMismatchedModelSourceOrUnverifiedSession() {
+        var runtimeSessions = mock(com.mavis.common.repository.RuntimeSessionRepository.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(courses, "runtimeSessions", runtimeSessions);
+        when(access.requireCurrentActiveUser()).thenReturn(User.builder().id(UUID.randomUUID()).build());
+        when(workspaces.findLockedById(workspaceId)).thenReturn(Optional.of(workspace));
+        when(assignments.findLockedById(assignmentId)).thenReturn(Optional.of(assignment));
+        assignment.setLabOrder(1);
+
+        var project = Project.builder().id(UUID.randomUUID()).workspace(workspace).status("ACTIVE")
+                .projectType("TEACHER_REFERENCE").isReferenceTemplate(true).build();
+        var source = SourceSnapshot.builder().id(UUID.randomUUID()).project(project).build();
+        var otherSource = SourceSnapshot.builder().id(UUID.randomUUID()).project(project).build();
+        var model = ModelVersion.builder().id(UUID.randomUUID()).sourceSnapshot(source).build();
+        var otherModel = ModelVersion.builder().id(UUID.randomUUID()).sourceSnapshot(source).build();
+        assignment.setReferenceModel(model);
+
+        var mapper = new ObjectMapper();
+        var profile = mapper.createObjectNode();
+        var topology = profile.putObject("studioTopology").put("version", 1);
+        topology.putArray("blocks").addObject().put("service", "orders");
+        topology.putArray("connections");
+        var configuration = new RuntimeConfiguration();
+        configuration.setProjectId(project.getId());
+        configuration.setSourceSnapshotId(source.getId());
+        configuration.setModelVersionId(model.getId());
+        configuration.setProfile(profile);
+        configuration.setRevision(6);
+        when(configurations.findById(project.getId())).thenReturn(Optional.of(configuration));
+
+        UUID wrongModelSessionId = UUID.randomUUID();
+        when(runtimeSessions.findById(wrongModelSessionId)).thenReturn(Optional.of(
+                com.mavis.common.entity.RuntimeSession.builder().id(wrongModelSessionId)
+                        .assignment(assignment).modelVersion(otherModel).sourceSnapshot(source).build()));
+        assertEquals(ErrorCode.CONFLICT, assertThrows(BusinessException.class,
+                () -> courses.freezeTopology(workspaceId, assignmentId, wrongModelSessionId)).getErrorCode());
+
+        UUID wrongSourceSessionId = UUID.randomUUID();
+        when(runtimeSessions.findById(wrongSourceSessionId)).thenReturn(Optional.of(
+                com.mavis.common.entity.RuntimeSession.builder().id(wrongSourceSessionId)
+                        .assignment(assignment).modelVersion(model).sourceSnapshot(otherSource).build()));
+        assertEquals(ErrorCode.CONFLICT, assertThrows(BusinessException.class,
+                () -> courses.freezeTopology(workspaceId, assignmentId, wrongSourceSessionId)).getErrorCode());
+
+        UUID unverifiedSessionId = UUID.randomUUID();
+        when(runtimeSessions.findById(unverifiedSessionId)).thenReturn(Optional.of(
+                com.mavis.common.entity.RuntimeSession.builder().id(unverifiedSessionId)
+                        .assignment(assignment).modelVersion(model).sourceSnapshot(source).build()));
+        assertEquals(ErrorCode.CONFLICT, assertThrows(BusinessException.class,
+                () -> courses.freezeTopology(workspaceId, assignmentId, unverifiedSessionId)).getErrorCode());
+
+        UUID verifiedSessionId = UUID.randomUUID();
+        var plan = mapper.createObjectNode();
+        plan.putArray("infrastructureActions").addObject().put("action", "SCALE").put("service", "orders").put("replicas", 2);
+        var receipt = mapper.createObjectNode();
+        receipt.putObject("outcome").putObject("trace").putArray("spans").addObject().put("spanId", "s1");
+        var action = receipt.putArray("infrastructureActions").addObject()
+                .put("action", "SCALE").put("service", "orders")
+                .put("replicasBefore", 1).put("replicasAfter", 2).put("confirmed", true);
+        action.putObject("metricsBefore");
+        action.putObject("metricsAfter");
+        when(runtimeSessions.findById(verifiedSessionId)).thenReturn(Optional.of(
+                com.mavis.common.entity.RuntimeSession.builder().id(verifiedSessionId)
+                        .assignment(assignment).modelVersion(model).sourceSnapshot(source)
+                        .executionStatus("COMPLETED").scenarioStatus("PASSED")
+                        .evidenceStatus("AVAILABLE").cleanupStatus("CONFIRMED")
+                        .traceStatus("COMPLETE").sandboxEnforcementConfirmed(true)
+                        .receiptDigest("sha256:" + "f".repeat(64))
+                        .scenarioConfig(plan).runnerReceiptJson(receipt).build()));
+
+        var frozen = courses.freezeTopology(workspaceId, assignmentId, verifiedSessionId);
+        assertEquals(Integer.valueOf(6), assignment.getStudioTopologyRevision());
+        assertEquals(1, frozen.position());
+    }
+
 }

@@ -130,7 +130,7 @@ public class AccessPolicyServiceImpl implements AccessPolicyService {
             return true;
         }
 
-        if (!canAccessCourseProject(project, user)) {
+        if (!canAccessCourseProject(project, user, true)) {
             return false;
         }
 
@@ -151,7 +151,8 @@ public class AccessPolicyServiceImpl implements AccessPolicyService {
                 }
 
                 // Nếu là Sinh viên thành viên trong Workspace, chỉ được xem nếu đồ án là Reference Template!
-                if (Boolean.TRUE.equals(project.getIsReferenceTemplate())) {
+                if (Boolean.TRUE.equals(project.getIsReferenceTemplate())
+                        || "TEACHER_REFERENCE".equalsIgnoreCase(project.getProjectType())) {
                     return true;
                 }
             }
@@ -172,10 +173,14 @@ public class AccessPolicyServiceImpl implements AccessPolicyService {
         return false;
     }
 
-    private boolean canAccessCourseProject(Project project, User user) {
+    private boolean canAccessCourseProject(Project project, User user, boolean readOnly) {
         if (project.getWorkspace() == null || !project.getWorkspace().isCourseMode()
                 || !CourseLabPolicy.isStudent(user)) {
             return true;
+        }
+        if (readOnly && (Boolean.TRUE.equals(project.getIsReferenceTemplate())
+                || "TEACHER_REFERENCE".equalsIgnoreCase(project.getProjectType()))) {
+            return courseLabs != null && courseLabs.canReadReferenceProject(project, user);
         }
         var lab = project.getAssignment();
         if (lab == null || !project.getWorkspace().getId().equals(lab.getWorkspace().getId())
@@ -211,7 +216,13 @@ public class AccessPolicyServiceImpl implements AccessPolicyService {
             return;
         }
 
-        if (!canAccessCourseProject(project, user)) {
+        if ((Boolean.TRUE.equals(project.getIsReferenceTemplate())
+                || "TEACHER_REFERENCE".equalsIgnoreCase(project.getProjectType()))
+                && CourseLabPolicy.isStudent(user)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "Students cannot modify reference projects");
+        }
+
+        if (!canAccessCourseProject(project, user, false)) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "This course project is locked");
         }
 

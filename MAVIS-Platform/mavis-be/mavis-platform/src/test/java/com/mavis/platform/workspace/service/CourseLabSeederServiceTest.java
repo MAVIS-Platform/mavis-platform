@@ -119,9 +119,11 @@ class CourseLabSeederServiceTest {
             if (run.getId() == null) run.setId(UUID.randomUUID());
             return run;
         });
+        List<Assignment> savedAssignments = new java.util.ArrayList<>();
         when(assignments.saveAndFlush(any())).thenAnswer(inv -> {
             Assignment a = inv.getArgument(0);
             if (a.getId() == null) a.setId(UUID.randomUUID());
+            savedAssignments.add(a);
             return a;
         });
 
@@ -160,12 +162,29 @@ class CourseLabSeederServiceTest {
         verify(diagrams, times(1)).saveAll(anyList());
         verify(evaluations, times(1)).save(any());
         verify(quizzes, times(3)).publishCurriculum(eq(workspaceId), any(UUID.class), any());
+        assertThat(savedAssignments).hasSize(3);
+        assertThat(savedAssignments.get(0).getLabMode()).isEqualTo("THEORY_QUIZ");
+        assertThat(savedAssignments.get(0).getStudioTopologySnapshot()).isNull();
+        assertThat(savedAssignments.get(1).getLabMode()).isEqualTo("THEORY_QUIZ_STUDIO");
+        assertThat(savedAssignments.get(1).getStudioTopologySnapshot()).isNotNull();
+        assertThat(savedAssignments.get(1).getStudioTopologySnapshot().path("blocks").size()).isEqualTo(4);
+        assertThat(savedAssignments.get(1).getStudioTopologyRevision()).isEqualTo(1);
+        assertThat(savedAssignments.get(2).getLabMode()).isEqualTo("THEORY_QUIZ_STUDIO");
+        assertThat(savedAssignments.get(2).getStudioTopologySnapshot()).isNotNull();
 
-        // Second call is idempotent when labs already exist
+        // Second call is idempotent when labs already exist, and upgrades legacy labs with no diagram submissions
+        Assignment legacyRuntimeLab = Assignment.builder()
+                .id(UUID.randomUUID())
+                .labOrder(1)
+                .labMode("LEGACY")
+                .requireRuntimeTrace(true)
+                .build();
         when(assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId))
-                .thenReturn(List.of(Assignment.builder().id(UUID.randomUUID()).labOrder(1).build()));
+                .thenReturn(List.of(legacyRuntimeLab));
         CourseAccessService.Roadmap second = seeder.seedCurated(workspaceId);
         assertThat(second).isEqualTo(expectedRoadmap);
+        assertThat(legacyRuntimeLab.getLabMode()).isEqualTo("THEORY_QUIZ_STUDIO");
+        assertThat(legacyRuntimeLab.getStudioTopologySnapshot()).isNotNull();
         verify(projects, times(1)).save(any());
     }
 
@@ -233,9 +252,11 @@ class CourseLabSeederServiceTest {
             if (run.getId() == null) run.setId(UUID.randomUUID());
             return run;
         });
+        List<Assignment> savedAssignments = new java.util.ArrayList<>();
         when(assignments.saveAndFlush(any())).thenAnswer(inv -> {
             Assignment a = inv.getArgument(0);
             if (a.getId() == null) a.setId(UUID.randomUUID());
+            savedAssignments.add(a);
             return a;
         });
         when(courses.roadmap(workspaceId)).thenReturn(new CourseAccessService.Roadmap(true, "NOT_ENROLLED", List.of()));

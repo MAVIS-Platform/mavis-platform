@@ -17,6 +17,22 @@ import { ArchitectureGraph, ElementDetailsPanel } from "@/features/architecture/
 import { TraceViewer, RuntimeSessionTimeline } from "@/features/runtime/components";
 import { SubmissionVersionHeader, FeedbackPanel } from "./components";
 import { GradingPanel, resolveSubmissionOutcome } from "./grading";
+import type { Submission } from "@/types/domain";
+
+export function filterStudentSubmissions(
+  submissions: ReadonlyArray<Submission>,
+  workspaceId?: string | null,
+  assignmentId?: string | null,
+  classAssignmentIds?: ReadonlySet<string>,
+): Submission[] {
+  return submissions.filter((submission) => {
+    if (assignmentId && submission.assignmentId !== assignmentId) return false;
+    if (!workspaceId) return true;
+    if (submission.workspaceId) return submission.workspaceId === workspaceId;
+    return Boolean(classAssignmentIds?.has(submission.assignmentId));
+  });
+}
+
 export function Submissions() {
   const canReview = usePermission("submission:review");
   const isLecturer = useSession().data?.user?.role === "lecturer";
@@ -27,18 +43,20 @@ function MySubmissions() {
   const params = useSearchParams();
   const selection = useSelection();
   const assignmentId = params?.get("assignment") || "";
-  const workspaceId = params?.get("workspace") || selection.workspaceId;
+  const workspaceId = params?.get("workspace") || selection.workspaceId || "";
   const workspaces = useApiQuery("workspaces", {});
-  const query = useApiQuery("submissions", {});
-  const idsInSelectedClass = new Set(
-    (workspaces.data?.find((item) => item.id === workspaceId)?.members ?? []).map(
-      (member) => member.id,
-    ),
+  const assignments = useApiQuery(
+    "assignments",
+    { workspaceId },
+    { enabled: Boolean(workspaceId) },
   );
-  const rows = (query.data ?? []).filter(
-    (submission) =>
-      (!assignmentId || submission.assignmentId === assignmentId) &&
-      (!workspaceId || idsInSelectedClass.has(submission.studentId)),
+  const query = useApiQuery("submissions", workspaceId ? { workspaceId } : {});
+  const classAssignmentIds = new Set((assignments.data ?? []).map((item) => item.id));
+  const rows = filterStudentSubmissions(
+    query.data ?? [],
+    workspaceId,
+    assignmentId,
+    classAssignmentIds,
   );
   const workspace = workspaces.data?.find((item) => item.id === workspaceId);
   const list = (
@@ -46,33 +64,122 @@ function MySubmissions() {
       <header className="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">
-            {t("My Submissions", "Bài nộp của tôi")}
+            {t("Submissions & Grades", "Bài nộp & Điểm")}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {t(
-              "Review submission status and published feedback for your work.",
-              "Theo dõi trạng thái và phản hồi đã công bố cho bài làm của bạn.",
+              "Track your Lab submission dossiers, Lecturer grades, and published feedback.",
+              "Theo dõi hồ sơ bài nộp Lab, điểm số từ Giảng viên và phản hồi đã công bố.",
             )}
           </p>
         </div>
-        {workspace && (
-          <Button asChild size="sm" variant="outline">
-            <Link href={`/workspace-overview?workspace=${encodeURIComponent(workspace.id)}`}>
-              {t("Back to class", "Quay lại lớp")}
-            </Link>
-          </Button>
-        )}
+        <div className="flex flex-wrap gap-2">
+          {!workspaceId && (workspaces.data?.length ?? 0) > 0 && <WorkspaceSelector />}
+          {workspace && (
+            <Button asChild size="sm" variant="outline">
+              <Link href={`/workspace-overview?workspace=${encodeURIComponent(workspace.id)}`}>
+                {t("Back to class", "Quay lại lớp")}
+              </Link>
+            </Button>
+          )}
+        </div>
       </header>
       <RequestState
         query={query}
         empty={!rows.length}
         emptyMessage={
           assignmentId
-            ? "No snapshot has been submitted for this Lab yet. Open the assignment to prepare your first submission."
-            : "No submitted work yet. Open an assignment in your workspace to submit a model version."
+            ? t(
+                "No snapshot has been submitted for this Lab yet. Open your Lab workspace to submit.",
+                "Chưa có bài nộp nào cho Lab này. Hãy mở Lab để hoàn thành và nộp bài.",
+              )
+            : t(
+                "No submissions yet. Open a Lab in your class roadmap to submit your work.",
+                "Chưa có bài nộp nào. Hãy mở một bài Lab trong Lộ trình Lớp để thực hiện và nộp bài.",
+              )
         }
       >
-        <SubmissionList rows={rows} />
+        <DataTable
+          caption={t("My Submissions", "Bài nộp của tôi")}
+          rows={rows}
+          rowKey={(s) => s.id}
+          columns={[
+            ...(workspaceId
+              ? []
+              : [
+                  {
+                    key: "workspace",
+                    label: t("Class", "Lớp học"),
+                    render: (s: Submission) => (
+                      <span className="text-xs font-medium">{s.workspaceName || "—"}</span>
+                    ),
+                  },
+                ]),
+            {
+              key: "lab",
+              label: t("Lab", "Bài Lab"),
+              render: (s: Submission) => (
+                <div className="space-y-0.5">
+                  <Link
+                    className="font-medium text-foreground underline underline-offset-4 hover:text-primary"
+                    href={`/submissions/${encodeURIComponent(s.id)}`}
+                  >
+                    {s.labOrder ? `Lab ${String(s.labOrder).padStart(2, "0")} · ` : ""}
+                    {s.assignmentTitle || s.assignmentId}
+                  </Link>
+                  {s.labMode && (
+                    <div className="text-[11px] font-mono text-muted-foreground">{s.labMode}</div>
+                  )}
+                </div>
+              ),
+            },
+            {
+              key: "evidence",
+              label: t("Evidence", "Minh chứng"),
+              render: (s: Submission) => (
+                <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                  {s.courseQuizEvidence && (
+                    <Badge variant="outline">
+                      Quiz {s.courseQuizEvidence.correctCount}/{s.courseQuizEvidence.questionCount}
+                    </Badge>
+                  )}
+                  {s.runtime?.studioVerified && (
+                    <Badge variant="success">{t("Studio Verified", "Đã xác minh Studio")}</Badge>
+                  )}
+                  {(s.studentSnapshots?.length ?? 0) > 0 && (
+                    <span>
+                      {s.studentSnapshots?.length} {t("snapshots", "bài giải")}
+                    </span>
+                  )}
+                </div>
+              ),
+            },
+            {
+              key: "review",
+              label: t("Grade & Outcome", "Điểm & Kết quả"),
+              render: (s: Submission) => <SubmissionResult submissionId={s.id} />,
+            },
+            {
+              key: "date",
+              label: t("Submitted", "Đã nộp"),
+              render: (s: Submission) =>
+                s.submittedAt
+                  ? new Date(s.submittedAt).toLocaleString()
+                  : t("Not submitted", "Chưa nộp"),
+            },
+            {
+              key: "action",
+              label: t("Action", "Thao tác"),
+              render: (s: Submission) => (
+                <Button asChild size="sm" variant="outline">
+                  <Link href={`/submissions/${encodeURIComponent(s.id)}`}>
+                    {t("View dossier", "Xem hồ sơ")}
+                  </Link>
+                </Button>
+              ),
+            },
+          ]}
+        />
       </RequestState>
     </div>
   );
@@ -281,17 +388,20 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
     { refreshMs: canReview ? 60000 : 15000 },
   );
   const [selected, setSelected] = useState<string | null>(null);
+  const isV2Submission = Boolean(
+    query.data &&
+    query.data.diagramVersionId === null &&
+    (query.data.studentSnapshots?.length || query.data.evidencePackageDigest),
+  );
+  const showLegacyTechnicalPanels = canReview && !isV2Submission;
+  const backWorkspaceId = query.data?.workspaceId || selection.workspaceId;
   return (
     <RequestState query={query}>
       {query.data && (
         <div className="min-w-0 space-y-6">
           <Button asChild size="sm" variant="outline">
             <Link
-              href={`/submissions?${selection.workspaceId ? `workspace=${encodeURIComponent(selection.workspaceId)}&` : ""}${
-                query.data.assignmentId
-                  ? `assignment=${encodeURIComponent(query.data.assignmentId)}`
-                  : ""
-              }`}
+              href={`/submissions${backWorkspaceId || (canReview && query.data.assignmentId) ? `?${backWorkspaceId ? `workspace=${encodeURIComponent(backWorkspaceId)}&` : ""}${canReview && query.data.assignmentId ? `assignment=${encodeURIComponent(query.data.assignmentId)}` : ""}` : ""}`}
             >
               ← {t("Back to class submissions", "Quay lại bài nộp của lớp")}
             </Link>
@@ -302,7 +412,7 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
             guidedLab={query.data.guidedLab === true}
             studentSnapshots={query.data.studentSnapshots ?? undefined}
           />
-          <section id="review" className="scroll-mt-24">
+          <section id="review" className="scroll-mt-24 space-y-5">
             <SubmissionVersionHeader submission={query.data} />
             <FrozenArtifacts submission={query.data} />
             <StudioSubmissionEvidence
@@ -311,33 +421,37 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
               available={Boolean(query.data.studioEvidence)}
             />
           </section>
-          <div
-            id="submitted-graph"
-            className="grid min-w-0 scroll-mt-24 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]"
-          >
-            <div className="min-w-0 overflow-x-auto">
-              <ArchitectureGraph
-                model={query.data.model}
-                selectedId={selected}
-                onSelect={setSelected}
-              />
-            </div>
-            <section id="submitted-analysis" className="min-w-0 scroll-mt-24">
-              <ElementDetailsPanel model={query.data.model} selectedId={selected} />
-            </section>
-          </div>
-          {query.data.runtime ? (
-            <section id="submitted-runtime" className="scroll-mt-24 space-y-5">
-              <RuntimeSessionTimeline session={query.data.runtime} />
-              <TraceViewer session={query.data.runtime} />
-            </section>
-          ) : (
-            <section id="submitted-runtime" className="scroll-mt-24">
-              <EmptyState
-                title="Runtime evidence not submitted"
-                description="This frozen submission does not contain a runtime session."
-              />
-            </section>
+          {showLegacyTechnicalPanels && (
+            <>
+              <div
+                id="submitted-graph"
+                className="grid min-w-0 scroll-mt-24 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]"
+              >
+                <div className="min-w-0 overflow-x-auto">
+                  <ArchitectureGraph
+                    model={query.data.model}
+                    selectedId={selected}
+                    onSelect={setSelected}
+                  />
+                </div>
+                <section id="submitted-analysis" className="min-w-0 scroll-mt-24">
+                  <ElementDetailsPanel model={query.data.model} selectedId={selected} />
+                </section>
+              </div>
+              {query.data.runtime ? (
+                <section id="submitted-runtime" className="scroll-mt-24 space-y-5">
+                  <RuntimeSessionTimeline session={query.data.runtime} />
+                  <TraceViewer session={query.data.runtime} />
+                </section>
+              ) : (
+                <section id="submitted-runtime" className="scroll-mt-24">
+                  <EmptyState
+                    title="Runtime evidence not submitted"
+                    description="This frozen submission does not contain a runtime session."
+                  />
+                </section>
+              )}
+            </>
           )}
           <FeedbackPanel key={query.data.id} submission={query.data} selectedId={selected} />
         </div>

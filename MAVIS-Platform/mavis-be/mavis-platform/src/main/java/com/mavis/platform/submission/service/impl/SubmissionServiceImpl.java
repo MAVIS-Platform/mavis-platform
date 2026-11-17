@@ -49,9 +49,22 @@ public class SubmissionServiceImpl implements SubmissionService {
     @Override
     @Transactional(readOnly = true)
     public List<SubmissionResponseDTO> getMySubmissions() {
+        return getMySubmissions(null);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<SubmissionResponseDTO> getMySubmissions(UUID workspaceId) {
         User user = accessPolicyService.requireCurrentActiveUser();
         boolean admin = user.getRole()!=null && "SYSTEM_ADMIN".equalsIgnoreCase(user.getRole().getCode());
-        return mapToResponseListWithFeedbackCount(submissionSnapshotRepository.findVisibleTo(user.getId(), admin));
+        List<SubmissionResponseDTO> all = mapToResponseListWithFeedbackCount(
+                submissionSnapshotRepository.findVisibleTo(user.getId(), admin));
+        if (workspaceId == null) {
+            return all;
+        }
+        return all.stream()
+                .filter(s -> workspaceId.equals(s.getWorkspaceId()))
+                .toList();
     }
 
     @Override
@@ -469,7 +482,7 @@ public class SubmissionServiceImpl implements SubmissionService {
         SubmissionSnapshot submission = submissionSnapshotRepository.findWithDetailsById(submissionId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy bài nộp với ID: " + submissionId));
 
-        accessPolicyService.requireProjectReadAccess(submission.getProject());
+        requireSubmissionReadAccess(accessPolicyService, submission);
         long feedbackCount = feedbackCommentRepository.countBySubmissionId(submissionId);
         return SubmissionResponseDTO.fromEntity(submission, feedbackCount);
     }
@@ -482,7 +495,7 @@ public class SubmissionServiceImpl implements SubmissionService {
         SubmissionSnapshot submission = submissionSnapshotRepository.findWithDetailsById(submissionId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy bài nộp với ID: " + submissionId));
 
-        accessPolicyService.requireProjectReadAccess(submission.getProject());
+        requireSubmissionReadAccess(accessPolicyService, submission);
         // Kiểm tra quyền đọc
         Project project = submission.getProject();
         // Lấy danh sách feedbacks
@@ -518,13 +531,20 @@ public class SubmissionServiceImpl implements SubmissionService {
             markdownReport += "\n## Lecturer review\n- Status: " + review.getStatus() + "\n- Lecturer score /100: " + review.getScore() + "\n\n" + review.getSummary() + "\n";
         }
 
+        var assignment = submission.getAssignment();
+        var workspace = assignment != null ? assignment.getWorkspace() : null;
+
         return com.mavis.platform.submission.dto.SubmissionExportBundleDTO.builder()
                 .studioEvidence(submission.getStudioEvidence())
                 .submissionId(submission.getId())
+                .workspaceId(workspace != null ? workspace.getId() : null)
+                .workspaceName(workspace != null ? workspace.getName() : null)
                 .projectId(project != null ? project.getId() : null)
                 .projectName(project != null ? project.getName() : null)
-                .assignmentId(submission.getAssignment() != null ? submission.getAssignment().getId() : null)
-                .assignmentTitle(submission.getAssignment() != null ? submission.getAssignment().getTitle() : null)
+                .assignmentId(assignment != null ? assignment.getId() : null)
+                .assignmentTitle(assignment != null ? assignment.getTitle() : null)
+                .labOrder(assignment != null ? assignment.getLabOrder() : null)
+                .labMode(assignment != null && assignment.getLabMode() != null ? assignment.getLabMode() : "LEGACY")
                 .submittedById(submission.getSubmittedBy() != null ? submission.getSubmittedBy().getId() : null)
                 .submittedByName(submission.getSubmittedBy() != null ? submission.getSubmittedBy().getFullName() : null)
                 .sourceSnapshotId(submission.getSourceSnapshot() != null ? submission.getSourceSnapshot().getId() : null)
@@ -730,5 +750,28 @@ public class SubmissionServiceImpl implements SubmissionService {
         return submissions.stream()
                 .map(s -> SubmissionResponseDTO.fromEntity(s, feedbackCounts.getOrDefault(s.getId(), 0L)))
                 .collect(Collectors.toList());
+    }
+
+    static void requireSubmissionReadAccess(com.mavis.common.security.AccessPolicyService accessPolicyService,
+                                            SubmissionSnapshot submission) {
+        Assignment assignment = submission.getAssignment();
+        boolean v2Lab = assignment != null && assignment.getLabMode() != null
+                && !"LEGACY".equalsIgnoreCase(assignment.getLabMode());
+        if (v2Lab) {
+            User actor = accessPolicyService.requireCurrentActiveUser();
+            UUID currentUserId = actor != null ? actor.getId() : SecurityUtils.getCurrentUserId();
+            if (currentUserId != null && submission.getSubmittedBy() != null
+                    && currentUserId.equals(submission.getSubmittedBy().getId())) {
+                if (assignment.getWorkspace() != null) {
+                    accessPolicyService.requireWorkspaceMember(assignment.getWorkspace().getId());
+                }
+                return;
+            }
+            if (assignment.getWorkspace() != null) {
+                accessPolicyService.requireWorkspaceLecturer(assignment.getWorkspace().getId());
+                return;
+            }
+        }
+        accessPolicyService.requireProjectReadAccess(submission.getProject());
     }
 }

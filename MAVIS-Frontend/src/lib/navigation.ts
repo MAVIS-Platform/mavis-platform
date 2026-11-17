@@ -244,23 +244,23 @@ export const lecturerWorkspaceNavigation: readonly NavigationGroup[] = [
 
 export const studentWorkspaceNavigation: readonly NavigationGroup[] = [
   {
-    label: "Course",
+    label: "Learning Space",
     items: [
       {
+        id: "courses",
+        label: "My Classes",
+        icon: GraduationCap,
+        href: "/courses",
+      },
+      {
         id: "roadmap",
-        label: "Course Roadmap",
+        label: "Lab Roadmap & Course",
         icon: Map,
         href: "/roadmap",
       },
       {
-        id: "lab",
-        label: "Lab Workspace",
-        icon: BookOpen,
-        href: "/lab",
-      },
-      {
         id: "submissions",
-        label: "My Submissions",
+        label: "Submissions & Grades",
         icon: ClipboardCheck,
         href: "/submissions",
       },
@@ -280,14 +280,30 @@ export const submissionReviewNavigation: readonly NavigationGroup[] = [
   },
 ];
 
+export const studentReviewNavigation: readonly NavigationGroup[] = [
+  {
+    label: "Student Submission · read-only",
+    items: [
+      { id: "review", label: "Submission Details & Review", icon: ClipboardCheck },
+      { id: "roadmap", label: "Lab Roadmap & Course", icon: Map, href: "/roadmap" },
+      { id: "submissions", label: "Submissions & Grades", icon: BookOpen, href: "/submissions" },
+    ],
+  },
+];
+
 export function contextualNavigation(
   role: AppRole,
   scope: WorkspaceScope,
+  live = false,
 ): readonly NavigationGroup[] {
-  if (role === "student" && scope === "project") return projectNavigation;
-  if (role === "student" && scope === "workspace") return studentWorkspaceNavigation;
+  if (live && scope === "project") return projectNavigation;
+  if (role === "student" && scope === "review") return studentReviewNavigation;
+  if (role === "student" && (scope === "workspace" || scope === "project")) {
+    return studentWorkspaceNavigation;
+  }
+  if (role === "lecturer" && scope === "project") return projectNavigation;
   if (role === "lecturer" && scope === "workspace") return lecturerWorkspaceNavigation;
-  if ((role === "lecturer" || role === "student") && scope === "review") {
+  if (role === "lecturer" && scope === "review") {
     return submissionReviewNavigation;
   }
   return [];

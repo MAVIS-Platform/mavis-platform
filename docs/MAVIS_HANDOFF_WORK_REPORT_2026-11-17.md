@@ -102,24 +102,25 @@ Không commit các file sau vì thuộc agent khác/ngoài task:
 - Submission `9deb7b8a-592c-4d09-85d3-a5d200c8b9bc` (Studio v2, grade 86.67).
 - Không dùng các bản ghi này thay cho dataset mới ở trên.
 
-## 5. Test / CI đã chạy
+## 5. Test / CI đã chạy (Cập nhật cuối 17/11/2026 sau khi hoàn tất T09/T10/T36/T38/T41/T42/T45/T46/T51/T57–T60)
 
-- Frontend: `npm run typecheck` PASS; `npm test` **420 pass, 0 fail**; `npm run build` PASS.
-- Backend:
-  - `RuntimePlanningServiceTest`: **25/25 PASS** (frozen A thắng reference B; missing/invalid frozen bị từ chối).
-  - `SubmissionServiceImplTest`: **30/30 PASS** (teacher session, wrong student/assignment/workspace bị từ chối).
-  - `SubmissionReviewServiceTest`: **8/8 PASS** (draft private, stale 409, self-grade reject).
-  - `MigrationUpgradeTest`: **1/1 PASS**, 0 skip qua V38 (PostgreSQL 15438).
-- Worker: `RuntimeAllocationTests` **11 pass, 1 skip** sau per-resource lock.
-- Deploy schema: **9 OK, 1 skip** PostgreSQL-only.
-- CI full: `50d0bb6` run `44023855917` success; `f9a5d13` run `44023886765` success.
+- Frontend (sau `npm ci` đồng bộ Zod `4.6.7`, Next.js `15.5.29`): `npm run typecheck` PASS; `npm test` **427/427 pass, 0 fail**; `npm run test:connected` **3/3 pass**; `test:three-e-ui`, `test:course-setup`, `test:lecturer-lms` PASS; `npm run build` PASS.
+- Backend (non-Postgres local CI subset):
+  - `mavis-common`: **23/23 PASS** (`AccessPolicyServiceImplTest` 16, `GitHubRepositoryUrlsTest` 2, `ZipUtilsTest` 5).
+  - `mavis-platform`: **163/163 PASS** (bao gồm `CourseAccessServiceTest` 7/7 cho `T09`, `CourseSetupServiceTest` 4/4 cho `T10`, `SubmissionServiceImplTest` 32/32 cho `T36`/`T45`/`T46`, `SubmissionReviewServiceTest` 8/8, `CourseAuthoringServiceTest` 14/14, `CourseQuizServiceTest` 9/9, `QuizBankServiceTest` 2/2, `AssignmentServiceImplTest` 15/15).
+  - `mavis-analyzer`: **240/240 PASS** (bao gồm `RuntimePlanningServiceTest` 25/25, `PreparedStudioTopologyTest` 4/4, `RuntimeSetupControllerTest` 1/1).
+  - `mavis-bootstrap`: **147 executed PASS + 6 conditional Postgres skips** (`0` fail, `0` error; gồm 120/120 `Wf01`..`Wf04`). Tổng **573/573 executed PASS**.
+  - Lưu ý môi trường: Docker Desktop daemon không chạy trên máy cục bộ trong lượt cuối này nên `RuntimeStudioApiIntegrationTest` (`3` test `@SpringBootTest`) và `6` lớp Postgres (`CourseHttpAcceptanceTest` đã bổ sung `checkSubmissionV2Flow`, `MigrationUpgradeTest` v.v.) chạy trong container PostgreSQL của GitHub Actions `verify`.
+- Worker: **246 pass, 5 skip** Linux/Docker (`251` tổng, `0` fail, `7 s`).
+- Deploy schema: **8 OK, 1 skip** PostgreSQL-only (`9` tổng, `0.281s`).
+- Đã đăng ký thêm `CourseSetupServiceTest`, `QuizBankServiceTest`, `PreparedStudioTopologyTest`, `RuntimeSetupControllerTest`, `ZipUtilsTest` vào `.github/workflows/deploy-production.yml`.
 
-## 6. Priority 2 đã kiểm
+## 6. Đã hoàn thiện thêm ở lượt chốt 17/11/2026
 
-- Passkey hết hạn: HTTP **400** `INVALID_OR_EXPIRED_PASSKEY`.
-- Cross-workspace non-member: HTTP **403**.
-- Sửa title Lab sau nộp: evidence digest và theory answer **không đổi**.
-- Draft grade/stale: có unit test hiện hành và đi qua CI.
+- **T09 (`CourseAccessService` + `CourseAccessServiceTest`):** Re-publish Lab đã có `studioTopologySnapshot` không ghi đè lại snapshot/revision đã đóng băng cho tới khi giảng viên gọi rõ `freezeTopology`; kiểm thử negative/positive cho model/source mismatch và unverified session.
+- **T10 (`CourseSetupService` + `CourseSetupServiceTest`):** Tổng hợp readiness qua mọi Lab & reference project (`selectPrimaryReference` chỉ đúng reference còn thiếu runtime/topology thay vì dừng ở reference đầu tiên).
+- **T36 / T45 / T46 (`SubmissionServiceImplTest` + `CourseHttpAcceptanceTest#checkSubmissionV2Flow`):** Bổ sung unit test & HTTP acceptance test cho Submission v2 (`THEORY_QUIZ` không diagram), return/resubmit, `DRAFT` privacy, cross-workspace `403`, và bất biến digest/evidence khi sửa tiêu đề Lab hoặc publish Quiz v2.
+- **T38 / T41 / T42 (`lab-submission-v2.tsx`, `frozen-artifacts.tsx`, `grading.tsx`, `course-learning-ui.test.cjs`):** Cô lập nháp giải trình trong `localStorage` theo `(userId, workspaceId, assignmentId)` & xóa sau khi nộp; `FrozenArtifacts` render gói v2 không diagram; `GradeForm` hiển thị `writtenExplanation` của từng Snapshot trên thẻ chấm và giữ nháp đang nhập khi gặp refresh revision (`409`).
 
 ## 7. Cách chạy local
 
@@ -167,6 +168,5 @@ Tài khoản local dùng để test: lecturer `hoangnt@fpt.edu.vn`; student `tri
 
 1. **T56 — BLOCKED:** chưa có test accounts LECTURER/STUDENT production. Không tạo user SQL production, không bypass OTP. Cần cấp credential qua cơ chế an toàn rồi chạy full flow production trong class test riêng.
 2. Production chưa được nghiệm thu bằng hai tài khoản thật; HTTP 200 chỉ là smoke.
-3. Các case nên bổ sung test tự động HTTP: Passkey expiry, cross-workspace submission/quiz, published-edit immutability, draft/stale UI.
-4. WIP giao diện sinh viên của agent khác cần được review/hoàn thiện trước khi merge; không reset/clean.
-5. Local DB `mavis-e2e-db` đang giữ dataset mới để review. Backend/frontend đã dừng; không còn container `mavisrun-*`.
+3. WIP UI giao diện sinh viên từ lượt trước đã được agent dọn và hợp nhất lên `main` (`0859d50d`, `7bddd59b`); chỉ giữ lại tại local các script E2E helper untracked nếu chưa dọn (`e2e-local-studio.cjs`, v.v.).
+4. Theo dõi run GitHub Actions cho commit chốt vừa đẩy để xác nhận `CourseHttpAcceptanceTest` (gồm `checkSubmissionV2Flow`) và `RuntimeStudioApiIntegrationTest` PASS trên container PostgreSQL CI.

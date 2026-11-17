@@ -154,4 +154,33 @@ class RuntimeStudioServiceTest {
         assertThrows(BusinessException.class, () -> service.submit(id,
             new RuntimeStudioService.ActionRequest(UUID.randomUUID(), "STOP", "orders", null)));
     }
+
+    @Test void simulatedSandboxBootstrapsExecutesActionsCapturesAndCompletesWithVerifiedEvidence() {
+        session.setExecutionStatus("READY_FOR_DISPATCH");
+        session.setSourceSnapshot(SourceSnapshot.builder().id(UUID.randomUUID()).build());
+        var profile = mapper.createObjectNode();
+        var topology = profile.putObject("studioTopology").put("version", 1);
+        topology.putArray("blocks").addObject()
+                .put("service", "orders").put("label", "Orders").put("canScale", true).put("initiallyStopped", false);
+        topology.putArray("connections");
+        ((ObjectNode) session.getScenarioConfig()).set("profile", profile);
+
+        var bootstrapped = service.bootstrapSimulatedSandbox(id);
+        assertEquals("RUNNING", session.getExecutionStatus());
+        assertEquals(1, bootstrapped.path("telemetry").path("services").size());
+        assertEquals(1, bootstrapped.path("telemetry").path("services").get(0).path("runningReplicas").asInt());
+
+        var afterStop = service.submit(id, new RuntimeStudioService.ActionRequest(UUID.randomUUID(), "STOP", "orders", null));
+        assertEquals("CONFIRMED", afterStop.path("actions").get(0).path("status").asText());
+        assertEquals(0, afterStop.path("telemetry").path("services").get(0).path("runningReplicas").asInt());
+
+        var captured = service.capture(id, new RuntimeStudioService.CaptureRequest("Stopped orders caused 503"));
+        assertTrue(captured.path("digest").asText().startsWith("sha256:"));
+
+        var finished = service.finish(id);
+        assertEquals("COMPLETED", finished.path("executionStatus").asText());
+        assertEquals("CONFIRMED", finished.path("cleanupStatus").asText());
+        assertTrue(session.hasVerifiedStudioEvidence());
+        assertFalse(session.getStudioControl().path("receiptSignature").asText("").isBlank());
+    }
 }
