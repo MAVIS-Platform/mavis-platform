@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ErrorState } from "@/components/shared/request-state";
+import { MarkdownPreview } from "@/components/shared/markdown-preview";
 import { useApiMutation } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
 import type { Assignment } from "./requirements";
@@ -100,20 +101,37 @@ export function LabInfoForm({
             <Input type="datetime-local" value={due} onChange={(event) => setDue(event.target.value)} />
           </label>
         </div>
-        <label className="block space-y-1.5 text-sm font-medium">
-          <span>{t("Instructions, learning goals and completion criteria", "Hướng dẫn, mục tiêu và tiêu chí hoàn thành")}</span>
-          <Textarea
-            aria-label="Assignment instructions"
-            maxLength={10000}
-            rows={6}
-            value={instructions}
-            placeholder={t(
-              "Describe the learning goal, what students should investigate, the required evidence and the completion criteria.",
-              "Nêu mục tiêu học tập, nội dung sinh viên cần khảo sát, bằng chứng cần nộp và tiêu chí hoàn thành.",
-            )}
-            onChange={(event) => setInstructions(event.target.value)}
-          />
-        </label>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <label className="block space-y-1.5 text-sm font-medium">
+            <span>{t("Instructions, learning goals and completion criteria", "Hướng dẫn, mục tiêu và tiêu chí hoàn thành")}</span>
+            <Textarea
+              aria-label="Assignment instructions"
+              maxLength={10000}
+              rows={7}
+              value={instructions}
+              placeholder={t(
+                "Describe the learning goal, what students should investigate, the required evidence and the completion criteria.",
+                "Nêu mục tiêu học tập, nội dung sinh viên cần khảo sát, bằng chứng cần nộp và tiêu chí hoàn thành.",
+              )}
+              onChange={(event) => setInstructions(event.target.value)}
+            />
+          </label>
+          <div className="space-y-1.5 text-sm font-medium">
+            <span>{t("Live guide preview (Markdown)", "Xem trước hướng dẫn (Markdown)")}</span>
+            <div className="min-h-40 rounded-lg border bg-background p-3.5 text-sm font-normal">
+              {instructions.trim() ? (
+                <MarkdownPreview markdown={instructions} />
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    "Formatted Markdown instructions for students appear here.",
+                    "Bản hướng dẫn định dạng Markdown cho sinh viên hiển thị tại đây.",
+                  )}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
       </section>
 
       <section className="space-y-4 rounded-xl border bg-card p-5" aria-labelledby="lab-mode-heading">

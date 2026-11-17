@@ -1,5 +1,6 @@
 package com.mavis.platform.admin.service;
 
+import com.mavis.platform.admin.dto.AdminCreateUserRequest;
 import com.mavis.platform.admin.dto.AdminDashboardStatsDTO;
 import com.mavis.platform.admin.dto.AdminUserResponseDTO;
 import com.mavis.platform.admin.dto.AuditLogResponseDTO;
@@ -9,12 +10,11 @@ import java.util.UUID;
 
 public interface AdminPortalService {
 
-    /**
-     * Lấy danh sách toàn bộ người dùng trong hệ thống (tối ưu @EntityGraph(attributePaths = {"role"})).
-     *
-     * @return Danh sách AdminUserResponseDTO
-     */
     List<AdminUserResponseDTO> getAllUsers();
+
+    default AdminUserResponseDTO createUser(AdminCreateUserRequest request) {
+        throw new UnsupportedOperationException("Not implemented");
+    }
 
     /**
      * Thay đổi trạng thái tài khoản người dùng ('ACTIVE', 'LOCKED') và ghi AuditLog (BR-65).

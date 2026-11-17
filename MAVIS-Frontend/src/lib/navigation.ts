@@ -86,63 +86,17 @@ export const globalNavigation: Record<AppRole, readonly NavigationGroup[]> = {
   ],
   admin: [
     {
-      label: "Monitoring",
+      label: "System Administration",
       items: [
         { id: "health", label: "System Health", icon: Activity, href: "/administration/health" },
-        { id: "jobs", label: "Analysis Jobs", icon: ListChecks, href: "/administration/jobs" },
-        { id: "usage", label: "Platform Usage", icon: LayoutGrid, href: "/administration/usage" },
-      ],
-    },
-    {
-      label: "User Management",
-      items: [
-        { id: "users", label: "User Account List", icon: Users, href: "/administration/users" },
-      ],
-    },
-    {
-      label: "Integrations",
-      items: [
-        {
-          id: "integrations",
-          label: "Integration Management",
-          icon: Plug,
-          href: "/administration/integrations",
-        },
-      ],
-    },
-    {
-      label: "Audit",
-      items: [
-        { id: "audit", label: "Audit Records", icon: ScrollText, href: "/administration/audit" },
-      ],
-    },
-    {
-      label: "Runtime Administration",
-      items: [
-        {
-          id: "studio",
-          label: "MAVIS Studio",
-          icon: Boxes,
-          href: "/administration/studio",
-        },
-        {
-          id: "runtime-summary",
-          label: "Runtime Summary",
-          icon: Server,
-          href: "/administration/runtime-summary",
-        },
+        { id: "users", label: "Accounts & Roles", icon: Users, href: "/administration/users" },
         {
           id: "profiles",
-          label: "Runtime Execution Profiles",
+          label: "Runtime & Quotas",
           icon: ShieldCheck,
           href: "/administration/profiles",
         },
-        {
-          id: "admin-sessions",
-          label: "Runtime Sessions",
-          icon: Play,
-          href: "/administration/admin-sessions",
-        },
+        { id: "audit", label: "Audit & Jobs", icon: ScrollText, href: "/administration/audit" },
       ],
     },
   ],
@@ -207,36 +161,50 @@ export const lecturerWorkspaceNavigation: readonly NavigationGroup[] = [
     items: [
       {
         id: "workspace-overview",
-        label: "Workspace Overview",
+        label: "Overview & Setup",
         icon: LayoutGrid,
         href: "/workspace-overview",
       },
-      { id: "members", label: "Workspace Members", icon: Users, href: "/members" },
-      { id: "assignments", label: "Lab Library", icon: BookOpen, href: "/assignments" },
-      { id: "lab-authoring", label: "Lab Creation", icon: BookOpen, href: "/lab-authoring" },
-      {
-        id: "assignment-submissions",
-        label: "Assignment Submissions",
-        icon: ClipboardCheck,
-        href: "/submissions",
-      },
-      {
-        id: "workspace-results",
-        label: "Results",
-        icon: ClipboardCheck,
-        href: "/submissions?view=results",
-      },
       {
         id: "course-authoring",
-        label: "Course Authoring",
+        label: "Curriculum & Materials",
         icon: GraduationCap,
         href: "/workspace-overview?view=course-authoring",
       },
       {
-        id: "course-setup",
-        label: "Course Setup",
-        icon: Settings2,
-        href: "/workspace-overview?view=course-setup",
+        id: "assignments",
+        label: "Lab Library",
+        icon: BookOpen,
+        href: "/assignments",
+      },
+      { id: "lab-authoring", label: "Lab Creation", icon: BookOpen, href: "/lab-authoring" },
+      {
+        id: "assignment-submissions",
+        label: "Grading & Gradebook",
+        icon: ClipboardCheck,
+        href: "/submissions",
+      },
+      { id: "members", label: "Students & Access", icon: Users, href: "/members" },
+    ],
+  },
+];
+
+export const lecturerReviewNavigation: readonly NavigationGroup[] = [
+  {
+    label: "Grading · SpeedGrader",
+    items: [
+      { id: "review", label: "Submission Review", icon: ClipboardCheck },
+      {
+        id: "submissions",
+        label: "Submissions Queue",
+        icon: ListChecks,
+        href: "/submissions",
+      },
+      {
+        id: "workspace-overview",
+        label: "Class Overview",
+        icon: LayoutGrid,
+        href: "/workspace-overview",
       },
     ],
   },
@@ -301,10 +269,11 @@ export function contextualNavigation(
   if (role === "student" && (scope === "workspace" || scope === "project")) {
     return studentWorkspaceNavigation;
   }
-  if (role === "lecturer" && scope === "project") return projectNavigation;
-  if (role === "lecturer" && scope === "workspace") return lecturerWorkspaceNavigation;
+  if (role === "lecturer" && (scope === "workspace" || scope === "project")) {
+    return lecturerWorkspaceNavigation;
+  }
   if (role === "lecturer" && scope === "review") {
-    return submissionReviewNavigation;
+    return lecturerReviewNavigation;
   }
   return [];
 }
@@ -350,7 +319,7 @@ export function existingRouteContext(pathname: string) {
   if (pathname === "/submissions") {
     return { scope: "global" as const, title: "My Submissions", activeId: "submissions" };
   }
-  if (pathname === "/studio" || pathname === "/administration/studio") {
+  if (pathname === "/studio") {
     return { scope: "global" as const, title: "MAVIS Studio", activeId: "studio" };
   }
   return { scope: "global" as const, title: "My Courses", activeId: "courses" };

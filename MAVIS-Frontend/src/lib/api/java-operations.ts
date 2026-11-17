@@ -263,6 +263,12 @@ export async function executeJava(
         theoryEvidence: z.record(z.string(), z.unknown()).nullish(),
         studioEvidence:z.record(z.string(), z.unknown()).nullish(),
         studentSnapshots: z.array(studentSnapshotSchema).nullish(),
+        reviewStatus: z.string().nullish(),
+        reviewScore: z.number().nullish(),
+        labOutcome: z.string().nullish(),
+        reviewSummary: z.string().nullish(),
+        gradedByName: z.string().nullish(),
+        gradedAt: z.string().nullish(),
         sourceSnapshotId: z.string().uuid(),
         modelVersionId: z.string().uuid(),
         runtimeSessionId: z.string().uuid().nullish(),
@@ -348,6 +354,12 @@ export async function executeJava(
       theoryEvidence: sub.theoryEvidence ?? null,
       studioEvidence:sub.studioEvidence??null,
       ...(sub.studentSnapshots ? { studentSnapshots: sub.studentSnapshots } : {}),
+      reviewStatus: sub.reviewStatus ?? null,
+      reviewScore: sub.reviewScore ?? null,
+      labOutcome: sub.labOutcome ?? null,
+      reviewSummary: sub.reviewSummary ?? null,
+      gradedByName: sub.gradedByName ?? null,
+      gradedAt: sub.gradedAt ?? null,
       id: sub.id,
       assignmentId: sub.assignmentId,
       studentId: sub.submittedById,
@@ -756,6 +768,21 @@ export async function executeJava(
       return post("notifications/read-all", { before: input["before"] });
     case "accounts":
       return list.parse(await get("admin/users")).map(account);
+    case "createAccount": {
+      const roleCode = { student: "STUDENT", lecturer: "LECTURER", admin: "SYSTEM_ADMIN" }[
+        z.enum(["student", "lecturer", "admin"]).parse(input["role"])
+      ];
+      return account(
+        await post("admin/users", {
+          fullName: input["fullName"],
+          email: input["email"],
+          ...(input["password"] ? { password: input["password"] } : {}),
+          roleCode,
+        }),
+      );
+    }
+    case "forceStopRuntimeSession":
+      return post(`admin/runtime-sessions/${id(input, "sessionId")}/force-stop`, {});
     case "setAccountLock":
       return account(
         await patch(`admin/users/${id(input, "accountId")}/status`, {
@@ -810,6 +837,9 @@ export async function executeJava(
             createdAt: z.string(),
             action: z.string(),
             actorId: z.string().nullish(),
+            actorName: z.string().nullish(),
+            actorEmail: z.string().nullish(),
+            details: z.string().nullish(),
             targetId: z.string().nullish(),
           }),
         )
@@ -819,6 +849,9 @@ export async function executeJava(
           at: a.createdAt,
           action: a.action,
           actorId: a.actorId ?? "SYSTEM",
+          actorName: a.actorName ?? null,
+          actorEmail: a.actorEmail ?? null,
+          details: a.details ?? null,
           resourceId: a.targetId ?? "SYSTEM",
         }));
     case "adminJobs":
@@ -830,20 +863,42 @@ export async function executeJava(
     case "platformSummary": {
       const a = z
         .object({
+          liveHealthStatus: z.string().nullish(),
           totalProjects: z.number().int().nonnegative(),
           totalUsers: z.number().int().nonnegative(),
           totalJobs: z.number().int().nonnegative(),
           runningRuntimeSessions: z.number().int().nonnegative(),
+          activeLecturers: z.number().int().nonnegative().nullish(),
+          activeStudents: z.number().int().nonnegative().nullish(),
+          pendingVerificationUsers: z.number().int().nonnegative().nullish(),
+          lockedUsers: z.number().int().nonnegative().nullish(),
+          totalGuidedLabs: z.number().int().nonnegative().nullish(),
         })
         .parse(await get("admin/dashboard-stats"));
+      const liveHealthStatus = a.liveHealthStatus?.toUpperCase();
       return {
-        health: "unknown",
+        health:
+          liveHealthStatus === "HEALTHY"
+            ? "available"
+            : liveHealthStatus === "DEGRADED"
+              ? "degraded"
+              : "unknown",
+        ...(a.liveHealthStatus ? { liveHealthStatus: a.liveHealthStatus } : {}),
         message:
-          "Inventory counts are available. External services and Runner health have not been probed.",
+          liveHealthStatus === "HEALTHY"
+            ? "Platform API and core services are operating normally."
+            : "Inventory counts are available. External services and Runner health have not been probed.",
         projects: a.totalProjects,
         users: a.totalUsers,
         analysisJobs: a.totalJobs,
         runningSessions: a.runningRuntimeSessions,
+        ...(a.activeLecturers != null ? { activeLecturers: a.activeLecturers } : {}),
+        ...(a.activeStudents != null ? { activeStudents: a.activeStudents } : {}),
+        ...(a.pendingVerificationUsers != null
+          ? { pendingVerificationUsers: a.pendingVerificationUsers }
+          : {}),
+        ...(a.lockedUsers != null ? { lockedUsers: a.lockedUsers } : {}),
+        ...(a.totalGuidedLabs != null ? { totalGuidedLabs: a.totalGuidedLabs } : {}),
       };
     }
 
@@ -1025,7 +1080,15 @@ export async function executeJava(
         assignmentId = id(input, "assignmentId");
       const current = assignment(await get(`assignments/${assignmentId}`));
       if (current.workspaceId !== workspaceId) throw new ApiError("not-found", 404);
-      const rows = list.parse(await get(`assignments/${assignmentId}/submissions`));
+      const query = new URLSearchParams();
+      if (typeof input["reviewStatus"] === "string" && input["reviewStatus"]) {
+        query.set("reviewStatus", input["reviewStatus"]);
+      }
+      if (typeof input["labOutcome"] === "string" && input["labOutcome"]) {
+        query.set("labOutcome", input["labOutcome"]);
+      }
+      const suffix = query.toString() ? `?${query}` : "";
+      const rows = list.parse(await get(`assignments/${assignmentId}/submissions${suffix}`));
       if (rows.some((row) => object.parse(row)["assignmentId"] !== assignmentId))
         throw new ApiError("contract", 502);
       return Promise.all(rows.map((row) => coursework(row, false)));

@@ -332,6 +332,43 @@ public class CourseAuthoringService {
         return view(course);
     }
 
+    public CourseView deleteModule(UUID workspaceId, UUID moduleId) {
+        access.requireWorkspaceLecturer(workspaceId);
+        CourseDefinition course = requireCourse(workspaceId);
+        requireDraft(course);
+        CourseModule target = findModule(course, moduleId);
+
+        List<CourseModule> allModules = new java.util.ArrayList<>(modules.findByCourseIdOrderByPositionAsc(course.getId()));
+        for (CourseModule candidate : allModules) {
+            if (moduleId.equals(candidate.getPrerequisiteModuleId())) {
+                candidate.setPrerequisiteModuleId(null);
+                modules.saveAndFlush(candidate);
+            }
+        }
+
+        List<CourseItem> moduleItems = items.findByModuleIdOrderByPositionAsc(moduleId);
+        if (!moduleItems.isEmpty()) {
+            items.deleteAll(moduleItems);
+            items.flush();
+        }
+
+        modules.delete(target);
+        modules.flush();
+
+        List<CourseModule> remaining = new java.util.ArrayList<>(modules.findByCourseIdOrderByPositionAsc(course.getId()));
+        for (CourseModule mod : remaining) {
+            mod.setPosition(-mod.getPosition());
+            modules.saveAndFlush(mod);
+        }
+        int position = 1;
+        for (CourseModule mod : remaining) {
+            mod.setPosition(position++);
+            modules.saveAndFlush(mod);
+        }
+        bump(course);
+        return view(course);
+    }
+
     public CourseView updateItem(UUID workspaceId, UUID moduleId, UUID itemId, ItemRequest request) {
         access.requireWorkspaceLecturer(workspaceId);
         CourseDefinition course = requireCourse(workspaceId);

@@ -50,6 +50,13 @@ public class CourseAccessController {
         return ApiResponse.success(courses.freezeTopology(workspaceId, assignmentId, sessionId));
     }
 
+    @PostMapping("/workspaces/{workspaceId}/course-labs/{assignmentId}/auto-configure-studio")
+    public ApiResponse<CourseSetupService.AutoConfigureStudioResult> autoConfigureStudio(
+            @PathVariable UUID workspaceId, @PathVariable UUID assignmentId) {
+        return ApiResponse.success("Đã tự động cấu hình và đóng băng 2D Studio",
+                setup.autoConfigureStudio(workspaceId, assignmentId));
+    }
+
     @PostMapping("/workspaces/{workspaceId}/course-labs/seed-curated")
     public ApiResponse<CourseAccessService.Roadmap> seedCurated(
             @PathVariable UUID workspaceId,

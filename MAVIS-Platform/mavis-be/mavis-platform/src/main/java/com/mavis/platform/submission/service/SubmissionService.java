@@ -33,6 +33,15 @@ public interface SubmissionService {
      */
     List<SubmissionResponseDTO> getSubmissionsByAssignment(UUID assignmentId);
 
+    default List<SubmissionResponseDTO> getSubmissionsByAssignment(UUID assignmentId, String reviewStatus, String labOutcome) {
+        return getSubmissionsByAssignment(assignmentId).stream()
+                .filter(s -> reviewStatus == null || reviewStatus.isBlank()
+                        || reviewStatus.equalsIgnoreCase(s.getReviewStatus()))
+                .filter(s -> labOutcome == null || labOutcome.isBlank()
+                        || labOutcome.equalsIgnoreCase(s.getLabOutcome()))
+                .toList();
+    }
+
     /**
      * Lấy lịch sử các bài nộp theo đồ án (Project), tối ưu 8-way EntityGraph.
      *

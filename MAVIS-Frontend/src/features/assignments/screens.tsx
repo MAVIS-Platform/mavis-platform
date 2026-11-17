@@ -29,6 +29,7 @@ import {
   useCourseRoadmap,
   useCourseSetup,
 } from "@/features/workspaces/course-access";
+import { CourseWorkspaceShell } from "@/features/courses/course-workspace-shell";
 import { AssignmentInstructions } from "./assignment-instructions";
 import { AssignmentSourceDetails } from "./source-picker";
 
@@ -52,6 +53,8 @@ type LibraryFilter = "all" | "class" | "draft";
 function LecturerAssignments() {
   const { t } = useLocale();
   const { workspaceId } = useSelection();
+  const workspacesQuery = useApiQuery("workspaces", {});
+  const workspace = workspacesQuery.data?.find((item) => item.id === workspaceId);
   const query = useApiQuery("assignments", { workspaceId }, { enabled: Boolean(workspaceId) });
   const roadmap = useCourseRoadmap(workspaceId);
   const setup = useCourseSetup(workspaceId);
@@ -89,15 +92,22 @@ function LecturerAssignments() {
     { id: "draft", label: t("Not in class", "Chưa vào lớp"), count: rows.length - inClassCount },
   ];
 
-  return (
+  const content = (
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
-          {t(
-            "Every Lab you create lives here. Author it in Lab Creation, then choose which Labs open in this class — students see the class sequence in their roadmap.",
-            "Mọi Lab bạn tạo đều nằm ở đây. Soạn Lab trong Tạo Lab, sau đó chọn Lab nào mở trong lớp này — sinh viên thấy thứ tự lớp trong lộ trình học.",
-          )}
-        </p>
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight">{t("Lab Library", "Kho Lab")}</h2>
+          <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
+            {t(
+              "Every Lab you create lives here. Author it in Lab Creation, then choose which Labs open in this class — students see the class sequence in their roadmap.",
+              "Mọi Lab bạn tạo đều nằm ở đây. Soạn Lab trong Tạo Lab, sau đó chọn Lab nào mở trong lớp này — sinh viên thấy thứ tự lớp trong lộ trình học.",
+            )}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {labs.length} {t("Labs", "Lab")} · {inClassCount} {t("in class", "trong lớp")} ·{" "}
+            {labs.length - inClassCount} {t("not in class", "chưa vào lớp")}
+          </p>
+        </div>
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="outline" size="sm" onClick={() => setShowTools((open) => !open)}>
             <Settings2 className="mr-1 size-4" aria-hidden="true" />
@@ -116,7 +126,7 @@ function LecturerAssignments() {
         <section className="space-y-3 rounded-xl border bg-card p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <h2 className="font-semibold">{t("Course tools", "Công cụ khóa học")}</h2>
+              <h3 className="font-semibold">{t("Course tools", "Công cụ khóa học")}</h3>
               <p className="text-xs text-muted-foreground">
                 {t(
                   "Seed a curated course or open the course-level setup checklist. These actions are separate from authoring one Lab.",
@@ -125,8 +135,8 @@ function LecturerAssignments() {
               </p>
             </div>
             <Button asChild size="sm" variant="outline">
-              <Link href={`/roadmap?workspace=${encodeURIComponent(workspaceId)}`}>
-                {t("Course setup checklist", "Checklist thiết lập khóa học")}
+              <Link href={`/workspace-overview?workspace=${encodeURIComponent(workspaceId)}`}>
+                {t("Overview & Setup", "Tổng quan & Khởi tạo")}
               </Link>
             </Button>
           </div>
@@ -313,6 +323,14 @@ function LecturerAssignments() {
         {remove.error && <ErrorState error={remove.error} />}
       </RequestState>
     </div>
+  );
+
+  return workspace ? (
+    <CourseWorkspaceShell workspace={workspace} active="assignments">
+      {content}
+    </CourseWorkspaceShell>
+  ) : (
+    content
   );
 }
 

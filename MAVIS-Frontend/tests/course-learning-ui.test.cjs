@@ -191,7 +191,8 @@ test("assignment authoring separates details, theory, source, quiz, studio and p
   assert.ok(theory.includes("THEORY"));
   assert.ok(source.includes("AssignmentSourcePicker"));
   assert.ok(quiz.includes("QuizBuilder"));
-  assert.ok(studio.includes("runtime-config?project="));
+  assert.ok(studio.includes("useAutoConfigureStudio"));
+  assert.ok(!studio.includes("runtime-config?project="));
   assert.ok(publish.includes("CourseSetupPanel"));
   assert.match(publish, /theoryReady/);
 });
@@ -738,10 +739,12 @@ test("lecturer course setup checklist links the reference runtime and Studio Liv
   assert.ok(access.includes("workspaces/${workspaceId}/course/publish"));
   assert.ok(access.includes("course-setup"));
   assert.match(panel, /Course setup/);
-  assert.match(panel, /Studio Live/);
-  assert.match(panel, /runtime-config\?project=/);
+  assert.match(panel, /Auto-Configure Studio|Studio Live/);
+  assert.match(panel, /lab-authoring\?/);
+  assert.ok(!panel.includes("runtime-config?project="));
   assert.ok(course.includes("<CourseSetupPanel workspaceId={workspaceId}"));
-  assert.ok(studio.includes("runtime-config?project="));
+  assert.ok(studio.includes("useAutoConfigureStudio"));
+  assert.ok(!studio.includes("runtime-config?project="));
   assert.equal(
     allowedBackendPath("workspaces/11111111-1111-1111-1111-111111111111/course-setup"),
     true,
@@ -949,16 +952,18 @@ test("Lab Library is the class-facing lab store and Quiz can be generated from L
   assert.ok(quiz.includes("sourceTheoryItems"));
 });
 
-test("Studio Live authoring and standalone Studio carry project and return context", () => {
+test("Studio Live authoring runs self-contained inline topology and playtest without external jumps", () => {
   const studio = read("src/features/assignments/lab-studio-section.tsx");
+  const theory = read("src/features/assignments/lab-theory-section.tsx");
   const workbench = read("src/features/runtime/studio-workbench.tsx");
   const live = read("src/features/runtime/live-studio-workbench.tsx");
 
-  assert.ok(studio.includes("Start Live session"));
-  assert.ok(studio.includes("Open MAVIS Studio"));
-  assert.match(studio, /\/sessions\?/);
-  assert.match(studio, /\/studio\?/);
-  assert.match(studio, /returnTo/);
+  assert.ok(studio.includes("useAutoConfigureStudio"));
+  assert.ok(studio.includes("LiveStudioWorkbench"));
+  assert.ok(!studio.includes("/sessions?"));
+  assert.ok(!studio.includes("/studio?"));
+  assert.ok(!theory.includes("/diagrams?"));
+  assert.ok(!theory.includes("/architecture?"));
   assert.match(workbench, /Live project/);
   assert.match(workbench, /Select a project/);
   assert.match(workbench, /session\.projectId === projectId/);
@@ -985,11 +990,7 @@ test("Studio Live setup uses a visual prepared topology builder and Lab session 
   assert.ok(studio.includes("PreparedTopologyEditor"));
   assert.ok(studio.includes("verifiedSession"));
   assert.ok(studio.includes("sessionId={verifiedSession"));
-  assert.ok(studio.includes("assignment: assignment.id"));
-  assert.match(contract, /assignmentId:\s*id\.optional\(\)/);
-  assert.match(domain, /assignmentId:\s*z\.string\(\)\.nullable\(\)\.optional\(\)/);
-  assert.match(runtime, /assignmentId \? \{ assignmentId \}/);
-  assert.ok(studio.includes("&assignment=${assignment.id}"));
+  assert.ok(studio.includes("useAutoConfigureStudio"));
   assert.ok(screens.includes('assignmentId ? `&assignment=${assignmentId}` : ""'));
   assert.ok(
     screens.includes('studioTopology: config.data.profile["studioTopology"]') ||
@@ -1128,7 +1129,11 @@ test("FE-02 Student Submissions eliminate ReadOnlyDrawio iframe/.drawio and isol
   const componentsSource = read("src/features/submissions/components.tsx");
 
   assert.doesNotMatch(frozenSource, /ReadOnlyDrawio|submission-viewer\.html|\.drawio/);
-  assert.match(screensSource, /showLegacyTechnicalPanels\s*=\s*canReview\s*&&\s*!isV2Submission/);
+  assert.doesNotMatch(
+    screensSource,
+    /ArchitectureGraph|ElementDetailsPanel|FeedbackPanel|Runtime evidence not submitted/,
+  );
+  assert.ok(screensSource.includes("ClassGradebookMatrix"));
   assert.match(componentsSource, /if\s*\(!canReview\)\s*\{?\s*return/);
 
   const legacyDrawioHtml = renderToStaticMarkup(
@@ -1182,4 +1187,20 @@ test("FE-02 Student Submissions eliminate ReadOnlyDrawio iframe/.drawio and isol
     filtered.map((s) => s.id),
     ["sub-a"],
   );
+});
+
+test("ADM-V2 Enterprise Control Center removes /administration/studio links and wires 1-click user/session controls", () => {
+  const adminScreens = read("src/features/administration/screens.tsx");
+  const adminOps = read("src/features/administration/operations.tsx");
+  const runtimeBackend = read("src/features/runtime/backend.tsx");
+  const nav = read("src/lib/navigation.ts");
+
+  assert.doesNotMatch(adminScreens, /administration\/studio/);
+  assert.doesNotMatch(adminOps, /administration\/studio/);
+  assert.doesNotMatch(runtimeBackend, /administration\/studio/);
+  assert.doesNotMatch(nav, /administration\/studio/);
+  assert.ok(adminScreens.includes("createAccount"));
+  assert.ok(adminScreens.includes("Activate"));
+  assert.ok(adminOps.includes("forceStopRuntimeSession"));
+  assert.ok(adminScreens.includes("actorName"));
 });

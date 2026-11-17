@@ -5,4 +5,7 @@ import java.util.*;
 public interface SubmissionReviewRepository extends JpaRepository<SubmissionReview,UUID> {
     @EntityGraph(attributePaths={"lecturer"})
     Optional<SubmissionReview> findBySubmissionId(UUID submissionId);
+
+    @EntityGraph(attributePaths={"lecturer", "submission"})
+    List<SubmissionReview> findBySubmissionIdIn(Collection<UUID> submissionIds);
 }

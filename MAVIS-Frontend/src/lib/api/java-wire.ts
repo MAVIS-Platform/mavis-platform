@@ -166,6 +166,8 @@ export function jobView(raw: unknown) {
     .object({
       jobId: z.string().uuid(),
       projectId: z.string().uuid(),
+      projectName: nullableText.optional(),
+      workspaceName: nullableText.optional(),
       sourceSnapshotId: z.string().uuid(),
       status: z.string(),
       modelVersionId: nullableText,
@@ -196,6 +198,8 @@ export function jobView(raw: unknown) {
   return analysisJobSchema.parse({
     id: j.jobId,
     projectId: j.projectId,
+    ...(j.projectName ? { projectName: j.projectName } : {}),
+    ...(j.workspaceName ? { workspaceName: j.workspaceName } : {}),
     snapshotId: j.sourceSnapshotId,
     status,
     progress: null,

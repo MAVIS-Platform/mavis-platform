@@ -8,7 +8,13 @@ import { ErrorState, RequestState } from "@/components/shared/request-state";
 import { SearchInput, SelectField } from "@/components/shared/forms";
 import { DataTable, DetailPanel, StatusBadge } from "@/components/shared/data";
 import { CreateWorkspace, WorkspaceControls } from "./manage";
-import { CourseEnrollment, CourseRoadmap } from "./course-access";
+import {
+  CourseEnrollment,
+  CoursePasskey,
+  CourseRoadmap,
+  useCourseAuthoring,
+  useCourseRoadmap,
+} from "./course-access";
 import { ReferenceManagement } from "./reference-manage";
 import { CourseWorkspaceShell } from "@/features/courses/course-workspace-shell";
 import { CourseOutline } from "@/features/courses/course-outline";
@@ -203,14 +209,28 @@ export function WorkspaceOverview() {
       : canManage && requestedView === "course-setup"
         ? "setup"
         : "outline";
+  const assignmentsQuery = useApiQuery(
+    "assignments",
+    { workspaceId: workspace?.id ?? "" },
+    { enabled: Boolean(workspace?.id && canManage) },
+  );
+  const authoring = useCourseAuthoring(workspace?.id ?? "", Boolean(workspace?.id && canManage));
+  const roadmap = useCourseRoadmap(workspace?.id ?? "");
+  const studentCount = (workspace?.members ?? []).filter(
+    (member) => member.role.toUpperCase() === "STUDENT",
+  ).length;
+  const moduleCount = authoring.data?.modules?.length ?? 0;
+  const itemCount =
+    authoring.data?.modules?.reduce((sum, mod) => sum + mod.items.length, 0) ?? 0;
+  const totalLabs = assignmentsQuery.data?.length ?? 0;
+  const publishedLabs = roadmap.data?.labs?.length ?? 0;
 
   return (
     <RequestState query={query} empty={!workspace}>
       {workspace && (
         <CourseWorkspaceShell
           workspace={workspace}
-          active="content"
-          showTabs={session.data?.user?.role !== "lecturer"}
+          active={activeTab === "authoring" ? "authoring" : "content"}
           actions={
             canManage ? (
               <>
@@ -228,7 +248,49 @@ export function WorkspaceOverview() {
             ) : undefined
           }
         >
-          <div className="space-y-4">
+          <div className="space-y-5">
+            {canManage && activeTab !== "authoring" && (
+              <section
+                aria-label={t("Class KPIs", "Chỉ số lớp học")}
+                className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
+              >
+                <div className="rounded-xl border bg-card p-4">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    {t("Enrolled Students", "Sinh viên tham gia")}
+                  </p>
+                  <p className="mt-1 text-2xl font-semibold">{studentCount}</p>
+                </div>
+                <div className="rounded-xl border bg-card p-4">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    {t("Curriculum Modules & Items", "Chương & Học liệu")}
+                  </p>
+                  <p className="mt-1 text-2xl font-semibold">
+                    {moduleCount}{" "}
+                    <span className="text-sm font-normal text-muted-foreground">
+                      ({itemCount} {t("items", "mục")})
+                    </span>
+                  </p>
+                </div>
+                <div className="rounded-xl border bg-card p-4">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    {t("Labs Published", "Lab đã công bố")}
+                  </p>
+                  <p className="mt-1 text-2xl font-semibold">
+                    {publishedLabs}/{totalLabs}
+                  </p>
+                </div>
+                <div className="rounded-xl border bg-card p-4">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    {t("Course Status", "Trạng thái khóa học")}
+                  </p>
+                  <p className="mt-1 text-lg font-semibold">
+                    {authoring.data?.publishedVersion
+                      ? `v${authoring.data.publishedVersion} · ${t("Published", "Đã xuất bản")}`
+                      : t("Draft / Setup", "Nháp / Thiết lập")}
+                  </p>
+                </div>
+              </section>
+            )}
             {activeTab === "outline" && !canManage && (
               <CourseRoadmap
                 key={`student-roadmap-${workspace.id}`}
@@ -237,10 +299,23 @@ export function WorkspaceOverview() {
                 active={workspace.status !== "ARCHIVED"}
               />
             )}
-            {activeTab === "outline" && (
+            {activeTab === "outline" && canManage && (
+              <div className="space-y-5">
+                <CourseSetupPanel workspaceId={workspace.id} />
+                <div id="class-passkey">
+                  <CoursePasskey workspaceId={workspace.id} />
+                </div>
+                <CourseOutline
+                  workspaceId={workspace.id}
+                  canManage
+                  active={workspace.status !== "ARCHIVED"}
+                />
+              </div>
+            )}
+            {activeTab === "outline" && !canManage && (
               <CourseOutline
                 workspaceId={workspace.id}
-                canManage={canManage}
+                canManage={false}
                 active={workspace.status !== "ARCHIVED"}
               />
             )}
@@ -248,6 +323,9 @@ export function WorkspaceOverview() {
             {activeTab === "setup" && canManage && (
               <div className="space-y-5">
                 <CourseSetupPanel workspaceId={workspace.id} />
+                <div id="class-passkey">
+                  <CoursePasskey workspaceId={workspace.id} />
+                </div>
                 <CourseRoadmap
                   key={workspace.id}
                   workspaceId={workspace.id}
@@ -284,11 +362,7 @@ export function WorkspaceMembers() {
   return (
     <RequestState query={query} empty={!workspace}>
       {workspace && (
-        <CourseWorkspaceShell
-          workspace={workspace}
-          active="members"
-          showTabs={session.data?.user?.role !== "lecturer"}
-        >
+        <CourseWorkspaceShell workspace={workspace} active="members">
           <div className="space-y-4">
             {canManage && (
               <div className="rounded-xl border bg-card p-4">
