@@ -12,7 +12,10 @@ public sealed class RuntimeLifecycleTests
         public int CleanupCalls, PreserveCalls;
         public IReadOnlyList<RuntimeInfrastructureActionResult> Actions = [];
         public bool FailActions;
-        public IReadOnlyList<RuntimeInfrastructureActionResult> ObservedInfrastructureActions => FailActions ? Actions : [];
+        public bool Interactive;
+        public int ScenarioCalls;
+        public bool InteractiveStudio => Interactive;
+        public IReadOnlyList<RuntimeInfrastructureActionResult> ObservedInfrastructureActions => Actions;
         public Task PrepareAndStartAsync(CancellationToken ct)
         {
             if (FailStart) throw new InvalidOperationException("SECRET_SENTINEL");
@@ -20,7 +23,11 @@ public sealed class RuntimeLifecycleTests
             return Task.CompletedTask;
         }
         public Task WaitUntilReadyAsync(CancellationToken ct) => Task.CompletedTask;
-        public Task<HttpScenarioOutcome> ExecuteScenarioAsync(CancellationToken ct) => Task.FromResult(new HttpScenarioOutcome("s", "Failed", []));
+        public Task<HttpScenarioOutcome> ExecuteScenarioAsync(CancellationToken ct)
+        {
+            ScenarioCalls++;
+            return Task.FromResult(new HttpScenarioOutcome("s", ScenarioCalls > 1 ? "Passed" : "Failed", []));
+        }
         public Task<IReadOnlyList<RuntimeInfrastructureActionResult>> ExecuteInfrastructureActionsAsync(CancellationToken ct) =>
             FailActions ? throw new RuntimeStageException("INFRASTRUCTURE_ACTION_UNCONFIRMED") : Task.FromResult(Actions);
         public Task<TraceCorrelationResult?> PreserveEvidenceAsync(CancellationToken ct)
@@ -57,6 +64,19 @@ public sealed class RuntimeLifecycleTests
             new() { ["replicas"] = 1 }, new() { ["replicas"] = 4 }, DateTimeOffset.UtcNow, true);
         var result = await RuntimeSessionLifecycle.RunAsync(new Backend { Actions = [action] }, 5);
         Assert.Equal(action, Assert.Single(result.InfrastructureActions!));
+    }
+
+    [Fact]
+    public async Task StudioScenarioIsCheckedAgainAfterConfirmedActions()
+    {
+        var action = new RuntimeInfrastructureActionResult("START", "payment", 0, 1,
+            new() { ["replicas"] = 0 }, new() { ["replicas"] = 1 }, DateTimeOffset.UtcNow, true);
+        var backend = new Backend { Actions = [action], Interactive = true };
+
+        var result = await RuntimeSessionLifecycle.RunAsync(backend, 5);
+
+        Assert.Equal(2, backend.ScenarioCalls);
+        Assert.Equal("Passed", result.ScenarioStatus);
     }
 
     [Fact]

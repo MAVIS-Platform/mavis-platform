@@ -20,6 +20,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
     IRuntimeLifecycleObserver? lifecycle = null, JavaRuntimeClient? studio = null) : IRuntimeSessionBackend
 {
     public string ResourceProject { get; } = RuntimeAllocation.ProjectName(definition.ResourceProject);
+    public bool InteractiveStudio => definition.InteractiveStudio;
     public bool AllocationReserved { get; private set; }
     public string Stage { get; private set; } = "VALIDATE";
     public Dictionary<string, string> ActualImageIds { get; } = new(StringComparer.Ordinal);
