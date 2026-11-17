@@ -1110,7 +1110,11 @@ test("FE-02 Student Submissions eliminate ReadOnlyDrawio iframe/.drawio and isol
   const componentsSource = read("src/features/submissions/components.tsx");
 
   assert.doesNotMatch(frozenSource, /ReadOnlyDrawio|submission-viewer\.html|\.drawio/);
-  assert.match(screensSource, /showLegacyTechnicalPanels\s*=\s*canReview\s*&&\s*!isV2Submission/);
+  assert.doesNotMatch(
+    screensSource,
+    /ArchitectureGraph|ElementDetailsPanel|FeedbackPanel|Runtime evidence not submitted/,
+  );
+  assert.ok(screensSource.includes("ClassGradebookMatrix"));
   assert.match(componentsSource, /if\s*\(!canReview\)\s*\{?\s*return/);
 
   const legacyDrawioHtml = renderToStaticMarkup(
