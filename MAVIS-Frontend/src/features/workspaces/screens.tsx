@@ -16,7 +16,7 @@ import {
 } from "./course-access";
 import { ReferenceManagement } from "./reference-manage";
 import { CourseWorkspaceShell } from "@/features/courses/course-workspace-shell";
-import { Courses } from "@/features/courses/screens";
+import { CourseRoadmap as CourseRoadmapScreen, Courses } from "@/features/courses/screens";
 import { CourseOutline } from "@/features/courses/course-outline";
 import { CourseBuilder } from "@/features/courses/course-builder";
 import { CourseSetupPanel } from "@/features/courses/course-setup";
@@ -158,7 +158,8 @@ export function WorkspaceOverview() {
 
   return (
     <RequestState query={query} empty={!workspace}>
-      {workspace && (
+      {workspace && !canManage && <CourseRoadmapScreen />}
+      {workspace && canManage && (
         <CourseWorkspaceShell
           workspace={workspace}
           active={activeTab === "authoring" ? "authoring" : "content"}

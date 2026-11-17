@@ -8,11 +8,15 @@ import {
   Award,
   BookOpen,
   Check,
+  CheckCircle2,
+  ChevronRight,
   CircleAlert,
   Clock3,
   Code2,
+  FileCheck2,
   GraduationCap,
   KeyRound,
+  Lock,
   Network,
   Play,
   ShieldCheck,
@@ -609,7 +613,6 @@ export function CourseRoadmap() {
   const workspace = workspaces.data?.find((item) => item.id === workspaceId);
   const canManage = workspace?.myRole === "LECTURER" || session.data?.user?.role === "admin";
   const publishedCourse = usePublishedCourse(workspaceId);
-  const [studentView, setStudentView] = useState<"roadmap" | "outline" | "curriculum">("roadmap");
 
   useEffect(() => {
     if (workspaceId && workspaceId !== selection.workspaceId) selection.setWorkspaceId(workspaceId);
@@ -621,30 +624,30 @@ export function CourseRoadmap() {
       empty={!workspace}
       emptyMessage={t("Select a course to view its roadmap.", "Chọn một khóa học để xem lộ trình.")}
     >
-      {workspace && (
-        <div className="space-y-6">
-          <div className="rounded-2xl border bg-card p-6">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                  {workspace.code || t("Course", "Khóa học")} /{" "}
-                  {t("Learning roadmap", "Lộ trình học tập")}
-                </p>
-                <h1 className="mt-2 text-2xl font-semibold">{workspace.name}</h1>
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-                  {t(
-                    "Labs unlock in sequence. Complete the required evidence package and receive a passing lecturer review before the next Lab becomes available.",
-                    "Các Lab mở theo thứ tự. Hoàn thành bộ bằng chứng bắt buộc và đạt đánh giá của giảng viên để mở Lab tiếp theo.",
-                  )}
-                </p>
+      {workspace &&
+        (canManage ? (
+          <div className="space-y-6">
+            <div className="rounded-2xl border bg-card p-6">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                    {workspace.code || t("Course", "Khóa học")} /{" "}
+                    {t("Learning roadmap", "Lộ trình học tập")}
+                  </p>
+                  <h1 className="mt-2 text-2xl font-semibold">{workspace.name}</h1>
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+                    {t(
+                      "Labs unlock in sequence. Complete the required evidence package and receive a passing lecturer review before the next Lab becomes available.",
+                      "Các Lab mở theo thứ tự. Hoàn thành bộ bằng chứng bắt buộc và đạt đánh giá của giảng viên để mở Lab tiếp theo.",
+                    )}
+                  </p>
+                </div>
+                <Button asChild variant="outline">
+                  <Link href="/courses">{t("Back to courses", "Quay lại khóa học")}</Link>
+                </Button>
               </div>
-              <Button asChild variant="outline">
-                <Link href="/courses">{t("Back to courses", "Quay lại khóa học")}</Link>
-              </Button>
             </div>
-          </div>
 
-          {canManage && (
             <section className="rounded-2xl border bg-card p-5" aria-labelledby="course-controls">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
@@ -678,160 +681,575 @@ export function CourseRoadmap() {
                 </div>
               </div>
             </section>
-          )}
 
-          {canManage && client.mode === "backend" && <CourseBuilder workspaceId={workspaceId} />}
+            {client.mode === "backend" && <CourseBuilder workspaceId={workspaceId} />}
 
-          {canManage && client.mode === "backend" && <CourseSetupPanel workspaceId={workspaceId} />}
+            {client.mode === "backend" && <CourseSetupPanel workspaceId={workspaceId} />}
 
-          {canManage ? (
-            <>
-              {publishedCourse.data && (
-                <section
-                  className="rounded-2xl border bg-card p-5"
-                  aria-labelledby="published-course-roadmap"
-                >
-                  <h2 id="published-course-roadmap" className="font-semibold">
-                    {t("Published Course roadmap", "Lộ trình Course đã publish")}
-                  </h2>
-                  <div className="mt-3 rounded-md bg-muted/40 p-3 text-sm">
-                    <h3 className="font-medium">{publishedCourse.data.snapshot.title}</h3>
-                    {publishedCourse.data.snapshot.description && (
-                      <p className="mt-1 text-muted-foreground">
-                        {publishedCourse.data.snapshot.description}
-                      </p>
-                    )}
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      v{publishedCourse.data.version} · {publishedCourse.data.snapshotDigest}
+            {publishedCourse.data && (
+              <section
+                className="rounded-2xl border bg-card p-5"
+                aria-labelledby="published-course-roadmap"
+              >
+                <h2 id="published-course-roadmap" className="font-semibold">
+                  {t("Published Course roadmap", "Lộ trình Course đã publish")}
+                </h2>
+                <div className="mt-3 rounded-md bg-muted/40 p-3 text-sm">
+                  <h3 className="font-medium">{publishedCourse.data.snapshot.title}</h3>
+                  {publishedCourse.data.snapshot.description && (
+                    <p className="mt-1 text-muted-foreground">
+                      {publishedCourse.data.snapshot.description}
                     </p>
-                  </div>
-                  <ol className="mt-4 space-y-4">
-                    {publishedCourse.data.snapshot.modules.map((module) => (
-                      <li key={module.id} className="rounded-xl border p-4">
-                        <h3 className="font-medium">
-                          {module.position}. {module.title}
-                        </h3>
-                        {module.description && (
-                          <p className="mt-1 text-sm text-muted-foreground">{module.description}</p>
-                        )}
-                        {module.items.length > 0 && (
-                          <ol className="mt-3 space-y-1">
-                            {module.items.map((item) => (
-                              <li
-                                key={item.id}
-                                className="rounded-lg border bg-background p-3 text-sm"
-                              >
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <Badge variant="outline">{item.type.replaceAll("_", " ")}</Badge>
-                                  <span className="font-medium">{item.title}</span>
-                                  {item.assignmentId && (
-                                    <Button asChild size="sm" variant="link" className="h-auto p-0">
-                                      <Link
-                                        href={`/lab?${new URLSearchParams({ workspace: workspaceId, assignment: item.assignmentId, step: item.type === "QUIZ" || item.type === "IMPACT_LAB" ? "2" : item.type === "RUNTIME_LAB" ? "3" : "1" })}`}
-                                      >
-                                        {t("Open activity", "Mở hoạt động")}
-                                      </Link>
-                                    </Button>
-                                  )}
-                                </div>
-                                {item.type === "THEORY" &&
-                                  typeof item.content["body"] === "string" && (
-                                    <p className="mt-2 whitespace-pre-wrap text-muted-foreground">
-                                      {item.content["body"]}
-                                    </p>
-                                  )}
-                                {item.type === "ESSAY" &&
-                                  typeof item.content["prompt"] === "string" && (
-                                    <div className="mt-2 space-y-2">
-                                      <p className="whitespace-pre-wrap">
-                                        {item.content["prompt"]}
-                                      </p>
-                                      <p className="text-xs text-muted-foreground">
-                                        {t(
-                                          "Rubric-based lecturer review",
-                                          "Giảng viên chấm theo rubric",
-                                        )}
-                                      </p>
-                                    </div>
-                                  )}
-                              </li>
-                            ))}
-                          </ol>
-                        )}
-                      </li>
-                    ))}
-                  </ol>
-                </section>
-              )}
-              <CourseLabRoadmap
-                workspaceId={workspaceId}
-                canManage={canManage}
-                active={workspace.status !== "ARCHIVED"}
-              />
-            </>
-          ) : (
-            <div className="space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-card p-2">
-                <div
-                  className="flex flex-wrap gap-1.5"
-                  role="tablist"
-                  aria-label={t("Class sections", "Khu vực học tập")}
-                >
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={studentView === "roadmap" ? "default" : "ghost"}
-                    onClick={() => setStudentView("roadmap")}
-                  >
-                    {t("Lab Roadmap", "Lộ trình Bài Lab")}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={studentView === "outline" ? "default" : "ghost"}
-                    onClick={() => setStudentView("outline")}
-                  >
-                    {t("Module Outline", "Đề cương Chương mục")}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={studentView === "curriculum" ? "default" : "ghost"}
-                    onClick={() => setStudentView("curriculum")}
-                  >
-                    {t("Curriculum Library", "Giáo trình Tham khảo")}
-                  </Button>
+                  )}
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    v{publishedCourse.data.version}
+                  </p>
                 </div>
-                <Button asChild size="sm" variant="outline">
-                  <Link href={`/submissions?workspace=${encodeURIComponent(workspaceId)}`}>
-                    {t("Submissions & Grades", "Bài nộp & Điểm")}
-                  </Link>
-                </Button>
-              </div>
-              {studentView === "roadmap" && (
-                <CourseLabRoadmap
-                  workspaceId={workspaceId}
-                  canManage={false}
-                  active={workspace.status !== "ARCHIVED"}
-                />
+                <ol className="mt-4 space-y-4">
+                  {publishedCourse.data.snapshot.modules.map((module) => (
+                    <li key={module.id} className="rounded-xl border p-4">
+                      <h3 className="font-medium">
+                        {module.position}. {module.title}
+                      </h3>
+                      {module.description && (
+                        <p className="mt-1 text-sm text-muted-foreground">{module.description}</p>
+                      )}
+                      {module.items.length > 0 && (
+                        <ol className="mt-3 space-y-1">
+                          {module.items.map((item) => (
+                            <li
+                              key={item.id}
+                              className="rounded-lg border bg-background p-3 text-sm"
+                            >
+                              <div className="flex flex-wrap items-center gap-2">
+                                <Badge variant="outline">{item.type.replaceAll("_", " ")}</Badge>
+                                <span className="font-medium">{item.title}</span>
+                                {item.assignmentId && (
+                                  <Button asChild size="sm" variant="link" className="h-auto p-0">
+                                    <Link
+                                      href={`/lab?${new URLSearchParams({ workspace: workspaceId, assignment: item.assignmentId, step: item.type === "QUIZ" || item.type === "IMPACT_LAB" ? "2" : item.type === "RUNTIME_LAB" ? "3" : "1" })}`}
+                                    >
+                                      {t("Open activity", "Mở hoạt động")}
+                                    </Link>
+                                  </Button>
+                                )}
+                              </div>
+                              {item.type === "THEORY" &&
+                                typeof item.content["body"] === "string" && (
+                                  <p className="mt-2 whitespace-pre-wrap text-muted-foreground">
+                                    {item.content["body"]}
+                                  </p>
+                                )}
+                              {item.type === "ESSAY" &&
+                                typeof item.content["prompt"] === "string" && (
+                                  <div className="mt-2 space-y-2">
+                                    <p className="whitespace-pre-wrap">
+                                      {item.content["prompt"]}
+                                    </p>
+                                    <p className="text-xs text-muted-foreground">
+                                      {t(
+                                        "Rubric-based lecturer review",
+                                        "Giảng viên chấm theo rubric",
+                                      )}
+                                    </p>
+                                  </div>
+                                )}
+                            </li>
+                          ))}
+                        </ol>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              </section>
+            )}
+            <CourseLabRoadmap
+              workspaceId={workspaceId}
+              canManage={canManage}
+              active={workspace.status !== "ARCHIVED"}
+            />
+          </div>
+        ) : (
+          <StudentCourseDetail workspace={workspace} />
+        ))}
+    </RequestState>
+  );
+}
+
+function StudentCourseDetail({
+  workspace,
+}: {
+  workspace: import("@/lib/api/contracts").Response<"workspaces">[number];
+}) {
+  const { t } = useLocale();
+  const client = useApi();
+  const workspaceId = workspace.id;
+  const roadmap = useCourseRoadmap(workspaceId);
+  const publishedCourse = usePublishedCourse(workspaceId);
+  const assignmentsQuery = useApiQuery("assignments", { workspaceId });
+  const submissionsQuery = useApiQuery("submissions", { workspaceId });
+  const [activeTab, setActiveTab] = useState<"player" | "submissions" | "library">("player");
+
+  const labs = roadmap.data?.labs ?? [];
+  const passedCount = labs.filter((l) => l.state === "PASSED").length;
+  const progressPercent = labs.length ? Math.round((passedCount / labs.length) * 100) : 0;
+
+  const defaultLabId =
+    labs.find((l) => l.state === "UNLOCKED")?.assignmentId ?? labs[0]?.assignmentId ?? "";
+  const [selectedLabId, setSelectedLabId] = useState<string>("");
+  const currentLabId =
+    selectedLabId && labs.some((l) => l.assignmentId === selectedLabId)
+      ? selectedLabId
+      : defaultLabId;
+  const selectedLab = labs.find((l) => l.assignmentId === currentLabId) ?? labs[0] ?? null;
+  const selectedAssignment = (assignmentsQuery.data ?? []).find(
+    (a) => a.id === selectedLab?.assignmentId,
+  );
+  const classAssignmentIds = new Set((assignmentsQuery.data ?? []).map((a) => a.id));
+  const classSubmissions = (submissionsQuery.data ?? []).filter(
+    (sub) =>
+      sub.workspaceId === workspaceId ||
+      (!sub.workspaceId && classAssignmentIds.has(sub.assignmentId)),
+  );
+  const stepDescriptions: Array<{ step: 1 | 2 | 3 | 4; label: string; hint: string }> = [
+    {
+      step: 1,
+      label: t("Step 1 · Architecture & Theory", "Bước 1 · Lý Thuyết & C1–C3"),
+      hint: t("Read docs & 3E evidence", "Đọc lý thuyết & bằng chứng 3E"),
+    },
+    {
+      step: 2,
+      label: t("Step 2 · Impact Explorer", "Bước 2 · Lan Truyền Ngược"),
+      hint: t("Reverse BFS blast radius", "Truy vết ảnh hưởng Reverse BFS"),
+    },
+    {
+      step: 3,
+      label: t("Step 3 · Quiz Gate", "Bước 3 · Vượt Qua Quiz Gate"),
+      hint: t("Pass comprehension check", "Đạt kiểm tra kiến thức nền"),
+    },
+    {
+      step: 4,
+      label: t("Step 4 · 2D Studio & Submit", "Bước 4 · Thực Hành Studio & Nộp"),
+      hint: t("Verify session & explain", "Xác minh phiên & nộp bài giải"),
+    },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <section className="rounded-2xl bg-gradient-to-r from-blue-900 via-blue-700 to-teal-700 p-6 text-white shadow-lg">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="max-w-2xl space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge className="border-white/25 bg-white/15 font-mono text-white hover:bg-white/20">
+                {workspace.code || t("CLASS", "LỚP")}
+              </Badge>
+              <span className="text-xs font-medium text-teal-100">
+                {labs.length > 0
+                  ? `${passedCount}/${labs.length} Labs (${progressPercent}%)`
+                  : t("Course Workspace", "Lớp học MAVIS")}
+              </span>
+            </div>
+            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{workspace.name}</h1>
+            <p className="text-sm text-blue-100/90">
+              {t(
+                "Select a Lab on the left to review instructions, inspect architecture diagrams, pass the Quiz Gate, and launch 2D Studio practice.",
+                "Chọn một bài Lab bên trái để xem lý thuyết, kiểm tra kiến trúc, vượt Quiz Gate và thực hành trên 2D Studio.",
               )}
-              {studentView === "outline" && (
+            </p>
+          </div>
+          <Button
+            asChild
+            variant="outline"
+            className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+          >
+            <Link href="/courses">← {t("Back to courses", "Quay lại khóa học")}</Link>
+          </Button>
+        </div>
+
+        {labs.length > 0 && (
+          <div className="mt-5 max-w-md space-y-1.5">
+            <div className="flex justify-between text-xs text-teal-100">
+              <span>{t("Overall Course Progress", "Tiến Độ Toàn Khóa")}</span>
+              <span className="font-semibold text-white">{progressPercent}%</span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-white/20">
+              <div
+                className="h-full rounded-full bg-emerald-400 transition-all"
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
+          </div>
+        )}
+      </section>
+
+      <div
+        className="flex flex-wrap items-center gap-2 rounded-2xl border bg-card p-2 shadow-sm"
+        role="tablist"
+        aria-label={t("Student course workspace sections", "Mục học tập trong lớp")}
+      >
+        <Button
+          type="button"
+          size="sm"
+          role="tab"
+          aria-selected={activeTab === "player"}
+          variant={activeTab === "player" ? "default" : "ghost"}
+          onClick={() => setActiveTab("player")}
+          className={activeTab === "player" ? "bg-teal-600 text-white hover:bg-teal-700" : ""}
+        >
+          <BookOpen className="mr-1.5 h-4 w-4" aria-hidden="true" />
+          {t("1. Course & Lab Player", "1. Lộ Trình & Phòng Học Lab")}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          role="tab"
+          aria-selected={activeTab === "submissions"}
+          variant={activeTab === "submissions" ? "default" : "ghost"}
+          onClick={() => setActiveTab("submissions")}
+          className={activeTab === "submissions" ? "bg-teal-600 text-white hover:bg-teal-700" : ""}
+        >
+          <FileCheck2 className="mr-1.5 h-4 w-4" aria-hidden="true" />
+          {t("2. My Submissions & Grades", "2. Bài Nộp & Điểm Số")}
+          {classSubmissions.length > 0 && (
+            <Badge variant="secondary" className="ml-1.5 px-1.5 py-0 text-[11px]">
+              {classSubmissions.length}
+            </Badge>
+          )}
+        </Button>
+        {client.mode === "backend" && (
+          <Button
+            type="button"
+            size="sm"
+            role="tab"
+            aria-selected={activeTab === "library"}
+            variant={activeTab === "library" ? "default" : "ghost"}
+            onClick={() => setActiveTab("library")}
+            className={activeTab === "library" ? "bg-teal-600 text-white hover:bg-teal-700" : ""}
+          >
+            <Code2 className="mr-1.5 h-4 w-4" aria-hidden="true" />
+            {t("3. Java & C# Reference Library", "3. Giáo Trình Java & C#")}
+          </Button>
+        )}
+      </div>
+
+      {activeTab === "player" && (
+        <div className="space-y-6">
+          <div className="grid gap-6 lg:grid-cols-[340px_minmax(0,1fr)] lg:items-start">
+            <aside className="rounded-2xl border bg-card p-4 shadow-sm lg:sticky lg:top-6">
+              <div className="mb-3 flex items-center justify-between gap-2 border-b pb-3">
+                <div>
+                  <h2 className="text-sm font-semibold">
+                    {t("Guided Labs & Sequence", "Danh Sách Bài Lab Theo Thứ Tự")}
+                  </h2>
+                  <p className="text-xs text-muted-foreground">
+                    {passedCount}/{labs.length} {t("completed", "đã đạt")}
+                  </p>
+                </div>
+              </div>
+
+              <RequestState query={roadmap} empty={!labs.length}>
+                <ol className="space-y-2">
+                  {labs.map((lab) => {
+                    const isSelected = lab.assignmentId === selectedLab?.assignmentId;
+                    const isPassed = lab.state === "PASSED";
+                    const isLocked = lab.state === "LOCKED";
+                    return (
+                      <li key={lab.assignmentId}>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedLabId(lab.assignmentId)}
+                          className={`flex w-full items-start gap-3 rounded-xl border p-3 text-left transition-all ${
+                            isSelected
+                              ? "border-teal-600 bg-teal-50/70 shadow-sm dark:border-teal-500 dark:bg-teal-950/30"
+                              : isLocked
+                                ? "border-border/60 bg-muted/30 opacity-80 hover:opacity-100"
+                                : "border-border bg-background hover:border-teal-400"
+                          }`}
+                        >
+                          <span className="mt-0.5 shrink-0">
+                            {isPassed ? (
+                              <CheckCircle2
+                                className="h-4 w-4 text-emerald-600"
+                                aria-hidden="true"
+                              />
+                            ) : isLocked ? (
+                              <Lock className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                            ) : (
+                              <Play
+                                className="h-4 w-4 fill-current text-blue-600"
+                                aria-hidden="true"
+                              />
+                            )}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="flex flex-wrap items-center gap-1.5 text-[11px] font-medium">
+                              <span className="font-mono text-muted-foreground">
+                                Lab {String(lab.position).padStart(2, "0")}
+                              </span>
+                              <Badge
+                                variant={
+                                  isPassed ? "success" : isLocked ? "secondary" : "default"
+                                }
+                                className="px-1.5 py-0 text-[10px]"
+                              >
+                                {isPassed
+                                  ? t("PASSED", "ĐÃ ĐẠT")
+                                  : isLocked
+                                    ? t("LOCKED", "ĐANG KHÓA")
+                                    : t("UNLOCKED", "ĐANG MỞ")}
+                              </Badge>
+                            </span>
+                            <span className="mt-1 block text-sm font-medium leading-snug text-foreground">
+                              {lab.title}
+                            </span>
+                          </span>
+                          <ChevronRight
+                            className={`mt-1 h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
+                              isSelected ? "translate-x-0.5 text-teal-600" : ""
+                            }`}
+                            aria-hidden="true"
+                          />
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ol>
+              </RequestState>
+            </aside>
+
+            <section className="rounded-2xl border bg-card p-6 shadow-sm">
+              {!selectedLab ? (
+                <EmptyState
+                  title={t("No Lab selected yet", "Chưa có bài Lab nào")}
+                  description={t(
+                    "Your lecturer is preparing Labs for this class, or check the module outline below.",
+                    "Giảng viên đang chuẩn bị bài Lab cho lớp này, hoặc bạn có thể xem nội dung chương bên dưới.",
+                  )}
+                />
+              ) : (
+                <div className="space-y-6">
+                  <div className="flex flex-wrap items-start justify-between gap-4 border-b pb-4">
+                    <div className="space-y-1.5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant="outline" className="font-mono">
+                          Lab {String(selectedLab.position).padStart(2, "0")}
+                        </Badge>
+                        <Badge
+                          variant={
+                            selectedLab.state === "PASSED"
+                              ? "success"
+                              : selectedLab.state === "LOCKED"
+                                ? "secondary"
+                                : "default"
+                          }
+                        >
+                          {selectedLab.state === "PASSED"
+                            ? t("Passed", "Đã vượt qua")
+                            : selectedLab.state === "LOCKED"
+                              ? t("Locked until previous Lab passes", "Chưa mở khóa")
+                              : t("Ready to study", "Sẵn sàng học")}
+                        </Badge>
+                      </div>
+                      <h2 className="text-xl font-bold tracking-tight sm:text-2xl">
+                        {selectedLab.title}
+                      </h2>
+                    </div>
+                  </div>
+
+                  {selectedAssignment?.instructions ? (
+                    <div className="rounded-xl border bg-muted/20 p-4 text-sm">
+                      <MarkdownPreview markdown={selectedAssignment.instructions} />
+                    </div>
+                  ) : null}
+
+                  <div className="space-y-4 rounded-xl border border-emerald-200 bg-emerald-50/70 p-4 dark:border-emerald-800/60 dark:bg-emerald-950/20">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h3 className="text-sm font-semibold text-emerald-950 dark:text-emerald-200">
+                          {t(
+                            "4-Step Guided Learning Flow",
+                            "Quy Trình Học & Thực Hành 4 Bước Cho Lab Này",
+                          )}
+                        </h3>
+                        <p className="text-xs text-emerald-900/80 dark:text-emerald-300/80">
+                          {t(
+                            "Follow Steps 1 to 4 directly inside the unified Lab workspace.",
+                            "Thực hiện lần lượt Bước 1 đến Bước 4 ngay trong Không Gian Làm Bài Lab.",
+                          )}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {stepDescriptions.map((s) => {
+                        const stepHref = `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(selectedLab.assignmentId)}&step=${s.step}`;
+                        return selectedLab.state === "LOCKED" ? (
+                          <div
+                            key={s.step}
+                            className="rounded-xl border border-border/70 bg-background/70 p-3 opacity-70"
+                          >
+                            <p className="text-xs font-semibold text-muted-foreground">{s.label}</p>
+                            <p className="mt-0.5 text-xs text-muted-foreground">{s.hint}</p>
+                          </div>
+                        ) : (
+                          <Link
+                            key={s.step}
+                            href={stepHref}
+                            className="group rounded-xl border border-emerald-200/80 bg-background p-3 transition-all hover:border-emerald-500 hover:shadow-sm dark:border-emerald-800/50"
+                          >
+                            <p className="text-xs font-semibold text-emerald-800 group-hover:text-emerald-600 dark:text-emerald-300">
+                              {s.label}
+                            </p>
+                            <p className="mt-0.5 text-xs text-muted-foreground">{s.hint}</p>
+                          </Link>
+                        );
+                      })}
+                    </div>
+
+                    {selectedLab.state === "LOCKED" ? (
+                      <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+                        <Lock className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                        <span>
+                          {t(
+                            "This Lab unlocks automatically once the previous Lab is completed and reviewed as Passed by your lecturer.",
+                            "Lab này sẽ tự động mở khóa sau khi bạn hoàn thành Lab trước và được Giảng viên chấm Đạt.",
+                          )}
+                          {selectedLab.reason ? ` (${selectedLab.reason})` : ""}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap items-center gap-3 pt-1">
+                        <Button
+                          asChild
+                          size="lg"
+                          className="bg-emerald-600 text-white shadow-sm hover:bg-emerald-700"
+                        >
+                          <Link
+                            href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(selectedLab.assignmentId)}&step=1`}
+                          >
+                            <Play className="mr-2 h-4 w-4 fill-current" aria-hidden="true" />
+                            {t(
+                              "Launch Lab Workspace Now",
+                              "Vào Không Gian Làm Bài Lab Ngay",
+                            )}
+                          </Link>
+                        </Button>
+                        <Button asChild variant="outline" size="lg">
+                          <Link
+                            href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(selectedLab.assignmentId)}&step=4`}
+                          >
+                            {t("Jump to 2D Studio", "Mở Thẳng Studio Thực Hành")}
+                          </Link>
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </section>
+          </div>
+
+          {publishedCourse.data && (
+            <details className="rounded-2xl border bg-card p-5 shadow-sm">
+              <summary className="w-fit cursor-pointer text-sm font-semibold text-primary">
+                {t("Full Course Modules & Reading Outline", "Đề Cương Toàn Bộ Chương & Bài Đọc")}
+              </summary>
+              <div className="mt-4">
                 <CourseOutline
                   workspaceId={workspaceId}
                   canManage={false}
                   active={workspace.status !== "ARCHIVED"}
                 />
-              )}
-              {studentView === "curriculum" && (
-                <section className="rounded-2xl border bg-card p-5">
-                  <CurriculumLibrary />
-                </section>
-              )}
-            </div>
+              </div>
+            </details>
           )}
         </div>
       )}
-    </RequestState>
+
+      {activeTab === "submissions" && (
+        <section className="rounded-2xl border bg-card p-5 shadow-sm">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-3">
+            <div>
+              <h2 className="text-base font-semibold">
+                {t("Your Submissions in This Class", "Bài Đã Nộp Trong Lớp Này")}
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  "Track grading status, scores, and detailed lecturer comments.",
+                  "Theo dõi trạng thái chấm bài, điểm số và nhận xét chi tiết từ Giảng viên.",
+                )}
+              </p>
+            </div>
+            <Button asChild size="sm" variant="outline">
+              <Link href={`/submissions?workspace=${encodeURIComponent(workspaceId)}`}>
+                {t("Open Full Submissions Page", "Mở Trang Bài Nộp Đầy Đủ")}
+              </Link>
+            </Button>
+          </div>
+
+          <RequestState
+            query={submissionsQuery}
+            empty={!classSubmissions.length}
+            emptyMessage={t(
+              "You have not submitted any Labs in this class yet. Open Step 4 in a Lab to submit.",
+              "Bạn chưa nộp bài Lab nào trong lớp này. Hãy vào Bước 4 trong Lab để nộp bài.",
+            )}
+          >
+            <div className="divide-y">
+              {classSubmissions.map((sub) => (
+                <div
+                  key={sub.id}
+                  className="flex flex-wrap items-center justify-between gap-3 py-3.5"
+                >
+                  <div className="space-y-1">
+                    <Link
+                      href={`/submissions/${encodeURIComponent(sub.id)}`}
+                      className="font-medium text-foreground hover:text-primary hover:underline"
+                    >
+                      {sub.labOrder ? `Lab ${String(sub.labOrder).padStart(2, "0")} · ` : ""}
+                      {sub.assignmentTitle || sub.assignmentId}
+                    </Link>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(sub.submittedAt).toLocaleString()}
+                      {sub.reviewScore != null ? ` · ${sub.reviewScore}/100` : ""}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StatusBadge
+                      status={
+                        sub.labOutcome === "PASSED"
+                          ? "PASSED"
+                          : sub.labOutcome === "NEEDS_REVISION"
+                            ? "NEEDS_REVISION"
+                            : sub.reviewStatus || "PENDING"
+                      }
+                      variant={
+                        sub.labOutcome === "PASSED"
+                          ? "success"
+                          : sub.labOutcome === "NEEDS_REVISION"
+                            ? "warning"
+                            : "secondary"
+                      }
+                    />
+                    <Button asChild size="sm" variant="outline">
+                      <Link href={`/submissions/${encodeURIComponent(sub.id)}`}>
+                        {t("View Details", "Xem Chi Tiết")}
+                      </Link>
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </RequestState>
+        </section>
+      )}
+
+      {activeTab === "library" && client.mode === "backend" && (
+        <section className="rounded-2xl border bg-card p-5 shadow-sm">
+          <CurriculumLibrary />
+        </section>
+      )}
+    </div>
   );
 }
 
