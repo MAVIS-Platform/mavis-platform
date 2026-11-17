@@ -230,15 +230,22 @@ class CourseSetupServiceTest {
         org.springframework.test.util.ReflectionTestUtils.setField(setup, "elements", elements);
         org.springframework.test.util.ReflectionTestUtils.setField(setup, "relationships", relationships);
         ModelElement orders = ModelElement.builder().id(UUID.randomUUID()).modelVersion(model)
-                .elementType("SERVICE_CONTAINER").name("orders").languageStack("dotnet8").build();
+                .elementType("SERVICE_CONTAINER").name("orders").build();
         ModelElement payment = ModelElement.builder().id(UUID.randomUUID()).modelVersion(model)
-                .elementType("SERVICE_CONTAINER").name("payment").languageStack("dotnet8").build();
+                .elementType("SERVICE_CONTAINER").name("payment").build();
         ModelElement route = ModelElement.builder().id(UUID.randomUUID()).modelVersion(model)
-                .elementType("SERVICE_CONTAINER").name("orders-payment-route").languageStack("dotnet8").build();
+                .elementType("SERVICE_CONTAINER").name("orders-payment-route").build();
+        ModelElement ordersCode = ModelElement.builder().modelVersion(model).elementType("CLASS").name("Program")
+                .languageStack("CSHARP_DOTNET").scope("orders/Program.cs").build();
+        ModelElement paymentCode = ModelElement.builder().modelVersion(model).elementType("CLASS").name("Program")
+                .languageStack("CSHARP_DOTNET").scope("payment/Program.cs").build();
+        ModelElement routeCode = ModelElement.builder().modelVersion(model).elementType("CLASS").name("Program")
+                .languageStack("CSHARP_DOTNET").scope("orders-payment-route/Program.cs").build();
         orders.setProperties(mapper.readTree("{\"ports\":[\"8080\"]}"));
         payment.setProperties(mapper.readTree("{\"ports\":[\"8081:9090\"]}"));
         route.setProperties(mapper.readTree("{\"ports\":[\"8080/tcp\"]}"));
-        when(elements.findByModelVersionId(modelId)).thenReturn(List.of(orders, payment, route));
+        when(elements.findByModelVersionId(modelId)).thenReturn(List.of(
+                orders, payment, route, ordersCode, paymentCode, routeCode));
         when(relationships.findByModelVersionId(modelId)).thenReturn(List.of(
                 ModelRelationship.builder().sourceElement(orders).targetElement(route).relationType("HTTP").build(),
                 ModelRelationship.builder().sourceElement(route).targetElement(payment).relationType("HTTP").build()));

@@ -358,6 +358,27 @@ public class CourseSetupService {
                 enrolled == null ? 0 : enrolled);
     }
 
+    private Set<String> dotnetServices(ModelVersion refModel, Set<String> services) {
+        if (refModel == null || elements == null || services.isEmpty()) return Set.of();
+        Set<String> result = new LinkedHashSet<>();
+        for (ModelElement element : elements.findByModelVersionId(refModel.getId())) {
+            String stack = element.getLanguageStack() == null ? "" : element.getLanguageStack().toLowerCase();
+            if (!(stack.contains("csharp") || stack.contains("c#") || stack.contains("dotnet") || stack.contains(".net"))) {
+                continue;
+            }
+            String path = element.getScope() == null ? "" : element.getScope().toLowerCase().replace('\\', '/');
+            if (path.isBlank()) path = element.getName() == null ? "" : element.getName().toLowerCase();
+            for (String service : services) {
+                String needle = service.toLowerCase(java.util.Locale.ROOT);
+                if (path.equals(needle) || path.startsWith(needle + "/") || path.contains("/" + needle + "/")) {
+                    result.add(service);
+                    break;
+                }
+            }
+        }
+        return result;
+    }
+
     /**
      * Internal container port declared by the analyzed compose service. Compose
      * entries can be plain ("8080"), protocol-qualified ("8080/tcp") or mapped
@@ -440,15 +461,25 @@ public class CourseSetupService {
         Set<String> controllerNames = new LinkedHashSet<>();
         if (!containerElements.isEmpty()) {
             Set<String> names = new LinkedHashSet<>();
+            Map<String, String> languageByName = new HashMap<>();
             for (ModelElement el : containerElements) {
                 if (el.getName() == null || el.getName().isBlank()) continue;
                 String svcName = el.getName().trim();
                 elementNameById.put(el.getId(), svcName);
-                String stack = el.getLanguageStack() == null ? "" : el.getLanguageStack().toLowerCase();
-                runtimeByName.put(svcName, stack.contains(".net") || stack.contains("dotnet") || stack.contains("c#")
-                        ? "dotnet8-linux-x64-glibc" : "java");
+                languageByName.putIfAbsent(svcName, el.getLanguageStack());
                 containerPortByName.putIfAbsent(svcName, containerPort(el));
                 names.add(svcName);
+            }
+            // Compose-only images rarely declare their language stack. Fall back to the
+            // analyzed source tree: a C# element under the service's folder means the
+            // service runs on the .NET runtime and needs the .NET instrumentation agent.
+            Set<String> dotnetServices = dotnetServices(refModel, names);
+            for (String svcName : names) {
+                String stack = languageByName.getOrDefault(svcName, "");
+                String lower = stack == null ? "" : stack.toLowerCase();
+                boolean dotnet = lower.contains(".net") || lower.contains("dotnet") || lower.contains("c#")
+                        || lower.contains("csharp") || dotnetServices.contains(svcName);
+                runtimeByName.put(svcName, dotnet ? "dotnet8-linux-x64-glibc" : "java");
             }
 
             // A prepared connection controller must be a real service that is not itself a
