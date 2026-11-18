@@ -18,32 +18,63 @@ public final class Module5SagaSecurityAndDataProvider {
                         "So sánh Orchestration vs Choreography Saga, thiết kế Compensating Transactions & Transactional Outbox.",
                         55,
                         """
-                        # Bài 5.1: Saga Pattern & Transactional Outbox
+                        # 📖 BÀI 5.1 (`java-10`): QUẢN LÝ GIAO DỊCH PHÂN TÁN VỚI `SAGA PATTERN` & `TRANSACTIONAL OUTBOX`
 
-                        ## 1. Mục tiêu học tập & Bài toán thực tế
-                        - Giải quyết bài toán nhất quán dữ liệu trải dài qua nhiều Microservices mà không cần khóa 2-Phase Commit (`2PC/XA`).
-                        - Triển khai **Compensating Transactions** lũy đẳng và mẫu **Transactional Outbox** để loại bỏ lỗi **Dual-Write** giữa PostgreSQL và Message Broker.
+                        ### 1. Tại Sao `2PC (Two-Phase Commit)` Không Phù Hợp Cho Microservices & Sự Ra Đời Của `Saga Pattern`
+                        Theo Chương 4 cuốn *Microservices Patterns* (Chris Richardson):
+                        - Khi mỗi Microservice sở hữu một cơ sở dữ liệu riêng (`Database-per-Service`), một quy trình đặt hàng cần cập nhật dữ liệu ở cả 3 dịch vụ: `order-service → payment-service → inventory-service`. Giao dịch phân tán truyền thống kiểu **2PC (Two-Phase Commit)** yêu cầu khóa đồng thời tài nguyên trên cả 3 Database và giảm tính sẵn sàng của hệ thống (nếu 1 dịch vụ bảo trì, toàn bộ giao dịch bị treo cứng).
+                        - Giải pháp chuẩn là **`Saga Pattern`**: Chia một quy trình nghiệp vụ xuyên dịch vụ thành một chuỗi các **Giao dịch Cục bộ (`Local Transactions` `T1`, `T2`, `T3`)**.
+                          - Mỗi giao dịch cục bộ `Ti` cập nhật và `COMMIT` ngay vào Database riêng của dịch vụ thứ `i`, đồng thời đặt trạng thái trung gian rõ ràng (ví dụ `Order.status = PENDING_APPROVAL` — gọi là **Khóa ngữ nghĩa / `Semantic Lock`** để báo rằng đơn hàng đang trong tiến trình xử lý).
+                          - Nếu bước thứ 3 (`T3` tại `inventory-service`) bị thất bại (ví dụ hết hàng), vì `T1` và `T2` đã `COMMIT` vào DB mất rồi nên không thể gọi lệnh SQL `ROLLBACK` được nữa! Thay vào đó, Saga phải chạy ngược lại các **Giao dịch Bù trừ (`Compensating Transactions`: `C2 → C1`)** mang ý nghĩa nghiệp vụ đối ngược để hoàn tác những gì đã làm (ví dụ: `C2 = RefundPayment` hoàn tiền lại cho khách, `C1 = RejectOrder` đổi trạng thái đơn hàng thành `REJECTED`)!
 
-                        ## 2. Nguyên lý Kiến trúc & Bảng đối chiếu
-                        | Cơ chế Saga / Outbox | Bản chất vận hành | Ưu điểm nổi bật | Điều kiện bắt buộc |
-                        | :--- | :--- | :--- | :--- |
-                        | **Choreography Saga** | Service phát Event và lắng nghe phản ứng lẫn nhau | Ít thành phần điều phối, hợp 2–3 bước | Tránh vòng lặp sự kiện khi quy trình phình to |
-                        | **Orchestration Saga** | Saga Orchestrator giữ máy trạng thái trung tâm | Tầm nhìn rõ luồng & thứ tự bù trừ ngược | Gắn `sagaId / correlationId` xuyên suốt & bù trừ lũy đẳng |
-                        | **Transactional Outbox** | Ghi `orders` + `outbox_messages` trong 1 `@Transactional` DB | Không bao giờ mất sự kiện sau commit | Relay Publisher hỗ trợ `At-Least-Once` & Consumer chống trùng |
+                        ### 2. So Sánh Hai Kiểu Phối Hợp Saga (`Choreography` vs `Orchestration`) & Mẫu `Transactional Outbox`
 
-                        ## 3. Triển khai chuẩn với Java 21 & Spring Boot 3
+                        | Tiêu chí so sánh | `Choreography-Based Saga` (Vũ đạo sự kiện phi tập trung) | `Orchestration-Based Saga` (Nhạc trưởng điều phối tập trung) |
+                        | :--- | :--- | :--- |
+                        | **Cách hoạt động** | Không có nhạc trưởng trung tâm; dịch vụ A xong việc thì phát sự kiện, dịch vụ B lắng nghe và tự làm bước tiếp theo rồi phát sự kiện mới. | Có một đối tượng điều phối trung tâm (`OrderSagaOrchestrator`) ra lệnh tuần tự cho từng dịch vụ và quyết định chạy bước bù trừ nào khi có lỗi. |
+                        | **Khi nào nên dùng?** | Quy trình rất đơn giản chỉ có 2–3 bước và ít nhánh lỗi. | Quy trình phức tạp có nhiều bước, nhiều nhánh rẽ và cần theo dõi trạng thái tập trung mà không tạo phụ thuộc vòng giữa các dịch vụ. |
+
+                        - **Mẫu `Transactional Outbox` (Chống mất tin nhắn khi vừa ghi DB vừa gửi Event)**:
+                          - Nếu `order-service` gọi `orderRepository.save(order)` xong rồi mới gọi `rabbitTemplate.convertAndSend(event)`, lỡ máy chủ mất điện đúng vào mili-giây giữa hai lệnh đó thì đơn hàng đã lưu trong DB nhưng sự kiện không bao giờ được phát đi!
+                          - Với **`Transactional Outbox`** (Chương 3 *Microservices Patterns*), trong cùng một giao dịch `@Transactional` của PostgreSQL, dịch vụ vừa `INSERT` vào bảng `orders`, vừa `INSERT` bản tin sự kiện vào bảng `outbox_messages`. Sau đó một tiến trình nền (*Message Relay / Polling Publisher*) sẽ đọc bảng `outbox_messages` để đẩy lên Broker một cách an toàn tuyệt đối!
+
                         ```java
-                        @Transactional
-                        public UUID createPendingOrder(CreateOrderCommand cmd) {
-                            Order order = orders.save(Order.pendingApproval(cmd));
-                            outbox.save(OutboxMessage.forEvent("OrderCreated", order.getId(), toJson(order)));
-                            return order.getId();
+                        package com.mavis.ecommerce.order.saga;
+
+                        import java.util.UUID;
+
+                        /**
+                         * Minh họa máy trạng thái OrderCreationSaga (Orchestration Pattern)
+                         * có gắn correlationId xuyên suốt để truy vết toàn bộ tiến trình và các bước bù trừ.
+                         */
+                        public class OrderSagaOrchestrator {
+
+                            public enum SagaStepState {
+                                STARTED, PAYMENT_RESERVED, INVENTORY_RESERVED, COMPLETED,
+                                COMPENSATING_PAYMENT, REJECTED
+                            }
+
+                            public record SagaContext(
+                                    UUID sagaId,          // Correlation ID dùng để truy vết toàn bộ Saga
+                                    UUID orderId,
+                                    SagaStepState state,
+                                    String failureReason
+                            ) {}
+
+                            public SagaContext onInventoryFailed(SagaContext current, String reason,
+                                                                 PaymentCompensationPort paymentPort,
+                                                                 OrderStatePort orderPort) {
+                                // Bước 1: Kích hoạt giao dịch bù trừ (Compensating Transaction) hoàn tiền tại payment-service
+                                // Truyền kèm sagaId làm khóa lũy đẳng để nếu gửi lại lệnh bù trừ cũng không bị hoàn tiền 2 lần!
+                                paymentPort.refundPaymentIdempotently(current.sagaId(), current.orderId());
+
+                                // Bước 2: Chuyển trạng thái đơn hàng từ PENDING sang REJECTED
+                                orderPort.markOrderRejected(current.orderId(), reason);
+
+                                return new SagaContext(current.sagaId(), current.orderId(), SagaStepState.REJECTED, reason);
+                            }
                         }
                         ```
-
-                        ## 4. Checklist Kiểm toán 3E & Các bẫy thường gặp khi vấn đáp
-                        - **Bẫy Dual-Write**: Gọi `orderRepo.save()` rồi gọi ngay `kafkaTemplate.send()` trong 1 hàm không Outbox -> DB commit xong mà Broker rớt mạng sẽ mất vĩnh viễn sự kiện!
-                        - **Semantic Lock**: Dùng trạng thái trung gian `PENDING_APPROVAL` trong khi Saga chưa hoàn tất để chặn user sửa/hủy trùng lặp.
                         """
                 ),
                 new LessonSpec(
@@ -52,19 +83,30 @@ public final class Module5SagaSecurityAndDataProvider {
                         "Kiểm toán Zero Secret Leaks ([REDACTED]), xác minh JWT (Signature, iss, aud, exp) và phân biệt 401 vs 403.",
                         55,
                         """
-                        # Bài 5.2: Spring Cloud Config, Redacted Secrets & OAuth 2.0 / JWT
+                        # 📖 BÀI 5.2 (`java-11`): CẤU HÌNH TẬP TRUNG (`SPRING CLOUD CONFIG`), QUẢN LÝ SECRET & BẢO MẬT `OAUTH 2.0 / JWT`
 
-                        ## 1. Mục tiêu học tập & Bài toán thực tế
-                        - Quản lý cấu hình tập trung với Spring Cloud Config và kiểm toán **Zero Secret Leaks (`[REDACTED]`)** trong log/report.
-                        - Cấu hình OAuth 2.0 Resource Server xác minh chữ ký JWT chặt chẽ và chống lỗ hổng **BOLA/IDOR**.
+                        ### 1. Cấu Hình Tập Trung Với `Spring Cloud Config Server` & Bảo Vệ Thông Tin Nhạy Cảm
+                        Theo Chương 11 cuốn *Microservices Patterns* (Chris Richardson) và Chương 6 cuốn *Mastering Microservices with Java* (Sourabh Sharma):
+                        1. **`Spring Cloud Config Server`**: Cung cấp cấu hình tập trung có đánh phiên bản (backed by Git/Vault) cho hàng chục Microservices theo từng môi trường (`dev`, `staging`, `prod`).
+                        2. **Quy tắc Ghi nhận Bằng chứng Cấu hình An toàn (`Redacted Config Evidence — java-11`)**:
+                           - Khi viết báo cáo kiểm toán kiến trúc hoặc trích xuất bằng chứng tĩnh, ta chỉ ghi nhận **đường dẫn tệp cấu hình và tên khóa biến (`property key` / `env var name`) kèm giá trị đã được che (`[REDACTED]`)**, tuyệt đối không bao giờ sao chép giá trị thật của mật khẩu, Private Key hay Access Token vào tài liệu hay ảnh chụp màn hình!
 
-                        ## 2. Nguyên lý Kiến trúc & Bảng đối chiếu
-                        | Lớp kiểm tra JWT / AuthZ | Mã HTTP khi vi phạm | Ý nghĩa bảo mật |
-                        | :--- | :--- | :--- |
-                        | Thiếu token, sai Signature, hết `exp`, sai `iss`/`aud` | **`401 Unauthorized`** | Chưa xác thực được danh tính hợp lệ (`Authentication` fail) |
-                        | JWT hợp lệ nhưng thiếu `@PreAuthorize` Role hoặc đọc tài nguyên của người khác (`BOLA/IDOR`) | **`403 Forbidden`** | Đã biết là ai nhưng không có quyền truy cập tài nguyên (`Authorization` fail) |
+                        ### 2. Xác Thực & Phân Quyền Dịch Vụ Với `OAuth 2.0` và `JWT Resource Server`
+                        Theo tài liệu [Spring Security OAuth 2.0 Resource Server JWT](https://docs.spring.io/spring-security/reference/servlet/oauth2/resource-server/jwt.html) và Chương 6 cuốn *Mastering Microservices with Java*:
+                        - **4 Vai trò trong OAuth 2.0**:
+                          1. `Resource Owner` (Người dùng cuối).
+                          2. `Client` (Ứng dụng Web/Mobile).
+                          3. `Authorization Server` (Máy chủ cấp phát thẻ bài Token sau khi xác thực người dùng).
+                          4. `Resource Server` (Chính là các Microservices như `order-service`, `payment-service` đứng bảo vệ dữ liệu nghiệp vụ).
+                        - **4 Kiểm tra Bắt buộc Khi Một `Resource Server` Xác minh Thẻ bài `JWT`**:
+                          1. **Chữ ký số (`Signature`)**: Kiểm tra bằng khóa công khai (`Public Key / JWKS`) để đảm bảo nội dung JWT không bị kẻ gian sửa đổi.
+                          2. **Đơn vị phát hành (`iss — Issuer`)**: Token có thực sự do đúng `Authorization Server` tin cậy phát hành hay không.
+                          3. **Đối tượng thụ hưởng (`aud — Audience`)**: Token này có được cấp để gọi vào `Resource Server` hiện tại hay không (ngăn việc lấy token cấp cho dịch vụ đọc tin tức đem đi gọi dịch vụ chuyển tiền!).
+                          4. **Thời hạn hiệu lực (`exp — Expiration`)**: Từ chối ngay lập tức (`HTTP 401 Unauthorized`) nếu token đã hết hạn.
+                        - **Phân biệt `Authentication (401)` và `Authorization (403)`**:
+                          - Một `JWT` hợp lệ (đúng chữ ký, đúng issuer, đúng audience, chưa hết hạn) chỉ chứng minh **Danh tính đã được xác thực (`Authentication`)**.
+                          - Dịch vụ vẫn phải kiểm tra tiếp xem danh tính đó có **Quyền thực hiện hành động (`Authorization`: `@PreAuthorize("hasRole('LECTURER')")` hoặc kiểm tra chủ sở hữu tài nguyên `order.getCustomerId().equals(currentUserId)`)** hay không; nếu thiếu quyền, phải từ chối với mã **`HTTP 403 Forbidden`**!
 
-                        ## 3. Triển khai chuẩn với Java 21 & Spring Boot 3
                         ```java
                         @GetMapping("/api/v1/workspaces/{workspaceId}/course-essays")
                         public List<EssaySubmissionView> list(@PathVariable UUID workspaceId) {
@@ -73,9 +115,6 @@ public final class Module5SagaSecurityAndDataProvider {
                             return isLecturer(actor) ? findAll(workspaceId) : findByStudent(workspaceId, actor.getId());
                         }
                         ```
-
-                        ## 4. Checklist Kiểm toán 3E & Các bẫy thường gặp khi vấn đáp
-                        - **Zero Secret Leaks**: Khi xuất báo cáo cấu hình tĩnh cho Lecturer/Admin, mọi giá trị nhạy cảm như `JWT_SECRET` hay `SPRING_DATASOURCE_PASSWORD` phải được che thành `[REDACTED]`, chỉ giữ tên khóa và đường dẫn tệp.
                         """
                 ),
                 new LessonSpec(
@@ -84,29 +123,30 @@ public final class Module5SagaSecurityAndDataProvider {
                         "Áp dụng CQRS, UNIQUE CONSTRAINT ở DB và Whole Transaction Retry khi gặp SQLSTATE 40001.",
                         55,
                         """
-                        # Bài 5.3: API Composition vs CQRS & Cạnh tranh giao dịch PostgreSQL
+                        # 📖 BÀI 5.3 (`java-a02`): TRUY VẤN PHÂN TÁN (`API COMPOSITION` vs `CQRS`) & CẠNH TRANH GIAO DỊCH TRONG POSTGRESQL
 
-                        ## 1. Mục tiêu học tập & Bài toán thực tế
-                        - Chọn đúng mẫu truy vấn dữ liệu trải qua nhiều Microservices (**API Composition** vs **CQRS Read Model**).
-                        - Xử lý triệt để Race Condition, Lost Update và **Serialization Failure (`SQLSTATE 40001`)** trong PostgreSQL dưới tải đồng thời.
+                        ### 1. Hai Mẫu Truy Vấn Dữ Liệu Xuyên Dịch Vụ (`API Composition` vs `CQRS`)
+                        Theo Chương 7 cuốn *Microservices Patterns* (Chris Richardson), khi dữ liệu nằm rải rác ở nhiều Microservices, làm sao để hiển thị màn hình *"Chi tiết Đơn hàng kèm Trạng thái Thanh toán, Tồn kho và Lộ trình Giao hàng"*?
+                        1. **`API Composition Pattern` (Tổng hợp qua API)**: Một bộ tổng hợp (*API Composer* ở Gateway/BFF) gọi song song sang 3–4 dịch vụ rồi ghép kết quả JSON trong bộ nhớ. Dễ cài đặt nhưng kém hiệu quả nếu cần tìm kiếm/phân trang trên tập dữ liệu lớn.
+                        2. **`CQRS (Command Query Responsibility Segregation)`**: Tách riêng mô hình Ghi (*Command*) và mô hình Đọc (*Query View Database*). Dịch vụ đọc lắng nghe các sự kiện (`OrderCreated`, `PaymentAuthorized`, `ShipmentUpdated`) để cập nhật vào một bảng/chỉ mục tối ưu sẵn cho truy vấn (như PostgreSQL Read Model hoặc Elasticsearch).
 
-                        ## 2. Nguyên lý Kiến trúc & Bảng đối chiếu
                         | Pattern | Cách lấy dữ liệu chéo service | Điểm mạnh | Hạn chế cần lường trước |
                         | :--- | :--- | :--- | :--- |
                         | **API Composition** | API Composer gọi song song các service và merge trong RAM | Đơn giản, luôn đọc dữ liệu mới nhất | Tốn memory nếu join bộ dữ liệu lớn hoặc 1 service bị nghẽn |
                         | **CQRS** | Projector nghe Event tạo bảng đọc (`Read Model`) phi chuẩn hóa | Tốc độ query đọc cực nhanh, lọc/sort thoải mái | Chấp nhận độ trễ nhất quán cuối cùng (*Eventual Consistency*) |
 
-                        ## 3. Triển khai chuẩn với Java 21 & Spring Boot 3
+                        ### 2. Chống `Lost Update`, Mức Cô Lập Giao Dịch (`Isolation Levels`) & Ràng Buộc Duy Nhất (`Unique Constraint`)
+                        Theo tài liệu [PostgreSQL Transaction Isolation](https://www.postgresql.org/docs/current/transaction-iso.html):
+                        - Khi hai yêu cầu đến **cùng một thời điểm** (ví dụ khách hàng bấm đúp chuột gửi 2 request thanh toán có cùng mã thao tác `idempotencyKey`, hoặc 2 người cùng mua món hàng cuối cùng trong kho):
+                          1. **Không bao giờ chỉ kiểm tra trùng bằng câu lệnh `SELECT` trong code Java rồi mới `INSERT`** (vì 2 luồng chạy song song sẽ cùng thấy `SELECT` trả về rỗng và cùng `INSERT` thành công!). Bắt buộc phải đặt **Ràng buộc Duy nhất (`UNIQUE CONSTRAINT`) ngay tại tầng Cơ sở dữ liệu PostgreSQL**!
+                          2. **Chống mất cập nhật (`Lost Update`)**: Sử dụng khóa lạc quan (`@Version` trong JPA — *Optimistic Locking*), khóa bi quan (`SELECT ... FOR UPDATE`), hoặc mức cô lập **`REPEATABLE READ` / `SERIALIZABLE`**. Khi PostgreSQL báo lỗi xung đột tuần tự hóa (`Serialization Failure — SQLSTATE 40001`), ứng dụng cần **thử lại toàn bộ giao dịch (Retry Whole Transaction)** theo ngân sách đã định, và lưu ý rằng việc `ROLLBACK` giao dịch DB **không tự động thu hồi được các tác dụng phụ đã phát ra ngoài DB** (như email đã gửi hay lệnh HTTP đã bắn đi)!
+
                         ```sql
                         -- Chống race condition ghi danh/nộp bài đồng thời trực tiếp ở tầng PostgreSQL
                         ALTER TABLE course_item_submissions
                             ADD CONSTRAINT uq_course_item_student_submission
                             UNIQUE (course_item_id, student_id);
                         ```
-
-                        ## 4. Checklist Kiểm toán 3E & Các bẫy thường gặp khi vấn đáp
-                        - **Cấm pattern `SELECT` rồi mới `INSERT` trong code Java để check trùng** khi có concurrent request: bắt buộc dùng `UNIQUE CONSTRAINT` + `ON CONFLICT DO UPDATE / DO NOTHING` ngay trong DB!
-                        - **Whole Transaction Retry**: Khi gặp `SQLSTATE 40001` (`Serialization Failure`), PHẢI retry lại toàn bộ block giao dịch từ đầu (và không gọi HTTP/email ra ngoài trước khi transaction commit xong!).
                         """
                 )
         );
@@ -212,21 +252,30 @@ public final class Module5SagaSecurityAndDataProvider {
                 "Bài tập Tự luận Chương 5: Máy trạng thái Order Saga, Transactional Outbox & Bảo mật JWT",
                 "Lập bảng trạng thái OrderSagaOrchestrator kèm Compensating Transactions, thiết kế bảng Outbox và kịch bản JWT 401/403.",
                 """
-                ### Đề bài Tự luận Chương 5: Order Saga, Transactional Outbox & Kiểm thử JWT
-                Quy trình Đặt hàng trả trước đi qua `order-service`, `payment-service`, `inventory-service` (mỗi service 1 PostgreSQL DB riêng).
+                ### Đề bài Tự luận Chương 5: Đặc tả Máy trạng thái `Order Saga`, `Transactional Outbox` & Bảo mật `JWT`
+                Hệ thống Thương mại điện tử của bạn cần xử lý quy trình **Đặt hàng trả trước** đi qua 3 dịch vụ có Database riêng:
+                1. `order-service`: Tạo đơn hàng.
+                2. `payment-service`: Trừ tiền ví điện tử của khách hàng.
+                3. `inventory-service`: Giữ chỗ và xuất kho sản phẩm.
 
-                **Yêu cầu bài viết (450 – 650 từ)**:
-                1. **Bảng Trạng thái `Order Saga` & Chuỗi Bù trừ**: Mô tả từng bước khi `order-service` & `payment-service` thành công nhưng `inventory-service` thất bại do hết hàng. Giải thích cách chống hoàn tiền trùng nếu `RefundPaymentCommand` gửi lại 2 lần.
-                2. **Mẫu `Transactional Outbox`**: Giải thích rủi ro Dual-Write và mô tả cấu trúc bảng `outbox_messages`.
-                3. **3 Ca kiểm thử `JWT` (`POST /api/v1/orders/{orderId}/cancel`)**: Token hết hạn/sai `aud`; Token hợp lệ `User_A` hủy đơn `User_B`; Token hợp lệ chính chủ `User_A`. Chỉ rõ HTTP status từng ca.
+                **Yêu cầu bài viết tự luận (450 – 650 từ)**:
+                1. **Bảng Trạng thái `Order Saga` & Chuỗi Giao dịch Bù trừ (`Compensation Table`)**:
+                   - Hãy lập bảng mô tả từng bước của `OrderSagaOrchestrator` trong trường hợp: Bước 1 (`order-service` tạo đơn `PENDING`) thành công → Bước 2 (`payment-service` trừ tiền) thành công → Bước 3 (`inventory-service` giữ kho) **THẤT BẠI do kho vừa hết hàng**.
+                   - Chỉ rõ trạng thái của từng dịch vụ ở mỗi thời điểm, lệnh bù trừ nào được phát ra, và cách xử lý nếu bản tin bù trừ `RefundPaymentCommand` bị gửi trùng 2 lần tới `payment-service`.
+                2. **Ứng dụng Mẫu `Transactional Outbox`**: Giải thích tại sao trong Bước 1, `order-service` không được vừa `save(order)` xong đã bắn thẳng bản tin lên RabbitMQ ngoài giao dịch DB, và mô tả cấu trúc bảng `outbox_events` để khắc phục triệt để lỗi này.
+                3. **Kịch bản Kiểm thử Bảo mật `JWT` (`401` vs `403`)**: Thiết kế 3 ca kiểm thử (Test Cases) gửi request tới endpoint `POST /api/v1/orders/{orderId}/cancel`:
+                   - Ca 1: Token đã hết hạn (`exp` ở quá khứ) hoặc sai `aud`.
+                   - Ca 2: Token hợp lệ của Sinh viên/Khách hàng `User_A`, nhưng lại truyền `orderId` thuộc sở hữu của `User_B`.
+                   - Ca 3: Token hợp lệ của chính chủ `User_A`.
+                   Chỉ rõ mã HTTP Status trả về ở từng ca.
                 """,
                 List.of(
-                        new RubricCriterion("1. Bảng trạng thái Saga & Lũy đẳng bù trừ", 40,
-                                "Lập đủ luồng thuận và luồng bù trừ ngược (RefundPayment -> RejectOrder), gắn sagaId chống hoàn tiền 2 lần."),
+                        new RubricCriterion("1. Thiết kế Bảng Trạng thái Saga & Lũy đẳng Bù trừ", 40,
+                                "Lập bảng đầy đủ luồng thuận và luồng bù trừ ngược (RefundPayment -> CancelOrder), có gắn correlationId / sagaId để chống hoàn tiền trùng."),
                         new RubricCriterion("2. Thiết kế Transactional Outbox", 30,
-                                "Giải thích đúng nguy cơ Dual-Write và ghi chung giao dịch vào bảng outbox_messages."),
-                        new RubricCriterion("3. Phân biệt 401 Unauthorized vs 403 Forbidden", 30,
-                                "Ca 1 -> 401, Ca 2 -> 403 (BOLA/IDOR), Ca 3 -> 200/202.")
+                                "Giải thích rõ nguy cơ Dual-Write (lưu DB thành công nhưng mất bản tin Broker) và mô tả đúng việc ghi chung giao dịch vào bảng outbox_events."),
+                        new RubricCriterion("3. Phân biệt Chính xác 401 Unauthorized & 403 Forbidden", 30,
+                                "Xác định đúng Ca 1 trả về 401, Ca 2 trả về 403 (vi phạm quyền sở hữu tài nguyên BOLA/IDOR), Ca 3 trả về 200/202.")
                 )
         );
     }

@@ -28,6 +28,7 @@ import type { Assignment } from "@/features/assignments/requirements";
 import {
   CoursePasskey,
   PublishCourseLab,
+  SeedCuratedCourseLabs,
   useCoursePasskeys,
   useCourseRoadmap,
   useCourseSetup,
@@ -199,6 +200,39 @@ export function LecturerCurriculumManager({
         </div>
 
         <CoursePasskey workspaceId={workspaceId} />
+      </section>
+
+      {/* One-click Coursera Java Curriculum Seeder & Sync */}
+      <section
+        className={cn(
+          "rounded-2xl border p-4 shadow-sm",
+          labs.length < 6
+            ? "border-amber-300/80 bg-amber-50/40 dark:border-amber-800 dark:bg-amber-950/20"
+            : "bg-card",
+        )}
+      >
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-sm font-semibold">
+              {t(
+                "MAVIS Curated Course & Lab Library",
+                "Kho Học Liệu & Giáo Trình Chuẩn Coursera",
+              )}
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              {labs.length < 6
+                ? t(
+                    "No complete 6-module curriculum detected yet. Click below to seed/sync all 6 Chapters, 18 Lessons, 60 Quiz questions, 6 Essays, and 6 Labs.",
+                    "Lớp học chưa có đủ 6 Chương & Lab chuẩn. Bấm nút bên dưới để tự động nạp/đồng bộ trọn bộ 6 Chương (18 bài giảng, 6 Quiz, 6 Tự luận, 6 Lab).",
+                  )
+                : t(
+                    "Re-sync curated reference models, textbook chapters, quizzes, and essays whenever needed.",
+                    "Đồng bộ lại giáo trình chuẩn, ngân hàng lý thuyết, Quiz và đề Tự luận bất cứ lúc nào.",
+                  )}
+            </p>
+          </div>
+        </div>
+        <SeedCuratedCourseLabs workspaceId={workspaceId} />
       </section>
 
       {/* Course Outline (structured chapters + published course roadmap) */}

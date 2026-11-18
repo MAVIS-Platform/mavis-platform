@@ -18,36 +18,44 @@ public final class Module2ArchitectureAndDddProvider {
                         "Giải phẫu 5 bi kịch Monolithic Hell, trục Y của Scale Cube và cô lập 3 tầng sơ đồ C4 Model.",
                         50,
                         """
-                        # Bài 2.1: Monolith -> Microservices, Scale Cube & C4 Model (C1–C3)
+                        # 📖 BÀI 2.1 (`java-01`): TIẾN HÓA TỪ MONOLITH SANG MICROSERVICES, SCALE CUBE & MÔ HÌNH HÓA C4 (`C1–C3`)
 
-                        ## 1. Mục tiêu học tập & Bài toán thực tế
-                        - Nhận diện chính xác khi nào một hệ thống Monolith gặp "Monolithic Hell" (nghẽn build, khóa công nghệ, triển khai mạo hiểm) và khi nào Modular Monolith lại tốt hơn Microservices.
-                        - Phân rã hệ thống theo **Scale Cube 3 trục** và truyền đạt kiến trúc nhất quán qua **C4 Model (C1 Context, C2 Container, C3 Component)**.
+                        ### 1. Từ "Địa Ngục Nguyên Khối" (*Monolithic Hell*) Đến Khối Lập Phương Mở Rộng (*Scale Cube*)
+                        Trong Chương 1 cuốn *Microservices Patterns* (Chris Richardson), hệ thống giao đồ ăn **FTGO (Food to Go)** ban đầu được xây dựng như một khối **Monolith** duy nhất (`ftgo-monolith.war`). Khi quy mô tăng lên, nhóm phát triển rơi vào **5 bi kịch của Monolithic Hell**:
+                        1. **Độ phức tạp vượt tầm kiểm soát**: Hàng trăm module nghiệp vụ (`Order`, `Delivery`, `Kitchen`, `Accounting`, `Restaurant`) gọi chéo nhau làm không một lập trình viên nào hiểu hết hệ thống.
+                        2. **Chu kỳ Build, Test & Deploy cực chậm**: Sửa 1 dòng code nhỏ cũng phải build và khởi động lại toàn bộ ứng dụng mất hàng chục phút.
+                        3. **Khó mở rộng quy mô do xung đột tài nguyên**: Module xử lý hình ảnh thực đơn cần nhiều CPU, trong khi module kế toán cần nhiều bộ nhớ RAM — nhốt chung trong 1 tiến trình JVM khiến việc mở rộng cực kỳ lãng phí.
+                        4. **Thiếu cô lập lỗi (Lack of Fault Isolation)**: Một lỗi rò rỉ bộ nhớ (*Memory Leak*) ở module báo cáo làm sập toàn bộ JVM, kéo theo tính năng đặt hàng của khách hàng chết ngay lập tức!
+                        5. **Bị khóa chặt vào công nghệ cũ (Technology Lock-in)**: Rất khó nâng cấp phiên bản JDK hoặc Spring mới cho toàn bộ khối code khổng lồ cùng một lúc.
 
-                        ## 2. Nguyên lý Kiến trúc & Bảng đối chiếu
-                        | Tầng C4 | Câu hỏi trả lời | Phần tử hợp lệ | Sai lầm cần tránh |
-                        | :--- | :--- | :--- | :--- |
-                        | **C1 Context** | Ai dùng hệ thống & nói chuyện với hệ thống ngoài nào? | Actor (`Customer`, `Lecturer`), Software System, `Stripe/SMTP` | Vẽ Microservice hay bảng DB vào C1 |
-                        | **C2 Container** | Gồm những ứng dụng & DB triển khai độc lập nào? | `api-gateway`, `order-service`, `Order DB`, `Kafka` | Vẽ từng class Java vào C2 |
-                        | **C3 Component** | Bên trong 1 service có các module trách nhiệm nào? | `@RestController`, `@Service`, `@FeignClient`, `@Repository` | Coi mọi class Java là 1 Microservice |
+                        Để giải quyết, cuốn *Microservices Patterns* và *Production-Ready Microservices* (Susan Fowler, Chương 1) phân tích **Khối lập phương Mở rộng 3 Chiều (`The Scale Cube`)**:
 
-                        ## 3. Triển khai chuẩn với Java 21 & Spring Boot 3
-                        ```yaml
-                        # docker-compose.yml phản ánh đúng tầng C2 Container độc lập
-                        services:
-                          api-gateway:
-                            image: mavis/api-gateway:curated
-                            ports: ["8080:8080"]
-                          order-service:
-                            image: mavis/order-service:curated
-                            ports: ["8081:8081"]
-                          order-db:
-                            image: postgres:16
+                        ```
+                                            Trục Y: Phân rã theo Chức năng Nghiệp vụ (MICROSERVICES!)
+                                            (Tách thành Order Service, Payment Service, Inventory Service)
+                                                              ^
+                                                              |
+                                                              |
+                                                              +-------------------> Trục X: Nhân bản Ngang sau Load Balancer
+                                                             /                      (Chạy N bản sao giống hệt nhau: Replicas 1..N)
+                                                            /
+                                                           v
+                                            Trục Z: Phân mảnh Dữ liệu (Data Partitioning / Sharding)
+                                            (Chia request theo vùng địa lý hoặc mã khách hàng Hash(userId))
                         ```
 
-                        ## 4. Checklist Kiểm toán 3E & Các bẫy thường gặp khi vấn đáp
-                        - **Scale Cube**: Trục X = nhân bản ngang (replicas), Trục Z = sharding theo user/region, **Trục Y = Microservices (phân rã theo chức năng nghiệp vụ)**.
-                        - **Microservices không phải viên đạn bạc**: Với đội < 5 người hoặc domain chưa rõ ràng, chi phí mạng và giao dịch phân tán có thể phản tác dụng.
+                        - **Trục X (Horizontal Duplication)**: Chạy nhiều bản sao (*Instances / Replicas*) giống hệt nhau phía sau bộ cân bằng tải (*Load Balancer*). Tăng được thông lượng nhưng không giảm được độ phức tạp của code.
+                        - **Trục Z (Data Partitioning / Sharding)**: Định tuyến yêu cầu dựa trên thuộc tính dữ liệu (ví dụ khách hàng miền Bắc vào cụm DB Bắc, miền Nam vào cụm DB Nam).
+                        - **Trục Y (Functional Decomposition — Chính là Kiến trúc Microservices!)**: Cắt khối Monolith theo từng năng lực nghiệp vụ độc lập thành các dịch vụ nhỏ, mỗi dịch vụ có quy trình phát triển, triển khai và mở rộng hoàn toàn độc lập!
+
+                        ### 2. Tư Duy Phân Tầng Kiến Trúc Với Chuẩn C4 Model (`C1`, `C2`, `C3`)
+                        Theo [C4 Model (Simon Brown)](https://c4model.com/diagrams), để không trộn lẫn các khái niệm ở những mức độ trừu tượng khác nhau lên cùng một bức vẽ, kiến trúc phần mềm phải được tách thành các tầng phóng to giống như Google Maps:
+
+                        | Mức C4 | Tên Sơ Đồ | Câu Hỏi Trả Lời | Các Phần Tử Được Phép Có | Sai Lầm Phổ Biến Cần Tránh |
+                        | :--- | :--- | :--- | :--- | :--- |
+                        | **`C1`** | **System Context Diagram** (Sơ đồ Ngữ cảnh Hệ thống) | Hệ thống của chúng ta phục vụ những ai và giao tiếp với hệ thống bên ngoài nào? | • Người dùng (`Person / Actor`)<br>• Hệ thống trung tâm (`Software System`)<br>• Hệ thống ngoại vi (`External System`: Stripe, Gmail SMTP) | Đưa tên các Microservices nội bộ, bảng PostgreSQL hoặc class Java lên sơ đồ `C1`! |
+                        | **`C2`** | **Container Diagram** (Sơ đồ Đơn vị Triển khai) | Hệ thống bao gồm những ứng dụng chạy độc lập (processes/containers) và kho dữ liệu nào? | • Các Microservices (`api-gateway`, `order-service`, `payment-service`)<br>• Các Database (`Order DB`, `Payment DB`)<br>• Message Broker (`RabbitMQ`, `Kafka`) | Nhầm chữ "Container" của C2 là chỉ dùng cho Docker, hoặc vẽ các class Java nhỏ lẻ lên sơ đồ `C2`! |
+                        | **`C3`** | **Component Diagram** (Sơ đồ Thành phần Nội bộ) | Bên trong **một** container (ví dụ `order-service`) được chia thành những khối trách nhiệm nào? | • `OrderController` (`@RestController`)<br>• `OrderService` (`@Service`)<br>• `PaymentFeignClient` (`@FeignClient`)<br>• `OrderRepository` (`@Repository`) | Mặc định cứ 1 lớp Java bất kỳ là 1 Microservice, hoặc trộn lẫn nội bộ của tất cả các services vào 1 hình `C3` duy nhất! |
                         """
                 ),
                 new LessonSpec(
@@ -56,20 +64,34 @@ public final class Module2ArchitectureAndDddProvider {
                         "Phân rã theo Bounded Context, Anti-Corruption Layer (ACL) và kiểm toán phản mẫu Shared Database.",
                         50,
                         """
-                        # Bài 2.2: DDD Bounded Context, Database-per-Service & Shared DB Anti-pattern
+                        # 📖 BÀI 2.2 (`java-02`): DOMAIN-DRIVEN DESIGN (`BOUNDED CONTEXT`), `DATABASE-PER-SERVICE` & PHẢN MẪU `SHARED DATABASE`
 
-                        ## 1. Mục tiêu học tập & Bài toán thực tế
-                        - Xác định ranh giới dịch vụ bằng **DDD Strategic Design (`Ubiquitous Language`, `Bounded Context`, `Context Map`)**.
-                        - Áp dụng **Database-per-Service** đúng bản chất và phát hiện chính xác **Shared Database Anti-pattern** trong mã nguồn/cấu hình.
+                        ### 1. Hai Chiến Lược Phân Rã Hệ Thống & Thiết Kế Chiến Lược DDD
+                        Theo Chương 2 cuốn *Microservices Patterns* (Chris Richardson) và Chương 3 cuốn *Mastering Microservices with Java* (Sourabh Sharma), để tách một hệ thống lớn thành các Microservices đúng đắn (không bị tách quá nhỏ thành *Nanoservices* hay dính chùm thành *Distributed Monolith*), chúng ta dựa trên 2 phương pháp:
+                        1. **Phân rã theo Năng lực Kinh doanh (`Decompose by Business Capability`)**: Xác định các hoạt động cốt lõi tạo ra giá trị của doanh nghiệp (Quản lý Đơn hàng, Xử lý Thanh toán, Quản lý Tồn kho, Giao nhận).
+                        2. **Phân rã theo Miền con & Ngữ cảnh Giới hạn của DDD (`Decompose by Subdomain & Bounded Context`)**:
+                           - **Ngôn ngữ Chung (`Ubiquitous Language`)**: Ngôn ngữ thống nhất giữa chuyên gia nghiệp vụ và kỹ sư phần mềm trong cùng một miền.
+                           - **Ngữ cảnh Giới hạn (`Bounded Context`)**: Ranh giới rõ ràng mà bên trong đó một mô hình miền (*Domain Model*) có ý nghĩa duy nhất. Ví dụ: Khái niệm `"Account"` trong ngữ cảnh `Identity Service` là Tài khoản đăng nhập (Email, PasswordHash), nhưng `"Account"` trong ngữ cảnh `Payment Service` lại là Ví tiền/Số dư tín dụng! Nhờ `Bounded Context`, mỗi Microservice sở hữu mô hình riêng mà không giẫm chân lên nhau.
+                           - **Bản đồ Ngữ cảnh (`Context Map` — Chương 3 *Mastering Microservices with Java*)**: Định nghĩa cách các `Bounded Context` tích hợp với nhau thông qua các mẫu như *Customer-Supplier*, *Shared Kernel*, *Open Host Service*, và đặc biệt là **Lớp Chống Thoái Hóa (`Anti-Corruption Layer — ACL`)** giúp chuyển đổi dữ liệu từ hệ thống cũ/ngoại vi mà không làm ô nhiễm mô hình miền bên trong dịch vụ mới.
 
-                        ## 2. Nguyên lý Kiến trúc & Bảng đối chiếu
-                        | Khía cạnh | Thiết kế chuẩn (`Database-per-Service`) | Phản mẫu (`Shared Database`) |
-                        | :--- | :--- | :--- |
-                        | **Quyền sở hữu dữ liệu** | Mỗi service độc quyền schema/DB riêng | Hai service cùng trỏ chung DB/schema/credential |
-                        | **Giao tiếp xuyên ranh giới** | Qua REST/OpenFeign hoặc Domain Events | `JOIN` trực tiếp sang bảng của dịch vụ khác |
-                        | **Bảo vệ mô hình cũ** | Dùng **Anti-Corruption Layer (`ACL`)** dịch DTO | Cho phép entity nội bộ phụ thuộc schema ngoài |
+                        ### 2. Nguyên Tắc Sống Còn: `Database-per-Service` vs. Phản Mẫu `Shared Database`
+                        Mỗi Microservice bắt buộc phải là **chủ sở hữu duy nhất (Single Owner)** đối với dữ liệu thuộc `Bounded Context` của nó:
 
-                        ## 3. Triển khai chuẩn với Java 21 & Spring Boot 3
+                        ```
+                        [PHẢN MẪU: SHARED DATABASE ANTI-PATTERN]                 [CHUẨN MỰC: DATABASE-PER-SERVICE PATTERN]
+                        +----------------+      +--------------------+           +----------------+          +--------------------+
+                        | order-service  |      | inventory-service  |           | order-service  | --API--> | inventory-service  |
+                        +----------------+      +--------------------+           +----------------+          +--------------------+
+                                 \\                      /                                |                             |
+                                  \\                    /                                 v                             v
+                           [ CÙNG GHI VÀO BẢNG orders & inventories ]             [ Order Schema/DB ]          [ Inventory Schema/DB ]
+                           ❌ Vi phạm đóng gói: Đổi cột DB làm sập cả 2!          ✅ Cô lập hoàn toàn quyền ghi & schema dữ liệu!
+                        ```
+
+                        - **Lưu ý cực kỳ tinh tế khi Kiểm toán Kiến trúc (`java-02`)**:
+                          - Hai dịch vụ cùng sử dụng công nghệ PostgreSQL, hoặc thậm chí cùng chạy trên một máy chủ RDS PostgreSQL vật lý để tiết kiệm chi phí hạ tầng **CHƯA CHẮC đã vi phạm `Shared Database`**, miễn là chúng sử dụng **hai Database/Schema hoàn toàn tách biệt** (`order_db` vs `inventory_db`) với tài khoản/quyền truy cập cô lập!
+                          - **Dấu hiệu vi phạm thực sự (`Shared Database Violation`)**: Khi hai dịch vụ cùng trỏ chung vào một schema/database VÀ **cùng đọc/ghi trực tiếp lên cùng một bảng dữ liệu** (hoặc dùng chung một bộ tập tin Flyway/Liquibase migration). Nếu khi phân tích tĩnh mà cấu hình quyền truy cập bị thiếu hoặc bị ẩn, người kỹ sư phải kết luận chính xác là **"Chưa đủ bằng chứng (Insufficient Evidence)"** thay vì võ đoán!
+
                         ```java
                         @Component
                         public class PaymentGatewayAcl {
@@ -82,10 +104,6 @@ public final class Module2ArchitectureAndDddProvider {
                             }
                         }
                         ```
-
-                        ## 4. Checklist Kiểm toán 3E & Các bẫy thường gặp khi vấn đáp
-                        - **Bẫy Shared DB giả**: 2 service cùng dùng PostgreSQL `16` (chung engine hoặc chung cụm host) **nhưng tách riêng database/schema & user** là **HỢP LỆ**.
-                        - **Vi phạm thật sự**: `order-service` và `billing-service` cùng cấu hình `SPRING_DATASOURCE_URL` tới cùng schema `public` và query chung bảng `orders`.
                         """
                 ),
                 new LessonSpec(
@@ -94,37 +112,60 @@ public final class Module2ArchitectureAndDddProvider {
                         "Thiết kế Entity, Value Object, Aggregate Root, tham chiếu qua ID và Constructor Injection minh bạch cho C3.",
                         50,
                         """
-                        # Bài 2.3: Cấu trúc nội bộ C3 Component & DDD Aggregate Root
+                        # 📖 BÀI 2.3 (`java-03`): CẤU TRÚC NỘI BỘ `C3 COMPONENT` TRONG SPRING BOOT & CÁC KHỐI XÂY DỰNG DDD
 
-                        ## 1. Mục tiêu học tập & Bài toán thực tế
-                        - Thiết kế **DDD Tactical Building Blocks** (`Entity`, `Value Object`, `Aggregate Root`, `Repository`) gọn nhẹ, chuẩn ranh giới nhất quán giao dịch.
-                        - Chuẩn hóa **Constructor Injection** để bộ phân tích tĩnh C3 nhận diện 100% các cạnh phụ thuộc bên trong dịch vụ.
+                        ### 1. Các Khối Xây Dựng Chiến Thuật Của DDD (`Entity`, `Value Object`, `Aggregate`, `Repository`, `Service`)
+                        Theo Chương 3 cuốn *Mastering Microservices with Java* (Sourabh Sharma) và Chương 5 cuốn *Microservices Patterns* (Chris Richardson), bên trong một Microservice (tầng `C3`), mô hình miền được cấu thành từ 5 viên gạch:
+                        1. **`Entity` (Thực thể định danh)**: Đối tượng có **định danh duy nhất (`ID`)** tồn tại xuyên suốt vòng đời dù các thuộc tính của nó thay đổi (ví dụ: `Order` có `orderId`, trạng thái đổi từ `PENDING → PAID → SHIPPED`).
+                        2. **`Value Object` (Đối tượng giá trị)**: Đối tượng được định nghĩa hoàn toàn bởi **giá trị của các thuộc tính** chứ không có ID riêng, và luôn **bất biến (Immutable)** (ví dụ: `Money(amount, currency)`, `DeliveryAddress(street, city)`).
+                        3. **`Aggregate` & `Aggregate Root` (Khối tổng hợp & Gốc tổng hợp)**:
+                           - Một cụm các `Entity` và `Value Object` (ví dụ: `Order` + danh sách `OrderLineItem`) được gom lại thành một đơn vị nhất quán giao dịch (*Transactional Consistency Boundary*).
+                           - Mọi thao tác sửa đổi từ bên ngoài bắt buộc phải đi qua phương thức của **`Aggregate Root` (`Order`)** để bảo toàn các bất biến nghiệp vụ (*Business Invariants*, ví dụ: *"Tổng tiền đơn hàng phải luôn ≥ mức tối thiểu"*).
+                           - **Quy tắc kết nối giữa các Aggregate trong Microservices**: Một `Aggregate` (`Order`) chỉ được giữ **khóa định danh (`customerId`, `restaurantId`)** của `Aggregate` khác chứ **không giữ tham chiếu đối tượng JPA `@ManyToOne` trực tiếp** xuyên qua ranh giới dịch vụ!
+                        4. **`Repository` (Kho lưu trữ)**: Giao diện chịu trách nhiệm nạp và lưu trữ toàn bộ một `Aggregate Root` xuống cơ sở dữ liệu.
+                        5. **`Application / Domain Service`**: Điều phối luồng nghiệp vụ giữa các `Aggregate`, `Repository` và các cổng giao tiếp ngoại vi (`Outbound Ports`).
 
-                        ## 2. Nguyên lý Kiến trúc & Bảng đối chiếu
-                        | Khối DDD | Định danh / So sánh | Quy tắc tham chiếu xuyên Aggregate | Ghi chú Spring Boot / JPA |
-                        | :--- | :--- | :--- | :--- |
-                        | **Entity** | Có ID riêng (`Order.id`) | Nằm trong Aggregate Root | Quản lý vòng đời qua Aggregate Root |
-                        | **Value Object** | Không ID, so sánh theo giá trị | Java `record Money(BigDecimal amount, String currency)` | Bất biến, dùng `@Embeddable` hoặc JSONB |
-                        | **Aggregate Root** | Cụm nhất quán transaction (`Order`) | **Chỉ giữ ID (`UUID restaurantId`)**, CẤM `@ManyToOne` xuyên service | Xuất Domain Event sau khi commit |
+                        ### 2. Kiến Trúc Nội Bộ 3 Tầng Chuẩn Mực Ở Mức `C3` Của Dịch Vụ Spring Boot
+                        Khi đọc hoặc thiết kế mức `C3 Component` của một dịch vụ Spring Boot, hãy luôn sử dụng **Tiêm phụ thuộc qua hàm khởi tạo (`Constructor Injection`)** để mọi phụ thuộc nội bộ lộ rõ ngay trên chữ ký hàm khởi tạo:
 
-                        ## 3. Triển khai chuẩn với Java 21 & Spring Boot 3
                         ```java
+                        package com.mavis.ecommerce.order.application;
+
+                        import com.mavis.ecommerce.order.api.dto.CreateOrderRequest;
+                        import com.mavis.ecommerce.order.domain.model.Order;
+                        import com.mavis.ecommerce.order.domain.port.InventoryClientPort;
+                        import com.mavis.ecommerce.order.domain.repository.OrderRepository;
+                        import org.springframework.stereotype.Service;
+                        import org.springframework.transaction.annotation.Transactional;
+
                         @Service
                         public class OrderApplicationService {
-                            private final OrderRepository orderRepository;
-                            private final PaymentClient paymentClient;
 
-                            // Constructor Injection giúp C3 Component Graph thấy rõ cạnh phụ thuộc
-                            public OrderApplicationService(OrderRepository orderRepository, PaymentClient paymentClient) {
+                            private final OrderRepository orderRepository;
+                            private final InventoryClientPort inventoryClient;
+
+                            // Constructor Injection: Nhìn vào đây là thấy rõ ngay sơ đồ phụ thuộc C3!
+                            public OrderApplicationService(OrderRepository orderRepository,
+                                                           InventoryClientPort inventoryClient) {
                                 this.orderRepository = orderRepository;
-                                this.paymentClient = paymentClient;
+                                this.inventoryClient = inventoryClient;
+                            }
+
+                            @Transactional
+                            public Order createOrder(CreateOrderRequest request) {
+                                // 1. Kiểm tra tồn kho qua Outbound Port
+                                for (var line : request.items()) {
+                                    boolean reserved = inventoryClient.checkAndReserveStock(line.skuCode(), line.quantity());
+                                    if (!reserved) {
+                                        throw new IllegalStateException("Không đủ tồn kho cho mã SKU: " + line.skuCode());
+                                    }
+                                }
+                                // 2. Khởi tạo Aggregate Root (đảm bảo toàn vẹn nghiệp vụ) và lưu qua Repository
+                                Order order = Order.createPending(request.customerId(), request.items());
+                                return orderRepository.save(order);
                             }
                         }
                         ```
-
-                        ## 4. Checklist Kiểm toán 3E & Các bẫy thường gặp khi vấn đáp
-                        - **Vì sao cấm `@ManyToOne` sang Entity dịch vụ khác?** Phá vỡ Database-per-Service, buộc tải chéo bảng và khóa transaction cục bộ.
-                        - **Anemic Domain Model**: Tránh nhét hết rule nghiệp vụ vào Service rồi biến Entity thành getter/setter rỗng.
                         """
                 )
         );
@@ -227,20 +268,23 @@ public final class Module2ArchitectureAndDddProvider {
                 "Bài tập Tự luận Chương 2: Phân rã Hệ thống Thương mại Điện tử theo DDD & C4 Model",
                 "Đề xuất tách Monolith chia sẻ bảng sang Bounded Context, Database-per-Service và đặc tả C1–C3.",
                 """
-                ### Đề bài Tự luận Chương 2: Phân rã Monolith Thương mại Điện tử & Đặc tả C4 Model
-                Công ty của bạn đang chạy một Monolith gồm `Orders`, `Payments`, `Inventory`, `Notifications` dùng chung `ecommerce_shared_db`, dẫn tới khóa bảng nặng khi báo cáo tồn kho.
+                ### Đề bài Tự luận Chương 2: Phân rã Hệ thống Thương mại Điện tử Nguyên khối & Đặc tả C4 Model
+                Giả sử công ty của bạn đang vận hành một ứng dụng Thương mại điện tử Nguyên khối (`Monolith`) gồm 4 nhóm chức năng đang dùng chung một cơ sở dữ liệu `ecommerce_shared_db`: (1) Quản lý Đơn hàng (`Orders`), (2) Xử lý Thanh toán (`Payments`), (3) Quản lý Kho hàng (`Inventory`), và (4) Gửi Thông báo Email/SMS (`Notifications`). Trong đợt khuyến mãi vừa qua, việc truy vấn báo cáo tồn kho nặng đã làm khóa bảng Database khiến khách hàng không thể thanh toán đơn hàng.
 
-                **Yêu cầu bài viết (400 – 600 từ)**:
-                1. **Phân rã theo `Bounded Context` & `Database-per-Service`**: Chỉ rõ từng Microservice, trách nhiệm cốt lõi, `Aggregate Root` chính và các bảng sở hữu độc quyền. Giải thích cách `order-service` lấy tồn kho mà không được phép `JOIN` chéo DB.
-                2. **Đặc tả 3 tầng `C1`, `C2`, `C3`**: Liệt kê chính xác các Nodes và Edges ở C1 Context, C2 Container, và C3 Component bên trong `order-service`.
+                **Yêu cầu bài viết tự luận (400 – 600 từ)**:
+                1. **Phân rã theo `Bounded Context` & `Database-per-Service`**: Hãy đề xuất phương án tách khối Monolith trên thành các Microservices độc lập. Với mỗi dịch vụ, hãy chỉ rõ: Tên dịch vụ, Trách nhiệm cốt lõi, Tên `Aggregate Root` chính, và các bảng dữ liệu mà nó sở hữu độc quyền. Giải thích cách `order-service` lấy thông tin tồn kho mà không được phép `JOIN` trực tiếp vào bảng của `inventory-service`.
+                2. **Đặc tả 3 Tầng Sơ đồ C4 (`C1`, `C2`, `C3`)**: Hãy liệt kê chính xác danh sách các phần tử (`Nodes`) và các mối quan hệ (`Edges` kèm giao thức) sẽ xuất hiện ở từng tầng:
+                   - Tầng `C1 (System Context)`
+                   - Tầng `C2 (Container Diagram)`
+                   - Tầng `C3 (Component Diagram)` khi phóng to vào bên trong `order-service`.
                 """,
                 List.of(
-                        new RubricCriterion("1. Phân định Bounded Context & Database-per-Service", 40,
-                                "Tách rõ 4 dịch vụ/4 DB riêng, xác định Aggregate Root đúng và thay SQL JOIN chéo bằng API/Events."),
-                        new RubricCriterion("2. Cô lập nghiêm ngặt 3 tầng C1, C2, C3", 40,
-                                "Phân bổ đúng phần tử cho từng mức C1, C2, C3; không lẫn Database/Class vào C1 hoặc Class nhỏ vào C2."),
-                        new RubricCriterion("3. Cấu trúc nội bộ C3 của order-service", 20,
-                                "Thể hiện rõ OrderController -> OrderApplicationService -> Order Aggregate / Repository & Outbound Client Ports.")
+                        new RubricCriterion("1. Phân định Bounded Context & Quyền sở hữu Dữ liệu", 40,
+                                "Tách rõ 4 dịch vụ với 4 schema/DB riêng biệt, chỉ rõ Aggregate Root của từng miền và giải thích đúng việc thay thế câu lệnh SQL JOIN chéo bằng giao tiếp qua API/Events."),
+                        new RubricCriterion("2. Tuân thủ nghiêm ngặt Cô lập Tầng C4 (C1, C2, C3)", 40,
+                                "Phân bổ đúng phần tử cho từng tầng C1, C2, C3; không trộn lẫn Database/Service vào C1 và không trộn lẫn Class/Component nội bộ vào C2."),
+                        new RubricCriterion("3. Thiết kế Cấu trúc Nội bộ C3 của order-service", 20,
+                                "Trình bày rõ luồng OrderController -> OrderApplicationService -> Order Aggregate / OrderRepository & Outbound Client Ports.")
                 )
         );
     }
