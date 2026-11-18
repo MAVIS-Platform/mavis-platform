@@ -367,6 +367,12 @@ public class CourseSetupService {
                 continue;
             }
             String path = element.getScope() == null ? "" : element.getScope().toLowerCase().replace('\\', '/');
+            if (path.isBlank() && element.getProperties() != null) {
+                path = element.getProperties().path("workerProjectPath")
+                        .asText(element.getProperties().path("sourcePath").asText(""))
+                        .toLowerCase(java.util.Locale.ROOT)
+                        .replace('\\', '/');
+            }
             if (path.isBlank()) path = element.getName() == null ? "" : element.getName().toLowerCase();
             for (String service : services) {
                 String needle = service.toLowerCase(java.util.Locale.ROOT);

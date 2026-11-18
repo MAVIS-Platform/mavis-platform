@@ -239,8 +239,10 @@ class CourseSetupServiceTest {
                 .languageStack("CSHARP_DOTNET").scope("orders/Program.cs").build();
         ModelElement paymentCode = ModelElement.builder().modelVersion(model).elementType("CLASS").name("Program")
                 .languageStack("CSHARP_DOTNET").scope("payment/Program.cs").build();
-        ModelElement routeCode = ModelElement.builder().modelVersion(model).elementType("CLASS").name("Program")
-                .languageStack("CSHARP_DOTNET").scope("orders-payment-route/Program.cs").build();
+        ModelElement routeCode = ModelElement.builder().modelVersion(model).elementType("COMPONENT").name("RouteController")
+                .languageStack("CSHARP_DOTNET")
+                .properties(mapper.readTree("{\"workerProjectPath\":\"repo/orders-payment-route/RouteController.csproj\"}"))
+                .build();
         orders.setProperties(mapper.readTree("{\"ports\":[\"8080\"]}"));
         payment.setProperties(mapper.readTree("{\"ports\":[\"8081:9090\"]}"));
         route.setProperties(mapper.readTree("{\"ports\":[\"8080/tcp\"]}"));
