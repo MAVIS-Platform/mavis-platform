@@ -183,12 +183,12 @@ function MarkdownEditor({
         </div>
       </div>
 
-      <div className={mode === "split" ? "grid gap-4 lg:grid-cols-2" : "block"}>
+      <div className={mode === "split" ? "grid items-start gap-4 lg:grid-cols-2" : "block"}>
         {(mode === "write" || mode === "split") && (
           <Textarea
             rows={12}
             value={value}
-            className="font-mono text-sm leading-6"
+            className="h-80 resize-none font-mono text-sm leading-6"
             placeholder={t(
               "# Lesson heading\n\nWrite the lesson in Markdown or import a .md file.\n\n- Key idea\n- Example from the sample repository",
               "# Tiêu đề bài học\n\nViết bài học bằng Markdown hoặc nhập tệp .md.\n\n- Ý chính\n- Ví dụ từ repo mẫu",
@@ -197,7 +197,7 @@ function MarkdownEditor({
           />
         )}
         {(mode === "preview" || mode === "split") && (
-          <div className="min-h-64 rounded-xl border bg-background p-5 shadow-2xs">
+          <div className="h-80 overflow-y-auto rounded-xl border bg-background p-5 shadow-2xs">
             <div className="mb-4 flex flex-wrap items-center gap-2 border-b pb-3">
               <span className="inline-flex items-center gap-1 rounded-full border border-teal-200 bg-teal-50 px-2.5 py-0.5 text-[11px] font-medium text-teal-800 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-300">
                 📖 {t("Theory Lesson", "Bài giảng lý thuyết")}

@@ -256,12 +256,12 @@ export function TheoryLibrary() {
             />
           </label>
 
-          <div className="grid gap-4 lg:grid-cols-2">
-            <label className="space-y-1.5 text-xs font-medium">
+          <div className="grid items-start gap-4 lg:grid-cols-2">
+            <label className="flex flex-col gap-1.5 text-xs font-medium">
               <span>{t("Lesson body (Markdown)", "Nội dung bài học (Markdown)")}</span>
               <Textarea
-                rows={14}
-                className="font-mono text-sm leading-6"
+                rows={12}
+                className="h-80 resize-none font-mono text-sm leading-6"
                 value={draft.body}
                 placeholder={t(
                   "# Lesson heading\n\nWrite or import Markdown content for students…",
@@ -270,9 +270,9 @@ export function TheoryLibrary() {
                 onChange={(event) => setDraft({ ...draft, body: event.target.value })}
               />
             </label>
-            <div className="space-y-1.5 text-xs font-medium">
+            <div className="flex flex-col gap-1.5 text-xs font-medium">
               <span>{t("Student Preview", "Xem trước như sinh viên")}</span>
-              <div className="h-[340px] overflow-y-auto rounded-lg border bg-background p-4">
+              <div className="h-80 overflow-y-auto rounded-lg border bg-background p-4">
                 {draft.body.trim() ? (
                   <MarkdownPreview markdown={draft.body} />
                 ) : (
