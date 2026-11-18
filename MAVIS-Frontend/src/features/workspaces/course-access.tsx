@@ -1527,6 +1527,30 @@ export function PublishCourseLab({
   );
 }
 
+export type BootstrapJavaCourseraResult = {
+  workspaceId: string;
+  code: string;
+  name: string;
+};
+
+export function useBootstrapJavaCoursera() {
+  const router = useRouter();
+  const cache = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      courseApi<BootstrapJavaCourseraResult>("workspaces/bootstrap-java-coursera", {
+        method: "POST",
+      }),
+    onSuccess: (data) => {
+      void cache.invalidateQueries({ queryKey: ["api", "workspaces"] });
+      void cache.invalidateQueries({ queryKey: ["api", "assignments"] });
+      void cache.invalidateQueries({ queryKey: ["api", "course-authoring", data.workspaceId] });
+      void cache.invalidateQueries({ queryKey: roadmapKey(data.workspaceId) });
+      router.push(`/workspace-overview?workspace=${encodeURIComponent(data.workspaceId)}`);
+    },
+  });
+}
+
 export function SeedCuratedCourseLabs({
   workspaceId,
   variant = "outline",
