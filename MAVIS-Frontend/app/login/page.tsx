@@ -43,9 +43,21 @@ export default function LoginPage() {
     await client.cancelQueries();
     client.clear();
     client.setQueryData(["api", "session", {}], session);
-    router.replace(
-      await loginDestination(params.get("next"), session.user?.role ?? "student", api),
-    );
+    const nextParam = params.get("next");
+    const destination = await loginDestination(nextParam, session.user?.role ?? "student", api);
+    if (!nextParam && session.user?.role === "lecturer" && destination === "/workspaces") {
+      try {
+        const list = await api.execute("workspaces", {});
+        const javaCourse = list.find((w) => w.code === "JAVA-MS-2026");
+        if (javaCourse?.id) {
+          router.replace(`/workspace-overview?workspace=${encodeURIComponent(javaCourse.id)}`);
+          return;
+        }
+      } catch {
+        /* Fallback to default /workspaces landing route. */
+      }
+    }
+    router.replace(destination);
   };
   async function sample(role: AppRole) {
     if (submitting.current) return;
