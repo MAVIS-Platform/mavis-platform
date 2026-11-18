@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import {
   BookOpenCheck,
@@ -11,20 +12,24 @@ import {
   Plus,
   Users,
 } from "lucide-react";
-import { useApiQuery, useSelection } from "@/hooks/use-api";
+import { useApi, useApiQuery, useSelection } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { EmptyState, RequestState } from "@/components/shared/request-state";
+import { EmptyState, ErrorState, RequestState } from "@/components/shared/request-state";
 import { SearchInput } from "@/components/shared/forms";
 import { StatusBadge } from "@/components/shared/data";
 import { CreateWorkspace } from "./manage";
+import { useBootstrapJavaCoursera } from "./course-access";
 import { useLocale } from "@/lib/i18n/locale-context";
 
 export function TeacherDashboard() {
   const { t } = useLocale();
+  const api = useApi();
+  const router = useRouter();
   const query = useApiQuery("workspaces", {});
   const submissions = useApiQuery("submissions", {});
   const selection = useSelection();
+  const bootstrapJava = useBootstrapJavaCoursera();
   const [showCreate, setShowCreate] = useState(false);
   const [search, setSearch] = useState("");
 
@@ -83,6 +88,23 @@ export function TeacherDashboard() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2.5">
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={bootstrapJava.isPending}
+              onClick={() => {
+                if (api.mode === "mock") {
+                  router.push("/workspace-overview?workspace=workspace-java-ms-2026");
+                  return;
+                }
+                bootstrapJava.mutate();
+              }}
+              className="bg-amber-400 text-slate-950 shadow-sm hover:bg-amber-300"
+            >
+              {bootstrapJava.isPending
+                ? t("Provisioning JAVA-MS-2026…", "Đang khởi tạo JAVA-MS-2026…")
+                : t("☕ 1-Click Java Microservices", "☕ Khởi tạo / Đồng bộ JAVA-MS-2026")}
+            </Button>
             <Button type="button" onClick={() => setShowCreate((open) => !open)}>
               <Plus className="mr-1.5 h-4 w-4" aria-hidden="true" />
               {showCreate ? t("Close", "Đóng") : t("Create class", "Tạo lớp mới")}
@@ -95,6 +117,11 @@ export function TeacherDashboard() {
             </Button>
           </div>
         </div>
+        {bootstrapJava.isError && (
+          <div className="mt-3 rounded-lg bg-white/95 p-2 text-foreground">
+            <ErrorState error={bootstrapJava.error} />
+          </div>
+        )}
       </section>
 
       {showCreate && <CreateWorkspace onClose={() => setShowCreate(false)} />}
@@ -192,7 +219,7 @@ export function TeacherDashboard() {
                           </Badge>
                           <div className="flex items-center gap-1.5">
                             <Link
-                              href={`/members?workspace=${encodeURIComponent(workspace.id)}`}
+                              href={`/workspace-overview?workspace=${encodeURIComponent(workspace.id)}#class-passkey`}
                               onClick={() => selection.setWorkspaceId(workspace.id)}
                               className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300"
                             >
