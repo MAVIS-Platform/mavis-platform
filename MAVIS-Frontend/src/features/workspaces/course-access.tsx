@@ -866,8 +866,8 @@ export function CourseEnrollment({
     <DetailPanel title={t("Join a class with Passkey", "Tham gia lớp bằng Passkey")}>
       <p className="text-xs text-muted-foreground">
         {t(
-          "Enter the 22-character Passkey issued by your Lecturer to enroll immediately.",
-          "Nhập mã Passkey gồm 22 ký tự do Giảng viên cấp để ghi danh ngay vào lớp học.",
+          "Enter the 4–32 character Passkey issued by your Lecturer (e.g. JAVA2026) to enroll immediately.",
+          "Nhập mã Passkey (4–32 ký tự, VD: JAVA2026) do Giảng viên cấp để ghi danh ngay vào lớp học.",
         )}
       </p>
       <form
@@ -881,23 +881,24 @@ export function CourseEnrollment({
       >
         <div className="min-w-[260px] flex-1 max-w-md">
           <FormField
-            label={`Passkey (${code.length}/22)`}
-            hint={t("Spaces are removed automatically.", "Khoảng trắng sẽ được tự động loại bỏ.")}
+            label="Passkey"
+            hint={t("4–32 characters (letters, digits, - or _). Example: JAVA2026.", "Từ 4–32 ký tự (chữ, số, - hoặc _). Ví dụ: JAVA2026.")}
           >
             {(props) => (
               <Input
                 {...props}
                 required
                 className="font-mono tracking-wider"
-                placeholder="XXXXXXXXXXXXXXXXXXXXXX"
-                pattern="[A-Za-z0-9_\-]{22}"
-                maxLength={22}
+                placeholder="JAVA2026"
+                pattern="[A-Za-z0-9_\-]{4,32}"
+                minLength={4}
+                maxLength={32}
                 autoComplete="off"
                 spellCheck={false}
                 disabled={redeem.isPending}
                 value={code}
                 onChange={(event) => {
-                  setCode(event.target.value.replace(/\s+/g, "").slice(0, 22));
+                  setCode(event.target.value.replace(/\s+/g, "").slice(0, 32));
                   setRequestId(undefined);
                   redeem.reset();
                 }}
@@ -905,7 +906,7 @@ export function CourseEnrollment({
             )}
           </FormField>
         </div>
-        <Button disabled={redeem.isPending || code.length !== 22}>
+        <Button disabled={redeem.isPending || code.length < 4 || code.length > 32}>
           {redeem.isPending ? t("Joining…", "Đang tham gia…") : t("Join class", "Vào lớp")}
         </Button>
       </form>
