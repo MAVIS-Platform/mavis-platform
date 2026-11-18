@@ -17,7 +17,8 @@ import {
   Users,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { useApiMutation, useApiQuery, useSession, useSelection } from "@/hooks/use-api";
+import { useApi, useApiMutation, useApiQuery, useSession, useSelection } from "@/hooks/use-api";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { ErrorState, RequestState } from "@/components/shared/request-state";
 import { SearchInput, SelectField } from "@/components/shared/forms";
@@ -26,6 +27,7 @@ import { CreateWorkspace, WorkspaceControls } from "./manage";
 import {
   CoursePasskey,
   CourseRoadmap,
+  useBootstrapJavaCoursera,
   useCourseAuthoring,
   useCourseRoadmap,
   useWorkspaceGradebook,
@@ -41,9 +43,12 @@ import { useLocale } from "@/lib/i18n/locale-context";
 
 export function Workspaces() {
   const { t } = useLocale();
+  const api = useApi();
+  const router = useRouter();
   const query = useApiQuery("workspaces", {});
   const session = useSession();
   const { workspaceId } = useSelection();
+  const bootstrapJava = useBootstrapJavaCoursera();
   const [showCreate, setShowCreate] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "archived">("all");
@@ -99,10 +104,34 @@ export function Workspaces() {
                 <h2 className="text-3xl font-semibold tracking-tight md:text-4xl">{t("A great class starts here.", "Khởi đầu cho một lớp học tuyệt vời.")}</h2>
                 <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">{t("Open a class to organize modules, Labs, students and grading.", "Mở một lớp để tổ chức chương, Lab, sinh viên và chấm điểm.")}</p>
               </div>
-              <Button type="button" className="h-12 rounded-xl bg-[#0056d2] px-6 text-white shadow-lg shadow-blue-600/15 hover:bg-[#0046ad]" onClick={() => setShowCreate((open) => !open)}>
-                <Plus className="mr-2 size-4" aria-hidden="true" />{showCreate ? t("Close", "Đóng") : t("Create class", "Tạo lớp")}
-              </Button>
+              <div className="flex flex-wrap items-center gap-2.5">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-12 rounded-xl border-teal-300 bg-teal-50/90 px-4 text-teal-900 hover:bg-teal-100 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-100"
+                  disabled={bootstrapJava.isPending}
+                  onClick={() => {
+                    if (api.mode === "mock") {
+                      router.push("/workspace-overview?workspace=workspace-java-ms-2026");
+                      return;
+                    }
+                    bootstrapJava.mutate();
+                  }}
+                >
+                  {bootstrapJava.isPending
+                    ? t("Provisioning JAVA-MS-2026…", "Đang khởi tạo JAVA-MS-2026…")
+                    : t("☕ 1-Click Java Microservices Course", "☕ Khởi tạo / Đồng bộ Môn Java Microservices (JAVA-MS-2026)")}
+                </Button>
+                <Button type="button" className="h-12 rounded-xl bg-[#0056d2] px-6 text-white shadow-lg shadow-blue-600/15 hover:bg-[#0046ad]" onClick={() => setShowCreate((open) => !open)}>
+                  <Plus className="mr-2 size-4" aria-hidden="true" />{showCreate ? t("Close", "Đóng") : t("Create class", "Tạo lớp")}
+                </Button>
+              </div>
             </div>
+            {bootstrapJava.isError && (
+              <div className="mt-3">
+                <ErrorState error={bootstrapJava.error} />
+              </div>
+            )}
           </header>
 
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto]">
@@ -244,7 +273,7 @@ export function Workspaces() {
                       </span>
                     )}
                     <Link
-                      href={`/members?workspace=${encodeURIComponent(workspace.id)}`}
+                      href={`/workspace-overview?workspace=${encodeURIComponent(workspace.id)}#class-passkey`}
                       className="inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 font-medium text-emerald-700 hover:bg-emerald-100"
                     >
                       🔑 {t("Passkey", "Passkey lớp")}
