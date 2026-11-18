@@ -1051,6 +1051,23 @@ export function LabTheorySection({
         </div>
         {course.addItem.error && <p role="alert" className="text-sm text-destructive">{course.addItem.error.message}</p>}
       </section>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-teal-200 bg-gradient-to-r from-teal-50/70 to-emerald-50/50 p-4">
+        <p className="text-sm font-medium text-teal-950">
+          {t(
+            "Done writing Theory? Pin your Sample Repository & verify C1–C3 Diagrams in Step 2.",
+            "Đã soạn xong Lý thuyết? Tiếp tục gắn Mã nguồn mẫu & kiểm tra Sơ đồ C1–C3 ở Bước 2.",
+          )}
+        </p>
+        <Button
+          type="button"
+          className="bg-teal-600 text-white hover:bg-teal-700"
+          onClick={() => onNavigate("source")}
+        >
+          {t("Next Step 2: Source Code & C1–C3 →", "Sang Bước 2: Mã nguồn & Sơ đồ C1–C3 →")}
+          <ArrowRight className="ml-1.5 size-4" aria-hidden="true" />
+        </Button>
+      </div>
     </div>
   );
 }

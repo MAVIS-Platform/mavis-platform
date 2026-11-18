@@ -394,7 +394,11 @@ export function LabAuthoring() {
           )}
 
           {activeStep === 2 && assignment && (
-            <LabSourceSection workspaceId={workspaceId} assignment={assignment} />
+            <LabSourceSection
+              workspaceId={workspaceId}
+              assignment={assignment}
+              onNavigate={navigate}
+            />
           )}
 
           {activeStep === 3 && assignment && (
