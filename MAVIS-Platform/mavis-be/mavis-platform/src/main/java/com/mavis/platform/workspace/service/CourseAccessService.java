@@ -434,9 +434,9 @@ public class CourseAccessService {
                 WHERE workspace_id = ? AND revoked_at IS NULL
                 """, workspaceId);
         jdbc.update("""
-                INSERT INTO course_passkeys (id, workspace_id, code, label, digest, expires_at, is_active, created_at)
-                VALUES (?, ?, ?, 'Mã tự động', ?, ?, TRUE, now())
-                """, UUID.randomUUID(), workspaceId, code, digest(code), expires);
+                INSERT INTO course_passkeys (workspace_id, digest, expires_at, id, code, label, is_active, created_at)
+                VALUES (?, ?, ?, ?, ?, 'Mã tự động', TRUE, now())
+                """, workspaceId, digest(code), expires, UUID.randomUUID(), code);
         audit("COURSE_PASSKEY_ISSUED", "WORKSPACE", workspaceId);
         return new Passkey(code, expires);
     }
