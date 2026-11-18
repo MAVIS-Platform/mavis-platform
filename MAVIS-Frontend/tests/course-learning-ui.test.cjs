@@ -682,8 +682,8 @@ test("Stage 3 lecturer 1-click curated course lab seeder is wired on courses and
     allowedBackendPath("workspaces/11111111-1111-1111-1111-111111111111/course-labs/seed-curated"),
     true,
   );
-  assert.ok(course.includes("<SeedCuratedCourseLabs workspaceId={workspaceId}"));
-  assert.ok(assignments.includes("<SeedCuratedCourseLabs workspaceId={workspaceId}"));
+  assert.equal(course.includes("<SeedCuratedCourseLabs workspaceId={workspaceId}"), false);
+  assert.equal(assignments.includes("<SeedCuratedCourseLabs workspaceId={workspaceId}"), false);
 });
 
 test("Course builder exposes immutable publishing and BFF routes for structured roadmap content", () => {
@@ -962,7 +962,7 @@ test("Lab Library is the class-facing lab store and Quiz can be generated from L
   const publish = read("src/features/assignments/lab-publish-section.tsx");
   const theory = read("src/features/assignments/lab-theory-section.tsx");
 
-  assert.match(navigation, /label: "Lab Library"/);
+  assert.match(authoring, /en: "Lab Library"/);
   assert.match(navigation, /id: "lab-authoring"[\s\S]*?label: "Lab Creation"/);
   assert.doesNotMatch(navigation, /label: "Lab Authoring"/);
   assert.ok(assignments.includes("Library draft"));
@@ -996,7 +996,7 @@ test("Theory Library is a standalone workspace screen with editing and course pu
   const navigation = read("src/lib/navigation.ts");
 
   assert.match(page, /"theory-library"/);
-  assert.match(navigation, /id: "theory-library"[\s\S]*?href: "\/theory-library"/);
+  assert.match(read("src/features/assignments/lab-authoring.tsx"), /id: "theory-library"/);
   assert.ok(screen.includes("theory-assets"));
   assert.ok(screen.includes("New lesson"));
   assert.ok(screen.includes("Edit theory lesson"));

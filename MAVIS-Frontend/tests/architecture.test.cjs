@@ -827,8 +827,6 @@ test("lecturer workspace navigation exposes unified class command destinations w
   assert.deepEqual(Object.fromEntries(destinations.map((item) => [item.id, item.href])), {
     "workspace-overview": "/workspace-overview",
     "course-authoring": "/workspace-overview?view=course-authoring",
-    "theory-library": "/theory-library",
-    assignments: "/assignments",
     "lab-authoring": "/lab-authoring",
     "assignment-submissions": "/submissions",
     members: "/members",
@@ -1049,9 +1047,7 @@ test("lecturer sidebar nests class destinations and keeps both lab menus", () =>
   );
   assert.ok(html.includes('aria-label="Collapse SE180711 · FA menu"'));
   assert.ok(html.includes('href="/workspace-overview?workspace=class-1"'));
-  assert.ok(html.includes('aria-label="Lab Library" href="/assignments?workspace=class-1"'));
   assert.ok(html.includes('aria-label="Lab Creation" href="/lab-authoring?workspace=class-1"'));
-  assert.ok(html.includes('aria-label="Theory Library" href="/theory-library?workspace=class-1"'));
   assert.ok(!html.includes("👨‍🏫 Lecturer"));
   assert.ok(html.includes("Sign out"));
 });
@@ -5163,7 +5159,6 @@ test("My Workspaces is a compact LMS class list with tabs and a module outline",
   assert.match(overviewHtml, /aria-label="Class sections"/);
   assert.match(overviewHtml, /Overview &amp; Setup/);
   assert.match(overviewHtml, /Curriculum &amp; Materials/);
-  assert.match(overviewHtml, /Lab Library/);
   assert.match(overviewHtml, /Lab Creation/);
   assert.match(overviewHtml, /Grading &amp; Gradebook/);
   assert.match(overviewHtml, /Students &amp; Access/);
