@@ -65,17 +65,17 @@ export function TeacherDashboard() {
 
   return (
     <div className="space-y-6">
-      <section className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-indigo-950 via-indigo-700 to-purple-700 p-6 text-white shadow-lg sm:p-7">
+      <section className="mavis-hero-surface p-6 sm:p-7">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="max-w-2xl space-y-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-medium text-indigo-100 backdrop-blur-sm">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
               <GraduationCap className="h-3.5 w-3.5" aria-hidden="true" />
               {t("MAVIS Teaching Studio", "Không Gian Quản Lý Giảng Dạy")}
             </span>
-            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
+            <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
               {t("My Classes", "Lớp Học Của Tôi")}
             </h1>
-            <p className="text-sm text-indigo-100/90">
+            <p className="text-sm leading-6 text-muted-foreground">
               {t(
                 "Create classes, author guided Labs with Quiz & 2D Studio, track student progress, and grade frozen submissions.",
                 "Quản lý lớp học, biên soạn bài Lab tương tác (Quiz & 2D Studio), theo dõi tiến độ sinh viên và chấm bài tập.",
@@ -83,19 +83,11 @@ export function TeacherDashboard() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2.5">
-            <Button
-              type="button"
-              onClick={() => setShowCreate((open) => !open)}
-              className="bg-emerald-500 text-white shadow-sm hover:bg-emerald-600"
-            >
+            <Button type="button" onClick={() => setShowCreate((open) => !open)}>
               <Plus className="mr-1.5 h-4 w-4" aria-hidden="true" />
               {showCreate ? t("Close", "Đóng") : t("Create class", "Tạo lớp mới")}
             </Button>
-            <Button
-              asChild
-              variant="outline"
-              className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white"
-            >
+            <Button asChild variant="outline">
               <Link href="/submissions">
                 <ClipboardCheck className="mr-1.5 h-4 w-4" aria-hidden="true" />
                 {t("Grading Queue", "Hàng Đợi Chấm Bài")}
@@ -109,27 +101,27 @@ export function TeacherDashboard() {
 
       {classes.length > 0 && (
         <section className="grid gap-4 sm:grid-cols-3">
-          <div className="rounded-2xl border bg-card p-4 shadow-sm">
+          <div className="mavis-card-hover rounded-2xl border bg-card p-4 shadow-sm">
             <div className="flex items-center justify-between text-xs font-medium text-muted-foreground">
               <span>{t("Managed Classes", "Tổng Số Lớp")}</span>
-              <Layers className="h-4 w-4 text-indigo-600" aria-hidden="true" />
+              <Layers className="h-4 w-4 text-primary" aria-hidden="true" />
             </div>
-            <p className="mt-2 text-2xl font-bold tracking-tight">{classes.length}</p>
+            <p className="mavis-tabular mt-2 text-2xl font-bold tracking-tight">{classes.length}</p>
             <p className="mt-0.5 text-xs text-muted-foreground">
               {activeCount} {t("active", "đang hoạt động")}
             </p>
           </div>
-          <div className="rounded-2xl border bg-card p-4 shadow-sm">
+          <div className="mavis-card-hover rounded-2xl border bg-card p-4 shadow-sm">
             <div className="flex items-center justify-between text-xs font-medium text-muted-foreground">
               <span>{t("Enrolled Students", "Tổng Sinh Viên")}</span>
-              <Users className="h-4 w-4 text-purple-600" aria-hidden="true" />
+              <Users className="h-4 w-4 text-sky-600 dark:text-sky-400" aria-hidden="true" />
             </div>
-            <p className="mt-2 text-2xl font-bold tracking-tight">{totalStudents}</p>
+            <p className="mavis-tabular mt-2 text-2xl font-bold tracking-tight">{totalStudents}</p>
             <p className="mt-0.5 text-xs text-muted-foreground">
               {t("Across all classes", "Trên tất cả lớp giảng dạy")}
             </p>
           </div>
-          <div className="rounded-2xl border bg-card p-4 shadow-sm">
+          <div className="mavis-card-hover rounded-2xl border bg-card p-4 shadow-sm">
             <div className="flex items-center justify-between text-xs font-medium text-muted-foreground">
               <span>{t("Teaching Mode", "Chế Độ Giảng Dạy")}</span>
               <BookOpenCheck className="h-4 w-4 text-emerald-600" aria-hidden="true" />
@@ -186,23 +178,23 @@ export function TeacherDashboard() {
                 return (
                   <article
                     key={workspace.id}
-                    className="flex flex-col justify-between overflow-hidden rounded-[20px] border bg-card shadow-sm transition-all hover:border-teal-400 hover:shadow-md"
+                    className="mavis-card-hover flex h-full flex-col justify-between overflow-hidden rounded-2xl border bg-card shadow-sm"
                   >
-                    <div className="h-2 bg-gradient-to-r from-teal-600 via-emerald-600 to-indigo-600" />
+                    <div className="h-1.5 bg-gradient-to-r from-primary via-sky-500 to-emerald-500" />
                     <div className="flex flex-1 flex-col justify-between gap-4 p-5">
                       <div className="space-y-3">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <Badge
                             variant="outline"
-                            className="border-indigo-200 bg-indigo-50 font-mono text-indigo-800 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300"
+                            className="border-primary/25 bg-primary/5 font-mono text-xs text-primary"
                           >
                             {workspace.code || t("CLASS", "LỚP")}
                           </Badge>
                           <div className="flex items-center gap-1.5">
                             <Link
-                              href={`/workspace-members?workspace=${encodeURIComponent(workspace.id)}`}
+                              href={`/members?workspace=${encodeURIComponent(workspace.id)}`}
                               onClick={() => selection.setWorkspaceId(workspace.id)}
-                              className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700 hover:bg-emerald-100"
+                              className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300"
                             >
                               <KeyRound className="h-3 w-3" aria-hidden="true" />
                               {t("Passkey", "Passkey")}
@@ -218,7 +210,7 @@ export function TeacherDashboard() {
                           <Link
                             href={workspaceUrl}
                             onClick={() => selection.setWorkspaceId(workspace.id)}
-                            className="block line-clamp-2 text-lg font-semibold leading-snug tracking-tight text-foreground hover:text-teal-700 hover:underline"
+                            className="block line-clamp-2 text-lg font-semibold leading-snug tracking-tight text-foreground hover:text-primary hover:underline"
                           >
                             {workspace.name}
                           </Link>
@@ -230,15 +222,15 @@ export function TeacherDashboard() {
                         </div>
 
                         <div className="flex flex-wrap gap-2 text-xs">
-                          <span className="inline-flex items-center gap-1 rounded-md bg-muted/60 px-2.5 py-1 font-medium text-foreground">
-                            <Users className="h-3.5 w-3.5 text-teal-600" aria-hidden="true" />
+                          <span className="mavis-tabular inline-flex items-center gap-1 rounded-md bg-muted/60 px-2.5 py-1 font-medium text-foreground">
+                            <Users className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
                             {students} {t("students", "sinh viên")}
                           </span>
                           {submissions.isSuccess && (
                             <span
                               className={
                                 pending > 0
-                                  ? "inline-flex items-center gap-1 rounded-md bg-amber-50 px-2.5 py-1 font-medium text-amber-800"
+                                  ? "mavis-tabular inline-flex items-center gap-1 rounded-md bg-amber-500/15 px-2.5 py-1 font-medium text-amber-800 dark:text-amber-300"
                                   : "inline-flex items-center gap-1 rounded-md bg-muted/60 px-2.5 py-1 text-muted-foreground"
                               }
                             >
@@ -255,7 +247,7 @@ export function TeacherDashboard() {
                           asChild
                           size="sm"
                           onClick={() => selection.setWorkspaceId(workspace.id)}
-                          className="flex-1 bg-teal-600 text-white hover:bg-teal-700"
+                          className="flex-1"
                         >
                           <Link href={workspaceUrl}>
                             <Layers className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
@@ -268,7 +260,7 @@ export function TeacherDashboard() {
                           variant="outline"
                           onClick={() => selection.setWorkspaceId(workspace.id)}
                         >
-                          <Link href={`/assignments/new?workspace=${encodeURIComponent(workspace.id)}`}>
+                          <Link href={`/lab-authoring?workspace=${encodeURIComponent(workspace.id)}`}>
                             <BookOpenCheck className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
                             {t("+ Lab", "+ Soạn Lab")}
                           </Link>

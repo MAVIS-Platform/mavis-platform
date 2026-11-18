@@ -780,7 +780,7 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
           <div
             className={
               canReview
-                ? "grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(380px,1fr)] xl:items-start"
+                ? "grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1.65fr)_minmax(340px,1fr)] lg:items-start"
                 : "min-w-0 space-y-6"
             }
           >
@@ -793,7 +793,7 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
                 available={Boolean(query.data.studioEvidence)}
               />
             </section>
-            <aside className="min-w-0 xl:sticky xl:top-6">
+            <aside className="min-w-0 lg:sticky lg:top-20">
               <GradingPanel
                 key={query.data.id}
                 submissionId={query.data.id}

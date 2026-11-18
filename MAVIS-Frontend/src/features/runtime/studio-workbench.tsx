@@ -2444,7 +2444,7 @@ export function StudioWorkbench() {
                         ))}
                       </div>
                     </div>
-                    <div className="grid grid-cols-4 gap-1">
+                    <div className="grid grid-cols-2 gap-1.5">
                       <button
                         type="button"
                         disabled={selectedRow.replicasNow === 0}
@@ -2454,7 +2454,7 @@ export function StudioWorkbench() {
                             service: selectedRow.serviceName,
                           })
                         }
-                        className="h-6 rounded border border-amber-500/40 bg-amber-500/15 text-[11px] font-semibold text-amber-200 transition enabled:hover:bg-amber-500/25 disabled:opacity-40"
+                        className="h-7 min-w-0 shrink-0 whitespace-nowrap rounded border border-amber-500/40 bg-amber-500/15 px-2 text-[11px] font-semibold text-amber-200 transition enabled:hover:bg-amber-500/25 disabled:opacity-40"
                       >
                         Stop
                       </button>
@@ -2467,7 +2467,7 @@ export function StudioWorkbench() {
                             service: selectedRow.serviceName,
                           })
                         }
-                        className="h-6 rounded border border-emerald-500/40 bg-emerald-500/15 text-[11px] font-semibold text-emerald-200 transition enabled:hover:bg-emerald-500/25 disabled:opacity-40"
+                        className="h-7 min-w-0 shrink-0 whitespace-nowrap rounded border border-emerald-500/40 bg-emerald-500/15 px-2 text-[11px] font-semibold text-emerald-200 transition enabled:hover:bg-emerald-500/25 disabled:opacity-40"
                       >
                         Start
                       </button>
@@ -2479,7 +2479,7 @@ export function StudioWorkbench() {
                           const copy = captureNodeCopy(selectedRow.serviceName);
                           if (copy) pasteNode(copy);
                         }}
-                        className="h-6 rounded border border-sky-500/40 bg-sky-500/15 text-[11px] font-semibold text-sky-200 transition enabled:hover:bg-sky-500/25"
+                        className="h-7 min-w-0 shrink-0 whitespace-nowrap rounded border border-sky-500/40 bg-sky-500/15 px-2 text-[11px] font-semibold text-sky-200 transition enabled:hover:bg-sky-500/25"
                       >
                         + Clone
                       </button>
@@ -2487,7 +2487,7 @@ export function StudioWorkbench() {
                         type="button"
                         disabled={customServices.length <= 2}
                         onClick={() => removeCustomBlock(selectedRow.serviceName)}
-                        className="h-6 rounded border border-red-500/40 bg-red-500/15 text-[11px] font-semibold text-red-200 transition enabled:hover:bg-red-500/25 disabled:opacity-40"
+                        className="h-7 min-w-0 shrink-0 whitespace-nowrap rounded border border-red-500/40 bg-red-500/15 px-2 text-[11px] font-semibold text-red-200 transition enabled:hover:bg-red-500/25 disabled:opacity-40"
                       >
                         {t("Delete")}
                       </button>

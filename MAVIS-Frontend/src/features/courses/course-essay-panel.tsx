@@ -95,7 +95,7 @@ export function CourseEssayItemPanel({
               {rubric.map((row, idx) => (
                 <tr key={idx}>
                   <td className="px-3 py-2 font-medium">{row.criterion}</td>
-                  <td className="px-3 py-2 font-semibold tabular-nums text-teal-700">
+                  <td className="mavis-tabular px-3 py-2 font-semibold text-primary">
                     {row.points ?? row.weightPoints ?? 0} đ
                   </td>
                   <td className="px-3 py-2 text-muted-foreground">
