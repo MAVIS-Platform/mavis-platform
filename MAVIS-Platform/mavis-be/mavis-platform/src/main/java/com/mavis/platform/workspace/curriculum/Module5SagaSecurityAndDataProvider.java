@@ -18,14 +18,32 @@ public final class Module5SagaSecurityAndDataProvider {
                         "So sánh Orchestration vs Choreography Saga, thiết kế Compensating Transactions & Transactional Outbox.",
                         55,
                         """
-                        # 📖 Bài 5.1: Saga Pattern & Transactional Outbox
+                        # Bài 5.1: Saga Pattern & Transactional Outbox
 
-                        ## 1. Tại sao bỏ `2PC / XA` trong Microservices?
-                        - Mỗi dịch vụ sở hữu DB riêng (`Database-per-Service`); 2PC khóa tài nguyên xuyên dịch vụ và làm giảm tính sẵn sàng.
-                        - **`Saga Pattern`**: Chuỗi các **Local Transactions** kèm khóa ngữ nghĩa (`PENDING_APPROVAL`). Nếu bước sau lỗi, chạy ngược **Compensating Transactions** (`RefundPayment` -> `RejectOrder`) gắn kèm `sagaId / correlationId` để bảo đảm bù trừ lũy đẳng!
+                        ## 1. Mục tiêu học tập & Bài toán thực tế
+                        - Giải quyết bài toán nhất quán dữ liệu trải dài qua nhiều Microservices mà không cần khóa 2-Phase Commit (`2PC/XA`).
+                        - Triển khai **Compensating Transactions** lũy đẳng và mẫu **Transactional Outbox** để loại bỏ lỗi **Dual-Write** giữa PostgreSQL và Message Broker.
 
-                        ## 2. `Transactional Outbox` (Chống mất sự kiện Dual-Write)
-                        - Ghi cả bản ghi nghiệp vụ (`orders`) lẫn bản tin sự kiện (`outbox_messages`) trong **cùng một `@Transactional` PostgreSQL**, rồi Relay Publisher đẩy sang Broker.
+                        ## 2. Nguyên lý Kiến trúc & Bảng đối chiếu
+                        | Cơ chế Saga / Outbox | Bản chất vận hành | Ưu điểm nổi bật | Điều kiện bắt buộc |
+                        | :--- | :--- | :--- | :--- |
+                        | **Choreography Saga** | Service phát Event và lắng nghe phản ứng lẫn nhau | Ít thành phần điều phối, hợp 2–3 bước | Tránh vòng lặp sự kiện khi quy trình phình to |
+                        | **Orchestration Saga** | Saga Orchestrator giữ máy trạng thái trung tâm | Tầm nhìn rõ luồng & thứ tự bù trừ ngược | Gắn `sagaId / correlationId` xuyên suốt & bù trừ lũy đẳng |
+                        | **Transactional Outbox** | Ghi `orders` + `outbox_messages` trong 1 `@Transactional` DB | Không bao giờ mất sự kiện sau commit | Relay Publisher hỗ trợ `At-Least-Once` & Consumer chống trùng |
+
+                        ## 3. Triển khai chuẩn với Java 21 & Spring Boot 3
+                        ```java
+                        @Transactional
+                        public UUID createPendingOrder(CreateOrderCommand cmd) {
+                            Order order = orders.save(Order.pendingApproval(cmd));
+                            outbox.save(OutboxMessage.forEvent("OrderCreated", order.getId(), toJson(order)));
+                            return order.getId();
+                        }
+                        ```
+
+                        ## 4. Checklist Kiểm toán 3E & Các bẫy thường gặp khi vấn đáp
+                        - **Bẫy Dual-Write**: Gọi `orderRepo.save()` rồi gọi ngay `kafkaTemplate.send()` trong 1 hàm không Outbox -> DB commit xong mà Broker rớt mạng sẽ mất vĩnh viễn sự kiện!
+                        - **Semantic Lock**: Dùng trạng thái trung gian `PENDING_APPROVAL` trong khi Saga chưa hoàn tất để chặn user sửa/hủy trùng lặp.
                         """
                 ),
                 new LessonSpec(
@@ -34,14 +52,30 @@ public final class Module5SagaSecurityAndDataProvider {
                         "Kiểm toán Zero Secret Leaks ([REDACTED]), xác minh JWT (Signature, iss, aud, exp) và phân biệt 401 vs 403.",
                         55,
                         """
-                        # 📖 Bài 5.2: Spring Cloud Config, Redacted Secrets & OAuth 2.0 / JWT
+                        # Bài 5.2: Spring Cloud Config, Redacted Secrets & OAuth 2.0 / JWT
 
-                        ## 1. `Zero Secret Leaks`
-                        - Trong báo cáo kiểm toán cấu hình tĩnh, chỉ ghi đường dẫn tệp + tên khóa (`SPRING_DATASOURCE_PASSWORD=[REDACTED]`), tuyệt đối không lộ Secret thô.
+                        ## 1. Mục tiêu học tập & Bài toán thực tế
+                        - Quản lý cấu hình tập trung với Spring Cloud Config và kiểm toán **Zero Secret Leaks (`[REDACTED]`)** trong log/report.
+                        - Cấu hình OAuth 2.0 Resource Server xác minh chữ ký JWT chặt chẽ và chống lỗ hổng **BOLA/IDOR**.
 
-                        ## 2. 4 Kiểm tra bắt buộc trên `JWT Resource Server`
-                        1. **Signature** (JWKS public key), 2. **Issuer (`iss`)**, 3. **Audience (`aud`)**, 4. **Expiration (`exp`)**.
-                        - Thiếu/hết hạn token $\rightarrow$ **`401 Unauthorized`**. Hợp lệ token nhưng sai Role hoặc truy cập tài nguyên người khác (`BOLA/IDOR`) $\rightarrow$ **`403 Forbidden`**.
+                        ## 2. Nguyên lý Kiến trúc & Bảng đối chiếu
+                        | Lớp kiểm tra JWT / AuthZ | Mã HTTP khi vi phạm | Ý nghĩa bảo mật |
+                        | :--- | :--- | :--- |
+                        | Thiếu token, sai Signature, hết `exp`, sai `iss`/`aud` | **`401 Unauthorized`** | Chưa xác thực được danh tính hợp lệ (`Authentication` fail) |
+                        | JWT hợp lệ nhưng thiếu `@PreAuthorize` Role hoặc đọc tài nguyên của người khác (`BOLA/IDOR`) | **`403 Forbidden`** | Đã biết là ai nhưng không có quyền truy cập tài nguyên (`Authorization` fail) |
+
+                        ## 3. Triển khai chuẩn với Java 21 & Spring Boot 3
+                        ```java
+                        @GetMapping("/api/v1/workspaces/{workspaceId}/course-essays")
+                        public List<EssaySubmissionView> list(@PathVariable UUID workspaceId) {
+                            User actor = access.requireCurrentActiveUser();
+                            // Kiểm tra BOLA/IDOR: Sinh viên chỉ được thấy bài của chính mình!
+                            return isLecturer(actor) ? findAll(workspaceId) : findByStudent(workspaceId, actor.getId());
+                        }
+                        ```
+
+                        ## 4. Checklist Kiểm toán 3E & Các bẫy thường gặp khi vấn đáp
+                        - **Zero Secret Leaks**: Khi xuất báo cáo cấu hình tĩnh cho Lecturer/Admin, mọi giá trị nhạy cảm như `JWT_SECRET` hay `SPRING_DATASOURCE_PASSWORD` phải được che thành `[REDACTED]`, chỉ giữ tên khóa và đường dẫn tệp.
                         """
                 ),
                 new LessonSpec(
@@ -50,15 +84,29 @@ public final class Module5SagaSecurityAndDataProvider {
                         "Áp dụng CQRS, UNIQUE CONSTRAINT ở DB và Whole Transaction Retry khi gặp SQLSTATE 40001.",
                         55,
                         """
-                        # 📖 Bài 5.3: API Composition vs CQRS & Cạnh tranh giao dịch PostgreSQL
+                        # Bài 5.3: API Composition vs CQRS & Cạnh tranh giao dịch PostgreSQL
 
-                        ## 1. Truy vấn dữ liệu phân tán
-                        - **`API Composition`**: API Composer gọi song song các dịch vụ và ghép JSON trong RAM.
-                        - **`CQRS`**: Tách Read Model cập nhật từ sự kiện (`OrderCreated`, `PaymentAuthorized`) để tối ưu truy vấn phức tạp.
+                        ## 1. Mục tiêu học tập & Bài toán thực tế
+                        - Chọn đúng mẫu truy vấn dữ liệu trải qua nhiều Microservices (**API Composition** vs **CQRS Read Model**).
+                        - Xử lý triệt để Race Condition, Lost Update và **Serialization Failure (`SQLSTATE 40001`)** trong PostgreSQL dưới tải đồng thời.
 
-                        ## 2. Chống `Lost Update` & Trùng khóa đồng thời
-                        - Không dựa vào `SELECT` rồi `INSERT` trong code Java: bắt buộc đặt **`UNIQUE CONSTRAINT`** trực tiếp tại PostgreSQL.
-                        - Khi PostgreSQL báo **`Serialization Failure (SQLSTATE 40001)`**, phải **Retry toàn bộ khối giao dịch (`Whole Transaction Retry`)**; lưu ý DB rollback không thu hồi được email/HTTP đã phát ra ngoài DB.
+                        ## 2. Nguyên lý Kiến trúc & Bảng đối chiếu
+                        | Pattern | Cách lấy dữ liệu chéo service | Điểm mạnh | Hạn chế cần lường trước |
+                        | :--- | :--- | :--- | :--- |
+                        | **API Composition** | API Composer gọi song song các service và merge trong RAM | Đơn giản, luôn đọc dữ liệu mới nhất | Tốn memory nếu join bộ dữ liệu lớn hoặc 1 service bị nghẽn |
+                        | **CQRS** | Projector nghe Event tạo bảng đọc (`Read Model`) phi chuẩn hóa | Tốc độ query đọc cực nhanh, lọc/sort thoải mái | Chấp nhận độ trễ nhất quán cuối cùng (*Eventual Consistency*) |
+
+                        ## 3. Triển khai chuẩn với Java 21 & Spring Boot 3
+                        ```sql
+                        -- Chống race condition ghi danh/nộp bài đồng thời trực tiếp ở tầng PostgreSQL
+                        ALTER TABLE course_item_submissions
+                            ADD CONSTRAINT uq_course_item_student_submission
+                            UNIQUE (course_item_id, student_id);
+                        ```
+
+                        ## 4. Checklist Kiểm toán 3E & Các bẫy thường gặp khi vấn đáp
+                        - **Cấm pattern `SELECT` rồi mới `INSERT` trong code Java để check trùng** khi có concurrent request: bắt buộc dùng `UNIQUE CONSTRAINT` + `ON CONFLICT DO UPDATE / DO NOTHING` ngay trong DB!
+                        - **Whole Transaction Retry**: Khi gặp `SQLSTATE 40001` (`Serialization Failure`), PHẢI retry lại toàn bộ block giao dịch từ đầu (và không gọi HTTP/email ra ngoài trước khi transaction commit xong!).
                         """
                 )
         );

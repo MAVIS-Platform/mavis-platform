@@ -18,14 +18,40 @@ public final class Module3CommunicationAndGatewayProvider {
                         "Đối chiếu hợp đồng OpenFeign -> Controller và chạy Cycle-Safe Reverse BFS tìm Blast Radius an toàn chu trình.",
                         50,
                         """
-                        # 📖 Bài 3.1: OpenFeign & Cycle-Safe Reverse BFS
+                        # Bài 3.1: OpenFeign & Cycle-Safe Reverse BFS
 
-                        ## 1. Bằng chứng Hợp đồng Giao tiếp (`@FeignClient`)
-                        - Khai báo `@FeignClient` mới chỉ là Client declaration; cần kiểm chứng thêm **Call-site** và sự trùng khớp **HTTP Verb + Path** tại Controller đích.
+                        ## 1. Mục tiêu học tập & Bài toán thực tế
+                        - Đọc hiểu chính xác khai báo `@FeignClient` kết hợp Call-site và đối chiếu chữ ký Controller đích (`HTTP Verb` + `Path` + `DTO`).
+                        - Vận dụng thuật toán **Cycle-Safe Reverse BFS** để tính **Vùng ảnh hưởng (`Blast Radius`)** khi một dịch vụ trung tâm gặp sự cố hoặc đổi API.
 
-                        ## 2. Đồ thị Phụ thuộc & Thuật toán `Cycle-Safe Reverse BFS`
-                        Khi `payment-service` (tâm chấn) sập, lỗi lan truyền **ngược chiều mũi tên phụ thuộc** ($A \rightarrow B$ suy ra $B$ ảnh hưởng $A$ ở Hop 1 DIRECT, các dịch vụ gọi $A$ ở Hop 2 INDIRECT).
-                        - **Tập `visited`** là bắt buộc để chặn lặp vô tận khi đồ thị có chu trình (`Cyclic Dependency`).
+                        ## 2. Nguyên lý Kiến trúc & Bảng đối chiếu
+                        | Khái niệm | Định nghĩa | Vai trò trong MAVIS | Bẫy thường gặp |
+                        | :--- | :--- | :--- | :--- |
+                        | **Call-site Evidence** | Nơi `@Service` thực sự gọi method `@FeignClient` | Chứng minh cạnh phụ thuộc tĩnh có được dùng | Chỉ có interface `@FeignClient` mà không ai gọi |
+                        | **Hop 1 (`DIRECT`)** | Caller gọi trực tiếp tới tâm chấn `payment-service` | Gãy hợp đồng ngay lập tức khi Provider đổi DTO/sập | Nhầm chiều mũi tên xuôi vs ngược |
+                        | **Hop >= 2 (`INDIRECT`)** | Dịch vụ phụ thuộc bắc cầu qua Caller Hop 1 | Bị ảnh hưởng dây chuyền về độ trễ & SLA | Vòng lặp vô tận nếu đồ thị có cycle mà thiếu `visited` |
+
+                        ## 3. Triển khai chuẩn với Java 21 & Spring Boot 3
+                        ```java
+                        public Set<String> findBlastRadius(Map<String, List<String>> reverseAdj, String epicenter) {
+                            Set<String> visited = new LinkedHashSet<>();
+                            ArrayDeque<String> queue = new ArrayDeque<>();
+                            visited.add(epicenter);
+                            queue.add(epicenter);
+                            while (!queue.isEmpty()) {
+                                String current = queue.poll();
+                                for (String caller : reverseAdj.getOrDefault(current, List.of())) {
+                                    if (visited.add(caller)) {
+                                        queue.add(caller);
+                                    }
+                                }
+                            }
+                            return visited;
+                        }
+                        ```
+
+                        ## 4. Checklist Kiểm toán 3E & Các bẫy thường gặp khi vấn đáp
+                        - **Chứng minh hợp đồng 2 chiều**: `@FeignClient(name = "payment-service")` + `@PostMapping("/api/payments/authorize")` phải khớp `@PostMapping("/authorize")` + class prefix `@RequestMapping("/api/payments")` bên `PaymentController`.
                         """
                 ),
                 new LessonSpec(
@@ -34,12 +60,30 @@ public final class Module3CommunicationAndGatewayProvider {
                         "Phân biệt Eureka Client-Side Discovery với Docker Compose DNS và điều kiện nhận tải khi Scale Replicas.",
                         50,
                         """
-                        # 📖 Bài 3.2: Netflix Eureka Discovery & Spring Cloud LoadBalancer
+                        # Bài 3.2: Netflix Eureka Discovery & Spring Cloud LoadBalancer
 
-                        ## 1. Eureka Server không phải Proxy trung tâm
-                        - Các instance tự đăng ký (`IP:Port`) kèm nhịp tim `Heartbeat` lên Eureka Registry.
-                        - **Client-Side LoadBalancer (`Spring Cloud LoadBalancer`)** bên trong phía gọi (hoặc API Gateway) trực tiếp tải danh bạ về và chia tải xoay vòng (*Round-Robin*).
-                        - Để Scale Replicas thành công: instance mới phải `UP`, sẵn sàng (`Readiness`), không xung đột hostPort và phía gọi làm mới cache danh bạ.
+                        ## 1. Mục tiêu học tập & Bài toán thực tế
+                        - Phân biệt **Client-Side Discovery (Eureka + Spring Cloud LoadBalancer)** với **Server-Side Discovery (Docker Compose DNS / Kubernetes Service)**.
+                        - Nắm vững điều kiện để replica mới thực sự nhận được traffic khi scale ngang trong sản xuất.
+
+                        ## 2. Nguyên lý Kiến trúc & Bảng đối chiếu
+                        | Cơ chế | Bên giữ danh sách IP:Port | Ai chia tải? | Lưu ý khi Scale Replicas |
+                        | :--- | :--- | :--- | :--- |
+                        | **Eureka Client-Side** | Eureka Registry + Local Cache ở Client | `Spring Cloud LoadBalancer` (`lb://...`) | Cần đợi Heartbeat + cache refresh (`registryFetchIntervalSeconds`) |
+                        | **Docker DNS Server-Side** | DNS nội bộ của mạng Docker bridge | Kernel VIP / Round-Robin DNS | Tránh ghim cứng `ports: "8081:8081"` ra host khiến port conflict khi scale > 1 |
+
+                        ## 3. Triển khai chuẩn với Java 21 & Spring Boot 3
+                        ```yaml
+                        eureka:
+                          client:
+                            service-url:
+                              defaultZone: ${EUREKA_URI:http://discovery-service:8761/eureka/}
+                            registry-fetch-interval-seconds: 5
+                        ```
+
+                        ## 4. Checklist Kiểm toán 3E & Các bẫy thường gặp khi vấn đáp
+                        - **Eureka không phải Proxy**: Request dữ liệu KHÔNG đi xuyên qua Eureka Server; Caller dùng danh bạ cục bộ gọi thẳng sang instance đích.
+                        - **Self-Preservation Mode**: Khi nhiều instance mất heartbeat do nghẽn mạng ngắn hạn, Eureka tạm giữ danh bạ để tránh xóa nhầm node còn sống.
                         """
                 ),
                 new LessonSpec(
@@ -48,15 +92,35 @@ public final class Module3CommunicationAndGatewayProvider {
                         "Thiết kế định tuyến Gateway với RewritePath/StripPrefix và bảo mật Defense in Depth cho dịch vụ nội bộ.",
                         50,
                         """
-                        # 📖 Bài 3.3: Spring Cloud Gateway & Defense in Depth
+                        # Bài 3.3: Spring Cloud Gateway & Defense in Depth
 
-                        ## 1. Giải phẫu một `Route` trong `Spring Cloud Gateway`
-                        1. **`uri`**: Đích đến (như `lb://order-service`).
-                        2. **`predicates`**: Điều kiện khớp (`Path=/external/v1/orders/**`, `Method=GET,POST`).
-                        3. **`filters`**: Biến đổi request trước khi gửi xuống đích (`StripPrefix`, `RewritePath`). Khi đối chiếu Controller đích, bắt buộc dùng **đường dẫn SAU khi rewrite**!
+                        ## 1. Mục tiêu học tập & Bài toán thực tế
+                        - Cấu hình chính xác một **Route** của `Spring Cloud Gateway` (`uri`, `predicates`, `filters`).
+                        - Kiểm toán nhất quán giữa Public Edge URL và Internal Controller Path sau bước biến đổi (`StripPrefix`, `RewritePath`), kết hợp **Defense in Depth**.
 
-                        ## 2. Phòng thủ chiều sâu (`Defense in Depth`)
-                        Dù Gateway đã kiểm tra JWT tại biên, các Microservices nội bộ vẫn PHẢI tự kiểm tra quyền (`@PreAuthorize`) và quyền sở hữu tài nguyên (`Resource Ownership`).
+                        ## 2. Nguyên lý Kiến trúc & Bảng đối chiếu
+                        | Thành phần Route | Chức năng | Ví dụ thực tế | Sai lầm thường gặp |
+                        | :--- | :--- | :--- | :--- |
+                        | `uri` | Đích đến qua LoadBalancer | `lb://order-service` | Hardcode `http://localhost:8081` mất khả năng scale |
+                        | `predicates` | Điều kiện khớp HTTP Request | `Path=/external/v1/orders/**` | Khớp thừa wildcard che mất route cụ thể hơn |
+                        | `filters` | Biến đổi URL/Header trước chuyển tiếp | `StripPrefix=1`, `RewritePath=...` | Quên tính bước rewrite khi đối chiếu Controller đích |
+
+                        ## 3. Triển khai chuẩn với Java 21 & Spring Boot 3
+                        ```yaml
+                        spring:
+                          cloud:
+                            gateway:
+                              routes:
+                                - id: order-public-api
+                                  uri: lb://order-service
+                                  predicates:
+                                    - Path=/external/v1/orders/**
+                                  filters:
+                                    - RewritePath=/external/v1/(?<segment>.*), /api/v1/${segment}
+                        ```
+
+                        ## 4. Checklist Kiểm toán 3E & Các bẫy thường gặp khi vấn đáp
+                        - **Defense in Depth**: Dù Gateway đã xác thực JWT ở biên, dịch vụ nội bộ (`order-service`) vẫn BẮT BUỘC tự xác minh role (`@PreAuthorize`) và quyền sở hữu (`AccessPolicyService`), phòng trường hợp kẻ tấn công lọt vào mạng nội bộ hoặc gọi chéo service.
                         """
                 )
         );

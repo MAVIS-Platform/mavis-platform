@@ -195,6 +195,12 @@ if [ -e "$passkey_essay_migration" ]; then
   compose "$prefix" "$tag" "$incoming/compose.production.yml" config --format json |
     python3 "$schema_tool" "$passkey_essay_migration" /opt/mavis/db-backups/passkey-essay-before-v42.dump
 fi
+java_course_seed_migration="$incoming/V43__Seed_Three_Role_Accounts_And_Java_Course.sql"
+if [ -e "$java_course_seed_migration" ]; then
+  test -f "$passkey_essay_migration" && test -f "$schema_tool" || { echo "Incomplete Java course seed schema package"; exit 1; }
+  compose "$prefix" "$tag" "$incoming/compose.production.yml" config --format json |
+    python3 "$schema_tool" "$java_course_seed_migration" /opt/mavis/db-backups/java-seed-before-v43.dump
+fi
 if ! compose "$prefix" "$tag" "$incoming/compose.production.yml" up -d --no-build --remove-orphans || ! healthy; then
   echo "Deployment failed; restoring previous images and Compose."
   compose "$old_prefix" "$old_tag" "$previous/compose.production.yml" up -d --no-build --remove-orphans

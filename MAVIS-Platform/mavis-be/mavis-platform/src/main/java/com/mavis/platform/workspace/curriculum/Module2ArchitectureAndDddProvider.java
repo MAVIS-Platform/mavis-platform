@@ -18,19 +18,36 @@ public final class Module2ArchitectureAndDddProvider {
                         "Giải phẫu 5 bi kịch Monolithic Hell, trục Y của Scale Cube và cô lập 3 tầng sơ đồ C4 Model.",
                         50,
                         """
-                        # 📖 Bài 2.1: Monolith -> Microservices, Scale Cube & C4 Model (C1–C3)
+                        # Bài 2.1: Monolith -> Microservices, Scale Cube & C4 Model (C1–C3)
 
-                        ## 1. Khối lập phương Mở rộng 3 chiều (`The Scale Cube`)
-                        - **Trục X**: Nhân bản ngang các replica sau Load Balancer.
-                        - **Trục Z**: Phân mảnh dữ liệu theo người dùng hoặc vùng địa lý.
-                        - **Trục Y (Microservices)**: Phân rã theo **chức năng nghiệp vụ độc lập** (`Order`, `Payment`, `Inventory`), giúp phát triển, build và deploy tách biệt.
+                        ## 1. Mục tiêu học tập & Bài toán thực tế
+                        - Nhận diện chính xác khi nào một hệ thống Monolith gặp "Monolithic Hell" (nghẽn build, khóa công nghệ, triển khai mạo hiểm) và khi nào Modular Monolith lại tốt hơn Microservices.
+                        - Phân rã hệ thống theo **Scale Cube 3 trục** và truyền đạt kiến trúc nhất quán qua **C4 Model (C1 Context, C2 Container, C3 Component)**.
 
-                        ## 2. Tư duy phân tầng C4 Model (`C1`, `C2`, `C3`)
+                        ## 2. Nguyên lý Kiến trúc & Bảng đối chiếu
                         | Tầng C4 | Câu hỏi trả lời | Phần tử hợp lệ | Sai lầm cần tránh |
                         | :--- | :--- | :--- | :--- |
-                        | **C1 Context** | Ai dùng hệ thống & nói chuyện với hệ thống ngoài nào? | Actor, Software System, Stripe/SMTP | Vẽ Microservice hay bảng DB vào C1 |
+                        | **C1 Context** | Ai dùng hệ thống & nói chuyện với hệ thống ngoài nào? | Actor (`Customer`, `Lecturer`), Software System, `Stripe/SMTP` | Vẽ Microservice hay bảng DB vào C1 |
                         | **C2 Container** | Gồm những ứng dụng & DB triển khai độc lập nào? | `api-gateway`, `order-service`, `Order DB`, `Kafka` | Vẽ từng class Java vào C2 |
                         | **C3 Component** | Bên trong 1 service có các module trách nhiệm nào? | `@RestController`, `@Service`, `@FeignClient`, `@Repository` | Coi mọi class Java là 1 Microservice |
+
+                        ## 3. Triển khai chuẩn với Java 21 & Spring Boot 3
+                        ```yaml
+                        # docker-compose.yml phản ánh đúng tầng C2 Container độc lập
+                        services:
+                          api-gateway:
+                            image: mavis/api-gateway:curated
+                            ports: ["8080:8080"]
+                          order-service:
+                            image: mavis/order-service:curated
+                            ports: ["8081:8081"]
+                          order-db:
+                            image: postgres:16
+                        ```
+
+                        ## 4. Checklist Kiểm toán 3E & Các bẫy thường gặp khi vấn đáp
+                        - **Scale Cube**: Trục X = nhân bản ngang (replicas), Trục Z = sharding theo user/region, **Trục Y = Microservices (phân rã theo chức năng nghiệp vụ)**.
+                        - **Microservices không phải viên đạn bạc**: Với đội < 5 người hoặc domain chưa rõ ràng, chi phí mạng và giao dịch phân tán có thể phản tác dụng.
                         """
                 ),
                 new LessonSpec(
@@ -39,15 +56,36 @@ public final class Module2ArchitectureAndDddProvider {
                         "Phân rã theo Bounded Context, Anti-Corruption Layer (ACL) và kiểm toán phản mẫu Shared Database.",
                         50,
                         """
-                        # 📖 Bài 2.2: DDD Bounded Context, Database-per-Service & Shared DB Anti-pattern
+                        # Bài 2.2: DDD Bounded Context, Database-per-Service & Shared DB Anti-pattern
 
-                        ## 1. Domain-Driven Design Chiến lược
-                        - **`Ubiquitous Language` & `Bounded Context`**: Mỗi ngữ cảnh có ranh giới mô hình riêng (`Account` ở `Identity` khác với `Account` ví tiền ở `Payment`).
-                        - **`Anti-Corruption Layer (ACL)`**: Lớp dịch thuật ngăn mô hình dữ liệu cũ làm ô nhiễm dịch vụ mới.
+                        ## 1. Mục tiêu học tập & Bài toán thực tế
+                        - Xác định ranh giới dịch vụ bằng **DDD Strategic Design (`Ubiquitous Language`, `Bounded Context`, `Context Map`)**.
+                        - Áp dụng **Database-per-Service** đúng bản chất và phát hiện chính xác **Shared Database Anti-pattern** trong mã nguồn/cấu hình.
 
-                        ## 2. `Database-per-Service` vs Phản mẫu `Shared Database`
-                        - Hai dịch vụ chạy cùng công nghệ PostgreSQL (hoặc cùng 1 server vật lý) **nhưng tách riêng database/schema & credential** là hợp lệ.
-                        - **Vi phạm thật sự (`Shared Database`)**: Khi 2 dịch vụ cùng kết nối chung schema/tài khoản và đọc/ghi trực tiếp trên cùng một bảng dữ liệu!
+                        ## 2. Nguyên lý Kiến trúc & Bảng đối chiếu
+                        | Khía cạnh | Thiết kế chuẩn (`Database-per-Service`) | Phản mẫu (`Shared Database`) |
+                        | :--- | :--- | :--- |
+                        | **Quyền sở hữu dữ liệu** | Mỗi service độc quyền schema/DB riêng | Hai service cùng trỏ chung DB/schema/credential |
+                        | **Giao tiếp xuyên ranh giới** | Qua REST/OpenFeign hoặc Domain Events | `JOIN` trực tiếp sang bảng của dịch vụ khác |
+                        | **Bảo vệ mô hình cũ** | Dùng **Anti-Corruption Layer (`ACL`)** dịch DTO | Cho phép entity nội bộ phụ thuộc schema ngoài |
+
+                        ## 3. Triển khai chuẩn với Java 21 & Spring Boot 3
+                        ```java
+                        @Component
+                        public class PaymentGatewayAcl {
+                            public InternalPaymentStatus translate(ExternalStripeChargeResponse external) {
+                                return switch (external.rawState()) {
+                                    case "succeeded" -> InternalPaymentStatus.AUTHORIZED;
+                                    case "requires_action" -> InternalPaymentStatus.PENDING_CHALLENGE;
+                                    default -> InternalPaymentStatus.REJECTED;
+                                };
+                            }
+                        }
+                        ```
+
+                        ## 4. Checklist Kiểm toán 3E & Các bẫy thường gặp khi vấn đáp
+                        - **Bẫy Shared DB giả**: 2 service cùng dùng PostgreSQL `16` (chung engine hoặc chung cụm host) **nhưng tách riêng database/schema & user** là **HỢP LỆ**.
+                        - **Vi phạm thật sự**: `order-service` và `billing-service` cùng cấu hình `SPRING_DATASOURCE_URL` tới cùng schema `public` và query chung bảng `orders`.
                         """
                 ),
                 new LessonSpec(
@@ -56,13 +94,37 @@ public final class Module2ArchitectureAndDddProvider {
                         "Thiết kế Entity, Value Object, Aggregate Root, tham chiếu qua ID và Constructor Injection minh bạch cho C3.",
                         50,
                         """
-                        # 📖 Bài 2.3: Cấu trúc nội bộ C3 Component & DDD Aggregate Root
+                        # Bài 2.3: Cấu trúc nội bộ C3 Component & DDD Aggregate Root
 
-                        ## 1. 5 Khối xây dựng DDD chiến thuật
-                        1. **Entity**: Có định danh duy nhất tồn tại suốt vòng đời (`Order.id`).
-                        2. **Value Object**: Bất biến, định nghĩa bằng giá trị (`Money(amount, currency)`).
-                        3. **Aggregate & Aggregate Root**: Cụm nhất quán giao dịch (`Order` + `OrderLineItem`). Không giữ tham chiếu `@ManyToOne` xuyên dịch vụ mà chỉ giữ **ID tham chiếu (`restaurantId`, `customerId`)**.
-                        4. **Repository** & **Application Service**: Tiêm phụ thuộc bằng **Constructor Injection** để lộ rõ các cạnh phụ thuộc nội bộ tầng `C3`.
+                        ## 1. Mục tiêu học tập & Bài toán thực tế
+                        - Thiết kế **DDD Tactical Building Blocks** (`Entity`, `Value Object`, `Aggregate Root`, `Repository`) gọn nhẹ, chuẩn ranh giới nhất quán giao dịch.
+                        - Chuẩn hóa **Constructor Injection** để bộ phân tích tĩnh C3 nhận diện 100% các cạnh phụ thuộc bên trong dịch vụ.
+
+                        ## 2. Nguyên lý Kiến trúc & Bảng đối chiếu
+                        | Khối DDD | Định danh / So sánh | Quy tắc tham chiếu xuyên Aggregate | Ghi chú Spring Boot / JPA |
+                        | :--- | :--- | :--- | :--- |
+                        | **Entity** | Có ID riêng (`Order.id`) | Nằm trong Aggregate Root | Quản lý vòng đời qua Aggregate Root |
+                        | **Value Object** | Không ID, so sánh theo giá trị | Java `record Money(BigDecimal amount, String currency)` | Bất biến, dùng `@Embeddable` hoặc JSONB |
+                        | **Aggregate Root** | Cụm nhất quán transaction (`Order`) | **Chỉ giữ ID (`UUID restaurantId`)**, CẤM `@ManyToOne` xuyên service | Xuất Domain Event sau khi commit |
+
+                        ## 3. Triển khai chuẩn với Java 21 & Spring Boot 3
+                        ```java
+                        @Service
+                        public class OrderApplicationService {
+                            private final OrderRepository orderRepository;
+                            private final PaymentClient paymentClient;
+
+                            // Constructor Injection giúp C3 Component Graph thấy rõ cạnh phụ thuộc
+                            public OrderApplicationService(OrderRepository orderRepository, PaymentClient paymentClient) {
+                                this.orderRepository = orderRepository;
+                                this.paymentClient = paymentClient;
+                            }
+                        }
+                        ```
+
+                        ## 4. Checklist Kiểm toán 3E & Các bẫy thường gặp khi vấn đáp
+                        - **Vì sao cấm `@ManyToOne` sang Entity dịch vụ khác?** Phá vỡ Database-per-Service, buộc tải chéo bảng và khóa transaction cục bộ.
+                        - **Anemic Domain Model**: Tránh nhét hết rule nghiệp vụ vào Service rồi biến Entity thành getter/setter rỗng.
                         """
                 )
         );

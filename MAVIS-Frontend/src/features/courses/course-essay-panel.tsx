@@ -14,9 +14,11 @@ import {
 } from "@/features/workspaces/course-access";
 
 export type RubricRow = {
+  title?: string | undefined;
   criterion?: string | undefined;
   points?: number | undefined;
   weightPoints?: number | undefined;
+  maxScore?: number | undefined;
   description?: string | undefined;
   excellentDescription?: string | undefined;
 };
@@ -94,9 +96,9 @@ export function CourseEssayItemPanel({
             <tbody className="divide-y">
               {rubric.map((row, idx) => (
                 <tr key={idx}>
-                  <td className="px-3 py-2 font-medium">{row.criterion}</td>
+                  <td className="px-3 py-2 font-medium">{row.title || row.criterion || `Tiêu chí ${idx + 1}`}</td>
                   <td className="mavis-tabular px-3 py-2 font-semibold text-primary">
-                    {row.points ?? row.weightPoints ?? 0} đ
+                    {row.weightPoints ?? row.maxScore ?? row.points ?? 0} đ
                   </td>
                   <td className="px-3 py-2 text-muted-foreground">
                     {row.description ?? row.excellentDescription ?? ""}
