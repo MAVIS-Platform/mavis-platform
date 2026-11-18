@@ -418,7 +418,29 @@ function AttemptForm({
               </Button>
             </div>
           ) : (
-            <Button disabled={submit.isPending || !answered}>{t("Submit Quiz", "Nộp Quiz")}</Button>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="border-amber-300 text-xs text-amber-800 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-300"
+                  onClick={() => {
+                    const quickWrong: Record<number, number[]> = {};
+                    quiz.questions.forEach((q, idx) => {
+                      const lastOpt = Math.max(0, q.options.length - 1);
+                      quickWrong[idx] = [lastOpt];
+                    });
+                    setAnswers(quickWrong);
+                    setAttemptId(undefined);
+                    submit.reset();
+                  }}
+                >
+                  🧪 {t("Pre-fill Quick Answers (Test DS-02b / Retry Gate)", "Điền nhanh lựa chọn mẫu (Kiểm thử Quiz Gate / DS-02b)")}
+                </Button>
+              </div>
+              <Button disabled={submit.isPending || !answered}>{t("Submit Quiz", "Nộp Quiz")}</Button>
+            </div>
           )}
           {submit.isError && (
             <div role="alert">

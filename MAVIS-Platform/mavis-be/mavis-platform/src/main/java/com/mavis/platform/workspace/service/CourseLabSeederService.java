@@ -158,7 +158,7 @@ public class CourseLabSeederService {
         List<Assignment> existingLabs = assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId);
         Integer publishedModules = jdbc.queryForObject("""
                 SELECT COUNT(*) FROM course_modules cm
-                JOIN courses c ON c.id = cm.course_id
+                JOIN course_definitions c ON c.id = cm.course_id
                 WHERE c.workspace_id = ? AND c.status = 'PUBLISHED'
                 """, Integer.class, workspaceId);
         if (existingLabs.size() >= 6 && publishedModules != null && publishedModules >= 6) {

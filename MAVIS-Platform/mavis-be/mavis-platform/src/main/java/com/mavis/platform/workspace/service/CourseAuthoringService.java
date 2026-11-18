@@ -85,7 +85,7 @@ public class CourseAuthoringService {
         Boolean needsHeal = jdbc.query("""
                 SELECT w.code, w.status,
                        (SELECT COUNT(*) FROM assignments a WHERE a.workspace_id = w.id AND a.lab_order IS NOT NULL) AS lab_count,
-                       (SELECT COUNT(*) FROM course_modules cm JOIN courses c ON c.id = cm.course_id
+                       (SELECT COUNT(*) FROM course_modules cm JOIN course_definitions c ON c.id = cm.course_id
                         WHERE c.workspace_id = w.id AND c.status = 'PUBLISHED') AS mod_count
                 FROM workspaces w WHERE w.id = ?
                 """, rs -> {

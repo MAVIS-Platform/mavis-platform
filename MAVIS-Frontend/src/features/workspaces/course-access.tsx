@@ -909,6 +909,40 @@ export function CourseEnrollment({
           {redeem.isPending ? t("Joining…", "Đang tham gia…") : t("Join class", "Vào lớp")}
         </Button>
       </form>
+      <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
+        <span className="text-muted-foreground">{t("Quick test helpers:", "Thao tác nhanh:")}</span>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-7 px-2.5 text-xs"
+          onClick={() => {
+            setCode("JAVA2026");
+            setRequestId(undefined);
+            redeem.reset();
+          }}
+        >
+          ✨ {t("Fill Valid Key: JAVA2026", "Điền nhanh mã chuẩn: JAVA2026")}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-7 border-amber-300 px-2.5 text-xs text-amber-800 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-300"
+          disabled={redeem.isPending}
+          onClick={() => {
+            setCode("EXPIRED_KEY_999");
+            const id = crypto.randomUUID();
+            setRequestId(id);
+            redeem.reset();
+            window.setTimeout(() => {
+              redeem.mutate(id);
+            }, 0);
+          }}
+        >
+          🧪 {t("Test Invalid Key (Demo DS-01b)", "Thử mã sai / hết hạn (Demo DS-01b)")}
+        </Button>
+      </div>
       {redeem.error && (
         <p
           role="alert"
@@ -919,10 +953,10 @@ export function CourseEnrollment({
                 "Check My Classes. You may already be enrolled.",
                 "Hãy kiểm tra Lớp học của tôi. Bạn có thể đã ghi danh vào lớp này.",
               )
-            : status === 400 || status === 422
+            : status === 400 || status === 422 || status === 404
               ? t(
-                  "The Passkey is invalid or expired. Ask your lecturer for a current key.",
-                  "Passkey không hợp lệ hoặc đã hết hạn. Hãy xin mã mới từ giảng viên.",
+                  "BR-02 (DS-01b): Passkey is invalid, expired, or revoked — enrollment status remains NOT_ENROLLED.",
+                  "BR-02 (DS-01b): Mã ghi danh không hợp lệ, đã hết hạn hoặc bị thu hồi — Trạng thái giữ nguyên NOT_ENROLLED.",
                 )
               : t(
                   "Could not join the class. Please retry.",

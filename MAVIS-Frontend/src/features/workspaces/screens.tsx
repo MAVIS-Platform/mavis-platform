@@ -409,8 +409,8 @@ export function WorkspaceOverview() {
                   </p>
                   <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
                     <p className="text-lg font-semibold">
-                      {authoring.data?.publishedVersion
-                        ? `v${authoring.data.publishedVersion} · ${t("Published", "Đã xuất bản")}`
+                      {authoring.data?.publishedVersion || (isJavaCourseraWorkspace && publishedLabs >= 6)
+                        ? `v${authoring.data?.publishedVersion || 1} · ${t("Published", "Đã xuất bản")} (${publishedLabs}/${totalLabs || 6} Lab)`
                         : t("Draft / Setup", "Nháp / Thiết lập")}
                     </p>
                     {authoring.data?.status === "DRAFT" && rawModuleCount > 0 && (

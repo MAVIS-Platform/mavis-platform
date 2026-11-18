@@ -21,8 +21,10 @@ import { ApiError } from "@/lib/errors/api-error";
 import { useApiQuery } from "@/hooks/use-api";
 import { useCourseAuthoring, useCourseRoadmap, usePublishedCourse } from "@/features/workspaces/course-access";
 import { MarkdownPreview } from "@/components/shared/markdown-preview";
+import { InteractiveConceptStage } from "@/components/shared/interactive-concept-stage";
 import { CourseEssayItemPanel, type RubricRow } from "./course-essay-panel";
 import { ChapterQuizRunner } from "./chapter-quiz-runner";
+import { getScenarioForLessonOrLab } from "./designed-to-scale-scenarios";
 import {
   JAVA_COURSERA_COURSE_TITLE,
   buildCourseraModulesWithLabLinks,
@@ -317,7 +319,15 @@ export function CourseOutline({
                             <summary className="inline-flex cursor-pointer items-center gap-1.5 rounded-md bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-800 hover:bg-teal-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:bg-teal-950/50 dark:text-teal-300">
                               📖 {t("Read lesson", "Đọc bài học")}
                             </summary>
-                            <div className="mt-3 max-w-4xl rounded-xl border bg-background p-4 shadow-xs sm:p-5">
+                            <div className="mt-3 max-w-4xl space-y-4 rounded-xl border bg-background p-4 shadow-xs sm:p-5">
+                              <InteractiveConceptStage
+                                scenario={getScenarioForLessonOrLab(
+                                  module.position,
+                                  typeof item.content?.["curriculumCode"] === "string"
+                                    ? String(item.content["curriculumCode"])
+                                    : item.title,
+                                )}
+                              />
                               <MarkdownPreview markdown={String(item.content["body"])} />
                             </div>
                           </details>

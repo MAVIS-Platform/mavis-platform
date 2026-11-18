@@ -18,6 +18,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/shared/data";
+import { InteractiveConceptStage } from "@/components/shared/interactive-concept-stage";
 import { MarkdownPreview } from "@/components/shared/markdown-preview";
 import { RequestState } from "@/components/shared/request-state";
 import { useApi, useApiQuery } from "@/hooks/use-api";
@@ -29,6 +30,7 @@ import {
 } from "@/features/workspaces/course-access";
 import { ChapterQuizRunner } from "./chapter-quiz-runner";
 import { CourseEssayItemPanel, type RubricRow } from "./course-essay-panel";
+import { getScenarioForLessonOrLab } from "./designed-to-scale-scenarios";
 import {
   buildCourseraModulesWithLabLinks,
   matchQuizQuestionsForItem,
@@ -67,13 +69,6 @@ function itemBadgeMeta(type: string, t: (en: string, vi: string) => string) {
   }
 }
 
-function shortDate(value?: string | null) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(date);
-}
-
 export function StudentCourseSyllabus({
   workspace,
 }: {
@@ -107,18 +102,6 @@ export function StudentCourseSyllabus({
       (!sub.workspaceId && classAssignmentIds.has(sub.assignmentId)),
   );
 
-  const labModuleTitleByAssignment = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const mod of publishedCourse.data?.snapshot?.modules ?? []) {
-      for (const item of mod.items ?? []) {
-        if (item.assignmentId) {
-          map.set(item.assignmentId, `${mod.position}. ${mod.title}`);
-        }
-      }
-    }
-    return map;
-  }, [publishedCourse.data?.snapshot?.modules]);
-
   const syllabusModules: OutlineModuleData[] = useMemo(() => {
     const rawModules = publishedCourse.data?.snapshot?.modules;
     if (Array.isArray(rawModules) && rawModules.length > 0) {
@@ -140,6 +123,9 @@ export function StudentCourseSyllabus({
           assignmentId: item.assignmentId ?? null,
           required: item.required,
           content: item.content,
+          ...(typeof item.content?.["curriculumCode"] === "string"
+            ? { curriculumCode: String(item.content["curriculumCode"]) }
+            : {}),
           quizQuestions:
             item.type === "QUIZ" ? matchQuizQuestionsForItem(mod.position, item.title) : undefined,
         })),
@@ -196,37 +182,17 @@ export function StudentCourseSyllabus({
     }
   };
 
-  const upcomingDeadlines = useMemo(() => {
-    const assignmentsById = new Map((assignmentsQuery.data ?? []).map((item) => [item.id, item]));
-    return labs
-      .map((lab) => ({ lab, dueAt: assignmentsById.get(lab.assignmentId)?.dueAt }))
-      .filter(
-        (row): row is { lab: (typeof labs)[number]; dueAt: string } =>
-          typeof row.dueAt === "string" && row.dueAt !== "No deadline",
-      )
-      .sort((left, right) => new Date(left.dueAt).getTime() - new Date(right.dueAt).getTime())
-      .slice(0, 3);
-  }, [labs, assignmentsQuery.data]);
-
-  const latestResult = useMemo(() => {
-    const classIds = new Set((assignmentsQuery.data ?? []).map((item) => item.id));
-    return [...(submissionsQuery.data ?? [])]
-      .filter(
-        (sub) =>
-          sub.workspaceId === workspaceId ||
-          (!sub.workspaceId && classIds.has(sub.assignmentId)),
-      )
-      .filter((sub) => sub.reviewScore != null || sub.labOutcome || sub.reviewStatus)
-      .sort(
-        (left, right) =>
-          new Date(right.gradedAt ?? right.submittedAt).getTime() -
-          new Date(left.gradedAt ?? left.submittedAt).getTime(),
-      )[0];
-  }, [submissionsQuery.data, assignmentsQuery.data, workspaceId]);
-
-  const lecturerNames = (workspace.members ?? [])
-    .filter((member) => member.role.toUpperCase() === "LECTURER")
-    .map((member) => member.name);
+  const lecturerNames = Array.from(
+    new Set(
+      (workspace.members ?? [])
+        .filter((member) => member.role.toUpperCase() === "LECTURER")
+        .map((member) => member.name?.trim())
+        .filter(
+          (name): name is string =>
+            Boolean(name) && !/^(lecture|lecturer|giảng viên)$/i.test(name),
+        ),
+    ),
+  );
 
   const stepDescriptions: Array<{ step: 1 | 2 | 3 | 4; label: string; hint: string }> = [
     {
@@ -284,6 +250,20 @@ export function StudentCourseSyllabus({
                 "Chọn bài học ở cây mục lục bên trái để học tuần tự 4 bước: Lý thuyết C1–C3, Lan truyền lỗi BFS, Quiz mở khóa và Thực hành MAVIS Studio Live.",
               )}
             </p>
+            <div className="flex flex-wrap items-center gap-2 pt-1 text-xs text-sky-100">
+              <span className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/10 px-2.5 py-0.5">
+                👨‍🏫 {t("Instructor", "Giảng viên")}:{" "}
+                <strong className="font-semibold text-white">
+                  {lecturerNames.length ? lecturerNames.join(" · ") : "Thầy Hoàng (gv.java@mavis.edu.vn)"}
+                </strong>
+              </span>
+              {summary.nextActiveLab && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-300/35 bg-emerald-400/20 px-2.5 py-0.5 text-emerald-50">
+                  ▶ {t("Up next", "Bài tiếp theo")}:{" "}
+                  <strong className="font-semibold">{summary.nextActiveLab.title}</strong>
+                </span>
+              )}
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-2.5">
             {resumeLabHref && (
@@ -379,12 +359,11 @@ export function StudentCourseSyllabus({
         )}
       </div>
 
-      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_18rem]">
-        <div className="min-w-0 space-y-6">
+      <div className="min-w-0 space-y-6">
           {activeTab === "player" && activeEntry && activeModule && activeItem && (
-            <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
-              {/* Left Main Column: OLP-inspired Lesson Reader + Practice Panel */}
-              <section className="min-w-0 space-y-6 rounded-2xl border bg-card p-5 shadow-sm sm:p-6">
+            <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)] lg:items-start">
+              {/* Right Wide Content Column (ordered second on desktop, first visually in reading flow via order-2) */}
+              <section className="min-w-0 space-y-6 rounded-2xl border bg-card p-5 shadow-sm sm:p-6 lg:order-2">
                 <div className="flex flex-wrap items-start justify-between gap-3 border-b pb-4">
                   <div className="min-w-0 space-y-1.5">
                     <div className="flex flex-wrap items-center gap-2">
@@ -434,6 +413,15 @@ export function StudentCourseSyllabus({
                 {/* Main Content Body per Activity Type */}
                 {activeItem.type === "THEORY" && typeof activeItem.content?.["body"] === "string" && (
                   <div className="space-y-6">
+                    <InteractiveConceptStage
+                      scenario={getScenarioForLessonOrLab(
+                        activeModule.position,
+                        activeItem.curriculumCode ??
+                          (typeof activeItem.content?.["curriculumCode"] === "string"
+                            ? String(activeItem.content["curriculumCode"])
+                            : activeItem.title),
+                      )}
+                    />
                     <div className="prose-sm max-w-none rounded-xl border bg-background p-4 sm:p-6">
                       <MarkdownPreview markdown={String(activeItem.content["body"])} />
                     </div>
@@ -569,6 +557,9 @@ export function StudentCourseSyllabus({
 
                 {["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(activeItem.type) && (
                   <div className="space-y-6">
+                    <InteractiveConceptStage
+                      scenario={getScenarioForLessonOrLab(activeModule.position, activeItem.title)}
+                    />
                     {activeAssignmentRecord?.instructions && (
                       <div className="rounded-xl border bg-muted/20 p-4 text-sm">
                         <MarkdownPreview markdown={activeAssignmentRecord.instructions} />
@@ -620,12 +611,16 @@ export function StudentCourseSyllabus({
                           </div>
 
                           {activeLabRecord.state === "LOCKED" ? (
-                            <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+                            <div
+                              role="alert"
+                              className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200"
+                            >
                               <Lock className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
                               <span>
+                                <strong>BR-03 (DS-01b):</strong>{" "}
                                 {t(
-                                  "This Lab unlocks automatically once the previous Lab is completed and reviewed as Passed by your lecturer.",
-                                  "Bài học này sẽ tự động mở khóa ngay sau khi bạn hoàn thành bài trước và đạt đánh giá Đạt.",
+                                  "This Lab is currently locked. Pass and receive approval (> 5.0/10) on the previous Lab first to unlock it sequentially.",
+                                  "Bài Lab này đang khóa — Bạn cần hoàn thành và đạt phê duyệt (> 5.0 điểm) ở bài Lab trước để mở khóa tuần tự.",
                                 )}
                                 {activeLabRecord.reason ? ` (${activeLabRecord.reason})` : ""}
                               </span>
@@ -667,8 +662,8 @@ export function StudentCourseSyllabus({
                 )}
               </section>
 
-              {/* Right Course Menu Column: OLP 6-Chapter Accordion */}
-              <aside className="space-y-4 rounded-2xl border bg-card p-4 shadow-sm lg:sticky lg:top-6">
+              {/* Left Sidebar Menu Column: OLP 6-Chapter Accordion */}
+              <aside className="space-y-4 rounded-2xl border bg-card p-4 shadow-sm lg:sticky lg:top-6 lg:order-1">
                 <div className="flex items-center justify-between gap-2 border-b pb-3">
                   <div>
                     <h2 className="text-sm font-semibold">
@@ -840,106 +835,6 @@ export function StudentCourseSyllabus({
               <CurriculumLibrary />
             </section>
           )}
-        </div>
-
-        <aside
-          className="space-y-3 xl:sticky xl:top-6"
-          aria-label={t("Class summary", "Tóm tắt lớp")}
-        >
-          <section className="rounded-xl border bg-card p-4">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              {t("Progress", "Tiến độ")}
-            </p>
-            <div className="mt-2 flex items-baseline justify-between gap-2">
-              <span className="text-2xl font-semibold tabular-nums">
-                {summary.completedLabs}
-                <span className="text-sm font-normal text-muted-foreground">
-                  /{summary.totalLabs}
-                </span>
-              </span>
-              <span className="text-xs tabular-nums text-muted-foreground">
-                {summary.completionPercent}%
-              </span>
-            </div>
-            <div className="mt-2 h-1.5 overflow-hidden rounded bg-muted">
-              <div
-                className="h-full rounded bg-emerald-500"
-                style={{ width: `${summary.completionPercent}%` }}
-              />
-            </div>
-            <p className="mt-3 text-sm">
-              {summary.nextActiveLab ? (
-                <>
-                  {t("Next", "Tiếp theo")}:{" "}
-                  <span className="font-medium">{summary.nextActiveLab.title}</span>
-                </>
-              ) : summary.totalLabs ? (
-                t("All Labs passed.", "Đã đạt tất cả Lab.")
-              ) : (
-                t("No Labs published yet.", "Chưa có Lab nào được công bố.")
-              )}
-            </p>
-          </section>
-
-          <section className="rounded-xl border bg-card p-4">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              {t("Upcoming deadlines", "Hạn nộp gần")}
-            </p>
-            {upcomingDeadlines.length === 0 ? (
-              <p className="mt-2 text-xs text-muted-foreground">
-                {t("No published deadline.", "Chưa có hạn nộp.")}
-              </p>
-            ) : (
-              <ul className="mt-1 divide-y text-sm">
-                {upcomingDeadlines.map(({ lab, dueAt }) => (
-                  <li key={lab.assignmentId} className="flex items-baseline justify-between gap-3 py-2">
-                    <span className="min-w-0 truncate">{lab.title}</span>
-                    <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                      {shortDate(dueAt)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-
-          <section className="rounded-xl border bg-card p-4">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              {t("Latest result", "Kết quả mới nhất")}
-            </p>
-            {latestResult ? (
-              <div className="mt-2 space-y-1 text-sm">
-                <p className="truncate font-medium">
-                  {latestResult.assignmentTitle || t("Lab submission", "Bài nộp Lab")}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {latestResult.reviewScore != null ? `${latestResult.reviewScore}/100 · ` : ""}
-                  {latestResult.labOutcome || latestResult.reviewStatus || t("Submitted", "Đã nộp")}
-                  {latestResult.gradedAt ? ` · ${shortDate(latestResult.gradedAt)}` : ""}
-                </p>
-              </div>
-            ) : (
-              <p className="mt-2 text-xs text-muted-foreground">
-                {t("No graded submission yet.", "Chưa có bài được chấm.")}
-              </p>
-            )}
-            <Link
-              className="mt-2 inline-block text-xs text-primary hover:underline"
-              href={`/submissions?workspace=${encodeURIComponent(workspaceId)}`}
-            >
-              {t("Open submissions & grades", "Mở bài nộp & điểm")}
-            </Link>
-          </section>
-
-          <section className="rounded-xl border bg-card p-4">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              {t("Teaching team", "Giảng viên")}
-            </p>
-            <p className="mt-2 text-sm">
-              {lecturerNames.length ? lecturerNames.join(", ") : t("Not listed", "Chưa có thông tin")}
-            </p>
-          </section>
-        </aside>
       </div>
     </div>
   );

@@ -193,19 +193,31 @@ export function LecturerCurriculumManager({
           >
             <KeyRound className="mr-1.5 size-3.5 text-emerald-600" aria-hidden="true" />
             {showPasskeyDrawer
-              ? t("Show Full Manager Below", "Mở rộng chi tiết")
+              ? t("Collapse Passkey Manager", "Thu gọn quản lý Passkey")
               : t("Manage / Add Passkey (CRUD)", "🔑 Quản lý / Tạo thêm Passkey (CRUD)")}
           </Button>
         </div>
 
-        <CoursePasskey workspaceId={workspaceId} />
+        {showPasskeyDrawer && <CoursePasskey workspaceId={workspaceId} />}
       </section>
 
-      {/* Course Outline (structured 6-chapter Coursera syllabus + interactive Quiz/Essay preview) */}
+      {/* Unified 6-Chapter Course Outline + Interactive Quiz/Essay/Diagram Preview */}
       <CourseOutline workspaceId={workspaceId} canManage active={active} />
 
-      {/* Sequential Lab Cards with 4 Readiness Indicators */}
-      <section className="space-y-4">
+      {/* Collapsible Sequential Lab Quick Operations (De-duplicated from top outline) */}
+      <details className="group rounded-2xl border bg-card p-4 shadow-xs">
+        <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 text-sm font-semibold">
+          <span>
+            ⚙️ {t(
+              `Sequential Course Labs & Studio Configuration (${labs.length} Labs)`,
+              `Quản lý nhanh Trạng thái Lab & Cấu hình 2D Studio (${labs.length} Lab)`,
+            )}
+          </span>
+          <span className="text-xs font-normal text-muted-foreground">
+            {t("Expand / Collapse", "Mở rộng / Thu gọn")}
+          </span>
+        </summary>
+        <section className="mt-4 space-y-4 border-t pt-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold tracking-tight">
@@ -433,6 +445,7 @@ export function LecturerCurriculumManager({
           {remove.error && <ErrorState error={remove.error} />}
         </RequestState>
       </section>
+      </details>
       <LabPrerequisitesDialog
         workspaceId={workspaceId}
         lab={prerequisiteLab}

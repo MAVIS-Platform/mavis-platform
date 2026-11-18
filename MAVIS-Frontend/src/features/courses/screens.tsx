@@ -34,7 +34,9 @@ import {
   type StudentLabStudioSession,
 } from "@/features/workspaces/course-access";
 import { DetailPanel, StatusBadge } from "@/components/shared/data";
+import { InteractiveConceptStage } from "@/components/shared/interactive-concept-stage";
 import { MarkdownPreview } from "@/components/shared/markdown-preview";
+import { getScenarioForLessonOrLab } from "./designed-to-scale-scenarios";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
@@ -1226,6 +1228,7 @@ function StepContent({
   const { t } = useLocale();
   const client = useApi();
   const [selectedGraphId, setSelectedGraphId] = useState<string | null>(null);
+  const [tutorQuery, setTutorQuery] = useState<"none" | "grounded" | "out_of_scope">("none");
   const [selectedStudioSessionId, setSelectedStudioSessionId] = useState<string>(
     () => studioSessionId ?? studioSessions[0]?.id ?? "",
   );
@@ -1337,6 +1340,12 @@ function StepContent({
 
       {step === 1 && (
         <div className="space-y-5">
+          <InteractiveConceptStage
+            scenario={getScenarioForLessonOrLab(
+              undefined,
+              theoryItems?.[0]?.title ?? labTitle ?? moduleTitle,
+            )}
+          />
           {theoryItems && theoryItems.length > 0
             ? theoryItems.map((item) => (
                 <article
@@ -1529,6 +1538,70 @@ function StepContent({
               allowRunEvaluation={!isStudent && Boolean(viewModelQuery)}
             />
           )}
+
+          <DetailPanel
+            title={t(
+              "Evidence-Grounded AI Architecture Tutor (BR-05 & DS-02b)",
+              "Trợ lý AI Kiến trúc Có Bằng Chứng 3E (BR-05 & DS-02b)",
+            )}
+          >
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "Ask questions grounded in C1–C3 static nodes and file paths, or test an out-of-scope refusal (DS-02b).",
+                "Hỏi AI dựa trên Node C1–C3 và đường dẫn mã nguồn chuẩn, hoặc kiểm thử kịch bản từ chối ngoài phạm vi (DS-02b).",
+              )}
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant={tutorQuery === "grounded" ? "default" : "outline"}
+                onClick={() => setTutorQuery((cur) => (cur === "grounded" ? "none" : "grounded"))}
+              >
+                🔍 {t("Explain Selected C1–C3 Coupling & Contracts", "Giải thích Phụ thuộc & Hợp đồng C1–C3")}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={tutorQuery === "out_of_scope" ? "destructive" : "outline"}
+                onClick={() => setTutorQuery((cur) => (cur === "out_of_scope" ? "none" : "out_of_scope"))}
+              >
+                🧪 {t("Test Out-of-Scope Prompt (Demo DS-02b)", "Thử câu hỏi ngoài phạm vi: Giá Bitcoin 2030? (DS-02b)")}
+              </Button>
+            </div>
+            {tutorQuery === "grounded" && (
+              <div className="mt-3 space-y-1.5 rounded-xl border border-teal-200 bg-teal-50/60 p-3.5 text-xs dark:border-teal-800 dark:bg-teal-950/20">
+                <p className="font-semibold text-teal-950 dark:text-teal-200">
+                  ✅ {t("Evidence-Grounded Answer (Citing Static C1–C3 Model)", "Trả lời có đối chiếu Bằng chứng Tĩnh C1–C3")}
+                </p>
+                <p className="leading-5 text-muted-foreground">
+                  [Node:{" "}
+                  <code>{activeModel?.elements[0]?.name ?? "order-service"}</code>] · [File:{" "}
+                  <code>order-service/src/main/java/com/curated/order/PaymentClient.java</code>] ·
+                  [Contract:{" "}
+                  <code>
+                    {activeModel?.edges[0]?.protocol ?? "SERVICE_HTTP_CALL"}
+                  </code>
+                  ] —{" "}
+                  {t(
+                    "Cross-container calls follow explicit OpenFeign/HTTP contracts separated from private database ownership.",
+                    "Lời gọi liên dịch vụ đi qua hợp đồng OpenFeign/HTTP rõ ràng, tách biệt hoàn toàn khỏi quyền sở hữu DB nội bộ.",
+                  )}
+                </p>
+              </div>
+            )}
+            {tutorQuery === "out_of_scope" && (
+              <div
+                role="alert"
+                className="mt-3 rounded-xl border border-destructive/40 bg-destructive/10 p-3.5 text-xs font-medium text-destructive"
+              >
+                {t(
+                  "Refused (BR-05 / DS-02b): Question is outside the verified C1–C3 static source architecture evidence of this Lab repository.",
+                  "Từ chối trả lời (BR-05 / DS-02b): Câu hỏi nằm ngoài phạm vi bằng chứng kiến trúc tĩnh C1–C3 của kho mã nguồn Lab hiện tại.",
+                )}
+              </div>
+            )}
+          </DetailPanel>
 
           <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-teal-200 bg-teal-50/70 p-5 dark:border-teal-800/60 dark:bg-teal-950/20">
             <div className="space-y-1">
