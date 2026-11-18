@@ -133,18 +133,20 @@ export function MarkdownPreview({ markdown, className = "" }: { markdown: string
 
   const flushList = () => {
     if (!list) return;
-    const items = list.items.map((item, index) => (
-      <li key={index} className="space-y-1">
-        <span>{inline(item.text)}</span>
-        {item.subItems.length > 0 && (
+    const items = list.items.map((item, index) =>
+      item.subItems.length > 0 ? (
+        <li key={index} className="space-y-1">
+          <span>{inline(item.text)}</span>
           <ul className="ml-5 mt-1 list-disc space-y-1 text-sm leading-6 text-muted-foreground">
             {item.subItems.map((sub, subIdx) => (
               <li key={subIdx}>{inline(sub.text)}</li>
             ))}
           </ul>
-        )}
-      </li>
-    ));
+        </li>
+      ) : (
+        <li key={index}>{inline(item.text)}</li>
+      ),
+    );
     blocks.push(
       list.ordered ? (
         <ol
