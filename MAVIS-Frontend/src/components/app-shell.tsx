@@ -283,11 +283,20 @@ function ShellChrome({
   const globalGroups = decorateGroups(
     globalNavigation[role].map((group) => ({
       ...group,
-      items: group.items.flatMap((item) =>
-        (item.id === "workspaces" || (role === "student" && item.id === "courses")) &&
-        !live &&
-        !onPreviewNavigate &&
-        workspaces.length > 0
+      items: group.items.flatMap((item) => {
+        if (
+          role === "lecturer" &&
+          !live &&
+          !onPreviewNavigate &&
+          workspaces.length > 0 &&
+          (item.id === "workspace-overview" || item.id === "submissions")
+        ) {
+          return [];
+        }
+        return (item.id === "workspaces" || (role === "student" && item.id === "courses")) &&
+          !live &&
+          !onPreviewNavigate &&
+          workspaces.length > 0
           ? [
               item,
               ...workspaces.map((w) => {
@@ -316,8 +325,8 @@ function ShellChrome({
                 };
               }),
             ]
-          : [item],
-      ),
+          : [item];
+      }),
     })),
   );
   const groups = decorateGroups(contextualNavigation(role, scope, live));
@@ -824,6 +833,7 @@ function NavigationGroups({
   collapsibleGroupLabels?: readonly string[];
 }) {
   const { t } = useLocale();
+  const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
   return (
     <nav aria-label={t(label)} className={onToggleGroup ? "space-y-2" : "space-y-5"}>
       {groups.map((group) => {
@@ -832,7 +842,10 @@ function NavigationGroups({
             {group.items.map((item) => {
               const isWorkspace =
                 item.id.startsWith("workspace:") && Boolean(item.children?.length);
-              const expanded = expandedGroups?.[item.id] ?? activeId.startsWith(`${item.id}:`);
+              const expanded =
+                expandedGroups?.[item.id] ??
+                expandedItems[item.id] ??
+                activeId.startsWith(`${item.id}:`);
               return (
                 <li key={item.id}>
                   <div className={cn("flex items-center gap-1", isWorkspace && "mb-0.5")}>
@@ -849,7 +862,10 @@ function NavigationGroups({
                     {isWorkspace && !collapsed && (
                       <Collapsible
                         open={expanded}
-                        onOpenChange={(open) => onToggleGroup?.(item.id, open)}
+                        onOpenChange={(open) => {
+                          setExpandedItems((prev) => ({ ...prev, [item.id]: open }));
+                          onToggleGroup?.(item.id, open);
+                        }}
                       >
                         <CollapsibleTrigger asChild>
                           <button
