@@ -272,6 +272,7 @@ public class CourseLabSeederService {
         }
 
         syncJavaCourseraOutline(workspaceId, orderedLabs);
+        syncTheoryAssetsLibrary(workspaceId, lecturer != null ? lecturer.getId() : null);
 
         jdbc.update("INSERT INTO audit_logs(actor_id, action, target_type, target_id) VALUES (?, ?, ?, ?)",
                 lecturer.getId(), "COURSE_JAVA_COURSERA_SEEDED", "WORKSPACE", workspaceId);
@@ -381,6 +382,25 @@ public class CourseLabSeederService {
             log.info("Published 6-module Java Coursera outline for workspace {}", workspaceId);
         } catch (Exception ex) {
             log.warn("Could not publish Java Coursera outline for workspace {}: {}", workspaceId, ex.getMessage(), ex);
+        }
+    }
+
+    private void syncTheoryAssetsLibrary(UUID workspaceId, UUID creatorId) {
+        try {
+            List<String> existingTitles = jdbc.queryForList(
+                    "SELECT title FROM theory_assets WHERE workspace_id = ?", String.class, workspaceId);
+            Set<String> seen = existingTitles != null ? new LinkedHashSet<>(existingTitles) : Set.of();
+            for (LessonSpec lesson : JavaCourseraCatalog.allLessons()) {
+                if (seen.contains(lesson.title())) {
+                    continue;
+                }
+                jdbc.update("""
+                        INSERT INTO theory_assets (id, workspace_id, title, body, language, style, source, version, created_by, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, 'vi', 'GUIDED', 'SEED', 1, ?, now(), now())
+                        """, UUID.randomUUID(), workspaceId, lesson.title(), lesson.bodyMarkdown(), creatorId);
+            }
+        } catch (Exception ex) {
+            log.debug("Skipped syncing theory_assets library for workspace {}: {}", workspaceId, ex.getMessage());
         }
     }
 
