@@ -68,6 +68,131 @@ public final class Module2ArchitectureAndDddProvider {
         );
     }
 
+    public static List<QuizQuestionSpec> quizQuestions() {
+        return List.of(
+                new QuizQuestionSpec("m2-q1",
+                        "Theo mô hình Scale Cube (Microservices Patterns), kiến trúc Microservices tương ứng trực tiếp với trục mở rộng nào?",
+                        "SINGLE_CHOICE",
+                        List.of("Trục X (Nhân bản nguyên khối)",
+                                "Trục Y (Phân rã theo năng lực nghiệp vụ độc lập)",
+                                "Trục Z (Sharding dữ liệu)",
+                                "Không thuộc trục nào"),
+                        1,
+                        "Trục Y (Functional Decomposition) tách ứng dụng theo năng lực nghiệp vụ thành các dịch vụ độc lập.", 1),
+                new QuizQuestionSpec("m2-q2",
+                        "Trong C4 Model, sơ đồ C1 (System Context Diagram) chủ yếu thể hiện điều gì?",
+                        "SINGLE_CHOICE",
+                        List.of("Các phương thức private Java",
+                                "Cấu hình docker-compose.yml",
+                                "Người dùng (Actors), Hệ thống trung tâm và Hệ thống bên ngoài",
+                                "Khóa ngoại PostgreSQL"),
+                        2,
+                        "C1 đặt hệ thống phần mềm trong bức tranh toàn cảnh gồm người sử dụng và các hệ thống ngoại vi.", 1),
+                new QuizQuestionSpec("m2-q3",
+                        "Sơ đồ C3 (Component Diagram) phóng to phạm vi nào?",
+                        "SINGLE_CHOICE",
+                        List.of("Các thành phần kiến trúc nội bộ (Controllers, Services, Repositories, Clients) bên trong MỘT container",
+                                "Toàn bộ trung tâm dữ liệu toàn cầu",
+                                "Cơ cấu phòng ban công ty",
+                                "Trình duyệt người dùng"),
+                        0,
+                        "C3 mở nắp một container cụ thể từ C2 để cho thấy cách các Component nội bộ phối hợp.", 1),
+                new QuizQuestionSpec("m2-q4",
+                        "Hai module Java (order và billing) đóng gói chung trong 1 tệp app.jar duy nhất chứng minh điều gì?",
+                        "SINGLE_CHOICE",
+                        List.of("Đây là 2 Microservices độc lập",
+                                "Mỗi module có server DB riêng",
+                                "Mới chỉ là ranh giới Modular Monolith (triển khai chung 1 container), chưa phải 2 Microservices độc lập",
+                                "Hệ thống đang dùng Kafka"),
+                        2,
+                        "Microservice phải là đơn vị triển khai độc lập; đóng gói chung 1 JAR vẫn chỉ là 1 container.", 1),
+                new QuizQuestionSpec("m2-q5",
+                        "Bằng chứng nào mạnh nhất cho thấy hai dịch vụ vi phạm phản mẫu Shared Database?",
+                        "SINGLE_CHOICE",
+                        List.of("Cả hai dùng Java 21",
+                                "Cả hai chọn PostgreSQL nhưng tách DB và tài khoản riêng",
+                                "Cả hai kết nối cùng 1 schema và đọc/ghi trực tiếp lên cùng một bảng dữ liệu",
+                                "Hai dịch vụ gọi nhau qua REST API"),
+                        2,
+                        "Chia sẻ quyền đọc/ghi trực tiếp cùng một bảng phá vỡ đóng gói Bounded Context.", 1),
+                new QuizQuestionSpec("m2-q6",
+                        "Trong DDD, lớp dịch thuật đứng chắn giữa Microservice mới và hệ thống cũ để ngăn ô nhiễm mô hình miền gọi là gì?",
+                        "SINGLE_CHOICE",
+                        List.of("Shared Kernel", "Conformist", "Anti-Corruption Layer (ACL)", "Database Trigger"),
+                        2,
+                        "Anti-Corruption Layer (ACL) dịch qua lại giữa mô hình bên ngoài và mô hình miền sạch bên trong Bounded Context.", 1),
+                new QuizQuestionSpec("m2-q7",
+                        "Trong thiết kế DDD cho Microservices, Order Aggregate tham chiếu tới Restaurant Aggregate bằng cách nào?",
+                        "SINGLE_CHOICE",
+                        List.of("Dùng @ManyToOne trực tiếp giữa 2 DB",
+                                "Lưu trữ định danh giá trị (UUID restaurantId / khóa ngoại mềm) thay vì giữ tham chiếu đối tượng xuyên dịch vụ",
+                                "Gộp chung thành 1 bảng 200 cột",
+                                "Không lưu thông tin nhà hàng"),
+                        1,
+                        "Các Aggregate tham chiếu nhau qua Identity Reference (ID) để giữ tính độc lập giao dịch.", 1),
+                new QuizQuestionSpec("m2-q8",
+                        "Tại sao Constructor Injection trong Spring Boot lại hữu ích khi phân tích sơ đồ C3?",
+                        "SINGLE_CHOICE",
+                        List.of("Giúp giấu kín phụ thuộc",
+                                "Làm lộ rõ mọi phụ thuộc bắt buộc của Component trên hàm khởi tạo và dễ viết Unit Test",
+                                "Tự động biến SQL thành GraphQL",
+                                "Không cần biên dịch"),
+                        1,
+                        "Constructor Injection thể hiện tường minh các cạnh phụ thuộc nội bộ ở mức C3.", 1),
+                new QuizQuestionSpec("m2-q9",
+                        "Loại test nào kiểm tra URL mapping, @Valid, HTTP status và JSON serialization của Controller mà không cần DB thật?",
+                        "SINGLE_CHOICE",
+                        List.of("Web Layer Slice Test với @WebMvcTest và MockMvc",
+                                "Đếm số package",
+                                "Chỉ đọc README.md",
+                                "Chạy tải production"),
+                        0,
+                        "@WebMvcTest chỉ nạp tầng Web/Controller để kiểm tra chính xác hợp đồng HTTP và Validation.", 1),
+                new QuizQuestionSpec("m2-q10",
+                        "Chỉ nhìn thấy tên class kết thúc bằng Service (VD: HelperService) có đủ kết luận là tầng điều phối nghiệp vụ chuẩn C3 không?",
+                        "SINGLE_CHOICE",
+                        List.of("Luôn đủ 100%",
+                                "Không; cần đối chiếu bằng chứng mã nguồn thực tế (ai gọi, nó gọi đâu, hành vi bên trong)",
+                                "Chỉ cần có 2 method",
+                                "Chỉ cần tên viết hoa"),
+                        1,
+                        "Ranh giới kiến trúc nằm ở luồng gọi và hành vi thực tế trong mã nguồn (Code Evidence), không chỉ ở hậu tố tên class.", 1)
+        );
+    }
+
+    public static EssaySpec essay() {
+        return new EssaySpec(
+                "Bài tập Tự luận Chương 2: Phân rã Hệ thống Thương mại Điện tử theo DDD & C4 Model",
+                "Đề xuất tách Monolith chia sẻ bảng sang Bounded Context, Database-per-Service và đặc tả C1–C3.",
+                """
+                ### Đề bài Tự luận Chương 2: Phân rã Monolith Thương mại Điện tử & Đặc tả C4 Model
+                Công ty của bạn đang chạy một Monolith gồm `Orders`, `Payments`, `Inventory`, `Notifications` dùng chung `ecommerce_shared_db`, dẫn tới khóa bảng nặng khi báo cáo tồn kho.
+
+                **Yêu cầu bài viết (400 – 600 từ)**:
+                1. **Phân rã theo `Bounded Context` & `Database-per-Service`**: Chỉ rõ từng Microservice, trách nhiệm cốt lõi, `Aggregate Root` chính và các bảng sở hữu độc quyền. Giải thích cách `order-service` lấy tồn kho mà không được phép `JOIN` chéo DB.
+                2. **Đặc tả 3 tầng `C1`, `C2`, `C3`**: Liệt kê chính xác các Nodes và Edges ở C1 Context, C2 Container, và C3 Component bên trong `order-service`.
+                """,
+                List.of(
+                        new RubricCriterion("1. Phân định Bounded Context & Database-per-Service", 40,
+                                "Tách rõ 4 dịch vụ/4 DB riêng, xác định Aggregate Root đúng và thay SQL JOIN chéo bằng API/Events."),
+                        new RubricCriterion("2. Cô lập nghiêm ngặt 3 tầng C1, C2, C3", 40,
+                                "Phân bổ đúng phần tử cho từng mức C1, C2, C3; không lẫn Database/Class vào C1 hoặc Class nhỏ vào C2."),
+                        new RubricCriterion("3. Cấu trúc nội bộ C3 của order-service", 20,
+                                "Thể hiện rõ OrderController -> OrderApplicationService -> Order Aggregate / Repository & Outbound Client Ports.")
+                )
+        );
+    }
+
+    public static VisualLabSpec visualLab() {
+        return new VisualLabSpec(
+                "STATIC_LAB",
+                "Mô hình Trực quan #1: Khám phá Sơ đồ Tĩnh C1–C3 & Kiểm toán Shared Database (3E)",
+                "Quan sát mô hình kiến trúc tham chiếu C1 Context, C2 Container, C3 Component và kiểm tra 5 quy tắc bằng chứng 3E.",
+                false,
+                List.of("C4_CONTEXT", "C4_CONTAINER", "C4_COMPONENT")
+        );
+    }
+
     public static CourseraModuleSpec module() {
         return new CourseraModuleSpec(
                 2,
@@ -77,9 +202,9 @@ public final class Module2ArchitectureAndDddProvider {
                 "Khám phá sơ đồ C1 System Context, C2 Container, C3 Component và kiểm toán ranh giới Database-per-Service.",
                 "java-01",
                 lessons(),
-                List.of(),
-                null,
-                null
+                quizQuestions(),
+                essay(),
+                visualLab()
         );
     }
 }
