@@ -175,7 +175,7 @@ export function CourseOutline({
         </div>
         {canManage && (
           <Button asChild size="sm" variant="outline">
-            <Link href={`/roadmap?workspace=${encodeURIComponent(workspaceId)}#course-builder`}>
+            <Link href={`/workspace-overview?workspace=${encodeURIComponent(workspaceId)}&view=course-authoring`}>
               {t("Edit content", "Sửa nội dung")}
             </Link>
           </Button>
@@ -188,7 +188,7 @@ export function CourseOutline({
             <details
               open={
                 canManage
-                  ? undefined
+                  ? module.position === 1
                   : module.position === 1 || module.items.some((item) => item.assignmentId && labs.get(item.assignmentId)?.state === "UNLOCKED")
               }
               className="group border-b last:border-b-0"
@@ -239,7 +239,7 @@ export function CourseOutline({
                       ? `/assignments?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(item.assignmentId)}`
                       : `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(item.assignmentId)}&step=${stepForType(item.type)}`
                     : canManage
-                      ? `/roadmap?workspace=${encodeURIComponent(workspaceId)}#course-builder`
+                      ? `/workspace-overview?workspace=${encodeURIComponent(workspaceId)}&view=course-authoring`
                       : null;
                   return (
                     <li key={item.id} className="flex flex-wrap items-center gap-3 py-3">
