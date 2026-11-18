@@ -243,68 +243,69 @@ function LecturerAssignments({ embedded = false }: { embedded?: boolean } = {}) 
                       </p>
                     </div>
                   </div>
-                  <div className="flex flex-wrap items-center gap-1.5 border-t pt-3">
-                    <Button asChild size="sm" className="bg-indigo-600 text-white hover:bg-indigo-700">
-                      <Link href={creatorHref}>
-                        <Pencil className="mr-1 size-3.5" aria-hidden="true" />
-                        {t("Edit in Lab Creation", "Chỉnh sửa & Cấu hình")}
-                      </Link>
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => setPrerequisiteLab(lab)}
-                    >
-                      <GitBranch className="mr-1 size-3.5" aria-hidden="true" />
-                      {t("Prerequisites", "Điều kiện")}
-                    </Button>
-                    {inClass ? (
-                      <Button asChild size="sm" variant="outline">
-                        <Link href={previewHref}>
-                          <Eye className="mr-1 size-3.5" aria-hidden="true" />
-                          {t("Preview", "Xem trước")}
+                  <div className="space-y-2 border-t pt-3">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <Button asChild size="sm" className="bg-indigo-600 text-white hover:bg-indigo-700">
+                        <Link href={creatorHref}>
+                          <Pencil className="mr-1 size-3.5" aria-hidden="true" />
+                          {t("Edit in Lab Creation", "Chỉnh sửa & Cấu hình")}
                         </Link>
                       </Button>
-                    ) : (
-                      <div className="flex flex-col items-start">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setPrerequisiteLab(lab)}
+                      >
+                        <GitBranch className="mr-1 size-3.5" aria-hidden="true" />
+                        {t("Prerequisites", "Điều kiện")}
+                      </Button>
+                      {inClass ? (
+                        <Button asChild size="sm" variant="outline">
+                          <Link href={previewHref}>
+                            <Eye className="mr-1 size-3.5" aria-hidden="true" />
+                            {t("Preview", "Xem trước")}
+                          </Link>
+                        </Button>
+                      ) : (
                         <PublishCourseLab workspaceId={workspaceId} assignmentId={lab.id} />
-                        {!readyForClass && client.mode === "backend" && (
-                          <span className="mt-1 text-[11px] text-muted-foreground">
-                            {t(
-                              "Pin a source and publish a Quiz before adding it to the class.",
-                              "Cần ghim nguồn và công bố Quiz trước khi thêm vào lớp.",
-                            )}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                    <Button asChild size="sm" variant="ghost">
-                      <Link href={`/submissions?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(lab.id)}`}>
-                        {t("Submissions", "Bài nộp")}
-                      </Link>
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      disabled={remove.isPending || Boolean(inClass)}
-                      title={inClass ? t("Remove this Lab from the class before deleting it.", "Hãy gỡ Lab khỏi lớp trước khi xóa.") : undefined}
-                      onClick={() => {
-                        if (
-                          window.confirm(
-                            t(
-                              "Delete this Lab from the library? This cannot be undone.",
-                              "Xóa Lab này khỏi kho? Không thể hoàn tác.",
-                            ),
+                      )}
+                      <Button asChild size="sm" variant="ghost">
+                        <Link href={`/submissions?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(lab.id)}`}>
+                          {t("Submissions", "Bài nộp")}
+                        </Link>
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="ml-auto text-muted-foreground hover:text-destructive"
+                        disabled={remove.isPending || Boolean(inClass)}
+                        title={inClass ? t("Remove this Lab from the class before deleting it.", "Hãy gỡ Lab khỏi lớp trước khi xóa.") : undefined}
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              t(
+                                "Delete this Lab from the library? This cannot be undone.",
+                                "Xóa Lab này khỏi kho? Không thể hoàn tác.",
+                              ),
+                            )
                           )
-                        )
-                          remove.mutate({ workspaceId, assignmentId: lab.id });
-                      }}
-                    >
-                      <Trash2 className="size-3.5" aria-hidden="true" />
-                      <span className="sr-only">{t("Delete", "Xóa")}</span>
-                    </Button>
+                            remove.mutate({ workspaceId, assignmentId: lab.id });
+                        }}
+                      >
+                        <Trash2 className="size-3.5" aria-hidden="true" />
+                        <span className="sr-only">{t("Delete", "Xóa")}</span>
+                      </Button>
+                    </div>
+                    {!inClass && !readyForClass && client.mode === "backend" && (
+                      <p className="text-[11px] text-muted-foreground">
+                        {t(
+                          "Pin a source and publish a Quiz before adding it to the class.",
+                          "Cần ghim nguồn và công bố Quiz trước khi thêm vào lớp.",
+                        )}
+                      </p>
+                    )}
                   </div>
                 </li>
               );
