@@ -76,7 +76,6 @@ export type AppShellProps = {
 };
 
 export function AppShell(props: AppShellProps) {
-  const { t } = useLocale();
   const pathname = usePathname();
   // FlowFrame verifies the Java session. Do not run the provisional session
   // adapter or its permission gate for the integrated backend mainflow.

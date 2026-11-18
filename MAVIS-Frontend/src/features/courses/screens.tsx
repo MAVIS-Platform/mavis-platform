@@ -5,22 +5,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowRight,
-  Award,
   BookOpen,
   Check,
-  CheckCircle2,
-  ChevronRight,
   CircleAlert,
   Clock3,
   Code2,
-  FileCheck2,
-  GraduationCap,
-  KeyRound,
-  Lock,
   Network,
   Play,
   ShieldCheck,
-  Sparkles,
 } from "lucide-react";
 import { SearchInput } from "@/components/shared/forms";
 import { useApi, useApiMutation, useApiQuery, useSelection, useSession } from "@/hooks/use-api";
@@ -31,11 +23,8 @@ import {
   RequestState,
 } from "@/components/shared/request-state";
 import {
-  CourseEnrollment,
-  CourseRoadmap as CourseLabRoadmap,
   SeedCuratedCourseLabs,
   useBootstrapLabStudio,
-  useCourseAuthoring,
   useCourseRoadmap,
   usePublishedCourse,
   useStartLabStudioSession,
@@ -56,15 +45,7 @@ import { ArchitectureGraph, ElementDetailsPanel } from "@/features/architecture/
 import { DiagramPreview } from "@/features/architecture/diagram-preview";
 import { LiveStudioWorkbench } from "@/features/runtime/live-studio-workbench";
 import type { ArchitecturalModel } from "@/types/domain";
-
-function shortDate(value?: string | null) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(date);
-}
 import { CourseBuilder } from "./course-builder";
-import { CourseOutline } from "./course-outline";
 import { CourseQuiz, useCourseQuiz } from "./course-quiz";
 import { CourseSetupPanel } from "./course-setup";
 import { CurriculumLibrary } from "./curriculum";
@@ -549,7 +530,6 @@ export function LabWorkspace() {
   const roadmap = useCourseRoadmap(workspaceId);
   const isLecturer = workspace?.myRole === "LECTURER" || session.data?.user?.role === "admin";
   const preview = Boolean(isLecturer && params.get("preview") !== "0");
-  const course = useCourseAuthoring(workspaceId, Boolean(isLecturer));
   const publishedCourse = usePublishedCourse(workspaceId);
   const courseModules = publishedCourse.data?.snapshot.modules ?? [];
   const currentModule = courseModules.find((module) =>
@@ -829,6 +809,14 @@ export function LabWorkspace() {
                         : t("Theory & Quiz Lab", "Lab Lý Thuyết & Quiz")}
                     </Badge>
                     {preview && <Badge variant="warning">{t("Preview", "Xem trước")}</Badge>}
+                    {readiness.map((gate) => (
+                      <Badge
+                        key={gate.label}
+                        className="border-white/20 bg-white/10 text-[11px] font-normal text-teal-100"
+                      >
+                        {gate.label}: {gate.state}
+                      </Badge>
+                    ))}
                   </div>
                 </div>
                 <div aria-label={t("Lab actions", "Thao tác Lab")} className="flex flex-wrap items-center gap-2">

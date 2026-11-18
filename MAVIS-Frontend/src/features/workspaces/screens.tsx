@@ -21,7 +21,7 @@ import { useApiMutation, useApiQuery, useSession, useSelection } from "@/hooks/u
 import { Button } from "@/components/ui/button";
 import { ErrorState, RequestState } from "@/components/shared/request-state";
 import { SearchInput, SelectField } from "@/components/shared/forms";
-import { DataTable, DetailPanel, StatusBadge } from "@/components/shared/data";
+import { DataTable, DetailPanel } from "@/components/shared/data";
 import { CreateWorkspace, WorkspaceControls } from "./manage";
 import {
   CoursePasskey,
