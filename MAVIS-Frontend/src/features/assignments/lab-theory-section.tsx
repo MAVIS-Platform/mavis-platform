@@ -1055,16 +1055,16 @@ export function LabTheorySection({
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-teal-200 bg-gradient-to-r from-teal-50/70 to-emerald-50/50 p-4">
         <p className="text-sm font-medium text-teal-950">
           {t(
-            "Done writing Theory? Proceed to Step 3 to create or AI-generate Quiz questions.",
-            "Đã soạn xong Lý thuyết? Tiếp tục sang Bước 3 để tạo hoặc nhờ AI sinh Câu hỏi Quiz.",
+            "Done writing Theory? Pin your Sample Repository & verify C1–C3 Diagrams in Step 3.",
+            "Đã soạn xong Lý thuyết? Tiếp tục gắn Nguồn tham chiếu & kiểm tra Sơ đồ C1–C3 ở Bước 3.",
           )}
         </p>
         <Button
           type="button"
           className="bg-teal-600 text-white hover:bg-teal-700"
-          onClick={() => onNavigate("quiz")}
+          onClick={() => onNavigate("source")}
         >
-          {t("Next Step 3: Quiz Questions →", "Sang Bước 3: Câu hỏi Quiz →")}
+          {t("Next Step 3: Reference Source (C1–C3) →", "Sang Bước 3: Nguồn tham chiếu (C1–C3) →")}
           <ArrowRight className="ml-1.5 size-4" aria-hidden="true" />
         </Button>
       </div>

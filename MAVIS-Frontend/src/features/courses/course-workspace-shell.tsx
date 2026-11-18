@@ -6,8 +6,11 @@ import type { ReactNode } from "react";
 import {
   BookOpen,
   ClipboardCheck,
+  FilePlus2,
+  GraduationCap,
+  LayoutGrid,
+  Library,
   Map,
-  Plus,
   Users,
   Zap,
   type LucideIcon,
@@ -27,7 +30,7 @@ export type CourseWorkspaceTab =
   | "members"
   | "results";
 
-type UnifiedStaffTab = "curriculum" | "submissions" | "members";
+type UnifiedStaffTab = Exclude<CourseWorkspaceTab, "results">;
 type UnifiedStudentTab = "syllabus" | "lab" | "submissions";
 
 const STAFF_TABS: Array<{
@@ -38,11 +41,39 @@ const STAFF_TABS: Array<{
   href: (ws: string) => string;
 }> = [
   {
-    id: "curriculum",
-    en: "Curriculum & Labs",
-    vi: "Giáo trình & Bài học Lab",
-    icon: BookOpen,
+    id: "content",
+    en: "Overview & Setup",
+    vi: "Tổng quan & Khởi tạo",
+    icon: LayoutGrid,
     href: (ws) => `/workspace-overview?workspace=${encodeURIComponent(ws)}`,
+  },
+  {
+    id: "authoring",
+    en: "Curriculum & Materials",
+    vi: "Đề cương & Học liệu",
+    icon: GraduationCap,
+    href: (ws) => `/workspace-overview?workspace=${encodeURIComponent(ws)}&view=course-authoring`,
+  },
+  {
+    id: "theory-library",
+    en: "Theory Library",
+    vi: "Thư viện lý thuyết",
+    icon: Library,
+    href: (ws) => `/theory-library?workspace=${encodeURIComponent(ws)}`,
+  },
+  {
+    id: "assignments",
+    en: "Lab Library",
+    vi: "Thư viện Lab",
+    icon: BookOpen,
+    href: (ws) => `/assignments?workspace=${encodeURIComponent(ws)}`,
+  },
+  {
+    id: "lab-authoring",
+    en: "Lab Creation",
+    vi: "Tạo Lab",
+    icon: FilePlus2,
+    href: (ws) => `/lab-authoring?workspace=${encodeURIComponent(ws)}`,
   },
   {
     id: "submissions",
@@ -53,8 +84,8 @@ const STAFF_TABS: Array<{
   },
   {
     id: "members",
-    en: "Students & Passkey",
-    vi: "Học viên & Mã lớp",
+    en: "Students & Access",
+    vi: "Sinh viên & Phân quyền",
     icon: Users,
     href: (ws) => `/members?workspace=${encodeURIComponent(ws)}`,
   },
@@ -91,13 +122,16 @@ const STUDENT_TABS: Array<{
 ];
 
 function resolveStaffTab(pathname: string | null, active: CourseWorkspaceTab): UnifiedStaffTab {
+  if (pathname === "/theory-library") return "theory-library";
+  if (pathname === "/lab-authoring") return "lab-authoring";
+  if (pathname === "/assignments") return "assignments";
   if (pathname === "/submissions" || active === "submissions" || active === "results") {
     return "submissions";
   }
   if (pathname === "/members" || active === "members") {
     return "members";
   }
-  return "curriculum";
+  return active;
 }
 
 function resolveStudentTab(pathname: string | null, active: CourseWorkspaceTab): UnifiedStudentTab {
@@ -200,15 +234,6 @@ export function CourseWorkspaceShell({
                 );
               })}
             </div>
-            {!isStudent && (
-              <Link
-                href={`/lab-authoring?workspace=${encodeURIComponent(workspace.id)}`}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-emerald-400"
-              >
-                <Plus className="size-3.5" aria-hidden="true" />
-                {t("Create Lesson / Lab", "Soạn Bài Học / Lab Mới")}
-              </Link>
-            )}
           </nav>
         )}
       </header>

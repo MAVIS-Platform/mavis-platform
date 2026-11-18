@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { ErrorState, LoadingState, RequestState } from "@/components/shared/request-state";
 import { useApiQuery, useSelection, useSession } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
+import { CourseWorkspaceShell } from "@/features/courses/course-workspace-shell";
 import { useCourseAuthoring, useCourseSetup } from "@/features/workspaces/course-access";
 import type { Assignment } from "./requirements";
 import { LabInfoForm } from "./lab-info-form";
@@ -30,14 +31,12 @@ import { LabSourceSection } from "./lab-source-section";
 import { LabQuizSection } from "./lab-quiz-section";
 import { LabStudioSection } from "./lab-studio-section";
 import { LabPublishSection } from "./lab-publish-section";
-import { cn } from "@/lib/utils";
 
 type Tab = "info" | "theory" | "source" | "quiz" | "studio" | "publish";
-type HorizontalStep = 1 | 2 | 3 | 4;
 
 const TAB_LABELS: Record<Tab, { en: string; vi: string; icon: LucideIcon }> = {
   info: { en: "Lab information", vi: "Thông tin Lab", icon: Info },
-  theory: { en: "Theory", vi: "Lý thuyết Lab", icon: BookOpen },
+  theory: { en: "Lab theory", vi: "Lý thuyết Lab", icon: BookOpen },
   source: { en: "Reference source", vi: "Nguồn tham chiếu", icon: GitBranch },
   quiz: { en: "Quiz", vi: "Quiz", icon: CircleHelp },
   studio: { en: "Studio Live", vi: "Studio Live", icon: Activity },
@@ -53,13 +52,6 @@ function isTab(value: string | null): value is Tab {
     value === "studio" ||
     value === "publish"
   );
-}
-
-function stepForTab(tab: Tab): HorizontalStep {
-  if (tab === "info" || tab === "source") return 1;
-  if (tab === "theory") return 2;
-  if (tab === "quiz") return 3;
-  return 4;
 }
 
 export function LabAuthoring() {
@@ -106,66 +98,24 @@ export function LabAuthoring() {
 
   const onSaved = (saved: Assignment) => {
     setCreatedAssignmentId(saved.id);
-    setTab("source");
+    setTab("theory");
     const query = new URLSearchParams(params?.toString() ?? "");
     query.set("assignment", saved.id);
-    query.set("tab", "source");
+    query.set("tab", "theory");
     router.replace(`/lab-authoring?${query.toString()}`);
   };
 
-  const activeStep = stepForTab(tab);
-
-  const horizontalSteps: Array<{
-    step: HorizontalStep;
-    targetTab: Tab;
-    title: string;
-    subtitle: string;
-    icon: LucideIcon;
-    done: boolean;
-    enabled: boolean;
-  }> = [
+  const navItems: Array<{ id: Tab; done: boolean; enabled: boolean }> = [
+    { id: "info", done: Boolean(assignment), enabled: true },
+    { id: "theory", done: theoryReady, enabled: Boolean(assignment) },
+    { id: "source", done: Boolean(assignment?.referenceSource?.modelId), enabled: Boolean(assignment) },
+    { id: "quiz", done: Boolean(setupLab?.quizPublished), enabled: Boolean(assignment) },
     {
-      step: 1,
-      targetTab: assignment ? "source" : "info",
-      title: t(
-        `${TAB_LABELS.info.en} & ${TAB_LABELS.source.en}`,
-        "Bước 1: Thông Tin Lab & Nguồn Tham Chiếu",
-      ),
-      subtitle: t("Title, mode, pinned repo & C1–C3 diagrams", "Tên bài, hình thức & repo mẫu C1–C3"),
-      icon: GitBranch,
-      done: Boolean(assignment && assignment.referenceSource?.modelId),
-      enabled: true,
-    },
-    {
-      step: 2,
-      targetTab: "theory",
-      title: t(TAB_LABELS.theory.en, "Bước 2: Lý Thuyết Lab"),
-      subtitle: t("Markdown lesson & AI evidence draft", "Bài giảng Markdown & AI soạn từ bằng chứng"),
-      icon: BookOpen,
-      done: Boolean(assignment && theoryReady),
+      id: "studio",
+      done: !assignment?.requireRuntimeTrace || Boolean(setupLab?.topologyFrozen),
       enabled: Boolean(assignment),
     },
-    {
-      step: 3,
-      targetTab: "quiz",
-      title: t(TAB_LABELS.quiz.en, "Bước 3: Câu Hỏi Quiz"),
-      subtitle: t("80% Gatekeeper comprehension check", "Câu hỏi trắc nghiệm mở khóa Lab"),
-      icon: CircleHelp,
-      done: Boolean(setupLab?.quizPublished),
-      enabled: Boolean(assignment),
-    },
-    {
-      step: 4,
-      targetTab: "studio",
-      title: t(
-        `${TAB_LABELS.studio.en} & ${TAB_LABELS.publish.en}`,
-        "Bước 4: Bài Tập 2D Studio & Xuất Bản",
-      ),
-      subtitle: t("Topology, playtest & publish to class", "Thực nghiệm 2D & công bố vào lớp"),
-      icon: Rocket,
-      done: Boolean(setupLab?.published),
-      enabled: Boolean(assignment),
-    },
+    { id: "publish", done: Boolean(setupLab?.published), enabled: Boolean(assignment) },
   ];
 
   const header = (
@@ -298,104 +248,61 @@ export function LabAuthoring() {
     return <ErrorState error={assignments.error} onRetry={() => void assignments.refetch()} />;
   }
 
-  return (
-    <RequestState query={workspaces} empty={!workspace}>
-      <div className="space-y-5">
-        {header}
-
-        {/* Clean 4-Step Horizontal Stepper */}
+  const content = (
+    <div className="space-y-5">
+      {header}
+      <div className="grid gap-5 lg:grid-cols-[260px_minmax(0,1fr)]">
         <nav
           aria-label={t("Lab creation steps", "Các bước tạo Lab")}
-          className="grid gap-3 md:grid-cols-4"
+          className="space-y-1 rounded-xl border bg-card p-3 h-fit"
         >
-          {horizontalSteps.map((item) => {
-            const Icon = item.icon;
-            const active = activeStep === item.step;
+          {navItems.map((item, index) => {
+            const meta = TAB_LABELS[item.id];
+            const Icon = meta.icon;
+            const active = tab === item.id;
             return (
               <button
-                key={item.step}
+                key={item.id}
                 type="button"
                 disabled={!item.enabled}
-                onClick={() => navigate(item.targetTab)}
+                onClick={() => navigate(item.id)}
                 aria-current={active ? "step" : undefined}
-                className={cn(
-                  "flex items-start gap-3 rounded-2xl border p-3.5 text-left transition-all disabled:cursor-not-allowed disabled:opacity-50",
-                  active
-                    ? "border-teal-500 bg-teal-50/70 shadow-xs ring-1 ring-teal-500/30 dark:bg-teal-950/30"
-                    : "bg-card hover:border-teal-300",
-                )}
+                className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm transition-colors ${
+                  active ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                } disabled:cursor-not-allowed disabled:opacity-50`}
               >
-                <span className="mt-0.5 grid size-6 shrink-0 place-items-center">
+                <span className="grid size-5 shrink-0 place-items-center">
                   {item.done ? (
-                    <CheckCircle2
-                      className="size-5 text-emerald-600 dark:text-emerald-400"
-                      aria-hidden="true"
-                    />
+                    <CheckCircle2 className="size-4 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
                   ) : (
-                    <Circle
-                      className={cn("size-5", active ? "text-teal-600" : "text-muted-foreground")}
-                      aria-hidden="true"
-                    />
+                    <Circle className="size-4" aria-hidden="true" />
                   )}
                 </span>
-                <div className="min-w-0 flex-1 space-y-0.5">
-                  <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
-                    <Icon
-                      className={cn("size-3.5 shrink-0", active ? "text-teal-700" : "text-muted-foreground")}
-                      aria-hidden="true"
-                    />
-                    <span className="line-clamp-1">{item.title}</span>
-                  </div>
-                  <p className="line-clamp-1 text-[11px] text-muted-foreground">{item.subtitle}</p>
-                </div>
+                <Icon className="size-4 shrink-0" aria-hidden="true" />
+                <span className="min-w-0 flex-1">
+                  {index + 1}. {t(meta.en, meta.vi)}
+                </span>
               </button>
             );
           })}
+          <p className="mt-2 border-t px-2 pt-3 text-xs leading-5 text-muted-foreground">
+            {t(
+              "Saving a step does not publish it. Publishing and freezing remain explicit actions.",
+              "Lưu một bước không tự công bố. Công bố và đóng băng vẫn là thao tác riêng.",
+            )}
+          </p>
         </nav>
 
-        <main className="min-w-0 space-y-6">
-          {activeStep === 1 && (
-            <div className="space-y-6">
-              {assignment ? (
-                <details
-                  open={tab === "info" || !assignment.referenceSource?.modelId}
-                  className="rounded-2xl border bg-card p-4"
-                >
-                  <summary className="cursor-pointer text-sm font-semibold text-foreground">
-                    {t(
-                      "Lesson Details & Objectives (Title, Description, Deadline)",
-                      "Thông tin Bài học & Mục tiêu (Tiêu đề, Mô tả, Hạn nộp)",
-                    )}
-                  </summary>
-                  <div className="mt-4">
-                    <LabInfoForm
-                      key={assignment.id}
-                      workspaceId={workspaceId}
-                      assignment={assignment}
-                      onSaved={onSaved}
-                    />
-                  </div>
-                </details>
-              ) : (
-                <LabInfoForm
-                  key="new-lab"
-                  workspaceId={workspaceId}
-                  assignment={undefined}
-                  onSaved={onSaved}
-                />
-              )}
-
-              {assignment && (
-                <LabSourceSection
-                  workspaceId={workspaceId}
-                  assignment={assignment}
-                  onNavigate={navigate}
-                />
-              )}
-            </div>
+        <main className="min-w-0">
+          {tab === "info" && (
+            <LabInfoForm
+              key={assignment?.id ?? "new-lab"}
+              workspaceId={workspaceId}
+              assignment={assignment}
+              onSaved={onSaved}
+            />
           )}
-
-          {activeStep === 2 && assignment && (
+          {tab === "theory" && assignment && (
             <LabTheorySection
               workspaceId={workspaceId}
               workspaceName={workspace?.name ?? "Course"}
@@ -403,37 +310,53 @@ export function LabAuthoring() {
               onNavigate={navigate}
             />
           )}
-
-          {activeStep === 3 && assignment && (
+          {tab === "source" && assignment && (
+            <LabSourceSection
+              workspaceId={workspaceId}
+              assignment={assignment}
+              onNavigate={navigate}
+            />
+          )}
+          {tab === "quiz" && assignment && (
             <LabQuizSection
               workspaceId={workspaceId}
               assignmentId={assignment.id}
               onNavigate={navigate}
             />
           )}
-
-          {activeStep === 4 && assignment && (
-            <div className="space-y-6">
-              <LabStudioSection
-                workspaceId={workspaceId}
-                assignment={assignment}
-                onNavigate={navigate}
-              />
-              <LabPublishSection
-                workspaceId={workspaceId}
-                assignment={assignment}
-                onNavigate={navigate}
-              />
-            </div>
+          {tab === "studio" && assignment && (
+            <LabStudioSection
+              workspaceId={workspaceId}
+              assignment={assignment}
+              onNavigate={navigate}
+            />
           )}
-
-          {!assignment && activeStep !== 1 && (
+          {tab === "publish" && assignment && (
+            <LabPublishSection
+              workspaceId={workspaceId}
+              assignment={assignment}
+              onNavigate={navigate}
+            />
+          )}
+          {!assignment && tab !== "info" && (
             <p className="rounded-xl border bg-card p-5 text-sm text-muted-foreground">
               {t("Save the Lab information first.", "Hãy lưu thông tin Lab trước.")}
             </p>
           )}
         </main>
       </div>
+    </div>
+  );
+
+  return (
+    <RequestState query={workspaces} empty={!workspace}>
+      {workspace ? (
+        <CourseWorkspaceShell workspace={workspace} active="lab-authoring">
+          {content}
+        </CourseWorkspaceShell>
+      ) : (
+        content
+      )}
     </RequestState>
   );
 }

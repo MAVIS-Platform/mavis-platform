@@ -68,8 +68,8 @@ export function LabQuizSection({
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-teal-200 bg-gradient-to-r from-teal-50/70 to-emerald-50/50 p-4">
           <p className="text-sm font-medium text-teal-950">
             {t(
-              "Quiz published? Configure the 2D Studio Sandbox & publish this Lab to your class in Step 4.",
-              "Đã công bố Quiz? Tiếp tục cấu hình Bài tập 2D Studio & Xuất bản Lab cho lớp ở Bước 4.",
+              "Quiz published? Proceed to Step 5 to configure Studio Live.",
+              "Đã công bố Quiz? Tiếp tục sang Bước 5 để cấu hình thực hành Studio Live.",
             )}
           </p>
           <Button
@@ -77,7 +77,7 @@ export function LabQuizSection({
             className="bg-teal-600 text-white hover:bg-teal-700"
             onClick={() => onNavigate("studio")}
           >
-            {t("Next Step 4: 2D Studio & Publish →", "Sang Bước 4: 2D Studio & Xuất bản →")}
+            {t("Next Step 5: Studio Live →", "Sang Bước 5: Studio Live →")}
             <ArrowRight className="ml-1.5 size-4" aria-hidden="true" />
           </Button>
         </div>
