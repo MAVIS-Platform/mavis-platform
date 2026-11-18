@@ -70,7 +70,7 @@ class CourseAccessPostgresTest {
             var oldKey = tx.execute(status -> courses.issue(workspaceId, 1));
             var key = tx.execute(status -> courses.issue(workspaceId, 2));
             assertNotEquals(oldKey.code(), key.code());
-            assertEquals(64, jdbc.queryForObject("SELECT length(digest) FROM course_passkeys", Integer.class));
+            assertEquals(64, jdbc.queryForObject("SELECT length(digest) FROM course_passkeys WHERE is_active = TRUE", Integer.class));
             assertTrue(courses.keyStatus(workspaceId).active());
             assertEquals(ErrorCode.FORBIDDEN, assertThrows(BusinessException.class,
                     () -> courses.redeem(key.code(), UUID.randomUUID())).getErrorCode());
@@ -104,7 +104,7 @@ class CourseAccessPostgresTest {
                 jdbc.update("UPDATE course_passkeys SET expires_at = now() + interval '1 microsecond'");
                 assertTrue(jdbc.queryForObject("""
                         SELECT now() < expires_at AND expires_at < statement_timestamp()
-                        FROM course_passkeys WHERE workspace_id = ?
+                        FROM course_passkeys WHERE workspace_id = ? AND is_active = TRUE
                         """, Boolean.class, workspaceId));
                 assertEquals(ErrorCode.BAD_REQUEST, assertThrows(BusinessException.class,
                         () -> courses.redeem(expiring.code(), UUID.randomUUID())).getErrorCode());
