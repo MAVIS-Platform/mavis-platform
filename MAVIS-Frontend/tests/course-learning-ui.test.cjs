@@ -159,7 +159,7 @@ test("lecturer Lab authoring is a dedicated workspace with ordered authoring ste
     "Check & add to class",
   ])
     assert.ok(authoring.includes(label), label);
-  assert.ok(info.includes('t("Save Lab draft", "Lưu bản nháp Lab")'));
+  assert.ok(info.includes('t("Next Step 2: Lab Theory", "Sang Bước 2: Lý thuyết Lab")'));
   assert.ok(info.includes("Attach the reference source and publish it in the next steps."));
   assert.match(source, /referenceModelId:\s*modelId/);
   assert.match(publish, /Preview as student/);

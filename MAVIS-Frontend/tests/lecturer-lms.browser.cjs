@@ -448,7 +448,7 @@ async function main() {
     });
     await page.getByText("Lab information", { exact: false }).first().waitFor();
     await page.getByText("Reference source", { exact: false }).first().waitFor();
-    await page.getByText("Save Lab changes", { exact: true }).waitFor();
+    await page.getByText("Next Step 2: Lab Theory", { exact: true }).waitFor();
     assert.equal(
       await page.getByText("Required architecture views", { exact: true }).count(),
       0,

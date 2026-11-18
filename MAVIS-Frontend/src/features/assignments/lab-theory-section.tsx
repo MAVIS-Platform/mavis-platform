@@ -1,14 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowRight,
   BookOpen,
   GitBranch,
   Library,
-  Plus,
   Save,
   Sparkles,
   Trash2,
@@ -24,6 +22,7 @@ import { useApiQuery } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { ArchitectureGraph, ElementDetailsPanel } from "@/features/architecture/components";
 import { DiagramPreview } from "@/features/architecture/diagram-preview";
+import { isMissingCourseError } from "@/features/courses/course-outline";
 import {
   useCourseAuthoring,
   useStudentLabContext,
@@ -90,10 +89,6 @@ const LESSON_TEMPLATES = [
       "",
       "- Point to the service, module or boundary students should inspect.",
       "",
-      "## Common mistakes",
-      "",
-      "- Describe a trap students usually fall into.",
-      "",
       "## Check your understanding",
       "",
       "- Write one question students should be able to answer.",
@@ -115,10 +110,6 @@ const LESSON_TEMPLATES = [
       "1. Open C1 and list the external actors.",
       "2. Open C2 and trace the request path for one use case.",
       "3. Open C3 and identify the component that owns the decision.",
-      "",
-      "## What to record",
-      "",
-      "- The boundary you found, the dependency direction, and the evidence.",
     ].join("\n"),
   },
   {
@@ -132,7 +123,6 @@ const LESSON_TEMPLATES = [
       "",
       "- [ ] I can explain the service boundary in my own words.",
       "- [ ] I can point to the call path in C2.",
-      "- [ ] I know which dependency is synchronous and which is asynchronous.",
       "- [ ] I know what evidence the Lab will ask me to capture.",
     ].join("\n"),
   },
@@ -143,14 +133,12 @@ function MarkdownEditor({
   value,
   onChange,
   title,
-  moduleLabel,
   t,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   title?: string;
-  moduleLabel?: string;
   t: (en: string, vi: string) => string;
 }) {
   const [mode, setMode] = useState<"write" | "preview" | "split">("write");
@@ -202,8 +190,8 @@ function MarkdownEditor({
             value={value}
             className="font-mono text-sm leading-6"
             placeholder={t(
-              "# Lesson heading\n\nWrite the lesson in Markdown.\n\n- Key idea\n- Example from the sample repository",
-              "# Tiêu đề bài học\n\nViết bài học bằng Markdown.\n\n- Ý chính\n- Ví dụ từ repo mẫu",
+              "# Lesson heading\n\nWrite the lesson in Markdown or import a .md file.\n\n- Key idea\n- Example from the sample repository",
+              "# Tiêu đề bài học\n\nViết bài học bằng Markdown hoặc nhập tệp .md.\n\n- Ý chính\n- Ví dụ từ repo mẫu",
             )}
             onChange={(event) => onChange(event.target.value)}
           />
@@ -211,11 +199,6 @@ function MarkdownEditor({
         {(mode === "preview" || mode === "split") && (
           <div className="min-h-64 rounded-xl border bg-background p-5 shadow-2xs">
             <div className="mb-4 flex flex-wrap items-center gap-2 border-b pb-3">
-              {moduleLabel && (
-                <span className="rounded-full border bg-muted/50 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
-                  {moduleLabel}
-                </span>
-              )}
               <span className="inline-flex items-center gap-1 rounded-full border border-teal-200 bg-teal-50 px-2.5 py-0.5 text-[11px] font-medium text-teal-800 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-300">
                 📖 {t("Theory Lesson", "Bài giảng lý thuyết")}
               </span>
@@ -263,13 +246,43 @@ export function LabTheorySection({
       ),
     retry: false,
   });
+
+  function invalidateTheory() {
+    void cache.invalidateQueries({ queryKey: ["api", "theory-assets", workspaceId] });
+    void cache.invalidateQueries({ queryKey: ["api", "lab-theory-assets", workspaceId, assignment.id] });
+    void cache.invalidateQueries({ queryKey: ["api", "course-authoring", workspaceId] });
+    void cache.invalidateQueries({ queryKey: ["api", "course-published", workspaceId] });
+    void cache.invalidateQueries({ queryKey: ["api", "course-setup", workspaceId] });
+  }
+
+  const [newTitle, setNewTitle] = useState("");
+  const [newBody, setNewBody] = useState("");
+  const [libraryItemId, setLibraryItemId] = useState("");
+  const [editorStyle, setEditorStyle] = useState("CUSTOM");
+  const [draftSource, setDraftSource] = useState<"LECTURER" | "IMPORT" | "AI">("LECTURER");
+  const [aiNote, setAiNote] = useState("");
+  const [bodies, setBodies] = useState<Record<string, string>>({});
+  const [c4Tab, setC4Tab] = useState<"CONTEXT" | "CONTAINER" | "COMPONENT" | "GRAPH">("CONTEXT");
+  const [selectedGraphId, setSelectedGraphId] = useState<string | null>(null);
+  const [syncStatus, setSyncStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const [authorMode, setAuthorMode] = useState<"write" | "library">("write");
+
   const attachAsset = useMutation({
-    mutationFn: (assetId: string) =>
-      api<AttachedTheory>(`workspaces/${workspaceId}/course-labs/${assignment.id}/theory-assets`, {
-        method: "POST",
-        body: JSON.stringify({ assetId }),
-      }),
-    onSuccess: () => invalidateTheory(),
+    mutationFn: async (assetId: string) => {
+      const attached = await api<AttachedTheory>(
+        `workspaces/${workspaceId}/course-labs/${assignment.id}/theory-assets`,
+        {
+          method: "POST",
+          body: JSON.stringify({ assetId }),
+        },
+      );
+      await course.publish.mutateAsync().catch(() => undefined);
+      return attached;
+    },
+    onSuccess: () => {
+      invalidateTheory();
+      setLibraryItemId("");
+    },
   });
   const detachAsset = useMutation({
     mutationFn: (assetId: string) =>
@@ -295,6 +308,7 @@ export function LabTheorySection({
         method: "POST",
         body: JSON.stringify({ assetId: asset.id }),
       });
+      await course.publish.mutateAsync().catch(() => undefined);
       return asset;
     },
     onSuccess: () => {
@@ -303,6 +317,7 @@ export function LabTheorySection({
       setNewBody("");
       setDraftSource("LECTURER");
       setEditorStyle("CUSTOM");
+      setAiNote("");
     },
   });
   const generateDraft = useMutation({
@@ -324,41 +339,25 @@ export function LabTheorySection({
       setDraftSource("AI");
       setAiNote(
         t(
-          `AI draft from ${draft.evidenceCount} evidence excerpt(s). Review it, then save it to the library.`,
-          `Bản nháp AI từ ${draft.evidenceCount} bằng chứng. Hãy kiểm tra rồi lưu vào thư viện.`,
+          `AI draft from ${draft.evidenceCount} evidence excerpt(s). Review it, then click 'Save to library & attach'.`,
+          `Bản nháp AI từ ${draft.evidenceCount} bằng chứng. Hãy kiểm tra rồi bấm 'Lưu vào thư viện & gắn'.`,
         ),
       );
     },
   });
-  function invalidateTheory() {
-    void cache.invalidateQueries({ queryKey: ["api", "theory-assets", workspaceId] });
-    void cache.invalidateQueries({ queryKey: ["api", "lab-theory-assets", workspaceId, assignment.id] });
-    void cache.invalidateQueries({ queryKey: ["api", "course-authoring", workspaceId] });
-    void cache.invalidateQueries({ queryKey: ["api", "course-published", workspaceId] });
-    void cache.invalidateQueries({ queryKey: ["api", "course-setup", workspaceId] });
-  }
-  const [courseTitle, setCourseTitle] = useState(`${workspaceName} Course`);
-  const [moduleTitle, setModuleTitle] = useState("");
-  const [selectedModuleId, setSelectedModuleId] = useState("");
-  const [newTitle, setNewTitle] = useState("");
-  const [newBody, setNewBody] = useState("");
-  const [sourceItemId, setSourceItemId] = useState("");
-  const [libraryItemId, setLibraryItemId] = useState("");
-  const [editorStyle, setEditorStyle] = useState("CUSTOM");
-  const [draftSource, setDraftSource] = useState<"LECTURER" | "IMPORT" | "AI">("LECTURER");
-  const [aiNote, setAiNote] = useState("");
-  const [bodies, setBodies] = useState<Record<string, string>>({});
-  const [c4Tab, setC4Tab] = useState<"CONTEXT" | "CONTAINER" | "COMPONENT" | "GRAPH">("CONTEXT");
-  const [selectedGraphId, setSelectedGraphId] = useState<string | null>(null);
-  const [syncStatus, setSyncStatus] = useState<"idle" | "saving" | "saved">("idle");
-  const [authorMode, setAuthorMode] = useState<"write" | "library">("write");
+
   const isPublished = course.data?.status === "PUBLISHED";
   const savingBusy =
     syncStatus === "saving" ||
     course.startDraft.isPending ||
     course.updateItem.isPending ||
-    course.addItem.isPending ||
     course.publish.isPending;
+
+  const modules = (course.data?.modules as TheoryModule[] | undefined) ?? [];
+  const linkedModule = modules.find((module) =>
+    module.items.some((item) => item.assignmentId === assignment.id),
+  );
+  const selectedModule = linkedModule ?? modules[0];
 
   async function saveWithAutoPublish(
     task: (
@@ -390,21 +389,9 @@ export function LabTheorySection({
     }
   }
 
-  const modules = (course.data?.modules as TheoryModule[] | undefined) ?? [];
-  const availableLessons = modules.flatMap((module) =>
-    module.items
-      .filter((item) => item.type === "THEORY" && item.assignmentId !== assignment.id)
-      .map((item) => ({ item, moduleTitle: module.title })),
-  );
-  const selectedSource = availableLessons.find(({ item }) => item.id === sourceItemId);
   const libraryAssets = libraryQuery.data ?? [];
   const attachedAssets = attachedQuery.data ?? [];
   const selectedLibraryAsset = libraryAssets.find((asset) => asset.id === libraryItemId);
-  const linkedModule = modules.find((module) =>
-    module.items.some((item) => item.assignmentId === assignment.id),
-  );
-  const selectedModule =
-    modules.find((module) => module.id === selectedModuleId) ?? linkedModule ?? modules[0];
   const reference = assignment.referenceSource;
   const studentCtx = useStudentLabContext(
     workspaceId,
@@ -424,12 +411,6 @@ export function LabTheorySection({
     refArch?.diagrams?.find((d) => d.level?.toUpperCase() === c4Tab)?.mermaidDsl ?? null;
 
   useEffect(() => {
-    if (selectedModule && selectedModule.id !== selectedModuleId) {
-      setSelectedModuleId(selectedModule.id);
-    }
-  }, [selectedModule, selectedModuleId]);
-
-  useEffect(() => {
     if (!selectedModule) return;
     setBodies(
       Object.fromEntries(
@@ -446,7 +427,8 @@ export function LabTheorySection({
   const addCourseModule = course.addModule;
 
   useEffect(() => {
-    if (course.isPending || course.isError || saveCourse.isPending || saveCourse.isError) return;
+    if (course.isPending || saveCourse.isPending || saveCourse.isError) return;
+    if (course.isError && !isMissingCourseError(course.error)) return;
     if (!course.data && !bootstrappedCourseRef.current) {
       bootstrappedCourseRef.current = true;
       void saveCourse.mutateAsync({
@@ -454,7 +436,7 @@ export function LabTheorySection({
         description: "",
       });
     }
-  }, [course.isPending, course.isError, course.data, saveCourse, workspaceName]);
+  }, [course.isPending, course.isError, course.error, course.data, saveCourse, workspaceName]);
 
   useEffect(() => {
     if (
@@ -476,110 +458,10 @@ export function LabTheorySection({
     }
   }, [course.isPending, course.isError, course.data, addCourseModule, t]);
 
-  if (
-    course.isPending ||
-    saveCourse.isPending ||
-    (Boolean(course.data) && modules.length === 0 && addCourseModule.isPending)
-  ) {
-    return (
-      <div className="rounded-xl border border-teal-200 bg-teal-50/60 p-4 text-sm text-teal-900">
-        {t(
-          "Initializing default Course & Module automatically so you can write Theory right away…",
-          "Đang tự động khởi tạo Khóa học & Chương mặc định để bạn soạn Lý thuyết ngay…",
-        )}
-      </div>
-    );
-  }
-
-  if (!course.data) {
-    return (
-      <section className="space-y-4 rounded-xl border bg-card p-5">
-        <div className="flex items-center gap-2">
-          <BookOpen className="size-4 text-primary" aria-hidden="true" />
-          <h2 className="font-semibold">{t("Create the course structure first", "Tạo cấu trúc khóa học trước")}</h2>
-        </div>
-        <p className="text-sm text-muted-foreground">
-          {t(
-            "Theory belongs to a module inside the Course. Create a Course draft, then add the first module and lesson here.",
-            "Lý thuyết nằm trong một chương của Course. Tạo bản nháp Course, sau đó thêm chương và bài học đầu tiên tại đây.",
-          )}
-        </p>
-        <p className="text-xs text-muted-foreground">
-          {t(
-            "Theory Library is the reusable lesson source. This step attaches a library lesson (or a custom one) to this Lab.",
-            "Theory Library là nơi lưu bài giảng dùng lại. Bước này gắn một bài trong thư viện (hoặc bài tự soạn) vào Lab hiện tại.",
-          )}
-        </p>
-        <Button asChild type="button" size="sm" variant="outline">
-          <Link href={`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&section=theory-library`}>
-            {t("Open Theory Library", "Mở Thư viện lý thuyết")}
-          </Link>
-        </Button>
-        <div className="flex flex-wrap items-end gap-2">
-          <label className="min-w-64 flex-1 space-y-1 text-xs font-medium">
-            <span>{t("Course title", "Tên khóa học")}</span>
-            <Input value={courseTitle} onChange={(event) => setCourseTitle(event.target.value)} />
-          </label>
-          <Button
-            type="button"
-            disabled={course.save.isPending || !courseTitle.trim()}
-            onClick={() => course.save.mutate({ title: courseTitle.trim(), description: "" })}
-          >
-            {course.save.isPending
-              ? t("Creating draft…", "Đang tạo bản nháp…")
-              : t("Create Course draft", "Tạo bản nháp Course")}
-          </Button>
-        </div>
-        {course.save.error && <p role="alert" className="text-sm text-destructive">{course.save.error.message}</p>}
-      </section>
-    );
-  }
-
-  if (modules.length === 0) {
-    return (
-      <section className="space-y-4 rounded-xl border bg-card p-5">
-        <div className="flex items-center gap-2">
-          <Library className="size-4 text-primary" aria-hidden="true" />
-          <h2 className="font-semibold">{t("Add the first module", "Thêm chương đầu tiên")}</h2>
-        </div>
-        <p className="text-sm text-muted-foreground">
-          {t(
-            "A module is a chapter. Lessons, C1–C3 reference views and the Quiz live inside the module. Create one module now; you can add more in Course authoring.",
-            "Chương là nhóm nội dung. Bài học, C1–C3 tham chiếu và Quiz nằm trong chương. Tạo một chương tại đây; có thể thêm tiếp trong Soạn nội dung.",
-          )}
-        </p>
-        <div className="flex flex-wrap items-end gap-2">
-          <label className="min-w-64 flex-1 space-y-1 text-xs font-medium">
-            <span>{t("Module title", "Tên chương")}</span>
-            <Input
-              value={moduleTitle}
-              placeholder={t("e.g. Service boundaries", "Ví dụ: Ranh giới service")}
-              onChange={(event) => setModuleTitle(event.target.value)}
-            />
-          </label>
-          <Button
-            type="button"
-            disabled={course.addModule.isPending || !moduleTitle.trim()}
-            onClick={() =>
-              course.addModule.mutate(
-                { title: moduleTitle.trim() },
-                { onSuccess: () => setModuleTitle("") },
-              )
-            }
-          >
-            <Plus className="mr-1 size-4" aria-hidden="true" />
-            {t("Add module", "Thêm chương")}
-          </Button>
-        </div>
-        {course.addModule.error && <p role="alert" className="text-sm text-destructive">{course.addModule.error.message}</p>}
-      </section>
-    );
-  }
-
-  const theoryItems = selectedModule?.items.filter((item) => item.type === "THEORY") ?? [];
-  const activeModuleLabel = selectedModule
-    ? `${t("Chapter", "Chương")} ${selectedModule.position}`
-    : undefined;
+  const theoryItems =
+    selectedModule?.items.filter(
+      (item) => item.type === "THEORY" && (!item.assignmentId || item.assignmentId === assignment.id),
+    ) ?? [];
 
   return (
     <div className="space-y-5">
@@ -587,8 +469,8 @@ export function LabTheorySection({
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-2.5 text-xs text-amber-800 dark:text-amber-200">
           <span>
             {t(
-              "Theory changes live in the Course draft. Students read them after you publish a new course version.",
-              "Thay đổi lý thuyết nằm trong bản nháp Course. Sinh viên đọc sau khi công bố phiên bản mới.",
+              "Theory changes live in the Course draft. Publish the course version when ready so students see the latest lesson.",
+              "Thay đổi lý thuyết đang ở bản nháp Course. Bấm công bố phiên bản để sinh viên đọc bài mới nhất.",
             )}
           </span>
           <Button
@@ -618,109 +500,131 @@ export function LabTheorySection({
           <div className="space-y-1">
             <div className="flex flex-wrap items-center gap-2">
               <BookOpen className="size-4 text-primary" aria-hidden="true" />
-              <h2 className="text-base font-semibold">{t("Module and lessons", "Chương và bài giảng lý thuyết")}</h2>
-              {isPublished && (
+              <h2 className="text-base font-semibold">
+                {t("Lab Theory Lesson", "Bài giảng lý thuyết của Lab")}
+              </h2>
+              {theoryItems.length > 0 && (
                 <Badge variant="success">
-                  {t(
-                    "Live Course · Edits auto-publish cleanly",
-                    "Đang xuất bản · Lưu là tự động cập nhật",
-                  )}
+                  {theoryItems.length} {t("attached", "đã gắn")}
                 </Badge>
               )}
             </div>
             <p className="max-w-3xl text-xs leading-5 text-muted-foreground">
               {t(
-                "Theory = lesson content + sample repository + C1–C3 reference views. Students read this in a Coursera-style reader before the Quiz.",
-                "Lý thuyết = bài giảng Markdown + repo mẫu + sơ đồ C1–C3. Sinh viên đọc bài giảng theo giao diện chuẩn Coursera trước khi làm Quiz.",
+                "Write Markdown, import a .md/.txt file, generate an AI draft, or pick an existing lesson from the Theory library.",
+                "Viết Markdown, nhập tệp .md/.txt, dùng AI soạn tự động hoặc chọn bài có sẵn từ Thư viện lý thuyết.",
               )}
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <select
-              aria-label={t("Module", "Chương")}
-              className="h-8 rounded-md border bg-background px-2.5 text-xs font-medium"
-              value={selectedModule?.id ?? ""}
-              onChange={(event) => setSelectedModuleId(event.target.value)}
+          <div className="inline-flex rounded-lg border bg-muted/40 p-0.5 text-xs">
+            <button
+              type="button"
+              onClick={() => setAuthorMode("write")}
+              className={`rounded-md px-3 py-1.5 font-medium transition-colors ${
+                authorMode === "write"
+                  ? "bg-background text-foreground shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
             >
-              {modules.map((module) => (
-                <option key={module.id} value={module.id}>
-                  {t("Chapter", "Chương")} {module.position}: {module.title}
-                </option>
-              ))}
-            </select>
-            <Button asChild size="sm" variant="outline">
-              <Link href={`/workspace-overview?workspace=${encodeURIComponent(workspaceId)}&view=course-authoring`}>
-                {t("Open full course authoring", "Mở trình sắp xếp Chương")}
-              </Link>
-            </Button>
+              ✍️ {t("Write / Import / AI", "Tự soạn / Nhập file / AI")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setAuthorMode("library")}
+              className={`rounded-md px-3 py-1.5 font-medium transition-colors ${
+                authorMode === "library"
+                  ? "bg-background text-foreground shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              📚 {t("Theory library", "Thư viện lý thuyết")} ({libraryAssets.length})
+            </button>
           </div>
         </div>
 
         {theoryItems.length > 0 && (
           <div className="space-y-3">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              {t("Lessons in this Chapter", "Bài giảng hiện có trong Chương này")} ({theoryItems.length})
+              {t("Attached lessons in this Lab", "Bài giảng đã gắn vào Lab này")} ({theoryItems.length})
             </p>
             <ul className="space-y-3">
-              {theoryItems.map((item) => (
-                <li key={item.id} className="space-y-3 rounded-xl border bg-muted/15 p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      {activeModuleLabel && <Badge variant="outline">{activeModuleLabel}</Badge>}
-                      <span className="inline-flex items-center gap-1 rounded-full border border-teal-200 bg-teal-50 px-2.5 py-0.5 text-[11px] font-medium text-teal-800 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-300">
-                        📖 {t("Lesson", "Bài giảng")}
-                      </span>
-                      <span className="text-sm font-semibold">{item.title}</span>
+              {theoryItems.map((item) => {
+                const linkedAsset = attachedAssets.find(
+                  (asset) => asset.courseItemId === item.id || asset.title === item.title,
+                );
+                return (
+                  <li key={item.id} className="space-y-3 rounded-xl border bg-muted/15 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="inline-flex items-center gap-1 rounded-full border border-teal-200 bg-teal-50 px-2.5 py-0.5 text-[11px] font-medium text-teal-800 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-300">
+                          📖 {t("Lesson", "Bài giảng")}
+                        </span>
+                        <span className="text-sm font-semibold">{item.title}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        {linkedAsset && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            disabled={detachAsset.isPending}
+                            aria-label={t("Detach lesson", "Gỡ bài học")}
+                            onClick={() => detachAsset.mutate(linkedAsset.assetId)}
+                          >
+                            <Trash2 className="mr-1 size-3.5" aria-hidden="true" />
+                            {t("Detach", "Gỡ")}
+                          </Button>
+                        )}
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={savingBusy}
+                          onClick={() =>
+                            void saveWithAutoPublish(async (_draft, mod) => {
+                              const targetItem =
+                                mod.items.find(
+                                  (it) =>
+                                    it.id === item.id ||
+                                    (it.type === "THEORY" &&
+                                      (it.assignmentId === item.assignmentId || it.title === item.title)),
+                                ) ?? item;
+                              await course.updateItem.mutateAsync({
+                                moduleId: mod.id,
+                                itemId: targetItem.id,
+                                type: "THEORY",
+                                title: item.title,
+                                description: item.description ?? "",
+                                required: item.required,
+                                assignmentId: item.assignmentId ?? assignment.id,
+                                content: { body: bodies[item.id] ?? bodyOf(item), format: "markdown" },
+                              });
+                            })
+                          }
+                        >
+                          <Save className="mr-1 size-3.5" aria-hidden="true" />
+                          {savingBusy
+                            ? t("Saving…", "Đang lưu…")
+                            : t("Save lesson", "Lưu bài học")}
+                        </Button>
+                      </div>
                     </div>
-                    <Button
-                      type="button"
-                      size="sm"
-                      disabled={savingBusy}
-                      onClick={() =>
-                        void saveWithAutoPublish(async (_draft, mod) => {
-                          const targetItem =
-                            mod.items.find(
-                              (it) =>
-                                it.id === item.id ||
-                                (it.type === "THEORY" &&
-                                  (it.assignmentId === item.assignmentId || it.title === item.title)),
-                            ) ?? item;
-                          await course.updateItem.mutateAsync({
-                            moduleId: mod.id,
-                            itemId: targetItem.id,
-                            type: "THEORY",
-                            title: item.title,
-                            description: item.description ?? "",
-                            required: item.required,
-                            assignmentId: item.assignmentId ?? assignment.id,
-                            content: { body: bodies[item.id] ?? bodyOf(item), format: "markdown" },
-                          });
-                        })
-                      }
-                    >
-                      <Save className="mr-1 size-3.5" aria-hidden="true" />
-                      {savingBusy
-                        ? t("Saving & Publishing…", "Đang lưu & cập nhật…")
-                        : t("Save lesson", "Lưu bài học")}
-                    </Button>
-                  </div>
-                  <MarkdownEditor
-                    label={t("Lesson content (Markdown)", "Nội dung bài học (Markdown)")}
-                    title={item.title}
-                    {...(activeModuleLabel ? { moduleLabel: activeModuleLabel } : {})}
-                    value={bodies[item.id] ?? bodyOf(item)}
-                    onChange={(value) => setBodies((current) => ({ ...current, [item.id]: value }))}
-                    t={t}
-                  />
-                </li>
-              ))}
+                    <MarkdownEditor
+                      label={t("Lesson content (Markdown)", "Nội dung bài học (Markdown)")}
+                      title={item.title}
+                      value={bodies[item.id] ?? bodyOf(item)}
+                      onChange={(value) => setBodies((current) => ({ ...current, [item.id]: value }))}
+                      t={t}
+                    />
+                  </li>
+                );
+              })}
             </ul>
           </div>
         )}
 
-        {syncStatus === "saved" && !course.updateItem.isError && !course.addItem.isError && (
+        {syncStatus === "saved" && !course.updateItem.isError && (
           <p role="status" className="text-xs font-medium text-emerald-700 dark:text-emerald-400">
-            {t("Lesson saved and published to students.", "Đã lưu và cập nhật bài học cho sinh viên.")}
+            {t("Lesson saved.", "Đã lưu bài học.")}
           </p>
         )}
         {(course.updateItem.error || course.startDraft.error || course.publish.error) && (
@@ -729,296 +633,170 @@ export function LabTheorySection({
           </p>
         )}
 
-        <div className="space-y-4 border-t pt-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="inline-flex rounded-lg border bg-muted/40 p-0.5 text-xs">
-              <button
-                type="button"
-                onClick={() => setAuthorMode("write")}
-                className={`rounded-md px-3 py-1.5 font-medium transition-colors ${
-                  authorMode === "write"
-                    ? "bg-background text-foreground shadow-xs"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                ✍️ {t("Write a custom lesson", "Tự soạn bài học / AI")}
-              </button>
-              <button
-                type="button"
-                onClick={() => setAuthorMode("library")}
-                className={`rounded-md px-3 py-1.5 font-medium transition-colors ${
-                  authorMode === "library"
-                    ? "bg-background text-foreground shadow-xs"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                📚 {t("Theory library", "Thư viện lý thuyết")} ({libraryAssets.length})
-              </button>
-            </div>
-          </div>
-
-          {authorMode === "write" ? (
-            <div className="space-y-3 rounded-xl border p-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-xs text-muted-foreground">
-                  {t(
-                    "Start from a structure, write Markdown yourself, import a .md/.txt file, or generate an AI draft from repository evidence.",
-                    "Chọn khung mẫu, tự viết Markdown, nhập tệp .md/.txt hoặc dùng AI sinh bài giảng từ bằng chứng mã nguồn.",
-                  )}
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                  {LESSON_TEMPLATES.map((template) => (
-                    <Button
-                      key={template.en}
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        setNewTitle(t(template.titleEn, template.titleVi));
-                        setNewBody(template.body);
-                        setEditorStyle(template.style);
-                        setDraftSource("LECTURER");
+        {authorMode === "write" ? (
+          <div className="space-y-3 rounded-xl border p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs font-semibold text-foreground">
+                {t("Create or import a lesson for this Lab", "Soạn mới hoặc nhập file bài giảng cho Lab")}
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                <label className="inline-flex cursor-pointer items-center rounded-md border px-2.5 py-1 text-xs font-medium transition-colors hover:bg-muted">
+                  <Upload className="mr-1 size-3.5" aria-hidden="true" />
+                  {t("Import Markdown (.md)", "Nhập file Markdown (.md)")}
+                  <input
+                    className="sr-only"
+                    type="file"
+                    accept=".md,.markdown,.txt,text/markdown,text/plain"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (!file) return;
+                      void file.text().then((text) => {
+                        setNewBody(text);
+                        setDraftSource("IMPORT");
                         setAiNote("");
-                      }}
-                    >
-                      {t(template.en, template.vi)}
-                    </Button>
-                  ))}
-                  <label className="inline-flex cursor-pointer items-center rounded-md border px-2.5 py-1 text-xs font-medium transition-colors hover:bg-muted">
-                    <Upload className="mr-1 size-3.5" aria-hidden="true" />
-                    {t("Import Markdown", "Nhập Markdown")}
-                    <input
-                      className="sr-only"
-                      type="file"
-                      accept=".md,.markdown,.txt,text/markdown,text/plain"
-                      onChange={(event) => {
-                        const file = event.target.files?.[0];
-                        if (!file) return;
-                        void file.text().then((text) => {
-                          setNewBody(text);
-                          setDraftSource("IMPORT");
-                          setAiNote("");
-                          if (!newTitle.trim()) setNewTitle(file.name.replace(/\.(md|markdown|txt)$/i, ""));
-                        });
-                        event.target.value = "";
-                      }}
-                    />
-                  </label>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={generateDraft.isPending}
-                    onClick={() => generateDraft.mutate()}
-                  >
-                    <Sparkles className="mr-1 size-3.5" aria-hidden="true" />
-                    {generateDraft.isPending
-                      ? t("Drafting…", "Đang tạo nháp…")
-                      : t("AI draft from evidence", "AI soạn từ bằng chứng")}
-                  </Button>
-                </div>
-              </div>
-              <Input
-                aria-label={t("Lesson title", "Tên bài học")}
-                placeholder={t("e.g. Lesson 1.1: DTO Boundaries, Record & Validation", "Ví dụ: Bài 1.1: Ranh giới kiểu dữ liệu, Java Record & Validation")}
-                value={newTitle}
-                onChange={(event) => setNewTitle(event.target.value)}
-              />
-              <MarkdownEditor
-                label={t("Lesson content (Markdown)", "Nội dung bài học (Markdown)")}
-                title={newTitle}
-                {...(activeModuleLabel ? { moduleLabel: activeModuleLabel } : {})}
-                value={newBody}
-                onChange={setNewBody}
-                t={t}
-              />
-              {aiNote && <p className="text-xs text-muted-foreground">{aiNote}</p>}
-              {generateDraft.error && (
-                <p role="alert" className="text-xs text-destructive">
-                  {generateDraft.error.message}
-                </p>
-              )}
-              <div className="flex flex-wrap gap-2 pt-1">
+                        if (!newTitle.trim()) setNewTitle(file.name.replace(/\.(md|markdown|txt)$/i, ""));
+                      });
+                      event.target.value = "";
+                    }}
+                  />
+                </label>
                 <Button
                   type="button"
                   size="sm"
                   variant="outline"
-                  disabled={savingBusy || !newTitle.trim() || !newBody.trim()}
-                  onClick={() =>
-                    void saveWithAutoPublish(async (_draft, mod) => {
-                      await course.addItem.mutateAsync({
-                        moduleId: mod.id,
-                        type: "THEORY",
-                        title: newTitle.trim(),
-                        assignmentId: assignment.id,
-                        required: true,
-                        content: { body: newBody.trim(), format: "markdown" },
-                      });
-                      setNewTitle("");
-                      setNewBody("");
-                    })
-                  }
+                  disabled={generateDraft.isPending}
+                  onClick={() => generateDraft.mutate()}
                 >
-                  <Plus className="mr-1 size-4" aria-hidden="true" />
-                  {t("Add as Lab lesson", "Thêm làm bài học Lab")}
+                  <Sparkles className="mr-1 size-3.5" aria-hidden="true" />
+                  {generateDraft.isPending
+                    ? t("Drafting…", "Đang tạo nháp…")
+                    : t("AI draft from evidence", "AI soạn từ bằng chứng")}
                 </Button>
+                {LESSON_TEMPLATES.map((template) => (
+                  <Button
+                    key={template.en}
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setNewTitle(t(template.titleEn, template.titleVi));
+                      setNewBody(template.body);
+                      setEditorStyle(template.style);
+                      setDraftSource("LECTURER");
+                      setAiNote("");
+                    }}
+                  >
+                    {t(template.en, template.vi)}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            <Input
+              aria-label={t("Lesson title", "Tên bài học")}
+              placeholder={t(
+                "e.g. Lesson 1: Service boundaries & resilience",
+                "Ví dụ: Bài 1: Ranh giới dịch vụ & xử lý lỗi",
+              )}
+              value={newTitle}
+              onChange={(event) => setNewTitle(event.target.value)}
+            />
+            <MarkdownEditor
+              label={t("Lesson content (Markdown)", "Nội dung bài học (Markdown)")}
+              title={newTitle}
+              value={newBody}
+              onChange={setNewBody}
+              t={t}
+            />
+            {aiNote && <p className="text-xs text-muted-foreground">{aiNote}</p>}
+            {generateDraft.error && (
+              <p role="alert" className="text-xs text-destructive">
+                {generateDraft.error.message}
+              </p>
+            )}
+            <div className="flex flex-wrap justify-end gap-2 pt-1">
+              <Button
+                type="button"
+                size="sm"
+                disabled={saveToLibrary.isPending || !newTitle.trim() || !newBody.trim()}
+                onClick={() => saveToLibrary.mutate()}
+              >
+                <Library className="mr-1.5 size-4" aria-hidden="true" />
+                {saveToLibrary.isPending
+                  ? t("Saving…", "Đang lưu…")
+                  : t("Save to library & attach", "Lưu vào thư viện & gắn vào Lab")}
+              </Button>
+            </div>
+            {saveToLibrary.error && (
+              <p role="alert" className="text-xs text-destructive">
+                {saveToLibrary.error.message}
+              </p>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-3 rounded-xl border p-4">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <h4 className="text-sm font-semibold">{t("Theory library", "Thư viện lý thuyết")}</h4>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                  {t(
+                    "Pick an existing lesson from the class Theory Library to attach to this Lab.",
+                    "Chọn bài giảng có sẵn trong Thư viện lý thuyết của lớp để gắn vào Lab này.",
+                  )}
+                </p>
+              </div>
+              <Badge variant="outline">{libraryAssets.length}</Badge>
+            </div>
+
+            {libraryAssets.length === 0 ? (
+              <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+                {t(
+                  "The library is empty. Switch to 'Write / Import / AI' and click 'Save to library & attach'.",
+                  "Thư viện đang trống. Chuyển sang 'Tự soạn / Nhập file / AI' rồi bấm 'Lưu vào thư viện & gắn vào Lab'.",
+                )}
+              </p>
+            ) : (
+              <>
+                <select
+                  className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                  value={libraryItemId}
+                  aria-label={t("Theory library lesson", "Bài học trong thư viện")}
+                  onChange={(event) => setLibraryItemId(event.target.value)}
+                >
+                  <option value="">{t("Choose a library lesson…", "Chọn bài trong thư viện…")}</option>
+                  {libraryAssets.map((asset) => (
+                    <option key={asset.id} value={asset.id}>
+                      {asset.title}
+                    </option>
+                  ))}
+                </select>
+                {selectedLibraryAsset && (
+                  <div className="max-h-48 space-y-2 overflow-y-auto rounded-lg border bg-background p-4 text-xs">
+                    <p className="text-sm font-semibold">{selectedLibraryAsset.title}</p>
+                    <MarkdownPreview markdown={selectedLibraryAsset.body.slice(0, 800)} />
+                  </div>
+                )}
                 <Button
                   type="button"
                   size="sm"
-                  disabled={saveToLibrary.isPending || !newTitle.trim() || !newBody.trim()}
-                  onClick={() => saveToLibrary.mutate()}
+                  disabled={!selectedLibraryAsset || attachAsset.isPending}
+                  onClick={() => {
+                    if (selectedLibraryAsset) attachAsset.mutate(selectedLibraryAsset.id);
+                  }}
                 >
-                  <Library className="mr-1 size-4" aria-hidden="true" />
-                  {saveToLibrary.isPending
-                    ? t("Saving…", "Đang lưu…")
-                    : t("Save to library & attach", "Lưu vào thư viện & gắn")}
+                  <BookOpen className="mr-1 size-4" aria-hidden="true" />
+                  {attachAsset.isPending
+                    ? t("Attaching…", "Đang gắn…")
+                    : t("Attach to this Lab", "Gắn vào Lab này")}
                 </Button>
-              </div>
-              {saveToLibrary.error && (
-                <p role="alert" className="text-xs text-destructive">
-                  {saveToLibrary.error.message}
-                </p>
-              )}
-            </div>
-          ) : (
-            <div className="space-y-3 rounded-xl border p-4">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <h4 className="text-sm font-semibold">{t("Theory library", "Thư viện lý thuyết")}</h4>
-                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                    {t(
-                      "Reusable lessons for this class. Attach one to this Lab; editing it later updates every Lab that uses it.",
-                      "Bài học dùng lại cho lớp này. Gắn vào Lab; sửa sau này sẽ cập nhật mọi Lab đang dùng.",
-                    )}
-                  </p>
-                </div>
-                <Badge variant="outline">{libraryAssets.length}</Badge>
-              </div>
-
-              {attachedAssets.length > 0 && (
-                <ul className="divide-y rounded-md border text-xs">
-                  {attachedAssets.map((asset) => (
-                    <li key={asset.assetId} className="flex items-center justify-between gap-2 px-3 py-2">
-                      <span className="min-w-0">
-                        <span className="block truncate font-medium">{asset.title}</span>
-                        <span className="text-muted-foreground">
-                          {asset.source} · {asset.style}
-                        </span>
-                      </span>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        disabled={detachAsset.isPending}
-                        aria-label={t("Detach lesson", "Gỡ bài học")}
-                        onClick={() => detachAsset.mutate(asset.assetId)}
-                      >
-                        <Trash2 className="size-3.5" aria-hidden="true" />
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-
-              {libraryAssets.length === 0 ? (
-                <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
-                  {t(
-                    "The library is empty. Switch to 'Write a custom lesson' and click 'Save to library & attach'.",
-                    "Thư viện đang trống. Chuyển sang tab 'Tự soạn bài học / AI' rồi bấm 'Lưu vào thư viện & gắn'.",
-                  )}
-                </p>
-              ) : (
-                <>
-                  <select
-                    className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                    value={libraryItemId}
-                    aria-label={t("Theory library lesson", "Bài học trong thư viện")}
-                    onChange={(event) => setLibraryItemId(event.target.value)}
-                  >
-                    <option value="">{t("Choose a library lesson…", "Chọn bài trong thư viện…")}</option>
-                    {libraryAssets.map((asset) => (
-                      <option key={asset.id} value={asset.id}>
-                        {asset.title} · {asset.source}
-                      </option>
-                    ))}
-                  </select>
-                  {selectedLibraryAsset && (
-                    <div className="max-h-48 space-y-2 overflow-y-auto rounded-lg border bg-background p-4 text-xs">
-                      <p className="font-semibold text-sm">{selectedLibraryAsset.title}</p>
-                      <MarkdownPreview markdown={selectedLibraryAsset.body.slice(0, 800)} />
-                    </div>
-                  )}
-                  <Button
-                    type="button"
-                    size="sm"
-                    disabled={!selectedLibraryAsset || attachAsset.isPending}
-                    onClick={() => {
-                      if (selectedLibraryAsset) attachAsset.mutate(selectedLibraryAsset.id);
-                    }}
-                  >
-                    <BookOpen className="mr-1 size-4" aria-hidden="true" />
-                    {attachAsset.isPending
-                      ? t("Attaching…", "Đang gắn…")
-                      : t("Attach to this Lab", "Gắn vào Lab này")}
-                  </Button>
-                </>
-              )}
-              {(attachAsset.error || detachAsset.error) && (
-                <p role="alert" className="text-xs text-destructive">
-                  {(attachAsset.error ?? detachAsset.error)?.message}
-                </p>
-              )}
-
-              {availableLessons.length > 0 && (
-                <details className="rounded-md border px-3 py-2">
-                  <summary className="cursor-pointer text-xs font-medium">
-                    {t("Copy a lesson already in this curriculum", "Sao chép bài đã có trong giáo trình")}
-                  </summary>
-                  <div className="space-y-2 pt-2">
-                    <select
-                      className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                      value={sourceItemId}
-                      aria-label={t("Ready-made lesson", "Bài học có sẵn")}
-                      onChange={(event) => setSourceItemId(event.target.value)}
-                    >
-                      <option value="">{t("Choose a lesson…", "Chọn bài học…")}</option>
-                      {availableLessons.map(({ item, moduleTitle }) => (
-                        <option key={item.id} value={item.id}>
-                          {moduleTitle} · {item.title}
-                        </option>
-                      ))}
-                    </select>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      disabled={!selectedSource || course.addItem.isPending}
-                      onClick={() => {
-                        if (!selectedSource) return;
-                        course.addItem.mutate(
-                          {
-                            moduleId: selectedModule!.id,
-                            type: "THEORY",
-                            title: selectedSource.item.title,
-                            description: selectedSource.item.description ?? "",
-                            assignmentId: assignment.id,
-                            required: true,
-                            content: { body: bodyOf(selectedSource.item), format: "markdown" },
-                          },
-                          { onSuccess: () => setSourceItemId("") },
-                        );
-                      }}
-                    >
-                      <BookOpen className="mr-1 size-4" aria-hidden="true" />
-                      {t("Copy into this Lab", "Sao chép vào Lab này")}
-                    </Button>
-                  </div>
-                </details>
-              )}
-            </div>
-          )}
-        </div>
-        {course.addItem.error && <p role="alert" className="text-sm text-destructive">{course.addItem.error.message}</p>}
+              </>
+            )}
+            {(attachAsset.error || detachAsset.error) && (
+              <p role="alert" className="text-xs text-destructive">
+                {(attachAsset.error ?? detachAsset.error)?.message}
+              </p>
+            )}
+          </div>
+        )}
       </section>
 
       <details className="rounded-xl border bg-card p-5">

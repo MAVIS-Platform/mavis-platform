@@ -509,7 +509,7 @@ async function shot(page, name) {
   await page
     .getByPlaceholder(/Describe the learning goal/)
     .fill("E2E: inspect the reference topology, run Studio Stop/Start/Scale and collect evidence.");
-  await page.getByRole("button", { name: /Save Lab draft/i }).click();
+  await page.getByRole("button", { name: /Next Step 2: Lab Theory/i }).click();
   await page.waitForTimeout(3000);
   await shot(page, "08-lab-saved");
   console.log("[after-save]", (await page.locator("#main-content").innerText()).slice(0, 3000));

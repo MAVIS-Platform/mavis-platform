@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check, ClipboardList, ShieldCheck } from "lucide-react";
+import { ArrowRight, Check, ClipboardList } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -168,10 +168,8 @@ export function LabInfoForm({
         <Button disabled={save.isPending || !title.trim()}>
           {save.isPending
             ? t("Saving Lab draft…", "Đang lưu bản nháp Lab…")
-            : assignment
-              ? t("Save Lab changes", "Lưu thay đổi Lab")
-              : t("Save Lab draft", "Lưu bản nháp Lab")}
-          <ShieldCheck className="ml-1 size-4" aria-hidden="true" />
+            : t("Next Step 2: Lab Theory", "Sang Bước 2: Lý thuyết Lab")}
+          <ArrowRight className="ml-1.5 size-4" aria-hidden="true" />
         </Button>
       </div>
       {save.error && <ErrorState error={save.error} />}

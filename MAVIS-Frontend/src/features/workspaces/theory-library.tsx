@@ -2,9 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Library, Pencil, Plus, Search, Trash2, Upload } from "lucide-react";
+import { Pencil, Plus, Search, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { MarkdownPreview } from "@/components/shared/markdown-preview";
@@ -47,9 +46,6 @@ const EMPTY_DRAFT: Draft = {
   licenseNote: "",
 };
 
-const STYLES = ["CONCEPT", "GUIDED", "CHECKLIST", "CUSTOM"] as const;
-const SOURCES = ["LECTURER", "SEED", "IMPORT", "AI", "BUNDLE"] as const;
-
 function shortDate(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
@@ -57,12 +53,11 @@ function shortDate(value: string) {
 }
 
 export function TheoryLibrary() {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const { workspaceId } = useSelection();
   const cache = useQueryClient();
   const course = useCourseAuthoring(workspaceId);
   const [search, setSearch] = useState("");
-  const [styleFilter, setStyleFilter] = useState("");
   const [editorId, setEditorId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [error, setError] = useState("");
@@ -77,15 +72,13 @@ export function TheoryLibrary() {
 
   const visible = useMemo(() => {
     const term = search.trim().toLowerCase();
-    return (assets.data ?? []).filter((asset) => {
-      if (styleFilter && asset.style !== styleFilter) return false;
-      return (
+    return (assets.data ?? []).filter(
+      (asset) =>
         !term ||
         asset.title.toLowerCase().includes(term) ||
-        asset.body.toLowerCase().includes(term)
-      );
-    });
-  }, [assets.data, search, styleFilter]);
+        asset.body.toLowerCase().includes(term),
+    );
+  }, [assets.data, search]);
 
   const invalidate = () => {
     void cache.invalidateQueries({ queryKey: ["api", "theory-assets", workspaceId] });
@@ -96,14 +89,14 @@ export function TheoryLibrary() {
 
   const save = useMutation({
     mutationFn: () =>
-      editorId
+      editorId && editorId !== "new"
         ? api<TheoryAsset>(`workspaces/${workspaceId}/theory-assets/${editorId}`, {
             method: "PUT",
             body: JSON.stringify(draft),
           })
         : api<TheoryAsset>(`workspaces/${workspaceId}/theory-assets`, {
             method: "POST",
-            body: JSON.stringify(draft),
+            body: JSON.stringify({ ...draft, language: locale }),
           }),
     onSuccess: () => {
       invalidate();
@@ -126,7 +119,7 @@ export function TheoryLibrary() {
 
   const startNew = () => {
     setEditorId("new");
-    setDraft(EMPTY_DRAFT);
+    setDraft({ ...EMPTY_DRAFT, language: locale });
     setError("");
   };
   const startEdit = (asset: TheoryAsset) => {
@@ -150,12 +143,12 @@ export function TheoryLibrary() {
         <div>
           <p className="max-w-2xl text-sm text-muted-foreground">
             {t(
-              "Reusable theory lessons for this class. Labs link to an asset, so one edit reaches every Lab that uses it.",
-              "Bài lý thuyết dùng lại cho lớp. Lab liên kết tới asset, nên sửa một lần là mọi Lab đang dùng đều cập nhật.",
+              "Reusable Markdown lessons for this class. Write or import a .md file once, then attach it to any Lab.",
+              "Kho bài giảng Markdown dùng chung cho lớp. Soạn hoặc nhập file .md một lần, sau đó gắn vào bất kỳ bài Lab nào.",
             )}
           </p>
           <p className="mt-1 text-xs tabular-nums text-muted-foreground">
-            {assets.data?.length ?? 0} {t("lessons", "bài")}
+            {assets.data?.length ?? 0} {t("lessons", "bài học")}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -172,19 +165,6 @@ export function TheoryLibrary() {
               onChange={(event) => setSearch(event.target.value)}
             />
           </div>
-          <select
-            className="h-9 rounded-md border bg-background px-2 text-sm"
-            value={styleFilter}
-            aria-label={t("Filter by style", "Lọc theo kiểu")}
-            onChange={(event) => setStyleFilter(event.target.value)}
-          >
-            <option value="">{t("All styles", "Mọi kiểu")}</option>
-            {STYLES.map((style) => (
-              <option key={style} value={style}>
-                {style}
-              </option>
-            ))}
-          </select>
           <Button type="button" size="sm" onClick={startNew}>
             <Plus className="mr-1 size-4" aria-hidden="true" />
             {t("New lesson", "Bài mới")}
@@ -228,91 +208,71 @@ export function TheoryLibrary() {
       )}
 
       {editing && (
-        <section className="space-y-3 rounded-lg border bg-card p-4">
-          <div className="flex items-center justify-between gap-2">
+        <section className="space-y-4 rounded-xl border bg-card p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-3">
             <h2 className="text-sm font-semibold">
               {editorId === "new"
                 ? t("New theory lesson", "Bài lý thuyết mới")
                 : t("Edit theory lesson", "Sửa bài lý thuyết")}
             </h2>
-            <Button type="button" size="sm" variant="ghost" onClick={() => setEditorId(null)}>
-              {t("Cancel", "Huỷ")}
-            </Button>
+            <div className="flex items-center gap-2">
+              <label className="inline-flex cursor-pointer items-center rounded-md border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-muted">
+                <Upload className="mr-1.5 size-3.5" aria-hidden="true" />
+                {t("Import Markdown (.md)", "Nhập file Markdown (.md)")}
+                <input
+                  className="sr-only"
+                  type="file"
+                  accept=".md,.markdown,.txt,text/markdown,text/plain"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (!file) return;
+                    void file.text().then((text) => {
+                      setDraft((current) => ({
+                        ...current,
+                        body: text,
+                        source: "IMPORT",
+                        title: current.title || file.name.replace(/\.(md|markdown|txt)$/i, ""),
+                      }));
+                    });
+                    event.target.value = "";
+                  }}
+                />
+              </label>
+              <Button type="button" size="sm" variant="ghost" onClick={() => setEditorId(null)}>
+                {t("Cancel", "Huỷ")}
+              </Button>
+            </div>
           </div>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <label className="space-y-1 text-xs font-medium md:col-span-2 xl:col-span-2">
-              <span>{t("Title", "Tiêu đề")}</span>
-              <Input
-                value={draft.title}
-                onChange={(event) => setDraft({ ...draft, title: event.target.value })}
-              />
-            </label>
-            <label className="space-y-1 text-xs font-medium">
-              <span>{t("Style", "Kiểu")}</span>
-              <select
-                className="h-9 w-full rounded-md border bg-background px-2 text-sm"
-                value={draft.style}
-                onChange={(event) => setDraft({ ...draft, style: event.target.value })}
-              >
-                {STYLES.map((style) => (
-                  <option key={style} value={style}>
-                    {style}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="space-y-1 text-xs font-medium">
-              <span>{t("Source", "Nguồn")}</span>
-              <select
-                className="h-9 w-full rounded-md border bg-background px-2 text-sm"
-                value={draft.source}
-                onChange={(event) => setDraft({ ...draft, source: event.target.value })}
-              >
-                {SOURCES.map((source) => (
-                  <option key={source} value={source}>
-                    {source}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="space-y-1 text-xs font-medium">
-              <span>{t("Language", "Ngôn ngữ")}</span>
-              <select
-                className="h-9 w-full rounded-md border bg-background px-2 text-sm"
-                value={draft.language}
-                onChange={(event) => setDraft({ ...draft, language: event.target.value })}
-              >
-                <option value="vi">vi</option>
-                <option value="en">en</option>
-              </select>
-            </label>
-            <label className="space-y-1 text-xs font-medium md:col-span-2">
-              <span>{t("Source URL (optional)", "URL nguồn (tuỳ chọn)")}</span>
-              <Input
-                value={draft.sourceUrl}
-                onChange={(event) => setDraft({ ...draft, sourceUrl: event.target.value })}
-              />
-            </label>
-            <label className="space-y-1 text-xs font-medium md:col-span-2">
-              <span>{t("License note (optional)", "Ghi chú bản quyền (tuỳ chọn)")}</span>
-              <Input
-                value={draft.licenseNote}
-                onChange={(event) => setDraft({ ...draft, licenseNote: event.target.value })}
-              />
-            </label>
-          </div>
-          <div className="grid gap-3 lg:grid-cols-2">
-            <label className="space-y-1 text-xs font-medium">
-              <span>{t("Lesson body (Markdown)", "Nội dung bài (Markdown)")}</span>
+
+          <label className="block space-y-1.5 text-xs font-medium">
+            <span>{t("Lesson title", "Tiêu đề bài học")}</span>
+            <Input
+              value={draft.title}
+              placeholder={t(
+                "e.g. Service boundaries and resilience patterns",
+                "Ví dụ: Ranh giới dịch vụ và mẫu chịu lỗi",
+              )}
+              onChange={(event) => setDraft({ ...draft, title: event.target.value })}
+            />
+          </label>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <label className="space-y-1.5 text-xs font-medium">
+              <span>{t("Lesson body (Markdown)", "Nội dung bài học (Markdown)")}</span>
               <Textarea
                 rows={14}
+                className="font-mono text-sm leading-6"
                 value={draft.body}
+                placeholder={t(
+                  "# Lesson heading\n\nWrite or import Markdown content for students…",
+                  "# Tiêu đề bài giảng\n\nViết hoặc nhập file Markdown cho sinh viên…",
+                )}
                 onChange={(event) => setDraft({ ...draft, body: event.target.value })}
               />
             </label>
-            <div className="space-y-1 text-xs font-medium">
-              <span>{t("Preview", "Xem trước")}</span>
-              <div className="h-80 overflow-y-auto rounded-lg border bg-background p-4">
+            <div className="space-y-1.5 text-xs font-medium">
+              <span>{t("Student Preview", "Xem trước như sinh viên")}</span>
+              <div className="h-[340px] overflow-y-auto rounded-lg border bg-background p-4">
                 {draft.body.trim() ? (
                   <MarkdownPreview markdown={draft.body} />
                 ) : (
@@ -323,29 +283,16 @@ export function TheoryLibrary() {
               </div>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <label className="inline-flex cursor-pointer items-center rounded-md border px-3 py-1.5 text-sm transition-colors hover:bg-muted">
-              <Upload className="mr-1 size-3.5" aria-hidden="true" />
-              {t("Import Markdown", "Nhập Markdown")}
-              <input
-                className="sr-only"
-                type="file"
-                accept=".md,.markdown,.txt,text/markdown,text/plain"
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  if (!file) return;
-                  void file.text().then((text) => {
-                    setDraft((current) => ({
-                      ...current,
-                      body: text,
-                      source: "IMPORT",
-                      title: current.title || file.name.replace(/\.(md|markdown|txt)$/i, ""),
-                    }));
-                  });
-                  event.target.value = "";
-                }}
-              />
-            </label>
+
+          <div className="flex flex-wrap items-center justify-end gap-2 border-t pt-3">
+            {error && (
+              <span role="alert" className="mr-auto text-xs text-destructive">
+                {error}
+              </span>
+            )}
+            <Button type="button" size="sm" variant="outline" onClick={() => setEditorId(null)}>
+              {t("Cancel", "Huỷ")}
+            </Button>
             <Button
               type="button"
               size="sm"
@@ -354,21 +301,13 @@ export function TheoryLibrary() {
             >
               {save.isPending ? t("Saving…", "Đang lưu…") : t("Save lesson", "Lưu bài học")}
             </Button>
-            {error && (
-              <span role="alert" className="text-xs text-destructive">
-                {error}
-              </span>
-            )}
           </div>
         </section>
       )}
 
       <div className="overflow-hidden rounded-lg border bg-card">
-        <div className="hidden items-center gap-4 border-b bg-muted/30 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground md:grid md:grid-cols-[minmax(0,1fr)_7rem_7rem_4rem_6rem_8rem]">
+        <div className="hidden items-center gap-4 border-b bg-muted/30 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground md:grid md:grid-cols-[minmax(0,1fr)_8rem_8rem]">
           <span>{t("Lesson", "Bài học")}</span>
-          <span>{t("Style", "Kiểu")}</span>
-          <span>{t("Source", "Nguồn")}</span>
-          <span>{t("Lang", "Ngôn ngữ")}</span>
           <span>{t("Updated", "Cập nhật")}</span>
           <span className="text-right">{t("Actions", "Thao tác")}</span>
         </div>
@@ -381,7 +320,7 @@ export function TheoryLibrary() {
                 ? t("No lesson matches this search.", "Không có bài nào khớp tìm kiếm.")
                 : t(
                     "The library is empty. Create the first lesson or save one from a Lab's Theory step.",
-                    "Thư viện đang trống. Tạo bài đầu tiên hoặc lưu từ bước Theory của Lab.",
+                    "Thư viện đang trống. Tạo bài đầu tiên hoặc lưu từ bước Lý thuyết của Lab.",
                   )}
             </p>
             {!assets.data?.length && (
@@ -396,7 +335,7 @@ export function TheoryLibrary() {
             {visible.map((asset) => (
               <li
                 key={asset.id}
-                className="grid gap-x-4 gap-y-2 px-4 py-3 md:grid-cols-[minmax(0,1fr)_7rem_7rem_4rem_6rem_8rem] md:items-center"
+                className="grid gap-x-4 gap-y-2 px-4 py-3 md:grid-cols-[minmax(0,1fr)_8rem_8rem] md:items-center"
               >
                 <div className="min-w-0">
                   <p className="truncate text-[15px] font-semibold">{asset.title}</p>
@@ -404,11 +343,6 @@ export function TheoryLibrary() {
                     {asset.body.replace(/[#*_>`-]/g, " ").replace(/\s+/g, " ").trim().slice(0, 160)}
                   </p>
                 </div>
-                <Badge variant="outline" className="w-fit">
-                  {asset.style}
-                </Badge>
-                <span className="text-xs text-muted-foreground">{asset.source}</span>
-                <span className="text-xs text-muted-foreground">{asset.language}</span>
                 <span className="text-xs tabular-nums text-muted-foreground">
                   v{asset.version} · {shortDate(asset.updatedAt)}
                 </span>
@@ -433,7 +367,7 @@ export function TheoryLibrary() {
                         window.confirm(
                           t(
                             "Delete this lesson from the library? Labs keep their materialized copy.",
-                            "Xoá bài này khỏi thư viện? Các Lab vẫn giữ bản đã materialize.",
+                            "Xoá bài này khỏi thư viện? Các Lab vẫn giữ bản đã gắn.",
                           ),
                         )
                       )
