@@ -133,3 +133,12 @@ WHERE w.code = 'JAVA-MS-2026'
       WHERE cp.digest = encode(digest('SE1819JAVA', 'sha256'), 'hex')
          OR (cp.workspace_id = w.id AND cp.code = 'SE1819JAVA')
   );
+
+-- 7. Repair legacy placeholder password hashes in V1 demo accounts if present
+UPDATE users
+SET password_hash = crypt('Java@123456', gen_salt('bf', 10)),
+    status = 'ACTIVE'
+WHERE email IN ('hoangnt@fpt.edu.vn', 'trietlmse181979@fpt.edu.vn')
+  AND (password_hash LIKE '%YourHashedPasswordHere%'
+       OR password_hash LIKE '%hashed_pwd%'
+       OR status <> 'ACTIVE');
