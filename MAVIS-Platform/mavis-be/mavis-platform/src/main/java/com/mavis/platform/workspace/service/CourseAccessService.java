@@ -238,6 +238,42 @@ public class CourseAccessService {
         }
     }
 
+    @Transactional(readOnly = true)
+    public List<PasskeyItem> listPasskeys(UUID workspaceId) {
+        access.requireWorkspaceLecturer(workspaceId);
+        workspaces.findById(workspaceId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Workspace not found"));
+        return jdbc.query("""
+                SELECT id, workspace_id, code, label, expires_at, revoked_at, is_active, max_uses, used_count, created_at
+                FROM course_passkeys
+                WHERE workspace_id = ?
+                ORDER BY created_at DESC, expires_at DESC
+                """, (rs, rowNum) -> {
+            OffsetDateTime expiresAt = rs.getObject("expires_at", OffsetDateTime.class);
+            OffsetDateTime revokedAt = rs.getObject("revoked_at", OffsetDateTime.class);
+            boolean isActiveFlag = rs.getBoolean("is_active");
+            Integer maxUses = rs.getObject("max_uses", Integer.class);
+            int usedCount = rs.getInt("used_count");
+            boolean withinQuota = maxUses == null || usedCount < maxUses;
+            boolean active = isActiveFlag
+                    && revokedAt == null
+                    && expiresAt != null
+                    && expiresAt.isAfter(OffsetDateTime.now())
+                    && withinQuota;
+            return new PasskeyItem(
+                    rs.getObject("id", UUID.class),
+                    rs.getObject("workspace_id", UUID.class),
+                    rs.getString("code"),
+                    rs.getString("label"),
+                    expiresAt,
+                    revokedAt,
+                    active,
+                    maxUses,
+                    usedCount,
+                    rs.getObject("created_at", OffsetDateTime.class));
+        }, workspaceId);
+    }
+
     public Passkey issue(UUID workspaceId, int validHours) { return issue(workspaceId, validHours, null); }
     public Passkey issue(UUID workspaceId, int validHours, Integer maxStudents) {
         Workspace workspace = manage(workspaceId);
