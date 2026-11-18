@@ -5161,12 +5161,10 @@ test("My Workspaces is a compact LMS class list with tabs and a module outline",
   assert.doesNotMatch(rootHtml, /Workspace code/, "Create class form stays closed until requested");
   const overviewHtml = renderComp(WorkspaceOverview, "ws-swd");
   assert.match(overviewHtml, /aria-label="Class sections"/);
-  assert.match(overviewHtml, /Overview &amp; Setup/);
-  assert.match(overviewHtml, /Curriculum &amp; Materials/);
-  assert.match(overviewHtml, /Lab Library/);
-  assert.match(overviewHtml, /Lab Creation/);
+  assert.match(overviewHtml, /Curriculum &amp; Labs/);
   assert.match(overviewHtml, /Grading &amp; Gradebook/);
-  assert.match(overviewHtml, /Students &amp; Access/);
+  assert.match(overviewHtml, /Students &amp; Passkey/);
+  assert.match(overviewHtml, /Create Lesson \/ Lab/);
   assert.match(overviewHtml, /Enrolled Students/);
   assert.match(overviewHtml, /Class Passkey/);
   assert.match(overviewHtml, /Foundations/);
@@ -5190,9 +5188,9 @@ test("My Workspaces is a compact LMS class list with tabs and a module outline",
   assert.match(
     membersHtml,
     /Class sections/,
-    "lecturer class view shows unified 5-tab navigation",
+    "lecturer class view shows unified 3-tab Coursera navigation",
   );
-  assert.match(membersHtml, /Students &amp; Access/);
+  assert.match(membersHtml, /Students &amp; Passkey/);
   client.setQueryData(["api", "session", {}], {
     user: { id: "u2", name: "Student A", email: "student@example.com", role: "student" },
   });

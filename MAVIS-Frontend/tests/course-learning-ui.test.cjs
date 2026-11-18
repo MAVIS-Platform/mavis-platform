@@ -83,7 +83,7 @@ test("student class outline uses published roadmap and markdown activities with 
   assert.ok(outline.includes("legacyLabs.length > 0"));
   assert.ok(outline.includes("<MarkdownPreview"));
   assert.ok(outline.includes("Pass the preceding Labs to unlock this activity."));
-  assert.ok(shell.includes('tab === "content" || tab === "submissions"'));
+  assert.ok(shell.includes("STUDENT_TABS") && shell.includes("STAFF_TABS"));
 });
 
 test("student submissions are scoped by selected class workspaceId and retain class navigation", () => {
