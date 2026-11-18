@@ -26,7 +26,6 @@ import { CreateWorkspace, WorkspaceControls } from "./manage";
 import {
   CoursePasskey,
   CourseRoadmap,
-  useBootstrapJavaCoursera,
   useCourseAuthoring,
   useCourseRoadmap,
   useWorkspaceGradebook,
@@ -43,11 +42,9 @@ import { useLocale } from "@/lib/i18n/locale-context";
 
 export function Workspaces() {
   const { t } = useLocale();
-  const api = useApi();
   const query = useApiQuery("workspaces", {});
   const session = useSession();
-  const { workspaceId, setWorkspaceId } = useSelection();
-  const bootstrapJava = useBootstrapJavaCoursera();
+  const { workspaceId } = useSelection();
   const [showCreate, setShowCreate] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "archived">("all");
@@ -110,33 +107,11 @@ export function Workspaces() {
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2.5">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-11 rounded-xl border-white/30 bg-white/12 px-4 text-white hover:bg-white/20 hover:text-white"
-                  disabled={bootstrapJava.isPending}
-                  onClick={() => {
-                    if (api.mode === "mock") {
-                      setWorkspaceId("workspace-java-ms-2026");
-                      return;
-                    }
-                    bootstrapJava.mutate();
-                  }}
-                >
-                  {bootstrapJava.isPending
-                    ? t("Provisioning JAVA-MS-2026…", "Đang khởi tạo JAVA-MS-2026…")
-                    : t("☕ 1-Click Java Microservices Course", "☕ Khởi tạo / Đồng bộ Môn Java Microservices (JAVA-MS-2026)")}
-                </Button>
                 <Button type="button" className="h-11 rounded-xl bg-white px-5 font-semibold text-slate-950 shadow-sm hover:bg-sky-50" onClick={() => setShowCreate((open) => !open)}>
                   <Plus className="mr-2 size-4" aria-hidden="true" />{showCreate ? t("Close", "Đóng") : t("Create class", "Tạo lớp")}
                 </Button>
               </div>
             </div>
-            {bootstrapJava.isError && (
-              <div className="mt-3">
-                <ErrorState error={bootstrapJava.error} />
-              </div>
-            )}
           </header>
 
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto]">
