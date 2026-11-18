@@ -79,6 +79,7 @@ import {
   StudentKpiStrip,
 } from "./student-courses-dashboard";
 import { StudentCourseSyllabus } from "./student-course-syllabus";
+import { LecturerCurriculumManager } from "./lecturer-curriculum-manager";
 
 type LearningStep = {
   id: 1 | 2 | 3 | 4;
@@ -436,7 +437,7 @@ export function CourseRoadmap() {
   const workspaces = useApiQuery("workspaces", {});
   const workspace = workspaces.data?.find((item) => item.id === workspaceId);
   const canManage = workspace?.myRole === "LECTURER" || session.data?.user?.role === "admin";
-  const publishedCourse = usePublishedCourse(workspaceId);
+  const [studentPreview, setStudentPreview] = useState(false);
 
   useEffect(() => {
     if (workspaceId && workspaceId !== selection.workspaceId) selection.setWorkspaceId(workspaceId);
@@ -451,147 +452,65 @@ export function CourseRoadmap() {
       {workspace &&
         (canManage ? (
           <div className="space-y-6">
-            <div className="rounded-2xl border bg-card p-6">
-              <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="rounded-2xl border border-teal-200/80 bg-gradient-to-r from-teal-900 via-teal-800 to-emerald-700 p-6 text-white shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                    {workspace.code || t("Course", "Khóa học")} /{" "}
-                    {t("Learning roadmap", "Lộ trình học tập")}
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-teal-100">
+                    {workspace.code || t("Course", "Khóa học")} ·{" "}
+                    {t("Curriculum & Learning Roadmap", "Giáo trình & Lộ trình học tập")}
                   </p>
-                  <h1 className="mt-2 text-2xl font-semibold">{workspace.name}</h1>
-                  <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-                    {t(
-                      "Labs unlock in sequence. Complete the required evidence package and receive a passing lecturer review before the next Lab becomes available.",
-                      "Các Lab mở theo thứ tự. Hoàn thành bộ bằng chứng bắt buộc và đạt đánh giá của giảng viên để mở Lab tiếp theo.",
-                    )}
-                  </p>
+                  <h1 className="mt-1.5 text-2xl font-bold tracking-tight">{workspace.name}</h1>
                 </div>
-                <Button asChild variant="outline">
-                  <Link href="/courses">{t("Back to courses", "Quay lại khóa học")}</Link>
-                </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setStudentPreview((open) => !open)}
+                    className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+                  >
+                    {studentPreview
+                      ? t("← Back to Curriculum Manager", "← Quay lại Trình Quản lý Giáo trình")
+                      : t("👁️ Preview Student Syllabus View", "👁️ Xem Giao diện Lộ trình của Sinh viên")}
+                  </Button>
+                  <Button
+                    asChild
+                    size="sm"
+                    variant="outline"
+                    className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+                  >
+                    <Link href="/courses">{t("Back to courses", "Quay lại khóa học")}</Link>
+                  </Button>
+                </div>
               </div>
             </div>
 
-            <section className="rounded-2xl border bg-card p-5" aria-labelledby="course-controls">
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <div>
-                  <h2 id="course-controls" className="font-semibold">
-                    {t("Lecturer course controls", "Điều khiển khóa học dành cho giảng viên")}
-                  </h2>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {t(
-                      "Manage the class roster, publish Lab assignments and review frozen submissions.",
-                      "Quản lý danh sách lớp, công bố Lab và chấm các bản nộp đã đóng băng.",
-                    )}
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {client.mode === "backend" && <SeedCuratedCourseLabs workspaceId={workspaceId} />}
-                  <Button asChild variant="outline">
-                    <Link href={`/members?workspace=${encodeURIComponent(workspaceId)}`}>
-                      {t("Manage members", "Quản lý thành viên")}
-                    </Link>
-                  </Button>
-                  <Button asChild variant="outline">
-                    <Link href={`/assignments?workspace=${encodeURIComponent(workspaceId)}`}>
-                      {t("Manage Labs", "Quản lý Lab")}
-                    </Link>
-                  </Button>
-                  <Button asChild>
-                    <Link href={`/submissions?workspace=${encodeURIComponent(workspaceId)}`}>
-                      {t("Review submissions", "Chấm bài nộp")}
-                    </Link>
-                  </Button>
-                </div>
-              </div>
-            </section>
+            {studentPreview ? (
+              <StudentCourseSyllabus workspace={workspace} />
+            ) : (
+              <>
+                <LecturerCurriculumManager
+                  workspaceId={workspaceId}
+                  active={workspace.status !== "ARCHIVED"}
+                />
 
-            {client.mode === "backend" && <CourseBuilder workspaceId={workspaceId} />}
-
-            {client.mode === "backend" && <CourseSetupPanel workspaceId={workspaceId} />}
-
-            {publishedCourse.data && (
-              <section
-                className="rounded-2xl border bg-card p-5"
-                aria-labelledby="published-course-roadmap"
-              >
-                <h2 id="published-course-roadmap" className="font-semibold">
-                  {t("Published Course roadmap", "Lộ trình Course đã publish")}
-                </h2>
-                <div className="mt-3 rounded-md bg-muted/40 p-3 text-sm">
-                  <h3 className="font-medium">{publishedCourse.data.snapshot.title}</h3>
-                  {publishedCourse.data.snapshot.description && (
-                    <p className="mt-1 text-muted-foreground">
-                      {publishedCourse.data.snapshot.description}
-                    </p>
-                  )}
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    v{publishedCourse.data.version}
-                  </p>
-                </div>
-                <ol className="mt-4 space-y-4">
-                  {publishedCourse.data.snapshot.modules.map((module) => (
-                    <li key={module.id} className="rounded-xl border p-4">
-                      <h3 className="font-medium">
-                        {module.position}. {module.title}
-                      </h3>
-                      {module.description && (
-                        <p className="mt-1 text-sm text-muted-foreground">{module.description}</p>
+                {client.mode === "backend" && (
+                  <details className="rounded-2xl border bg-card p-5">
+                    <summary className="cursor-pointer text-sm font-semibold text-foreground">
+                      {t(
+                        "Advanced Course Modules & Setup Checklist",
+                        "Cấu trúc Chương Nâng cao & Checklist Thiết lập Khóa học",
                       )}
-                      {module.items.length > 0 && (
-                        <ol className="mt-3 space-y-1">
-                          {module.items.map((item) => (
-                            <li
-                              key={item.id}
-                              className="rounded-lg border bg-background p-3 text-sm"
-                            >
-                              <div className="flex flex-wrap items-center gap-2">
-                                <Badge variant="outline">{item.type.replaceAll("_", " ")}</Badge>
-                                <span className="font-medium">{item.title}</span>
-                                {item.assignmentId && (
-                                  <Button asChild size="sm" variant="link" className="h-auto p-0">
-                                    <Link
-                                      href={`/lab?${new URLSearchParams({ workspace: workspaceId, assignment: item.assignmentId, step: item.type === "QUIZ" || item.type === "IMPACT_LAB" ? "2" : item.type === "RUNTIME_LAB" ? "3" : "1" })}`}
-                                    >
-                                      {t("Open activity", "Mở hoạt động")}
-                                    </Link>
-                                  </Button>
-                                )}
-                              </div>
-                              {item.type === "THEORY" &&
-                                typeof item.content["body"] === "string" && (
-                                  <p className="mt-2 whitespace-pre-wrap text-muted-foreground">
-                                    {item.content["body"]}
-                                  </p>
-                                )}
-                              {item.type === "ESSAY" &&
-                                typeof item.content["prompt"] === "string" && (
-                                  <div className="mt-2 space-y-2">
-                                    <p className="whitespace-pre-wrap">
-                                      {item.content["prompt"]}
-                                    </p>
-                                    <p className="text-xs text-muted-foreground">
-                                      {t(
-                                        "Rubric-based lecturer review",
-                                        "Giảng viên chấm theo rubric",
-                                      )}
-                                    </p>
-                                  </div>
-                                )}
-                            </li>
-                          ))}
-                        </ol>
-                      )}
-                    </li>
-                  ))}
-                </ol>
-              </section>
+                    </summary>
+                    <div className="mt-4 space-y-5">
+                      <SeedCuratedCourseLabs workspaceId={workspaceId} />
+                      <CourseBuilder workspaceId={workspaceId} />
+                      <CourseSetupPanel workspaceId={workspaceId} />
+                    </div>
+                  </details>
+                )}
+              </>
             )}
-            <CourseLabRoadmap
-              workspaceId={workspaceId}
-              canManage={canManage}
-              active={workspace.status !== "ARCHIVED"}
-            />
           </div>
         ) : (
           <StudentCourseSyllabus workspace={workspace} />
