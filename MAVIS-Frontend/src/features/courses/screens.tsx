@@ -1580,7 +1580,7 @@ function StepContent({
                   <code>order-service/src/main/java/com/curated/order/PaymentClient.java</code>] ·
                   [Contract:{" "}
                   <code>
-                    {activeModel?.relationships[0]?.relationType ?? "SERVICE_HTTP_CALL"}
+                    {activeModel?.edges[0]?.protocol ?? "SERVICE_HTTP_CALL"}
                   </code>
                   ] —{" "}
                   {t(
