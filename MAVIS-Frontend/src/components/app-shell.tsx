@@ -341,7 +341,9 @@ function ShellChrome({
       ? params.get("view") === "course-authoring"
         ? "course-authoring"
         : "workspace-overview"
-      : pathname === "/theory-library" || pathname === "/assignments" || pathname === "/lab-authoring"
+      : pathname === "/theory-library" ||
+          pathname === "/assignments" ||
+          pathname === "/lab-authoring"
         ? "lab-authoring"
         : pathname === "/submissions" && role === "lecturer"
           ? "assignment-submissions"
@@ -571,57 +573,56 @@ function ShellChrome({
               ]}
             />
             <div className="flex shrink-0 items-center gap-1.5">
-              {!live &&
-                (role === "student" || role === "lecturer") &&
-                workspaces.length > 0 && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="hidden h-8 max-w-48 gap-1.5 rounded-full border-emerald-200 bg-emerald-50/70 px-3 text-xs font-medium text-emerald-900 hover:bg-emerald-100 md:inline-flex dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200"
-                      >
-                        <span className="truncate">
-                          {workspaces.find((w) => w.id === selectedWorkspaceId)?.code ||
-                            workspaces.find((w) => w.id === selectedWorkspaceId)?.name ||
-                            t("Switch class", "Chọn lớp")}
-                        </span>
-                        <ChevronDown className="size-3 shrink-0" aria-hidden="true" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-64 rounded-xl p-1.5">
-                      <DropdownMenuLabel className="px-2 py-1.5 text-xs text-muted-foreground">
-                        {t("Quick switch class", "Chuyển nhanh lớp học")}
-                      </DropdownMenuLabel>
-                      <DropdownMenuSeparator />
-                      {workspaces.map((ws) => {
-                        const targetHref =
-                          role === "student"
-                            ? `/roadmap?workspace=${encodeURIComponent(ws.id)}`
-                            : `/workspace-overview?workspace=${encodeURIComponent(ws.id)}`;
-                        return (
-                          <DropdownMenuItem key={ws.id} asChild>
-                            <Link
-                              href={targetHref}
-                              className={cn(
-                                "flex items-center justify-between gap-2",
-                                ws.id === selectedWorkspaceId && "bg-emerald-50 font-semibold text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200",
-                              )}
-                            >
-                              <span className="truncate">{ws.name}</span>
-                              {ws.code && (
-                                <span className="shrink-0 font-mono text-[10px] opacity-75">
-                                  {ws.code}
-                                </span>
-                              )}
-                            </Link>
-                          </DropdownMenuItem>
-                        );
-                      })}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
+              {!live && (role === "student" || role === "lecturer") && workspaces.length > 0 && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="hidden h-8 max-w-48 gap-1.5 rounded-full border-emerald-200 bg-emerald-50/70 px-3 text-xs font-medium text-emerald-900 hover:bg-emerald-100 md:inline-flex dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200"
+                    >
+                      <span className="truncate">
+                        {workspaces.find((w) => w.id === selectedWorkspaceId)?.code ||
+                          workspaces.find((w) => w.id === selectedWorkspaceId)?.name ||
+                          t("Switch class", "Chọn lớp")}
+                      </span>
+                      <ChevronDown className="size-3 shrink-0" aria-hidden="true" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-64 rounded-xl p-1.5">
+                    <DropdownMenuLabel className="px-2 py-1.5 text-xs text-muted-foreground">
+                      {t("Quick switch class", "Chuyển nhanh lớp học")}
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    {workspaces.map((ws) => {
+                      const targetHref =
+                        role === "student"
+                          ? `/roadmap?workspace=${encodeURIComponent(ws.id)}`
+                          : `/workspace-overview?workspace=${encodeURIComponent(ws.id)}`;
+                      return (
+                        <DropdownMenuItem key={ws.id} asChild>
+                          <Link
+                            href={targetHref}
+                            className={cn(
+                              "flex items-center justify-between gap-2",
+                              ws.id === selectedWorkspaceId &&
+                                "bg-emerald-50 font-semibold text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200",
+                            )}
+                          >
+                            <span className="truncate">{ws.name}</span>
+                            {ws.code && (
+                              <span className="shrink-0 font-mono text-[10px] opacity-75">
+                                {ws.code}
+                              </span>
+                            )}
+                          </Link>
+                        </DropdownMenuItem>
+                      );
+                    })}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
               <LocaleSwitchButton />
               <AppearanceSelector />
               <NotificationBell />
@@ -692,17 +693,6 @@ function ShellChrome({
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="hidden sm:inline-flex gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                    disabled={signOutPending || Boolean(onPreviewNavigate)}
-                    onClick={() => onSignOut?.()}
-                  >
-                    <LogOut className="size-3.5" aria-hidden="true" />
-                    <span>{signOutPending ? t("Signing out…", "Đang đăng xuất…") : t("Sign out", "Đăng xuất")}</span>
-                  </Button>
                 </>
               )}
             </div>

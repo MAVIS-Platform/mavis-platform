@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import {
   ArrowRight,
@@ -17,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { MavisShell } from "@/components/mavis-shell";
+import { CourseCover } from "@/components/course-cover";
 import { RequestState } from "@/components/shared/request-state";
 import { cn } from "@/lib/utils";
 import type { Response } from "@/lib/api/contracts";
@@ -26,34 +26,6 @@ import { useLocale } from "@/lib/i18n/locale-context";
 type Workspace = Response<"workspaces">[number];
 type Translate = (english: string, vietnamese: string) => string;
 const COURSES_PER_PAGE = 6;
-const courseCovers = [
-  "/course-covers/architecture.png",
-  "/course-covers/cloud.png",
-  "/course-covers/programming.png",
-] as const;
-
-function coverForCourse(courseId: string) {
-  const hash = Array.from(courseId).reduce(
-    (value, character) => (value * 31 + character.charCodeAt(0)) >>> 0,
-    0,
-  );
-  return courseCovers[hash % courseCovers.length] ?? courseCovers[0];
-}
-
-function CourseCover({ courseId, title }: { courseId: string; title: string }) {
-  return (
-    <div className="relative aspect-[16/7] overflow-hidden rounded-xl bg-[var(--section-background)]">
-      <Image
-        src={coverForCourse(courseId)}
-        alt={title}
-        fill
-        sizes="(min-width: 1280px) 25vw, (min-width: 768px) 50vw, 100vw"
-        className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
-      />
-      <div className="absolute inset-0 bg-gradient-to-t from-primary/20 to-transparent" />
-    </div>
-  );
-}
 
 function CoursePagination({
   page,
@@ -143,7 +115,7 @@ function CourseCard({ workspace, compact = false }: { workspace: Workspace; comp
   const { t } = useLocale();
   return (
     <article className="group flex h-full flex-col rounded-2xl border bg-card p-5 shadow-[var(--shadow-low)]">
-      <CourseCover courseId={workspace.id} title={workspace.name} />
+      <CourseCover courseId={workspace.id} className="rounded-xl" />
       <div className="mt-4 flex items-start justify-between gap-3">
         <Badge variant="outline" className="border-primary/20 bg-primary/5 text-primary">
           {workspace.code || "COURSE"}
@@ -457,13 +429,15 @@ export function AllCoursesPage({ initialQuery = "" }: { initialQuery?: string })
     "BEGINNER" | "INTERMEDIATE" | "ADVANCED" | undefined
   >();
   const [sort, setSort] = useState<"NAME" | "NEWEST">("NAME");
+  const [page, setPage] = useState(0);
+  useEffect(() => setPage(0), [query, category, difficulty, sort]);
   const catalog = useApiQuery("catalogCourses", {
     q: query,
     category,
     difficulty,
     sort,
-    page: 0,
-    size: 24,
+    page,
+    size: COURSES_PER_PAGE,
   });
   return (
     <MavisShell>
@@ -574,56 +548,58 @@ export function AllCoursesPage({ initialQuery = "" }: { initialQuery?: string })
           </div>
           <RequestState query={catalog} empty={false}>
             {catalog.data?.items.length ? (
-              <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
-                {catalog.data.items.map((course) => (
-                  <article
-                    key={course.workspaceId}
-                    className="flex flex-col rounded-2xl border bg-card p-5 shadow-[var(--shadow-low)]"
-                  >
-                    <div className="flex flex-wrap gap-1.5">
-                      {course.difficulties.map((level) => (
-                        <Badge key={level} variant="outline">
-                          {difficultyLabel(level, t)}
-                        </Badge>
-                      ))}
-                    </div>
-                    <h3 className="mt-4 text-lg font-semibold">{course.title}</h3>
-                    <p className="mt-2 line-clamp-3 flex-1 text-sm leading-6 text-muted-foreground">
-                      {course.description ||
-                        t(
-                          "Learning path provided by lecturer-created Labs.",
-                          "Lộ trình học tập được xây dựng từ các Lab do giảng viên tạo.",
-                        )}
-                    </p>
-                    <p className="mt-3 text-xs text-muted-foreground">
-                      {course.labCount} Labs · {course.lecturerName}
-                    </p>
-                    <div className="mt-3 flex flex-wrap gap-1">
-                      {course.categories.map((item) => (
-                        <Badge key={item} variant="secondary">
-                          {item}
-                        </Badge>
-                      ))}
-                    </div>
-                    {course.enrolled ? (
-                      <Button asChild className="mt-5 w-full">
-                        <Link href={courseHref(course.workspaceId)}>
-                          {t("Continue learning", "Tiếp tục học")} <ArrowRight className="size-4" />
-                        </Link>
-                      </Button>
-                    ) : (
-                      <Button
-                        type="button"
-                        className="mt-5 w-full"
-                        variant="outline"
-                        onClick={() => setPasskeyOpen(true)}
-                      >
-                        <KeyRound className="size-4" aria-hidden="true" />
-                        {t("Enroll with Passkey", "Ghi danh bằng Passkey")}
-                      </Button>
-                    )}
-                  </article>
-                ))}
+              <div className="space-y-4">
+                <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+                  {catalog.data.items.map((course) => (
+                    <article
+                      key={course.workspaceId}
+                      className="group flex flex-col rounded-2xl border bg-card p-5 shadow-[var(--shadow-low)]"
+                    >
+                      <CourseCover courseId={course.workspaceId} className="rounded-xl" />
+                      <div className="mt-4 flex flex-wrap gap-1.5">
+                        {course.difficulties.map((level) => (
+                          <Badge key={level} variant="outline">
+                            {difficultyLabel(level, t)}
+                          </Badge>
+                        ))}
+                      </div>
+                      <h3 className="mt-4 text-lg font-semibold">{course.title}</h3>
+                      <p className="mt-2 line-clamp-3 flex-1 text-sm leading-6 text-muted-foreground">
+                        {course.description ||
+                          t(
+                            "Learning path provided by lecturer-created Labs.",
+                            "Lộ trình học tập được xây dựng từ các Lab do giảng viên tạo.",
+                          )}
+                      </p>
+                      <p className="mt-3 text-xs text-muted-foreground">
+                        {course.labCount} Labs · {course.lecturerName}
+                      </p>
+                      {course.enrolled ? (
+                        <Button asChild className="mt-5 w-full">
+                          <Link href={courseHref(course.workspaceId)}>
+                            {t("Continue learning", "Tiếp tục học")}{" "}
+                            <ArrowRight className="size-4" />
+                          </Link>
+                        </Button>
+                      ) : (
+                        <Button
+                          type="button"
+                          className="mt-5 w-full bg-secondary text-secondary-foreground hover:bg-secondary/90"
+                          onClick={() => setPasskeyOpen(true)}
+                        >
+                          <KeyRound className="size-4" aria-hidden="true" />
+                          {t("Enroll", "Ghi danh")}
+                        </Button>
+                      )}
+                    </article>
+                  ))}
+                </div>
+                <CoursePagination
+                  page={page}
+                  totalItems={catalog.data.total}
+                  onPageChange={setPage}
+                  t={t}
+                />
               </div>
             ) : (
               <p className="rounded-xl border bg-card p-5 text-sm text-muted-foreground">

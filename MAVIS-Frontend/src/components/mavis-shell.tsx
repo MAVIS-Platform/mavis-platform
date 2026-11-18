@@ -1,15 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { BookOpen, Home, LayoutGrid, LogOut, UserRound } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { usePathname } from "next/navigation";
+import { BookOpen, Home, LayoutGrid, UserRound } from "lucide-react";
 import { MavisLogo } from "@/components/mavis-logo";
 import { AppearanceSelector } from "@/components/appearance-selector";
 import { NotificationBell } from "@/features/notifications/inbox";
 import { RequireSession } from "@/features/auth/access";
 import { LocaleSwitchButton, useLocale } from "@/lib/i18n/locale-context";
-import { useApiMutation, useSession } from "@/hooks/use-api";
+import { useSession } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
@@ -22,20 +21,8 @@ const links = [
 
 function MavisChrome({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
   const { t } = useLocale();
   const session = useSession();
-  const signOut = useApiMutation("signOut");
-  const cache = useQueryClient();
-  async function logout() {
-    try {
-      await signOut.mutateAsync({});
-      cache.clear();
-      router.replace("/login?signedOut=1");
-    } catch {
-      // The global mutation handler presents the request failure.
-    }
-  }
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="sticky top-0 z-40 border-b bg-card/95 backdrop-blur">
@@ -84,17 +71,6 @@ function MavisChrome({ children }: { children: ReactNode }) {
               <Link href="/profile">
                 <UserRound aria-hidden="true" />
               </Link>
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="hidden sm:inline-flex"
-              aria-label={t("Sign out", "Đăng xuất")}
-              title={t("Sign out", "Đăng xuất")}
-              disabled={signOut.isPending}
-              onClick={() => void logout()}
-            >
-              <LogOut aria-hidden="true" />
             </Button>
             <span className="hidden max-w-32 truncate pl-1 text-xs font-medium text-muted-foreground lg:inline">
               {session.data?.user?.name}

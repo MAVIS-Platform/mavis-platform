@@ -2,22 +2,10 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
-import {
-  BookOpen,
-  CheckCircle2,
-  Clock3,
-  Layers,
-  Network,
-  ShieldCheck,
-  Building2,
-  Compass,
-  ClipboardCheck,
-  Plus,
-  Search,
-  Users,
-} from "lucide-react";
+import { BookOpen, CheckCircle2, Clock3, ClipboardCheck, Plus, Search, Users } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { useApi, useApiMutation, useApiQuery, useSession, useSelection } from "@/hooks/use-api";
+import { CourseCover } from "@/components/course-cover";
+import { useApiMutation, useApiQuery, useSession, useSelection } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
 import { ErrorState, RequestState } from "@/components/shared/request-state";
 import { SearchInput, SelectField } from "@/components/shared/forms";
@@ -82,8 +70,7 @@ export function Workspaces() {
   const totalStudents = (query.data ?? []).reduce(
     (sum, workspace) =>
       sum +
-      (workspace.members ?? []).filter((member) => member.role.toUpperCase() === "STUDENT")
-        .length,
+      (workspace.members ?? []).filter((member) => member.role.toUpperCase() === "STUDENT").length,
     0,
   );
   if (workspaceId && selected) return <WorkspaceOverview />;
@@ -103,12 +90,20 @@ export function Workspaces() {
                   {t("A great class starts here.", "Khởi đầu cho một lớp học tuyệt vời.")}
                 </h2>
                 <p className="mt-2 max-w-xl text-sm leading-6 text-sky-100/90">
-                  {t("Open a class to organize modules, Labs, students and grading.", "Mở một lớp để tổ chức chương, Lab, sinh viên và chấm điểm.")}
+                  {t(
+                    "Open a class to organize modules, Labs, students and grading.",
+                    "Mở một lớp để tổ chức chương, Lab, sinh viên và chấm điểm.",
+                  )}
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2.5">
-                <Button type="button" className="h-11 rounded-xl bg-white px-5 font-semibold text-slate-950 shadow-sm hover:bg-sky-50" onClick={() => setShowCreate(true)}>
-                  <Plus className="mr-2 size-4" aria-hidden="true" />{t("Create class", "Tạo lớp")}
+                <Button
+                  type="button"
+                  className="h-11 rounded-xl bg-white px-5 font-semibold text-slate-950 shadow-sm hover:bg-sky-50"
+                  onClick={() => setShowCreate(true)}
+                >
+                  <Plus className="mr-2 size-4" aria-hidden="true" />
+                  {t("Create class", "Tạo lớp")}
                 </Button>
               </div>
             </div>
@@ -116,17 +111,57 @@ export function Workspaces() {
 
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto]">
             <div className="flex flex-wrap items-center gap-4 rounded-xl border bg-card p-5 shadow-sm">
-              <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-950/40"><ClipboardCheck className="size-6" aria-hidden="true" /></span>
+              <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-950/40">
+                <ClipboardCheck className="size-6" aria-hidden="true" />
+              </span>
               <div className="min-w-0 flex-1">
-                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{t("Needs your attention", "Cần bạn xem xét")}</p>
-                <p className="mt-1 text-lg font-semibold">{submissions.isSuccess ? pendingReviews : "—"} {t("submissions to review", "bài nộp chờ chấm")}</p>
-                <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{(query.data ?? []).filter((w) => pendingByWorkspace.has(w.id)).map((w) => w.name + " · " + pendingByWorkspace.get(w.id) + " " + t("submission(s)", "bài nộp")).join(" · ") || t("Your classes are up to date.", "Các lớp đã được cập nhật.")}</p>
+                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  {t("Needs your attention", "Cần bạn xem xét")}
+                </p>
+                <p className="mt-1 text-lg font-semibold">
+                  {submissions.isSuccess ? pendingReviews : "—"}{" "}
+                  {t("submissions to review", "bài nộp chờ chấm")}
+                </p>
+                <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
+                  {(query.data ?? [])
+                    .filter((w) => pendingByWorkspace.has(w.id))
+                    .map(
+                      (w) =>
+                        w.name +
+                        " · " +
+                        pendingByWorkspace.get(w.id) +
+                        " " +
+                        t("submission(s)", "bài nộp"),
+                    )
+                    .join(" · ") || t("Your classes are up to date.", "Các lớp đã được cập nhật.")}
+                </p>
               </div>
-              <Button asChild variant="outline" className="rounded-lg border-blue-200 text-[#0056d2] hover:bg-blue-50"><Link href="/submissions">{t("Review submissions", "Chấm bài nộp")}<span className="ml-2" aria-hidden="true">→</span></Link></Button>
+              <Button
+                asChild
+                variant="outline"
+                className="rounded-lg border-blue-200 text-[#0056d2] hover:bg-blue-50"
+              >
+                <Link href="/submissions">
+                  {t("Review submissions", "Chấm bài nộp")}
+                  <span className="ml-2" aria-hidden="true">
+                    →
+                  </span>
+                </Link>
+              </Button>
             </div>
             <div className="grid grid-cols-2 divide-x rounded-xl border bg-card p-5 shadow-sm lg:min-w-72">
-              <div className="pr-6"><BookOpen className="mb-3 size-4 text-blue-600" aria-hidden="true" /><p className="text-3xl font-semibold tracking-tight">{activeCount}</p><p className="mt-1 text-xs text-muted-foreground">{t("Active classes", "Lớp đang hoạt động")}</p></div>
-              <div className="pl-6"><Users className="mb-3 size-4 text-teal-600" aria-hidden="true" /><p className="text-3xl font-semibold tracking-tight">{totalStudents}</p><p className="mt-1 text-xs text-muted-foreground">{t("Students", "Sinh viên")}</p></div>
+              <div className="pr-6">
+                <BookOpen className="mb-3 size-4 text-blue-600" aria-hidden="true" />
+                <p className="text-3xl font-semibold tracking-tight">{activeCount}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {t("Active classes", "Lớp đang hoạt động")}
+                </p>
+              </div>
+              <div className="pl-6">
+                <Users className="mb-3 size-4 text-teal-600" aria-hidden="true" />
+                <p className="text-3xl font-semibold tracking-tight">{totalStudents}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{t("Students", "Sinh viên")}</p>
+              </div>
             </div>
           </div>
 
@@ -193,37 +228,41 @@ export function Workspaces() {
         )}
       >
         <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-            {visibleWorkspaces.map((workspace, index) => {
-              const colors = ["#0056d2", "#7b2cbf", "#0b807c", "#c54108", "#254cda", "#bd1960"];
-              const CoverIcon = [Building2, Compass, Network, Layers, ShieldCheck, Network][index % 6] ?? Building2;
-              const pending = pendingByWorkspace.get(workspace.id) ?? 0;
-              const members = workspace.members ?? [];
-              const students = members.filter(
-                (member) => member.role.toUpperCase() === "STUDENT",
-              ).length;
-              const archived = (workspace.status ?? "ACTIVE") === "ARCHIVED";
-              const workspaceUrl = `/workspace-overview?workspace=${encodeURIComponent(workspace.id)}`;
-              return (
-                <article
-                  key={workspace.id}
-                  className="flex min-h-[350px] flex-col overflow-hidden rounded-lg border bg-card transition-shadow hover:shadow-md"
+          {visibleWorkspaces.map((workspace) => {
+            const pending = pendingByWorkspace.get(workspace.id) ?? 0;
+            const members = workspace.members ?? [];
+            const students = members.filter(
+              (member) => member.role.toUpperCase() === "STUDENT",
+            ).length;
+            const archived = (workspace.status ?? "ACTIVE") === "ARCHIVED";
+            const workspaceUrl = `/workspace-overview?workspace=${encodeURIComponent(workspace.id)}`;
+            return (
+              <article
+                key={workspace.id}
+                className="flex min-h-[350px] flex-col overflow-hidden rounded-lg border bg-card transition-shadow hover:shadow-md"
+              >
+                <CourseCover
+                  courseId={workspace.id}
+                  className="flex items-start justify-between gap-2 p-3"
                 >
-                  <div className="relative flex h-28 shrink-0 items-start justify-between gap-2 overflow-hidden p-3" style={{ backgroundColor: colors[index % colors.length] }}>
-                    <CoverIcon className="pointer-events-none absolute -right-3 -bottom-3 size-32 -rotate-12 text-white/15" aria-hidden="true" />
-                    <span className="relative rounded bg-white px-2 py-1 text-xs font-semibold text-slate-900">
-                      {workspace.code || t("CLASS", "LỚP")}
+                  <span className="relative rounded bg-white px-2 py-1 text-xs font-semibold text-slate-900">
+                    {workspace.code || t("CLASS", "LỚP")}
+                  </span>
+                  {archived ? (
+                    <span className="text-xs text-muted-foreground">
+                      {t("Archived", "Lưu trữ")}
                     </span>
-                    {archived ? (
-                      <span className="text-xs text-muted-foreground">{t("Archived", "Lưu trữ")}</span>
-                    ) : (
-                      <span className="relative inline-flex items-center gap-1 rounded bg-white/95 px-2 py-1 text-xs text-emerald-700">
-                        <span className="size-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
-                        {t("Active", "Đang hoạt động")}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex flex-1 flex-col gap-3 p-5">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">{t("Lecturer", "Giảng viên")}</p>
+                  ) : (
+                    <span className="relative inline-flex items-center gap-1 rounded bg-white/95 px-2 py-1 text-xs text-emerald-700">
+                      <span className="size-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
+                      {t("Active", "Đang hoạt động")}
+                    </span>
+                  )}
+                </CourseCover>
+                <div className="flex flex-1 flex-col gap-3 p-5">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                    {t("Lecturer", "Giảng viên")}
+                  </p>
                   <Link
                     className="truncate text-xl font-semibold tracking-tight text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     href={workspaceUrl}
@@ -248,8 +287,14 @@ export function Workspaces() {
                             : "inline-flex items-center gap-1"
                         }
                       >
-                        {pending > 0 ? <Clock3 className="size-3.5" aria-hidden="true" /> : <CheckCircle2 className="size-3.5" aria-hidden="true" />}
-                        {pending > 0 ? pending + " " + t("to grade", "bài chờ chấm") : t("Up to date", "Đã cập nhật")}
+                        {pending > 0 ? (
+                          <Clock3 className="size-3.5" aria-hidden="true" />
+                        ) : (
+                          <CheckCircle2 className="size-3.5" aria-hidden="true" />
+                        )}
+                        {pending > 0
+                          ? pending + " " + t("to grade", "bài chờ chấm")
+                          : t("Up to date", "Đã cập nhật")}
                       </span>
                     )}
                     <Link
@@ -260,22 +305,34 @@ export function Workspaces() {
                     </Link>
                   </div>
                   <div className="mt-auto grid grid-cols-2 gap-3 border-t pt-4">
-                  <Button asChild className="bg-[#0056d2] text-white hover:bg-[#0046ad]"><Link href={workspaceUrl}>{t("Open class", "Mở lớp")}</Link></Button>
-                  <Button asChild variant="outline" className="border-[#0056d2] text-[#0056d2]"><Link href={"/submissions?workspace=" + encodeURIComponent(workspace.id)}>{t("Submissions", "Bài nộp")}</Link></Button>
+                    <Button asChild className="bg-[#0056d2] text-white hover:bg-[#0046ad]">
+                      <Link href={workspaceUrl}>{t("Open class", "Mở lớp")}</Link>
+                    </Button>
+                    <Button asChild variant="outline" className="border-[#0056d2] text-[#0056d2]">
+                      <Link href={"/submissions?workspace=" + encodeURIComponent(workspace.id)}>
+                        {t("Submissions", "Bài nộp")}
+                      </Link>
+                    </Button>
                   </div>
-                  </div>
-                </article>
-              );
-            })}
-            {visibleWorkspaces.length === 0 && (
-              <p className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground md:col-span-2">
-                {t("No class matches this search or filter.", "Không có lớp nào khớp tìm kiếm hoặc bộ lọc.")}
-              </p>
-            )}
-
-          </div>
+                </div>
+              </article>
+            );
+          })}
+          {visibleWorkspaces.length === 0 && (
+            <p className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground md:col-span-2">
+              {t(
+                "No class matches this search or filter.",
+                "Không có lớp nào khớp tìm kiếm hoặc bộ lọc.",
+              )}
+            </p>
+          )}
+        </div>
       </RequestState>
-      {canCreate && <footer className="border-t pt-8 text-center text-sm text-muted-foreground">© MAVIS — Architecture Learning &amp; Analysis</footer>}
+      {canCreate && (
+        <footer className="border-t pt-8 text-center text-sm text-muted-foreground">
+          © MAVIS — Architecture Learning &amp; Analysis
+        </footer>
+      )}
     </div>
   );
 }
@@ -308,7 +365,11 @@ export function WorkspaceOverview() {
   const rawModuleCount = authoring.data?.modules?.length ?? 0;
   const isJavaCourseraWorkspace = workspace?.code?.toUpperCase() === "JAVA-MS-2026";
   const moduleCount =
-    rawModuleCount > 0 ? rawModuleCount : isJavaCourseraWorkspace ? JAVA_COURSERA_MODULES.length : 0;
+    rawModuleCount > 0
+      ? rawModuleCount
+      : isJavaCourseraWorkspace
+        ? JAVA_COURSERA_MODULES.length
+        : 0;
   const itemCount =
     rawModuleCount > 0
       ? (authoring.data?.modules?.reduce((sum, mod) => sum + mod.items.length, 0) ?? 0)
@@ -384,7 +445,8 @@ export function WorkspaceOverview() {
                   </p>
                   <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
                     <p className="text-lg font-semibold">
-                      {authoring.data?.publishedVersion || (isJavaCourseraWorkspace && publishedLabs >= 6)
+                      {authoring.data?.publishedVersion ||
+                      (isJavaCourseraWorkspace && publishedLabs >= 6)
                         ? `v${authoring.data?.publishedVersion || 1} · ${t("Published", "Đã xuất bản")} (${publishedLabs}/${totalLabs || 6} Lab)`
                         : t("Draft / Setup", "Nháp / Thiết lập")}
                     </p>

@@ -43,10 +43,23 @@ test("MAVIS catalog pages own the new shell while roadmap and Lab keep the exist
   assert.match(mavisPages, /export function MavisHomePage/);
   assert.match(mavisPages, /export function AllCoursesPage/);
   assert.match(mavisPages, /<MavisShell>/);
-  assert.match(mavisPages, /Enroll with Passkey/);
+  assert.match(mavisPages, /t\("Enroll", "Ghi danh"\)/);
+  assert.doesNotMatch(mavisPages, /course\.categories\.map/);
   assert.match(mavisPages, /<PasskeyEnrollmentModal/);
   assert.doesNotMatch(mavisPages, /Enrollment required/);
+  assert.match(mavisPages, /const COURSES_PER_PAGE = 6/);
+  assert.match(mavisPages, /<CourseCover courseId=\{workspace\.id\}/);
+  assert.match(mavisPages, /<CourseCover courseId=\{course\.workspaceId\}/);
   assert.match(home, /<PublicHomepage\s*\/>/);
+});
+
+test("lecturer and student course cards share deterministic cover artwork", () => {
+  const lecturer = read("src/features/workspaces/screens.tsx");
+  const cover = read("src/components/course-cover.tsx");
+
+  assert.match(lecturer, /<CourseCover\s+courseId=\{workspace\.id\}/);
+  assert.match(cover, /function courseCoverIndex\(courseId/);
+  assert.match(cover, /hash % coverColors\.length/);
 });
 
 test("student navigation locks class sidebar to 3 clean course items and preserves all-role destinations", () => {

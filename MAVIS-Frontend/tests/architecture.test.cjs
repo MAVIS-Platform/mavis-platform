@@ -799,9 +799,7 @@ test("project navigation preserves every destination and keeps role menus intact
     "/submissions",
   );
   assert.deepEqual(
-    globalNavigation.admin
-      .flatMap((g) => g.items)
-      .map((i) => ({ id: i.id, href: i.href })),
+    globalNavigation.admin.flatMap((g) => g.items).map((i) => ({ id: i.id, href: i.href })),
     [
       { id: "health", href: "/administration/health" },
       { id: "users", href: "/administration/users" },
@@ -1052,7 +1050,7 @@ test("lecturer sidebar nests class destinations and keeps one Lab Creation menu"
   assert.ok(!html.includes('aria-label="Lab Library"'));
   assert.ok(!html.includes('aria-label="Theory Library"'));
   assert.ok(!html.includes("👨‍🏫 Lecturer"));
-  assert.ok(html.includes("Sign out"));
+  assert.ok(!html.includes("Sign out"));
 });
 
 test("student sidebar omits lecturer-only class destinations", () => {
@@ -5186,11 +5184,7 @@ test("My Workspaces is a compact LMS class list with tabs and a module outline",
     "Overview must not include member management",
   );
   const membersHtml = renderComp(WorkspaceMembers, "ws-swd");
-  assert.match(
-    membersHtml,
-    /Class sections/,
-    "lecturer class view shows unified 7-tab navigation",
-  );
+  assert.match(membersHtml, /Class sections/, "lecturer class view shows unified 7-tab navigation");
   assert.match(membersHtml, /Students &amp; Access/);
   client.setQueryData(["api", "session", {}], {
     user: { id: "u2", name: "Student A", email: "student@example.com", role: "student" },
