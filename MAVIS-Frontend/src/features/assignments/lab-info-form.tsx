@@ -35,10 +35,11 @@ export function LabInfoForm({
       : "",
   );
   const [requireRuntimeTrace, setRequireRuntimeTrace] = useState(
-    assignment?.requireRuntimeTrace ?? false,
+    assignment?.requireRuntimeTrace ?? true,
   );
   const [labMode, setLabMode] = useState(
-    assignment?.labMode ?? (assignment?.requireRuntimeTrace ? "THEORY_QUIZ_STUDIO" : "THEORY_QUIZ"),
+    assignment?.labMode ??
+      (assignment?.requireRuntimeTrace === false ? "THEORY_QUIZ" : "THEORY_QUIZ_STUDIO"),
   );
   const [guideTab, setGuideTab] = useState<"write" | "preview">("write");
 
@@ -64,8 +65,8 @@ export function LabInfoForm({
           setTitle("");
           setInstructions("");
           setDue("");
-          setRequireRuntimeTrace(false);
-          setLabMode("THEORY_QUIZ");
+          setRequireRuntimeTrace(true);
+          setLabMode("THEORY_QUIZ_STUDIO");
         }
         onSaved?.(saved);
       },
@@ -165,45 +166,22 @@ export function LabInfoForm({
           )}
         </div>
 
-        <div className="space-y-3 border-t pt-4" aria-labelledby="lab-mode-heading">
-          <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4" aria-labelledby="lab-mode-heading">
+          <div className="space-y-0.5">
             <div className="flex items-center gap-2">
               <Rocket className="size-4 text-primary" aria-hidden="true" />
               <h3 id="lab-mode-heading" className="text-sm font-semibold">
                 {t("Lab mode", "Hình thức Lab")}
               </h3>
             </div>
-            <span className="text-xs text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               {t(
                 "Students do not submit diagrams or a model version. C1–C3 are read-only theory content linked to the sample repository.",
                 "Sinh viên không nộp diagram hay model version. C1–C3 là lý thuyết chỉ đọc gắn với repo mẫu.",
               )}
-            </span>
+            </p>
           </div>
-          <div className="grid gap-3 md:grid-cols-2">
-            <button
-              type="button"
-              aria-pressed={!requireRuntimeTrace}
-              onClick={() => {
-                setRequireRuntimeTrace(false);
-                setLabMode("THEORY_QUIZ");
-              }}
-              className={`space-y-1 rounded-lg border p-3.5 text-left transition-colors ${
-                !requireRuntimeTrace
-                  ? "border-primary bg-primary/8 ring-1 ring-primary/30"
-                  : "hover:bg-muted/40"
-              }`}
-            >
-              <span className="block text-sm font-semibold">
-                {t("Theory + Quiz", "Lý thuyết + Quiz")}
-              </span>
-              <span className="block text-xs leading-5 text-muted-foreground">
-                {t(
-                  "Lesson, sample repository and C1–C3 reference views plus the Quiz gate. No runtime session.",
-                  "Bài học, repo mẫu và C1–C3 tham chiếu cùng Quiz gate. Không có phiên runtime.",
-                )}
-              </span>
-            </button>
+          <div className="inline-flex flex-wrap rounded-lg border bg-muted/40 p-1 text-xs">
             <button
               type="button"
               aria-pressed={requireRuntimeTrace}
@@ -211,21 +189,36 @@ export function LabInfoForm({
                 setRequireRuntimeTrace(true);
                 setLabMode("THEORY_QUIZ_STUDIO");
               }}
-              className={`space-y-1 rounded-lg border p-3.5 text-left transition-colors ${
+              title={t(
+                "Adds a real MAVIS Studio Live practice and evidence step after the Quiz.",
+                "Thêm bước thực hành MAVIS Studio Live thật và minh chứng sau Quiz.",
+              )}
+              className={`rounded-md px-3 py-1.5 font-medium transition-colors ${
                 requireRuntimeTrace
-                  ? "border-primary bg-primary/8 ring-1 ring-primary/30"
-                  : "hover:bg-muted/40"
+                  ? "bg-primary text-primary-foreground shadow-2xs"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              <span className="block text-sm font-semibold">
-                {t("Theory + Quiz + Studio", "Lý thuyết + Quiz + Studio")}
-              </span>
-              <span className="block text-xs leading-5 text-muted-foreground">
-                {t(
-                  "Adds a real MAVIS Studio Live practice and evidence step after the Quiz.",
-                  "Thêm bước thực hành MAVIS Studio Live thật và minh chứng sau Quiz.",
-                )}
-              </span>
+              {t("Theory + Quiz + Studio", "Lý thuyết + Quiz + Studio")}
+            </button>
+            <button
+              type="button"
+              aria-pressed={!requireRuntimeTrace}
+              onClick={() => {
+                setRequireRuntimeTrace(false);
+                setLabMode("THEORY_QUIZ");
+              }}
+              title={t(
+                "Lesson, sample repository and C1–C3 reference views plus the Quiz gate. No runtime session.",
+                "Bài học, repo mẫu và C1–C3 tham chiếu cùng Quiz gate. Không có phiên runtime.",
+              )}
+              className={`rounded-md px-3 py-1.5 font-medium transition-colors ${
+                !requireRuntimeTrace
+                  ? "bg-primary text-primary-foreground shadow-2xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {t("Theory + Quiz", "Lý thuyết + Quiz")}
             </button>
           </div>
         </div>
