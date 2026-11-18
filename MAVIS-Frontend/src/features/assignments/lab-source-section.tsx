@@ -21,7 +21,7 @@ export function LabSourceSection({
 }: {
   workspaceId: string;
   assignment: Assignment;
-  onNavigate?: ((tab: "quiz") => void) | undefined;
+  onNavigate?: ((tab: "theory" | "quiz") => void) | undefined;
 }) {
   const { t } = useLocale();
   const save = useApiMutation("updateAssignment");
@@ -239,16 +239,16 @@ export function LabSourceSection({
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-teal-200 bg-gradient-to-r from-teal-50/70 to-emerald-50/50 p-4">
           <p className="text-sm font-medium text-teal-950">
             {t(
-              "Source pinned? Proceed to Step 3 to create the Gatekeeper Quiz.",
-              "Đã ghim mã nguồn mẫu? Chuyển sang Bước 3 để soạn Câu hỏi Quiz mở khóa.",
+              "Source pinned? Proceed to Step 2 to write or AI-generate grounded Lab theory.",
+              "Đã ghim mã nguồn mẫu? Chuyển sang Bước 2 để soạn hoặc nhờ AI sinh Lý thuyết Lab.",
             )}
           </p>
           <Button
             type="button"
             className="bg-teal-600 text-white hover:bg-teal-700"
-            onClick={() => onNavigate("quiz")}
+            onClick={() => onNavigate("theory")}
           >
-            {t("Next Step 3: Quiz Questions →", "Sang Bước 3: Câu hỏi Quiz →")}
+            {t("Next Step 2: Lab Theory →", "Sang Bước 2: Lý thuyết Lab →")}
             <ArrowRight className="ml-1.5 size-4" aria-hidden="true" />
           </Button>
         </div>

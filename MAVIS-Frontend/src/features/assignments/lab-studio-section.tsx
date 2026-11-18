@@ -94,29 +94,61 @@ export function LabStudioSection({
           </Badge>
         </div>
 
-        {!projectId ? (
-          <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-800 dark:text-amber-200">
-            <Lock className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-            {t(
-              "Attach and analyze the reference source before configuring Studio Live.",
-              "Gắn và phân tích nguồn tham chiếu trước khi cấu hình Studio Live.",
-            )}
+        {!assignment.requireRuntimeTrace ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/20 p-4 text-sm">
+            <div className="space-y-1">
+              <p className="font-semibold">
+                {t(
+                  "This Lab is configured as Theory + Quiz (no Studio runtime required)",
+                  "Lab này đang ở chế độ Lý thuyết + Quiz (không yêu cầu chạy Studio Live)",
+                )}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  "Use the checklist below to verify readiness and add the Lab to the class sequence, or switch Lab mode to Theory + Quiz + Studio in Step 1.",
+                  "Dùng bảng kiểm tra bên dưới để đưa Lab vào lớp, hoặc đổi Hình thức Lab ở Bước 1 sang Lý thuyết + Quiz + Studio nếu muốn thêm bài tập Docker topology.",
+                )}
+              </p>
+            </div>
+          </div>
+        ) : !projectId ? (
+          <div className="space-y-3">
+            <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-800 dark:text-amber-200">
+              <Lock className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              {t(
+                "Attach and analyze the reference source or choose a deployable Studio repository below before configuring Studio Live.",
+                "Gắn và phân tích nguồn tham chiếu hoặc chọn repo Studio bên dưới trước khi cấu hình Studio Live.",
+              )}
+            </div>
+            <StudioExerciseEditor
+              workspaceId={workspaceId}
+              assignmentId={assignment.id}
+              labTitle={assignment.title}
+              applications={[]}
+            />
           </div>
         ) : (
           <>
+            <StudioExerciseEditor
+              workspaceId={workspaceId}
+              assignmentId={assignment.id}
+              labTitle={assignment.title}
+              applications={readiness.data?.applications ?? []}
+            />
+
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-300/80 bg-gradient-to-r from-emerald-50/80 via-teal-50/50 to-white p-4 dark:border-emerald-800 dark:from-emerald-950/30 dark:to-background">
               <div className="space-y-1">
                 <p className="flex items-center gap-1.5 text-sm font-semibold text-emerald-950 dark:text-emerald-100">
                   <Sparkles className="size-4 text-emerald-600" aria-hidden="true" />
                   {t(
-                    "Auto-Configure & Freeze 2D Studio Topology (1-Click)",
-                    "Tự động cấu hình & Đóng băng Topology Studio 2D (1 chạm)",
+                    "Auto-Configure 2D Studio Topology (1-Click)",
+                    "Tự động cấu hình Topology Studio 2D (1 chạm)",
                   )}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   {t(
-                    "Extracts services and edges from the reference model, creates runtime profile & scenario, and freezes the 2D Studio sandbox for students.",
-                    "Trích xuất các service và luồng gọi từ model chuẩn, tạo runtime profile & kịch bản mặc định, và đóng băng sandbox 2D cho sinh viên.",
+                    "Extracts services, ports and controllers from the selected Studio repository and prepares the 2D topology & baseline scenario.",
+                    "Trích xuất service, port và controller từ repo Studio đã chọn để khởi tạo topology 2D và kịch bản kiểm tra.",
                   )}
                 </p>
               </div>
@@ -135,7 +167,7 @@ export function LabStudioSection({
                 }
               >
                 {autoStudio.isPending
-                  ? t("Configuring & Freezing…", "Đang cấu hình & đóng băng…")
+                  ? t("Configuring Studio…", "Đang cấu hình Studio…")
                   : t("⚡ 1-Click Auto-Configure Studio", "⚡ Tự động cấu hình 2D Studio")}
               </Button>
             </div>
@@ -193,12 +225,6 @@ export function LabStudioSection({
                   : ` · ${t("available as fallback verified trace", "dự phòng nếu chưa có phiên riêng của Lab")}`}
               </p>
             )}
-            <StudioExerciseEditor
-              workspaceId={workspaceId}
-              assignmentId={assignment.id}
-              labTitle={assignment.title}
-              applications={readiness.data?.applications ?? []}
-            />
 
             {projectId && runtimeConfig.data && (
               <PreparedTopologyEditor

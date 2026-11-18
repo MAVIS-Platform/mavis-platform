@@ -188,7 +188,7 @@ export function LabTheorySection({
   workspaceId: string;
   workspaceName: string;
   assignment: Assignment;
-  onNavigate: (tab: "source") => void;
+  onNavigate: (tab: "source" | "quiz") => void;
 }) {
   const { t, locale } = useLocale();
   const cache = useQueryClient();
@@ -1055,16 +1055,16 @@ export function LabTheorySection({
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-teal-200 bg-gradient-to-r from-teal-50/70 to-emerald-50/50 p-4">
         <p className="text-sm font-medium text-teal-950">
           {t(
-            "Done writing Theory? Pin your Sample Repository & verify C1–C3 Diagrams in Step 2.",
-            "Đã soạn xong Lý thuyết? Tiếp tục gắn Mã nguồn mẫu & kiểm tra Sơ đồ C1–C3 ở Bước 2.",
+            "Done writing Theory? Proceed to Step 3 to create or AI-generate Quiz questions.",
+            "Đã soạn xong Lý thuyết? Tiếp tục sang Bước 3 để tạo hoặc nhờ AI sinh Câu hỏi Quiz.",
           )}
         </p>
         <Button
           type="button"
           className="bg-teal-600 text-white hover:bg-teal-700"
-          onClick={() => onNavigate("source")}
+          onClick={() => onNavigate("quiz")}
         >
-          {t("Next Step 2: Source Code & C1–C3 →", "Sang Bước 2: Mã nguồn & Sơ đồ C1–C3 →")}
+          {t("Next Step 3: Quiz Questions →", "Sang Bước 3: Câu hỏi Quiz →")}
           <ArrowRight className="ml-1.5 size-4" aria-hidden="true" />
         </Button>
       </div>

@@ -312,7 +312,12 @@ export function WorkspaceOverview() {
           actions={
             canManage ? (
               <>
-                <Button asChild size="sm" variant="outline">
+                <Button
+                  asChild
+                  size="sm"
+                  variant="outline"
+                  className="border-white/30 bg-white/15 text-white hover:bg-white/25 hover:text-white"
+                >
                   <Link href={`/assignments?workspace=${encodeURIComponent(workspace.id)}`}>
                     {t("Manage Labs", "Quản lý Lab")}
                   </Link>
@@ -361,11 +366,27 @@ export function WorkspaceOverview() {
                   <p className="text-xs font-medium text-muted-foreground">
                     {t("Course Status", "Trạng thái khóa học")}
                   </p>
-                  <p className="mt-1 text-lg font-semibold">
-                    {authoring.data?.publishedVersion
-                      ? `v${authoring.data.publishedVersion} · ${t("Published", "Đã xuất bản")}`
-                      : t("Draft / Setup", "Nháp / Thiết lập")}
-                  </p>
+                  <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-lg font-semibold">
+                      {authoring.data?.publishedVersion
+                        ? `v${authoring.data.publishedVersion} · ${t("Published", "Đã xuất bản")}`
+                        : t("Draft / Setup", "Nháp / Thiết lập")}
+                    </p>
+                    {authoring.data?.status === "DRAFT" && moduleCount > 0 && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-7 px-2.5 text-xs"
+                        disabled={authoring.publish.isPending}
+                        onClick={() => authoring.publish.mutate()}
+                      >
+                        {authoring.publish.isPending
+                          ? t("Publishing…", "Đang công bố…")
+                          : t("Publish course", "Công bố Course")}
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </section>
             )}

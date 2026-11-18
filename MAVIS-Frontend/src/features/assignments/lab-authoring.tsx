@@ -56,8 +56,8 @@ function isTab(value: string | null): value is Tab {
 }
 
 function stepForTab(tab: Tab): HorizontalStep {
-  if (tab === "info" || tab === "theory") return 1;
-  if (tab === "source") return 2;
+  if (tab === "info" || tab === "source") return 1;
+  if (tab === "theory") return 2;
   if (tab === "quiz") return 3;
   return 4;
 }
@@ -106,10 +106,10 @@ export function LabAuthoring() {
 
   const onSaved = (saved: Assignment) => {
     setCreatedAssignmentId(saved.id);
-    setTab("theory");
+    setTab("source");
     const query = new URLSearchParams(params?.toString() ?? "");
     query.set("assignment", saved.id);
-    query.set("tab", "theory");
+    query.set("tab", "source");
     router.replace(`/lab-authoring?${query.toString()}`);
   };
 
@@ -126,23 +126,23 @@ export function LabAuthoring() {
   }> = [
     {
       step: 1,
-      targetTab: assignment ? "theory" : "info",
+      targetTab: assignment ? "source" : "info",
       title: t(
-        `${TAB_LABELS.info.en} & ${TAB_LABELS.theory.en}`,
-        "Bước 1: Tên Bài & Lý Thuyết",
+        `${TAB_LABELS.info.en} & ${TAB_LABELS.source.en}`,
+        "Bước 1: Thông Tin Lab & Nguồn Tham Chiếu",
       ),
-      subtitle: t("Title, goals & Markdown lesson", "Tiêu đề, mục tiêu & bài giảng"),
-      icon: BookOpen,
-      done: Boolean(assignment && theoryReady),
+      subtitle: t("Title, mode, pinned repo & C1–C3 diagrams", "Tên bài, hình thức & repo mẫu C1–C3"),
+      icon: GitBranch,
+      done: Boolean(assignment && assignment.referenceSource?.modelId),
       enabled: true,
     },
     {
       step: 2,
-      targetTab: "source",
-      title: t(TAB_LABELS.source.en, "Bước 2: Mã Nguồn & Sơ Đồ C1–C3"),
-      subtitle: t("Pinned repository & C1–C3 diagrams", "Repo mẫu & sơ đồ kiến trúc"),
-      icon: GitBranch,
-      done: Boolean(assignment?.referenceSource?.modelId),
+      targetTab: "theory",
+      title: t(TAB_LABELS.theory.en, "Bước 2: Lý Thuyết Lab"),
+      subtitle: t("Markdown lesson & AI evidence draft", "Bài giảng Markdown & AI soạn từ bằng chứng"),
+      icon: BookOpen,
+      done: Boolean(assignment && theoryReady),
       enabled: Boolean(assignment),
     },
     {
@@ -235,15 +235,18 @@ export function LabAuthoring() {
             </select>
           )}
           <Button
-            asChild
+            type="button"
             size="sm"
             variant="outline"
             className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+            onClick={() => {
+              setCreatedAssignmentId("");
+              setTab("info");
+              router.push(`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&tab=info`);
+            }}
           >
-            <Link href={`/assignments/new?workspace=${encodeURIComponent(workspaceId)}`}>
-              <Plus className="mr-1 size-4" aria-hidden="true" />
-              {t("New Lab", "+ Tạo Bài Học Mới")}
-            </Link>
+            <Plus className="mr-1 size-4" aria-hidden="true" />
+            {t("New Lab", "+ Tạo Bài Học Mới")}
           </Button>
           {assignment && (
             <Button
@@ -355,7 +358,7 @@ export function LabAuthoring() {
             <div className="space-y-6">
               {assignment ? (
                 <details
-                  open={tab === "info"}
+                  open={tab === "info" || !assignment.referenceSource?.modelId}
                   className="rounded-2xl border bg-card p-4"
                 >
                   <summary className="cursor-pointer text-sm font-semibold text-foreground">
@@ -383,9 +386,8 @@ export function LabAuthoring() {
               )}
 
               {assignment && (
-                <LabTheorySection
+                <LabSourceSection
                   workspaceId={workspaceId}
-                  workspaceName={workspace?.name ?? "Course"}
                   assignment={assignment}
                   onNavigate={navigate}
                 />
@@ -394,8 +396,9 @@ export function LabAuthoring() {
           )}
 
           {activeStep === 2 && assignment && (
-            <LabSourceSection
+            <LabTheorySection
               workspaceId={workspaceId}
+              workspaceName={workspace?.name ?? "Course"}
               assignment={assignment}
               onNavigate={navigate}
             />
