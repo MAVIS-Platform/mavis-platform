@@ -997,7 +997,7 @@ test("project groups persist independently, restore active routes and tolerate d
   assert.doesNotThrow(() => render().toggle("Runtime", true));
 });
 
-test("lecturer sidebar nests class destinations and keeps both lab menus", () => {
+test("lecturer sidebar nests class destinations and keeps one Lab Creation menu", () => {
   const React = require("react"),
     { renderToStaticMarkup } = require("react-dom/server"),
     { ThemeProvider } = require("../src/components/theme-provider.tsx");
@@ -1048,6 +1048,8 @@ test("lecturer sidebar nests class destinations and keeps both lab menus", () =>
   assert.ok(html.includes('aria-label="Collapse SE180711 · FA menu"'));
   assert.ok(html.includes('href="/workspace-overview?workspace=class-1"'));
   assert.ok(html.includes('aria-label="Lab Creation" href="/lab-authoring?workspace=class-1"'));
+  assert.ok(!html.includes('aria-label="Lab Library"'));
+  assert.ok(!html.includes('aria-label="Theory Library"'));
   assert.ok(!html.includes("👨‍🏫 Lecturer"));
   assert.ok(html.includes("Sign out"));
 });
@@ -5160,6 +5162,7 @@ test("My Workspaces is a compact LMS class list with tabs and a module outline",
   assert.match(overviewHtml, /Overview &amp; Setup/);
   assert.match(overviewHtml, /Curriculum &amp; Materials/);
   assert.match(overviewHtml, /Lab Creation/);
+  assert.doesNotMatch(overviewHtml, /Lab Library/);
   assert.match(overviewHtml, /Grading &amp; Gradebook/);
   assert.match(overviewHtml, /Students &amp; Access/);
   assert.match(overviewHtml, /Enrolled Students/);

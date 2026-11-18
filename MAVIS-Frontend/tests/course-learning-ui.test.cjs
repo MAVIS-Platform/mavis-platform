@@ -668,7 +668,7 @@ test("Stage 1 reference views, Step 4 submit bridge, and student BFF endpoints a
   assert.ok(composer.includes("Run Static Analysis Now"));
 });
 
-test("Stage 3 lecturer 1-click curated course lab seeder is wired on courses and assignments pages", () => {
+test("Curated course seeding remains available without a standalone library card", () => {
   const access = read("src/features/workspaces/course-access.tsx");
   const course = read("src/features/courses/screens.tsx");
   const assignments = read("src/features/assignments/screens.tsx");
@@ -953,7 +953,7 @@ test("BFF allows Quiz draft, publish, versions and question bank paths", () => {
   assert.equal(allowedBackendPath(`workspaces/${workspace}/quiz-bank/unsafe`), false);
 });
 
-test("Lab Library is the class-facing lab store and Quiz can be generated from Lab theory", () => {
+test("Lab Library is available inside Lab Creation and Quiz can be generated from Lab theory", () => {
   const navigation = read("src/lib/navigation.ts");
   const assignments = read("src/features/assignments/screens.tsx");
   const authoring = read("src/features/assignments/lab-authoring.tsx");
@@ -962,8 +962,16 @@ test("Lab Library is the class-facing lab store and Quiz can be generated from L
   const publish = read("src/features/assignments/lab-publish-section.tsx");
   const theory = read("src/features/assignments/lab-theory-section.tsx");
 
-  assert.match(authoring, /en: "Lab Library"/);
+  assert.doesNotMatch(navigation, /label: "Lab Library"|label: "Theory Library"/);
+  assert.ok(authoring.includes('id: "library", en: "Lab Library"'));
+  assert.ok(authoring.includes('id: "theory-library", en: "Theory Library"'));
+  assert.ok(authoring.includes("<Assignments embedded />"));
+  assert.ok(authoring.includes("<TheoryLibrary />"));
   assert.match(navigation, /id: "lab-authoring"[\s\S]*?label: "Lab Creation"/);
+  assert.ok(authoring.includes('id: "library", en: "Lab Library"'));
+  assert.ok(authoring.includes('id: "theory-library", en: "Theory Library"'));
+  assert.ok(authoring.includes("<Assignments embedded />"));
+  assert.ok(authoring.includes("<TheoryLibrary />"));
   assert.doesNotMatch(navigation, /label: "Lab Authoring"/);
   assert.ok(assignments.includes("Library draft"));
   assert.ok(assignments.includes("In class"));
@@ -990,13 +998,15 @@ test("Lab Library is the class-facing lab store and Quiz can be generated from L
   assert.ok(studioExercise.includes("no code editing"));
 });
 
-test("Theory Library is a standalone workspace screen with editing and course publishing", () => {
+test("Theory Library is available inside Lab Creation with editing and course publishing", () => {
   const screen = read("src/features/workspaces/theory-library.tsx");
   const page = read("app/[screen]/page.tsx");
   const navigation = read("src/lib/navigation.ts");
+  const authoring = read("src/features/assignments/lab-authoring.tsx");
 
   assert.match(page, /"theory-library"/);
-  assert.match(read("src/features/assignments/lab-authoring.tsx"), /id: "theory-library"/);
+  assert.doesNotMatch(navigation, /id: "theory-library"/);
+  assert.ok(authoring.includes("<TheoryLibrary />"));
   assert.ok(screen.includes("theory-assets"));
   assert.ok(screen.includes("New lesson"));
   assert.ok(screen.includes("Edit theory lesson"));
