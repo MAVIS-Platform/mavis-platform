@@ -33,6 +33,12 @@ public final class JavaCourseraCatalog {
         );
     }
 
+    public static List<LessonSpec> allLessons() {
+        return modules().stream()
+                .flatMap(module -> module.lessons().stream())
+                .toList();
+    }
+
     public static CourseQuizService.Publish toQuizPublishRequest(CourseraModuleSpec module) {
         LessonSpec primary = module.lessons().isEmpty() ? null : module.lessons().getFirst();
         String lessonMarkdown = primary != null
