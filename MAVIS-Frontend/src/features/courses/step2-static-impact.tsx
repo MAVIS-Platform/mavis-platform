@@ -33,6 +33,7 @@ export function Step2StaticImpact({
   const { t } = useLocale();
   const [selectedTargetId, setSelectedTargetId] = useState<string>("");
   const [scope, setScope] = useState<ImpactScopeMode>("all");
+  const [demoLeafActive, setDemoLeafActive] = useState(false);
 
   const modelQueryResult = useApiQuery(
     "model",
@@ -229,7 +230,10 @@ export function Step2StaticImpact({
                   aria-label="Target element for Reverse BFS"
                   className="w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground"
                   value={activeTargetId}
-                  onChange={(event) => setSelectedTargetId(event.target.value)}
+                  onChange={(event) => {
+                    setDemoLeafActive(false);
+                    setSelectedTargetId(event.target.value);
+                  }}
                 >
                   {impact.candidateTargets.map((candidate) => (
                     <option key={candidate.id} value={candidate.id}>
@@ -244,7 +248,10 @@ export function Step2StaticImpact({
                   aria-label="Reverse BFS traversal scope"
                   className="w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground"
                   value={scope}
-                  onChange={(event) => setScope(event.target.value as ImpactScopeMode)}
+                  onChange={(event) => {
+                    setDemoLeafActive(false);
+                    setScope(event.target.value as ImpactScopeMode);
+                  }}
                 >
                   <option value="all">
                     {t("All architectural nodes", "Tất cả nút kiến trúc")}
@@ -256,6 +263,54 @@ export function Step2StaticImpact({
                 </select>
               </label>
             </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-muted/20 px-3 py-2 text-xs">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline" className="font-mono">
+                  Visited Set: {demoLeafActive ? 1 : 1 + impact.upstreamImpacted.length} {t("nodes visited cleanly", "node đã duyệt an toàn")}
+                </Badge>
+                <span className="text-muted-foreground">
+                  {t(
+                    "Cycle-safe Reverse BFS prevents infinite loops on mutual dependencies.",
+                    "Reverse BFS dùng Visited Set chống lặp vô hạn trên phụ thuộc vòng.",
+                  )}
+                </span>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant={demoLeafActive ? "default" : "outline"}
+                className={
+                  demoLeafActive
+                    ? "h-7 bg-amber-600 px-2.5 text-xs text-white hover:bg-amber-700"
+                    : "h-7 border-amber-300 px-2.5 text-xs text-amber-800 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-300"
+                }
+                onClick={() => setDemoLeafActive((cur) => !cur)}
+              >
+                🧪 {t("Test Isolated 0-Upstream Node (DS-03b)", "Test Node Cô lập 0 Upstream (Demo DS-03b)")}
+              </Button>
+            </div>
+
+            {(demoLeafActive || impact.upstreamImpacted.length === 0) && (
+              <div
+                role="status"
+                className="flex items-start gap-2.5 rounded-xl border border-amber-300 bg-amber-50/90 p-3 text-xs leading-5 text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100"
+              >
+                <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600" aria-hidden="true" />
+                <div>
+                  <p className="font-bold">
+                    DS-03b (Zero Upstream Impact) ·{" "}
+                    {demoLeafActive ? "audit-archiver-cron (Leaf Node)" : impact.targetName}
+                  </p>
+                  <p>
+                    {t(
+                      "This node has 0 inbound upstream callers — Blast Radius = 1 (Origin only, zero cascading upstream propagation).",
+                      "Node này không có thành phần gọi ngược (0 upstream callers) — Bán kính ảnh hưởng = 1 (Không lan truyền dây chuyền).",
+                    )}
+                  </p>
+                </div>
+              </div>
+            )}
 
             {impact.cyclesDetected && (
               <div
