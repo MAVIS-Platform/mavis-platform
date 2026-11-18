@@ -21,12 +21,13 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
-@Transactional(noRollbackFor = BusinessException.class)
+@Transactional
 public class CourseQuizService {
     private static final Set<String> QUESTION_TYPES = Set.of("SINGLE_CHOICE", "MULTI_CHOICE", "TRUE_FALSE");
     private final AssignmentRepository assignments;
@@ -154,13 +155,40 @@ public class CourseQuizService {
                 assignmentId, lab.getReferenceModel().getId());
     }
 
-    @Transactional(readOnly = true, noRollbackFor = BusinessException.class)
+    @Transactional(readOnly = true)
     public Quiz get(UUID workspaceId, UUID assignmentId) {
         access.requireWorkspaceMember(workspaceId);
         var user = access.requireCurrentActiveUser();
         var lab = lab(workspaceId, assignmentId, false);
         if (CourseLabPolicy.isStudent(user)) labs.requireOpen(lab, user);
         var quiz = current(lab);
+        String latestStatus = null;
+        if (CourseLabPolicy.isStudent(user)) {
+            latestStatus = labs.hasPassedQuizVersion(lab.getId(), user.getId(), quiz.version())
+                    ? "PASSED"
+                    : latestStatus(lab.getId(), user.getId(), quiz.version());
+        }
+        return view(quiz, latestStatus);
+    }
+
+    @Transactional(readOnly = true)
+    public Quiz getIfPublished(UUID workspaceId, UUID assignmentId) {
+        access.requireWorkspaceMember(workspaceId);
+        var user = access.requireCurrentActiveUser();
+        var labOpt = assignments.findById(assignmentId)
+                .filter(value -> workspaceId.equals(value.getWorkspace().getId()))
+                .filter(value -> value.getLabOrder() != null && value.getReferenceModel() != null
+                        && "ACTIVE".equals(value.getWorkspace().getStatus()));
+        if (labOpt.isEmpty()) {
+            return null;
+        }
+        var lab = labOpt.get();
+        if (CourseLabPolicy.isStudent(user)) labs.requireOpen(lab, user);
+        var quizOpt = findCurrent(lab);
+        if (quizOpt.isEmpty()) {
+            return null;
+        }
+        var quiz = quizOpt.get();
         String latestStatus = null;
         if (CourseLabPolicy.isStudent(user)) {
             latestStatus = labs.hasPassedQuizVersion(lab.getId(), user.getId(), quiz.version())
@@ -303,13 +331,17 @@ public class CourseQuizService {
                 """, assignmentId, version, modelId, parts.lesson(), parts.threshold(), questions);
     }
 
-    private Definition current(Assignment lab) {
+    private Optional<Definition> findCurrent(Assignment lab) {
         return jdbc.query("""
                 SELECT version, lesson, pass_percent, questions::text FROM course_quizzes
                 WHERE assignment_id = ? AND reference_model_id = ? ORDER BY version DESC LIMIT 1
                 """, (rs, row) -> new Definition(rs.getInt(1), rs.getString(2), rs.getInt(3),
                         normalizeQuestions(decode(rs.getString(4), new TypeReference<List<Question>>() {}))),
-                lab.getId(), lab.getReferenceModel().getId()).stream().findFirst()
+                lab.getId(), lab.getReferenceModel().getId()).stream().findFirst();
+    }
+
+    private Definition current(Assignment lab) {
+        return findCurrent(lab)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "QUIZ_NOT_PUBLISHED",
                         "Quiz has not been published"));
     }

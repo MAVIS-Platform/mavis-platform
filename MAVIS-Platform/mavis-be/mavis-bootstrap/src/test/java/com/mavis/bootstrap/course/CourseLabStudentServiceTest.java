@@ -176,7 +176,7 @@ class CourseLabStudentServiceTest {
         when(evidences.findByModelVersionId(refModel.getId())).thenReturn(List.of(ev));
         when(evaluations.findByModelVersionIdOrderByCreatedAtDesc(refModel.getId())).thenReturn(List.of(evalRun));
         when(evaluationFindings.findByEvaluationRunId(evalRun.getId())).thenReturn(List.of(finding));
-        when(courseQuizService.get(workspaceId, labId)).thenReturn(new CourseQuizService.Quiz(1, "Lesson", 80, List.of(), true, "PASSED", true));
+        when(courseQuizService.getIfPublished(workspaceId, labId)).thenReturn(new CourseQuizService.Quiz(1, "Lesson", 80, List.of(), true, "PASSED", true));
         when(runtimeSessions.findByAssignmentIdAndTriggeredBy_IdOrderByCreatedAtDesc(labId, student.getId())).thenReturn(List.of());
         when(runtimeSessions.findByProject_Workspace_IdAndTriggeredBy_IdOrderByCreatedAtDesc(workspaceId, student.getId())).thenReturn(List.of());
         UUID subId = UUID.randomUUID();

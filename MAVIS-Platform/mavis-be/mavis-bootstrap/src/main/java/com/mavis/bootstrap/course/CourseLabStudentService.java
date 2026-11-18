@@ -60,7 +60,7 @@ import java.util.Set;
 import java.util.UUID;
 
 @Service
-@Transactional(noRollbackFor = BusinessException.class)
+@Transactional
 public class CourseLabStudentService {
     private static final Set<String> ACTIVE_SESSION_STATUSES = Set.of("ALLOCATED", "RUNNING", "READY_FOR_DISPATCH");
 
@@ -205,7 +205,7 @@ public class CourseLabStudentService {
             SubmissionReviewService.View latestReview,
             JsonNode studioExercise) {}
 
-    @Transactional(readOnly = true, noRollbackFor = BusinessException.class)
+    @Transactional(readOnly = true)
     public StudentLabContextView studentContext(UUID workspaceId, UUID assignmentId) {
         User actor = access.requireCurrentActiveUser();
         access.requireWorkspaceMember(workspaceId);
@@ -219,13 +219,7 @@ public class CourseLabStudentService {
 
         CourseQuizService.Quiz quiz = null;
         if (lab.getLabOrder() != null && lab.getReferenceModel() != null) {
-            try {
-                quiz = courseQuizService.get(workspaceId, assignmentId);
-            } catch (BusinessException ex) {
-                if (ex.getErrorCode() != ErrorCode.NOT_FOUND) {
-                    throw ex;
-                }
-            }
+            quiz = courseQuizService.getIfPublished(workspaceId, assignmentId);
         }
 
         List<RuntimeSessionResponseDTO> studioSessions = listStudioSessions(workspaceId, assignmentId);
