@@ -4,12 +4,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import {
-  BookOpen,
   ClipboardCheck,
   FilePlus2,
   GraduationCap,
   LayoutGrid,
-  Library,
   Map,
   Users,
   Zap,
@@ -53,20 +51,6 @@ const STAFF_TABS: Array<{
     vi: "Đề cương & Học liệu",
     icon: GraduationCap,
     href: (ws) => `/workspace-overview?workspace=${encodeURIComponent(ws)}&view=course-authoring`,
-  },
-  {
-    id: "theory-library",
-    en: "Theory Library",
-    vi: "Thư viện lý thuyết",
-    icon: Library,
-    href: (ws) => `/theory-library?workspace=${encodeURIComponent(ws)}`,
-  },
-  {
-    id: "assignments",
-    en: "Lab Library",
-    vi: "Thư viện Lab",
-    icon: BookOpen,
-    href: (ws) => `/assignments?workspace=${encodeURIComponent(ws)}`,
   },
   {
     id: "lab-authoring",
@@ -122,9 +106,13 @@ const STUDENT_TABS: Array<{
 ];
 
 function resolveStaffTab(pathname: string | null, active: CourseWorkspaceTab): UnifiedStaffTab {
-  if (pathname === "/theory-library") return "theory-library";
-  if (pathname === "/lab-authoring") return "lab-authoring";
-  if (pathname === "/assignments") return "assignments";
+  if (
+    pathname === "/theory-library" ||
+    pathname === "/lab-authoring" ||
+    pathname === "/assignments"
+  ) {
+    return "lab-authoring";
+  }
   if (pathname === "/submissions" || active === "submissions" || active === "results") {
     return "submissions";
   }

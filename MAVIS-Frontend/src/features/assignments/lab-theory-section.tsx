@@ -454,7 +454,7 @@ export function LabTheorySection({
           )}
         </p>
         <Button asChild type="button" size="sm" variant="outline">
-          <Link href={`/theory-library?workspace=${encodeURIComponent(workspaceId)}`}>
+          <Link href={`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&section=theory-library`}>
             {t("Open Theory Library", "Mở Thư viện lý thuyết")}
           </Link>
         </Button>

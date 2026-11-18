@@ -341,17 +341,13 @@ function ShellChrome({
       ? params.get("view") === "course-authoring"
         ? "course-authoring"
         : "workspace-overview"
-      : pathname === "/theory-library"
-        ? "theory-library"
-        : pathname === "/assignments"
-          ? "assignments"
-          : pathname === "/lab-authoring"
-            ? "lab-authoring"
-            : pathname === "/submissions" && role === "lecturer"
-              ? "assignment-submissions"
-              : pathname === "/members"
-                ? "members"
-                : route.activeId;
+      : pathname === "/theory-library" || pathname === "/assignments" || pathname === "/lab-authoring"
+        ? "lab-authoring"
+        : pathname === "/submissions" && role === "lecturer"
+          ? "assignment-submissions"
+          : pathname === "/members"
+            ? "members"
+            : route.activeId;
   const activeWorkspaceNavId =
     selectedWorkspaceId && workspaces.some((w) => w.id === selectedWorkspaceId)
       ? `workspace:${selectedWorkspaceId}:${activeWorkspaceDestination}`

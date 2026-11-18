@@ -11,7 +11,6 @@ import {
   GitCompareArrows,
   GitFork,
   LayoutGrid,
-  Library,
   ListChecks,
   Network,
   Play,
@@ -176,18 +175,6 @@ export const lecturerWorkspaceNavigation: readonly NavigationGroup[] = [
         label: "Curriculum & Materials",
         icon: GraduationCap,
         href: "/workspace-overview?view=course-authoring",
-      },
-      {
-        id: "theory-library",
-        label: "Theory Library",
-        icon: Library,
-        href: "/theory-library",
-      },
-      {
-        id: "assignments",
-        label: "Lab Library",
-        icon: BookOpen,
-        href: "/assignments",
       },
       {
         id: "lab-authoring",

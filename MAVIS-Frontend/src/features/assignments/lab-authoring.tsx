@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import {
   Activity,
@@ -11,8 +11,10 @@ import {
   Circle,
   CircleHelp,
   Eye,
+  FilePlus2,
   GitBranch,
   Info,
+  Library,
   Plus,
   Rocket,
   type LucideIcon,
@@ -24,6 +26,8 @@ import { useApiQuery, useSelection, useSession } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { CourseWorkspaceShell } from "@/features/courses/course-workspace-shell";
 import { useCourseAuthoring, useCourseSetup } from "@/features/workspaces/course-access";
+import { TheoryLibrary } from "@/features/workspaces/theory-library";
+import { Assignments } from "./screens";
 import type { Assignment } from "./requirements";
 import { LabInfoForm } from "./lab-info-form";
 import { LabTheorySection } from "./lab-theory-section";
@@ -33,6 +37,7 @@ import { LabStudioSection } from "./lab-studio-section";
 import { LabPublishSection } from "./lab-publish-section";
 
 type Tab = "info" | "theory" | "source" | "quiz" | "studio" | "publish";
+type LabWorkspaceSection = "create" | "library" | "theory-library";
 
 const TAB_LABELS: Record<Tab, { en: string; vi: string; icon: LucideIcon }> = {
   info: { en: "Lab information", vi: "Thông tin Lab", icon: Info },
@@ -56,11 +61,23 @@ function isTab(value: string | null): value is Tab {
 
 export function LabAuthoring() {
   const { t } = useLocale();
+  const pathname = usePathname();
   const params = useSearchParams();
   const router = useRouter();
   const selection = useSelection();
   const session = useSession();
   const workspaceId = params?.get("workspace") || selection.workspaceId;
+  const requestedSection = params?.get("section");
+  const section: LabWorkspaceSection =
+    requestedSection === "library"
+      ? "library"
+      : requestedSection === "theory-library"
+        ? "theory-library"
+        : pathname === "/assignments"
+          ? "library"
+          : pathname === "/theory-library"
+            ? "theory-library"
+            : "create";
   const requestedAssignmentId = params?.get("assignment") || "";
   const [createdAssignmentId, setCreatedAssignmentId] = useState("");
   const requestedTab = params?.get("tab") ?? params?.get("step") ?? null;
@@ -132,7 +149,7 @@ export function LabAuthoring() {
             </Link>
             <span>·</span>
             <Link
-              href={`/assignments?workspace=${encodeURIComponent(workspaceId)}`}
+              href={`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&section=library`}
               className="hover:text-white hover:underline"
             >
               {t("Back to Lab Library", "Về Kho Lab")}
@@ -348,14 +365,58 @@ export function LabAuthoring() {
     </div>
   );
 
+  const sectionItems: Array<{
+    id: LabWorkspaceSection;
+    en: string;
+    vi: string;
+    icon: LucideIcon;
+  }> = [
+    { id: "create", en: "Lab Creation", vi: "Tạo Lab", icon: FilePlus2 },
+    { id: "library", en: "Lab Library", vi: "Thư viện Lab", icon: BookOpen },
+    { id: "theory-library", en: "Theory Library", vi: "Thư viện lý thuyết", icon: Library },
+  ];
+  const changeSection = (next: LabWorkspaceSection) => {
+    const query = new URLSearchParams(params?.toString() ?? "");
+    query.set("workspace", workspaceId);
+    query.set("section", next);
+    router.push("/lab-authoring?" + query.toString());
+  };
+  const hubContent = (
+    <div className="space-y-5">
+      <nav
+        aria-label={t("Lab workspace", "Không gian Lab")}
+        className="flex flex-wrap gap-2 rounded-xl border bg-card p-2"
+      >
+        {sectionItems.map((item) => {
+          const Icon = item.icon;
+          const active = section === item.id;
+          return (
+            <Button
+              key={item.id}
+              type="button"
+              size="sm"
+              variant={active ? "default" : "ghost"}
+              aria-pressed={active}
+              onClick={() => changeSection(item.id)}
+            >
+              <Icon className="mr-2 size-4" aria-hidden="true" />
+              {t(item.en, item.vi)}
+            </Button>
+          );
+        })}
+      </nav>
+      {section === "create" ? content : section === "library" ? <Assignments embedded /> : <TheoryLibrary />}
+    </div>
+  );
+
   return (
     <RequestState query={workspaces} empty={!workspace}>
       {workspace ? (
         <CourseWorkspaceShell workspace={workspace} active="lab-authoring">
-          {content}
+          {hubContent}
         </CourseWorkspaceShell>
       ) : (
-        content
+        hubContent
       )}
     </RequestState>
   );

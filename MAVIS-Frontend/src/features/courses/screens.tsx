@@ -23,7 +23,6 @@ import {
   RequestState,
 } from "@/components/shared/request-state";
 import {
-  SeedCuratedCourseLabs,
   useBootstrapLabStudio,
   useCourseRoadmap,
   usePublishedCourse,
@@ -484,7 +483,6 @@ export function CourseRoadmap() {
                       )}
                     </summary>
                     <div className="mt-4 space-y-5">
-                      <SeedCuratedCourseLabs workspaceId={workspaceId} />
                       <CourseBuilder workspaceId={workspaceId} />
                       <CourseSetupPanel workspaceId={workspaceId} />
                     </div>
