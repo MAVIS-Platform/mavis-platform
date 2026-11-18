@@ -1676,14 +1676,38 @@ function StepContent({
       )}
 
       {step === 2 && (
-        <Step2StaticImpact
-          projectId={projectId}
-          modelId={modelId}
-          modelQuery={modelQuery}
-          sourceLink={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=1${previewParam}`}
-          inlineModel={activeModel}
-          onOpenC1C3View={onOpenC1C3View}
-        />
+        <div className="space-y-5">
+          <Step2StaticImpact
+            projectId={projectId}
+            modelId={modelId}
+            modelQuery={modelQuery}
+            sourceLink={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=1${previewParam}`}
+            inlineModel={activeModel}
+            onOpenC1C3View={onOpenC1C3View}
+          />
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-teal-200 bg-gradient-to-r from-teal-50/70 to-emerald-50/60 p-4">
+            <Button asChild variant="outline">
+              <Link
+                href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=1${previewParam}`}
+              >
+                {t(
+                  "← Back to Step 1 (Theory)",
+                  "← Quay lại Bước 1 (Lý thuyết)",
+                )}
+              </Link>
+            </Button>
+            <Button asChild className="bg-teal-600 text-white hover:bg-teal-700">
+              <Link
+                href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=3${previewParam}`}
+              >
+                {t(
+                  "Next Step 3: Take Quiz to Unlock Studio Lab →",
+                  "Sang Bước 3: Làm Bài Quiz Mở Khóa Phòng Lab →",
+                )}
+              </Link>
+            </Button>
+          </div>
+        </div>
       )}
 
       {step === 3 && (
