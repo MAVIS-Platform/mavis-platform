@@ -75,6 +75,7 @@ export function RequestDemo() {
             <path
               key={to}
               d={path}
+              className={from === selected || to === selected ? "mavis-packet-edge" : undefined}
               vectorEffect="non-scaling-stroke"
               data-related={from === selected || to === selected}
               data-fault={stopped && to !== "Inventory"}

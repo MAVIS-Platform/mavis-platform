@@ -215,7 +215,7 @@
 
 :root {
   --font-ui: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
-  --font-technical: "Cascadia Code", Consolas, ui-monospace, monospace;
+  --font-technical: "JetBrains Mono", "Cascadia Code", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --radius: 1rem;
   --radius-technical: 0.5rem;
   --radius-control: 0.75rem;
@@ -316,6 +316,43 @@
   .mavis-content-layout.has-inline-details { grid-template-columns: minmax(0, 1fr) var(--detail-width); }
   .mavis-workspace-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--workspace-gap); }
   .mavis-graph-canvas { background-color: var(--background); background-image: radial-gradient(var(--border) 1px, transparent 1px); background-size: 20px 20px; }
+  .mavis-grid-pattern {
+    background-image: radial-gradient(color-mix(in oklch, var(--foreground) 11%, transparent) 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+  .mavis-hero-surface {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    background-color: var(--card);
+    background-image:
+      radial-gradient(640px 220px at 100% 0%, color-mix(in oklch, var(--primary) 12%, transparent), transparent 70%),
+      radial-gradient(color-mix(in oklch, var(--foreground) 8%, transparent) 1px, transparent 1px);
+    background-size: 100% 100%, 22px 22px;
+    box-shadow: var(--shadow-low);
+  }
+  .mavis-card-hover {
+    transition: transform 150ms var(--ease-standard), border-color 150ms var(--ease-standard), box-shadow 150ms var(--ease-standard);
+  }
+  .mavis-card-hover:hover {
+    transform: translateY(-2px);
+    border-color: color-mix(in oklch, var(--primary) 42%, var(--border));
+    box-shadow: 0 8px 20px -12px oklch(0.21 0.03 263 / 18%);
+  }
+  .mavis-tabular {
+    font-family: var(--font-technical);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@keyframes mavis-packet-flow {
+  from { stroke-dashoffset: 36; }
+  to { stroke-dashoffset: 0; }
+}
+.mavis-packet-edge {
+  stroke-dasharray: 6 6;
+  animation: mavis-packet-flow 1.4s linear infinite;
 }
 
 @container mavis-content (min-width: 1200px) { .mavis-workspace-grid { grid-template-columns: var(--filter-width) minmax(560px, 1fr) var(--detail-width); } }
