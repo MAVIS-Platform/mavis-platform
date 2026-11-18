@@ -40,6 +40,7 @@ export function LabInfoForm({
   const [labMode, setLabMode] = useState(
     assignment?.labMode ?? (assignment?.requireRuntimeTrace ? "THEORY_QUIZ_STUDIO" : "THEORY_QUIZ"),
   );
+  const [guideTab, setGuideTab] = useState<"write" | "preview">("write");
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -72,15 +73,19 @@ export function LabInfoForm({
   };
 
   return (
-    <form onSubmit={submit} className="space-y-6">
-      <section className="space-y-4 rounded-xl border bg-card p-5" aria-labelledby="lab-info-heading">
-        <div className="flex items-center gap-2 border-b pb-2">
-          <ClipboardList className="size-4 text-primary" aria-hidden="true" />
-          <h2 id="lab-info-heading" className="font-semibold">
-            {t("Lab information", "Thông tin Lab")}
-          </h2>
+    <form onSubmit={submit} className="space-y-5">
+      <section className="space-y-5 rounded-xl border bg-card p-5" aria-labelledby="lab-info-heading">
+        <div className="flex items-center justify-between gap-2 border-b pb-3">
+          <div className="flex items-center gap-2">
+            <ClipboardList className="size-4 text-primary" aria-hidden="true" />
+            <h2 id="lab-info-heading" className="text-base font-semibold">
+              {t("Lab information", "Thông tin Lab")}
+            </h2>
+          </div>
+          <span className="text-xs text-muted-foreground tabular-nums">{title.length}/255</span>
         </div>
-        <div className="grid gap-4 md:grid-cols-[minmax(0,1.2fr)_minmax(16rem,0.8fr)]">
+
+        <div className="grid gap-4 md:grid-cols-[minmax(0,1.4fr)_minmax(15rem,0.6fr)]">
           <label className="space-y-1.5 text-sm font-medium">
             <span>{t("Lab title", "Tên Lab")}</span>
             <Input
@@ -94,31 +99,58 @@ export function LabInfoForm({
               )}
               onChange={(event) => setTitle(event.target.value)}
             />
-            <span className="text-xs font-normal text-muted-foreground">{title.length}/255</span>
           </label>
           <label className="space-y-1.5 text-sm font-medium">
             <span>{t("Due date (optional)", "Hạn nộp (không bắt buộc)")}</span>
             <Input type="datetime-local" value={due} onChange={(event) => setDue(event.target.value)} />
           </label>
         </div>
-        <div className="grid gap-4 lg:grid-cols-2">
-          <label className="block space-y-1.5 text-sm font-medium">
-            <span>{t("Instructions, learning goals and completion criteria", "Hướng dẫn, mục tiêu và tiêu chí hoàn thành")}</span>
+
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <label htmlFor="lab-instructions-input" className="text-sm font-medium">
+              {t("Instructions, learning goals and completion criteria", "Hướng dẫn, mục tiêu và tiêu chí hoàn thành")}
+            </label>
+            <div className="inline-flex rounded-lg border bg-muted/40 p-0.5 text-xs">
+              <button
+                type="button"
+                onClick={() => setGuideTab("write")}
+                className={`rounded-md px-2.5 py-1 font-medium transition-colors ${
+                  guideTab === "write"
+                    ? "bg-background text-foreground shadow-xs"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {t("Write", "Soạn thảo")}
+              </button>
+              <button
+                type="button"
+                onClick={() => setGuideTab("preview")}
+                className={`rounded-md px-2.5 py-1 font-medium transition-colors ${
+                  guideTab === "preview"
+                    ? "bg-background text-foreground shadow-xs"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {t("Preview", "Xem trước")}
+              </button>
+            </div>
+          </div>
+          {guideTab === "write" ? (
             <Textarea
+              id="lab-instructions-input"
               aria-label="Assignment instructions"
               maxLength={10000}
-              rows={7}
+              rows={6}
               value={instructions}
               placeholder={t(
-                "Describe the learning goal, what students should investigate, the required evidence and the completion criteria.",
-                "Nêu mục tiêu học tập, nội dung sinh viên cần khảo sát, bằng chứng cần nộp và tiêu chí hoàn thành.",
+                "Describe the learning goal, what students should investigate, the required evidence and the completion criteria (Markdown supported).",
+                "Nêu mục tiêu học tập, nội dung sinh viên cần khảo sát, bằng chứng cần nộp và tiêu chí hoàn thành (hỗ trợ Markdown).",
               )}
               onChange={(event) => setInstructions(event.target.value)}
             />
-          </label>
-          <div className="space-y-1.5 text-sm font-medium">
-            <span>{t("Live guide preview (Markdown)", "Xem trước hướng dẫn (Markdown)")}</span>
-            <div className="min-h-40 rounded-lg border bg-background p-3.5 text-sm font-normal">
+          ) : (
+            <div className="min-h-36 rounded-lg border bg-background p-4 text-sm">
               {instructions.trim() ? (
                 <MarkdownPreview markdown={instructions} />
               ) : (
@@ -130,70 +162,76 @@ export function LabInfoForm({
                 </p>
               )}
             </div>
+          )}
+        </div>
+
+        <div className="space-y-3 border-t pt-4" aria-labelledby="lab-mode-heading">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Rocket className="size-4 text-primary" aria-hidden="true" />
+              <h3 id="lab-mode-heading" className="text-sm font-semibold">
+                {t("Lab mode", "Hình thức Lab")}
+              </h3>
+            </div>
+            <span className="text-xs text-muted-foreground">
+              {t(
+                "Students do not submit diagrams or a model version. C1–C3 are read-only theory content linked to the sample repository.",
+                "Sinh viên không nộp diagram hay model version. C1–C3 là lý thuyết chỉ đọc gắn với repo mẫu.",
+              )}
+            </span>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <button
+              type="button"
+              aria-pressed={!requireRuntimeTrace}
+              onClick={() => {
+                setRequireRuntimeTrace(false);
+                setLabMode("THEORY_QUIZ");
+              }}
+              className={`space-y-1 rounded-lg border p-3.5 text-left transition-colors ${
+                !requireRuntimeTrace
+                  ? "border-primary bg-primary/8 ring-1 ring-primary/30"
+                  : "hover:bg-muted/40"
+              }`}
+            >
+              <span className="block text-sm font-semibold">
+                {t("Theory + Quiz", "Lý thuyết + Quiz")}
+              </span>
+              <span className="block text-xs leading-5 text-muted-foreground">
+                {t(
+                  "Lesson, sample repository and C1–C3 reference views plus the Quiz gate. No runtime session.",
+                  "Bài học, repo mẫu và C1–C3 tham chiếu cùng Quiz gate. Không có phiên runtime.",
+                )}
+              </span>
+            </button>
+            <button
+              type="button"
+              aria-pressed={requireRuntimeTrace}
+              onClick={() => {
+                setRequireRuntimeTrace(true);
+                setLabMode("THEORY_QUIZ_STUDIO");
+              }}
+              className={`space-y-1 rounded-lg border p-3.5 text-left transition-colors ${
+                requireRuntimeTrace
+                  ? "border-primary bg-primary/8 ring-1 ring-primary/30"
+                  : "hover:bg-muted/40"
+              }`}
+            >
+              <span className="block text-sm font-semibold">
+                {t("Theory + Quiz + Studio", "Lý thuyết + Quiz + Studio")}
+              </span>
+              <span className="block text-xs leading-5 text-muted-foreground">
+                {t(
+                  "Adds a real MAVIS Studio Live practice and evidence step after the Quiz.",
+                  "Thêm bước thực hành MAVIS Studio Live thật và minh chứng sau Quiz.",
+                )}
+              </span>
+            </button>
           </div>
         </div>
       </section>
 
-      <section className="space-y-4 rounded-xl border bg-card p-5" aria-labelledby="lab-mode-heading">
-        <div className="flex items-center gap-2 border-b pb-2">
-          <Rocket className="size-4 text-primary" aria-hidden="true" />
-          <h2 id="lab-mode-heading" className="font-semibold">
-            {t("Lab mode", "Hình thức Lab")}
-          </h2>
-        </div>
-        <div className="grid gap-3 md:grid-cols-2">
-          <button
-            type="button"
-            aria-pressed={!requireRuntimeTrace}
-            onClick={() => {
-              setRequireRuntimeTrace(false);
-              setLabMode("THEORY_QUIZ");
-            }}
-            className={`space-y-1 rounded-xl border p-4 text-left transition-colors ${
-              !requireRuntimeTrace ? "border-primary bg-primary/5" : "hover:bg-muted/40"
-            }`}
-          >
-            <span className="block text-sm font-semibold">
-              {t("Theory + Quiz", "Lý thuyết + Quiz")}
-            </span>
-            <span className="block text-xs leading-5 text-muted-foreground">
-              {t(
-                "Lesson, sample repository and C1–C3 reference views plus the Quiz gate. No runtime session.",
-                "Bài học, repo mẫu và C1–C3 tham chiếu cùng Quiz gate. Không có phiên runtime.",
-              )}
-            </span>
-          </button>
-          <button
-            type="button"
-            aria-pressed={requireRuntimeTrace}
-            onClick={() => {
-              setRequireRuntimeTrace(true);
-              setLabMode("THEORY_QUIZ_STUDIO");
-            }}
-            className={`space-y-1 rounded-xl border p-4 text-left transition-colors ${
-              requireRuntimeTrace ? "border-primary bg-primary/5" : "hover:bg-muted/40"
-            }`}
-          >
-            <span className="block text-sm font-semibold">
-              {t("Theory + Quiz + Studio", "Lý thuyết + Quiz + Studio")}
-            </span>
-            <span className="block text-xs leading-5 text-muted-foreground">
-              {t(
-                "Adds a real MAVIS Studio Live practice and evidence step after the Quiz.",
-                "Thêm bước thực hành MAVIS Studio Live thật và minh chứng sau Quiz.",
-              )}
-            </span>
-          </button>
-        </div>
-        <p className="rounded-lg border bg-muted/30 p-3 text-xs leading-5 text-muted-foreground">
-          {t(
-            "Students do not submit diagrams or a model version. C1–C3 are read-only theory content linked to the sample repository.",
-            "Sinh viên không nộp diagram hay model version. C1–C3 là nội dung lý thuyết chỉ đọc gắn với repo mẫu.",
-          )}
-        </p>
-      </section>
-
-      <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-xs text-muted-foreground">
           {t(
             "Saving creates a draft Lab. Attach the reference source and publish it in the next steps.",

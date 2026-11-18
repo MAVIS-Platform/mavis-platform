@@ -129,112 +129,103 @@ export function LabAuthoring() {
     { id: "quiz", done: Boolean(setupLab?.quizPublished), enabled: Boolean(assignment) },
     {
       id: "studio",
-      done: !assignment?.requireRuntimeTrace || Boolean(setupLab?.topologyFrozen),
+      done: Boolean(assignment && (!assignment.requireRuntimeTrace || setupLab?.topologyFrozen)),
       enabled: Boolean(assignment),
     },
     { id: "publish", done: Boolean(setupLab?.published), enabled: Boolean(assignment) },
   ];
 
   const header = (
-    <header className="space-y-4 rounded-2xl border border-teal-200/80 bg-gradient-to-r from-teal-900 via-teal-800 to-emerald-700 p-5 text-white shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0 space-y-2">
-          <div className="flex flex-wrap items-center gap-2 text-xs text-teal-100">
-            <Link
-              href={`/workspace-overview?workspace=${encodeURIComponent(workspaceId)}`}
-              className="inline-flex items-center gap-1 font-medium text-white hover:underline"
-            >
-              <ArrowLeft className="size-3.5" aria-hidden="true" />
-              {t("Back to Class Curriculum", "Quay lại Giáo trình lớp học")}
-            </Link>
-            <span>·</span>
-            <Link
-              href={`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&section=library`}
-              className="hover:text-white hover:underline"
-            >
-              {t("Back to Lab Library", "Về Kho Lab")}
-            </Link>
-            <span>·</span>
-            <span>{workspace?.name ?? t("Class", "Lớp")}</span>
-            {assignment?.referenceSource?.revision ? (
-              <>
-                <span>·</span>
-                <span>
-                  {t("Ref rev", "Rev tham chiếu")} {assignment.referenceSource.revision}
-                </span>
-              </>
-            ) : null}
-          </div>
-          <div className="flex flex-wrap items-center gap-2.5">
-            <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
-              {assignment?.title ?? t("Create a new Lesson / Lab", "Tạo Bài Học / Lab Mới")}
-            </h1>
-            {assignment && (
-              <Badge className="border-white/30 bg-white/15 text-white">
-                {setupLab?.published ? t("Published", "Đã công bố") : t("Draft", "Bản nháp")}
-              </Badge>
-            )}
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {allLabs.length > 0 && (
-            <select
-              aria-label={t("Switch Lab", "Chuyển nhanh bài Lab")}
-              value={activeAssignmentId}
-              onChange={(event) => {
-                const nextId = event.target.value;
-                if (!nextId) return;
-                router.push(
-                  `/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(nextId)}&tab=info`,
-                );
-              }}
-              className="h-9 max-w-[220px] rounded-lg border border-white/30 bg-white/15 px-2.5 text-xs font-medium text-white backdrop-blur-xs focus:outline-none"
-            >
-              <option value="" className="text-slate-900">
-                {t("Switch Lab…", "Chuyển bài học…")}
-              </option>
-              {allLabs.map((item) => (
-                <option key={item.id} value={item.id} className="text-slate-900">
-                  {item.title}
-                </option>
-              ))}
-            </select>
-          )}
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white"
-            onClick={() => {
-              setCreatedAssignmentId("");
-              setTab("info");
-              router.push(`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&tab=info`);
-            }}
+    <header className="flex flex-wrap items-center justify-between gap-4 rounded-xl border bg-card px-5 py-4">
+      <div className="min-w-0 space-y-1">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <Link
+            href={`/workspace-overview?workspace=${encodeURIComponent(workspaceId)}`}
+            className="inline-flex items-center gap-1 font-medium text-foreground hover:underline"
           >
-            <Plus className="mr-1 size-4" aria-hidden="true" />
-            {t("New Lab", "+ Tạo Bài Học Mới")}
-          </Button>
+            <ArrowLeft className="size-3.5" aria-hidden="true" />
+            {t("Back to Class Curriculum", "Quay lại Giáo trình lớp học")}
+          </Link>
+          <span>·</span>
+          <Link
+            href={`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&section=library`}
+            className="hover:text-foreground hover:underline"
+          >
+            {t("Back to Lab Library", "Về Kho Lab")}
+          </Link>
+          {assignment?.referenceSource?.revision ? (
+            <>
+              <span>·</span>
+              <span>
+                {t("Ref rev", "Rev tham chiếu")} {assignment.referenceSource.revision}
+              </span>
+            </>
+          ) : null}
+        </div>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <h1 className="text-lg font-semibold tracking-tight sm:text-xl">
+            {assignment?.title ?? t("Create a new Lesson / Lab", "Tạo Bài Học / Lab Mới")}
+          </h1>
           {assignment && (
-            <Button
-              asChild
-              size="sm"
-              className="bg-emerald-500 text-white hover:bg-emerald-600"
-            >
-              <Link
-                href={`/lab?${new URLSearchParams({
-                  workspace: workspaceId,
-                  assignment: assignment.id,
-                  step: "1",
-                  preview: "1",
-                })}`}
-              >
-                <Eye className="mr-1 size-4" aria-hidden="true" />
-                {t("Preview as student", "Xem trước như sinh viên")}
-              </Link>
-            </Button>
+            <Badge variant={setupLab?.published ? "success" : "secondary"}>
+              {setupLab?.published ? t("Published", "Đã công bố") : t("Draft", "Bản nháp")}
+            </Badge>
           )}
         </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        {allLabs.length > 0 && (
+          <select
+            aria-label={t("Switch Lab", "Chuyển nhanh bài Lab")}
+            value={activeAssignmentId}
+            onChange={(event) => {
+              const nextId = event.target.value;
+              if (!nextId) return;
+              router.push(
+                `/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(nextId)}&tab=info`,
+              );
+            }}
+            className="h-8 max-w-[220px] rounded-md border bg-background px-2.5 text-xs font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+          >
+            <option value="">
+              {t("Switch Lab…", "Chuyển bài học…")}
+            </option>
+            {allLabs.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.title}
+              </option>
+            ))}
+          </select>
+        )}
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={() => {
+            setCreatedAssignmentId("");
+            setTab("info");
+            router.push(`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&tab=info`);
+          }}
+        >
+          <Plus className="mr-1 size-3.5" aria-hidden="true" />
+          {t("New Lab", "Tạo Lab mới")}
+        </Button>
+        {assignment && (
+          <Button asChild size="sm">
+            <Link
+              href={`/lab?${new URLSearchParams({
+                workspace: workspaceId,
+                assignment: assignment.id,
+                step: "1",
+                preview: "1",
+              })}`}
+            >
+              <Eye className="mr-1 size-3.5" aria-hidden="true" />
+              {t("Preview as student", "Xem trước như sinh viên")}
+            </Link>
+          </Button>
+        )}
       </div>
     </header>
   );
@@ -266,51 +257,46 @@ export function LabAuthoring() {
   }
 
   const content = (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {header}
-      <div className="grid gap-5 lg:grid-cols-[260px_minmax(0,1fr)]">
-        <nav
-          aria-label={t("Lab creation steps", "Các bước tạo Lab")}
-          className="space-y-1 rounded-xl border bg-card p-3 h-fit"
-        >
-          {navItems.map((item, index) => {
-            const meta = TAB_LABELS[item.id];
-            const Icon = meta.icon;
-            const active = tab === item.id;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                disabled={!item.enabled}
-                onClick={() => navigate(item.id)}
-                aria-current={active ? "step" : undefined}
-                className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm transition-colors ${
-                  active ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                } disabled:cursor-not-allowed disabled:opacity-50`}
-              >
-                <span className="grid size-5 shrink-0 place-items-center">
-                  {item.done ? (
-                    <CheckCircle2 className="size-4 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
-                  ) : (
-                    <Circle className="size-4" aria-hidden="true" />
-                  )}
-                </span>
-                <Icon className="size-4 shrink-0" aria-hidden="true" />
-                <span className="min-w-0 flex-1">
-                  {index + 1}. {t(meta.en, meta.vi)}
-                </span>
-              </button>
-            );
-          })}
-          <p className="mt-2 border-t px-2 pt-3 text-xs leading-5 text-muted-foreground">
-            {t(
-              "Saving a step does not publish it. Publishing and freezing remain explicit actions.",
-              "Lưu một bước không tự công bố. Công bố và đóng băng vẫn là thao tác riêng.",
-            )}
-          </p>
-        </nav>
+      <nav
+        aria-label={t("Lab creation steps", "Các bước tạo Lab")}
+        className="grid gap-1.5 rounded-xl border bg-card p-2 sm:grid-cols-3 lg:grid-cols-6"
+      >
+        {navItems.map((item, index) => {
+          const meta = TAB_LABELS[item.id];
+          const Icon = meta.icon;
+          const active = tab === item.id;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              disabled={!item.enabled}
+              onClick={() => navigate(item.id)}
+              aria-current={active ? "step" : undefined}
+              className={`flex items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-medium transition-colors ${
+                active
+                  ? "bg-primary/10 text-primary ring-1 ring-primary/30"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              } disabled:cursor-not-allowed disabled:opacity-45`}
+            >
+              <span className="grid size-4 shrink-0 place-items-center">
+                {item.done ? (
+                  <CheckCircle2 className="size-4 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+                ) : (
+                  <Circle className="size-3.5" aria-hidden="true" />
+                )}
+              </span>
+              <Icon className="size-3.5 shrink-0" aria-hidden="true" />
+              <span className="min-w-0 truncate">
+                {index + 1}. {t(meta.en, meta.vi)}
+              </span>
+            </button>
+          );
+        })}
+      </nav>
 
-        <main className="min-w-0">
+      <main className="min-w-0">
           {tab === "info" && (
             <LabInfoForm
               key={assignment?.id ?? "new-lab"}
@@ -360,8 +346,7 @@ export function LabAuthoring() {
               {t("Save the Lab information first.", "Hãy lưu thông tin Lab trước.")}
             </p>
           )}
-        </main>
-      </div>
+      </main>
     </div>
   );
 
