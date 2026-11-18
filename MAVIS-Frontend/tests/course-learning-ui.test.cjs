@@ -46,21 +46,21 @@ test("student navigation locks class sidebar to 3 clean course items and preserv
 
   for (const label of [
     "My Courses",
+    "Lab Roadmap & Course",
     "My Grades & Submissions",
-    "Free Studio Sandbox",
     "My Classes",
+    "Curriculum & Labs",
     "Grading & Gradebook",
-    "MAVIS Studio",
-    "Admin Control Center",
+    "System Overview",
     "Users & Roles",
-    "Runtime & Quotas",
-    "Audit & Jobs",
+    "Governance & Audit",
   ])
     assert.ok(navigation.includes(label), label);
   assert.match(navigation, /href:\s*"\/courses"/);
+  assert.match(navigation, /href:\s*"\/roadmap"/);
   assert.match(navigation, /href:\s*"\/submissions"/);
-  assert.match(navigation, /href:\s*"\/studio"/);
   assert.match(navigation, /href:\s*"\/workspaces"/);
+  assert.match(navigation, /href:\s*"\/workspace-overview"/);
   assert.match(navigation, /href:\s*"\/administration\/health"/);
 });
 
@@ -73,7 +73,7 @@ test("student course landing prioritizes joined classes, defers curriculum and k
   assert.ok(course.includes("Continue learning"));
   assert.ok(course.includes("Reference materials: Java and C#"));
   assert.match(curriculum, /useCurriculum\(open\)/);
-  assert.ok(nav.includes('href: "/courses"') && nav.includes('href: "/submissions"') && nav.includes('href: "/studio"'));
+  assert.ok(nav.includes('href: "/courses"') && nav.includes('href: "/submissions"') && nav.includes('href: "/roadmap"'));
 });
 
 test("student class outline uses published roadmap and markdown activities with a legacy roadmap fallback", () => {

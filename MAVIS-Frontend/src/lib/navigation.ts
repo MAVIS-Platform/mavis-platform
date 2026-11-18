@@ -61,12 +61,17 @@ export const globalNavigation: Record<AppRole, readonly NavigationGroup[]> = {
       items: [
         { id: "courses", label: "My Courses", icon: GraduationCap, href: "/courses" },
         {
+          id: "roadmap",
+          label: "Lab Roadmap & Course",
+          icon: BookOpen,
+          href: "/roadmap",
+        },
+        {
           id: "submissions",
           label: "My Grades & Submissions",
           icon: ClipboardCheck,
           href: "/submissions",
         },
-        { id: "studio", label: "Free Studio Sandbox", icon: Boxes, href: "/studio" },
       ],
     },
   ],
@@ -76,12 +81,17 @@ export const globalNavigation: Record<AppRole, readonly NavigationGroup[]> = {
       items: [
         { id: "workspaces", label: "My Classes", icon: Users, href: "/workspaces" },
         {
+          id: "workspace-overview",
+          label: "Curriculum & Labs",
+          icon: BookOpen,
+          href: "/workspace-overview",
+        },
+        {
           id: "submissions",
           label: "Grading & Gradebook",
           icon: ClipboardCheck,
           href: "/submissions",
         },
-        { id: "studio", label: "MAVIS Studio", icon: Boxes, href: "/studio" },
       ],
     },
   ],
@@ -89,15 +99,14 @@ export const globalNavigation: Record<AppRole, readonly NavigationGroup[]> = {
     {
       label: "System Administration",
       items: [
-        { id: "health", label: "Admin Control Center", icon: Activity, href: "/administration/health" },
+        { id: "health", label: "System Overview", icon: Activity, href: "/administration/health" },
         { id: "users", label: "Users & Roles", icon: Users, href: "/administration/users" },
         {
           id: "profiles",
-          label: "Runtime & Quotas",
+          label: "Governance & Audit",
           icon: ShieldCheck,
           href: "/administration/profiles",
         },
-        { id: "audit", label: "Audit & Jobs", icon: ScrollText, href: "/administration/audit" },
       ],
     },
   ],

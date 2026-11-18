@@ -806,7 +806,6 @@ test("project navigation preserves every destination and keeps role menus intact
       { id: "health", href: "/administration/health" },
       { id: "users", href: "/administration/users" },
       { id: "profiles", href: "/administration/profiles" },
-      { id: "audit", href: "/administration/audit" },
     ],
   );
   assert.equal(contextualNavigation("admin", "project").length, 0);
@@ -814,12 +813,8 @@ test("project navigation preserves every destination and keeps role menus intact
     globalNavigation.admin.flatMap((g) => g.items).some((i) => i.href === "/administration/studio"),
     false,
   );
-  for (const role of ["student", "lecturer"])
-    assert.ok(
-      globalNavigation[role]
-        .flatMap((g) => g.items)
-        .some((i) => i.id === "studio" && i.href === "/studio"),
-    );
+  assert.equal(globalNavigation.student.flatMap((g) => g.items).length, 3);
+  assert.equal(globalNavigation.lecturer.flatMap((g) => g.items).length, 3);
 });
 
 test("lecturer workspace navigation exposes unified class command destinations without adding them to student navigation", () => {
@@ -847,7 +842,7 @@ test("lecturer workspace navigation exposes unified class command destinations w
   assert.ok(
     globalNavigation.lecturer
       .flatMap((group) => group.items)
-      .some((item) => item.id === "studio" && item.href === "/studio"),
+      .some((item) => item.id === "workspace-overview" && item.href === "/workspace-overview"),
   );
   assert.equal(
     globalNavigation.student
