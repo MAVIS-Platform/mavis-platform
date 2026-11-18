@@ -6,7 +6,6 @@ import { useApi, useApiQuery } from "@/hooks/use-api";
 import type { ArchitecturalModel } from "@/types/domain";
 import { SelectField } from "@/components/shared/forms";
 import { DrawioEditor, MxGraphNativeSvgPreview } from "./drawio-editor";
-import { HumanC4Diagram } from "./human-c4-diagram";
 import { ScenarioDiagram } from "./scenario-diagram";
 import { UmlDiagramWorkspace } from "./uml-diagram-workspace";
 import { SearchableThreeESelect } from "./three-e-searchable-select";
@@ -77,9 +76,6 @@ export function ArchitectureDiagrams({
   const [kind, setKind] = useState<DiagramKind>(initialKind),
     [service, setService] = useState(""),
     [theme, setTheme] = useState<DrawioTheme>("clean"),
-    [renderEngine, setRenderEngine] = useState<"human" | "drawio">(
-      guidedStatic ? "human" : "drawio",
-    ),
     [c4AiEnrichment, setC4AiEnrichment] = useState<C4AiDiagramEnrichment | null>(null),
     [generatedState, setGeneratedState] = useState<{ targetKey: string; xml: string }>({
       targetKey: "",
@@ -259,13 +255,10 @@ export function ArchitectureDiagrams({
   }
   const showServiceSelect = ["COMPONENT", "LOGICAL"].includes(kind);
   const showServiceScopeSelect = ["UML_CLASS", "UML_PACKAGE"].includes(kind);
-  const supportsHumanC4 = kind === "CONTEXT" || kind === "CONTAINER" || kind === "COMPONENT";
-  const useHumanC4 = supportsHumanC4 && renderEngine === "human";
   return (
     <section aria-label="Architecture diagrams" className="min-w-0 space-y-2.5">
-      {(!hideKindSelector || showServiceSelect || showServiceScopeSelect || supportsHumanC4) && (
-        <div data-tour="diagram-type-bar" className="flex flex-wrap items-end justify-between gap-3 rounded-xl border bg-card p-3">
-          <div className="flex flex-wrap items-end gap-3">
+      {(!hideKindSelector || showServiceSelect || showServiceScopeSelect) && (
+        <div data-tour="diagram-type-bar" className="flex flex-wrap items-end gap-3 rounded-xl border bg-card p-3">
           {!hideKindSelector && (
             <div className="w-full sm:w-64">
               <SelectField
@@ -305,42 +298,9 @@ export function ArchitectureDiagrams({
               />
             </div>
           )}
-          </div>
-          {supportsHumanC4 && (
-            <div
-              className="inline-flex rounded-lg border bg-muted/40 p-0.5 text-xs"
-              role="group"
-              aria-label={t("Diagram view mode", "Chế độ hiển thị sơ đồ")}
-            >
-              <button
-                type="button"
-                onClick={() => setRenderEngine("human")}
-                className={`rounded-md px-2.5 py-1.5 font-medium transition-colors ${
-                  useHumanC4
-                    ? "bg-card text-foreground shadow-xs"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {t("Clean C4 View", "Sơ đồ C4 tự nhiên")}
-              </button>
-              <button
-                type="button"
-                onClick={() => setRenderEngine("drawio")}
-                className={`rounded-md px-2.5 py-1.5 font-medium transition-colors ${
-                  !useHumanC4
-                    ? "bg-card text-foreground shadow-xs"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {guidedStatic
-                  ? t("Technical Draw.io", "Bản Draw.io gốc")
-                  : t("Draw.io Editor", "Trình sửa Draw.io")}
-              </button>
-            </div>
-          )}
         </div>
       )}
-      {selection.notice && !isUmlWorkspaceKind && !useHumanC4 && (
+      {selection.notice && !isUmlWorkspaceKind && (
         <p
           role="status"
           className="rounded-lg border bg-muted/30 p-3 text-xs leading-5 text-muted-foreground"
@@ -352,16 +312,7 @@ export function ArchitectureDiagrams({
         </p>
       )}
       <div data-tour="diagram-canvas">
-      {useHumanC4 ? (
-        <HumanC4Diagram
-          model={model}
-          kind={kind}
-          containerId={container?.id}
-          systemName={systemName}
-          selectedId={selectedId}
-          onSelect={onSelect}
-        />
-      ) : kind === "SCENARIOS" || kind === "UML_SEQUENCE" ? (
+      {kind === "SCENARIOS" || kind === "UML_SEQUENCE" ? (
         <ScenarioDiagram
           model={model}
           selectedId={selectedId}
