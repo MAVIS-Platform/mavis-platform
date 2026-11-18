@@ -482,6 +482,7 @@ function ShellChrome({
                 preview={Boolean(onPreviewNavigate)}
                 onNavigate={navigatePreview}
                 label="Contextual navigation"
+                hideGroupHeading={role === "student" && scope === "workspace"}
                 {...(scope === "project" && !live
                   ? { expandedGroups: projectGroups.groups, onToggleGroup: projectGroups.toggle }
                   : {})}
@@ -816,6 +817,7 @@ function NavigationGroups({
   expandedGroups,
   onToggleGroup,
   collapsibleGroupLabels,
+  hideGroupHeading = false,
 }: {
   groups: readonly NavigationGroup[];
   collapsed: boolean;
@@ -827,6 +829,7 @@ function NavigationGroups({
   expandedGroups?: Record<string, boolean>;
   onToggleGroup?: (group: string, open: boolean) => void;
   collapsibleGroupLabels?: readonly string[];
+  hideGroupHeading?: boolean;
 }) {
   const { t } = useLocale();
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
@@ -943,7 +946,7 @@ function NavigationGroups({
         }
         return (
           <div key={group.label}>
-            {!collapsed && (
+            {!collapsed && !hideGroupHeading && (
               <p className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
                 {t(group.label)}
               </p>
