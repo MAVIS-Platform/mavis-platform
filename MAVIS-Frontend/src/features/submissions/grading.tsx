@@ -73,7 +73,7 @@ export function GradingPanel({
                 }
               />
               {query.data.score !== null && (
-                <span className="text-xl font-semibold">{query.data.score} / 100</span>
+                <span className="mavis-tabular text-xl font-semibold">{query.data.score} / 100</span>
               )}
               {resolveSubmissionOutcome(query.data) && (
                 <Badge
@@ -541,8 +541,29 @@ export function GradeForm({
         </p>
       )}
       {valid && outcome && (
-        <div className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2 text-sm">
-          <span className="text-muted-foreground">{t("Calculated outcome")}</span>
+        <div
+          className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2.5 text-xs ${
+            outcome === "PASS"
+              ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-900 dark:text-emerald-200"
+              : "border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-200"
+          }`}
+        >
+          <div className="space-y-0.5">
+            <span className="font-semibold">
+              {t("Calculated outcome", "Kết quả dự kiến (BR-10)")}:{" "}
+              {outcome === "PASS"
+                ? t("PASS — unlocks the next Lab", "ĐẠT — tự động mở khóa Lab kế tiếp")
+                : t(
+                    "NEEDS REVISION — next Lab remains locked",
+                    "CẦN SỬA LẠI — Lab kế tiếp vẫn khóa",
+                  )}
+            </span>
+            {computedScale100 !== null && (
+              <p className="mavis-tabular opacity-85">
+                {t("Overall equivalent", "Quy đổi tổng điểm")}: {computedScale100} / 100
+              </p>
+            )}
+          </div>
           <Badge variant={outcome === "PASS" ? "success" : "warning"}>{outcome}</Badge>
         </div>
       )}
@@ -557,7 +578,10 @@ export function GradeForm({
         </p>
       )}
       {!summary.trim() && value !== null && (
-        <p role="status" className="text-sm text-muted-foreground">
+        <p
+          role="status"
+          className="rounded-lg border border-primary/25 bg-primary/5 px-3 py-2 text-xs font-medium text-foreground"
+        >
           {t("Add an overall review before publishing or returning this snapshot.")}
         </p>
       )}

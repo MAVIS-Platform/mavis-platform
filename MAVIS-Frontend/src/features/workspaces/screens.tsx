@@ -244,7 +244,7 @@ export function Workspaces() {
                       </span>
                     )}
                     <Link
-                      href={`/workspace-members?workspace=${encodeURIComponent(workspace.id)}`}
+                      href={`/members?workspace=${encodeURIComponent(workspace.id)}`}
                       className="inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 font-medium text-emerald-700 hover:bg-emerald-100"
                     >
                       🔑 {t("Passkey", "Passkey lớp")}
