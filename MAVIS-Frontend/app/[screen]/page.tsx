@@ -157,22 +157,35 @@ export default async function FeaturePage({ params }: { params: Promise<{ screen
         <ArchitectureWorkspace title={config.title} mode="diagram" />
       </AppShell>
     );
+  const selfContainedShellScreens = new Set([
+    "courses",
+    "workspaces",
+    "roadmap",
+    "workspace-overview",
+    "theory-library",
+    "assignments",
+    "lab-authoring",
+    "submissions",
+    "members",
+    "lab",
+  ]);
+  const isSelfContained = selfContainedShellScreens.has(screen);
   return (
     <AppShell
       scope={config.scope}
       activeId={screen}
       pageTitle={config.title}
-      contentVariant={screen === "workspaces" ? "workspace" : "standard"}
+      contentVariant={screen === "workspaces" || isSelfContained ? "workspace" : "standard"}
     >
       <PageContainer>
-        {screen !== "courses" && (
+        {!isSelfContained && (
           <SectionHeader
             title={config.title}
             actions={screen === "snapshots" ? <ImportSnapshotAction /> : undefined}
           />
         )}
         {config.selector === "project" && <ProjectSelector />}
-        {config.selector === "workspace" && <WorkspaceSelector />}
+        {config.selector === "workspace" && !isSelfContained && <WorkspaceSelector />}
         <Screen />
       </PageContainer>
     </AppShell>

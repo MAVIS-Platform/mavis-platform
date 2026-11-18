@@ -8,7 +8,8 @@ import { useApiQuery, usePermission, useSelection } from "@/hooks/use-api";
 import { useSearchParams } from "next/navigation";
 import { SelectField, SearchInput, Pagination } from "@/components/shared/forms";
 import { WorkspaceSelector } from "@/features/workspaces/components";
-import { useWorkspaceGradebook } from "@/features/workspaces/course-access";
+import { useCourseEssays, useWorkspaceGradebook } from "@/features/workspaces/course-access";
+import { LecturerEssayRow } from "@/features/courses/course-essay-panel";
 import { EmptyState, RequestState } from "@/components/shared/request-state";
 import { DataTable, StatusLabel } from "@/components/shared/data";
 import { Badge } from "@/components/ui/badge";
@@ -76,7 +77,7 @@ function MySubmissions() {
           {!workspaceId && (workspaces.data?.length ?? 0) > 0 && <WorkspaceSelector />}
           {workspace && (
             <Button asChild size="sm" variant="outline">
-              <Link href={`/workspace-overview?workspace=${encodeURIComponent(workspace.id)}`}>
+              <Link href={`/roadmap?workspace=${encodeURIComponent(workspace.id)}`}>
                 {t("Back to class", "Quay lại lớp")}
               </Link>
             </Button>
@@ -197,7 +198,7 @@ function TeachingSubmissions() {
   const workspaces = useApiQuery("workspaces", {});
   const workspace = workspaces.data?.find((item) => item.id === workspaceId);
   const [selected, setSelected] = useState("");
-  const [viewMode, setViewMode] = useState<"queue" | "gradebook">(
+  const [viewMode, setViewMode] = useState<"queue" | "essays" | "gradebook">(
     params.get("view") === "results" ? "gradebook" : "queue",
   );
   const [reviewStatusFilter, setReviewStatusFilter] = useState("ALL");
@@ -207,73 +208,86 @@ function TeachingSubmissions() {
   const assignment = assignments.data?.find((a) => a.id === requested) ?? assignments.data?.[0];
 
   const body = workspaceId ? (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-2" role="tablist" aria-label={t("Grading views", "Chế độ chấm điểm")}>
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-teal-200/80 bg-gradient-to-r from-teal-50/70 via-emerald-50/40 to-white p-3.5 dark:border-teal-900 dark:from-teal-950/30 dark:to-background">
+        <div
+          className="flex flex-wrap gap-2"
+          role="tablist"
+          aria-label={t("Grading views", "Chế độ chấm điểm")}
+        >
           <Button
             type="button"
             size="sm"
-            variant={viewMode === "queue" ? "default" : "outline"}
-            onClick={() => setViewMode("queue")}
+            variant={viewMode === "queue" && reviewStatusFilter === "PENDING" ? "default" : "outline"}
+            onClick={() => {
+              setViewMode("queue");
+              setReviewStatusFilter("PENDING");
+              setOutcomeFilter("ALL");
+            }}
           >
-            {t("Submissions Queue", "Hàng đợi chấm bài")}
+            ⏳ {t("Pending Queue", "Bài nộp chờ chấm")}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={viewMode === "queue" && reviewStatusFilter === "GRADED" ? "default" : "outline"}
+            onClick={() => {
+              setViewMode("queue");
+              setReviewStatusFilter("GRADED");
+              setOutcomeFilter("ALL");
+            }}
+          >
+            ✔️ {t("Graded Submissions", "Bài đã chấm điểm")}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={viewMode === "queue" && reviewStatusFilter === "ALL" ? "default" : "outline"}
+            onClick={() => {
+              setViewMode("queue");
+              setReviewStatusFilter("ALL");
+              setOutcomeFilter("ALL");
+            }}
+          >
+            {t("All Submissions", "Tất cả bài nộp")}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={viewMode === "essays" ? "default" : "outline"}
+            className={viewMode === "essays" ? "bg-teal-600 text-white hover:bg-teal-700" : undefined}
+            onClick={() => setViewMode("essays")}
+          >
+            ✍️ {t("Chapter Essays", "Bài Tự Luận Chương")}
           </Button>
           <Button
             type="button"
             size="sm"
             variant={viewMode === "gradebook" ? "default" : "outline"}
+            className={viewMode === "gradebook" ? "bg-teal-600 text-white hover:bg-teal-700" : undefined}
             onClick={() => setViewMode("gradebook")}
           >
-            {t("Class Gradebook Matrix", "Bảng điểm ma trận lớp")}
+            📊 {t("Class Gradebook & CSV Export", "Bảng điểm & Tiến độ toàn lớp")}
           </Button>
         </div>
-        <div
-          className="flex flex-wrap gap-1.5 rounded-xl border bg-muted/30 p-1"
-          role="group"
-          aria-label={t("Quick grading filters", "Lọc nhanh bài nộp")}
-        >
-          {[
-            { id: "ALL", status: "ALL", outcome: "ALL", label: t("All", "Tất cả") },
-            {
-              id: "PENDING",
-              status: "PENDING",
-              outcome: "ALL",
-              label: t("Pending Review", "Chờ chấm"),
-            },
-            {
-              id: "GRADED",
-              status: "GRADED",
-              outcome: "ALL",
-              label: t("Graded", "Đã chấm"),
-            },
-            {
-              id: "REVISION",
-              status: "ALL",
-              outcome: "NEEDS_REVISION",
-              label: t("Needs Revision", "Cần sửa"),
-            },
-          ].map((pill) => {
-            const active =
-              reviewStatusFilter === pill.status && outcomeFilter === pill.outcome;
-            return (
-              <Button
-                key={pill.id}
-                type="button"
-                size="sm"
-                variant={active ? "default" : "ghost"}
-                onClick={() => {
-                  setReviewStatusFilter(pill.status);
-                  setOutcomeFilter(pill.outcome);
-                }}
-              >
-                {pill.label}
-              </Button>
-            );
-          })}
-        </div>
+        {viewMode === "queue" && (
+          <Button
+            type="button"
+            size="sm"
+            variant={outcomeFilter === "NEEDS_REVISION" ? "default" : "ghost"}
+            onClick={() => {
+              setReviewStatusFilter("ALL");
+              setOutcomeFilter(outcomeFilter === "NEEDS_REVISION" ? "ALL" : "NEEDS_REVISION");
+            }}
+          >
+            {t("Needs Revision Only", "Lọc bài Cần sửa")}
+          </Button>
+        )}
       </div>
 
-      {viewMode === "gradebook" ? (
+      {viewMode === "essays" ? (
+        <CourseEssaysGradingPanel workspaceId={workspaceId} />
+      ) : viewMode === "gradebook" ? (
         <ClassGradebookMatrix workspaceId={workspaceId} workspaceCode={workspace?.code || workspaceId} />
       ) : (
         <RequestState
@@ -347,6 +361,28 @@ function TeachingSubmissions() {
     </CourseWorkspaceShell>
   ) : (
     body
+  );
+}
+
+function CourseEssaysGradingPanel({ workspaceId }: { workspaceId: string }) {
+  const { t } = useLocale();
+  const essays = useCourseEssays(workspaceId);
+  const rows = essays.data ?? [];
+  return (
+    <RequestState
+      query={essays}
+      empty={!rows.length}
+      emptyMessage={t(
+        "No chapter essays have been submitted in this class yet.",
+        "Chưa có sinh viên nào nộp bài Tự luận theo chương trong lớp này.",
+      )}
+    >
+      <div className="space-y-4">
+        {rows.map((submission) => (
+          <LecturerEssayRow key={submission.id} workspaceId={workspaceId} submission={submission} />
+        ))}
+      </div>
+    </RequestState>
   );
 }
 
@@ -744,7 +780,7 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
           <div
             className={
               canReview
-                ? "grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(380px,1fr)] xl:items-start"
+                ? "grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1.65fr)_minmax(340px,1fr)] lg:items-start"
                 : "min-w-0 space-y-6"
             }
           >
@@ -757,7 +793,7 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
                 available={Boolean(query.data.studioEvidence)}
               />
             </section>
-            <aside className="min-w-0 xl:sticky xl:top-6">
+            <aside className="min-w-0 lg:sticky lg:top-20">
               <GradingPanel
                 key={query.data.id}
                 submissionId={query.data.id}

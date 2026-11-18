@@ -11,6 +11,8 @@ public interface IRuntimeSessionBackend
     IReadOnlyList<RuntimeInfrastructureActionResult> ObservedInfrastructureActions => [];
     Task<IReadOnlyList<RuntimeInfrastructureActionResult>> ExecuteInfrastructureActionsAsync(CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<RuntimeInfrastructureActionResult>>([]);
+    /// <summary>Interactive Studio sessions observe the scenario again after student actions.</summary>
+    bool InteractiveStudio => false;
     Task<TraceCorrelationResult?> PreserveEvidenceAsync(CancellationToken ct);
     Task<bool> CleanupAsync(CancellationToken ct);
 }
@@ -41,6 +43,10 @@ public static class RuntimeSessionLifecycle
             await backend.WaitUntilReadyAsync(deadline.Token);
             scenario = await backend.ExecuteScenarioAsync(deadline.Token);
             infrastructureActions = await backend.ExecuteInfrastructureActionsAsync(deadline.Token);
+            // A Studio session starts from a prepared broken state: the initial scenario records
+            // the baseline. Verify the exercise outcome again after the student's actions.
+            if (backend.InteractiveStudio && infrastructureActions.Count > 0)
+                scenario = await backend.ExecuteScenarioAsync(deadline.Token);
             status = "Completed"; // Processing completion is separate from scenario pass/fail.
         }
         catch (OperationCanceledException)

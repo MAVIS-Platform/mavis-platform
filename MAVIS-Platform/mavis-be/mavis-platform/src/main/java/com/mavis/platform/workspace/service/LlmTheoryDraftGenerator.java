@@ -56,7 +56,7 @@ public class LlmTheoryDraftGenerator {
     @Value("${mavis.ai.theory-model:gemini-2.5-flash}")
     private String geminiModel;
 
-    @Value("${mavis.ai.theory-openai-model:gpt-4.1-nano}")
+    @Value("${mavis.ai.theory-openai-model:gpt-4o-mini}")
     private String openAiModel;
 
     private final HttpClient httpClient = HttpClient.newBuilder()
@@ -80,6 +80,8 @@ public class LlmTheoryDraftGenerator {
             response = apiKey.startsWith("sk-")
                     ? sendOpenAi(apiKey, prompt)
                     : sendGemini(apiKey, prompt);
+        } catch (BusinessException error) {
+            throw error;
         } catch (IOException | InterruptedException error) {
             if (error instanceof InterruptedException) Thread.currentThread().interrupt();
             log.warn("Theory draft generation failed: {}", error.getMessage());
@@ -111,8 +113,13 @@ public class LlmTheoryDraftGenerator {
     }
 
     private String sendOpenAi(String apiKey, String prompt) throws IOException, InterruptedException {
+        boolean deepSeek = isDeepSeekKey(apiKey);
+        String targetUrl = (customEndpointUrl != null && !customEndpointUrl.isBlank())
+                ? customEndpointUrl
+                : (deepSeek ? "https://api.deepseek.com/v1/chat/completions" : "https://api.openai.com/v1/chat/completions");
+        String targetModel = (deepSeek && "gpt-4o-mini".equals(openAiModel)) ? "deepseek-flash" : openAiModel;
         ObjectNode request = json.createObjectNode();
-        request.put("model", openAiModel);
+        request.put("model", targetModel);
         request.putObject("response_format").put("type", "json_object");
         ArrayNode messages = request.putArray("messages");
         messages.addObject().put("role", "system")
@@ -120,7 +127,7 @@ public class LlmTheoryDraftGenerator {
         messages.addObject().put("role", "user").put("content", prompt);
 
         HttpRequest httpRequest = HttpRequest.newBuilder()
-                .uri(URI.create("https://api.openai.com/v1/chat/completions"))
+                .uri(URI.create(targetUrl))
                 .header("Content-Type", "application/json")
                 .header("Authorization", "Bearer " + apiKey)
                 .timeout(Duration.ofSeconds(45))
@@ -128,13 +135,17 @@ public class LlmTheoryDraftGenerator {
                 .build();
         HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            throw new IOException("OpenAI HTTP status " + response.statusCode());
+            throw providerFailure(deepSeek ? "DeepSeek" : "OpenAI", response.statusCode());
         }
         JsonNode content = json.readTree(response.body()).path("choices").path(0).path("message").path("content");
         if (content.isMissingNode() || content.asText().isBlank()) {
             throw new IOException("OpenAI response missing message content");
         }
         return content.asText();
+    }
+
+    private static boolean isDeepSeekKey(String apiKey) {
+        return apiKey != null && apiKey.matches("^sk-[0-9a-f]{32}$");
     }
 
     private String sendGemini(String apiKey, String prompt) throws IOException, InterruptedException {
@@ -155,7 +166,7 @@ public class LlmTheoryDraftGenerator {
                 .build();
         HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            throw new IOException("Gemini HTTP status " + response.statusCode());
+            throw providerFailure("Gemini", response.statusCode());
         }
         JsonNode text = json.readTree(response.body())
                 .path("candidates").path(0).path("content").path("parts").path(0).path("text");
@@ -163,6 +174,23 @@ public class LlmTheoryDraftGenerator {
             throw new IOException("Gemini response missing text candidate");
         }
         return text.asText();
+    }
+
+    private static BusinessException providerFailure(String provider, int status) {
+        if (status == 401 || status == 403) {
+            return new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "AI_AUTH_FAILED",
+                    provider + " rejected the configured API key.");
+        }
+        if (status == 404) {
+            return new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "AI_MODEL_UNAVAILABLE",
+                    provider + " does not offer the configured model. Set MAVIS_AI_THEORY_OPENAI_MODEL to an available model.");
+        }
+        if (status == 429) {
+            return new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "AI_QUOTA_EXHAUSTED",
+                    provider + " quota or credits are exhausted. Add credits or write the lesson manually.");
+        }
+        return new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "AI_GENERATION_FAILED",
+                provider + " returned HTTP " + status + ". Try again or write the lesson manually.");
     }
 
     Draft parse(String raw, String topic) {

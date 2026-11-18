@@ -815,12 +815,8 @@ test("project navigation preserves every destination and keeps role menus intact
     globalNavigation.admin.flatMap((g) => g.items).some((i) => i.href === "/administration/studio"),
     false,
   );
-  for (const role of ["student", "lecturer"])
-    assert.ok(
-      globalNavigation[role]
-        .flatMap((g) => g.items)
-        .some((i) => i.id === "studio" && i.href === "/studio"),
-    );
+  assert.equal(globalNavigation.student.flatMap((g) => g.items).length, 3);
+  assert.equal(globalNavigation.lecturer.flatMap((g) => g.items).length, 3);
 });
 
 test("lecturer workspace navigation exposes unified class command destinations without adding them to student navigation", () => {
@@ -833,8 +829,6 @@ test("lecturer workspace navigation exposes unified class command destinations w
   assert.deepEqual(Object.fromEntries(destinations.map((item) => [item.id, item.href])), {
     "workspace-overview": "/workspace-overview",
     "course-authoring": "/workspace-overview?view=course-authoring",
-    "theory-library": "/theory-library",
-    assignments: "/assignments",
     "lab-authoring": "/lab-authoring",
     "assignment-submissions": "/submissions",
     members: "/members",
@@ -848,7 +842,7 @@ test("lecturer workspace navigation exposes unified class command destinations w
   assert.ok(
     globalNavigation.lecturer
       .flatMap((group) => group.items)
-      .some((item) => item.id === "studio" && item.href === "/studio"),
+      .some((item) => item.id === "workspace-overview" && item.href === "/workspace-overview"),
   );
   assert.equal(
     globalNavigation.student
@@ -1005,7 +999,7 @@ test("project groups persist independently, restore active routes and tolerate d
   assert.doesNotThrow(() => render().toggle("Runtime", true));
 });
 
-test("lecturer sidebar nests class destinations and keeps both lab menus", () => {
+test("lecturer sidebar nests class destinations and keeps one Lab Creation menu", () => {
   const React = require("react"),
     { renderToStaticMarkup } = require("react-dom/server"),
     { ThemeProvider } = require("../src/components/theme-provider.tsx");
@@ -1055,9 +1049,9 @@ test("lecturer sidebar nests class destinations and keeps both lab menus", () =>
   );
   assert.ok(html.includes('aria-label="Collapse SE180711 · FA menu"'));
   assert.ok(html.includes('href="/workspace-overview?workspace=class-1"'));
-  assert.ok(html.includes('aria-label="Lab Library" href="/assignments?workspace=class-1"'));
   assert.ok(html.includes('aria-label="Lab Creation" href="/lab-authoring?workspace=class-1"'));
-  assert.ok(html.includes('aria-label="Theory Library" href="/theory-library?workspace=class-1"'));
+  assert.ok(!html.includes('aria-label="Lab Library"'));
+  assert.ok(!html.includes('aria-label="Theory Library"'));
   assert.ok(!html.includes("👨‍🏫 Lecturer"));
   assert.ok(html.includes("Sign out"));
 });
@@ -5169,7 +5163,8 @@ test("My Workspaces is a compact LMS class list with tabs and a module outline",
   assert.match(overviewHtml, /aria-label="Class sections"/);
   assert.match(overviewHtml, /Overview &amp; Setup/);
   assert.match(overviewHtml, /Curriculum &amp; Materials/);
-  assert.match(overviewHtml, /Labs &amp; Quiz Studio/);
+  assert.match(overviewHtml, /Lab Creation/);
+  assert.doesNotMatch(overviewHtml, /Lab Library/);
   assert.match(overviewHtml, /Grading &amp; Gradebook/);
   assert.match(overviewHtml, /Students &amp; Access/);
   assert.match(overviewHtml, /Enrolled Students/);
@@ -5195,7 +5190,7 @@ test("My Workspaces is a compact LMS class list with tabs and a module outline",
   assert.match(
     membersHtml,
     /Class sections/,
-    "lecturer class view shows unified 5-tab navigation",
+    "lecturer class view shows unified 7-tab navigation",
   );
   assert.match(membersHtml, /Students &amp; Access/);
   client.setQueryData(["api", "session", {}], {

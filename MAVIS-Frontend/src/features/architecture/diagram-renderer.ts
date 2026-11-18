@@ -60,20 +60,36 @@ export async function renderDiagram(
             }
           : {},
       htmlLabels: false,
-      flowchart: { htmlLabels: false },
+      c4: {
+        diagramMarginX: 60,
+        diagramMarginY: 40,
+        c4ShapeMargin: 64,
+        c4ShapePadding: 24,
+      },
+      flowchart: {
+        htmlLabels: false,
+        nodeSpacing: 64,
+        rankSpacing: 84,
+        curve: "basis",
+      },
       look: "classic",
-      fontFamily: "Arial, sans-serif",
+      fontFamily: '"Inter", "Segoe UI", Arial, sans-serif',
       maxTextSize: 500_000,
     });
     let source = content;
-    if (/^C4/.test(content) && style !== "clean") {
-      const background = style === "blueprint" ? "#0b3658" : "#243447";
-      const border = style === "blueprint" ? "#38bdf8" : "#94a3b8";
-      for (const match of content.matchAll(/^\s*(?:Container|Component|System)[\w]*\((n_\w+),/gm)) {
-        source += `\nUpdateElementStyle(${match[1]}, "${background}", "#e0f2fe", "${border}")`;
+    if (/^C4/.test(content)) {
+      if (!/UpdateLayoutConfig\s*\(/i.test(source)) {
+        source += '\nUpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")';
       }
-      for (const match of content.matchAll(/^\s*Rel\((n_\w+),\s*(n_\w+),/gm)) {
-        source += `\nUpdateRelStyle(${match[1]}, ${match[2]}, "${border}", "${border}")`;
+      if (style !== "clean") {
+        const background = style === "blueprint" ? "#0b3658" : "#243447";
+        const border = style === "blueprint" ? "#38bdf8" : "#94a3b8";
+        for (const match of content.matchAll(/^\s*(?:Container|Component|System)[\w]*\((n_\w+),/gm)) {
+          source += `\nUpdateElementStyle(${match[1]}, "${background}", "#e0f2fe", "${border}")`;
+        }
+        for (const match of content.matchAll(/^\s*Rel\((n_\w+),\s*(n_\w+),/gm)) {
+          source += `\nUpdateRelStyle(${match[1]}, ${match[2]}, "${border}", "${border}")`;
+        }
       }
     }
     const { svg } = await mermaid.render(`mavis_diagram_${++sequence}`, source);

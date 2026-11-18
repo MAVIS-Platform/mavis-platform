@@ -4,39 +4,50 @@ import { useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import {
   BookOpen,
+  CheckCircle2,
+  Clock3,
+  Layers,
+  Network,
+  ShieldCheck,
+  Building2,
+  Compass,
   ClipboardCheck,
   Plus,
   Search,
   Users,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { useApiMutation, useApiQuery, useSession, useSelection } from "@/hooks/use-api";
+import { useApi, useApiMutation, useApiQuery, useSession, useSelection } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
 import { ErrorState, RequestState } from "@/components/shared/request-state";
 import { SearchInput, SelectField } from "@/components/shared/forms";
-import { DataTable, DetailPanel, StatusBadge } from "@/components/shared/data";
+import { DataTable, DetailPanel } from "@/components/shared/data";
 import { CreateWorkspace, WorkspaceControls } from "./manage";
 import {
-  CourseEnrollment,
   CoursePasskey,
   CourseRoadmap,
+  useBootstrapJavaCoursera,
   useCourseAuthoring,
   useCourseRoadmap,
   useWorkspaceGradebook,
 } from "./course-access";
 import { ReferenceManagement } from "./reference-manage";
 import { CourseWorkspaceShell } from "@/features/courses/course-workspace-shell";
-import { CourseRoadmap as CourseRoadmapScreen } from "@/features/courses/screens";
+import { LecturerCurriculumManager } from "@/features/courses/lecturer-curriculum-manager";
+import { Courses, CourseRoadmap as CourseRoadmapScreen } from "@/features/courses/screens";
 import { CourseOutline } from "@/features/courses/course-outline";
 import { CourseBuilder } from "@/features/courses/course-builder";
 import { CourseSetupPanel } from "@/features/courses/course-setup";
+import { JAVA_COURSERA_MODULES } from "@/features/courses/java-coursera-curriculum-data";
 import { useLocale } from "@/lib/i18n/locale-context";
 
 export function Workspaces() {
   const { t } = useLocale();
+  const api = useApi();
   const query = useApiQuery("workspaces", {});
   const session = useSession();
-  const { workspaceId } = useSelection();
+  const { workspaceId, setWorkspaceId } = useSelection();
+  const bootstrapJava = useBootstrapJavaCoursera();
   const [showCreate, setShowCreate] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "archived">("all");
@@ -79,61 +90,74 @@ export function Workspaces() {
     0,
   );
   if (workspaceId && selected) return <WorkspaceOverview />;
+  if (session.data?.user && !canCreate) return <Courses />;
   return (
-    <div className="space-y-6">
+    <div className={canCreate ? "space-y-8 rounded-lg bg-background p-6 md:p-8" : "space-y-6"}>
       {canCreate ? (
-        <div className="space-y-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <p className="max-w-2xl text-sm text-muted-foreground">
-              {t(
-                "Open a class to organize modules, Labs, students and grading.",
-                "Mở một lớp để tổ chức chương, Lab, sinh viên và chấm điểm.",
-              )}
-            </p>
-            <Button
-              type="button"
-              variant={showCreate ? "outline" : "default"}
-              onClick={() => setShowCreate((open) => !open)}
-            >
-              <Plus className="mr-1 size-4" aria-hidden="true" />
-              {showCreate ? t("Close", "Đóng") : t("Create class", "Tạo lớp")}
-            </Button>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="flex items-center gap-3 rounded-xl border bg-card p-4">
-              <span className="grid size-10 place-items-center rounded-lg bg-primary/10 text-primary">
-                <BookOpen className="size-5" aria-hidden="true" />
-              </span>
-              <div>
-                <p className="text-2xl font-semibold tabular-nums">{activeCount}</p>
-                <p className="text-xs text-muted-foreground">{t("Active classes", "Lớp đang hoạt động")}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3 rounded-xl border bg-card p-4">
-              <span className="grid size-10 place-items-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-                <Users className="size-5" aria-hidden="true" />
-              </span>
-              <div>
-                <p className="text-2xl font-semibold tabular-nums">{totalStudents}</p>
-                <p className="text-xs text-muted-foreground">{t("Total students", "Tổng sinh viên")}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3 rounded-xl border bg-card p-4">
-              <span className="grid size-10 place-items-center rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400">
-                <ClipboardCheck className="size-5" aria-hidden="true" />
-              </span>
-              <div>
-                <p className="text-2xl font-semibold tabular-nums">
-                  {submissions.isSuccess ? pendingReviews : "—"}
+        <div className="space-y-7">
+          <header className="mavis-hero-surface px-6 py-7 text-white md:px-8">
+            <div className="relative flex flex-wrap items-center justify-between gap-6">
+              <div className="max-w-2xl">
+                <p className="mb-2.5 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">
+                  <span className="h-1 w-6 rounded-full bg-teal-300" />
+                  {t("Your teaching space", "Không gian giảng dạy")}
                 </p>
-                <p className="text-xs text-muted-foreground">{t("Pending submissions", "Bài nộp chờ chấm")}</p>
+                <h2 className="text-2xl font-bold tracking-tight text-white md:text-3xl">
+                  {t("A great class starts here.", "Khởi đầu cho một lớp học tuyệt vời.")}
+                </h2>
+                <p className="mt-2 max-w-xl text-sm leading-6 text-sky-100/90">
+                  {t("Open a class to organize modules, Labs, students and grading.", "Mở một lớp để tổ chức chương, Lab, sinh viên và chấm điểm.")}
+                </p>
               </div>
+              <div className="flex flex-wrap items-center gap-2.5">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-11 rounded-xl border-white/30 bg-white/12 px-4 text-white hover:bg-white/20 hover:text-white"
+                  disabled={bootstrapJava.isPending}
+                  onClick={() => {
+                    if (api.mode === "mock") {
+                      setWorkspaceId("workspace-java-ms-2026");
+                      return;
+                    }
+                    bootstrapJava.mutate();
+                  }}
+                >
+                  {bootstrapJava.isPending
+                    ? t("Provisioning JAVA-MS-2026…", "Đang khởi tạo JAVA-MS-2026…")
+                    : t("☕ 1-Click Java Microservices Course", "☕ Khởi tạo / Đồng bộ Môn Java Microservices (JAVA-MS-2026)")}
+                </Button>
+                <Button type="button" className="h-11 rounded-xl bg-white px-5 font-semibold text-slate-950 shadow-sm hover:bg-sky-50" onClick={() => setShowCreate((open) => !open)}>
+                  <Plus className="mr-2 size-4" aria-hidden="true" />{showCreate ? t("Close", "Đóng") : t("Create class", "Tạo lớp")}
+                </Button>
+              </div>
+            </div>
+            {bootstrapJava.isError && (
+              <div className="mt-3">
+                <ErrorState error={bootstrapJava.error} />
+              </div>
+            )}
+          </header>
+
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto]">
+            <div className="flex flex-wrap items-center gap-4 rounded-xl border bg-card p-5 shadow-sm">
+              <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-950/40"><ClipboardCheck className="size-6" aria-hidden="true" /></span>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{t("Needs your attention", "Cần bạn xem xét")}</p>
+                <p className="mt-1 text-lg font-semibold">{submissions.isSuccess ? pendingReviews : "—"} {t("submissions to review", "bài nộp chờ chấm")}</p>
+                <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{(query.data ?? []).filter((w) => pendingByWorkspace.has(w.id)).map((w) => w.name + " · " + pendingByWorkspace.get(w.id) + " " + t("submission(s)", "bài nộp")).join(" · ") || t("Your classes are up to date.", "Các lớp đã được cập nhật.")}</p>
+              </div>
+              <Button asChild variant="outline" className="rounded-lg border-blue-200 text-[#0056d2] hover:bg-blue-50"><Link href="/submissions">{t("Review submissions", "Chấm bài nộp")}<span className="ml-2" aria-hidden="true">→</span></Link></Button>
+            </div>
+            <div className="grid grid-cols-2 divide-x rounded-xl border bg-card p-5 shadow-sm lg:min-w-72">
+              <div className="pr-6"><BookOpen className="mb-3 size-4 text-blue-600" aria-hidden="true" /><p className="text-3xl font-semibold tracking-tight">{activeCount}</p><p className="mt-1 text-xs text-muted-foreground">{t("Active classes", "Lớp đang hoạt động")}</p></div>
+              <div className="pl-6"><Users className="mb-3 size-4 text-teal-600" aria-hidden="true" /><p className="text-3xl font-semibold tracking-tight">{totalStudents}</p><p className="mt-1 text-xs text-muted-foreground">{t("Students", "Sinh viên")}</p></div>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="relative w-full sm:max-w-md">
+            <h2 className="text-2xl font-semibold">{t("Your classes", "Các lớp của bạn")}</h2>
+            <div className="relative order-last w-full sm:order-none sm:ml-auto sm:max-w-xs">
               <Search
                 className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
                 aria-hidden="true"
@@ -149,7 +173,7 @@ export function Workspaces() {
             <div
               role="group"
               aria-label={t("Filter classes", "Lọc lớp")}
-              className="inline-flex rounded-lg border bg-card p-0.5"
+              className="inline-flex gap-3"
             >
               {(
                 [
@@ -165,8 +189,8 @@ export function Workspaces() {
                   onClick={() => setStatusFilter(id)}
                   className={
                     statusFilter === id
-                      ? "rounded-md bg-foreground px-3 py-1.5 text-sm text-background"
-                      : "rounded-md px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground"
+                      ? "rounded-full bg-[#0056d2] px-4 py-2 text-sm text-white"
+                      : "rounded-full border px-4 py-2 text-sm text-muted-foreground hover:text-foreground"
                   }
                 >
                   {label}
@@ -184,86 +208,20 @@ export function Workspaces() {
       )}
 
       {canCreate && showCreate && <CreateWorkspace onClose={() => setShowCreate(false)} />}
-      {session.data?.user?.role === "student" && <CourseEnrollment destination="roadmap" />}
 
       <RequestState
         query={query}
         empty={!query.data?.length}
-        emptyMessage={
-          canCreate
-            ? t(
-                "You have no classes yet. Create the first class above.",
-                "Bạn chưa có lớp nào. Hãy tạo lớp đầu tiên ở trên.",
-              )
-            : t(
-                "You are not enrolled in a class yet. Enter your Passkey above to join.",
-                "Bạn chưa ghi danh lớp nào. Nhập Passkey ở trên để tham gia.",
-              )
-        }
+        emptyMessage={t(
+          "You have no classes yet. Create the first class above.",
+          "Bạn chưa có lớp nào. Hãy tạo lớp đầu tiên ở trên.",
+        )}
       >
-        {!canCreate ? (
-          <div className="grid gap-4 md:grid-cols-2">
-            {query.data?.map((workspace) => {
-              const members = workspace.members ?? [];
-              const students = members.filter(
-                (member) => member.role.toUpperCase() === "STUDENT",
-              ).length;
-              const lecturers = members
-                .filter((member) => member.role.toUpperCase() === "LECTURER")
-                .map((member) => member.name);
-              const roadmapUrl = `/roadmap?workspace=${encodeURIComponent(workspace.id)}`;
-              return (
-                <article
-                  key={workspace.id}
-                  className="flex flex-col justify-between gap-4 rounded-2xl border bg-card p-5 transition-colors hover:border-primary/40"
-                >
-                  <div className="space-y-2">
-                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                      <span className="rounded bg-primary/10 px-2 py-0.5 font-mono font-semibold text-primary">
-                        {workspace.code || t("CLASS", "LỚP")}
-                      </span>
-                      <StatusBadge
-                        status={workspace.status ?? "ACTIVE"}
-                        variant={workspace.status === "ARCHIVED" ? "secondary" : "default"}
-                      />
-                    </div>
-                    <Link
-                      className="block w-fit max-w-full break-words text-lg font-semibold tracking-tight text-foreground hover:text-primary hover:underline"
-                      href={roadmapUrl}
-                    >
-                      {workspace.name}
-                    </Link>
-                    {workspace.description && (
-                      <p className="line-clamp-2 text-sm text-muted-foreground">
-                        {workspace.description}
-                      </p>
-                    )}
-                    <p className="text-xs text-muted-foreground">
-                      {lecturers.length
-                        ? `${t("Lecturer", "Giảng viên")}: ${lecturers.join(", ")} · `
-                        : ""}
-                      {students} {t("students", "sinh viên")}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2 border-t pt-3">
-                    <Button asChild size="sm">
-                      <Link href={roadmapUrl}>
-                        {t("Enter class & Lab roadmap", "Vào lớp & Lộ trình Lab")}
-                      </Link>
-                    </Button>
-                    <Button asChild size="sm" variant="outline">
-                      <Link href={`/submissions?workspace=${encodeURIComponent(workspace.id)}`}>
-                        {t("Submissions & Grades", "Bài nộp & Điểm")}
-                      </Link>
-                    </Button>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="grid gap-4 md:grid-cols-2">
-            {visibleWorkspaces.map((workspace) => {
+        <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+            {visibleWorkspaces.map((workspace, index) => {
+              const colors = ["#0056d2", "#7b2cbf", "#0b807c", "#c54108", "#254cda", "#bd1960"];
+              const CoverIcon = [Building2, Compass, Network, Layers, ShieldCheck, Network][index % 6] ?? Building2;
+              const pending = pendingByWorkspace.get(workspace.id) ?? 0;
               const members = workspace.members ?? [];
               const students = members.filter(
                 (member) => member.role.toUpperCase() === "STUDENT",
@@ -273,23 +231,26 @@ export function Workspaces() {
               return (
                 <article
                   key={workspace.id}
-                  className="flex flex-col gap-3 rounded-xl border bg-card p-4 transition-colors hover:border-primary/30"
+                  className="flex min-h-[350px] flex-col overflow-hidden rounded-lg border bg-card transition-shadow hover:shadow-md"
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="rounded-md bg-primary/10 px-2 py-0.5 font-mono text-xs font-semibold tracking-wide text-primary">
+                  <div className="relative flex h-28 shrink-0 items-start justify-between gap-2 overflow-hidden p-3" style={{ backgroundColor: colors[index % colors.length] }}>
+                    <CoverIcon className="pointer-events-none absolute -right-3 -bottom-3 size-32 -rotate-12 text-white/15" aria-hidden="true" />
+                    <span className="relative rounded bg-white px-2 py-1 text-xs font-semibold text-slate-900">
                       {workspace.code || t("CLASS", "LỚP")}
                     </span>
                     {archived ? (
                       <span className="text-xs text-muted-foreground">{t("Archived", "Lưu trữ")}</span>
                     ) : (
-                      <span className="inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
+                      <span className="relative inline-flex items-center gap-1 rounded bg-white/95 px-2 py-1 text-xs text-emerald-700">
                         <span className="size-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
                         {t("Active", "Đang hoạt động")}
                       </span>
                     )}
                   </div>
+                  <div className="flex flex-1 flex-col gap-3 p-5">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">{t("Lecturer", "Giảng viên")}</p>
                   <Link
-                    className="truncate text-2xl font-semibold tracking-tight text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="truncate text-xl font-semibold tracking-tight text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     href={workspaceUrl}
                   >
                     {workspace.name}
@@ -312,15 +273,22 @@ export function Workspaces() {
                             : "inline-flex items-center gap-1"
                         }
                       >
-                        <ClipboardCheck className="size-3.5" aria-hidden="true" />
-                        {pendingByWorkspace.get(workspace.id) ?? 0}{" "}
-                        {t("pending submissions", "bài chờ chấm")}
+                        {pending > 0 ? <Clock3 className="size-3.5" aria-hidden="true" /> : <CheckCircle2 className="size-3.5" aria-hidden="true" />}
+                        {pending > 0 ? pending + " " + t("to grade", "bài chờ chấm") : t("Up to date", "Đã cập nhật")}
                       </span>
                     )}
+                    <Link
+                      href={`/workspace-overview?workspace=${encodeURIComponent(workspace.id)}#class-passkey`}
+                      className="inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 font-medium text-emerald-700 hover:bg-emerald-100"
+                    >
+                      🔑 {t("Passkey", "Passkey lớp")}
+                    </Link>
                   </div>
-                  <Button asChild className="mt-auto w-full">
-                    <Link href={workspaceUrl}>{t("Open class", "Mở lớp")}</Link>
-                  </Button>
+                  <div className="mt-auto grid grid-cols-2 gap-3 border-t pt-4">
+                  <Button asChild className="bg-[#0056d2] text-white hover:bg-[#0046ad]"><Link href={workspaceUrl}>{t("Open class", "Mở lớp")}</Link></Button>
+                  <Button asChild variant="outline" className="border-[#0056d2] text-[#0056d2]"><Link href={"/submissions?workspace=" + encodeURIComponent(workspace.id)}>{t("Submissions", "Bài nộp")}</Link></Button>
+                  </div>
+                  </div>
                 </article>
               );
             })}
@@ -329,19 +297,10 @@ export function Workspaces() {
                 {t("No class matches this search or filter.", "Không có lớp nào khớp tìm kiếm hoặc bộ lọc.")}
               </p>
             )}
-            {canCreate && (
-              <button
-                type="button"
-                onClick={() => setShowCreate(true)}
-                className="flex min-h-40 flex-col items-center justify-center gap-2 rounded-xl border border-dashed text-sm text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
-              >
-                <Plus className="size-5" aria-hidden="true" />
-                {t("Create class", "Tạo lớp")}
-              </button>
-            )}
+
           </div>
-        )}
       </RequestState>
+      {canCreate && <footer className="border-t pt-8 text-center text-sm text-muted-foreground">© MAVIS — Architecture Learning &amp; Analysis</footer>}
     </div>
   );
 }
@@ -371,9 +330,16 @@ export function WorkspaceOverview() {
   const studentCount = (workspace?.members ?? []).filter(
     (member) => member.role.toUpperCase() === "STUDENT",
   ).length;
-  const moduleCount = authoring.data?.modules?.length ?? 0;
+  const rawModuleCount = authoring.data?.modules?.length ?? 0;
+  const isJavaCourseraWorkspace = workspace?.code?.toUpperCase() === "JAVA-MS-2026";
+  const moduleCount =
+    rawModuleCount > 0 ? rawModuleCount : isJavaCourseraWorkspace ? JAVA_COURSERA_MODULES.length : 0;
   const itemCount =
-    authoring.data?.modules?.reduce((sum, mod) => sum + mod.items.length, 0) ?? 0;
+    rawModuleCount > 0
+      ? (authoring.data?.modules?.reduce((sum, mod) => sum + mod.items.length, 0) ?? 0)
+      : isJavaCourseraWorkspace
+        ? JAVA_COURSERA_MODULES.reduce((sum, mod) => sum + mod.items.length, 0)
+        : 0;
   const totalLabs = assignmentsQuery.data?.length ?? 0;
   const publishedLabs = roadmap.data?.labs?.length ?? 0;
 
@@ -387,7 +353,12 @@ export function WorkspaceOverview() {
           actions={
             canManage ? (
               <>
-                <Button asChild size="sm" variant="outline">
+                <Button
+                  asChild
+                  size="sm"
+                  variant="outline"
+                  className="border-white/30 bg-white/15 text-white hover:bg-white/25 hover:text-white"
+                >
                   <Link href={`/assignments?workspace=${encodeURIComponent(workspace.id)}`}>
                     {t("Manage Labs", "Quản lý Lab")}
                   </Link>
@@ -436,11 +407,27 @@ export function WorkspaceOverview() {
                   <p className="text-xs font-medium text-muted-foreground">
                     {t("Course Status", "Trạng thái khóa học")}
                   </p>
-                  <p className="mt-1 text-lg font-semibold">
-                    {authoring.data?.publishedVersion
-                      ? `v${authoring.data.publishedVersion} · ${t("Published", "Đã xuất bản")}`
-                      : t("Draft / Setup", "Nháp / Thiết lập")}
-                  </p>
+                  <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-lg font-semibold">
+                      {authoring.data?.publishedVersion
+                        ? `v${authoring.data.publishedVersion} · ${t("Published", "Đã xuất bản")}`
+                        : t("Draft / Setup", "Nháp / Thiết lập")}
+                    </p>
+                    {authoring.data?.status === "DRAFT" && rawModuleCount > 0 && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-7 px-2.5 text-xs"
+                        disabled={authoring.publish.isPending}
+                        onClick={() => authoring.publish.mutate()}
+                      >
+                        {authoring.publish.isPending
+                          ? t("Publishing…", "Đang công bố…")
+                          : t("Publish course", "Công bố Course")}
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </section>
             )}
@@ -453,16 +440,10 @@ export function WorkspaceOverview() {
               />
             )}
             {activeTab === "outline" && canManage && (
-              <div className="space-y-5">
-                <div id="class-passkey">
-                  <CoursePasskey workspaceId={workspace.id} />
-                </div>
-                <CourseOutline
-                  workspaceId={workspace.id}
-                  canManage
-                  active={workspace.status !== "ARCHIVED"}
-                />
-              </div>
+              <LecturerCurriculumManager
+                workspaceId={workspace.id}
+                active={workspace.status !== "ARCHIVED"}
+              />
             )}
             {activeTab === "outline" && !canManage && (
               <CourseOutline
@@ -524,6 +505,11 @@ export function WorkspaceMembers() {
             {canManage && (
               <div className="rounded-xl border bg-card p-4">
                 <WorkspaceControls key={workspace.id} workspace={workspace} mode="members" />
+              </div>
+            )}
+            {canManage && (
+              <div id="class-passkey">
+                <CoursePasskey workspaceId={workspace.id} />
               </div>
             )}
             {canManage && (

@@ -409,12 +409,12 @@ export function LiveSandboxParity({
               ))}
             </div>
           </div>
-          <div className="grid grid-cols-4 gap-1">
+          <div className="grid grid-cols-2 gap-1.5">
             <button
               type="button"
               disabled={busy || running === undefined || running === 0}
               onClick={() => void command("STOP", selected)}
-              className="h-6 min-w-0 rounded border border-amber-500/40 bg-amber-500/15 px-1 text-[10.5px] font-semibold text-amber-200 disabled:opacity-40"
+              className="h-7 min-w-0 shrink-0 whitespace-nowrap rounded border border-amber-500/40 bg-amber-500/15 px-2 text-[11px] font-semibold text-amber-200 transition-colors hover:bg-amber-500/25 disabled:opacity-40"
             >
               Stop
             </button>
@@ -422,7 +422,7 @@ export function LiveSandboxParity({
               type="button"
               disabled={busy || running === undefined || running > 0}
               onClick={() => void command("START", selected)}
-              className="h-6 min-w-0 rounded border border-emerald-500/40 bg-emerald-500/15 px-1 text-[10.5px] font-semibold text-emerald-200 disabled:opacity-40"
+              className="h-7 min-w-0 shrink-0 whitespace-nowrap rounded border border-emerald-500/40 bg-emerald-500/15 px-2 text-[11px] font-semibold text-emerald-200 transition-colors hover:bg-emerald-500/25 disabled:opacity-40"
             >
               Start
             </button>
@@ -430,7 +430,7 @@ export function LiveSandboxParity({
               type="button"
               disabled={!canScale || busy || running === undefined || running === 0 || running >= 8}
               onClick={() => void command("SCALE", selected, (running ?? 0) + 1)}
-              className="h-6 min-w-0 rounded border border-sky-500/40 bg-sky-500/15 px-1 text-[10.5px] font-semibold text-sky-200 disabled:opacity-40"
+              className="h-7 min-w-0 shrink-0 whitespace-nowrap rounded border border-sky-500/40 bg-sky-500/15 px-2 text-[11px] font-semibold text-sky-200 transition-colors hover:bg-sky-500/25 disabled:opacity-40"
             >
               Clone
             </button>
@@ -438,9 +438,9 @@ export function LiveSandboxParity({
               type="button"
               disabled
               title={capability("delete-block").reason}
-              className="flex h-6 min-w-0 items-center justify-center gap-0.5 rounded border border-red-500/40 bg-red-500/15 px-1 text-[10.5px] font-semibold text-red-200 opacity-40"
+              className="flex h-7 min-w-0 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded border border-red-500/40 bg-red-500/15 px-2 text-[11px] font-semibold text-red-200 opacity-40"
             >
-              <Trash2 aria-hidden="true" className="size-3" /> Delete
+              <Trash2 aria-hidden="true" className="size-3 shrink-0" /> Delete
             </button>
           </div>
           {draft !== null && (

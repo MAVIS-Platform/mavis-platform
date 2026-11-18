@@ -284,14 +284,15 @@ public class CourseLabStudentService {
             }
         }
         ModelVersion refModel = lab.getReferenceModel();
-        if (refModel == null || refModel.getSourceSnapshot() == null || refModel.getProject() == null) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "Lab chưa được gắn kiến trúc tham chiếu hợp lệ");
-        }
         var exercise = labStudioExercises.findByAssignmentId(lab.getId()).orElse(null);
         JsonNode frozenExercise = lab.getStudioExerciseSnapshot();
         UUID runtimeModelId = frozenExercise != null && frozenExercise.hasNonNull("runtimeModelId")
                 ? UUID.fromString(frozenExercise.path("runtimeModelId").asText())
                 : exercise == null ? null : exercise.getRuntimeModelId();
+        if (runtimeModelId == null
+                && (refModel == null || refModel.getSourceSnapshot() == null || refModel.getProject() == null)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Lab chưa được gắn kiến trúc tham chiếu hợp lệ");
+        }
         ModelVersion runtimeModel = refModel;
         if (runtimeModelId != null) {
             runtimeModel = models.findById(runtimeModelId)
@@ -317,7 +318,8 @@ public class CourseLabStudentService {
         }
 
         StudentWorkspaceBundle working = ensureStudentWorkingProject(lab, actor, runtimeModel);
-        JsonNode resolvedTopology = resolveStudioTopology(lab, runtimeModel);
+        JsonNode resolvedTopology = applyExerciseInitialState(frozenExercise,
+                resolveStudioTopology(lab, runtimeModel));
         ObjectNode appsNode = resolveApplicationsNode(runtimeModel, resolvedTopology);
         Map<String, String> serviceMappings = buildServiceMappings(working.model(), appsNode);
 
@@ -473,6 +475,36 @@ public class CourseLabStudentService {
     }
 
     private record StudentWorkspaceBundle(Project project, SourceSnapshot snapshot, ModelVersion model) {}
+
+    private JsonNode applyExerciseInitialState(JsonNode exercise, JsonNode topology) {
+        if (exercise == null || topology == null || !topology.isObject()) return topology;
+        JsonNode initial = exercise.get("initialState");
+        if (initial == null || !initial.isObject()) return topology;
+        Set<String> stoppedServices = textValues(initial.get("stoppedServices"));
+        Set<String> stoppedControllers = textValues(initial.get("stoppedControllers"));
+        ObjectNode copy = topology.deepCopy();
+        for (JsonNode block : copy.withArray("blocks")) {
+            if (block.isObject() && stoppedServices.contains(block.path("service").asText())) {
+                ((ObjectNode) block).put("initiallyStopped", true);
+            }
+        }
+        for (JsonNode connection : copy.withArray("connections")) {
+            if (connection.isObject() && stoppedControllers.contains(connection.path("controllerService").asText())) {
+                ((ObjectNode) connection).put("initiallyStopped", true);
+            }
+        }
+        return copy;
+    }
+
+    private static Set<String> textValues(JsonNode node) {
+        Set<String> values = new java.util.HashSet<>();
+        if (node != null && node.isArray()) {
+            node.forEach(item -> {
+                if (item.isTextual() && !item.asText().isBlank()) values.add(item.asText().trim());
+            });
+        }
+        return values;
+    }
 
     private StudentWorkspaceBundle ensureStudentWorkingProject(Assignment lab, User actor, ModelVersion refModel) {
         SourceSnapshot refSnapshot = refModel.getSourceSnapshot();

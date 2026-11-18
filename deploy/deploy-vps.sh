@@ -56,8 +56,23 @@ DOCKER_CONFIG=$(mktemp -d /opt/mavis/.registry.XXXXXX)
 cleanup() { rm -rf "$DOCKER_CONFIG"; }
 trap cleanup EXIT
 IFS= read -r registry_token
+IFS= read -r ai_api_key || true
 printf '%s' "$registry_token" | docker login ghcr.io --username "$registry_user" --password-stdin
 unset registry_token
+if [ -n "${ai_api_key:-}" ]; then
+  AI_KEY="$ai_api_key" python3 - <<'PY'
+import os
+from pathlib import Path
+p = Path('/opt/mavis/.env.production')
+key = os.environ['AI_KEY'].strip()
+lines = [l for l in p.read_text().splitlines() if not l.startswith(('MAVIS_AI_API_KEY=', 'OPENAI_API_KEY='))]
+lines.append(f'MAVIS_AI_API_KEY={key}')
+lines.append(f'OPENAI_API_KEY={key}')
+p.write_text('\n'.join(lines) + '\n')
+p.chmod(0o600)
+PY
+fi
+unset ai_api_key
 compose() {
   local image_prefix="$1" image_tag="$2" file="$3"
   shift 3
@@ -174,6 +189,20 @@ if [ -e "$studio_exercise_migration" ]; then
   compose "$prefix" "$tag" "$incoming/compose.production.yml" config --format json |
     python3 "$schema_tool" "$studio_exercise_migration" /opt/mavis/db-backups/studio-exercise-before-v41.dump
 fi
+passkey_essay_migration="$incoming/V42__Passkey_Crud_And_Essay_Submissions.sql"
+if [ -e "$passkey_essay_migration" ]; then
+  test -f "$studio_exercise_migration" && test -f "$schema_tool" || { echo "Incomplete Passkey & Essay schema package"; exit 1; }
+  compose "$prefix" "$tag" "$incoming/compose.production.yml" config --format json |
+    python3 "$schema_tool" "$passkey_essay_migration" /opt/mavis/db-backups/passkey-essay-before-v42.dump
+fi
+java_course_seed_migration="$incoming/V43__Seed_Three_Role_Accounts_And_Java_Course.sql"
+if [ -e "$java_course_seed_migration" ]; then
+  test -f "$passkey_essay_migration" && test -f "$schema_tool" || { echo "Incomplete Java course seed schema package"; exit 1; }
+  compose "$prefix" "$tag" "$incoming/compose.production.yml" config --format json |
+    python3 "$schema_tool" "$java_course_seed_migration" /opt/mavis/db-backups/java-seed-before-v43.dump
+fi
+# Ensure persistent data volume upload and worker directories are writable by app user 1654:1654
+docker run --rm --mount source=mavis_data,target=/data alpine:3.20 sh -c "mkdir -p /data/uploads /data/worker-artifacts && chown -R 1654:1654 /data/uploads /data/worker-artifacts" >/dev/null 2>&1 || true
 if ! compose "$prefix" "$tag" "$incoming/compose.production.yml" up -d --no-build --remove-orphans || ! healthy; then
   echo "Deployment failed; restoring previous images and Compose."
   compose "$old_prefix" "$old_tag" "$previous/compose.production.yml" up -d --no-build --remove-orphans

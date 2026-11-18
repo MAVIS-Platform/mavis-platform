@@ -65,6 +65,9 @@ public class CourseSetupService {
     @Autowired(required = false)
     private ObjectMapper objectMapper;
 
+    @Autowired(required = false)
+    private com.mavis.common.repository.LabStudioExerciseRepository labStudioExercises;
+
     public record AutoConfigureStudioResult(
             UUID assignmentId,
             int blockCount,
@@ -355,6 +358,64 @@ public class CourseSetupService {
                 enrolled == null ? 0 : enrolled);
     }
 
+    private Set<String> dotnetServices(ModelVersion refModel, Set<String> services) {
+        if (refModel == null || elements == null || services.isEmpty()) return Set.of();
+        Set<String> result = new LinkedHashSet<>();
+        for (ModelElement element : elements.findByModelVersionId(refModel.getId())) {
+            String stack = element.getLanguageStack() == null ? "" : element.getLanguageStack().toLowerCase();
+            if (!(stack.contains("csharp") || stack.contains("c#") || stack.contains("dotnet") || stack.contains(".net"))) {
+                continue;
+            }
+            String path = element.getScope() == null ? "" : element.getScope().toLowerCase().replace('\\', '/');
+            if (path.isBlank() && element.getProperties() != null) {
+                path = element.getProperties().path("workerProjectPath")
+                        .asText(element.getProperties().path("sourcePath").asText(""))
+                        .toLowerCase(java.util.Locale.ROOT)
+                        .replace('\\', '/');
+            }
+            if (path.isBlank()) path = element.getName() == null ? "" : element.getName().toLowerCase();
+            for (String service : services) {
+                String needle = service.toLowerCase(java.util.Locale.ROOT);
+                if (path.equals(needle) || path.startsWith(needle + "/") || path.contains("/" + needle + "/")) {
+                    result.add(service);
+                    break;
+                }
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Internal container port declared by the analyzed compose service. Compose
+     * entries can be plain ("8080"), protocol-qualified ("8080/tcp") or mapped
+     * ("8080:8080"); the last segment is the port the process listens on.
+     */
+    private static int containerPort(ModelElement element) {
+        JsonNode ports = element.getProperties() == null ? null : element.getProperties().path("ports");
+        if (ports != null && ports.isArray()) {
+            for (JsonNode item : ports) {
+                String raw = item.asText("").trim();
+                if (raw.isEmpty()) continue;
+                String withoutProtocol = raw.split("/")[0];
+                String last = withoutProtocol.substring(withoutProtocol.lastIndexOf(':') + 1);
+                try {
+                    int port = Integer.parseInt(last);
+                    if (port >= 1 && port <= 65535) return port;
+                } catch (NumberFormatException ignored) {
+                    // Try the next declared port.
+                }
+            }
+        }
+        return 8080;
+    }
+
+    private static boolean looksLikeConnectionController(String name) {
+        for (String token : name.toLowerCase(java.util.Locale.ROOT).split("[-_.]")) {
+            if (Set.of("route", "router", "gateway", "proxy", "edge", "ingress").contains(token)) return true;
+        }
+        return false;
+    }
+
     private static List<String> objectKeys(JsonNode node) {
         if (node == null || !node.isObject()) return List.of();
         List<String> keys = new ArrayList<>();
@@ -379,6 +440,12 @@ public class CourseSetupService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Lab not found"));
 
         ModelVersion refModel = lab.getReferenceModel();
+        if (labStudioExercises != null) {
+            var exercise = labStudioExercises.findByAssignmentId(lab.getId()).orElse(null);
+            if (exercise != null && exercise.getRuntimeModelId() != null) {
+                refModel = models.findById(exercise.getRuntimeModelId()).orElse(refModel);
+            }
+        }
         ObjectMapper json = objectMapper != null ? objectMapper : new ObjectMapper();
         ObjectNode topology = json.createObjectNode().put("version", 1);
         ArrayNode blocks = topology.putArray("blocks");
@@ -395,50 +462,100 @@ public class CourseSetupService {
                 : List.of();
 
         Map<UUID, String> elementNameById = new HashMap<>();
+        Map<String, String> runtimeByName = new HashMap<>();
+        Map<String, Integer> containerPortByName = new HashMap<>();
+        Set<String> controllerNames = new LinkedHashSet<>();
         if (!containerElements.isEmpty()) {
-            Set<String> seenServices = new LinkedHashSet<>();
+            Set<String> names = new LinkedHashSet<>();
+            Map<String, String> languageByName = new HashMap<>();
             for (ModelElement el : containerElements) {
                 if (el.getName() == null || el.getName().isBlank()) continue;
                 String svcName = el.getName().trim();
                 elementNameById.put(el.getId(), svcName);
-                if (seenServices.add(svcName)) {
-                    blocks.addObject()
-                            .put("service", svcName)
-                            .put("label", svcName)
-                            .put("canScale", true)
-                            .put("initiallyStopped", false);
-                    if (el.getId() != null) {
-                        serviceMappings.put(svcName, el.getId());
-                    }
-                }
+                languageByName.putIfAbsent(svcName, el.getLanguageStack());
+                containerPortByName.putIfAbsent(svcName, containerPort(el));
+                names.add(svcName);
             }
+            // Compose-only images rarely declare their language stack. Fall back to the
+            // analyzed source tree: a C# element under the service's folder means the
+            // service runs on the .NET runtime and needs the .NET instrumentation agent.
+            Set<String> dotnetServices = dotnetServices(refModel, names);
+            for (String svcName : names) {
+                String stack = languageByName.getOrDefault(svcName, "");
+                String lower = stack == null ? "" : stack.toLowerCase();
+                boolean dotnet = lower.contains(".net") || lower.contains("dotnet") || lower.contains("c#")
+                        || lower.contains("csharp") || dotnetServices.contains(svcName);
+                runtimeByName.put(svcName, dotnet ? "dotnet8-linux-x64-glibc" : "java");
+            }
+
+            // A prepared connection controller must be a real service that is not itself a
+            // block. Collapse routing/gateway services that sit between two blocks into the
+            // connection they carry instead of emitting an invalid self-controlled edge.
+            List<String[]> edges = new ArrayList<>();
             if (refModel != null && relationships != null) {
                 for (ModelRelationship rel : relationships.findByModelVersionId(refModel.getId())) {
                     if (rel.getSourceElement() == null || rel.getTargetElement() == null) continue;
                     String fromName = elementNameById.get(rel.getSourceElement().getId());
                     String toName = elementNameById.get(rel.getTargetElement().getId());
                     if (fromName != null && toName != null && !fromName.equals(toName)) {
+                        edges.add(new String[] { fromName, toName,
+                                rel.getRelationType() != null ? rel.getRelationType() : "HTTP" });
+                    }
+                }
+            }
+            for (String name : names) {
+                if (!looksLikeConnectionController(name)) continue;
+                boolean inbound = edges.stream().anyMatch(edge -> edge[1].equals(name) && !edge[0].equals(name));
+                boolean outbound = edges.stream().anyMatch(edge -> edge[0].equals(name) && !edge[1].equals(name));
+                if (inbound && outbound) controllerNames.add(name);
+            }
+
+            Set<String> seenServices = new LinkedHashSet<>();
+            for (ModelElement el : containerElements) {
+                if (el.getName() == null || el.getName().isBlank()) continue;
+                String svcName = el.getName().trim();
+                if (!seenServices.add(svcName)) continue;
+                if (el.getId() != null) serviceMappings.put(svcName, el.getId());
+                if (controllerNames.contains(svcName)) continue;
+                blocks.addObject()
+                        .put("service", svcName)
+                        .put("label", svcName)
+                        .put("canScale", true)
+                        .put("initiallyStopped", false);
+            }
+
+            Set<String> seenConnections = new LinkedHashSet<>();
+            for (String controller : controllerNames) {
+                for (String[] inbound : edges) {
+                    if (!inbound[1].equals(controller)) continue;
+                    for (String[] outbound : edges) {
+                        if (!outbound[0].equals(controller)) continue;
+                        String from = inbound[0];
+                        String to = outbound[1];
+                        if (from.equals(to) || controllerNames.contains(from) || controllerNames.contains(to)) continue;
+                        if (!seenConnections.add(from + "->" + to + "@" + controller)) continue;
                         connections.addObject()
-                                .put("from", fromName)
-                                .put("to", toName)
-                                .put("controllerService", fromName)
-                                .put("protocol", rel.getRelationType() != null ? rel.getRelationType() : "HTTP")
+                                .put("from", from)
+                                .put("to", to)
+                                .put("controllerService", controller)
+                                .put("protocol", outbound[2])
                                 .put("initiallyStopped", false);
                     }
                 }
             }
         } else {
-            for (String svc : List.of("api-gateway", "order-service", "payment-service", "inventory-service")) {
+            for (String svc : List.of("order-service", "payment-service", "inventory-service")) {
                 blocks.addObject()
                         .put("service", svc)
                         .put("label", svc)
                         .put("canScale", true)
                         .put("initiallyStopped", false);
             }
-            connections.addObject().put("from", "api-gateway").put("to", "order-service")
-                    .put("controllerService", "api-gateway").put("protocol", "HTTP").put("initiallyStopped", false);
+            controllerNames.add("api-gateway");
             connections.addObject().put("from", "order-service").put("to", "payment-service")
-                    .put("controllerService", "order-service").put("protocol", "FEIGN_CALL").put("initiallyStopped", false);
+                    .put("controllerService", "api-gateway").put("protocol", "FEIGN_CALL").put("initiallyStopped", false);
+            connections.addObject().put("from", "order-service").put("to", "inventory-service")
+                    .put("controllerService", "api-gateway").put("protocol", "FEIGN_CALL").put("initiallyStopped", false);
         }
 
         if (refModel != null && refModel.getProject() != null && refModel.getSourceSnapshot() != null) {
@@ -446,12 +563,19 @@ public class CourseSetupService {
             RuntimeConfiguration cfg = configurations.findById(refProjectId).orElse(null);
             ObjectNode profile = json.createObjectNode();
             ObjectNode apps = profile.putObject("applications");
-            int port = 8080;
+            Set<String> applicationNames = new LinkedHashSet<>();
             for (JsonNode b : blocks) {
                 String svc = b.path("service").asText("");
-                if (!svc.isBlank()) {
-                    apps.putObject(svc).put("runtime", "java").put("containerPort", port++);
-                }
+                if (!svc.isBlank()) applicationNames.add(svc);
+            }
+            // Connection controllers are real services too: they must be started and
+            // mapped even though they are not draggable blocks.
+            applicationNames.addAll(controllerNames);
+            for (String svc : applicationNames) {
+                apps.putObject(svc)
+                        .put("runtime", runtimeByName.getOrDefault(svc, "java"))
+                        .put("containerPort", containerPortByName.getOrDefault(svc, 8080))
+                        .put("readinessPath", "/health");
             }
             ObjectNode mappingsNode = profile.putObject("serviceMappings");
             serviceMappings.forEach((k, v) -> mappingsNode.put(k, v.toString()));
@@ -486,7 +610,7 @@ public class CourseSetupService {
                 ArrayNode steps = json.createArrayNode();
                 String primaryService = blocks.isEmpty() ? "order-service" : blocks.get(0).path("service").asText("order-service");
                 steps.addObject().put("id", "auto-health-check").put("service", primaryService)
-                        .put("method", "GET").put("path", "/actuator/health").put("expectedStatus", 200);
+                        .put("method", "GET").put("path", "/health").put("expectedStatus", 200);
                 jdbc.update("""
                         INSERT INTO runtime_scenarios (id, project_id, name, steps, revision)
                         VALUES (?, ?, 'Auto-Configured Studio Scenario', CAST(? AS jsonb), 1)

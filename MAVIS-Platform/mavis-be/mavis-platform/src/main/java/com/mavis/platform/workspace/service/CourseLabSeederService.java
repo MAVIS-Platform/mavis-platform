@@ -28,10 +28,20 @@ import com.mavis.common.repository.SourceSnapshotRepository;
 import com.mavis.common.repository.WorkspaceRepository;
 import com.mavis.common.security.AccessPolicyService;
 import com.mavis.common.utils.HashUtils;
+import com.mavis.platform.workspace.curriculum.CourseraCurriculumModels.CourseraModuleSpec;
+import com.mavis.platform.workspace.curriculum.CourseraCurriculumModels.LessonSpec;
+import com.mavis.platform.workspace.curriculum.CourseraCurriculumModels.RubricCriterion;
+import com.mavis.platform.workspace.curriculum.JavaCourseraCatalog;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.ByteArrayOutputStream;
@@ -49,10 +59,18 @@ import java.util.zip.ZipOutputStream;
 
 @Service
 @Transactional
+@Slf4j
 public class CourseLabSeederService {
     private static final String ACTION_SEEDED = "COURSE_LABS_SEEDED_CURATED";
     public static final String PRESET_STANDARD_DEMO = "STANDARD_DEMO";
     public static final String PRESET_FULL_CURRICULUM = "FULL_CURRICULUM";
+    public static final String PRESET_JAVA_COURSERA = "JAVA_COURSERA_FULL";
+    private static final ThreadLocal<java.util.Set<UUID>> SEEDING_IN_PROGRESS =
+            ThreadLocal.withInitial(java.util.HashSet::new);
+
+    public static boolean isSeeding(UUID workspaceId) {
+        return workspaceId != null && SEEDING_IN_PROGRESS.get().contains(workspaceId);
+    }
 
     private record LabSeedSpec(
             String curriculumCode,
@@ -100,7 +118,7 @@ public class CourseLabSeederService {
             CourseAccessService courses,
             JdbcTemplate jdbc,
             ObjectMapper json,
-            @Value("${mavis.storage.upload-dir:C:/mavis/uploads/}") String uploadDir) {
+            @Value("${mavis.storage.upload-dir:${java.io.tmpdir}/mavis-uploads}") String uploadDir) {
         this.access = access;
         this.workspaces = workspaces;
         this.assignments = assignments;
@@ -124,6 +142,47 @@ public class CourseLabSeederService {
         return seedCurated(workspaceId, PRESET_STANDARD_DEMO);
     }
 
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void ensureJavaCourseraPopulated(UUID workspaceId) {
+        if (workspaceId == null || isSeeding(workspaceId)) {
+            return;
+        }
+        Workspace workspace = workspaces.findById(workspaceId).orElse(null);
+        if (workspace == null || !"ACTIVE".equals(workspace.getStatus())) {
+            return;
+        }
+        User actor = workspace.getCreatedBy();
+        if (actor == null) {
+            return;
+        }
+        List<Assignment> existingLabs = assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId);
+        Integer publishedModules = jdbc.queryForObject("""
+                SELECT COUNT(*) FROM course_modules cm
+                JOIN courses c ON c.id = cm.course_id
+                WHERE c.workspace_id = ? AND c.status = 'PUBLISHED'
+                """, Integer.class, workspaceId);
+        if (existingLabs.size() >= 6 && publishedModules != null && publishedModules >= 6) {
+            return;
+        }
+        Authentication previous = SecurityContextHolder.getContext().getAuthentication();
+        SEEDING_IN_PROGRESS.get().add(workspaceId);
+        try {
+            var auth = new UsernamePasswordAuthenticationToken(
+                    actor.getId().toString(), null, List.of(new SimpleGrantedAuthority("ROLE_LECTURER")));
+            SecurityContextHolder.getContext().setAuthentication(auth);
+            seedJavaCourseraInternal(workspaceId, workspace, actor);
+        } catch (Exception ex) {
+            log.warn("Auto-healing Java Coursera workspace {} deferred: {}", workspaceId, ex.getMessage());
+        } finally {
+            SEEDING_IN_PROGRESS.get().remove(workspaceId);
+            if (previous != null) {
+                SecurityContextHolder.getContext().setAuthentication(previous);
+            } else {
+                SecurityContextHolder.clearContext();
+            }
+        }
+    }
+
     public CourseAccessService.Roadmap seedCurated(UUID workspaceId, String preset) {
         User lecturer = access.requireCurrentActiveUser();
         access.requireWorkspaceLecturer(workspaceId);
@@ -133,7 +192,12 @@ public class CourseLabSeederService {
             throw new BusinessException(ErrorCode.CONFLICT, "This workspace is archived");
         }
 
-        boolean fullCurriculum = PRESET_FULL_CURRICULUM.equalsIgnoreCase(preset == null ? "" : preset.trim());
+        String normalizedPreset = preset == null ? "" : preset.trim();
+        if (PRESET_JAVA_COURSERA.equalsIgnoreCase(normalizedPreset)) {
+            return seedJavaCourseraInternal(workspaceId, workspace, lecturer);
+        }
+
+        boolean fullCurriculum = PRESET_FULL_CURRICULUM.equalsIgnoreCase(normalizedPreset);
         List<Assignment> existingLabs = assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId);
         upgradeExistingLabsIfSafe(existingLabs);
 
@@ -208,6 +272,222 @@ public class CourseLabSeederService {
                 lecturer.getId(), ACTION_SEEDED, "WORKSPACE", workspaceId);
 
         return courses.roadmap(workspaceId);
+    }
+
+    private CourseAccessService.Roadmap seedJavaCourseraInternal(UUID workspaceId, Workspace workspace, User lecturer) {
+        boolean addedFlag = !isSeeding(workspaceId);
+        if (addedFlag) {
+            SEEDING_IN_PROGRESS.get().add(workspaceId);
+        }
+        try {
+            return runSeedJavaCourseraInternal(workspaceId, workspace, lecturer);
+        } finally {
+            if (addedFlag) {
+                SEEDING_IN_PROGRESS.get().remove(workspaceId);
+            }
+        }
+    }
+
+    private CourseAccessService.Roadmap runSeedJavaCourseraInternal(UUID workspaceId, Workspace workspace, User lecturer) {
+        ensureCourseMode(workspace);
+        List<Assignment> existingLabs = assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId);
+        ModelVersion refModel = existingLabs.stream()
+                .map(Assignment::getReferenceModel)
+                .filter(java.util.Objects::nonNull)
+                .findFirst()
+                .orElseGet(() -> seedReferenceModel(workspaceId, workspace, lecturer));
+        ensureReferenceRuntimeSetup(refModel, java.util.Map.of());
+
+        int nextOrder = existingLabs.stream()
+                .map(Assignment::getLabOrder)
+                .filter(java.util.Objects::nonNull)
+                .mapToInt(Integer::intValue)
+                .max()
+                .orElse(0);
+
+        List<Assignment> orderedLabs = new ArrayList<>();
+        for (CourseraModuleSpec modSpec : JavaCourseraCatalog.modules()) {
+            Assignment match = existingLabs.stream()
+                    .filter(a -> modSpec.labTitle().equals(a.getTitle()))
+                    .findFirst()
+                    .orElse(null);
+            if (match == null) {
+                boolean runtime = modSpec.visualLab() != null && modSpec.visualLab().requireRuntimeTrace();
+                List<String> diagramTypes = modSpec.visualLab() != null
+                        ? modSpec.visualLab().requiredDiagramTypes()
+                        : List.of("C4_CONTAINER", "C4_COMPONENT");
+                Assignment.AssignmentBuilder labBuilder = Assignment.builder()
+                        .workspace(workspace)
+                        .createdBy(lecturer)
+                        .title(modSpec.labTitle())
+                        .description(modSpec.labDescription())
+                        .labMode(runtime ? "THEORY_QUIZ_STUDIO" : "THEORY_QUIZ")
+                        .requiredDiagramTypes(json.valueToTree(diagramTypes))
+                        .ruleSetVersion("SWD_DEFAULT_V1")
+                        .requireRuntimeTrace(runtime)
+                        .referenceModel(refModel)
+                        .labOrder(++nextOrder);
+                if (runtime) {
+                    labBuilder.studioTopologySnapshot(buildDefaultStudioTopology())
+                            .studioTopologyRevision(1);
+                }
+                match = assignments.saveAndFlush(labBuilder.build());
+            }
+            quizzes.publishCurriculum(workspaceId, match.getId(), JavaCourseraCatalog.toQuizPublishRequest(modSpec));
+            orderedLabs.add(match);
+        }
+
+        syncJavaCourseraOutline(workspaceId, orderedLabs);
+        syncTheoryAssetsLibrary(workspaceId, lecturer != null ? lecturer.getId() : null);
+
+        jdbc.update("INSERT INTO audit_logs(actor_id, action, target_type, target_id) VALUES (?, ?, ?, ?)",
+                lecturer.getId(), "COURSE_JAVA_COURSERA_SEEDED", "WORKSPACE", workspaceId);
+
+        return courses.roadmap(workspaceId);
+    }
+
+    private void syncJavaCourseraOutline(UUID workspaceId, List<Assignment> orderedLabs) {
+        if (courseAuthoring == null || orderedLabs.isEmpty()) {
+            return;
+        }
+        try {
+            CourseAuthoringService.CourseView existing = null;
+            try {
+                existing = courseAuthoring.get(workspaceId);
+            } catch (BusinessException ex) {
+                if (ex.getErrorCode() != ErrorCode.NOT_FOUND) {
+                    throw ex;
+                }
+            }
+            boolean upToDate = false;
+            if (existing != null
+                    && "PUBLISHED".equals(existing.status())
+                    && existing.publishedVersion() >= 1
+                    && JavaCourseraCatalog.COURSE_TITLE.equals(existing.title())
+                    && existing.modules() != null
+                    && existing.modules().size() == 6) {
+                int totalItems = existing.modules().stream()
+                        .mapToInt(m -> m.items() != null ? m.items().size() : 0)
+                        .sum();
+                String firstTheoryBody = existing.modules().stream()
+                        .flatMap(m -> m.items().stream())
+                        .filter(item -> "THEORY".equals(item.type()) && item.content() != null)
+                        .map(item -> item.content().path("body").asText(""))
+                        .findFirst()
+                        .orElse("");
+                boolean hasMojibake = existing.modules().stream()
+                        .flatMap(m -> m.items().stream())
+                        .anyMatch(item -> item.content() != null
+                                && item.content().path("body").asText("").contains("ðŸ"));
+                upToDate = totalItems >= 36 && firstTheoryBody.length() >= 1500 && !hasMojibake;
+            }
+            if (upToDate) {
+                return;
+            }
+            if (existing != null && "ARCHIVED".equals(existing.status())) {
+                log.warn("Skipped syncing archived Java Coursera outline for workspace {}", workspaceId);
+                return;
+            }
+            if (existing != null && "PUBLISHED".equals(existing.status())) {
+                existing = courseAuthoring.startDraft(workspaceId);
+            }
+            existing = courseAuthoring.saveDraft(workspaceId, new CourseAuthoringService.CourseRequest(
+                    JavaCourseraCatalog.COURSE_TITLE,
+                    JavaCourseraCatalog.COURSE_DESCRIPTION));
+            if (existing.modules() != null && !existing.modules().isEmpty()) {
+                for (CourseAuthoringService.ModuleView staleModule : List.copyOf(existing.modules())) {
+                    courseAuthoring.deleteModule(workspaceId, staleModule.id());
+                }
+            }
+
+            List<CourseraModuleSpec> catalogModules = JavaCourseraCatalog.modules();
+            for (int i = 0; i < catalogModules.size() && i < orderedLabs.size(); i++) {
+                CourseraModuleSpec modSpec = catalogModules.get(i);
+                Assignment lab = orderedLabs.get(i);
+                CourseAuthoringService.CourseView afterModule = courseAuthoring.addModule(
+                        workspaceId, new CourseAuthoringService.ModuleRequest(
+                                modSpec.title(), modSpec.description(), null));
+                UUID moduleId = afterModule.modules().getLast().id();
+
+                for (LessonSpec lesson : modSpec.lessons()) {
+                    ObjectNode content = json.createObjectNode();
+                    content.put("body", lesson.bodyMarkdown());
+                    content.put("curriculumCode", lesson.curriculumCode());
+                    content.put("estimatedMinutes", lesson.estimatedMinutes());
+                    courseAuthoring.addItem(workspaceId, moduleId,
+                            new CourseAuthoringService.ItemRequest(
+                                    "THEORY", lesson.title(), lesson.summary(), null, content, true));
+                }
+
+                courseAuthoring.addItem(workspaceId, moduleId,
+                        new CourseAuthoringService.ItemRequest(
+                                "QUIZ",
+                                "Quiz Chương " + modSpec.position() + " · Kiểm tra Trắc nghiệm (10 câu)",
+                                "Vượt qua Quiz Gate (>= 70%) để mở khóa bài thực hành tiếp theo.",
+                                lab.getId(), json.createObjectNode(), true));
+
+                if (modSpec.essay() != null) {
+                    ObjectNode essayContent = json.createObjectNode();
+                    essayContent.put("prompt", modSpec.essay().promptMarkdown());
+                    ArrayNode rubricArr = essayContent.putArray("rubric");
+                    for (RubricCriterion c : modSpec.essay().rubric()) {
+                        ObjectNode node = rubricArr.addObject();
+                        node.put("title", c.criterion());
+                        node.put("criterion", c.criterion());
+                        node.put("description", c.excellentDescription());
+                        node.put("excellentDescription", c.excellentDescription());
+                        node.put("points", c.weightPoints());
+                        node.put("weightPoints", c.weightPoints());
+                        node.put("maxScore", c.weightPoints());
+                    }
+                    courseAuthoring.addItem(workspaceId, moduleId,
+                            new CourseAuthoringService.ItemRequest(
+                                    "ESSAY", modSpec.essay().title(), modSpec.essay().description(),
+                                    null, essayContent, true));
+                }
+
+                if (modSpec.visualLab() != null) {
+                    String resolvedLabType = "RUNTIME_LAB".equals(modSpec.visualLab().itemType())
+                            && !Boolean.TRUE.equals(lab.getRequireRuntimeTrace())
+                            ? "IMPACT_LAB"
+                            : modSpec.visualLab().itemType();
+                    courseAuthoring.addItem(workspaceId, moduleId,
+                            new CourseAuthoringService.ItemRequest(
+                                    resolvedLabType,
+                                    modSpec.visualLab().title(),
+                                    modSpec.visualLab().description(),
+                                    lab.getId(), json.createObjectNode(), true));
+                }
+            }
+            courseAuthoring.publish(workspaceId);
+            log.info("Published 6-module Java Coursera outline for workspace {}", workspaceId);
+        } catch (Exception ex) {
+            log.warn("Could not publish Java Coursera outline for workspace {}: {}", workspaceId, ex.getMessage(), ex);
+        }
+    }
+
+    private void syncTheoryAssetsLibrary(UUID workspaceId, UUID creatorId) {
+        try {
+            List<String> existingTitles = jdbc.queryForList(
+                    "SELECT title FROM theory_assets WHERE workspace_id = ?", String.class, workspaceId);
+            Set<String> seen = existingTitles != null ? new LinkedHashSet<>(existingTitles) : Set.of();
+            for (LessonSpec lesson : JavaCourseraCatalog.allLessons()) {
+                if (seen.contains(lesson.title())) {
+                    jdbc.update("""
+                            UPDATE theory_assets
+                            SET body = ?, updated_at = now()
+                            WHERE workspace_id = ? AND title = ?
+                            """, lesson.bodyMarkdown(), workspaceId, lesson.title());
+                    continue;
+                }
+                jdbc.update("""
+                        INSERT INTO theory_assets (id, workspace_id, title, body, language, style, source, version, created_by, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, 'vi', 'GUIDED', 'SEED', 1, ?, now(), now())
+                        """, UUID.randomUUID(), workspaceId, lesson.title(), lesson.bodyMarkdown(), creatorId);
+            }
+        } catch (Exception ex) {
+            log.debug("Skipped syncing theory_assets library for workspace {}: {}", workspaceId, ex.getMessage());
+        }
     }
 
     private void syncCuratedCourseOutline(UUID workspaceId, Workspace workspace) {
@@ -338,6 +618,8 @@ public class CourseLabSeederService {
                 .isPublished(true)
                 .createdBy(lecturer)
                 .build());
+        refProject.setReferenceSnapshotId(refSnapshot.getId());
+        projects.saveAndFlush(refProject);
 
         ModelVersion refModel = models.saveAndFlush(ModelVersion.builder()
                 .project(refProject)
@@ -350,52 +632,52 @@ public class CourseLabSeederService {
                 .build());
 
         ModelElement customer = elements.save(ModelElement.builder()
-                .modelVersion(refModel).elementType("PERSON").languageStack("Actor")
-                .name("Customer").scope("external").status("CONFIRMED").build());
+                .modelVersion(refModel).elementType("EXTERNAL_SYSTEM").languageStack("Actor")
+                .name("Customer").scope("external").status("VALIDATED").build());
         ModelElement gateway = elements.save(ModelElement.builder()
                 .modelVersion(refModel).elementType("SERVICE_CONTAINER").languageStack("Java / Spring Cloud Gateway")
-                .name("api-gateway").scope("service").status("CONFIRMED").build());
+                .name("api-gateway").scope("service").status("VALIDATED").build());
         ModelElement orderService = elements.save(ModelElement.builder()
                 .modelVersion(refModel).elementType("SERVICE_CONTAINER").languageStack("Java / Spring Boot")
-                .name("order-service").scope("service").status("CONFIRMED").build());
+                .name("order-service").scope("service").status("VALIDATED").build());
         ModelElement paymentService = elements.save(ModelElement.builder()
                 .modelVersion(refModel).elementType("SERVICE_CONTAINER").languageStack("Java / Spring Boot")
-                .name("payment-service").scope("service").status("CONFIRMED").build());
+                .name("payment-service").scope("service").status("VALIDATED").build());
         ModelElement inventoryService = elements.save(ModelElement.builder()
                 .modelVersion(refModel).elementType("SERVICE_CONTAINER").languageStack("Java / Spring Boot")
-                .name("inventory-service").scope("service").status("CONFIRMED").build());
+                .name("inventory-service").scope("service").status("VALIDATED").build());
 
         ModelElement orderController = elements.save(ModelElement.builder()
                 .modelVersion(refModel).parentElement(orderService).elementType("COMPONENT").languageStack("Spring MVC")
-                .name("OrderController").scope("order-service").status("CONFIRMED").build());
+                .name("OrderController").scope("order-service").status("VALIDATED").build());
         ModelElement paymentClient = elements.save(ModelElement.builder()
                 .modelVersion(refModel).parentElement(orderService).elementType("COMPONENT").languageStack("OpenFeign")
-                .name("PaymentClient").scope("order-service").status("CONFIRMED").build());
+                .name("PaymentClient").scope("order-service").status("VALIDATED").build());
         ModelElement paymentController = elements.save(ModelElement.builder()
                 .modelVersion(refModel).parentElement(paymentService).elementType("COMPONENT").languageStack("Spring MVC")
-                .name("PaymentController").scope("payment-service").status("CONFIRMED").build());
+                .name("PaymentController").scope("payment-service").status("VALIDATED").build());
         ModelElement inventoryController = elements.save(ModelElement.builder()
                 .modelVersion(refModel).parentElement(inventoryService).elementType("COMPONENT").languageStack("Spring MVC")
-                .name("InventoryController").scope("inventory-service").status("CONFIRMED").build());
+                .name("InventoryController").scope("inventory-service").status("VALIDATED").build());
 
         ModelRelationship customerToGateway = relationships.save(ModelRelationship.builder()
                 .modelVersion(refModel).sourceElement(customer).targetElement(gateway)
-                .relationType("USES").originLayer("STATIC").direction("DIRECTED").build());
+                .relationType("SERVICE_HTTP_CALL").originLayer("STATIC").direction("DIRECTED").build());
         ModelRelationship gatewayToOrder = relationships.save(ModelRelationship.builder()
                 .modelVersion(refModel).sourceElement(gateway).targetElement(orderService)
-                .relationType("HTTP_CALL").originLayer("STATIC").direction("DIRECTED").build());
+                .relationType("SERVICE_HTTP_CALL").originLayer("STATIC").direction("DIRECTED").build());
         ModelRelationship orderToPayment = relationships.save(ModelRelationship.builder()
                 .modelVersion(refModel).sourceElement(orderService).targetElement(paymentService)
-                .relationType("FEIGN_CALL").originLayer("STATIC").direction("DIRECTED").build());
+                .relationType("SERVICE_HTTP_CALL").originLayer("STATIC").direction("DIRECTED").build());
         ModelRelationship orderToInventory = relationships.save(ModelRelationship.builder()
                 .modelVersion(refModel).sourceElement(orderService).targetElement(inventoryService)
-                .relationType("HTTP_CALL").originLayer("STATIC").direction("DIRECTED").build());
+                .relationType("SERVICE_HTTP_CALL").originLayer("STATIC").direction("DIRECTED").build());
         ModelRelationship clientToPaymentController = relationships.save(ModelRelationship.builder()
                 .modelVersion(refModel).sourceElement(paymentClient).targetElement(paymentController)
-                .relationType("CALL_SITE").originLayer("STATIC").direction("DIRECTED").build());
+                .relationType("CODE_DEPENDENCY").originLayer("STATIC").direction("DIRECTED").build());
         ModelRelationship orderCtrlToClient = relationships.save(ModelRelationship.builder()
                 .modelVersion(refModel).sourceElement(orderController).targetElement(paymentClient)
-                .relationType("DEPENDS_ON").originLayer("STATIC").direction("DIRECTED").build());
+                .relationType("CODE_DEPENDENCY").originLayer("STATIC").direction("DIRECTED").build());
 
         evidences.save(Evidence.builder()
                 .sourceSnapshot(refSnapshot)
@@ -403,7 +685,7 @@ public class CourseLabSeederService {
                 .relationship(orderToPayment)
                 .locator("order-service/src/main/java/com/curated/order/PaymentClient.java:6")
                 .adapterVersion("curated-seed-v1")
-                .sourceType("CALL_SITE")
+                .sourceType("STATIC_CODE")
                 .excerpt("@FeignClient(name = \"payment-service\", url = \"http://payment-service:8082\")")
                 .build());
 
@@ -649,17 +931,30 @@ public class CourseLabSeederService {
     }
 
     private Path persistArchive(UUID workspaceId, UUID projectId, byte[] zipBytes) {
+        String filename = "curated-course-" + workspaceId + "-" + projectId + ".zip";
         try {
             Files.createDirectories(storageRoot);
-            Path target = storageRoot.toRealPath().resolve("curated-course-" + workspaceId + "-" + projectId + ".zip");
+            Path target = storageRoot.toRealPath().resolve(filename);
             Files.write(target, zipBytes);
             return target;
-        } catch (IOException ex) {
-            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR, "Unable to store curated reference archive: " + ex.getMessage());
+        } catch (IOException primaryEx) {
+            Path fallbackDir = Path.of(System.getProperty("java.io.tmpdir"), "mavis-uploads");
+            try {
+                Files.createDirectories(fallbackDir);
+                Path fallbackTarget = fallbackDir.toRealPath().resolve(filename);
+                Files.write(fallbackTarget, zipBytes);
+                log.warn("Primary upload directory '{}' unavailable ({}); wrote curated archive to '{}'",
+                        storageRoot, primaryEx.getMessage(), fallbackTarget);
+                return fallbackTarget;
+            } catch (IOException fallbackEx) {
+                log.warn("Unable to persist curated archive to disk ({}); LabReferenceArchive will materialize in temp dir on demand",
+                        fallbackEx.getMessage());
+                return fallbackDir.resolve(filename);
+            }
         }
     }
 
-    private static byte[] buildCuratedArchive() {
+    public static byte[] buildCuratedArchive() {
         try (ByteArrayOutputStream out = new ByteArrayOutputStream();
              ZipOutputStream zip = new ZipOutputStream(out)) {
             writeEntry(zip, "pom.xml", """

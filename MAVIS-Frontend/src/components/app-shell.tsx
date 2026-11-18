@@ -76,7 +76,6 @@ export type AppShellProps = {
 };
 
 export function AppShell(props: AppShellProps) {
-  const { t } = useLocale();
   const pathname = usePathname();
   // FlowFrame verifies the Java session. Do not run the provisional session
   // adapter or its permission gate for the integrated backend mainflow.
@@ -284,11 +283,20 @@ function ShellChrome({
   const globalGroups = decorateGroups(
     globalNavigation[role].map((group) => ({
       ...group,
-      items: group.items.flatMap((item) =>
-        (item.id === "workspaces" || (role === "student" && item.id === "courses")) &&
-        !live &&
-        !onPreviewNavigate &&
-        workspaces.length > 0
+      items: group.items.flatMap((item) => {
+        if (
+          role === "lecturer" &&
+          !live &&
+          !onPreviewNavigate &&
+          workspaces.length > 0 &&
+          (item.id === "workspace-overview" || item.id === "submissions")
+        ) {
+          return [];
+        }
+        return (item.id === "workspaces" || (role === "student" && item.id === "courses")) &&
+          !live &&
+          !onPreviewNavigate &&
+          workspaces.length > 0
           ? [
               item,
               ...workspaces.map((w) => {
@@ -317,8 +325,8 @@ function ShellChrome({
                 };
               }),
             ]
-          : [item],
-      ),
+          : [item];
+      }),
     })),
   );
   const groups = decorateGroups(contextualNavigation(role, scope, live));
@@ -333,17 +341,13 @@ function ShellChrome({
       ? params.get("view") === "course-authoring"
         ? "course-authoring"
         : "workspace-overview"
-      : pathname === "/theory-library"
-        ? "theory-library"
-        : pathname === "/assignments"
-          ? "assignments"
-          : pathname === "/lab-authoring"
-            ? "lab-authoring"
-            : pathname === "/submissions" && role === "lecturer"
-              ? "assignment-submissions"
-              : pathname === "/members"
-                ? "members"
-                : route.activeId;
+      : pathname === "/theory-library" || pathname === "/assignments" || pathname === "/lab-authoring"
+        ? "lab-authoring"
+        : pathname === "/submissions" && role === "lecturer"
+          ? "assignment-submissions"
+          : pathname === "/members"
+            ? "members"
+            : route.activeId;
   const activeWorkspaceNavId =
     selectedWorkspaceId && workspaces.some((w) => w.id === selectedWorkspaceId)
       ? `workspace:${selectedWorkspaceId}:${activeWorkspaceDestination}`
@@ -458,7 +462,9 @@ function ShellChrome({
                         ? "Submission review"
                         : scope === "project"
                           ? "Project workspace"
-                          : "Teaching workspace",
+                          : role === "student"
+                            ? "Learning workspace"
+                            : "Teaching workspace",
                     )}
                   </p>
                   <p className="mt-1 break-words text-xs font-medium">{context}</p>
@@ -476,6 +482,7 @@ function ShellChrome({
                 preview={Boolean(onPreviewNavigate)}
                 onNavigate={navigatePreview}
                 label="Contextual navigation"
+                hideGroupHeading={role === "student" && scope === "workspace"}
                 {...(scope === "project" && !live
                   ? { expandedGroups: projectGroups.groups, onToggleGroup: projectGroups.toggle }
                   : {})}
@@ -564,6 +571,57 @@ function ShellChrome({
               ]}
             />
             <div className="flex shrink-0 items-center gap-1.5">
+              {!live &&
+                (role === "student" || role === "lecturer") &&
+                workspaces.length > 0 && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="hidden h-8 max-w-48 gap-1.5 rounded-full border-emerald-200 bg-emerald-50/70 px-3 text-xs font-medium text-emerald-900 hover:bg-emerald-100 md:inline-flex dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200"
+                      >
+                        <span className="truncate">
+                          {workspaces.find((w) => w.id === selectedWorkspaceId)?.code ||
+                            workspaces.find((w) => w.id === selectedWorkspaceId)?.name ||
+                            t("Switch class", "Chọn lớp")}
+                        </span>
+                        <ChevronDown className="size-3 shrink-0" aria-hidden="true" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-64 rounded-xl p-1.5">
+                      <DropdownMenuLabel className="px-2 py-1.5 text-xs text-muted-foreground">
+                        {t("Quick switch class", "Chuyển nhanh lớp học")}
+                      </DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      {workspaces.map((ws) => {
+                        const targetHref =
+                          role === "student"
+                            ? `/roadmap?workspace=${encodeURIComponent(ws.id)}`
+                            : `/workspace-overview?workspace=${encodeURIComponent(ws.id)}`;
+                        return (
+                          <DropdownMenuItem key={ws.id} asChild>
+                            <Link
+                              href={targetHref}
+                              className={cn(
+                                "flex items-center justify-between gap-2",
+                                ws.id === selectedWorkspaceId && "bg-emerald-50 font-semibold text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200",
+                              )}
+                            >
+                              <span className="truncate">{ws.name}</span>
+                              {ws.code && (
+                                <span className="shrink-0 font-mono text-[10px] opacity-75">
+                                  {ws.code}
+                                </span>
+                              )}
+                            </Link>
+                          </DropdownMenuItem>
+                        );
+                      })}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
               <LocaleSwitchButton />
               <AppearanceSelector />
               <NotificationBell />
@@ -759,6 +817,7 @@ function NavigationGroups({
   expandedGroups,
   onToggleGroup,
   collapsibleGroupLabels,
+  hideGroupHeading = false,
 }: {
   groups: readonly NavigationGroup[];
   collapsed: boolean;
@@ -770,8 +829,10 @@ function NavigationGroups({
   expandedGroups?: Record<string, boolean>;
   onToggleGroup?: (group: string, open: boolean) => void;
   collapsibleGroupLabels?: readonly string[];
+  hideGroupHeading?: boolean;
 }) {
   const { t } = useLocale();
+  const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
   return (
     <nav aria-label={t(label)} className={onToggleGroup ? "space-y-2" : "space-y-5"}>
       {groups.map((group) => {
@@ -780,7 +841,10 @@ function NavigationGroups({
             {group.items.map((item) => {
               const isWorkspace =
                 item.id.startsWith("workspace:") && Boolean(item.children?.length);
-              const expanded = expandedGroups?.[item.id] ?? activeId.startsWith(`${item.id}:`);
+              const expanded =
+                expandedGroups?.[item.id] ??
+                expandedItems[item.id] ??
+                activeId.startsWith(`${item.id}:`);
               return (
                 <li key={item.id}>
                   <div className={cn("flex items-center gap-1", isWorkspace && "mb-0.5")}>
@@ -797,7 +861,10 @@ function NavigationGroups({
                     {isWorkspace && !collapsed && (
                       <Collapsible
                         open={expanded}
-                        onOpenChange={(open) => onToggleGroup?.(item.id, open)}
+                        onOpenChange={(open) => {
+                          setExpandedItems((prev) => ({ ...prev, [item.id]: open }));
+                          onToggleGroup?.(item.id, open);
+                        }}
                       >
                         <CollapsibleTrigger asChild>
                           <button
@@ -879,7 +946,7 @@ function NavigationGroups({
         }
         return (
           <div key={group.label}>
-            {!collapsed && (
+            {!collapsed && !hideGroupHeading && (
               <p className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
                 {t(group.label)}
               </p>

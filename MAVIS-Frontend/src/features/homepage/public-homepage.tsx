@@ -26,38 +26,38 @@ const lecturerPath = "/login?next=%2Fworkspaces";
 const milestones = [
   {
     icon: CodeXml,
-    title: ["Read the architecture", "Đọc kiến trúc"],
-    result: ["C4 diagrams and source evidence", "Sơ đồ C4 và trích đoạn mã"],
+    title: ["Static C1–C3 & AI", "Kiến trúc tĩnh C1–C3 & AI"],
+    result: ["C1–C3 diagrams & file:line evidence", "Sơ đồ C1–C3 và bằng chứng mã nguồn"],
     text: [
-      "Identify the services and trace their dependencies to the code that connects them.",
-      "Xác định các dịch vụ và lần theo từng phụ thuộc đến đoạn mã tạo ra kết nối.",
+      "Analyze curated Java and C# repos to extract C1–C3 views, Dependency Graph, 3E findings, and evidence-grounded AI explanations.",
+      "Phân tích repo mẫu Java/C# trích xuất sơ đồ C1–C3, Đồ thị phụ thuộc, 5 luật 3E và giải thích AI trích dẫn đúng dòng code.",
     ],
   },
   {
     icon: BookOpen,
-    title: ["Study and take a quiz", "Học lý thuyết và làm bài kiểm tra"],
-    result: ["Quiz result", "Kết quả kiểm tra"],
+    title: ["Theory, Reverse BFS & Quiz Gate", "Lý thuyết, Reverse BFS & Quiz Gate"],
+    result: ["Quiz Gate ≥ 70% unlock", "Đạt Quiz Gate ≥ 70% mở khóa Runtime"],
     text: [
-      "Read the Lab materials, compare your findings with the reference model, and take the quiz.",
-      "Đọc học liệu, đối chiếu kết quả phân tích với mô hình tham chiếu và làm bài kiểm tra.",
+      "Read guided architecture theory, trace cycle-safe Reverse BFS blast radius, and pass the versioned Quiz Gate to unlock live Docker.",
+      "Đọc tài liệu lý thuyết, truy vết lan truyền ngược Reverse BFS và vượt qua Quiz Gate để mở khóa môi trường Docker thật.",
     ],
   },
   {
     icon: Radio,
-    title: ["Investigate a change", "Quan sát thay đổi"],
-    result: ["Before and after evidence", "Bằng chứng trước và sau"],
+    title: ["Live Docker & OTel Runtime", "Docker thật & OpenTelemetry Runtime"],
+    result: ["Real OTel traces & metrics", "Trace OpenTelemetry & chỉ số thực tế"],
     text: [
-      "In Labs with runtime enabled, use OpenTelemetry traces and MAVIS Studio to compare how the system behaves before and after a change.",
-      "Với Lab có cấu hình runtime, dùng trace OpenTelemetry và MAVIS Studio để quan sát hệ thống trước và sau thay đổi.",
+      "Validate Docker Compose preflight rules, start isolated Lab containers, and observe live distributed OpenTelemetry spans on 2D/3D graphs.",
+      "Kiểm tra an toàn Compose Preflight, khởi chạy container thật và quan sát luồng gói tin OpenTelemetry trực tiếp trên đồ thị 2D/3D.",
     ],
   },
   {
     icon: Check,
-    title: ["Submit your findings", "Nộp kết quả"],
-    result: ["Grade and feedback", "Điểm và phản hồi"],
+    title: ["MAVIS Studio & 4-Stage Submission", "MAVIS Studio & Nộp bài 4 bước"],
+    result: ["Signed RuntimeReceipt & > 5.0/10 grade", "Biên nhận HMAC & chấm > 5.0/10 mở Lab kế"],
     text: [
-      "Submit your evidence and explanation for review. The next Lab opens when your submission meets the requirements.",
-      "Nộp minh chứng kèm giải thích để giảng viên chấm. Lab tiếp theo mở khi bài nộp đạt yêu cầu.",
+      "Execute real Stop/Start and Scale (1–8) actions, compare Before vs. After impact, freeze your 4-stage SHA-256 package, and unlock the next Lab.",
+      "Thực thi Stop/Start và Scale (1–8) thật, so sánh Trước/Sau, đóng băng gói minh chứng 4 bước SHA-256 và mở khóa bài Lab kế tiếp.",
     ],
   },
 ] as const;
@@ -124,10 +124,10 @@ const questions = [
     ],
   },
   {
-    question: ["When can I run Studio Live?", "Khi nào tôi có thể chạy Studio Live?"],
+    question: ["When can I run MAVIS Studio Live?", "Khi nào tôi có thể chạy MAVIS Studio Live?"],
     answer: [
-      "Studio Sandbox simulates changes. Studio Live uses Docker and OpenTelemetry in a prepared Lab when its requirements are met.",
-      "Bạn có thể vào Studio Live khi giảng viên đã cấu hình runtime cho Lab và bạn đã hoàn thành các bước bắt buộc. Studio Live chạy dịch vụ bằng Docker và thu thập dữ liệu qua OpenTelemetry.",
+      "MAVIS Studio Live unlocks once you pass the Lab's Step 2 Quiz Gate (≥ 70%) on a Lab with a lecturer-verified Docker Compose runtime topology.",
+      "MAVIS Studio Live mở khóa ngay khi bạn vượt qua Quiz Gate (≥ 70%) ở Bước 2 trên các bài Lab đã được giảng viên cấu hình và xác minh hạ tầng Docker.",
     ],
   },
 ] as const;

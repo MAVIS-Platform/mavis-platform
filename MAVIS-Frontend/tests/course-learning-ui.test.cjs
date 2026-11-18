@@ -51,34 +51,35 @@ test("student navigation locks class sidebar to 3 clean course items and preserv
 
   for (const label of [
     "My Courses",
+    "Lab Roadmap & Course",
     "My Grades & Submissions",
-    "Free Studio Sandbox",
     "My Classes",
+    "Curriculum & Labs",
     "Grading & Gradebook",
-    "MAVIS Studio",
-    "Admin Control Center",
+    "System Overview",
     "Users & Roles",
-    "Runtime & Quotas",
-    "Audit & Jobs",
+    "Governance & Audit",
   ])
     assert.ok(navigation.includes(label), label);
   assert.match(navigation, /href:\s*"\/courses"/);
+  assert.match(navigation, /href:\s*"\/roadmap"/);
   assert.match(navigation, /href:\s*"\/submissions"/);
-  assert.match(navigation, /href:\s*"\/studio"/);
   assert.match(navigation, /href:\s*"\/workspaces"/);
+  assert.match(navigation, /href:\s*"\/workspace-overview"/);
   assert.match(navigation, /href:\s*"\/administration\/health"/);
 });
 
 test("student course landing prioritizes joined classes, defers curriculum and keeps Passkey deep-link", () => {
   const course = read("src/features/courses/screens.tsx");
+  const dashboard = read("src/features/courses/student-courses-dashboard.tsx");
   const curriculum = read("src/features/courses/curriculum.tsx");
   const nav = read("src/lib/navigation.ts");
-  assert.ok(course.includes('id="course-passkey"'));
-  assert.ok(course.includes('aria-controls="course-passkey-form"'));
-  assert.ok(course.includes("Continue learning"));
+  assert.ok(dashboard.includes('id="course-passkey"'));
+  assert.ok(dashboard.includes('aria-controls="course-passkey-form"'));
+  assert.ok(dashboard.includes("Continue learning"));
   assert.ok(course.includes("Reference materials: Java and C#"));
   assert.match(curriculum, /useCurriculum\(open\)/);
-  assert.ok(nav.includes('href: "/courses"') && nav.includes('href: "/submissions"') && nav.includes('href: "/studio"'));
+  assert.ok(nav.includes('href: "/courses"') && nav.includes('href: "/submissions"') && nav.includes('href: "/roadmap"'));
 });
 
 test("student class outline uses published roadmap and markdown activities with a legacy roadmap fallback", () => {
@@ -88,7 +89,7 @@ test("student class outline uses published roadmap and markdown activities with 
   assert.ok(outline.includes("legacyLabs.length > 0"));
   assert.ok(outline.includes("<MarkdownPreview"));
   assert.ok(outline.includes("Pass the preceding Labs to unlock this activity."));
-  assert.ok(shell.includes('tab === "content" || tab === "submissions"'));
+  assert.ok(shell.includes("STUDENT_TABS") && shell.includes("STAFF_TABS"));
 });
 
 test("student submissions are scoped by selected class workspaceId and retain class navigation", () => {
@@ -101,10 +102,11 @@ test("student submissions are scoped by selected class workspaceId and retain cl
 
 test("Lab UI keeps unavailable progress gates honest and runs 4-step V2 workflow inside /lab", () => {
   const course = read("src/features/courses/screens.tsx");
+  const dashboard = read("src/features/courses/student-courses-dashboard.tsx");
   const access = read("src/features/workspaces/course-access.tsx");
   const quiz = read("src/features/courses/course-quiz.tsx");
 
-  assert.ok(course.includes('<CourseEnrollment destination="roadmap" />'));
+  assert.ok(dashboard.includes('<CourseEnrollment destination="roadmap" />'));
   assert.ok(access.includes('"course-enrollments/redeem"'));
   assert.ok(access.includes("course-roadmap"));
   assert.ok(access.includes('state: "LOCKED" | "UNLOCKED" | "PASSED"'));
@@ -308,7 +310,9 @@ test("lecturer review requires comments and maps the documented pass threshold t
 });
 
 test("new Course and Lab surfaces expose direct Vietnamese copy", () => {
-  const course = read("src/features/courses/screens.tsx");
+  const course =
+    read("src/features/courses/screens.tsx") +
+    read("src/features/courses/student-courses-dashboard.tsx");
 
   for (const text of [
     "Lớp học của tôi",
@@ -501,8 +505,8 @@ test("Stage 4 Step 2 UI integrates Reverse BFS Explorer, inline Step 1 Back-Link
   assert.ok(quiz.includes("quiz.runtimeUnlocked"));
   assert.ok(quiz.includes("quiz.latestStatus"));
   assert.match(course, /quiz\.data\?\.runtimeUnlocked === true/);
-  assert.ok(quiz.includes("Proceed to Step 3: Live Runtime"));
-  assert.ok(quiz.includes("Step 3 Live Docker Runtime is locked until you score at least"));
+  assert.ok(quiz.includes("Proceed to Step 4: Studio Live & Submit"));
+  assert.ok(quiz.includes("Step 4 Live Studio & Submission is locked until you score at least"));
 });
 
 test("Studio in the guided Lab unlocks Step 4 after Quiz Gate and embeds simulated sandbox bootstrap", () => {
@@ -669,7 +673,7 @@ test("Stage 1 reference views, Step 4 submit bridge, and student BFF endpoints a
   assert.ok(composer.includes("Run Static Analysis Now"));
 });
 
-test("Stage 3 lecturer 1-click curated course lab seeder is wired on courses and assignments pages", () => {
+test("Curated course seeding remains available without a standalone library card", () => {
   const access = read("src/features/workspaces/course-access.tsx");
   const course = read("src/features/courses/screens.tsx");
   const assignments = read("src/features/assignments/screens.tsx");
@@ -683,8 +687,8 @@ test("Stage 3 lecturer 1-click curated course lab seeder is wired on courses and
     allowedBackendPath("workspaces/11111111-1111-1111-1111-111111111111/course-labs/seed-curated"),
     true,
   );
-  assert.ok(course.includes("<SeedCuratedCourseLabs workspaceId={workspaceId}"));
-  assert.ok(assignments.includes("<SeedCuratedCourseLabs workspaceId={workspaceId}"));
+  assert.equal(course.includes("<SeedCuratedCourseLabs workspaceId={workspaceId}"), false);
+  assert.equal(assignments.includes("<SeedCuratedCourseLabs workspaceId={workspaceId}"), false);
 });
 
 test("Course builder exposes immutable publishing and BFF routes for structured roadmap content", () => {
@@ -954,7 +958,7 @@ test("BFF allows Quiz draft, publish, versions and question bank paths", () => {
   assert.equal(allowedBackendPath(`workspaces/${workspace}/quiz-bank/unsafe`), false);
 });
 
-test("Lab Library is the class-facing lab store and Quiz can be generated from Lab theory", () => {
+test("Lab Library is available inside Lab Creation and Quiz can be generated from Lab theory", () => {
   const navigation = read("src/lib/navigation.ts");
   const assignments = read("src/features/assignments/screens.tsx");
   const authoring = read("src/features/assignments/lab-authoring.tsx");
@@ -963,8 +967,16 @@ test("Lab Library is the class-facing lab store and Quiz can be generated from L
   const publish = read("src/features/assignments/lab-publish-section.tsx");
   const theory = read("src/features/assignments/lab-theory-section.tsx");
 
-  assert.match(navigation, /label: "Lab Library"/);
+  assert.doesNotMatch(navigation, /label: "Lab Library"|label: "Theory Library"/);
+  assert.ok(authoring.includes('id: "library", en: "Lab Library"'));
+  assert.ok(authoring.includes('id: "theory-library", en: "Theory Library"'));
+  assert.ok(authoring.includes("<Assignments embedded />"));
+  assert.ok(authoring.includes("<TheoryLibrary />"));
   assert.match(navigation, /id: "lab-authoring"[\s\S]*?label: "Lab Creation"/);
+  assert.ok(authoring.includes('id: "library", en: "Lab Library"'));
+  assert.ok(authoring.includes('id: "theory-library", en: "Theory Library"'));
+  assert.ok(authoring.includes("<Assignments embedded />"));
+  assert.ok(authoring.includes("<TheoryLibrary />"));
   assert.doesNotMatch(navigation, /label: "Lab Authoring"/);
   assert.ok(assignments.includes("Library draft"));
   assert.ok(assignments.includes("In class"));
@@ -991,13 +1003,15 @@ test("Lab Library is the class-facing lab store and Quiz can be generated from L
   assert.ok(studioExercise.includes("no code editing"));
 });
 
-test("Theory Library is a standalone workspace screen with editing and course publishing", () => {
+test("Theory Library is available inside Lab Creation with editing and course publishing", () => {
   const screen = read("src/features/workspaces/theory-library.tsx");
   const page = read("app/[screen]/page.tsx");
   const navigation = read("src/lib/navigation.ts");
+  const authoring = read("src/features/assignments/lab-authoring.tsx");
 
   assert.match(page, /"theory-library"/);
-  assert.match(navigation, /id: "theory-library"[\s\S]*?href: "\/theory-library"/);
+  assert.doesNotMatch(navigation, /id: "theory-library"/);
+  assert.ok(authoring.includes("<TheoryLibrary />"));
   assert.ok(screen.includes("theory-assets"));
   assert.ok(screen.includes("New lesson"));
   assert.ok(screen.includes("Edit theory lesson"));
@@ -1257,4 +1271,43 @@ test("ADM-V2 Enterprise Control Center removes /administration/studio links and 
   assert.ok(adminScreens.includes("Activate"));
   assert.ok(adminOps.includes("forceStopRuntimeSession"));
   assert.ok(adminScreens.includes("actorName"));
+});
+
+test("Lecturer flow, 1-Click Login, MockAdapter JAVA-MS-2026, and clean routes have no 404 links or hidden Passkeys", () => {
+  const { allowedBackendPath } = require("../src/lib/api/backend-path.ts");
+  assert.equal(allowedBackendPath("workspaces/bootstrap-java-coursera"), true);
+
+  const loginSrc = read("app/login/page.tsx");
+  assert.ok(loginSrc.includes("1-Click Test Login"));
+  assert.ok(loginSrc.includes("gv.java@mavis.edu.vn"));
+  assert.ok(loginSrc.includes("sv.java@mavis.edu.vn"));
+  assert.ok(loginSrc.includes("admin@mavis.edu.vn"));
+  assert.ok(loginSrc.includes("JAVA-MS-2026"));
+  assert.ok(loginSrc.includes("JAVA2026"));
+
+  const workspacesSrc = read("src/features/workspaces/screens.tsx");
+  const teacherDashSrc = read("src/features/workspaces/teacher-dashboard.tsx");
+  assert.ok(!workspacesSrc.includes("/workspace-members"));
+  assert.ok(!teacherDashSrc.includes("/workspace-members"));
+  assert.ok(workspacesSrc.includes("#class-passkey"));
+  assert.ok(teacherDashSrc.includes("#class-passkey"));
+
+  const managerSrc = read("src/features/courses/lecturer-curriculum-manager.tsx");
+  assert.ok(!managerSrc.includes("/theory-assets"));
+  assert.ok(!managerSrc.includes("/assignments/new"));
+  assert.ok(!managerSrc.includes('className={showPasskeyDrawer ? "block" : "sr-only'));
+  assert.ok(managerSrc.includes("Active Class Passkeys:"));
+  assert.ok(managerSrc.includes("<CoursePasskey"));
+
+  const outlineSrc = read("src/features/courses/course-outline.tsx");
+  assert.ok(!outlineSrc.includes("#course-builder"));
+  assert.ok(outlineSrc.includes("view=course-authoring"));
+
+  const essaySrc = read("src/features/courses/course-essay-panel.tsx");
+  assert.ok(essaySrc.includes("row.title || row.criterion"));
+  assert.ok(essaySrc.includes("row.weightPoints ?? row.maxScore"));
+
+  const mockSrc = read("src/lib/api/mock-adapter.ts");
+  assert.ok(mockSrc.includes("workspace-java-ms-2026"));
+  assert.ok(mockSrc.includes("JAVA-MS-2026"));
 });

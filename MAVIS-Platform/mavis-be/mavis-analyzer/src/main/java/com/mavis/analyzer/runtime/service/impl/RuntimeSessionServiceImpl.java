@@ -60,7 +60,10 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
     // MAVIS.Runner reads the run definition with UnmappedMemberHandling.Disallow; export only the members its records declare.
     private static final List<String> RUNNER_PROFILE_FIELDS = List.of("collectorImage", "instrumentationVolume", "applications",
             "memoryMiB", "cpus", "timeoutSeconds", "approvedForLocalPoc", "scenarioRunnerImage",
-            "dotnetInstrumentationVersion", "javaInstrumentationVersion", "environmentBindings");
+            "dotnetInstrumentationVersion", "javaInstrumentationVersion", "environmentBindings",
+            // Required by the Runner to apply initially stopped blocks/connections and to
+            // validate interactive Studio actions against the prepared topology.
+            "studioTopology");
     private static final List<String> RUNNER_STEP_FIELDS = List.of("id", "service", "method", "path", "expectedStatus", "jsonBody",
             "headers", "secretHeaders", "extract", "environmentVariables", "bodyReference", "envHeaders", "allowClientError");
     private static final Pattern EXCERPT_MAPPING_PATTERN = Pattern.compile("@(GetMapping|PostMapping|PutMapping|DeleteMapping|PatchMapping|RequestMapping)\\s*(?:\\(\\s*\"([^\"]*)\"\\s*\\))?");
@@ -674,7 +677,9 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                     && project.getAssignment() != null
                     && assignment.getId().equals(project.getAssignment().getId());
             if (studentWorking) {
-                var referenceSnapshot = runtimeSource
+                // A Studio Lab runs on the exercise runtime repository even when the Lab's
+                // reference source (C1-C3) points at a different project.
+                var referenceSnapshot = exercise != null && exercise.getRuntimeSnapshotId() != null
                         ? sourceSnapshotRepository.findById(exercise.getRuntimeSnapshotId()).orElse(null)
                         : assignment.getReferenceModel() == null ? null
                         : assignment.getReferenceModel().getSourceSnapshot();
@@ -1782,12 +1787,19 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         var exercise = lab == null || labStudioExercises == null ? null
                 : labStudioExercises.findByAssignmentId(lab.getId()).orElse(null);
         if (exercise != null && exercise.getRuntimeModelId() != null) {
-            boolean matches = model != null
-                    && exercise.getRuntimeModelId().equals(model.getId())
-                    && exercise.getRuntimeSnapshotId() != null
-                    && exercise.getRuntimeSnapshotId().equals(snapshot == null ? null : snapshot.getId())
+            // Guided sessions run on a cloned STUDENT_WORKING snapshot, so the session snapshot id
+            // differs from the exercise runtime snapshot id. Match the pinned runtime snapshot by
+            // identity on the project and by artifact hash on the cloned snapshot instead.
+            UUID runtimeSnapshotId = exercise.getRuntimeSnapshotId();
+            var runtimeSnapshot = runtimeSnapshotId == null ? null
+                    : sourceSnapshotRepository.findById(runtimeSnapshotId).orElse(null);
+            boolean matches = runtimeSnapshot != null
                     && snapshot != null && snapshot.getProject() != null
                     && Objects.equals(project.getId(), snapshot.getProject().getId())
+                    && Objects.equals(project.getReferenceSnapshotId(), runtimeSnapshotId)
+                    && Objects.equals(runtimeSnapshot.getArtifactHash(), snapshot.getArtifactHash())
+                    && model != null && model.getProject() != null
+                    && Objects.equals(project.getId(), model.getProject().getId())
                     && model.getSourceSnapshot() != null
                     && snapshot.getId().equals(model.getSourceSnapshot().getId())
                     && !"RUNTIME_ENRICHED".equalsIgnoreCase(model.getOrigin());

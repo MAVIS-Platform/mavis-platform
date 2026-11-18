@@ -11,7 +11,6 @@ import {
   Pencil,
   Plus,
   Search,
-  Settings2,
   Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -25,7 +24,6 @@ import { useLocale } from "@/lib/i18n/locale-context";
 import { isDeadlinePassed } from "@/features/submissions/submission-readiness";
 import {
   PublishCourseLab,
-  SeedCuratedCourseLabs,
   useCourseRoadmap,
   useCourseSetup,
 } from "@/features/workspaces/course-access";
@@ -46,14 +44,14 @@ function formatDeadline(value: string | undefined) {
   }).format(date);
 }
 
-export function Assignments() {
+export function Assignments({ embedded = false }: { embedded?: boolean } = {}) {
   const canManage = usePermission("workspace:manage");
-  return canManage ? <LecturerAssignments /> : <StudentAssignments />;
+  return canManage ? <LecturerAssignments embedded={embedded} /> : <StudentAssignments />;
 }
 
 type LibraryFilter = "all" | "class" | "draft";
 
-function LecturerAssignments() {
+function LecturerAssignments({ embedded = false }: { embedded?: boolean } = {}) {
   const { t } = useLocale();
   const { workspaceId } = useSelection();
   const workspacesQuery = useApiQuery("workspaces", {});
@@ -63,7 +61,6 @@ function LecturerAssignments() {
   const setup = useCourseSetup(workspaceId);
   const client = useApi();
   const remove = useApiMutation("deleteAssignment");
-  const [showTools, setShowTools] = useState(false);
   const [filter, setFilter] = useState<LibraryFilter>("all");
   const [search, setSearch] = useState("");
   const [prerequisiteLab, setPrerequisiteLab] = useState<Assignment | null>(null);
@@ -114,10 +111,6 @@ function LecturerAssignments() {
         </div>
         <div className="flex flex-wrap items-start gap-2">
           <ImportLabButton workspaceId={workspaceId} />
-          <Button type="button" variant="outline" size="sm" onClick={() => setShowTools((open) => !open)}>
-            <Settings2 className="mr-1 size-4" aria-hidden="true" />
-            {t("Course tools", "Công cụ khóa học")}
-          </Button>
           <Button asChild size="sm">
             <Link href={`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}`}>
               <Plus className="mr-1 size-4" aria-hidden="true" />
@@ -126,28 +119,6 @@ function LecturerAssignments() {
           </Button>
         </div>
       </div>
-
-      {showTools && (
-        <section className="space-y-3 rounded-xl border bg-card p-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h3 className="font-semibold">{t("Course tools", "Công cụ khóa học")}</h3>
-              <p className="text-xs text-muted-foreground">
-                {t(
-                  "Seed a curated course or open the course-level setup checklist. These actions are separate from authoring one Lab.",
-                  "Khởi tạo khóa học mẫu hoặc mở checklist cấp khóa học. Các thao tác này tách khỏi việc soạn một Lab.",
-                )}
-              </p>
-            </div>
-            <Button asChild size="sm" variant="outline">
-              <Link href={`/workspace-overview?workspace=${encodeURIComponent(workspaceId)}`}>
-                {t("Overview & Setup", "Tổng quan & Khởi tạo")}
-              </Link>
-            </Button>
-          </div>
-          <SeedCuratedCourseLabs workspaceId={workspaceId} />
-        </section>
-      )}
 
       {rows.length > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -354,7 +325,7 @@ function LecturerAssignments() {
     </div>
   );
 
-  return workspace ? (
+  return workspace && !embedded ? (
     <CourseWorkspaceShell workspace={workspace} active="assignments">
       {content}
     </CourseWorkspaceShell>

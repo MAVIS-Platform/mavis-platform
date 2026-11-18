@@ -379,7 +379,7 @@ export function LiveStudioWorkbench({
                           </span>
                           <span className="text-slate-400"> · {item.status}</span>
                           {item.result && (
-                            <span className="ml-2 font-mono text-slate-400">
+                            <span className="mavis-tabular ml-2 font-mono text-slate-400">
                               replicas {item.result.replicasBefore} → {item.result.replicasAfter} ·
                               requests {metric(item.result.metricsAfter["requestCount"])} · p95{" "}
                               {metric(item.result.metricsAfter["p95LatencyMs"])} ms · errors{" "}
@@ -422,16 +422,16 @@ export function LiveStudioWorkbench({
                           >
                             {running === undefined ? "Waiting" : running === 0 ? "Down" : "Running"}
                           </td>
-                          <td className="px-1 py-1 font-mono text-slate-300">
+                          <td className="mavis-tabular px-1 py-1 font-mono text-slate-300">
                             {telemetry?.stats[0]?.cpu ?? "—"}
                           </td>
-                          <td className="px-1 py-1 font-mono text-slate-300">
+                          <td className="mavis-tabular px-1 py-1 font-mono text-slate-300">
                             {telemetry?.stats[0]?.memory ?? "—"}
                           </td>
-                          <td className="px-1 py-1 font-mono text-slate-300">
+                          <td className="mavis-tabular px-1 py-1 font-mono text-slate-300">
                             {result ? `${metric(result.metricsAfter["p95LatencyMs"])} ms` : "—"}
                           </td>
-                          <td className="px-1 py-1 font-mono text-slate-300">
+                          <td className="mavis-tabular px-1 py-1 font-mono text-slate-300">
                             <span className="inline-flex items-center gap-1">
                               <button
                                 type="button"
@@ -487,6 +487,15 @@ export function LiveStudioWorkbench({
 
               {tab === "snapshots" && (
                 <div className="space-y-2">
+                  {data.actions.length === 0 && (
+                    <p
+                      role="note"
+                      className="rounded border border-amber-500/35 bg-amber-500/10 px-2.5 py-1.5 text-[11px] leading-relaxed text-amber-200"
+                    >
+                      BR-08 (INCOMPLETE_SCENARIO guard): Execute at least one Start, Stop, or Scale
+                      action on a live service before sealing your signed receipt.
+                    </p>
+                  )}
                   {data.receiptDigest && (
                     <Button
                       type="button"

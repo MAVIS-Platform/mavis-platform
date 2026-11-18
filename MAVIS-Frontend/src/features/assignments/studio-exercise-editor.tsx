@@ -208,7 +208,7 @@ export function StudioExerciseEditor({
   });
 
   return (
-    <details className="rounded-xl border bg-card p-4">
+    <details open className="rounded-xl border bg-card p-4">
       <summary className="flex cursor-pointer flex-wrap items-center gap-2 text-sm font-semibold">
         <ClipboardList className="size-4 text-primary" aria-hidden="true" />
         {t("Studio exercise (teacher)", "Đề Studio (giảng viên)")}

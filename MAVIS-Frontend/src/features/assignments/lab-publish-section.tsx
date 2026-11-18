@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
 import { CheckCircle2, Circle, Rocket } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { api } from "@/lib/mainflow-api";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { CourseSetupPanel } from "@/features/courses/course-setup";
 import {
@@ -29,7 +31,17 @@ export function LabPublishSection({
   const { t } = useLocale();
   const setup = useCourseSetup(workspaceId);
   const setupLab = setup.data?.labs?.find((item) => item.assignmentId === assignment.id);
-  const readiness = useRuntimeSetupReadiness(assignment.referenceSource?.projectId ?? null);
+  const exercise = useQuery({
+    queryKey: ["api", "studio-exercise", workspaceId, assignment.id],
+    queryFn: ({ signal }) =>
+      api<{ runtimeProjectId: string | null } | null>(
+        `workspaces/${workspaceId}/course-labs/${assignment.id}/studio-exercise`,
+        { signal },
+      ),
+    retry: false,
+  });
+  const studioProjectId = exercise.data?.runtimeProjectId ?? assignment.referenceSource?.projectId ?? null;
+  const readiness = useRuntimeSetupReadiness(studioProjectId);
   const course = useCourseAuthoring(workspaceId);
   const modules = course.data?.modules ?? [];
   const theoryReady = modules.some(

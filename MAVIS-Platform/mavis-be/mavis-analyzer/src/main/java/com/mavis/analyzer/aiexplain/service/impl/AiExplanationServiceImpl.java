@@ -352,16 +352,19 @@ public class AiExplanationServiceImpl implements AiExplanationService {
         String modelLabel;
 
         if (useOpenAi) {
+            boolean deepSeek = apiKey.matches("^sk-[0-9a-f]{32}$");
+            String targetModel = deepSeek ? "deepseek-flash" : "gpt-5-mini";
+            String targetUrl = deepSeek ? "https://api.deepseek.com/v1/chat/completions" : "https://api.openai.com/v1/chat/completions";
             ObjectNode openAiReq = objectMapper.createObjectNode();
-            openAiReq.put("model", "gpt-5-mini");
-            openAiReq.put("reasoning_effort", "minimal");
+            openAiReq.put("model", targetModel);
+            if (!deepSeek) openAiReq.put("reasoning_effort", "minimal");
             openAiReq.putObject("response_format").put("type", "json_object");
             ArrayNode messages = openAiReq.putArray("messages");
             messages.addObject().put("role", "system").put("content", systemPrompt);
             messages.addObject().put("role", "user").put("content", "Architectural Grounding Context:\n" + promptJson.toPrettyString());
 
             HttpRequest httpRequest = HttpRequest.newBuilder()
-                    .uri(URI.create("https://api.openai.com/v1/chat/completions"))
+                    .uri(URI.create(targetUrl))
                     .header("Content-Type", "application/json")
                     .header("Authorization", "Bearer " + apiKey)
                     .timeout(Duration.ofSeconds(18))
@@ -373,13 +376,13 @@ public class AiExplanationServiceImpl implements AiExplanationService {
                 throw new RuntimeException("OpenAI HTTP error status: " + response.statusCode());
             }
             JsonNode responseNode = objectMapper.readTree(response.body());
-            if (aiUsageRecorder != null) aiUsageRecorder.recordResponse("openai", "gpt-5-mini", responseNode);
+            if (aiUsageRecorder != null) aiUsageRecorder.recordResponse("openai", targetModel, responseNode);
             JsonNode contentNode = responseNode.path("choices").path(0).path("message").path("content");
             if (contentNode.isMissingNode() || contentNode.asText().isBlank()) {
                 throw new RuntimeException("OpenAI response missing message content");
             }
             jsonText = contentNode.asText().trim();
-            modelLabel = "gpt-5-mini";
+            modelLabel = targetModel;
         } else {
             String targetUrl = hasCustomUrl ? customEndpointUrl : DEFAULT_GEMINI_URL + apiKey;
             String fullUserPrompt = systemPrompt + "\n\nArchitectural Grounding Context:\n" + promptJson.toPrettyString();

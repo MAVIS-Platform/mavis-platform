@@ -55,7 +55,12 @@
   transform: none;
 }
 .v2-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
   border-bottom: 1px solid var(--border);
+  background: color-mix(in oklch, var(--background) 88%, transparent);
+  backdrop-filter: blur(12px);
 }
 .v2-header-inner {
   min-height: 4.75rem;

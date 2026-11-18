@@ -5,22 +5,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowRight,
-  Award,
   BookOpen,
   Check,
-  CheckCircle2,
-  ChevronRight,
   CircleAlert,
   Clock3,
   Code2,
-  FileCheck2,
-  GraduationCap,
-  KeyRound,
-  Lock,
   Network,
   Play,
   ShieldCheck,
-  Sparkles,
 } from "lucide-react";
 import { SearchInput } from "@/components/shared/forms";
 import { useApi, useApiMutation, useApiQuery, useSelection, useSession } from "@/hooks/use-api";
@@ -31,11 +23,7 @@ import {
   RequestState,
 } from "@/components/shared/request-state";
 import {
-  CourseEnrollment,
-  CourseRoadmap as CourseLabRoadmap,
-  SeedCuratedCourseLabs,
   useBootstrapLabStudio,
-  useCourseAuthoring,
   useCourseRoadmap,
   usePublishedCourse,
   useStartLabStudioSession,
@@ -53,18 +41,11 @@ import { Badge } from "@/components/ui/badge";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { getRuleName } from "@/features/architecture/three-e-content";
 import { ArchitectureGraph, ElementDetailsPanel } from "@/features/architecture/components";
+import { ArchitectureDiagrams } from "@/features/architecture/architecture-diagrams";
 import { DiagramPreview } from "@/features/architecture/diagram-preview";
 import { LiveStudioWorkbench } from "@/features/runtime/live-studio-workbench";
 import type { ArchitecturalModel } from "@/types/domain";
-
-function shortDate(value?: string | null) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(date);
-}
 import { CourseBuilder } from "./course-builder";
-import { CourseOutline } from "./course-outline";
 import { CourseQuiz, useCourseQuiz } from "./course-quiz";
 import { CourseSetupPanel } from "./course-setup";
 import { CurriculumLibrary } from "./curriculum";
@@ -72,6 +53,14 @@ import { Step2StaticImpact } from "./step2-static-impact";
 import { LabToc, type LabTocItem, type LabTocStep } from "./lab-toc";
 import { LabSubmissionV2 } from "./lab-submission-v2";
 import { TeacherDashboard } from "@/features/workspaces/teacher-dashboard";
+import {
+  PasskeyEnrollmentModal,
+  StudentCourseProgressCard,
+  StudentCoursesHero,
+  StudentKpiStrip,
+} from "./student-courses-dashboard";
+import { StudentCourseSyllabus } from "./student-course-syllabus";
+import { LecturerCurriculumManager } from "./lecturer-curriculum-manager";
 
 type LearningStep = {
   id: 1 | 2 | 3 | 4;
@@ -205,7 +194,19 @@ function synthesizeFallbackMermaid(
 ): string | null {
   if (!model || model.elements.length === 0) return null;
   const filtered =
-    view === "CONTAINER"
+    view === "CONTEXT"
+      ? model.elements.filter(
+          (e) =>
+            !e.parentId &&
+            [
+              "PERSON",
+              "EXTERNAL_SYSTEM",
+              "FRONTEND_APP",
+              "API_GATEWAY",
+              "SERVICE_CONTAINER",
+            ].includes(e.elementType ?? ""),
+        )
+      : view === "CONTAINER"
       ? model.elements.filter(
           (e) =>
             !e.parentId ||
@@ -219,16 +220,16 @@ function synthesizeFallbackMermaid(
             ].includes(e.elementType ?? ""),
         )
       : model.elements;
-  const visible = filtered.length > 0 ? filtered.slice(0, 24) : model.elements.slice(0, 24);
+  const visible = filtered.length > 0 ? filtered.slice(0, 18) : model.elements.slice(0, 18);
   const visibleIds = new Set(visible.map((e) => e.id));
-  const lines = ["flowchart LR"];
+  const lines = ["flowchart TB"];
   for (const el of visible) {
     const safeLabel = el.name.replace(/"/g, "'");
     lines.push(`  n_${sanitizeMermaidId(el.id)}["${safeLabel}"]`);
   }
   for (const edge of model.edges) {
     if (visibleIds.has(edge.from) && visibleIds.has(edge.to)) {
-      const proto = edge.protocol.replace(/"/g, "'");
+      const proto = edge.protocol.replace(/"/g, "'").replace(/_/g, " ");
       lines.push(
         `  n_${sanitizeMermaidId(edge.from)} -->|${proto}| n_${sanitizeMermaidId(edge.to)}`,
       );
@@ -308,106 +309,32 @@ export function Courses() {
 
   if (userRole === "lecturer" || userRole === "admin") return <TeacherDashboard />;
 
+  const firstWorkspaceId = workspaces[0]?.id ?? null;
+  const overallPct = studentSubStats.total
+    ? Math.round((studentSubStats.passedCount / studentSubStats.total) * 100)
+    : 0;
+
   return (
     <div className="space-y-6">
-      <section className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 via-blue-700 to-teal-700 p-6 text-white shadow-lg sm:p-7">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="max-w-2xl space-y-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-medium text-teal-100 backdrop-blur-sm">
-              <GraduationCap className="h-3.5 w-3.5" aria-hidden="true" />
-              {t("MAVIS Learning Hub", "Không Gian Học Tập MAVIS")}
-            </span>
-            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
-              {t("My Courses", "Khóa học của tôi")}
-            </h1>
-            <p className="text-sm text-blue-100/90">
-              {t(
-                "Resume your architecture & runtime Labs, track Quiz gates, and review Lecturer feedback.",
-                "Tiếp tục học các bài Lab kiến trúc & runtime, hoàn thành Quiz Gate và theo dõi điểm chấm từ Giảng viên.",
-              )}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2.5">
-            {isStudent && (
-              <Button
-                type="button"
-                aria-expanded={passkeyOpen}
-                aria-controls="course-passkey-form"
-                onClick={() => setPasskeyOpen((open) => !open)}
-                className="bg-white text-slate-900 shadow-sm hover:bg-teal-50"
-              >
-                <KeyRound className="mr-1.5 h-4 w-4" aria-hidden="true" />
-                {passkeyOpen
-                  ? t("Close Passkey Box", "Đóng ô Passkey")
-                  : t("Join a Class with Passkey", "Tham Gia Lớp Bằng Passkey")}
-              </Button>
-            )}
-            <Button
-              asChild
-              variant="outline"
-              className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white"
-            >
-              <Link href="/studio">
-                <Sparkles className="mr-1.5 h-4 w-4" aria-hidden="true" />
-                {t("Free Studio Sandbox", "Sandbox Studio Tự Do")}
-              </Link>
-            </Button>
-          </div>
-        </div>
-      </section>
+      <StudentCoursesHero
+        studentName={session.data?.user?.name}
+        firstWorkspaceId={firstWorkspaceId}
+        passkeyOpen={passkeyOpen}
+        onTogglePasskey={() => setPasskeyOpen((open) => !open)}
+      />
 
       {isStudent && (
-        <section id="course-passkey-form" className={passkeyOpen ? "scroll-mt-6" : "hidden"}>
-          <div
-            id="course-passkey"
-            tabIndex={-1}
-            className="scroll-mt-6 rounded-2xl border border-teal-200 bg-teal-50/40 p-1 dark:border-teal-800/60 dark:bg-teal-950/20"
-          >
-            <CourseEnrollment destination="roadmap" />
-          </div>
-        </section>
+        <PasskeyEnrollmentModal open={passkeyOpen} onClose={() => setPasskeyOpen(false)} />
       )}
 
       {workspaces.length > 0 && (
-        <section className="grid gap-4 sm:grid-cols-3">
-          <div className="rounded-2xl border bg-card p-4 shadow-sm">
-            <div className="flex items-center justify-between text-xs font-medium text-muted-foreground">
-              <span>{t("Enrolled Classes", "Lớp học của tôi")}</span>
-              <BookOpen className="h-4 w-4 text-blue-600" aria-hidden="true" />
-            </div>
-            <p className="mt-2 text-2xl font-bold tracking-tight">{workspaces.length}</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {t("Active learning courses", "Khóa học đang mở")}
-            </p>
-          </div>
-          <div className="rounded-2xl border bg-card p-4 shadow-sm">
-            <div className="flex items-center justify-between text-xs font-medium text-muted-foreground">
-              <span>{t("Passed Submissions", "Bài Đã Đạt")}</span>
-              <ShieldCheck className="h-4 w-4 text-teal-600" aria-hidden="true" />
-            </div>
-            <p className="mt-2 text-2xl font-bold tracking-tight text-teal-700 dark:text-teal-400">
-              {studentSubStats.passedCount}
-              <span className="ml-1.5 text-xs font-normal text-muted-foreground">
-                / {studentSubStats.total} {t("submitted", "đã nộp")}
-              </span>
-            </p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {t("Lab & review checkpoints", "Bài Lab đã chấm đạt")}
-            </p>
-          </div>
-          <div className="rounded-2xl border bg-card p-4 shadow-sm">
-            <div className="flex items-center justify-between text-xs font-medium text-muted-foreground">
-              <span>{t("Average Grade", "Điểm Trung Bình")}</span>
-              <Award className="h-4 w-4 text-amber-500" aria-hidden="true" />
-            </div>
-            <p className="mt-2 text-2xl font-bold tracking-tight">
-              {studentSubStats.avgScore != null ? `${studentSubStats.avgScore}/100` : "—"}
-            </p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {t("Across graded Labs", "Tính trên các Lab đã chấm")}
-            </p>
-          </div>
-        </section>
+        <StudentKpiStrip
+          enrolledCount={workspaces.length}
+          passedLabsCount={studentSubStats.passedCount}
+          submittedCount={studentSubStats.total}
+          completionPercent={overallPct}
+          avgScore={studentSubStats.avgScore}
+        />
       )}
 
       <RequestState query={query} empty={false}>
@@ -454,7 +381,7 @@ export function Courses() {
                 )}
               />
             ) : (
-              <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+              <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
                 {filteredWorkspaces.map((workspace) => {
                   const memberCount = workspace.members.length;
                   const isLecturer =
@@ -463,7 +390,7 @@ export function Courses() {
                     .filter((member) => member.role.toUpperCase() === "LECTURER")
                     .map((member) => member.name);
                   return (
-                    <StudentCourseCard
+                    <StudentCourseProgressCard
                       key={workspace.id}
                       workspace={workspace}
                       memberCount={memberCount}
@@ -493,126 +420,6 @@ export function Courses() {
   );
 }
 
-function StudentCourseCard({
-  workspace,
-  memberCount,
-  lecturerNames,
-  isLecturer,
-  onOpen,
-}: {
-  workspace: import("@/lib/api/contracts").Response<"workspaces">[number];
-  memberCount: number;
-  lecturerNames: string[];
-  isLecturer: boolean;
-  onOpen: () => void;
-}) {
-  const { t } = useLocale();
-  const roadmap = useCourseRoadmap(workspace.id);
-  const labs = roadmap.data?.labs ?? [];
-  const passed = labs.filter((lab) => lab.state === "PASSED").length;
-  const nextLab = labs.find((lab) => lab.state === "UNLOCKED");
-  const percent = labs.length ? Math.round((passed / labs.length) * 100) : 0;
-  const roadmapHref = `/roadmap?workspace=${encodeURIComponent(workspace.id)}`;
-
-  return (
-    <article className="flex flex-col justify-between overflow-hidden rounded-2xl border bg-card shadow-sm transition-all hover:border-teal-500/50 hover:shadow-md">
-      <div className="h-2 bg-gradient-to-r from-blue-700 via-teal-600 to-emerald-500" />
-      <div className="flex flex-1 flex-col justify-between gap-4 p-5">
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <Badge
-              variant="outline"
-              className="border-teal-200 bg-teal-50 font-mono text-teal-800 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-300"
-            >
-              {workspace.code || t("CLASS", "LỚP")}
-            </Badge>
-            <StatusBadge status={workspace.status || "ACTIVE"} />
-          </div>
-
-          <div>
-            <h2 className="line-clamp-2 text-lg font-semibold leading-snug tracking-tight">
-              {workspace.name}
-            </h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {t("Lecturer", "Giảng viên")}:{" "}
-              <span className="font-medium text-foreground">
-                {lecturerNames.length
-                  ? lecturerNames.join(", ")
-                  : t("Not listed", "Chưa có thông tin")}
-              </span>
-              {" · "}
-              {memberCount} {t("members", "thành viên")}
-            </p>
-          </div>
-
-          {roadmap.data?.guided && (
-            <div className="space-y-1.5 rounded-xl bg-muted/40 p-3">
-              <div className="flex items-center justify-between gap-2 text-xs">
-                <span className="font-medium text-muted-foreground">
-                  {t("Course Progress", "Tiến Độ Khóa Học")}
-                </span>
-                <span className="font-semibold text-teal-700 dark:text-teal-400">
-                  {passed}/{labs.length} Labs ({percent}%)
-                </span>
-              </div>
-              <div
-                role="progressbar"
-                aria-label={t("Labs passed", "Lab đã đạt")}
-                aria-valuemin={0}
-                aria-valuemax={labs.length || 1}
-                aria-valuenow={passed}
-                className="h-2 overflow-hidden rounded-full bg-muted"
-              >
-                <div
-                  className="h-full rounded-full bg-gradient-to-r from-teal-500 to-emerald-600 transition-all"
-                  style={{ width: `${percent}%` }}
-                />
-              </div>
-            </div>
-          )}
-
-          {nextLab ? (
-            <p className="flex items-start gap-2 rounded-lg border border-blue-200/70 bg-blue-50/60 px-3 py-2 text-xs text-blue-900 dark:border-blue-800/50 dark:bg-blue-950/30 dark:text-blue-200">
-              <Play className="mt-0.5 h-3.5 w-3.5 shrink-0 fill-current text-blue-600" aria-hidden="true" />
-              <span>
-                <span className="font-semibold">{t("Up next", "Bài tiếp theo")}:</span>{" "}
-                {nextLab.title}
-              </span>
-            </p>
-          ) : labs.length > 0 && passed === labs.length ? (
-            <p className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50/70 px-3 py-2 text-xs font-medium text-emerald-800 dark:border-emerald-800/60 dark:bg-emerald-950/30 dark:text-emerald-300">
-              <Check className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-              {t("All guided Labs completed!", "Bạn đã hoàn thành toàn bộ Lab!")}
-            </p>
-          ) : null}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 border-t pt-3">
-          <Button
-            asChild
-            onClick={onOpen}
-            className="flex-1 bg-teal-600 text-white hover:bg-teal-700"
-          >
-            <Link href={roadmapHref}>
-              <Play className="mr-1.5 h-3.5 w-3.5 fill-current" aria-hidden="true" />
-              {isLecturer
-                ? t("Manage course", "Quản lý khóa học")
-                : nextLab
-                  ? t("Continue learning", "Tiếp tục học")
-                  : t("Continue learning", "Vào lớp học")}
-            </Link>
-          </Button>
-          <Button asChild size="sm" variant="outline" onClick={onOpen}>
-            <Link href={`/submissions?workspace=${encodeURIComponent(workspace.id)}`}>
-              {t("Grades", "Điểm & Bài nộp")}
-            </Link>
-          </Button>
-        </div>
-      </div>
-    </article>
-  );
-}
-
 export function CourseRoadmap() {
   const { t } = useLocale();
   const params = useSearchParams();
@@ -623,7 +430,7 @@ export function CourseRoadmap() {
   const workspaces = useApiQuery("workspaces", {});
   const workspace = workspaces.data?.find((item) => item.id === workspaceId);
   const canManage = workspace?.myRole === "LECTURER" || session.data?.user?.role === "admin";
-  const publishedCourse = usePublishedCourse(workspaceId);
+  const [studentPreview, setStudentPreview] = useState(false);
 
   useEffect(() => {
     if (workspaceId && workspaceId !== selection.workspaceId) selection.setWorkspaceId(workspaceId);
@@ -638,761 +445,69 @@ export function CourseRoadmap() {
       {workspace &&
         (canManage ? (
           <div className="space-y-6">
-            <div className="rounded-2xl border bg-card p-6">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                    {workspace.code || t("Course", "Khóa học")} /{" "}
-                    {t("Learning roadmap", "Lộ trình học tập")}
-                  </p>
-                  <h1 className="mt-2 text-2xl font-semibold">{workspace.name}</h1>
-                  <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-                    {t(
-                      "Labs unlock in sequence. Complete the required evidence package and receive a passing lecturer review before the next Lab becomes available.",
-                      "Các Lab mở theo thứ tự. Hoàn thành bộ bằng chứng bắt buộc và đạt đánh giá của giảng viên để mở Lab tiếp theo.",
-                    )}
-                  </p>
-                </div>
-                <Button asChild variant="outline">
-                  <Link href="/courses">{t("Back to courses", "Quay lại khóa học")}</Link>
-                </Button>
-              </div>
-            </div>
-
-            <section className="rounded-2xl border bg-card p-5" aria-labelledby="course-controls">
+            <div className="rounded-2xl border border-teal-200/80 bg-gradient-to-r from-teal-900 via-teal-800 to-emerald-700 p-6 text-white shadow-sm">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
-                  <h2 id="course-controls" className="font-semibold">
-                    {t("Lecturer course controls", "Điều khiển khóa học dành cho giảng viên")}
-                  </h2>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {t(
-                      "Manage the class roster, publish Lab assignments and review frozen submissions.",
-                      "Quản lý danh sách lớp, công bố Lab và chấm các bản nộp đã đóng băng.",
-                    )}
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-teal-100">
+                    {workspace.code || t("Course", "Khóa học")} ·{" "}
+                    {t("Curriculum & Learning Roadmap", "Giáo trình & Lộ trình học tập")}
                   </p>
+                  <h1 className="mt-1.5 text-2xl font-bold tracking-tight">{workspace.name}</h1>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  {client.mode === "backend" && <SeedCuratedCourseLabs workspaceId={workspaceId} />}
-                  <Button asChild variant="outline">
-                    <Link href={`/members?workspace=${encodeURIComponent(workspaceId)}`}>
-                      {t("Manage members", "Quản lý thành viên")}
-                    </Link>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setStudentPreview((open) => !open)}
+                    className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+                  >
+                    {studentPreview
+                      ? t("← Back to Curriculum Manager", "← Quay lại Trình Quản lý Giáo trình")
+                      : t("👁️ Preview Student Syllabus View", "👁️ Xem Giao diện Lộ trình của Sinh viên")}
                   </Button>
-                  <Button asChild variant="outline">
-                    <Link href={`/assignments?workspace=${encodeURIComponent(workspaceId)}`}>
-                      {t("Manage Labs", "Quản lý Lab")}
-                    </Link>
-                  </Button>
-                  <Button asChild>
-                    <Link href={`/submissions?workspace=${encodeURIComponent(workspaceId)}`}>
-                      {t("Review submissions", "Chấm bài nộp")}
-                    </Link>
+                  <Button
+                    asChild
+                    size="sm"
+                    variant="outline"
+                    className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+                  >
+                    <Link href="/courses">{t("Back to courses", "Quay lại khóa học")}</Link>
                   </Button>
                 </div>
               </div>
-            </section>
-
-            {client.mode === "backend" && <CourseBuilder workspaceId={workspaceId} />}
-
-            {client.mode === "backend" && <CourseSetupPanel workspaceId={workspaceId} />}
-
-            {publishedCourse.data && (
-              <section
-                className="rounded-2xl border bg-card p-5"
-                aria-labelledby="published-course-roadmap"
-              >
-                <h2 id="published-course-roadmap" className="font-semibold">
-                  {t("Published Course roadmap", "Lộ trình Course đã publish")}
-                </h2>
-                <div className="mt-3 rounded-md bg-muted/40 p-3 text-sm">
-                  <h3 className="font-medium">{publishedCourse.data.snapshot.title}</h3>
-                  {publishedCourse.data.snapshot.description && (
-                    <p className="mt-1 text-muted-foreground">
-                      {publishedCourse.data.snapshot.description}
-                    </p>
-                  )}
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    v{publishedCourse.data.version}
-                  </p>
-                </div>
-                <ol className="mt-4 space-y-4">
-                  {publishedCourse.data.snapshot.modules.map((module) => (
-                    <li key={module.id} className="rounded-xl border p-4">
-                      <h3 className="font-medium">
-                        {module.position}. {module.title}
-                      </h3>
-                      {module.description && (
-                        <p className="mt-1 text-sm text-muted-foreground">{module.description}</p>
-                      )}
-                      {module.items.length > 0 && (
-                        <ol className="mt-3 space-y-1">
-                          {module.items.map((item) => (
-                            <li
-                              key={item.id}
-                              className="rounded-lg border bg-background p-3 text-sm"
-                            >
-                              <div className="flex flex-wrap items-center gap-2">
-                                <Badge variant="outline">{item.type.replaceAll("_", " ")}</Badge>
-                                <span className="font-medium">{item.title}</span>
-                                {item.assignmentId && (
-                                  <Button asChild size="sm" variant="link" className="h-auto p-0">
-                                    <Link
-                                      href={`/lab?${new URLSearchParams({ workspace: workspaceId, assignment: item.assignmentId, step: item.type === "QUIZ" || item.type === "IMPACT_LAB" ? "2" : item.type === "RUNTIME_LAB" ? "3" : "1" })}`}
-                                    >
-                                      {t("Open activity", "Mở hoạt động")}
-                                    </Link>
-                                  </Button>
-                                )}
-                              </div>
-                              {item.type === "THEORY" &&
-                                typeof item.content["body"] === "string" && (
-                                  <p className="mt-2 whitespace-pre-wrap text-muted-foreground">
-                                    {item.content["body"]}
-                                  </p>
-                                )}
-                              {item.type === "ESSAY" &&
-                                typeof item.content["prompt"] === "string" && (
-                                  <div className="mt-2 space-y-2">
-                                    <p className="whitespace-pre-wrap">
-                                      {item.content["prompt"]}
-                                    </p>
-                                    <p className="text-xs text-muted-foreground">
-                                      {t(
-                                        "Rubric-based lecturer review",
-                                        "Giảng viên chấm theo rubric",
-                                      )}
-                                    </p>
-                                  </div>
-                                )}
-                            </li>
-                          ))}
-                        </ol>
-                      )}
-                    </li>
-                  ))}
-                </ol>
-              </section>
-            )}
-            <CourseLabRoadmap
-              workspaceId={workspaceId}
-              canManage={canManage}
-              active={workspace.status !== "ARCHIVED"}
-            />
-          </div>
-        ) : (
-          <StudentCourseDetail workspace={workspace} />
-        ))}
-    </RequestState>
-  );
-}
-
-function StudentCourseDetail({
-  workspace,
-}: {
-  workspace: import("@/lib/api/contracts").Response<"workspaces">[number];
-}) {
-  const { t } = useLocale();
-  const client = useApi();
-  const workspaceId = workspace.id;
-  const roadmap = useCourseRoadmap(workspaceId);
-  const publishedCourse = usePublishedCourse(workspaceId);
-  const assignmentsQuery = useApiQuery("assignments", { workspaceId });
-  const submissionsQuery = useApiQuery("submissions", { workspaceId });
-  const [activeTab, setActiveTab] = useState<"player" | "submissions" | "library">("player");
-
-  const labs = roadmap.data?.labs ?? [];
-  const passedCount = labs.filter((l) => l.state === "PASSED").length;
-  const progressPercent = labs.length ? Math.round((passedCount / labs.length) * 100) : 0;
-
-  const defaultLabId =
-    labs.find((l) => l.state === "UNLOCKED")?.assignmentId ?? labs[0]?.assignmentId ?? "";
-  const [selectedLabId, setSelectedLabId] = useState<string>("");
-  const currentLabId =
-    selectedLabId && labs.some((l) => l.assignmentId === selectedLabId)
-      ? selectedLabId
-      : defaultLabId;
-  const selectedLab = labs.find((l) => l.assignmentId === currentLabId) ?? labs[0] ?? null;
-  const selectedAssignment = (assignmentsQuery.data ?? []).find(
-    (a) => a.id === selectedLab?.assignmentId,
-  );
-  const classAssignmentIds = new Set((assignmentsQuery.data ?? []).map((a) => a.id));
-  const classSubmissions = (submissionsQuery.data ?? []).filter(
-    (sub) =>
-      sub.workspaceId === workspaceId ||
-      (!sub.workspaceId && classAssignmentIds.has(sub.assignmentId)),
-  );
-  const upcomingDeadlines = useMemo(() => {
-    const assignmentsById = new Map((assignmentsQuery.data ?? []).map((item) => [item.id, item]));
-    return labs
-      .map((lab) => ({ lab, dueAt: assignmentsById.get(lab.assignmentId)?.dueAt }))
-      .filter(
-        (row): row is { lab: (typeof labs)[number]; dueAt: string } =>
-          typeof row.dueAt === "string" && row.dueAt !== "No deadline",
-      )
-      .sort((left, right) => new Date(left.dueAt).getTime() - new Date(right.dueAt).getTime())
-      .slice(0, 3);
-  }, [labs, assignmentsQuery.data]);
-  const latestResult = useMemo(() => {
-    const classIds = new Set((assignmentsQuery.data ?? []).map((item) => item.id));
-    return [...(submissionsQuery.data ?? [])]
-      .filter(
-        (sub) =>
-          sub.workspaceId === workspaceId ||
-          (!sub.workspaceId && classIds.has(sub.assignmentId)),
-      )
-      .filter((sub) => sub.reviewScore != null || sub.labOutcome || sub.reviewStatus)
-      .sort(
-        (left, right) =>
-          new Date(right.gradedAt ?? right.submittedAt).getTime() -
-          new Date(left.gradedAt ?? left.submittedAt).getTime(),
-      )[0];
-  }, [submissionsQuery.data, assignmentsQuery.data, workspaceId]);
-  const lecturerNames = (workspace.members ?? [])
-    .filter((member) => member.role.toUpperCase() === "LECTURER")
-    .map((member) => member.name);
-  const nextLab = labs.find((lab) => lab.state === "UNLOCKED");
-  const stepDescriptions: Array<{ step: 1 | 2 | 3 | 4; label: string; hint: string }> = [
-    {
-      step: 1,
-      label: t("Step 1 · Architecture & Theory", "Bước 1 · Lý Thuyết & C1–C3"),
-      hint: t("Read docs & 3E evidence", "Đọc lý thuyết & bằng chứng 3E"),
-    },
-    {
-      step: 2,
-      label: t("Step 2 · Impact Explorer", "Bước 2 · Lan Truyền Ngược"),
-      hint: t("Reverse BFS blast radius", "Truy vết ảnh hưởng Reverse BFS"),
-    },
-    {
-      step: 3,
-      label: t("Step 3 · Quiz Gate", "Bước 3 · Vượt Qua Quiz Gate"),
-      hint: t("Pass comprehension check", "Đạt kiểm tra kiến thức nền"),
-    },
-    {
-      step: 4,
-      label: t("Step 4 · 2D Studio & Submit", "Bước 4 · Thực Hành Studio & Nộp"),
-      hint: t("Verify session & explain", "Xác minh phiên & nộp bài giải"),
-    },
-  ];
-
-  return (
-    <div className="space-y-6">
-      <section className="rounded-2xl bg-gradient-to-r from-blue-900 via-blue-700 to-teal-700 p-6 text-white shadow-lg">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="max-w-2xl space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge className="border-white/25 bg-white/15 font-mono text-white hover:bg-white/20">
-                {workspace.code || t("CLASS", "LỚP")}
-              </Badge>
-              <span className="text-xs font-medium text-teal-100">
-                {labs.length > 0
-                  ? `${passedCount}/${labs.length} Labs (${progressPercent}%)`
-                  : t("Course Workspace", "Lớp học MAVIS")}
-              </span>
             </div>
-            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{workspace.name}</h1>
-            <p className="text-sm text-blue-100/90">
-              {t(
-                "Select a Lab on the left to review instructions, inspect architecture diagrams, pass the Quiz Gate, and launch 2D Studio practice.",
-                "Chọn một bài Lab bên trái để xem lý thuyết, kiểm tra kiến trúc, vượt Quiz Gate và thực hành trên 2D Studio.",
-              )}
-            </p>
-          </div>
-          <Button
-            asChild
-            variant="outline"
-            className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white"
-          >
-            <Link href="/courses">← {t("Back to courses", "Quay lại khóa học")}</Link>
-          </Button>
-        </div>
 
-        {labs.length > 0 && (
-          <div className="mt-5 max-w-md space-y-1.5">
-            <div className="flex justify-between text-xs text-teal-100">
-              <span>{t("Overall Course Progress", "Tiến Độ Toàn Khóa")}</span>
-              <span className="font-semibold text-white">{progressPercent}%</span>
-            </div>
-            <div className="h-2 overflow-hidden rounded-full bg-white/20">
-              <div
-                className="h-full rounded-full bg-emerald-400 transition-all"
-                style={{ width: `${progressPercent}%` }}
-              />
-            </div>
-          </div>
-        )}
-      </section>
-
-      <div
-        className="flex flex-wrap items-center gap-2 rounded-2xl border bg-card p-2 shadow-sm"
-        role="tablist"
-        aria-label={t("Student course workspace sections", "Mục học tập trong lớp")}
-      >
-        <Button
-          type="button"
-          size="sm"
-          role="tab"
-          aria-selected={activeTab === "player"}
-          variant={activeTab === "player" ? "default" : "ghost"}
-          onClick={() => setActiveTab("player")}
-          className={activeTab === "player" ? "bg-teal-600 text-white hover:bg-teal-700" : ""}
-        >
-          <BookOpen className="mr-1.5 h-4 w-4" aria-hidden="true" />
-          {t("1. Course & Lab Player", "1. Lộ Trình & Phòng Học Lab")}
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          role="tab"
-          aria-selected={activeTab === "submissions"}
-          variant={activeTab === "submissions" ? "default" : "ghost"}
-          onClick={() => setActiveTab("submissions")}
-          className={activeTab === "submissions" ? "bg-teal-600 text-white hover:bg-teal-700" : ""}
-        >
-          <FileCheck2 className="mr-1.5 h-4 w-4" aria-hidden="true" />
-          {t("2. My Submissions & Grades", "2. Bài Nộp & Điểm Số")}
-          {classSubmissions.length > 0 && (
-            <Badge variant="secondary" className="ml-1.5 px-1.5 py-0 text-[11px]">
-              {classSubmissions.length}
-            </Badge>
-          )}
-        </Button>
-        {client.mode === "backend" && (
-          <Button
-            type="button"
-            size="sm"
-            role="tab"
-            aria-selected={activeTab === "library"}
-            variant={activeTab === "library" ? "default" : "ghost"}
-            onClick={() => setActiveTab("library")}
-            className={activeTab === "library" ? "bg-teal-600 text-white hover:bg-teal-700" : ""}
-          >
-            <Code2 className="mr-1.5 h-4 w-4" aria-hidden="true" />
-            {t("3. Java & C# Reference Library", "3. Giáo Trình Java & C#")}
-          </Button>
-        )}
-      </div>
-
-      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_18rem]">
-        <div className="min-w-0 space-y-6">
-      {activeTab === "player" && (
-        <div className="space-y-6">
-          <div className="grid gap-6 lg:grid-cols-[340px_minmax(0,1fr)] lg:items-start">
-            <aside className="rounded-2xl border bg-card p-4 shadow-sm lg:sticky lg:top-6">
-              <div className="mb-3 flex items-center justify-between gap-2 border-b pb-3">
-                <div>
-                  <h2 className="text-sm font-semibold">
-                    {t("Guided Labs & Sequence", "Danh Sách Bài Lab Theo Thứ Tự")}
-                  </h2>
-                  <p className="text-xs text-muted-foreground">
-                    {passedCount}/{labs.length} {t("completed", "đã đạt")}
-                  </p>
-                </div>
-              </div>
-
-              <RequestState query={roadmap} empty={!labs.length}>
-                <ol className="space-y-2">
-                  {labs.map((lab) => {
-                    const isSelected = lab.assignmentId === selectedLab?.assignmentId;
-                    const isPassed = lab.state === "PASSED";
-                    const isLocked = lab.state === "LOCKED";
-                    return (
-                      <li key={lab.assignmentId}>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedLabId(lab.assignmentId)}
-                          className={`flex w-full items-start gap-3 rounded-xl border p-3 text-left transition-all ${
-                            isSelected
-                              ? "border-teal-600 bg-teal-50/70 shadow-sm dark:border-teal-500 dark:bg-teal-950/30"
-                              : isLocked
-                                ? "border-border/60 bg-muted/30 opacity-80 hover:opacity-100"
-                                : "border-border bg-background hover:border-teal-400"
-                          }`}
-                        >
-                          <span className="mt-0.5 shrink-0">
-                            {isPassed ? (
-                              <CheckCircle2
-                                className="h-4 w-4 text-emerald-600"
-                                aria-hidden="true"
-                              />
-                            ) : isLocked ? (
-                              <Lock className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-                            ) : (
-                              <Play
-                                className="h-4 w-4 fill-current text-blue-600"
-                                aria-hidden="true"
-                              />
-                            )}
-                          </span>
-                          <span className="min-w-0 flex-1">
-                            <span className="flex flex-wrap items-center gap-1.5 text-[11px] font-medium">
-                              <span className="font-mono text-muted-foreground">
-                                Lab {String(lab.position).padStart(2, "0")}
-                              </span>
-                              <Badge
-                                variant={
-                                  isPassed ? "success" : isLocked ? "secondary" : "default"
-                                }
-                                className="px-1.5 py-0 text-[10px]"
-                              >
-                                {isPassed
-                                  ? t("PASSED", "ĐÃ ĐẠT")
-                                  : isLocked
-                                    ? t("LOCKED", "ĐANG KHÓA")
-                                    : t("UNLOCKED", "ĐANG MỞ")}
-                              </Badge>
-                            </span>
-                            <span className="mt-1 block text-sm font-medium leading-snug text-foreground">
-                              {lab.title}
-                            </span>
-                          </span>
-                          <ChevronRight
-                            className={`mt-1 h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
-                              isSelected ? "translate-x-0.5 text-teal-600" : ""
-                            }`}
-                            aria-hidden="true"
-                          />
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ol>
-              </RequestState>
-            </aside>
-
-            <section className="rounded-2xl border bg-card p-6 shadow-sm">
-              {!selectedLab ? (
-                <EmptyState
-                  title={t("No Lab selected yet", "Chưa có bài Lab nào")}
-                  description={t(
-                    "Your lecturer is preparing Labs for this class, or check the module outline below.",
-                    "Giảng viên đang chuẩn bị bài Lab cho lớp này, hoặc bạn có thể xem nội dung chương bên dưới.",
-                  )}
-                />
-              ) : (
-                <div className="space-y-6">
-                  <div className="flex flex-wrap items-start justify-between gap-4 border-b pb-4">
-                    <div className="space-y-1.5">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant="outline" className="font-mono">
-                          Lab {String(selectedLab.position).padStart(2, "0")}
-                        </Badge>
-                        <Badge
-                          variant={
-                            selectedLab.state === "PASSED"
-                              ? "success"
-                              : selectedLab.state === "LOCKED"
-                                ? "secondary"
-                                : "default"
-                          }
-                        >
-                          {selectedLab.state === "PASSED"
-                            ? t("Passed", "Đã vượt qua")
-                            : selectedLab.state === "LOCKED"
-                              ? t("Locked until previous Lab passes", "Chưa mở khóa")
-                              : t("Ready to study", "Sẵn sàng học")}
-                        </Badge>
-                      </div>
-                      <h2 className="text-xl font-bold tracking-tight sm:text-2xl">
-                        {selectedLab.title}
-                      </h2>
-                    </div>
-                  </div>
-
-                  {selectedAssignment?.instructions ? (
-                    <div className="rounded-xl border bg-muted/20 p-4 text-sm">
-                      <MarkdownPreview markdown={selectedAssignment.instructions} />
-                    </div>
-                  ) : null}
-
-                  <div className="space-y-4 rounded-xl border border-emerald-200 bg-emerald-50/70 p-4 dark:border-emerald-800/60 dark:bg-emerald-950/20">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div>
-                        <h3 className="text-sm font-semibold text-emerald-950 dark:text-emerald-200">
-                          {t(
-                            "4-Step Guided Learning Flow",
-                            "Quy Trình Học & Thực Hành 4 Bước Cho Lab Này",
-                          )}
-                        </h3>
-                        <p className="text-xs text-emerald-900/80 dark:text-emerald-300/80">
-                          {t(
-                            "Follow Steps 1 to 4 directly inside the unified Lab workspace.",
-                            "Thực hiện lần lượt Bước 1 đến Bước 4 ngay trong Không Gian Làm Bài Lab.",
-                          )}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      {stepDescriptions.map((s) => {
-                        const stepHref = `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(selectedLab.assignmentId)}&step=${s.step}`;
-                        return selectedLab.state === "LOCKED" ? (
-                          <div
-                            key={s.step}
-                            className="rounded-xl border border-border/70 bg-background/70 p-3 opacity-70"
-                          >
-                            <p className="text-xs font-semibold text-muted-foreground">{s.label}</p>
-                            <p className="mt-0.5 text-xs text-muted-foreground">{s.hint}</p>
-                          </div>
-                        ) : (
-                          <Link
-                            key={s.step}
-                            href={stepHref}
-                            className="group rounded-xl border border-emerald-200/80 bg-background p-3 transition-all hover:border-emerald-500 hover:shadow-sm dark:border-emerald-800/50"
-                          >
-                            <p className="text-xs font-semibold text-emerald-800 group-hover:text-emerald-600 dark:text-emerald-300">
-                              {s.label}
-                            </p>
-                            <p className="mt-0.5 text-xs text-muted-foreground">{s.hint}</p>
-                          </Link>
-                        );
-                      })}
-                    </div>
-
-                    {selectedLab.state === "LOCKED" ? (
-                      <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
-                        <Lock className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-                        <span>
-                          {t(
-                            "This Lab unlocks automatically once the previous Lab is completed and reviewed as Passed by your lecturer.",
-                            "Lab này sẽ tự động mở khóa sau khi bạn hoàn thành Lab trước và được Giảng viên chấm Đạt.",
-                          )}
-                          {selectedLab.reason ? ` (${selectedLab.reason})` : ""}
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="flex flex-wrap items-center gap-3 pt-1">
-                        <Button
-                          asChild
-                          size="lg"
-                          className="bg-emerald-600 text-white shadow-sm hover:bg-emerald-700"
-                        >
-                          <Link
-                            href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(selectedLab.assignmentId)}&step=1`}
-                          >
-                            <Play className="mr-2 h-4 w-4 fill-current" aria-hidden="true" />
-                            {t(
-                              "Launch Lab Workspace Now",
-                              "Vào Không Gian Làm Bài Lab Ngay",
-                            )}
-                          </Link>
-                        </Button>
-                        <Button asChild variant="outline" size="lg">
-                          <Link
-                            href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(selectedLab.assignmentId)}&step=4`}
-                          >
-                            {t("Jump to 2D Studio", "Mở Thẳng Studio Thực Hành")}
-                          </Link>
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </section>
-          </div>
-
-          {publishedCourse.data && (
-            <details className="rounded-2xl border bg-card p-5 shadow-sm">
-              <summary className="w-fit cursor-pointer text-sm font-semibold text-primary">
-                {t("Full Course Modules & Reading Outline", "Đề Cương Toàn Bộ Chương & Bài Đọc")}
-              </summary>
-              <div className="mt-4">
-                <CourseOutline
+            {studentPreview ? (
+              <StudentCourseSyllabus workspace={workspace} />
+            ) : (
+              <>
+                <LecturerCurriculumManager
                   workspaceId={workspaceId}
-                  canManage={false}
                   active={workspace.status !== "ARCHIVED"}
                 />
-              </div>
-            </details>
-          )}
-        </div>
-      )}
 
-      {activeTab === "submissions" && (
-        <section className="rounded-2xl border bg-card p-5 shadow-sm">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-3">
-            <div>
-              <h2 className="text-base font-semibold">
-                {t("Your Submissions in This Class", "Bài Đã Nộp Trong Lớp Này")}
-              </h2>
-              <p className="text-xs text-muted-foreground">
-                {t(
-                  "Track grading status, scores, and detailed lecturer comments.",
-                  "Theo dõi trạng thái chấm bài, điểm số và nhận xét chi tiết từ Giảng viên.",
+                {client.mode === "backend" && (
+                  <details className="rounded-2xl border bg-card p-5">
+                    <summary className="cursor-pointer text-sm font-semibold text-foreground">
+                      {t(
+                        "Advanced Course Modules & Setup Checklist",
+                        "Cấu trúc Chương Nâng cao & Checklist Thiết lập Khóa học",
+                      )}
+                    </summary>
+                    <div className="mt-4 space-y-5">
+                      <CourseBuilder workspaceId={workspaceId} />
+                      <CourseSetupPanel workspaceId={workspaceId} />
+                    </div>
+                  </details>
                 )}
-              </p>
-            </div>
-            <Button asChild size="sm" variant="outline">
-              <Link href={`/submissions?workspace=${encodeURIComponent(workspaceId)}`}>
-                {t("Open Full Submissions Page", "Mở Trang Bài Nộp Đầy Đủ")}
-              </Link>
-            </Button>
+              </>
+            )}
           </div>
-
-          <RequestState
-            query={submissionsQuery}
-            empty={!classSubmissions.length}
-            emptyMessage={t(
-              "You have not submitted any Labs in this class yet. Open Step 4 in a Lab to submit.",
-              "Bạn chưa nộp bài Lab nào trong lớp này. Hãy vào Bước 4 trong Lab để nộp bài.",
-            )}
-          >
-            <div className="divide-y">
-              {classSubmissions.map((sub) => (
-                <div
-                  key={sub.id}
-                  className="flex flex-wrap items-center justify-between gap-3 py-3.5"
-                >
-                  <div className="space-y-1">
-                    <Link
-                      href={`/submissions/${encodeURIComponent(sub.id)}`}
-                      className="font-medium text-foreground hover:text-primary hover:underline"
-                    >
-                      {sub.labOrder ? `Lab ${String(sub.labOrder).padStart(2, "0")} · ` : ""}
-                      {sub.assignmentTitle || sub.assignmentId}
-                    </Link>
-                    <p className="text-xs text-muted-foreground">
-                      {new Date(sub.submittedAt).toLocaleString()}
-                      {sub.reviewScore != null ? ` · ${sub.reviewScore}/100` : ""}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <StatusBadge
-                      status={
-                        sub.labOutcome === "PASSED"
-                          ? "PASSED"
-                          : sub.labOutcome === "NEEDS_REVISION"
-                            ? "NEEDS_REVISION"
-                            : sub.reviewStatus || "PENDING"
-                      }
-                      variant={
-                        sub.labOutcome === "PASSED"
-                          ? "success"
-                          : sub.labOutcome === "NEEDS_REVISION"
-                            ? "warning"
-                            : "secondary"
-                      }
-                    />
-                    <Button asChild size="sm" variant="outline">
-                      <Link href={`/submissions/${encodeURIComponent(sub.id)}`}>
-                        {t("View Details", "Xem Chi Tiết")}
-                      </Link>
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </RequestState>
-        </section>
-      )}
-
-      {activeTab === "library" && client.mode === "backend" && (
-        <section className="rounded-2xl border bg-card p-5 shadow-sm">
-          <CurriculumLibrary />
-        </section>
-      )}
-        </div>
-
-        <aside className="space-y-3 xl:sticky xl:top-6" aria-label={t("Class summary", "Tóm tắt lớp")}>
-          <section className="rounded-xl border bg-card p-4">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              {t("Progress", "Tiến độ")}
-            </p>
-            <div className="mt-2 flex items-baseline justify-between gap-2">
-              <span className="text-2xl font-semibold tabular-nums">
-                {passedCount}
-                <span className="text-sm font-normal text-muted-foreground">/{labs.length}</span>
-              </span>
-              <span className="text-xs tabular-nums text-muted-foreground">{progressPercent}%</span>
-            </div>
-            <div
-              role="progressbar"
-              aria-label={t("Labs passed", "Lab đã đạt")}
-              aria-valuemin={0}
-              aria-valuemax={labs.length || 1}
-              aria-valuenow={passedCount}
-              className="mt-2 h-1.5 overflow-hidden rounded bg-muted"
-            >
-              <div
-                className="h-full rounded bg-emerald-500"
-                style={{ width: `${progressPercent}%` }}
-              />
-            </div>
-            <p className="mt-3 text-sm">
-              {nextLab ? (
-                <>
-                  {t("Next", "Tiếp theo")}: <span className="font-medium">{nextLab.title}</span>
-                </>
-              ) : labs.length ? (
-                t("All Labs passed.", "Đã đạt tất cả Lab.")
-              ) : (
-                t("No Labs published yet.", "Chưa có Lab nào được công bố.")
-              )}
-            </p>
-          </section>
-
-          <section className="rounded-xl border bg-card p-4">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              {t("Upcoming deadlines", "Hạn nộp gần")}
-            </p>
-            {upcomingDeadlines.length === 0 ? (
-              <p className="mt-2 text-xs text-muted-foreground">
-                {t("No published deadline.", "Chưa có hạn nộp.")}
-              </p>
-            ) : (
-              <ul className="mt-1 divide-y text-sm">
-                {upcomingDeadlines.map(({ lab, dueAt }) => (
-                  <li key={lab.assignmentId} className="flex items-baseline justify-between gap-3 py-2">
-                    <span className="min-w-0 truncate">{lab.title}</span>
-                    <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                      {shortDate(dueAt)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-
-          <section className="rounded-xl border bg-card p-4">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              {t("Latest result", "Kết quả mới nhất")}
-            </p>
-            {latestResult ? (
-              <div className="mt-2 space-y-1 text-sm">
-                <p className="truncate font-medium">
-                  {latestResult.assignmentTitle || t("Lab submission", "Bài nộp Lab")}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {latestResult.reviewScore != null ? `${latestResult.reviewScore}/100 · ` : ""}
-                  {latestResult.labOutcome || latestResult.reviewStatus || t("Submitted", "Đã nộp")}
-                  {latestResult.gradedAt ? ` · ${shortDate(latestResult.gradedAt)}` : ""}
-                </p>
-              </div>
-            ) : (
-              <p className="mt-2 text-xs text-muted-foreground">
-                {t("No graded submission yet.", "Chưa có bài được chấm.")}
-              </p>
-            )}
-            <Link
-              className="mt-2 inline-block text-xs text-primary hover:underline"
-              href={`/submissions?workspace=${encodeURIComponent(workspaceId)}`}
-            >
-              {t("Open submissions & grades", "Mở bài nộp & điểm")}
-            </Link>
-          </section>
-
-          <section className="rounded-xl border bg-card p-4">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              {t("Teaching team", "Giảng viên")}
-            </p>
-            <p className="mt-2 text-sm">
-              {lecturerNames.length ? lecturerNames.join(", ") : t("Not listed", "Chưa có thông tin")}
-            </p>
-          </section>
-        </aside>
-      </div>
-    </div>
+        ) : (
+          <StudentCourseSyllabus workspace={workspace} />
+        ))}
+    </RequestState>
   );
 }
 
@@ -1426,7 +541,6 @@ export function LabWorkspace() {
   const roadmap = useCourseRoadmap(workspaceId);
   const isLecturer = workspace?.myRole === "LECTURER" || session.data?.user?.role === "admin";
   const preview = Boolean(isLecturer && params.get("preview") !== "0");
-  const course = useCourseAuthoring(workspaceId, Boolean(isLecturer));
   const publishedCourse = usePublishedCourse(workspaceId);
   const courseModules = publishedCourse.data?.snapshot.modules ?? [];
   const currentModule = courseModules.find((module) =>
@@ -1673,56 +787,96 @@ export function LabWorkspace() {
     >
       {workspace && lab && (
         <div className="space-y-5">
-          <header className="rounded-xl border bg-card p-4 sm:p-5">
-            <div className="flex flex-wrap items-start justify-between gap-4">
+          <header className="mavis-hero-surface p-5 text-white">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="min-w-0 space-y-2">
-                <p className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-xs text-muted-foreground">
-                  <Link className="hover:text-foreground" href="/courses">
-                    {t("Classes", "Lớp học")}
-                  </Link>
-                  <span aria-hidden="true">/</span>
+                <div className="flex flex-wrap items-center gap-2 text-xs text-sky-100/90">
                   <Link
-                    className="hover:text-foreground"
+                    className="inline-flex items-center gap-1 rounded-md border border-white/25 bg-white/12 px-2.5 py-1 font-medium text-white transition-colors hover:bg-white/20"
                     href={`/roadmap?workspace=${encodeURIComponent(workspaceId)}`}
                   >
-                    {workspace.name}
+                    ← {t("Back to Course Syllabus", "Quay lại Lộ trình môn học")}
                   </Link>
-                  <span aria-hidden="true">/</span>
-                  <span>
-                    {t("Module", "Chương")} {currentModule?.position ?? "—"}:{" "}
-                    {currentModule?.title ?? t("Unassigned module", "Chưa gán chương")}
-                  </span>
-                  <span aria-hidden="true">/</span>
-                  <span className="text-foreground">{lab.title}</span>
-                </p>
+                  <span>/</span>
+                  <span className="truncate">{workspace.name}</span>
+                  {currentModule && (
+                    <>
+                      <span>/</span>
+                      <span className="truncate">
+                        {t("Module", "Chương")} {currentModule.position}: {currentModule.title}
+                      </span>
+                    </>
+                  )}
+                </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="text-xl font-semibold tracking-tight">{lab.title}</h1>
-                  <Badge variant="outline">
+                  <h1 className="text-xl font-bold tracking-tight text-white sm:text-2xl">
+                    {lab.title}
+                  </h1>
+                  <Badge
+                    variant="outline"
+                    className="border-white/25 bg-white/15 font-mono text-xs text-white"
+                  >
                     {t("Class", "Lớp")} {workspace.code || "—"}
                   </Badge>
-                  <Badge variant="secondary">
+                  <Badge className="border-teal-300/30 bg-teal-400/20 text-teal-50">
                     {requiresRuntime
                       ? t("2D Studio Practice Lab", "Lab Thực Hành 2D Studio")
                       : t("Theory & Quiz Lab", "Lab Lý Thuyết & Quiz")}
                   </Badge>
                   {preview && <Badge variant="warning">{t("Preview", "Xem trước")}</Badge>}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant="secondary">
-                    {t("Guided 4-Step Learning", "Học & Thực Hành 4 Bước")}
-                  </Badge>
-                  <Badge variant="outline">
-                    {t("Reference Repository Included", "Kèm Mã Nguồn Tham Chiếu")}
-                  </Badge>
+                  {readiness.map((gate) => (
+                    <Badge
+                      key={gate.label}
+                      variant="outline"
+                      className="border-white/20 bg-white/10 text-[11px] font-normal text-sky-100"
+                    >
+                      {gate.label}: {gate.state}
+                    </Badge>
+                  ))}
                 </div>
               </div>
-              <div aria-label={t("Lab actions", "Thao tác Lab")} className="flex flex-wrap gap-2">
-                <Button asChild variant="outline" size="sm">
-                  <Link href={`/roadmap?workspace=${encodeURIComponent(workspaceId)}`}>
-                    {t("Course roadmap", "Lộ trình khóa học")}
-                  </Link>
-                </Button>
-                <Button asChild variant="outline" size="sm">
+              <div aria-label={t("Lab actions", "Thao tác Lab")} className="flex flex-wrap items-center gap-2">
+                {(roadmap.data?.labs.length ?? 0) > 1 && (
+                  <label className="sr-only" htmlFor="lab-switcher">
+                    {t("Switch Lab", "Chuyển bài Lab")}
+                  </label>
+                )}
+                {(roadmap.data?.labs.length ?? 0) > 1 && (
+                  <select
+                    id="lab-switcher"
+                    value={lab.id}
+                    onChange={(event) => {
+                      const nextId = event.target.value;
+                      if (nextId) {
+                        router.push(
+                          `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(nextId)}&step=1${preview ? "&preview=1" : ""}`,
+                        );
+                      }
+                    }}
+                    className="h-8 max-w-56 rounded-lg border border-white/25 bg-white/12 px-2.5 text-xs text-white outline-none hover:bg-white/20"
+                  >
+                    {(roadmap.data?.labs ?? []).map((item) => {
+                      const icon =
+                        item.state === "PASSED" ? "✅" : item.state === "LOCKED" ? "🔒" : "▶️";
+                      return (
+                        <option
+                          key={item.assignmentId}
+                          value={item.assignmentId}
+                          disabled={item.state === "LOCKED" && !preview}
+                          className="bg-slate-900 text-white"
+                        >
+                          {icon} Lab {item.position}: {item.title}
+                        </option>
+                      );
+                    })}
+                  </select>
+                )}
+                <Button
+                  asChild
+                  variant="outline"
+                  size="sm"
+                  className="border-white/30 bg-white/12 text-white hover:bg-white/20 hover:text-white"
+                >
                   <Link
                     href={`/submissions?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(lab.id)}`}
                   >
@@ -1730,7 +884,12 @@ export function LabWorkspace() {
                   </Link>
                 </Button>
                 {isLecturer && (
-                  <Button asChild size="sm" variant="outline">
+                  <Button
+                    asChild
+                    size="sm"
+                    variant="outline"
+                    className="border-white/30 bg-white/12 text-white hover:bg-white/20 hover:text-white"
+                  >
                     <Link
                       href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignmentId)}&step=${displayedStep}${preview ? "&preview=0" : "&preview=1"}`}
                     >
@@ -1741,11 +900,11 @@ export function LabWorkspace() {
                   </Button>
                 )}
                 {isLecturer && (
-                  <Button asChild size="sm">
+                  <Button asChild size="sm" className="bg-white text-slate-950 hover:bg-sky-50">
                     <Link
-                      href={`/assignments?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(lab.id)}`}
+                      href={`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(lab.id)}`}
                     >
-                      {t("Manage Lab assignment", "Quản lý bài tập Lab")}
+                      {t("Edit Lab", "Chỉnh sửa Lab")}
                     </Link>
                   </Button>
                 )}
@@ -1754,7 +913,7 @@ export function LabWorkspace() {
             {preview && (
               <p
                 role="status"
-                className="mt-3 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs leading-5 text-amber-800 dark:text-amber-200"
+                className="mt-3 rounded-md border border-amber-300/40 bg-amber-500/20 px-3 py-2 text-xs leading-5 text-amber-100"
               >
                 {t(
                   "Preview mode is read-only. Quiz attempts, runtime sessions and submissions are not created.",
@@ -1764,118 +923,80 @@ export function LabWorkspace() {
             )}
           </header>
 
-          <nav
-            aria-label={t("Lab 4-step workflow", "Quy trình 4 bước trong Lab")}
-            className="grid gap-2 rounded-xl border bg-card p-2 sm:grid-cols-4"
-          >
-            {learningSteps.map((s) => {
-              const available = stepAvailable(s.id);
-              const isCurrent = displayedStep === s.id;
-              const complete = stepComplete[s.id];
-              return available ? (
-                <Link
-                  key={s.id}
-                  href={labHref(s.id)}
-                  className={`flex items-center gap-2.5 rounded-lg border px-3 py-2 text-xs transition-colors ${
-                    isCurrent
-                      ? "border-primary bg-primary/10 font-semibold text-primary"
-                      : complete
-                        ? "border-emerald-500/30 bg-emerald-500/5 text-foreground hover:border-primary/40"
-                        : "border-transparent bg-muted/30 text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-                  }`}
-                >
-                  <span className="grid size-6 shrink-0 place-items-center rounded-full border font-mono text-[11px]">
-                    {complete ? <Check className="size-3.5" aria-hidden="true" /> : s.id}
-                  </span>
-                  <span className="min-w-0 truncate">{t(s.shortTitle, s.shortTitleVi)}</span>
-                </Link>
-              ) : (
-                <div
-                  key={s.id}
-                  aria-disabled="true"
-                  className="flex cursor-not-allowed items-center gap-2.5 rounded-lg border border-transparent bg-muted/20 px-3 py-2 text-xs text-muted-foreground/70"
-                >
-                  <span className="grid size-6 shrink-0 place-items-center rounded-full border font-mono text-[11px]">
-                    {s.id}
-                  </span>
-                  <span className="min-w-0 truncate">{t(s.shortTitle, s.shortTitleVi)}</span>
-                </div>
-              );
-            })}
-          </nav>
+          <LabToc
+            layout="stepper"
+            steps={tocSteps}
+            activeStep={displayedStep}
+            moduleTitle={currentModule?.title}
+            items={tocItems}
+            progress={progress}
+            preview={preview}
+          />
 
           {(() => {
             const activeMeta = learningSteps.find((s) => s.id === displayedStep) ?? learningSteps[0];
             if (!activeMeta) return null;
             return (
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-blue-200 bg-blue-50/70 px-4 py-2.5 text-xs text-blue-950 dark:border-blue-800/60 dark:bg-blue-950/30 dark:text-blue-100">
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-primary/20 bg-primary/5 px-4 py-2.5 text-xs text-foreground">
                 <p>
-                  <span className="font-semibold">
+                  <span className="font-semibold text-primary">
                     {t(`Step ${activeMeta.id}/4`, `Bước ${activeMeta.id}/4`)} ·{" "}
                     {t(activeMeta.title, activeMeta.titleVi)}:
                   </span>{" "}
-                  {t(activeMeta.description, activeMeta.descriptionVi)}
+                  <span className="text-muted-foreground">
+                    {t(activeMeta.description, activeMeta.descriptionVi)}
+                  </span>
                 </p>
               </div>
             );
           })()}
 
-          <div className="grid min-w-0 gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
-            <LabToc
-              steps={tocSteps}
-              activeStep={displayedStep}
-              moduleTitle={currentModule?.title}
-              items={tocItems}
-              progress={progress}
+          <div className="min-w-0 space-y-5">
+            <StepContent
+              requiresRuntime={requiresRuntime}
+              runtimeReady={runtimeReady}
+              runtimeSessionHref={labSessions[0] ? runtimeLink(labSessions[0].id) : null}
+              studioHref={
+                verifiedStudioSession ? runtimeLink(verifiedStudioSession.id) + "&studio=1" : null
+              }
+              studioVerified={Boolean(verifiedStudioSession)}
+              studioSessionId={verifiedStudioSession?.id}
+              studioSessions={studioSessionsList}
+              labMode={lab.labMode ?? (requiresRuntime ? "THEORY_QUIZ_STUDIO" : "THEORY_QUIZ")}
+              showQuiz={roadmap.data?.guided === true}
+              canAttemptQuiz={
+                session.data?.user?.role === "student" && roadmap.data?.guided === true
+              }
+              isStudent={!isLecturer}
               preview={preview}
+              hasActiveAnalysisJob={Boolean(
+                jobs.data?.some((job) =>
+                  ["queued", "processing", "running"].includes(String(job.status)),
+                ),
+              )}
+              step={displayedStep}
+              workspaceId={workspaceId}
+              labId={lab.id}
+              labTitle={lab.title}
+              labInstructions={lab.instructions}
+              moduleTitle={currentModule?.title}
+              theoryItems={theoryItems}
+              projectId={projectId}
+              modelQuery={modelQuery}
+              referenceModelQuery={referenceModelQuery}
+              snapshotId={referenceSnapshotId}
+              modelId={activeModelId}
+              modelRevision={activeModelRevision}
+              referenceArchitecture={refArch}
+              inlineReferenceModel={inlineReferenceModel}
+              inlineC4View={inlineC4View}
+              onSelectInlineC4View={setInlineC4View}
+              onOpenC1C3View={(view) => {
+                setInlineC4View(view);
+                router.push(labHref(1, view));
+              }}
+              studentContext={studentContext.data}
             />
-            <div className="min-w-0 space-y-5">
-              <StepContent
-                requiresRuntime={requiresRuntime}
-                runtimeReady={runtimeReady}
-                runtimeSessionHref={labSessions[0] ? runtimeLink(labSessions[0].id) : null}
-                studioHref={
-                  verifiedStudioSession ? runtimeLink(verifiedStudioSession.id) + "&studio=1" : null
-                }
-                studioVerified={Boolean(verifiedStudioSession)}
-                studioSessionId={verifiedStudioSession?.id}
-                studioSessions={studioSessionsList}
-                labMode={lab.labMode ?? (requiresRuntime ? "THEORY_QUIZ_STUDIO" : "THEORY_QUIZ")}
-                showQuiz={roadmap.data?.guided === true}
-                canAttemptQuiz={
-                  session.data?.user?.role === "student" && roadmap.data?.guided === true
-                }
-                isStudent={!isLecturer}
-                preview={preview}
-                hasActiveAnalysisJob={Boolean(
-                  jobs.data?.some((job) =>
-                    ["queued", "processing", "running"].includes(String(job.status)),
-                  ),
-                )}
-                step={displayedStep}
-                workspaceId={workspaceId}
-                labId={lab.id}
-                labTitle={lab.title}
-                labInstructions={lab.instructions}
-                moduleTitle={currentModule?.title}
-                theoryItems={theoryItems}
-                projectId={projectId}
-                modelQuery={modelQuery}
-                referenceModelQuery={referenceModelQuery}
-                snapshotId={referenceSnapshotId}
-                modelId={activeModelId}
-                modelRevision={activeModelRevision}
-                referenceArchitecture={refArch}
-                inlineReferenceModel={inlineReferenceModel}
-                inlineC4View={inlineC4View}
-                onSelectInlineC4View={setInlineC4View}
-                onOpenC1C3View={(view) => {
-                  setInlineC4View(view);
-                  router.push(labHref(1, view));
-                }}
-                studentContext={studentContext.data}
-              />
-            </div>
           </div>
         </div>
       )}
@@ -2181,13 +1302,13 @@ function StepContent({
     return synthesizeFallbackMermaid(activeModel, inlineC4View);
   }, [activeModel, inlineC4View, referenceArchitecture?.diagrams]);
 
-  const submitHref = "#lab-submit";
+  const previewParam = preview ? "&preview=1" : "";
+  const submitHref = `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=4${previewParam}#lab-submit`;
   const viewModelQuery = modelQuery ?? referenceModelQuery ?? null;
   const current = learningSteps.find((item) => item.id === step)!;
   const Icon = current.icon;
   const next = step < 4 ? ((step + 1) as 2 | 3 | 4) : undefined;
   const nextAvailable = Boolean(preview) || (next !== undefined && (next <= 3 || runtimeReady));
-  const previewParam = preview ? "&preview=1" : "";
   const needsSandboxBootstrap = Boolean(
     activeStudioSessionId &&
     studioStateQuery.isSuccess &&
@@ -2218,14 +1339,27 @@ function StepContent({
         <div className="space-y-5">
           {theoryItems && theoryItems.length > 0
             ? theoryItems.map((item) => (
-                <DetailPanel key={item.id} title={item.title}>
-                  <MarkdownPreview markdown={String(item.content?.["body"] ?? "")} />
-                </DetailPanel>
+                <article
+                  key={item.id}
+                  className="rounded-2xl border bg-card p-6 shadow-sm"
+                >
+                  <h3 className="mb-3 border-b pb-2.5 text-lg font-semibold tracking-tight">
+                    {item.title}
+                  </h3>
+                  <div className="prose prose-sm max-w-[68ch] leading-7 dark:prose-invert">
+                    <MarkdownPreview markdown={String(item.content?.["body"] ?? "")} />
+                  </div>
+                </article>
               ))
             : labInstructions && (
-                <DetailPanel title={t("Lab Lesson & Instructions", "Bài học & Hướng dẫn Lab")}>
-                  <MarkdownPreview markdown={labInstructions} />
-                </DetailPanel>
+                <article className="rounded-2xl border bg-card p-6 shadow-sm">
+                  <h3 className="mb-3 border-b pb-2.5 text-lg font-semibold tracking-tight">
+                    {t("Lab Lesson & Instructions", "Bài học & Hướng dẫn Lab")}
+                  </h3>
+                  <div className="prose prose-sm max-w-[68ch] leading-7 dark:prose-invert">
+                    <MarkdownPreview markdown={labInstructions} />
+                  </div>
+                </article>
               )}
 
           <div className="space-y-4 rounded-2xl border bg-card p-5">
@@ -2280,7 +1414,22 @@ function StepContent({
             </div>
 
             {inlineC4View !== "GRAPH" ? (
-              activeDiagramMermaid ? (
+              activeModel && activeModel.elements.length > 0 ? (
+                <div className="space-y-4">
+                  <ArchitectureDiagrams
+                    model={activeModel}
+                    guidedStatic
+                    controlledKind={inlineC4View}
+                    hideKindSelector
+                    systemName={labTitle}
+                    selectedId={selectedGraphId}
+                    onSelect={setSelectedGraphId}
+                  />
+                  {selectedGraphId && (
+                    <ElementDetailsPanel model={activeModel} selectedId={selectedGraphId} />
+                  )}
+                </div>
+              ) : activeDiagramMermaid ? (
                 <DiagramPreview
                   title={`C4 ${inlineC4View}`}
                   content={activeDiagramMermaid}
@@ -2380,18 +1529,69 @@ function StepContent({
               allowRunEvaluation={!isStudent && Boolean(viewModelQuery)}
             />
           )}
+
+          <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-teal-200 bg-teal-50/70 p-5 dark:border-teal-800/60 dark:bg-teal-950/20">
+            <div className="space-y-1">
+              <p className="text-sm font-semibold text-teal-950 dark:text-teal-100">
+                {t(
+                  "Finished reading the Theory & C1–C3 Diagrams?",
+                  "Bạn đã nắm vững Lý thuyết & Kiến trúc C1–C3?",
+                )}
+              </p>
+              <p className="text-xs text-teal-900/80 dark:text-teal-300/80">
+                {t(
+                  "Proceed to trace upstream blast radius on the service graph in Step 2.",
+                  "Chuyển sang Bước 2 để thử nghiệm phân tích lan truyền lỗi trên đồ thị phụ thuộc.",
+                )}
+              </p>
+            </div>
+            <Button asChild className="bg-teal-600 text-white hover:bg-teal-700">
+              <Link
+                href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=2${previewParam}`}
+              >
+                {t(
+                  "Next Step 2: Reverse BFS Impact Simulator →",
+                  "Sang Bước 2: Thử Nghiệm Lan Truyền Lỗi (BFS) →",
+                )}
+              </Link>
+            </Button>
+          </div>
         </div>
       )}
 
       {step === 2 && (
-        <Step2StaticImpact
-          projectId={projectId}
-          modelId={modelId}
-          modelQuery={modelQuery}
-          sourceLink={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=1${previewParam}`}
-          inlineModel={activeModel}
-          onOpenC1C3View={onOpenC1C3View}
-        />
+        <div className="space-y-5">
+          <Step2StaticImpact
+            projectId={projectId}
+            modelId={modelId}
+            modelQuery={modelQuery}
+            sourceLink={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=1${previewParam}`}
+            inlineModel={activeModel}
+            onOpenC1C3View={onOpenC1C3View}
+          />
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-teal-200 bg-gradient-to-r from-teal-50/70 to-emerald-50/60 p-4">
+            <Button asChild variant="outline">
+              <Link
+                href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=1${previewParam}`}
+              >
+                {t(
+                  "← Back to Step 1 (Theory)",
+                  "← Quay lại Bước 1 (Lý thuyết)",
+                )}
+              </Link>
+            </Button>
+            <Button asChild className="bg-teal-600 text-white hover:bg-teal-700">
+              <Link
+                href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=3${previewParam}`}
+              >
+                {t(
+                  "Next Step 3: Take Quiz to Unlock Studio Lab →",
+                  "Sang Bước 3: Làm Bài Quiz Mở Khóa Phòng Lab →",
+                )}
+              </Link>
+            </Button>
+          </div>
+        </div>
       )}
 
       {step === 3 && (

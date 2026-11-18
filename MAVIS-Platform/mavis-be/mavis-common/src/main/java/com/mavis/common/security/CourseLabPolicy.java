@@ -55,6 +55,10 @@ public class CourseLabPolicy {
                 || !"STUDENT_WORKING".equals(project.getProjectType())) return;
         var lab = project.getAssignment();
         var owner = project.getOwner();
+        if (owner != null && (owner.getRole() == null
+                || !"STUDENT".equalsIgnoreCase(owner.getRole().getCode()))) {
+            return; // Lecturer validation sessions do not pass through the student Quiz gate.
+        }
         if (lab == null || owner == null || !project.getWorkspace().getId().equals(lab.getWorkspace().getId())
                 || !canOpen(lab, owner) || !hasPassedCurrentQuiz(lab, owner.getId())) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "RUNTIME_QUIZ_REQUIRED", "Pass the current Lab Quiz before starting Runtime");

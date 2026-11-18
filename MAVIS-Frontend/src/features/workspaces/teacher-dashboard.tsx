@@ -6,27 +6,41 @@ import {
   BookOpenCheck,
   ClipboardCheck,
   GraduationCap,
+  KeyRound,
   Layers,
   Plus,
   Users,
 } from "lucide-react";
-import { useApiQuery, useSelection } from "@/hooks/use-api";
+import { useApi, useApiQuery, useSelection } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { EmptyState, RequestState } from "@/components/shared/request-state";
+import { EmptyState, ErrorState, RequestState } from "@/components/shared/request-state";
 import { SearchInput } from "@/components/shared/forms";
 import { StatusBadge } from "@/components/shared/data";
 import { CreateWorkspace } from "./manage";
+import { useBootstrapJavaCoursera } from "./course-access";
 import { useLocale } from "@/lib/i18n/locale-context";
 
 export function TeacherDashboard() {
   const { t } = useLocale();
+  const api = useApi();
   const query = useApiQuery("workspaces", {});
+  const submissions = useApiQuery("submissions", {});
   const selection = useSelection();
+  const bootstrapJava = useBootstrapJavaCoursera();
   const [showCreate, setShowCreate] = useState(false);
   const [search, setSearch] = useState("");
 
   const classes = query.data ?? [];
+  const pendingByWorkspace = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const sub of submissions.data ?? []) {
+      if (!sub.workspaceId) continue;
+      if (sub.reviewStatus && sub.reviewStatus !== "PENDING") continue;
+      counts.set(sub.workspaceId, (counts.get(sub.workspaceId) ?? 0) + 1);
+    }
+    return counts;
+  }, [submissions.data]);
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return classes;
@@ -54,17 +68,17 @@ export function TeacherDashboard() {
 
   return (
     <div className="space-y-6">
-      <section className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-indigo-950 via-indigo-700 to-purple-700 p-6 text-white shadow-lg sm:p-7">
+      <section className="mavis-hero-surface p-6 text-white sm:p-7">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="max-w-2xl space-y-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-medium text-indigo-100 backdrop-blur-sm">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/15 px-3 py-1 text-xs font-semibold text-sky-100 backdrop-blur-sm">
               <GraduationCap className="h-3.5 w-3.5" aria-hidden="true" />
               {t("MAVIS Teaching Studio", "Không Gian Quản Lý Giảng Dạy")}
             </span>
-            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
+            <h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
               {t("My Classes", "Lớp Học Của Tôi")}
             </h1>
-            <p className="text-sm text-indigo-100/90">
+            <p className="text-sm leading-6 text-sky-100/90">
               {t(
                 "Create classes, author guided Labs with Quiz & 2D Studio, track student progress, and grade frozen submissions.",
                 "Quản lý lớp học, biên soạn bài Lab tương tác (Quiz & 2D Studio), theo dõi tiến độ sinh viên và chấm bài tập.",
@@ -74,8 +88,27 @@ export function TeacherDashboard() {
           <div className="flex flex-wrap items-center gap-2.5">
             <Button
               type="button"
+              variant="secondary"
+              disabled={bootstrapJava.isPending}
+              onClick={() => {
+                if (api.mode === "mock") {
+                  if (typeof window !== "undefined") {
+                    window.location.assign("/workspace-overview?workspace=workspace-java-ms-2026");
+                  }
+                  return;
+                }
+                bootstrapJava.mutate();
+              }}
+              className="bg-amber-400 text-slate-950 shadow-sm hover:bg-amber-300"
+            >
+              {bootstrapJava.isPending
+                ? t("Provisioning JAVA-MS-2026…", "Đang khởi tạo JAVA-MS-2026…")
+                : t("☕ 1-Click Java Microservices", "☕ Khởi tạo / Đồng bộ JAVA-MS-2026")}
+            </Button>
+            <Button
+              type="button"
               onClick={() => setShowCreate((open) => !open)}
-              className="bg-emerald-500 text-white shadow-sm hover:bg-emerald-600"
+              className="bg-white text-slate-950 shadow-sm hover:bg-sky-50"
             >
               <Plus className="mr-1.5 h-4 w-4" aria-hidden="true" />
               {showCreate ? t("Close", "Đóng") : t("Create class", "Tạo lớp mới")}
@@ -83,7 +116,7 @@ export function TeacherDashboard() {
             <Button
               asChild
               variant="outline"
-              className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+              className="border-white/30 bg-white/12 text-white hover:bg-white/20 hover:text-white"
             >
               <Link href="/submissions">
                 <ClipboardCheck className="mr-1.5 h-4 w-4" aria-hidden="true" />
@@ -92,33 +125,38 @@ export function TeacherDashboard() {
             </Button>
           </div>
         </div>
+        {bootstrapJava.isError && (
+          <div className="mt-3 rounded-lg bg-white/95 p-2 text-foreground">
+            <ErrorState error={bootstrapJava.error} />
+          </div>
+        )}
       </section>
 
       {showCreate && <CreateWorkspace onClose={() => setShowCreate(false)} />}
 
       {classes.length > 0 && (
         <section className="grid gap-4 sm:grid-cols-3">
-          <div className="rounded-2xl border bg-card p-4 shadow-sm">
+          <div className="mavis-card-hover rounded-2xl border bg-card p-4 shadow-sm">
             <div className="flex items-center justify-between text-xs font-medium text-muted-foreground">
               <span>{t("Managed Classes", "Tổng Số Lớp")}</span>
-              <Layers className="h-4 w-4 text-indigo-600" aria-hidden="true" />
+              <Layers className="h-4 w-4 text-primary" aria-hidden="true" />
             </div>
-            <p className="mt-2 text-2xl font-bold tracking-tight">{classes.length}</p>
+            <p className="mavis-tabular mt-2 text-2xl font-bold tracking-tight">{classes.length}</p>
             <p className="mt-0.5 text-xs text-muted-foreground">
               {activeCount} {t("active", "đang hoạt động")}
             </p>
           </div>
-          <div className="rounded-2xl border bg-card p-4 shadow-sm">
+          <div className="mavis-card-hover rounded-2xl border bg-card p-4 shadow-sm">
             <div className="flex items-center justify-between text-xs font-medium text-muted-foreground">
               <span>{t("Enrolled Students", "Tổng Sinh Viên")}</span>
-              <Users className="h-4 w-4 text-purple-600" aria-hidden="true" />
+              <Users className="h-4 w-4 text-sky-600 dark:text-sky-400" aria-hidden="true" />
             </div>
-            <p className="mt-2 text-2xl font-bold tracking-tight">{totalStudents}</p>
+            <p className="mavis-tabular mt-2 text-2xl font-bold tracking-tight">{totalStudents}</p>
             <p className="mt-0.5 text-xs text-muted-foreground">
               {t("Across all classes", "Trên tất cả lớp giảng dạy")}
             </p>
           </div>
-          <div className="rounded-2xl border bg-card p-4 shadow-sm">
+          <div className="mavis-card-hover rounded-2xl border bg-card p-4 shadow-sm">
             <div className="flex items-center justify-between text-xs font-medium text-muted-foreground">
               <span>{t("Teaching Mode", "Chế Độ Giảng Dạy")}</span>
               <BookOpenCheck className="h-4 w-4 text-emerald-600" aria-hidden="true" />
@@ -170,33 +208,44 @@ export function TeacherDashboard() {
                 const students = members.filter(
                   (member) => member.role.toUpperCase() === "STUDENT",
                 ).length;
+                const pending = pendingByWorkspace.get(workspace.id) ?? 0;
                 const workspaceUrl = `/workspace-overview?workspace=${encodeURIComponent(workspace.id)}`;
                 return (
                   <article
                     key={workspace.id}
-                    className="flex flex-col justify-between overflow-hidden rounded-[20px] border bg-card shadow-sm transition-all hover:border-indigo-400 hover:shadow-md"
+                    className="mavis-card-hover flex h-full flex-col justify-between overflow-hidden rounded-2xl border bg-card shadow-sm"
                   >
-                    <div className="h-2 bg-gradient-to-r from-indigo-600 via-violet-600 to-purple-600" />
+                    <div className="h-1.5 bg-gradient-to-r from-primary via-sky-500 to-emerald-500" />
                     <div className="flex flex-1 flex-col justify-between gap-4 p-5">
                       <div className="space-y-3">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <Badge
                             variant="outline"
-                            className="border-indigo-200 bg-indigo-50 font-mono text-indigo-800 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300"
+                            className="border-primary/25 bg-primary/5 font-mono text-xs text-primary"
                           >
                             {workspace.code || t("CLASS", "LỚP")}
                           </Badge>
-                          <StatusBadge
-                            status={workspace.status ?? "ACTIVE"}
-                            variant={workspace.status === "ARCHIVED" ? "secondary" : "default"}
-                          />
+                          <div className="flex items-center gap-1.5">
+                            <Link
+                              href={`/workspace-overview?workspace=${encodeURIComponent(workspace.id)}#class-passkey`}
+                              onClick={() => selection.setWorkspaceId(workspace.id)}
+                              className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300"
+                            >
+                              <KeyRound className="h-3 w-3" aria-hidden="true" />
+                              {t("Passkey", "Passkey")}
+                            </Link>
+                            <StatusBadge
+                              status={workspace.status ?? "ACTIVE"}
+                              variant={workspace.status === "ARCHIVED" ? "secondary" : "default"}
+                            />
+                          </div>
                         </div>
 
                         <div>
                           <Link
                             href={workspaceUrl}
                             onClick={() => selection.setWorkspaceId(workspace.id)}
-                            className="block line-clamp-2 text-lg font-semibold leading-snug tracking-tight text-foreground hover:text-indigo-600 hover:underline"
+                            className="block line-clamp-2 text-lg font-semibold leading-snug tracking-tight text-foreground hover:text-primary hover:underline"
                           >
                             {workspace.name}
                           </Link>
@@ -208,13 +257,23 @@ export function TeacherDashboard() {
                         </div>
 
                         <div className="flex flex-wrap gap-2 text-xs">
-                          <span className="inline-flex items-center gap-1 rounded-md bg-muted/60 px-2.5 py-1 font-medium text-foreground">
-                            <Users className="h-3.5 w-3.5 text-indigo-600" aria-hidden="true" />
+                          <span className="mavis-tabular inline-flex items-center gap-1 rounded-md bg-muted/60 px-2.5 py-1 font-medium text-foreground">
+                            <Users className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
                             {students} {t("students", "sinh viên")}
                           </span>
-                          <span className="inline-flex items-center gap-1 rounded-md bg-muted/60 px-2.5 py-1 text-muted-foreground">
-                            {members.length} {t("members total", "tổng thành viên")}
-                          </span>
+                          {submissions.isSuccess && (
+                            <span
+                              className={
+                                pending > 0
+                                  ? "mavis-tabular inline-flex items-center gap-1 rounded-md bg-amber-500/15 px-2.5 py-1 font-medium text-amber-800 dark:text-amber-300"
+                                  : "inline-flex items-center gap-1 rounded-md bg-muted/60 px-2.5 py-1 text-muted-foreground"
+                              }
+                            >
+                              {pending > 0
+                                ? `${pending} ${t("pending review", "bài chờ chấm")}`
+                                : t("All graded", "Đã chấm xong")}
+                            </span>
+                          )}
                         </div>
                       </div>
 
@@ -223,9 +282,12 @@ export function TeacherDashboard() {
                           asChild
                           size="sm"
                           onClick={() => selection.setWorkspaceId(workspace.id)}
-                          className="flex-1 bg-indigo-600 text-white hover:bg-indigo-700"
+                          className="flex-1"
                         >
-                          <Link href={workspaceUrl}>{t("Open class", "Mở lớp & Quản lý")}</Link>
+                          <Link href={workspaceUrl}>
+                            <Layers className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+                            {t("Open class", "Giáo trình & Bài học")}
+                          </Link>
                         </Button>
                         <Button
                           asChild
@@ -233,8 +295,9 @@ export function TeacherDashboard() {
                           variant="outline"
                           onClick={() => selection.setWorkspaceId(workspace.id)}
                         >
-                          <Link href={`/assignments?workspace=${encodeURIComponent(workspace.id)}`}>
-                            {t("Labs", "QL Lab")}
+                          <Link href={`/lab-authoring?workspace=${encodeURIComponent(workspace.id)}`}>
+                            <BookOpenCheck className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+                            {t("+ Lab", "+ Soạn Lab")}
                           </Link>
                         </Button>
                         <Button

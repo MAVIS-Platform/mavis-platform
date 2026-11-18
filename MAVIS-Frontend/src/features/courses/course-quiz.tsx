@@ -156,17 +156,30 @@ function AttemptForm({
     submit.reset();
   };
 
+  const answeredCount = quiz.questions.filter(
+    (_, index) => (answers[index] ?? []).length > 0,
+  ).length;
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {quiz.lesson && (
-        <div className="rounded-lg border bg-muted/20 p-3">
+        <div className="rounded-xl border bg-muted/20 p-4">
           <MarkdownPreview markdown={quiz.lesson} />
         </div>
       )}
-      <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
-        <span>
-          {t("Passing score", "Ngưỡng đạt")} {quiz.passPercent}%
-        </span>
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-teal-200/80 bg-gradient-to-r from-teal-50/80 via-emerald-50/50 to-white px-4 py-3">
+        <div className="flex flex-wrap items-center gap-3 text-sm text-slate-700">
+          <span className="font-semibold text-teal-950">
+            {t("Gatekeeper Quiz", "Bài kiểm tra mở khóa Lab")}
+          </span>
+          <span className="text-xs text-muted-foreground">
+            {t("Passing score", "Ngưỡng đạt")} {quiz.passPercent}% ·{" "}
+            {t(
+              `${answeredCount}/${quiz.questions.length} answered`,
+              `Đã trả lời ${answeredCount}/${quiz.questions.length} câu`,
+            )}
+          </span>
+        </div>
         <Badge
           variant={
             quiz.runtimeUnlocked
@@ -210,7 +223,7 @@ function AttemptForm({
           </ol>
         </div>
       ) : quiz.runtimeUnlocked ? (
-        <div className="space-y-3 rounded-2xl border border-emerald-400 bg-emerald-50/90 p-5 text-emerald-950 shadow-sm dark:border-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-100">
+        <div className="space-y-4 rounded-2xl border border-emerald-400 bg-emerald-50/90 p-5 text-emerald-950 shadow-sm dark:border-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-100">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="space-y-1">
               <p className="text-base font-bold">
@@ -229,12 +242,42 @@ function AttemptForm({
             >
               <Link href={submissionHref ?? runtimeStepHref}>
                 {submissionHref
-                  ? t("Proceed to Submit Lab", "Chuyển sang Bước 4: Studio & Nộp Bài")
-                  : t("Proceed to Step 3: Live Runtime", "Tiếp tục Bước 3: Live Runtime")}
+                  ? t("Proceed to Step 4: Submit Lab", "Chuyển sang Bước 4: Nộp bài Lab")
+                  : t(
+                      "Proceed to Step 4: Studio Live & Submit",
+                      "Tiếp tục Bước 4: Studio Live & Nộp bài",
+                    )}
                 <ArrowRight />
               </Link>
             </Button>
           </div>
+          {submit.data?.questionResults && submit.data.questionResults.length > 0 && (
+            <details className="rounded-xl border border-emerald-200 bg-white/90 p-3 text-foreground dark:bg-background/90">
+              <summary className="cursor-pointer text-xs font-semibold text-emerald-800 dark:text-emerald-300">
+                {t("Review Answer Explanations", "Xem giải thích chi tiết từng câu hỏi")}
+              </summary>
+              <ul className="mt-3 space-y-2 text-sm">
+                {submit.data.questionResults.map((result, index) => (
+                  <li key={`${result.id}-${index}`} className="rounded-lg border p-3">
+                    <p className="flex items-center gap-2 font-medium">
+                      {result.correct ? (
+                        <CheckCircle2 className="size-4 text-emerald-600" aria-hidden="true" />
+                      ) : (
+                        <XCircle className="size-4 text-destructive" aria-hidden="true" />
+                      )}
+                      {t("Question", "Câu")} {index + 1}:{" "}
+                      {quiz.questions[index]?.prompt ?? ""}
+                    </p>
+                    {result.explanation && (
+                      <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                        💡 {result.explanation}
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
         </div>
       ) : submit.data?.status === "PASSED" ? (
         <div className="space-y-2">
@@ -263,42 +306,61 @@ function AttemptForm({
               {t(
                 submissionHref
                   ? `Reach ${quiz.passPercent}% on the current Quiz (v${quiz.version}) before submitting this Lab.`
-                  : `Step 3 Live Docker Runtime is locked until you score at least ${quiz.passPercent}% on the current Quiz version (v${quiz.version}). Review the theory and retry if needed.`,
+                  : `Step 4 Live Studio & Submission is locked until you score at least ${quiz.passPercent}% on the current Quiz version (v${quiz.version}). Review the theory and retry if needed.`,
                 submissionHref
                   ? `Hãy đạt ${quiz.passPercent}% ở Quiz hiện tại (v${quiz.version}) trước khi nộp Lab.`
-                  : `Bước 3 Live Docker Runtime đang bị khóa cho đến khi bạn đạt tối thiểu ${quiz.passPercent}% ở phiên bản Quiz hiện tại (v${quiz.version}). Hãy ôn lại lý thuyết và làm lại nếu cần.`,
+                  : `Bước 4 Studio Live & Nộp bài đang bị khóa cho đến khi bạn đạt tối thiểu ${quiz.passPercent}% ở phiên bản Quiz hiện tại (v${quiz.version}). Hãy ôn lại lý thuyết và làm lại nếu cần.`,
               )}
             </span>
           </div>
           {quiz.questions.map((question, index) => {
             const type = questionType(question);
             const multi = type === "MULTI_CHOICE";
+            const selectedOptions = answers[index] ?? [];
             return (
               <fieldset
                 key={question.id ?? index}
-                className="space-y-2 rounded-lg border p-3"
+                className="space-y-3 rounded-2xl border bg-card p-4 shadow-xs"
                 disabled={submit.isPending || !!submit.data}
               >
-                <legend className="px-1 font-medium">
-                  {index + 1}. {question.prompt}
+                <legend className="flex flex-wrap items-center gap-2 px-1 text-sm font-semibold text-foreground">
+                  <span className="inline-flex items-center rounded-md bg-teal-50 px-2 py-0.5 text-xs font-semibold text-teal-800 border border-teal-200">
+                    {t("Question", "Câu")} {index + 1}
+                  </span>
+                  <span>
+                    {index + 1}. {question.prompt}
+                  </span>
                   {multi && (
-                    <span className="ml-2 text-xs font-normal text-muted-foreground">
-                      {t("Select all that apply", "Chọn tất cả đáp án đúng")}
+                    <span className="text-xs font-normal text-muted-foreground">
+                      ({t("Select all that apply", "Chọn tất cả đáp án đúng")})
                     </span>
                   )}
                 </legend>
-                {question.options.map((option, optionIndex) => (
-                  <label key={optionIndex} className="flex items-start gap-2">
-                    <input
-                      type={multi ? "checkbox" : "radio"}
-                      name={`question-${index}`}
-                      required={!multi}
-                      checked={(answers[index] ?? []).includes(optionIndex)}
-                      onChange={() => toggle(index, optionIndex, multi)}
-                    />
-                    {option}
-                  </label>
-                ))}
+                <div className="grid gap-2 pt-1">
+                  {question.options.map((option, optionIndex) => {
+                    const isChecked = selectedOptions.includes(optionIndex);
+                    return (
+                      <label
+                        key={optionIndex}
+                        className={`flex cursor-pointer items-start gap-3 rounded-xl border px-3.5 py-2.5 text-sm transition ${
+                          isChecked
+                            ? "border-teal-500 bg-teal-50/70 font-medium text-teal-950"
+                            : "border-border/80 bg-background hover:border-teal-300 hover:bg-muted/30"
+                        }`}
+                      >
+                        <input
+                          type={multi ? "checkbox" : "radio"}
+                          name={`question-${index}`}
+                          className="mt-1 accent-teal-600"
+                          required={!multi}
+                          checked={isChecked}
+                          onChange={() => toggle(index, optionIndex, multi)}
+                        />
+                        <span className="leading-6">{option}</span>
+                      </label>
+                    );
+                  })}
+                </div>
               </fieldset>
             );
           })}
@@ -331,9 +393,12 @@ function AttemptForm({
                         )}
                         {t("Question", "Câu")} {index + 1}:{" "}
                         {result.correct ? t("Correct", "Đúng") : t("Incorrect", "Sai")}
+                        {quiz.questions[index]?.prompt ? ` — ${quiz.questions[index].prompt}` : ""}
                       </p>
                       {result.explanation && (
-                        <p className="mt-1 text-xs text-muted-foreground">{result.explanation}</p>
+                        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                          💡 {result.explanation}
+                        </p>
                       )}
                     </li>
                   ))}

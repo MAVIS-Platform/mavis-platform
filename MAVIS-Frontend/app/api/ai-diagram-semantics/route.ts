@@ -127,9 +127,12 @@ async function callStructuredLlm<T>(
   maxTokens?: number,
 ): Promise<Partial<T> | null> {
   if (resolved.provider === "openai") {
+    const isDeepSeek = /^sk-[0-9a-f]{32}$/.test(resolved.key);
     const endpoint =
-      process.env["OPENAI_BASE_URL"]?.trim() || "https://api.openai.com/v1/chat/completions";
-    const modelName = process.env["OPENAI_MODEL"]?.trim() || "gpt-5-mini";
+      process.env["OPENAI_BASE_URL"]?.trim() ||
+      (isDeepSeek ? "https://api.deepseek.com/v1/chat/completions" : "https://api.openai.com/v1/chat/completions");
+    const modelName =
+      process.env["OPENAI_MODEL"]?.trim() || (isDeepSeek ? "deepseek-flash" : "gpt-5-mini");
     const isReasoningModel = /^(?:gpt-5|o1|o3|o4)/i.test(modelName);
     const requestBody: Record<string, unknown> = {
       model: modelName,

@@ -70,7 +70,9 @@ class CourseAccessPostgresTest {
             var oldKey = tx.execute(status -> courses.issue(workspaceId, 1));
             var key = tx.execute(status -> courses.issue(workspaceId, 2));
             assertNotEquals(oldKey.code(), key.code());
-            assertEquals(64, jdbc.queryForObject("SELECT length(digest) FROM course_passkeys", Integer.class));
+            assertEquals(64, jdbc.queryForObject(
+                    "SELECT length(digest) FROM course_passkeys WHERE workspace_id = ? AND is_active = TRUE",
+                    Integer.class, workspaceId));
             assertTrue(courses.keyStatus(workspaceId).active());
             assertEquals(ErrorCode.FORBIDDEN, assertThrows(BusinessException.class,
                     () -> courses.redeem(key.code(), UUID.randomUUID())).getErrorCode());
@@ -101,15 +103,15 @@ class CourseAccessPostgresTest {
             var expiring = tx.execute(status -> courses.issue(workspaceId, 1));
             when(access.requireCurrentActiveUser()).thenReturn(student);
             tx.executeWithoutResult(status -> {
-                jdbc.update("UPDATE course_passkeys SET expires_at = now() + interval '1 microsecond'");
+                jdbc.update("UPDATE course_passkeys SET expires_at = now() + interval '1 microsecond' WHERE workspace_id = ? AND is_active = TRUE", workspaceId);
                 assertTrue(jdbc.queryForObject("""
                         SELECT now() < expires_at AND expires_at < statement_timestamp()
-                        FROM course_passkeys WHERE workspace_id = ?
+                        FROM course_passkeys WHERE workspace_id = ? AND is_active = TRUE
                         """, Boolean.class, workspaceId));
                 assertEquals(ErrorCode.BAD_REQUEST, assertThrows(BusinessException.class,
                         () -> courses.redeem(expiring.code(), UUID.randomUUID())).getErrorCode());
             });
-            jdbc.update("UPDATE course_passkeys SET expires_at = now() - interval '1 minute'");
+            jdbc.update("UPDATE course_passkeys SET expires_at = now() - interval '1 minute' WHERE workspace_id = ?", workspaceId);
             assertEquals(ErrorCode.BAD_REQUEST, assertThrows(BusinessException.class,
                     () -> tx.execute(status -> courses.redeem(expiring.code(), UUID.randomUUID()))).getErrorCode());
             assertEquals(4, jdbc.queryForObject("SELECT count(*) FROM audit_logs WHERE action LIKE 'COURSE_PASSKEY_%'", Integer.class));
