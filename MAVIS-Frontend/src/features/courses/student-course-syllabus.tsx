@@ -129,6 +129,10 @@ export function StudentCourseSyllabus({
           })),
       }));
     }
+    const isJavaCourseraWorkspace = workspace.code?.toUpperCase() === "JAVA-MS-2026";
+    if (!isJavaCourseraWorkspace) {
+      return [];
+    }
     return buildCourseraModulesWithLabLinks(assignmentsQuery.data ?? [], labs).map((mod) => ({
       ...mod,
       items: mod.items.filter((item) => item.type !== "ESSAY"),

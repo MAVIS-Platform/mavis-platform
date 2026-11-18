@@ -95,6 +95,9 @@ export function CourseOutline({
   active: boolean;
 }) {
   const { t } = useLocale();
+  const workspaces = useApiQuery("workspaces", {});
+  const workspace = workspaces.data?.find((w) => w.id === workspaceId);
+  const isJavaCourseraWorkspace = workspace?.code?.toUpperCase() === "JAVA-MS-2026";
   const authoring = useCourseAuthoring(workspaceId, canManage);
   const publishedQuery = usePublishedCourse(workspaceId);
   const published = publishedQuery.data;
@@ -106,44 +109,11 @@ export function CourseOutline({
   const draftModules = (draft?.modules as OutlineModule[] | undefined) ?? [];
   const rawModules = publishedModules.length > 0 ? publishedModules : draftModules;
   const legacyLabs = roadmap.data?.labs ?? [];
-  const useLegacyOnly = !canManage && rawModules.length === 0 && legacyLabs.length > 0;
-  const isCatalogFallback = !useLegacyOnly && rawModules.length === 0;
-  const allRawModulesEmpty =
-    rawModules.length > 0 &&
-    rawModules.every((m) => m.items.filter((i) => i.type !== "ESSAY").length === 0);
-  const synthesizedLabItems: OutlineItem[] = (assignments.data ?? []).map((a, idx) => {
-    const tier = resolveLabTier(a);
-    return {
-      id: `lab-item-${a.id}`,
-      type:
-        tier === "THEORY_QUIZ_STUDIO"
-          ? "RUNTIME_LAB"
-          : tier === "THEORY_ONLY"
-            ? "STATIC_LAB"
-            : "IMPACT_LAB",
-      title: a.title,
-      description: a.instructions?.split("\n")[0]?.replace(/^#+\s*/, "").slice(0, 160) ?? null,
-      position: idx + 1,
-      assignmentId: a.id,
-      required: true,
-    };
-  });
+  const useLegacyOnly = !canManage && rawModules.length === 0 && legacyLabs.length > 0 && !isJavaCourseraWorkspace;
+  const isCatalogFallback = isJavaCourseraWorkspace && !useLegacyOnly && rawModules.length === 0;
   const baseModules: OutlineModule[] = isCatalogFallback
-    ? synthesizedLabItems.length > 0 && canManage
-      ? [
-          {
-            id: "milestone-1",
-            title: t("Milestone 1 · Course Labs", "Chương 1 (Mốc 1) · Danh sách bài Lab"),
-            description: null,
-            position: 1,
-            prerequisiteModuleId: null,
-            items: synthesizedLabItems,
-          },
-        ]
-      : (buildCourseraModulesWithLabLinks(assignments.data ?? [], legacyLabs) as OutlineModule[])
-    : allRawModulesEmpty && synthesizedLabItems.length > 0
-      ? rawModules.map((mod, idx) => (idx === 0 ? { ...mod, items: synthesizedLabItems } : mod))
-      : rawModules;
+    ? (buildCourseraModulesWithLabLinks(assignments.data ?? [], legacyLabs) as OutlineModule[])
+    : rawModules;
   const modules: OutlineModule[] = baseModules.map((mod) => ({
     ...mod,
     items: mod.items.filter((item) => item.type !== "ESSAY"),
@@ -151,7 +121,7 @@ export function CourseOutline({
   const courseTitle =
     published?.snapshot.title ??
     (draftModules.length > 0 ? draft?.title : undefined) ??
-    JAVA_COURSERA_COURSE_TITLE;
+    (isJavaCourseraWorkspace ? JAVA_COURSERA_COURSE_TITLE : workspace?.name);
   const courseStatus = published
     ? `v${published.version}`
     : isCatalogFallback
@@ -219,7 +189,37 @@ export function CourseOutline({
   }
 
   if (modules.length === 0) {
-    return null;
+    if (!canManage) return null;
+    return (
+      <section className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-dashed bg-card px-5 py-6">
+        <div className="space-y-1">
+          <h2 className="text-base font-semibold text-foreground">
+            {t(
+              "No curriculum chapters (milestones) set up yet",
+              "Chưa thiết lập Chương / Mốc học tập cho lớp này",
+            )}
+          </h2>
+          <p className="max-w-2xl text-xs leading-5 text-muted-foreground">
+            {t(
+              "Create your Labs in Lab Creation first, then open Curriculum & Materials to add Chapters/Milestones (Milestone 1, Milestone 2, …) and assign Labs into each milestone.",
+              "Hãy tạo các bài Lab ở tab Tạo Lab trước, sau đó vào Đề cương & Học liệu (Curriculum & Materials) để tạo các Chương / Mốc (Mốc 1, Mốc 2, …) và gắn bài Lab vào từng Mốc.",
+            )}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button asChild size="sm" variant="outline">
+            <Link href={`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}`}>
+              {t("Create Labs", "Tạo bài Lab")}
+            </Link>
+          </Button>
+          <Button asChild size="sm">
+            <Link href={`/workspace-overview?workspace=${encodeURIComponent(workspaceId)}&view=course-authoring`}>
+              {t("Setup Curriculum Milestones", "Thiết lập Chương / Mốc (Curriculum)")}
+            </Link>
+          </Button>
+        </div>
+      </section>
+    );
   }
 
   return (

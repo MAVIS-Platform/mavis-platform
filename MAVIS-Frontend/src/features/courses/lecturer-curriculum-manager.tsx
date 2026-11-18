@@ -201,10 +201,11 @@ export function LecturerCurriculumManager({
         {showPasskeyDrawer && <CoursePasskey workspaceId={workspaceId} />}
       </section>
 
-      {/* Unified 6-Chapter Course Outline + Interactive Quiz/Essay/Diagram Preview */}
+      {/* Unified Course Outline + Interactive Quiz/Diagram Preview */}
       <CourseOutline workspaceId={workspaceId} canManage active={active} />
 
-      {/* Collapsible Sequential Lab Quick Operations (De-duplicated from top outline) */}
+      {/* Collapsible Sequential Lab Quick Operations (shown only when Labs exist) */}
+      {labs.length > 0 && (
       <details className="group rounded-2xl border bg-card p-4 shadow-xs">
         <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 text-sm font-semibold">
           <span>
@@ -446,6 +447,7 @@ export function LecturerCurriculumManager({
         </RequestState>
       </section>
       </details>
+      )}
       <LabPrerequisitesDialog
         workspaceId={workspaceId}
         lab={prerequisiteLab}
