@@ -8,7 +8,8 @@ import { useApiQuery, usePermission, useSelection } from "@/hooks/use-api";
 import { useSearchParams } from "next/navigation";
 import { SelectField, SearchInput, Pagination } from "@/components/shared/forms";
 import { WorkspaceSelector } from "@/features/workspaces/components";
-import { useWorkspaceGradebook } from "@/features/workspaces/course-access";
+import { useCourseEssays, useWorkspaceGradebook } from "@/features/workspaces/course-access";
+import { LecturerEssayRow } from "@/features/courses/course-essay-panel";
 import { EmptyState, RequestState } from "@/components/shared/request-state";
 import { DataTable, StatusLabel } from "@/components/shared/data";
 import { Badge } from "@/components/ui/badge";
@@ -197,7 +198,7 @@ function TeachingSubmissions() {
   const workspaces = useApiQuery("workspaces", {});
   const workspace = workspaces.data?.find((item) => item.id === workspaceId);
   const [selected, setSelected] = useState("");
-  const [viewMode, setViewMode] = useState<"queue" | "gradebook">(
+  const [viewMode, setViewMode] = useState<"queue" | "essays" | "gradebook">(
     params.get("view") === "results" ? "gradebook" : "queue",
   );
   const [reviewStatusFilter, setReviewStatusFilter] = useState("ALL");
@@ -253,6 +254,15 @@ function TeachingSubmissions() {
           <Button
             type="button"
             size="sm"
+            variant={viewMode === "essays" ? "default" : "outline"}
+            className={viewMode === "essays" ? "bg-teal-600 text-white hover:bg-teal-700" : undefined}
+            onClick={() => setViewMode("essays")}
+          >
+            ✍️ {t("Chapter Essays", "Bài Tự Luận Chương")}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
             variant={viewMode === "gradebook" ? "default" : "outline"}
             className={viewMode === "gradebook" ? "bg-teal-600 text-white hover:bg-teal-700" : undefined}
             onClick={() => setViewMode("gradebook")}
@@ -275,7 +285,9 @@ function TeachingSubmissions() {
         )}
       </div>
 
-      {viewMode === "gradebook" ? (
+      {viewMode === "essays" ? (
+        <CourseEssaysGradingPanel workspaceId={workspaceId} />
+      ) : viewMode === "gradebook" ? (
         <ClassGradebookMatrix workspaceId={workspaceId} workspaceCode={workspace?.code || workspaceId} />
       ) : (
         <RequestState
@@ -349,6 +361,28 @@ function TeachingSubmissions() {
     </CourseWorkspaceShell>
   ) : (
     body
+  );
+}
+
+function CourseEssaysGradingPanel({ workspaceId }: { workspaceId: string }) {
+  const { t } = useLocale();
+  const essays = useCourseEssays(workspaceId);
+  const rows = essays.data ?? [];
+  return (
+    <RequestState
+      query={essays}
+      empty={!rows.length}
+      emptyMessage={t(
+        "No chapter essays have been submitted in this class yet.",
+        "Chưa có sinh viên nào nộp bài Tự luận theo chương trong lớp này.",
+      )}
+    >
+      <div className="space-y-4">
+        {rows.map((submission) => (
+          <LecturerEssayRow key={submission.id} workspaceId={workspaceId} submission={submission} />
+        ))}
+      </div>
+    </RequestState>
   );
 }
 

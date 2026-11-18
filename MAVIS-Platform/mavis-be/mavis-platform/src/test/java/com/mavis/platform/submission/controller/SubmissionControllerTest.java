@@ -97,7 +97,7 @@ class SubmissionControllerTest {
                 .feedbackCount(2L)
                 .build();
 
-        when(submissionService.getSubmissionsByAssignment(assignmentId)).thenReturn(List.of(dto));
+        when(submissionService.getSubmissionsByAssignment(assignmentId, null, null)).thenReturn(List.of(dto));
 
         mockMvc.perform(get("/api/v1/assignments/{assignmentId}/submissions", assignmentId)
                         .contentType(MediaType.APPLICATION_JSON))

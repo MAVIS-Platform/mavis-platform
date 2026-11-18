@@ -31,11 +31,43 @@ type KeyStatus = {
   expiresAt: string | null;
   maxStudents: number | null;
   enrolledStudents: number;
+  code?: string | null | undefined;
 };
-type IssuedKey = { code: string; expiresAt: string };
+
+export type PasskeyItem = {
+  id: string;
+  workspaceId: string;
+  code: string | null;
+  label: string;
+  expiresAt: string;
+  revokedAt: string | null;
+  active: boolean;
+  maxUses: number | null;
+  usedCount: number;
+  createdAt: string;
+};
+
+export type CourseEssaySubmission = {
+  id: string;
+  workspaceId: string;
+  courseItemId: string;
+  itemTitle: string;
+  studentId: string;
+  studentName: string;
+  studentEmail: string;
+  answerMarkdown: string;
+  status: "SUBMITTED" | "GRADED" | "RETURNED";
+  score: number | null;
+  feedback: string | null;
+  gradedBy: string | null;
+  submittedAt: string;
+  gradedAt: string | null;
+};
 
 const roadmapKey = (workspaceId: string) => ["api", "course-roadmap", workspaceId];
 const passkeyKey = (workspaceId: string) => ["api", "course-passkey", workspaceId];
+const passkeysKey = (workspaceId: string) => ["api", "course-passkeys", workspaceId];
+const essaysKey = (workspaceId: string) => ["api", "course-essays", workspaceId];
 
 async function courseApi<T>(path: string, init?: RequestInit): Promise<T> {
   try {
@@ -59,6 +91,135 @@ export function useCourseRoadmap(workspaceId: string) {
       courseApi<Roadmap>(`workspaces/${workspaceId}/course-roadmap`, { signal }),
     enabled: client.mode === "backend" && !!workspaceId,
     refetchOnWindowFocus: true,
+  });
+}
+
+export function useCoursePasskeys(workspaceId: string, enabled = true) {
+  const client = useApi();
+  return useQuery({
+    queryKey: passkeysKey(workspaceId),
+    queryFn: ({ signal }) =>
+      courseApi<PasskeyItem[]>(`workspaces/${workspaceId}/course-passkeys`, { signal }),
+    enabled: client.mode === "backend" && Boolean(workspaceId) && enabled,
+    retry: false,
+  });
+}
+
+export function useCreateCoursePasskey(workspaceId: string) {
+  const cache = useQueryClient();
+  return useMutation({
+    mutationFn: (body: {
+      customCode?: string | undefined;
+      label?: string | undefined;
+      validHours?: number | undefined;
+      maxUses?: number | undefined;
+    }) =>
+      courseApi<PasskeyItem>(`workspaces/${workspaceId}/course-passkeys`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      void cache.invalidateQueries({ queryKey: passkeysKey(workspaceId) });
+      void cache.invalidateQueries({ queryKey: passkeyKey(workspaceId) });
+      void cache.invalidateQueries({ queryKey: ["api", "course-setup", workspaceId] });
+      void cache.invalidateQueries({ queryKey: ["api", "workspaces"] });
+    },
+  });
+}
+
+export function useUpdateCoursePasskey(workspaceId: string) {
+  const cache = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      passkeyId,
+      ...body
+    }: {
+      passkeyId: string;
+      customCode?: string | undefined;
+      label?: string | undefined;
+      validHours?: number | undefined;
+      maxUses?: number | undefined;
+      active?: boolean | undefined;
+    }) =>
+      courseApi<PasskeyItem>(`workspaces/${workspaceId}/course-passkeys/${passkeyId}`, {
+        method: "PUT",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      void cache.invalidateQueries({ queryKey: passkeysKey(workspaceId) });
+      void cache.invalidateQueries({ queryKey: passkeyKey(workspaceId) });
+      void cache.invalidateQueries({ queryKey: ["api", "course-setup", workspaceId] });
+    },
+  });
+}
+
+export function useDeleteCoursePasskey(workspaceId: string) {
+  const cache = useQueryClient();
+  return useMutation({
+    mutationFn: (passkeyId: string) =>
+      courseApi<null>(`workspaces/${workspaceId}/course-passkeys/${passkeyId}`, {
+        method: "DELETE",
+      }),
+    onSuccess: () => {
+      void cache.invalidateQueries({ queryKey: passkeysKey(workspaceId) });
+      void cache.invalidateQueries({ queryKey: passkeyKey(workspaceId) });
+      void cache.invalidateQueries({ queryKey: ["api", "course-setup", workspaceId] });
+    },
+  });
+}
+
+export function useCourseEssays(workspaceId: string, enabled = true) {
+  const client = useApi();
+  return useQuery({
+    queryKey: essaysKey(workspaceId),
+    queryFn: ({ signal }) =>
+      courseApi<CourseEssaySubmission[]>(`workspaces/${workspaceId}/course-essays`, { signal }),
+    enabled: client.mode === "backend" && Boolean(workspaceId) && enabled,
+    retry: false,
+  });
+}
+
+export function useSubmitCourseEssay(workspaceId: string) {
+  const cache = useQueryClient();
+  return useMutation({
+    mutationFn: ({ itemId, answerMarkdown }: { itemId: string; answerMarkdown: string }) =>
+      courseApi<CourseEssaySubmission>(
+        `workspaces/${workspaceId}/course-items/${itemId}/essay-submissions`,
+        {
+          method: "POST",
+          body: JSON.stringify({ answerMarkdown }),
+        },
+      ),
+    onSuccess: () => {
+      void cache.invalidateQueries({ queryKey: essaysKey(workspaceId) });
+    },
+  });
+}
+
+export function useGradeCourseEssay(workspaceId: string) {
+  const cache = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      submissionId,
+      score,
+      feedback,
+      status = "GRADED",
+    }: {
+      submissionId: string;
+      score: number;
+      feedback: string;
+      status?: "GRADED" | "RETURNED" | undefined;
+    }) =>
+      courseApi<CourseEssaySubmission>(
+        `workspaces/${workspaceId}/essay-submissions/${submissionId}/grade`,
+        {
+          method: "PUT",
+          body: JSON.stringify({ score, feedback, status }),
+        },
+      ),
+    onSuccess: () => {
+      void cache.invalidateQueries({ queryKey: essaysKey(workspaceId) });
+    },
   });
 }
 
@@ -704,8 +865,8 @@ export function CourseEnrollment({
     <DetailPanel title={t("Join a class with Passkey", "Tham gia lớp bằng Passkey")}>
       <p className="text-xs text-muted-foreground">
         {t(
-          "Enter the 22-character Passkey issued by your Lecturer to enroll immediately.",
-          "Nhập mã Passkey gồm 22 ký tự do Giảng viên cấp để ghi danh ngay vào lớp học.",
+          "Enter the 4–32 character Passkey issued by your Lecturer (e.g. JAVA2026) to enroll immediately.",
+          "Nhập mã Passkey (4–32 ký tự, VD: JAVA2026) do Giảng viên cấp để ghi danh ngay vào lớp học.",
         )}
       </p>
       <form
@@ -719,23 +880,24 @@ export function CourseEnrollment({
       >
         <div className="min-w-[260px] flex-1 max-w-md">
           <FormField
-            label={`Passkey (${code.length}/22)`}
-            hint={t("Spaces are removed automatically.", "Khoảng trắng sẽ được tự động loại bỏ.")}
+            label="Passkey"
+            hint={t("4–32 characters (letters, digits, - or _). Example: JAVA2026.", "Từ 4–32 ký tự (chữ, số, - hoặc _). Ví dụ: JAVA2026.")}
           >
             {(props) => (
               <Input
                 {...props}
                 required
                 className="font-mono tracking-wider"
-                placeholder="XXXXXXXXXXXXXXXXXXXXXX"
-                pattern="[A-Za-z0-9_\-]{22}"
-                maxLength={22}
+                placeholder="JAVA2026"
+                pattern="[A-Za-z0-9_\-]{4,32}"
+                minLength={4}
+                maxLength={32}
                 autoComplete="off"
                 spellCheck={false}
                 disabled={redeem.isPending}
                 value={code}
                 onChange={(event) => {
-                  setCode(event.target.value.replace(/\s+/g, "").slice(0, 22));
+                  setCode(event.target.value.replace(/\s+/g, "").slice(0, 32));
                   setRequestId(undefined);
                   redeem.reset();
                 }}
@@ -743,7 +905,7 @@ export function CourseEnrollment({
             )}
           </FormField>
         </div>
-        <Button disabled={redeem.isPending || code.length !== 22}>
+        <Button disabled={redeem.isPending || code.length < 4 || code.length > 32}>
           {redeem.isPending ? t("Joining…", "Đang tham gia…") : t("Join class", "Vào lớp")}
         </Button>
       </form>
@@ -923,137 +1085,337 @@ export function CourseRoadmap({
 
 export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
   const t = useCourseText();
-  const cache = useQueryClient();
-  const path = `workspaces/${workspaceId}/course-passkey`;
-  const [validHours, setValidHours] = useState(24);
-  const [maxStudents, setMaxStudents] = useState(30);
-  const [issued, setIssued] = useState<IssuedKey>();
-  const [copied, setCopied] = useState(false);
+  const passkeys = useCoursePasskeys(workspaceId);
+  const createKey = useCreateCoursePasskey(workspaceId);
+  const updateKey = useUpdateCoursePasskey(workspaceId);
+  const deleteKey = useDeleteCoursePasskey(workspaceId);
   const status = useQuery({
     queryKey: passkeyKey(workspaceId),
-    queryFn: ({ signal }) => courseApi<KeyStatus>(path, { signal }),
+    queryFn: ({ signal }) => courseApi<KeyStatus>(`workspaces/${workspaceId}/course-passkey`, { signal }),
   });
-  const change = useMutation<IssuedKey | null, Error, "issue" | "revoke">({
-    mutationFn: (action: "issue" | "revoke") =>
-      action === "issue"
-        ? courseApi<IssuedKey>(path, {
-            method: "POST",
-            body: JSON.stringify({ validHours, maxStudents }),
-          })
-        : courseApi<null>(`${path}/revoke`, { method: "POST" }),
-    onSuccess: (key) => {
-      setIssued(key ?? undefined);
-      setCopied(false);
-      void cache.invalidateQueries({ queryKey: passkeyKey(workspaceId) });
-      void cache.invalidateQueries({ queryKey: ["api", "course-setup", workspaceId] });
-    },
-  });
+
+  const [customCode, setCustomCode] = useState("");
+  const [label, setLabel] = useState("");
+  const [validHours, setValidHours] = useState(720);
+  const [maxUses, setMaxUses] = useState(100);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editCode, setEditCode] = useState("");
+  const [editLabel, setEditLabel] = useState("");
+  const [editHours, setEditHours] = useState(720);
+  const [editMaxUses, setEditMaxUses] = useState(100);
+
+  const list = passkeys.data ?? [];
+  const mutating = createKey.isPending || updateKey.isPending || deleteKey.isPending;
+
+  const handleCopy = (id: string, value: string) => {
+    void navigator.clipboard?.writeText(value).then(
+      () => setCopiedId(id),
+      () => setCopiedId(null),
+    );
+  };
+
+  const beginEdit = (item: PasskeyItem) => {
+    setEditingId(item.id);
+    setEditCode(item.code ?? "");
+    setEditLabel(item.label ?? "");
+    setEditHours(720);
+    setEditMaxUses(item.maxUses ?? 100);
+  };
+
   return (
-    <div className="space-y-3 rounded-lg border p-4">
-      <h3 className="text-sm font-semibold">{t("Class Passkey", "Passkey của lớp")}</h3>
-      {status.data?.active && status.data.expiresAt && (
-        <p className="text-sm text-muted-foreground">
-          {t("Expires", "Hết hạn")}{" "}
-          <time dateTime={status.data.expiresAt}>
-            {new Date(status.data.expiresAt).toLocaleString()}
-          </time>
-        </p>
-      )}
-      {status.data && (
-        <p className="text-sm text-muted-foreground">
-          {t("Enrollment", "Ghi danh")}: {status.data.enrolledStudents}/
-          {status.data.maxStudents ?? t("Unlimited", "Không giới hạn")}
-        </p>
-      )}
+    <div className="space-y-4 rounded-2xl border bg-card p-5 shadow-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 className="text-base font-semibold">
+            {t("Class Passkey Manager (CRUD)", "Quản lý Mã Ghi Danh Lớp Học (Passkey CRUD)")}
+          </h3>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "Create custom 4–32 character passkeys (e.g. JAVA2026) or auto-generated codes, copy them anytime, toggle status, edit, or delete.",
+              "Tạo mã lớp tùy ý từ 4–32 ký tự (VD: JAVA2026) hoặc tự sinh mã, sao chép bất cứ lúc nào, sửa/gia hạn, tạm khóa hoặc xóa mã.",
+            )}
+          </p>
+        </div>
+        {status.data && (
+          <span className="rounded-full border bg-muted/40 px-3 py-1 text-xs font-medium text-muted-foreground">
+            {t("Enrolled", "Đã ghi danh")}: {status.data.enrolledStudents}/
+            {status.data.maxStudents ?? t("Unlimited", "Không giới hạn")}
+          </span>
+        )}
+      </div>
+
       <form
-        className="flex flex-wrap items-end gap-2"
+        className="grid gap-3 rounded-xl border bg-muted/20 p-3.5 sm:grid-cols-2 lg:grid-cols-5"
         onSubmit={(event) => {
           event.preventDefault();
-          if (
-            !status.data?.active ||
-            window.confirm(t("Replace the active Passkey?", "Thay Passkey đang có hiệu lực?"))
-          )
-            change.mutate("issue");
+          createKey.mutate(
+            {
+              ...(customCode.trim() ? { customCode: customCode.trim() } : {}),
+              ...(label.trim() ? { label: label.trim() } : {}),
+              validHours: validHours > 0 ? validHours : 720,
+              maxUses: maxUses > 0 ? maxUses : undefined,
+            },
+            {
+              onSuccess: () => {
+                setCustomCode("");
+                setLabel("");
+              },
+            },
+          );
         }}
       >
-        <FormField label={t("Valid for (hours)", "Hiệu lực (giờ)")}>
+        <FormField label={t("Custom code (optional)", "Mã tùy chọn (4–32 ký tự)")}>
+          {(props) => (
+            <Input
+              {...props}
+              className="font-mono"
+              maxLength={32}
+              placeholder="JAVA2026"
+              value={customCode}
+              onChange={(event) => setCustomCode(event.target.value.replace(/\s+/g, "").slice(0, 32))}
+            />
+          )}
+        </FormField>
+        <FormField label={t("Label", "Tên gợi nhớ (Label)")}>
+          {(props) => (
+            <Input
+              {...props}
+              maxLength={120}
+              placeholder={t("e.g. SE1819 Main Class", "VD: Mã lớp SE1819 chính thức")}
+              value={label}
+              onChange={(event) => setLabel(event.target.value)}
+            />
+          )}
+        </FormField>
+        <FormField label={t("Valid hours", "Hiệu lực (giờ)")}>
           {(props) => (
             <Input
               {...props}
               type="number"
               min={1}
-              max={168}
+              max={8760}
               required
               value={validHours || ""}
               onChange={(event) => setValidHours(Number(event.target.value))}
             />
           )}
         </FormField>
-        <FormField label={t("Maximum students", "Sĩ số tối đa")}>
+        <FormField label={t("Max uses", "Giới hạn lượt")}>
           {(props) => (
             <Input
               {...props}
               type="number"
               min={1}
               max={10000}
-              required
-              value={maxStudents || ""}
-              onChange={(event) => setMaxStudents(Number(event.target.value))}
+              value={maxUses || ""}
+              onChange={(event) => setMaxUses(Number(event.target.value))}
             />
           )}
         </FormField>
-        <Button disabled={change.isPending || !status.data}>
-          {status.data?.active
-            ? t("Replace Passkey", "Đổi Passkey")
-            : t("Issue Passkey", "Cấp Passkey")}
-        </Button>
-        {status.data?.active && (
-          <Button
-            type="button"
-            variant="outline"
-            disabled={change.isPending}
-            onClick={() => {
-              if (window.confirm(t("Revoke this Passkey?", "Thu hồi Passkey này?")))
-                change.mutate("revoke");
-            }}
-          >
-            {t("Revoke", "Thu hồi")}
+        <div className="flex items-end">
+          <Button type="submit" className="w-full bg-teal-600 text-white hover:bg-teal-700" disabled={mutating}>
+            {createKey.isPending
+              ? t("Creating…", "Đang tạo…")
+              : t("+ Create Passkey", "➕ Tạo Mã Passkey Mới")}
           </Button>
-        )}
-      </form>
-      {issued && (
-        <div className="flex flex-wrap items-center gap-2" role="status">
-          <code className="select-all rounded bg-muted px-2 py-1">{issued.code}</code>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              void navigator.clipboard?.writeText(issued.code).then(
-                () => setCopied(true),
-                () => setCopied(false),
-              );
-            }}
-          >
-            {copied ? t("Copied", "Đã sao chép") : t("Copy", "Sao chép")}
-          </Button>
-          <span className="text-xs text-muted-foreground">
-            {t("Copy the key before leaving this page.", "Hãy sao chép mã trước khi rời trang.")}
-          </span>
         </div>
-      )}
-      {status.isError && (
-        <Button type="button" variant="outline" onClick={() => void status.refetch()}>
-          {t("Retry loading Passkey", "Tải lại Passkey")}
-        </Button>
-      )}
-      {change.error && (
+      </form>
+
+      {(createKey.error || updateKey.error || deleteKey.error) && (
         <p role="alert" className="text-sm text-destructive">
-          {t(
-            "Could not update the Passkey. Please retry.",
-            "Chưa thể cập nhật Passkey. Vui lòng thử lại.",
-          )}
+          {(createKey.error ?? updateKey.error ?? deleteKey.error)?.message ??
+            t("Could not update Passkey. Please verify code uniqueness and format.", "Chưa thể cập nhật Passkey. Vui lòng kiểm tra định dạng/trùng mã.")}
         </p>
+      )}
+
+      {passkeys.isPending ? (
+        <p className="text-xs text-muted-foreground">{t("Loading passkeys…", "Đang tải danh sách mã lớp…")}</p>
+      ) : list.length === 0 ? (
+        <p className="rounded-xl border border-dashed p-4 text-xs text-muted-foreground">
+          {t("No passkeys yet. Create the first Passkey (e.g. JAVA2026) above.", "Chưa có mã lớp nào. Hãy tạo mã đầu tiên (VD: JAVA2026) ở trên.")}
+        </p>
+      ) : (
+        <div className="overflow-x-auto rounded-xl border">
+          <table className="w-full text-left text-xs">
+            <thead className="border-b bg-muted/40 text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2.5 font-medium">{t("Code", "Mã lớp")}</th>
+                <th className="px-3 py-2.5 font-medium">{t("Label", "Nhãn")}</th>
+                <th className="px-3 py-2.5 font-medium">{t("Usage", "Đã dùng")}</th>
+                <th className="px-3 py-2.5 font-medium">{t("Expires", "Hết hạn")}</th>
+                <th className="px-3 py-2.5 font-medium">{t("Status", "Trạng thái")}</th>
+                <th className="px-3 py-2.5 text-right font-medium">{t("Actions", "Thao tác")}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {list.map((item) => {
+                const expired = new Date(item.expiresAt).getTime() <= Date.now();
+                const isEditing = editingId === item.id;
+                return (
+                  <tr key={item.id} className="align-middle hover:bg-muted/20">
+                    <td className="px-3 py-2.5 font-mono">
+                      {isEditing ? (
+                        <Input
+                          className="h-7 w-32 font-mono text-xs"
+                          value={editCode}
+                          maxLength={32}
+                          onChange={(e) => setEditCode(e.target.value.replace(/\s+/g, "").slice(0, 32))}
+                        />
+                      ) : (
+                        <div className="flex items-center gap-1.5">
+                          <code className="select-all rounded bg-teal-50 px-2 py-0.5 font-semibold text-teal-900 dark:bg-teal-950/40 dark:text-teal-200">
+                            {item.code || "••••"}
+                          </code>
+                          {item.code && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 px-2 text-[11px]"
+                              onClick={() => handleCopy(item.id, item.code!)}
+                            >
+                              {copiedId === item.id ? t("Copied", "Đã chép") : t("Copy", "Sao chép")}
+                            </Button>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      {isEditing ? (
+                        <Input
+                          className="h-7 w-44 text-xs"
+                          value={editLabel}
+                          onChange={(e) => setEditLabel(e.target.value)}
+                        />
+                      ) : (
+                        item.label
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5 tabular-nums">
+                      {isEditing ? (
+                        <Input
+                          type="number"
+                          className="h-7 w-20 text-xs"
+                          min={1}
+                          value={editMaxUses || ""}
+                          onChange={(e) => setEditMaxUses(Number(e.target.value))}
+                        />
+                      ) : (
+                        `${item.usedCount} / ${item.maxUses ?? "∞"}`
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5 text-muted-foreground">
+                      {isEditing ? (
+                        <Input
+                          type="number"
+                          className="h-7 w-20 text-xs"
+                          min={1}
+                          value={editHours || ""}
+                          onChange={(e) => setEditHours(Number(e.target.value))}
+                        />
+                      ) : (
+                        new Date(item.expiresAt).toLocaleDateString()
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      {item.active ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700">
+                          🟢 {t("Active", "Đang hoạt động")}
+                        </span>
+                      ) : expired ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 font-medium text-rose-700">
+                          🔴 {t("Expired", "Đã hết hạn")}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-600">
+                          ⚪ {t("Paused", "Đang tạm khóa")}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5 text-right">
+                      <div className="flex flex-wrap justify-end gap-1">
+                        {isEditing ? (
+                          <>
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="h-7 px-2 text-xs"
+                              disabled={mutating}
+                              onClick={() =>
+                                updateKey.mutate(
+                                  {
+                                    passkeyId: item.id,
+                                    customCode: editCode.trim() || undefined,
+                                    label: editLabel.trim() || undefined,
+                                    validHours: editHours > 0 ? editHours : undefined,
+                                    maxUses: editMaxUses > 0 ? editMaxUses : undefined,
+                                  },
+                                  { onSuccess: () => setEditingId(null) },
+                                )
+                              }
+                            >
+                              {t("Save", "Lưu")}
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 px-2 text-xs"
+                              onClick={() => setEditingId(null)}
+                            >
+                              {t("Cancel", "Hủy")}
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 px-2 text-xs"
+                              disabled={mutating}
+                              onClick={() => beginEdit(item)}
+                            >
+                              ✏️ {t("Edit", "Sửa")}
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 px-2 text-xs"
+                              disabled={mutating}
+                              onClick={() =>
+                                updateKey.mutate({ passkeyId: item.id, active: !item.active })
+                              }
+                            >
+                              {item.active ? t("Pause", "Tạm khóa") : t("Activate", "Bật lại")}
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 px-2 text-xs text-destructive hover:text-destructive"
+                              disabled={mutating}
+                              onClick={() => {
+                                if (window.confirm(t("Delete this Passkey permanently?", "Xóa vĩnh viễn mã lớp này?"))) {
+                                  deleteKey.mutate(item.id);
+                                }
+                              }}
+                            >
+                              🗑️ {t("Delete", "Xóa")}
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
@@ -1165,11 +1527,11 @@ export function SeedCuratedCourseLabs({
 }) {
   const t = useCourseText();
   const cache = useQueryClient();
-  const [activePreset, setActivePreset] = useState<"STANDARD_DEMO" | "FULL_CURRICULUM" | null>(
-    null,
-  );
+  const [activePreset, setActivePreset] = useState<
+    "STANDARD_DEMO" | "FULL_CURRICULUM" | "JAVA_COURSERA_FULL" | null
+  >(null);
   const seed = useMutation({
-    mutationFn: (preset: "STANDARD_DEMO" | "FULL_CURRICULUM") => {
+    mutationFn: (preset: "STANDARD_DEMO" | "FULL_CURRICULUM" | "JAVA_COURSERA_FULL") => {
       setActivePreset(preset);
       return courseApi<Roadmap>(`workspaces/${workspaceId}/course-labs/seed-curated`, {
         method: "POST",
@@ -1190,6 +1552,19 @@ export function SeedCuratedCourseLabs({
   return (
     <div className="inline-flex flex-col items-start gap-1.5">
       <div className="flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          className="bg-teal-600 text-white hover:bg-teal-700"
+          disabled={seed.isPending}
+          onClick={() => seed.mutate("JAVA_COURSERA_FULL")}
+        >
+          {seed.isPending && activePreset === "JAVA_COURSERA_FULL"
+            ? t("Seeding Coursera Java 6-Module Course…", "Đang nạp Giáo trình Java 6 Chương…")
+            : t(
+                "☕ Seed Full Coursera Java 6-Module Course (Lessons + Quizzes + Essays)",
+                "☕ Khởi tạo Giáo trình Java Microservices Chuẩn Coursera (6 Chương + Quiz + Tự luận)",
+              )}
+        </Button>
         <Button
           type="button"
           variant={variant}

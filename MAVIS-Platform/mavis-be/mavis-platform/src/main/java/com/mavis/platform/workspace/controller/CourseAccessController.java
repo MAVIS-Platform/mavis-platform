@@ -14,6 +14,7 @@ import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -25,7 +26,7 @@ public class CourseAccessController {
     private final CourseSetupService setup;
 
     public record IssueKey(@Min(1) @Max(168) int validHours, @Min(1) @Max(10000) Integer maxStudents) {}
-    public record RedeemKey(@NotBlank @Pattern(regexp = "[A-Za-z0-9_-]{22}") String code) {}
+    public record RedeemKey(@NotBlank @Pattern(regexp = "[A-Za-z0-9_-]{4,32}") String code) {}
     public record SeedCuratedRequest(String preset) {}
 
     @GetMapping("/workspaces/{workspaceId}/course-roadmap")
@@ -64,6 +65,11 @@ public class CourseAccessController {
         return ApiResponse.success(seeder.seedCurated(workspaceId, request != null ? request.preset() : null));
     }
 
+    @PostMapping("/workspaces/{workspaceId}/course-labs/seed-java-coursera")
+    public ApiResponse<CourseAccessService.Roadmap> seedJavaCoursera(@PathVariable UUID workspaceId) {
+        return ApiResponse.success(seeder.seedCurated(workspaceId, CourseLabSeederService.PRESET_JAVA_COURSERA));
+    }
+
     @GetMapping("/workspaces/{workspaceId}/course-passkey")
     public ApiResponse<CourseAccessService.KeyStatus> keyStatus(@PathVariable UUID workspaceId) {
         return ApiResponse.success(courses.keyStatus(workspaceId));
@@ -79,6 +85,36 @@ public class CourseAccessController {
     @PostMapping("/workspaces/{workspaceId}/course-passkey/revoke")
     public ApiResponse<Void> revoke(@PathVariable UUID workspaceId) {
         courses.revoke(workspaceId);
+        return ApiResponse.success(null);
+    }
+
+    @GetMapping("/workspaces/{workspaceId}/course-passkeys")
+    public ApiResponse<List<CourseAccessService.PasskeyItem>> listPasskeys(@PathVariable UUID workspaceId) {
+        return ApiResponse.success(courses.listPasskeys(workspaceId));
+    }
+
+    @PostMapping("/workspaces/{workspaceId}/course-passkeys")
+    public ResponseEntity<ApiResponse<CourseAccessService.PasskeyItem>> createPasskey(
+            @PathVariable UUID workspaceId,
+            @RequestBody(required = false) CourseAccessService.CreatePasskeyRequest request) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+                .body(ApiResponse.success(courses.createPasskey(workspaceId, request)));
+    }
+
+    @PutMapping("/workspaces/{workspaceId}/course-passkeys/{passkeyId}")
+    public ResponseEntity<ApiResponse<CourseAccessService.PasskeyItem>> updatePasskey(
+            @PathVariable UUID workspaceId,
+            @PathVariable UUID passkeyId,
+            @RequestBody(required = false) CourseAccessService.UpdatePasskeyRequest request) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+                .body(ApiResponse.success(courses.updatePasskey(workspaceId, passkeyId, request)));
+    }
+
+    @DeleteMapping("/workspaces/{workspaceId}/course-passkeys/{passkeyId}")
+    public ApiResponse<Void> deletePasskey(
+            @PathVariable UUID workspaceId,
+            @PathVariable UUID passkeyId) {
+        courses.deletePasskey(workspaceId, passkeyId);
         return ApiResponse.success(null);
     }
 

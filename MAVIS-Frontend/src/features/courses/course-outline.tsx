@@ -21,6 +21,7 @@ import { ApiError } from "@/lib/errors/api-error";
 import { useApiQuery } from "@/hooks/use-api";
 import { useCourseAuthoring, useCourseRoadmap, usePublishedCourse } from "@/features/workspaces/course-access";
 import { MarkdownPreview } from "@/components/shared/markdown-preview";
+import { CourseEssayItemPanel, type RubricRow } from "./course-essay-panel";
 
 export function isMissingCourseError(error: unknown) {
   return error instanceof ApiError && error.status === 404;
@@ -262,16 +263,35 @@ export function CourseOutline({
                         )}
                         {item.type === "THEORY" && typeof item.content?.["body"] === "string" && (
                           <details className="mt-2 text-sm">
-                            <summary className="w-fit cursor-pointer text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                              {t("Read lesson", "Đọc bài học")}
+                            <summary className="inline-flex cursor-pointer items-center gap-1.5 rounded-md bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-800 hover:bg-teal-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                              📖 {t("Read lesson", "Đọc bài học")}
                             </summary>
-                            <div className="mt-3 max-w-3xl">
+                            <div className="mt-3 max-w-3xl rounded-xl border bg-background p-4 shadow-xs">
                               <MarkdownPreview markdown={String(item.content["body"])} />
                             </div>
                           </details>
                         )}
                         {item.type === "ESSAY" && typeof item.content?.["prompt"] === "string" && (
-                          <p className="mt-2 text-sm text-muted-foreground">{String(item.content["prompt"])}</p>
+                          <details className="mt-2 text-sm">
+                            <summary className="inline-flex cursor-pointer items-center gap-1.5 rounded-md bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-900 hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                              ✍️{" "}
+                              {canManage
+                                ? t("Review & Grade Chapter Essay", "Xem đề Tự luận & Chấm bài chương")
+                                : t("Open Case Study Essay & Rubric", "Mở Đề Tự Luận, Rubric & Nộp bài")}
+                            </summary>
+                            <CourseEssayItemPanel
+                              workspaceId={workspaceId}
+                              itemId={item.id}
+                              promptMarkdown={String(item.content["prompt"])}
+                              rubric={
+                                Array.isArray(item.content["rubric"])
+                                  ? (item.content["rubric"] as RubricRow[])
+                                  : undefined
+                              }
+                              canManage={canManage}
+                              active={active}
+                            />
+                          </details>
                         )}
                         {lockedForStudent && (
                           <p className="mt-1 text-xs text-warning">

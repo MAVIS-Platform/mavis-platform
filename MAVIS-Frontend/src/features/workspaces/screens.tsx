@@ -467,6 +467,11 @@ export function WorkspaceMembers() {
               </div>
             )}
             {canManage && (
+              <div id="class-passkey">
+                <CoursePasskey workspaceId={workspace.id} />
+              </div>
+            )}
+            {canManage && (
               <details className="rounded-xl border bg-card p-4">
                 <summary className="cursor-pointer text-sm font-medium">
                   {t("Class settings", "Thiết lập lớp")}

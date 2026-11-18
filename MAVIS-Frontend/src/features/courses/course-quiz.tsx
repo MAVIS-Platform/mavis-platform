@@ -223,7 +223,7 @@ function AttemptForm({
           </ol>
         </div>
       ) : quiz.runtimeUnlocked ? (
-        <div className="space-y-3 rounded-2xl border border-emerald-400 bg-emerald-50/90 p-5 text-emerald-950 shadow-sm dark:border-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-100">
+        <div className="space-y-4 rounded-2xl border border-emerald-400 bg-emerald-50/90 p-5 text-emerald-950 shadow-sm dark:border-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-100">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="space-y-1">
               <p className="text-base font-bold">
@@ -248,6 +248,33 @@ function AttemptForm({
               </Link>
             </Button>
           </div>
+          {submit.data?.questionResults && submit.data.questionResults.length > 0 && (
+            <details className="rounded-xl border border-emerald-200 bg-white/90 p-3 text-foreground dark:bg-background/90">
+              <summary className="cursor-pointer text-xs font-semibold text-emerald-800 dark:text-emerald-300">
+                {t("Review Answer Explanations", "Xem giải thích chi tiết từng câu hỏi")}
+              </summary>
+              <ul className="mt-3 space-y-2 text-sm">
+                {submit.data.questionResults.map((result, index) => (
+                  <li key={`${result.id}-${index}`} className="rounded-lg border p-3">
+                    <p className="flex items-center gap-2 font-medium">
+                      {result.correct ? (
+                        <CheckCircle2 className="size-4 text-emerald-600" aria-hidden="true" />
+                      ) : (
+                        <XCircle className="size-4 text-destructive" aria-hidden="true" />
+                      )}
+                      {t("Question", "Câu")} {index + 1}:{" "}
+                      {quiz.questions[index]?.prompt ?? ""}
+                    </p>
+                    {result.explanation && (
+                      <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                        💡 {result.explanation}
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
         </div>
       ) : submit.data?.status === "PASSED" ? (
         <div className="space-y-2">
@@ -363,9 +390,12 @@ function AttemptForm({
                         )}
                         {t("Question", "Câu")} {index + 1}:{" "}
                         {result.correct ? t("Correct", "Đúng") : t("Incorrect", "Sai")}
+                        {quiz.questions[index]?.prompt ? ` — ${quiz.questions[index].prompt}` : ""}
                       </p>
                       {result.explanation && (
-                        <p className="mt-1 text-xs text-muted-foreground">{result.explanation}</p>
+                        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                          💡 {result.explanation}
+                        </p>
                       )}
                     </li>
                   ))}
