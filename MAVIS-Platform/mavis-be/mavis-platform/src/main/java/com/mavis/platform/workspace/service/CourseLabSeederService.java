@@ -350,9 +350,13 @@ public class CourseLabSeederService {
                     ArrayNode rubricArr = essayContent.putArray("rubric");
                     for (RubricCriterion c : modSpec.essay().rubric()) {
                         ObjectNode node = rubricArr.addObject();
+                        node.put("title", c.criterion());
                         node.put("criterion", c.criterion());
-                        node.put("points", c.weightPoints());
                         node.put("description", c.excellentDescription());
+                        node.put("excellentDescription", c.excellentDescription());
+                        node.put("points", c.weightPoints());
+                        node.put("weightPoints", c.weightPoints());
+                        node.put("maxScore", c.weightPoints());
                     }
                     courseAuthoring.addItem(workspaceId, moduleId,
                             new CourseAuthoringService.ItemRequest(
