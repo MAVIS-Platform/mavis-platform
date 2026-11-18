@@ -144,10 +144,19 @@ export class MockAdapter implements ApiAdapter {
   private grading=new Map<string,Response<"submissionReview">>();
   private frozenBundles=new Map<string,{modelId:string;layout:Record<string,unknown>}>();
   private classrooms: Array<{id:string; code:string; name:string; status:string; ownerId:string; members:Array<{id:string;name:string;role:string}>}> = [];
-  private courseworkAssignments: Array<Response<"assignments">[number]> = [{ id:"assignment-1", workspaceId:"workspace-1", title:"Analyze checkout architecture", instructions:"Submit a source snapshot and an immutable model revision. Runtime evidence is optional.", dueAt:"2026-11-01T16:59:00Z" }];
+  private courseworkAssignments: Array<Response<"assignments">[number]> = [
+    { id:"assignment-1", workspaceId:"workspace-1", title:"Analyze checkout architecture", instructions:"Submit a source snapshot and an immutable model revision. Runtime evidence is optional.", dueAt:"2026-11-01T16:59:00Z" },
+    { id:"java-ms-lab-1", workspaceId:"workspace-java-ms-2026", title:"Lab 01 · Java 21 DTO Boundaries, Stream Pipeline & Multi-Environment Config", instructions:"Thiết kế DTO bất biến sâu bằng Java 21 Record và Stream API thuần khiết.", dueAt:"No deadline", labOrder: 1, labMode: "THEORY_QUIZ", requireRuntimeTrace: false },
+    { id:"java-ms-lab-2", workspaceId:"workspace-java-ms-2026", title:"Lab 02 · C4 Model (C1–C3), DDD Bounded Context & Database-per-Service", instructions:"Phân rã hệ thống theo Scale Cube Y-axis và kiểm toán Shared Database.", dueAt:"No deadline", labOrder: 2, labMode: "THEORY_QUIZ", requireRuntimeTrace: false },
+    { id:"java-ms-lab-3", workspaceId:"workspace-java-ms-2026", title:"Lab 03 · Synchronous OpenFeign, Cycle-Safe Reverse BFS & API Gateway", instructions:"Tìm Blast Radius bằng Cycle-Safe Reverse BFS từ tâm chấn payment-service.", dueAt:"No deadline", labOrder: 3, labMode: "THEORY_QUIZ", requireRuntimeTrace: false },
+    { id:"java-ms-lab-4", workspaceId:"workspace-java-ms-2026", title:"Lab 04 · Resilience4j Circuit Breaker, Timeout Budget & Idempotent Consumer", instructions:"Chạy thực nghiệm chống sập dây chuyền Circuit Breaker & Stop/Scale Studio.", dueAt:"No deadline", labOrder: 4, labMode: "THEORY_QUIZ_STUDIO", requireRuntimeTrace: true },
+    { id:"java-ms-lab-5", workspaceId:"workspace-java-ms-2026", title:"Lab 05 · Distributed Saga, Transactional Outbox & OAuth2/JWT Zero Secret Leaks", instructions:"Thiết kế Compensating Transaction và kiểm toán Zero Secret Leaks [REDACTED].", dueAt:"No deadline", labOrder: 5, labMode: "THEORY_QUIZ_STUDIO", requireRuntimeTrace: true },
+    { id:"java-ms-lab-6", workspaceId:"workspace-java-ms-2026", title:"Lab 06 · OpenTelemetry Traceparent, Testcontainers & Production Readiness", instructions:"Đo kiểm Before vs After theo chuẩn OpenTelemetry và Health Probes.", dueAt:"No deadline", labOrder: 6, labMode: "THEORY_QUIZ_STUDIO", requireRuntimeTrace: true },
+  ];
   private accounts: Account[] = [
-    { id: "sample-student", name: "Sample learner", email:"student@example.com", role: "student", locked: false },
-    { id: "sample-lecturer", name: "Sample lecturer", email:"lecturer@example.com", role: "lecturer", locked: false },
+    { id: "sample-student", name: "Lê Minh Triết · Sinh Viên SE181979", email:"sv.java@mavis.edu.vn", role: "student", locked: false },
+    { id: "sample-lecturer", name: "Thầy Hoàng · Giảng Viên Java Microservices", email:"gv.java@mavis.edu.vn", role: "lecturer", locked: false },
+    { id: "sample-admin", name: "Quản Trị Viên Hệ Thống MAVIS", email:"admin@mavis.edu.vn", role: "admin", locked: false },
   ];
   private integrations: Integration[] = [
     { id: "integration-1", name: "Source analyzer (sample)", enabled: false, revision: 1 },
@@ -161,7 +170,24 @@ export class MockAdapter implements ApiAdapter {
     private readonly scenario: MockScenario = "normal",
     private readonly latency = 350,
   ) {
-    if (scenario !== "empty") this.classrooms.push({ id:"workspace-1", code:"SE1701", name:"Software Architecture · SE1701", status:"ACTIVE", ownerId:"sample-lecturer", members:this.accounts.map(a => ({id:a.id,name:a.name,role:a.role})) });
+    if (scenario !== "empty") {
+      this.classrooms.push({
+        id: "workspace-java-ms-2026",
+        code: "JAVA-MS-2026",
+        name: "Kiến Trúc & Phát Triển Java Microservices Toàn Diện (Chuẩn Coursera)",
+        status: "ACTIVE",
+        ownerId: "sample-lecturer",
+        members: this.accounts.map((a) => ({ id: a.id, name: a.name, role: a.role })),
+      });
+      this.classrooms.push({
+        id: "workspace-1",
+        code: "SE1701",
+        name: "Software Architecture · SE1701",
+        status: "ACTIVE",
+        ownerId: "sample-lecturer",
+        members: this.accounts.map((a) => ({ id: a.id, name: a.name, role: a.role })),
+      });
+    }
     const model = this.models[0];
     const snapshot = this.snapshots[0];
     if (model && snapshot)
