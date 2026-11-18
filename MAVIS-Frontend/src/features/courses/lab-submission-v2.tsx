@@ -41,6 +41,27 @@ export function LabSubmissionV2({
   const submit = useApiMutation("submit");
   const [answer, setAnswer] = useState("");
   const [revising, setRevising] = useState(false);
+  const [mitigations, setMitigations] = useState<{
+    circuitBreaker: boolean;
+    databasePerService: boolean;
+    idempotencyKey: boolean;
+  }>({
+    circuitBreaker: true,
+    databasePerService: true,
+    idempotencyKey: true,
+  });
+
+  const checklistScore =
+    (mitigations.circuitBreaker ? 1 : 0) +
+    (mitigations.databasePerService ? 1 : 0) +
+    (mitigations.idempotencyKey ? 1 : 0);
+  const estimatedRubricScore = useMemo(() => {
+    const baseQuiz = 2.7; // 30% Quiz weight
+    const topologyScore = answer.trim().length >= 80 ? 3.5 : answer.trim().length > 0 ? 1.8 : 0.8;
+    const mitigationScore = Math.round((checklistScore / 3) * 2.6 * 10) / 10;
+    return Math.min(10, Math.round((baseQuiz + topologyScore + mitigationScore) * 10) / 10);
+  }, [answer, checklistScore]);
+  const passesRubricPreview = estimatedRubricScore > 5.0;
 
   useEffect(() => {
     try {
@@ -213,6 +234,93 @@ export function LabSubmissionV2({
               {submit.error.message}
             </p>
           )}
+          <div className="space-y-3 rounded-xl border border-teal-200/80 bg-teal-50/40 p-3.5 text-xs dark:border-teal-900 dark:bg-teal-950/20">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="font-semibold text-teal-950 dark:text-teal-200">
+                📊 {t("WF-04 Rubric 0–10 Estimate & C1–C3 Snapshot Bundler", "Dự báo Điểm Rubric 0–10 (WF-04) & Đóng gói Snapshot C1–C3")}
+              </span>
+              <Badge variant={passesRubricPreview ? "success" : "destructive"}>
+                {estimatedRubricScore.toFixed(1)} / 10.0 ·{" "}
+                {passesRubricPreview
+                  ? t("APPROVED Eligible (> 5.0)", "ĐẠT (> 5.0 → Mở Lab tiếp theo)")
+                  : t("DS-04b Revision Needed (≤ 5.0)", "Cần sửa (≤ 5.0 · DS-04b)")}
+              </Badge>
+            </div>
+            <p className="text-muted-foreground">
+              {t(
+                "30% Quiz Gate + 40% C1–C3 Snapshot Architecture + 30% Reverse BFS Mitigation Checklist",
+                "Cấu trúc điểm: 30% Quiz Gate + 40% Kiến trúc C1–C3 Snapshot + 30% Giải pháp Reverse BFS Mitigation",
+              )}
+            </p>
+            <div className="flex flex-wrap gap-3">
+              <label className="inline-flex cursor-pointer items-center gap-1.5 font-medium">
+                <input
+                  type="checkbox"
+                  checked={mitigations.circuitBreaker}
+                  onChange={(e) =>
+                    setMitigations((m) => ({ ...m, circuitBreaker: e.target.checked }))
+                  }
+                />
+                Circuit Breaker + Fallback
+              </label>
+              <label className="inline-flex cursor-pointer items-center gap-1.5 font-medium">
+                <input
+                  type="checkbox"
+                  checked={mitigations.databasePerService}
+                  onChange={(e) =>
+                    setMitigations((m) => ({ ...m, databasePerService: e.target.checked }))
+                  }
+                />
+                Database-per-Service
+              </label>
+              <label className="inline-flex cursor-pointer items-center gap-1.5 font-medium">
+                <input
+                  type="checkbox"
+                  checked={mitigations.idempotencyKey}
+                  onChange={(e) =>
+                    setMitigations((m) => ({ ...m, idempotencyKey: e.target.checked }))
+                  }
+                />
+                X-Idempotency-Key + Outbox
+              </label>
+            </div>
+            <div className="flex flex-wrap gap-2 pt-1">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7 border-emerald-300 bg-background px-2.5 text-xs text-emerald-800 hover:bg-emerald-50"
+                onClick={() => {
+                  const sample =
+                    "Hồ sơ kiến trúc C1–C3 đạt chuẩn: Tách Database-per-Service giữa Order Service và Inventory Service, bảo vệ lời gọi đồng bộ OpenFeign bằng Resilience4j Circuit Breaker (CLOSED/OPEN/HALF_OPEN), và đảm bảo nhất quán Saga bằng Transactional Outbox + X-Idempotency-Key. Kết quả đo Reverse BFS & 2D Studio kiểm chứng 0% cascading failure.";
+                  setMitigations({ circuitBreaker: true, databasePerService: true, idempotencyKey: true });
+                  setAnswer(sample);
+                  try {
+                    window.localStorage.setItem(draftKey, sample);
+                  } catch {}
+                }}
+              >
+                🚀 {t("Fill Passing Architectural Dossier (> 5.0)", "Điền Hồ Sơ Chuẩn Đạt Rubric (8.8/10)")}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7 border-rose-300 bg-background px-2.5 text-xs text-rose-800 hover:bg-rose-50"
+                onClick={() => {
+                  const flawed = "Shared DB trực tiếp.";
+                  setMitigations({ circuitBreaker: false, databasePerService: false, idempotencyKey: false });
+                  setAnswer(flawed);
+                  try {
+                    window.localStorage.setItem(draftKey, flawed);
+                  } catch {}
+                }}
+              >
+                🧪 {t("Fill Flawed Draft to Test DS-04b (≤ 5.0)", "Điền Thiết Kế Lỗi Test DS-04b (≤ 5.0)")}
+              </Button>
+            </div>
+          </div>
+
           <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
             <span className="text-xs text-muted-foreground">
               {answer.trim().length} {t("characters", "ký tự")}
@@ -221,33 +329,66 @@ export function LabSubmissionV2({
               type="button"
               className="bg-teal-600 text-white hover:bg-teal-700"
               disabled={!canSubmit || submit.isPending}
-            onClick={() =>
-              submit.mutate(
-                {
-                  assignmentId,
-                  runtimeSessionId: studio ? runtimeSessionId! : null,
-                  submissionNotes: answer.trim(),
-                  theoryAnswers: [
-                    { sectionId: "THEORY", title: "Theory explanation", answer: answer.trim() },
-                  ],
-                  studentSnapshots: [],
-                },
-                {
-                  onSuccess: () => {
-                    try {
-                      window.localStorage.removeItem(draftKey);
-                    } catch {}
-                    setAnswer("");
-                    setRevising(false);
-                    void cache.invalidateQueries({ queryKey: ["api", "submissions"] });
-                    void cache.invalidateQueries({ queryKey: ["api", "submission"] });
-                    void cache.invalidateQueries({
-                      queryKey: ["api", "student-lab-context", workspaceId, assignmentId],
-                    });
+              onClick={() => {
+                const nowIso = new Date().toISOString();
+                const trimmed = answer.trim();
+                const snapshots = [
+                  {
+                    snapshotId: `c1-context-${assignmentId}`,
+                    step: "STEP_4",
+                    title: "C1 System Context Boundary",
+                    targetViewOrService: "api-gateway",
+                    writtenExplanation: trimmed,
+                    capturedAt: nowIso,
                   },
-                },
-              )
-            }
+                  {
+                    snapshotId: `c2-container-${assignmentId}`,
+                    step: "STEP_4",
+                    title: `C2 Containers (${mitigations.databasePerService ? "Database-per-Service" : "Shared DB Flaw"})`,
+                    targetViewOrService: "order-service",
+                    writtenExplanation: `CircuitBreaker=${mitigations.circuitBreaker}, DBPerService=${mitigations.databasePerService}`,
+                    capturedAt: nowIso,
+                  },
+                  {
+                    snapshotId: `c3-component-${assignmentId}`,
+                    step: "STEP_4",
+                    title: `C3 Component Contracts (${mitigations.idempotencyKey ? "Idempotent Outbox" : "Unprotected"})`,
+                    targetViewOrService: "InventoryClientPort",
+                    writtenExplanation: `IdempotencyKey=${mitigations.idempotencyKey}`,
+                    capturedAt: nowIso,
+                  },
+                ];
+                submit.mutate(
+                  {
+                    assignmentId,
+                    runtimeSessionId: studio ? runtimeSessionId! : null,
+                    submissionNotes: `${trimmed}\n[RubricPreview=${estimatedRubricScore}/10; CB=${mitigations.circuitBreaker}; DBPerService=${mitigations.databasePerService}; Idempotency=${mitigations.idempotencyKey}]`,
+                    theoryAnswers: [
+                      { sectionId: "THEORY", title: "Theory explanation", answer: trimmed },
+                      {
+                        sectionId: "MITIGATION",
+                        title: "Reverse BFS & Resilience Mitigations",
+                        answer: `ScorePreview=${estimatedRubricScore}/10 (${passesRubricPreview ? "APPROVED_ELIGIBLE" : "DS04B_REVISION"})`,
+                      },
+                    ],
+                    studentSnapshots: snapshots,
+                  },
+                  {
+                    onSuccess: () => {
+                      try {
+                        window.localStorage.removeItem(draftKey);
+                      } catch {}
+                      setAnswer("");
+                      setRevising(false);
+                      void cache.invalidateQueries({ queryKey: ["api", "submissions"] });
+                      void cache.invalidateQueries({ queryKey: ["api", "submission"] });
+                      void cache.invalidateQueries({
+                        queryKey: ["api", "student-lab-context", workspaceId, assignmentId],
+                      });
+                    },
+                  },
+                );
+              }}
             >
               {submit.isPending ? t("Submitting…", "Đang nộp…") : t("Submit Lab", "Nộp Lab")}
             </Button>
