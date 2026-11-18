@@ -877,132 +877,180 @@ export function LabWorkspace() {
     >
       {workspace && lab && (
         <div className="space-y-5">
-          <header className="rounded-xl border bg-card p-4 sm:p-5">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="min-w-0 space-y-2">
-                <p className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-xs text-muted-foreground">
-                  <Link className="hover:text-foreground" href="/courses">
-                    {t("Classes", "Lớp học")}
-                  </Link>
-                  <span aria-hidden="true">/</span>
-                  <Link
-                    className="hover:text-foreground"
-                    href={`/roadmap?workspace=${encodeURIComponent(workspaceId)}`}
+          <header className="overflow-hidden rounded-2xl border bg-card shadow-sm">
+            <div className="bg-gradient-to-r from-emerald-950 via-teal-900 to-slate-900 px-5 py-4 text-white">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0 space-y-1.5">
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-teal-100/90">
+                    <Link
+                      className="inline-flex items-center gap-1 rounded-md bg-white/15 px-2.5 py-1 font-medium text-white hover:bg-white/25"
+                      href={`/roadmap?workspace=${encodeURIComponent(workspaceId)}`}
+                    >
+                      ← {t("Back to Course Syllabus", "Quay lại Lộ trình môn học")}
+                    </Link>
+                    <span>/</span>
+                    <span className="truncate">{workspace.name}</span>
+                    {currentModule && (
+                      <>
+                        <span>/</span>
+                        <span className="truncate">
+                          {t("Module", "Chương")} {currentModule.position}: {currentModule.title}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h1 className="text-xl font-bold tracking-tight sm:text-2xl">{lab.title}</h1>
+                    <Badge className="border-white/25 bg-white/15 font-mono text-white">
+                      {t("Class", "Lớp")} {workspace.code || "—"}
+                    </Badge>
+                    <Badge className="border-teal-300/30 bg-teal-500/25 text-teal-100">
+                      {requiresRuntime
+                        ? t("2D Studio Practice Lab", "Lab Thực Hành 2D Studio")
+                        : t("Theory & Quiz Lab", "Lab Lý Thuyết & Quiz")}
+                    </Badge>
+                    {preview && <Badge variant="warning">{t("Preview", "Xem trước")}</Badge>}
+                  </div>
+                </div>
+                <div aria-label={t("Lab actions", "Thao tác Lab")} className="flex flex-wrap items-center gap-2">
+                  {(roadmap.data?.labs.length ?? 0) > 1 && (
+                    <label className="sr-only" htmlFor="lab-switcher">
+                      {t("Switch Lab", "Chuyển bài Lab")}
+                    </label>
+                  )}
+                  {(roadmap.data?.labs.length ?? 0) > 1 && (
+                    <select
+                      id="lab-switcher"
+                      value={lab.id}
+                      onChange={(event) => {
+                        const nextId = event.target.value;
+                        if (nextId) {
+                          router.push(
+                            `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(nextId)}&step=1${preview ? "&preview=1" : ""}`,
+                          );
+                        }
+                      }}
+                      className="h-8 max-w-56 rounded-lg border border-white/25 bg-white/10 px-2.5 text-xs text-white outline-none hover:bg-white/20"
+                    >
+                      {(roadmap.data?.labs ?? []).map((item) => {
+                        const icon =
+                          item.state === "PASSED" ? "✅" : item.state === "LOCKED" ? "🔒" : "▶️";
+                        return (
+                          <option
+                            key={item.assignmentId}
+                            value={item.assignmentId}
+                            disabled={item.state === "LOCKED" && !preview}
+                            className="bg-slate-900 text-white"
+                          >
+                            {icon} Lab {item.position}: {item.title}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  )}
+                  <Button
+                    asChild
+                    variant="outline"
+                    size="sm"
+                    className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white"
                   >
-                    {workspace.name}
-                  </Link>
-                  <span aria-hidden="true">/</span>
-                  <span>
-                    {t("Module", "Chương")} {currentModule?.position ?? "—"}:{" "}
-                    {currentModule?.title ?? t("Unassigned module", "Chưa gán chương")}
-                  </span>
-                  <span aria-hidden="true">/</span>
-                  <span className="text-foreground">{lab.title}</span>
+                    <Link
+                      href={`/submissions?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(lab.id)}`}
+                    >
+                      {t("Submissions & Grades", "Bài nộp & Điểm")}
+                    </Link>
+                  </Button>
+                  {isLecturer && (
+                    <Button
+                      asChild
+                      size="sm"
+                      variant="outline"
+                      className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+                    >
+                      <Link
+                        href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignmentId)}&step=${displayedStep}${preview ? "&preview=0" : "&preview=1"}`}
+                      >
+                        {preview
+                          ? t("Exit preview", "Thoát xem trước")
+                          : t("Preview as student", "Xem trước như sinh viên")}
+                      </Link>
+                    </Button>
+                  )}
+                  {isLecturer && (
+                    <Button asChild size="sm" className="bg-emerald-500 text-white hover:bg-emerald-400">
+                      <Link
+                        href={`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(lab.id)}`}
+                      >
+                        {t("Edit Lab", "Chỉnh sửa Lab")}
+                      </Link>
+                    </Button>
+                  )}
+                </div>
+              </div>
+              {preview && (
+                <p
+                  role="status"
+                  className="mt-3 rounded-md border border-amber-300/40 bg-amber-500/20 px-3 py-2 text-xs leading-5 text-amber-100"
+                >
+                  {t(
+                    "Preview mode is read-only. Quiz attempts, runtime sessions and submissions are not created.",
+                    "Chế độ xem trước chỉ đọc. Không tạo lượt Quiz, phiên runtime hay bài nộp.",
+                  )}
                 </p>
-                <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="text-xl font-semibold tracking-tight">{lab.title}</h1>
-                  <Badge variant="outline">
-                    {t("Class", "Lớp")} {workspace.code || "—"}
-                  </Badge>
-                  <Badge variant="secondary">
-                    {requiresRuntime
-                      ? t("2D Studio Practice Lab", "Lab Thực Hành 2D Studio")
-                      : t("Theory & Quiz Lab", "Lab Lý Thuyết & Quiz")}
-                  </Badge>
-                  {preview && <Badge variant="warning">{t("Preview", "Xem trước")}</Badge>}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant="secondary">
-                    {t("Guided 4-Step Learning", "Học & Thực Hành 4 Bước")}
-                  </Badge>
-                  <Badge variant="outline">
-                    {t("Reference Repository Included", "Kèm Mã Nguồn Tham Chiếu")}
-                  </Badge>
-                </div>
-              </div>
-              <div aria-label={t("Lab actions", "Thao tác Lab")} className="flex flex-wrap gap-2">
-                <Button asChild variant="outline" size="sm">
-                  <Link href={`/roadmap?workspace=${encodeURIComponent(workspaceId)}`}>
-                    {t("Course roadmap", "Lộ trình khóa học")}
-                  </Link>
-                </Button>
-                <Button asChild variant="outline" size="sm">
-                  <Link
-                    href={`/submissions?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(lab.id)}`}
-                  >
-                    {t("Submissions & Grades", "Bài nộp & Điểm")}
-                  </Link>
-                </Button>
-                {isLecturer && (
-                  <Button asChild size="sm" variant="outline">
-                    <Link
-                      href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignmentId)}&step=${displayedStep}${preview ? "&preview=0" : "&preview=1"}`}
-                    >
-                      {preview
-                        ? t("Exit preview", "Thoát xem trước")
-                        : t("Preview as student", "Xem trước như sinh viên")}
-                    </Link>
-                  </Button>
-                )}
-                {isLecturer && (
-                  <Button asChild size="sm">
-                    <Link
-                      href={`/assignments?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(lab.id)}`}
-                    >
-                      {t("Manage Lab assignment", "Quản lý bài tập Lab")}
-                    </Link>
-                  </Button>
-                )}
-              </div>
+              )}
             </div>
-            {preview && (
-              <p
-                role="status"
-                className="mt-3 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs leading-5 text-amber-800 dark:text-amber-200"
-              >
-                {t(
-                  "Preview mode is read-only. Quiz attempts, runtime sessions and submissions are not created.",
-                  "Chế độ xem trước chỉ đọc. Không tạo lượt Quiz, phiên runtime hay bài nộp.",
-                )}
-              </p>
-            )}
           </header>
 
           <nav
             aria-label={t("Lab 4-step workflow", "Quy trình 4 bước trong Lab")}
-            className="grid gap-2 rounded-xl border bg-card p-2 sm:grid-cols-4"
+            className="grid gap-2 rounded-2xl border bg-card p-2.5 shadow-sm sm:grid-cols-4"
           >
             {learningSteps.map((s) => {
               const available = stepAvailable(s.id);
               const isCurrent = displayedStep === s.id;
               const complete = stepComplete[s.id];
+              const step4Locked = s.id === 4 && !runtimeReady && !preview;
               return available ? (
                 <Link
                   key={s.id}
                   href={labHref(s.id)}
-                  className={`flex items-center gap-2.5 rounded-lg border px-3 py-2 text-xs transition-colors ${
+                  className={`flex items-center justify-between gap-2 rounded-xl border px-3 py-2.5 text-xs transition-colors ${
                     isCurrent
-                      ? "border-primary bg-primary/10 font-semibold text-primary"
+                      ? "border-teal-600 bg-teal-50 font-semibold text-teal-900 dark:border-teal-500 dark:bg-teal-950/40 dark:text-teal-200"
                       : complete
-                        ? "border-emerald-500/30 bg-emerald-500/5 text-foreground hover:border-primary/40"
+                        ? "border-emerald-500/40 bg-emerald-500/5 text-foreground hover:border-teal-500/60"
                         : "border-transparent bg-muted/30 text-muted-foreground hover:bg-muted/60 hover:text-foreground"
                   }`}
                 >
-                  <span className="grid size-6 shrink-0 place-items-center rounded-full border font-mono text-[11px]">
-                    {complete ? <Check className="size-3.5" aria-hidden="true" /> : s.id}
+                  <span className="flex min-w-0 items-center gap-2.5">
+                    <span className="grid size-6 shrink-0 place-items-center rounded-full border font-mono text-[11px]">
+                      {complete ? <Check className="size-3.5 text-emerald-600" aria-hidden="true" /> : s.id}
+                    </span>
+                    <span className="min-w-0 truncate">
+                      {t(`Step ${s.id}: ${s.shortTitle}`, `Bước ${s.id}: ${s.shortTitleVi}`)}
+                    </span>
                   </span>
-                  <span className="min-w-0 truncate">{t(s.shortTitle, s.shortTitleVi)}</span>
+                  {s.id === 4 && (
+                    <Badge
+                      variant={step4Locked ? "secondary" : "success"}
+                      className="shrink-0 px-1.5 py-0 text-[10px]"
+                    >
+                      {step4Locked ? t("🔒 Quiz Gate", "🔒 Cần qua Quiz") : t("🔓 Unlocked", "🔓 Đã mở")}
+                    </Badge>
+                  )}
                 </Link>
               ) : (
                 <div
                   key={s.id}
                   aria-disabled="true"
-                  className="flex cursor-not-allowed items-center gap-2.5 rounded-lg border border-transparent bg-muted/20 px-3 py-2 text-xs text-muted-foreground/70"
+                  className="flex cursor-not-allowed items-center gap-2.5 rounded-xl border border-transparent bg-muted/20 px-3 py-2.5 text-xs text-muted-foreground/70"
                 >
                   <span className="grid size-6 shrink-0 place-items-center rounded-full border font-mono text-[11px]">
                     {s.id}
                   </span>
-                  <span className="min-w-0 truncate">{t(s.shortTitle, s.shortTitleVi)}</span>
+                  <span className="min-w-0 truncate">
+                    {t(`Step ${s.id}: ${s.shortTitle}`, `Bước ${s.id}: ${s.shortTitleVi}`)}
+                  </span>
                 </div>
               );
             })}
