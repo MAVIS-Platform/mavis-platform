@@ -1,13 +1,18 @@
 import type { Operation } from "./contracts";
 
 export const mutationInvalidations: Partial<Record<Operation, readonly Operation[]>> = {
+  createAnnouncement: ["adminAnnouncements", "announcements"],
+  updateAnnouncement: ["adminAnnouncements", "announcements"],
+  publishAnnouncement: ["adminAnnouncements", "announcements"],
+  unpublishAnnouncement: ["adminAnnouncements", "announcements"],
+  deleteAnnouncement: ["adminAnnouncements", "announcements"],
   updateProfile: ["session"],
   createWorkspace: ["workspaces"],
   updateWorkspace: ["workspaces"],
   archiveWorkspace: ["workspaces"],
   addWorkspaceMember: ["workspaces"],
   removeWorkspaceMember: ["workspaces"],
-  createAssignment: ["assignments"],
+  createAssignment: ["assignments", "catalogCourses"],
   gradeSubmission: ["submissionReview", "assignmentSubmissions", "submissions", "submission"],
   createAccount: ["accounts", "platformSummary", "audit"],
   forceStopRuntimeSession: [
@@ -19,7 +24,7 @@ export const mutationInvalidations: Partial<Record<Operation, readonly Operation
     "audit",
   ],
   createReferenceProject:["workspaceProjects","projects"],
-  updateAssignment:["assignments"],deleteAssignment:["assignments","assignmentSubmissions"],
+  updateAssignment:["assignments", "catalogCourses"],deleteAssignment:["assignments","assignmentSubmissions", "catalogCourses"],
   batchWorkspaceMembers:["workspaces"],publishReference:["referenceVersions","snapshots","workspaceProjects"],
   freezeArtifacts:["diagrams"],saveArchitectureDocument:["architectureDocument","documentRevisions"],
   updateFeedback:["submission","submissions","assignmentSubmissions"],deleteFeedback:["submission","submissions","assignmentSubmissions"],

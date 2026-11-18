@@ -22,7 +22,8 @@ import { Assignments } from "@/features/assignments/screens";
 import { LabAuthoring } from "@/features/assignments/lab-authoring";
 import { TheoryLibrary } from "@/features/workspaces/theory-library";
 import { Submissions } from "@/features/submissions/screens";
-import { CourseRoadmap, Courses, LabWorkspace } from "@/features/courses/screens";
+import { CourseRoadmap, LabWorkspace } from "@/features/courses/screens";
+import { MavisCoursesPage } from "@/features/courses/mavis-pages";
 import type { ComponentType } from "react";
 const screens: Record<
   string,
@@ -124,7 +125,7 @@ const screens: Record<
     scope: "global",
     component: Submissions,
   },
-  courses: { title: "My Courses", scope: "global", component: Courses },
+  courses: { title: "My Courses", scope: "global", component: MavisCoursesPage },
   roadmap: {
     title: "Course Roadmap",
     scope: "workspace",
@@ -145,6 +146,9 @@ export default async function FeaturePage({ params }: { params: Promise<{ screen
   const { screen } = await params;
   const config = screens[screen];
   if (!config) notFound();
+  // The three student-facing catalog pages own their MAVIS top navigation.
+  // Course roadmap and Lab routes deliberately remain inside the existing shell.
+  if (screen === "courses") return <MavisCoursesPage />;
   if (screen === "studio") return <StudioWorkbench />;
   const Screen = config.component;
   if (screen === "diagrams")

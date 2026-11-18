@@ -17,6 +17,7 @@ import {
   Play,
   Plug,
   ScrollText,
+  Megaphone,
   Server,
   Settings2,
   ShieldCheck,
@@ -89,7 +90,12 @@ export const globalNavigation: Record<AppRole, readonly NavigationGroup[]> = {
     {
       label: "System Administration",
       items: [
-        { id: "health", label: "Admin Control Center", icon: Activity, href: "/administration/health" },
+        {
+          id: "health",
+          label: "Admin Control Center",
+          icon: Activity,
+          href: "/administration/health",
+        },
         { id: "users", label: "Users & Roles", icon: Users, href: "/administration/users" },
         {
           id: "profiles",
@@ -98,6 +104,12 @@ export const globalNavigation: Record<AppRole, readonly NavigationGroup[]> = {
           href: "/administration/profiles",
         },
         { id: "audit", label: "Audit & Jobs", icon: ScrollText, href: "/administration/audit" },
+        {
+          id: "announcements",
+          label: "Announcements",
+          icon: Megaphone,
+          href: "/administration/announcements",
+        },
       ],
     },
   ],

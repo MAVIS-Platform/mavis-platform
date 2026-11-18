@@ -8,7 +8,7 @@ export function defaultLoginDestination(role: AppRole) {
     ? "/administration/health"
     : role === "lecturer"
       ? "/workspaces"
-      : "/courses";
+      : "/home";
 }
 
 export async function loginDestination(next: string | null, role: AppRole, api: ApiAdapter) {
@@ -21,7 +21,9 @@ export async function loginDestination(next: string | null, role: AppRole, api: 
     [...globalNavigation[role], ...projectNavigation, ...lecturerWorkspaceNavigation].some(
       (group) => group.items.some((item) => item.href === path),
     ) ||
-    ["/profile", "/notifications", "/references", "/import"].includes(path) ||
+    ["/home", "/all-courses", "/profile", "/notifications", "/references", "/import"].includes(
+      path,
+    ) ||
     /^\/submissions\/[^/]+$/.test(path);
   if (!known || (path.startsWith("/administration/") && role !== "admin")) return fallback;
   try {

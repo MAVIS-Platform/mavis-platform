@@ -18,7 +18,7 @@ function screenNames(relative) {
   return names;
 }
 const routes = [...new Set([
-  "/", "/architecture", "/impact", "/explain", "/import", "/design-system", "/login", "/profile", "/notifications",
+  "/", "/home", "/all-courses", "/architecture", "/impact", "/explain", "/import", "/design-system", "/login", "/profile", "/notifications",
   ...screenNames("app/[screen]/page.tsx").map(name => "/" + name),
   ...screenNames("app/administration/[screen]/page.tsx").map(name => "/administration/" + name),
   ...["register", "verify", "forgot-password", "reset-password"].map(name => "/auth/" + name),

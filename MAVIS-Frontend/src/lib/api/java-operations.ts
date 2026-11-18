@@ -762,6 +762,28 @@ export async function executeJava(
       if (input["category"]) params.set("category", String(input["category"]));
       return get(`notifications?${params}`);
     }
+    case "announcements": return get("announcements");
+    case "adminAnnouncements": {
+      const params = new URLSearchParams();
+      if (input["status"]) params.set("status", String(input["status"]));
+      if (input["search"]) params.set("search", String(input["search"]));
+      const query = params.toString();
+      return get(`admin/announcements${query ? `?${query}` : ""}`);
+    }
+    case "createAnnouncement": return post("admin/announcements", input);
+    case "updateAnnouncement":
+      return javaRequest(`admin/announcements/${id(input, "announcementId")}`, token, { method: "PUT", body: JSON.stringify(input), signal });
+    case "publishAnnouncement": return post(`admin/announcements/${id(input, "announcementId")}/publish`, {});
+    case "unpublishAnnouncement": return post(`admin/announcements/${id(input, "announcementId")}/unpublish`, {});
+    case "deleteAnnouncement":
+      await javaRequest(`admin/announcements/${id(input, "announcementId")}`, token, { method: "DELETE", signal });
+      return { ok: true };
+    case "catalogCourses": {
+      const params = new URLSearchParams({ q: String(input["q"]), sort: String(input["sort"]), page: String(input["page"]), size: String(input["size"]) });
+      if (input["category"]) params.set("category", String(input["category"]));
+      if (input["difficulty"]) params.set("difficulty", String(input["difficulty"]));
+      return get(`courses?${params}`);
+    }
     case "readNotification":
       return patch(`notifications/${id(input, "notificationId")}/read`, {});
     case "readAllNotifications":

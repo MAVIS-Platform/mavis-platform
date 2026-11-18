@@ -39,6 +39,27 @@ const notificationItem = z.object({
   createdAt: z.string().datetime(),
   readAt: z.string().datetime().nullable(),
 });
+const announcementPriority = z.enum(["LOW", "NORMAL", "HIGH", "URGENT"]);
+const announcementAudience = z.enum(["ALL", "STUDENT", "LECTURER", "WORKSPACE"]);
+const announcementStatus = z.enum(["DRAFT", "SCHEDULED", "PUBLISHED", "EXPIRED", "ARCHIVED"]);
+const announcement = z.object({
+  id: z.string().uuid(), title: z.string(), content: z.string(), priority: announcementPriority,
+  status: announcementStatus, audienceType: announcementAudience, pinned: z.boolean(),
+  publishAt: z.string().datetime().nullable(), expireAt: z.string().datetime().nullable(),
+  createdByName: z.string(), createdAt: z.string().datetime(), updatedAt: z.string().datetime(),
+});
+const announcementWrite = z.object({
+  title: z.string().trim().min(1).max(160), content: z.string().trim().min(1).max(12000),
+  priority: announcementPriority, status: announcementStatus, audienceType: announcementAudience,
+  pinned: z.boolean(), publishAt: z.string().datetime({ offset: true }).nullable(),
+  expireAt: z.string().datetime({ offset: true }).nullable(), workspaceIds: z.array(z.string().uuid()).max(100),
+});
+const catalogCourse = z.object({
+  workspaceId: z.string().uuid(), code: z.string().nullable(), title: z.string(),
+  description: z.string().nullable(), lecturerName: z.string(), enrolled: z.boolean(),
+  categories: z.array(z.string()), difficulties: z.array(z.enum(["BEGINNER", "INTERMEDIATE", "ADVANCED"])),
+  labCount: z.number().int().nonnegative(), createdAt: z.string().datetime(),
+});
 const activityBase = z.object({
   id,
   projectId: id,
@@ -56,6 +77,27 @@ const activityItem = z.discriminatedUnion("kind", [
   activityBase.extend({ kind: z.literal("SNAPSHOT_DELETED"), job: z.null() }),
 ]);
 export const contracts = {
+  announcements: contract(nothing, z.array(announcement)),
+  adminAnnouncements: contract(
+    z.object({ status: announcementStatus.optional(), search: z.string().max(160) }),
+    z.array(announcement),
+  ),
+  createAnnouncement: contract(announcementWrite, announcement, true),
+  updateAnnouncement: contract(announcementWrite.extend({ announcementId: z.string().uuid() }), announcement, true),
+  publishAnnouncement: contract(z.object({ announcementId: z.string().uuid() }), announcement, true),
+  unpublishAnnouncement: contract(z.object({ announcementId: z.string().uuid() }), announcement, true),
+  deleteAnnouncement: contract(z.object({ announcementId: z.string().uuid() }), ok, true),
+  catalogCourses: contract(
+    z.object({
+      q: z.string().max(160), category: z.string().max(80).optional(),
+      difficulty: z.enum(["BEGINNER", "INTERMEDIATE", "ADVANCED"]).optional(),
+      sort: z.enum(["NAME", "NEWEST"]), page: z.number().int().min(0), size: z.number().int().min(1).max(48),
+    }),
+    z.object({
+      items: z.array(catalogCourse), total: z.number().int().nonnegative(), page: z.number().int().nonnegative(),
+      size: z.number().int().positive(), categories: z.array(z.string()),
+    }),
+  ),
   notifications: contract(
     z.object({
       page: z.number().int().min(0).max(10000),

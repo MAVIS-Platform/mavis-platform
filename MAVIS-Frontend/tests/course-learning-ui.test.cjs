@@ -30,14 +30,19 @@ if (!require.extensions[".ts"]) {
   require.extensions[".tsx"] = compileTypeScript;
 }
 
-test("course learning routes are registered in the shared authenticated shell", () => {
+test("MAVIS catalog pages own the new shell while roadmap and Lab keep the existing flow", () => {
   const routes = read("app/[screen]/page.tsx");
   const home = read("app/page.tsx");
+  const mavisPages = read("src/features/courses/mavis-pages.tsx");
 
-  assert.match(routes, /courses:\s*\{[^}]*component:\s*Courses/s);
+  assert.match(routes, /courses:\s*\{[^}]*component:\s*MavisCoursesPage/s);
+  assert.match(routes, /screen === "courses"[^\n]*<MavisCoursesPage/);
   assert.match(routes, /roadmap:\s*\{[^}]*component:\s*CourseRoadmap/s);
   assert.match(routes, /lab:\s*\{[^}]*component:\s*LabWorkspace/s);
   assert.match(routes, /<AppShell\s+scope=\{config\.scope\}\s+activeId=\{screen\}/);
+  assert.match(mavisPages, /export function MavisHomePage/);
+  assert.match(mavisPages, /export function AllCoursesPage/);
+  assert.match(mavisPages, /<MavisShell>/);
   assert.match(home, /<PublicHomepage\s*\/>/);
 });
 

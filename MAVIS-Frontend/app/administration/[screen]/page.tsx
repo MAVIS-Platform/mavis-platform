@@ -10,6 +10,7 @@ import {
   AuditRecords,
 } from "@/features/administration/screens";
 import { SystemHealth, AdminRuntimeSummary } from "@/features/administration/operations";
+import { AdminAnnouncements } from "@/features/administration/announcements";
 import { RuntimeSessions } from "@/features/runtime/screens";
 import { StudioWorkbench } from "@/features/runtime/studio-workbench";
 import type { ComponentType } from "react";
@@ -24,6 +25,7 @@ const screens: Record<string, { title: string; component: ComponentType }> = {
   profiles: { title: "Runtime Execution Profiles", component: RuntimeProfiles },
   "admin-sessions": { title: "Runtime Sessions", component: AdminSessions },
   studio: { title: "MAVIS Studio", component: StudioWorkbench },
+  announcements: { title: "Announcement Management", component: AdminAnnouncements },
 };
 function AdminSessions() {
   return <RuntimeSessions administrative />;

@@ -34,15 +34,26 @@ export function operationPermission(operation: Operation): Permission | undefine
       "adminHealth",
       "adminAiUsage",
       "forceStopRuntimeSession",
+      "adminAnnouncements",
+      "createAnnouncement",
+      "updateAnnouncement",
+      "publishAnnouncement",
+      "unpublishAnnouncement",
+      "deleteAnnouncement",
     ].includes(operation)
   )
     return "admin:manage";
   if (operation === "feedback") return "submission:review";
   if (operation === "gradeSubmission") return "submission:review";
   if (operation === "submissionReview") return "workspace:read";
-  if (["updateFeedback","deleteFeedback"].includes(operation)) return "submission:review";
-  if (["updateAssignment","deleteAssignment","batchWorkspaceMembers","publishReference"].includes(operation)) return "workspace:manage";
-  if (["workspaceProjects","submissionExport"].includes(operation)) return "workspace:read";
+  if (["updateFeedback", "deleteFeedback"].includes(operation)) return "submission:review";
+  if (
+    ["updateAssignment", "deleteAssignment", "batchWorkspaceMembers", "publishReference"].includes(
+      operation,
+    )
+  )
+    return "workspace:manage";
+  if (["workspaceProjects", "submissionExport"].includes(operation)) return "workspace:read";
   if (
     [
       "createWorkspace",
@@ -55,7 +66,8 @@ export function operationPermission(operation: Operation): Permission | undefine
   )
     return "workspace:manage";
   if (operation === "assignmentSubmissions") return "submission:review";
-  if(operation==="createReferenceProject")return "workspace:manage";
+  if (["announcements", "catalogCourses"].includes(operation)) return "workspace:read";
+  if (operation === "createReferenceProject") return "workspace:manage";
   if (operation === "submit") return "submission:create";
   if (
     ["workspaces", "assignments", "referenceVersions", "submissions", "submission"].includes(

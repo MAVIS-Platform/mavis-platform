@@ -807,6 +807,7 @@ test("project navigation preserves every destination and keeps role menus intact
       { id: "users", href: "/administration/users" },
       { id: "profiles", href: "/administration/profiles" },
       { id: "audit", href: "/administration/audit" },
+      { id: "announcements", href: "/administration/announcements" },
     ],
   );
   assert.equal(contextualNavigation("admin", "project").length, 0);

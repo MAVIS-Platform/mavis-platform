@@ -116,7 +116,7 @@ export interface CombinedFragment {
   provenance: SequenceProvenanceOrigin;
 }
 
-export const interactionOperandSchema: z.ZodType<InteractionOperand> =
+export const interactionOperandSchema: z.ZodType<InteractionOperand, z.ZodTypeDef, unknown> =
   z.lazy(() =>
     z.object({
       operandId: z.string().min(1).max(160),
@@ -129,7 +129,7 @@ export const interactionOperandSchema: z.ZodType<InteractionOperand> =
     }),
   );
 
-export const combinedFragmentSchema: z.ZodType<CombinedFragment> = z.lazy(
+export const combinedFragmentSchema: z.ZodType<CombinedFragment, z.ZodTypeDef, unknown> = z.lazy(
   () =>
     z.object({
       fragmentId: z.string().min(1).max(160),

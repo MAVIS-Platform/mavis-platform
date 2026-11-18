@@ -928,6 +928,18 @@ export class MockAdapter implements ApiAdapter {
       case "adminAiUsage":
         return {status:"UNAVAILABLE",updatedAt:new Date().toISOString(),message:"Token tracking is not available in preview mode.",providers:[]};
       case "notifications": return {items:[],total:0,unreadCount:0,page:0,size:20,asOf:new Date().toISOString()};
+      case "announcements":
+      case "adminAnnouncements": return [];
+      case "createAnnouncement":
+      case "updateAnnouncement": {
+        const value = operation === "createAnnouncement" ? contracts.createAnnouncement.input.parse(raw) : contracts.updateAnnouncement.input.parse(raw);
+        const now = new Date().toISOString();
+        return { id:"00000000-0000-4000-8000-000000000041", title:value.title, content:value.content, priority:value.priority, status:value.status, audienceType:value.audienceType, pinned:value.pinned, publishAt:value.publishAt, expireAt:value.expireAt, createdByName:"Sample administrator", createdAt:now, updatedAt:now };
+      }
+      case "publishAnnouncement":
+      case "unpublishAnnouncement": throw new ApiError("not-found",404);
+      case "deleteAnnouncement": return {ok:true};
+      case "catalogCourses": return {items:[],total:0,page:0,size:24,categories:[]};
       case "readNotification": throw new ApiError("not-found",404);
       case "readAllNotifications": return {ok:true};
       case "platformSummary":
