@@ -99,16 +99,26 @@ export function LabSubmissionV2({
                         ? t("Returned for revision", "Trả lại để sửa")
                         : t("Published result", "Kết quả đã công bố")}
                     </Badge>
-                    {activeReview.score !== null && (
-                      <span className="font-semibold">{activeReview.score}/100</span>
-                    )}
+                  {activeReview.score !== null && (
+                    <span className="rounded-md bg-emerald-100 px-2 py-0.5 font-bold text-emerald-900">
+                      {activeReview.score}/100
+                    </span>
+                  )}
                   </div>
                   {activeReview.summary && (
                     <p className="whitespace-pre-wrap">{activeReview.summary}</p>
                   )}
                 </div>
               )}
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2 pt-1">
+              <Button asChild size="sm" className="bg-teal-600 text-white hover:bg-teal-700">
+                <Link href={`/roadmap?workspace=${encodeURIComponent(workspaceId)}`}>
+                  {t(
+                    "Back to Course Syllabus for Next Lesson →",
+                    "Quay về Lộ trình môn học để sang bài tiếp theo →",
+                  )}
+                </Link>
+              </Button>
               <Button asChild size="sm" variant="outline">
                 <Link href={`/submissions?workspace=${encodeURIComponent(workspaceId)}`}>
                   {t("View submission and grade", "Xem bài nộp và điểm")} <ArrowRight />
@@ -175,6 +185,18 @@ export function LabSubmissionV2({
               aria-label={t("Submission explanation", "Giải trình bài nộp")}
             />
           </label>
+          {studio && runtimeSessionId && (
+            <p
+              role="status"
+              className="flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs font-medium text-emerald-800 dark:text-emerald-200"
+            >
+              <CheckCircle2 className="size-4 shrink-0 text-emerald-600" aria-hidden="true" />
+              {t(
+                "2D Studio session verified — your runtime receipt will be sealed with this submission.",
+                "Phiên 2D Studio đã được xác minh — biên nhận thực nghiệm sẽ được niêm phong kèm bài nộp này.",
+              )}
+            </p>
+          )}
           {studio && !runtimeSessionId && (
             <p
               role="status"
@@ -191,9 +213,14 @@ export function LabSubmissionV2({
               {submit.error.message}
             </p>
           )}
-          <Button
-            type="button"
-            disabled={!canSubmit || submit.isPending}
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+            <span className="text-xs text-muted-foreground">
+              {answer.trim().length} {t("characters", "ký tự")}
+            </span>
+            <Button
+              type="button"
+              className="bg-teal-600 text-white hover:bg-teal-700"
+              disabled={!canSubmit || submit.isPending}
             onClick={() =>
               submit.mutate(
                 {
@@ -221,9 +248,10 @@ export function LabSubmissionV2({
                 },
               )
             }
-          >
-            {submit.isPending ? t("Submitting…", "Đang nộp…") : t("Submit Lab", "Nộp Lab")}
-          </Button>
+            >
+              {submit.isPending ? t("Submitting…", "Đang nộp…") : t("Submit Lab", "Nộp Lab")}
+            </Button>
+          </div>
         </div>
       </DetailPanel>
     </div>

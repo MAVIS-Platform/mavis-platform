@@ -6,6 +6,7 @@ import {
   BookOpenCheck,
   ClipboardCheck,
   GraduationCap,
+  KeyRound,
   Layers,
   Plus,
   Users,
@@ -22,11 +23,21 @@ import { useLocale } from "@/lib/i18n/locale-context";
 export function TeacherDashboard() {
   const { t } = useLocale();
   const query = useApiQuery("workspaces", {});
+  const submissions = useApiQuery("submissions", {});
   const selection = useSelection();
   const [showCreate, setShowCreate] = useState(false);
   const [search, setSearch] = useState("");
 
   const classes = query.data ?? [];
+  const pendingByWorkspace = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const sub of submissions.data ?? []) {
+      if (!sub.workspaceId) continue;
+      if (sub.reviewStatus && sub.reviewStatus !== "PENDING") continue;
+      counts.set(sub.workspaceId, (counts.get(sub.workspaceId) ?? 0) + 1);
+    }
+    return counts;
+  }, [submissions.data]);
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return classes;
@@ -170,13 +181,14 @@ export function TeacherDashboard() {
                 const students = members.filter(
                   (member) => member.role.toUpperCase() === "STUDENT",
                 ).length;
+                const pending = pendingByWorkspace.get(workspace.id) ?? 0;
                 const workspaceUrl = `/workspace-overview?workspace=${encodeURIComponent(workspace.id)}`;
                 return (
                   <article
                     key={workspace.id}
-                    className="flex flex-col justify-between overflow-hidden rounded-[20px] border bg-card shadow-sm transition-all hover:border-indigo-400 hover:shadow-md"
+                    className="flex flex-col justify-between overflow-hidden rounded-[20px] border bg-card shadow-sm transition-all hover:border-teal-400 hover:shadow-md"
                   >
-                    <div className="h-2 bg-gradient-to-r from-indigo-600 via-violet-600 to-purple-600" />
+                    <div className="h-2 bg-gradient-to-r from-teal-600 via-emerald-600 to-indigo-600" />
                     <div className="flex flex-1 flex-col justify-between gap-4 p-5">
                       <div className="space-y-3">
                         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -186,17 +198,27 @@ export function TeacherDashboard() {
                           >
                             {workspace.code || t("CLASS", "LỚP")}
                           </Badge>
-                          <StatusBadge
-                            status={workspace.status ?? "ACTIVE"}
-                            variant={workspace.status === "ARCHIVED" ? "secondary" : "default"}
-                          />
+                          <div className="flex items-center gap-1.5">
+                            <Link
+                              href={`/workspace-members?workspace=${encodeURIComponent(workspace.id)}`}
+                              onClick={() => selection.setWorkspaceId(workspace.id)}
+                              className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700 hover:bg-emerald-100"
+                            >
+                              <KeyRound className="h-3 w-3" aria-hidden="true" />
+                              {t("Passkey", "Passkey")}
+                            </Link>
+                            <StatusBadge
+                              status={workspace.status ?? "ACTIVE"}
+                              variant={workspace.status === "ARCHIVED" ? "secondary" : "default"}
+                            />
+                          </div>
                         </div>
 
                         <div>
                           <Link
                             href={workspaceUrl}
                             onClick={() => selection.setWorkspaceId(workspace.id)}
-                            className="block line-clamp-2 text-lg font-semibold leading-snug tracking-tight text-foreground hover:text-indigo-600 hover:underline"
+                            className="block line-clamp-2 text-lg font-semibold leading-snug tracking-tight text-foreground hover:text-teal-700 hover:underline"
                           >
                             {workspace.name}
                           </Link>
@@ -209,12 +231,22 @@ export function TeacherDashboard() {
 
                         <div className="flex flex-wrap gap-2 text-xs">
                           <span className="inline-flex items-center gap-1 rounded-md bg-muted/60 px-2.5 py-1 font-medium text-foreground">
-                            <Users className="h-3.5 w-3.5 text-indigo-600" aria-hidden="true" />
+                            <Users className="h-3.5 w-3.5 text-teal-600" aria-hidden="true" />
                             {students} {t("students", "sinh viên")}
                           </span>
-                          <span className="inline-flex items-center gap-1 rounded-md bg-muted/60 px-2.5 py-1 text-muted-foreground">
-                            {members.length} {t("members total", "tổng thành viên")}
-                          </span>
+                          {submissions.isSuccess && (
+                            <span
+                              className={
+                                pending > 0
+                                  ? "inline-flex items-center gap-1 rounded-md bg-amber-50 px-2.5 py-1 font-medium text-amber-800"
+                                  : "inline-flex items-center gap-1 rounded-md bg-muted/60 px-2.5 py-1 text-muted-foreground"
+                              }
+                            >
+                              {pending > 0
+                                ? `${pending} ${t("pending review", "bài chờ chấm")}`
+                                : t("All graded", "Đã chấm xong")}
+                            </span>
+                          )}
                         </div>
                       </div>
 
@@ -223,9 +255,12 @@ export function TeacherDashboard() {
                           asChild
                           size="sm"
                           onClick={() => selection.setWorkspaceId(workspace.id)}
-                          className="flex-1 bg-indigo-600 text-white hover:bg-indigo-700"
+                          className="flex-1 bg-teal-600 text-white hover:bg-teal-700"
                         >
-                          <Link href={workspaceUrl}>{t("Open class", "Mở lớp & Quản lý")}</Link>
+                          <Link href={workspaceUrl}>
+                            <Layers className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+                            {t("Open class", "Giáo trình & Bài học")}
+                          </Link>
                         </Button>
                         <Button
                           asChild
@@ -233,8 +268,9 @@ export function TeacherDashboard() {
                           variant="outline"
                           onClick={() => selection.setWorkspaceId(workspace.id)}
                         >
-                          <Link href={`/assignments?workspace=${encodeURIComponent(workspace.id)}`}>
-                            {t("Labs", "QL Lab")}
+                          <Link href={`/assignments/new?workspace=${encodeURIComponent(workspace.id)}`}>
+                            <BookOpenCheck className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+                            {t("+ Lab", "+ Soạn Lab")}
                           </Link>
                         </Button>
                         <Button

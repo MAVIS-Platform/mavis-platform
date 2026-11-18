@@ -207,70 +207,72 @@ function TeachingSubmissions() {
   const assignment = assignments.data?.find((a) => a.id === requested) ?? assignments.data?.[0];
 
   const body = workspaceId ? (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-2" role="tablist" aria-label={t("Grading views", "Chế độ chấm điểm")}>
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-teal-200/80 bg-gradient-to-r from-teal-50/70 via-emerald-50/40 to-white p-3.5 dark:border-teal-900 dark:from-teal-950/30 dark:to-background">
+        <div
+          className="flex flex-wrap gap-2"
+          role="tablist"
+          aria-label={t("Grading views", "Chế độ chấm điểm")}
+        >
           <Button
             type="button"
             size="sm"
-            variant={viewMode === "queue" ? "default" : "outline"}
-            onClick={() => setViewMode("queue")}
+            variant={viewMode === "queue" && reviewStatusFilter === "PENDING" ? "default" : "outline"}
+            onClick={() => {
+              setViewMode("queue");
+              setReviewStatusFilter("PENDING");
+              setOutcomeFilter("ALL");
+            }}
           >
-            {t("Submissions Queue", "Hàng đợi chấm bài")}
+            ⏳ {t("Pending Queue", "Bài nộp chờ chấm")}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={viewMode === "queue" && reviewStatusFilter === "GRADED" ? "default" : "outline"}
+            onClick={() => {
+              setViewMode("queue");
+              setReviewStatusFilter("GRADED");
+              setOutcomeFilter("ALL");
+            }}
+          >
+            ✔️ {t("Graded Submissions", "Bài đã chấm điểm")}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={viewMode === "queue" && reviewStatusFilter === "ALL" ? "default" : "outline"}
+            onClick={() => {
+              setViewMode("queue");
+              setReviewStatusFilter("ALL");
+              setOutcomeFilter("ALL");
+            }}
+          >
+            {t("All Submissions", "Tất cả bài nộp")}
           </Button>
           <Button
             type="button"
             size="sm"
             variant={viewMode === "gradebook" ? "default" : "outline"}
+            className={viewMode === "gradebook" ? "bg-teal-600 text-white hover:bg-teal-700" : undefined}
             onClick={() => setViewMode("gradebook")}
           >
-            {t("Class Gradebook Matrix", "Bảng điểm ma trận lớp")}
+            📊 {t("Class Gradebook & CSV Export", "Bảng điểm & Tiến độ toàn lớp")}
           </Button>
         </div>
-        <div
-          className="flex flex-wrap gap-1.5 rounded-xl border bg-muted/30 p-1"
-          role="group"
-          aria-label={t("Quick grading filters", "Lọc nhanh bài nộp")}
-        >
-          {[
-            { id: "ALL", status: "ALL", outcome: "ALL", label: t("All", "Tất cả") },
-            {
-              id: "PENDING",
-              status: "PENDING",
-              outcome: "ALL",
-              label: t("Pending Review", "Chờ chấm"),
-            },
-            {
-              id: "GRADED",
-              status: "GRADED",
-              outcome: "ALL",
-              label: t("Graded", "Đã chấm"),
-            },
-            {
-              id: "REVISION",
-              status: "ALL",
-              outcome: "NEEDS_REVISION",
-              label: t("Needs Revision", "Cần sửa"),
-            },
-          ].map((pill) => {
-            const active =
-              reviewStatusFilter === pill.status && outcomeFilter === pill.outcome;
-            return (
-              <Button
-                key={pill.id}
-                type="button"
-                size="sm"
-                variant={active ? "default" : "ghost"}
-                onClick={() => {
-                  setReviewStatusFilter(pill.status);
-                  setOutcomeFilter(pill.outcome);
-                }}
-              >
-                {pill.label}
-              </Button>
-            );
-          })}
-        </div>
+        {viewMode === "queue" && (
+          <Button
+            type="button"
+            size="sm"
+            variant={outcomeFilter === "NEEDS_REVISION" ? "default" : "ghost"}
+            onClick={() => {
+              setReviewStatusFilter("ALL");
+              setOutcomeFilter(outcomeFilter === "NEEDS_REVISION" ? "ALL" : "NEEDS_REVISION");
+            }}
+          >
+            {t("Needs Revision Only", "Lọc bài Cần sửa")}
+          </Button>
+        )}
       </div>
 
       {viewMode === "gradebook" ? (

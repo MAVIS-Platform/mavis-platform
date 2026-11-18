@@ -46,34 +46,35 @@ test("student navigation locks class sidebar to 3 clean course items and preserv
 
   for (const label of [
     "My Courses",
+    "Lab Roadmap & Course",
     "My Grades & Submissions",
-    "Free Studio Sandbox",
     "My Classes",
+    "Curriculum & Labs",
     "Grading & Gradebook",
-    "MAVIS Studio",
-    "Admin Control Center",
+    "System Overview",
     "Users & Roles",
-    "Runtime & Quotas",
-    "Audit & Jobs",
+    "Governance & Audit",
   ])
     assert.ok(navigation.includes(label), label);
   assert.match(navigation, /href:\s*"\/courses"/);
+  assert.match(navigation, /href:\s*"\/roadmap"/);
   assert.match(navigation, /href:\s*"\/submissions"/);
-  assert.match(navigation, /href:\s*"\/studio"/);
   assert.match(navigation, /href:\s*"\/workspaces"/);
+  assert.match(navigation, /href:\s*"\/workspace-overview"/);
   assert.match(navigation, /href:\s*"\/administration\/health"/);
 });
 
 test("student course landing prioritizes joined classes, defers curriculum and keeps Passkey deep-link", () => {
   const course = read("src/features/courses/screens.tsx");
+  const dashboard = read("src/features/courses/student-courses-dashboard.tsx");
   const curriculum = read("src/features/courses/curriculum.tsx");
   const nav = read("src/lib/navigation.ts");
-  assert.ok(course.includes('id="course-passkey"'));
-  assert.ok(course.includes('aria-controls="course-passkey-form"'));
-  assert.ok(course.includes("Continue learning"));
+  assert.ok(dashboard.includes('id="course-passkey"'));
+  assert.ok(dashboard.includes('aria-controls="course-passkey-form"'));
+  assert.ok(dashboard.includes("Continue learning"));
   assert.ok(course.includes("Reference materials: Java and C#"));
   assert.match(curriculum, /useCurriculum\(open\)/);
-  assert.ok(nav.includes('href: "/courses"') && nav.includes('href: "/submissions"') && nav.includes('href: "/studio"'));
+  assert.ok(nav.includes('href: "/courses"') && nav.includes('href: "/submissions"') && nav.includes('href: "/roadmap"'));
 });
 
 test("student class outline uses published roadmap and markdown activities with a legacy roadmap fallback", () => {
@@ -83,7 +84,7 @@ test("student class outline uses published roadmap and markdown activities with 
   assert.ok(outline.includes("legacyLabs.length > 0"));
   assert.ok(outline.includes("<MarkdownPreview"));
   assert.ok(outline.includes("Pass the preceding Labs to unlock this activity."));
-  assert.ok(shell.includes('tab === "content" || tab === "submissions"'));
+  assert.ok(shell.includes("STUDENT_TABS") && shell.includes("STAFF_TABS"));
 });
 
 test("student submissions are scoped by selected class workspaceId and retain class navigation", () => {
@@ -96,10 +97,11 @@ test("student submissions are scoped by selected class workspaceId and retain cl
 
 test("Lab UI keeps unavailable progress gates honest and runs 4-step V2 workflow inside /lab", () => {
   const course = read("src/features/courses/screens.tsx");
+  const dashboard = read("src/features/courses/student-courses-dashboard.tsx");
   const access = read("src/features/workspaces/course-access.tsx");
   const quiz = read("src/features/courses/course-quiz.tsx");
 
-  assert.ok(course.includes('<CourseEnrollment destination="roadmap" />'));
+  assert.ok(dashboard.includes('<CourseEnrollment destination="roadmap" />'));
   assert.ok(access.includes('"course-enrollments/redeem"'));
   assert.ok(access.includes("course-roadmap"));
   assert.ok(access.includes('state: "LOCKED" | "UNLOCKED" | "PASSED"'));
@@ -303,7 +305,9 @@ test("lecturer review requires comments and maps the documented pass threshold t
 });
 
 test("new Course and Lab surfaces expose direct Vietnamese copy", () => {
-  const course = read("src/features/courses/screens.tsx");
+  const course =
+    read("src/features/courses/screens.tsx") +
+    read("src/features/courses/student-courses-dashboard.tsx");
 
   for (const text of [
     "Lớp học của tôi",

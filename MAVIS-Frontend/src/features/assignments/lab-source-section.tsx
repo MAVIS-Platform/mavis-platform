@@ -2,24 +2,33 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowUpRight, GitBranch, Network, Save } from "lucide-react";
+import { ArrowRight, ArrowUpRight, GitBranch, Network, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useApiMutation } from "@/hooks/use-api";
+import { useApiMutation, useApiQuery } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
+import { DiagramPreview } from "@/features/architecture/diagram-preview";
+import { ArchitectureGraph } from "@/features/architecture/components";
+import { useStudentLabContext } from "@/features/workspaces/course-access";
 import { AssignmentSourceDetails, AssignmentSourcePicker } from "./source-picker";
 import type { Assignment } from "./requirements";
+
+type PreviewKind = "CONTEXT" | "CONTAINER" | "COMPONENT" | "GRAPH";
 
 export function LabSourceSection({
   workspaceId,
   assignment,
+  onNavigate,
 }: {
   workspaceId: string;
   assignment: Assignment;
+  onNavigate?: ((tab: "quiz") => void) | undefined;
 }) {
   const { t } = useLocale();
   const save = useApiMutation("updateAssignment");
   const [modelId, setModelId] = useState(assignment.referenceSource?.modelId ?? "");
   const [sourcePending, setSourcePending] = useState(false);
+  const [previewKind, setPreviewKind] = useState<PreviewKind>("CONTAINER");
+  const [selectedGraphId, setSelectedGraphId] = useState<string | null>(null);
 
   const dueAt =
     assignment.dueAt && assignment.dueAt !== "No deadline" ? assignment.dueAt : null;
@@ -27,6 +36,23 @@ export function LabSourceSection({
   const referenceProject = reference?.projectId;
   const referenceModel = reference?.modelId;
   const canSave = Boolean(modelId) && !sourcePending && !save.isPending;
+
+  const studentCtx = useStudentLabContext(
+    workspaceId,
+    assignment.id,
+    Boolean(referenceProject && referenceModel),
+  );
+  const modelQuery = useApiQuery(
+    "model",
+    {
+      projectId: referenceProject ?? "",
+      modelId: referenceModel ?? "",
+    },
+    { enabled: Boolean(referenceProject && referenceModel && previewKind === "GRAPH") },
+  );
+  const diagrams = studentCtx.data?.referenceArchitecture?.diagrams ?? [];
+  const activeMermaid =
+    diagrams.find((item) => item.level?.toUpperCase() === previewKind)?.mermaidDsl ?? null;
 
   const saveSource = () => {
     if (!canSave) return;
@@ -45,10 +71,10 @@ export function LabSourceSection({
 
   return (
     <div className="space-y-5">
-      <section className="space-y-4 rounded-xl border bg-card p-5">
+      <section className="space-y-4 rounded-2xl border bg-card p-5 shadow-xs">
         <div>
           <h2 className="flex items-center gap-2 font-semibold">
-            <GitBranch className="size-4 text-primary" aria-hidden="true" />
+            <GitBranch className="size-4 text-teal-600" aria-hidden="true" />
             {t("Reference repository and pinned analysis", "Repo tham chiếu và phân tích đã ghim")}
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -77,7 +103,12 @@ export function LabSourceSection({
                   "Chọn phiên bản model đã phân tích để ghim vào Lab.",
                 )}
           </p>
-          <Button type="button" disabled={!canSave} onClick={saveSource}>
+          <Button
+            type="button"
+            className="bg-teal-600 text-white hover:bg-teal-700"
+            disabled={!canSave}
+            onClick={saveSource}
+          >
             <Save className="mr-1 size-4" aria-hidden="true" />
             {save.isPending
               ? t("Saving source…", "Đang lưu nguồn…")
@@ -86,7 +117,7 @@ export function LabSourceSection({
         </div>
         {save.error && <p role="alert" className="text-sm text-destructive">{save.error.message}</p>}
         {save.isSuccess && (
-          <p role="status" className="text-sm text-success">
+          <p role="status" className="text-sm text-emerald-700">
             {t("Reference source pinned to this Lab.", "Đã ghim nguồn tham chiếu vào Lab.")}
           </p>
         )}
@@ -100,23 +131,80 @@ export function LabSourceSection({
       )}
 
       {referenceProject && referenceModel && (
-        <section className="space-y-3 rounded-xl border bg-card p-5">
-          <div>
-            <h3 className="font-semibold">{t("Generated architecture views", "Sơ đồ kiến trúc được tạo tự động")}</h3>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {t(
-                "C1–C3 are generated from the pinned analysis of this repository, so students read the theory next to the same architecture the Lab is based on.",
-                "C1–C3 được tạo từ phân tích đã ghim của repo này, để sinh viên đọc lý thuyết cùng kiến trúc mà Lab đang dựa trên.",
-              )}
-            </p>
+        <section className="space-y-4 rounded-2xl border bg-card p-5 shadow-xs">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="font-semibold">
+                {t("Generated architecture views (C1–C3 & Dependency Graph)", "Xem trước Sơ đồ Kiến trúc (C1–C3 & Đồ thị phụ thuộc)")}
+              </h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {t(
+                  "Students view these exact C1–C3 diagrams & Dependency Graph inline inside Step 1 & Step 2.",
+                  "Sinh viên sẽ xem trực tiếp các sơ đồ C1–C3 & Đồ thị phụ thuộc này trong Bước 1 & Bước 2.",
+                )}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {(
+                [
+                  { id: "CONTEXT", label: "C1 Context" },
+                  { id: "CONTAINER", label: "C2 Container" },
+                  { id: "COMPONENT", label: "C3 Component" },
+                  { id: "GRAPH", label: t("Dependency Graph", "Đồ thị phụ thuộc") },
+                ] as const
+              ).map((tabItem) => (
+                <Button
+                  key={tabItem.id}
+                  type="button"
+                  size="sm"
+                  variant={previewKind === tabItem.id ? "default" : "outline"}
+                  onClick={() => setPreviewKind(tabItem.id)}
+                >
+                  {tabItem.label}
+                </Button>
+              ))}
+            </div>
           </div>
-          <div className="grid gap-2 sm:grid-cols-2">
+
+          <div className="min-h-72 overflow-hidden rounded-xl border bg-background p-3">
+            {previewKind === "GRAPH" ? (
+              modelQuery.data ? (
+                <ArchitectureGraph
+                  model={modelQuery.data}
+                  selectedId={selectedGraphId}
+                  onSelect={setSelectedGraphId}
+                />
+              ) : (
+                <p className="p-4 text-sm text-muted-foreground">
+                  {t("Loading dependency graph…", "Đang tải đồ thị phụ thuộc…")}
+                </p>
+              )
+            ) : activeMermaid ? (
+              <DiagramPreview
+                title={`C4 ${previewKind}`}
+                content={activeMermaid}
+                format="MERMAID"
+                style="clean"
+              />
+            ) : (
+              <p className="p-4 text-sm text-muted-foreground">
+                {studentCtx.isPending
+                  ? t("Loading C1–C3 preview…", "Đang tải bản xem trước C1–C3…")
+                  : t(
+                      "Diagram preview not available yet — use the full view links below.",
+                      "Chưa có dữ liệu sơ đồ xem trước — dùng liên kết mở toàn màn hình bên dưới.",
+                    )}
+              </p>
+            )}
+          </div>
+
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
             {[
-              { kind: "CONTEXT", label: "C1 System Context", hint: t("System, actors and external systems", "Hệ thống, tác nhân và hệ thống ngoài") },
-              { kind: "CONTAINER", label: "C2 Container", hint: t("Services, databases and their connections", "Service, database và kết nối") },
-              { kind: "COMPONENT", label: "C3 Component", hint: t("Components inside a container", "Thành phần bên trong container") },
+              { kind: "CONTEXT", label: "C1 System Context" },
+              { kind: "CONTAINER", label: "C2 Container" },
+              { kind: "COMPONENT", label: "C3 Component" },
             ].map((view) => (
-              <Button key={view.kind} asChild variant="outline" className="h-auto justify-between py-2.5">
+              <Button key={view.kind} asChild variant="outline" size="sm" className="justify-between">
                 <Link
                   href={`/diagrams?${new URLSearchParams({
                     project: referenceProject,
@@ -124,35 +212,46 @@ export function LabSourceSection({
                     kind: view.kind,
                   })}`}
                 >
-                  <span className="text-left">
-                    <span className="block text-sm font-medium">{view.label}</span>
-                    <span className="block text-xs font-normal text-muted-foreground">{view.hint}</span>
-                  </span>
-                  <ArrowUpRight className="ml-2 size-4 shrink-0" aria-hidden="true" />
+                  <span>{view.label}</span>
+                  <ArrowUpRight className="ml-2 size-3.5 shrink-0" aria-hidden="true" />
                 </Link>
               </Button>
             ))}
-            <Button asChild variant="outline" className="h-auto justify-between py-2.5">
+            <Button asChild variant="outline" size="sm" className="justify-between">
               <Link
                 href={`/architecture?${new URLSearchParams({
                   project: referenceProject,
                   model: referenceModel,
                 })}`}
               >
-                <span className="text-left">
-                  <span className="flex items-center gap-1.5 text-sm font-medium">
-                    <Network className="size-3.5" aria-hidden="true" />
-                    {t("Dependency graph", "Đồ thị phụ thuộc")}
-                  </span>
-                  <span className="block text-xs font-normal text-muted-foreground">
-                    {t("Module and class dependencies from the analysis", "Phụ thuộc module và lớp từ phân tích")}
-                  </span>
+                <span className="flex items-center gap-1.5">
+                  <Network className="size-3.5" aria-hidden="true" />
+                  {t("Full Dependency Graph", "Mở đồ thị đầy đủ")}
                 </span>
-                <ArrowUpRight className="ml-2 size-4 shrink-0" aria-hidden="true" />
+                <ArrowUpRight className="ml-2 size-3.5 shrink-0" aria-hidden="true" />
               </Link>
             </Button>
           </div>
         </section>
+      )}
+
+      {onNavigate && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-teal-200 bg-gradient-to-r from-teal-50/70 to-emerald-50/50 p-4">
+          <p className="text-sm font-medium text-teal-950">
+            {t(
+              "Source pinned? Proceed to Step 3 to create the Gatekeeper Quiz.",
+              "Đã ghim mã nguồn mẫu? Chuyển sang Bước 3 để soạn Câu hỏi Quiz mở khóa.",
+            )}
+          </p>
+          <Button
+            type="button"
+            className="bg-teal-600 text-white hover:bg-teal-700"
+            onClick={() => onNavigate("quiz")}
+          >
+            {t("Next Step 3: Quiz Questions →", "Sang Bước 3: Câu hỏi Quiz →")}
+            <ArrowRight className="ml-1.5 size-4" aria-hidden="true" />
+          </Button>
+        </div>
       )}
     </div>
   );

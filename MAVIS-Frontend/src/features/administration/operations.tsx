@@ -102,7 +102,7 @@ export function AdminCommandHeader({
     (counts.data?.pendingVerificationUsers ?? 0) + (counts.data?.lockedUsers ?? 0);
 
   const tabs: Array<{
-    id: "health" | "users" | "profiles" | "audit";
+    id: "health" | "users" | "profiles";
     href: string;
     label: string;
     icon: typeof Activity;
@@ -110,26 +110,20 @@ export function AdminCommandHeader({
     {
       id: "health",
       href: "/administration/health",
-      label: t("System & Inventory", "Hệ Thống & Tài Nguyên"),
+      label: t("System Overview", "Tổng quan Hệ thống"),
       icon: Activity,
     },
     {
       id: "users",
       href: "/administration/users",
-      label: t("Users & Roles", "Người Dùng & Phân Quyền"),
+      label: t("Users & Roles", "Người dùng & Phân quyền"),
       icon: Users,
     },
     {
       id: "profiles",
       href: "/administration/profiles",
-      label: t("Runtime & Quotas", "Runtime & Hạn Mức"),
+      label: t("Governance & Audit", "Hồ sơ Runtime & Nhật ký"),
       icon: ShieldCheck,
-    },
-    {
-      id: "audit",
-      href: "/administration/audit",
-      label: t("Audit & Jobs", "Nhật Ký & Tác Vụ"),
-      icon: ScrollText,
     },
   ];
 
@@ -194,7 +188,8 @@ export function AdminCommandHeader({
         >
           {tabs.map((tab) => {
             const Icon = tab.icon;
-            const current = active === tab.id;
+            const current =
+              active === tab.id || (tab.id === "profiles" && active === "audit");
             return (
               <Link
                 key={tab.id}
@@ -212,6 +207,34 @@ export function AdminCommandHeader({
             );
           })}
         </nav>
+
+        {(active === "profiles" || active === "audit") && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-white/15 pt-3 text-xs">
+            <span className="text-slate-300">{t("Governance view:", "Phân mục:")}</span>
+            <Link
+              href="/administration/profiles"
+              className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 font-medium transition-colors ${
+                active === "profiles"
+                  ? "bg-white/20 text-white"
+                  : "text-slate-200 hover:bg-white/10"
+              }`}
+            >
+              <ShieldCheck className="size-3.5" aria-hidden="true" />
+              {t("Execution Profiles & Quotas", "Cấu hình Runtime & Hạn mức")}
+            </Link>
+            <Link
+              href="/administration/audit"
+              className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 font-medium transition-colors ${
+                active === "audit"
+                  ? "bg-white/20 text-white"
+                  : "text-slate-200 hover:bg-white/10"
+              }`}
+            >
+              <ScrollText className="size-3.5" aria-hidden="true" />
+              {t("Audit Logs & Background Jobs", "Nhật ký Hệ thống & Tác vụ")}
+            </Link>
+          </div>
+        )}
       </section>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

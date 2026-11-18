@@ -6,10 +6,10 @@ import type { ReactNode } from "react";
 import {
   BookOpen,
   ClipboardCheck,
-  GraduationCap,
-  LayoutGrid,
-  Library,
+  Map,
+  Plus,
   Users,
+  Zap,
   type LucideIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -27,33 +27,87 @@ export type CourseWorkspaceTab =
   | "members"
   | "results";
 
-const TAB_LABELS: Record<
-  Exclude<CourseWorkspaceTab, "results">,
-  { en: string; vi: string; icon: LucideIcon }
-> = {
-  content: { en: "Overview & Setup", vi: "Tổng quan & Khởi tạo", icon: LayoutGrid },
-  authoring: { en: "Curriculum & Materials", vi: "Đề cương & Học liệu", icon: GraduationCap },
-  "theory-library": { en: "Theory Library", vi: "Thư viện lý thuyết", icon: Library },
-  assignments: { en: "Lab Library", vi: "Thư viện Lab", icon: BookOpen },
-  "lab-authoring": { en: "Lab Creation", vi: "Tạo Lab", icon: BookOpen },
-  submissions: { en: "Grading & Gradebook", vi: "Chấm bài & Bảng điểm", icon: ClipboardCheck },
-  members: { en: "Students & Access", vi: "Sinh viên & Phân quyền", icon: Users },
-};
+type UnifiedStaffTab = "curriculum" | "submissions" | "members";
+type UnifiedStudentTab = "syllabus" | "lab" | "submissions";
 
-const STUDENT_TAB_LABELS: Partial<Record<CourseWorkspaceTab, { en: string; vi: string }>> = {
-  content: { en: "Class content", vi: "Nội dung lớp" },
-  submissions: { en: "Submissions", vi: "Bài nộp" },
-};
+const STAFF_TABS: Array<{
+  id: UnifiedStaffTab;
+  en: string;
+  vi: string;
+  icon: LucideIcon;
+  href: (ws: string) => string;
+}> = [
+  {
+    id: "curriculum",
+    en: "Curriculum & Labs",
+    vi: "Giáo trình & Bài học Lab",
+    icon: BookOpen,
+    href: (ws) => `/workspace-overview?workspace=${encodeURIComponent(ws)}`,
+  },
+  {
+    id: "submissions",
+    en: "Grading & Gradebook",
+    vi: "Chấm bài & Bảng điểm",
+    icon: ClipboardCheck,
+    href: (ws) => `/submissions?workspace=${encodeURIComponent(ws)}`,
+  },
+  {
+    id: "members",
+    en: "Students & Passkey",
+    vi: "Học viên & Mã lớp",
+    icon: Users,
+    href: (ws) => `/members?workspace=${encodeURIComponent(ws)}`,
+  },
+];
 
-function tabHref(workspaceId: string, tab: Exclude<CourseWorkspaceTab, "results">) {
-  const workspace = encodeURIComponent(workspaceId);
-  if (tab === "content") return `/workspace-overview?workspace=${workspace}`;
-  if (tab === "authoring") return `/workspace-overview?workspace=${workspace}&view=course-authoring`;
-  if (tab === "theory-library") return `/theory-library?workspace=${workspace}`;
-  if (tab === "lab-authoring") return `/lab-authoring?workspace=${workspace}`;
-  if (tab === "assignments") return `/assignments?workspace=${workspace}`;
-  if (tab === "members") return `/members?workspace=${workspace}`;
-  return `/submissions?workspace=${workspace}`;
+const STUDENT_TABS: Array<{
+  id: UnifiedStudentTab;
+  en: string;
+  vi: string;
+  icon: LucideIcon;
+  href: (ws: string) => string;
+}> = [
+  {
+    id: "syllabus",
+    en: "Course Syllabus",
+    vi: "Lộ trình bài học",
+    icon: Map,
+    href: (ws) => `/roadmap?workspace=${encodeURIComponent(ws)}`,
+  },
+  {
+    id: "lab",
+    en: "Lab Practice",
+    vi: "Phòng học Lab",
+    icon: Zap,
+    href: (ws) => `/lab?workspace=${encodeURIComponent(ws)}`,
+  },
+  {
+    id: "submissions",
+    en: "Grades & Submissions",
+    vi: "Điểm số & Bài nộp",
+    icon: ClipboardCheck,
+    href: (ws) => `/submissions?workspace=${encodeURIComponent(ws)}`,
+  },
+];
+
+function resolveStaffTab(pathname: string | null, active: CourseWorkspaceTab): UnifiedStaffTab {
+  if (pathname === "/submissions" || active === "submissions" || active === "results") {
+    return "submissions";
+  }
+  if (pathname === "/members" || active === "members") {
+    return "members";
+  }
+  return "curriculum";
+}
+
+function resolveStudentTab(pathname: string | null, active: CourseWorkspaceTab): UnifiedStudentTab {
+  if (pathname === "/submissions" || active === "submissions" || active === "results") {
+    return "submissions";
+  }
+  if (pathname === "/lab") {
+    return "lab";
+  }
+  return "syllabus";
 }
 
 export function CourseWorkspaceShell({
@@ -75,25 +129,16 @@ export function CourseWorkspaceShell({
   const students = members.filter((member) => member.role.toUpperCase() === "STUDENT").length;
   const lecturers = members.filter((member) => member.role.toUpperCase() === "LECTURER").length;
   const isStudent = workspace.myRole?.toUpperCase() === "STUDENT";
-  const normalizedActive = pathname === "/theory-library" ? "theory-library" : pathname === "/lab-authoring" ? "lab-authoring" : active === "results" ? "submissions" : active;
-  const visibleTabs = (Object.keys(TAB_LABELS) as Array<Exclude<CourseWorkspaceTab, "results">>).filter(
-    (tab) => !isStudent || tab === "content" || tab === "submissions",
-  );
+  const activeStaffTab = resolveStaffTab(pathname, active);
+  const activeStudentTab = resolveStudentTab(pathname, active);
 
   return (
     <div className="space-y-6">
-      <header
-        className={cn(
-          "overflow-hidden rounded-2xl p-5 shadow-lg sm:p-6",
-          isStudent
-            ? "bg-gradient-to-r from-emerald-950 via-emerald-800 to-teal-600 text-white"
-            : "bg-gradient-to-r from-emerald-950 via-emerald-700 to-teal-600 text-white",
-        )}
-      >
+      <header className="overflow-hidden rounded-2xl bg-gradient-to-r from-emerald-950 via-emerald-800 to-teal-600 p-5 text-white shadow-lg sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0 space-y-2">
             <p className="text-xs text-white/75">
-              <Link className="hover:text-white hover:underline" href="/workspaces">
+              <Link className="hover:text-white hover:underline" href={isStudent ? "/courses" : "/workspaces"}>
                 {t("Classes", "Lớp học")}
               </Link>
               <span aria-hidden="true"> / </span>
@@ -129,29 +174,41 @@ export function CourseWorkspaceShell({
         {showTabs && (
           <nav
             aria-label={t("Class sections", "Các mục của lớp")}
-            className="mt-5 flex flex-wrap gap-1.5 rounded-xl bg-black/20 p-1.5 backdrop-blur-sm"
+            className="mt-5 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-black/20 p-1.5 backdrop-blur-sm"
           >
-            {visibleTabs.map((tab) => {
-              const label = (isStudent ? STUDENT_TAB_LABELS[tab] : undefined) ?? TAB_LABELS[tab];
-              const Icon = TAB_LABELS[tab].icon;
-              const isCurrent = normalizedActive === tab;
-              return (
-                <Link
-                  key={tab}
-                  href={tabHref(workspace.id, tab)}
-                  aria-current={isCurrent ? "page" : undefined}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
-                    isCurrent
-                      ? "bg-white text-emerald-950 shadow-sm"
-                      : "text-white/80 hover:bg-white/15 hover:text-white",
-                  )}
-                >
-                  <Icon className="size-3.5" aria-hidden="true" />
-                  {t(label.en, label.vi)}
-                </Link>
-              );
-            })}
+            <div className="flex flex-wrap gap-1.5">
+              {(isStudent ? STUDENT_TABS : STAFF_TABS).map((tab) => {
+                const Icon = tab.icon;
+                const isCurrent = isStudent
+                  ? activeStudentTab === tab.id
+                  : activeStaffTab === tab.id;
+                return (
+                  <Link
+                    key={tab.id}
+                    href={tab.href(workspace.id)}
+                    aria-current={isCurrent ? "page" : undefined}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors",
+                      isCurrent
+                        ? "bg-white text-emerald-950 shadow-sm"
+                        : "text-white/85 hover:bg-white/15 hover:text-white",
+                    )}
+                  >
+                    <Icon className="size-3.5" aria-hidden="true" />
+                    {t(tab.en, tab.vi)}
+                  </Link>
+                );
+              })}
+            </div>
+            {!isStudent && (
+              <Link
+                href={`/lab-authoring?workspace=${encodeURIComponent(workspace.id)}`}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-emerald-400"
+              >
+                <Plus className="size-3.5" aria-hidden="true" />
+                {t("Create Lesson / Lab", "Soạn Bài Học / Lab Mới")}
+              </Link>
+            )}
           </nav>
         )}
       </header>

@@ -21,10 +21,9 @@ import { useApiMutation, useApiQuery, useSession, useSelection } from "@/hooks/u
 import { Button } from "@/components/ui/button";
 import { ErrorState, RequestState } from "@/components/shared/request-state";
 import { SearchInput, SelectField } from "@/components/shared/forms";
-import { DataTable, DetailPanel, StatusBadge } from "@/components/shared/data";
+import { DataTable, DetailPanel } from "@/components/shared/data";
 import { CreateWorkspace, WorkspaceControls } from "./manage";
 import {
-  CourseEnrollment,
   CoursePasskey,
   CourseRoadmap,
   useCourseAuthoring,
@@ -33,7 +32,8 @@ import {
 } from "./course-access";
 import { ReferenceManagement } from "./reference-manage";
 import { CourseWorkspaceShell } from "@/features/courses/course-workspace-shell";
-import { CourseRoadmap as CourseRoadmapScreen } from "@/features/courses/screens";
+import { LecturerCurriculumManager } from "@/features/courses/lecturer-curriculum-manager";
+import { Courses, CourseRoadmap as CourseRoadmapScreen } from "@/features/courses/screens";
 import { CourseOutline } from "@/features/courses/course-outline";
 import { CourseBuilder } from "@/features/courses/course-builder";
 import { CourseSetupPanel } from "@/features/courses/course-setup";
@@ -86,6 +86,7 @@ export function Workspaces() {
     0,
   );
   if (workspaceId && selected) return <WorkspaceOverview />;
+  if (session.data?.user && !canCreate) return <Courses />;
   return (
     <div className={canCreate ? "space-y-8 rounded-lg bg-background p-6 md:p-8" : "space-y-6"}>
       {canCreate ? (
@@ -173,85 +174,16 @@ export function Workspaces() {
       )}
 
       {canCreate && showCreate && <CreateWorkspace onClose={() => setShowCreate(false)} />}
-      {session.data?.user?.role === "student" && <CourseEnrollment destination="roadmap" />}
 
       <RequestState
         query={query}
         empty={!query.data?.length}
-        emptyMessage={
-          canCreate
-            ? t(
-                "You have no classes yet. Create the first class above.",
-                "Bạn chưa có lớp nào. Hãy tạo lớp đầu tiên ở trên.",
-              )
-            : t(
-                "You are not enrolled in a class yet. Enter your Passkey above to join.",
-                "Bạn chưa ghi danh lớp nào. Nhập Passkey ở trên để tham gia.",
-              )
-        }
+        emptyMessage={t(
+          "You have no classes yet. Create the first class above.",
+          "Bạn chưa có lớp nào. Hãy tạo lớp đầu tiên ở trên.",
+        )}
       >
-        {!canCreate ? (
-          <div className="grid gap-4 md:grid-cols-2">
-            {query.data?.map((workspace) => {
-              const members = workspace.members ?? [];
-              const students = members.filter(
-                (member) => member.role.toUpperCase() === "STUDENT",
-              ).length;
-              const lecturers = members
-                .filter((member) => member.role.toUpperCase() === "LECTURER")
-                .map((member) => member.name);
-              const roadmapUrl = `/roadmap?workspace=${encodeURIComponent(workspace.id)}`;
-              return (
-                <article
-                  key={workspace.id}
-                  className="flex flex-col justify-between gap-4 rounded-2xl border bg-card p-5 transition-colors hover:border-primary/40"
-                >
-                  <div className="space-y-2">
-                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                      <span className="rounded bg-primary/10 px-2 py-0.5 font-mono font-semibold text-primary">
-                        {workspace.code || t("CLASS", "LỚP")}
-                      </span>
-                      <StatusBadge
-                        status={workspace.status ?? "ACTIVE"}
-                        variant={workspace.status === "ARCHIVED" ? "secondary" : "default"}
-                      />
-                    </div>
-                    <Link
-                      className="block w-fit max-w-full break-words text-lg font-semibold tracking-tight text-foreground hover:text-primary hover:underline"
-                      href={roadmapUrl}
-                    >
-                      {workspace.name}
-                    </Link>
-                    {workspace.description && (
-                      <p className="line-clamp-2 text-sm text-muted-foreground">
-                        {workspace.description}
-                      </p>
-                    )}
-                    <p className="text-xs text-muted-foreground">
-                      {lecturers.length
-                        ? `${t("Lecturer", "Giảng viên")}: ${lecturers.join(", ")} · `
-                        : ""}
-                      {students} {t("students", "sinh viên")}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2 border-t pt-3">
-                    <Button asChild size="sm">
-                      <Link href={roadmapUrl}>
-                        {t("Enter class & Lab roadmap", "Vào lớp & Lộ trình Lab")}
-                      </Link>
-                    </Button>
-                    <Button asChild size="sm" variant="outline">
-                      <Link href={`/submissions?workspace=${encodeURIComponent(workspace.id)}`}>
-                        {t("Submissions & Grades", "Bài nộp & Điểm")}
-                      </Link>
-                    </Button>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
             {visibleWorkspaces.map((workspace, index) => {
               const colors = ["#0056d2", "#7b2cbf", "#0b807c", "#c54108", "#254cda", "#bd1960"];
               const CoverIcon = [Building2, Compass, Network, Layers, ShieldCheck, Network][index % 6] ?? Building2;
@@ -311,6 +243,12 @@ export function Workspaces() {
                         {pending > 0 ? pending + " " + t("to grade", "bài chờ chấm") : t("Up to date", "Đã cập nhật")}
                       </span>
                     )}
+                    <Link
+                      href={`/workspace-members?workspace=${encodeURIComponent(workspace.id)}`}
+                      className="inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 font-medium text-emerald-700 hover:bg-emerald-100"
+                    >
+                      🔑 {t("Passkey", "Passkey lớp")}
+                    </Link>
                   </div>
                   <div className="mt-auto grid grid-cols-2 gap-3 border-t pt-4">
                   <Button asChild className="bg-[#0056d2] text-white hover:bg-[#0046ad]"><Link href={workspaceUrl}>{t("Open class", "Mở lớp")}</Link></Button>
@@ -327,7 +265,6 @@ export function Workspaces() {
             )}
 
           </div>
-        )}
       </RequestState>
       {canCreate && <footer className="border-t pt-8 text-center text-sm text-muted-foreground">© MAVIS — Architecture Learning &amp; Analysis</footer>}
     </div>
@@ -441,16 +378,10 @@ export function WorkspaceOverview() {
               />
             )}
             {activeTab === "outline" && canManage && (
-              <div className="space-y-5">
-                <div id="class-passkey">
-                  <CoursePasskey workspaceId={workspace.id} />
-                </div>
-                <CourseOutline
-                  workspaceId={workspace.id}
-                  canManage
-                  active={workspace.status !== "ARCHIVED"}
-                />
-              </div>
+              <LecturerCurriculumManager
+                workspaceId={workspace.id}
+                active={workspace.status !== "ARCHIVED"}
+              />
             )}
             {activeTab === "outline" && !canManage && (
               <CourseOutline

@@ -104,10 +104,10 @@ export function LabStudioSection({
           </div>
         ) : (
           <>
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/25 bg-primary/5 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-300/80 bg-gradient-to-r from-emerald-50/80 via-teal-50/50 to-white p-4 dark:border-emerald-800 dark:from-emerald-950/30 dark:to-background">
               <div className="space-y-1">
-                <p className="flex items-center gap-1.5 text-sm font-semibold">
-                  <Sparkles className="size-4 text-primary" aria-hidden="true" />
+                <p className="flex items-center gap-1.5 text-sm font-semibold text-emerald-950 dark:text-emerald-100">
+                  <Sparkles className="size-4 text-emerald-600" aria-hidden="true" />
                   {t(
                     "Auto-Configure & Freeze 2D Studio Topology (1-Click)",
                     "Tự động cấu hình & Đóng băng Topology Studio 2D (1 chạm)",
@@ -122,6 +122,7 @@ export function LabStudioSection({
               </div>
               <Button
                 type="button"
+                className="bg-emerald-600 text-white hover:bg-emerald-700"
                 disabled={autoStudio.isPending}
                 onClick={() =>
                   autoStudio.mutate(undefined, {
@@ -135,7 +136,7 @@ export function LabStudioSection({
               >
                 {autoStudio.isPending
                   ? t("Configuring & Freezing…", "Đang cấu hình & đóng băng…")
-                  : t("⚡ 1-Click Auto-Configure Studio", "⚡ Tự động cấu hình Studio")}
+                  : t("⚡ 1-Click Auto-Configure Studio", "⚡ Tự động cấu hình 2D Studio")}
               </Button>
             </div>
             {autoStudio.isSuccess && (

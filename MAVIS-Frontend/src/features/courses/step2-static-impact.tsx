@@ -67,6 +67,52 @@ export function Step2StaticImpact({
 
   return (
     <div className="space-y-5">
+      <div className="rounded-2xl border border-teal-200/80 bg-gradient-to-r from-teal-50/80 via-emerald-50/50 to-white p-4 shadow-xs">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-sm font-semibold text-teal-950">
+            <GitBranch className="size-4 text-teal-600" />
+            <span>
+              {t(
+                "Reverse BFS Impact Simulator — How to complete Step 2",
+                "Mô phỏng lan truyền lỗi Reverse BFS — Hướng dẫn thực hiện Bước 2",
+              )}
+            </span>
+          </div>
+          <Badge variant="outline" className="border-teal-300 bg-white text-teal-700">
+            {t("3 quick steps", "3 bước thực hành")}
+          </Badge>
+        </div>
+        <ol className="mt-3 grid gap-2 text-xs leading-5 text-slate-700 md:grid-cols-3">
+          <li className="rounded-xl border border-teal-100 bg-white/90 px-3 py-2">
+            <span className="font-semibold text-teal-800">
+              {t("1. Pick a target service:", "1. Chọn node đích (Service/DB):")}
+            </span>{" "}
+            {t(
+              "Choose any component below to simulate a failure or breaking change.",
+              "Nhấp vào thành phần bên dưới để giả lập sự cố hoặc thay đổi API.",
+            )}
+          </li>
+          <li className="rounded-xl border border-teal-100 bg-white/90 px-3 py-2">
+            <span className="font-semibold text-teal-800">
+              {t("2. Inspect blast radius:", "2. Quan sát bán kính ảnh hưởng:")}
+            </span>{" "}
+            {t(
+              "Trace upstream callers vs. unaffected nodes along directed edges.",
+              "Xem các caller phụ thuộc ngược chiều mũi tên và vùng cách ly an toàn.",
+            )}
+          </li>
+          <li className="rounded-xl border border-teal-100 bg-white/90 px-3 py-2">
+            <span className="font-semibold text-teal-800">
+              {t("3. Verify 3E & move on:", "3. Đối chiếu 3E & sang Quiz:")}
+            </span>{" "}
+            {t(
+              "Proceed to Step 3 Quiz to unlock the interactive 2D Studio Lab.",
+              "Chuyển sang Bước 3 làm Quiz kiểm tra kiến thức để mở khóa 2D Studio.",
+            )}
+          </li>
+        </ol>
+      </div>
+
       <DetailPanel
         title={t(
           "Reference Architecture Views (Back-Links)",
