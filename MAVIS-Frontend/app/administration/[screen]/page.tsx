@@ -34,11 +34,12 @@ export default async function AdminPage({ params }: { params: Promise<{ screen: 
   if (!config) notFound();
   if (screen === "studio") return <StudioWorkbench />;
   const Screen = config.component;
+  const hasAdminBanner = ["health", "users", "profiles", "audit"].includes(screen);
   return (
     <AppShell scope="global" activeId={screen} pageTitle={config.title} contentVariant="workspace">
       <div className="mx-auto w-full max-w-[1600px]">
         <PageContainer>
-          <SectionHeader title={config.title} />
+          {!hasAdminBanner && <SectionHeader title={config.title} />}
           <Screen />
         </PageContainer>
       </div>
