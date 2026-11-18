@@ -71,11 +71,15 @@ export function StudioExerciseEditor({
   assignmentId,
   labTitle,
   applications,
+  defaultModelId,
+  onSaved,
 }: {
   workspaceId: string;
   assignmentId: string;
   labTitle: string;
   applications: string[];
+  defaultModelId?: string | undefined;
+  onSaved?: (() => void) | undefined;
 }) {
   const { t } = useLocale();
   const cache = useQueryClient();
@@ -101,12 +105,15 @@ export function StudioExerciseEditor({
   useEffect(() => {
     const current = exercise.data;
     if (!current) {
-      setForm(EMPTY);
+      setForm((prev) => ({
+        ...EMPTY,
+        runtimeModelId: prev.runtimeModelId || defaultModelId || "",
+      }));
       return;
     }
     const replica = current.successCriteria?.minReplicas?.[0];
     setForm({
-      runtimeModelId: current.runtimeModelId ?? "",
+      runtimeModelId: current.runtimeModelId ?? defaultModelId ?? "",
       baselineRequests:
         current.baselineRequests?.length ? current.baselineRequests : EMPTY.baselineRequests,
       stoppedServices: current.initialState?.stoppedServices ?? [],
@@ -139,6 +146,7 @@ export function StudioExerciseEditor({
         return;
       }
       setImported(version);
+      setForm((current) => ({ ...current, runtimeModelId: version.modelId }));
       void cache.invalidateQueries({ queryKey: ["api", "referenceVersions", workspaceId] });
     },
     [cache, workspaceId],
@@ -203,6 +211,7 @@ export function StudioExerciseEditor({
       void cache.invalidateQueries({
         queryKey: ["api", "studio-exercise", workspaceId, assignmentId],
       });
+      onSaved?.();
     },
     onError: (cause) => setError(cause instanceof Error ? cause.message : String(cause)),
   });

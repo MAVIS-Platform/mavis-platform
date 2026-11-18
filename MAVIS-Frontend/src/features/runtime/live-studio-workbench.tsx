@@ -262,7 +262,7 @@ export function LiveStudioWorkbench({
         </aside>
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <div ref={graphRef} className="relative min-h-0 flex-1 bg-[#070b12] p-2.5">
+          <div ref={graphRef} className="relative min-h-[380px] flex-1 bg-[#070b12] p-2.5">
             {state.isError ? (
               <ErrorState error={state.error} onRetry={() => void state.refetch()} />
             ) : data.services.length > 0 || data.topology ? (

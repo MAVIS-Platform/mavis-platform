@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useApi, useApiMutation, useApiQuery } from "@/hooks/use-api";
 import { captureStudioImage } from "./studio-observability";
 
@@ -12,6 +13,7 @@ type StudioAction = "START" | "STOP" | "SCALE";
  */
 export function useStudioSession(sessionId: string) {
   const api = useApi();
+  const queryClient = useQueryClient();
   const state = useApiQuery("studioState", { sessionId }, { enabled: !!sessionId, poll: true });
   const action = useApiMutation("studioAction");
   const finish = useApiMutation("studioFinish");
@@ -85,11 +87,22 @@ export function useStudioSession(sessionId: string) {
     }
   }
 
+  useEffect(() => {
+    if (data?.executionStatus === "COMPLETED" || data?.receiptDigest) {
+      void queryClient.invalidateQueries({ queryKey: ["api", "student-lab-studio-sessions"] });
+      void queryClient.invalidateQueries({ queryKey: ["api", "runtimeReadSessions"] });
+      void queryClient.invalidateQueries({ queryKey: ["api", "student-lab-context"] });
+    }
+  }, [data?.executionStatus, data?.receiptDigest, queryClient]);
+
   async function finishStudio() {
     try {
       await finish.mutateAsync({ sessionId });
     } finally {
       await state.refetch();
+      void queryClient.invalidateQueries({ queryKey: ["api", "student-lab-studio-sessions"] });
+      void queryClient.invalidateQueries({ queryKey: ["api", "runtimeReadSessions"] });
+      void queryClient.invalidateQueries({ queryKey: ["api", "student-lab-context"] });
     }
   }
 
@@ -98,19 +111,21 @@ export function useStudioSession(sessionId: string) {
       await cancel.mutateAsync({ sessionId, action: "cancel" });
     } finally {
       await state.refetch();
+      void queryClient.invalidateQueries({ queryKey: ["api", "student-lab-studio-sessions"] });
+      void queryClient.invalidateQueries({ queryKey: ["api", "runtimeReadSessions"] });
     }
   }
 
   async function captureSnapshot(graph: SVGSVGElement | null) {
-    if (!data || !graph || !explanation.trim()) return;
+    if (!data || !explanation.trim()) return;
     setCapturing(true);
     setDownloadError(null);
     try {
-      const imageData = await captureStudioImage(graph);
+      const imageData = graph ? await captureStudioImage(graph).catch(() => undefined) : undefined;
       await capture.mutateAsync({
         sessionId,
         explanation: explanation.trim(),
-        imageData,
+        ...(imageData ? { imageData } : {}),
         observedAt: data.telemetry?.observedAt,
       });
       setExplanation("");

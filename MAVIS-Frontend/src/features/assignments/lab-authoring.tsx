@@ -272,7 +272,7 @@ export function LabAuthoring() {
                     </span>
                   )}
                   <span className="truncate">
-                    {index + 1}. {t(meta.en, meta.vi)}
+                    {t(meta.en, meta.vi)}
                   </span>
                 </button>
               );

@@ -15,6 +15,7 @@ import {
   useCourseSetup,
   useRuntimeSetupReadiness,
   useStartLabStudioSession,
+  useStudentLabStudioSessions,
 } from "@/features/workspaces/course-access";
 import { PreparedTopologyEditor } from "@/features/runtime/prepared-topology-editor";
 import { LiveStudioWorkbench } from "@/features/runtime/live-studio-workbench";
@@ -55,11 +56,21 @@ export function LabStudioSection({
     { projectId: projectId ?? "" },
     { enabled: Boolean(projectId) },
   );
+  const labSessions = useStudentLabStudioSessions(
+    workspaceId,
+    assignment.id,
+    Boolean(projectId),
+  );
   const [selectedSessionId, setSelectedSessionId] = useState("");
   const [showPlaytest, setShowPlaytest] = useState(false);
   const setupLab = setup.data?.labs?.find((item) => item.assignmentId === assignment.id);
   const published = setupLab?.published === true;
-  const sessionList = sessions.data ?? [];
+  const sessionList = [
+    ...(labSessions.data ?? []),
+    ...(sessions.data ?? []).filter(
+      (item) => !(labSessions.data ?? []).some((labItem) => labItem.id === item.id),
+    ),
+  ];
   const verifiedSession =
     sessionList.find((session) => session.assignmentId === assignment.id && session.studioVerified) ??
     sessionList.find((session) => session.studioVerified);
@@ -106,6 +117,13 @@ export function LabStudioSection({
               assignmentId={assignment.id}
               labTitle={assignment.title}
               applications={[]}
+              defaultModelId={assignment.referenceSource?.modelId}
+              onSaved={() => {
+                void exercise.refetch();
+                void readiness.refetch();
+                void runtimeConfig.refetch();
+                void setup.refetch();
+              }}
             />
           </div>
         ) : (
@@ -115,6 +133,13 @@ export function LabStudioSection({
               assignmentId={assignment.id}
               labTitle={assignment.title}
               applications={readiness.data?.applications ?? []}
+              defaultModelId={assignment.referenceSource?.modelId}
+              onSaved={() => {
+                void exercise.refetch();
+                void readiness.refetch();
+                void runtimeConfig.refetch();
+                void setup.refetch();
+              }}
             />
 
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/20 p-4">
@@ -287,21 +312,24 @@ export function LabStudioSection({
                   </div>
                 </div>
                 {startStudio.error && <ErrorState error={startStudio.error} />}
-                <LiveStudioWorkbench
-                  sessions={sessionList}
-                  sessionId={activeSessionId}
-                  projectId={projectId}
-                  onSelectSession={setSelectedSessionId}
-                  onStartSession={() =>
-                    startStudio.mutate(undefined, {
-                      onSuccess: (created) => {
-                        if (created?.id) setSelectedSessionId(created.id);
-                      },
-                    })
-                  }
-                  starting={startStudio.isPending}
-                  hideSwitchToSandbox
-                />
+                <div className="h-[680px] overflow-hidden rounded-xl border border-slate-800">
+                  <LiveStudioWorkbench
+                    sessions={sessionList}
+                    sessionId={activeSessionId}
+                    projectId={projectId}
+                    onSelectSession={setSelectedSessionId}
+                    onStartSession={() =>
+                      startStudio.mutate(undefined, {
+                        onSuccess: (created) => {
+                          if (created?.id) setSelectedSessionId(created.id);
+                          void labSessions.refetch();
+                        },
+                      })
+                    }
+                    starting={startStudio.isPending}
+                    hideSwitchToSandbox
+                  />
+                </div>
               </div>
             )}
           </>
