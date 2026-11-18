@@ -31,20 +31,35 @@ export function LabInfoForm({
             new Date(assignment.dueAt).getTimezoneOffset() * 60000,
         )
           .toISOString()
-          .slice(0, 16)
+          .slice(0, 10)
       : "",
   );
   const [guideTab, setGuideTab] = useState<"write" | "preview">("write");
 
+  const applyDaysOffset = (days: number | null) => {
+    if (days === null) {
+      setDue("");
+      return;
+    }
+    const target = new Date(Date.now() + days * 86_400_000);
+    const localIso = new Date(target.getTime() - target.getTimezoneOffset() * 60_000)
+      .toISOString()
+      .slice(0, 10);
+    setDue(localIso);
+  };
+
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
     if (!title.trim()) return;
+    const dueIso = due
+      ? new Date(`${due.slice(0, 10)}T23:59:59`).toISOString()
+      : null;
     const payload: Record<string, unknown> = {
       workspaceId,
       ...(assignment ? { assignmentId: assignment.id } : {}),
       title: title.trim(),
       description: instructions,
-      dueAt: due ? new Date(due).toISOString() : null,
+      dueAt: dueIso,
       requireRuntimeTrace: true,
       labMode: "THEORY_QUIZ_STUDIO",
       requiredDiagramTypes: [],
@@ -92,10 +107,44 @@ export function LabInfoForm({
               onChange={(event) => setTitle(event.target.value)}
             />
           </label>
-          <label className="space-y-1.5 text-sm font-medium">
-            <span>{t("Due date (optional)", "Hạn nộp (không bắt buộc)")}</span>
-            <Input type="datetime-local" value={due} onChange={(event) => setDue(event.target.value)} />
-          </label>
+          <div className="space-y-1.5 text-sm font-medium">
+            <div className="flex flex-wrap items-center justify-between gap-1.5">
+              <span>{t("Due date (optional)", "Hạn nộp (không bắt buộc)")}</span>
+              <div className="inline-flex flex-wrap items-center gap-1 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => applyDaysOffset(null)}
+                  className={`rounded-md border px-2 py-0.5 font-medium transition ${
+                    !due
+                      ? "border-teal-500 bg-teal-500/15 text-teal-700 dark:text-teal-300"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {t("No deadline", "Không giới hạn")}
+                </button>
+                {[
+                  { days: 7, en: "+7d", vi: "+7 ngày" },
+                  { days: 14, en: "+14d", vi: "+14 ngày" },
+                  { days: 30, en: "+30d", vi: "+30 ngày" },
+                ].map((preset) => (
+                  <button
+                    key={preset.days}
+                    type="button"
+                    onClick={() => applyDaysOffset(preset.days)}
+                    className="rounded-md border px-2 py-0.5 font-medium text-muted-foreground transition hover:border-teal-400 hover:text-foreground"
+                  >
+                    {t(preset.en, preset.vi)}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <Input
+              type="date"
+              aria-label={t("Due date (optional)", "Hạn nộp (không bắt buộc)")}
+              value={due}
+              onChange={(event) => setDue(event.target.value)}
+            />
+          </div>
         </div>
 
         <div className="space-y-2">

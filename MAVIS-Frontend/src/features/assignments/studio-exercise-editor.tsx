@@ -1,16 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ClipboardList, Plus, Trash2 } from "lucide-react";
+import { ClipboardList, GitBranch, Plus, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { useApiQuery } from "@/hooks/use-api";
 import { api } from "@/lib/mainflow-api";
 import { useLocale } from "@/lib/i18n/locale-context";
-import { AssignmentSourcePicker } from "./source-picker";
+import type { Assignment } from "./requirements";
 
 type BaselineRequest = { method: "GET" | "HEAD"; path: string; expectedStatus: number | null };
 type TraceEdge = { from: string; to: string };
@@ -69,9 +68,10 @@ const EMPTY: Form = {
 export function StudioExerciseEditor({
   workspaceId,
   assignmentId,
-  labTitle,
+  labTitle: _labTitle,
   applications,
   defaultModelId,
+  referenceSource,
   onSaved,
 }: {
   workspaceId: string;
@@ -79,24 +79,13 @@ export function StudioExerciseEditor({
   labTitle: string;
   applications: string[];
   defaultModelId?: string | undefined;
+  referenceSource?: Assignment["referenceSource"] | undefined;
   onSaved?: (() => void) | undefined;
 }) {
   const { t } = useLocale();
   const cache = useQueryClient();
   const [form, setForm] = useState<Form>(EMPTY);
   const [error, setError] = useState("");
-  const [imported, setImported] = useState<{
-    modelId: string;
-    projectId: string;
-    snapshotId: string;
-  } | null>(null);
-  const [importPending, setImportPending] = useState(false);
-  const versions = useApiQuery("referenceVersions", { workspaceId });
-  const projects = useApiQuery("workspaceProjects", { workspaceId });
-  const projectNameById = useMemo(
-    () => new Map((projects.data ?? []).map((p) => [p.id, p.name])),
-    [projects.data],
-  );
   const exercise = useQuery({
     queryKey: ["api", "studio-exercise", workspaceId, assignmentId],
     queryFn: ({ signal }) =>
@@ -112,13 +101,13 @@ export function StudioExerciseEditor({
     if (!current) {
       setForm((prev) => ({
         ...EMPTY,
-        runtimeModelId: prev.runtimeModelId || defaultModelId || "",
+        runtimeModelId: prev.runtimeModelId || referenceSource?.modelId || defaultModelId || "",
       }));
       return;
     }
     const replica = current.successCriteria?.minReplicas?.[0];
     setForm({
-      runtimeModelId: current.runtimeModelId ?? defaultModelId ?? "",
+      runtimeModelId: referenceSource?.modelId ?? current.runtimeModelId ?? defaultModelId ?? "",
       baselineRequests:
         current.baselineRequests?.length ? current.baselineRequests : EMPTY.baselineRequests,
       stoppedServices: current.initialState?.stoppedServices ?? [],
@@ -136,41 +125,20 @@ export function StudioExerciseEditor({
       replicaCount: replica?.count == null ? "" : String(replica.count),
       instructions: current.instructions ?? "",
     });
-  }, [exercise.data]);
-
-  const selectedVersion = useMemo(
-    () => (versions.data ?? []).find((version) => version.model.id === form.runtimeModelId),
-    [versions.data, form.runtimeModelId],
-  );
-
-  const onImportVersion = useCallback(
-    (version: { modelId: string; projectId: string; snapshotId: string }, pending: boolean) => {
-      setImportPending(pending);
-      if (!version.modelId) {
-        setImported(null);
-        return;
-      }
-      setImported(version);
-      setForm((current) => ({ ...current, runtimeModelId: version.modelId }));
-      void cache.invalidateQueries({ queryKey: ["api", "referenceVersions", workspaceId] });
-    },
-    [cache, workspaceId],
-  );
+  }, [exercise.data, referenceSource?.modelId, defaultModelId]);
 
   const save = useMutation({
     mutationFn: () => {
-      const source = imported?.modelId
-        ? imported
-        : selectedVersion
+      const source =
+        referenceSource?.modelId && referenceSource.projectId && referenceSource.snapshotId
           ? {
-              modelId: selectedVersion.model.id,
-              projectId: selectedVersion.model.projectId,
-              snapshotId: selectedVersion.snapshot.id,
+              modelId: referenceSource.modelId,
+              projectId: referenceSource.projectId,
+              snapshotId: referenceSource.snapshotId,
             }
           : exercise.data?.runtimeModelId &&
               exercise.data.runtimeProjectId &&
-              exercise.data.runtimeSnapshotId &&
-              (!form.runtimeModelId || form.runtimeModelId === exercise.data.runtimeModelId)
+              exercise.data.runtimeSnapshotId
             ? {
                 modelId: exercise.data.runtimeModelId,
                 projectId: exercise.data.runtimeProjectId,
@@ -178,7 +146,12 @@ export function StudioExerciseEditor({
               }
             : null;
       if (!source) {
-        throw new Error(t("Choose the deployable Studio repository.", "Hãy chọn repo Studio có thể deploy."));
+        throw new Error(
+          t(
+            "Pin the Lab Reference Repository in Step 3 before saving the Studio exercise.",
+            "Hãy gắn Repo tham chiếu ở Bước 3 trước khi lưu đề Studio.",
+          ),
+        );
       }
       const edge =
         form.traceFrom.trim() && form.traceTo.trim()
@@ -289,54 +262,22 @@ export function StudioExerciseEditor({
           </Button>
         </div>
 
-        <label className="block space-y-1 text-xs font-medium">
-          <span>{t("Deployable Studio repository", "Repo Studio có thể deploy")}</span>
-          <select
-            className="h-9 w-full rounded-md border bg-background px-2 text-sm"
-            value={form.runtimeModelId}
-            onChange={(event) => setForm({ ...form, runtimeModelId: event.target.value })}
-          >
-            <option value="">{t("Choose an analyzed repository…", "Chọn repo đã phân tích…")}</option>
-            {form.runtimeModelId &&
-              !(versions.data ?? []).some((v) => v.model.id === form.runtimeModelId) && (
-                <option value={form.runtimeModelId}>
-                  {projectNameById.get(
-                    imported?.projectId ?? exercise.data?.runtimeProjectId ?? "",
-                  ) ?? t("Selected Studio repository", "Repo Studio đã chọn")}{" "}
-                  · {form.runtimeModelId.slice(0, 8)}
-                </option>
-              )}
-            {(versions.data ?? []).map((version) => (
-              <option key={version.model.id} value={version.model.id}>
-                {projectNameById.get(version.model.projectId) ?? version.snapshot.name ?? version.model.projectId.slice(0, 8)}{" "}
-                · r{version.model.revision} · {version.snapshot.sourceType}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <details className="rounded-md border border-dashed p-3">
-          <summary className="cursor-pointer text-xs font-medium">
-            {t("Import a new deployable repository", "Nhập repo deploy mới")}
-          </summary>
-          <div className="pt-3">
-            <AssignmentSourcePicker
-              workspaceId={workspaceId}
-              title={`${labTitle} · Studio runtime`}
-              onChange={() => undefined}
-              onVersionChange={onImportVersion}
-            />
-            {imported && (
-              <p className="mt-2 text-xs text-muted-foreground">
-                {t("Imported runtime source", "Nguồn runtime đã nhập")}:{" "}
-                <span className="font-mono">{imported.modelId.slice(0, 8)}</span>
-                {importPending
-                  ? ` · ${t("analysis is still running", "phân tích vẫn đang chạy")}`
-                  : ""}
-              </p>
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-background px-3 py-2.5 text-xs">
+          <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
+            <GitBranch className="size-3.5 text-teal-600" aria-hidden="true" />
+            {t(
+              "Unified Lab Repository (shared with Step 3 C1–C3 Reference Source):",
+              "Repo dùng chung từ Bước 3 (Nguồn tham chiếu C1–C3 & Studio Live):",
             )}
-          </div>
-        </details>
+          </span>
+          <span className="font-mono text-muted-foreground">
+            {referenceSource?.projectName
+              ? `${referenceSource.projectName} · r${referenceSource.revision}`
+              : form.runtimeModelId
+                ? `model ${form.runtimeModelId.slice(0, 8)}`
+                : t("Not pinned in Step 3 yet", "Chưa gắn ở Bước 3")}
+          </span>
+        </div>
 
         <section className="space-y-2">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">

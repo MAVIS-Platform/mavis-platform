@@ -29,7 +29,7 @@ export function LabStudioSection({
 }: {
   workspaceId: string;
   assignment: Assignment;
-  onNavigate: (tab: "publish") => void;
+  onNavigate: (tab: "source" | "publish") => void;
 }) {
   const { t } = useLocale();
   const exercise = useQuery({
@@ -41,7 +41,7 @@ export function LabStudioSection({
       ),
     retry: false,
   });
-  const projectId = exercise.data?.runtimeProjectId ?? assignment.referenceSource?.projectId ?? null;
+  const projectId = assignment.referenceSource?.projectId ?? exercise.data?.runtimeProjectId ?? null;
   const readiness = useRuntimeSetupReadiness(projectId);
   const setup = useCourseSetup(workspaceId);
   const autoStudio = useAutoConfigureStudio(workspaceId, assignment.id);
@@ -104,27 +104,19 @@ export function LabStudioSection({
         </div>
 
         {!projectId ? (
-          <div className="space-y-3">
-            <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-800 dark:text-amber-200">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-amber-800 dark:text-amber-200">
+            <div className="flex items-start gap-2">
               <Lock className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-              {t(
-                "Attach and analyze the reference source or choose a deployable Studio repository below before configuring Studio Live.",
-                "Gắn và phân tích nguồn tham chiếu hoặc chọn repo Studio bên dưới trước khi cấu hình Studio Live.",
-              )}
+              <span>
+                {t(
+                  "Attach and analyze the single unified Lab repository in Step 3 (Reference source) first. Both C1–C3 static views and Studio Live run on that same pinned repository.",
+                  "Hãy gắn và phân tích Repo chuẩn của bài Lab ở Bước 3 (Nguồn tham chiếu) trước. Cả sơ đồ tĩnh C1–C3 lẫn thực hành Studio Live đều dùng chung 1 Repo duy nhất đó.",
+                )}
+              </span>
             </div>
-            <StudioExerciseEditor
-              workspaceId={workspaceId}
-              assignmentId={assignment.id}
-              labTitle={assignment.title}
-              applications={[]}
-              defaultModelId={assignment.referenceSource?.modelId}
-              onSaved={() => {
-                void exercise.refetch();
-                void readiness.refetch();
-                void runtimeConfig.refetch();
-                void setup.refetch();
-              }}
-            />
+            <Button type="button" size="sm" variant="outline" onClick={() => onNavigate("source")}>
+              {t("← Go to Step 3: Reference source", "← Sang Bước 3: Gắn Nguồn tham chiếu")}
+            </Button>
           </div>
         ) : (
           <>
@@ -134,6 +126,7 @@ export function LabStudioSection({
               labTitle={assignment.title}
               applications={readiness.data?.applications ?? []}
               defaultModelId={assignment.referenceSource?.modelId}
+              referenceSource={assignment.referenceSource}
               onSaved={() => {
                 void exercise.refetch();
                 void readiness.refetch();
