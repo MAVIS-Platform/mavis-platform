@@ -96,6 +96,23 @@ public class CourseAccessController {
                 .body(ApiResponse.success(courses.createPasskey(workspaceId, request)));
     }
 
+    @PutMapping("/workspaces/{workspaceId}/course-passkeys/{passkeyId}")
+    public ResponseEntity<ApiResponse<CourseAccessService.PasskeyItem>> updatePasskey(
+            @PathVariable UUID workspaceId,
+            @PathVariable UUID passkeyId,
+            @RequestBody(required = false) CourseAccessService.UpdatePasskeyRequest request) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+                .body(ApiResponse.success(courses.updatePasskey(workspaceId, passkeyId, request)));
+    }
+
+    @DeleteMapping("/workspaces/{workspaceId}/course-passkeys/{passkeyId}")
+    public ApiResponse<Void> deletePasskey(
+            @PathVariable UUID workspaceId,
+            @PathVariable UUID passkeyId) {
+        courses.deletePasskey(workspaceId, passkeyId);
+        return ApiResponse.success(null);
+    }
+
     @PostMapping("/course-enrollments/redeem")
     public ApiResponse<CourseAccessService.Enrollment> redeem(
             @Valid @RequestBody RedeemKey request,
