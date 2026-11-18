@@ -85,6 +85,17 @@ SELECT CASE WHEN bool_and(present) THEN 'ready'
             WHEN bool_or(present) THEN 'partial'
             ELSE 'missing' END FROM expected;
 """),
+    "V43__Seed_Three_Role_Accounts_And_Java_Course.sql": (43, """
+WITH expected(present) AS (VALUES
+    (EXISTS (SELECT FROM users WHERE email = 'gv.java@mavis.edu.vn' AND status = 'ACTIVE')),
+    (EXISTS (SELECT FROM users WHERE email = 'sv.java@mavis.edu.vn' AND status = 'ACTIVE')),
+    (EXISTS (SELECT FROM users WHERE email = 'admin@mavis.edu.vn' AND status = 'ACTIVE')),
+    (EXISTS (SELECT FROM workspaces WHERE code = 'JAVA-MS-2026' AND course_mode = TRUE))
+)
+SELECT CASE WHEN bool_and(present) THEN 'ready'
+            WHEN bool_or(present) THEN 'partial'
+            ELSE 'missing' END FROM expected;
+"""),
     "V42__Passkey_Crud_And_Essay_Submissions.sql": (42, """
 WITH expected(present) AS (VALUES
     (to_regclass('course_item_submissions') IS NOT NULL),
