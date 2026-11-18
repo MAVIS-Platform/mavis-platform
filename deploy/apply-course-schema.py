@@ -85,6 +85,21 @@ SELECT CASE WHEN bool_and(present) THEN 'ready'
             WHEN bool_or(present) THEN 'partial'
             ELSE 'missing' END FROM expected;
 """),
+    "V44__Mavis_Announcements.sql": (44, """
+WITH expected(present) AS (VALUES
+    (to_regclass('announcements') IS NOT NULL),
+    (to_regclass('announcement_workspaces') IS NOT NULL),
+    (EXISTS (SELECT FROM information_schema.columns WHERE table_schema = current_schema()
+             AND table_name = 'announcements' AND column_name = 'priority'
+             AND data_type = 'character varying')),
+    (EXISTS (SELECT FROM information_schema.columns WHERE table_schema = current_schema()
+             AND table_name = 'announcement_workspaces' AND column_name = 'workspace_id'
+             AND data_type = 'uuid'))
+)
+SELECT CASE WHEN bool_and(present) THEN 'ready'
+            WHEN bool_or(present) THEN 'partial'
+            ELSE 'missing' END FROM expected;
+"""),
     "V43__Seed_Three_Role_Accounts_And_Java_Course.sql": (43, """
 WITH expected(present) AS (VALUES
     (EXISTS (SELECT FROM users WHERE email = 'gv.java@mavis.edu.vn' AND status = 'ACTIVE')),

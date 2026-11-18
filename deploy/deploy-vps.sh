@@ -201,6 +201,12 @@ if [ -e "$java_course_seed_migration" ]; then
   compose "$prefix" "$tag" "$incoming/compose.production.yml" config --format json |
     python3 "$schema_tool" "$java_course_seed_migration" /opt/mavis/db-backups/java-seed-before-v43.dump
 fi
+announcements_migration="$incoming/V44__Mavis_Announcements.sql"
+if [ -e "$announcements_migration" ]; then
+  test -f "$java_course_seed_migration" && test -f "$schema_tool" || { echo "Incomplete Announcements schema package"; exit 1; }
+  compose "$prefix" "$tag" "$incoming/compose.production.yml" config --format json |
+    python3 "$schema_tool" "$announcements_migration" /opt/mavis/db-backups/announcements-before-v44.dump
+fi
 # Ensure persistent data volume upload and worker directories are writable by app user 1654:1654
 docker run --rm --mount source=mavis_data,target=/data alpine:3.20 sh -c "mkdir -p /data/uploads /data/worker-artifacts && chown -R 1654:1654 /data/uploads /data/worker-artifacts" >/dev/null 2>&1 || true
 if ! compose "$prefix" "$tag" "$incoming/compose.production.yml" up -d --no-build --remove-orphans || ! healthy; then

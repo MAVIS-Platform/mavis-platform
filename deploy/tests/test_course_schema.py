@@ -84,6 +84,7 @@ class MigrationTest(unittest.TestCase):
             ("V38__Submission_V2_Lab_Mode.sql", 38, "theory_evidence"),
             ("V42__Passkey_Crud_And_Essay_Submissions.sql", 42, "course_item_submissions"),
             ("V43__Seed_Three_Role_Accounts_And_Java_Course.sql", 43, "gv.java@mavis.edu.vn"),
+            ("V44__Mavis_Announcements.sql", 44, "announcement_workspaces"),
         ):
             registered, probe = module.MIGRATIONS[filename]
             self.assertEqual(registered, version)
