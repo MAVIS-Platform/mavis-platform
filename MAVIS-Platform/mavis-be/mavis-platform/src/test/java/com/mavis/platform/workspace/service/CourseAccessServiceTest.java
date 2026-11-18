@@ -2,6 +2,7 @@ package com.mavis.platform.workspace.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mavis.common.entity.Assignment;
+import com.mavis.common.entity.Role;
 import com.mavis.common.entity.ModelVersion;
 import com.mavis.common.entity.Project;
 import com.mavis.common.entity.RuntimeConfiguration;
@@ -18,12 +19,15 @@ import com.mavis.common.security.CourseLabPolicy;
 import com.mavis.platform.assignment.service.LabReferenceArchive;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class CourseAccessServiceTest {
@@ -310,6 +314,54 @@ class CourseAccessServiceTest {
         var frozen = courses.freezeTopology(workspaceId, assignmentId, verifiedSessionId);
         assertEquals(Integer.valueOf(6), assignment.getStudioTopologyRevision());
         assertEquals(1, frozen.position());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void supportsFullPasskeyCrudAndCaseInsensitiveRedemption() {
+        UUID teacherId = UUID.randomUUID();
+        when(access.requireCurrentActiveUser()).thenReturn(User.builder().id(teacherId).build());
+        when(workspaces.findById(workspaceId)).thenReturn(Optional.of(workspace));
+        when(workspaces.findLockedById(workspaceId)).thenReturn(Optional.of(workspace));
+        when(jdbc.queryForList(contains("SELECT id FROM course_passkeys WHERE digest = ?"),
+                eq(UUID.class), any())).thenReturn(List.of());
+
+        var created = courses.createPasskey(workspaceId,
+                new CourseAccessService.CreatePasskeyRequest("JAVA2026", "Java Class", 720, 200));
+
+        assertTrue(workspace.isCourseMode());
+        assertEquals("JAVA2026", created.code());
+        assertEquals("Java Class", created.label());
+        assertTrue(created.active());
+
+        when(jdbc.query(contains("FROM course_passkeys"), any(RowMapper.class),
+                eq(created.id()), eq(workspaceId))).thenReturn(List.of(created));
+        var updated = courses.updatePasskey(workspaceId, created.id(),
+                new CourseAccessService.UpdatePasskeyRequest("JAVA2026-V2", "Updated Label", 48, 150, false));
+        assertEquals("JAVA2026-V2", updated.code());
+        assertEquals("Updated Label", updated.label());
+        assertFalse(updated.active());
+
+        when(jdbc.update(contains("DELETE FROM course_passkeys"), eq(created.id()), eq(workspaceId))).thenReturn(1);
+        assertDoesNotThrow(() -> courses.deletePasskey(workspaceId, created.id()));
+
+        UUID studentId = UUID.randomUUID();
+        Role studentRole = Role.builder().code("STUDENT").build();
+        when(access.requireCurrentActiveUser()).thenReturn(User.builder().id(studentId).role(studentRole).build());
+        when(jdbc.queryForObject(contains("FROM auth_rate_limits"), eq(Boolean.class), any())).thenReturn(false);
+        when(jdbc.queryForList(contains("SELECT workspace_id FROM course_passkeys WHERE digest = ?"),
+                eq(UUID.class), any()))
+                .thenReturn(List.of())
+                .thenReturn(List.of(workspaceId));
+        when(jdbc.queryForObject(contains("SELECT EXISTS (SELECT 1 FROM course_passkeys"),
+                eq(Boolean.class), eq(workspaceId), any())).thenReturn(true);
+        when(jdbc.update(contains("INSERT INTO workspace_members"), eq(workspaceId), eq(studentId),
+                any(), any())).thenReturn(1);
+
+        var enrolled = courses.redeem("java2026", UUID.randomUUID());
+        assertEquals(workspaceId, enrolled.workspaceId());
+        verify(jdbc).update(contains("UPDATE course_passkeys SET used_count = used_count + 1"),
+                eq(workspaceId), any());
     }
 
 }
