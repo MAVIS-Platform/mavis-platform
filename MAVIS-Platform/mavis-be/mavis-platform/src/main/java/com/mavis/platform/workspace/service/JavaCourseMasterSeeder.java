@@ -6,6 +6,7 @@ import com.mavis.common.entity.Workspace;
 import com.mavis.common.repository.RoleRepository;
 import com.mavis.common.repository.UserRepository;
 import com.mavis.common.repository.WorkspaceRepository;
+import com.mavis.common.security.AuthorizationRequestCache;
 import com.mavis.common.utils.HashUtils;
 import com.mavis.platform.workspace.curriculum.JavaCourseraCatalog;
 import lombok.RequiredArgsConstructor;
@@ -15,6 +16,7 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -26,11 +28,13 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Idempotent startup seeder that provisions:
+ * Idempotent startup & 1-click bootstrap seeder that provisions in 5 isolated phases:
+ * 0. Self-healing schema DDL for multi-passkey columns and course_item_submissions.
  * 1. Ready-to-test accounts (gv.java@mavis.edu.vn, sv.java@mavis.edu.vn, admin@mavis.edu.vn)
- *    with valid BCrypt password hashes, plus fixes legacy placeholder hashes in V1.
- * 2. Flagship workspace JAVA-MS-2026 with Passkeys JAVA2026 & SE1819JAVA.
- * 3. Full published 6-module Coursera Java Microservices course (18 lessons, 60 quiz questions, 6 essays).
+ *    with valid BCrypt password hashes, plus repairing legacy placeholder hashes.
+ * 2. Flagship workspace JAVA-MS-2026 with Lecturer/Student memberships.
+ * 3. Active passkeys JAVA2026 & SE1819JAVA.
+ * 4. Full published 6-module Coursera Java Microservices course (18 lessons, 60 quizzes, 6 essays, 6 labs).
  */
 @Component
 @ConditionalOnProperty(name = "mavis.seed.java-coursera.enabled", havingValue = "true", matchIfMissing = true)
@@ -54,24 +58,100 @@ public class JavaCourseMasterSeeder implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) {
+        bootstrapJavaCourseraWorkspace(null);
+    }
+
+    public Workspace bootstrapJavaCourseraWorkspace() {
+        return bootstrapJavaCourseraWorkspace(null);
+    }
+
+    public Workspace bootstrapJavaCourseraWorkspace(User caller) {
+        // Phase 0: Self-healing schema guard
+        ensureSchemaReady();
+
+        // Phase 1: 3 Core Role Accounts + legacy hash repair
+        User gvJava = ensureThreeRoleAccounts();
+        if (gvJava == null) {
+            log.warn("JavaCourseMasterSeeder phase 1 aborted: LECTURER/STUDENT/SYSTEM_ADMIN roles or gv.java user unavailable");
+            return caller != null ? workspaces.findByCode(JavaCourseraCatalog.COURSE_CODE).orElse(null) : null;
+        }
+
+        // Phase 2: Flagship workspace JAVA-MS-2026 & memberships
+        Workspace workspace = ensureJavaWorkspaceAndMembers(gvJava, caller);
+        if (workspace == null) {
+            return null;
+        }
+
+        // Phase 3: Active Passkeys JAVA2026 & SE1819JAVA
+        ensureJavaPasskeys(workspace.getId());
+
+        // Phase 4: Curated 6-Module Coursera course, outline, 18 theory assets & publish
+        User ownerForSeed = caller != null ? caller : gvJava;
+        ensureCuratedCourseAndOutline(workspace.getId(), ownerForSeed);
+
+        return workspaces.findById(workspace.getId()).orElse(workspace);
+    }
+
+    private void ensureSchemaReady() {
+        try {
+            jdbc.execute("ALTER TABLE course_passkeys ADD COLUMN IF NOT EXISTS id UUID");
+            jdbc.execute("ALTER TABLE course_passkeys ADD COLUMN IF NOT EXISTS code VARCHAR(32)");
+            jdbc.execute("ALTER TABLE course_passkeys ADD COLUMN IF NOT EXISTS label VARCHAR(120) NOT NULL DEFAULT 'Class Passkey'");
+            jdbc.execute("ALTER TABLE course_passkeys ADD COLUMN IF NOT EXISTS max_uses INTEGER");
+            jdbc.execute("ALTER TABLE course_passkeys ADD COLUMN IF NOT EXISTS used_count INTEGER NOT NULL DEFAULT 0");
+            jdbc.execute("ALTER TABLE course_passkeys ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE");
+            jdbc.execute("ALTER TABLE course_passkeys ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now()");
+            jdbc.execute("""
+                    CREATE TABLE IF NOT EXISTS course_item_submissions (
+                        id UUID PRIMARY KEY,
+                        workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+                        course_item_id UUID NOT NULL REFERENCES course_items(id) ON DELETE CASCADE,
+                        student_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        answer_markdown TEXT NOT NULL,
+                        status VARCHAR(24) NOT NULL DEFAULT 'SUBMITTED',
+                        score INTEGER,
+                        feedback TEXT,
+                        graded_by UUID REFERENCES users(id) ON DELETE SET NULL,
+                        submitted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                        graded_at TIMESTAMPTZ,
+                        CONSTRAINT uq_course_item_student_submission UNIQUE (course_item_id, student_id)
+                    )
+                    """);
+            log.info("JavaCourseMasterSeeder Phase 0 complete: schema self-heal verified");
+        } catch (Exception ex) {
+            log.warn("JavaCourseMasterSeeder Phase 0 skipped/partial schema check: {}", ex.getMessage());
+        }
+    }
+
+    private User ensureThreeRoleAccounts() {
         try {
             Role lecturerRole = roles.findByCode("LECTURER").orElse(null);
             Role studentRole = roles.findByCode("STUDENT").orElse(null);
             Role adminRole = roles.findByCode("SYSTEM_ADMIN").orElse(null);
             if (lecturerRole == null || studentRole == null || adminRole == null) {
-                return;
+                log.warn("JavaCourseMasterSeeder Phase 1 skipped: core roles missing in DB");
+                return null;
             }
-
             User gvJava = ensureUser(LECTURER_EMAIL, DEFAULT_PASSWORD,
                     "Thầy Hoàng · Giảng Viên Java Microservices", lecturerRole);
-            User svJava = ensureUser(STUDENT_EMAIL, DEFAULT_PASSWORD,
+            ensureUser(STUDENT_EMAIL, DEFAULT_PASSWORD,
                     "Lê Minh Triết · Sinh Viên SE181979", studentRole);
             ensureUser(ADMIN_EMAIL, ADMIN_PASSWORD,
                     "Quản Trị Viên Hệ Thống MAVIS", adminRole);
 
             repairPlaceholderHash("hoangnt@fpt.edu.vn", DEFAULT_PASSWORD);
             repairPlaceholderHash("trietlmse181979@fpt.edu.vn", DEFAULT_PASSWORD);
+            log.info("JavaCourseMasterSeeder Phase 1 complete: seeded 3 role accounts ({}, {}, {})",
+                    LECTURER_EMAIL, STUDENT_EMAIL, ADMIN_EMAIL);
+            return gvJava;
+        } catch (Exception ex) {
+            log.warn("JavaCourseMasterSeeder Phase 1 failed to seed accounts: {}", ex.getMessage(), ex);
+            return users.findByEmail(LECTURER_EMAIL).orElse(null);
+        }
+    }
 
+    private Workspace ensureJavaWorkspaceAndMembers(User gvJava, User caller) {
+        try {
             Workspace workspace = workspaces.findByCode(JavaCourseraCatalog.COURSE_CODE)
                     .orElseGet(() -> workspaces.saveAndFlush(Workspace.builder()
                             .code(JavaCourseraCatalog.COURSE_CODE)
@@ -83,42 +163,73 @@ public class JavaCourseMasterSeeder implements ApplicationRunner {
                             .maxStudents(200)
                             .build()));
 
-            if (!workspace.isCourseMode()) {
+            if (!workspace.isCourseMode() || !"ACTIVE".equalsIgnoreCase(workspace.getStatus())) {
                 workspace.setCourseMode(true);
+                workspace.setStatus("ACTIVE");
                 workspace.setMaxStudents(200);
-                workspaces.saveAndFlush(workspace);
+                workspace = workspaces.saveAndFlush(workspace);
             }
 
             ensureMember(workspace.getId(), gvJava.getId(), "LECTURER");
-            ensureMember(workspace.getId(), svJava.getId(), "STUDENT");
+            if (caller != null && !caller.getId().equals(gvJava.getId())) {
+                ensureMember(workspace.getId(), caller.getId(), "LECTURER");
+            }
+            users.findByEmail(STUDENT_EMAIL)
+                    .ifPresent(u -> ensureMember(workspace.getId(), u.getId(), "STUDENT"));
             users.findByEmail("hoangnt@fpt.edu.vn")
                     .ifPresent(u -> ensureMember(workspace.getId(), u.getId(), "LECTURER"));
             users.findByEmail("trietlmse181979@fpt.edu.vn")
                     .ifPresent(u -> ensureMember(workspace.getId(), u.getId(), "STUDENT"));
 
-            ensurePasskey(workspace.getId(), PASSKEY_MAIN,
-                    "Mã vào lớp Java Microservices Chính Thức", 365 * 24, 200);
-            ensurePasskey(workspace.getId(), PASSKEY_BACKUP,
-                    "Mã dự phòng cho sinh viên thực hành Lab", 180 * 24, 100);
+            log.info("JavaCourseMasterSeeder Phase 2 complete: workspace {} ({}) ready",
+                    JavaCourseraCatalog.COURSE_CODE, workspace.getId());
+            return workspace;
+        } catch (Exception ex) {
+            log.warn("JavaCourseMasterSeeder Phase 2 failed for workspace {}: {}",
+                    JavaCourseraCatalog.COURSE_CODE, ex.getMessage(), ex);
+            return workspaces.findByCode(JavaCourseraCatalog.COURSE_CODE).orElse(null);
+        }
+    }
 
+    private void ensureJavaPasskeys(UUID workspaceId) {
+        try {
+            ensurePasskey(workspaceId, PASSKEY_MAIN,
+                    "Mã vào lớp Java Microservices Chính Thức", 365 * 24, 200);
+            ensurePasskey(workspaceId, PASSKEY_BACKUP,
+                    "Mã dự phòng cho sinh viên thực hành Lab", 180 * 24, 100);
+            log.info("JavaCourseMasterSeeder Phase 3 complete: passkeys {} & {} active",
+                    PASSKEY_MAIN, PASSKEY_BACKUP);
+        } catch (Exception ex) {
+            log.warn("JavaCourseMasterSeeder Phase 3 failed to ensure passkeys: {}", ex.getMessage(), ex);
+        }
+    }
+
+    private void ensureCuratedCourseAndOutline(UUID workspaceId, User actor) {
+        Authentication previous = SecurityContextHolder.getContext().getAuthentication();
+        try {
             var auth = new UsernamePasswordAuthenticationToken(
-                    gvJava.getId().toString(), null, List.of(new SimpleGrantedAuthority("ROLE_LECTURER")));
+                    actor.getId().toString(), null, List.of(new SimpleGrantedAuthority("ROLE_LECTURER")));
             SecurityContextHolder.getContext().setAuthentication(auth);
-            try {
-                seeder.seedCurated(workspace.getId(), CourseLabSeederService.PRESET_JAVA_COURSERA);
-            } finally {
+            seeder.seedCurated(workspaceId, CourseLabSeederService.PRESET_JAVA_COURSERA);
+            log.info("JavaCourseMasterSeeder Phase 4 complete: Java Coursera 6-module outline & labs ready for {}", workspaceId);
+        } catch (Exception ex) {
+            log.warn("JavaCourseMasterSeeder Phase 4 failed to seed 6-module curriculum for {}: {}",
+                    workspaceId, ex.getMessage(), ex);
+        } finally {
+            if (previous != null) {
+                SecurityContextHolder.getContext().setAuthentication(previous);
+            } else {
                 SecurityContextHolder.clearContext();
             }
-            log.info("JavaCourseMasterSeeder ready: workspace={} passkey={}", JavaCourseraCatalog.COURSE_CODE, PASSKEY_MAIN);
-        } catch (Exception ex) {
-            log.debug("Skipped JavaCourseMasterSeeder initialization: {}", ex.getMessage());
         }
     }
 
     private User ensureUser(String email, String rawPassword, String fullName, Role role) {
         return users.findByEmail(email).map(existing -> {
             if (!"ACTIVE".equalsIgnoreCase(existing.getStatus())
-                    || (existing.getPasswordHash() != null && existing.getPasswordHash().contains("hashed_pwd"))) {
+                    || (existing.getPasswordHash() != null
+                    && (existing.getPasswordHash().contains("hashed_pwd")
+                    || existing.getPasswordHash().contains("YourHashedPasswordHere")))) {
                 existing.setStatus("ACTIVE");
                 existing.setPasswordHash(passwordEncoder.encode(rawPassword));
                 existing.setPreferredLocale("vi");
@@ -137,7 +248,9 @@ public class JavaCourseMasterSeeder implements ApplicationRunner {
 
     private void repairPlaceholderHash(String email, String rawPassword) {
         users.findByEmail(email).ifPresent(user -> {
-            if (user.getPasswordHash() != null && user.getPasswordHash().contains("hashed_pwd")) {
+            if (user.getPasswordHash() != null
+                    && (user.getPasswordHash().contains("hashed_pwd")
+                    || user.getPasswordHash().contains("YourHashedPasswordHere"))) {
                 user.setPasswordHash(passwordEncoder.encode(rawPassword));
                 user.setStatus("ACTIVE");
                 users.saveAndFlush(user);
@@ -151,6 +264,7 @@ public class JavaCourseMasterSeeder implements ApplicationRunner {
                 VALUES (?, ?, ?)
                 ON CONFLICT (workspace_id, user_id) DO NOTHING
                 """, workspaceId, userId, role);
+        AuthorizationRequestCache.evictMembership(workspaceId, userId);
     }
 
     private void ensurePasskey(UUID workspaceId, String code, String label, int validHours, int maxUses) {
@@ -158,6 +272,12 @@ public class JavaCourseMasterSeeder implements ApplicationRunner {
         List<UUID> existing = jdbc.queryForList(
                 "SELECT id FROM course_passkeys WHERE digest = ?", UUID.class, digest);
         if (!existing.isEmpty()) {
+            jdbc.update("""
+                    UPDATE course_passkeys
+                    SET is_active = TRUE, revoked_at = NULL,
+                        expires_at = GREATEST(expires_at, ?)
+                    WHERE id = ?
+                    """, OffsetDateTime.now().plusHours(validHours), existing.getFirst());
             return;
         }
         OffsetDateTime now = OffsetDateTime.now();
