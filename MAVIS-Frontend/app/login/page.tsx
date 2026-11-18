@@ -58,11 +58,13 @@ export default function LoginPage() {
       submitting.current = false;
     }
   }
-  async function signIn() {
+  async function signInWith(targetEmail: string, targetPassword: string) {
     if (submitting.current) return;
+    setEmail(targetEmail);
+    setPassword(targetPassword);
     submitting.current = true;
     try {
-      const session = await real.mutateAsync({ email: email.trim(), password });
+      const session = await real.mutateAsync({ email: targetEmail.trim(), password: targetPassword });
       setPassword("");
       await finish(session);
     } catch {
@@ -70,6 +72,9 @@ export default function LoginPage() {
     } finally {
       submitting.current = false;
     }
+  }
+  async function signIn() {
+    await signInWith(email, password);
   }
   return (
     <div className="relative isolate flex min-h-svh flex-col bg-background text-foreground">
@@ -183,20 +188,38 @@ export default function LoginPage() {
             </div>
           )}
           {api.mode === "mock" ? (
-            <div className="space-y-5">
+            <div className="space-y-4">
               <p className="rounded-lg border bg-muted/50 p-3 text-sm text-muted-foreground">
-                Sample preview · choose a role. No live account is used.
+                Sample preview · chọn nhanh 1 trong 3 tài khoản mẫu (1-Click):
               </p>
-              <div className="grid grid-cols-3 gap-2">
-                {(["student", "lecturer", "admin"] as const).map((role) => (
+              <div className="grid gap-2">
+                {([
+                  {
+                    role: "lecturer" as const,
+                    label: "👨‍🏫 Giảng viên Java · gv.java@mavis.edu.vn",
+                    hint: "Sở hữu môn JAVA-MS-2026 (6 Chương · Quiz · Tự luận · Passkey JAVA2026)",
+                  },
+                  {
+                    role: "student" as const,
+                    label: "🎓 Sinh viên Java · sv.java@mavis.edu.vn",
+                    hint: "Đã ghi danh JAVA-MS-2026 · Học tuần tự 6 Chương",
+                  },
+                  {
+                    role: "admin" as const,
+                    label: "🛡️ Quản trị viên · admin@mavis.edu.vn",
+                    hint: "Quản lý tài khoản, phân quyền & cấu hình hệ thống",
+                  },
+                ]).map((item) => (
                   <Button
-                    key={role}
+                    key={item.role}
+                    type="button"
                     variant="outline"
-                    className="capitalize"
+                    className="h-auto flex-col items-start gap-0.5 px-3 py-2.5 text-left"
                     disabled={login.isPending}
-                    onClick={() => void sample(role)}
+                    onClick={() => void sample(item.role)}
                   >
-                    {role}
+                    <span className="font-semibold text-foreground">{item.label}</span>
+                    <span className="text-[11px] font-normal text-muted-foreground">{item.hint}</span>
                   </Button>
                 ))}
               </div>
@@ -297,49 +320,72 @@ export default function LoginPage() {
                   "Sử dụng tài khoản đã xác minh được cung cấp cho không gian làm việc của bạn.",
                 )}
               </p>
-              <details className="rounded-xl border border-teal-200/80 bg-teal-50/40 p-3 text-xs dark:border-teal-900 dark:bg-teal-950/20">
-                <summary className="cursor-pointer font-semibold text-teal-900 dark:text-teal-200">
-                  🔑 Tài khoản Demo Seed sẵn (Java Microservices + Passkey JAVA2026)
-                </summary>
-                <div className="mt-2.5 grid gap-1.5">
-                  <button
-                    type="button"
-                    className="flex items-center justify-between rounded-lg border bg-background px-2.5 py-1.5 text-left hover:border-teal-400"
-                    onClick={() => {
-                      setEmail("gv.java@mavis.edu.vn");
-                      setPassword("Java@123456");
-                    }}
-                  >
-                    <span className="font-medium">👨‍🏫 Giảng viên Java: gv.java@mavis.edu.vn</span>
-                    <span className="font-mono text-[11px] text-teal-700 dark:text-teal-300">Điền nhanh</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="flex items-center justify-between rounded-lg border bg-background px-2.5 py-1.5 text-left hover:border-teal-400"
-                    onClick={() => {
-                      setEmail("sv.java@mavis.edu.vn");
-                      setPassword("Java@123456");
-                    }}
-                  >
-                    <span className="font-medium">🎓 Sinh viên Java: sv.java@mavis.edu.vn</span>
-                    <span className="font-mono text-[11px] text-teal-700 dark:text-teal-300">Điền nhanh</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="flex items-center justify-between rounded-lg border bg-background px-2.5 py-1.5 text-left hover:border-teal-400"
-                    onClick={() => {
-                      setEmail("admin@mavis.edu.vn");
-                      setPassword("Admin@123456");
-                    }}
-                  >
-                    <span className="font-medium">🛡️ System Admin: admin@mavis.edu.vn</span>
-                    <span className="font-mono text-[11px] text-teal-700 dark:text-teal-300">Điền nhanh</span>
-                  </button>
-                  <p className="pt-1 text-[11px] text-muted-foreground">
-                    Mã vào lớp học (Passkey): <code className="font-mono font-bold text-teal-800 dark:text-teal-300">JAVA2026</code>
+              <section
+                aria-label="1-Click Demo Login Accounts"
+                className="rounded-xl border border-teal-300/80 bg-teal-50/50 p-3.5 text-xs dark:border-teal-800 dark:bg-teal-950/30"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="font-semibold text-teal-950 dark:text-teal-100">
+                    ⚡ Đăng Nhập Nhanh 3 Tài Khoản Seed Sẵn (1-Click Test Login)
                   </p>
                 </div>
-              </details>
+                <div className="mt-2.5 grid gap-2">
+                  <button
+                    type="button"
+                    disabled={real.isPending}
+                    className="flex flex-col gap-0.5 rounded-lg border border-teal-200 bg-background px-3 py-2 text-left transition-colors hover:border-teal-500 hover:bg-teal-50/40 disabled:opacity-60 dark:border-teal-900"
+                    onClick={() => void signInWith("gv.java@mavis.edu.vn", "Java@123456")}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-foreground">
+                        👨‍🏫 Giảng viên Java · gv.java@mavis.edu.vn
+                      </span>
+                      <span className="rounded bg-teal-600 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-white">
+                        1-Click
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-muted-foreground">
+                      Sở hữu sẵn môn JAVA-MS-2026 (6 Chương · Quiz · Tự luận · Passkey JAVA2026) · MK: Java@123456
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={real.isPending}
+                    className="flex flex-col gap-0.5 rounded-lg border border-indigo-200 bg-background px-3 py-2 text-left transition-colors hover:border-indigo-500 hover:bg-indigo-50/40 disabled:opacity-60 dark:border-indigo-900"
+                    onClick={() => void signInWith("sv.java@mavis.edu.vn", "Java@123456")}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-foreground">
+                        🎓 Sinh viên Java · sv.java@mavis.edu.vn
+                      </span>
+                      <span className="rounded bg-indigo-600 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-white">
+                        1-Click
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-muted-foreground">
+                      Đã ghi danh môn JAVA-MS-2026 · Học tuần tự 6 Chương · MK: Java@123456
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={real.isPending}
+                    className="flex flex-col gap-0.5 rounded-lg border border-slate-200 bg-background px-3 py-2 text-left transition-colors hover:border-slate-400 hover:bg-muted/40 disabled:opacity-60 dark:border-slate-800"
+                    onClick={() => void signInWith("admin@mavis.edu.vn", "Admin@123456")}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-foreground">
+                        🛡️ Quản trị viên · admin@mavis.edu.vn
+                      </span>
+                      <span className="rounded bg-slate-700 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-white">
+                        1-Click
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-muted-foreground">
+                      Quản lý tài khoản, phân quyền &amp; cấu hình hệ thống · MK: Admin@123456
+                    </span>
+                  </button>
+                </div>
+              </section>
             </form>
           )}
           {api.mode === "backend" && (
