@@ -41,6 +41,7 @@ import { Badge } from "@/components/ui/badge";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { getRuleName } from "@/features/architecture/three-e-content";
 import { ArchitectureGraph, ElementDetailsPanel } from "@/features/architecture/components";
+import { ArchitectureDiagrams } from "@/features/architecture/architecture-diagrams";
 import { DiagramPreview } from "@/features/architecture/diagram-preview";
 import { LiveStudioWorkbench } from "@/features/runtime/live-studio-workbench";
 import type { ArchitecturalModel } from "@/types/domain";
@@ -193,7 +194,19 @@ function synthesizeFallbackMermaid(
 ): string | null {
   if (!model || model.elements.length === 0) return null;
   const filtered =
-    view === "CONTAINER"
+    view === "CONTEXT"
+      ? model.elements.filter(
+          (e) =>
+            !e.parentId &&
+            [
+              "PERSON",
+              "EXTERNAL_SYSTEM",
+              "FRONTEND_APP",
+              "API_GATEWAY",
+              "SERVICE_CONTAINER",
+            ].includes(e.elementType ?? ""),
+        )
+      : view === "CONTAINER"
       ? model.elements.filter(
           (e) =>
             !e.parentId ||
@@ -207,16 +220,16 @@ function synthesizeFallbackMermaid(
             ].includes(e.elementType ?? ""),
         )
       : model.elements;
-  const visible = filtered.length > 0 ? filtered.slice(0, 24) : model.elements.slice(0, 24);
+  const visible = filtered.length > 0 ? filtered.slice(0, 18) : model.elements.slice(0, 18);
   const visibleIds = new Set(visible.map((e) => e.id));
-  const lines = ["flowchart LR"];
+  const lines = ["flowchart TB"];
   for (const el of visible) {
     const safeLabel = el.name.replace(/"/g, "'");
     lines.push(`  n_${sanitizeMermaidId(el.id)}["${safeLabel}"]`);
   }
   for (const edge of model.edges) {
     if (visibleIds.has(edge.from) && visibleIds.has(edge.to)) {
-      const proto = edge.protocol.replace(/"/g, "'");
+      const proto = edge.protocol.replace(/"/g, "'").replace(/_/g, " ");
       lines.push(
         `  n_${sanitizeMermaidId(edge.from)} -->|${proto}| n_${sanitizeMermaidId(edge.to)}`,
       );
@@ -774,12 +787,12 @@ export function LabWorkspace() {
     >
       {workspace && lab && (
         <div className="space-y-5">
-          <header className="mavis-hero-surface p-5">
+          <header className="mavis-hero-surface p-5 text-white">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="min-w-0 space-y-2">
-                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-sky-100/90">
                   <Link
-                    className="inline-flex items-center gap-1 rounded-md border bg-background/80 px-2.5 py-1 font-medium text-foreground transition-colors hover:border-primary/40 hover:text-primary"
+                    className="inline-flex items-center gap-1 rounded-md border border-white/25 bg-white/12 px-2.5 py-1 font-medium text-white transition-colors hover:bg-white/20"
                     href={`/roadmap?workspace=${encodeURIComponent(workspaceId)}`}
                   >
                     ← {t("Back to Course Syllabus", "Quay lại Lộ trình môn học")}
@@ -796,23 +809,27 @@ export function LabWorkspace() {
                   )}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+                  <h1 className="text-xl font-bold tracking-tight text-white sm:text-2xl">
                     {lab.title}
                   </h1>
                   <Badge
                     variant="outline"
-                    className="border-primary/25 bg-primary/10 font-mono text-xs text-primary"
+                    className="border-white/25 bg-white/15 font-mono text-xs text-white"
                   >
                     {t("Class", "Lớp")} {workspace.code || "—"}
                   </Badge>
-                  <Badge variant="secondary">
+                  <Badge className="border-teal-300/30 bg-teal-400/20 text-teal-50">
                     {requiresRuntime
                       ? t("2D Studio Practice Lab", "Lab Thực Hành 2D Studio")
                       : t("Theory & Quiz Lab", "Lab Lý Thuyết & Quiz")}
                   </Badge>
                   {preview && <Badge variant="warning">{t("Preview", "Xem trước")}</Badge>}
                   {readiness.map((gate) => (
-                    <Badge key={gate.label} variant="outline" className="text-[11px] font-normal">
+                    <Badge
+                      key={gate.label}
+                      variant="outline"
+                      className="border-white/20 bg-white/10 text-[11px] font-normal text-sky-100"
+                    >
                       {gate.label}: {gate.state}
                     </Badge>
                   ))}
@@ -836,7 +853,7 @@ export function LabWorkspace() {
                         );
                       }
                     }}
-                    className="h-8 max-w-56 rounded-lg border bg-background px-2.5 text-xs text-foreground outline-none hover:border-primary/40"
+                    className="h-8 max-w-56 rounded-lg border border-white/25 bg-white/12 px-2.5 text-xs text-white outline-none hover:bg-white/20"
                   >
                     {(roadmap.data?.labs ?? []).map((item) => {
                       const icon =
@@ -846,6 +863,7 @@ export function LabWorkspace() {
                           key={item.assignmentId}
                           value={item.assignmentId}
                           disabled={item.state === "LOCKED" && !preview}
+                          className="bg-slate-900 text-white"
                         >
                           {icon} Lab {item.position}: {item.title}
                         </option>
@@ -853,7 +871,12 @@ export function LabWorkspace() {
                     })}
                   </select>
                 )}
-                <Button asChild variant="outline" size="sm">
+                <Button
+                  asChild
+                  variant="outline"
+                  size="sm"
+                  className="border-white/30 bg-white/12 text-white hover:bg-white/20 hover:text-white"
+                >
                   <Link
                     href={`/submissions?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(lab.id)}`}
                   >
@@ -861,7 +884,12 @@ export function LabWorkspace() {
                   </Link>
                 </Button>
                 {isLecturer && (
-                  <Button asChild size="sm" variant="outline">
+                  <Button
+                    asChild
+                    size="sm"
+                    variant="outline"
+                    className="border-white/30 bg-white/12 text-white hover:bg-white/20 hover:text-white"
+                  >
                     <Link
                       href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignmentId)}&step=${displayedStep}${preview ? "&preview=0" : "&preview=1"}`}
                     >
@@ -872,7 +900,7 @@ export function LabWorkspace() {
                   </Button>
                 )}
                 {isLecturer && (
-                  <Button asChild size="sm">
+                  <Button asChild size="sm" className="bg-white text-slate-950 hover:bg-sky-50">
                     <Link
                       href={`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(lab.id)}`}
                     >
@@ -885,7 +913,7 @@ export function LabWorkspace() {
             {preview && (
               <p
                 role="status"
-                className="mt-3 rounded-md border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-xs leading-5 text-amber-800 dark:text-amber-200"
+                className="mt-3 rounded-md border border-amber-300/40 bg-amber-500/20 px-3 py-2 text-xs leading-5 text-amber-100"
               >
                 {t(
                   "Preview mode is read-only. Quiz attempts, runtime sessions and submissions are not created.",
@@ -1386,7 +1414,22 @@ function StepContent({
             </div>
 
             {inlineC4View !== "GRAPH" ? (
-              activeDiagramMermaid ? (
+              activeModel && activeModel.elements.length > 0 ? (
+                <div className="space-y-4">
+                  <ArchitectureDiagrams
+                    model={activeModel}
+                    guidedStatic
+                    controlledKind={inlineC4View}
+                    hideKindSelector
+                    systemName={labTitle}
+                    selectedId={selectedGraphId}
+                    onSelect={setSelectedGraphId}
+                  />
+                  {selectedGraphId && (
+                    <ElementDetailsPanel model={activeModel} selectedId={selectedGraphId} />
+                  )}
+                </div>
+              ) : activeDiagramMermaid ? (
                 <DiagramPreview
                   title={`C4 ${inlineC4View}`}
                   content={activeDiagramMermaid}

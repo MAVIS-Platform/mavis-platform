@@ -86,8 +86,12 @@ test("CourseQuiz aligns Step 4 unlock copy consistently with no Step 3 CTA contr
   );
 });
 
-test("Mermaid diagram-renderer configures both C4 and Flowchart spacing with UpdateLayoutConfig", () => {
+test("LabWorkspace uses zero-overlap ELK/MxGraph ArchitectureDiagrams for C1-C3 and preserves Mermaid spacing fallback", () => {
+  const screens = read("src/features/courses/screens.tsx");
+  const diagrams = read("src/features/architecture/architecture-diagrams.tsx");
   const renderer = read("src/features/architecture/diagram-renderer.ts");
+  assert.match(screens, /<ArchitectureDiagrams[\s\S]*guidedStatic[\s\S]*controlledKind=\{inlineC4View\}[\s\S]*hideKindSelector/);
+  assert.match(diagrams, /controlledKind\?: DiagramKind/);
   assert.match(renderer, /c4:\s*\{[\s\S]*c4ShapeMargin:\s*64[\s\S]*c4ShapePadding:\s*24/);
   assert.match(renderer, /flowchart:\s*\{[\s\S]*nodeSpacing:\s*64[\s\S]*rankSpacing:\s*84/);
   assert.match(renderer, /UpdateLayoutConfig\(\$c4ShapeInRow="3", \$c4BoundaryInRow="1"\)/);

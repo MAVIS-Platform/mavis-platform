@@ -259,26 +259,26 @@ export function StudentCourseSyllabus({
 
   return (
     <div className="space-y-6">
-      <section className="mavis-hero-surface p-6">
+      <section className="mavis-hero-surface p-6 text-white">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="max-w-2xl space-y-2">
             <div className="flex flex-wrap items-center gap-2">
               <Badge
                 variant="outline"
-                className="border-primary/25 bg-primary/10 font-mono text-xs text-primary"
+                className="border-white/25 bg-white/15 font-mono text-xs text-white"
               >
                 {workspace.code || t("CLASS", "LỚP")}
               </Badge>
-              <span className="mavis-tabular text-xs font-medium text-muted-foreground">
+              <span className="mavis-tabular text-xs font-medium text-sky-100">
                 {summary.totalLabs > 0
                   ? `${summary.completedLabs}/${summary.totalLabs} ${t("completed", "bài đã xong")} (${summary.completionPercent}%)`
                   : t("Course Workspace", "Lớp học MAVIS")}
               </span>
             </div>
-            <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+            <h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
               {workspace.name}
             </h1>
-            <p className="text-sm leading-6 text-muted-foreground">
+            <p className="text-sm leading-6 text-sky-100/90">
               {t(
                 "Pick any unlocked Lab from the left syllabus tree to read the lesson, test impact analysis, pass the Quiz Gate, and practice on MAVIS Studio Live.",
                 "Chọn bài học ở cây mục lục bên trái để học tuần tự 4 bước: Lý thuyết C1–C3, Lan truyền lỗi BFS, Quiz mở khóa và Thực hành MAVIS Studio Live.",
@@ -287,14 +287,18 @@ export function StudentCourseSyllabus({
           </div>
           <div className="flex flex-wrap items-center gap-2.5">
             {resumeLabHref && (
-              <Button asChild>
+              <Button asChild className="bg-white text-slate-950 shadow-sm hover:bg-sky-50">
                 <Link href={resumeLabHref}>
-                  <Play className="mr-1.5 h-4 w-4 fill-current" aria-hidden="true" />
+                  <Play className="mr-1.5 h-4 w-4 fill-current text-blue-700" aria-hidden="true" />
                   {t("Resume Current Lesson", "Học Tiếp Bài Hiện Tại")}
                 </Link>
               </Button>
             )}
-            <Button asChild variant="outline">
+            <Button
+              asChild
+              variant="outline"
+              className="border-white/30 bg-white/12 text-white hover:bg-white/20 hover:text-white"
+            >
               <Link href="/courses">← {t("Back to courses", "Quay lại khóa học")}</Link>
             </Button>
           </div>
@@ -302,9 +306,9 @@ export function StudentCourseSyllabus({
 
         {summary.totalLabs > 0 && (
           <div className="mt-5 max-w-lg space-y-1.5">
-            <div className="flex justify-between text-xs text-muted-foreground">
+            <div className="flex justify-between text-xs text-sky-100">
               <span>{t("Course Syllabus Progress", "Tiến Độ Hoàn Thành Khóa Học")}</span>
-              <span className="mavis-tabular font-semibold text-primary">
+              <span className="mavis-tabular font-semibold text-white">
                 {summary.completedLabs}/{summary.totalLabs} · {summary.completionPercent}%
               </span>
             </div>
@@ -314,10 +318,10 @@ export function StudentCourseSyllabus({
               aria-valuemin={0}
               aria-valuemax={summary.totalLabs}
               aria-valuenow={summary.completedLabs}
-              className="h-2 overflow-hidden rounded-full bg-muted"
+              className="h-2 overflow-hidden rounded-full bg-white/20"
             >
               <div
-                className="h-full rounded-full bg-gradient-to-r from-primary to-emerald-500 transition-[width]"
+                className="h-full rounded-full bg-gradient-to-r from-sky-300 to-emerald-300 transition-[width]"
                 style={{ width: `${summary.completionPercent}%` }}
               />
             </div>

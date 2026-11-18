@@ -55,6 +55,8 @@ export function ArchitectureDiagrams({
   onSelectSequence,
   systemName,
   guidedStatic = false,
+  controlledKind,
+  hideKindSelector = false,
 }: {
   model: ArchitecturalModel;
   selectedId: string | null;
@@ -63,12 +65,14 @@ export function ArchitectureDiagrams({
     ((id: string | null, seqCtx: SequenceSelectionContext | null) => void) | undefined;
   systemName?: string | undefined;
   guidedStatic?: boolean;
+  controlledKind?: DiagramKind | undefined;
+  hideKindSelector?: boolean;
 }) {
   const { locale, t } = useLocale();
   const searchParams = useSearchParams();
   const requestedKindParam = searchParams.get("kind");
   const resolveKind = guidedStatic ? resolveGuidedDiagramKind : resolveDiagramKind;
-  const initialKind = resolveKind(requestedKindParam);
+  const initialKind = controlledKind ?? resolveKind(requestedKindParam);
   const [kind, setKind] = useState<DiagramKind>(initialKind),
     [service, setService] = useState(""),
     [theme, setTheme] = useState<DrawioTheme>("clean"),
@@ -99,8 +103,8 @@ export function ArchitectureDiagrams({
     "UML_STATE",
   ].includes(kind);
   useEffect(() => {
-    setKind(resolveKind(requestedKindParam));
-  }, [requestedKindParam, resolveKind]);
+    setKind(controlledKind ?? resolveKind(requestedKindParam));
+  }, [controlledKind, requestedKindParam, resolveKind]);
 
   const isC4EnrichableKind =
     kind === "CONTAINER" || kind === "COMPONENT";
@@ -253,45 +257,49 @@ export function ArchitectureDiagrams({
   const showServiceScopeSelect = ["UML_CLASS", "UML_PACKAGE"].includes(kind);
   return (
     <section aria-label="Architecture diagrams" className="min-w-0 space-y-2.5">
-      <div data-tour="diagram-type-bar" className="flex flex-wrap items-end gap-3 rounded-xl border bg-card p-3">
-        <div className="w-full sm:w-64">
-          <SelectField
-            label={t("Diagram type", "Loại sơ đồ")}
-            value={kind}
-            onChange={(value) => change(value as DiagramKind)}
-            options={guidedStatic ? guidedDiagramOptions : diagramOptions}
-          />
-        </div>
-        {showServiceSelect && (
-          <div className="w-full sm:w-80">
-            <SelectField
-              label="Service"
-              value={container?.id ?? ""}
-              onChange={setService}
-              options={containers.map((node) => ({
-                value: node.id,
-                label: `${node.name}${node.count === 0 ? " · no components extracted" : ""}`,
-              }))}
-            />
-          </div>
-        )}
-        {showServiceScopeSelect && (
-          <div className="w-full sm:w-80">
-            <SelectField
-              label="Service"
-              value={kind === "UML_CLASS" ? service || container?.id || "ALL" : service || "ALL"}
-              onChange={setService}
-              options={[
-                { value: "ALL", label: "All services" },
-                ...containers.map((node) => ({
+      {(!hideKindSelector || showServiceSelect || showServiceScopeSelect) && (
+        <div data-tour="diagram-type-bar" className="flex flex-wrap items-end gap-3 rounded-xl border bg-card p-3">
+          {!hideKindSelector && (
+            <div className="w-full sm:w-64">
+              <SelectField
+                label={t("Diagram type", "Loại sơ đồ")}
+                value={kind}
+                onChange={(value) => change(value as DiagramKind)}
+                options={guidedStatic ? guidedDiagramOptions : diagramOptions}
+              />
+            </div>
+          )}
+          {showServiceSelect && (
+            <div className="w-full sm:w-80">
+              <SelectField
+                label={t("Service to inspect (C3 Component)", "Chọn Service để xem C3 Component")}
+                value={container?.id ?? ""}
+                onChange={setService}
+                options={containers.map((node) => ({
                   value: node.id,
-                  label: node.name,
-                })),
-              ]}
-            />
-          </div>
-        )}
-      </div>
+                  label: `${node.name}${node.count === 0 ? " · no components extracted" : ""}`,
+                }))}
+              />
+            </div>
+          )}
+          {showServiceScopeSelect && (
+            <div className="w-full sm:w-80">
+              <SelectField
+                label="Service"
+                value={kind === "UML_CLASS" ? service || container?.id || "ALL" : service || "ALL"}
+                onChange={setService}
+                options={[
+                  { value: "ALL", label: "All services" },
+                  ...containers.map((node) => ({
+                    value: node.id,
+                    label: node.name,
+                  })),
+                ]}
+              />
+            </div>
+          )}
+        </div>
+      )}
       {selection.notice && !isUmlWorkspaceKind && (
         <p
           role="status"

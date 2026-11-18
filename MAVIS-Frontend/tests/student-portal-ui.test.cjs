@@ -58,12 +58,7 @@ test("Student Courses & Syllabus portals use theme-adaptive mavis-hero-surface w
   const submissions = read("src/features/submissions/screens.tsx");
   const access = read("src/features/workspaces/course-access.tsx");
 
-  assert.match(dashboard, /mavis-hero-surface/);
-  assert.doesNotMatch(
-    dashboard,
-    /mavis-hero-surface[^"]*text-white/,
-    "Theme-adaptive mavis-hero-surface must use semantic text-foreground instead of hardcoded text-white",
-  );
+  assert.match(dashboard, /mavis-hero-surface[^"]*text-white/);
   assert.match(dashboard, /mavis-card-hover/);
   assert.match(dashboard, /mavis-tabular/);
   assert.doesNotMatch(
@@ -71,8 +66,7 @@ test("Student Courses & Syllabus portals use theme-adaptive mavis-hero-surface w
     /Free Studio Sandbox|Sandbox Studio Tự Do/,
     "Student /courses Hero must not display Free Studio Sandbox button",
   );
-  assert.match(syllabus, /mavis-hero-surface/);
-  assert.doesNotMatch(syllabus, /mavis-hero-surface[^"]*text-white/);
+  assert.match(syllabus, /mavis-hero-surface[^"]*text-white/);
   assert.match(submissions, /href=\{`\/roadmap\?workspace=\$\{encodeURIComponent\(workspace\.id\)\}`\}/);
   assert.match(access, /border-destructive\/30 bg-destructive\/10/);
   assert.match(access, /border-l-emerald-500/);

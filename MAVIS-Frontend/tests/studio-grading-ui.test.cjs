@@ -25,12 +25,7 @@ test("Studio Live & Studio Workbench inspector action buttons use 2x2 grid with 
 test("Teacher Dashboard uses unified mavis-hero-surface and links only to valid registered routes", () => {
   const dashboard = read("src/features/workspaces/teacher-dashboard.tsx");
   const workspacesScreens = read("src/features/workspaces/screens.tsx");
-  assert.match(dashboard, /mavis-hero-surface/);
-  assert.doesNotMatch(
-    dashboard,
-    /mavis-hero-surface[^"]*text-white/,
-    "Theme-adaptive mavis-hero-surface must use semantic text-foreground instead of hardcoded text-white",
-  );
+  assert.match(dashboard, /mavis-hero-surface[^"]*text-white/);
   assert.match(dashboard, /mavis-card-hover/);
   assert.match(dashboard, /mavis-tabular/);
   assert.doesNotMatch(dashboard, /from-indigo-950 via-indigo-700 to-purple-700/);

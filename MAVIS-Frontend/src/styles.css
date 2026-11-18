@@ -323,14 +323,16 @@
   .mavis-hero-surface {
     position: relative;
     overflow: hidden;
-    border: 1px solid var(--border);
+    border: 1px solid rgba(255, 255, 255, 0.14);
     border-radius: var(--radius-card);
-    background-color: var(--card);
+    background-color: #0b1933;
     background-image:
-      radial-gradient(640px 220px at 100% 0%, color-mix(in oklch, var(--primary) 12%, transparent), transparent 70%),
-      radial-gradient(color-mix(in oklch, var(--foreground) 8%, transparent) 1px, transparent 1px);
-    background-size: 100% 100%, 22px 22px;
-    box-shadow: var(--shadow-low);
+      radial-gradient(640px 260px at 96% 0%, rgba(20, 184, 166, 0.34), transparent 68%),
+      radial-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px),
+      linear-gradient(115deg, #0b1933 0%, #154087 52%, #0e7490 100%);
+    background-size: 100% 100%, 22px 22px, 100% 100%;
+    color: #f8fafc;
+    box-shadow: 0 12px 30px -18px rgba(11, 25, 51, 0.55);
   }
   .mavis-card-hover {
     transition: transform 150ms var(--ease-standard), border-color 150ms var(--ease-standard), box-shadow 150ms var(--ease-standard);
