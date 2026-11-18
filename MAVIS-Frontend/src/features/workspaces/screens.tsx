@@ -242,6 +242,12 @@ export function Workspaces() {
                         {pending > 0 ? pending + " " + t("to grade", "bài chờ chấm") : t("Up to date", "Đã cập nhật")}
                       </span>
                     )}
+                    <Link
+                      href={`/workspace-members?workspace=${encodeURIComponent(workspace.id)}`}
+                      className="inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 font-medium text-emerald-700 hover:bg-emerald-100"
+                    >
+                      🔑 {t("Passkey", "Passkey lớp")}
+                    </Link>
                   </div>
                   <div className="mt-auto grid grid-cols-2 gap-3 border-t pt-4">
                   <Button asChild className="bg-[#0056d2] text-white hover:bg-[#0046ad]"><Link href={workspaceUrl}>{t("Open class", "Mở lớp")}</Link></Button>
