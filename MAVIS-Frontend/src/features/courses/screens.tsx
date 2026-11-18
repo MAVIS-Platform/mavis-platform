@@ -1470,14 +1470,27 @@ function StepContent({
         <div className="space-y-5">
           {theoryItems && theoryItems.length > 0
             ? theoryItems.map((item) => (
-                <DetailPanel key={item.id} title={item.title}>
-                  <MarkdownPreview markdown={String(item.content?.["body"] ?? "")} />
-                </DetailPanel>
+                <article
+                  key={item.id}
+                  className="rounded-2xl border bg-card p-6 shadow-sm"
+                >
+                  <h3 className="mb-3 border-b pb-2.5 text-lg font-semibold tracking-tight">
+                    {item.title}
+                  </h3>
+                  <div className="prose prose-sm max-w-none dark:prose-invert">
+                    <MarkdownPreview markdown={String(item.content?.["body"] ?? "")} />
+                  </div>
+                </article>
               ))
             : labInstructions && (
-                <DetailPanel title={t("Lab Lesson & Instructions", "Bài học & Hướng dẫn Lab")}>
-                  <MarkdownPreview markdown={labInstructions} />
-                </DetailPanel>
+                <article className="rounded-2xl border bg-card p-6 shadow-sm">
+                  <h3 className="mb-3 border-b pb-2.5 text-lg font-semibold tracking-tight">
+                    {t("Lab Lesson & Instructions", "Bài học & Hướng dẫn Lab")}
+                  </h3>
+                  <div className="prose prose-sm max-w-none dark:prose-invert">
+                    <MarkdownPreview markdown={labInstructions} />
+                  </div>
+                </article>
               )}
 
           <div className="space-y-4 rounded-2xl border bg-card p-5">
@@ -1632,6 +1645,33 @@ function StepContent({
               allowRunEvaluation={!isStudent && Boolean(viewModelQuery)}
             />
           )}
+
+          <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-teal-200 bg-teal-50/70 p-5 dark:border-teal-800/60 dark:bg-teal-950/20">
+            <div className="space-y-1">
+              <p className="text-sm font-semibold text-teal-950 dark:text-teal-100">
+                {t(
+                  "Finished reading the Theory & C1–C3 Diagrams?",
+                  "Bạn đã nắm vững Lý thuyết & Kiến trúc C1–C3?",
+                )}
+              </p>
+              <p className="text-xs text-teal-900/80 dark:text-teal-300/80">
+                {t(
+                  "Proceed to trace upstream blast radius on the service graph in Step 2.",
+                  "Chuyển sang Bước 2 để thử nghiệm phân tích lan truyền lỗi trên đồ thị phụ thuộc.",
+                )}
+              </p>
+            </div>
+            <Button asChild className="bg-teal-600 text-white hover:bg-teal-700">
+              <Link
+                href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=2${previewParam}`}
+              >
+                {t(
+                  "Next Step 2: Reverse BFS Impact Simulator →",
+                  "Sang Bước 2: Thử Nghiệm Lan Truyền Lỗi (BFS) →",
+                )}
+              </Link>
+            </Button>
+          </div>
         </div>
       )}
 
