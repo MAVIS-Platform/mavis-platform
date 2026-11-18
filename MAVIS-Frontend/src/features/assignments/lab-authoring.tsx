@@ -5,7 +5,6 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import {
   Activity,
-  ArrowLeft,
   BookOpen,
   CheckCircle2,
   Circle,
@@ -135,101 +134,6 @@ export function LabAuthoring() {
     { id: "publish", done: Boolean(setupLab?.published), enabled: Boolean(assignment) },
   ];
 
-  const header = (
-    <header className="flex flex-wrap items-center justify-between gap-4 rounded-xl border bg-card px-5 py-4">
-      <div className="min-w-0 space-y-1">
-        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <Link
-            href={`/workspace-overview?workspace=${encodeURIComponent(workspaceId)}`}
-            className="inline-flex items-center gap-1 font-medium text-foreground hover:underline"
-          >
-            <ArrowLeft className="size-3.5" aria-hidden="true" />
-            {t("Back to Class Curriculum", "Quay lại Giáo trình lớp học")}
-          </Link>
-          <span>·</span>
-          <Link
-            href={`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&section=library`}
-            className="hover:text-foreground hover:underline"
-          >
-            {t("Back to Lab Library", "Về Kho Lab")}
-          </Link>
-          {assignment?.referenceSource?.revision ? (
-            <>
-              <span>·</span>
-              <span>
-                {t("Ref rev", "Rev tham chiếu")} {assignment.referenceSource.revision}
-              </span>
-            </>
-          ) : null}
-        </div>
-        <div className="flex flex-wrap items-center gap-2.5">
-          <h1 className="text-lg font-semibold tracking-tight sm:text-xl">
-            {assignment?.title ?? t("Create a new Lesson / Lab", "Tạo Bài Học / Lab Mới")}
-          </h1>
-          {assignment && (
-            <Badge variant={setupLab?.published ? "success" : "secondary"}>
-              {setupLab?.published ? t("Published", "Đã công bố") : t("Draft", "Bản nháp")}
-            </Badge>
-          )}
-        </div>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        {allLabs.length > 0 && (
-          <select
-            aria-label={t("Switch Lab", "Chuyển nhanh bài Lab")}
-            value={activeAssignmentId}
-            onChange={(event) => {
-              const nextId = event.target.value;
-              if (!nextId) return;
-              router.push(
-                `/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(nextId)}&tab=info`,
-              );
-            }}
-            className="h-8 max-w-[220px] rounded-md border bg-background px-2.5 text-xs font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-          >
-            <option value="">
-              {t("Switch Lab…", "Chuyển bài học…")}
-            </option>
-            {allLabs.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.title}
-              </option>
-            ))}
-          </select>
-        )}
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          onClick={() => {
-            setCreatedAssignmentId("");
-            setTab("info");
-            router.push(`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&tab=info`);
-          }}
-        >
-          <Plus className="mr-1 size-3.5" aria-hidden="true" />
-          {t("New Lab", "Tạo Lab mới")}
-        </Button>
-        {assignment && (
-          <Button asChild size="sm">
-            <Link
-              href={`/lab?${new URLSearchParams({
-                workspace: workspaceId,
-                assignment: assignment.id,
-                step: "1",
-                preview: "1",
-              })}`}
-            >
-              <Eye className="mr-1 size-3.5" aria-hidden="true" />
-              {t("Preview as student", "Xem trước như sinh viên")}
-            </Link>
-          </Button>
-        )}
-      </div>
-    </header>
-  );
-
   if (!workspaceId) {
     return (
       <p className="text-sm text-muted-foreground">{t("Select a class first.", "Hãy chọn lớp trước.")}</p>
@@ -244,7 +148,7 @@ export function LabAuthoring() {
         </p>
         <Button asChild className="mt-3" size="sm" variant="outline">
           <Link href={`/assignments?workspace=${encodeURIComponent(workspaceId)}`}>
-            {t("Open Lab Library", "Mở Kho Lab")}
+            {t("Back to Lab Library", "Về Kho Lab")}
           </Link>
         </Button>
       </section>
@@ -258,7 +162,6 @@ export function LabAuthoring() {
 
   const content = (
     <div className="space-y-4">
-      {header}
       <nav
         aria-label={t("Lab creation steps", "Các bước tạo Lab")}
         className="grid gap-1.5 rounded-xl border bg-card p-2 sm:grid-cols-3 lg:grid-cols-6"
@@ -367,29 +270,92 @@ export function LabAuthoring() {
     router.push("/lab-authoring?" + query.toString());
   };
   const hubContent = (
-    <div className="space-y-5">
-      <nav
-        aria-label={t("Lab workspace", "Không gian Lab")}
-        className="flex flex-wrap gap-2 rounded-xl border bg-card p-2"
-      >
-        {sectionItems.map((item) => {
-          const Icon = item.icon;
-          const active = section === item.id;
-          return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-2">
+        <nav
+          aria-label={t("Lab workspace", "Không gian Lab")}
+          className="flex flex-wrap items-center gap-1.5"
+        >
+          {sectionItems.map((item) => {
+            const Icon = item.icon;
+            const active = section === item.id;
+            return (
+              <Button
+                key={item.id}
+                type="button"
+                size="sm"
+                variant={active ? "default" : "ghost"}
+                aria-pressed={active}
+                onClick={() => changeSection(item.id)}
+              >
+                <Icon className="mr-1.5 size-4" aria-hidden="true" />
+                {t(item.en, item.vi)}
+              </Button>
+            );
+          })}
+        </nav>
+
+        {section === "create" && (
+          <div className="flex flex-wrap items-center gap-2">
+            {assignment && (
+              <Badge variant={setupLab?.published ? "success" : "secondary"}>
+                {setupLab?.published ? t("Published", "Đã công bố") : t("Draft", "Bản nháp")}
+              </Badge>
+            )}
+            {allLabs.length > 0 && (
+              <select
+                aria-label={t("Switch Lab", "Chuyển nhanh bài Lab")}
+                value={activeAssignmentId}
+                onChange={(event) => {
+                  const nextId = event.target.value;
+                  if (!nextId) return;
+                  router.push(
+                    `/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(nextId)}&tab=info`,
+                  );
+                }}
+                className="h-8 max-w-[220px] rounded-md border bg-background px-2.5 text-xs font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value="">
+                  {t("Switch Lab…", "Chuyển bài học…")}
+                </option>
+                {allLabs.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.title}
+                  </option>
+                ))}
+              </select>
+            )}
             <Button
-              key={item.id}
               type="button"
               size="sm"
-              variant={active ? "default" : "ghost"}
-              aria-pressed={active}
-              onClick={() => changeSection(item.id)}
+              variant="outline"
+              onClick={() => {
+                setCreatedAssignmentId("");
+                setTab("info");
+                router.push(`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&tab=info`);
+              }}
             >
-              <Icon className="mr-2 size-4" aria-hidden="true" />
-              {t(item.en, item.vi)}
+              <Plus className="mr-1 size-3.5" aria-hidden="true" />
+              {t("New Lab", "Tạo Lab mới")}
             </Button>
-          );
-        })}
-      </nav>
+            {assignment && (
+              <Button asChild size="sm">
+                <Link
+                  href={`/lab?${new URLSearchParams({
+                    workspace: workspaceId,
+                    assignment: assignment.id,
+                    step: "1",
+                    preview: "1",
+                  })}`}
+                >
+                  <Eye className="mr-1 size-3.5" aria-hidden="true" />
+                  {t("Preview as student", "Xem trước như sinh viên")}
+                </Link>
+              </Button>
+            )}
+          </div>
+        )}
+      </div>
       {section === "create" ? content : section === "library" ? <Assignments embedded /> : <TheoryLibrary />}
     </div>
   );
