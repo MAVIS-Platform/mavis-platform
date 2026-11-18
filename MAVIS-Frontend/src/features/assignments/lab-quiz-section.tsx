@@ -65,19 +65,15 @@ export function LabQuizSection({
       </details>
 
       {onNavigate && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-teal-200 bg-gradient-to-r from-teal-50/70 to-emerald-50/50 p-4">
-          <p className="text-sm font-medium text-teal-950">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-4">
+          <p className="text-xs text-muted-foreground">
             {t(
               "Quiz published? Proceed to Step 5 to configure Studio Live.",
               "Đã công bố Quiz? Tiếp tục sang Bước 5 để cấu hình thực hành Studio Live.",
             )}
           </p>
-          <Button
-            type="button"
-            className="bg-teal-600 text-white hover:bg-teal-700"
-            onClick={() => onNavigate("studio")}
-          >
-            {t("Next Step 5: Studio Live →", "Sang Bước 5: Studio Live →")}
+          <Button type="button" size="sm" onClick={() => onNavigate("studio")}>
+            {t("Next Step 5: Studio Live", "Sang Bước 5: Studio Live")}
             <ArrowRight className="ml-1.5 size-4" aria-hidden="true" />
           </Button>
         </div>

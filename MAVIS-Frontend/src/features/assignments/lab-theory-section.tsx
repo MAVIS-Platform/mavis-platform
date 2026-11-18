@@ -142,38 +142,94 @@ function MarkdownEditor({
   label,
   value,
   onChange,
+  title,
+  moduleLabel,
   t,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
+  title?: string;
+  moduleLabel?: string;
   t: (en: string, vi: string) => string;
 }) {
+  const [mode, setMode] = useState<"write" | "preview" | "split">("write");
   return (
-    <div className="grid gap-3 lg:grid-cols-2">
-      <label className="space-y-1 text-xs font-medium">
-        <span>{label}</span>
-        <Textarea
-          rows={10}
-          value={value}
-          placeholder={t(
-            "# Lesson heading\n\nWrite the lesson in Markdown.\n\n- Key idea\n- Example from the sample repository",
-            "# Tiêu đề bài học\n\nViết bài học bằng Markdown.\n\n- Ý chính\n- Ví dụ từ repo mẫu",
-          )}
-          onChange={(event) => onChange(event.target.value)}
-        />
-      </label>
-      <div className="space-y-1 text-xs font-medium">
-        <span>{t("Preview", "Xem trước")}</span>
-        <div className="min-h-56 rounded-lg border bg-background p-4">
-          {value.trim() ? (
-            <MarkdownPreview markdown={value} />
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              {t("Markdown preview appears here.", "Bản xem trước Markdown hiện ở đây.")}
-            </p>
-          )}
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-xs font-medium text-foreground">{label}</span>
+        <div className="inline-flex rounded-lg border bg-muted/40 p-0.5 text-xs">
+          <button
+            type="button"
+            onClick={() => setMode("write")}
+            className={`rounded-md px-2.5 py-1 font-medium transition-colors ${
+              mode === "write"
+                ? "bg-background text-foreground shadow-xs"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {t("Write", "Soạn thảo")}
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("preview")}
+            className={`rounded-md px-2.5 py-1 font-medium transition-colors ${
+              mode === "preview"
+                ? "bg-background text-foreground shadow-xs"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {t("Student Preview (Coursera)", "Xem như Sinh viên (Coursera)")}
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("split")}
+            className={`hidden rounded-md px-2.5 py-1 font-medium transition-colors lg:inline-block ${
+              mode === "split"
+                ? "bg-background text-foreground shadow-xs"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {t("Split view", "Song song")}
+          </button>
         </div>
+      </div>
+
+      <div className={mode === "split" ? "grid gap-4 lg:grid-cols-2" : "block"}>
+        {(mode === "write" || mode === "split") && (
+          <Textarea
+            rows={12}
+            value={value}
+            className="font-mono text-sm leading-6"
+            placeholder={t(
+              "# Lesson heading\n\nWrite the lesson in Markdown.\n\n- Key idea\n- Example from the sample repository",
+              "# Tiêu đề bài học\n\nViết bài học bằng Markdown.\n\n- Ý chính\n- Ví dụ từ repo mẫu",
+            )}
+            onChange={(event) => onChange(event.target.value)}
+          />
+        )}
+        {(mode === "preview" || mode === "split") && (
+          <div className="min-h-64 rounded-xl border bg-background p-5 shadow-2xs">
+            <div className="mb-4 flex flex-wrap items-center gap-2 border-b pb-3">
+              {moduleLabel && (
+                <span className="rounded-full border bg-muted/50 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+                  {moduleLabel}
+                </span>
+              )}
+              <span className="inline-flex items-center gap-1 rounded-full border border-teal-200 bg-teal-50 px-2.5 py-0.5 text-[11px] font-medium text-teal-800 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-300">
+                📖 {t("Theory Lesson", "Bài giảng lý thuyết")}
+              </span>
+              {title && <span className="text-sm font-semibold text-foreground">{title}</span>}
+            </div>
+            {value.trim() ? (
+              <MarkdownPreview markdown={value} />
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                {t("Markdown preview appears here.", "Bản xem trước Markdown hiện ở đây.")}
+              </p>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -295,6 +351,7 @@ export function LabTheorySection({
   const [c4Tab, setC4Tab] = useState<"CONTEXT" | "CONTAINER" | "COMPONENT" | "GRAPH">("CONTEXT");
   const [selectedGraphId, setSelectedGraphId] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const [authorMode, setAuthorMode] = useState<"write" | "library">("write");
   const isPublished = course.data?.status === "PUBLISHED";
   const savingBusy =
     syncStatus === "saving" ||
@@ -520,30 +577,14 @@ export function LabTheorySection({
   }
 
   const theoryItems = selectedModule?.items.filter((item) => item.type === "THEORY") ?? [];
+  const activeModuleLabel = selectedModule
+    ? `${t("Chapter", "Chương")} ${selectedModule.position}`
+    : undefined;
 
   return (
     <div className="space-y-5">
-      <section className="rounded-xl border bg-card p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="font-semibold">{t("How theory works", "Lý thuyết hoạt động thế nào")}</h2>
-            <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
-              {t(
-                "Theory = lesson content + sample repository + C1–C3 reference views. Students read this before the Quiz and do not submit diagrams.",
-                "Lý thuyết = nội dung bài học + repo mẫu + C1–C3 tham chiếu. Sinh viên đọc trước Quiz và không nộp diagram.",
-              )}
-            </p>
-          </div>
-          <Button asChild size="sm" variant="outline">
-            <Link href={`/workspace-overview?workspace=${encodeURIComponent(workspaceId)}&view=course-authoring`}>
-              {t("Open full course authoring", "Mở soạn nội dung đầy đủ")}
-            </Link>
-          </Button>
-        </div>
-      </section>
-
       {course.data?.status === "DRAFT" && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-2.5 text-xs text-amber-800 dark:text-amber-200">
           <span>
             {t(
               "Theory changes live in the Course draft. Students read them after you publish a new course version.",
@@ -572,205 +613,111 @@ export function LabTheorySection({
         </p>
       )}
 
-      <section className="space-y-4 rounded-xl border bg-card p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h3 className="flex items-center gap-2 font-semibold">
-              <GitBranch className="size-4 text-primary" aria-hidden="true" />
-              {t("Sample repository", "Repo mẫu")}
-            </h3>
-            <p className="mt-1 text-sm text-muted-foreground">
+      <section className="space-y-5 rounded-xl border bg-card p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b pb-4">
+          <div className="space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <BookOpen className="size-4 text-primary" aria-hidden="true" />
+              <h2 className="text-base font-semibold">{t("Module and lessons", "Chương và bài giảng lý thuyết")}</h2>
+              {isPublished && (
+                <Badge variant="success">
+                  {t(
+                    "Live Course · Edits auto-publish cleanly",
+                    "Đang xuất bản · Lưu là tự động cập nhật",
+                  )}
+                </Badge>
+              )}
+            </div>
+            <p className="max-w-3xl text-xs leading-5 text-muted-foreground">
               {t(
-                "The pinned reference repository students use to read C1–C3 and complete the Lab.",
-                "Repo tham chiếu đã ghim để sinh viên đọc C1–C3 và hoàn thành Lab.",
+                "Theory = lesson content + sample repository + C1–C3 reference views. Students read this in a Coursera-style reader before the Quiz.",
+                "Lý thuyết = bài giảng Markdown + repo mẫu + sơ đồ C1–C3. Sinh viên đọc bài giảng theo giao diện chuẩn Coursera trước khi làm Quiz.",
               )}
             </p>
           </div>
-          {reference?.revision && (
-            <Badge variant="outline">
-              {t("Revision", "Revision")} {reference.revision}
-            </Badge>
-          )}
-        </div>
-        {reference ? (
-          <div className="space-y-4">
-            <AssignmentSourceDetails source={reference} assignmentId={assignment.id} />
-            {reference.projectId && reference.modelId ? (
-              <div className="space-y-3 rounded-lg border bg-muted/15 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    {t(
-                      "Inline Reference C1–C3 & Dependency Graph Preview",
-                      "Xem trước C1–C3 & Đồ thị phụ thuộc ngay tại đây",
-                    )}
-                  </p>
-                  <div className="flex flex-wrap gap-1.5" role="tablist">
-                    {(
-                      [
-                        { id: "CONTEXT", label: "C1 System Context" },
-                        { id: "CONTAINER", label: "C2 Container" },
-                        { id: "COMPONENT", label: "C3 Component" },
-                        { id: "GRAPH", label: t("Dependency graph", "Đồ thị phụ thuộc") },
-                      ] as const
-                    ).map((item) => (
-                      <Button
-                        key={item.id}
-                        type="button"
-                        size="sm"
-                        variant={c4Tab === item.id ? "default" : "outline"}
-                        onClick={() => setC4Tab(item.id)}
-                      >
-                        {item.label}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-                {c4Tab !== "GRAPH" ? (
-                  activeDiagramMermaid ? (
-                    <DiagramPreview
-                      title={`C4 ${c4Tab}`}
-                      content={activeDiagramMermaid}
-                      format="MERMAID"
-                      style="clean"
-                    />
-                  ) : (
-                    <p className="rounded border border-dashed p-4 text-xs text-muted-foreground">
-                      {studentCtx.isPending
-                        ? t("Loading C4 diagram preview…", "Đang tải sơ đồ C4…")
-                        : t(
-                            "C4 Mermaid projection is unavailable for this level; switch to Dependency graph to inspect elements.",
-                            "Chưa có dữ liệu sơ đồ C4 cho cấp độ này; chuyển sang Đồ thị phụ thuộc để kiểm tra.",
-                          )}
-                    </p>
-                  )
-                ) : modelQuery.data ? (
-                  <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
-                    <div className="min-w-0 overflow-x-auto">
-                      <ArchitectureGraph
-                        model={modelQuery.data}
-                        selectedId={selectedGraphId}
-                        onSelect={setSelectedGraphId}
-                      />
-                    </div>
-                    <ElementDetailsPanel model={modelQuery.data} selectedId={selectedGraphId} />
-                  </div>
-                ) : (
-                  <p className="text-xs text-muted-foreground">
-                    {t("Loading architectural model…", "Đang tải mô hình kiến trúc…")}
-                  </p>
-                )}
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                {t("Analyze the reference source to view C1–C3.", "Phân tích nguồn tham chiếu để xem C1–C3.")}
-              </p>
-            )}
-          </div>
-        ) : (
-          <div className="space-y-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
-            <p className="text-sm text-amber-800 dark:text-amber-200">
-              {t(
-                "Attach and analyze the sample repository before students can read C1–C3.",
-                "Gắn và phân tích repo mẫu trước khi sinh viên đọc C1–C3.",
-              )}
-            </p>
-            <Button type="button" size="sm" variant="outline" onClick={() => onNavigate("source")}>
-              {t("Go to Reference source", "Mở Nguồn tham chiếu")}
-              <ArrowRight className="ml-1 size-3.5" aria-hidden="true" />
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              aria-label={t("Module", "Chương")}
+              className="h-8 rounded-md border bg-background px-2.5 text-xs font-medium"
+              value={selectedModule?.id ?? ""}
+              onChange={(event) => setSelectedModuleId(event.target.value)}
+            >
+              {modules.map((module) => (
+                <option key={module.id} value={module.id}>
+                  {t("Chapter", "Chương")} {module.position}: {module.title}
+                </option>
+              ))}
+            </select>
+            <Button asChild size="sm" variant="outline">
+              <Link href={`/workspace-overview?workspace=${encodeURIComponent(workspaceId)}&view=course-authoring`}>
+                {t("Open full course authoring", "Mở trình sắp xếp Chương")}
+              </Link>
             </Button>
           </div>
-        )}
-      </section>
-
-      <section className="space-y-4 rounded-xl border bg-card p-5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h3 className="font-semibold">{t("Module and lessons", "Chương và bài học")}</h3>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {t(
-                "Choose the module that contains this Lab, then edit or add the Markdown lesson students read before the Quiz.",
-                "Chọn chương chứa Lab này, chỉnh sửa hoặc thêm bài học Markdown ngay tại đây.",
-              )}
-            </p>
-          </div>
-          {isPublished && (
-            <Badge variant="success">
-              {t(
-                "Live Course · Edits auto-publish cleanly",
-                "Đang xuất bản · Lưu là tự động cập nhật",
-              )}
-            </Badge>
-          )}
         </div>
-        <label className="block max-w-md space-y-1 text-xs font-medium">
-          <span>{t("Module", "Chương")}</span>
-          <select
-            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-            value={selectedModule?.id ?? ""}
-            onChange={(event) => setSelectedModuleId(event.target.value)}
-          >
-            {modules.map((module) => (
-              <option key={module.id} value={module.id}>
-                {module.position}. {module.title}
-              </option>
-            ))}
-          </select>
-        </label>
 
-        {theoryItems.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            {t("No lesson in this module yet. Add the first lesson below.", "Chương này chưa có bài học. Thêm bài đầu tiên bên dưới.")}
-          </p>
-        ) : (
-          <ul className="space-y-4">
-            {theoryItems.map((item) => (
-              <li key={item.id} className="space-y-3 rounded-lg border p-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="outline">{t("Lesson", "Bài học")}</Badge>
-                  <span className="text-sm font-medium">{item.title}</span>
-                </div>
-                <MarkdownEditor
-                  label={t("Lesson content (Markdown)", "Nội dung bài học (Markdown)")}
-                  value={bodies[item.id] ?? bodyOf(item)}
-                  onChange={(value) => setBodies((current) => ({ ...current, [item.id]: value }))}
-                  t={t}
-                />
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={savingBusy}
-                  onClick={() =>
-                    void saveWithAutoPublish(async (_draft, mod) => {
-                      const targetItem =
-                        mod.items.find(
-                          (it) =>
-                            it.id === item.id ||
-                            (it.type === "THEORY" &&
-                              (it.assignmentId === item.assignmentId || it.title === item.title)),
-                        ) ?? item;
-                      await course.updateItem.mutateAsync({
-                        moduleId: mod.id,
-                        itemId: targetItem.id,
-                        type: "THEORY",
-                        title: item.title,
-                        description: item.description ?? "",
-                        required: item.required,
-                        assignmentId: item.assignmentId ?? assignment.id,
-                        content: { body: bodies[item.id] ?? bodyOf(item), format: "markdown" },
-                      });
-                    })
-                  }
-                >
-                  <Save className="mr-1 size-3.5" aria-hidden="true" />
-                  {savingBusy
-                    ? t("Saving & Publishing…", "Đang lưu & cập nhật…")
-                    : t("Save lesson", "Lưu bài học")}
-                </Button>
-              </li>
-            ))}
-          </ul>
+        {theoryItems.length > 0 && (
+          <div className="space-y-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              {t("Lessons in this Chapter", "Bài giảng hiện có trong Chương này")} ({theoryItems.length})
+            </p>
+            <ul className="space-y-3">
+              {theoryItems.map((item) => (
+                <li key={item.id} className="space-y-3 rounded-xl border bg-muted/15 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {activeModuleLabel && <Badge variant="outline">{activeModuleLabel}</Badge>}
+                      <span className="inline-flex items-center gap-1 rounded-full border border-teal-200 bg-teal-50 px-2.5 py-0.5 text-[11px] font-medium text-teal-800 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-300">
+                        📖 {t("Lesson", "Bài giảng")}
+                      </span>
+                      <span className="text-sm font-semibold">{item.title}</span>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={savingBusy}
+                      onClick={() =>
+                        void saveWithAutoPublish(async (_draft, mod) => {
+                          const targetItem =
+                            mod.items.find(
+                              (it) =>
+                                it.id === item.id ||
+                                (it.type === "THEORY" &&
+                                  (it.assignmentId === item.assignmentId || it.title === item.title)),
+                            ) ?? item;
+                          await course.updateItem.mutateAsync({
+                            moduleId: mod.id,
+                            itemId: targetItem.id,
+                            type: "THEORY",
+                            title: item.title,
+                            description: item.description ?? "",
+                            required: item.required,
+                            assignmentId: item.assignmentId ?? assignment.id,
+                            content: { body: bodies[item.id] ?? bodyOf(item), format: "markdown" },
+                          });
+                        })
+                      }
+                    >
+                      <Save className="mr-1 size-3.5" aria-hidden="true" />
+                      {savingBusy
+                        ? t("Saving & Publishing…", "Đang lưu & cập nhật…")
+                        : t("Save lesson", "Lưu bài học")}
+                    </Button>
+                  </div>
+                  <MarkdownEditor
+                    label={t("Lesson content (Markdown)", "Nội dung bài học (Markdown)")}
+                    title={item.title}
+                    {...(activeModuleLabel ? { moduleLabel: activeModuleLabel } : {})}
+                    value={bodies[item.id] ?? bodyOf(item)}
+                    onChange={(value) => setBodies((current) => ({ ...current, [item.id]: value }))}
+                    t={t}
+                  />
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
+
         {syncStatus === "saved" && !course.updateItem.isError && !course.addItem.isError && (
           <p role="status" className="text-xs font-medium text-emerald-700 dark:text-emerald-400">
             {t("Lesson saved and published to students.", "Đã lưu và cập nhật bài học cho sinh viên.")}
@@ -782,289 +729,413 @@ export function LabTheorySection({
           </p>
         )}
 
-        <div className="grid gap-3 lg:grid-cols-2">
-          <div className="space-y-3 rounded-lg border p-4">
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <h4 className="text-sm font-semibold">{t("Theory library", "Thư viện lý thuyết")}</h4>
-                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+        <div className="space-y-4 border-t pt-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="inline-flex rounded-lg border bg-muted/40 p-0.5 text-xs">
+              <button
+                type="button"
+                onClick={() => setAuthorMode("write")}
+                className={`rounded-md px-3 py-1.5 font-medium transition-colors ${
+                  authorMode === "write"
+                    ? "bg-background text-foreground shadow-xs"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                ✍️ {t("Write a custom lesson", "Tự soạn bài học / AI")}
+              </button>
+              <button
+                type="button"
+                onClick={() => setAuthorMode("library")}
+                className={`rounded-md px-3 py-1.5 font-medium transition-colors ${
+                  authorMode === "library"
+                    ? "bg-background text-foreground shadow-xs"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                📚 {t("Theory library", "Thư viện lý thuyết")} ({libraryAssets.length})
+              </button>
+            </div>
+          </div>
+
+          {authorMode === "write" ? (
+            <div className="space-y-3 rounded-xl border p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs text-muted-foreground">
                   {t(
-                    "Reusable lessons for this class. Attach one to this Lab; editing it later updates every Lab that uses it.",
-                    "Bài học dùng lại cho lớp này. Gắn vào Lab; sửa sau này sẽ cập nhật mọi Lab đang dùng.",
+                    "Start from a structure, write Markdown yourself, import a .md/.txt file, or generate an AI draft from repository evidence.",
+                    "Chọn khung mẫu, tự viết Markdown, nhập tệp .md/.txt hoặc dùng AI sinh bài giảng từ bằng chứng mã nguồn.",
                   )}
                 </p>
-              </div>
-              <Badge variant="outline">{libraryAssets.length}</Badge>
-            </div>
-
-            {attachedAssets.length > 0 && (
-              <ul className="divide-y rounded-md border text-xs">
-                {attachedAssets.map((asset) => (
-                  <li key={asset.assetId} className="flex items-center justify-between gap-2 px-2 py-1.5">
-                    <span className="min-w-0">
-                      <span className="block truncate font-medium">{asset.title}</span>
-                      <span className="text-muted-foreground">
-                        {asset.source} · {asset.style}
-                      </span>
-                    </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {LESSON_TEMPLATES.map((template) => (
                     <Button
+                      key={template.en}
                       type="button"
                       size="sm"
-                      variant="ghost"
-                      disabled={detachAsset.isPending}
-                      aria-label={t("Detach lesson", "Gỡ bài học")}
-                      onClick={() => detachAsset.mutate(asset.assetId)}
+                      variant="outline"
+                      onClick={() => {
+                        setNewTitle(t(template.titleEn, template.titleVi));
+                        setNewBody(template.body);
+                        setEditorStyle(template.style);
+                        setDraftSource("LECTURER");
+                        setAiNote("");
+                      }}
                     >
-                      <Trash2 className="size-3.5" aria-hidden="true" />
+                      {t(template.en, template.vi)}
                     </Button>
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            {libraryAssets.length === 0 ? (
-              <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
-                {t(
-                  "The library is empty. Write a lesson on the right and save it to the library.",
-                  "Thư viện đang trống. Soạn bài bên phải rồi lưu vào thư viện.",
-                )}
-              </p>
-            ) : (
-              <>
-                <select
-                  className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                  value={libraryItemId}
-                  aria-label={t("Theory library lesson", "Bài học trong thư viện")}
-                  onChange={(event) => setLibraryItemId(event.target.value)}
-                >
-                  <option value="">{t("Choose a library lesson…", "Chọn bài trong thư viện…")}</option>
-                  {libraryAssets.map((asset) => (
-                    <option key={asset.id} value={asset.id}>
-                      {asset.title} · {asset.source}
-                    </option>
                   ))}
-                </select>
-                {selectedLibraryAsset && (
-                  <div className="max-h-40 space-y-1 overflow-y-auto rounded-md bg-muted/30 p-3 text-xs">
-                    <p className="font-medium">{selectedLibraryAsset.title}</p>
-                    <p className="whitespace-pre-wrap text-muted-foreground">
-                      {selectedLibraryAsset.body.slice(0, 500)}
-                      {selectedLibraryAsset.body.length > 500 ? "…" : ""}
-                    </p>
-                    <p className="text-[11px] text-muted-foreground">
-                      {selectedLibraryAsset.language.toUpperCase()} · {selectedLibraryAsset.style} · v
-                      {selectedLibraryAsset.version}
-                      {selectedLibraryAsset.sourceUrl ? ` · ${selectedLibraryAsset.sourceUrl}` : ""}
-                    </p>
-                  </div>
-                )}
-                <Button
-                  type="button"
-                  size="sm"
-                  disabled={!selectedLibraryAsset || attachAsset.isPending}
-                  onClick={() => {
-                    if (selectedLibraryAsset) attachAsset.mutate(selectedLibraryAsset.id);
-                  }}
-                >
-                  <BookOpen className="mr-1 size-4" aria-hidden="true" />
-                  {attachAsset.isPending
-                    ? t("Attaching…", "Đang gắn…")
-                    : t("Attach to this Lab", "Gắn vào Lab này")}
-                </Button>
-              </>
-            )}
-            {(attachAsset.error || detachAsset.error) && (
-              <p role="alert" className="text-xs text-destructive">
-                {(attachAsset.error ?? detachAsset.error)?.message}
-              </p>
-            )}
-
-            {availableLessons.length > 0 && (
-              <details className="rounded-md border px-3 py-2">
-                <summary className="cursor-pointer text-xs font-medium">
-                  {t("Copy a lesson already in this curriculum", "Sao chép bài đã có trong giáo trình")}
-                </summary>
-                <div className="space-y-2 pt-2">
-                  <select
-                    className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                    value={sourceItemId}
-                    aria-label={t("Ready-made lesson", "Bài học có sẵn")}
-                    onChange={(event) => setSourceItemId(event.target.value)}
-                  >
-                    <option value="">{t("Choose a lesson…", "Chọn bài học…")}</option>
-                    {availableLessons.map(({ item, moduleTitle }) => (
-                      <option key={item.id} value={item.id}>
-                        {moduleTitle} · {item.title}
-                      </option>
-                    ))}
-                  </select>
+                  <label className="inline-flex cursor-pointer items-center rounded-md border px-2.5 py-1 text-xs font-medium transition-colors hover:bg-muted">
+                    <Upload className="mr-1 size-3.5" aria-hidden="true" />
+                    {t("Import Markdown", "Nhập Markdown")}
+                    <input
+                      className="sr-only"
+                      type="file"
+                      accept=".md,.markdown,.txt,text/markdown,text/plain"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        if (!file) return;
+                        void file.text().then((text) => {
+                          setNewBody(text);
+                          setDraftSource("IMPORT");
+                          setAiNote("");
+                          if (!newTitle.trim()) setNewTitle(file.name.replace(/\.(md|markdown|txt)$/i, ""));
+                        });
+                        event.target.value = "";
+                      }}
+                    />
+                  </label>
                   <Button
                     type="button"
                     size="sm"
                     variant="outline"
-                    disabled={!selectedSource || course.addItem.isPending}
-                    onClick={() => {
-                      if (!selectedSource) return;
-                      course.addItem.mutate(
-                        {
-                          moduleId: selectedModule!.id,
-                          type: "THEORY",
-                          title: selectedSource.item.title,
-                          description: selectedSource.item.description ?? "",
-                          assignmentId: assignment.id,
-                          required: true,
-                          content: { body: bodyOf(selectedSource.item), format: "markdown" },
-                        },
-                        { onSuccess: () => setSourceItemId("") },
-                      );
-                    }}
+                    disabled={generateDraft.isPending}
+                    onClick={() => generateDraft.mutate()}
                   >
-                    <BookOpen className="mr-1 size-4" aria-hidden="true" />
-                    {t("Copy into this Lab", "Sao chép vào Lab này")}
+                    <Sparkles className="mr-1 size-3.5" aria-hidden="true" />
+                    {generateDraft.isPending
+                      ? t("Drafting…", "Đang tạo nháp…")
+                      : t("AI draft from evidence", "AI soạn từ bằng chứng")}
                   </Button>
                 </div>
-              </details>
-            )}
-          </div>
-
-          <div className="space-y-3 rounded-lg border border-dashed p-4">
-            <div>
-              <h4 className="text-sm font-semibold">{t("Write a custom lesson", "Tự soạn bài học")}</h4>
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                {t(
-                  "Start from a structure, write Markdown yourself, or import a .md/.txt file. The lesson is linked to this Lab only.",
-                  "Bắt đầu từ khung có sẵn, tự viết Markdown hoặc nhập tệp .md/.txt. Bài học chỉ gắn với Lab này.",
-                )}
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {LESSON_TEMPLATES.map((template) => (
+              </div>
+              <Input
+                aria-label={t("Lesson title", "Tên bài học")}
+                placeholder={t("e.g. Lesson 1.1: DTO Boundaries, Record & Validation", "Ví dụ: Bài 1.1: Ranh giới kiểu dữ liệu, Java Record & Validation")}
+                value={newTitle}
+                onChange={(event) => setNewTitle(event.target.value)}
+              />
+              <MarkdownEditor
+                label={t("Lesson content (Markdown)", "Nội dung bài học (Markdown)")}
+                title={newTitle}
+                {...(activeModuleLabel ? { moduleLabel: activeModuleLabel } : {})}
+                value={newBody}
+                onChange={setNewBody}
+                t={t}
+              />
+              {aiNote && <p className="text-xs text-muted-foreground">{aiNote}</p>}
+              {generateDraft.error && (
+                <p role="alert" className="text-xs text-destructive">
+                  {generateDraft.error.message}
+                </p>
+              )}
+              <div className="flex flex-wrap gap-2 pt-1">
                 <Button
-                  key={template.en}
                   type="button"
                   size="sm"
                   variant="outline"
-                  onClick={() => {
-                    setNewTitle(t(template.titleEn, template.titleVi));
-                    setNewBody(template.body);
-                    setEditorStyle(template.style);
-                    setDraftSource("LECTURER");
-                    setAiNote("");
-                  }}
+                  disabled={savingBusy || !newTitle.trim() || !newBody.trim()}
+                  onClick={() =>
+                    void saveWithAutoPublish(async (_draft, mod) => {
+                      await course.addItem.mutateAsync({
+                        moduleId: mod.id,
+                        type: "THEORY",
+                        title: newTitle.trim(),
+                        assignmentId: assignment.id,
+                        required: true,
+                        content: { body: newBody.trim(), format: "markdown" },
+                      });
+                      setNewTitle("");
+                      setNewBody("");
+                    })
+                  }
                 >
-                  {t(template.en, template.vi)}
+                  <Plus className="mr-1 size-4" aria-hidden="true" />
+                  {t("Add as Lab lesson", "Thêm làm bài học Lab")}
                 </Button>
-              ))}
-              <label className="inline-flex cursor-pointer items-center rounded-md border px-3 py-1.5 text-sm transition-colors hover:bg-muted">
-                <Upload className="mr-1 size-3.5" aria-hidden="true" />
-                {t("Import Markdown", "Nhập Markdown")}
-                <input
-                  className="sr-only"
-                  type="file"
-                  accept=".md,.markdown,.txt,text/markdown,text/plain"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    if (!file) return;
-                    void file.text().then((text) => {
-                      setNewBody(text);
-                      setDraftSource("IMPORT");
-                      setAiNote("");
-                      if (!newTitle.trim()) setNewTitle(file.name.replace(/\.(md|markdown|txt)$/i, ""));
-                    });
-                    event.target.value = "";
-                  }}
-                />
-              </label>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={generateDraft.isPending}
-                onClick={() => generateDraft.mutate()}
-              >
-                <Sparkles className="mr-1 size-3.5" aria-hidden="true" />
-                {generateDraft.isPending
-                  ? t("Drafting…", "Đang tạo nháp…")
-                  : t("AI draft from evidence", "AI soạn từ bằng chứng")}
-              </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={saveToLibrary.isPending || !newTitle.trim() || !newBody.trim()}
+                  onClick={() => saveToLibrary.mutate()}
+                >
+                  <Library className="mr-1 size-4" aria-hidden="true" />
+                  {saveToLibrary.isPending
+                    ? t("Saving…", "Đang lưu…")
+                    : t("Save to library & attach", "Lưu vào thư viện & gắn")}
+                </Button>
+              </div>
+              {saveToLibrary.error && (
+                <p role="alert" className="text-xs text-destructive">
+                  {saveToLibrary.error.message}
+                </p>
+              )}
             </div>
-            <Input
-              aria-label={t("Lesson title", "Tên bài học")}
-              placeholder={t("Lesson title", "Tên bài học")}
-              value={newTitle}
-              onChange={(event) => setNewTitle(event.target.value)}
-            />
-            <MarkdownEditor
-              label={t("Lesson content (Markdown)", "Nội dung bài học (Markdown)")}
-              value={newBody}
-              onChange={setNewBody}
-              t={t}
-            />
-            {aiNote && <p className="text-xs text-muted-foreground">{aiNote}</p>}
-            {generateDraft.error && (
-              <p role="alert" className="text-xs text-destructive">
-                {generateDraft.error.message}
-              </p>
-            )}
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={savingBusy || !newTitle.trim() || !newBody.trim()}
-                onClick={() =>
-                  void saveWithAutoPublish(async (_draft, mod) => {
-                    await course.addItem.mutateAsync({
-                      moduleId: mod.id,
-                      type: "THEORY",
-                      title: newTitle.trim(),
-                      assignmentId: assignment.id,
-                      required: true,
-                      content: { body: newBody.trim(), format: "markdown" },
-                    });
-                    setNewTitle("");
-                    setNewBody("");
-                  })
-                }
-              >
-                <Plus className="mr-1 size-4" aria-hidden="true" />
-                {t("Add as Lab lesson", "Thêm làm bài học Lab")}
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                disabled={saveToLibrary.isPending || !newTitle.trim() || !newBody.trim()}
-                onClick={() => saveToLibrary.mutate()}
-              >
-                <Library className="mr-1 size-4" aria-hidden="true" />
-                {saveToLibrary.isPending
-                  ? t("Saving…", "Đang lưu…")
-                  : t("Save to library & attach", "Lưu vào thư viện & gắn")}
-              </Button>
+          ) : (
+            <div className="space-y-3 rounded-xl border p-4">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <h4 className="text-sm font-semibold">{t("Theory library", "Thư viện lý thuyết")}</h4>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    {t(
+                      "Reusable lessons for this class. Attach one to this Lab; editing it later updates every Lab that uses it.",
+                      "Bài học dùng lại cho lớp này. Gắn vào Lab; sửa sau này sẽ cập nhật mọi Lab đang dùng.",
+                    )}
+                  </p>
+                </div>
+                <Badge variant="outline">{libraryAssets.length}</Badge>
+              </div>
+
+              {attachedAssets.length > 0 && (
+                <ul className="divide-y rounded-md border text-xs">
+                  {attachedAssets.map((asset) => (
+                    <li key={asset.assetId} className="flex items-center justify-between gap-2 px-3 py-2">
+                      <span className="min-w-0">
+                        <span className="block truncate font-medium">{asset.title}</span>
+                        <span className="text-muted-foreground">
+                          {asset.source} · {asset.style}
+                        </span>
+                      </span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        disabled={detachAsset.isPending}
+                        aria-label={t("Detach lesson", "Gỡ bài học")}
+                        onClick={() => detachAsset.mutate(asset.assetId)}
+                      >
+                        <Trash2 className="size-3.5" aria-hidden="true" />
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {libraryAssets.length === 0 ? (
+                <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+                  {t(
+                    "The library is empty. Switch to 'Write a custom lesson' and click 'Save to library & attach'.",
+                    "Thư viện đang trống. Chuyển sang tab 'Tự soạn bài học / AI' rồi bấm 'Lưu vào thư viện & gắn'.",
+                  )}
+                </p>
+              ) : (
+                <>
+                  <select
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                    value={libraryItemId}
+                    aria-label={t("Theory library lesson", "Bài học trong thư viện")}
+                    onChange={(event) => setLibraryItemId(event.target.value)}
+                  >
+                    <option value="">{t("Choose a library lesson…", "Chọn bài trong thư viện…")}</option>
+                    {libraryAssets.map((asset) => (
+                      <option key={asset.id} value={asset.id}>
+                        {asset.title} · {asset.source}
+                      </option>
+                    ))}
+                  </select>
+                  {selectedLibraryAsset && (
+                    <div className="max-h-48 space-y-2 overflow-y-auto rounded-lg border bg-background p-4 text-xs">
+                      <p className="font-semibold text-sm">{selectedLibraryAsset.title}</p>
+                      <MarkdownPreview markdown={selectedLibraryAsset.body.slice(0, 800)} />
+                    </div>
+                  )}
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={!selectedLibraryAsset || attachAsset.isPending}
+                    onClick={() => {
+                      if (selectedLibraryAsset) attachAsset.mutate(selectedLibraryAsset.id);
+                    }}
+                  >
+                    <BookOpen className="mr-1 size-4" aria-hidden="true" />
+                    {attachAsset.isPending
+                      ? t("Attaching…", "Đang gắn…")
+                      : t("Attach to this Lab", "Gắn vào Lab này")}
+                  </Button>
+                </>
+              )}
+              {(attachAsset.error || detachAsset.error) && (
+                <p role="alert" className="text-xs text-destructive">
+                  {(attachAsset.error ?? detachAsset.error)?.message}
+                </p>
+              )}
+
+              {availableLessons.length > 0 && (
+                <details className="rounded-md border px-3 py-2">
+                  <summary className="cursor-pointer text-xs font-medium">
+                    {t("Copy a lesson already in this curriculum", "Sao chép bài đã có trong giáo trình")}
+                  </summary>
+                  <div className="space-y-2 pt-2">
+                    <select
+                      className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                      value={sourceItemId}
+                      aria-label={t("Ready-made lesson", "Bài học có sẵn")}
+                      onChange={(event) => setSourceItemId(event.target.value)}
+                    >
+                      <option value="">{t("Choose a lesson…", "Chọn bài học…")}</option>
+                      {availableLessons.map(({ item, moduleTitle }) => (
+                        <option key={item.id} value={item.id}>
+                          {moduleTitle} · {item.title}
+                        </option>
+                      ))}
+                    </select>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={!selectedSource || course.addItem.isPending}
+                      onClick={() => {
+                        if (!selectedSource) return;
+                        course.addItem.mutate(
+                          {
+                            moduleId: selectedModule!.id,
+                            type: "THEORY",
+                            title: selectedSource.item.title,
+                            description: selectedSource.item.description ?? "",
+                            assignmentId: assignment.id,
+                            required: true,
+                            content: { body: bodyOf(selectedSource.item), format: "markdown" },
+                          },
+                          { onSuccess: () => setSourceItemId("") },
+                        );
+                      }}
+                    >
+                      <BookOpen className="mr-1 size-4" aria-hidden="true" />
+                      {t("Copy into this Lab", "Sao chép vào Lab này")}
+                    </Button>
+                  </div>
+                </details>
+              )}
             </div>
-            {saveToLibrary.error && (
-              <p role="alert" className="text-xs text-destructive">
-                {saveToLibrary.error.message}
-              </p>
-            )}
-          </div>
+          )}
         </div>
         {course.addItem.error && <p role="alert" className="text-sm text-destructive">{course.addItem.error.message}</p>}
       </section>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-teal-200 bg-gradient-to-r from-teal-50/70 to-emerald-50/50 p-4">
-        <p className="text-sm font-medium text-teal-950">
+      <details className="rounded-xl border bg-card p-5">
+        <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2 text-sm font-semibold">
+          <span className="flex items-center gap-2">
+            <GitBranch className="size-4 text-primary" aria-hidden="true" />
+            {t("Sample repository", "Repo mẫu")} &amp; C1–C3
+          </span>
+          {reference?.revision ? (
+            <Badge variant="outline">
+              {t("Revision", "Revision")} {reference.revision}
+            </Badge>
+          ) : (
+            <Badge variant="secondary">{t("Configure in Step 3", "Gắn ở Bước 3")}</Badge>
+          )}
+        </summary>
+        <div className="mt-4 space-y-4">
+          {reference ? (
+            <div className="space-y-4">
+              <AssignmentSourceDetails source={reference} assignmentId={assignment.id} />
+              {reference.projectId && reference.modelId ? (
+                <div className="space-y-3 rounded-lg border bg-muted/15 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      {t(
+                        "Inline Reference C1–C3 & Dependency Graph Preview",
+                        "Xem trước C1–C3 & Đồ thị phụ thuộc ngay tại đây",
+                      )}
+                    </p>
+                    <div className="flex flex-wrap gap-1.5" role="tablist">
+                      {(
+                        [
+                          { id: "CONTEXT", label: "C1 System Context" },
+                          { id: "CONTAINER", label: "C2 Container" },
+                          { id: "COMPONENT", label: "C3 Component" },
+                          { id: "GRAPH", label: t("Dependency graph", "Đồ thị phụ thuộc") },
+                        ] as const
+                      ).map((item) => (
+                        <Button
+                          key={item.id}
+                          type="button"
+                          size="sm"
+                          variant={c4Tab === item.id ? "default" : "outline"}
+                          onClick={() => setC4Tab(item.id)}
+                        >
+                          {item.label}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                  {c4Tab !== "GRAPH" ? (
+                    activeDiagramMermaid ? (
+                      <DiagramPreview
+                        title={`C4 ${c4Tab}`}
+                        content={activeDiagramMermaid}
+                        format="MERMAID"
+                        style="clean"
+                      />
+                    ) : (
+                      <p className="rounded border border-dashed p-4 text-xs text-muted-foreground">
+                        {studentCtx.isPending
+                          ? t("Loading C4 diagram preview…", "Đang tải sơ đồ C4…")
+                          : t(
+                              "C4 Mermaid projection is unavailable for this level; switch to Dependency graph to inspect elements.",
+                              "Chưa có dữ liệu sơ đồ C4 cho cấp độ này; chuyển sang Đồ thị phụ thuộc để kiểm tra.",
+                            )}
+                      </p>
+                    )
+                  ) : modelQuery.data ? (
+                    <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+                      <div className="min-w-0 overflow-x-auto">
+                        <ArchitectureGraph
+                          model={modelQuery.data}
+                          selectedId={selectedGraphId}
+                          onSelect={setSelectedGraphId}
+                        />
+                      </div>
+                      <ElementDetailsPanel model={modelQuery.data} selectedId={selectedGraphId} />
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      {t("Loading architectural model…", "Đang tải mô hình kiến trúc…")}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  {t("Analyze the reference source to view C1–C3.", "Phân tích nguồn tham chiếu để xem C1–C3.")}
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
+              <p className="text-sm text-amber-800 dark:text-amber-200">
+                {t(
+                  "Attach and analyze the sample repository in Step 3 so students can inspect C1–C3.",
+                  "Gắn và phân tích repo mẫu ở Bước 3 để sinh viên xem sơ đồ C1–C3.",
+                )}
+              </p>
+              <Button type="button" size="sm" variant="outline" onClick={() => onNavigate("source")}>
+                {t("Go to Step 3: Reference source", "Sang Bước 3: Nguồn tham chiếu")}
+                <ArrowRight className="ml-1 size-3.5" aria-hidden="true" />
+              </Button>
+            </div>
+          )}
+        </div>
+      </details>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-4">
+        <p className="text-xs text-muted-foreground">
           {t(
             "Done writing Theory? Pin your Sample Repository & verify C1–C3 Diagrams in Step 3.",
             "Đã soạn xong Lý thuyết? Tiếp tục gắn Nguồn tham chiếu & kiểm tra Sơ đồ C1–C3 ở Bước 3.",
           )}
         </p>
-        <Button
-          type="button"
-          className="bg-teal-600 text-white hover:bg-teal-700"
-          onClick={() => onNavigate("source")}
-        >
-          {t("Next Step 3: Reference Source (C1–C3) →", "Sang Bước 3: Nguồn tham chiếu (C1–C3) →")}
+        <Button type="button" size="sm" onClick={() => onNavigate("source")}>
+          {t("Next Step 3: Reference Source (C1–C3)", "Sang Bước 3: Nguồn tham chiếu (C1–C3)")}
           <ArrowRight className="ml-1.5 size-4" aria-hidden="true" />
         </Button>
       </div>

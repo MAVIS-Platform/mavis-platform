@@ -236,19 +236,15 @@ export function LabSourceSection({
       )}
 
       {onNavigate && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-teal-200 bg-gradient-to-r from-teal-50/70 to-emerald-50/50 p-4">
-          <p className="text-sm font-medium text-teal-950">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-4">
+          <p className="text-xs text-muted-foreground">
             {t(
               "Reference source pinned? Proceed to Step 4 to create the Gatekeeper Quiz.",
               "Đã ghim nguồn tham chiếu C1–C3? Chuyển sang Bước 4 để soạn Câu hỏi Quiz mở khóa.",
             )}
           </p>
-          <Button
-            type="button"
-            className="bg-teal-600 text-white hover:bg-teal-700"
-            onClick={() => onNavigate("quiz")}
-          >
-            {t("Next Step 4: Quiz →", "Sang Bước 4: Câu hỏi Quiz →")}
+          <Button type="button" size="sm" onClick={() => onNavigate("quiz")}>
+            {t("Next Step 4: Quiz", "Sang Bước 4: Câu hỏi Quiz")}
             <ArrowRight className="ml-1.5 size-4" aria-hidden="true" />
           </Button>
         </div>
