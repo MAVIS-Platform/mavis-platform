@@ -156,17 +156,30 @@ function AttemptForm({
     submit.reset();
   };
 
+  const answeredCount = quiz.questions.filter(
+    (_, index) => (answers[index] ?? []).length > 0,
+  ).length;
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {quiz.lesson && (
-        <div className="rounded-lg border bg-muted/20 p-3">
+        <div className="rounded-xl border bg-muted/20 p-4">
           <MarkdownPreview markdown={quiz.lesson} />
         </div>
       )}
-      <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
-        <span>
-          {t("Passing score", "Ngưỡng đạt")} {quiz.passPercent}%
-        </span>
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-teal-200/80 bg-gradient-to-r from-teal-50/80 via-emerald-50/50 to-white px-4 py-3">
+        <div className="flex flex-wrap items-center gap-3 text-sm text-slate-700">
+          <span className="font-semibold text-teal-950">
+            {t("Gatekeeper Quiz", "Bài kiểm tra mở khóa Lab")}
+          </span>
+          <span className="text-xs text-muted-foreground">
+            {t("Passing score", "Ngưỡng đạt")} {quiz.passPercent}% ·{" "}
+            {t(
+              `${answeredCount}/${quiz.questions.length} answered`,
+              `Đã trả lời ${answeredCount}/${quiz.questions.length} câu`,
+            )}
+          </span>
+        </div>
         <Badge
           variant={
             quiz.runtimeUnlocked
@@ -273,32 +286,51 @@ function AttemptForm({
           {quiz.questions.map((question, index) => {
             const type = questionType(question);
             const multi = type === "MULTI_CHOICE";
+            const selectedOptions = answers[index] ?? [];
             return (
               <fieldset
                 key={question.id ?? index}
-                className="space-y-2 rounded-lg border p-3"
+                className="space-y-3 rounded-2xl border bg-card p-4 shadow-xs"
                 disabled={submit.isPending || !!submit.data}
               >
-                <legend className="px-1 font-medium">
-                  {index + 1}. {question.prompt}
+                <legend className="flex flex-wrap items-center gap-2 px-1 text-sm font-semibold text-foreground">
+                  <span className="inline-flex items-center rounded-md bg-teal-50 px-2 py-0.5 text-xs font-semibold text-teal-800 border border-teal-200">
+                    {t("Question", "Câu")} {index + 1}
+                  </span>
+                  <span>
+                    {index + 1}. {question.prompt}
+                  </span>
                   {multi && (
-                    <span className="ml-2 text-xs font-normal text-muted-foreground">
-                      {t("Select all that apply", "Chọn tất cả đáp án đúng")}
+                    <span className="text-xs font-normal text-muted-foreground">
+                      ({t("Select all that apply", "Chọn tất cả đáp án đúng")})
                     </span>
                   )}
                 </legend>
-                {question.options.map((option, optionIndex) => (
-                  <label key={optionIndex} className="flex items-start gap-2">
-                    <input
-                      type={multi ? "checkbox" : "radio"}
-                      name={`question-${index}`}
-                      required={!multi}
-                      checked={(answers[index] ?? []).includes(optionIndex)}
-                      onChange={() => toggle(index, optionIndex, multi)}
-                    />
-                    {option}
-                  </label>
-                ))}
+                <div className="grid gap-2 pt-1">
+                  {question.options.map((option, optionIndex) => {
+                    const isChecked = selectedOptions.includes(optionIndex);
+                    return (
+                      <label
+                        key={optionIndex}
+                        className={`flex cursor-pointer items-start gap-3 rounded-xl border px-3.5 py-2.5 text-sm transition ${
+                          isChecked
+                            ? "border-teal-500 bg-teal-50/70 font-medium text-teal-950"
+                            : "border-border/80 bg-background hover:border-teal-300 hover:bg-muted/30"
+                        }`}
+                      >
+                        <input
+                          type={multi ? "checkbox" : "radio"}
+                          name={`question-${index}`}
+                          className="mt-1 accent-teal-600"
+                          required={!multi}
+                          checked={isChecked}
+                          onChange={() => toggle(index, optionIndex, multi)}
+                        />
+                        <span className="leading-6">{option}</span>
+                      </label>
+                    );
+                  })}
+                </div>
               </fieldset>
             );
           })}
