@@ -33,7 +33,6 @@ type KeyStatus = {
   enrolledStudents: number;
   code?: string | null | undefined;
 };
-type IssuedKey = { code: string; expiresAt: string };
 
 export type PasskeyItem = {
   id: string;
@@ -1528,11 +1527,11 @@ export function SeedCuratedCourseLabs({
 }) {
   const t = useCourseText();
   const cache = useQueryClient();
-  const [activePreset, setActivePreset] = useState<"STANDARD_DEMO" | "FULL_CURRICULUM" | null>(
-    null,
-  );
+  const [activePreset, setActivePreset] = useState<
+    "STANDARD_DEMO" | "FULL_CURRICULUM" | "JAVA_COURSERA_FULL" | null
+  >(null);
   const seed = useMutation({
-    mutationFn: (preset: "STANDARD_DEMO" | "FULL_CURRICULUM") => {
+    mutationFn: (preset: "STANDARD_DEMO" | "FULL_CURRICULUM" | "JAVA_COURSERA_FULL") => {
       setActivePreset(preset);
       return courseApi<Roadmap>(`workspaces/${workspaceId}/course-labs/seed-curated`, {
         method: "POST",
@@ -1553,6 +1552,19 @@ export function SeedCuratedCourseLabs({
   return (
     <div className="inline-flex flex-col items-start gap-1.5">
       <div className="flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          className="bg-teal-600 text-white hover:bg-teal-700"
+          disabled={seed.isPending}
+          onClick={() => seed.mutate("JAVA_COURSERA_FULL")}
+        >
+          {seed.isPending && activePreset === "JAVA_COURSERA_FULL"
+            ? t("Seeding Coursera Java 6-Module Course…", "Đang nạp Giáo trình Java 6 Chương…")
+            : t(
+                "☕ Seed Full Coursera Java 6-Module Course (Lessons + Quizzes + Essays)",
+                "☕ Khởi tạo Giáo trình Java Microservices Chuẩn Coursera (6 Chương + Quiz + Tự luận)",
+              )}
+        </Button>
         <Button
           type="button"
           variant={variant}
