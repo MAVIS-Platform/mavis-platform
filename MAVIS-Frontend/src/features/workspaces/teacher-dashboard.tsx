@@ -85,11 +85,11 @@ export function TeacherDashboard() {
           <div className="flex flex-wrap items-center gap-2.5">
             <Button
               type="button"
-              onClick={() => setShowCreate((open) => !open)}
+              onClick={() => setShowCreate(true)}
               className="bg-white text-slate-950 shadow-sm hover:bg-sky-50"
             >
               <Plus className="mr-1.5 h-4 w-4" aria-hidden="true" />
-              {showCreate ? t("Close", "Đóng") : t("Create class", "Tạo lớp mới")}
+              {t("Create class", "Tạo lớp mới")}
             </Button>
             <Button
               asChild

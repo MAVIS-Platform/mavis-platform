@@ -2,88 +2,124 @@
 import { useState } from "react";
 import { useApiMutation, useSession } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { ErrorState } from "@/components/shared/request-state";
 import { FormField, SelectField } from "@/components/shared/forms";
 import { Textarea } from "@/components/ui/textarea";
 import { useLocale } from "@/lib/i18n/locale-context";
+
 export function CreateWorkspace({ onClose }: { onClose?: () => void } = {}) {
   const session = useSession(),
     create = useApiMutation("createWorkspace");
   const { t } = useLocale();
   const [code, setCode] = useState(""),
-    [name, setName] = useState("");
+    [name, setName] = useState(""),
+    [description, setDescription] = useState("");
   if (!["lecturer", "admin"].includes(session.data?.user?.role ?? "")) return null;
   return (
-    <section className="rounded-xl border bg-card p-4 sm:p-5" aria-labelledby="create-class-title">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 id="create-class-title" className="font-semibold">
-            {t("Create a class", "Tạo lớp")}
-          </h2>
-          <p className="mt-0.5 text-sm text-muted-foreground">
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose?.();
+      }}
+    >
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle id="create-class-title">
+            {t("Create a class", "Tạo lớp học mới")}
+          </DialogTitle>
+          <DialogDescription>
             {t(
               "Use a short class code and the name students will recognize.",
-              "Dùng mã lớp ngắn và tên lớp sinh viên sẽ nhận ra.",
+              "Nhập mã lớp ngắn gọn và tên lớp học để sinh viên dễ nhận diện.",
             )}
-          </p>
-        </div>
-        {onClose && (
-          <Button type="button" size="sm" variant="ghost" onClick={onClose}>
-            {t("Cancel", "Hủy")}
-          </Button>
-        )}
-      </div>
-      <form
-        className="mt-4 grid gap-3 md:grid-cols-[minmax(9rem,0.6fr)_minmax(0,1.4fr)_auto]"
-        onSubmit={(e) => {
-          e.preventDefault();
-          create.mutate(
-            { code, name },
-            {
-              onSuccess: () => {
-                setCode("");
-                setName("");
-                onClose?.();
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          className="space-y-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            create.mutate(
+              {
+                code: code.trim(),
+                name: name.trim(),
+                ...(description.trim() ? { description: description.trim() } : {}),
               },
-            },
-          );
-        }}
-      >
-        <FormField label={t("Class code", "Mã lớp")}>
-          {(props) => (
-            <Input
-              {...props}
-              aria-label="Workspace code"
-              placeholder="SE181070"
-              required
-              maxLength={50}
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-            />
-          )}
-        </FormField>
-        <FormField label={t("Class name", "Tên lớp")}>
-          {(props) => (
-            <Input
-              {...props}
-              aria-label="Workspace name"
-              placeholder={t("Software Architecture · Fall 2026", "Kiến trúc phần mềm · Kỳ 2026")}
-              required
-              maxLength={255}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-          )}
-        </FormField>
-        <div className="flex items-end">
-          <Button type="submit" className="w-full md:w-auto" disabled={create.isPending}>
-            {create.isPending ? t("Creating class…", "Đang tạo lớp…") : t("Create class", "Tạo lớp")}
-          </Button>
-        </div>
-      </form>
-      {create.error && <ErrorState error={create.error} />}
-    </section>
+              {
+                onSuccess: () => {
+                  setCode("");
+                  setName("");
+                  setDescription("");
+                  onClose?.();
+                },
+              },
+            );
+          }}
+        >
+          <FormField label={t("Class code", "Mã lớp")}>
+            {(props) => (
+              <Input
+                {...props}
+                autoFocus
+                aria-label="Workspace code"
+                placeholder="SE181070"
+                required
+                maxLength={50}
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+              />
+            )}
+          </FormField>
+          <FormField label={t("Class name", "Tên lớp học")}>
+            {(props) => (
+              <Input
+                {...props}
+                aria-label="Workspace name"
+                placeholder={t("Software Architecture · Fall 2026", "Kiến trúc phần mềm · Kỳ 2026")}
+                required
+                maxLength={255}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+            )}
+          </FormField>
+          <FormField label={t("Description (optional)", "Mô tả ngắn (tùy chọn)")}>
+            {(props) => (
+              <Textarea
+                {...props}
+                rows={3}
+                maxLength={2000}
+                placeholder={t(
+                  "Schedule, cohort, or learning objectives for this class…",
+                  "Lịch học, khóa sinh viên hoặc mục tiêu môn học…",
+                )}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
+            )}
+          </FormField>
+          {create.error && <ErrorState error={create.error} />}
+          <DialogFooter className="gap-2 pt-2">
+            {onClose && (
+              <Button type="button" variant="outline" onClick={onClose}>
+                {t("Cancel", "Hủy")}
+              </Button>
+            )}
+            <Button type="submit" disabled={create.isPending || !code.trim() || !name.trim()}>
+              {create.isPending ? t("Creating class…", "Đang tạo lớp…") : t("Create class", "Tạo lớp")}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 export function WorkspaceControls({

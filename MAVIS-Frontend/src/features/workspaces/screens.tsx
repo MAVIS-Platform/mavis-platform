@@ -107,8 +107,8 @@ export function Workspaces() {
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2.5">
-                <Button type="button" className="h-11 rounded-xl bg-white px-5 font-semibold text-slate-950 shadow-sm hover:bg-sky-50" onClick={() => setShowCreate((open) => !open)}>
-                  <Plus className="mr-2 size-4" aria-hidden="true" />{showCreate ? t("Close", "Đóng") : t("Create class", "Tạo lớp")}
+                <Button type="button" className="h-11 rounded-xl bg-white px-5 font-semibold text-slate-950 shadow-sm hover:bg-sky-50" onClick={() => setShowCreate(true)}>
+                  <Plus className="mr-2 size-4" aria-hidden="true" />{t("Create class", "Tạo lớp")}
                 </Button>
               </div>
             </div>
