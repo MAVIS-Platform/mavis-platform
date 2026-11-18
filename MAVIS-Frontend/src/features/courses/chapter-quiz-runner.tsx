@@ -205,9 +205,41 @@ export function ChapterQuizRunner({
 
       {!canManage && !submitted && (
         <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
-          <span className="text-xs text-muted-foreground">
-            {t("Answered", "Đã chọn")}: <strong>{answeredCount}</strong> / {questions.length}
-          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted-foreground">
+              {t("Answered", "Đã chọn")}: <strong>{answeredCount}</strong> / {questions.length}
+            </span>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7 px-2 text-xs"
+              onClick={() => {
+                const next: Record<string, number> = {};
+                questions.forEach((q) => {
+                  next[q.id] = q.correctOption;
+                });
+                setAnswers(next);
+              }}
+            >
+              ✨ {t("Fill Sample Pass (≥ 70%)", "Điền nhanh đáp án mẫu (Đạt ≥ 70%)")}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7 border-amber-300 px-2 text-xs text-amber-800 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-300"
+              onClick={() => {
+                const next: Record<string, number> = {};
+                questions.forEach((q) => {
+                  next[q.id] = (q.correctOption + 1) % Math.max(q.options.length, 2);
+                });
+                setAnswers(next);
+              }}
+            >
+              🧪 {t("Test Fail Case (DS-02b)", "Thử kịch bản < 60% (Demo DS-02b)")}
+            </Button>
+          </div>
           <Button
             type="button"
             className="bg-emerald-600 text-white hover:bg-emerald-700"
