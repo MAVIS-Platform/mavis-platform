@@ -457,7 +457,9 @@ function ShellChrome({
                         ? "Submission review"
                         : scope === "project"
                           ? "Project workspace"
-                          : "Teaching workspace",
+                          : role === "student"
+                            ? "Learning workspace"
+                            : "Teaching workspace",
                     )}
                   </p>
                   <p className="mt-1 break-words text-xs font-medium">{context}</p>

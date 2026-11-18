@@ -142,41 +142,42 @@ export function StudentCourseSyllabus({
 
   return (
     <div className="space-y-6">
-      <section className="rounded-2xl bg-gradient-to-r from-emerald-950 via-teal-900 to-slate-900 p-6 text-white shadow-lg">
+      <section className="mavis-hero-surface p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="max-w-2xl space-y-2">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge className="border-white/25 bg-white/15 font-mono text-white hover:bg-white/20">
+              <Badge
+                variant="outline"
+                className="border-primary/25 bg-primary/10 font-mono text-xs text-primary"
+              >
                 {workspace.code || t("CLASS", "LỚP")}
               </Badge>
-              <span className="text-xs font-medium text-teal-100">
+              <span className="mavis-tabular text-xs font-medium text-muted-foreground">
                 {summary.totalLabs > 0
                   ? `${summary.completedLabs}/${summary.totalLabs} ${t("completed", "bài đã xong")} (${summary.completionPercent}%)`
                   : t("Course Workspace", "Lớp học MAVIS")}
               </span>
             </div>
-            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{workspace.name}</h1>
-            <p className="text-sm text-teal-100/90">
+            <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+              {workspace.name}
+            </h1>
+            <p className="text-sm leading-6 text-muted-foreground">
               {t(
-                "Pick any unlocked Lab from the left syllabus tree to read the lesson, test impact analysis, pass the Quiz Gate, and practice on 2D Studio.",
-                "Chọn bài học ở cây mục lục bên trái để học tuần tự 4 bước: Lý thuyết C1–C3, Lan truyền lỗi BFS, Quiz mở khóa và Thực hành 2D Studio.",
+                "Pick any unlocked Lab from the left syllabus tree to read the lesson, test impact analysis, pass the Quiz Gate, and practice on MAVIS Studio Live.",
+                "Chọn bài học ở cây mục lục bên trái để học tuần tự 4 bước: Lý thuyết C1–C3, Lan truyền lỗi BFS, Quiz mở khóa và Thực hành MAVIS Studio Live.",
               )}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2.5">
             {resumeLabHref && (
-              <Button asChild className="bg-teal-500 text-white shadow-sm hover:bg-teal-400">
+              <Button asChild>
                 <Link href={resumeLabHref}>
                   <Play className="mr-1.5 h-4 w-4 fill-current" aria-hidden="true" />
                   {t("Resume Current Lesson", "Học Tiếp Bài Hiện Tại")}
                 </Link>
               </Button>
             )}
-            <Button
-              asChild
-              variant="outline"
-              className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white"
-            >
+            <Button asChild variant="outline">
               <Link href="/courses">← {t("Back to courses", "Quay lại khóa học")}</Link>
             </Button>
           </div>
@@ -184,9 +185,9 @@ export function StudentCourseSyllabus({
 
         {summary.totalLabs > 0 && (
           <div className="mt-5 max-w-lg space-y-1.5">
-            <div className="flex justify-between text-xs text-teal-100">
+            <div className="flex justify-between text-xs text-muted-foreground">
               <span>{t("Course Syllabus Progress", "Tiến Độ Hoàn Thành Khóa Học")}</span>
-              <span className="font-semibold text-white">
+              <span className="mavis-tabular font-semibold text-primary">
                 {summary.completedLabs}/{summary.totalLabs} · {summary.completionPercent}%
               </span>
             </div>
@@ -196,10 +197,10 @@ export function StudentCourseSyllabus({
               aria-valuemin={0}
               aria-valuemax={summary.totalLabs}
               aria-valuenow={summary.completedLabs}
-              className="h-2.5 overflow-hidden rounded-full bg-white/20"
+              className="h-2 overflow-hidden rounded-full bg-muted"
             >
               <div
-                className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-teal-300 transition-all"
+                className="h-full rounded-full bg-gradient-to-r from-primary to-emerald-500 transition-[width]"
                 style={{ width: `${summary.completionPercent}%` }}
               />
             </div>
