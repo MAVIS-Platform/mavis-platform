@@ -38,7 +38,7 @@ function safeHref(value: string) {
   return value.startsWith("/") || /^https?:\/\//i.test(value) ? value : null;
 }
 
-function inline(text: string): ReactNode[] {
+function inline(text: string, depth = 0): ReactNode[] {
   const cleaned = sanitizeMojibake(text);
   const parts = cleaned.split(INLINE);
   return parts.map((part, index) => {
@@ -54,10 +54,12 @@ function inline(text: string): ReactNode[] {
       );
     }
     if (part.startsWith("**") && part.endsWith("**")) {
-      return <strong key={index}>{part.slice(2, -2)}</strong>;
+      const inner = part.slice(2, -2);
+      return <strong key={index}>{depth < 2 ? inline(inner, depth + 1) : inner}</strong>;
     }
     if (part.startsWith("*") && part.endsWith("*")) {
-      return <em key={index}>{part.slice(1, -1)}</em>;
+      const inner = part.slice(1, -1);
+      return <em key={index}>{depth < 2 ? inline(inner, depth + 1) : inner}</em>;
     }
     const link = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(part);
     if (link) {
