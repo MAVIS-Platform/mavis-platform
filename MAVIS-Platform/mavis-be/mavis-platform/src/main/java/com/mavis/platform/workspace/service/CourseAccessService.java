@@ -430,11 +430,13 @@ public class CourseAccessService {
         String code = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
         OffsetDateTime expires = OffsetDateTime.now().plusHours(validHours);
         jdbc.update("""
-                INSERT INTO course_passkeys (workspace_id, digest, expires_at)
-                VALUES (?, ?, ?)
-                ON CONFLICT (workspace_id) DO UPDATE
-                SET digest = EXCLUDED.digest, expires_at = EXCLUDED.expires_at, revoked_at = NULL
-                """, workspaceId, digest(code), expires);
+                UPDATE course_passkeys SET revoked_at = now(), is_active = FALSE
+                WHERE workspace_id = ? AND revoked_at IS NULL
+                """, workspaceId);
+        jdbc.update("""
+                INSERT INTO course_passkeys (id, workspace_id, code, label, digest, expires_at, is_active, created_at)
+                VALUES (?, ?, ?, 'Mã tự động', ?, ?, TRUE, now())
+                """, UUID.randomUUID(), workspaceId, code, digest(code), expires);
         audit("COURSE_PASSKEY_ISSUED", "WORKSPACE", workspaceId);
         return new Passkey(code, expires);
     }
@@ -444,20 +446,22 @@ public class CourseAccessService {
         access.requireWorkspaceLecturer(workspaceId);
         int enrolled = jdbc.queryForObject("SELECT count(*) FROM workspace_members WHERE workspace_id=? AND member_role='STUDENT'", Integer.class, workspaceId);
         return jdbc.query("""
-                SELECT k.expires_at, k.revoked_at IS NULL AND k.expires_at > now()
+                SELECT k.code, k.expires_at, k.is_active AND k.revoked_at IS NULL AND k.expires_at > now()
                        AND w.status = 'ACTIVE' AS active
                 FROM course_passkeys k JOIN workspaces w ON w.id = k.workspace_id
                 WHERE k.workspace_id = ?
+                ORDER BY k.created_at DESC, k.expires_at DESC
                 """, (rs, row) -> new KeyStatus(rs.getObject("expires_at", OffsetDateTime.class),
-                rs.getBoolean("active"), workspaces.findById(workspaceId).map(Workspace::getMaxStudents).orElse(null), enrolled), workspaceId)
+                rs.getBoolean("active"), workspaces.findById(workspaceId).map(Workspace::getMaxStudents).orElse(null), enrolled,
+                rs.getString("code")), workspaceId)
                 .stream().findFirst().orElse(new KeyStatus(null, false,
-                        workspaces.findById(workspaceId).map(Workspace::getMaxStudents).orElse(null), enrolled));
+                        workspaces.findById(workspaceId).map(Workspace::getMaxStudents).orElse(null), enrolled, null));
     }
 
     public void revoke(UUID workspaceId) {
         manage(workspaceId);
         int changed = jdbc.update("""
-                UPDATE course_passkeys SET revoked_at = now() WHERE workspace_id = ? AND revoked_at IS NULL
+                UPDATE course_passkeys SET revoked_at = now(), is_active = FALSE WHERE workspace_id = ? AND revoked_at IS NULL
                 """, workspaceId);
         if (changed > 0) audit("COURSE_PASSKEY_REVOKED", "WORKSPACE", workspaceId);
     }
@@ -468,14 +472,31 @@ public class CourseAccessService {
             throw new BusinessException(ErrorCode.FORBIDDEN, "Only students can redeem a course Passkey");
         }
         passkeyRateCheck(actor.getId());
-        String keyDigest = digest(code);
+        String normalizedCode = code == null ? "" : code.trim();
+        if (!normalizedCode.matches("[A-Za-z0-9_-]{4,32}")) {
+            passkeyFailure(actor.getId());
+            throw invalidKey();
+        }
+        String keyDigest = digest(normalizedCode);
         UUID prior = replay(actor.getId(), requestId, keyDigest);
         if (prior != null) {
             return new Enrollment(prior);
         }
-        UUID workspaceId = jdbc.queryForList("SELECT workspace_id FROM course_passkeys WHERE digest = ?",
-                        UUID.class, keyDigest)
-                .stream().findFirst().orElseThrow(() -> { passkeyFailure(actor.getId()); return invalidKey(); });
+        List<UUID> foundWorkspaces = jdbc.queryForList("SELECT workspace_id FROM course_passkeys WHERE digest = ?",
+                UUID.class, keyDigest);
+        if (foundWorkspaces.isEmpty() && !normalizedCode.toUpperCase(java.util.Locale.ROOT).equals(normalizedCode)) {
+            String upperDigest = digest(normalizedCode.toUpperCase(java.util.Locale.ROOT));
+            UUID upperReplay = replay(actor.getId(), requestId, upperDigest);
+            if (upperReplay != null) {
+                return new Enrollment(upperReplay);
+            }
+            foundWorkspaces = jdbc.queryForList("SELECT workspace_id FROM course_passkeys WHERE digest = ?",
+                    UUID.class, upperDigest);
+            if (!foundWorkspaces.isEmpty()) {
+                keyDigest = upperDigest;
+            }
+        }
+        UUID workspaceId = foundWorkspaces.stream().findFirst().orElseThrow(() -> { passkeyFailure(actor.getId()); return invalidKey(); });
         Workspace workspace = lock(workspaceId);
         prior = replay(actor.getId(), requestId, keyDigest);
         if (prior != null) {
@@ -483,7 +504,8 @@ public class CourseAccessService {
         }
         boolean valid = Boolean.TRUE.equals(jdbc.queryForObject("""
                 SELECT EXISTS (SELECT 1 FROM course_passkeys WHERE workspace_id = ? AND digest = ?
-                AND revoked_at IS NULL AND expires_at > statement_timestamp())
+                AND is_active = TRUE AND revoked_at IS NULL AND expires_at > statement_timestamp()
+                AND (max_uses IS NULL OR used_count < max_uses))
                 """, Boolean.class, workspaceId, keyDigest));
         if (!valid || !workspace.isCourseMode() || !"ACTIVE".equals(workspace.getStatus())) {
             passkeyFailure(actor.getId());
@@ -501,6 +523,8 @@ public class CourseAccessService {
         if (added == 0) {
             throw new BusinessException(ErrorCode.CONFLICT, "ALREADY_ENROLLED", "Already enrolled in this course");
         }
+        jdbc.update("UPDATE course_passkeys SET used_count = used_count + 1 WHERE workspace_id = ? AND digest = ?",
+                workspaceId, keyDigest);
         AuthorizationRequestCache.evictMembership(workspaceId, actor.getId());
         jdbc.update("DELETE FROM auth_rate_limits WHERE scope='PASSKEY' AND subject_digest=?", digest(actor.getId().toString()));
         audit("COURSE_ENROLLED", "WORKSPACE", workspaceId);
