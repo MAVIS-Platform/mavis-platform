@@ -31,11 +31,44 @@ type KeyStatus = {
   expiresAt: string | null;
   maxStudents: number | null;
   enrolledStudents: number;
+  code?: string | null | undefined;
 };
 type IssuedKey = { code: string; expiresAt: string };
 
+export type PasskeyItem = {
+  id: string;
+  workspaceId: string;
+  code: string | null;
+  label: string;
+  expiresAt: string;
+  revokedAt: string | null;
+  active: boolean;
+  maxUses: number | null;
+  usedCount: number;
+  createdAt: string;
+};
+
+export type CourseEssaySubmission = {
+  id: string;
+  workspaceId: string;
+  courseItemId: string;
+  itemTitle: string;
+  studentId: string;
+  studentName: string;
+  studentEmail: string;
+  answerMarkdown: string;
+  status: "SUBMITTED" | "GRADED" | "RETURNED";
+  score: number | null;
+  feedback: string | null;
+  gradedBy: string | null;
+  submittedAt: string;
+  gradedAt: string | null;
+};
+
 const roadmapKey = (workspaceId: string) => ["api", "course-roadmap", workspaceId];
 const passkeyKey = (workspaceId: string) => ["api", "course-passkey", workspaceId];
+const passkeysKey = (workspaceId: string) => ["api", "course-passkeys", workspaceId];
+const essaysKey = (workspaceId: string) => ["api", "course-essays", workspaceId];
 
 async function courseApi<T>(path: string, init?: RequestInit): Promise<T> {
   try {
@@ -59,6 +92,135 @@ export function useCourseRoadmap(workspaceId: string) {
       courseApi<Roadmap>(`workspaces/${workspaceId}/course-roadmap`, { signal }),
     enabled: client.mode === "backend" && !!workspaceId,
     refetchOnWindowFocus: true,
+  });
+}
+
+export function useCoursePasskeys(workspaceId: string, enabled = true) {
+  const client = useApi();
+  return useQuery({
+    queryKey: passkeysKey(workspaceId),
+    queryFn: ({ signal }) =>
+      courseApi<PasskeyItem[]>(`workspaces/${workspaceId}/course-passkeys`, { signal }),
+    enabled: client.mode === "backend" && Boolean(workspaceId) && enabled,
+    retry: false,
+  });
+}
+
+export function useCreateCoursePasskey(workspaceId: string) {
+  const cache = useQueryClient();
+  return useMutation({
+    mutationFn: (body: {
+      customCode?: string | undefined;
+      label?: string | undefined;
+      validHours?: number | undefined;
+      maxUses?: number | undefined;
+    }) =>
+      courseApi<PasskeyItem>(`workspaces/${workspaceId}/course-passkeys`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      void cache.invalidateQueries({ queryKey: passkeysKey(workspaceId) });
+      void cache.invalidateQueries({ queryKey: passkeyKey(workspaceId) });
+      void cache.invalidateQueries({ queryKey: ["api", "course-setup", workspaceId] });
+      void cache.invalidateQueries({ queryKey: ["api", "workspaces"] });
+    },
+  });
+}
+
+export function useUpdateCoursePasskey(workspaceId: string) {
+  const cache = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      passkeyId,
+      ...body
+    }: {
+      passkeyId: string;
+      customCode?: string | undefined;
+      label?: string | undefined;
+      validHours?: number | undefined;
+      maxUses?: number | undefined;
+      active?: boolean | undefined;
+    }) =>
+      courseApi<PasskeyItem>(`workspaces/${workspaceId}/course-passkeys/${passkeyId}`, {
+        method: "PUT",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      void cache.invalidateQueries({ queryKey: passkeysKey(workspaceId) });
+      void cache.invalidateQueries({ queryKey: passkeyKey(workspaceId) });
+      void cache.invalidateQueries({ queryKey: ["api", "course-setup", workspaceId] });
+    },
+  });
+}
+
+export function useDeleteCoursePasskey(workspaceId: string) {
+  const cache = useQueryClient();
+  return useMutation({
+    mutationFn: (passkeyId: string) =>
+      courseApi<null>(`workspaces/${workspaceId}/course-passkeys/${passkeyId}`, {
+        method: "DELETE",
+      }),
+    onSuccess: () => {
+      void cache.invalidateQueries({ queryKey: passkeysKey(workspaceId) });
+      void cache.invalidateQueries({ queryKey: passkeyKey(workspaceId) });
+      void cache.invalidateQueries({ queryKey: ["api", "course-setup", workspaceId] });
+    },
+  });
+}
+
+export function useCourseEssays(workspaceId: string, enabled = true) {
+  const client = useApi();
+  return useQuery({
+    queryKey: essaysKey(workspaceId),
+    queryFn: ({ signal }) =>
+      courseApi<CourseEssaySubmission[]>(`workspaces/${workspaceId}/course-essays`, { signal }),
+    enabled: client.mode === "backend" && Boolean(workspaceId) && enabled,
+    retry: false,
+  });
+}
+
+export function useSubmitCourseEssay(workspaceId: string) {
+  const cache = useQueryClient();
+  return useMutation({
+    mutationFn: ({ itemId, answerMarkdown }: { itemId: string; answerMarkdown: string }) =>
+      courseApi<CourseEssaySubmission>(
+        `workspaces/${workspaceId}/course-items/${itemId}/essay-submissions`,
+        {
+          method: "POST",
+          body: JSON.stringify({ answerMarkdown }),
+        },
+      ),
+    onSuccess: () => {
+      void cache.invalidateQueries({ queryKey: essaysKey(workspaceId) });
+    },
+  });
+}
+
+export function useGradeCourseEssay(workspaceId: string) {
+  const cache = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      submissionId,
+      score,
+      feedback,
+      status = "GRADED",
+    }: {
+      submissionId: string;
+      score: number;
+      feedback: string;
+      status?: "GRADED" | "RETURNED" | undefined;
+    }) =>
+      courseApi<CourseEssaySubmission>(
+        `workspaces/${workspaceId}/essay-submissions/${submissionId}/grade`,
+        {
+          method: "PUT",
+          body: JSON.stringify({ score, feedback, status }),
+        },
+      ),
+    onSuccess: () => {
+      void cache.invalidateQueries({ queryKey: essaysKey(workspaceId) });
+    },
   });
 }
 
