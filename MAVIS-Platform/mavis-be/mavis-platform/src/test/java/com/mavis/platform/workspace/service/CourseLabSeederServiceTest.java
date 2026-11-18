@@ -533,7 +533,7 @@ class CourseLabSeederServiceTest {
     }
 
     @Test
-    void ensureJavaCourseraPopulatedQueriesCourseDefinitionsAndHealsPartialWorkspace() {
+    void ensureJavaCourseraPopulatedQueriesCourseDefinitionsAndHealsPartialWorkspace() throws Exception {
         UUID workspaceId = UUID.randomUUID();
         User lecturer = User.builder().id(UUID.randomUUID()).email("lecturer@mavis.edu.vn").build();
         Workspace workspace = Workspace.builder()
