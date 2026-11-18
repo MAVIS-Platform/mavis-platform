@@ -1914,6 +1914,28 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Architecture & Scaling Explanation": "Giải thích Kiến trúc & Tác động nhân bản",
   "503 / CIRCUIT OPEN — Service Unavailable": "503 / NGẮT MẠCH — Service ngừng hoạt động",
   "Static Dependency Blast Radius": "Bán kính ảnh hưởng phụ thuộc (Blast Radius)",
+  "Learning workspace": "Không gian học tập",
+  "Curriculum & Labs": "Giáo trình & Bài Lab",
+  "System Overview": "Tổng quan hệ thống",
+  "Governance & Audit": "Quản trị & Nhật ký",
+  "My Grades & Submissions": "Điểm & Bài nộp",
+  "Back to home": "Quay lại trang chủ",
+  "Explore your architecture, trace dependencies, and make changes with the source evidence in view.":
+    "Khám phá kiến trúc, lần theo các phụ thuộc và kiểm chứng tác động thay đổi với bằng chứng mã nguồn rõ ràng.",
+  "Email verified. You can sign in now.": "Email đã được xác minh. Bạn có thể đăng nhập ngay.",
+  "Password updated. Sign in with your new password.":
+    "Mật khẩu đã được cập nhật. Hãy đăng nhập bằng mật khẩu mới.",
+  "You’re signed out.": "Bạn đã đăng xuất.",
+  "You're signed out.": "Bạn đã đăng xuất.",
+  "Experience": "Trải nghiệm",
+  "Static C1–C3 & AI": "Kiến trúc tĩnh C1–C3 & AI",
+  "Theory & Quiz Gate": "Lý thuyết & Quiz Gate",
+  "Live Runtime View": "Trực quan Runtime thật",
+  "MAVIS Studio & Submit": "MAVIS Studio & Nộp bài",
+  "Every required snapshot must exceed 5.0 / 10 to unlock the next Lab.":
+    "Mọi Snapshot bắt buộc phải đạt trên 5.0 / 10 để tự động mở khóa bài Lab tiếp theo.",
+  "Overall written evaluation is required before publishing grades.":
+    "Bắt buộc nhập nhận xét tổng thể trước khi công bố kết quả chấm điểm.",
 };
 
 export const PATTERN_REPLACEMENTS: Array<[RegExp, string]> = [
