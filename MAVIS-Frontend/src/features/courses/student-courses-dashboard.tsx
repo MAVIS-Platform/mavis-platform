@@ -27,19 +27,19 @@ export function StudentCoursesHero({
     : "/courses#course-passkey";
 
   return (
-    <section className="mavis-hero-surface p-6 sm:p-7">
+    <section className="mavis-hero-surface p-6 text-white sm:p-7">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="max-w-2xl space-y-2">
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/15 px-3 py-1 text-xs font-semibold text-sky-100 backdrop-blur-sm">
             <GraduationCap className="h-3.5 w-3.5" aria-hidden="true" />
             {t("MAVIS Coursera Hub", "Không Gian Học Tập MAVIS")}
           </span>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+          <h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
             {studentName
               ? `${t("Welcome back,", "Xin chào,")} ${studentName}`
               : t("My Courses", "Khóa học của tôi")}
           </h1>
-          <p className="text-sm leading-6 text-muted-foreground">
+          <p className="text-sm leading-6 text-sky-100/90">
             {t(
               "Track sequential Labs, pass Quiz Gates, practice on MAVIS Studio Live, and view your graded feedback.",
               "Theo dõi lộ trình bài Lab tuần tự, vượt qua Quiz Gate, thực hành MAVIS Studio Live và xem nhận xét từ Giảng viên.",
@@ -49,26 +49,38 @@ export function StudentCoursesHero({
 
         <div className="flex flex-wrap items-center gap-2.5">
           {firstWorkspaceId && (
-            <Button asChild>
+            <Button
+              asChild
+              className="bg-white text-slate-950 shadow-sm hover:bg-sky-50"
+            >
               <Link href={resumeHref}>
-                <Play className="mr-1.5 h-4 w-4 fill-current" aria-hidden="true" />
+                <Play className="mr-1.5 h-4 w-4 fill-current text-blue-700" aria-hidden="true" />
                 {t("Resume Latest Course", "Tiếp tục bài học gần nhất")}
               </Link>
             </Button>
           )}
           <Button
             type="button"
-            variant={firstWorkspaceId ? "outline" : "default"}
+            variant="outline"
             aria-expanded={passkeyOpen}
             aria-controls="course-passkey-form"
             onClick={onTogglePasskey}
+            className={
+              firstWorkspaceId
+                ? "border-white/30 bg-white/12 text-white hover:bg-white/20 hover:text-white"
+                : "border-transparent bg-white text-slate-950 shadow-sm hover:bg-sky-50"
+            }
           >
             <KeyRound className="mr-1.5 h-4 w-4" aria-hidden="true" />
             {passkeyOpen
               ? t("Close Passkey", "Đóng ô Passkey")
               : t("Enter Class Passkey", "Nhập Mã Lớp (Passkey)")}
           </Button>
-          <Button asChild variant="outline">
+          <Button
+            asChild
+            variant="outline"
+            className="border-white/30 bg-white/12 text-white hover:bg-white/20 hover:text-white"
+          >
             <Link href="/submissions">
               <ClipboardCheck className="mr-1.5 h-4 w-4" aria-hidden="true" />
               {t("My Grades & Submissions", "Điểm & Bài nộp của tôi")}
@@ -243,7 +255,7 @@ export function StudentCourseProgressCard({
             </p>
           </div>
 
-          {roadmap.data?.guided && (
+          {roadmap.data?.guided ? (
             <div className="space-y-1.5 rounded-xl border bg-muted/35 p-3">
               <div className="flex items-center justify-between gap-2 text-xs">
                 <span className="font-medium text-muted-foreground">
@@ -267,6 +279,13 @@ export function StudentCourseProgressCard({
                 />
               </div>
             </div>
+          ) : (
+            <p className="rounded-xl border border-dashed bg-muted/20 px-3 py-2.5 text-xs text-muted-foreground">
+              {t(
+                "Open class to inspect syllabus materials and upcoming Labs.",
+                "Vào lớp để xem đề cương bài học và danh sách bài Lab sắp mở.",
+              )}
+            </p>
           )}
 
           {summary.nextActiveLab ? (

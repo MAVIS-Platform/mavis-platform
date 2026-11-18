@@ -94,19 +94,25 @@ export function Workspaces() {
     <div className={canCreate ? "space-y-8 rounded-lg bg-background p-6 md:p-8" : "space-y-6"}>
       {canCreate ? (
         <div className="space-y-7">
-          <header className="relative isolate overflow-hidden rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-50 via-background to-indigo-50 px-6 py-8 dark:border-blue-900 dark:from-blue-950/40 dark:to-indigo-950/30 md:px-8">
-            <div className="pointer-events-none absolute -right-12 -top-24 size-72 rounded-full border-[40px] border-blue-500/5" aria-hidden="true" />
+          <header className="mavis-hero-surface px-6 py-7 text-white md:px-8">
             <div className="relative flex flex-wrap items-center justify-between gap-6">
               <div className="max-w-2xl">
-                <p className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-blue-600 dark:text-blue-400"><span className="h-1 w-6 rounded-full bg-blue-600" />{t("Your teaching space", "Không gian giảng dạy")}</p>
-                <h2 className="text-3xl font-semibold tracking-tight md:text-4xl">{t("A great class starts here.", "Khởi đầu cho một lớp học tuyệt vời.")}</h2>
-                <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">{t("Open a class to organize modules, Labs, students and grading.", "Mở một lớp để tổ chức chương, Lab, sinh viên và chấm điểm.")}</p>
+                <p className="mb-2.5 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">
+                  <span className="h-1 w-6 rounded-full bg-teal-300" />
+                  {t("Your teaching space", "Không gian giảng dạy")}
+                </p>
+                <h2 className="text-2xl font-bold tracking-tight text-white md:text-3xl">
+                  {t("A great class starts here.", "Khởi đầu cho một lớp học tuyệt vời.")}
+                </h2>
+                <p className="mt-2 max-w-xl text-sm leading-6 text-sky-100/90">
+                  {t("Open a class to organize modules, Labs, students and grading.", "Mở một lớp để tổ chức chương, Lab, sinh viên và chấm điểm.")}
+                </p>
               </div>
               <div className="flex flex-wrap items-center gap-2.5">
                 <Button
                   type="button"
                   variant="outline"
-                  className="h-12 rounded-xl border-teal-300 bg-teal-50/90 px-4 text-teal-900 hover:bg-teal-100 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-100"
+                  className="h-11 rounded-xl border-white/30 bg-white/12 px-4 text-white hover:bg-white/20 hover:text-white"
                   disabled={bootstrapJava.isPending}
                   onClick={() => {
                     if (api.mode === "mock") {
@@ -120,7 +126,7 @@ export function Workspaces() {
                     ? t("Provisioning JAVA-MS-2026…", "Đang khởi tạo JAVA-MS-2026…")
                     : t("☕ 1-Click Java Microservices Course", "☕ Khởi tạo / Đồng bộ Môn Java Microservices (JAVA-MS-2026)")}
                 </Button>
-                <Button type="button" className="h-12 rounded-xl bg-[#0056d2] px-6 text-white shadow-lg shadow-blue-600/15 hover:bg-[#0046ad]" onClick={() => setShowCreate((open) => !open)}>
+                <Button type="button" className="h-11 rounded-xl bg-white px-5 font-semibold text-slate-950 shadow-sm hover:bg-sky-50" onClick={() => setShowCreate((open) => !open)}>
                   <Plus className="mr-2 size-4" aria-hidden="true" />{showCreate ? t("Close", "Đóng") : t("Create class", "Tạo lớp")}
                 </Button>
               </div>

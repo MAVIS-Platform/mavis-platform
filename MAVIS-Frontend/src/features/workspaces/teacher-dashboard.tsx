@@ -68,17 +68,17 @@ export function TeacherDashboard() {
 
   return (
     <div className="space-y-6">
-      <section className="mavis-hero-surface p-6 sm:p-7">
+      <section className="mavis-hero-surface p-6 text-white sm:p-7">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="max-w-2xl space-y-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/15 px-3 py-1 text-xs font-semibold text-sky-100 backdrop-blur-sm">
               <GraduationCap className="h-3.5 w-3.5" aria-hidden="true" />
               {t("MAVIS Teaching Studio", "Không Gian Quản Lý Giảng Dạy")}
             </span>
-            <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+            <h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
               {t("My Classes", "Lớp Học Của Tôi")}
             </h1>
-            <p className="text-sm leading-6 text-muted-foreground">
+            <p className="text-sm leading-6 text-sky-100/90">
               {t(
                 "Create classes, author guided Labs with Quiz & 2D Studio, track student progress, and grade frozen submissions.",
                 "Quản lý lớp học, biên soạn bài Lab tương tác (Quiz & 2D Studio), theo dõi tiến độ sinh viên và chấm bài tập.",
@@ -105,11 +105,19 @@ export function TeacherDashboard() {
                 ? t("Provisioning JAVA-MS-2026…", "Đang khởi tạo JAVA-MS-2026…")
                 : t("☕ 1-Click Java Microservices", "☕ Khởi tạo / Đồng bộ JAVA-MS-2026")}
             </Button>
-            <Button type="button" onClick={() => setShowCreate((open) => !open)}>
+            <Button
+              type="button"
+              onClick={() => setShowCreate((open) => !open)}
+              className="bg-white text-slate-950 shadow-sm hover:bg-sky-50"
+            >
               <Plus className="mr-1.5 h-4 w-4" aria-hidden="true" />
               {showCreate ? t("Close", "Đóng") : t("Create class", "Tạo lớp mới")}
             </Button>
-            <Button asChild variant="outline">
+            <Button
+              asChild
+              variant="outline"
+              className="border-white/30 bg-white/12 text-white hover:bg-white/20 hover:text-white"
+            >
               <Link href="/submissions">
                 <ClipboardCheck className="mr-1.5 h-4 w-4" aria-hidden="true" />
                 {t("Grading Queue", "Hàng Đợi Chấm Bài")}
