@@ -1,12 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   BookOpen,
+  Check,
   CheckCircle2,
   CircleDashed,
   CircleHelp,
+  Copy,
   Eye,
   GitBranch,
   Pencil,
@@ -25,6 +27,11 @@ import type { Assignment } from "@/features/assignments/requirements";
 import {
   CoursePasskey,
   PublishCourseLab,
+<<<<<<< HEAD
+=======
+  SeedCuratedCourseLabs,
+  useCoursePasskeys,
+>>>>>>> 62588d4f (fix(curriculum-manager): show active passkey codes inline and fix /theory-library and /lab-authoring links)
   useCourseRoadmap,
   useCourseSetup,
 } from "@/features/workspaces/course-access";
@@ -81,10 +88,23 @@ export function LecturerCurriculumManager({
   );
   const roadmap = useCourseRoadmap(workspaceId);
   const setup = useCourseSetup(workspaceId);
+  const passkeysQuery = useCoursePasskeys(workspaceId);
   const remove = useApiMutation("deleteAssignment");
   const [filter, setFilter] = useState<FilterMode>("all");
   const [search, setSearch] = useState("");
+<<<<<<< HEAD
+=======
+  const [showPasskeyDrawer, setShowPasskeyDrawer] = useState(false);
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.location.hash === "#class-passkey") {
+      setShowPasskeyDrawer(true);
+    }
+  }, []);
+  const [copiedKeyId, setCopiedKeyId] = useState<string | null>(null);
+>>>>>>> 62588d4f (fix(curriculum-manager): show active passkey codes inline and fix /theory-library and /lab-authoring links)
   const [prerequisiteLab, setPrerequisiteLab] = useState<Assignment | null>(null);
+
+  const activePasskeys = (passkeysQuery.data ?? []).filter((pk) => pk.active && pk.code);
 
   const labs = assignmentsQuery.data ?? [];
 
@@ -129,9 +149,63 @@ export function LecturerCurriculumManager({
 
   return (
     <div className="space-y-6">
-      <div id="class-passkey">
+      {/* Always-visible Passkey Quick Bar + Full CRUD Manager */}
+      <section
+        id="class-passkey"
+        className="space-y-3 rounded-2xl border border-emerald-200/80 bg-emerald-50/40 p-4 dark:border-emerald-900 dark:bg-emerald-950/20"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-900 dark:text-emerald-200">
+              <KeyRound className="size-4 text-emerald-600" aria-hidden="true" />
+              {t("Active Class Passkeys:", "Mã ghi danh lớp học đang mở:")}
+            </span>
+            {activePasskeys.length > 0 ? (
+              activePasskeys.map((pk) => (
+                <button
+                  key={pk.id}
+                  type="button"
+                  onClick={() => {
+                    void navigator.clipboard?.writeText(pk.code ?? "").then(
+                      () => setCopiedKeyId(pk.id),
+                      () => setCopiedKeyId(null),
+                    );
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-2.5 py-1 font-mono text-xs font-bold text-emerald-900 shadow-2xs hover:border-emerald-500 dark:border-emerald-700 dark:bg-emerald-950 dark:text-emerald-100"
+                  title={pk.label}
+                >
+                  <span>{pk.code}</span>
+                  {copiedKeyId === pk.id ? (
+                    <Check className="size-3 text-emerald-600" aria-hidden="true" />
+                  ) : (
+                    <Copy className="size-3 text-emerald-600" aria-hidden="true" />
+                  )}
+                </button>
+              ))
+            ) : (
+              <span className="text-xs text-muted-foreground">
+                {t(
+                  "No passkey visible yet — create one below (e.g. JAVA2026).",
+                  "Chưa có mã passkey — tạo mã mới bên dưới (VD: JAVA2026).",
+                )}
+              </span>
+            )}
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant={showPasskeyDrawer ? "secondary" : "outline"}
+            onClick={() => setShowPasskeyDrawer((open) => !open)}
+          >
+            <KeyRound className="mr-1.5 size-3.5 text-emerald-600" aria-hidden="true" />
+            {showPasskeyDrawer
+              ? t("Show Full Manager Below", "Mở rộng chi tiết")
+              : t("Manage / Add Passkey (CRUD)", "🔑 Quản lý / Tạo thêm Passkey (CRUD)")}
+          </Button>
+        </div>
+
         <CoursePasskey workspaceId={workspaceId} />
-      </div>
+      </section>
 
       {/* Course Outline (structured chapters + published course roadmap) */}
       <CourseOutline workspaceId={workspaceId} canManage active={active} />
