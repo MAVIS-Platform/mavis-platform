@@ -37,7 +37,7 @@ function coverForCourse(courseId: string) {
     (value, character) => (value * 31 + character.charCodeAt(0)) >>> 0,
     0,
   );
-  return courseCovers[hash % courseCovers.length];
+  return courseCovers[hash % courseCovers.length] ?? courseCovers[0];
 }
 
 function CourseCover({ courseId, title }: { courseId: string; title: string }) {

@@ -4,7 +4,6 @@ import { ArrowRight, CircleHelp } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useLocale } from "@/lib/i18n/locale-context";
-import { CourseQuiz } from "@/features/courses/course-quiz";
 import { useCourseSetup } from "@/features/workspaces/course-access";
 import { QuizBuilder } from "./quiz-builder";
 
@@ -45,24 +44,6 @@ export function LabQuizSection({
         </div>
         <QuizBuilder workspaceId={workspaceId} assignmentId={assignmentId} />
       </section>
-
-      <details className="rounded-2xl border bg-card p-5 shadow-xs">
-        <summary className="cursor-pointer text-sm font-semibold text-foreground">
-          {t("Student Quiz Gate Preview (Read-Only)", "Xem trước giao diện Quiz của Sinh viên")}
-        </summary>
-        <div className="mt-4">
-          <CourseQuiz
-            workspaceId={workspaceId}
-            labId={assignmentId}
-            canSubmit={false}
-            runtimeStepHref={`/lab?${new URLSearchParams({
-              workspace: workspaceId,
-              assignment: assignmentId,
-              step: "3",
-            })}`}
-          />
-        </div>
-      </details>
 
       {onNavigate && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-4">

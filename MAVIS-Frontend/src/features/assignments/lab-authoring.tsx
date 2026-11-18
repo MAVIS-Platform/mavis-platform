@@ -127,7 +127,7 @@ export function LabAuthoring() {
     { id: "quiz", done: Boolean(setupLab?.quizPublished), enabled: Boolean(assignment) },
     {
       id: "studio",
-      done: Boolean(assignment && (!assignment.requireRuntimeTrace || setupLab?.topologyFrozen)),
+      done: Boolean(assignment && setupLab?.topologyFrozen),
       enabled: Boolean(assignment),
     },
     { id: "publish", done: Boolean(setupLab?.published), enabled: Boolean(assignment) },

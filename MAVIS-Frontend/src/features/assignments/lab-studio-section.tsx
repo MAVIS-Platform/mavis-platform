@@ -12,7 +12,6 @@ import { useLocale } from "@/lib/i18n/locale-context";
 import {
   PublishCourseLab,
   useAutoConfigureStudio,
-  useBootstrapLabStudio,
   useCourseSetup,
   useRuntimeSetupReadiness,
   useStartLabStudioSession,
@@ -46,7 +45,6 @@ export function LabStudioSection({
   const setup = useCourseSetup(workspaceId);
   const autoStudio = useAutoConfigureStudio(workspaceId, assignment.id);
   const startStudio = useStartLabStudioSession(workspaceId, assignment.id);
-  const bootstrapStudio = useBootstrapLabStudio(workspaceId, assignment.id);
   const runtimeConfig = useApiQuery(
     "runtimeConfiguration",
     { projectId: projectId ?? "" },
@@ -94,24 +92,7 @@ export function LabStudioSection({
           </Badge>
         </div>
 
-        {!assignment.requireRuntimeTrace ? (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/20 p-4 text-sm">
-            <div className="space-y-1">
-              <p className="font-semibold">
-                {t(
-                  "This Lab is configured as Theory + Quiz (no Studio runtime required)",
-                  "Lab này đang ở chế độ Lý thuyết + Quiz (không yêu cầu chạy Studio Live)",
-                )}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {t(
-                  "Use the checklist below to verify readiness and add the Lab to the class sequence, or switch Lab mode to Theory + Quiz + Studio in Step 1.",
-                  "Dùng bảng kiểm tra bên dưới để đưa Lab vào lớp, hoặc đổi Hình thức Lab ở Bước 1 sang Lý thuyết + Quiz + Studio nếu muốn thêm bài tập Docker topology.",
-                )}
-              </p>
-            </div>
-          </div>
-        ) : !projectId ? (
+        {!projectId ? (
           <div className="space-y-3">
             <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-800 dark:text-amber-200">
               <Lock className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
@@ -136,10 +117,10 @@ export function LabStudioSection({
               applications={readiness.data?.applications ?? []}
             />
 
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-300/80 bg-gradient-to-r from-emerald-50/80 via-teal-50/50 to-white p-4 dark:border-emerald-800 dark:from-emerald-950/30 dark:to-background">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/20 p-4">
               <div className="space-y-1">
-                <p className="flex items-center gap-1.5 text-sm font-semibold text-emerald-950 dark:text-emerald-100">
-                  <Sparkles className="size-4 text-emerald-600" aria-hidden="true" />
+                <p className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+                  <Sparkles className="size-4 text-primary" aria-hidden="true" />
                   {t(
                     "Auto-Configure 2D Studio Topology (1-Click)",
                     "Tự động cấu hình Topology Studio 2D (1 chạm)",
@@ -154,7 +135,6 @@ export function LabStudioSection({
               </div>
               <Button
                 type="button"
-                className="bg-emerald-600 text-white hover:bg-emerald-700"
                 disabled={autoStudio.isPending}
                 onClick={() =>
                   autoStudio.mutate(undefined, {
@@ -227,15 +207,25 @@ export function LabStudioSection({
             )}
 
             {projectId && runtimeConfig.data && (
-              <PreparedTopologyEditor
-                projectId={projectId}
-                configuration={runtimeConfig.data}
-                onSaved={() => {
-                  void runtimeConfig.refetch();
-                  void readiness.refetch();
-                  void setup.refetch();
-                }}
-              />
+              <details className="rounded-xl border bg-muted/10 p-4">
+                <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {t(
+                    "Advanced 2D Topology Fine-Tuning (Blocks & Connections)",
+                    "Tinh chỉnh nâng cao Topology 2D (Blocks & Connections)",
+                  )}
+                </summary>
+                <div className="mt-3">
+                  <PreparedTopologyEditor
+                    projectId={projectId}
+                    configuration={runtimeConfig.data}
+                    onSaved={() => {
+                      void runtimeConfig.refetch();
+                      void readiness.refetch();
+                      void setup.refetch();
+                    }}
+                  />
+                </div>
+              </details>
             )}
             {projectId && !runtimeConfig.data && !runtimeConfig.isPending && (
               <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
@@ -294,23 +284,9 @@ export function LabStudioSection({
                         ? t("Starting session…", "Đang khởi tạo phiên…")
                         : t("New Playtest Session", "Khởi tạo phiên thử mới")}
                     </Button>
-                    {activeSessionId && (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        disabled={bootstrapStudio.isPending}
-                        onClick={() => bootstrapStudio.mutate(activeSessionId)}
-                      >
-                        {bootstrapStudio.isPending
-                          ? t("Loading 2D Sandbox…", "Đang nạp Sandbox 2D…")
-                          : t("Initialize Simulated Topology", "Nạp Topology mô phỏng")}
-                      </Button>
-                    )}
                   </div>
                 </div>
                 {startStudio.error && <ErrorState error={startStudio.error} />}
-                {bootstrapStudio.error && <ErrorState error={bootstrapStudio.error} />}
                 <LiveStudioWorkbench
                   sessions={sessionList}
                   sessionId={activeSessionId}

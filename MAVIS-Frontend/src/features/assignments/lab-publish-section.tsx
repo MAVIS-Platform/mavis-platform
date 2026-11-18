@@ -102,12 +102,10 @@ export function LabPublishSection({
     {
       id: "studio",
       label: t("Studio Live topology", "Topology Studio Live"),
-      done: !assignment.requireRuntimeTrace || Boolean(setupLab?.topologyFrozen),
-      detail: !assignment.requireRuntimeTrace
-        ? t("This Lab does not require a runtime trace.", "Lab này không yêu cầu runtime trace.")
-        : setupLab?.topologyFrozen
-          ? t("Topology is frozen into the published Lab.", "Topology đã được đóng băng vào Lab.")
-          : t("Configure runtime, publish, then freeze topology.", "Cấu hình runtime, công bố rồi đóng băng topology."),
+      done: Boolean(setupLab?.topologyFrozen),
+      detail: setupLab?.topologyFrozen
+        ? t("Topology is frozen into the published Lab.", "Topology đã được đóng băng vào Lab.")
+        : t("Configure runtime, publish, then freeze topology.", "Cấu hình runtime, công bố rồi đóng băng topology."),
       tab: "studio",
     },
     {
@@ -199,7 +197,14 @@ export function LabPublishSection({
         </div>
       </section>
 
-      <CourseSetupPanel workspaceId={workspaceId} />
+      <details className="rounded-xl border bg-card p-5">
+        <summary className="cursor-pointer text-sm font-semibold">
+          {t("Class-wide Course Setup Checklist (All Labs)", "Checklist Thiết lập Toàn Khóa học (Tất cả Lab)")}
+        </summary>
+        <div className="mt-4">
+          <CourseSetupPanel workspaceId={workspaceId} />
+        </div>
+      </details>
     </div>
   );
 }
