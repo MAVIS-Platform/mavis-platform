@@ -246,6 +246,49 @@ export default function LoginPage() {
               <p className="text-center text-xs leading-5 text-muted-foreground">
                 Use the verified account provided for your workspace.
               </p>
+              <details className="rounded-xl border border-teal-200/80 bg-teal-50/40 p-3 text-xs dark:border-teal-900 dark:bg-teal-950/20">
+                <summary className="cursor-pointer font-semibold text-teal-900 dark:text-teal-200">
+                  🔑 Tài khoản Demo Seed sẵn (Java Microservices + Passkey JAVA2026)
+                </summary>
+                <div className="mt-2.5 grid gap-1.5">
+                  <button
+                    type="button"
+                    className="flex items-center justify-between rounded-lg border bg-background px-2.5 py-1.5 text-left hover:border-teal-400"
+                    onClick={() => {
+                      setEmail("gv.java@mavis.edu.vn");
+                      setPassword("Java@123456");
+                    }}
+                  >
+                    <span className="font-medium">👨‍🏫 Giảng viên Java: gv.java@mavis.edu.vn</span>
+                    <span className="font-mono text-[11px] text-teal-700">Điền nhanh</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="flex items-center justify-between rounded-lg border bg-background px-2.5 py-1.5 text-left hover:border-teal-400"
+                    onClick={() => {
+                      setEmail("sv.java@mavis.edu.vn");
+                      setPassword("Java@123456");
+                    }}
+                  >
+                    <span className="font-medium">🎓 Sinh viên Java: sv.java@mavis.edu.vn</span>
+                    <span className="font-mono text-[11px] text-teal-700">Điền nhanh</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="flex items-center justify-between rounded-lg border bg-background px-2.5 py-1.5 text-left hover:border-teal-400"
+                    onClick={() => {
+                      setEmail("admin@mavis.edu.vn");
+                      setPassword("Admin@123456");
+                    }}
+                  >
+                    <span className="font-medium">🛡️ System Admin: admin@mavis.edu.vn</span>
+                    <span className="font-mono text-[11px] text-teal-700">Điền nhanh</span>
+                  </button>
+                  <p className="pt-1 text-[11px] text-muted-foreground">
+                    Mã vào lớp học (Passkey): <code className="font-mono font-bold text-teal-800">JAVA2026</code>
+                  </p>
+                </div>
+              </details>
             </form>
           )}
           {api.mode === "backend" && (
