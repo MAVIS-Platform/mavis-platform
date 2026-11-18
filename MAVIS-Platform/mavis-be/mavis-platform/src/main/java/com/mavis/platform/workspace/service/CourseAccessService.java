@@ -17,6 +17,7 @@ import com.mavis.common.security.AuthorizationRequestCache;
 import com.mavis.common.security.CourseLabPolicy;
 import com.mavis.common.utils.HashUtils;
 import com.mavis.platform.assignment.service.LabReferenceArchive;
+import com.mavis.platform.workspace.curriculum.JavaCourseraCatalog;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -55,6 +56,10 @@ public class CourseAccessService {
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.mavis.common.repository.SourceSnapshotRepository sourceSnapshots;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    @org.springframework.context.annotation.Lazy
+    private CourseLabSeederService seeder;
 
     public record Lab(UUID assignmentId, int position, String title, String state, String reason) {}
     public record Roadmap(boolean guided, String enrollmentStatus, List<Lab> labs) {}
@@ -543,6 +548,14 @@ public class CourseAccessService {
         boolean student = CourseLabPolicy.isStudent(actor);
         var passed = student ? labs.passedAssignments(workspaceId, actor.getId()) : Set.<UUID>of();
         var assignmentsInOrder = assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId);
+        if (assignmentsInOrder.size() < 6
+                && seeder != null
+                && !CourseLabSeederService.isSeeding(workspaceId)
+                && "ACTIVE".equals(workspace.getStatus())
+                && JavaCourseraCatalog.COURSE_CODE.equalsIgnoreCase(workspace.getCode())) {
+            seeder.ensureJavaCourseraPopulated(workspaceId);
+            assignmentsInOrder = assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId);
+        }
         Map<UUID, List<UUID>> explicitPrerequisites = new HashMap<>();
         jdbc.query("""
                 SELECT lp.assignment_id, lp.prerequisite_assignment_id

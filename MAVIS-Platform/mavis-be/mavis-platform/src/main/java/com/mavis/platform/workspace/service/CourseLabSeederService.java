@@ -36,7 +36,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.ByteArrayOutputStream;
@@ -60,6 +65,12 @@ public class CourseLabSeederService {
     public static final String PRESET_STANDARD_DEMO = "STANDARD_DEMO";
     public static final String PRESET_FULL_CURRICULUM = "FULL_CURRICULUM";
     public static final String PRESET_JAVA_COURSERA = "JAVA_COURSERA_FULL";
+    private static final ThreadLocal<java.util.Set<UUID>> SEEDING_IN_PROGRESS =
+            ThreadLocal.withInitial(java.util.HashSet::new);
+
+    public static boolean isSeeding(UUID workspaceId) {
+        return workspaceId != null && SEEDING_IN_PROGRESS.get().contains(workspaceId);
+    }
 
     private record LabSeedSpec(
             String curriculumCode,
@@ -129,6 +140,47 @@ public class CourseLabSeederService {
 
     public CourseAccessService.Roadmap seedCurated(UUID workspaceId) {
         return seedCurated(workspaceId, PRESET_STANDARD_DEMO);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void ensureJavaCourseraPopulated(UUID workspaceId) {
+        if (workspaceId == null || isSeeding(workspaceId)) {
+            return;
+        }
+        Workspace workspace = workspaces.findById(workspaceId).orElse(null);
+        if (workspace == null || !"ACTIVE".equals(workspace.getStatus())) {
+            return;
+        }
+        User actor = workspace.getCreatedBy();
+        if (actor == null) {
+            return;
+        }
+        List<Assignment> existingLabs = assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId);
+        Integer publishedModules = jdbc.queryForObject("""
+                SELECT COUNT(*) FROM course_modules cm
+                JOIN courses c ON c.id = cm.course_id
+                WHERE c.workspace_id = ? AND c.status = 'PUBLISHED'
+                """, Integer.class, workspaceId);
+        if (existingLabs.size() >= 6 && publishedModules != null && publishedModules >= 6) {
+            return;
+        }
+        Authentication previous = SecurityContextHolder.getContext().getAuthentication();
+        SEEDING_IN_PROGRESS.get().add(workspaceId);
+        try {
+            var auth = new UsernamePasswordAuthenticationToken(
+                    actor.getId().toString(), null, List.of(new SimpleGrantedAuthority("ROLE_LECTURER")));
+            SecurityContextHolder.getContext().setAuthentication(auth);
+            seedJavaCourseraInternal(workspaceId, workspace, actor);
+        } catch (Exception ex) {
+            log.warn("Auto-healing Java Coursera workspace {} deferred: {}", workspaceId, ex.getMessage());
+        } finally {
+            SEEDING_IN_PROGRESS.get().remove(workspaceId);
+            if (previous != null) {
+                SecurityContextHolder.getContext().setAuthentication(previous);
+            } else {
+                SecurityContextHolder.clearContext();
+            }
+        }
     }
 
     public CourseAccessService.Roadmap seedCurated(UUID workspaceId, String preset) {
@@ -223,6 +275,20 @@ public class CourseLabSeederService {
     }
 
     private CourseAccessService.Roadmap seedJavaCourseraInternal(UUID workspaceId, Workspace workspace, User lecturer) {
+        boolean addedFlag = !isSeeding(workspaceId);
+        if (addedFlag) {
+            SEEDING_IN_PROGRESS.get().add(workspaceId);
+        }
+        try {
+            return runSeedJavaCourseraInternal(workspaceId, workspace, lecturer);
+        } finally {
+            if (addedFlag) {
+                SEEDING_IN_PROGRESS.get().remove(workspaceId);
+            }
+        }
+    }
+
+    private CourseAccessService.Roadmap runSeedJavaCourseraInternal(UUID workspaceId, Workspace workspace, User lecturer) {
         ensureCourseMode(workspace);
         List<Assignment> existingLabs = assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId);
         ModelVersion refModel = existingLabs.stream()
@@ -566,7 +632,7 @@ public class CourseLabSeederService {
                 .build());
 
         ModelElement customer = elements.save(ModelElement.builder()
-                .modelVersion(refModel).elementType("PERSON").languageStack("Actor")
+                .modelVersion(refModel).elementType("EXTERNAL_SYSTEM").languageStack("Actor")
                 .name("Customer").scope("external").status("VALIDATED").build());
         ModelElement gateway = elements.save(ModelElement.builder()
                 .modelVersion(refModel).elementType("SERVICE_CONTAINER").languageStack("Java / Spring Cloud Gateway")
@@ -865,17 +931,30 @@ public class CourseLabSeederService {
     }
 
     private Path persistArchive(UUID workspaceId, UUID projectId, byte[] zipBytes) {
+        String filename = "curated-course-" + workspaceId + "-" + projectId + ".zip";
         try {
             Files.createDirectories(storageRoot);
-            Path target = storageRoot.toRealPath().resolve("curated-course-" + workspaceId + "-" + projectId + ".zip");
+            Path target = storageRoot.toRealPath().resolve(filename);
             Files.write(target, zipBytes);
             return target;
-        } catch (IOException ex) {
-            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR, "Unable to store curated reference archive: " + ex.getMessage());
+        } catch (IOException primaryEx) {
+            Path fallbackDir = Path.of(System.getProperty("java.io.tmpdir"), "mavis-uploads");
+            try {
+                Files.createDirectories(fallbackDir);
+                Path fallbackTarget = fallbackDir.toRealPath().resolve(filename);
+                Files.write(fallbackTarget, zipBytes);
+                log.warn("Primary upload directory '{}' unavailable ({}); wrote curated archive to '{}'",
+                        storageRoot, primaryEx.getMessage(), fallbackTarget);
+                return fallbackTarget;
+            } catch (IOException fallbackEx) {
+                log.warn("Unable to persist curated archive to disk ({}); LabReferenceArchive will materialize in temp dir on demand",
+                        fallbackEx.getMessage());
+                return fallbackDir.resolve(filename);
+            }
         }
     }
 
-    private static byte[] buildCuratedArchive() {
+    public static byte[] buildCuratedArchive() {
         try (ByteArrayOutputStream out = new ByteArrayOutputStream();
              ZipOutputStream zip = new ZipOutputStream(out)) {
             writeEntry(zip, "pom.xml", """

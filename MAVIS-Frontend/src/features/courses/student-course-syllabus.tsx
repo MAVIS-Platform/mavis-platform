@@ -5,9 +5,13 @@ import { useMemo, useState } from "react";
 import {
   BookOpen,
   CheckCircle2,
+  ChevronDown,
+  ChevronLeft,
   ChevronRight,
   Code2,
   FileCheck2,
+  FileText,
+  HelpCircle,
   Lock,
   Play,
 } from "lucide-react";
@@ -15,7 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/shared/data";
 import { MarkdownPreview } from "@/components/shared/markdown-preview";
-import { EmptyState, RequestState } from "@/components/shared/request-state";
+import { RequestState } from "@/components/shared/request-state";
 import { useApi, useApiQuery } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { computeCourseProgressSummary } from "@/lib/coursera-ui-helpers";
@@ -23,9 +27,45 @@ import {
   useCourseRoadmap,
   usePublishedCourse,
 } from "@/features/workspaces/course-access";
-import { CourseOutline } from "./course-outline";
+import { ChapterQuizRunner } from "./chapter-quiz-runner";
+import { CourseEssayItemPanel, type RubricRow } from "./course-essay-panel";
+import {
+  buildCourseraModulesWithLabLinks,
+  matchQuizQuestionsForItem,
+  type OutlineItemData,
+  type OutlineModuleData,
+} from "./java-coursera-curriculum-data";
 import { CurriculumLibrary } from "./curriculum";
 import type { Response } from "@/lib/api/contracts";
+
+function itemBadgeMeta(type: string, t: (en: string, vi: string) => string) {
+  switch (type) {
+    case "THEORY":
+      return {
+        label: t("Theory Lesson", "Bài giảng lý thuyết"),
+        emoji: "📖",
+        pillClass: "bg-teal-50 text-teal-800 border-teal-200 dark:bg-teal-950/40 dark:text-teal-300 dark:border-teal-800",
+      };
+    case "QUIZ":
+      return {
+        label: t("Chapter Quiz", "Trắc nghiệm (10 câu)"),
+        emoji: "❓",
+        pillClass: "bg-sky-50 text-sky-800 border-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-800",
+      };
+    case "ESSAY":
+      return {
+        label: t("Case Study Essay", "Bài tập Tự luận"),
+        emoji: "📝",
+        pillClass: "bg-amber-50 text-amber-900 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800",
+      };
+    default:
+      return {
+        label: t("2D Studio Lab", "Thực hành 2D Studio"),
+        emoji: "🔬",
+        pillClass: "bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800",
+      };
+  }
+}
 
 function shortDate(value?: string | null) {
   if (!value) return "";
@@ -78,6 +118,83 @@ export function StudentCourseSyllabus({
     }
     return map;
   }, [publishedCourse.data?.snapshot?.modules]);
+
+  const syllabusModules: OutlineModuleData[] = useMemo(() => {
+    const rawModules = publishedCourse.data?.snapshot?.modules;
+    if (Array.isArray(rawModules) && rawModules.length > 0) {
+      return rawModules.map((mod) => ({
+        id: mod.id,
+        title: mod.title,
+        description: mod.description ?? null,
+        position: mod.position,
+        prerequisiteModuleId: mod.prerequisiteModuleId ?? null,
+        labTitle:
+          mod.items.find((it) => ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(it.type))?.title ??
+          mod.title,
+        items: (mod.items ?? []).map((item) => ({
+          id: item.id,
+          type: item.type as OutlineItemData["type"],
+          title: item.title,
+          description: item.description ?? null,
+          position: item.position,
+          assignmentId: item.assignmentId ?? null,
+          required: item.required,
+          content: item.content,
+          quizQuestions:
+            item.type === "QUIZ" ? matchQuizQuestionsForItem(mod.position, item.title) : undefined,
+        })),
+      }));
+    }
+    return buildCourseraModulesWithLabLinks(assignmentsQuery.data ?? [], labs);
+  }, [publishedCourse.data?.snapshot?.modules, assignmentsQuery.data, labs]);
+
+  const flattenedItems = useMemo(
+    () => syllabusModules.flatMap((mod) => mod.items.map((item) => ({ module: mod, item }))),
+    [syllabusModules],
+  );
+  const [selectedItemId, setSelectedItemId] = useState<string>("");
+  const [practicePanel, setPracticePanel] = useState<"none" | "quiz" | "essay">("none");
+
+  const activeEntry =
+    flattenedItems.find((entry) => entry.item.id === selectedItemId) ??
+    flattenedItems[0] ??
+    null;
+  const activeIndex = activeEntry
+    ? flattenedItems.findIndex((entry) => entry.item.id === activeEntry.item.id)
+    : -1;
+  const prevEntry = activeIndex > 0 ? flattenedItems[activeIndex - 1] : null;
+  const nextEntry =
+    activeIndex >= 0 && activeIndex < flattenedItems.length - 1
+      ? flattenedItems[activeIndex + 1]
+      : null;
+
+  const activeModule = activeEntry?.module ?? null;
+  const activeItem = activeEntry?.item ?? null;
+  const chapterQuizItem = activeModule?.items.find((i) => i.type === "QUIZ") ?? null;
+  const chapterEssayItem = activeModule?.items.find((i) => i.type === "ESSAY") ?? null;
+  const chapterLabItem =
+    activeModule?.items.find((i) =>
+      ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(i.type),
+    ) ?? null;
+  const chapterAssignmentId =
+    activeItem?.assignmentId ??
+    chapterLabItem?.assignmentId ??
+    chapterQuizItem?.assignmentId ??
+    selectedLab?.assignmentId ??
+    null;
+  const activeLabRecord =
+    (chapterAssignmentId ? labs.find((l) => l.assignmentId === chapterAssignmentId) : undefined) ??
+    selectedLab;
+  const activeAssignmentRecord =
+    (chapterAssignmentId ? (assignmentsQuery.data ?? []).find((a) => a.id === chapterAssignmentId) : undefined) ??
+    selectedAssignment;
+  const selectCurriculumItem = (item: OutlineItemData) => {
+    setSelectedItemId(item.id);
+    setPracticePanel("none");
+    if (item.assignmentId) {
+      setSelectedLabId(item.assignmentId);
+    }
+  };
 
   const upcomingDeadlines = useMemo(() => {
     const assignmentsById = new Map((assignmentsQuery.data ?? []).map((item) => [item.id, item]));
@@ -260,258 +377,379 @@ export function StudentCourseSyllabus({
 
       <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_18rem]">
         <div className="min-w-0 space-y-6">
-          {activeTab === "player" && (
-            <div className="space-y-6">
-              {publishedCourse.data && (
-                <details
-                  open
-                  className="rounded-2xl border border-teal-200/80 bg-card p-5 shadow-sm dark:border-teal-900"
-                >
-                  <summary className="flex w-full cursor-pointer list-none items-center justify-between gap-2 text-base font-semibold text-teal-800 dark:text-teal-200">
-                    <span>
-                      {t(
-                        "📚 Full Coursera Course Syllabus (6 Modules · Lessons, Quizzes, Essays & Labs)",
-                        "📚 Đề Cương Toàn Bộ Chương, Bài Giảng, Quiz, Tự Luận & Lab (Chuẩn Coursera)",
+          {activeTab === "player" && activeEntry && activeModule && activeItem && (
+            <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
+              {/* Left Main Column: OLP-inspired Lesson Reader + Practice Panel */}
+              <section className="min-w-0 space-y-6 rounded-2xl border bg-card p-5 shadow-sm sm:p-6">
+                <div className="flex flex-wrap items-start justify-between gap-3 border-b pb-4">
+                  <div className="min-w-0 space-y-1.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="outline" className="font-mono">
+                        {t(`Chapter ${activeModule.position}`, `Chương ${activeModule.position}`)}
+                      </Badge>
+                      <Badge variant="outline" className={itemBadgeMeta(activeItem.type, t).pillClass}>
+                        {itemBadgeMeta(activeItem.type, t).emoji} {itemBadgeMeta(activeItem.type, t).label}
+                      </Badge>
+                      {activeItem.estimatedMinutes && (
+                        <span className="text-xs text-muted-foreground">
+                          · ~{activeItem.estimatedMinutes} {t("min", "phút")}
+                        </span>
                       )}
-                    </span>
-                    <Badge variant="outline" className="border-teal-300 text-teal-700 dark:border-teal-700 dark:text-teal-300">
-                      {t("Expand / Collapse", "Thu gọn / Mở rộng")}
-                    </Badge>
-                  </summary>
-                  <div className="mt-4 border-t pt-4">
-                    <CourseOutline
-                      workspaceId={workspaceId}
-                      canManage={false}
-                      active={workspace.status !== "ARCHIVED"}
-                    />
-                  </div>
-                </details>
-              )}
-
-              <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)] lg:items-start">
-                <aside className="rounded-2xl border bg-card p-4 shadow-sm lg:sticky lg:top-6">
-                  <div className="mb-3 flex items-center justify-between gap-2 border-b pb-3">
-                    <div>
-                      <h2 className="text-sm font-semibold">
-                        {t("Course Syllabus Tree", "Cây Mục Lục Chương & Bài Lab")}
-                      </h2>
-                      <p className="text-xs text-muted-foreground">
-                        {summary.completedLabs}/{summary.totalLabs}{" "}
-                        {t("completed", "đã hoàn thành")}
-                      </p>
                     </div>
+                    <h2 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+                      {activeItem.title}
+                    </h2>
+                    {activeItem.description && (
+                      <p className="text-sm text-muted-foreground">{activeItem.description}</p>
+                    )}
                   </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={!prevEntry}
+                      onClick={() => prevEntry && selectCurriculumItem(prevEntry.item)}
+                    >
+                      <ChevronLeft className="mr-1 h-4 w-4" aria-hidden="true" />
+                      {t("Prev", "Bài trước")}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={!nextEntry}
+                      onClick={() => nextEntry && selectCurriculumItem(nextEntry.item)}
+                    >
+                      {t("Next", "Bài tiếp theo")}
+                      <ChevronRight className="ml-1 h-4 w-4" aria-hidden="true" />
+                    </Button>
+                  </div>
+                </div>
 
-                  <RequestState query={roadmap} empty={!labs.length}>
-                    <ol className="space-y-2">
-                      {labs.map((lab) => {
-                        const isSelected = lab.assignmentId === selectedLab?.assignmentId;
-                        const isPassed = lab.state === "PASSED";
-                        const isLocked = lab.state === "LOCKED";
-                        const moduleLabel = labModuleTitleByAssignment.get(lab.assignmentId);
-                        return (
-                          <li key={lab.assignmentId}>
-                            <button
-                              type="button"
-                              onClick={() => setSelectedLabId(lab.assignmentId)}
-                              className={`flex w-full items-start gap-3 rounded-xl border p-3 text-left transition-all ${
-                                isSelected
-                                  ? "border-teal-600 bg-teal-50/70 shadow-sm dark:border-teal-500 dark:bg-teal-950/30"
-                                  : isLocked
-                                    ? "border-border/60 bg-muted/30 opacity-80 hover:opacity-100"
-                                    : "border-border bg-background hover:border-teal-400"
-                              }`}
-                            >
-                              <span className="mt-0.5 shrink-0">
-                                {isPassed ? (
-                                  <CheckCircle2
-                                    className="h-4 w-4 text-emerald-600"
-                                    aria-hidden="true"
-                                  />
-                                ) : isLocked ? (
-                                  <Lock
-                                    className="h-4 w-4 text-muted-foreground"
-                                    aria-hidden="true"
-                                  />
-                                ) : (
-                                  <Play
-                                    className="h-4 w-4 fill-current text-teal-600"
-                                    aria-hidden="true"
-                                  />
-                                )}
-                              </span>
-                              <span className="min-w-0 flex-1">
-                                <span className="flex flex-wrap items-center gap-1.5 text-[11px] font-medium">
-                                  <span className="font-mono text-muted-foreground">
-                                    {t(`Lesson ${lab.position}`, `Bài ${lab.position}`)}
-                                  </span>
-                                  <Badge
-                                    variant={
-                                      isPassed ? "success" : isLocked ? "secondary" : "default"
-                                    }
-                                    className="px-1.5 py-0 text-[10px]"
-                                  >
-                                    {isPassed
-                                      ? t("Done", "Đã hoàn thành")
-                                      : isLocked
-                                        ? t("Locked", "Đang khóa")
-                                        : t("Active", "Đang mở")}
-                                  </Badge>
-                                </span>
-                                {moduleLabel && (
-                                  <span className="mt-0.5 block truncate text-[10px] text-muted-foreground">
-                                    {moduleLabel}
-                                  </span>
-                                )}
-                                <span className="mt-0.5 block text-sm font-medium leading-snug text-foreground">
-                                  {lab.title}
-                                </span>
-                              </span>
-                              <ChevronRight
-                                className={`mt-1 h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
-                                  isSelected ? "translate-x-0.5 text-teal-600" : ""
-                                }`}
-                                aria-hidden="true"
-                              />
-                            </button>
-                          </li>
-                        );
-                      })}
-                    </ol>
-                  </RequestState>
-                </aside>
+                {/* Main Content Body per Activity Type */}
+                {activeItem.type === "THEORY" && typeof activeItem.content?.["body"] === "string" && (
+                  <div className="space-y-6">
+                    <div className="prose-sm max-w-none rounded-xl border bg-background p-4 sm:p-6">
+                      <MarkdownPreview markdown={String(activeItem.content["body"])} />
+                    </div>
 
-                <section className="rounded-2xl border bg-card p-6 shadow-sm">
-                  {!selectedLab ? (
-                    <EmptyState
-                      title={t("No Lab selected yet", "Chưa có bài Lab nào")}
-                      description={t(
-                        "Your lecturer is preparing Labs for this class, or check the module outline below.",
-                        "Giảng viên đang chuẩn bị bài Lab cho lớp này, hoặc bạn có thể xem nội dung chương bên dưới.",
-                      )}
-                    />
-                  ) : (
-                    <div className="space-y-6">
-                      <div className="flex flex-wrap items-start justify-between gap-4 border-b pb-4">
-                        <div className="space-y-1.5">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Badge variant="outline" className="font-mono">
-                              Lab {String(selectedLab.position).padStart(2, "0")}
-                            </Badge>
-                            <Badge
-                              variant={
-                                selectedLab.state === "PASSED"
-                                  ? "success"
-                                  : selectedLab.state === "LOCKED"
-                                    ? "secondary"
-                                    : "default"
-                              }
-                            >
-                              {selectedLab.state === "PASSED"
-                                ? t("Completed", "Đã hoàn thành")
-                                : selectedLab.state === "LOCKED"
-                                  ? t("Locked until previous Lab passes", "Cần hoàn thành bài trước")
-                                  : t("Ready to study", "Đang mở — Sẵn sàng học")}
-                            </Badge>
-                          </div>
-                          <h2 className="text-xl font-bold tracking-tight sm:text-2xl">
-                            {selectedLab.title}
-                          </h2>
-                        </div>
+                    {/* OLP-inspired Chapter Practice Box directly under Lesson */}
+                    <div className="space-y-4 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 dark:border-emerald-800/60 dark:bg-emerald-950/20 sm:p-5">
+                      <div>
+                        <h3 className="text-sm font-bold text-emerald-950 dark:text-emerald-200">
+                          📝 {t(
+                            `Chapter ${activeModule.position} Practice & Assessment`,
+                            `Bài Tập Thực Hành & Kiểm Tra Chương ${activeModule.position}`,
+                          )}
+                        </h3>
+                        <p className="mt-0.5 text-xs text-emerald-900/80 dark:text-emerald-300/80">
+                          {t(
+                            "Test your understanding immediately with the 10-question Quiz, Case Study Essay, or 2D Studio Lab.",
+                            "Kiểm tra kiến thức ngay sau khi đọc lý thuyết với Quiz trắc nghiệm 10 câu, bài Tự luận Rubric hoặc phòng thực hành 2D Studio.",
+                          )}
+                        </p>
                       </div>
 
-                      {selectedAssignment?.instructions ? (
-                        <div className="rounded-xl border bg-muted/20 p-4 text-sm">
-                          <MarkdownPreview markdown={selectedAssignment.instructions} />
-                        </div>
-                      ) : null}
-
-                      <div className="space-y-4 rounded-xl border border-emerald-200 bg-emerald-50/70 p-4 dark:border-emerald-800/60 dark:bg-emerald-950/20">
-                        <div>
-                          <h3 className="text-sm font-semibold text-emerald-950 dark:text-emerald-200">
-                            {t(
-                              "4-Step Guided Learning Checklist",
-                              "Lộ Trình 4 Bước Cho Bài Học Này",
-                            )}
-                          </h3>
-                          <p className="text-xs text-emerald-900/80 dark:text-emerald-300/80">
-                            {t(
-                              "Follow Steps 1 to 4 inside the interactive Lab workspace.",
-                              "Thực hiện tuần tự Bước 1 đến Bước 4 ngay trong Không Gian Làm Bài Lab.",
-                            )}
-                          </p>
-                        </div>
-
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          {stepDescriptions.map((s) => {
-                            const stepHref = `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(selectedLab.assignmentId)}&step=${s.step}`;
-                            return selectedLab.state === "LOCKED" ? (
-                              <div
-                                key={s.step}
-                                className="rounded-xl border border-border/70 bg-background/70 p-3 opacity-70"
-                              >
-                                <p className="text-xs font-semibold text-muted-foreground">
-                                  {s.label}
-                                </p>
-                                <p className="mt-0.5 text-xs text-muted-foreground">{s.hint}</p>
-                              </div>
-                            ) : (
-                              <Link
-                                key={s.step}
-                                href={stepHref}
-                                className="group rounded-xl border border-emerald-200/80 bg-background p-3 transition-all hover:border-emerald-500 hover:shadow-sm dark:border-emerald-800/50"
-                              >
-                                <p className="text-xs font-semibold text-emerald-800 group-hover:text-emerald-600 dark:text-emerald-300">
-                                  {s.label}
-                                </p>
-                                <p className="mt-0.5 text-xs text-muted-foreground">{s.hint}</p>
-                              </Link>
-                            );
-                          })}
-                        </div>
-
-                        {selectedLab.state === "LOCKED" ? (
-                          <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
-                            <Lock className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-                            <span>
-                              {t(
-                                "This Lab unlocks automatically once the previous Lab is completed and reviewed as Passed by your lecturer.",
-                                "Bài học này sẽ tự động mở khóa ngay sau khi bạn hoàn thành bài trước và đạt đánh giá Đạt.",
-                              )}
-                              {selectedLab.reason ? ` (${selectedLab.reason})` : ""}
-                            </span>
-                          </div>
-                        ) : (
-                          <div className="flex flex-wrap items-center gap-3 pt-1">
-                            <Button
-                              asChild
-                              size="lg"
-                              className="bg-emerald-600 text-white shadow-sm hover:bg-emerald-700"
+                      <div className="flex flex-wrap gap-2.5">
+                        {chapterQuizItem && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={practicePanel === "quiz" ? "default" : "outline"}
+                            className={
+                              practicePanel === "quiz"
+                                ? "bg-sky-600 text-white hover:bg-sky-700"
+                                : "border-sky-300 bg-background text-sky-900 hover:bg-sky-50 dark:border-sky-800 dark:text-sky-200"
+                            }
+                            onClick={() =>
+                              setPracticePanel((cur) => (cur === "quiz" ? "none" : "quiz"))
+                            }
+                          >
+                            <HelpCircle className="mr-1.5 h-4 w-4" aria-hidden="true" />
+                            {t("Take Quiz (10 Qs)", `Làm Trắc Nghiệm Chương ${activeModule.position}`)}
+                          </Button>
+                        )}
+                        {chapterEssayItem && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={practicePanel === "essay" ? "default" : "outline"}
+                            className={
+                              practicePanel === "essay"
+                                ? "bg-amber-600 text-white hover:bg-amber-700"
+                                : "border-amber-300 bg-background text-amber-900 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-200"
+                            }
+                            onClick={() =>
+                              setPracticePanel((cur) => (cur === "essay" ? "none" : "essay"))
+                            }
+                          >
+                            <FileText className="mr-1.5 h-4 w-4" aria-hidden="true" />
+                            {t("Open Case Study Essay", "Làm Bài Tự Luận + Rubric")}
+                          </Button>
+                        )}
+                        {chapterLabItem && chapterLabItem.assignmentId && activeLabRecord?.state !== "LOCKED" && (
+                          <Button asChild size="sm" className="bg-emerald-600 text-white hover:bg-emerald-700">
+                            <Link
+                              href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(chapterLabItem.assignmentId)}&step=1`}
                             >
-                              <Link
-                                href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(selectedLab.assignmentId)}&step=1`}
-                              >
-                                <Play className="mr-2 h-4 w-4 fill-current" aria-hidden="true" />
-                                {t(
-                                  "Start / Continue This Lab",
-                                  "Bắt Đầu / Tiếp Tục Làm Bài Lab Này",
-                                )}
-                              </Link>
-                            </Button>
-                            <Button asChild variant="outline" size="lg">
-                              <Link
-                                href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(selectedLab.assignmentId)}&step=4`}
-                              >
-                                {t("Jump to 2D Studio", "Mở Thẳng Studio Thực Hành")}
-                              </Link>
-                            </Button>
-                          </div>
+                              <Play className="mr-1.5 h-3.5 w-3.5 fill-current" aria-hidden="true" />
+                              {t("Open 2D Studio Lab", "Mở Phòng Lab Thực Hành")}
+                            </Link>
+                          </Button>
                         )}
                       </div>
+
+                      {practicePanel === "quiz" && chapterQuizItem && (
+                        <ChapterQuizRunner
+                          title={chapterQuizItem.title}
+                          questions={
+                            chapterQuizItem.quizQuestions?.length
+                              ? chapterQuizItem.quizQuestions
+                              : matchQuizQuestionsForItem(activeModule.position, chapterQuizItem.title)
+                          }
+                          canManage={false}
+                          workspaceId={workspaceId}
+                          assignmentId={chapterQuizItem.assignmentId}
+                        />
+                      )}
+
+                      {practicePanel === "essay" &&
+                        chapterEssayItem &&
+                        typeof chapterEssayItem.content?.["prompt"] === "string" && (
+                          <CourseEssayItemPanel
+                            workspaceId={workspaceId}
+                            itemId={chapterEssayItem.id}
+                            promptMarkdown={String(chapterEssayItem.content["prompt"])}
+                            rubric={
+                              Array.isArray(chapterEssayItem.content["rubric"])
+                                ? (chapterEssayItem.content["rubric"] as RubricRow[])
+                                : undefined
+                            }
+                            canManage={false}
+                            active={workspace.status !== "ARCHIVED"}
+                          />
+                        )}
                     </div>
+                  </div>
+                )}
+
+                {activeItem.type === "QUIZ" && (
+                  <ChapterQuizRunner
+                    title={activeItem.title}
+                    questions={
+                      activeItem.quizQuestions?.length
+                        ? activeItem.quizQuestions
+                        : matchQuizQuestionsForItem(activeModule.position, activeItem.title)
+                    }
+                    canManage={false}
+                    workspaceId={workspaceId}
+                    assignmentId={activeItem.assignmentId}
+                  />
+                )}
+
+                {activeItem.type === "ESSAY" && typeof activeItem.content?.["prompt"] === "string" && (
+                  <CourseEssayItemPanel
+                    workspaceId={workspaceId}
+                    itemId={activeItem.id}
+                    promptMarkdown={String(activeItem.content["prompt"])}
+                    rubric={
+                      Array.isArray(activeItem.content["rubric"])
+                        ? (activeItem.content["rubric"] as RubricRow[])
+                        : undefined
+                    }
+                    canManage={false}
+                    active={workspace.status !== "ARCHIVED"}
+                  />
+                )}
+
+                {["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(activeItem.type) && (
+                  <div className="space-y-6">
+                    {activeAssignmentRecord?.instructions && (
+                      <div className="rounded-xl border bg-muted/20 p-4 text-sm">
+                        <MarkdownPreview markdown={activeAssignmentRecord.instructions} />
+                      </div>
+                    )}
+
+                    <div className="space-y-4 rounded-xl border border-emerald-200 bg-emerald-50/70 p-4 dark:border-emerald-800/60 dark:bg-emerald-950/20 sm:p-5">
+                      <div>
+                        <h3 className="text-sm font-semibold text-emerald-950 dark:text-emerald-200">
+                          {t(
+                            "4-Step Guided Learning Checklist",
+                            "Lộ Trình 4 Bước Cho Bài Lab Này",
+                          )}
+                        </h3>
+                        <p className="text-xs text-emerald-900/80 dark:text-emerald-300/80">
+                          {t(
+                            "Follow Steps 1 to 4 inside the interactive Lab workspace.",
+                            "Thực hiện tuần tự Bước 1 đến Bước 4 ngay trong Không Gian Làm Bài Lab.",
+                          )}
+                        </p>
+                      </div>
+
+                      {activeLabRecord ? (
+                        <>
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            {stepDescriptions.map((s) => {
+                              const stepHref = `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(activeLabRecord.assignmentId)}&step=${s.step}`;
+                              return activeLabRecord.state === "LOCKED" ? (
+                                <div
+                                  key={s.step}
+                                  className="rounded-xl border border-border/70 bg-background/70 p-3 opacity-70"
+                                >
+                                  <p className="text-xs font-semibold text-muted-foreground">{s.label}</p>
+                                  <p className="mt-0.5 text-xs text-muted-foreground">{s.hint}</p>
+                                </div>
+                              ) : (
+                                <Link
+                                  key={s.step}
+                                  href={stepHref}
+                                  className="group rounded-xl border border-emerald-200/80 bg-background p-3 transition-all hover:border-emerald-500 hover:shadow-sm dark:border-emerald-800/50"
+                                >
+                                  <p className="text-xs font-semibold text-emerald-800 group-hover:text-emerald-600 dark:text-emerald-300">
+                                    {s.label}
+                                  </p>
+                                  <p className="mt-0.5 text-xs text-muted-foreground">{s.hint}</p>
+                                </Link>
+                              );
+                            })}
+                          </div>
+
+                          {activeLabRecord.state === "LOCKED" ? (
+                            <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+                              <Lock className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                              <span>
+                                {t(
+                                  "This Lab unlocks automatically once the previous Lab is completed and reviewed as Passed by your lecturer.",
+                                  "Bài học này sẽ tự động mở khóa ngay sau khi bạn hoàn thành bài trước và đạt đánh giá Đạt.",
+                                )}
+                                {activeLabRecord.reason ? ` (${activeLabRecord.reason})` : ""}
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="flex flex-wrap items-center gap-3 pt-1">
+                              <Button
+                                asChild
+                                size="lg"
+                                className="bg-emerald-600 text-white shadow-sm hover:bg-emerald-700"
+                              >
+                                <Link
+                                  href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(activeLabRecord.assignmentId)}&step=1`}
+                                >
+                                  <Play className="mr-2 h-4 w-4 fill-current" aria-hidden="true" />
+                                  {t("Start / Continue This Lab", "Bắt Đầu / Tiếp Tục Làm Bài Lab Này")}
+                                </Link>
+                              </Button>
+                              <Button asChild variant="outline" size="lg">
+                                <Link
+                                  href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(activeLabRecord.assignmentId)}&step=4`}
+                                >
+                                  {t("Jump to 2D Studio", "Mở Thẳng Studio Thực Hành")}
+                                </Link>
+                              </Button>
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <p className="text-xs text-emerald-900/80 dark:text-emerald-300/80">
+                          {t(
+                            "Read all 3 lessons in this chapter first; the interactive 2D Studio Lab is linked once published by your lecturer.",
+                            "Hãy đọc trọn vẹn 3 bài giảng và hoàn thành Quiz/Tự luận chương này; phòng Lab 2D Studio sẽ mở ngay khi giảng viên công bố Assignment.",
+                          )}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </section>
+
+              {/* Right Course Menu Column: OLP 6-Chapter Accordion */}
+              <aside className="space-y-4 rounded-2xl border bg-card p-4 shadow-sm lg:sticky lg:top-6">
+                <div className="flex items-center justify-between gap-2 border-b pb-3">
+                  <div>
+                    <h2 className="text-sm font-semibold">
+                      📑 {t("Course Syllabus Menu", "Nội Dung Môn Học")}
+                    </h2>
+                    <p className="text-xs text-muted-foreground">
+                      {syllabusModules.length} {t("chapters", "chương")} · {flattenedItems.length}{" "}
+                      {t("activities", "hoạt động")}
+                    </p>
+                  </div>
+                  {summary.totalLabs > 0 && (
+                    <Badge variant="outline" className="text-[11px]">
+                      {summary.completedLabs}/{summary.totalLabs} Lab
+                    </Badge>
                   )}
-                </section>
-              </div>
+                </div>
+
+                <div className="space-y-2">
+                  {syllabusModules.map((mod) => {
+                    const isActiveModule = mod.id === activeModule.id;
+                    return (
+                      <details
+                        key={mod.id}
+                        open={isActiveModule}
+                        className="group overflow-hidden rounded-xl border bg-background"
+                      >
+                        <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2.5 text-left text-xs font-semibold hover:bg-muted/40">
+                          <span className="line-clamp-2 min-w-0 flex-1">
+                            {mod.title}
+                          </span>
+                          <ChevronDown
+                            className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180"
+                            aria-hidden="true"
+                          />
+                        </summary>
+                        <ul className="divide-y border-t">
+                          {mod.items.map((item) => {
+                            const selected = item.id === activeItem.id;
+                            const badgeMeta = itemBadgeMeta(item.type, t);
+                            const linkedLab = item.assignmentId
+                              ? labs.find((l) => l.assignmentId === item.assignmentId)
+                              : undefined;
+                            const isLabItem = ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(item.type);
+                            const isLocked = isLabItem && linkedLab?.state === "LOCKED";
+                            const isPassed = isLabItem && linkedLab?.state === "PASSED";
+                            return (
+                              <li key={item.id}>
+                                <button
+                                  type="button"
+                                  onClick={() => selectCurriculumItem(item)}
+                                  className={`flex w-full items-start gap-2.5 px-3 py-2.5 text-left text-xs transition-colors ${
+                                    selected
+                                      ? "bg-teal-50 font-semibold text-teal-900 dark:bg-teal-950/40 dark:text-teal-200"
+                                      : "hover:bg-muted/50 text-foreground"
+                                  }`}
+                                >
+                                  <span className="mt-0.5 shrink-0 text-xs">{badgeMeta.emoji}</span>
+                                  <span className="min-w-0 flex-1">
+                                    <span className="block leading-snug">{item.title}</span>
+                                    <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10px] font-normal text-muted-foreground">
+                                      <span>{badgeMeta.label}</span>
+                                      {item.estimatedMinutes ? <span>· ~{item.estimatedMinutes}p</span> : null}
+                                      {isPassed ? (
+                                        <span className="inline-flex items-center gap-0.5 text-emerald-600">
+                                          <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
+                                          {t("Done", "Đạt")}
+                                        </span>
+                                      ) : isLocked ? (
+                                        <span className="inline-flex items-center gap-0.5 text-amber-600">
+                                          <Lock className="h-3 w-3" aria-hidden="true" />
+                                          {t("Locked", "Khóa")}
+                                        </span>
+                                      ) : null}
+                                    </span>
+                                  </span>
+                                </button>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </details>
+                    );
+                  })}
+                </div>
+              </aside>
             </div>
           )}
 

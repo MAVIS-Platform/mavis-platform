@@ -40,4 +40,26 @@ class LabReferenceArchiveTest {
                     () -> storage.resolve(source, true)).getErrorCode());
         }
     }
+
+    @Test
+    void materializesCuratedArchiveInTempFallbackWhenMissingFromPrimaryStorage() throws Exception {
+        var missingPrimary = Files.createDirectory(directory.resolve("empty-primary"))
+                .resolve("curated-course-test-demo.zip");
+        byte[] bytes = com.mavis.platform.workspace.service.CourseLabSeederService.buildCuratedArchive();
+        Path expectedTempCopy = Path.of(System.getProperty("java.io.tmpdir"), "mavis-uploads")
+                .resolve("curated-course-test-demo.zip");
+        try {
+            var storage = new LabReferenceArchive(directory.toString());
+            var source = SourceSnapshot.builder()
+                    .storagePath(missingPrimary.toString())
+                    .artifactHash(HashUtils.sha256Hex(bytes))
+                    .build();
+
+            var resolved = storage.resolve(source, true);
+            assertTrue(resolved.exists());
+            assertTrue(Files.isRegularFile(expectedTempCopy));
+        } finally {
+            Files.deleteIfExists(expectedTempCopy);
+        }
+    }
 }

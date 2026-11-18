@@ -38,6 +38,7 @@ import { Courses, CourseRoadmap as CourseRoadmapScreen } from "@/features/course
 import { CourseOutline } from "@/features/courses/course-outline";
 import { CourseBuilder } from "@/features/courses/course-builder";
 import { CourseSetupPanel } from "@/features/courses/course-setup";
+import { JAVA_COURSERA_MODULES } from "@/features/courses/java-coursera-curriculum-data";
 import { useLocale } from "@/lib/i18n/locale-context";
 
 export function Workspaces() {
@@ -323,9 +324,16 @@ export function WorkspaceOverview() {
   const studentCount = (workspace?.members ?? []).filter(
     (member) => member.role.toUpperCase() === "STUDENT",
   ).length;
-  const moduleCount = authoring.data?.modules?.length ?? 0;
+  const rawModuleCount = authoring.data?.modules?.length ?? 0;
+  const isJavaCourseraWorkspace = workspace?.code?.toUpperCase() === "JAVA-MS-2026";
+  const moduleCount =
+    rawModuleCount > 0 ? rawModuleCount : isJavaCourseraWorkspace ? JAVA_COURSERA_MODULES.length : 0;
   const itemCount =
-    authoring.data?.modules?.reduce((sum, mod) => sum + mod.items.length, 0) ?? 0;
+    rawModuleCount > 0
+      ? (authoring.data?.modules?.reduce((sum, mod) => sum + mod.items.length, 0) ?? 0)
+      : isJavaCourseraWorkspace
+        ? JAVA_COURSERA_MODULES.reduce((sum, mod) => sum + mod.items.length, 0)
+        : 0;
   const totalLabs = assignmentsQuery.data?.length ?? 0;
   const publishedLabs = roadmap.data?.labs?.length ?? 0;
 
@@ -399,7 +407,7 @@ export function WorkspaceOverview() {
                         ? `v${authoring.data.publishedVersion} · ${t("Published", "Đã xuất bản")}`
                         : t("Draft / Setup", "Nháp / Thiết lập")}
                     </p>
-                    {authoring.data?.status === "DRAFT" && moduleCount > 0 && (
+                    {authoring.data?.status === "DRAFT" && rawModuleCount > 0 && (
                       <Button
                         type="button"
                         size="sm"

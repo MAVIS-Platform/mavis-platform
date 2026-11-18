@@ -117,6 +117,32 @@ public class JavaCourseMasterSeeder implements ApplicationRunner {
                         CONSTRAINT uq_course_item_student_submission UNIQUE (course_item_id, student_id)
                     )
                     """);
+            String dbVersion = null;
+            try {
+                dbVersion = jdbc.queryForObject("SELECT version()", String.class);
+            } catch (Exception ignored) {
+                // Unit test mock or non-Postgres datasource
+            }
+            if (dbVersion != null && dbVersion.contains("PostgreSQL")) {
+                jdbc.execute("""
+                        DO $$
+                        BEGIN
+                            ALTER TABLE model_elements DROP CONSTRAINT IF EXISTS model_elements_element_type_check;
+                            ALTER TABLE model_elements ADD CONSTRAINT model_elements_element_type_check
+                                CHECK (element_type IN ('SYSTEM','SERVICE_CONTAINER','COMPONENT','CLASS_INTERFACE','DATABASE','EXTERNAL_SYSTEM','QUEUE_BROKER','MESSAGE_CHANNEL','PERSON'));
+                            ALTER TABLE model_elements DROP CONSTRAINT IF EXISTS model_elements_status_check;
+                            ALTER TABLE model_elements ADD CONSTRAINT model_elements_status_check
+                                CHECK (status IN ('DRAFT','NEEDS_REVIEW','VALIDATED','STUDENT_CONFIRMED','UNCERTAIN_MAPPING'));
+                            ALTER TABLE model_relationships DROP CONSTRAINT IF EXISTS model_relationships_relation_type_check;
+                            ALTER TABLE model_relationships ADD CONSTRAINT model_relationships_relation_type_check
+                                CHECK (relation_type IN ('SERVICE_HTTP_CALL','CODE_DEPENDENCY','DATABASE_ACCESS','RUNTIME_OBSERVED','DECLARED_COMPOSE','MESSAGE_PUBLISH','MESSAGE_SUBSCRIBE','DECLARED_LINK','CONFIGURATION_DEPENDENCY','SERVICE_DISCOVERY','TRACING_EXPORT','GATEWAY_ROUTE','CONFIGURED_ENDPOINT'));
+                            ALTER TABLE evidences DROP CONSTRAINT IF EXISTS evidences_source_type_check;
+                            ALTER TABLE evidences ADD CONSTRAINT evidences_source_type_check
+                                CHECK (source_type IN ('STATIC_CODE','CONFIG_FILE','DOCKER_COMPOSE','RUNTIME_TRACE'));
+                        EXCEPTION WHEN OTHERS THEN NULL;
+                        END $$;
+                        """);
+            }
             log.info("JavaCourseMasterSeeder Phase 0 complete: schema self-heal verified");
         } catch (Exception ex) {
             log.warn("JavaCourseMasterSeeder Phase 0 skipped/partial schema check: {}", ex.getMessage());

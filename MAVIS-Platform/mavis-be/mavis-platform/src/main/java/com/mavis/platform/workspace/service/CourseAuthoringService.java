@@ -49,6 +49,10 @@ public class CourseAuthoringService {
     private final AssignmentRepository assignments;
     private final JdbcTemplate jdbc;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    @org.springframework.context.annotation.Lazy
+    private CourseLabSeederService seeder;
+
     public record CourseView(UUID id, UUID workspaceId, String title, String description, String status,
                              int draftRevision, int publishedVersion, List<ModuleView> modules) {}
     public record PublishedView(UUID courseId, int version, int draftRevision, String snapshotDigest,
@@ -74,9 +78,37 @@ public class CourseAuthoringService {
         return view(course);
     }
 
+    private void ensureJavaCourseraCourseIfNeeded(UUID workspaceId) {
+        if (workspaceId == null || seeder == null || CourseLabSeederService.isSeeding(workspaceId)) {
+            return;
+        }
+        Boolean needsHeal = jdbc.query("""
+                SELECT w.code, w.status,
+                       (SELECT COUNT(*) FROM assignments a WHERE a.workspace_id = w.id AND a.lab_order IS NOT NULL) AS lab_count,
+                       (SELECT COUNT(*) FROM course_modules cm JOIN courses c ON c.id = cm.course_id
+                        WHERE c.workspace_id = w.id AND c.status = 'PUBLISHED') AS mod_count
+                FROM workspaces w WHERE w.id = ?
+                """, rs -> {
+            if (!rs.next()) {
+                return Boolean.FALSE;
+            }
+            String code = rs.getString("code");
+            String status = rs.getString("status");
+            int labCount = rs.getInt("lab_count");
+            int modCount = rs.getInt("mod_count");
+            return "JAVA-MS-2026".equalsIgnoreCase(code)
+                    && "ACTIVE".equals(status)
+                    && (labCount < 6 || modCount < 6);
+        }, workspaceId);
+        if (Boolean.TRUE.equals(needsHeal)) {
+            seeder.ensureJavaCourseraPopulated(workspaceId);
+        }
+    }
+
     @Transactional(readOnly = true)
     public PublishedView publishedForLearner(UUID workspaceId) {
         access.requireWorkspaceMember(workspaceId);
+        ensureJavaCourseraCourseIfNeeded(workspaceId);
         CourseDefinition course = courses.findByWorkspaceId(workspaceId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Course not found"));
         if (course.getPublishedVersion() < 1) throw new BusinessException(ErrorCode.NOT_FOUND, "Course has not been published");
@@ -211,6 +243,7 @@ public class CourseAuthoringService {
     @Transactional(readOnly = true)
     public CourseView get(UUID workspaceId) {
         access.requireWorkspaceLecturer(workspaceId);
+        ensureJavaCourseraCourseIfNeeded(workspaceId);
         CourseDefinition course = courses.findByWorkspaceId(workspaceId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Course draft not found"));
         return view(course);

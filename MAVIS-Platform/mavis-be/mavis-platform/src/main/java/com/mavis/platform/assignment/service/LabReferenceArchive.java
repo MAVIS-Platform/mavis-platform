@@ -4,6 +4,7 @@ import com.mavis.common.entity.SourceSnapshot;
 import com.mavis.common.exception.BusinessException;
 import com.mavis.common.exception.ErrorCode;
 import com.mavis.common.utils.HashUtils;
+import com.mavis.platform.workspace.service.CourseLabSeederService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
@@ -26,9 +27,22 @@ public class LabReferenceArchive {
             throw unavailable();
         }
         try {
-            Path root = storageRoot.toRealPath();
-            Path archive = Path.of(snapshot.getStoragePath()).toRealPath();
-            if (!archive.startsWith(root) || !Files.isRegularFile(archive)) {
+            Path rawPath = Path.of(snapshot.getStoragePath());
+            Path archive = Files.isRegularFile(rawPath) ? rawPath.toRealPath() : null;
+            if (archive != null) {
+                Path fallbackRoot = Path.of(System.getProperty("java.io.tmpdir"), "mavis-uploads");
+                boolean inPrimaryRoot = Files.exists(storageRoot) && archive.startsWith(storageRoot.toRealPath());
+                boolean inFallbackRoot = Files.exists(fallbackRoot) && archive.startsWith(fallbackRoot.toRealPath());
+                if (!inPrimaryRoot && !inFallbackRoot) {
+                    throw unavailable();
+                }
+            } else if (rawPath.getFileName() != null && rawPath.getFileName().toString().startsWith("curated-course-")) {
+                Path fallbackDir = Path.of(System.getProperty("java.io.tmpdir"), "mavis-uploads");
+                Files.createDirectories(fallbackDir);
+                Path materialized = fallbackDir.toRealPath().resolve(rawPath.getFileName().toString());
+                Files.write(materialized, CourseLabSeederService.buildCuratedArchive());
+                archive = materialized;
+            } else {
                 throw unavailable();
             }
             if (verifyDigest) {

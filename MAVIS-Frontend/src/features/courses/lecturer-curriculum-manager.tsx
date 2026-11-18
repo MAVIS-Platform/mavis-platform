@@ -28,7 +28,6 @@ import type { Assignment } from "@/features/assignments/requirements";
 import {
   CoursePasskey,
   PublishCourseLab,
-  SeedCuratedCourseLabs,
   useCoursePasskeys,
   useCourseRoadmap,
   useCourseSetup,
@@ -202,40 +201,7 @@ export function LecturerCurriculumManager({
         <CoursePasskey workspaceId={workspaceId} />
       </section>
 
-      {/* One-click Coursera Java Curriculum Seeder & Sync */}
-      <section
-        className={cn(
-          "rounded-2xl border p-4 shadow-sm",
-          labs.length < 6
-            ? "border-amber-300/80 bg-amber-50/40 dark:border-amber-800 dark:bg-amber-950/20"
-            : "bg-card",
-        )}
-      >
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h2 className="text-sm font-semibold">
-              {t(
-                "MAVIS Curated Course & Lab Library",
-                "Kho Học Liệu & Giáo Trình Chuẩn Coursera",
-              )}
-            </h2>
-            <p className="text-xs text-muted-foreground">
-              {labs.length < 6
-                ? t(
-                    "No complete 6-module curriculum detected yet. Click below to seed/sync all 6 Chapters, 18 Lessons, 60 Quiz questions, 6 Essays, and 6 Labs.",
-                    "Lớp học chưa có đủ 6 Chương & Lab chuẩn. Bấm nút bên dưới để tự động nạp/đồng bộ trọn bộ 6 Chương (18 bài giảng, 6 Quiz, 6 Tự luận, 6 Lab).",
-                  )
-                : t(
-                    "Re-sync curated reference models, textbook chapters, quizzes, and essays whenever needed.",
-                    "Đồng bộ lại giáo trình chuẩn, ngân hàng lý thuyết, Quiz và đề Tự luận bất cứ lúc nào.",
-                  )}
-            </p>
-          </div>
-        </div>
-        <SeedCuratedCourseLabs workspaceId={workspaceId} />
-      </section>
-
-      {/* Course Outline (structured chapters + published course roadmap) */}
+      {/* Course Outline (structured 6-chapter Coursera syllabus + interactive Quiz/Essay preview) */}
       <CourseOutline workspaceId={workspaceId} canManage active={active} />
 
       {/* Sequential Lab Cards with 4 Readiness Indicators */}
@@ -303,13 +269,29 @@ export function LecturerCurriculumManager({
 
         <RequestState
           query={assignmentsQuery}
-          empty={!labs.length}
-          emptyMessage={t(
-            "No Labs in this class yet. Open the Lab Creation tab to create your first Lab.",
-            "Chưa có bài Lab nào. Hãy mở tab Tạo Lab để soạn bài Lab đầu tiên.",
-          )}
+          empty={labs.length > 0 && visible.length === 0}
+          emptyMessage={t("No Labs match your current filter.", "Không có bài Lab nào khớp bộ lọc.")}
         >
-          {visible.length === 0 ? (
+          {labs.length === 0 ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed bg-card px-5 py-4">
+              <div className="space-y-0.5">
+                <p className="text-sm font-medium">
+                  {t("Sequential Lab Roadmap", "Lộ trình thực hành 2D Studio & Kiến trúc")}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    "Use the chapters above to inspect Lessons, Quizzes, and Essays, or open Lab Creation to author a custom interactive 2D Studio Lab.",
+                    "Sử dụng Đề cương 6 chương phía trên để xem Giáo trình, Quiz & Tự luận, hoặc mở tab Tạo Lab để soạn thêm bài thực hành 2D Studio mới.",
+                  )}
+                </p>
+              </div>
+              <Button asChild size="sm" variant="outline">
+                <Link href={`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}`}>
+                  {t("Open Lab Creation", "Mở tab Tạo Lab")}
+                </Link>
+              </Button>
+            </div>
+          ) : visible.length === 0 ? (
             <p className="rounded-xl border border-dashed bg-card p-6 text-sm text-muted-foreground">
               {t("No Labs match your current filter.", "Không có bài Lab nào khớp bộ lọc.")}
             </p>
