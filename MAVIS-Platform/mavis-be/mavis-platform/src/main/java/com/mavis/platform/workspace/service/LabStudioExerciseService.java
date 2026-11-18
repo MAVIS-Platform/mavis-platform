@@ -106,6 +106,12 @@ public class LabStudioExerciseService {
         exercise.setInstructions(instructions);
         exercise.setRevision((exercise.getRevision() == null ? 0 : exercise.getRevision()) + 1);
         exercise.setUpdatedBy(actor);
+        if (lab.getReferenceModel() == null && request != null && request.runtimeModelId() != null) {
+            models.findById(request.runtimeModelId()).ifPresent(model -> {
+                lab.setReferenceModel(model);
+                assignments.save(lab);
+            });
+        }
         return view(exercises.save(exercise));
     }
 
@@ -139,6 +145,16 @@ public class LabStudioExerciseService {
         if (model.getSourceSnapshot() == null || !snapshot.getId().equals(model.getSourceSnapshot().getId())) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "STUDIO_EXERCISE_INVALID",
                     "Runtime model and snapshot must belong to the same source revision");
+        }
+        if (!Boolean.TRUE.equals(snapshot.getIsPublished())) {
+            snapshot.setIsPublished(true);
+            snapshots.save(snapshot);
+        }
+        if (!"TEACHER_REFERENCE".equals(project.getProjectType())
+                || !Boolean.TRUE.equals(project.getIsReferenceTemplate())) {
+            project.setProjectType("TEACHER_REFERENCE");
+            project.setIsReferenceTemplate(true);
+            projects.save(project);
         }
     }
 

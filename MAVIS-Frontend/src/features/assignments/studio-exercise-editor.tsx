@@ -92,6 +92,11 @@ export function StudioExerciseEditor({
   } | null>(null);
   const [importPending, setImportPending] = useState(false);
   const versions = useApiQuery("referenceVersions", { workspaceId });
+  const projects = useApiQuery("workspaceProjects", { workspaceId });
+  const projectNameById = useMemo(
+    () => new Map((projects.data ?? []).map((p) => [p.id, p.name])),
+    [projects.data],
+  );
   const exercise = useQuery({
     queryKey: ["api", "studio-exercise", workspaceId, assignmentId],
     queryFn: ({ signal }) =>
@@ -162,7 +167,16 @@ export function StudioExerciseEditor({
               projectId: selectedVersion.model.projectId,
               snapshotId: selectedVersion.snapshot.id,
             }
-          : null;
+          : exercise.data?.runtimeModelId &&
+              exercise.data.runtimeProjectId &&
+              exercise.data.runtimeSnapshotId &&
+              (!form.runtimeModelId || form.runtimeModelId === exercise.data.runtimeModelId)
+            ? {
+                modelId: exercise.data.runtimeModelId,
+                projectId: exercise.data.runtimeProjectId,
+                snapshotId: exercise.data.runtimeSnapshotId,
+              }
+            : null;
       if (!source) {
         throw new Error(t("Choose the deployable Studio repository.", "Hãy chọn repo Studio có thể deploy."));
       }
@@ -232,6 +246,49 @@ export function StudioExerciseEditor({
           )}
         </p>
 
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/20 p-3">
+          <div className="space-y-0.5">
+            <p className="text-xs font-semibold text-foreground">
+              {t(
+                "Curated Studio Live Exercise Preset (orders → orders-payment-route → payment)",
+                "Mẫu Đề Chuẩn Studio Live (orders → orders-payment-route → payment)",
+              )}
+            </p>
+            <p className="text-[11px] text-muted-foreground">
+              {t(
+                "One-click fill for MAVIS-Platform/mavis-studio-live-demo & mavis-studio-live-seed: baseline GET /orders, stopped payment & route-controller, scale orders to 2.",
+                "Điền nhanh cấu hình chuẩn cho repo mavis-studio-live-demo & mavis-studio-live-seed: GET /orders, dừng sẵn payment & route-controller, scale orders lên 2.",
+              )}
+            </p>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() =>
+              setForm((current) => ({
+                ...current,
+                baselineRequests: [{ method: "GET", path: "/orders", expectedStatus: 200 }],
+                stoppedServices: ["payment"],
+                stoppedControllers: "orders-payment-route",
+                allowedActions: [...ACTIONS],
+                maxErrorRatePercent: "0",
+                maxP95Ms: "2500",
+                traceFrom: "orders",
+                traceTo: "payment",
+                replicaService: "orders",
+                replicaCount: "2",
+                instructions: t(
+                  "The stack starts with payment and orders-payment-route stopped (GET /orders returns 502 / 100% error rate). (1) START payment, (2) CONNECT orders -> payment (START orders-payment-route) to restore 0% error rate, (3) SCALE orders to at least 2 replicas, capture Before/After snapshots, and click Finish Studio to seal the HMAC-SHA256 RuntimeReceipt.",
+                  "Hệ thống bắt đầu với dịch vụ payment và tuyến điều khiển orders-payment-route đang dừng (GET /orders trả lỗi 502 / 100% error rate). Hãy: (1) Bật (START) dịch vụ payment, (2) Kết nối dây (START orders-payment-route) để khôi phục luồng gọi orders -> payment về 0% lỗi, (3) Nhân bản (SCALE) dịch vụ orders lên tối thiểu 2 replicas, chụp Snapshot Before/After và nhấn Finish Studio để ký biên nhận RuntimeReceipt (HMAC-SHA256).",
+                ),
+              }))
+            }
+          >
+            {t("⚡ Fill Curated Studio Preset", "⚡ Điền nhanh Đề chuẩn Studio Live")}
+          </Button>
+        </div>
+
         <label className="block space-y-1 text-xs font-medium">
           <span>{t("Deployable Studio repository", "Repo Studio có thể deploy")}</span>
           <select
@@ -240,10 +297,19 @@ export function StudioExerciseEditor({
             onChange={(event) => setForm({ ...form, runtimeModelId: event.target.value })}
           >
             <option value="">{t("Choose an analyzed repository…", "Chọn repo đã phân tích…")}</option>
+            {form.runtimeModelId &&
+              !(versions.data ?? []).some((v) => v.model.id === form.runtimeModelId) && (
+                <option value={form.runtimeModelId}>
+                  {projectNameById.get(
+                    imported?.projectId ?? exercise.data?.runtimeProjectId ?? "",
+                  ) ?? t("Selected Studio repository", "Repo Studio đã chọn")}{" "}
+                  · {form.runtimeModelId.slice(0, 8)}
+                </option>
+              )}
             {(versions.data ?? []).map((version) => (
               <option key={version.model.id} value={version.model.id}>
-                r{version.model.revision} · {version.model.projectId.slice(0, 8)} ·{" "}
-                {version.snapshot.sourceType}
+                {projectNameById.get(version.model.projectId) ?? version.snapshot.name ?? version.model.projectId.slice(0, 8)}{" "}
+                · r{version.model.revision} · {version.snapshot.sourceType}
               </option>
             ))}
           </select>
@@ -355,13 +421,13 @@ export function StudioExerciseEditor({
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {t("Stopped at start", "Dừng sẵn khi bắt đầu")}
             </p>
-            {applications.length === 0 ? (
+            {applications.length === 0 && form.stoppedServices.length === 0 ? (
               <p className="text-xs text-muted-foreground">
                 {t("Prepare the runtime profile first.", "Hãy chuẩn bị runtime profile trước.")}
               </p>
             ) : (
               <ul className="space-y-1">
-                {applications.map((service) => (
+                {Array.from(new Set([...applications, ...form.stoppedServices])).map((service) => (
                   <li key={service}>
                     <label className="flex items-center gap-2 text-sm">
                       <input

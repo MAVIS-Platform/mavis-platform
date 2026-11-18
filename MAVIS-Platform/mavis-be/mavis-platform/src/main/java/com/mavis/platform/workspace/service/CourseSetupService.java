@@ -137,7 +137,10 @@ public class CourseSetupService {
 
         ReferenceSetup fallbackReference = resolveReference(workspaceId, ordered);
         List<ReferenceSetup> labReferences = ordered.stream()
-                .map(lab -> lab.getReferenceModel() == null ? fallbackReference : reference(lab.getReferenceModel()))
+                .map(lab -> {
+                    ModelVersion runtimeModel = resolveRuntimeModel(lab);
+                    return runtimeModel == null ? fallbackReference : reference(runtimeModel);
+                })
                 .toList();
         ReferenceSetup reference = selectPrimaryReference(ordered, labReferences, fallbackReference);
         List<LabSetup> labs = ordered.stream().map(lab -> labSetup(lab, fallbackReference)).toList();
@@ -312,13 +315,27 @@ public class CourseSetupService {
                 false, false, false, 0, List.of(), 0, 0, false);
     }
 
+    private ModelVersion resolveRuntimeModel(Assignment lab) {
+        if (lab == null) return null;
+        if (labStudioExercises != null && lab.getId() != null) {
+            var exercise = labStudioExercises.findByAssignmentId(lab.getId()).orElse(null);
+            if (exercise != null && exercise.getRuntimeModelId() != null) {
+                var runtimeModel = models.findById(exercise.getRuntimeModelId()).orElse(null);
+                if (runtimeModel != null) return runtimeModel;
+            }
+        }
+        return lab.getReferenceModel();
+    }
+
     private LabSetup labSetup(Assignment lab, ReferenceSetup fallback) {
         boolean published = lab.getLabOrder() != null;
         ReferenceSetup reference = lab.getReferenceModel() == null ? fallback : reference(lab.getReferenceModel());
-        boolean referenceReady = reference.referenceReady();
+        ModelVersion runtimeModel = resolveRuntimeModel(lab);
+        ReferenceSetup runtimeReference = runtimeModel == null ? reference : reference(runtimeModel);
+        boolean referenceReady = reference.referenceReady() || runtimeReference.referenceReady();
         boolean requiresRuntime = Boolean.TRUE.equals(lab.getRequireRuntimeTrace());
-        boolean studioReady = referenceReady && reference.runtimeMatchesSource()
-                && reference.runtimeConfigured() && reference.topologyConfigured();
+        boolean studioReady = runtimeReference.referenceReady() && runtimeReference.runtimeMatchesSource()
+                && runtimeReference.runtimeConfigured() && runtimeReference.topologyConfigured();
         boolean topologyFrozen = lab.getStudioTopologySnapshot() != null
                 && lab.getStudioTopologySnapshot().isObject();
         int quizVersion = quizVersion(lab);
@@ -440,11 +457,25 @@ public class CourseSetupService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Lab not found"));
 
         ModelVersion refModel = lab.getReferenceModel();
+        com.mavis.common.entity.LabStudioExercise exercise = null;
         if (labStudioExercises != null) {
-            var exercise = labStudioExercises.findByAssignmentId(lab.getId()).orElse(null);
+            exercise = labStudioExercises.findByAssignmentId(lab.getId()).orElse(null);
             if (exercise != null && exercise.getRuntimeModelId() != null) {
                 refModel = models.findById(exercise.getRuntimeModelId()).orElse(refModel);
             }
+        }
+        if (lab.getReferenceModel() == null && refModel != null) {
+            lab.setReferenceModel(refModel);
+        }
+        Set<String> initialStoppedServices = new LinkedHashSet<>();
+        Set<String> initialStoppedControllers = new LinkedHashSet<>();
+        if (exercise != null && exercise.getInitialState() != null && exercise.getInitialState().isObject()) {
+            exercise.getInitialState().path("stoppedServices").forEach(node -> {
+                if (node.isTextual() && !node.asText().isBlank()) initialStoppedServices.add(node.asText().trim());
+            });
+            exercise.getInitialState().path("stoppedControllers").forEach(node -> {
+                if (node.isTextual() && !node.asText().isBlank()) initialStoppedControllers.add(node.asText().trim());
+            });
         }
         ObjectMapper json = objectMapper != null ? objectMapper : new ObjectMapper();
         ObjectNode topology = json.createObjectNode().put("version", 1);
@@ -521,10 +552,11 @@ public class CourseSetupService {
                         .put("service", svcName)
                         .put("label", svcName)
                         .put("canScale", true)
-                        .put("initiallyStopped", false);
+                        .put("initiallyStopped", initialStoppedServices.contains(svcName));
             }
 
-            Set<String> seenConnections = new LinkedHashSet<>();
+            Set<String> usedControllers = new LinkedHashSet<>();
+            Set<String> usedPairs = new LinkedHashSet<>();
             for (String controller : controllerNames) {
                 for (String[] inbound : edges) {
                     if (!inbound[1].equals(controller)) continue;
@@ -533,13 +565,13 @@ public class CourseSetupService {
                         String from = inbound[0];
                         String to = outbound[1];
                         if (from.equals(to) || controllerNames.contains(from) || controllerNames.contains(to)) continue;
-                        if (!seenConnections.add(from + "->" + to + "@" + controller)) continue;
+                        if (!usedControllers.add(controller) || !usedPairs.add(from + "->" + to)) continue;
                         connections.addObject()
                                 .put("from", from)
                                 .put("to", to)
                                 .put("controllerService", controller)
                                 .put("protocol", outbound[2])
-                                .put("initiallyStopped", false);
+                                .put("initiallyStopped", initialStoppedControllers.contains(controller));
                     }
                 }
             }
@@ -549,13 +581,16 @@ public class CourseSetupService {
                         .put("service", svc)
                         .put("label", svc)
                         .put("canScale", true)
-                        .put("initiallyStopped", false);
+                        .put("initiallyStopped", initialStoppedServices.contains(svc));
             }
-            controllerNames.add("api-gateway");
+            controllerNames.add("order-payment-route");
+            controllerNames.add("order-inventory-route");
             connections.addObject().put("from", "order-service").put("to", "payment-service")
-                    .put("controllerService", "api-gateway").put("protocol", "FEIGN_CALL").put("initiallyStopped", false);
+                    .put("controllerService", "order-payment-route").put("protocol", "FEIGN_CALL")
+                    .put("initiallyStopped", initialStoppedControllers.contains("order-payment-route"));
             connections.addObject().put("from", "order-service").put("to", "inventory-service")
-                    .put("controllerService", "api-gateway").put("protocol", "FEIGN_CALL").put("initiallyStopped", false);
+                    .put("controllerService", "order-inventory-route").put("protocol", "FEIGN_CALL")
+                    .put("initiallyStopped", initialStoppedControllers.contains("order-inventory-route"));
         }
 
         if (refModel != null && refModel.getProject() != null && refModel.getSourceSnapshot() != null) {

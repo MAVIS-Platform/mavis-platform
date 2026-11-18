@@ -178,8 +178,15 @@ export function LabStudioSection({
             </div>
             {autoStudio.isSuccess && (
               <p role="status" className="text-xs text-success">
-                {autoStudio.data.message} · {autoStudio.data.containerCount}{" "}
-                {t("containers", "container")} · {autoStudio.data.linkCount} {t("links", "liên kết")}
+                {autoStudio.data.message ??
+                  t(
+                    "Auto-configured 2D Studio topology",
+                    "Đã tự động cấu hình Topology 2D Studio",
+                  )}{" "}
+                · {autoStudio.data.blockCount ?? autoStudio.data.containerCount ?? 0}{" "}
+                {t("blocks", "block dịch vụ")} ·{" "}
+                {autoStudio.data.connectionCount ?? autoStudio.data.linkCount ?? 0}{" "}
+                {t("connections", "kết nối điều khiển")}
               </p>
             )}
             {autoStudio.error && <ErrorState error={autoStudio.error} />}
@@ -277,7 +284,7 @@ export function LabStudioSection({
                   workspaceId={workspaceId}
                   assignmentId={assignment.id}
                   position={setupLab?.position}
-                  sessionId={verifiedSession?.assignmentId === assignment.id ? verifiedSession.id : undefined}
+                  sessionId={verifiedSession?.id}
                 />
               ) : (
                 <Button type="button" variant="outline" onClick={() => onNavigate("publish")}>

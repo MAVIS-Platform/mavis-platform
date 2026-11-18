@@ -58,6 +58,9 @@ public class CourseAccessService {
     private com.mavis.common.repository.SourceSnapshotRepository sourceSnapshots;
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.mavis.common.repository.ModelVersionRepository modelVersions;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
     @org.springframework.context.annotation.Lazy
     private CourseLabSeederService seeder;
 
@@ -180,13 +183,24 @@ public class CourseAccessService {
                 }
             } else {
                 var referenceModel = assignment.getReferenceModel();
+                var referenceSnapshot = referenceModel == null ? null : referenceModel.getSourceSnapshot();
+                boolean clonedWorkingMatch = referenceSnapshot != null
+                        && session.getSourceSnapshot() != null
+                        && referenceSnapshot.getArtifactHash() != null
+                        && java.util.Objects.equals(referenceSnapshot.getArtifactHash(),
+                                session.getSourceSnapshot().getArtifactHash())
+                        && ((session.getProject() != null
+                                && java.util.Objects.equals(referenceSnapshot.getId(),
+                                        session.getProject().getReferenceSnapshotId()))
+                                || (session.getSourceSnapshot().getProject() != null
+                                        && java.util.Objects.equals(referenceSnapshot.getId(),
+                                                session.getSourceSnapshot().getProject().getReferenceSnapshotId())));
                 if (referenceModel == null || session.getModelVersion() == null
-                        || !referenceModel.getId().equals(session.getModelVersion().getId())) {
+                        || (!referenceModel.getId().equals(session.getModelVersion().getId()) && !clonedWorkingMatch)) {
                     throw new BusinessException(ErrorCode.CONFLICT, "Studio session model does not match this Lab");
                 }
-                var referenceSnapshot = referenceModel.getSourceSnapshot();
                 if (referenceSnapshot != null && (session.getSourceSnapshot() == null
-                        || !referenceSnapshot.getId().equals(session.getSourceSnapshot().getId()))) {
+                        || (!referenceSnapshot.getId().equals(session.getSourceSnapshot().getId()) && !clonedWorkingMatch))) {
                     throw new BusinessException(ErrorCode.CONFLICT, "Studio session source does not match this Lab");
                 }
             }
@@ -228,7 +242,7 @@ public class CourseAccessService {
     }
 
     private void copyTopologySnapshot(Assignment assignment) {
-        var model = assignment.getReferenceModel();
+        var model = resolveStudioRuntimeModel(assignment);
         var snapshot = model == null ? null : model.getSourceSnapshot();
         if (model == null || snapshot == null || snapshot.getProject() == null) return;
         RuntimeConfiguration configuration = configurations.findById(snapshot.getProject().getId()).orElse(null);
@@ -241,6 +255,20 @@ public class CourseAccessService {
             assignment.setStudioTopologySnapshot(topology.deepCopy());
             assignment.setStudioTopologyRevision(configuration.getRevision());
         }
+    }
+
+    private com.mavis.common.entity.ModelVersion resolveStudioRuntimeModel(Assignment assignment) {
+        if (labStudioExercises != null && modelVersions != null && assignment.getId() != null) {
+            var exercise = labStudioExercises.findByAssignmentId(assignment.getId()).orElse(null);
+            if (exercise != null && exercise.getRuntimeModelId() != null) {
+                var runtimeModel = modelVersions.findById(exercise.getRuntimeModelId()).orElse(null);
+                if (runtimeModel != null && runtimeModel.getSourceSnapshot() != null
+                        && runtimeModel.getSourceSnapshot().getProject() != null) {
+                    return runtimeModel;
+                }
+            }
+        }
+        return assignment.getReferenceModel();
     }
 
     @Transactional(readOnly = true)

@@ -726,11 +726,14 @@ export function useBootstrapLabStudio(workspaceId: string, assignmentId: string)
 
 export type AutoConfigureStudioResult = {
   assignmentId: string;
-  projectId: string;
+  projectId?: string;
+  blockCount?: number;
+  connectionCount?: number;
   topologyRevision: number;
-  containerCount: number;
-  linkCount: number;
-  message: string;
+  studioFrozen?: boolean;
+  containerCount?: number;
+  linkCount?: number;
+  message?: string;
 };
 
 export function useAutoConfigureStudio(workspaceId: string, assignmentId: string) {

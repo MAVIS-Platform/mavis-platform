@@ -13,6 +13,7 @@ import {
   useCourseAuthoring,
   useCourseSetup,
   useRuntimeSetupReadiness,
+  useStudentLabStudioSessions,
 } from "@/features/workspaces/course-access";
 import type { Assignment } from "./requirements";
 import { ExportLabButton } from "./lab-transfer";
@@ -42,6 +43,15 @@ export function LabPublishSection({
   });
   const studioProjectId = exercise.data?.runtimeProjectId ?? assignment.referenceSource?.projectId ?? null;
   const readiness = useRuntimeSetupReadiness(studioProjectId);
+  const labSessions = useStudentLabStudioSessions(
+    workspaceId,
+    assignment.id,
+    Boolean(studioProjectId),
+  );
+  const verifiedSession =
+    (labSessions.data ?? []).find(
+      (session) => session.assignmentId === assignment.id && session.studioVerified,
+    ) ?? (labSessions.data ?? []).find((session) => session.studioVerified);
   const course = useCourseAuthoring(workspaceId);
   const modules = course.data?.modules ?? [];
   const theoryReady = modules.some(
@@ -180,6 +190,7 @@ export function LabPublishSection({
                 workspaceId={workspaceId}
                 assignmentId={assignment.id}
                 position={setupLab?.position}
+                sessionId={verifiedSession?.id}
               />
             </>
           ) : (
@@ -187,6 +198,7 @@ export function LabPublishSection({
               workspaceId={workspaceId}
               assignmentId={assignment.id}
               position={setupLab?.position}
+              sessionId={verifiedSession?.id}
             />
           )}
           <ExportLabButton

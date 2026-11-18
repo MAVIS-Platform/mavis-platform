@@ -286,8 +286,12 @@ public class CourseLabStudentService {
         ModelVersion refModel = lab.getReferenceModel();
         var exercise = labStudioExercises.findByAssignmentId(lab.getId()).orElse(null);
         JsonNode frozenExercise = lab.getStudioExerciseSnapshot();
-        UUID runtimeModelId = frozenExercise != null && frozenExercise.hasNonNull("runtimeModelId")
-                ? UUID.fromString(frozenExercise.path("runtimeModelId").asText())
+        boolean isStudentActor = CourseLabPolicy.isStudent(actor);
+        JsonNode activeExercise = isStudentActor
+                ? (frozenExercise != null ? frozenExercise : exerciseToNode(exercise))
+                : (exercise != null ? exerciseToNode(exercise) : frozenExercise);
+        UUID runtimeModelId = activeExercise != null && activeExercise.hasNonNull("runtimeModelId")
+                ? UUID.fromString(activeExercise.path("runtimeModelId").asText())
                 : exercise == null ? null : exercise.getRuntimeModelId();
         if (runtimeModelId == null
                 && (refModel == null || refModel.getSourceSnapshot() == null || refModel.getProject() == null)) {
@@ -318,8 +322,8 @@ public class CourseLabStudentService {
         }
 
         StudentWorkspaceBundle working = ensureStudentWorkingProject(lab, actor, runtimeModel);
-        JsonNode resolvedTopology = applyExerciseInitialState(frozenExercise,
-                resolveStudioTopology(lab, runtimeModel));
+        JsonNode resolvedTopology = applyExerciseInitialState(activeExercise,
+                resolveStudioTopology(lab, runtimeModel, !isStudentActor));
         ObjectNode appsNode = resolveApplicationsNode(runtimeModel, resolvedTopology);
         Map<String, String> serviceMappings = buildServiceMappings(working.model(), appsNode);
 
@@ -332,9 +336,9 @@ public class CourseLabStudentService {
         }
         ObjectNode scenarioNode = scenarioConfig.putObject("scenario");
         ArrayNode stepsNode = scenarioNode.putArray("steps");
-        String primaryService = appsNode.fieldNames().hasNext() ? appsNode.fieldNames().next() : "order-service";
-        JsonNode configuredBaseline = frozenExercise != null
-                ? frozenExercise.get("baselineRequests")
+        String primaryService = selectPrimaryService(resolvedTopology, appsNode);
+        JsonNode configuredBaseline = activeExercise != null
+                ? activeExercise.get("baselineRequests")
                 : exercise == null ? null : exercise.getBaselineRequests();
         if (configuredBaseline != null && configuredBaseline.isArray() && !configuredBaseline.isEmpty()) {
             int index = 0;
@@ -614,7 +618,59 @@ public class CourseLabStudentService {
         }
     }
 
-    private JsonNode resolveStudioTopology(Assignment lab, ModelVersion refModel) {
+    private ObjectNode exerciseToNode(com.mavis.common.entity.LabStudioExercise exercise) {
+        if (exercise == null) return null;
+        ObjectNode node = json.createObjectNode();
+        if (exercise.getRuntimeProjectId() != null) node.put("runtimeProjectId", exercise.getRuntimeProjectId().toString());
+        if (exercise.getRuntimeModelId() != null) node.put("runtimeModelId", exercise.getRuntimeModelId().toString());
+        if (exercise.getRuntimeSnapshotId() != null) node.put("runtimeSnapshotId", exercise.getRuntimeSnapshotId().toString());
+        if (exercise.getBaselineRequests() != null) node.set("baselineRequests", exercise.getBaselineRequests());
+        if (exercise.getInitialState() != null) node.set("initialState", exercise.getInitialState());
+        if (exercise.getAllowedActions() != null) node.set("allowedActions", exercise.getAllowedActions());
+        if (exercise.getSuccessCriteria() != null) node.set("successCriteria", exercise.getSuccessCriteria());
+        if (exercise.getInstructions() != null) node.put("instructions", exercise.getInstructions());
+        return node;
+    }
+
+    private static String selectPrimaryService(JsonNode topology, ObjectNode appsNode) {
+        List<String> allBlocks = new ArrayList<>();
+        List<String> activeBlocks = new ArrayList<>();
+        Set<String> outbound = new LinkedHashSet<>();
+        Set<String> inbound = new LinkedHashSet<>();
+        if (topology != null && topology.isObject()) {
+            for (JsonNode block : topology.path("blocks")) {
+                String svc = block.path("service").asText("").trim();
+                if (svc.isEmpty()) continue;
+                allBlocks.add(svc);
+                if (!block.path("initiallyStopped").asBoolean(false)) {
+                    activeBlocks.add(svc);
+                }
+            }
+            for (JsonNode conn : topology.path("connections")) {
+                String from = conn.path("from").asText("").trim();
+                String to = conn.path("to").asText("").trim();
+                if (!from.isEmpty()) outbound.add(from);
+                if (!to.isEmpty()) inbound.add(to);
+            }
+        }
+        for (String svc : activeBlocks) {
+            if (outbound.contains(svc) && !inbound.contains(svc)) return svc;
+        }
+        for (String svc : activeBlocks) {
+            if (outbound.contains(svc)) return svc;
+        }
+        if (!activeBlocks.isEmpty()) return activeBlocks.get(0);
+        if (!allBlocks.isEmpty()) return allBlocks.get(0);
+        return appsNode != null && appsNode.fieldNames().hasNext() ? appsNode.fieldNames().next() : "order-service";
+    }
+
+    private JsonNode resolveStudioTopology(Assignment lab, ModelVersion refModel, boolean preferLiveConfiguration) {
+        if (preferLiveConfiguration && refModel != null && refModel.getProject() != null) {
+            RuntimeConfiguration config = runtimeConfigurations.findById(refModel.getProject().getId()).orElse(null);
+            if (config != null && config.getProfile() != null && config.getProfile().path("studioTopology").isObject()) {
+                return config.getProfile().path("studioTopology");
+            }
+        }
         if (lab.getStudioTopologySnapshot() != null && lab.getStudioTopologySnapshot().isObject()) {
             return lab.getStudioTopologySnapshot();
         }

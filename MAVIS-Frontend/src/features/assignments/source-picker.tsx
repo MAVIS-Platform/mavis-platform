@@ -208,7 +208,7 @@ export function AssignmentSourcePicker({
               setSnapshotId("");
             }}
             options={[
-              { value: "", label: "No reference source (students import their own project)" },
+              { value: "", label: "Select a curated reference project…" },
               ...(projects.data ?? [])
                 .filter((p) => p.projectType === "TEACHER_REFERENCE" || p.isReferenceTemplate)
                 .map((p) => ({ value: p.id, label: p.name })),
@@ -260,12 +260,54 @@ export function AssignmentSourcePicker({
         <>
           {mode === "github" ? (
             <>
+              <div className="space-y-1.5 rounded-lg border bg-background/80 p-3">
+                <p className="text-xs font-semibold text-foreground">
+                  Curated Organization Repositories (MAVIS-Platform · BR-03 / BR-07)
+                </p>
+                <p className="text-[11px] text-muted-foreground">
+                  Select an official prepared repository with digest-pinned Docker images, /health probes, and prepared route-controllers for MAVIS Studio Live:
+                </p>
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {[
+                    {
+                      label: "⚡ Studio Live Defense Demo (mavis-studio-live-demo)",
+                      url: "https://github.com/MAVIS-Platform/mavis-studio-live-demo",
+                    },
+                    {
+                      label: "🧪 Studio Live Seed (mavis-studio-live-seed)",
+                      url: "https://github.com/MAVIS-Platform/mavis-studio-live-seed",
+                    },
+                    {
+                      label: "☕ Java Microservices Seed (mavis-commerce-seed)",
+                      url: "https://github.com/MAVIS-Platform/mavis-commerce-seed",
+                    },
+                  ].map((preset) => (
+                    <Button
+                      key={preset.url}
+                      type="button"
+                      size="sm"
+                      variant={repository === preset.url ? "default" : "outline"}
+                      className="h-7 px-2.5 text-xs"
+                      onClick={() => {
+                        setRepository(preset.url);
+                        setLookup(preset.url);
+                        setBranch("main");
+                        setCommit("");
+                        setModelId("");
+                        setJobId("");
+                      }}
+                    >
+                      {preset.label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
               <label className="block text-sm">
                 GitHub repository URL
                 <Input
                   aria-label="Assignment GitHub repository URL"
                   value={repository}
-                  placeholder="https://github.com/owner/repository"
+                  placeholder="https://github.com/MAVIS-Platform/mavis-studio-live-demo"
                   onChange={(e) => {
                     setRepository(e.target.value);
                     setModelId("");

@@ -175,10 +175,11 @@ public class DockerDetectorServiceImpl implements DockerDetectorService {
                     } else if (trimmed.matches("-?\\s*(EVENTUATELOCAL_KAFKA_BOOTSTRAP_SERVERS|SPRING_KAFKA_BOOTSTRAP_SERVERS)\\s*[:=].*")) {
                         String authority=stripQuotes(trimmed.replaceFirst("^-?\\s*[A-Z_]+\\s*[:=]\\s*", "")).replace(" ","");
                         if(authority.matches("[A-Za-z0-9_.-]+:[0-9]+(,[A-Za-z0-9_.-]+:[0-9]+)*"))currentContainer.setMessageBrokerAuthority(java.util.Arrays.stream(authority.split(",")).sorted().distinct().collect(java.util.stream.Collectors.joining(",")));
-                    } else if (trimmed.startsWith("ports:")) {
+                    } else if (trimmed.startsWith("ports:") || trimmed.startsWith("expose:")) {
+                        String key = trimmed.startsWith("ports:") ? "ports:" : "expose:";
                         currentSection = "PORTS";
                         currentSectionIndent = indent;
-                        String inlineVal = trimmed.substring("ports:".length()).trim();
+                        String inlineVal = trimmed.substring(key.length()).trim();
                         if (inlineVal.startsWith("[") && inlineVal.endsWith("]")) {
                             extractInlineItems(inlineVal, currentContainer.getPorts());
                             currentSection = null;
