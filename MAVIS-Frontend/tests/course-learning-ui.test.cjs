@@ -1257,3 +1257,42 @@ test("ADM-V2 Enterprise Control Center removes /administration/studio links and 
   assert.ok(adminOps.includes("forceStopRuntimeSession"));
   assert.ok(adminScreens.includes("actorName"));
 });
+
+test("Lecturer flow, 1-Click Login, MockAdapter JAVA-MS-2026, and clean routes have no 404 links or hidden Passkeys", () => {
+  const { allowedBackendPath } = require("../src/lib/api/backend-path.ts");
+  assert.equal(allowedBackendPath("workspaces/bootstrap-java-coursera"), true);
+
+  const loginSrc = read("app/login/page.tsx");
+  assert.ok(loginSrc.includes("1-Click Test Login"));
+  assert.ok(loginSrc.includes("gv.java@mavis.edu.vn"));
+  assert.ok(loginSrc.includes("sv.java@mavis.edu.vn"));
+  assert.ok(loginSrc.includes("admin@mavis.edu.vn"));
+  assert.ok(loginSrc.includes("JAVA-MS-2026"));
+  assert.ok(loginSrc.includes("JAVA2026"));
+
+  const workspacesSrc = read("src/features/workspaces/screens.tsx");
+  const teacherDashSrc = read("src/features/workspaces/teacher-dashboard.tsx");
+  assert.ok(!workspacesSrc.includes("/workspace-members"));
+  assert.ok(!teacherDashSrc.includes("/workspace-members"));
+  assert.ok(workspacesSrc.includes("#class-passkey"));
+  assert.ok(teacherDashSrc.includes("#class-passkey"));
+
+  const managerSrc = read("src/features/courses/lecturer-curriculum-manager.tsx");
+  assert.ok(!managerSrc.includes("/theory-assets"));
+  assert.ok(!managerSrc.includes("/assignments/new"));
+  assert.ok(!managerSrc.includes("sr-only"));
+  assert.ok(managerSrc.includes("/theory-library?workspace="));
+  assert.ok(managerSrc.includes("/lab-authoring?workspace="));
+
+  const outlineSrc = read("src/features/courses/course-outline.tsx");
+  assert.ok(!outlineSrc.includes("#course-builder"));
+  assert.ok(outlineSrc.includes("view=course-authoring"));
+
+  const essaySrc = read("src/features/courses/course-essay-panel.tsx");
+  assert.ok(essaySrc.includes("row.title || row.criterion"));
+  assert.ok(essaySrc.includes("row.weightPoints ?? row.maxScore"));
+
+  const mockSrc = read("src/lib/api/mock-adapter.ts");
+  assert.ok(mockSrc.includes("workspace-java-ms-2026"));
+  assert.ok(mockSrc.includes("JAVA-MS-2026"));
+});
