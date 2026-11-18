@@ -18,14 +18,21 @@ public final class Module1JavaFoundationsProvider {
                         "Thiết kế DTO bằng Java 21 Record bất biến sâu, tách hợp đồng Interface khỏi implementation và chặn lỗi dữ liệu ở biên HTTP.",
                         45,
                         """
-                        # 📖 Bài 1.1: Ranh giới kiểu dữ liệu, Java 21 Record & Validation ở biên
+                        # Bài 1.1: Ranh giới kiểu dữ liệu, Java 21 Record & Validation ở biên
 
-                        ## 1. Tư duy 3 lớp ranh giới trong Java Microservices
-                        Khi một HTTP request (ví dụ `POST /api/v1/orders`) đi vào dịch vụ Spring Boot 3, dữ liệu đi qua 3 lớp ranh giới rõ ràng:
-                        1. **Lớp DTO ở biên (`Java 21 Record`)**: Khai báo dữ liệu truyền tải bất biến nông. **Cạm bẫy quan trọng ("Shallow Immutability")**: Một `record` chứa `List<OrderLineDto>` chỉ khóa tham chiếu, không tự khóa danh sách bên trong — bắt buộc dùng **Compact Constructor + `List.copyOf(...)`** để bất biến sâu (*Deep Immutability*).
-                        2. **Lớp Hợp đồng Nghiệp vụ (`Interface`)**: Như `InventoryClientPort` chỉ mô tả **What**, tách biệt khỏi **How** (`@Service`).
-                        3. **Phân biệt Lỗi dữ liệu biên (`400/422`) vs Lỗi hạ tầng (`500/503`)**: Chặn `quantity <= 0` ngay tại `@Valid` (`@Min`, `@NotBlank`, `@Future`).
+                        ## 1. Mục tiêu học tập & Bài toán thực tế
+                        - Phân tách rõ **biên giao tiếp (`Edge DTO`)**, **hợp đồng nghiệp vụ (`Port Interface`)** và **thực thi dịch vụ (`@Service`)** trong kiến trúc Java Microservices.
+                        - Loại bỏ lỗi rò rỉ đột biến (`Shallow Immutability`) khi nhận payload `POST /api/v1/orders` hay `POST /api/v1/bookings`.
+                        - Chặn dữ liệu không hợp lệ sớm bằng Bean Validation (`jakarta.validation`) với mã `400/422` thay vì để nổ `500` ở tầng PostgreSQL.
 
+                        ## 2. Nguyên lý Kiến trúc & Bảng đối chiếu
+                        | Lớp ranh giới | Thành phần Java 21 / Spring Boot 3 | Trách nhiệm chính | Sai lầm phổ biến |
+                        | :--- | :--- | :--- | :--- |
+                        | **Edge DTO** | `public record ...` + Compact Constructor | Chứa dữ liệu truyền qua HTTP, khóa tham chiếu bằng `List.copyOf` | Truyền thẳng JPA `@Entity` ra `@RestController` |
+                        | **Contract Port** | `InventoryClientPort` (`interface`) | Định nghĩa hành vi (**What**), tách caller khỏi implementation | Hardcode gọi class cụ thể gây khóa chặt dependency |
+                        | **Boundary Validation** | `@Valid`, `@NotBlank`, `@Min`, `@Future` | Phân biệt `400/422` (lỗi input) với `500/503` (lỗi hạ tầng) | Trả `200 OK` hoặc `500` khi client gửi `quantity <= 0` |
+
+                        ## 3. Triển khai chuẩn với Java 21 & Spring Boot 3
                         ```java
                         public record CreateOrderRequest(
                                 @NotBlank String customerId,
@@ -35,7 +42,23 @@ public final class Module1JavaFoundationsProvider {
                                 items = items != null ? List.copyOf(items) : List.of();
                             }
                         }
+
+                        @RestController
+                        @RequestMapping("/api/v1/orders")
+                        public class OrderController {
+                            private final OrderApplicationService service;
+                            public OrderController(OrderApplicationService service) { this.service = service; }
+
+                            @PostMapping
+                            public ResponseEntity<OrderSummaryDto> create(@Valid @RequestBody CreateOrderRequest req) {
+                                return ResponseEntity.status(HttpStatus.CREATED).body(service.placeOrder(req));
+                            }
+                        }
                         ```
+
+                        ## 4. Checklist Kiểm toán 3E & Các bẫy thường gặp khi vấn đáp
+                        - **Bẫy Shallow Immutability**: Khi caller sửa `List` gốc sau khi khởi tạo `record`, đối tượng vẫn bị biến đổi nếu thiếu `List.copyOf(...)` trong Compact Constructor.
+                        - **Evidence Kiểm toán 3E**: Kiểm tra `GlobalExceptionHandler` ánh xạ `MethodArgumentNotValidException` sang `400 Bad Request` và `BusinessException` có mã lỗi rõ ràng.
                         """
                 ),
                 new LessonSpec(
@@ -44,18 +67,35 @@ public final class Module1JavaFoundationsProvider {
                         "Chọn đúng List, Set, Map theo ngữ nghĩa bài toán và viết Stream pipeline thuần khiết, xử lý trùng khóa an toàn.",
                         45,
                         """
-                        # 📖 Bài 1.2: Collections, Stream API & Pipeline không tác dụng phụ
+                        # Bài 1.2: Collections, Stream API & Pipeline không tác dụng phụ
 
-                        ## 1. Chọn đúng cấu trúc dữ liệu (`List` vs `Set` vs `Map`)
+                        ## 1. Mục tiêu học tập & Bài toán thực tế
+                        - Chọn đúng cấu trúc dữ liệu (`List`, `Set`, `Map`) khi dựng đồ thị phụ thuộc dịch vụ, lọc finding kiểm toán và gom nhóm route Gateway.
+                        - Viết `Stream API` thuần khiết (pure pipeline), không gây hiệu ứng phụ (`side-effect free`) và xử lý an toàn trường hợp trùng khóa (`Duplicate Key`).
+
+                        ## 2. Nguyên lý Kiến trúc & Bảng đối chiếu
                         | Cấu trúc | Ngữ nghĩa cốt lõi | Dùng trong Microservices | Tránh dùng khi |
                         | :--- | :--- | :--- | :--- |
                         | `List<T>` | Giữ thứ tự, cho phép trùng | Danh sách `OrderLine`, chuỗi bước kịch bản | Tra cứu nhanh theo `serviceId` |
                         | `Set<T>` | Phần tử duy nhất, `O(1)` lookup | Tập `visited` chống lặp vô hạn trong `Reverse BFS` | Cần đếm tần suất lặp lại |
                         | `Map<K, V>` | Ánh xạ khóa duy nhất -> giá trị `O(1)` | Index `ServiceElement` theo ID, gom routes theo service | `Collectors.toMap()` thiếu hàm gộp khi trùng khóa |
 
-                        ## 2. Nguyên tắc vàng khi viết `Stream API`
-                        - **Không gây tác dụng phụ (`No Side Effects`)**: Cấm gọi HTTP/DB hoặc sửa `List` ngoài bên trong `.filter()` / `.map()`.
-                        - Luôn khai báo quy tắc gộp khóa hoặc dùng `Collectors.groupingBy` với `LinkedHashMap` / `LinkedHashSet` để giữ thứ tự xác định.
+                        ## 3. Triển khai chuẩn với Java 21 & Spring Boot 3
+                        ```java
+                        public Map<String, Integer> aggregateDishQuantities(List<PreOrderedDishDto> dishes) {
+                            return dishes.stream()
+                                    .collect(Collectors.toMap(
+                                            PreOrderedDishDto::dishId,
+                                            PreOrderedDishDto::quantity,
+                                            Integer::sum,
+                                            LinkedHashMap::new
+                                    ));
+                        }
+                        ```
+
+                        ## 4. Checklist Kiểm toán 3E & Các bẫy thường gặp khi vấn đáp
+                        - **Bẫy `IllegalStateException: Duplicate key`**: Gọi `Collectors.toMap(keyFn, valFn)` thiếu `mergeFunction` (`Integer::sum`) sẽ sập ngay khi có 2 phần tử trùng khóa.
+                        - **Bẫy Side Effect**: Không thay đổi `List` bên ngoài hoặc gọi HTTP/DB bên trong `.map()` / `.filter()` vì có thể phá vỡ hành vi khi chuyển sang parallel stream.
                         """
                 ),
                 new LessonSpec(
@@ -64,18 +104,34 @@ public final class Module1JavaFoundationsProvider {
                         "Hiểu dependencyManagement BOM, Maven Wrapper (./mvnw), thứ tự ưu tiên Spring Profiles và Zero Secret Leaks.",
                         40,
                         """
-                        # 📖 Bài 1.3: Quản trị Build Maven BOM & Cấu hình đa môi trường
+                        # Bài 1.3: Quản trị Build Maven BOM & Cấu hình đa môi trường
 
-                        ## 1. `<dependencies>` vs `<dependencyManagement>` (BOM)
-                        - `<dependencyManagement>` (như `spring-cloud-dependencies` BOM) **chỉ quy định bảng phiên bản chuẩn tương thích**, không tự tải dependency vào JAR nếu chưa khai báo trong `<dependencies>`.
-                        - **Ma trận chuẩn JDK 21**: Spring Boot `3.2.x / 3.3.x` đi kèm Spring Cloud `2023.0.x (Leyton)` trên namespace `jakarta.*`.
-                        - Dùng **`./mvnw` (`Maven Wrapper`)** để ghim đúng phiên bản Maven giữa mọi máy lập trình viên và CI/CD Docker.
+                        ## 1. Mục tiêu học tập & Bài toán thực tế
+                        - Quản lý hàng chục thư viện Spring Boot 3 & Spring Cloud đồng bộ phiên bản bằng Bill of Materials (BOM).
+                        - Bảo đảm build tái lập 100% giữa máy lập trình viên Windows/macOS và CI/CD Docker Linux bằng Maven Wrapper (`./mvnw`).
+                        - Bảo mật tuyệt đối cấu hình DB/JWT/API Key xuyên suốt nhiều môi trường (`dev`, `ci`, `prod`).
 
-                        ## 2. Thứ tự ưu tiên Externalized Configuration & Zero Secret Leaks
-                        1. `application.yml` mặc định trong JAR.
-                        2. `application-{profile}.yml` (theo `SPRING_PROFILES_ACTIVE=docker|prod`).
-                        3. **Biến môi trường (`Environment Variables`)**: Ghi đè các tệp YAML trong JAR!
-                        - **Tuyệt đối không commit mật khẩu DB, `JWT_SECRET`, API Key lên Git**. Luôn dùng `${SPRING_DATASOURCE_PASSWORD}` truyền từ biến môi trường.
+                        ## 2. Nguyên lý Kiến trúc & Bảng đối chiếu
+                        | Cơ chế Maven / Spring | Vai trò kỹ thuật | Lưu ý quan trọng | Rủi ro nếu dùng sai |
+                        | :--- | :--- | :--- | :--- |
+                        | `<dependencyManagement>` (BOM) | Khai báo bảng phiên bản chuẩn | Không tự đưa JAR vào classpath | Nhầm tưởng khai báo BOM là đã import thư viện |
+                        | `./mvnw` / `mvnw.cmd` | Ghim chính xác phiên bản Maven | Commit `mvnw` & `.mvn/` lên Git | Mỗi máy CI cài 1 bản Maven khác nhau gây lệch build |
+                        | Environment Variables | Ghi đè `application.yml` trong JAR | Dùng placeholder `${SPRING_DATASOURCE_PASSWORD}` | Hardcode secret thật vào Git (`Secret Leak`) |
+
+                        ## 3. Triển khai chuẩn với Java 21 & Spring Boot 3
+                        ```yaml
+                        spring:
+                          application:
+                            name: order-service
+                          datasource:
+                            url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/orders_db}
+                            username: ${SPRING_DATASOURCE_USERNAME:orders_user}
+                            password: ${SPRING_DATASOURCE_PASSWORD}
+                        ```
+
+                        ## 4. Checklist Kiểm toán 3E & Các bẫy thường gặp khi vấn đáp
+                        - **Ma trận JDK 21**: Spring Boot `3.2.x / 3.3.x` + Spring Cloud `2023.0.x (Leyton)` trên namespace `jakarta.*` (tuyệt đối không trộn `javax.*`).
+                        - **Thứ tự ưu tiên cấu hình**: Command-line args & Environment Variables (`SPRING_DATASOURCE_URL`) luôn thắng `application-{profile}.yml` và `application.yml` trong JAR.
                         """
                 )
         );
