@@ -26,7 +26,7 @@ import { CourseWorkspaceShell } from "@/features/courses/course-workspace-shell"
 import { useCourseAuthoring, useCourseSetup } from "@/features/workspaces/course-access";
 import { TheoryLibrary } from "@/features/workspaces/theory-library";
 import { Assignments } from "./screens";
-import { resolveLabTier, type Assignment } from "./requirements";
+import type { Assignment } from "./requirements";
 import { LabInfoForm } from "./lab-info-form";
 import { LabTheorySection } from "./lab-theory-section";
 import { LabSourceSection } from "./lab-source-section";
@@ -104,7 +104,6 @@ export function LabAuthoring() {
           module.items.some((item) => item.type === "THEORY")),
     );
   const canManage = workspace?.myRole === "LECTURER" || session.data?.user?.role === "admin";
-  const labTier = resolveLabTier(assignment);
 
   const navigate = (next: Tab) => {
     setTab(next);
@@ -127,18 +126,12 @@ export function LabAuthoring() {
     { id: "info", done: Boolean(assignment), enabled: true },
     { id: "theory", done: theoryReady, enabled: Boolean(assignment) },
     { id: "source", done: Boolean(assignment?.referenceSource?.modelId), enabled: Boolean(assignment) },
-    ...(labTier !== "THEORY_ONLY"
-      ? [{ id: "quiz" as const, done: Boolean(setupLab?.quizPublished), enabled: Boolean(assignment) }]
-      : []),
-    ...(labTier === "THEORY_QUIZ_STUDIO"
-      ? [
-          {
-            id: "studio" as const,
-            done: Boolean(assignment && setupLab?.topologyFrozen),
-            enabled: Boolean(assignment),
-          },
-        ]
-      : []),
+    { id: "quiz", done: Boolean(setupLab?.quizPublished), enabled: Boolean(assignment) },
+    {
+      id: "studio",
+      done: Boolean(assignment && setupLab?.topologyFrozen),
+      enabled: Boolean(assignment),
+    },
     { id: "publish", done: Boolean(setupLab?.published), enabled: Boolean(assignment) },
   ];
 
