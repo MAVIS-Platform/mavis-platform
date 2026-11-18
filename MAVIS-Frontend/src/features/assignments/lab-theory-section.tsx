@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -383,8 +383,55 @@ export function LabTheorySection({
     );
   }, [selectedModule?.id, selectedModule?.items.length]);
 
-  if (course.isPending) {
-    return <p className="text-sm text-muted-foreground">{t("Loading course structure…", "Đang tải cấu trúc khóa học…")}</p>;
+  const bootstrappedCourseRef = useRef(false);
+  const bootstrappedModuleRef = useRef(false);
+  const saveCourse = course.save;
+  const addCourseModule = course.addModule;
+
+  useEffect(() => {
+    if (course.isPending || course.isError || saveCourse.isPending || saveCourse.isError) return;
+    if (!course.data && !bootstrappedCourseRef.current) {
+      bootstrappedCourseRef.current = true;
+      void saveCourse.mutateAsync({
+        title: `${workspaceName} Course`.trim() || "MAVIS Course",
+        description: "",
+      });
+    }
+  }, [course.isPending, course.isError, course.data, saveCourse, workspaceName]);
+
+  useEffect(() => {
+    if (
+      course.isPending ||
+      course.isError ||
+      !course.data ||
+      addCourseModule.isPending ||
+      addCourseModule.isError ||
+      bootstrappedModuleRef.current
+    ) {
+      return;
+    }
+    const existingModules = (course.data.modules as TheoryModule[] | undefined) ?? [];
+    if (existingModules.length === 0) {
+      bootstrappedModuleRef.current = true;
+      void addCourseModule.mutateAsync({
+        title: t("Module 1: Core Architecture", "Chương 1: Kiến trúc cốt lõi"),
+      });
+    }
+  }, [course.isPending, course.isError, course.data, addCourseModule, t]);
+
+  if (
+    course.isPending ||
+    saveCourse.isPending ||
+    (Boolean(course.data) && modules.length === 0 && addCourseModule.isPending)
+  ) {
+    return (
+      <div className="rounded-xl border border-teal-200 bg-teal-50/60 p-4 text-sm text-teal-900">
+        {t(
+          "Initializing default Course & Module automatically so you can write Theory right away…",
+          "Đang tự động khởi tạo Khóa học & Chương mặc định để bạn soạn Lý thuyết ngay…",
+        )}
+      </div>
+    );
   }
 
   if (!course.data) {
