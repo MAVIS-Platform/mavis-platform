@@ -15,7 +15,7 @@ import {
   useRuntimeSetupReadiness,
   useStudentLabStudioSessions,
 } from "@/features/workspaces/course-access";
-import type { Assignment } from "./requirements";
+import { resolveLabTier, type Assignment } from "./requirements";
 import { ExportLabButton } from "./lab-transfer";
 
 type Tab = "info" | "theory" | "source" | "quiz" | "studio" | "publish";
@@ -54,12 +54,15 @@ export function LabPublishSection({
     ) ?? (labSessions.data ?? []).find((session) => session.studioVerified);
   const course = useCourseAuthoring(workspaceId);
   const modules = course.data?.modules ?? [];
-  const theoryReady = modules.some(
-    (module) =>
-      module.items.some((item) => item.type === "THEORY" && item.assignmentId === assignment.id) ||
-      (module.items.some((item) => item.assignmentId === assignment.id) &&
-        module.items.some((item) => item.type === "THEORY")),
-  );
+  const theoryReady =
+    Boolean(assignment.instructions?.trim()) ||
+    modules.some(
+      (module) =>
+        module.items.some((item) => item.type === "THEORY" && item.assignmentId === assignment.id) ||
+        (module.items.some((item) => item.assignmentId === assignment.id) &&
+          module.items.some((item) => item.type === "THEORY")),
+    );
+  const labTier = resolveLabTier(assignment);
   const published = setupLab?.published === true;
   const previewHref = `/lab?${new URLSearchParams({
     workspace: workspaceId,
@@ -87,7 +90,7 @@ export function LabPublishSection({
       label: t("Theory", "Lý thuyết"),
       done: theoryReady,
       detail: theoryReady
-        ? t("A theory item is linked to this Lab's module.", "Đã có nội dung lý thuyết trong chương của Lab.")
+        ? t("A theory item is linked to this Lab's module.", "Đã có nội dung lý thuyết cho bài Lab này.")
         : t("Add or review the lesson in the Theory step.", "Thêm hoặc kiểm tra bài học ở bước Lý thuyết."),
       tab: "theory",
     },
@@ -100,24 +103,32 @@ export function LabPublishSection({
         : t("Attach a pinned reference model.", "Gắn model tham chiếu đã ghim."),
       tab: "source",
     },
-    {
-      id: "quiz",
-      label: t("Quiz", "Quiz"),
-      done: Boolean(setupLab?.quizPublished),
-      detail: setupLab?.quizPublished
-        ? t(`Version ${setupLab.quizVersion}`, `Phiên bản ${setupLab.quizVersion}`)
-        : t("Publish a Quiz version.", "Công bố phiên bản Quiz."),
-      tab: "quiz",
-    },
-    {
-      id: "studio",
-      label: t("Studio Live topology", "Topology Studio Live"),
-      done: Boolean(setupLab?.topologyFrozen),
-      detail: setupLab?.topologyFrozen
-        ? t("Topology is frozen into the published Lab.", "Topology đã được đóng băng vào Lab.")
-        : t("Configure runtime, publish, then freeze topology.", "Cấu hình runtime, công bố rồi đóng băng topology."),
-      tab: "studio",
-    },
+    ...(labTier !== "THEORY_ONLY"
+      ? [
+          {
+            id: "quiz",
+            label: t("Quiz", "Quiz"),
+            done: Boolean(setupLab?.quizPublished),
+            detail: setupLab?.quizPublished
+              ? t(`Version ${setupLab.quizVersion}`, `Phiên bản ${setupLab.quizVersion}`)
+              : t("Publish a Quiz version.", "Công bố phiên bản Quiz."),
+            tab: "quiz" as Tab,
+          },
+        ]
+      : []),
+    ...(labTier === "THEORY_QUIZ_STUDIO"
+      ? [
+          {
+            id: "studio",
+            label: t("Studio Live topology", "Topology Studio Live"),
+            done: Boolean(setupLab?.topologyFrozen),
+            detail: setupLab?.topologyFrozen
+              ? t("Topology is frozen into the published Lab.", "Topology đã được đóng băng vào Lab.")
+              : t("Configure runtime, publish, then freeze topology.", "Cấu hình runtime, công bố rồi đóng băng topology."),
+            tab: "studio" as Tab,
+          },
+        ]
+      : []),
     {
       id: "publish",
       label: t("In class", "Trong lớp"),

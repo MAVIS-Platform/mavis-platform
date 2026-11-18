@@ -302,8 +302,11 @@ public class SubmissionServiceImpl implements SubmissionService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Studio Lab phải được publish trước khi nộp");
         }
 
+        boolean skipQuiz = assignment.getAiPolicy() != null
+                && (assignment.getAiPolicy().path("skipQuiz").asBoolean(false)
+                    || "THEORY_ONLY".equalsIgnoreCase(assignment.getAiPolicy().path("labTier").asText()));
         JsonNode quizEvidence = null;
-        if (assignment.getWorkspace() != null && assignment.getWorkspace().isCourseMode()
+        if (!skipQuiz && assignment.getWorkspace() != null && assignment.getWorkspace().isCourseMode()
                 && com.mavis.common.security.CourseLabPolicy.isStudent(submitter)) {
             var pass = courseLabs.currentQuizPass(assignment, currentUserId)
                     .orElseThrow(() -> new BusinessException(ErrorCode.FORBIDDEN,
@@ -315,6 +318,11 @@ public class SubmissionServiceImpl implements SubmissionService {
                     .put("referenceModelId", referenceModel.getId().toString())
                     .put("referenceSnapshotId", sourceSnapshot.getId().toString())
                     .put("artifactHash", sourceSnapshot.getArtifactHash()).put("commitSha", sourceSnapshot.getCommitSha());
+        } else if (skipQuiz) {
+            quizEvidence = json.createObjectNode().put("status", "NOT_REQUIRED")
+                    .put("labTier", "THEORY_ONLY")
+                    .put("referenceModelId", referenceModel.getId().toString())
+                    .put("referenceSnapshotId", sourceSnapshot.getId().toString());
         }
 
         JsonNode theoryEvidence = theoryEvidence(request.getTheoryAnswers());

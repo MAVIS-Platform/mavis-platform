@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowRight,
@@ -23,7 +23,6 @@ import { useLocale } from "@/lib/i18n/locale-context";
 import { ArchitectureDiagrams } from "@/features/architecture/architecture-diagrams";
 import { ArchitectureGraph, ElementDetailsPanel } from "@/features/architecture/components";
 import { DiagramPreview } from "@/features/architecture/diagram-preview";
-import { isMissingCourseError } from "@/features/courses/course-outline";
 import {
   useCourseAuthoring,
   useStudentLabContext,
@@ -221,7 +220,7 @@ function MarkdownEditor({
 
 export function LabTheorySection({
   workspaceId,
-  workspaceName,
+  workspaceName: _workspaceName,
   assignment,
   onNavigate,
 }: {
@@ -421,43 +420,6 @@ export function LabTheorySection({
       ),
     );
   }, [selectedModule?.id, selectedModule?.items.length]);
-
-  const bootstrappedCourseRef = useRef(false);
-  const bootstrappedModuleRef = useRef(false);
-  const saveCourse = course.save;
-  const addCourseModule = course.addModule;
-
-  useEffect(() => {
-    if (course.isPending || saveCourse.isPending || saveCourse.isError) return;
-    if (course.isError && !isMissingCourseError(course.error)) return;
-    if (!course.data && !bootstrappedCourseRef.current) {
-      bootstrappedCourseRef.current = true;
-      void saveCourse.mutateAsync({
-        title: `${workspaceName} Course`.trim() || "MAVIS Course",
-        description: "",
-      });
-    }
-  }, [course.isPending, course.isError, course.error, course.data, saveCourse, workspaceName]);
-
-  useEffect(() => {
-    if (
-      course.isPending ||
-      course.isError ||
-      !course.data ||
-      addCourseModule.isPending ||
-      addCourseModule.isError ||
-      bootstrappedModuleRef.current
-    ) {
-      return;
-    }
-    const existingModules = (course.data.modules as TheoryModule[] | undefined) ?? [];
-    if (existingModules.length === 0) {
-      bootstrappedModuleRef.current = true;
-      void addCourseModule.mutateAsync({
-        title: t("Module 1: Core Architecture", "Chương 1: Kiến trúc cốt lõi"),
-      });
-    }
-  }, [course.isPending, course.isError, course.data, addCourseModule, t]);
 
   const theoryItems =
     selectedModule?.items.filter(

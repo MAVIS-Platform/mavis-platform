@@ -26,7 +26,7 @@ import { CourseWorkspaceShell } from "@/features/courses/course-workspace-shell"
 import { useCourseAuthoring, useCourseSetup } from "@/features/workspaces/course-access";
 import { TheoryLibrary } from "@/features/workspaces/theory-library";
 import { Assignments } from "./screens";
-import type { Assignment } from "./requirements";
+import { resolveLabTier, type Assignment } from "./requirements";
 import { LabInfoForm } from "./lab-info-form";
 import { LabTheorySection } from "./lab-theory-section";
 import { LabSourceSection } from "./lab-source-section";
@@ -95,13 +95,16 @@ export function LabAuthoring() {
   const setupLab = setup.data?.labs?.find((item) => item.assignmentId === activeAssignmentId);
   const course = useCourseAuthoring(workspaceId, Boolean(workspace));
   const modules = course.data?.modules ?? [];
-  const theoryReady = modules.some(
-    (module) =>
-      module.items.some((item) => item.type === "THEORY" && item.assignmentId === activeAssignmentId) ||
-      (module.items.some((item) => item.assignmentId === activeAssignmentId) &&
-        module.items.some((item) => item.type === "THEORY")),
-  );
+  const theoryReady =
+    Boolean(assignment?.instructions?.trim()) ||
+    modules.some(
+      (module) =>
+        module.items.some((item) => item.type === "THEORY" && item.assignmentId === activeAssignmentId) ||
+        (module.items.some((item) => item.assignmentId === activeAssignmentId) &&
+          module.items.some((item) => item.type === "THEORY")),
+    );
   const canManage = workspace?.myRole === "LECTURER" || session.data?.user?.role === "admin";
+  const labTier = resolveLabTier(assignment);
 
   const navigate = (next: Tab) => {
     setTab(next);
@@ -124,12 +127,18 @@ export function LabAuthoring() {
     { id: "info", done: Boolean(assignment), enabled: true },
     { id: "theory", done: theoryReady, enabled: Boolean(assignment) },
     { id: "source", done: Boolean(assignment?.referenceSource?.modelId), enabled: Boolean(assignment) },
-    { id: "quiz", done: Boolean(setupLab?.quizPublished), enabled: Boolean(assignment) },
-    {
-      id: "studio",
-      done: Boolean(assignment && setupLab?.topologyFrozen),
-      enabled: Boolean(assignment),
-    },
+    ...(labTier !== "THEORY_ONLY"
+      ? [{ id: "quiz" as const, done: Boolean(setupLab?.quizPublished), enabled: Boolean(assignment) }]
+      : []),
+    ...(labTier === "THEORY_QUIZ_STUDIO"
+      ? [
+          {
+            id: "studio" as const,
+            done: Boolean(assignment && setupLab?.topologyFrozen),
+            enabled: Boolean(assignment),
+          },
+        ]
+      : []),
     { id: "publish", done: Boolean(setupLab?.published), enabled: Boolean(assignment) },
   ];
 
@@ -205,6 +214,7 @@ export function LabAuthoring() {
         <LabQuizSection
           workspaceId={workspaceId}
           assignmentId={assignment.id}
+          assignment={assignment}
           onNavigate={navigate}
         />
       )}

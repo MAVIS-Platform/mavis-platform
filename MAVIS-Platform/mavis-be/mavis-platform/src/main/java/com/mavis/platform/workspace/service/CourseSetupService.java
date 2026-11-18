@@ -338,15 +338,19 @@ public class CourseSetupService {
                 && runtimeReference.runtimeConfigured() && runtimeReference.topologyConfigured();
         boolean topologyFrozen = lab.getStudioTopologySnapshot() != null
                 && lab.getStudioTopologySnapshot().isObject();
+        boolean skipQuiz = lab.getAiPolicy() != null
+                && (lab.getAiPolicy().path("skipQuiz").asBoolean(false)
+                    || "THEORY_ONLY".equalsIgnoreCase(lab.getAiPolicy().path("labTier").asText()));
         int quizVersion = quizVersion(lab);
+        boolean quizReady = skipQuiz || quizVersion > 0;
         String state = !published ? "DRAFT"
                 : requiresRuntime && !studioReady ? "NEEDS_STUDIO"
                 : requiresRuntime && !topologyFrozen ? "NEEDS_FREEZE"
-                : quizVersion == 0 ? "NEEDS_QUIZ"
+                : !quizReady ? "NEEDS_QUIZ"
                 : "READY";
         return new LabSetup(lab.getId(), published ? lab.getLabOrder() : 0, lab.getTitle(),
                 published, referenceReady, requiresRuntime, studioReady, topologyFrozen,
-                quizVersion > 0, quizVersion, state);
+                quizReady, quizVersion, state);
     }
 
     private int quizVersion(Assignment lab) {

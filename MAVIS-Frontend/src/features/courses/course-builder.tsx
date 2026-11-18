@@ -27,17 +27,18 @@ import { Badge } from "@/components/ui/badge";
 import { useApiQuery } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { useCourseAuthoring } from "@/features/workspaces/course-access";
+import { labTierMeta, resolveLabTier } from "@/features/assignments/requirements";
 
 const itemTypes = ["THEORY", "QUIZ", "ESSAY", "STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"] as const;
 type ItemType = (typeof itemTypes)[number];
 
 const TYPE_META: Record<ItemType, { en: string; vi: string; icon: LucideIcon }> = {
-  THEORY: { en: "Theory", vi: "Lý thuyết", icon: BookOpen },
-  QUIZ: { en: "Quiz", vi: "Quiz", icon: HelpCircle },
+  THEORY: { en: "Theory Lab", vi: "Lab chỉ Lý thuyết", icon: BookOpen },
+  QUIZ: { en: "Theory + Quiz Lab", vi: "Lab Lý thuyết + Quiz", icon: HelpCircle },
   ESSAY: { en: "Essay", vi: "Tự luận", icon: FileText },
-  STATIC_LAB: { en: "Static Lab", vi: "Lab tĩnh", icon: Code2 },
-  IMPACT_LAB: { en: "Impact Lab", vi: "Lab tác động", icon: GitFork },
-  RUNTIME_LAB: { en: "Runtime Lab", vi: "Lab runtime", icon: Play },
+  STATIC_LAB: { en: "Theory Only Lab", vi: "Lab chỉ Lý thuyết", icon: Code2 },
+  IMPACT_LAB: { en: "Theory + Quiz Lab", vi: "Lab Lý thuyết + Quiz", icon: GitFork },
+  RUNTIME_LAB: { en: "Theory + Quiz + Studio Lab", vi: "Lab Lý thuyết + Quiz + Studio", icon: Play },
 };
 
 type Item = {
@@ -72,7 +73,7 @@ type ItemDraft = {
 };
 
 const emptyDraft = (): ItemDraft => ({
-  type: "THEORY",
+  type: "IMPACT_LAB",
   title: "",
   description: "",
   body: "",
@@ -136,6 +137,17 @@ function draftValid(draft: ItemDraft) {
   return true;
 }
 
+function itemTypeForAssignment(assignment: {
+  labMode?: string | null | undefined;
+  requireRuntimeTrace?: boolean | null | undefined;
+  aiPolicy?: unknown;
+}): ItemType {
+  const tier = resolveLabTier(assignment);
+  if (tier === "THEORY_QUIZ_STUDIO") return "RUNTIME_LAB";
+  if (tier === "THEORY_ONLY") return "STATIC_LAB";
+  return "IMPACT_LAB";
+}
+
 function ItemFields({
   draft,
   onChange,
@@ -144,24 +156,69 @@ function ItemFields({
 }: {
   draft: ItemDraft;
   onChange: (patch: Partial<ItemDraft>) => void;
-  assignments: Array<{ id: string; title: string; requireRuntimeTrace?: boolean }>;
+  assignments: Array<{
+    id: string;
+    title: string;
+    instructions?: string;
+    labMode?: string | null;
+    requireRuntimeTrace?: boolean;
+    aiPolicy?: unknown;
+  }>;
   t: (en: string, vi: string) => string;
 }) {
-  const labs = draft.type === "RUNTIME_LAB"
-    ? assignments.filter((assignment) => assignment.requireRuntimeTrace)
-    : assignments;
-  const needsAssignment = ["QUIZ", "STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(draft.type);
+  const isLegacyRawTheory = draft.type === "THEORY" && !draft.assignmentId;
+  const labs =
+    draft.type === "RUNTIME_LAB"
+      ? assignments.filter((assignment) => assignment.requireRuntimeTrace)
+      : assignments;
+  const needsAssignment = !isLegacyRawTheory;
   return (
     <div className="space-y-3">
+      {needsAssignment && (
+        <label className="space-y-1 text-xs font-medium">
+          <span>{t("Select created Lab", "Chọn bài Lab đã tạo (từ tab Tạo Lab)")}</span>
+          <select
+            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+            value={draft.assignmentId}
+            onChange={(event) => {
+              const nextId = event.target.value;
+              const picked = assignments.find((a) => a.id === nextId);
+              if (picked) {
+                onChange({
+                  assignmentId: nextId,
+                  type: itemTypeForAssignment(picked),
+                  title: draft.title.trim() ? draft.title : picked.title,
+                  description: draft.description.trim()
+                    ? draft.description
+                    : (picked.instructions?.split("\n")[0]?.replace(/^#+\s*/, "").slice(0, 160) ?? ""),
+                });
+              } else {
+                onChange({ assignmentId: "" });
+              }
+            }}
+          >
+            <option value="">{t("Choose a Lab in this class…", "Chọn bài Lab trong lớp này…")}</option>
+            {(labs.length > 0 ? labs : assignments).map((assignment) => {
+              const tier = resolveLabTier(assignment);
+              const meta = labTierMeta(tier);
+              return (
+                <option key={assignment.id} value={assignment.id}>
+                  [{t(meta.shortEn, meta.shortVi)}] {assignment.title}
+                </option>
+              );
+            })}
+          </select>
+        </label>
+      )}
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="space-y-1 text-xs font-medium">
-          <span>{t("Item type", "Loại nội dung")}</span>
+          <span>{t("Lab tier in this chapter", "Cấp độ bài Lab trong Chương / Mốc")}</span>
           <select
             className="w-full rounded-md border bg-background px-3 py-2 text-sm"
             value={draft.type}
             onChange={(event) => onChange({ type: event.target.value as ItemType })}
           >
-            {itemTypes.map((type) => (
+            {(["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"] as const).map((type) => (
               <option key={type} value={type}>
                 {t(TYPE_META[type].en, TYPE_META[type].vi)}
               </option>
@@ -169,11 +226,12 @@ function ItemFields({
           </select>
         </label>
         <label className="space-y-1 text-xs font-medium">
-          <span>{t("Item title", "Tên nội dung")}</span>
+          <span>{t("Display title in chapter", "Tên hiển thị trong chương")}</span>
           <Input
             required
             maxLength={255}
             value={draft.title}
+            placeholder={t("Auto-filled when you pick a Lab", "Tự động điền khi chọn bài Lab")}
             onChange={(event) => onChange({ title: event.target.value })}
           />
         </label>
@@ -185,68 +243,17 @@ function ItemFields({
           onChange={(event) => onChange({ description: event.target.value })}
         />
       </label>
-      {needsAssignment && (
-        <label className="space-y-1 text-xs font-medium">
-          <span>{t("Linked Lab", "Lab liên kết")}</span>
-          <select
-            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-            value={draft.assignmentId}
-            onChange={(event) => onChange({ assignmentId: event.target.value })}
-          >
-            <option value="">{t("Choose a published Lab", "Chọn Lab đã công bố")}</option>
-            {labs.map((assignment) => (
-              <option key={assignment.id} value={assignment.id}>
-                {assignment.title}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-      {draft.type === "THEORY" && (
+      {isLegacyRawTheory && (
         <div className="space-y-1.5">
           <label className="space-y-1 text-xs font-medium">
             <span>{t("Theory content", "Nội dung lý thuyết")}</span>
             <Textarea
               rows={7}
               value={draft.body}
-              placeholder={t(
-                "Write the lesson students read before the Quiz.",
-                "Viết bài học sinh viên đọc trước khi làm Quiz.",
-              )}
               onChange={(event) => onChange({ body: event.target.value })}
             />
           </label>
-          {draft.body.trim() && (
-            <div className="rounded-lg border bg-background p-3">
-              <p className="mb-1.5 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                <Eye className="size-3" aria-hidden="true" />
-                {t("Live Markdown Preview", "Xem trước Markdown trực tiếp")}
-              </p>
-              <MarkdownPreview markdown={draft.body} />
-            </div>
-          )}
         </div>
-      )}
-      {draft.type === "ESSAY" && (
-        <>
-          <label className="space-y-1 text-xs font-medium">
-            <span>{t("Essay prompt", "Đề tự luận")}</span>
-            <Textarea
-              rows={3}
-              value={draft.prompt}
-              onChange={(event) => onChange({ prompt: event.target.value })}
-            />
-          </label>
-          <label className="space-y-1 text-xs font-medium">
-            <span>{t("Rubric (one per line: criterion | max score)", "Rubric (mỗi dòng: tiêu chí | điểm tối đa)")}</span>
-            <Textarea
-              rows={3}
-              value={draft.rubric}
-              placeholder={"Reasoning | 10"}
-              onChange={(event) => onChange({ rubric: event.target.value })}
-            />
-          </label>
-        </>
       )}
       <label className="flex items-center gap-2 text-xs font-medium">
         <input
@@ -255,7 +262,7 @@ function ItemFields({
           checked={draft.required}
           onChange={(event) => onChange({ required: event.target.checked })}
         />
-        {t("Required activity", "Hoạt động bắt buộc")}
+        {t("Required Lab in this milestone", "Bài Lab bắt buộc trong Mốc này")}
       </label>
     </div>
   );
@@ -289,7 +296,14 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
 
   const data = course.data;
   const modules = (data?.modules as Module[] | undefined) ?? [];
-  const assignmentRows = (assignments.data ?? []) as Array<{ id: string; title: string; requireRuntimeTrace?: boolean }>;
+  const assignmentRows = (assignments.data ?? []) as Array<{
+    id: string;
+    title: string;
+    instructions?: string;
+    labMode?: string | null;
+    requireRuntimeTrace?: boolean;
+    aiPolicy?: unknown;
+  }>;
   const busy =
     course.save.isPending ||
     course.addModule.isPending ||
@@ -304,7 +318,8 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
   const inspectedItem = (() => {
     const targetId = editingItem?.itemId ?? selectedItem?.itemId;
     for (const mod of modules) {
-      const found = targetId ? mod.items.find((item) => item.id === targetId) : mod.items[0];
+      const visibleItems = mod.items.filter((item) => item.type !== "ESSAY");
+      const found = targetId ? visibleItems.find((item) => item.id === targetId) : visibleItems[0];
       if (found) return { module: mod, item: found };
     }
     return null;
@@ -530,6 +545,27 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
             <ol className="space-y-3">
               {modules.map((module) => {
                 const draft = draftFor(module.id);
+                const visibleItems = module.items.filter((item) => item.type !== "ESSAY");
+                const theoryOnlyCount = visibleItems.filter(
+                  (i) => i.type === "THEORY" || i.type === "STATIC_LAB",
+                ).length;
+                const quizLabCount = visibleItems.filter(
+                  (i) => i.type === "QUIZ" || i.type === "IMPACT_LAB",
+                ).length;
+                const studioLabCount = visibleItems.filter((i) => i.type === "RUNTIME_LAB").length;
+                const breakdown = [
+                  theoryOnlyCount > 0
+                    ? `${theoryOnlyCount} ${t("Theory Only", "Chỉ Lý thuyết")}`
+                    : null,
+                  quizLabCount > 0
+                    ? `${quizLabCount} ${t("Theory + Quiz", "Lý thuyết + Quiz")}`
+                    : null,
+                  studioLabCount > 0
+                    ? `${studioLabCount} ${t("Full Studio", "Có cả Studio")}`
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ");
                 return (
                   <li key={module.id} className="rounded-xl border">
                     <details open className="group">
@@ -540,7 +576,8 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
                         <div className="min-w-0 flex-1">
                           <p className="font-medium">{module.title}</p>
                           <p className="text-xs text-muted-foreground">
-                            {module.items.length} {t("activities", "hoạt động")}
+                            {visibleItems.length} {t("Labs", "bài Lab")}
+                            {breakdown ? ` · ${breakdown}` : ""}
                             {module.prerequisiteModuleId
                               ? ` · ${t("Prerequisite", "Tiên quyết")}: ${
                                   modules.find((candidate) => candidate.id === module.prerequisiteModuleId)?.title ?? "—"
@@ -643,10 +680,16 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
                         </form>
                       )}
 
-                      {module.items.length > 0 ? (
+                      {visibleItems.length > 0 ? (
                         <ol className="divide-y border-t">
-                          {module.items.map((item) => {
-                            const meta = TYPE_META[item.type] ?? TYPE_META.THEORY;
+                          {visibleItems.map((item, idx) => {
+                            const linkedAssignment = item.assignmentId
+                              ? assignmentRows.find((a) => a.id === item.assignmentId)
+                              : undefined;
+                            const resolvedType = linkedAssignment
+                              ? itemTypeForAssignment(linkedAssignment)
+                              : item.type;
+                            const meta = TYPE_META[resolvedType] ?? TYPE_META.THEORY;
                             const Icon = meta.icon;
                             const isInspected = inspectedItem?.item.id === item.id;
                             return (
@@ -655,6 +698,9 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
                                 className={`px-4 py-3 transition-colors ${isInspected ? "bg-primary/5" : ""}`}
                               >
                                 <div className="flex flex-wrap items-center gap-2">
+                                  <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] font-semibold text-muted-foreground">
+                                    Lab {idx + 1}
+                                  </span>
                                   <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                                   <Badge variant="outline">{t(meta.en, meta.vi)}</Badge>
                                   <button
@@ -672,7 +718,7 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
                                 {item.assignmentId && (
                                   <p className="mt-1 pl-6 text-xs text-muted-foreground">
                                     {t("Linked Lab", "Lab liên kết")}:{" "}
-                                    {assignmentRows.find((assignment) => assignment.id === item.assignmentId)?.title ?? item.assignmentId}
+                                    {linkedAssignment?.title ?? item.assignmentId}
                                   </p>
                                 )}
                                 {isDraft && (
@@ -715,7 +761,7 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
                                       variant="ghost"
                                       disabled={busy}
                                       onClick={() => {
-                                        if (window.confirm(t("Delete this learning item?", "Xóa nội dung học này?"))) {
+                                        if (window.confirm(t("Remove this Lab from the module?", "Xóa bài Lab này khỏi chương?"))) {
                                           course.deleteItem.mutate({ moduleId: module.id, itemId: item.id });
                                         }
                                       }}
@@ -730,16 +776,54 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
                           })}
                         </ol>
                       ) : (
-                        <p className="border-t px-4 py-3 text-sm text-muted-foreground">
-                          {t("No learning items in this module yet.", "Chương này chưa có nội dung học.")}
-                        </p>
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-t px-4 py-3 text-sm text-muted-foreground">
+                          <span>
+                            {t(
+                              "No Labs assigned to this milestone yet.",
+                              "Chương (Mốc) này chưa được gắn bài Lab nào.",
+                            )}
+                          </span>
+                          {isDraft && assignmentRows.length > 0 && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              disabled={busy}
+                              onClick={() => {
+                                void (async () => {
+                                  for (const a of assignmentRows) {
+                                    await course.addItem.mutateAsync({
+                                      moduleId: module.id,
+                                      type: itemTypeForAssignment(a),
+                                      title: a.title,
+                                      description:
+                                        a.instructions
+                                          ?.split("\n")[0]
+                                          ?.replace(/^#+\s*/, "")
+                                          .slice(0, 160) ?? "",
+                                      required: true,
+                                      content: {},
+                                      assignmentId: a.id,
+                                    });
+                                  }
+                                })();
+                              }}
+                            >
+                              ⚡{" "}
+                              {t(
+                                `Assign all ${assignmentRows.length} created Lab(s) to this module`,
+                                `Gắn nhanh ${assignmentRows.length} bài Lab đã tạo vào Chương này`,
+                              )}
+                            </Button>
+                          )}
+                        </div>
                       )}
 
                       {isDraft && (
                         <details className="border-t px-4 py-3">
-                          <summary className="flex cursor-pointer items-center gap-2 text-sm font-medium">
+                          <summary className="flex cursor-pointer items-center gap-2 text-sm font-medium text-teal-700 dark:text-teal-300">
                             <Plus className="size-4" aria-hidden="true" />
-                            {t("Add learning item", "Thêm nội dung học")}
+                            {t("Add Lab to this milestone", "Thêm bài Lab vào Chương / Mốc này")}
                           </summary>
                           <form onSubmit={(event) => addItem(module.id, event)} className="mt-3 space-y-3">
                             <ItemFields
@@ -751,7 +835,7 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
                             <Button size="sm" disabled={busy || !draftValid(draft)}>
                               {course.addItem.isPending
                                 ? t("Saving…", "Đang lưu…")
-                                : t("Add item", "Thêm nội dung")}
+                                : t("Add Lab to module", "Gắn bài Lab vào Chương")}
                             </Button>
                           </form>
                         </details>

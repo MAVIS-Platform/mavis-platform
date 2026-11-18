@@ -31,6 +31,7 @@ import {
   matchQuizQuestionsForItem,
   type QuizQuestionData,
 } from "./java-coursera-curriculum-data";
+import { resolveLabTier } from "@/features/assignments/requirements";
 
 export function isMissingCourseError(error: unknown) {
   return error instanceof ApiError && error.status === 404;
@@ -61,12 +62,12 @@ type OutlineModule = {
 };
 
 const TYPE_META: Record<string, { en: string; vi: string; icon: LucideIcon }> = {
-  THEORY: { en: "Theory", vi: "Lý thuyết", icon: BookOpen },
-  QUIZ: { en: "Quiz", vi: "Quiz", icon: HelpCircle },
+  THEORY: { en: "Theory Lab", vi: "Lab chỉ Lý thuyết", icon: BookOpen },
+  QUIZ: { en: "Theory + Quiz Lab", vi: "Lab Lý thuyết + Quiz", icon: HelpCircle },
   ESSAY: { en: "Essay", vi: "Tự luận", icon: FileText },
-  STATIC_LAB: { en: "Static Lab", vi: "Lab tĩnh", icon: Code2 },
-  IMPACT_LAB: { en: "Impact Lab", vi: "Lab tác động", icon: GitFork },
-  RUNTIME_LAB: { en: "Runtime Lab", vi: "Lab runtime", icon: Play },
+  STATIC_LAB: { en: "Theory Lab", vi: "Lab chỉ Lý thuyết", icon: Code2 },
+  IMPACT_LAB: { en: "Theory + Quiz Lab", vi: "Lab Lý thuyết + Quiz", icon: GitFork },
+  RUNTIME_LAB: { en: "Theory + Quiz + Studio Lab", vi: "Lab Lý thuyết + Quiz + Studio", icon: Play },
 };
 
 function stepForType(type: string) {
@@ -107,9 +108,46 @@ export function CourseOutline({
   const legacyLabs = roadmap.data?.labs ?? [];
   const useLegacyOnly = !canManage && rawModules.length === 0 && legacyLabs.length > 0;
   const isCatalogFallback = !useLegacyOnly && rawModules.length === 0;
-  const modules: OutlineModule[] = isCatalogFallback
-    ? (buildCourseraModulesWithLabLinks(assignments.data ?? [], legacyLabs) as OutlineModule[])
-    : rawModules;
+  const allRawModulesEmpty =
+    rawModules.length > 0 &&
+    rawModules.every((m) => m.items.filter((i) => i.type !== "ESSAY").length === 0);
+  const synthesizedLabItems: OutlineItem[] = (assignments.data ?? []).map((a, idx) => {
+    const tier = resolveLabTier(a);
+    return {
+      id: `lab-item-${a.id}`,
+      type:
+        tier === "THEORY_QUIZ_STUDIO"
+          ? "RUNTIME_LAB"
+          : tier === "THEORY_ONLY"
+            ? "STATIC_LAB"
+            : "IMPACT_LAB",
+      title: a.title,
+      description: a.instructions?.split("\n")[0]?.replace(/^#+\s*/, "").slice(0, 160) ?? null,
+      position: idx + 1,
+      assignmentId: a.id,
+      required: true,
+    };
+  });
+  const baseModules: OutlineModule[] = isCatalogFallback
+    ? synthesizedLabItems.length > 0 && canManage
+      ? [
+          {
+            id: "milestone-1",
+            title: t("Milestone 1 · Course Labs", "Chương 1 (Mốc 1) · Danh sách bài Lab"),
+            description: null,
+            position: 1,
+            prerequisiteModuleId: null,
+            items: synthesizedLabItems,
+          },
+        ]
+      : (buildCourseraModulesWithLabLinks(assignments.data ?? [], legacyLabs) as OutlineModule[])
+    : allRawModulesEmpty && synthesizedLabItems.length > 0
+      ? rawModules.map((mod, idx) => (idx === 0 ? { ...mod, items: synthesizedLabItems } : mod))
+      : rawModules;
+  const modules: OutlineModule[] = baseModules.map((mod) => ({
+    ...mod,
+    items: mod.items.filter((item) => item.type !== "ESSAY"),
+  }));
   const courseTitle =
     published?.snapshot.title ??
     (draftModules.length > 0 ? draft?.title : undefined) ??
@@ -199,13 +237,14 @@ export function CourseOutline({
           </h2>
           <p className="text-xs text-muted-foreground">
             {modules.length} {t("chapters", "chương")} ·{" "}
-            {modules.reduce((total, module) => total + module.items.length, 0)} {t("learning activities", "hoạt động học tập")}
+            {modules.reduce((total, module) => total + module.items.length, 0)}{" "}
+            {t("Labs in curriculum", "bài Lab trong lộ trình")}
           </p>
         </div>
         {canManage && (
           <Button asChild size="sm" variant="outline">
             <Link href={`/workspace-overview?workspace=${encodeURIComponent(workspaceId)}&view=course-authoring`}>
-              {t("Edit content", "Sửa nội dung")}
+              {t("Setup Labs in Curriculum", "Cấu hình Lab trong Curriculum")}
             </Link>
           </Button>
         )}
@@ -213,17 +252,39 @@ export function CourseOutline({
 
       <ol className="space-y-3">
         {modules.map((module) => {
-          const theoryCount = module.items.filter((i) => i.type === "THEORY").length;
-          const quizCount = module.items.filter((i) => i.type === "QUIZ").length;
-          const essayCount = module.items.filter((i) => i.type === "ESSAY").length;
-          const labCount = module.items.filter((i) =>
-            ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(i.type),
+          const resolveItemType = (item: OutlineItem) => {
+            const linked = item.assignmentId ? assignmentById.get(item.assignmentId) : undefined;
+            if (linked && ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(item.type)) {
+              const tier = resolveLabTier(linked);
+              return tier === "THEORY_QUIZ_STUDIO"
+                ? "RUNTIME_LAB"
+                : tier === "THEORY_ONLY"
+                  ? "STATIC_LAB"
+                  : "IMPACT_LAB";
+            }
+            return item.type;
+          };
+          const theoryOnlyCount = module.items.filter((i) => {
+            const rt = resolveItemType(i);
+            return rt === "THEORY" || rt === "STATIC_LAB";
+          }).length;
+          const quizLabCount = module.items.filter((i) => {
+            const rt = resolveItemType(i);
+            return rt === "QUIZ" || rt === "IMPACT_LAB";
+          }).length;
+          const studioLabCount = module.items.filter(
+            (i) => resolveItemType(i) === "RUNTIME_LAB",
           ).length;
           const breakdown = [
-            theoryCount > 0 ? `${theoryCount} ${t("Theory", "Lý thuyết")}` : null,
-            quizCount > 0 ? `${quizCount} Quiz` : null,
-            essayCount > 0 ? `${essayCount} ${t("Essay", "Tự luận")}` : null,
-            labCount > 0 ? `${labCount} Lab` : null,
+            theoryOnlyCount > 0
+              ? `${theoryOnlyCount} ${t("Theory Only", "Lab chỉ Lý thuyết")}`
+              : null,
+            quizLabCount > 0
+              ? `${quizLabCount} ${t("Theory + Quiz", "Lab Lý thuyết + Quiz")}`
+              : null,
+            studioLabCount > 0
+              ? `${studioLabCount} ${t("Full Studio", "Lab có cả Studio")}`
+              : null,
           ]
             .filter(Boolean)
             .join(" · ");
@@ -241,7 +302,7 @@ export function CourseOutline({
                 <span className="min-w-0 flex-1">
                   <span className="block font-semibold text-foreground">{module.title}</span>
                   <span className="block text-xs text-muted-foreground">
-                    {module.items.length} {t("activities", "hoạt động")}
+                    {module.items.length} {t("Labs", "bài Lab")}
                     {breakdown ? ` · ${breakdown}` : ""}
                     {module.prerequisiteModuleId
                       ? ` · ${t("Prerequisite", "Tiên quyết")}: ${
@@ -263,12 +324,13 @@ export function CourseOutline({
                 <p className="border-t bg-muted/20 px-5 py-2.5 text-sm text-muted-foreground">{module.description}</p>
               )}
               <ul className="divide-y border-t">
-                {module.items.map((item) => {
-                  const meta = TYPE_META[item.type] ?? { en: item.type, vi: item.type, icon: FileText };
+                {module.items.map((item, idx) => {
+                  const effectiveType = resolveItemType(item);
+                  const meta = TYPE_META[effectiveType] ?? { en: item.type, vi: item.type, icon: FileText };
                   const Icon = meta.icon;
                   const lab = item.assignmentId ? labs.get(item.assignmentId) : undefined;
                   const assignment = item.assignmentId ? assignmentById.get(item.assignmentId) : undefined;
-                  const isLab = ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(item.type);
+                  const isLab = ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(effectiveType);
                   const status = isLab
                     ? statusForLab(lab?.state, canManage)
                     : item.type === "QUIZ"
@@ -278,7 +340,7 @@ export function CourseOutline({
                   const lockedForStudent = lab?.state === "LOCKED";
                   const href = item.assignmentId && active && (!lockedForStudent || canManage)
                     ? canManage
-                      ? `/assignments?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(item.assignmentId)}`
+                      ? `/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(item.assignmentId)}`
                       : `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(item.assignmentId)}&step=${stepForType(item.type)}`
                     : canManage
                       ? `/workspace-overview?workspace=${encodeURIComponent(workspaceId)}&view=course-authoring`
@@ -296,6 +358,9 @@ export function CourseOutline({
                       </span>
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
+                          <span className="rounded bg-teal-500/10 px-1.5 py-0.5 font-mono text-[11px] font-bold text-teal-700 dark:text-teal-300">
+                            Lab {idx + 1}
+                          </span>
                           <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                             {t(meta.en, meta.vi)}
                           </span>

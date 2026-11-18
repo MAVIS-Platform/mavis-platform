@@ -43,26 +43,22 @@ import type { Response } from "@/lib/api/contracts";
 function itemBadgeMeta(type: string, t: (en: string, vi: string) => string) {
   switch (type) {
     case "THEORY":
+    case "STATIC_LAB":
       return {
-        label: t("Theory Lesson", "Bài giảng lý thuyết"),
+        label: t("Theory Only Lab", "Lab chỉ Lý thuyết"),
         emoji: "📖",
         pillClass: "bg-teal-50 text-teal-800 border-teal-200 dark:bg-teal-950/40 dark:text-teal-300 dark:border-teal-800",
       };
     case "QUIZ":
+    case "IMPACT_LAB":
       return {
-        label: t("Chapter Quiz", "Trắc nghiệm (10 câu)"),
+        label: t("Theory + Quiz Lab", "Lab Lý thuyết + Quiz"),
         emoji: "❓",
-        pillClass: "bg-sky-50 text-sky-800 border-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-800",
-      };
-    case "ESSAY":
-      return {
-        label: t("Case Study Essay", "Bài tập Tự luận"),
-        emoji: "📝",
-        pillClass: "bg-amber-50 text-amber-900 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800",
+        pillClass: "bg-sky-50 text-sky-800 border-sky-200 dark:bg-teal-950/40 dark:text-sky-300 dark:border-sky-800",
       };
     default:
       return {
-        label: t("2D Studio Lab", "Thực hành 2D Studio"),
+        label: t("2D Studio Lab", "Lab Lý thuyết + Quiz + Studio"),
         emoji: "🔬",
         pillClass: "bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800",
       };
@@ -114,24 +110,29 @@ export function StudentCourseSyllabus({
         labTitle:
           mod.items.find((it) => ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(it.type))?.title ??
           mod.title,
-        items: (mod.items ?? []).map((item) => ({
-          id: item.id,
-          type: item.type as OutlineItemData["type"],
-          title: item.title,
-          description: item.description ?? null,
-          position: item.position,
-          assignmentId: item.assignmentId ?? null,
-          required: item.required,
-          content: item.content,
-          ...(typeof item.content?.["curriculumCode"] === "string"
-            ? { curriculumCode: String(item.content["curriculumCode"]) }
-            : {}),
-          quizQuestions:
-            item.type === "QUIZ" ? matchQuizQuestionsForItem(mod.position, item.title) : undefined,
-        })),
+        items: (mod.items ?? [])
+          .filter((item) => item.type !== "ESSAY")
+          .map((item) => ({
+            id: item.id,
+            type: item.type as OutlineItemData["type"],
+            title: item.title,
+            description: item.description ?? null,
+            position: item.position,
+            assignmentId: item.assignmentId ?? null,
+            required: item.required,
+            content: item.content,
+            ...(typeof item.content?.["curriculumCode"] === "string"
+              ? { curriculumCode: String(item.content["curriculumCode"]) }
+              : {}),
+            quizQuestions:
+              item.type === "QUIZ" ? matchQuizQuestionsForItem(mod.position, item.title) : undefined,
+          })),
       }));
     }
-    return buildCourseraModulesWithLabLinks(assignmentsQuery.data ?? [], labs);
+    return buildCourseraModulesWithLabLinks(assignmentsQuery.data ?? [], labs).map((mod) => ({
+      ...mod,
+      items: mod.items.filter((item) => item.type !== "ESSAY"),
+    }));
   }, [publishedCourse.data?.snapshot?.modules, assignmentsQuery.data, labs]);
 
   const flattenedItems = useMemo(

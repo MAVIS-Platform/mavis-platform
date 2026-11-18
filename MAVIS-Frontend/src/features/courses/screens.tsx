@@ -63,6 +63,7 @@ import {
 } from "./student-courses-dashboard";
 import { StudentCourseSyllabus } from "./student-course-syllabus";
 import { LecturerCurriculumManager } from "./lecturer-curriculum-manager";
+import { resolveLabTier } from "@/features/assignments/requirements";
 
 type LearningStep = {
   id: 1 | 2 | 3 | 4;
@@ -553,6 +554,8 @@ export function LabWorkspace() {
     (item) => item.type === "THEORY" && typeof item.content?.["body"] === "string",
   );
   const lab = assignments.data?.find((item) => item.id === assignmentId);
+  const labTier = resolveLabTier(lab);
+  const isTheoryOnlyLab = labTier === "THEORY_ONLY";
   const studentContext = useStudentLabContext(
     workspaceId,
     assignmentId,
@@ -561,9 +564,15 @@ export function LabWorkspace() {
   const quiz = useCourseQuiz(
     workspaceId,
     assignmentId,
-    Boolean(lab && roadmap.data?.guided && (session.data?.user?.role === "student" || isLecturer)),
+    Boolean(
+      lab &&
+        !isTheoryOnlyLab &&
+        roadmap.data?.guided &&
+        (session.data?.user?.role === "student" || isLecturer),
+    ),
   );
   const runtimeReady =
+    isTheoryOnlyLab ||
     (!quiz.isError && quiz.data?.runtimeUnlocked === true) ||
     studentContext.data?.quiz?.runtimeUnlocked === true;
   const requiresRuntime =
@@ -823,7 +832,9 @@ export function LabWorkspace() {
                   <Badge className="border-teal-300/30 bg-teal-400/20 text-teal-50">
                     {requiresRuntime
                       ? t("2D Studio Practice Lab", "Lab Thực Hành 2D Studio")
-                      : t("Theory & Quiz Lab", "Lab Lý Thuyết & Quiz")}
+                      : isTheoryOnlyLab
+                        ? t("Theory Only Lab", "Lab Chỉ Lý Thuyết")
+                        : t("Theory & Quiz Lab", "Lab Lý Thuyết & Quiz")}
                   </Badge>
                   {preview && <Badge variant="warning">{t("Preview", "Xem trước")}</Badge>}
                   {readiness.map((gate) => (

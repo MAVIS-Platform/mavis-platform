@@ -12,7 +12,7 @@ import { DiagramPreview } from "@/features/architecture/diagram-preview";
 import { ArchitectureGraph, ElementDetailsPanel } from "@/features/architecture/components";
 import { useStudentLabContext } from "@/features/workspaces/course-access";
 import { AssignmentSourceDetails, AssignmentSourcePicker } from "./source-picker";
-import type { Assignment } from "./requirements";
+import { resolveLabTier, type Assignment } from "./requirements";
 
 type PreviewKind = "CONTEXT" | "CONTAINER" | "COMPONENT" | "GRAPH";
 
@@ -23,7 +23,7 @@ export function LabSourceSection({
 }: {
   workspaceId: string;
   assignment: Assignment;
-  onNavigate?: ((tab: "theory" | "quiz") => void) | undefined;
+  onNavigate?: ((tab: "theory" | "quiz" | "publish") => void) | undefined;
 }) {
   const { t } = useLocale();
   const cache = useQueryClient();
@@ -280,13 +280,26 @@ export function LabSourceSection({
       {onNavigate && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-4">
           <p className="text-xs text-muted-foreground">
-            {t(
-              "Reference source pinned? Proceed to Step 4 to create the Gatekeeper Quiz.",
-              "Đã ghim nguồn tham chiếu C1–C3? Chuyển sang Bước 4 để soạn Câu hỏi Quiz mở khóa.",
-            )}
+            {resolveLabTier(assignment) === "THEORY_ONLY"
+              ? t(
+                  "Reference source pinned? Proceed to Check & Add to Class.",
+                  "Đã ghim nguồn tham chiếu C1–C3? Chuyển sang bước Kiểm tra & Thêm vào lớp.",
+                )
+              : t(
+                  "Reference source pinned? Proceed to Step 4 to create the Gatekeeper Quiz.",
+                  "Đã ghim nguồn tham chiếu C1–C3? Chuyển sang Bước 4 để soạn Câu hỏi Quiz mở khóa.",
+                )}
           </p>
-          <Button type="button" size="sm" onClick={() => onNavigate("quiz")}>
-            {t("Next Step 4: Quiz", "Sang Bước 4: Câu hỏi Quiz")}
+          <Button
+            type="button"
+            size="sm"
+            onClick={() =>
+              onNavigate(resolveLabTier(assignment) === "THEORY_ONLY" ? "publish" : "quiz")
+            }
+          >
+            {resolveLabTier(assignment) === "THEORY_ONLY"
+              ? t("Next Step: Check & Publish", "Sang Bước Kiểm tra & Công bố")
+              : t("Next Step 4: Quiz", "Sang Bước 4: Câu hỏi Quiz")}
             <ArrowRight className="ml-1.5 size-4" aria-hidden="true" />
           </Button>
         </div>
