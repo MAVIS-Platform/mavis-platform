@@ -59,7 +59,36 @@ public class CourseAccessService {
     public record Lab(UUID assignmentId, int position, String title, String state, String reason) {}
     public record Roadmap(boolean guided, String enrollmentStatus, List<Lab> labs) {}
     public record Passkey(String code, OffsetDateTime expiresAt) {}
-    public record KeyStatus(OffsetDateTime expiresAt, boolean active, Integer maxStudents, int enrolledStudents) {}
+    public record KeyStatus(OffsetDateTime expiresAt, boolean active, Integer maxStudents, int enrolledStudents, String code) {
+        public KeyStatus(OffsetDateTime expiresAt, boolean active, Integer maxStudents, int enrolledStudents) {
+            this(expiresAt, active, maxStudents, enrolledStudents, null);
+        }
+    }
+    public record PasskeyItem(
+            UUID id,
+            UUID workspaceId,
+            String code,
+            String label,
+            OffsetDateTime expiresAt,
+            OffsetDateTime revokedAt,
+            boolean active,
+            Integer maxUses,
+            int usedCount,
+            OffsetDateTime createdAt
+    ) {}
+    public record CreatePasskeyRequest(
+            String customCode,
+            String label,
+            Integer validHours,
+            Integer maxUses
+    ) {}
+    public record UpdatePasskeyRequest(
+            String customCode,
+            String label,
+            Integer validHours,
+            Integer maxUses,
+            Boolean active
+    ) {}
     public record Enrollment(UUID workspaceId) {}
 
     public Lab publish(UUID workspaceId, UUID assignmentId) {
