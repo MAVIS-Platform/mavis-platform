@@ -32,6 +32,7 @@ import com.mavis.platform.workspace.curriculum.CourseraCurriculumModels.Coursera
 import com.mavis.platform.workspace.curriculum.CourseraCurriculumModels.LessonSpec;
 import com.mavis.platform.workspace.curriculum.CourseraCurriculumModels.RubricCriterion;
 import com.mavis.platform.workspace.curriculum.JavaCourseraCatalog;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -53,6 +54,7 @@ import java.util.zip.ZipOutputStream;
 
 @Service
 @Transactional
+@Slf4j
 public class CourseLabSeederService {
     private static final String ACTION_SEEDED = "COURSE_LABS_SEEDED_CURATED";
     public static final String PRESET_STANDARD_DEMO = "STANDARD_DEMO";
@@ -105,7 +107,7 @@ public class CourseLabSeederService {
             CourseAccessService courses,
             JdbcTemplate jdbc,
             ObjectMapper json,
-            @Value("${mavis.storage.upload-dir:C:/mavis/uploads/}") String uploadDir) {
+            @Value("${mavis.storage.upload-dir:${java.io.tmpdir}/mavis-uploads}") String uploadDir) {
         this.access = access;
         this.workspaces = workspaces;
         this.assignments = assignments;
