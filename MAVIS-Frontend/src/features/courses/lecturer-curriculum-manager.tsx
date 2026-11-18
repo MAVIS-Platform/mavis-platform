@@ -15,14 +15,17 @@ import {
   Plus,
   Search,
   Sparkles,
+  Trash2,
   Zap,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { RequestState } from "@/components/shared/request-state";
-import { useApiQuery } from "@/hooks/use-api";
+import { ErrorState, RequestState } from "@/components/shared/request-state";
+import { useApiMutation, useApiQuery } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
+import { LabPrerequisitesDialog } from "@/features/assignments/lab-prerequisites-dialog";
+import type { Assignment } from "@/features/assignments/requirements";
 import {
   CoursePasskey,
   PublishCourseLab,
@@ -83,9 +86,11 @@ export function LecturerCurriculumManager({
   );
   const roadmap = useCourseRoadmap(workspaceId);
   const setup = useCourseSetup(workspaceId);
+  const remove = useApiMutation("deleteAssignment");
   const [filter, setFilter] = useState<FilterMode>("all");
   const [search, setSearch] = useState("");
   const [showPasskeyDrawer, setShowPasskeyDrawer] = useState(false);
+  const [prerequisiteLab, setPrerequisiteLab] = useState<Assignment | null>(null);
 
   const labs = assignmentsQuery.data ?? [];
 
@@ -344,6 +349,15 @@ export function LecturerCurriculumManager({
                       </div>
 
                       <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setPrerequisiteLab(lab)}
+                        >
+                          <GitBranch className="mr-1.5 size-3.5" aria-hidden="true" />
+                          {t("Prerequisites & Order", "Điều kiện / Thứ tự")}
+                        </Button>
                         <Button asChild size="sm" variant="outline">
                           <Link href={previewHref}>
                             <Eye className="mr-1.5 size-3.5" aria-hidden="true" />
@@ -365,6 +379,35 @@ export function LecturerCurriculumManager({
                           assignmentId={lab.id}
                           position={position}
                         />
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          disabled={remove.isPending || Boolean(position)}
+                          title={
+                            position
+                              ? t(
+                                  "Published Labs cannot be deleted while active in class.",
+                                  "Không thể xóa Lab đang mở trong lớp.",
+                                )
+                              : t("Delete draft Lab", "Xóa bản nháp Lab")
+                          }
+                          onClick={() => {
+                            if (
+                              window.confirm(
+                                t(
+                                  "Delete this draft Lab from the class library? This cannot be undone.",
+                                  "Xóa bản nháp Lab này khỏi kho lớp? Không thể hoàn tác.",
+                                ),
+                              )
+                            ) {
+                              remove.mutate({ workspaceId, assignmentId: lab.id });
+                            }
+                          }}
+                        >
+                          <Trash2 className="size-3.5 text-muted-foreground" aria-hidden="true" />
+                          <span className="sr-only">{t("Delete", "Xóa")}</span>
+                        </Button>
                       </div>
                     </div>
                   </article>
@@ -372,8 +415,18 @@ export function LecturerCurriculumManager({
               })}
             </div>
           )}
+          {remove.error && <ErrorState error={remove.error} />}
         </RequestState>
       </section>
+      <LabPrerequisitesDialog
+        workspaceId={workspaceId}
+        lab={prerequisiteLab}
+        labs={labs}
+        open={Boolean(prerequisiteLab)}
+        onOpenChange={(open) => {
+          if (!open) setPrerequisiteLab(null);
+        }}
+      />
     </div>
   );
 }
