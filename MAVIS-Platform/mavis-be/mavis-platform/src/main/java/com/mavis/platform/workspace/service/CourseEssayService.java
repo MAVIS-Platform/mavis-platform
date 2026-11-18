@@ -8,6 +8,7 @@ import com.mavis.common.repository.WorkspaceRepository;
 import com.mavis.common.security.AccessPolicyService;
 import com.mavis.common.security.CourseLabPolicy;
 import com.mavis.platform.workspace.dto.CourseEssayDtos.EssaySubmissionView;
+import com.mavis.platform.workspace.dto.CourseEssayDtos.GradeEssayRequest;
 import com.mavis.platform.workspace.dto.CourseEssayDtos.SubmitEssayRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -113,6 +114,42 @@ public class CourseEssayService {
                 .stream()
                 .findFirst()
                 .orElseThrow(() -> new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR, "Failed to load saved essay submission"));
+    }
+
+    public EssaySubmissionView gradeEssay(UUID workspaceId, UUID submissionId, GradeEssayRequest req) {
+        access.requireWorkspaceLecturer(workspaceId);
+        User lecturer = access.requireCurrentActiveUser();
+        if (req == null || req.score() == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Score is required");
+        }
+        String nextStatus = (req.status() != null && ("RETURNED".equalsIgnoreCase(req.status().trim()) || "GRADED".equalsIgnoreCase(req.status().trim())))
+                ? req.status().trim().toUpperCase(java.util.Locale.ROOT)
+                : "GRADED";
+        OffsetDateTime now = OffsetDateTime.now();
+        int updated = jdbc.update("""
+                UPDATE course_item_submissions
+                SET score = ?, feedback = ?, status = ?, graded_by = ?, graded_at = ?
+                WHERE id = ? AND workspace_id = ?
+                """, req.score(), req.feedback(), nextStatus, lecturer.getId(), now, submissionId, workspaceId);
+        if (updated == 0) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "Essay submission not found");
+        }
+        jdbc.update("INSERT INTO audit_logs(actor_id, action, target_type, target_id) VALUES (?, ?, ?, ?)",
+                lecturer.getId(), "COURSE_ESSAY_GRADED", "COURSE_ITEM_SUBMISSION", submissionId);
+
+        return jdbc.query("""
+                SELECT s.id, s.workspace_id, s.course_item_id, ci.title AS item_title,
+                       s.student_id, u.full_name AS student_name, u.email AS student_email,
+                       s.answer_markdown, s.status, s.score, s.feedback, s.graded_by,
+                       s.submitted_at, s.graded_at
+                FROM course_item_submissions s
+                JOIN course_items ci ON ci.id = s.course_item_id
+                JOIN users u ON u.id = s.student_id
+                WHERE s.id = ? AND s.workspace_id = ?
+                """, this::mapRow, submissionId, workspaceId)
+                .stream()
+                .findFirst()
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Essay submission not found"));
     }
 
     private boolean isWorkspaceLecturer(UUID workspaceId, UUID userId) {
