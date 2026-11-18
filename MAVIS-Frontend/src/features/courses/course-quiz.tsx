@@ -1,15 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, CheckCircle2, Lock, XCircle } from "lucide-react";
+import { AlarmClock, ArrowRight, CheckCircle2, Lock, RotateCcw, Timer, XCircle } from "lucide-react";
 import { DetailPanel } from "@/components/shared/data";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { MarkdownPreview } from "@/components/shared/markdown-preview";
 import { api, ApiError } from "@/lib/mainflow-api";
 import { useLocale } from "@/lib/i18n/locale-context";
+import { computeRecommendedQuizSeconds, formatQuizClock } from "./chapter-quiz-runner";
 
 type QuestionType = "SINGLE_CHOICE" | "MULTI_CHOICE" | "TRUE_FALSE";
 type Question = {
@@ -124,8 +125,10 @@ function AttemptForm({
   submissionHref?: string | undefined;
 }) {
   const { t } = useLocale();
+  const totalSeconds = computeRecommendedQuizSeconds(quiz.questions.length);
   const [answers, setAnswers] = useState<Record<number, number[]>>({});
   const [attemptId, setAttemptId] = useState<string>();
+  const [remainingSeconds, setRemainingSeconds] = useState(totalSeconds);
   const submit = useMutation({
     mutationFn: (id: string) =>
       api<Result>(`${path}/attempts`, {
@@ -141,6 +144,19 @@ function AttemptForm({
     },
   });
   const answered = quiz.questions.every((_, index) => (answers[index]?.length ?? 0) > 0);
+  const timerActive = canSubmit && !quiz.runtimeUnlocked && !submit.data && quiz.questions.length > 0;
+
+  useEffect(() => {
+    setRemainingSeconds(totalSeconds);
+  }, [totalSeconds, quiz.version]);
+
+  useEffect(() => {
+    if (!timerActive || remainingSeconds <= 0) return;
+    const handle = window.setInterval(() => {
+      setRemainingSeconds((prev) => (prev <= 1 ? 0 : prev - 1));
+    }, 1000);
+    return () => window.clearInterval(handle);
+  }, [timerActive, remainingSeconds]);
 
   const toggle = (questionIndex: number, optionIndex: number, multi: boolean) => {
     setAnswers((current) => {
@@ -167,9 +183,9 @@ function AttemptForm({
           <MarkdownPreview markdown={quiz.lesson} />
         </div>
       )}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-teal-200/80 bg-gradient-to-r from-teal-50/80 via-emerald-50/50 to-white px-4 py-3">
-        <div className="flex flex-wrap items-center gap-3 text-sm text-slate-700">
-          <span className="font-semibold text-teal-950">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-teal-200/80 bg-gradient-to-r from-teal-50/80 via-emerald-50/50 to-white px-4 py-3 dark:border-teal-800/70 dark:from-teal-950/40 dark:via-emerald-950/20 dark:to-card">
+        <div className="flex flex-wrap items-center gap-3 text-sm text-foreground">
+          <span className="font-semibold text-teal-950 dark:text-teal-200">
             {t("Gatekeeper Quiz", "Bài kiểm tra mở khóa Lab")}
           </span>
           <span className="text-xs text-muted-foreground">
@@ -177,26 +193,64 @@ function AttemptForm({
             {t(
               `${answeredCount}/${quiz.questions.length} answered`,
               `Đã trả lời ${answeredCount}/${quiz.questions.length} câu`,
-            )}
+            )}{" "}
+            · {t(`Suggested ${Math.round(totalSeconds / 60)} min`, `Thời lượng ${Math.round(totalSeconds / 60)} phút`)}
           </span>
         </div>
-        <Badge
-          variant={
-            quiz.runtimeUnlocked
-              ? "default"
-              : (submit.data?.status ?? quiz.latestStatus) === "NEEDS_RETRY"
-                ? "destructive"
-                : "outline"
-          }
-        >
-          {!canSubmit
-            ? `v${quiz.version} · ${t("Preview", "Xem trước")}`
-            : quiz.runtimeUnlocked
-              ? `PASSED (v${quiz.version})`
-              : (submit.data?.status ?? quiz.latestStatus) === "NEEDS_RETRY"
-                ? `NEEDS_RETRY (v${quiz.version})`
-                : `NOT_PASSED (v${quiz.version})`}
-        </Badge>
+        <div className="flex flex-wrap items-center gap-2">
+          {canSubmit && !quiz.runtimeUnlocked && (
+            <div
+              role="timer"
+              aria-live="polite"
+              aria-label={t("Lab Quiz countdown timer", "Bộ đếm thời gian làm Quiz Lab")}
+              className={`mavis-tabular inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold ${
+                remainingSeconds === 0
+                  ? "border-rose-400 bg-rose-50 text-rose-700 dark:border-rose-700 dark:bg-rose-950/40 dark:text-rose-200"
+                  : remainingSeconds <= 120
+                    ? "border-amber-400 bg-amber-50 text-amber-800 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200"
+                    : "border-sky-300 bg-sky-50 text-sky-900 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-100"
+              }`}
+            >
+              {remainingSeconds <= 120 ? (
+                <AlarmClock className="size-3.5 shrink-0" aria-hidden="true" />
+              ) : (
+                <Timer className="size-3.5 shrink-0" aria-hidden="true" />
+              )}
+              <span>
+                {remainingSeconds === 0
+                  ? t("00:00 · Time up", "00:00 · Hết giờ gợi ý")
+                  : formatQuizClock(remainingSeconds)}
+              </span>
+              {remainingSeconds < totalSeconds && (
+                <button
+                  type="button"
+                  onClick={() => setRemainingSeconds(totalSeconds)}
+                  className="ml-1 inline-flex items-center opacity-75 hover:opacity-100"
+                  title={t("Reset timer", "Đặt lại đồng hồ")}
+                >
+                  <RotateCcw className="size-3" aria-hidden="true" />
+                </button>
+              )}
+            </div>
+          )}
+          <Badge
+            variant={
+              quiz.runtimeUnlocked
+                ? "default"
+                : (submit.data?.status ?? quiz.latestStatus) === "NEEDS_RETRY"
+                  ? "destructive"
+                  : "outline"
+            }
+          >
+            {!canSubmit
+              ? `v${quiz.version} · ${t("Preview", "Xem trước")}`
+              : quiz.runtimeUnlocked
+                ? `PASSED (v${quiz.version})`
+                : (submit.data?.status ?? quiz.latestStatus) === "NEEDS_RETRY"
+                  ? `NEEDS_RETRY (v${quiz.version})`
+                  : `NOT_PASSED (v${quiz.version})`}
+          </Badge>
+        </div>
       </div>
 
       {!canSubmit ? (

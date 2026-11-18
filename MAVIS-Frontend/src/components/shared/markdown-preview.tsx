@@ -8,22 +8,24 @@ function safeHref(value: string) {
   return value.startsWith("/") || /^https?:\/\//i.test(value) ? value : null;
 }
 
-function inline(text: string): ReactNode[] {
+function inline(text: string, depth = 0): ReactNode[] {
   const parts = text.split(INLINE);
   return parts.map((part, index) => {
     if (!part) return null;
     if (part.startsWith("`") && part.endsWith("`")) {
       return (
-        <code key={index} className="rounded bg-muted px-1 py-0.5 font-mono text-[0.9em]">
+        <code key={index} className="rounded bg-muted px-1.5 py-0.5 font-mono text-[0.88em] text-foreground">
           {part.slice(1, -1)}
         </code>
       );
     }
     if (part.startsWith("**") && part.endsWith("**")) {
-      return <strong key={index}>{part.slice(2, -2)}</strong>;
+      const inner = part.slice(2, -2);
+      return <strong key={index}>{depth < 2 ? inline(inner, depth + 1) : inner}</strong>;
     }
     if (part.startsWith("*") && part.endsWith("*")) {
-      return <em key={index}>{part.slice(1, -1)}</em>;
+      const inner = part.slice(1, -1);
+      return <em key={index}>{depth < 2 ? inline(inner, depth + 1) : inner}</em>;
     }
     const link = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(part);
     if (link) {

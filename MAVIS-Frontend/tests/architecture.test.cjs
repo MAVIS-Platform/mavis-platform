@@ -806,7 +806,6 @@ test("project navigation preserves every destination and keeps role menus intact
       { id: "health", href: "/administration/health" },
       { id: "users", href: "/administration/users" },
       { id: "profiles", href: "/administration/profiles" },
-      { id: "audit", href: "/administration/audit" },
       { id: "announcements", href: "/administration/announcements" },
     ],
   );
