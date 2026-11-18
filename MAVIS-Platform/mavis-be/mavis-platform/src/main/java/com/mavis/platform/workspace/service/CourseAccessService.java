@@ -274,6 +274,53 @@ public class CourseAccessService {
         }, workspaceId);
     }
 
+    public PasskeyItem createPasskey(UUID workspaceId, CreatePasskeyRequest req) {
+        Workspace workspace = manage(workspaceId);
+        workspace.setCourseMode(true);
+        workspaces.save(workspace);
+
+        int validHours = (req != null && req.validHours() != null && req.validHours() > 0)
+                ? req.validHours()
+                : 720;
+        String label = (req != null && req.label() != null && !req.label().isBlank())
+                ? req.label().trim()
+                : "Mã ghi danh lớp học";
+        Integer maxUses = req != null ? req.maxUses() : null;
+        if (maxUses != null && maxUses < 1) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Max uses must be at least 1");
+        }
+
+        String code;
+        if (req != null && req.customCode() != null && !req.customCode().isBlank()) {
+            code = req.customCode().trim();
+            if (!code.matches("[A-Za-z0-9_-]{4,32}")) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "INVALID_PASSKEY_FORMAT",
+                        "Passkey code must be 4-32 alphanumeric characters, hyphens, or underscores");
+            }
+        } else {
+            code = "MAVIS-" + UUID.randomUUID().toString().substring(0, 6).toUpperCase();
+        }
+
+        String keyDigest = digest(code);
+        List<UUID> conflict = jdbc.queryForList(
+                "SELECT id FROM course_passkeys WHERE digest = ?",
+                UUID.class, keyDigest);
+        if (!conflict.isEmpty()) {
+            throw new BusinessException(ErrorCode.CONFLICT, "PASSKEY_ALREADY_EXISTS",
+                    "This passkey code is already in use");
+        }
+
+        UUID id = UUID.randomUUID();
+        OffsetDateTime now = OffsetDateTime.now();
+        OffsetDateTime expires = now.plusHours(validHours);
+        jdbc.update("""
+                INSERT INTO course_passkeys (id, workspace_id, code, label, digest, expires_at, max_uses, used_count, is_active, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 0, TRUE, ?)
+                """, id, workspaceId, code, label, keyDigest, expires, maxUses, now);
+        audit("COURSE_PASSKEY_CREATED", "WORKSPACE", workspaceId);
+        return new PasskeyItem(id, workspaceId, code, label, expires, null, true, maxUses, 0, now);
+    }
+
     public Passkey issue(UUID workspaceId, int validHours) { return issue(workspaceId, validHours, null); }
     public Passkey issue(UUID workspaceId, int validHours, Integer maxStudents) {
         Workspace workspace = manage(workspaceId);
