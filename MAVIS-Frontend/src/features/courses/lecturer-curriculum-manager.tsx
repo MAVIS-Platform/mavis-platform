@@ -9,12 +9,8 @@ import {
   CircleHelp,
   Eye,
   GitBranch,
-  KeyRound,
-  Layers,
   Pencil,
-  Plus,
   Search,
-  Sparkles,
   Trash2,
   Zap,
 } from "lucide-react";
@@ -29,7 +25,6 @@ import type { Assignment } from "@/features/assignments/requirements";
 import {
   CoursePasskey,
   PublishCourseLab,
-  SeedCuratedCourseLabs,
   useCourseRoadmap,
   useCourseSetup,
 } from "@/features/workspaces/course-access";
@@ -89,7 +84,6 @@ export function LecturerCurriculumManager({
   const remove = useApiMutation("deleteAssignment");
   const [filter, setFilter] = useState<FilterMode>("all");
   const [search, setSearch] = useState("");
-  const [showPasskeyDrawer, setShowPasskeyDrawer] = useState(false);
   const [prerequisiteLab, setPrerequisiteLab] = useState<Assignment | null>(null);
 
   const labs = assignmentsQuery.data ?? [];
@@ -135,70 +129,7 @@ export function LecturerCurriculumManager({
 
   return (
     <div className="space-y-6">
-      {/* Quick-Control Strip */}
-      <section className="rounded-2xl border border-teal-200/80 bg-gradient-to-r from-teal-50/80 via-emerald-50/40 to-white p-4 shadow-xs dark:border-teal-900 dark:from-teal-950/30 dark:via-background dark:to-background">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 text-sm font-semibold text-teal-950 dark:text-teal-100">
-              <Layers className="size-4 text-teal-600" aria-hidden="true" />
-              <span>
-                {t(
-                  "Curriculum & Guided Lab Studio",
-                  "Quản lý Giáo trình & Bài học Lab",
-                )}
-              </span>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {t(
-                "Create Lessons/Labs, inspect 4 readiness gates, publish into the class sequence, or edit structured syllabus modules.",
-                "Tạo Bài học / Lab mới, kiểm tra 4 điều kiện sẵn sàng, công bố vào lộ trình lớp hoặc sắp xếp các chương học.",
-              )}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => setShowPasskeyDrawer((open) => !open)}
-            >
-              <KeyRound className="mr-1.5 size-3.5 text-emerald-600" aria-hidden="true" />
-              {t("Class Passkey", "Passkey lớp")}
-            </Button>
-            <Button asChild size="sm" variant="outline">
-              <Link href={`/theory-assets?workspace=${encodeURIComponent(workspaceId)}`}>
-                <BookOpen className="mr-1.5 size-3.5" aria-hidden="true" />
-                {t("Theory Library", "Kho Lý Thuyết")}
-              </Link>
-            </Button>
-            <Button asChild size="sm" variant="outline">
-              <Link
-                href={`/workspace-overview?workspace=${encodeURIComponent(workspaceId)}&view=course-authoring`}
-              >
-                <Sparkles className="mr-1.5 size-3.5" aria-hidden="true" />
-                {t("Module Builder", "Sắp xếp Chương")}
-              </Link>
-            </Button>
-            <Button asChild size="sm" className="bg-teal-600 text-white hover:bg-teal-700">
-              <Link href={`/assignments/new?workspace=${encodeURIComponent(workspaceId)}`}>
-                <Plus className="mr-1.5 size-4" aria-hidden="true" />
-                {t("Create Lesson / Lab", "Tạo Bài Học / Lab Mới")}
-              </Link>
-            </Button>
-          </div>
-        </div>
-
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-teal-200/60 pt-3">
-          <SeedCuratedCourseLabs workspaceId={workspaceId} />
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span>
-              {publishedCount}/{labs.length} {t("Labs active in class", "Lab đang mở trong lớp")}
-            </span>
-          </div>
-        </div>
-      </section>
-
-      <div id="class-passkey" className={showPasskeyDrawer ? "block" : "sr-only focus-within:not-sr-only"}>
+      <div id="class-passkey">
         <CoursePasskey workspaceId={workspaceId} />
       </div>
 
@@ -272,8 +203,8 @@ export function LecturerCurriculumManager({
           query={assignmentsQuery}
           empty={!labs.length}
           emptyMessage={t(
-            "No Labs in this class yet. Click '+ Create Lesson / Lab' above or seed the curated curriculum.",
-            "Chưa có bài Lab nào. Hãy nhấn '+ Tạo Bài Học / Lab Mới' hoặc tạo nhanh giáo trình mẫu ở trên.",
+            "No Labs in this class yet. Open the Lab Creation tab to create your first Lab.",
+            "Chưa có bài Lab nào. Hãy mở tab Tạo Lab để soạn bài Lab đầu tiên.",
           )}
         >
           {visible.length === 0 ? (
