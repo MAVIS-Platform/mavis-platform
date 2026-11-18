@@ -910,7 +910,10 @@ export function CourseEnrollment({
         </Button>
       </form>
       {redeem.error && (
-        <p role="alert" className="text-sm text-destructive">
+        <p
+          role="alert"
+          className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive"
+        >
           {status === 409
             ? t(
                 "Check My Classes. You may already be enrolled.",
@@ -969,7 +972,7 @@ export function CourseRoadmap({
       >
         <div className="flex flex-wrap items-center justify-between gap-3 text-xs font-medium">
           <span>{t("Course mastery progress", "Tiến độ hoàn thành khóa học")}</span>
-          <span>
+          <span className="mavis-tabular font-semibold text-primary">
             {passed}/{total} {t("Labs passed", "Lab đã đạt")} ({progress}%)
           </span>
         </div>
@@ -1007,7 +1010,13 @@ export function CourseRoadmap({
           return (
             <li
               key={lab.assignmentId}
-              className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-background p-3.5 transition-colors hover:border-primary/30"
+              className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border border-l-4 bg-background p-3.5 transition-colors ${
+                lab.state === "PASSED"
+                  ? "border-l-emerald-500 hover:border-emerald-500/50"
+                  : lab.state === "UNLOCKED"
+                    ? "border-l-primary hover:border-primary/50"
+                    : "border-l-muted-foreground/30 opacity-80"
+              }`}
             >
               <div className="flex min-w-0 items-start gap-3">
                 <span className="grid size-8 shrink-0 place-items-center rounded-lg border bg-muted/40 font-mono text-xs font-semibold">

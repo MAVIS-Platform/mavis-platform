@@ -77,7 +77,7 @@ function MySubmissions() {
           {!workspaceId && (workspaces.data?.length ?? 0) > 0 && <WorkspaceSelector />}
           {workspace && (
             <Button asChild size="sm" variant="outline">
-              <Link href={`/workspace-overview?workspace=${encodeURIComponent(workspace.id)}`}>
+              <Link href={`/roadmap?workspace=${encodeURIComponent(workspace.id)}`}>
                 {t("Back to class", "Quay lại lớp")}
               </Link>
             </Button>
