@@ -11,6 +11,7 @@ import {
   Copy,
   Eye,
   GitBranch,
+  KeyRound,
   Pencil,
   Search,
   Trash2,
@@ -27,11 +28,7 @@ import type { Assignment } from "@/features/assignments/requirements";
 import {
   CoursePasskey,
   PublishCourseLab,
-<<<<<<< HEAD
-=======
-  SeedCuratedCourseLabs,
   useCoursePasskeys,
->>>>>>> 62588d4f (fix(curriculum-manager): show active passkey codes inline and fix /theory-library and /lab-authoring links)
   useCourseRoadmap,
   useCourseSetup,
 } from "@/features/workspaces/course-access";
@@ -92,8 +89,6 @@ export function LecturerCurriculumManager({
   const remove = useApiMutation("deleteAssignment");
   const [filter, setFilter] = useState<FilterMode>("all");
   const [search, setSearch] = useState("");
-<<<<<<< HEAD
-=======
   const [showPasskeyDrawer, setShowPasskeyDrawer] = useState(false);
   useEffect(() => {
     if (typeof window !== "undefined" && window.location.hash === "#class-passkey") {
@@ -101,7 +96,6 @@ export function LecturerCurriculumManager({
     }
   }, []);
   const [copiedKeyId, setCopiedKeyId] = useState<string | null>(null);
->>>>>>> 62588d4f (fix(curriculum-manager): show active passkey codes inline and fix /theory-library and /lab-authoring links)
   const [prerequisiteLab, setPrerequisiteLab] = useState<Assignment | null>(null);
 
   const activePasskeys = (passkeysQuery.data ?? []).filter((pk) => pk.active && pk.code);

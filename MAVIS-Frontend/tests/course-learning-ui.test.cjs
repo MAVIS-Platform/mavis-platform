@@ -1282,8 +1282,7 @@ test("Lecturer flow, 1-Click Login, MockAdapter JAVA-MS-2026, and clean routes h
   assert.ok(!managerSrc.includes("/assignments/new"));
   assert.ok(!managerSrc.includes('className={showPasskeyDrawer ? "block" : "sr-only'));
   assert.ok(managerSrc.includes("Active Class Passkeys:"));
-  assert.ok(managerSrc.includes("/theory-library?workspace="));
-  assert.ok(managerSrc.includes("/lab-authoring?workspace="));
+  assert.ok(managerSrc.includes("<CoursePasskey"));
 
   const outlineSrc = read("src/features/courses/course-outline.tsx");
   assert.ok(!outlineSrc.includes("#course-builder"));
