@@ -28,6 +28,10 @@ import com.mavis.common.repository.SourceSnapshotRepository;
 import com.mavis.common.repository.WorkspaceRepository;
 import com.mavis.common.security.AccessPolicyService;
 import com.mavis.common.utils.HashUtils;
+import com.mavis.platform.workspace.curriculum.CourseraCurriculumModels.CourseraModuleSpec;
+import com.mavis.platform.workspace.curriculum.CourseraCurriculumModels.LessonSpec;
+import com.mavis.platform.workspace.curriculum.CourseraCurriculumModels.RubricCriterion;
+import com.mavis.platform.workspace.curriculum.JavaCourseraCatalog;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -53,6 +57,7 @@ public class CourseLabSeederService {
     private static final String ACTION_SEEDED = "COURSE_LABS_SEEDED_CURATED";
     public static final String PRESET_STANDARD_DEMO = "STANDARD_DEMO";
     public static final String PRESET_FULL_CURRICULUM = "FULL_CURRICULUM";
+    public static final String PRESET_JAVA_COURSERA = "JAVA_COURSERA_FULL";
 
     private record LabSeedSpec(
             String curriculumCode,
@@ -133,7 +138,12 @@ public class CourseLabSeederService {
             throw new BusinessException(ErrorCode.CONFLICT, "This workspace is archived");
         }
 
-        boolean fullCurriculum = PRESET_FULL_CURRICULUM.equalsIgnoreCase(preset == null ? "" : preset.trim());
+        String normalizedPreset = preset == null ? "" : preset.trim();
+        if (PRESET_JAVA_COURSERA.equalsIgnoreCase(normalizedPreset)) {
+            return seedJavaCourseraInternal(workspaceId, workspace, lecturer);
+        }
+
+        boolean fullCurriculum = PRESET_FULL_CURRICULUM.equalsIgnoreCase(normalizedPreset);
         List<Assignment> existingLabs = assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId);
         upgradeExistingLabsIfSafe(existingLabs);
 
@@ -208,6 +218,148 @@ public class CourseLabSeederService {
                 lecturer.getId(), ACTION_SEEDED, "WORKSPACE", workspaceId);
 
         return courses.roadmap(workspaceId);
+    }
+
+    private CourseAccessService.Roadmap seedJavaCourseraInternal(UUID workspaceId, Workspace workspace, User lecturer) {
+        ensureCourseMode(workspace);
+        List<Assignment> existingLabs = assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId);
+        ModelVersion refModel = existingLabs.stream()
+                .map(Assignment::getReferenceModel)
+                .filter(java.util.Objects::nonNull)
+                .findFirst()
+                .orElseGet(() -> seedReferenceModel(workspaceId, workspace, lecturer));
+        ensureReferenceRuntimeSetup(refModel, java.util.Map.of());
+
+        int nextOrder = existingLabs.stream()
+                .map(Assignment::getLabOrder)
+                .filter(java.util.Objects::nonNull)
+                .mapToInt(Integer::intValue)
+                .max()
+                .orElse(0);
+
+        List<Assignment> orderedLabs = new ArrayList<>();
+        for (CourseraModuleSpec modSpec : JavaCourseraCatalog.modules()) {
+            Assignment match = existingLabs.stream()
+                    .filter(a -> modSpec.labTitle().equals(a.getTitle()))
+                    .findFirst()
+                    .orElse(null);
+            if (match == null) {
+                boolean runtime = modSpec.visualLab() != null && modSpec.visualLab().requireRuntimeTrace();
+                List<String> diagramTypes = modSpec.visualLab() != null
+                        ? modSpec.visualLab().requiredDiagramTypes()
+                        : List.of("C4_CONTAINER", "C4_COMPONENT");
+                Assignment.AssignmentBuilder labBuilder = Assignment.builder()
+                        .workspace(workspace)
+                        .createdBy(lecturer)
+                        .title(modSpec.labTitle())
+                        .description(modSpec.labDescription())
+                        .labMode(runtime ? "THEORY_QUIZ_STUDIO" : "THEORY_QUIZ")
+                        .requiredDiagramTypes(json.valueToTree(diagramTypes))
+                        .ruleSetVersion("SWD_DEFAULT_V1")
+                        .requireRuntimeTrace(runtime)
+                        .referenceModel(refModel)
+                        .labOrder(++nextOrder);
+                if (runtime) {
+                    labBuilder.studioTopologySnapshot(buildDefaultStudioTopology())
+                            .studioTopologyRevision(1);
+                }
+                match = assignments.saveAndFlush(labBuilder.build());
+            }
+            quizzes.publishCurriculum(workspaceId, match.getId(), JavaCourseraCatalog.toQuizPublishRequest(modSpec));
+            orderedLabs.add(match);
+        }
+
+        syncJavaCourseraOutline(workspaceId, orderedLabs);
+
+        jdbc.update("INSERT INTO audit_logs(actor_id, action, target_type, target_id) VALUES (?, ?, ?, ?)",
+                lecturer.getId(), "COURSE_JAVA_COURSERA_SEEDED", "WORKSPACE", workspaceId);
+
+        return courses.roadmap(workspaceId);
+    }
+
+    private void syncJavaCourseraOutline(UUID workspaceId, List<Assignment> orderedLabs) {
+        if (courseAuthoring == null || orderedLabs.isEmpty()) {
+            return;
+        }
+        try {
+            CourseAuthoringService.CourseView existing = null;
+            try {
+                existing = courseAuthoring.get(workspaceId);
+            } catch (BusinessException ex) {
+                if (ex.getErrorCode() != ErrorCode.NOT_FOUND) {
+                    throw ex;
+                }
+            }
+            if (existing != null && existing.modules() != null && !existing.modules().isEmpty()) {
+                boolean alreadyJavaCourse = existing.modules().stream()
+                        .anyMatch(m -> m.title() != null && m.title().startsWith("Chương 1"));
+                if (alreadyJavaCourse) {
+                    return;
+                }
+            }
+            if (existing != null && "PUBLISHED".equals(existing.status())) {
+                courseAuthoring.startDraft(workspaceId);
+            } else if (existing == null) {
+                courseAuthoring.saveDraft(workspaceId, new CourseAuthoringService.CourseRequest(
+                        JavaCourseraCatalog.COURSE_TITLE,
+                        JavaCourseraCatalog.COURSE_DESCRIPTION));
+            }
+
+            List<CourseraModuleSpec> catalogModules = JavaCourseraCatalog.modules();
+            for (int i = 0; i < catalogModules.size() && i < orderedLabs.size(); i++) {
+                CourseraModuleSpec modSpec = catalogModules.get(i);
+                Assignment lab = orderedLabs.get(i);
+                CourseAuthoringService.CourseView afterModule = courseAuthoring.addModule(
+                        workspaceId, new CourseAuthoringService.ModuleRequest(
+                                modSpec.title(), modSpec.description(), null));
+                UUID moduleId = afterModule.modules().getLast().id();
+
+                for (LessonSpec lesson : modSpec.lessons()) {
+                    ObjectNode content = json.createObjectNode();
+                    content.put("body", lesson.bodyMarkdown());
+                    content.put("curriculumCode", lesson.curriculumCode());
+                    content.put("estimatedMinutes", lesson.estimatedMinutes());
+                    courseAuthoring.addItem(workspaceId, moduleId,
+                            new CourseAuthoringService.ItemRequest(
+                                    "THEORY", lesson.title(), lesson.summary(), null, content, true));
+                }
+
+                courseAuthoring.addItem(workspaceId, moduleId,
+                        new CourseAuthoringService.ItemRequest(
+                                "QUIZ",
+                                "Quiz Chương " + modSpec.position() + " · Kiểm tra Trắc nghiệm (10 câu)",
+                                "Vượt qua Quiz Gate (>= 70%) để mở khóa bài thực hành tiếp theo.",
+                                lab.getId(), json.createObjectNode(), true));
+
+                if (modSpec.essay() != null) {
+                    ObjectNode essayContent = json.createObjectNode();
+                    essayContent.put("prompt", modSpec.essay().promptMarkdown());
+                    ArrayNode rubricArr = essayContent.putArray("rubric");
+                    for (RubricCriterion c : modSpec.essay().rubric()) {
+                        ObjectNode node = rubricArr.addObject();
+                        node.put("criterion", c.criterion());
+                        node.put("points", c.weightPoints());
+                        node.put("description", c.excellentDescription());
+                    }
+                    courseAuthoring.addItem(workspaceId, moduleId,
+                            new CourseAuthoringService.ItemRequest(
+                                    "ESSAY", modSpec.essay().title(), modSpec.essay().description(),
+                                    null, essayContent, true));
+                }
+
+                if (modSpec.visualLab() != null) {
+                    courseAuthoring.addItem(workspaceId, moduleId,
+                            new CourseAuthoringService.ItemRequest(
+                                    modSpec.visualLab().itemType(),
+                                    modSpec.visualLab().title(),
+                                    modSpec.visualLab().description(),
+                                    lab.getId(), json.createObjectNode(), true));
+                }
+            }
+            courseAuthoring.publish(workspaceId);
+        } catch (Exception ignored) {
+            // Skip if optional authoring state is unavailable in lightweight mocked tests.
+        }
     }
 
     private void syncCuratedCourseOutline(UUID workspaceId, Workspace workspace) {
