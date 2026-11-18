@@ -72,6 +72,12 @@ import { Step2StaticImpact } from "./step2-static-impact";
 import { LabToc, type LabTocItem, type LabTocStep } from "./lab-toc";
 import { LabSubmissionV2 } from "./lab-submission-v2";
 import { TeacherDashboard } from "@/features/workspaces/teacher-dashboard";
+import {
+  PasskeyEnrollmentModal,
+  StudentCourseProgressCard,
+  StudentCoursesHero,
+  StudentKpiStrip,
+} from "./student-courses-dashboard";
 
 type LearningStep = {
   id: 1 | 2 | 3 | 4;
@@ -308,106 +314,32 @@ export function Courses() {
 
   if (userRole === "lecturer" || userRole === "admin") return <TeacherDashboard />;
 
+  const firstWorkspaceId = workspaces[0]?.id ?? null;
+  const overallPct = studentSubStats.total
+    ? Math.round((studentSubStats.passedCount / studentSubStats.total) * 100)
+    : 0;
+
   return (
     <div className="space-y-6">
-      <section className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 via-blue-700 to-teal-700 p-6 text-white shadow-lg sm:p-7">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="max-w-2xl space-y-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-medium text-teal-100 backdrop-blur-sm">
-              <GraduationCap className="h-3.5 w-3.5" aria-hidden="true" />
-              {t("MAVIS Learning Hub", "Không Gian Học Tập MAVIS")}
-            </span>
-            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
-              {t("My Courses", "Khóa học của tôi")}
-            </h1>
-            <p className="text-sm text-blue-100/90">
-              {t(
-                "Resume your architecture & runtime Labs, track Quiz gates, and review Lecturer feedback.",
-                "Tiếp tục học các bài Lab kiến trúc & runtime, hoàn thành Quiz Gate và theo dõi điểm chấm từ Giảng viên.",
-              )}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2.5">
-            {isStudent && (
-              <Button
-                type="button"
-                aria-expanded={passkeyOpen}
-                aria-controls="course-passkey-form"
-                onClick={() => setPasskeyOpen((open) => !open)}
-                className="bg-white text-slate-900 shadow-sm hover:bg-teal-50"
-              >
-                <KeyRound className="mr-1.5 h-4 w-4" aria-hidden="true" />
-                {passkeyOpen
-                  ? t("Close Passkey Box", "Đóng ô Passkey")
-                  : t("Join a Class with Passkey", "Tham Gia Lớp Bằng Passkey")}
-              </Button>
-            )}
-            <Button
-              asChild
-              variant="outline"
-              className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white"
-            >
-              <Link href="/studio">
-                <Sparkles className="mr-1.5 h-4 w-4" aria-hidden="true" />
-                {t("Free Studio Sandbox", "Sandbox Studio Tự Do")}
-              </Link>
-            </Button>
-          </div>
-        </div>
-      </section>
+      <StudentCoursesHero
+        studentName={session.data?.user?.name}
+        firstWorkspaceId={firstWorkspaceId}
+        passkeyOpen={passkeyOpen}
+        onTogglePasskey={() => setPasskeyOpen((open) => !open)}
+      />
 
       {isStudent && (
-        <section id="course-passkey-form" className={passkeyOpen ? "scroll-mt-6" : "hidden"}>
-          <div
-            id="course-passkey"
-            tabIndex={-1}
-            className="scroll-mt-6 rounded-2xl border border-teal-200 bg-teal-50/40 p-1 dark:border-teal-800/60 dark:bg-teal-950/20"
-          >
-            <CourseEnrollment destination="roadmap" />
-          </div>
-        </section>
+        <PasskeyEnrollmentModal open={passkeyOpen} onClose={() => setPasskeyOpen(false)} />
       )}
 
       {workspaces.length > 0 && (
-        <section className="grid gap-4 sm:grid-cols-3">
-          <div className="rounded-2xl border bg-card p-4 shadow-sm">
-            <div className="flex items-center justify-between text-xs font-medium text-muted-foreground">
-              <span>{t("Enrolled Classes", "Lớp học của tôi")}</span>
-              <BookOpen className="h-4 w-4 text-blue-600" aria-hidden="true" />
-            </div>
-            <p className="mt-2 text-2xl font-bold tracking-tight">{workspaces.length}</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {t("Active learning courses", "Khóa học đang mở")}
-            </p>
-          </div>
-          <div className="rounded-2xl border bg-card p-4 shadow-sm">
-            <div className="flex items-center justify-between text-xs font-medium text-muted-foreground">
-              <span>{t("Passed Submissions", "Bài Đã Đạt")}</span>
-              <ShieldCheck className="h-4 w-4 text-teal-600" aria-hidden="true" />
-            </div>
-            <p className="mt-2 text-2xl font-bold tracking-tight text-teal-700 dark:text-teal-400">
-              {studentSubStats.passedCount}
-              <span className="ml-1.5 text-xs font-normal text-muted-foreground">
-                / {studentSubStats.total} {t("submitted", "đã nộp")}
-              </span>
-            </p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {t("Lab & review checkpoints", "Bài Lab đã chấm đạt")}
-            </p>
-          </div>
-          <div className="rounded-2xl border bg-card p-4 shadow-sm">
-            <div className="flex items-center justify-between text-xs font-medium text-muted-foreground">
-              <span>{t("Average Grade", "Điểm Trung Bình")}</span>
-              <Award className="h-4 w-4 text-amber-500" aria-hidden="true" />
-            </div>
-            <p className="mt-2 text-2xl font-bold tracking-tight">
-              {studentSubStats.avgScore != null ? `${studentSubStats.avgScore}/100` : "—"}
-            </p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {t("Across graded Labs", "Tính trên các Lab đã chấm")}
-            </p>
-          </div>
-        </section>
+        <StudentKpiStrip
+          enrolledCount={workspaces.length}
+          passedLabsCount={studentSubStats.passedCount}
+          submittedCount={studentSubStats.total}
+          completionPercent={overallPct}
+          avgScore={studentSubStats.avgScore}
+        />
       )}
 
       <RequestState query={query} empty={false}>
@@ -454,7 +386,7 @@ export function Courses() {
                 )}
               />
             ) : (
-              <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+              <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
                 {filteredWorkspaces.map((workspace) => {
                   const memberCount = workspace.members.length;
                   const isLecturer =
@@ -463,7 +395,7 @@ export function Courses() {
                     .filter((member) => member.role.toUpperCase() === "LECTURER")
                     .map((member) => member.name);
                   return (
-                    <StudentCourseCard
+                    <StudentCourseProgressCard
                       key={workspace.id}
                       workspace={workspace}
                       memberCount={memberCount}
@@ -490,126 +422,6 @@ export function Courses() {
         </details>
       )}
     </div>
-  );
-}
-
-function StudentCourseCard({
-  workspace,
-  memberCount,
-  lecturerNames,
-  isLecturer,
-  onOpen,
-}: {
-  workspace: import("@/lib/api/contracts").Response<"workspaces">[number];
-  memberCount: number;
-  lecturerNames: string[];
-  isLecturer: boolean;
-  onOpen: () => void;
-}) {
-  const { t } = useLocale();
-  const roadmap = useCourseRoadmap(workspace.id);
-  const labs = roadmap.data?.labs ?? [];
-  const passed = labs.filter((lab) => lab.state === "PASSED").length;
-  const nextLab = labs.find((lab) => lab.state === "UNLOCKED");
-  const percent = labs.length ? Math.round((passed / labs.length) * 100) : 0;
-  const roadmapHref = `/roadmap?workspace=${encodeURIComponent(workspace.id)}`;
-
-  return (
-    <article className="flex flex-col justify-between overflow-hidden rounded-2xl border bg-card shadow-sm transition-all hover:border-teal-500/50 hover:shadow-md">
-      <div className="h-2 bg-gradient-to-r from-blue-700 via-teal-600 to-emerald-500" />
-      <div className="flex flex-1 flex-col justify-between gap-4 p-5">
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <Badge
-              variant="outline"
-              className="border-teal-200 bg-teal-50 font-mono text-teal-800 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-300"
-            >
-              {workspace.code || t("CLASS", "LỚP")}
-            </Badge>
-            <StatusBadge status={workspace.status || "ACTIVE"} />
-          </div>
-
-          <div>
-            <h2 className="line-clamp-2 text-lg font-semibold leading-snug tracking-tight">
-              {workspace.name}
-            </h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {t("Lecturer", "Giảng viên")}:{" "}
-              <span className="font-medium text-foreground">
-                {lecturerNames.length
-                  ? lecturerNames.join(", ")
-                  : t("Not listed", "Chưa có thông tin")}
-              </span>
-              {" · "}
-              {memberCount} {t("members", "thành viên")}
-            </p>
-          </div>
-
-          {roadmap.data?.guided && (
-            <div className="space-y-1.5 rounded-xl bg-muted/40 p-3">
-              <div className="flex items-center justify-between gap-2 text-xs">
-                <span className="font-medium text-muted-foreground">
-                  {t("Course Progress", "Tiến Độ Khóa Học")}
-                </span>
-                <span className="font-semibold text-teal-700 dark:text-teal-400">
-                  {passed}/{labs.length} Labs ({percent}%)
-                </span>
-              </div>
-              <div
-                role="progressbar"
-                aria-label={t("Labs passed", "Lab đã đạt")}
-                aria-valuemin={0}
-                aria-valuemax={labs.length || 1}
-                aria-valuenow={passed}
-                className="h-2 overflow-hidden rounded-full bg-muted"
-              >
-                <div
-                  className="h-full rounded-full bg-gradient-to-r from-teal-500 to-emerald-600 transition-all"
-                  style={{ width: `${percent}%` }}
-                />
-              </div>
-            </div>
-          )}
-
-          {nextLab ? (
-            <p className="flex items-start gap-2 rounded-lg border border-blue-200/70 bg-blue-50/60 px-3 py-2 text-xs text-blue-900 dark:border-blue-800/50 dark:bg-blue-950/30 dark:text-blue-200">
-              <Play className="mt-0.5 h-3.5 w-3.5 shrink-0 fill-current text-blue-600" aria-hidden="true" />
-              <span>
-                <span className="font-semibold">{t("Up next", "Bài tiếp theo")}:</span>{" "}
-                {nextLab.title}
-              </span>
-            </p>
-          ) : labs.length > 0 && passed === labs.length ? (
-            <p className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50/70 px-3 py-2 text-xs font-medium text-emerald-800 dark:border-emerald-800/60 dark:bg-emerald-950/30 dark:text-emerald-300">
-              <Check className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-              {t("All guided Labs completed!", "Bạn đã hoàn thành toàn bộ Lab!")}
-            </p>
-          ) : null}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 border-t pt-3">
-          <Button
-            asChild
-            onClick={onOpen}
-            className="flex-1 bg-teal-600 text-white hover:bg-teal-700"
-          >
-            <Link href={roadmapHref}>
-              <Play className="mr-1.5 h-3.5 w-3.5 fill-current" aria-hidden="true" />
-              {isLecturer
-                ? t("Manage course", "Quản lý khóa học")
-                : nextLab
-                  ? t("Continue learning", "Tiếp tục học")
-                  : t("Continue learning", "Vào lớp học")}
-            </Link>
-          </Button>
-          <Button asChild size="sm" variant="outline" onClick={onOpen}>
-            <Link href={`/submissions?workspace=${encodeURIComponent(workspace.id)}`}>
-              {t("Grades", "Điểm & Bài nộp")}
-            </Link>
-          </Button>
-        </div>
-      </div>
-    </article>
   );
 }
 

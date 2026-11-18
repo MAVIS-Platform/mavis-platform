@@ -66,11 +66,12 @@ test("student navigation locks class sidebar to 3 clean course items and preserv
 
 test("student course landing prioritizes joined classes, defers curriculum and keeps Passkey deep-link", () => {
   const course = read("src/features/courses/screens.tsx");
+  const dashboard = read("src/features/courses/student-courses-dashboard.tsx");
   const curriculum = read("src/features/courses/curriculum.tsx");
   const nav = read("src/lib/navigation.ts");
-  assert.ok(course.includes('id="course-passkey"'));
-  assert.ok(course.includes('aria-controls="course-passkey-form"'));
-  assert.ok(course.includes("Continue learning"));
+  assert.ok(dashboard.includes('id="course-passkey"'));
+  assert.ok(dashboard.includes('aria-controls="course-passkey-form"'));
+  assert.ok(dashboard.includes("Continue learning"));
   assert.ok(course.includes("Reference materials: Java and C#"));
   assert.match(curriculum, /useCurriculum\(open\)/);
   assert.ok(nav.includes('href: "/courses"') && nav.includes('href: "/submissions"') && nav.includes('href: "/roadmap"'));
@@ -96,10 +97,11 @@ test("student submissions are scoped by selected class workspaceId and retain cl
 
 test("Lab UI keeps unavailable progress gates honest and runs 4-step V2 workflow inside /lab", () => {
   const course = read("src/features/courses/screens.tsx");
+  const dashboard = read("src/features/courses/student-courses-dashboard.tsx");
   const access = read("src/features/workspaces/course-access.tsx");
   const quiz = read("src/features/courses/course-quiz.tsx");
 
-  assert.ok(course.includes('<CourseEnrollment destination="roadmap" />'));
+  assert.ok(dashboard.includes('<CourseEnrollment destination="roadmap" />'));
   assert.ok(access.includes('"course-enrollments/redeem"'));
   assert.ok(access.includes("course-roadmap"));
   assert.ok(access.includes('state: "LOCKED" | "UNLOCKED" | "PASSED"'));
@@ -303,7 +305,9 @@ test("lecturer review requires comments and maps the documented pass threshold t
 });
 
 test("new Course and Lab surfaces expose direct Vietnamese copy", () => {
-  const course = read("src/features/courses/screens.tsx");
+  const course =
+    read("src/features/courses/screens.tsx") +
+    read("src/features/courses/student-courses-dashboard.tsx");
 
   for (const text of [
     "Lớp học của tôi",
