@@ -1,15 +1,22 @@
 package com.mavis.platform.workspace.controller;
 
 import com.mavis.common.dto.ApiResponse;
+import com.mavis.common.entity.User;
+import com.mavis.common.entity.Workspace;
+import com.mavis.common.exception.BusinessException;
+import com.mavis.common.exception.ErrorCode;
+import com.mavis.common.security.AccessPolicyService;
 import com.mavis.platform.workspace.service.CourseAccessService;
 import com.mavis.platform.workspace.service.CourseLabSeederService;
 import com.mavis.platform.workspace.service.CourseSetupService;
+import com.mavis.platform.workspace.service.JavaCourseMasterSeeder;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -24,6 +31,14 @@ public class CourseAccessController {
     private final CourseAccessService courses;
     private final CourseLabSeederService seeder;
     private final CourseSetupService setup;
+
+    @Autowired(required = false)
+    private AccessPolicyService accessPolicy;
+
+    @Autowired(required = false)
+    private JavaCourseMasterSeeder masterSeeder;
+
+    public record BootstrapJavaCourseraResult(UUID workspaceId, String code, String name) {}
 
     public record IssueKey(@Min(1) @Max(168) int validHours, @Min(1) @Max(10000) Integer maxStudents) {}
     public record RedeemKey(@NotBlank @Pattern(regexp = "[A-Za-z0-9_-]{4,32}") String code) {}
@@ -123,5 +138,27 @@ public class CourseAccessController {
             @Valid @RequestBody RedeemKey request,
             @RequestHeader(value = "Idempotency-Key", required = false) UUID requestId) {
         return ApiResponse.success(courses.redeem(request.code(), requestId));
+    }
+
+    @PostMapping("/workspaces/bootstrap-java-coursera")
+    public ApiResponse<BootstrapJavaCourseraResult> bootstrapJavaCoursera() {
+        User caller = accessPolicy != null ? accessPolicy.requireCurrentActiveUser() : null;
+        if (caller != null) {
+            String roleCode = caller.getRole() != null ? caller.getRole().getCode() : "";
+            if (!"LECTURER".equalsIgnoreCase(roleCode) && !"SYSTEM_ADMIN".equalsIgnoreCase(roleCode)) {
+                throw new BusinessException(ErrorCode.FORBIDDEN,
+                        "Chỉ Giảng viên hoặc Quản trị viên mới được khởi tạo môn học chuẩn Coursera");
+            }
+        }
+        if (masterSeeder == null) {
+            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR, "Java Coursera seeder is unavailable");
+        }
+        Workspace workspace = masterSeeder.bootstrapJavaCourseraWorkspace(caller);
+        if (workspace == null) {
+            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR, "Unable to provision JAVA-MS-2026 workspace");
+        }
+        return ApiResponse.success(
+                "Đã khởi tạo và công bố khóa học Java Microservices 6 Chương (Passkey: JAVA2026)",
+                new BootstrapJavaCourseraResult(workspace.getId(), workspace.getCode(), workspace.getName()));
     }
 }
