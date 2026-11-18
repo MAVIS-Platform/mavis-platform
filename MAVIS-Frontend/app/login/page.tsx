@@ -328,6 +328,14 @@ export default function LoginPage() {
                   <p className="font-semibold text-teal-950 dark:text-teal-100">
                     ⚡ Đăng Nhập Nhanh 3 Tài Khoản Seed Sẵn (1-Click Test Login)
                   </p>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="rounded-full border border-teal-300 bg-white px-2 py-0.5 font-mono text-[10px] font-semibold text-teal-800 dark:border-teal-700 dark:bg-teal-950 dark:text-teal-200">
+                      JAVA-MS-2026
+                    </span>
+                    <span className="rounded-full border border-emerald-300 bg-emerald-100 px-2 py-0.5 font-mono text-[10px] font-bold text-emerald-900 dark:border-emerald-700 dark:bg-emerald-950 dark:text-emerald-200">
+                      🔑 JAVA2026 · SE1819JAVA
+                    </span>
+                  </div>
                 </div>
                 <div className="mt-2.5 grid gap-2">
                   <button
