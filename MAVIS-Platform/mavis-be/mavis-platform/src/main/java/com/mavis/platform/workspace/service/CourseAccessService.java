@@ -407,6 +407,17 @@ public class CourseAccessService {
                 nextRevoked, computedActive, nextMaxUses, existing.usedCount(), existing.createdAt());
     }
 
+    public void deletePasskey(UUID workspaceId, UUID passkeyId) {
+        manage(workspaceId);
+        int deleted = jdbc.update(
+                "DELETE FROM course_passkeys WHERE id = ? AND workspace_id = ?",
+                passkeyId, workspaceId);
+        if (deleted == 0) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "Passkey not found");
+        }
+        audit("COURSE_PASSKEY_DELETED", "WORKSPACE", workspaceId);
+    }
+
     public Passkey issue(UUID workspaceId, int validHours) { return issue(workspaceId, validHours, null); }
     public Passkey issue(UUID workspaceId, int validHours, Integer maxStudents) {
         Workspace workspace = manage(workspaceId);
