@@ -113,8 +113,13 @@ public class LlmTheoryDraftGenerator {
     }
 
     private String sendOpenAi(String apiKey, String prompt) throws IOException, InterruptedException {
+        boolean deepSeek = isDeepSeekKey(apiKey);
+        String targetUrl = (customEndpointUrl != null && !customEndpointUrl.isBlank())
+                ? customEndpointUrl
+                : (deepSeek ? "https://api.deepseek.com/v1/chat/completions" : "https://api.openai.com/v1/chat/completions");
+        String targetModel = (deepSeek && "gpt-4o-mini".equals(openAiModel)) ? "deepseek-flash" : openAiModel;
         ObjectNode request = json.createObjectNode();
-        request.put("model", openAiModel);
+        request.put("model", targetModel);
         request.putObject("response_format").put("type", "json_object");
         ArrayNode messages = request.putArray("messages");
         messages.addObject().put("role", "system")
@@ -122,7 +127,7 @@ public class LlmTheoryDraftGenerator {
         messages.addObject().put("role", "user").put("content", prompt);
 
         HttpRequest httpRequest = HttpRequest.newBuilder()
-                .uri(URI.create("https://api.openai.com/v1/chat/completions"))
+                .uri(URI.create(targetUrl))
                 .header("Content-Type", "application/json")
                 .header("Authorization", "Bearer " + apiKey)
                 .timeout(Duration.ofSeconds(45))
@@ -130,13 +135,17 @@ public class LlmTheoryDraftGenerator {
                 .build();
         HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            throw providerFailure("OpenAI", response.statusCode());
+            throw providerFailure(deepSeek ? "DeepSeek" : "OpenAI", response.statusCode());
         }
         JsonNode content = json.readTree(response.body()).path("choices").path(0).path("message").path("content");
         if (content.isMissingNode() || content.asText().isBlank()) {
             throw new IOException("OpenAI response missing message content");
         }
         return content.asText();
+    }
+
+    private static boolean isDeepSeekKey(String apiKey) {
+        return apiKey != null && apiKey.matches("^sk-[0-9a-f]{32}$");
     }
 
     private String sendGemini(String apiKey, String prompt) throws IOException, InterruptedException {

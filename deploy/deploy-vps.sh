@@ -56,8 +56,23 @@ DOCKER_CONFIG=$(mktemp -d /opt/mavis/.registry.XXXXXX)
 cleanup() { rm -rf "$DOCKER_CONFIG"; }
 trap cleanup EXIT
 IFS= read -r registry_token
+IFS= read -r ai_api_key || true
 printf '%s' "$registry_token" | docker login ghcr.io --username "$registry_user" --password-stdin
 unset registry_token
+if [ -n "${ai_api_key:-}" ]; then
+  AI_KEY="$ai_api_key" python3 - <<'PY'
+import os
+from pathlib import Path
+p = Path('/opt/mavis/.env.production')
+key = os.environ['AI_KEY'].strip()
+lines = [l for l in p.read_text().splitlines() if not l.startswith(('MAVIS_AI_API_KEY=', 'OPENAI_API_KEY='))]
+lines.append(f'MAVIS_AI_API_KEY={key}')
+lines.append(f'OPENAI_API_KEY={key}')
+p.write_text('\n'.join(lines) + '\n')
+p.chmod(0o600)
+PY
+fi
+unset ai_api_key
 compose() {
   local image_prefix="$1" image_tag="$2" file="$3"
   shift 3

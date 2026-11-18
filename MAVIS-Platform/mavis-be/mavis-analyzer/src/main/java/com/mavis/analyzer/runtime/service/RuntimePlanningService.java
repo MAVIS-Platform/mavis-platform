@@ -1004,18 +1004,20 @@ public class RuntimePlanningService {
   String rawText=null;
   String aiModelName=null;
   if(useOpenAi){
+   boolean deepSeek=apiKey.matches("^sk-[0-9a-f]{32}$");
    String primaryModel=(scenarioOpenAiModel!=null&&!scenarioOpenAiModel.isBlank())?scenarioOpenAiModel.trim():"gpt-5.4";
-   List<String> modelChain=primaryModel.equals("gpt-5-mini")?List.of("gpt-5-mini"):List.of(primaryModel,"gpt-5-mini");
+   if(deepSeek&&"gpt-5.4".equals(primaryModel))primaryModel="deepseek-flash";
+   List<String> modelChain=(deepSeek||primaryModel.equals("gpt-5-mini"))?List.of(primaryModel):List.of(primaryModel,"gpt-5-mini");
    Exception lastErr=null;
    for(String candidateModel:modelChain){
     try{
      ObjectNode openAiReq=json.createObjectNode();
      openAiReq.put("model",candidateModel);
-     openAiReq.put("reasoning_effort",candidateModel.startsWith("gpt-5.4")?"medium":"minimal");
+     if(!deepSeek)openAiReq.put("reasoning_effort",candidateModel.startsWith("gpt-5.4")?"medium":"minimal");
      openAiReq.putObject("response_format").put("type","json_object");
      ArrayNode messages=openAiReq.putArray("messages");
      messages.addObject().put("role","user").put("content",redactedPrompt);
-     String endpoint=hasCustomUrl?customAiEndpointUrl:"https://api.openai.com/v1/chat/completions";
+     String endpoint=hasCustomUrl?customAiEndpointUrl:(deepSeek?"https://api.deepseek.com/v1/chat/completions":"https://api.openai.com/v1/chat/completions");
      HttpRequest httpReq=HttpRequest.newBuilder()
        .uri(URI.create(endpoint))
        .timeout(Duration.ofSeconds(25))
