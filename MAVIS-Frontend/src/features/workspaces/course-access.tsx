@@ -1534,7 +1534,6 @@ export type BootstrapJavaCourseraResult = {
 };
 
 export function useBootstrapJavaCoursera() {
-  const router = useRouter();
   const cache = useQueryClient();
   return useMutation({
     mutationFn: () =>
@@ -1546,7 +1545,9 @@ export function useBootstrapJavaCoursera() {
       void cache.invalidateQueries({ queryKey: ["api", "assignments"] });
       void cache.invalidateQueries({ queryKey: ["api", "course-authoring", data.workspaceId] });
       void cache.invalidateQueries({ queryKey: roadmapKey(data.workspaceId) });
-      router.push(`/workspace-overview?workspace=${encodeURIComponent(data.workspaceId)}`);
+      if (typeof window !== "undefined") {
+        window.location.assign(`/workspace-overview?workspace=${encodeURIComponent(data.workspaceId)}`);
+      }
     },
   });
 }

@@ -18,7 +18,6 @@ import {
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useApi, useApiMutation, useApiQuery, useSession, useSelection } from "@/hooks/use-api";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { ErrorState, RequestState } from "@/components/shared/request-state";
 import { SearchInput, SelectField } from "@/components/shared/forms";
@@ -44,10 +43,9 @@ import { useLocale } from "@/lib/i18n/locale-context";
 export function Workspaces() {
   const { t } = useLocale();
   const api = useApi();
-  const router = useRouter();
   const query = useApiQuery("workspaces", {});
   const session = useSession();
-  const { workspaceId } = useSelection();
+  const { workspaceId, setWorkspaceId } = useSelection();
   const bootstrapJava = useBootstrapJavaCoursera();
   const [showCreate, setShowCreate] = useState(false);
   const [search, setSearch] = useState("");
@@ -112,7 +110,7 @@ export function Workspaces() {
                   disabled={bootstrapJava.isPending}
                   onClick={() => {
                     if (api.mode === "mock") {
-                      router.push("/workspace-overview?workspace=workspace-java-ms-2026");
+                      setWorkspaceId("workspace-java-ms-2026");
                       return;
                     }
                     bootstrapJava.mutate();

@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import {
   BookOpenCheck,
@@ -25,7 +24,6 @@ import { useLocale } from "@/lib/i18n/locale-context";
 export function TeacherDashboard() {
   const { t } = useLocale();
   const api = useApi();
-  const router = useRouter();
   const query = useApiQuery("workspaces", {});
   const submissions = useApiQuery("submissions", {});
   const selection = useSelection();
@@ -94,7 +92,9 @@ export function TeacherDashboard() {
               disabled={bootstrapJava.isPending}
               onClick={() => {
                 if (api.mode === "mock") {
-                  router.push("/workspace-overview?workspace=workspace-java-ms-2026");
+                  if (typeof window !== "undefined") {
+                    window.location.assign("/workspace-overview?workspace=workspace-java-ms-2026");
+                  }
                   return;
                 }
                 bootstrapJava.mutate();

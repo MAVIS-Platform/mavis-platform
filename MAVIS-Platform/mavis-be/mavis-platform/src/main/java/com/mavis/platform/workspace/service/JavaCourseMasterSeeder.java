@@ -170,19 +170,20 @@ public class JavaCourseMasterSeeder implements ApplicationRunner {
                 workspace = workspaces.saveAndFlush(workspace);
             }
 
-            ensureMember(workspace.getId(), gvJava.getId(), "LECTURER");
+            UUID workspaceId = workspace.getId();
+            ensureMember(workspaceId, gvJava.getId(), "LECTURER");
             if (caller != null && !caller.getId().equals(gvJava.getId())) {
-                ensureMember(workspace.getId(), caller.getId(), "LECTURER");
+                ensureMember(workspaceId, caller.getId(), "LECTURER");
             }
             users.findByEmail(STUDENT_EMAIL)
-                    .ifPresent(u -> ensureMember(workspace.getId(), u.getId(), "STUDENT"));
+                    .ifPresent(u -> ensureMember(workspaceId, u.getId(), "STUDENT"));
             users.findByEmail("hoangnt@fpt.edu.vn")
-                    .ifPresent(u -> ensureMember(workspace.getId(), u.getId(), "LECTURER"));
+                    .ifPresent(u -> ensureMember(workspaceId, u.getId(), "LECTURER"));
             users.findByEmail("trietlmse181979@fpt.edu.vn")
-                    .ifPresent(u -> ensureMember(workspace.getId(), u.getId(), "STUDENT"));
+                    .ifPresent(u -> ensureMember(workspaceId, u.getId(), "STUDENT"));
 
             log.info("JavaCourseMasterSeeder Phase 2 complete: workspace {} ({}) ready",
-                    JavaCourseraCatalog.COURSE_CODE, workspace.getId());
+                    JavaCourseraCatalog.COURSE_CODE, workspaceId);
             return workspace;
         } catch (Exception ex) {
             log.warn("JavaCourseMasterSeeder Phase 2 failed for workspace {}: {}",

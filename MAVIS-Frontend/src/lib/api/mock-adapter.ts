@@ -154,9 +154,11 @@ export class MockAdapter implements ApiAdapter {
     { id:"java-ms-lab-6", workspaceId:"workspace-java-ms-2026", title:"Lab 06 · OpenTelemetry Traceparent, Testcontainers & Production Readiness", instructions:"Đo kiểm Before vs After theo chuẩn OpenTelemetry và Health Probes.", dueAt:"No deadline", labOrder: 6, labMode: "THEORY_QUIZ_STUDIO", requireRuntimeTrace: true },
   ];
   private accounts: Account[] = [
-    { id: "sample-student", name: "Lê Minh Triết · Sinh Viên SE181979", email:"sv.java@mavis.edu.vn", role: "student", locked: false },
-    { id: "sample-lecturer", name: "Thầy Hoàng · Giảng Viên Java Microservices", email:"gv.java@mavis.edu.vn", role: "lecturer", locked: false },
-    { id: "sample-admin", name: "Quản Trị Viên Hệ Thống MAVIS", email:"admin@mavis.edu.vn", role: "admin", locked: false },
+    { id: "sample-student", name: "Sample learner", email:"student@example.com", role: "student", locked: false },
+    { id: "sample-lecturer", name: "Sample lecturer", email:"lecturer@example.com", role: "lecturer", locked: false },
+    { id: "gv-java", name: "Thầy Hoàng · Giảng Viên Java Microservices", email:"gv.java@mavis.edu.vn", role: "lecturer", locked: false },
+    { id: "sv-java", name: "Lê Minh Triết · Sinh Viên SE181979", email:"sv.java@mavis.edu.vn", role: "student", locked: false },
+    { id: "admin-java", name: "Quản Trị Viên Hệ Thống MAVIS", email:"admin@mavis.edu.vn", role: "admin", locked: false },
   ];
   private integrations: Integration[] = [
     { id: "integration-1", name: "Source analyzer (sample)", enabled: false, revision: 1 },
