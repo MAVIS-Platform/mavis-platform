@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { MarkdownPreview } from "@/components/shared/markdown-preview";
 import { useApiQuery } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
+import { ArchitectureDiagrams } from "@/features/architecture/architecture-diagrams";
 import { ArchitectureGraph, ElementDetailsPanel } from "@/features/architecture/components";
 import { DiagramPreview } from "@/features/architecture/diagram-preview";
 import { isMissingCourseError } from "@/features/courses/course-outline";
@@ -404,7 +405,7 @@ export function LabTheorySection({
       projectId: reference?.projectId ?? "",
       modelId: reference?.modelId ?? "",
     },
-    { enabled: Boolean(reference?.projectId && reference?.modelId && c4Tab === "GRAPH") },
+    { enabled: Boolean(reference?.projectId && reference?.modelId) },
   );
   const refArch = studentCtx.data?.referenceArchitecture;
   const activeDiagramMermaid =
@@ -848,7 +849,22 @@ export function LabTheorySection({
                     </div>
                   </div>
                   {c4Tab !== "GRAPH" ? (
-                    activeDiagramMermaid ? (
+                    modelQuery.data && modelQuery.data.elements.length > 0 ? (
+                      <div className="space-y-3">
+                        <ArchitectureDiagrams
+                          model={modelQuery.data}
+                          guidedStatic
+                          controlledKind={c4Tab}
+                          hideKindSelector
+                          systemName={assignment.title}
+                          selectedId={selectedGraphId}
+                          onSelect={setSelectedGraphId}
+                        />
+                        {selectedGraphId && (
+                          <ElementDetailsPanel model={modelQuery.data} selectedId={selectedGraphId} />
+                        )}
+                      </div>
+                    ) : activeDiagramMermaid ? (
                       <DiagramPreview
                         title={`C4 ${c4Tab}`}
                         content={activeDiagramMermaid}
@@ -857,7 +873,7 @@ export function LabTheorySection({
                       />
                     ) : (
                       <p className="rounded border border-dashed p-4 text-xs text-muted-foreground">
-                        {studentCtx.isPending
+                        {modelQuery.isPending || studentCtx.isPending
                           ? t("Loading C4 diagram preview…", "Đang tải sơ đồ C4…")
                           : t(
                               "C4 Mermaid projection is unavailable for this level; switch to Dependency graph to inspect elements.",

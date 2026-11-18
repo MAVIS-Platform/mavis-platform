@@ -26,7 +26,7 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
-@Transactional
+@Transactional(noRollbackFor = BusinessException.class)
 public class CourseQuizService {
     private static final Set<String> QUESTION_TYPES = Set.of("SINGLE_CHOICE", "MULTI_CHOICE", "TRUE_FALSE");
     private final AssignmentRepository assignments;
@@ -154,7 +154,7 @@ public class CourseQuizService {
                 assignmentId, lab.getReferenceModel().getId());
     }
 
-    @Transactional(readOnly = true)
+    @Transactional(readOnly = true, noRollbackFor = BusinessException.class)
     public Quiz get(UUID workspaceId, UUID assignmentId) {
         access.requireWorkspaceMember(workspaceId);
         var user = access.requireCurrentActiveUser();

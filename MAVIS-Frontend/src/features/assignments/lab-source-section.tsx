@@ -2,12 +2,14 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, ArrowUpRight, GitBranch, Network, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useApiMutation, useApiQuery } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
+import { ArchitectureDiagrams } from "@/features/architecture/architecture-diagrams";
 import { DiagramPreview } from "@/features/architecture/diagram-preview";
-import { ArchitectureGraph } from "@/features/architecture/components";
+import { ArchitectureGraph, ElementDetailsPanel } from "@/features/architecture/components";
 import { useStudentLabContext } from "@/features/workspaces/course-access";
 import { AssignmentSourceDetails, AssignmentSourcePicker } from "./source-picker";
 import type { Assignment } from "./requirements";
@@ -24,8 +26,14 @@ export function LabSourceSection({
   onNavigate?: ((tab: "theory" | "quiz") => void) | undefined;
 }) {
   const { t } = useLocale();
+  const cache = useQueryClient();
   const save = useApiMutation("updateAssignment");
   const [modelId, setModelId] = useState(assignment.referenceSource?.modelId ?? "");
+  const [pickedVersion, setPickedVersion] = useState<{
+    modelId: string;
+    projectId: string;
+    snapshotId: string;
+  } | null>(null);
   const [sourcePending, setSourcePending] = useState(false);
   const [previewKind, setPreviewKind] = useState<PreviewKind>("CONTAINER");
   const [selectedGraphId, setSelectedGraphId] = useState<string | null>(null);
@@ -33,8 +41,10 @@ export function LabSourceSection({
   const dueAt =
     assignment.dueAt && assignment.dueAt !== "No deadline" ? assignment.dueAt : null;
   const reference = assignment.referenceSource;
-  const referenceProject = reference?.projectId;
-  const referenceModel = reference?.modelId;
+  const referenceProject =
+    (modelId && pickedVersion?.modelId === modelId ? pickedVersion.projectId : undefined) ||
+    reference?.projectId;
+  const referenceModel = modelId || reference?.modelId;
   const canSave = Boolean(modelId) && !sourcePending && !save.isPending;
 
   const studentCtx = useStudentLabContext(
@@ -48,7 +58,7 @@ export function LabSourceSection({
       projectId: referenceProject ?? "",
       modelId: referenceModel ?? "",
     },
-    { enabled: Boolean(referenceProject && referenceModel && previewKind === "GRAPH") },
+    { enabled: Boolean(referenceProject && referenceModel) },
   );
   const diagrams = studentCtx.data?.referenceArchitecture?.diagrams ?? [];
   const activeMermaid =
@@ -56,17 +66,26 @@ export function LabSourceSection({
 
   const saveSource = () => {
     if (!canSave) return;
-    save.mutate({
-      workspaceId,
-      assignmentId: assignment.id,
-      title: assignment.title,
-      description: assignment.instructions,
-      dueAt,
-      requireRuntimeTrace: assignment.requireRuntimeTrace === true,
-      requiredDiagramTypes: assignment.requiredDiagramTypes ?? [],
-      referenceModelId: modelId,
-      clearReferenceSource: false,
-    });
+    save.mutate(
+      {
+        workspaceId,
+        assignmentId: assignment.id,
+        title: assignment.title,
+        description: assignment.instructions,
+        dueAt,
+        requireRuntimeTrace: assignment.requireRuntimeTrace === true,
+        requiredDiagramTypes: assignment.requiredDiagramTypes ?? [],
+        referenceModelId: modelId,
+        clearReferenceSource: false,
+      },
+      {
+        onSuccess: () => {
+          void cache.invalidateQueries({
+            queryKey: ["api", "student-lab-context", workspaceId, assignment.id],
+          });
+        },
+      },
+    );
   };
 
   return (
@@ -92,6 +111,9 @@ export function LabSourceSection({
           onChange={(id, pending) => {
             setModelId(id);
             setSourcePending(pending);
+          }}
+          onVersionChange={(version) => {
+            if (version.modelId) setPickedVersion(version);
           }}
         />
         <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
@@ -169,16 +191,36 @@ export function LabSourceSection({
           <div className="min-h-72 overflow-hidden rounded-xl border bg-background p-3">
             {previewKind === "GRAPH" ? (
               modelQuery.data ? (
-                <ArchitectureGraph
-                  model={modelQuery.data}
-                  selectedId={selectedGraphId}
-                  onSelect={setSelectedGraphId}
-                />
+                <div className="space-y-3">
+                  <ArchitectureGraph
+                    model={modelQuery.data}
+                    selectedId={selectedGraphId}
+                    onSelect={setSelectedGraphId}
+                  />
+                  {selectedGraphId && (
+                    <ElementDetailsPanel model={modelQuery.data} selectedId={selectedGraphId} />
+                  )}
+                </div>
               ) : (
                 <p className="p-4 text-sm text-muted-foreground">
                   {t("Loading dependency graph…", "Đang tải đồ thị phụ thuộc…")}
                 </p>
               )
+            ) : modelQuery.data && modelQuery.data.elements.length > 0 ? (
+              <div className="space-y-3">
+                <ArchitectureDiagrams
+                  model={modelQuery.data}
+                  guidedStatic
+                  controlledKind={previewKind}
+                  hideKindSelector
+                  systemName={assignment.title}
+                  selectedId={selectedGraphId}
+                  onSelect={setSelectedGraphId}
+                />
+                {selectedGraphId && (
+                  <ElementDetailsPanel model={modelQuery.data} selectedId={selectedGraphId} />
+                )}
+              </div>
             ) : activeMermaid ? (
               <DiagramPreview
                 title={`C4 ${previewKind}`}
@@ -188,7 +230,7 @@ export function LabSourceSection({
               />
             ) : (
               <p className="p-4 text-sm text-muted-foreground">
-                {studentCtx.isPending
+                {modelQuery.isPending || studentCtx.isPending
                   ? t("Loading C1–C3 preview…", "Đang tải bản xem trước C1–C3…")
                   : t(
                       "Diagram preview not available yet — use the full view links below.",

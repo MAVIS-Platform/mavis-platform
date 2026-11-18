@@ -38,7 +38,9 @@ public class DiagramProjectionServiceImpl implements DiagramProjectionService {
                 create(model,"C4","CONTAINER",containers,edges),
                 create(model,"C4","COMPONENT",components,edges)));
         var workspace = model.getProject().getWorkspace();
-        if (workspace != null && workspace.isCourseMode()) {
+        if (workspace != null && (workspace.isCourseMode()
+                || "TEACHER_REFERENCE".equalsIgnoreCase(model.getProject().getProjectType())
+                || Boolean.TRUE.equals(model.getProject().getIsReferenceTemplate()))) {
             projections.add(createContext(model, ordered, edges));
         }
         return diagrams.saveAll(projections).stream().map(com.mavis.analyzer.diagram.dto.DiagramResponseDTO::fromEntity).toList();

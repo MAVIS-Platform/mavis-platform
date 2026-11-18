@@ -129,6 +129,8 @@ public final class MermaidDslGenerator {
         String id = node.path("id").asText();
         String kind = node.path("kind").asText(node.path("type").asText(""));
         String macro = switch (kind.toUpperCase(Locale.ROOT)) {
+            case "SYSTEM" -> "System";
+            case "PERSON" -> "Person";
             case "SERVICE_CONTAINER" -> "Container";
             case "DATABASE" -> "ContainerDb";
             case "QUEUE_BROKER" -> "ContainerQueue";
@@ -137,7 +139,9 @@ public final class MermaidDslGenerator {
         };
         sb.append("    ").append(macro).append("(").append(toSafeAlias(id)).append(", \"")
                 .append(escapeLabel(node.path("name").asText("Element"))).append("\"");
-        if (!"System_Ext".equals(macro)) sb.append(", \"").append(escapeLabel(node.path("languageStack").asText(""))).append("\"");
+        if (!"System_Ext".equals(macro) && !"System".equals(macro) && !"Person".equals(macro)) {
+            sb.append(", \"").append(escapeLabel(node.path("languageStack").asText(""))).append("\"");
+        }
         sb.append(")\n");
         registerClick(clickMap, toSafeAlias(id), id);
     }

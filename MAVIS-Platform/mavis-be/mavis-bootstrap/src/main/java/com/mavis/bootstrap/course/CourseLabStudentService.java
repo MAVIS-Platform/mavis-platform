@@ -60,7 +60,7 @@ import java.util.Set;
 import java.util.UUID;
 
 @Service
-@Transactional
+@Transactional(noRollbackFor = BusinessException.class)
 public class CourseLabStudentService {
     private static final Set<String> ACTIVE_SESSION_STATUSES = Set.of("ALLOCATED", "RUNNING", "READY_FOR_DISPATCH");
 
@@ -205,7 +205,7 @@ public class CourseLabStudentService {
             SubmissionReviewService.View latestReview,
             JsonNode studioExercise) {}
 
-    @Transactional(readOnly = true)
+    @Transactional(readOnly = true, noRollbackFor = BusinessException.class)
     public StudentLabContextView studentContext(UUID workspaceId, UUID assignmentId) {
         User actor = access.requireCurrentActiveUser();
         access.requireWorkspaceMember(workspaceId);
@@ -218,11 +218,13 @@ public class CourseLabStudentService {
         ReferenceArchitectureView referenceArchitecture = buildReferenceArchitecture(lab.getReferenceModel());
 
         CourseQuizService.Quiz quiz = null;
-        try {
-            quiz = courseQuizService.get(workspaceId, assignmentId);
-        } catch (BusinessException ex) {
-            if (ex.getErrorCode() != ErrorCode.NOT_FOUND) {
-                throw ex;
+        if (lab.getLabOrder() != null && lab.getReferenceModel() != null) {
+            try {
+                quiz = courseQuizService.get(workspaceId, assignmentId);
+            } catch (BusinessException ex) {
+                if (ex.getErrorCode() != ErrorCode.NOT_FOUND) {
+                    throw ex;
+                }
             }
         }
 
@@ -445,6 +447,23 @@ public class CourseLabStudentService {
                         r.getRelationType(),
                         r.getOriginLayer()))
                 .toList();
+
+        if (!elementViews.isEmpty() && (diagramViews.isEmpty()
+                || (diagramViews.size() >= 2 && diagramViews.stream().noneMatch(d -> "CONTEXT".equalsIgnoreCase(d.level()))))) {
+            List<ReferenceDiagramView> enriched = new ArrayList<>(diagramViews);
+            ObjectNode contextLayout = json.createObjectNode().put("schemaVersion", "1.0").put("modelVersionId", modelId.toString());
+            ArrayNode ctxNodes = contextLayout.putArray("nodes");
+            contextLayout.putArray("edges");
+            ctxNodes.addObject()
+                    .put("id", "system:" + refModel.getProject().getId())
+                    .put("kind", "SYSTEM")
+                    .put("name", refModel.getProject().getName() != null ? refModel.getProject().getName() : "Reference System")
+                    .put("x", 280)
+                    .put("y", 0);
+            String ctxDsl = MermaidDslGenerator.generateFromLayoutJson("C4", "CONTEXT", contextLayout).getDsl();
+            enriched.add(new ReferenceDiagramView(UUID.randomUUID(), "C4", "CONTEXT", contextLayout, ctxDsl));
+            diagramViews = List.copyOf(enriched);
+        }
 
         List<ReferenceEvidenceView> evidenceViews = evidences.findByModelVersionId(modelId).stream()
                 .map(ev -> new ReferenceEvidenceView(
