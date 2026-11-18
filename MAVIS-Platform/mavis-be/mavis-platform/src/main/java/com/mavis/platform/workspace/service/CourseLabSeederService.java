@@ -292,19 +292,30 @@ public class CourseLabSeederService {
                     throw ex;
                 }
             }
-            if (existing != null && existing.modules() != null && !existing.modules().isEmpty()) {
-                boolean alreadyJavaCourse = existing.modules().stream()
-                        .anyMatch(m -> m.title() != null && m.title().startsWith("Chương 1"));
-                if (alreadyJavaCourse) {
+            if (existing != null
+                    && "PUBLISHED".equals(existing.status())
+                    && existing.publishedVersion() >= 1
+                    && existing.modules() != null
+                    && existing.modules().size() == 6) {
+                boolean hasMojibake = existing.modules().stream()
+                        .flatMap(m -> m.items().stream())
+                        .anyMatch(item -> item.content() != null
+                                && item.content().path("body").asText("").contains("ðŸ"));
+                if (!hasMojibake) {
                     return;
                 }
             }
             if (existing != null && "PUBLISHED".equals(existing.status())) {
-                courseAuthoring.startDraft(workspaceId);
+                existing = courseAuthoring.startDraft(workspaceId);
             } else if (existing == null) {
-                courseAuthoring.saveDraft(workspaceId, new CourseAuthoringService.CourseRequest(
+                existing = courseAuthoring.saveDraft(workspaceId, new CourseAuthoringService.CourseRequest(
                         JavaCourseraCatalog.COURSE_TITLE,
                         JavaCourseraCatalog.COURSE_DESCRIPTION));
+            }
+            if (existing.modules() != null && !existing.modules().isEmpty()) {
+                for (CourseAuthoringService.ModuleView staleModule : List.copyOf(existing.modules())) {
+                    courseAuthoring.deleteModule(workspaceId, staleModule.id());
+                }
             }
 
             List<CourseraModuleSpec> catalogModules = JavaCourseraCatalog.modules();
@@ -350,17 +361,22 @@ public class CourseLabSeederService {
                 }
 
                 if (modSpec.visualLab() != null) {
+                    String resolvedLabType = "RUNTIME_LAB".equals(modSpec.visualLab().itemType())
+                            && !Boolean.TRUE.equals(lab.getRequireRuntimeTrace())
+                            ? "IMPACT_LAB"
+                            : modSpec.visualLab().itemType();
                     courseAuthoring.addItem(workspaceId, moduleId,
                             new CourseAuthoringService.ItemRequest(
-                                    modSpec.visualLab().itemType(),
+                                    resolvedLabType,
                                     modSpec.visualLab().title(),
                                     modSpec.visualLab().description(),
                                     lab.getId(), json.createObjectNode(), true));
                 }
             }
             courseAuthoring.publish(workspaceId);
-        } catch (Exception ignored) {
-            // Skip if optional authoring state is unavailable in lightweight mocked tests.
+            log.info("Published 6-module Java Coursera outline for workspace {}", workspaceId);
+        } catch (Exception ex) {
+            log.warn("Could not publish Java Coursera outline for workspace {}: {}", workspaceId, ex.getMessage(), ex);
         }
     }
 
