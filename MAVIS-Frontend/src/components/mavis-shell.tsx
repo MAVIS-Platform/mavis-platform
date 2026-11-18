@@ -114,7 +114,14 @@ function MavisChrome({ children }: { children: ReactNode }) {
                 )}
               >
                 <Icon className="size-3.5" aria-hidden="true" />
-                {label}
+                {t(
+                  label,
+                  label === "My Courses"
+                    ? "Khóa học của tôi"
+                    : label === "All Courses"
+                      ? "Tất cả khóa học"
+                      : "Trang chủ",
+                )}
               </Link>
             );
           })}

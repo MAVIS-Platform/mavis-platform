@@ -43,6 +43,9 @@ test("MAVIS catalog pages own the new shell while roadmap and Lab keep the exist
   assert.match(mavisPages, /export function MavisHomePage/);
   assert.match(mavisPages, /export function AllCoursesPage/);
   assert.match(mavisPages, /<MavisShell>/);
+  assert.match(mavisPages, /Enroll with Passkey/);
+  assert.match(mavisPages, /<PasskeyEnrollmentModal/);
+  assert.doesNotMatch(mavisPages, /Enrollment required/);
   assert.match(home, /<PublicHomepage\s*\/>/);
 });
 
@@ -79,7 +82,11 @@ test("student course landing prioritizes joined classes, defers curriculum and k
   assert.ok(dashboard.includes("Continue learning"));
   assert.ok(course.includes("Reference materials: Java and C#"));
   assert.match(curriculum, /useCurriculum\(open\)/);
-  assert.ok(nav.includes('href: "/courses"') && nav.includes('href: "/submissions"') && nav.includes('href: "/roadmap"'));
+  assert.ok(
+    nav.includes('href: "/courses"') &&
+      nav.includes('href: "/submissions"') &&
+      nav.includes('href: "/roadmap"'),
+  );
 });
 
 test("student class outline uses published roadmap and markdown activities with a legacy roadmap fallback", () => {
