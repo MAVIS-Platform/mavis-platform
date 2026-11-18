@@ -110,3 +110,26 @@ FROM workspaces w
 JOIN users u ON u.email IN ('sv.java@mavis.edu.vn', 'trietlmse181979@fpt.edu.vn')
 WHERE w.code = 'JAVA-MS-2026'
 ON CONFLICT (workspace_id, user_id) DO UPDATE SET member_role = 'STUDENT';
+
+-- 6. Ensure Passkeys JAVA2026 & SE1819JAVA exist (column name is digest per V26)
+INSERT INTO course_passkeys (id, workspace_id, code, label, digest, expires_at, is_active, max_uses, used_count)
+SELECT uuid_generate_v4(), w.id, 'JAVA2026', 'Mã vào lớp Java Microservices Chính Thức',
+       encode(digest('JAVA2026', 'sha256'), 'hex'), now() + interval '365 days', TRUE, 200, 1
+FROM workspaces w
+WHERE w.code = 'JAVA-MS-2026'
+  AND NOT EXISTS (
+      SELECT 1 FROM course_passkeys cp
+      WHERE cp.digest = encode(digest('JAVA2026', 'sha256'), 'hex')
+         OR (cp.workspace_id = w.id AND cp.code = 'JAVA2026')
+  );
+
+INSERT INTO course_passkeys (id, workspace_id, code, label, digest, expires_at, is_active, max_uses, used_count)
+SELECT uuid_generate_v4(), w.id, 'SE1819JAVA', 'Mã dự phòng cho sinh viên thực hành Lab',
+       encode(digest('SE1819JAVA', 'sha256'), 'hex'), now() + interval '180 days', TRUE, 100, 0
+FROM workspaces w
+WHERE w.code = 'JAVA-MS-2026'
+  AND NOT EXISTS (
+      SELECT 1 FROM course_passkeys cp
+      WHERE cp.digest = encode(digest('SE1819JAVA', 'sha256'), 'hex')
+         OR (cp.workspace_id = w.id AND cp.code = 'SE1819JAVA')
+  );
