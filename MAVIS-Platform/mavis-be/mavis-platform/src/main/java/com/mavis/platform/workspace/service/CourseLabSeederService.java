@@ -293,26 +293,41 @@ public class CourseLabSeederService {
                     throw ex;
                 }
             }
+            boolean upToDate = false;
             if (existing != null
                     && "PUBLISHED".equals(existing.status())
                     && existing.publishedVersion() >= 1
+                    && JavaCourseraCatalog.COURSE_TITLE.equals(existing.title())
                     && existing.modules() != null
                     && existing.modules().size() == 6) {
+                int totalItems = existing.modules().stream()
+                        .mapToInt(m -> m.items() != null ? m.items().size() : 0)
+                        .sum();
+                String firstTheoryBody = existing.modules().stream()
+                        .flatMap(m -> m.items().stream())
+                        .filter(item -> "THEORY".equals(item.type()) && item.content() != null)
+                        .map(item -> item.content().path("body").asText(""))
+                        .findFirst()
+                        .orElse("");
                 boolean hasMojibake = existing.modules().stream()
                         .flatMap(m -> m.items().stream())
                         .anyMatch(item -> item.content() != null
                                 && item.content().path("body").asText("").contains("ðŸ"));
-                if (!hasMojibake) {
-                    return;
-                }
+                upToDate = totalItems >= 36 && firstTheoryBody.length() >= 1500 && !hasMojibake;
+            }
+            if (upToDate) {
+                return;
+            }
+            if (existing != null && "ARCHIVED".equals(existing.status())) {
+                log.warn("Skipped syncing archived Java Coursera outline for workspace {}", workspaceId);
+                return;
             }
             if (existing != null && "PUBLISHED".equals(existing.status())) {
                 existing = courseAuthoring.startDraft(workspaceId);
-            } else if (existing == null) {
-                existing = courseAuthoring.saveDraft(workspaceId, new CourseAuthoringService.CourseRequest(
-                        JavaCourseraCatalog.COURSE_TITLE,
-                        JavaCourseraCatalog.COURSE_DESCRIPTION));
             }
+            existing = courseAuthoring.saveDraft(workspaceId, new CourseAuthoringService.CourseRequest(
+                    JavaCourseraCatalog.COURSE_TITLE,
+                    JavaCourseraCatalog.COURSE_DESCRIPTION));
             if (existing.modules() != null && !existing.modules().isEmpty()) {
                 for (CourseAuthoringService.ModuleView staleModule : List.copyOf(existing.modules())) {
                     courseAuthoring.deleteModule(workspaceId, staleModule.id());
@@ -392,6 +407,11 @@ public class CourseLabSeederService {
             Set<String> seen = existingTitles != null ? new LinkedHashSet<>(existingTitles) : Set.of();
             for (LessonSpec lesson : JavaCourseraCatalog.allLessons()) {
                 if (seen.contains(lesson.title())) {
+                    jdbc.update("""
+                            UPDATE theory_assets
+                            SET body = ?, updated_at = now()
+                            WHERE workspace_id = ? AND title = ?
+                            """, lesson.bodyMarkdown(), workspaceId, lesson.title());
                     continue;
                 }
                 jdbc.update("""
@@ -532,6 +552,8 @@ public class CourseLabSeederService {
                 .isPublished(true)
                 .createdBy(lecturer)
                 .build());
+        refProject.setReferenceSnapshotId(refSnapshot.getId());
+        projects.saveAndFlush(refProject);
 
         ModelVersion refModel = models.saveAndFlush(ModelVersion.builder()
                 .project(refProject)
@@ -545,51 +567,51 @@ public class CourseLabSeederService {
 
         ModelElement customer = elements.save(ModelElement.builder()
                 .modelVersion(refModel).elementType("PERSON").languageStack("Actor")
-                .name("Customer").scope("external").status("CONFIRMED").build());
+                .name("Customer").scope("external").status("VALIDATED").build());
         ModelElement gateway = elements.save(ModelElement.builder()
                 .modelVersion(refModel).elementType("SERVICE_CONTAINER").languageStack("Java / Spring Cloud Gateway")
-                .name("api-gateway").scope("service").status("CONFIRMED").build());
+                .name("api-gateway").scope("service").status("VALIDATED").build());
         ModelElement orderService = elements.save(ModelElement.builder()
                 .modelVersion(refModel).elementType("SERVICE_CONTAINER").languageStack("Java / Spring Boot")
-                .name("order-service").scope("service").status("CONFIRMED").build());
+                .name("order-service").scope("service").status("VALIDATED").build());
         ModelElement paymentService = elements.save(ModelElement.builder()
                 .modelVersion(refModel).elementType("SERVICE_CONTAINER").languageStack("Java / Spring Boot")
-                .name("payment-service").scope("service").status("CONFIRMED").build());
+                .name("payment-service").scope("service").status("VALIDATED").build());
         ModelElement inventoryService = elements.save(ModelElement.builder()
                 .modelVersion(refModel).elementType("SERVICE_CONTAINER").languageStack("Java / Spring Boot")
-                .name("inventory-service").scope("service").status("CONFIRMED").build());
+                .name("inventory-service").scope("service").status("VALIDATED").build());
 
         ModelElement orderController = elements.save(ModelElement.builder()
                 .modelVersion(refModel).parentElement(orderService).elementType("COMPONENT").languageStack("Spring MVC")
-                .name("OrderController").scope("order-service").status("CONFIRMED").build());
+                .name("OrderController").scope("order-service").status("VALIDATED").build());
         ModelElement paymentClient = elements.save(ModelElement.builder()
                 .modelVersion(refModel).parentElement(orderService).elementType("COMPONENT").languageStack("OpenFeign")
-                .name("PaymentClient").scope("order-service").status("CONFIRMED").build());
+                .name("PaymentClient").scope("order-service").status("VALIDATED").build());
         ModelElement paymentController = elements.save(ModelElement.builder()
                 .modelVersion(refModel).parentElement(paymentService).elementType("COMPONENT").languageStack("Spring MVC")
-                .name("PaymentController").scope("payment-service").status("CONFIRMED").build());
+                .name("PaymentController").scope("payment-service").status("VALIDATED").build());
         ModelElement inventoryController = elements.save(ModelElement.builder()
                 .modelVersion(refModel).parentElement(inventoryService).elementType("COMPONENT").languageStack("Spring MVC")
-                .name("InventoryController").scope("inventory-service").status("CONFIRMED").build());
+                .name("InventoryController").scope("inventory-service").status("VALIDATED").build());
 
         ModelRelationship customerToGateway = relationships.save(ModelRelationship.builder()
                 .modelVersion(refModel).sourceElement(customer).targetElement(gateway)
-                .relationType("USES").originLayer("STATIC").direction("DIRECTED").build());
+                .relationType("SERVICE_HTTP_CALL").originLayer("STATIC").direction("DIRECTED").build());
         ModelRelationship gatewayToOrder = relationships.save(ModelRelationship.builder()
                 .modelVersion(refModel).sourceElement(gateway).targetElement(orderService)
-                .relationType("HTTP_CALL").originLayer("STATIC").direction("DIRECTED").build());
+                .relationType("SERVICE_HTTP_CALL").originLayer("STATIC").direction("DIRECTED").build());
         ModelRelationship orderToPayment = relationships.save(ModelRelationship.builder()
                 .modelVersion(refModel).sourceElement(orderService).targetElement(paymentService)
-                .relationType("FEIGN_CALL").originLayer("STATIC").direction("DIRECTED").build());
+                .relationType("SERVICE_HTTP_CALL").originLayer("STATIC").direction("DIRECTED").build());
         ModelRelationship orderToInventory = relationships.save(ModelRelationship.builder()
                 .modelVersion(refModel).sourceElement(orderService).targetElement(inventoryService)
-                .relationType("HTTP_CALL").originLayer("STATIC").direction("DIRECTED").build());
+                .relationType("SERVICE_HTTP_CALL").originLayer("STATIC").direction("DIRECTED").build());
         ModelRelationship clientToPaymentController = relationships.save(ModelRelationship.builder()
                 .modelVersion(refModel).sourceElement(paymentClient).targetElement(paymentController)
-                .relationType("CALL_SITE").originLayer("STATIC").direction("DIRECTED").build());
+                .relationType("CODE_DEPENDENCY").originLayer("STATIC").direction("DIRECTED").build());
         ModelRelationship orderCtrlToClient = relationships.save(ModelRelationship.builder()
                 .modelVersion(refModel).sourceElement(orderController).targetElement(paymentClient)
-                .relationType("DEPENDS_ON").originLayer("STATIC").direction("DIRECTED").build());
+                .relationType("CODE_DEPENDENCY").originLayer("STATIC").direction("DIRECTED").build());
 
         evidences.save(Evidence.builder()
                 .sourceSnapshot(refSnapshot)
@@ -597,7 +619,7 @@ public class CourseLabSeederService {
                 .relationship(orderToPayment)
                 .locator("order-service/src/main/java/com/curated/order/PaymentClient.java:6")
                 .adapterVersion("curated-seed-v1")
-                .sourceType("CALL_SITE")
+                .sourceType("STATIC_CODE")
                 .excerpt("@FeignClient(name = \"payment-service\", url = \"http://payment-service:8082\")")
                 .build());
 

@@ -18,20 +18,27 @@ public final class Module6ObservabilityAndPrdProvider {
                         "Làm chủ 3 trụ cột Traces/Metrics/Logs, W3C traceparent và phương pháp khoa học khi so sánh Before vs After.",
                         55,
                         """
-                        # Bài 6.1: OpenTelemetry & Đánh giá Thực nghiệm Before vs After
+                        # 📖 BÀI 6.1 (`java-12`): QUAN SÁT TOÀN DIỆN VỚI `OPENTELEMETRY` & PHƯƠNG PHÁP ĐÁNH GIÁ TRƯỚC/SAU (`BEFORE VS AFTER`)
 
-                        ## 1. Mục tiêu học tập & Bài toán thực tế
-                        - Thiết lập quan sát phân tán chuẩn **OpenTelemetry (Traces, Metrics, Logs)** qua header W3C `traceparent`.
-                        - Thực hiện đánh giá trước/sau (`Before vs After`) khoa học và diễn giải trung thực các cạnh chưa có dữ liệu runtime (`INCONCLUSIVE` / thiếu bằng chứng runtime).
+                        ### 1. Ba Trụ Cột Của `OpenTelemetry` (`Traces`, `Metrics`, `Logs`) & Quan Hệ Nhân Quả Cha–Con (`Causal Spans`)
+                        Theo [OpenTelemetry Signals Documentation](https://opentelemetry.io/docs/concepts/signals/), [OpenTelemetry Java Instrumentation](https://opentelemetry.io/docs/languages/java/) và Chương 11 cuốn *Microservices Patterns* (Chris Richardson):
+                        1. **`Distributed Traces` (Vết thực thi phân tán)**:
+                           - Một **`Trace`** biểu diễn toàn bộ hành trình của một yêu cầu đi xuyên qua nhiều Microservices, được định danh bằng một mã `traceId` chung.
+                           - Mỗi chặng xử lý bên trong một dịch vụ (ví dụ: nhận HTTP tại `api-gateway`, gọi Feign ở `order-service`, truy vấn SQL ở `OrderRepository`) là một **`Span`** có `spanId` riêng và trỏ về **`parentSpanId`** của chặng đã gọi nó.
+                           - Nhờ chuẩn truyền ngữ cảnh **[W3C Trace Context (`traceparent` HTTP Header / Message Header)](https://opentelemetry.io/docs/concepts/context-propagation/)**, các dịch vụ nối được các `Span` rời rạc thành một cây nhân quả cha–con chính xác 100% mà không sợ lệch đồng hồ giữa các máy chủ (*Clock Skew*)!
+                        2. **`Metrics` (Chỉ số định lượng theo chuỗi thời gian)**:
+                           - Ghi nhận xu hướng tổng hợp như: Thông lượng (`Throughput — Requests/sec`), Tỷ lệ lỗi (`Error Rate %`), và Phân vị độ trễ **`p95 / p99 Latency`** (thời gian mà 95% hoặc 99% số yêu cầu hoàn thành nhanh hơn mức đó).
+                        3. **`Structured Logs` (Nhật ký sự kiện có cấu trúc)**:
+                           - Ghi lại chi tiết sự kiện hoặc ngoại lệ kèm theo `traceId` và `spanId` để khi thấy một `Span` bị đỏ trên đồ thị, kỹ sư nhảy thẳng tới dòng log tương ứng ngay lập tức.
 
-                        ## 2. Nguyên lý Kiến trúc & Bảng đối chiếu
-                        | Trụ cột / Chỉ số | Vai trò trong kiểm toán Runtime | Quy tắc kết luận khoa học |
-                        | :--- | :--- | :--- |
-                        | **Distributed Traces (`Span`)** | Dựng cây nhân quả `parentSpanId -> spanId` chung `traceId` | Tĩnh có `A -> C` nhưng Runtime chưa đi qua `C` => **Chưa đủ bằng chứng runtime cho nhánh `C`** |
-                        | **Metrics (`p95`, Error %)** | Định lượng hiệu năng đuôi & ổn định sau scale | Bắt buộc giữ nguyên `Workload`, thời gian đo & `Sample Count` giữa Before vs After |
-                        | **Structured Logs** | Ghi ngữ cảnh chi tiết gắn kèm `traceId`, `spanId` | Tuyệt đối không log token, password, PII |
+                        ### 2. Phương Pháp Khoa Học Khi So Sánh Trước/Sau (`Before vs After`) & Đối Chiếu Mô Hình Tĩnh vs Runtime
+                        Khi thực hiện một thay đổi hạ tầng trên phòng Lab (ví dụ: `Stop` một dịch vụ phụ hoặc `Scale Replicas` từ `1` lên `4`), để kết luận có giá trị kỹ thuật thực sự (`java-12`):
+                        1. **Một Trace đơn lẻ KHÔNG BAO GIỜ đủ để kết luận về độ trễ `p95`!** Muốn so sánh `p95 Latency` và `Error Rate` giữa trạng thái Trước (`Baseline`) và Sau (`After Intervention`), bắt buộc phải giữ **tải đầu vào (`Workload`) và khoảng thời gian đo tương đương**, đồng thời ghi rõ **kích thước mẫu (`Sample Count`, ví dụ `N = 100` requests)**.
+                        2. **Phân biệt rõ câu hỏi của Mô hình Tĩnh (`Static Model`) và Bằng chứng Thực thi (`Runtime Evidence`)**:
+                           - **Mô hình Tĩnh** trả lời câu hỏi: *"Theo cấu trúc mã nguồn và cấu hình hiện tại, dịch vụ A CÓ KHẢ NĂNG gọi đi đâu và phụ thuộc vào đâu?"*
+                           - **Bằng chứng Runtime (Trace)** trả lời câu hỏi: *"Trong kịch bản chạy thử nghiệm vừa rồi, những cạnh nào ĐÃ THỰC SỰ có gói tin đi qua và mất bao nhiêu mili-giây?"*
+                           - Do đó, nếu trên đồ thị tĩnh có cạnh `A → C` nhưng trong phiên chạy thử không thấy `Span` nào đi qua `C`, ta **không được vội kết luận dịch vụ `C` không tồn tại hay bị hỏng**, mà phải kết luận chính xác là: **"Kịch bản thử nghiệm vừa chạy chưa kích hoạt nhánh code gọi tới `C` (Chưa đủ bằng chứng Runtime)"**!
 
-                        ## 3. Triển khai chuẩn với Java 21 & Spring Boot 3
                         ```yaml
                         management:
                           tracing:
@@ -41,9 +48,6 @@ public final class Module6ObservabilityAndPrdProvider {
                             tracing:
                               endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://otel-collector:4318/v1/traces}
                         ```
-
-                        ## 4. Checklist Kiểm toán 3E & Các bẫy thường gặp khi vấn đáp
-                        - **Bẫy 1-Trace Benchmark**: Tuyệt đối không kết luận `p95 Latency` hay hiệu quả scale replicas chỉ dựa trên 1 request đơn lẻ!
                         """
                 ),
                 new LessonSpec(
@@ -52,33 +56,43 @@ public final class Module6ObservabilityAndPrdProvider {
                         "Thiết kế chiến lược kiểm thử 4 tầng phát hiện lỗi SQL/Flyway với Testcontainers và lệch JSON Contract.",
                         55,
                         """
-                        # Bài 6.2: Chiến lược Kiểm thử Microservices 4 Tầng
+                        # 📖 BÀI 6.2 (`java-a01`): CHIẾN LƯỢC KIỂM THỬ MICROSERVICES (`UNIT`, `WEB SLICE`, `TESTCONTAINERS POSTGRESQL` & `CONTRACT TEST`)
 
-                        ## 1. Mục tiêu học tập & Bài toán thực tế
-                        - Phối hợp hiệu quả 4 tầng kiểm thử từ nhanh tới thật: `Unit -> Web Slice -> PostgreSQL Integration -> Contract Test`.
-                        - Dùng PostgreSQL thật (thay cho H2) để phát hiện lỗi kiểu `JSONB`, `ON CONFLICT`, Flyway migration trước khi deploy Production.
+                        ### 1. Kim Tự Tháp Kiểm Thử Hiện Đại Cho Dịch Vụ Spring Boot
+                        Theo Chương 9 & Chương 10 cuốn *Microservices Patterns* (Chris Richardson) và tài liệu [Spring Boot Testcontainers](https://docs.spring.io/spring-boot/reference/testing/testcontainers.html):
 
-                        ## 2. Nguyên lý Kiến trúc & Bảng đối chiếu
-                        | Tầng kiểm thử | Công cụ Java / Spring | Bắt được lỗi nào? | Điểm mù cần tầng trên bù đắp |
+                        | Tầng Kiểm Thử | Công Cụ Chuẩn Trong Spring Boot 3 | Mục Tiêu Phát Hiện Lỗi | Giới Hạn Nếu Chỉ Dùng Tầng Này |
                         | :--- | :--- | :--- | :--- |
-                        | **1. Unit Test** | JUnit 5 + Mockito | Sai logic domain, thuật toán Reverse BFS | Không phát hiện sai SQL PostgreSQL hay Spring mapping |
-                        | **2. Web Slice Test** | `@WebMvcTest` + `MockMvc` | Sai URL mapping, `@Valid`, mã HTTP 400/403 | Không test được constraint DB |
-                        | **3. DB/Migration Test** | PostgreSQL thật / Testcontainers | Sai Flyway SQL, `pgcrypto`, `JSONB`, `UNIQUE` | Chậm hơn unit test nếu lạm dụng |
-                        | **4. Contract Test** | Spring Cloud Contract / Pact | Lệch tên field JSON (`points` vs `weightPoints`) hoặc payload lỗi `4xx` | Cần đồng bộ phiên bản contract CI |
+                        | **1. Unit Test (Kiểm thử đơn vị)** | `JUnit 5` + `Mockito` | Kiểm tra cực nhanh (vài mili-giây) các quy tắc quyết định nghiệp vụ bên trong `Domain Aggregate` (`Order`) và `Application Service`. | Không phát hiện được lỗi viết sai đường dẫn HTTP, lỗi JSON mapping hay lỗi cú pháp SQL thực tế. |
+                        | **2. Web Slice Test (Kiểm thử tầng Web)** | `@WebMvcTest` + `MockMvc` | Kiểm tra định tuyến URL, kiểm tra dữ liệu đầu vào (`@Valid`), mã trạng thái HTTP (`200`, `400`, `401`, `403`, `404`), và cấu trúc JSON trả về theo [OpenAPI 3.1.1](https://spec.openapis.org/oas/v3.1.1.html). | Repository bị mock nên không kiểm tra được câu lệnh SQL hay migration. |
+                        | **3. Data / Integration Test trên Engine Thật** | `@SpringBootTest` / `@DataJpaTest` + **`Testcontainers PostgreSQL`** | Khởi chạy một container PostgreSQL thật cô lập để kiểm tra các tập tin `Flyway Migration`, cú pháp SQL đặc thù của PostgreSQL (`JSONB`, `ON CONFLICT`), khóa giao dịch và ràng buộc `UNIQUE`. | Chạy chậm hơn Unit Test vài giây vì cần khởi tạo container DB. |
+                        | **4. Consumer-Driven Contract Test (Kiểm thử Hợp đồng)** | `Spring Cloud Contract` / `Pact` | Đảm bảo khi dịch vụ cung cấp (`Provider` — `payment-service`) sửa đổi API, nó vẫn không làm gãy cấu trúc trường dữ liệu mà các dịch vụ tiêu thụ (`Consumer` — `order-service`) đang kỳ vọng, cả ở ca thành công lẫn ca lỗi! | Không thay thế cho kiểm thử nghiệp vụ nội bộ của từng dịch vụ. |
 
-                        ## 3. Triển khai chuẩn với Java 21 & Spring Boot 3
                         ```java
-                        @SpringBootTest
-                        class MigrationAndCourseRepositoryTest {
+                        package com.mavis.ecommerce.order.integration;
+
+                        import org.junit.jupiter.api.Test;
+                        import org.springframework.boot.test.context.SpringBootTest;
+                        import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+                        import org.testcontainers.containers.PostgreSQLContainer;
+                        import org.testcontainers.junit.jupiter.Container;
+                        import org.testcontainers.junit.jupiter.Testcontainers;
+
+                        @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+                        @Testcontainers
+                        class OrderPostgreSqlIntegrationTest {
+
+                            // Tự động khởi chạy PostgreSQL 16 thật trong Docker và nối thẳng vào Spring DataSource!
+                            @Container
+                            @ServiceConnection
+                            static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
+
                             @Test
-                            void flywayV43SeedsAccountsAndCourse() {
-                                // Xác minh migration thật trên PostgreSQL chạy lặp lại idempotent
+                            void flywayMigrationsAndUniqueOrderConstraintWorkOnRealPostgres() {
+                                // Kiểm chứng toàn bộ Flyway V1..Vn chạy sạch và kiểm tra ràng buộc UNIQUE thật trên PostgreSQL
                             }
                         }
                         ```
-
-                        ## 4. Checklist Kiểm toán 3E & Các bẫy thường gặp khi vấn đáp
-                        - Mock có thể xanh 100% trong khi PostgreSQL thật lại nổ `column does not exist` — vì vậy luôn cần cả schema validation / DB migration test trên CI!
                         """
                 ),
                 new LessonSpec(
@@ -87,20 +101,24 @@ public final class Module6ObservabilityAndPrdProvider {
                         "Phân biệt Liveness vs Readiness Probes, ngăn bùng nổ High Cardinality Metrics và rò rỉ PII trong Baggage/Log.",
                         55,
                         """
-                        # Bài 6.3: Tiêu chuẩn Production-Ready Microservices (Susan Fowler)
+                        # 📖 BÀI 6.3 (`java-a03`): TIÊU CHUẨN `PRODUCTION-READY MICROSERVICES` (SUSAN FOWLER) — `HEALTH PROBES`, `CARDINALITY` & TRIỂN KHAI AN TOÀN
 
-                        ## 1. Mục tiêu học tập & Bài toán thực tế
-                        - Đạt tiêu chuẩn vận hành thực tế (**Production-Readiness**) về tính sẵn sàng (`Availability`), khả năng chịu lỗi và quan sát tài nguyên.
-                        - Cấu hình đúng `Liveness` vs `Readiness` Probes trong Kubernetes/Docker và chặn triệt để lỗi **High Cardinality Metrics**.
+                        ### 1. Phân Biệt `Liveness Probe` (Còn Sống) Với `Readiness Probe` (Sẵn Sàng Nhận Tải)
+                        Theo Chương 3, 4 & 7 cuốn *Production-Ready Microservices* (Susan J. Fowler) và tài liệu [Spring Boot Observability & Actuator](https://docs.spring.io/spring-boot/reference/actuator/observability.html), một dịch vụ đạt chuẩn vận hành thực tế phải cung cấp 2 đầu mối kiểm tra sức khỏe phục vụ cho **hai quyết định hoàn toàn khác nhau** của hệ thống điều phối (Kubernetes / Load Balancer):
+                        1. **`Liveness Probe` (`/actuator/health/liveness` — Ứng dụng còn sống không?)**:
+                           - Kiểm tra xem tiến trình JVM của ứng dụng có bị treo cứng (*Deadlock*) hay hỏng hoàn toàn không.
+                           - **Quyết định**: Nếu `Liveness` báo `DOWN`, hệ thống điều phối sẽ **khởi động lại (Kill & Restart) container đó**.
+                        2. **`Readiness Probe` (`/actuator/health/readiness` — Ứng dụng có sẵn sàng nhận lưu lượng khách hàng không?)**:
+                           - Kiểm tra xem ứng dụng đã nạp xong cấu hình, kết nối được tới Database/Broker thiết yếu và sẵn sàng xử lý request hay chưa.
+                           - **Quyết định**: Nếu `Readiness` báo `DOWN` (ví dụ Database đang bảo trì 30 giây), bộ cân bằng tải sẽ **tạm thời ngắt không chuyển lưu lượng request mới vào instance này** (nhưng **KHÔNG giết container**), chờ khi kết nối hồi phục thì tự động đưa instance trở lại nhận tải!
 
-                        ## 2. Nguyên lý Kiến trúc & Bảng đối chiếu
-                        | Probe / Quy tắc | Endpoint Actuator | Hệ quả khi báo `DOWN` | Sai lầm chết người |
-                        | :--- | :--- | :--- | :--- |
-                        | **Liveness Probe** | `/actuator/health/liveness` | Orchestrator **RESTART container** | Nối kiểm tra DB ngoài vào Liveness khiến toàn cụm restart vòng lặp khi DB chớp tắt |
-                        | **Readiness Probe** | `/actuator/health/readiness` | Load Balancer **ngừng gửi traffic** vào pod đó | Không cấu hình Readiness nên request vẫn rớt vào pod chưa kịp boot xong |
-                        | **Metric Cardinality** | `MeterRegistry.counter(...)` | Giữ RAM Prometheus ổn định nếu tag hữu hạn | Gắn `userId`, `orderId`, `email` làm tag gây OOM Prometheus & lộ PII |
+                        ### 2. Hai Cạm Bẫy Vận Hành Cần Tránh Tuyệt Đối Trong `Observability` (`java-a03`)
+                        1. **Cấm gắn Định danh Không Giới hạn (`Unbounded ID` như `userId`, `orderId`, `email`) làm Nhãn của Metric (`Metric Tag / Label`)**:
+                           - Trong hệ thống thu thập Metric (Micrometer / Prometheus), mỗi tổ hợp nhãn (`Tag`) mới sẽ tạo ra một chuỗi thời gian (*Time Series*) riêng trong bộ nhớ RAM. Nếu bạn gắn `userId` (có 1 triệu người dùng) làm nhãn của Metric (`counter("orders.placed", "userId", userId)`), nó sẽ tạo ra **1 triệu chuỗi thời gian (High Cardinality Explosion)** làm tràn bộ nhớ sập luôn máy chủ giám sát, đồng thời làm rò rỉ thông tin cá nhân!
+                           - **Cách làm đúng**: Nhãn của Metric chỉ được dùng cho tập giá trị hữu hạn nhỏ (như `status="200"`, `method="POST"`, `service="order-service"`), còn `userId` / `orderId` chỉ được phép ghi trong **Span Attribute (đã kiểm soát)** hoặc **Log**!
+                        2. **Không đưa Thông tin Nhạy cảm (`Credentials`, `JWT Token`, `PII`) vào `OpenTelemetry Baggage` hoặc `Log`**:
+                           - `Baggage` được truyền tự động qua các HTTP Header sang mọi dịch vụ hạ nguồn; đặt token hay mật khẩu vào đó sẽ làm lộ thông tin sang các dịch vụ không được phép.
 
-                        ## 3. Triển khai chuẩn với Java 21 & Spring Boot 3
                         ```yaml
                         management:
                           endpoint:
@@ -113,9 +131,6 @@ public final class Module6ObservabilityAndPrdProvider {
                             readinessstate:
                               enabled: true
                         ```
-
-                        ## 4. Checklist Kiểm toán 3E & Các bẫy thường gặp khi vấn đáp
-                        - **An toàn OpenTelemetry Baggage & Logs**: Tuyệt đối không đưa JWT, API key, hay số thẻ thanh toán vào `Baggage` hoặc log span vì Baggage được lan truyền qua mọi hop HTTP!
                         """
                 )
         );
@@ -221,19 +236,23 @@ public final class Module6ObservabilityAndPrdProvider {
                 "Bài tập Tự luận Chương 6 (Tổng kết): Hồ sơ Production-Readiness Review (PRR)",
                 "Lập hồ sơ PRR gồm Ma trận kiểm thử 4 tầng, Health Probes + Observability an toàn và quy trình Chaos/Scale Before vs After.",
                 """
-                ### Đề bài Tự luận Tổng kết Môn: Production-Readiness Review (PRR)
-                Trước khi phát hành hệ thống gồm `api-gateway`, `order-service`, `payment-service`, `inventory-service` cho 100.000 khách hàng, hãy lập **Hồ sơ Nghiệm thu PRR (500 – 800 từ)**:
-                1. **Ma trận Kiểm thử 4 Tầng**: Chi tiết Unit, `@WebMvcTest`, `Testcontainers PostgreSQL` (Flyway + Unique Constraint), và `Contract Test`.
-                2. **Cấu hình `Health Probes` & `Observability` An toàn**: Giải thích xử lý khi DB `order-db` mất kết nối 20s giữa `Liveness` vs `Readiness`, liệt kê Tag metric được phép/bị cấm, và quy tắc che Secret/PII.
-                3. **Phương án Thực nghiệm `Before vs After`**: Quy trình đo khi Scale `inventory-service` từ `1 -> 4` replicas và Stop `payment-service` (`Workload`, `Sample Count`, `p95 Latency`, `Error Rate`, `traceId`).
+                ### Đề bài Tự luận Tổng kết Khóa học: Hồ sơ Đánh giá Sẵn sàng Sản xuất (`Production-Readiness Review — PRR`)
+                Theo đúng tinh thần cuốn *Production-Ready Microservices* (Susan J. Fowler), trước khi hệ thống Thương mại điện tử gồm 4 dịch vụ (`api-gateway`, `order-service`, `payment-service`, `inventory-service`) được phép phát hành chính thức lên môi trường Production phục vụ 100.000 khách hàng, Kiến trúc sư trưởng yêu cầu bạn lập **Hồ sơ Nghiệm thu Sẵn sàng Sản xuất (`PRR Document`)**.
+
+                **Yêu cầu bài viết tự luận tổng kết (500 – 800 từ)**:
+                1. **Ma trận Kiểm thử 4 Tầng (`Testing Matrix`)**: Hãy mô tả cụ thể bạn sẽ viết những bài test nào ở từng tầng (*Unit Test*, *@WebMvcTest*, *Testcontainers PostgreSQL Integration Test*, và *Contract Test*) cho tính năng Đặt hàng & Thanh toán để đảm bảo không bao giờ xảy ra lỗi tạo đơn trùng hoặc lỗi lệch hợp đồng JSON giữa `order-service` và `payment-service`.
+                2. **Thiết kế Cấu hình `Health Probes` & `Observability` An toàn**:
+                   - Phân biệt rõ cách cấu hình `/actuator/health/liveness` và `/actuator/health/readiness` cho `order-service` khi cơ sở dữ liệu `order-db` bị mất kết nối tạm thời trong 20 giây (tại sao không được để Kubernetes giết và khởi động lại `order-service` trong lúc đó?).
+                   - Liệt kê các nhãn (`Tags`) ĐƯỢC PHÉP gắn và các trường CẤM gắn vào Metric `http.server.requests`, cùng quy tắc che giấu thông tin nhạy cảm (`Secret & PII Redaction`) trong `OpenTelemetry Spans` và `Logs`.
+                3. **Phương án Thực nghiệm Hạ tầng Trước/Sau (`Before vs After Chaos & Scale Experiment`)**: Trình bày quy trình chuẩn để thực hiện một phép thử nhân bản `inventory-service` từ `1` lên `4` instances và ngắt thử `payment-service`: bạn sẽ cố định những biến số nào, thu thập những chỉ số nào (`Sample Count`, `p95 Latency`, `Error Rate`, `Trace ID`), và dựa vào đâu để kết luận hệ thống đã đạt chuẩn *Production-Ready*.
                 """,
                 List.of(
                         new RubricCriterion("1. Chiến lược Kiểm thử 4 Tầng & Testcontainers", 35,
-                                "Phân định đúng trách nhiệm từng tầng, kiểm tra Flyway + Unique Constraint bằng PostgreSQL thật và Contract Test."),
-                        new RubricCriterion("2. Health Probes (Liveness/Readiness) & Chống High Cardinality", 35,
-                                "Giải thích chính xác vai trò Readiness ngắt tải tạm thời thay vì kill container và cấm userId/orderId trong Metric Tags."),
-                        new RubricCriterion("3. Phương pháp Đo lường Before vs After", 30,
-                                "Cố định Workload, thu thập đủ Sample Count cho p95, đối chiếu traceId và phân biệt bằng chứng tĩnh vs runtime.")
+                                "Phân định rõ trách nhiệm của Unit, Web Slice, Testcontainers PostgreSQL (kiểm tra Flyway + Unique Constraint) và Consumer-Driven Contract Test."),
+                        new RubricCriterion("2. Thiết kế Liveness/Readiness & Chống High Cardinality", 35,
+                                "Giải thích chuẩn xác vai trò của Readiness (ngắt tải tạm thời thay vì restart container) và quy tắc cấm dùng userId/orderId làm nhãn Metric."),
+                        new RubricCriterion("3. Phương pháp Đo lường Thực nghiệm Before vs After", 30,
+                                "Nêu rõ yêu cầu cố định Workload, kích thước mẫu đủ lớn để tính p95, mã traceId đối chiếu và phân biệt rõ bằng chứng tĩnh với bằng chứng Runtime.")
                 )
         );
     }

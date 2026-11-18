@@ -183,14 +183,26 @@ export function CourseOutline({
       </div>
 
       <ol className="space-y-3">
-        {modules.map((module) => (
+        {modules.map((module) => {
+          const theoryCount = module.items.filter((i) => i.type === "THEORY").length;
+          const quizCount = module.items.filter((i) => i.type === "QUIZ").length;
+          const essayCount = module.items.filter((i) => i.type === "ESSAY").length;
+          const labCount = module.items.filter((i) =>
+            ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(i.type),
+          ).length;
+          const breakdown = [
+            theoryCount > 0 ? `${theoryCount} ${t("Theory", "Lý thuyết")}` : null,
+            quizCount > 0 ? `${quizCount} Quiz` : null,
+            essayCount > 0 ? `${essayCount} ${t("Essay", "Tự luận")}` : null,
+            labCount > 0 ? `${labCount} Lab` : null,
+          ]
+            .filter(Boolean)
+            .join(" · ");
+
+          return (
           <li key={module.id}>
             <details
-              open={
-                canManage
-                  ? module.position === 1
-                  : module.position === 1 || module.items.some((item) => item.assignmentId && labs.get(item.assignmentId)?.state === "UNLOCKED")
-              }
+              open={canManage ? module.position === 1 : true}
               className="group border-b last:border-b-0"
             >
               <summary className="flex cursor-pointer list-none flex-wrap items-center gap-3 py-3">
@@ -201,6 +213,7 @@ export function CourseOutline({
                   <span className="block font-medium">{module.title}</span>
                   <span className="block text-xs text-muted-foreground">
                     {module.items.length} {t("activities", "hoạt động")}
+                    {breakdown ? ` (${breakdown})` : ""}
                     {module.prerequisiteModuleId
                       ? ` · ${t("Prerequisite", "Tiên quyết")}: ${
                           modules.find((candidate) => candidate.id === module.prerequisiteModuleId)?.title
@@ -329,7 +342,8 @@ export function CourseOutline({
               </ul>
             </details>
           </li>
-        ))}
+          );
+        })}
       </ol>
     </section>
   );

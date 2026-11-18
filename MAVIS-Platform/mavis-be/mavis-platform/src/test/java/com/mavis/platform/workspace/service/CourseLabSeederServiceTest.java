@@ -26,14 +26,19 @@ import com.mavis.common.repository.SourceSnapshotRepository;
 import com.mavis.common.repository.WorkspaceRepository;
 import com.mavis.common.security.AccessPolicyService;
 import com.mavis.platform.assignment.service.LabReferenceArchive;
+import com.mavis.platform.workspace.curriculum.JavaCourseraCatalog;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -301,5 +306,139 @@ class CourseLabSeederServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.FORBIDDEN);
+    }
+
+    @Test
+    void seedsJavaCourseraPresetWithPostgresValidConstraintsAndOverwritesStaleDraft() throws Exception {
+        UUID workspaceId = UUID.randomUUID();
+        User lecturer = User.builder().id(UUID.randomUUID()).email("gv.java@mavis.edu.vn").build();
+        Workspace workspace = Workspace.builder().id(workspaceId).code("JAVA-MS-2026").name("Java").status("ACTIVE").courseMode(false).build();
+
+        AccessPolicyService access = mock(AccessPolicyService.class);
+        WorkspaceRepository workspaces = mock(WorkspaceRepository.class);
+        AssignmentRepository assignments = mock(AssignmentRepository.class);
+        ProjectRepository projects = mock(ProjectRepository.class);
+        SourceSnapshotRepository snapshots = mock(SourceSnapshotRepository.class);
+        ModelVersionRepository models = mock(ModelVersionRepository.class);
+        ModelElementRepository elements = mock(ModelElementRepository.class);
+        ModelRelationshipRepository relationships = mock(ModelRelationshipRepository.class);
+        DiagramVersionRepository diagrams = mock(DiagramVersionRepository.class);
+        EvaluationRunRepository evaluations = mock(EvaluationRunRepository.class);
+        EvidenceRepository evidences = mock(EvidenceRepository.class);
+        CourseQuizService quizzes = mock(CourseQuizService.class);
+        CourseAccessService courses = mock(CourseAccessService.class);
+        CourseAuthoringService courseAuthoring = mock(CourseAuthoringService.class);
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        ObjectMapper json = new ObjectMapper();
+        CourseCurriculum curriculum = new CourseCurriculum(json);
+
+        when(access.requireCurrentActiveUser()).thenReturn(lecturer);
+        when(workspaces.findLockedById(workspaceId)).thenReturn(Optional.of(workspace));
+        when(workspaces.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId))
+                .thenReturn(List.of());
+        AtomicReference<Project> savedProject = new AtomicReference<>();
+        when(projects.save(any())).thenAnswer(inv -> {
+            Project p = inv.getArgument(0);
+            if (p.getId() == null) p.setId(UUID.randomUUID());
+            savedProject.set(p);
+            return p;
+        });
+        when(projects.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(snapshots.save(any())).thenAnswer(inv -> {
+            SourceSnapshot s = inv.getArgument(0);
+            if (s.getId() == null) s.setId(UUID.randomUUID());
+            return s;
+        });
+        when(models.saveAndFlush(any())).thenAnswer(inv -> {
+            ModelVersion m = inv.getArgument(0);
+            if (m.getId() == null) m.setId(UUID.randomUUID());
+            return m;
+        });
+
+        List<ModelElement> savedElements = new ArrayList<>();
+        when(elements.save(any())).thenAnswer(inv -> {
+            ModelElement e = inv.getArgument(0);
+            if (e.getId() == null) e.setId(UUID.randomUUID());
+            savedElements.add(e);
+            return e;
+        });
+        List<ModelRelationship> savedRelationships = new ArrayList<>();
+        when(relationships.save(any())).thenAnswer(inv -> {
+            ModelRelationship r = inv.getArgument(0);
+            if (r.getId() == null) r.setId(UUID.randomUUID());
+            savedRelationships.add(r);
+            return r;
+        });
+        List<Evidence> savedEvidences = new ArrayList<>();
+        when(evidences.save(any())).thenAnswer(inv -> {
+            Evidence ev = inv.getArgument(0);
+            if (ev.getId() == null) ev.setId(UUID.randomUUID());
+            savedEvidences.add(ev);
+            return ev;
+        });
+        when(diagrams.saveAll(anyList())).thenAnswer(inv -> inv.getArgument(0));
+        when(evaluations.save(any())).thenAnswer(inv -> {
+            EvaluationRun run = inv.getArgument(0);
+            if (run.getId() == null) run.setId(UUID.randomUUID());
+            return run;
+        });
+        when(assignments.saveAndFlush(any())).thenAnswer(inv -> {
+            Assignment a = inv.getArgument(0);
+            if (a.getId() == null) a.setId(UUID.randomUUID());
+            return a;
+        });
+
+        UUID courseId = UUID.randomUUID();
+        CourseAuthoringService.CourseView staleDraft = new CourseAuthoringService.CourseView(
+                courseId, workspaceId, "Java Mc", "Test", "DRAFT", 2, 0, List.of());
+        when(courseAuthoring.get(workspaceId)).thenReturn(staleDraft);
+        AtomicInteger moduleCounter = new AtomicInteger(0);
+        when(courseAuthoring.saveDraft(eq(workspaceId), any())).thenAnswer(inv -> {
+            CourseAuthoringService.CourseRequest req = inv.getArgument(1);
+            return new CourseAuthoringService.CourseView(
+                    courseId, workspaceId, req.title(), req.description(), "DRAFT", 3, 0, List.of());
+        });
+        when(courseAuthoring.addModule(eq(workspaceId), any())).thenAnswer(inv -> {
+            CourseAuthoringService.ModuleRequest req = inv.getArgument(1);
+            int pos = moduleCounter.incrementAndGet();
+            var m = new CourseAuthoringService.ModuleView(
+                    UUID.randomUUID(), req.title(), req.description(), pos, req.prerequisiteModuleId(), List.of());
+            return new CourseAuthoringService.CourseView(
+                    courseId, workspaceId, JavaCourseraCatalog.COURSE_TITLE, JavaCourseraCatalog.COURSE_DESCRIPTION,
+                    "DRAFT", 3, 0, List.of(m));
+        });
+        when(courses.roadmap(workspaceId)).thenReturn(new CourseAccessService.Roadmap(true, "ENROLLED", List.of()));
+
+        CourseLabSeederService seeder = new CourseLabSeederService(
+                access, workspaces, assignments, projects, snapshots, models,
+                elements, relationships, diagrams, evaluations, evidences,
+                curriculum, quizzes, courses, jdbc, json, tempDir.toString());
+        ReflectionTestUtils.setField(seeder, "courseAuthoring", courseAuthoring);
+
+        seeder.seedCurated(workspaceId, CourseLabSeederService.PRESET_JAVA_COURSERA);
+
+        Set<String> allowedStatuses = Set.of("DRAFT", "NEEDS_REVIEW", "VALIDATED", "STUDENT_CONFIRMED", "UNCERTAIN_MAPPING");
+        Set<String> allowedRelationTypes = Set.of(
+                "SERVICE_HTTP_CALL", "CODE_DEPENDENCY", "DATABASE_ACCESS", "RUNTIME_OBSERVED", "DECLARED_COMPOSE",
+                "MESSAGE_PUBLISH", "MESSAGE_SUBSCRIBE", "DECLARED_LINK", "CONFIGURATION_DEPENDENCY",
+                "SERVICE_DISCOVERY", "TRACING_EXPORT", "GATEWAY_ROUTE", "CONFIGURED_ENDPOINT");
+        Set<String> allowedEvidenceSources = Set.of("STATIC_CODE", "CONFIG_FILE", "DOCKER_COMPOSE", "RUNTIME_TRACE");
+
+        assertThat(savedElements).hasSize(9);
+        assertThat(savedElements).allSatisfy(el -> assertThat(allowedStatuses).contains(el.getStatus()));
+        assertThat(savedRelationships).hasSize(6);
+        assertThat(savedRelationships).allSatisfy(rel -> assertThat(allowedRelationTypes).contains(rel.getRelationType()));
+        assertThat(savedEvidences).hasSize(1);
+        assertThat(savedEvidences).allSatisfy(ev -> assertThat(allowedEvidenceSources).contains(ev.getSourceType()));
+        assertThat(savedProject.get().getReferenceSnapshotId()).isNotNull();
+
+        verify(assignments, times(6)).saveAndFlush(any(Assignment.class));
+        verify(quizzes, times(6)).publishCurriculum(eq(workspaceId), any(UUID.class), any());
+        verify(courseAuthoring).saveDraft(eq(workspaceId), eq(new CourseAuthoringService.CourseRequest(
+                JavaCourseraCatalog.COURSE_TITLE, JavaCourseraCatalog.COURSE_DESCRIPTION)));
+        verify(courseAuthoring, times(6)).addModule(eq(workspaceId), any());
+        verify(courseAuthoring, times(36)).addItem(eq(workspaceId), any(UUID.class), any());
+        verify(courseAuthoring).publish(workspaceId);
     }
 }

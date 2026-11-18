@@ -18,40 +18,96 @@ public final class Module3CommunicationAndGatewayProvider {
                         "Đối chiếu hợp đồng OpenFeign -> Controller và chạy Cycle-Safe Reverse BFS tìm Blast Radius an toàn chu trình.",
                         50,
                         """
-                        # Bài 3.1: OpenFeign & Cycle-Safe Reverse BFS
+                        # 📖 BÀI 3.1 (`java-04`): GIAO TIẾP ĐỒNG BỘ VỚI `SPRING CLOUD OPENFEIGN` & THUẬT TOÁN `CYCLE-SAFE REVERSE BFS`
 
-                        ## 1. Mục tiêu học tập & Bài toán thực tế
-                        - Đọc hiểu chính xác khai báo `@FeignClient` kết hợp Call-site và đối chiếu chữ ký Controller đích (`HTTP Verb` + `Path` + `DTO`).
-                        - Vận dụng thuật toán **Cycle-Safe Reverse BFS** để tính **Vùng ảnh hưởng (`Blast Radius`)** khi một dịch vụ trung tâm gặp sự cố hoặc đổi API.
+                        ### 1. Giao Tiếp Đồng Bộ (`Synchronous Request/Response`) Với `Spring Cloud OpenFeign`
+                        Theo Chương 3 cuốn *Microservices Patterns* (Chris Richardson) và tài liệu [Spring Cloud OpenFeign](https://docs.spring.io/spring-cloud-openfeign/docs/current/reference/html/spring-cloud-openfeign.html), khi `order-service` cần gọi sang `payment-service` qua giao thức HTTP/REST, thay vì phải viết hàng chục dòng code `RestTemplate` nối chuỗi URL thủ công, lập trình viên chỉ cần khai báo một **Declarative HTTP Client Interface** với `@FeignClient`:
 
-                        ## 2. Nguyên lý Kiến trúc & Bảng đối chiếu
-                        | Khái niệm | Định nghĩa | Vai trò trong MAVIS | Bẫy thường gặp |
-                        | :--- | :--- | :--- | :--- |
-                        | **Call-site Evidence** | Nơi `@Service` thực sự gọi method `@FeignClient` | Chứng minh cạnh phụ thuộc tĩnh có được dùng | Chỉ có interface `@FeignClient` mà không ai gọi |
-                        | **Hop 1 (`DIRECT`)** | Caller gọi trực tiếp tới tâm chấn `payment-service` | Gãy hợp đồng ngay lập tức khi Provider đổi DTO/sập | Nhầm chiều mũi tên xuôi vs ngược |
-                        | **Hop >= 2 (`INDIRECT`)** | Dịch vụ phụ thuộc bắc cầu qua Caller Hop 1 | Bị ảnh hưởng dây chuyền về độ trễ & SLA | Vòng lặp vô tận nếu đồ thị có cycle mà thiếu `visited` |
-
-                        ## 3. Triển khai chuẩn với Java 21 & Spring Boot 3
                         ```java
-                        public Set<String> findBlastRadius(Map<String, List<String>> reverseAdj, String epicenter) {
-                            Set<String> visited = new LinkedHashSet<>();
-                            ArrayDeque<String> queue = new ArrayDeque<>();
-                            visited.add(epicenter);
-                            queue.add(epicenter);
-                            while (!queue.isEmpty()) {
-                                String current = queue.poll();
-                                for (String caller : reverseAdj.getOrDefault(current, List.of())) {
-                                    if (visited.add(caller)) {
-                                        queue.add(caller);
-                                    }
-                                }
-                            }
-                            return visited;
+                        package com.mavis.ecommerce.order.infrastructure.client;
+
+                        import org.springframework.cloud.openfeign.FeignClient;
+                        import org.springframework.web.bind.annotation.PostMapping;
+                        import org.springframework.web.bind.annotation.RequestBody;
+
+                        // Điểm khai báo phụ thuộc từ order-service (Caller) sang payment-service (Provider)
+                        @FeignClient(name = "payment-service", path = "/api/v1/payments")
+                        public interface PaymentFeignClient {
+
+                            @PostMapping("/authorize")
+                            PaymentAuthorizationResponse authorizePayment(@RequestBody AuthorizePaymentRequest request);
                         }
                         ```
 
-                        ## 4. Checklist Kiểm toán 3E & Các bẫy thường gặp khi vấn đáp
-                        - **Chứng minh hợp đồng 2 chiều**: `@FeignClient(name = "payment-service")` + `@PostMapping("/api/payments/authorize")` phải khớp `@PostMapping("/authorize")` + class prefix `@RequestMapping("/api/payments")` bên `PaymentController`.
+                        - **Quy tắc Đối chiếu Bằng chứng Hợp đồng (`Contract Matching Evidence`)**:
+                          - Việc chỉ tồn tại một interface `@FeignClient` trong source code mới chỉ chứng minh **"Có khai báo Client"**. Để khẳng định thực sự có mối phụ thuộc gọi hàm ở mức tĩnh, ta phải kiểm tra đủ **3 điểm**:
+                            1. **Điểm gọi (`Call-site`)**: Phương thức `paymentFeignClient.authorizePayment(...)` thực sự được gọi từ bên trong `OrderService`.
+                            2. **Khớp Hợp đồng (`Method + Path Match`)**: HTTP Verb (`POST`) và đường dẫn ghép đầy đủ (`/api/v1/payments/authorize`) của `PaymentFeignClient` bên `order-service` khớp hoàn toàn với `@RequestMapping("/api/v1/payments") + @PostMapping("/authorize")` tại `PaymentController` bên `payment-service`!
+                            3. **Phân biệt Khả năng Tĩnh vs. Thực tế Runtime**: Đồ thị tĩnh cho biết **khả năng tác động theo thiết kế mã nguồn**, còn muốn biết lúc chạy thực tế có bao nhiêu gói tin đã đi qua cạnh đó thì phải đối chiếu với **OpenTelemetry Runtime Trace**.
+
+                        ### 2. Đồ Thị Phụ Thuộc & Thuật Toán `Cycle-Safe Reverse BFS` Tính Bán Kính Ảnh Hưởng (`Blast Radius`)
+                        Giả sử trên Đồ thị Phụ thuộc Dịch vụ (`Service Dependency Graph`), cạnh có hướng `A → B` mang ý nghĩa: **"Dịch vụ `A` phụ thuộc vào (gọi sang) dịch vụ `B`"**:
+
+                        `api-gateway → order-service → payment-service`
+
+                        Bây giờ, nếu **`payment-service` bị sập hoặc thay đổi hợp đồng API**, dịch vụ nào sẽ bị lỗi theo?
+                        - Tác động lỗi sẽ **lan truyền NGƯỢC chiều mũi tên phụ thuộc** (từ dịch vụ được gọi `Provider` ngược về dịch vụ gọi nó `Caller`):
+
+                          `payment-service (Tâm chấn) ⇝ order-service (Hop 1 — Trực tiếp) ⇝ api-gateway (Hop 2 — Gián tiếp)`
+
+                        - **Tại sao bắt buộc phải dùng tập `visited` (`Cycle-Safe Reverse BFS`)?**:
+                          Trong các hệ thống thực tế, đôi khi lập trình viên vô tình tạo ra **chu trình phụ thuộc vòng (`Cyclic Dependency`: `A → B → C → A`)**. Nếu duyệt ngược mà không có tập `Set<String> visited` ghi nhớ các dịch vụ đã thăm, thuật toán sẽ chạy vòng tròn vô tận làm treo cứng CPU!
+
+                        ```java
+                        package com.mavis.ecommerce.impact;
+
+                        import java.util.*;
+
+                        public class ReverseBfsImpactAnalyzer {
+
+                            public record ImpactedService(String serviceId, int hopDistance, String impactType) {}
+
+                            /**
+                             * Thuật toán Cycle-Safe Reverse BFS:
+                             * @param forwardEdges Danh sách cạnh phụ thuộc xuôi (caller -> provider)
+                             * @param targetService Dịch vụ tâm chấn bị thay đổi hoặc gặp sự cố
+                             */
+                            public List<ImpactedService> computeBlastRadius(Map<String, List<String>> forwardEdges,
+                                                                            String targetService) {
+                                // Bước 1: Đảo ngược toàn bộ chiều mũi tên (provider -> danh sách các callers)
+                                Map<String, List<String>> reverseGraph = new HashMap<>();
+                                forwardEdges.forEach((caller, providers) -> {
+                                    for (String provider : providers) {
+                                        reverseGraph.computeIfAbsent(provider, k -> new ArrayList<>()).add(caller);
+                                    }
+                                });
+
+                                // Bước 2: Duyệt BFS trên đồ thị ngược với tập visited để chống vòng lặp vô tận (Cycle-safe)
+                                List<ImpactedService> result = new ArrayList<>();
+                                Set<String> visited = new HashSet<>();
+                                Queue<Map.Entry<String, Integer>> queue = new ArrayDeque<>();
+
+                                visited.add(targetService); // Không bao giờ thêm chính dịch vụ tâm chấn vào danh sách bị ảnh hưởng
+                                queue.offer(Map.entry(targetService, 0));
+
+                                while (!queue.isEmpty()) {
+                                    var current = queue.poll();
+                                    String currentService = current.getKey();
+                                    int currentHop = current.getValue();
+
+                                    for (String upstreamCaller : reverseGraph.getOrDefault(currentService, List.of())) {
+                                        if (visited.add(upstreamCaller)) { // Chỉ duyệt nếu chưa từng thăm
+                                            int nextHop = currentHop + 1;
+                                            String type = (nextHop == 1) ? "DIRECT" : "INDIRECT";
+                                            result.add(new ImpactedService(upstreamCaller, nextHop, type));
+                                            queue.offer(Map.entry(upstreamCaller, nextHop));
+                                        }
+                                    }
+                                }
+                                return result;
+                            }
+                        }
+                        ```
                         """
                 ),
                 new LessonSpec(
@@ -60,19 +116,22 @@ public final class Module3CommunicationAndGatewayProvider {
                         "Phân biệt Eureka Client-Side Discovery với Docker Compose DNS và điều kiện nhận tải khi Scale Replicas.",
                         50,
                         """
-                        # Bài 3.2: Netflix Eureka Discovery & Spring Cloud LoadBalancer
+                        # 📖 BÀI 3.2 (`java-05`): KHÁM PHÁ DỊCH VỤ ĐỘNG (`SERVICE DISCOVERY` VỚI EUREKA) & CÂN BẰNG TẢI NHIỀU INSTANCE
 
-                        ## 1. Mục tiêu học tập & Bài toán thực tế
-                        - Phân biệt **Client-Side Discovery (Eureka + Spring Cloud LoadBalancer)** với **Server-Side Discovery (Docker Compose DNS / Kubernetes Service)**.
-                        - Nắm vững điều kiện để replica mới thực sự nhận được traffic khi scale ngang trong sản xuất.
+                        ### 1. Tại Sao Không Thể Gán Cứng Địa Chỉ IP Trong Môi Trường Đám Mây & Container?
+                        Theo Chương 3 cuốn *Microservices Patterns* (Chris Richardson) và Chương 4–5 cuốn *Mastering Microservices with Java* (Sourabh Sharma), trong môi trường container hóa (Docker / Kubernetes), các instances của một dịch vụ liên tục được tạo mới hoặc thu hồi khi **Scale Up / Scale Down**, khiến địa chỉ IP và Port thay đổi liên tục.
+                        Để giải quyết, hệ thống sử dụng **Service Registry (Sổ đăng ký dịch vụ — ví dụ `Spring Cloud Netflix Eureka`)**:
+                        1. **Cơ chế Tự đăng ký (`Self-Registration`)**: Mỗi khi một instance của `inventory-service` khởi động, nó gửi tên định danh logic (`spring.application.name=inventory-service`) cùng địa chỉ `IP:Port` của nó lên đăng ký với `Eureka Server` và định kỳ gửi tín hiệu nhịp tim (`Heartbeat`) để báo rằng nó vẫn còn sống.
+                        2. **Bản chất cực kỳ quan trọng cần nhớ**:
+                           - **Eureka Registry chỉ lưu giữ và cung cấp danh sách các instances đang đăng ký**, chứ **bản thân Eureka Server KHÔNG phải là một proxy đứng giữa để chia tải cho mọi request**!
+                           - Việc chọn gọi vào instance nào trong danh sách đó do **Client-Side Load Balancer (`Spring Cloud LoadBalancer`)** nằm ngay bên trong phía gọi (`order-service` hoặc `api-gateway`) thực hiện (thường theo thuật toán xoay vòng *Round-Robin*).
 
-                        ## 2. Nguyên lý Kiến trúc & Bảng đối chiếu
-                        | Cơ chế | Bên giữ danh sách IP:Port | Ai chia tải? | Lưu ý khi Scale Replicas |
-                        | :--- | :--- | :--- | :--- |
-                        | **Eureka Client-Side** | Eureka Registry + Local Cache ở Client | `Spring Cloud LoadBalancer` (`lb://...`) | Cần đợi Heartbeat + cache refresh (`registryFetchIntervalSeconds`) |
-                        | **Docker DNS Server-Side** | DNS nội bộ của mạng Docker bridge | Kernel VIP / Round-Robin DNS | Tránh ghim cứng `ports: "8081:8081"` ra host khiến port conflict khi scale > 1 |
+                        ### 2. Phân Biệt `Application Discovery (Eureka)` Với `Docker Compose DNS Discovery`
+                        | Tiêu chí so sánh | `Spring Cloud Eureka` (Client-Side Discovery) | `Docker Compose DNS` (Server/Network DNS Discovery) |
+                        | :--- | :--- | :--- |
+                        | **Cơ chế hoạt động** | Ứng dụng Java chủ động đăng ký `IP:Port` lên Eureka Server; phía gọi tải bảng danh bạ về RAM và tự chọn instance bằng `Spring Cloud LoadBalancer`. | Mạng nội bộ của Docker tích hợp sẵn máy chủ DNS ở địa chỉ `127.0.0.11`, tự động phân giải tên service trong `docker-compose.yml` (ví dụ `http://inventory-service:8083`) sang IP của các containers. |
+                        | **Điều kiện để nhận tải sau khi Scale** | Instance mới phải khởi động xong Spring Context, đăng ký thành công lên Eureka (`UP`), và phía Client đã làm mới (refresh) bộ nhớ đệm danh bạ. | Container phải ở trạng thái `running` / `healthy` trong mạng Docker Compose và không bị xung đột cổng `hostPort` cố định trên máy chủ! |
 
-                        ## 3. Triển khai chuẩn với Java 21 & Spring Boot 3
                         ```yaml
                         eureka:
                           client:
@@ -80,10 +139,6 @@ public final class Module3CommunicationAndGatewayProvider {
                               defaultZone: ${EUREKA_URI:http://discovery-service:8761/eureka/}
                             registry-fetch-interval-seconds: 5
                         ```
-
-                        ## 4. Checklist Kiểm toán 3E & Các bẫy thường gặp khi vấn đáp
-                        - **Eureka không phải Proxy**: Request dữ liệu KHÔNG đi xuyên qua Eureka Server; Caller dùng danh bạ cục bộ gọi thẳng sang instance đích.
-                        - **Self-Preservation Mode**: Khi nhiều instance mất heartbeat do nghẽn mạng ngắn hạn, Eureka tạm giữ danh bạ để tránh xóa nhầm node còn sống.
                         """
                 ),
                 new LessonSpec(
@@ -92,35 +147,35 @@ public final class Module3CommunicationAndGatewayProvider {
                         "Thiết kế định tuyến Gateway với RewritePath/StripPrefix và bảo mật Defense in Depth cho dịch vụ nội bộ.",
                         50,
                         """
-                        # Bài 3.3: Spring Cloud Gateway & Defense in Depth
+                        # 📖 BÀI 3.3 (`java-06`): CỔNG ĐỊNH TUYẾN TẬP TRUNG `SPRING CLOUD GATEWAY` (`PREDICATES`, `FILTERS` & BẢO MẬT)
 
-                        ## 1. Mục tiêu học tập & Bài toán thực tế
-                        - Cấu hình chính xác một **Route** của `Spring Cloud Gateway` (`uri`, `predicates`, `filters`).
-                        - Kiểm toán nhất quán giữa Public Edge URL và Internal Controller Path sau bước biến đổi (`StripPrefix`, `RewritePath`), kết hợp **Defense in Depth**.
+                        ### 1. Cấu Trúc Hoạt Động Của `Spring Cloud Gateway`
+                        Theo Chương 8 cuốn *Microservices Patterns* (Chris Richardson) và [Spring Cloud Gateway Documentation](https://spring.io/projects/spring-cloud-gateway/), mọi yêu cầu từ bên ngoài đi vào hệ thống đều đi qua `api-gateway`. Một quy tắc định tuyến (`Route`) trong Gateway gồm 3 thành phần:
+                        1. **`id` & `uri` (Đích đến)**: Địa chỉ dịch vụ hạ nguồn (ví dụ `lb://order-service` để kết hợp cân bằng tải hoặc `http://order-service:8081`).
+                        2. **`predicates` (Điều kiện khớp yêu cầu)**: Kiểm tra xem request đến có thỏa mãn điều kiện về đường dẫn (`Path=/api/public/orders/**`), phương thức (`Method=GET,POST`), hoặc Header hay không.
+                        3. **`filters` (Bộ lọc biến đổi trước và sau khi chuyển tiếp)**:
+                           - Ví dụ `StripPrefix=2` hoặc `RewritePath=/api/public/(?<segment>.*), /api/v1/${segment}`: Đường dẫn mà khách hàng nhìn thấy bên ngoài (`/api/public/orders/123`) sẽ được **viết lại (rewrite)** thành `/api/v1/orders/123` trước khi gửi tới `order-service`!
+                           - **Quy tắc Đối chiếu Đường dẫn**: Khi có `RewritePath` hoặc `StripPrefix`, ta bắt buộc phải lấy **đường dẫn SAU khi đã biến đổi** để đối chiếu với `@RequestMapping` của Controller phía dưới!
 
-                        ## 2. Nguyên lý Kiến trúc & Bảng đối chiếu
-                        | Thành phần Route | Chức năng | Ví dụ thực tế | Sai lầm thường gặp |
-                        | :--- | :--- | :--- | :--- |
-                        | `uri` | Đích đến qua LoadBalancer | `lb://order-service` | Hardcode `http://localhost:8081` mất khả năng scale |
-                        | `predicates` | Điều kiện khớp HTTP Request | `Path=/external/v1/orders/**` | Khớp thừa wildcard che mất route cụ thể hơn |
-                        | `filters` | Biến đổi URL/Header trước chuyển tiếp | `StripPrefix=1`, `RewritePath=...` | Quên tính bước rewrite khi đối chiếu Controller đích |
-
-                        ## 3. Triển khai chuẩn với Java 21 & Spring Boot 3
                         ```yaml
+                        # File: api-gateway/src/main/resources/application.yml
                         spring:
                           cloud:
                             gateway:
                               routes:
-                                - id: order-public-api
+                                - id: order-service-route
                                   uri: lb://order-service
                                   predicates:
                                     - Path=/external/v1/orders/**
+                                    - Method=GET,POST
                                   filters:
+                                    # Biến đổi /external/v1/orders/99 -> /api/v1/orders/99 trước khi gửi xuống order-service
                                     - RewritePath=/external/v1/(?<segment>.*), /api/v1/${segment}
+                                    - AddRequestHeader=X-Gateway-Verified, true
                         ```
 
-                        ## 4. Checklist Kiểm toán 3E & Các bẫy thường gặp khi vấn đáp
-                        - **Defense in Depth**: Dù Gateway đã xác thực JWT ở biên, dịch vụ nội bộ (`order-service`) vẫn BẮT BUỘC tự xác minh role (`@PreAuthorize`) và quyền sở hữu (`AccessPolicyService`), phòng trường hợp kẻ tấn công lọt vào mạng nội bộ hoặc gọi chéo service.
+                        ### 2. Nguyên Tắc Phòng Thủ Chiều Sâu (`Defense in Depth`)
+                        - Mặc dù `API Gateway` thường thực hiện xác thực chữ ký `JWT` ở cửa ngõ (Edge Authentication), **các Microservices phía dưới (`order-service`, `payment-service`) VẪN PHẢI tự kiểm tra quyền truy cập tài nguyên (`Authorization / RBAC & Resource Ownership`)**! Tuyệt đối không giả định rằng cứ request nào lọt qua Gateway thì người dùng đó được phép xóa hay sửa đơn hàng của người khác.
                         """
                 )
         );
@@ -226,24 +281,26 @@ public final class Module3CommunicationAndGatewayProvider {
                 "Bài tập Tự luận Chương 3: Định tuyến API Gateway & Truy vết Reverse BFS",
                 "Truy vết Cycle-Safe Reverse BFS trên đồ thị có chu trình, viết cấu hình Spring Cloud Gateway và phá vỡ chu trình phụ thuộc.",
                 """
-                ### Đề bài Tự luận Chương 3: Blast Radius (Reverse BFS) & Spring Cloud Gateway
-                Cho 6 dịch vụ gọi đồng bộ:
-                - `api-gateway` -> `order-service`, `catalog-service`, `loyalty-service`
-                - `order-service` -> `payment-service`, `inventory-service`, `loyalty-service`
-                - `loyalty-service` -> `payment-service`
-                - `payment-service` -> `order-service` *(Chu trình phụ thuộc vòng!)*
+                ### Đề bài Tự luận Chương 3: Thiết kế Định tuyến API Gateway & Tính toán Bán kính Ảnh hưởng (`Reverse BFS`)
+                Cho một hệ thống gồm 6 dịch vụ với các mối phụ thuộc gọi đồng bộ (`Synchronous HTTP/OpenFeign`) như sau:
+                - `api-gateway` gọi sang `order-service`, `catalog-service`, và `loyalty-service`.
+                - `order-service` gọi sang `payment-service`, `inventory-service`, và `loyalty-service`.
+                - `loyalty-service` gọi sang `payment-service` (để tra cứu lịch sử chi tiêu tích điểm).
+                - `payment-service` gọi ngược sang `order-service` (để lấy thông tin chi tiết đơn hàng — **chú ý: có chu trình phụ thuộc vòng!**).
 
-                **Yêu cầu bài viết (400 – 600 từ)**:
-                1. Khi `payment-service` sập, dựng **Reverse Graph** và truy vết từng bước `Queue` + `visited` (Hop 1, Hop 2...) để liệt kê `DIRECT` và `INDIRECT`. Giải thích vai trò của `visited` tại chu trình `order-service <-> payment-service`.
-                2. Viết `spring.cloud.gateway.routes` định tuyến `/public/shop/orders/**` vào `lb://order-service` (`/api/v1/orders/**`), và đề xuất cách phá vỡ chu trình `order-service <-> payment-service`.
+                **Yêu cầu bài viết tự luận (400 – 600 từ)**:
+                1. **Truy vết từng bước Thuật toán `Cycle-Safe Reverse BFS`**: Giả sử đội phát triển **`payment-service`** thay đổi cấu trúc JSON trả về của API thanh toán (hoặc `payment-service` bị sập). Hãy biểu diễn lại **Đồ thị Ngược (`Reverse Graph`)** và trình bày từng bước chạy của hàng đợi `Queue` cùng tập `visited` (Hop 1, Hop 2...) để liệt kê chính xác các dịch vụ bị ảnh hưởng **Trực tiếp (`DIRECT`)** và **Gián tiếp (`INDIRECT`)**. Giải thích chuyện gì sẽ xảy ra tại chu trình `order-service <-> payment-service` nếu thuật toán thiếu tập `visited`.
+                2. **Thiết kế Cấu hình `Spring Cloud Gateway` & Loại bỏ Chu trình Phụ thuộc**:
+                   - Hãy viết đoạn cấu hình `spring.cloud.gateway.routes` trong `application.yml` để định tuyến đường dẫn bên ngoài `/public/shop/orders/**` vào `lb://order-service` với đường dẫn nội bộ `/api/v1/orders/**`.
+                   - Đề xuất cách thiết kế lại dữ liệu gửi đi giữa `order-service` và `payment-service` để **xóa bỏ hoàn toàn chu trình phụ thuộc vòng (`order-service <-> payment-service`)**.
                 """,
                 List.of(
-                        new RubricCriterion("1. Truy vết chính xác Reverse BFS & tập visited", 45,
-                                "Đảo chiều đúng, Hop 1 (order-service, loyalty-service), Hop 2 (api-gateway), giải thích chặn vòng lặp vô hạn."),
-                        new RubricCriterion("2. Cấu hình Spring Cloud Gateway Predicates & Filters", 30,
-                                "Viết đúng uri lb://order-service, Path Predicate và RewritePath Filter."),
-                        new RubricCriterion("3. Giải pháp phá vỡ chu trình phụ thuộc", 25,
-                                "Truyền đủ dữ liệu trong AuthorizePaymentRequest DTO hoặc tách sự kiện bất đồng bộ.")
+                        new RubricCriterion("1. Truy vết chính xác Reverse BFS & Tập visited", 45,
+                                "Đảo chiều đúng các cạnh, xác định đúng Hop 1 (order-service, loyalty-service) và Hop 2 (api-gateway), giải thích rõ cách tập visited chặn vòng lặp order-service <-> payment-service."),
+                        new RubricCriterion("2. Cấu hình Spring Cloud Gateway (Predicates & Filters)", 30,
+                                "Viết đúng cú pháp uri: lb://order-service, Path=/public/shop/orders/** và RewritePath sang /api/v1/orders/..."),
+                        new RubricCriterion("3. Giải pháp Phá vỡ Chu trình Phụ thuộc (Cycle Breaking)", 25,
+                                "Đề xuất đúng việc truyền đủ dữ liệu cần thiết trong DTO của AuthorizePaymentRequest (hoặc dùng sự kiện) để payment-service không phải gọi ngược lại order-service.")
                 )
         );
     }

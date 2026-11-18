@@ -262,6 +262,32 @@ export function StudentCourseSyllabus({
         <div className="min-w-0 space-y-6">
           {activeTab === "player" && (
             <div className="space-y-6">
+              {publishedCourse.data && (
+                <details
+                  open
+                  className="rounded-2xl border border-teal-200/80 bg-card p-5 shadow-sm dark:border-teal-900"
+                >
+                  <summary className="flex w-full cursor-pointer list-none items-center justify-between gap-2 text-base font-semibold text-teal-800 dark:text-teal-200">
+                    <span>
+                      {t(
+                        "📚 Full Coursera Course Syllabus (6 Modules · Lessons, Quizzes, Essays & Labs)",
+                        "📚 Đề Cương Toàn Bộ Chương, Bài Giảng, Quiz, Tự Luận & Lab (Chuẩn Coursera)",
+                      )}
+                    </span>
+                    <Badge variant="outline" className="border-teal-300 text-teal-700 dark:border-teal-700 dark:text-teal-300">
+                      {t("Expand / Collapse", "Thu gọn / Mở rộng")}
+                    </Badge>
+                  </summary>
+                  <div className="mt-4 border-t pt-4">
+                    <CourseOutline
+                      workspaceId={workspaceId}
+                      canManage={false}
+                      active={workspace.status !== "ARCHIVED"}
+                    />
+                  </div>
+                </details>
+              )}
+
               <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)] lg:items-start">
                 <aside className="rounded-2xl border bg-card p-4 shadow-sm lg:sticky lg:top-6">
                   <div className="mb-3 flex items-center justify-between gap-2 border-b pb-3">
@@ -486,24 +512,6 @@ export function StudentCourseSyllabus({
                   )}
                 </section>
               </div>
-
-              {publishedCourse.data && (
-                <details className="rounded-2xl border bg-card p-5 shadow-sm">
-                  <summary className="w-fit cursor-pointer text-sm font-semibold text-primary">
-                    {t(
-                      "Full Course Modules & Reading Outline",
-                      "Đề Cương Toàn Bộ Chương & Bài Đọc",
-                    )}
-                  </summary>
-                  <div className="mt-4">
-                    <CourseOutline
-                      workspaceId={workspaceId}
-                      canManage={false}
-                      active={workspace.status !== "ARCHIVED"}
-                    />
-                  </div>
-                </details>
-              )}
             </div>
           )}
 

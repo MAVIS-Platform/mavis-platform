@@ -18,34 +18,80 @@ public final class Module4ResilienceAndMessagingProvider {
                         "Vận dụng máy trạng thái CLOSED -> OPEN -> HALF_OPEN và nguyên tắc Fallback bảo toàn ngữ nghĩa thật.",
                         55,
                         """
-                        # Bài 4.1: Resilience4j Circuit Breaker & Fallback chuẩn nghiệp vụ
+                        # 📖 BÀI 4.1 (`java-07`): PHÒNG CHỐNG LỖI DÂY CHUYỀN VỚI `RESILIENCE4J CIRCUIT BREAKER` & `FALLBACK`
 
-                        ## 1. Mục tiêu học tập & Bài toán thực tế
-                        - Ngăn chặn hiệu ứng **Cascading Failure** khi một dịch vụ downstream (`payment-service`) bị chậm kéo theo toàn bộ Tomcat threads của `order-service` bị treo.
-                        - Làm chủ 3 trạng thái của Circuit Breaker (`CLOSED`, `OPEN`, `HALF_OPEN`) và viết `Fallback` trung thực về mặt nghiệp vụ.
+                        ### 1. Giải Phẫu Một Vụ Sập Dây Chuyền (`Cascading Failure`) & Máy Trạng Thái `Circuit Breaker`
+                        Theo Chương 3 cuốn *Microservices Patterns* (Chris Richardson), Chương 5 cuốn *Mastering Microservices with Java* (Sourabh Sharma) và Chương 3 cuốn *Production-Ready Microservices* (Susan Fowler):
+                        - Khi `order-service` gọi đồng bộ sang `payment-service` mà `payment-service` bị treo hoặc quá tải, nếu không có cơ chế bảo vệ, mọi luồng xử lý (*Worker Threads*) trong `order-service` sẽ bị kẹt cứng để chờ phản hồi. Chỉ sau vài giây, bể luồng (*Thread Pool*) của `order-service` cạn sạch, làm `order-service` và `api-gateway` chết theo dây chuyền!
+                        - **Bộ ngắt mạch (`Circuit Breaker` — cài đặt bằng `Resilience4j` trong Spring Cloud Circuit Breaker)** hoạt động giống hệt chiếc cầu dao điện tự động trong nhà với **3 trạng thái**:
 
-                        ## 2. Nguyên lý Kiến trúc & Bảng đối chiếu
-                        | Trạng thái Circuit Breaker | Hành vi xử lý request | Điều kiện chuyển trạng thái |
-                        | :--- | :--- | :--- |
-                        | **CLOSED** | Chuyển tiếp bình thường, đếm tỷ lệ lỗi & slow call trong sliding window | Vượt ngưỡng `failureRateThreshold` hoặc `slowCallRateThreshold` -> **OPEN** |
-                        | **OPEN** | Fail-fast tức thì (`CallNotPermittedException`), chạy thẳng `fallbackMethod` | Hết `waitDurationInOpenState` -> **HALF_OPEN** |
-                        | **HALF_OPEN** | Thả hữu hạn `permittedNumberOfCallsInHalfOpenState` request thăm dò | Đạt -> **CLOSED**; Lỗi tiếp -> **OPEN** |
-
-                        ## 3. Triển khai chuẩn với Java 21 & Spring Boot 3
-                        ```java
-                        @CircuitBreaker(name = "paymentClient", fallbackMethod = "authorizeFallback")
-                        public PaymentResult authorize(OrderPaymentCommand cmd) {
-                            return paymentClient.authorize(cmd);
-                        }
-
-                        private PaymentResult authorizeFallback(OrderPaymentCommand cmd, Throwable ex) {
-                            return PaymentResult.queuedForAsyncRetry(cmd.orderId(), "DEGRADED_PAYMENT_SERVICE");
-                        }
+                        ```
+                                             Tỷ lệ lỗi hoặc cuộc gọi chậm vượt ngưỡng
+                                             (VD: failureRateThreshold >= 50% trong cửa sổ trượt 10 cuộc gọi)
+                              +-------------------------------------------------------------------------+
+                              |                                                                         v
+                        +------------+                                                           +-------------+
+                        |   CLOSED   |                                                           |    OPEN     |
+                        | (Đóng mạch |                                                           | (Ngắt mạch  |
+                        |  Gọi bình  |                                                           | Chặn gọi sớm|
+                        |  thường)   |                                                           | -> Fallback)|
+                        +------------+                                                           +-------------+
+                              ^                                                                         |
+                              |              Cho phép N cuộc gọi thăm dò (permittedCallsInHalfOpen)     |
+                              |                      +--------------------------------------------------+
+                              |                      v
+                              |               +-------------+
+                              +---------------|  HALF_OPEN  |
+                               Thăm dò thành  | (Bán mở để  |---> Nếu thăm dò vẫn lỗi: Lập tức quay lại OPEN!
+                               công -> Đóng!  |  thăm dò)   |
+                                              +-------------+
                         ```
 
-                        ## 4. Checklist Kiểm toán 3E & Các bẫy thường gặp khi vấn đáp
-                        - **Bẫy Fallback dối trá**: Tuyệt đối CẤM fallback trả `status = PAID` hay HTTP `200` giả danh thành công khi thanh toán thật sự thất bại!
-                        - Phải chỉ rõ `recordExceptions` vs `ignoreExceptions` để lỗi validate `400 Bad Request` của client không làm nhảy Circuit Breaker thành `OPEN` oan uổng.
+                        ### 2. Nguyên Tắc Thiết Kế `Fallback` Đúng Ngữ Nghĩa Nghiệp Vụ (Cấm Trả Thành Công Giả!)
+                        - Một sai lầm rất nguy hiểm khi viết hàm `fallbackMethod` là: Khi `payment-service` bị sập, hàm fallback lại trả về `"status: PAID"` (thành công giả) khiến kho xuất hàng đi mà khách chưa hề trả tiền!
+                        - **Quy tắc chuẩn (`java-07`)**: Hàm `Fallback` phải phản ánh trung thực **mức suy giảm dịch vụ có kiểm soát (*Graceful Degradation*)** và bảo toàn ngữ nghĩa thật của giao dịch. Ví dụ:
+                          - Với thao tác **Đọc dữ liệu phụ trợ** (gợi ý sản phẩm, điểm thưởng): Có thể trả về dữ liệu từ bộ nhớ đệm (*Cache*) hoặc danh sách rỗng tạm thời.
+                          - Với thao tác **Giao dịch quan trọng** (Thanh toán): Phải trả về trạng thái rõ ràng như **`PAYMENT_PENDING_VERIFICATION` / `QUEUED_FOR_ASYNC_PAYMENT`** (Đơn hàng đã được tiếp nhận và xếp hàng chờ xử lý thanh toán sau) hoặc báo lỗi `HTTP 503` thân thiện ngay lập tức trong `2ms` mà không làm treo `order-service`!
+
+                        ```java
+                        package com.mavis.ecommerce.order.infrastructure.resilience;
+
+                        import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+                        import org.slf4j.Logger;
+                        import org.slf4j.LoggerFactory;
+                        import org.springframework.stereotype.Component;
+
+                        @Component
+                        public class ResilientPaymentGateway {
+
+                            private static final Logger log = LoggerFactory.getLogger(ResilientPaymentGateway.class);
+                            private final PaymentFeignClient paymentFeignClient;
+
+                            public ResilientPaymentGateway(PaymentFeignClient paymentFeignClient) {
+                                this.paymentFeignClient = paymentFeignClient;
+                            }
+
+                            @CircuitBreaker(name = "paymentServiceBreaker", fallbackMethod = "authorizePaymentFallback")
+                            public PaymentResult authorize(AuthorizePaymentRequest request) {
+                                return paymentFeignClient.authorizePayment(request);
+                            }
+
+                            /**
+                             * Hàm Fallback bảo toàn đúng ngữ nghĩa nghiệp vụ:
+                             * KHÔNG BAO GIỜ trả về "PAID" giả khi chưa thu được tiền!
+                             * Trả về trạng thái QUEUED_FOR_ASYNC_PAYMENT để xử lý bất đồng bộ hoặc thông báo rõ cho người dùng.
+                             */
+                            public PaymentResult authorizePaymentFallback(AuthorizePaymentRequest request, Throwable cause) {
+                                log.warn("Circuit Breaker paymentServiceBreaker kích hoạt cho orderId={}: {}",
+                                        request.orderId(), cause.getMessage());
+                                return new PaymentResult(
+                                        request.orderId(),
+                                        "QUEUED_FOR_ASYNC_PAYMENT",
+                                        "Hệ thống thanh toán đang bận tạm thời. Đơn hàng của bạn đã được giữ chỗ và sẽ tự động xử lý lại."
+                                );
+                            }
+                        }
+                        ```
                         """
                 ),
                 new LessonSpec(
@@ -54,20 +100,27 @@ public final class Module4ResilienceAndMessagingProvider {
                         "Tính End-to-End Timeout Budget, quy tắc Idempotency cho Retry, chống Retry Storm bằng Jitter và Bulkhead.",
                         50,
                         """
-                        # Bài 4.2: Timeout Budget, Retry + Jitter & Bulkhead
+                        # 📖 BÀI 4.2 (`java-08`): NGÂN SÁCH THỜI GIAN (`TIMEOUT`), `RETRY + JITTER` & VÁCH NGĂN `BULKHEAD`
 
-                        ## 1. Mục tiêu học tập & Bài toán thực tế
-                        - Thiết kế **End-to-End Timeout Budget** hợp lý giữa Gateway -> Order Service -> Payment Service.
-                        - Tránh thảm họa **Retry Storm / Thundering Herd** bằng Exponential Backoff + Random Jitter và chỉ Retry các thao tác an toàn lũy đẳng (`Idempotent`).
+                        ### 1. Thiết Kế Ngân Sách Thời Gian Đầu Cuối (`End-to-End Timeout Budget`) & Nguy Cơ Khuếch Đại Tải Do `Retry`
+                        Theo tài liệu [Build Resilient HTTP Apps](https://learn.microsoft.com/en-us/dotnet/core/resilience/http-resilience) và Chương 3–4 cuốn *Production-Ready Microservices* (Susan Fowler):
+                        1. **Cách tính Ngân sách Thời gian (`Timeout Budget`)**:
+                           - Giả sử `api-gateway` chỉ cho phép một yêu cầu từ người dùng chờ tối đa **`5000ms` (`Gateway Timeout`)**.
+                           - Nếu ở bên dưới, `order-service` đặt timeout mỗi lần gọi `payment-service` là `2000ms` và cho phép thử lại 3 lần (`maxAttempts = 3`) với khoảng nghỉ giữa các lần là `500ms` và `1000ms`, thì **Tổng thời gian tối đa ở trường hợp xấu nhất (`Worst-Case Total Duration`)** là:
 
-                        ## 2. Nguyên lý Kiến trúc & Bảng đối chiếu
-                        | Cơ chế Resilience4j | Công thức / Tham số cốt lõi | Mục tiêu bảo vệ | Sai lầm chết người |
-                        | :--- | :--- | :--- | :--- |
-                        | **Timeout Budget** | `sum(attempts * callTimeout + backoffs) < gatewayTimeout` | Tránh Gateway cắt HTTP 504 khi service vẫn đang xử lý | Đặt retry timeout lớn hơn timeout tầng trên |
-                        | **Retry + Jitter** | `waitDuration * backoff^n + randomJitter` | Giãn nhịp gọi lại cho lỗi mạng thoáng qua | Retry hàng loạt `POST` tạo đơn thiếu `Idempotency-Key` |
-                        | **Bulkhead** | `SemaphoreBulkhead` hoặc `ThreadPoolBulkhead` | Cô lập tài nguyên giữa endpoint nặng và nhẹ | 1 endpoint chậm nuốt hết Tomcat thread của toàn service |
+                             `T_max = (3 × 2000ms) + 500ms + 1000ms = 7500ms > 5000ms!`
 
-                        ## 3. Triển khai chuẩn với Java 21 & Spring Boot 3
+                           - Hậu quả: Ở giây thứ 5, `api-gateway` đã cắt kết nối báo lỗi cho khách hàng, trong khi ở bên dưới `order-service` vẫn cố đấm ăn xôi bắn lần retry thứ 3 hoàn toàn vô ích! Vì vậy, **tổng thời gian của mọi lần thử và khoảng chờ (`Backoff`) phải luôn nhỏ hơn ngân sách thời gian đầu cuối (`End-to-End Budget`)**.
+                        2. **Khi Nào ĐƯỢC `Retry` và Khi Nào CẤM `Retry`?**:
+                           - **Thao tác Đọc (`GET`) hoặc Thao tác Ghi có Khóa Lũy đẳng (`Idempotency-Key`)**: Được phép `Retry` khi gặp lỗi mạng tạm thời.
+                           - **Thao tác Ghi KHÔNG có tính lũy đẳng (Non-idempotent Write — ví dụ API trừ tiền không kiểm tra mã giao dịch trùng)**: **CẤM tự động `Retry`**, vì nếu gói tin đầu tiên đã trừ tiền xong nhưng chỉ bị rớt mạng ở chiều trả về, việc `Retry` sẽ trừ tiền khách hàng **2 lần**!
+                        3. **`Exponential Backoff + Jitter` (Khoảng chờ tăng theo hàm mũ kèm độ lệch ngẫu nhiên)**:
+                           - Nếu 1.000 clients cùng bị lỗi ở giây thứ 0 và tất cả đều hẹn đúng `1000ms` sau gọi lại cùng một lúc, chúng sẽ tạo thành một "đợt sóng thần" (**Retry Storm / Thundering Herd**) đánh sập luôn dịch vụ vừa mới hồi phục. Thêm **`Jitter` (độ lệch ngẫu nhiên `± 200ms`)** giúp rải đều các cuộc gọi thử lại theo thời gian.
+
+                        ### 2. Cô Lập Tài Nguyên Bằng Vách Ngăn Khoang Tàu (`Bulkhead Pattern`)
+                        - Tàu thủy được chia thành nhiều khoang kín nước bằng vách ngăn thép (*Bulkhead*): nếu một khoang bị thủng, nước chỉ ngập khoang đó chứ không làm chìm cả con tàu.
+                        - Trong Microservices, `@Bulkhead` của `Resilience4j` chia nhỏ bể luồng hoặc giới hạn số cuộc gọi đồng thời (`maxConcurrentCalls`) cho từng dịch vụ phụ thuộc. Nhờ đó, dù `payment-service` có bị chậm đến mức chiếm hết 10 slot trong khoang của nó, thì các luồng còn lại của `order-service` vẫn phục vụ bình thường cho các tính năng tra cứu đơn hàng và kiểm tra kho!
+
                         ```yaml
                         resilience4j:
                           retry:
@@ -78,9 +131,6 @@ public final class Module4ResilienceAndMessagingProvider {
                                 enable-exponential-backoff: true
                                 enable-randomized-wait: true
                         ```
-
-                        ## 4. Checklist Kiểm toán 3E & Các bẫy thường gặp khi vấn đáp
-                        - **Thứ tự bọc Decorator chuẩn Resilience4j**: `Retry ( CircuitBreaker ( TimeLimiter ( Bulkhead ( Method ) ) ) )` — Circuit Breaker mở sớm sẽ giúp Retry không đâm đầu thử lại vô ích.
                         """
                 ),
                 new LessonSpec(
@@ -89,29 +139,62 @@ public final class Module4ResilienceAndMessagingProvider {
                         "Phân biệt Publish != Eventual Consistency và thiết kế Idempotent Consumer với bảng processed_events.",
                         55,
                         """
-                        # Bài 4.3: Event-Driven Messaging & Idempotent Consumer
+                        # 📖 BÀI 4.3 (`java-09`): GIAO TIẾP BẤT ĐỒNG BỘ (`MESSAGING`) & XỬ LÝ BẢN TIN TRÙNG (`IDEMPOTENT CONSUMER`)
 
-                        ## 1. Mục tiêu học tập & Bài toán thực tế
-                        - Hiểu sâu cơ chế **At-Least-Once Delivery** của RabbitMQ / Apache Kafka và lý do bản tin có thể bị gửi lặp lại nhiều lần.
-                        - Xây dựng **Idempotent Consumer** kết hợp `Dead-Letter Queue (DLQ)` để không bao giờ trừ tiền hoặc trừ kho hai lần trên cùng 1 `eventId`.
+                        ### 1. Giao Tiếp Bất Đồng Bộ Hướng Sự Kiện (`Publisher → Broker → Consumer`)
+                        Theo Chương 3 cuốn *Microservices Patterns* (Chris Richardson) và [Spring Cloud Stream](https://spring.io/projects/spring-cloud-stream/):
+                        - Thay vì bắt khách hàng đứng chờ trên kết nối HTTP, dịch vụ phát hành (`Publisher / Producer`) đóng gói sự kiện (ví dụ `OrderCreatedEvent` kèm `eventId` duy nhất) và gửi vào một kênh tin (`Topic / Exchange` trên **RabbitMQ** hoặc **Apache Kafka**). Dịch vụ tiêu thụ (`Consumer`) sẽ nhận và xử lý sự kiện đó một cách độc lập.
+                        - **Hai chân lý quan trọng khi phân tích hệ thống Messaging (`java-09`)**:
+                          1. **"Publish thành công ≠ Toàn hệ thống đã nhất quán"**: Khi `order-service` gửi bản tin vào Broker thành công, điều đó mới chỉ chứng minh bước `Publish` đã hoàn tất; hệ thống chỉ đạt **Tính nhất quán cuối cùng (*Eventual Consistency*)** sau khi `Consumer` lấy bản tin ra xử lý xong mà không bị kẹt ở hàng đợi lỗi (*Dead-Letter Queue — DLQ*).
+                          2. **Cơ chế giao nhận `At-Least-Once Delivery` luôn có khả năng giao trùng bản tin**: Hầu hết các Message Brokers (RabbitMQ, Kafka) đảm bảo giao bản tin *ít nhất một lần*. Nếu `Consumer` vừa xử lý xong nghiệp vụ nhưng rớt mạng đúng lúc chưa kịp gửi tín hiệu xác nhận (`ACK`) về cho Broker, Broker sẽ **gửi lại chính bản tin đó lần thứ 2**!
 
-                        ## 2. Nguyên lý Kiến trúc & Bảng đối chiếu
-                        | Tình huống Messaging | Ý nghĩa thật | Giải pháp kỹ thuật bắt buộc |
-                        | :--- | :--- | :--- |
-                        | Producer `publish()` OK | Broker đã nhận message vào queue/partition | Chưa chắc Consumer xử lý xong (**Publish != Eventual Consistency**) |
-                        | Consumer xử lý xong nhưng mất ACK | Broker giao lại message lần thứ 2 | Chặn trùng ngay trong DB bằng `processed_events(event_id PRIMARY KEY)` |
-                        | Message hỏng dữ liệu retry N lần thất bại | Đứng queue làm nghẽn consumer (`Poison Pill`) | Đẩy sang `Dead-Letter Queue (DLQ)` để cảnh báo và xử lý riêng |
+                        ### 2. Xây Dựng Bộ Tiêu Thụ Lũy Đẳng (`Idempotent Consumer`) Chống Trùng Sự Kiện
+                        Để khi nhận cùng một `eventId` đến 2 hay 10 lần mà kết quả nghiệp vụ vẫn chỉ xảy ra **đúng 1 lần duy nhất**, `Consumer` phải sử dụng **Khóa chống trùng ổn định (`eventId` / `messageId`)** lưu trong cùng giao dịch Database với dữ liệu nghiệp vụ:
 
-                        ## 3. Triển khai chuẩn với Java 21 & Spring Boot 3
-                        ```sql
-                        -- Chốt chặn chống xử lý lặp lại ngay tại tầng PostgreSQL
-                        INSERT INTO processed_events (event_id, consumer_name, processed_at)
-                        VALUES (?, 'inventory-deduction', now())
-                        ON CONFLICT (event_id) DO NOTHING;
+                        ```java
+                        package com.mavis.ecommerce.notification.messaging;
+
+                        import org.springframework.amqp.rabbit.annotation.RabbitListener;
+                        import org.springframework.jdbc.core.JdbcTemplate;
+                        import org.springframework.stereotype.Component;
+                        import org.springframework.transaction.annotation.Transactional;
+                        import java.util.UUID;
+
+                        @Component
+                        public class IdempotentOrderEventConsumer {
+
+                            private final JdbcTemplate jdbc;
+
+                            public IdempotentOrderEventConsumer(JdbcTemplate jdbc) {
+                                this.jdbc = jdbc;
+                            }
+
+                            public record OrderPlacedEvent(UUID eventId, UUID orderId, String customerEmail) {}
+
+                            @RabbitListener(queues = "order.notification.queue")
+                            @Transactional
+                            public void handleOrderPlaced(OrderPlacedEvent event) {
+                                // Bước 1: Chèn eventId vào bảng processed_events có khóa chính (PRIMARY KEY) là event_id.
+                                // Nếu eventId đã tồn tại (do Broker gửi lại lần 2), câu lệnh INSERT ON CONFLICT DO NOTHING trả về 0!
+                                int inserted = jdbc.update(\"\"\"
+                                        INSERT INTO processed_events (event_id, order_id, processed_at)
+                                        VALUES (?, ?, now())
+                                        ON CONFLICT (event_id) DO NOTHING
+                                        \"\"\", event.eventId(), event.orderId());
+
+                                if (inserted == 0) {
+                                    // Sự kiện trùng lặp -> Bỏ qua an toàn (Idempotent No-Op)!
+                                    return;
+                                }
+
+                                // Bước 2: Thực hiện tác vụ nghiệp vụ đúng 1 lần duy nhất
+                                jdbc.update(\"\"\"
+                                        INSERT INTO notification_outbox (id, order_id, recipient_email, status)
+                                        VALUES (gen_random_uuid(), ?, ?, 'QUEUED')
+                                        \"\"\", event.orderId(), event.customerEmail());
+                            }
+                        }
                         ```
-
-                        ## 4. Checklist Kiểm toán 3E & Các bẫy thường gặp khi vấn đáp
-                        - Luôn kiểm tra số row bị tác động (`rowsAffected == 1`): nếu `0` nghĩa là event đã được xử lý trước đó -> ACK và kết thúc an toàn không chạy lại nghiệp vụ.
                         """
                 )
         );
@@ -217,21 +300,26 @@ public final class Module4ResilienceAndMessagingProvider {
                 "Bài tập Tự luận Chương 4: Kiến trúc Chịu lỗi & Messaging cho Ngày hội Flash Sale",
                 "Phân tách đồng bộ vs bất đồng bộ, tính toán Timeout/Retry Budget (< 3000ms) và thiết kế Circuit Breaker + Idempotent Consumer.",
                 """
-                ### Đề bài Tự luận Chương 4: Fault-Tolerant Architecture cho Flash Sale 11/11
-                Dịch vụ `order-service` đang gọi đồng bộ tới `payment-service` (trễ tới 15s lúc quá tải), `loyalty-service`, và `notification-service`. Gateway SLA Timeout tối đa là **`3.000ms`**.
+                ### Đề bài Tự luận Chương 4: Thiết kế Kiến trúc Chịu lỗi & Bất đồng bộ cho Ngày hội Siêu giảm giá
+                Trong sự kiện Flash Sale 11/11, dịch vụ `order-service` nhận lưu lượng tăng gấp 10 lần bình thường. Để xử lý một đơn hàng, `order-service` hiện đang:
+                1. Gọi đồng bộ (`OpenFeign`) sang `payment-service` (thời gian phản hồi trung bình bình thường là `300ms`, nhưng khi quá tải có lúc vọt lên `15.000ms`).
+                2. Gọi đồng bộ (`OpenFeign`) sang `loyalty-service` để cộng điểm thưởng.
+                3. Gọi đồng bộ (`OpenFeign`) sang `notification-service` để gửi Email xác nhận đơn hàng.
+                Ngân sách thời gian tối đa (`SLA Timeout`) mà `api-gateway` cho phép cho API đặt hàng là **`3.000ms`**.
 
-                **Yêu cầu bài viết (400 – 600 từ)**:
-                1. Chỉ rõ dịch vụ nào chuyển sang **Messaging bất đồng bộ (RabbitMQ/Kafka)** và thiết kế bảng `processed_events` tại `notification-service`.
-                2. Thiết lập thông số `TimeLimiter` & `Retry` cho cuộc gọi `payment-service` đảm bảo tổng thời gian xấu nhất **< 3.000ms**, kèm điều kiện `Idempotency-Key`.
-                3. Thiết kế cấu hình `@CircuitBreaker` (bảo toàn ngữ nghĩa Fallback) và `@Bulkhead` cho `order-service`.
+                **Yêu cầu bài viết tự luận (400 – 600 từ)**:
+                1. **Tái cấu trúc Đồng bộ vs. Bất đồng bộ**: Trong 3 cuộc gọi trên (`payment`, `loyalty`, `notification`), cuộc gọi nào nên giữ lại hoặc chuyển sang cơ chế **Messaging Bất đồng bộ (`RabbitMQ / Kafka`)**? Giải thích lý do và trình bày cách thiết kế **Bảng chống trùng (`processed_events`)** tại `notification-service` để khách hàng không bao giờ nhận 2 email giống hệt nhau khi Broker giao lại tin nhắn.
+                2. **Tính toán Ngân sách `Timeout`, `Retry` & Cấu hình `Circuit Breaker + Bulkhead`**:
+                   - Với cuộc gọi sang `payment-service`, hãy thiết lập bộ thông số cụ thể cho: `TimeLimiter (timeoutDuration)`, `Retry (maxAttempts, waitDuration)` sao cho tổng thời gian xấu nhất vẫn nằm gọn trong ngân sách **`3.000ms`** của `api-gateway`. Giải thích điều kiện bắt buộc (`Idempotency-Key`) để được phép bật `Retry` cho lệnh thanh toán.
+                   - Thiết kế cấu hình `@CircuitBreaker` và `@Bulkhead` để bảo vệ `order-service` khi `payment-service` bị treo.
                 """,
                 List.of(
-                        new RubricCriterion("1. Tách luồng bất đồng bộ & Idempotent Consumer", 35,
-                                "Chuyển notification & loyalty sang Messaging, thiết kế bảng processed_events(event_id PK) + ON CONFLICT."),
-                        new RubricCriterion("2. Toán học Timeout Budget & Idempotency-Key", 35,
-                                "Tính đúng attempts * timeout + backoff < 3000ms và yêu cầu Idempotency-Key trước khi Retry."),
-                        new RubricCriterion("3. Circuit Breaker Fallback & Bulkhead", 30,
-                                "Cấu hình ngưỡng mở mạch, cô lập slot Bulkhead và Fallback không trả thành công giả.")
+                        new RubricCriterion("1. Tách luồng Bất đồng bộ & Thiết kế Idempotent Consumer", 35,
+                                "Chuyển notification-service (và loyalty-service) sang Event-Driven Messaging; thiết kế đúng bảng processed_events(event_id PRIMARY KEY) chống trùng."),
+                        new RubricCriterion("2. Toán học Ngân sách Timeout + Retry & Idempotency-Key", 35,
+                                "Tính đúng tổng thời gian attempts * timeout + backoff < 3000ms (ví dụ: 2 lần thử x 1000ms + 300ms backoff = 2300ms) và nêu rõ yêu cầu Idempotency-Key."),
+                        new RubricCriterion("3. Thiết kế Circuit Breaker, Fallback & Bulkhead", 30,
+                                "Cấu hình rõ ngưỡng mở mạch, vách ngăn Bulkhead bảo vệ bể luồng và viết hàm Fallback không trả kết quả thanh toán giả.")
                 )
         );
     }
