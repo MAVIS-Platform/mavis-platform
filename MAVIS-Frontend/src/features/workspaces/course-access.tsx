@@ -1344,13 +1344,13 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
                       )}
                     </td>
                     <td className="px-3 py-2.5 text-right">
-                      <div className="flex flex-wrap justify-end gap-1">
+                      <div className="flex flex-nowrap items-center justify-end gap-1">
                         {isEditing ? (
                           <>
                             <Button
                               type="button"
                               size="sm"
-                              className="h-7 px-2 text-xs"
+                              className="h-7 whitespace-nowrap px-2 text-xs"
                               disabled={mutating}
                               onClick={() =>
                                 updateKey.mutate(
@@ -1371,7 +1371,7 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
                               type="button"
                               size="sm"
                               variant="ghost"
-                              className="h-7 px-2 text-xs"
+                              className="h-7 whitespace-nowrap px-2 text-xs"
                               onClick={() => setEditingId(null)}
                             >
                               {t("Cancel", "Hủy")}
@@ -1383,7 +1383,7 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
                               type="button"
                               size="sm"
                               variant="ghost"
-                              className="h-7 px-2 text-xs"
+                              className="h-7 whitespace-nowrap px-2 text-xs"
                               disabled={mutating}
                               onClick={() => beginEdit(item)}
                             >
@@ -1393,7 +1393,7 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
                               type="button"
                               size="sm"
                               variant="ghost"
-                              className="h-7 px-2 text-xs"
+                              className="h-7 whitespace-nowrap px-2 text-xs"
                               disabled={mutating}
                               onClick={() =>
                                 updateKey.mutate({ passkeyId: item.id, active: !item.active })
@@ -1405,7 +1405,7 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
                               type="button"
                               size="sm"
                               variant="ghost"
-                              className="h-7 px-2 text-xs text-destructive hover:text-destructive"
+                              className="h-7 whitespace-nowrap px-2 text-xs text-destructive hover:text-destructive"
                               disabled={mutating}
                               onClick={() => {
                                 if (window.confirm(t("Delete this Passkey permanently?", "Xóa vĩnh viễn mã lớp này?"))) {

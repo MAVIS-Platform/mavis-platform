@@ -39,14 +39,19 @@ export function AdminToolbar({
   refresh: () => void;
   updatedAt?: number;
 }) {
+  const { t } = useLocale();
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div className="flex min-w-0 flex-wrap items-center gap-3">{children}</div>
       <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-        {updatedAt ? <span>Updated {new Date(updatedAt).toLocaleTimeString()}</span> : null}
+        {updatedAt ? (
+          <span className="mavis-tabular">
+            {t("Updated", "Cập nhật lúc")} {new Date(updatedAt).toLocaleTimeString()}
+          </span>
+        ) : null}
         <Button size="sm" variant="outline" disabled={fetching} onClick={refresh}>
           <RefreshCw className={fetching ? "size-4 animate-spin" : "size-4"} />
-          {fetching ? "Refreshing…" : "Refresh"}
+          {fetching ? t("Refreshing…", "Đang tải lại…") : t("Refresh", "Làm mới")}
         </Button>
       </div>
     </div>
@@ -61,14 +66,15 @@ export function PageResults({
   page: number;
   onPage: (page: number) => void;
 }) {
+  const { t } = useLocale();
   const pages = Math.max(1, Math.ceil(count / 10)),
     active = Math.min(page, pages);
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <p className="text-xs text-muted-foreground">
+      <p className="mavis-tabular text-xs text-muted-foreground">
         {count
-          ? `${(active - 1) * 10 + 1}–${Math.min(active * 10, count)} of ${count}`
-          : "0 matching records"}
+          ? `${(active - 1) * 10 + 1}–${Math.min(active * 10, count)} ${t("of", "trên")} ${count}`
+          : t("0 matching records", "0 bản ghi phù hợp")}
       </p>
       <Pagination page={active} pageCount={pages} onPageChange={onPage} />
     </div>
@@ -129,11 +135,11 @@ export function AdminCommandHeader({
 
   return (
     <div className="space-y-4">
-      <section className="overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-900 to-teal-800 p-6 text-white shadow-lg">
+      <section className="mavis-hero-surface p-6 text-white">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="space-y-1.5">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-medium text-teal-100">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-white/25 bg-white/15 px-3 py-1 text-xs font-medium text-sky-100">
                 <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
                 {t("Enterprise Governance", "Quản Trị Hệ Thống Doanh Nghiệp")}
               </span>
@@ -153,10 +159,10 @@ export function AdminCommandHeader({
                     : t("Checking Status", "Đang Kiểm Tra")}
               </Badge>
             </div>
-            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
+            <h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
               {t("MAVIS Control Center", "Trung Tâm Quản Trị MAVIS")}
             </h1>
-            <p className="text-sm text-slate-200/90">
+            <p className="text-sm text-sky-100/90">
               {t(
                 "Monitor platform health, provision Lecturer & Student accounts, govern execution profiles, and audit security jobs.",
                 "Giám sát sức khỏe hệ thống, cấp tài khoản Giảng viên/Sinh viên, cấu hình Runtime & hạn mức AI.",
@@ -173,7 +179,7 @@ export function AdminCommandHeader({
               void counts.refetch();
               onRefresh?.();
             }}
-            className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+            className="border-white/30 bg-white/12 text-white hover:bg-white/20 hover:text-white"
           >
             <RefreshCw
               className={`mr-1.5 h-4 w-4 ${refreshing || health.isFetching ? "animate-spin" : ""}`}
@@ -198,7 +204,7 @@ export function AdminCommandHeader({
                 className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-semibold transition-colors sm:text-sm ${
                   current
                     ? "bg-white text-slate-900 shadow-sm"
-                    : "text-white/80 hover:bg-white/15 hover:text-white"
+                    : "text-white/85 hover:bg-white/15 hover:text-white"
                 }`}
               >
                 <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -210,13 +216,13 @@ export function AdminCommandHeader({
 
         {(active === "profiles" || active === "audit") && (
           <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-white/15 pt-3 text-xs">
-            <span className="text-slate-300">{t("Governance view:", "Phân mục:")}</span>
+            <span className="text-sky-100/80">{t("Governance view:", "Phân mục:")}</span>
             <Link
               href="/administration/profiles"
               className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 font-medium transition-colors ${
                 active === "profiles"
                   ? "bg-white/20 text-white"
-                  : "text-slate-200 hover:bg-white/10"
+                  : "text-sky-100 hover:bg-white/10"
               }`}
             >
               <ShieldCheck className="size-3.5" aria-hidden="true" />
@@ -227,7 +233,7 @@ export function AdminCommandHeader({
               className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 font-medium transition-colors ${
                 active === "audit"
                   ? "bg-white/20 text-white"
-                  : "text-slate-200 hover:bg-white/10"
+                  : "text-sky-100 hover:bg-white/10"
               }`}
             >
               <ScrollText className="size-3.5" aria-hidden="true" />
@@ -238,43 +244,49 @@ export function AdminCommandHeader({
       </section>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-2xl bg-gradient-to-br from-indigo-600 to-indigo-800 p-4 text-white shadow-sm">
-          <p className="text-xs font-medium text-indigo-100">
+        <div className="mavis-card-hover rounded-2xl border border-t-4 border-t-primary bg-card p-4 shadow-sm">
+          <p className="text-xs font-medium text-muted-foreground">
             {t("Total Accounts", "Tổng Tài Khoản")}
           </p>
-          <p className="mt-1.5 text-2xl font-bold">{counts.data?.users ?? "—"}</p>
-          <p className="mt-1 text-[11px] text-indigo-100/85">
+          <p className="mavis-tabular mt-1.5 text-2xl font-bold text-foreground">
+            {counts.data?.users ?? "—"}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
             {counts.data?.activeLecturers ?? 0} {t("lecturers", "giảng viên")} ·{" "}
             {counts.data?.activeStudents ?? 0} {t("students", "sinh viên")}
           </p>
         </div>
-        <div className="rounded-2xl bg-gradient-to-br from-rose-600 to-rose-800 p-4 text-white shadow-sm">
-          <p className="text-xs font-medium text-rose-100">
+        <div className="mavis-card-hover rounded-2xl border border-t-4 border-t-rose-500 bg-card p-4 shadow-sm">
+          <p className="text-xs font-medium text-muted-foreground">
             {t("Pending & Locked", "Chờ Duyệt & Đang Khóa")}
           </p>
-          <p className="mt-1.5 text-2xl font-bold">
+          <p className="mavis-tabular mt-1.5 text-2xl font-bold text-foreground">
             {counts.data ? pendingOrLocked : "—"}
           </p>
-          <p className="mt-1 text-[11px] text-rose-100/85">
+          <p className="mt-1 text-xs text-muted-foreground">
             {counts.data?.pendingVerificationUsers ?? 0} {t("pending", "chờ kích hoạt")} ·{" "}
             {counts.data?.lockedUsers ?? 0} {t("locked", "bị khóa")}
           </p>
         </div>
-        <div className="rounded-2xl bg-gradient-to-br from-sky-600 to-sky-800 p-4 text-white shadow-sm">
-          <p className="text-xs font-medium text-sky-100">
+        <div className="mavis-card-hover rounded-2xl border border-t-4 border-t-sky-500 bg-card p-4 shadow-sm">
+          <p className="text-xs font-medium text-muted-foreground">
             {t("Guided Labs & Projects", "Bài Lab & Dự Án")}
           </p>
-          <p className="mt-1.5 text-2xl font-bold">{counts.data?.totalGuidedLabs ?? "—"}</p>
-          <p className="mt-1 text-[11px] text-sky-100/85">
+          <p className="mavis-tabular mt-1.5 text-2xl font-bold text-foreground">
+            {counts.data?.totalGuidedLabs ?? "—"}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
             {counts.data?.projects ?? 0} {t("registered repositories", "dự án trên nền tảng")}
           </p>
         </div>
-        <div className="rounded-2xl bg-gradient-to-br from-emerald-600 to-emerald-800 p-4 text-white shadow-sm">
-          <p className="text-xs font-medium text-emerald-100">
+        <div className="mavis-card-hover rounded-2xl border border-t-4 border-t-emerald-500 bg-card p-4 shadow-sm">
+          <p className="text-xs font-medium text-muted-foreground">
             {t("Running Sessions", "Phiên Thực Hành Đang Chạy")}
           </p>
-          <p className="mt-1.5 text-2xl font-bold">{counts.data?.runningSessions ?? "—"}</p>
-          <p className="mt-1 text-[11px] text-emerald-100/85">
+          <p className="mavis-tabular mt-1.5 text-2xl font-bold text-foreground">
+            {counts.data?.runningSessions ?? "—"}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
             {counts.data?.analysisJobs ?? 0} {t("analysis jobs tracked", "tác vụ phân tích")}
           </p>
         </div>
@@ -284,6 +296,7 @@ export function AdminCommandHeader({
 }
 
 export function SystemHealth() {
+  const { t } = useLocale();
   const health = useApiQuery("adminHealth", {}, { refreshMs: 30000 });
   const counts = useApiQuery("platformSummary", {});
   const data = health.data,
@@ -313,7 +326,10 @@ export function SystemHealth() {
         }}
       >
         <span className="text-sm text-muted-foreground">
-          Live infrastructure checks · refresh every 30 seconds
+          {t(
+            "Live infrastructure checks · refresh every 30 seconds",
+            "Kiểm tra hạ tầng trực tiếp · tự động làm mới mỗi 30 giây",
+          )}
         </span>
       </AdminToolbar>
       <RequestState query={health}>
@@ -329,24 +345,25 @@ export function SystemHealth() {
                 <div>
                   <h2 className="text-lg font-semibold">
                     {data.status === "UP"
-                      ? "Core services are responding"
+                      ? t("Core services are responding", "Các dịch vụ cốt lõi đang hoạt động ổn định")
                       : data.status === "DEGRADED"
-                        ? "Attention required"
-                        : "Some checks are unavailable"}
+                        ? t("Attention required", "Cần kiểm tra hạ tầng")
+                        : t("Some checks are unavailable", "Một số dịch vụ kiểm tra chưa khả dụng")}
                   </h2>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    {data.checks.filter((c) => c.status === "UP").length} of {data.checks.length}{" "}
-                    checks healthy · measured {new Date(data.checkedAt).toLocaleTimeString()}
+                    {data.checks.filter((c) => c.status === "UP").length} / {data.checks.length}{" "}
+                    {t("checks healthy · measured", "dịch vụ khỏe mạnh · đo lúc")}{" "}
+                    {new Date(data.checkedAt).toLocaleTimeString()}
                   </p>
                 </div>
               </div>
               <StatusBadge
                 status={
                   data.status === "UP"
-                    ? "Healthy"
+                    ? t("Healthy", "Khỏe mạnh")
                     : data.status === "DEGRADED"
-                      ? "Degraded"
-                      : "Needs verification"
+                      ? t("Degraded", "Suy giảm")
+                      : t("Needs verification", "Cần xác minh")
                 }
                 variant={data.status === "UP" ? "success" : "warning"}
               />
@@ -355,11 +372,11 @@ export function SystemHealth() {
               {data.checks.map((c) => {
                 const Icon = icons[c.id] ?? Server;
                 return (
-                  <section key={c.id} className="flex flex-col gap-3 rounded-xl border bg-card p-5">
+                  <section key={c.id} className="mavis-card-hover flex flex-col gap-3 rounded-xl border bg-card p-5">
                     <div className="flex items-center justify-between gap-2">
                       <Icon className="size-5 text-muted-foreground" />
                       <StatusBadge
-                        status={c.status === "UP" ? "Healthy" : c.status.toLowerCase()}
+                        status={c.status === "UP" ? t("Healthy", "Khỏe mạnh") : c.status.toLowerCase()}
                         variant={
                           c.status === "UP"
                             ? "success"
@@ -369,26 +386,26 @@ export function SystemHealth() {
                         }
                       />
                     </div>
-                    <h3 className="font-semibold">{c.name}</h3>
-                    <p className="flex-1 text-sm text-muted-foreground">{c.message}</p>
-                    <p className="text-xs text-muted-foreground">
+                    <h3 className="font-semibold">{t(c.name)}</h3>
+                    <p className="flex-1 text-sm text-muted-foreground">{t(c.message)}</p>
+                    <p className="mavis-tabular text-xs text-muted-foreground">
                       {c.latencyMs === null
                         ? c.id === "backend"
-                          ? "Authenticated request served"
-                          : "Filesystem / configuration check"
-                        : `${c.latencyMs} ms response`}
+                          ? t("Authenticated request served", "Đã phục vụ yêu cầu xác thực")
+                          : t("Filesystem / configuration check", "Kiểm tra hệ thống tệp / cấu hình")
+                        : `${c.latencyMs} ms ${t("response", "phản hồi")}`}
                     </p>
                   </section>
                 );
               })}
             </div>
             {issues.length > 0 && (
-              <DetailPanel title="Recommended actions">
+              <DetailPanel title={t("Recommended actions", "Hành động khuyến nghị")}>
                 <ul className="space-y-3">
                   {issues.map((c) => (
                     <li key={c.id} className="border-l-2 border-amber-500 pl-3 text-sm">
-                      <strong>{c.name}</strong>
-                      <p className="mt-1 text-muted-foreground">{c.action ?? c.message}</p>
+                      <strong>{t(c.name)}</strong>
+                      <p className="mt-1 text-muted-foreground">{t(c.action ?? c.message)}</p>
                     </li>
                   ))}
                 </ul>
@@ -397,48 +414,55 @@ export function SystemHealth() {
             {data.jvm.maxBytes > 0 && (
               <div className="grid gap-4 sm:grid-cols-3">
                 <SummaryCard
-                  label="Backend JVM memory"
+                  label={t("Backend JVM memory", "Bộ nhớ JVM máy chủ")}
                   value={`${Math.round(data.jvm.usedBytes / 1024 / 1024)} MB`}
-                  description={`Maximum ${Math.round(data.jvm.maxBytes / 1024 / 1024)} MB · application process only`}
+                  description={`${t("Maximum", "Tối đa")} ${Math.round(data.jvm.maxBytes / 1024 / 1024)} MB · ${t("application process only", "chỉ tính tiến trình ứng dụng")}`}
                 />
                 <SummaryCard
-                  label="Backend uptime"
+                  label={t("Backend uptime", "Thời gian chạy máy chủ")}
                   value={`${Math.floor(data.jvm.uptimeSeconds / 3600)}h ${Math.floor((data.jvm.uptimeSeconds % 3600) / 60)}m`}
-                  description="Since the application process started"
+                  description={t(
+                    "Since the application process started",
+                    "Tính từ lúc khởi động tiến trình ứng dụng",
+                  )}
                 />
                 <SummaryCard
-                  label="Storage free"
+                  label={t("Storage free", "Dung lượng lưu trữ còn trống")}
                   value={
                     data.storage.freeBytes !== undefined
                       ? bytes(data.storage.freeBytes)
-                      : "Not measured"
+                      : t("Not measured", "Chưa đo")
                   }
                   description={
                     data.storage.totalBytes !== undefined
-                      ? `${bytes(data.storage.totalBytes)} volume capacity`
-                      : "Upload volume"
+                      ? `${bytes(data.storage.totalBytes)} ${t("volume capacity", "tổng dung lượng ổ")}`
+                      : t("Upload volume", "Ổ lưu trữ tải lên")
                   }
                 />
               </div>
             )}
             <p className="text-xs text-muted-foreground">
-              {data.scope} An available Worker does not confirm workload Runner readiness.
+              {data.scope}{" "}
+              {t(
+                "An available Worker does not confirm workload Runner readiness.",
+                "Worker sẵn sàng không đồng nghĩa Runner thực thi tải đã được kích hoạt.",
+              )}
             </p>
           </div>
         )}
       </RequestState>
       <DetailPanel
-        title="Platform inventory"
+        title={t("Platform inventory", "Tổng quan tài nguyên nền tảng")}
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Button asChild variant="outline" size="sm">
               <Link href="/administration/users">
-                Manage accounts <ArrowUpRight className="size-4" />
+                {t("Manage accounts", "Quản lý tài khoản")} <ArrowUpRight className="size-4" />
               </Link>
             </Button>
             <Button asChild variant="ghost" size="sm">
               <Link href="/administration/jobs">
-                Review analysis jobs <ArrowUpRight className="size-4" />
+                {t("Review analysis jobs", "Xem tác vụ phân tích")} <ArrowUpRight className="size-4" />
               </Link>
             </Button>
           </div>
@@ -447,20 +471,20 @@ export function SystemHealth() {
         <RequestState query={counts}>
           {counts.data && (
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <SummaryCard label="Projects" value={counts.data.projects} />
-              <SummaryCard label="Total Accounts" value={counts.data.users} />
-              <SummaryCard label="Active Lecturers" value={counts.data.activeLecturers ?? "—"} />
-              <SummaryCard label="Active Students" value={counts.data.activeStudents ?? "—"} />
+              <SummaryCard label={t("Projects", "Dự án")} value={counts.data.projects} />
+              <SummaryCard label={t("Total Accounts", "Tổng Tài Khoản")} value={counts.data.users} />
+              <SummaryCard label={t("Active Lecturers", "Giảng viên hoạt động")} value={counts.data.activeLecturers ?? "—"} />
+              <SummaryCard label={t("Active Students", "Sinh viên hoạt động")} value={counts.data.activeStudents ?? "—"} />
               <SummaryCard
-                label="Pending Verification"
+                label={t("Pending Verification", "Chờ kích hoạt")}
                 value={counts.data.pendingVerificationUsers ?? "—"}
               />
-              <SummaryCard label="Locked Accounts" value={counts.data.lockedUsers ?? "—"} />
-              <SummaryCard label="Guided Labs" value={counts.data.totalGuidedLabs ?? "—"} />
+              <SummaryCard label={t("Locked Accounts", "Tài khoản bị khóa")} value={counts.data.lockedUsers ?? "—"} />
+              <SummaryCard label={t("Guided Labs", "Bài Lab hướng dẫn")} value={counts.data.totalGuidedLabs ?? "—"} />
               <SummaryCard
-                label="Running Sessions"
+                label={t("Running Sessions", "Phiên đang chạy")}
                 value={counts.data.runningSessions}
-                description={`${counts.data.analysisJobs} analysis jobs recorded`}
+                description={`${counts.data.analysisJobs} ${t("analysis jobs recorded", "tác vụ phân tích đã ghi nhận")}`}
               />
             </div>
           )}
@@ -470,6 +494,7 @@ export function SystemHealth() {
   );
 }
 export function AdminRuntimeSummary() {
+  const { t } = useLocale();
   const q = useApiQuery("runtimeReadSessions", { projectId: "*" }, { refreshMs: 30000 });
   const forceStop = useApiMutation("forceStopRuntimeSession");
   const [page, setPage] = useState(1);
@@ -488,7 +513,7 @@ export function AdminRuntimeSummary() {
       >
         <Button asChild variant="outline" size="sm">
           <Link href="/administration/admin-sessions">
-            Inspect session details <ArrowUpRight className="size-4" />
+            {t("Inspect session details", "Xem chi tiết phiên")} <ArrowUpRight className="size-4" />
           </Link>
         </Button>
       </AdminToolbar>
@@ -497,27 +522,33 @@ export function AdminRuntimeSummary() {
         <div className="space-y-5">
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <SummaryCard
-              label="Recent sessions"
+              label={t("Recent sessions", "Phiên gần đây")}
               value={rows.length}
-              description="Latest 50 sessions returned by the server"
+              description={t(
+                "Latest 50 sessions returned by the server",
+                "50 phiên gần nhất máy chủ trả về",
+              )}
             />
-            <SummaryCard label="Active / stopping" value={active.length} />
+            <SummaryCard label={t("Active / stopping", "Đang chạy / đang dừng")} value={active.length} />
             <SummaryCard
-              label="Failed / timed out"
+              label={t("Failed / timed out", "Lỗi / hết thời gian")}
               value={rows.filter((r) => ["FAILED", "TIMED_OUT"].includes(r.executionStatus)).length}
             />
             <SummaryCard
-              label="Cleanup needs review"
+              label={t("Cleanup needs review", "Cần kiểm tra dọn dẹp")}
               value={
                 rows.filter((r) => ["FAILED", "PENDING", "INCOMPLETE"].includes(r.cleanupStatus))
                   .length
               }
             />
           </div>
-          <DetailPanel title="Recent execution history">
+          <DetailPanel title={t("Recent execution history", "Lịch sử thực thi gần đây")}>
             <DataTable
-              emptyDescription="Try clearing the filters or refresh to check for new records."
-              caption="Recent runtime sessions"
+              emptyDescription={t(
+                "Try clearing the filters or refresh to check for new records.",
+                "Hãy xóa bộ lọc hoặc làm mới để kiểm tra bản ghi mới.",
+              )}
+              caption={t("Recent runtime sessions", "Các phiên Runtime gần đây")}
               rows={rows.slice(
                 (Math.min(page, Math.max(1, Math.ceil(rows.length / 10))) - 1) * 10,
                 Math.min(page, Math.max(1, Math.ceil(rows.length / 10))) * 10,
@@ -526,32 +557,32 @@ export function AdminRuntimeSummary() {
               columns={[
                 {
                   key: "session",
-                  label: "Session",
+                  label: t("Session", "Phiên"),
                   render: (r) => (
                     <div className="max-w-60 break-all">
-                      <p className="font-medium">{r.scenarioName ?? "Runtime session"}</p>
+                      <p className="font-medium">{r.scenarioName ?? t("Runtime session", "Phiên Runtime")}</p>
                       <span className="text-xs text-muted-foreground">{r.id}</span>
                     </div>
                   ),
                 },
                 {
                   key: "status",
-                  label: "Execution",
+                  label: t("Execution", "Thực thi"),
                   render: (r) => <StatusBadge status={r.executionStatus} />,
                 },
                 {
                   key: "evidence",
-                  label: "Evidence",
+                  label: t("Evidence", "Bằng chứng"),
                   render: (r) => <StatusLabel status={r.evidenceStatus} />,
                 },
                 {
                   key: "cleanup",
-                  label: "Cleanup",
+                  label: t("Cleanup", "Dọn dẹp"),
                   render: (r) => <StatusLabel status={r.cleanupStatus} />,
                 },
                 {
                   key: "actions",
-                  label: "Actions",
+                  label: t("Actions", "Thao tác"),
                   render: (r) =>
                     stoppable(r.executionStatus) ? (
                       <Button
@@ -561,14 +592,17 @@ export function AdminRuntimeSummary() {
                         onClick={() => {
                           if (
                             window.confirm(
-                              `Force-stop runtime session ${r.id.slice(0, 8)} (${r.scenarioName ?? "session"})?`,
+                              t(
+                                `Force-stop runtime session ${r.id.slice(0, 8)} (${r.scenarioName ?? "session"})?`,
+                                `Dừng khẩn cấp phiên Runtime ${r.id.slice(0, 8)} (${r.scenarioName ?? "phiên"})?`,
+                              ),
                             )
                           ) {
                             forceStop.mutate({ sessionId: r.id });
                           }
                         }}
                       >
-                        Force Stop
+                        {t("Force Stop", "Dừng khẩn cấp")}
                       </Button>
                     ) : (
                       <span className="text-xs text-muted-foreground">—</span>
@@ -579,8 +613,10 @@ export function AdminRuntimeSummary() {
             <PageResults count={rows.length} page={page} onPage={setPage} />
           </DetailPanel>
           <Notice>
-            Summary covers recent session records, not a live probe of the workload Runner. Open a
-            session to inspect stop acknowledgements, evidence and cleanup.
+            {t(
+              "Summary covers recent session records, not a live probe of the workload Runner. Open a session to inspect stop acknowledgements, evidence and cleanup.",
+              "Bảng tổng hợp phản ánh bản ghi phiên gần đây. Mở từng phiên để xem xác nhận dừng, bằng chứng OTel và trạng thái dọn dẹp.",
+            )}
           </Notice>
         </div>
       </RequestState>

@@ -16,8 +16,10 @@ import {
   AnalysisStatusIndicator,
   analysisStatusBadgeProps,
 } from "@/features/source-analysis/components";
+import { useLocale } from "@/lib/i18n/locale-context";
 import type { Response } from "@/lib/api/contracts";
 export function Accounts() {
+  const { t } = useLocale();
   const query = useApiQuery("accounts", {});
   const lock = useApiMutation("setAccountLock");
   const updateRole = useApiMutation("setAccountRole");
@@ -94,7 +96,10 @@ export function Accounts() {
         refresh={() => void query.refetch()}
       >
         <p className="text-sm text-muted-foreground">
-          Manage access, pending activations, and teaching roles with 1-click updates.
+          {t(
+            "Manage access, pending activations, and teaching roles with 1-click updates.",
+            "Quản lý quyền truy cập, tài khoản chờ kích hoạt và vai trò giảng dạy chỉ với 1 chạm.",
+          )}
         </p>
         <Button
           size="sm"
@@ -102,76 +107,73 @@ export function Accounts() {
           onClick={() => setShowCreate((open) => !open)}
         >
           <Plus className="mr-1 size-4" aria-hidden="true" />
-          {showCreate ? "Close form" : "+ Create Account"}
+          {showCreate ? t("Close form", "Đóng biểu mẫu") : t("Create Account", "Tạo tài khoản")}
         </Button>
       </AdminToolbar>
       {showCreate && (
-        <DetailPanel title="Provision Active User Account">
+        <DetailPanel title={t("Provision Active User Account", "Cấp tài khoản người dùng mới")}>
           <form onSubmit={(e) => void submitCreate(e)} className="grid gap-3 md:grid-cols-4">
             <Input
               required
-              aria-label="Full name"
-              placeholder="Full name (e.g. Dr. Nguyen)"
+              aria-label={t("Full name", "Họ và tên")}
+              placeholder={t("Full name (e.g. Dr. Nguyen)", "Họ và tên (VD: TS. Nguyễn Văn A)")}
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
             />
             <Input
               required
               type="email"
-              aria-label="Email address"
-              placeholder="Email address"
+              aria-label={t("Email address", "Địa chỉ email")}
+              placeholder={t("Email address", "Địa chỉ email")}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
             <Input
               type="password"
-              aria-label="Initial password (optional)"
-              placeholder="Password (min 6 chars)"
+              aria-label={t("Initial password (optional)", "Mật khẩu ban đầu (tùy chọn)")}
+              placeholder={t("Password (min 6 chars)", "Mật khẩu (tối thiểu 6 ký tự)")}
               value={password}
               minLength={6}
               onChange={(e) => setPassword(e.target.value)}
             />
             <div className="flex gap-2">
               <select
-                aria-label="Account role"
+                aria-label={t("Account role", "Vai trò tài khoản")}
                 className="h-9 flex-1 rounded-md border bg-card px-3 text-sm"
                 value={newRole}
                 onChange={(e) =>
                   setNewRole(e.target.value as "student" | "lecturer" | "admin")
                 }
               >
-                <option value="lecturer">Lecturer</option>
-                <option value="student">Student</option>
-                <option value="admin">System Admin</option>
+                <option value="lecturer">{t("Lecturer", "Giảng viên")}</option>
+                <option value="student">{t("Student", "Sinh viên")}</option>
+                <option value="admin">{t("System Admin", "Quản trị viên")}</option>
               </select>
               <Button size="sm" disabled={createAcc.isPending}>
-                {createAcc.isPending ? "Creating…" : "Create"}
+                {createAcc.isPending ? t("Creating…", "Đang tạo…") : t("Create", "Tạo")}
               </Button>
             </div>
           </form>
           {createAcc.error && <ErrorState error={createAcc.error} />}
         </DetailPanel>
       )}
-      <div className="grid gap-4 sm:grid-cols-3">
-        <SummaryCard label="Accounts" value={query.data?.length ?? "—"} />
-        <SummaryCard label="Locked" value={query.data?.filter((a) => a.locked).length ?? "—"} />
-        <SummaryCard
-          label="Pending verification"
-          value={query.data?.filter((a) => a.status === "PENDING_VERIFICATION").length ?? "—"}
-        />
-      </div>
       <div className="flex flex-wrap gap-1.5 rounded-xl border bg-muted/30 p-1.5">
         {[
-          { label: "All Users", r: "all", s: "all" },
-          { label: "Lecturers", r: "lecturer", s: "all" },
-          { label: "Students", r: "student", s: "all" },
-          { label: "Pending Activation", r: "all", s: "PENDING_VERIFICATION" },
-          { label: "Locked", r: "all", s: "LOCKED" },
+          { key: "all", label: t("All Users", "Tất cả người dùng"), r: "all", s: "all" },
+          { key: "lecturer", label: t("Lecturers", "Giảng viên"), r: "lecturer", s: "all" },
+          { key: "student", label: t("Students", "Sinh viên"), r: "student", s: "all" },
+          {
+            key: "pending",
+            label: t("Pending Activation", "Chờ kích hoạt"),
+            r: "all",
+            s: "PENDING_VERIFICATION",
+          },
+          { key: "locked", label: t("Locked", "Đang khóa"), r: "all", s: "LOCKED" },
         ].map((pill) => {
           const activePill = role === pill.r && state === pill.s;
           return (
             <Button
-              key={pill.label}
+              key={pill.key}
               type="button"
               size="sm"
               variant={activePill ? "default" : "ghost"}
@@ -227,14 +229,17 @@ export function Accounts() {
       <RequestState query={query}>
         <div className="space-y-4 [&_thead]:bg-muted/50 [&_th]:py-3.5 [&_th]:font-semibold [&_td]:py-4">
           <DataTable
-            emptyDescription="Try clearing the filters or refresh to check for new records."
+            emptyDescription={t(
+              "Try clearing the filters or refresh to check for new records.",
+              "Hãy xóa bộ lọc hoặc làm mới để kiểm tra bản ghi mới.",
+            )}
             rows={rows.slice((activePage - 1) * 10, activePage * 10)}
             rowKey={(a) => a.id}
-            caption="User accounts"
+            caption={t("User accounts", "Danh sách tài khoản người dùng")}
             columns={[
               {
                 key: "name",
-                label: "Account",
+                label: t("Account", "Tài khoản"),
                 render: (a) => (
                   <div className="flex min-w-52 items-center gap-3">
                     <span
@@ -258,10 +263,10 @@ export function Accounts() {
               },
               {
                 key: "role",
-                label: "Role",
+                label: t("Role", "Vai trò"),
                 render: (a) =>
                   a.role === "admin" ? (
-                    <StatusBadge status="Administrator" />
+                    <StatusBadge status={t("Administrator", "Quản trị viên")} />
                   ) : (
                     <select
                       aria-label={`Role for ${a.name}`}
@@ -278,15 +283,15 @@ export function Accounts() {
                         }
                       }}
                     >
-                      <option value="student">Student</option>
-                      <option value="lecturer">Lecturer</option>
-                      <option value="admin">System administrator</option>
+                      <option value="student">{t("Student", "Sinh viên")}</option>
+                      <option value="lecturer">{t("Lecturer", "Giảng viên")}</option>
+                      <option value="admin">{t("System administrator", "Quản trị viên hệ thống")}</option>
                     </select>
                   ),
               },
               {
                 key: "status",
-                label: "Status",
+                label: t("Status", "Trạng thái"),
                 render: (a) => (
                   <StatusBadge
                     status={a.status ?? (a.locked ? "Locked" : "Active")}
@@ -302,7 +307,7 @@ export function Accounts() {
               },
               {
                 key: "createdAt",
-                label: "Created at",
+                label: t("Created at", "Ngày tạo"),
                 render: (a) => {
                   const date = a.createdAt ? new Date(a.createdAt) : null;
                   if (!date || Number.isNaN(date.getTime()))
@@ -322,7 +327,7 @@ export function Accounts() {
               },
               {
                 key: "action",
-                label: "Quick Action",
+                label: t("Quick Action", "Thao tác nhanh"),
                 render: (a) => {
                   const isPending = a.status === "PENDING_VERIFICATION";
                   return (
@@ -333,7 +338,9 @@ export function Accounts() {
                           disabled={busyId !== null}
                           onClick={() => void runLock(a.id, false)}
                         >
-                          {busyId === a.id ? "Activating…" : "Activate"}
+                          {busyId === a.id
+                            ? t("Activating…", "Đang kích hoạt…")
+                            : t("Activate", "Kích hoạt")}
                         </Button>
                       ) : (
                         <Button
@@ -343,10 +350,10 @@ export function Accounts() {
                           onClick={() => void runLock(a.id, !a.locked)}
                         >
                           {busyId === a.id
-                            ? "Updating…"
+                            ? t("Updating…", "Đang cập nhật…")
                             : a.locked
-                              ? "Unlock"
-                              : "Lock"}
+                              ? t("Unlock", "Mở khóa")
+                              : t("Lock", "Khóa")}
                         </Button>
                       )}
                     </div>
@@ -434,6 +441,7 @@ export function Integrations() {
   );
 }
 export function RuntimeProfiles() {
+  const { t } = useLocale();
   const q = useApiQuery("profiles", {});
   const [tab, setTab] = useState<"profiles" | "sessions" | "quotas">("profiles");
   return (
@@ -443,14 +451,18 @@ export function RuntimeProfiles() {
         refreshing={q.isFetching}
         onRefresh={() => void q.refetch()}
       />
-      <div className="flex flex-wrap gap-2" role="tablist" aria-label="Runtime Governance Sections">
+      <div
+        className="flex flex-wrap gap-2"
+        role="tablist"
+        aria-label={t("Runtime Governance Sections", "Các mục cấu hình Runtime")}
+      >
         <Button
           type="button"
           size="sm"
           variant={tab === "profiles" ? "default" : "outline"}
           onClick={() => setTab("profiles")}
         >
-          Execution Profiles
+          {t("Execution Profiles", "Hồ sơ thực thi Runtime")}
         </Button>
         <Button
           type="button"
@@ -458,7 +470,7 @@ export function RuntimeProfiles() {
           variant={tab === "sessions" ? "default" : "outline"}
           onClick={() => setTab("sessions")}
         >
-          Live Sessions &amp; Force-Stop
+          {t("Live Sessions & Force-Stop", "Phiên chạy thực tế & Dừng khẩn cấp")}
         </Button>
         <Button
           type="button"
@@ -466,7 +478,7 @@ export function RuntimeProfiles() {
           variant={tab === "quotas" ? "default" : "outline"}
           onClick={() => setTab("quotas")}
         >
-          AI Quotas &amp; Integrations
+          {t("AI Quotas & Integrations", "Hạn mức AI & Tích hợp")}
         </Button>
       </div>
       {tab === "sessions" ? (
@@ -484,7 +496,10 @@ export function RuntimeProfiles() {
             refresh={() => void q.refetch()}
           />
           <Notice>
-            Profile changes affect new runtime sessions. Review limits before enabling a profile.
+            {t(
+              "Profile changes affect new runtime sessions. Review limits before enabling a profile.",
+              "Thay đổi hồ sơ sẽ áp dụng cho các phiên Runtime mới. Hãy kiểm tra kỹ giới hạn tài nguyên trước khi bật.",
+            )}
           </Notice>
           <RequestState query={q} empty={!q.data?.length}>
             <div className="grid items-start gap-4 lg:grid-cols-2">
@@ -499,6 +514,7 @@ export function RuntimeProfiles() {
   );
 }
 function ProfileForm({ item }: { item: Response<"profiles">[number] }) {
+  const { t } = useLocale();
   const save = useApiMutation("configureProfile");
   const [enabled, setEnabled] = useState(item.enabled),
     [memory, setMemory] = useState(item.memoryMiB ?? 256),
@@ -521,15 +537,16 @@ function ProfileForm({ item }: { item: Response<"profiles">[number] }) {
         }}
       >
         <p className="text-xs text-muted-foreground">
-          Revision {item.revision} · {item.enabled ? "Enabled" : "Disabled"}. Review resource limits
-          before saving.
+          {t("Revision", "Phiên bản")} {item.revision} ·{" "}
+          {item.enabled ? t("Enabled", "Đang bật") : t("Disabled", "Đang tắt")}.{" "}
+          {t("Review resource limits before saving.", "Kiểm tra kỹ giới hạn tài nguyên trước khi lưu.")}
         </p>
-        <label className="flex gap-2">
+        <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-          Enabled
+          {t("Enabled", "Đang bật")}
         </label>
         <label className="block space-y-2 text-sm">
-          Memory (MiB)
+          {t("Memory (MiB)", "Bộ nhớ RAM (MiB)")}
           <Input
             type="number"
             min={64}
@@ -540,7 +557,7 @@ function ProfileForm({ item }: { item: Response<"profiles">[number] }) {
           />
         </label>
         <label className="block space-y-2 text-sm">
-          CPU cores
+          {t("CPU cores", "Số nhân CPU")}
           <Input
             type="number"
             min={0.01}
@@ -552,7 +569,7 @@ function ProfileForm({ item }: { item: Response<"profiles">[number] }) {
           />
         </label>
         <label className="block space-y-2 text-sm">
-          Timeout (seconds)
+          {t("Timeout (seconds)", "Thời gian chờ tối đa (giây)")}
           <Input
             type="number"
             min={1}
@@ -571,7 +588,7 @@ function ProfileForm({ item }: { item: Response<"profiles">[number] }) {
               timeout === (item.timeoutSeconds ?? 120))
           }
         >
-          {save.isPending ? "Saving…" : "Save changes"}
+          {save.isPending ? t("Saving…", "Đang lưu…") : t("Save changes", "Lưu thay đổi")}
         </Button>
         {save.isSuccess && (
           <p role="status" className="text-sm text-emerald-500">
