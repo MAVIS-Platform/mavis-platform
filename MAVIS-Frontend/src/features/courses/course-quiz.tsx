@@ -242,8 +242,11 @@ function AttemptForm({
             >
               <Link href={submissionHref ?? runtimeStepHref}>
                 {submissionHref
-                  ? t("Proceed to Submit Lab", "Chuyển sang Bước 4: Studio & Nộp Bài")
-                  : t("Proceed to Step 3: Live Runtime", "Tiếp tục Bước 3: Live Runtime")}
+                  ? t("Proceed to Step 4: Submit Lab", "Chuyển sang Bước 4: Nộp bài Lab")
+                  : t(
+                      "Proceed to Step 4: Studio Live & Submit",
+                      "Tiếp tục Bước 4: Studio Live & Nộp bài",
+                    )}
                 <ArrowRight />
               </Link>
             </Button>
@@ -303,10 +306,10 @@ function AttemptForm({
               {t(
                 submissionHref
                   ? `Reach ${quiz.passPercent}% on the current Quiz (v${quiz.version}) before submitting this Lab.`
-                  : `Step 3 Live Docker Runtime is locked until you score at least ${quiz.passPercent}% on the current Quiz version (v${quiz.version}). Review the theory and retry if needed.`,
+                  : `Step 4 Live Studio & Submission is locked until you score at least ${quiz.passPercent}% on the current Quiz version (v${quiz.version}). Review the theory and retry if needed.`,
                 submissionHref
                   ? `Hãy đạt ${quiz.passPercent}% ở Quiz hiện tại (v${quiz.version}) trước khi nộp Lab.`
-                  : `Bước 3 Live Docker Runtime đang bị khóa cho đến khi bạn đạt tối thiểu ${quiz.passPercent}% ở phiên bản Quiz hiện tại (v${quiz.version}). Hãy ôn lại lý thuyết và làm lại nếu cần.`,
+                  : `Bước 4 Studio Live & Nộp bài đang bị khóa cho đến khi bạn đạt tối thiểu ${quiz.passPercent}% ở phiên bản Quiz hiện tại (v${quiz.version}). Hãy ôn lại lý thuyết và làm lại nếu cần.`,
               )}
             </span>
           </div>

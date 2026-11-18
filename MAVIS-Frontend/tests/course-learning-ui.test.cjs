@@ -500,8 +500,8 @@ test("Stage 4 Step 2 UI integrates Reverse BFS Explorer, inline Step 1 Back-Link
   assert.ok(quiz.includes("quiz.runtimeUnlocked"));
   assert.ok(quiz.includes("quiz.latestStatus"));
   assert.match(course, /quiz\.data\?\.runtimeUnlocked === true/);
-  assert.ok(quiz.includes("Proceed to Step 3: Live Runtime"));
-  assert.ok(quiz.includes("Step 3 Live Docker Runtime is locked until you score at least"));
+  assert.ok(quiz.includes("Proceed to Step 4: Studio Live & Submit"));
+  assert.ok(quiz.includes("Step 4 Live Studio & Submission is locked until you score at least"));
 });
 
 test("Studio in the guided Lab unlocks Step 4 after Quiz Gate and embeds simulated sandbox bootstrap", () => {
