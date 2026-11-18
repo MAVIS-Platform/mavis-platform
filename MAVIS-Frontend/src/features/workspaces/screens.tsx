@@ -32,6 +32,7 @@ import {
 } from "./course-access";
 import { ReferenceManagement } from "./reference-manage";
 import { CourseWorkspaceShell } from "@/features/courses/course-workspace-shell";
+import { LecturerCurriculumManager } from "@/features/courses/lecturer-curriculum-manager";
 import { Courses, CourseRoadmap as CourseRoadmapScreen } from "@/features/courses/screens";
 import { CourseOutline } from "@/features/courses/course-outline";
 import { CourseBuilder } from "@/features/courses/course-builder";
@@ -377,16 +378,10 @@ export function WorkspaceOverview() {
               />
             )}
             {activeTab === "outline" && canManage && (
-              <div className="space-y-5">
-                <div id="class-passkey">
-                  <CoursePasskey workspaceId={workspace.id} />
-                </div>
-                <CourseOutline
-                  workspaceId={workspace.id}
-                  canManage
-                  active={workspace.status !== "ARCHIVED"}
-                />
-              </div>
+              <LecturerCurriculumManager
+                workspaceId={workspace.id}
+                active={workspace.status !== "ARCHIVED"}
+              />
             )}
             {activeTab === "outline" && !canManage && (
               <CourseOutline
