@@ -1409,3 +1409,12 @@ test("courseQuizEvidenceSchema accepts Theory-only PASSED and NOT_REQUIRED paylo
   });
   assert.equal(notRequired.status, "NOT_REQUIRED");
 });
+
+test("Learning Workspace keeps curriculum and previous/next navigation within the active module", () => {
+  const syllabus = read("src/features/courses/student-course-syllabus.tsx");
+
+  assert.match(syllabus, /activeModule\?\.items\.map\(\(item\)/);
+  assert.match(syllabus, /const activeModuleItemIndex =\s*activeModule\?\.items\.findIndex/);
+  assert.match(syllabus, /activeModule\.items\[activeModuleItemIndex \+ 1\]/);
+  assert.match(syllabus, /activeModule\.items\[activeModuleItemIndex - 1\]/);
+});
