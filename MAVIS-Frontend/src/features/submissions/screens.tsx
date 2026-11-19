@@ -214,80 +214,91 @@ function TeachingSubmissions() {
   const assignment = assignments.data?.find((a) => a.id === requested) ?? assignments.data?.[0];
 
   const body = workspaceId ? (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-teal-200/80 bg-gradient-to-r from-teal-50/70 via-emerald-50/40 to-white p-3.5 dark:border-teal-900 dark:from-teal-950/30 dark:to-background">
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
         <div
-          className="flex flex-wrap gap-2"
+          className="inline-flex flex-wrap items-center gap-1 rounded-lg bg-muted/40 p-1"
           role="tablist"
           aria-label={t("Grading views", "Chế độ chấm điểm")}
         >
-          <Button
-            type="button"
-            size="sm"
-            variant={viewMode === "queue" && reviewStatusFilter === "PENDING" ? "default" : "outline"}
-            onClick={() => {
-              setViewMode("queue");
-              setReviewStatusFilter("PENDING");
-              setOutcomeFilter("ALL");
-            }}
-          >
-            ⏳ {t("Pending Queue", "Bài nộp chờ chấm")}
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant={viewMode === "queue" && reviewStatusFilter === "GRADED" ? "default" : "outline"}
-            onClick={() => {
-              setViewMode("queue");
-              setReviewStatusFilter("GRADED");
-              setOutcomeFilter("ALL");
-            }}
-          >
-            ✔️ {t("Graded Submissions", "Bài đã chấm điểm")}
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant={viewMode === "queue" && reviewStatusFilter === "ALL" ? "default" : "outline"}
-            onClick={() => {
-              setViewMode("queue");
-              setReviewStatusFilter("ALL");
-              setOutcomeFilter("ALL");
-            }}
-          >
-            {t("All Submissions", "Tất cả bài nộp")}
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant={viewMode === "essays" ? "default" : "outline"}
-            className={viewMode === "essays" ? "bg-teal-600 text-white hover:bg-teal-700" : undefined}
-            onClick={() => setViewMode("essays")}
-          >
-            ✍️ {t("Chapter Essays", "Bài Tự Luận Chương")}
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant={viewMode === "gradebook" ? "default" : "outline"}
-            className={viewMode === "gradebook" ? "bg-teal-600 text-white hover:bg-teal-700" : undefined}
-            onClick={() => setViewMode("gradebook")}
-          >
-            📊 {t("Class Gradebook & CSV Export", "Bảng điểm & Tiến độ toàn lớp")}
-          </Button>
+          {(
+            [
+              {
+                id: "pending",
+                label: t("Pending", "Chờ chấm"),
+                active: viewMode === "queue" && reviewStatusFilter === "PENDING",
+                onClick: () => {
+                  setViewMode("queue");
+                  setReviewStatusFilter("PENDING");
+                  setOutcomeFilter("ALL");
+                },
+              },
+              {
+                id: "graded",
+                label: t("Graded", "Đã chấm"),
+                active: viewMode === "queue" && reviewStatusFilter === "GRADED",
+                onClick: () => {
+                  setViewMode("queue");
+                  setReviewStatusFilter("GRADED");
+                  setOutcomeFilter("ALL");
+                },
+              },
+              {
+                id: "all",
+                label: t("All submissions", "Tất cả"),
+                active: viewMode === "queue" && reviewStatusFilter === "ALL",
+                onClick: () => {
+                  setViewMode("queue");
+                  setReviewStatusFilter("ALL");
+                  setOutcomeFilter("ALL");
+                },
+              },
+              {
+                id: "essays",
+                label: t("Essays", "Tự luận"),
+                active: viewMode === "essays",
+                onClick: () => setViewMode("essays"),
+              },
+              {
+                id: "gradebook",
+                label: t("Gradebook", "Bảng điểm"),
+                active: viewMode === "gradebook",
+                onClick: () => setViewMode("gradebook"),
+              },
+            ] as const
+          ).map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              aria-selected={item.active}
+              onClick={item.onClick}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                item.active
+                  ? "bg-background text-foreground shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
         </div>
         {viewMode === "queue" && (
-          <Button
+          <button
             type="button"
-            size="sm"
-            variant={outcomeFilter === "NEEDS_REVISION" ? "default" : "ghost"}
+            aria-pressed={outcomeFilter === "NEEDS_REVISION"}
             onClick={() => {
               setReviewStatusFilter("ALL");
               setOutcomeFilter(outcomeFilter === "NEEDS_REVISION" ? "ALL" : "NEEDS_REVISION");
             }}
+            className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
+              outcomeFilter === "NEEDS_REVISION"
+                ? "border-amber-500/40 bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                : "border-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+            }`}
           >
-            {t("Needs Revision Only", "Lọc bài Cần sửa")}
-          </Button>
+            {t("Needs revision", "Cần sửa")}
+          </button>
         )}
       </div>
 
@@ -568,48 +579,18 @@ function AssignmentSubmissionList({
     ...(labOutcome !== "ALL" ? { labOutcome } : {}),
   });
   const rows = query.data ?? [];
-  const pendingCount = rows.filter(
-    (s) => !s.reviewStatus || s.reviewStatus === "PENDING" || s.reviewStatus === "DRAFT",
-  ).length;
-  const passedCount = rows.filter((s) => s.labOutcome === "PASSED").length;
-  const revisionCount = rows.filter((s) => s.labOutcome === "NEEDS_REVISION").length;
 
   return (
-    <div className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-xl border bg-card p-3.5">
-          <p className="text-xs text-muted-foreground">{t("Matching submissions", "Tổng bài khớp lọc")}</p>
-          <p className="mt-1 text-xl font-semibold">{rows.length}</p>
-        </div>
-        <div className="rounded-xl border bg-card p-3.5">
-          <p className="text-xs text-muted-foreground">{t("Pending / Draft", "Chờ chấm / Nháp")}</p>
-          <p className="mt-1 text-xl font-semibold">{pendingCount}</p>
-        </div>
-        <div className="rounded-xl border bg-card p-3.5">
-          <p className="text-xs text-muted-foreground">{t("Passed", "Đã đạt")}</p>
-          <p className="mt-1 text-xl font-semibold text-emerald-600 dark:text-emerald-400">
-            {passedCount}
-          </p>
-        </div>
-        <div className="rounded-xl border bg-card p-3.5">
-          <p className="text-xs text-muted-foreground">{t("Needs revision", "Cần sửa lại")}</p>
-          <p className="mt-1 text-xl font-semibold text-amber-600 dark:text-amber-400">
-            {revisionCount}
-          </p>
-        </div>
-      </div>
-
-      <RequestState
-        query={query}
-        empty={!rows.length}
-        emptyMessage={t(
-          "No submissions match the selected filters for this Lab.",
-          "Chưa có bài nộp nào khớp bộ lọc cho Lab này.",
-        )}
-      >
-        <SubmissionList rows={rows} />
-      </RequestState>
-    </div>
+    <RequestState
+      query={query}
+      empty={!rows.length}
+      emptyMessage={t(
+        "No submissions match the selected filters for this Lab.",
+        "Chưa có bài nộp nào khớp bộ lọc cho Lab này.",
+      )}
+    >
+      <SubmissionList rows={rows} />
+    </RequestState>
   );
 }
 function SubmissionList({ rows }: { rows: import("@/types/domain").Submission[] }) {
