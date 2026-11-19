@@ -623,7 +623,7 @@ export function ArchitectureGraph({
 }) {
   const [layer, setLayer] = useState("all");
   const [expanded, setExpanded] = useState(false);
-  const [origin, setOrigin] = useState<"all" | "source" | "deployment" | "runtime">("source");
+  const [origin, setOrigin] = useState<"all" | "source" | "deployment" | "runtime">("all");
   const projection = useMemo(() => {
     const projected = projectGraphModel(model, expanded, origin);
     const elements = projected.model.elements.filter(

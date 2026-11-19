@@ -39,8 +39,7 @@ import {
 } from "@/components/shared/markdown-preview";
 import { useApiQuery } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
-import { ArchitectureDiagrams } from "@/features/architecture/architecture-diagrams";
-import { ArchitectureGraph, ElementDetailsPanel } from "@/features/architecture/components";
+import { ArchitecturePresentation } from "@/features/architecture/architecture-presentation";
 import { DiagramPreview } from "@/features/architecture/diagram-preview";
 import {
   useCourseAuthoring,
@@ -1336,23 +1335,19 @@ export function LabTheorySection({
                       ))}
                     </div>
                   </div>
-                  {c4Tab !== "GRAPH" ? (
-                    modelQuery.data && modelQuery.data.elements.length > 0 ? (
-                      <div className="space-y-3">
-                        <ArchitectureDiagrams
-                          model={modelQuery.data}
-                          guidedStatic
-                          controlledKind={c4Tab}
-                          hideKindSelector
-                          systemName={assignment.title}
-                          selectedId={selectedGraphId}
-                          onSelect={setSelectedGraphId}
-                        />
-                        {selectedGraphId && (
-                          <ElementDetailsPanel model={modelQuery.data} selectedId={selectedGraphId} />
-                        )}
-                      </div>
-                    ) : activeDiagramMermaid ? (
+                  {modelQuery.data && (c4Tab === "GRAPH" || modelQuery.data.elements.length > 0) ? (
+                    <ArchitecturePresentation
+                      key={`${modelQuery.data.id}:${c4Tab}`}
+                      model={modelQuery.data}
+                      mode={c4Tab === "GRAPH" ? "graph" : "diagram"}
+                      controlledKind={c4Tab === "GRAPH" ? undefined : c4Tab}
+                      hideKindSelector
+                      systemName={assignment.title}
+                      selectedId={selectedGraphId}
+                      onSelect={setSelectedGraphId}
+                    />
+                  ) : c4Tab !== "GRAPH" ? (
+                    activeDiagramMermaid ? (
                       <DiagramPreview
                         title={`C4 ${c4Tab}`}
                         content={activeDiagramMermaid}
@@ -1369,17 +1364,6 @@ export function LabTheorySection({
                             )}
                       </p>
                     )
-                  ) : modelQuery.data ? (
-                    <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
-                      <div className="min-w-0 overflow-x-auto">
-                        <ArchitectureGraph
-                          model={modelQuery.data}
-                          selectedId={selectedGraphId}
-                          onSelect={setSelectedGraphId}
-                        />
-                      </div>
-                      <ElementDetailsPanel model={modelQuery.data} selectedId={selectedGraphId} />
-                    </div>
                   ) : (
                     <p className="text-xs text-muted-foreground">
                       {t("Loading architectural model…", "Đang tải mô hình kiến trúc…")}

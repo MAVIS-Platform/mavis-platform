@@ -7,9 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useApiMutation, useApiQuery } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
-import { ArchitectureDiagrams } from "@/features/architecture/architecture-diagrams";
+import { ArchitecturePresentation } from "@/features/architecture/architecture-presentation";
 import { DiagramPreview } from "@/features/architecture/diagram-preview";
-import { ArchitectureGraph, ElementDetailsPanel } from "@/features/architecture/components";
 import { useRuntimeSetupReadiness, useStudentLabContext } from "@/features/workspaces/course-access";
 import { AssignmentSourceDetails, AssignmentSourcePicker } from "./source-picker";
 import type { Assignment } from "./requirements";
@@ -65,10 +64,16 @@ export function LabSourceSection({
   );
   const readiness = useRuntimeSetupReadiness(referenceProject ?? null);
   const staticReady = (modelQuery.data?.elements.length ?? 0) > 0;
-  const studioReady = Boolean(
+  const studioConfiguredReady = Boolean(
     readiness.data?.preflightCompatible && readiness.data?.runnerReady,
   );
+  const studioComposeReady = Boolean(
+    readiness.data?.preflightCompatible && !readiness.data?.configured,
+  );
+  const studioReady = studioConfiguredReady || studioComposeReady;
+  const detectedServices = readiness.data?.detectedServices ?? [];
   const studioMissing = [
+    ...(readiness.data?.runnerIssues ?? []),
     ...(readiness.data?.prerequisites ?? []),
     ...(readiness.data?.warnings ?? []),
   ].filter(Boolean);
@@ -283,11 +288,18 @@ export function LabSourceSection({
                     ? readiness.error.message
                     : t("Could not check runtime readiness.", "Không kiểm tra được trạng thái runtime.")}
                 </p>
-              ) : studioReady ? (
+              ) : studioConfiguredReady ? (
                 <p className="mt-1 text-muted-foreground">
                   {t(
                     `Ready (${readiness.data?.applications.length ?? 0} services: ${(readiness.data?.applications ?? []).join(", ")})`,
                     `Sẵn sàng (${readiness.data?.applications.length ?? 0} service: ${(readiness.data?.applications ?? []).join(", ")})`,
+                  )}
+                </p>
+              ) : studioComposeReady ? (
+                <p className="mt-1 text-muted-foreground">
+                  {t(
+                    `Docker Compose compatible (${detectedServices.length} services${detectedServices.length ? `: ${detectedServices.join(", ")}` : ""}) — ready to auto-configure in Step 5 (Studio Live).`,
+                    `Docker Compose tương thích (${detectedServices.length} service${detectedServices.length ? `: ${detectedServices.join(", ")}` : ""}) — sẵn sàng tự động cấu hình ở Bước 5 (Studio Live).`,
                   )}
                 </p>
               ) : (
@@ -347,38 +359,21 @@ export function LabSourceSection({
           </div>
 
           <div className="min-h-72 overflow-hidden rounded-xl border bg-background p-3">
-            {previewKind === "GRAPH" ? (
-              modelQuery.data ? (
-                <div className="space-y-3">
-                  <ArchitectureGraph
-                    model={modelQuery.data}
-                    selectedId={selectedGraphId}
-                    onSelect={setSelectedGraphId}
-                  />
-                  {selectedGraphId && (
-                    <ElementDetailsPanel model={modelQuery.data} selectedId={selectedGraphId} />
-                  )}
-                </div>
-              ) : (
-                <p className="p-4 text-sm text-muted-foreground">
-                  {t("Loading dependency graph…", "Đang tải đồ thị phụ thuộc…")}
-                </p>
-              )
-            ) : modelQuery.data && modelQuery.data.elements.length > 0 ? (
-              <div className="space-y-3">
-                <ArchitectureDiagrams
-                  model={modelQuery.data}
-                  guidedStatic
-                  controlledKind={previewKind}
-                  hideKindSelector
-                  systemName={assignment.title}
-                  selectedId={selectedGraphId}
-                  onSelect={setSelectedGraphId}
-                />
-                {selectedGraphId && (
-                  <ElementDetailsPanel model={modelQuery.data} selectedId={selectedGraphId} />
-                )}
-              </div>
+            {modelQuery.data && (previewKind === "GRAPH" || modelQuery.data.elements.length > 0) ? (
+              <ArchitecturePresentation
+                key={`${modelQuery.data.id}:${previewKind}`}
+                model={modelQuery.data}
+                mode={previewKind === "GRAPH" ? "graph" : "diagram"}
+                controlledKind={previewKind === "GRAPH" ? undefined : previewKind}
+                hideKindSelector
+                systemName={assignment.title}
+                selectedId={selectedGraphId}
+                onSelect={setSelectedGraphId}
+              />
+            ) : previewKind === "GRAPH" ? (
+              <p className="p-4 text-sm text-muted-foreground">
+                {t("Loading dependency graph…", "Đang tải đồ thị phụ thuộc…")}
+              </p>
             ) : activeMermaid ? (
               <DiagramPreview
                 title={`C4 ${previewKind}`}

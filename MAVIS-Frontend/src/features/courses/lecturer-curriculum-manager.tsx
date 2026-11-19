@@ -93,7 +93,7 @@ export function LecturerCurriculumManager({
       const setupLab = setup.data?.labs.find((item) => item.assignmentId === lab.id) ?? null;
       const hasTheory = Boolean(lab.instructions?.trim() || setupLab?.published || inClass);
       const hasSource = Boolean(lab.referenceSource?.modelId);
-      const hasQuiz = Boolean(setupLab?.quizPublished);
+      const hasQuiz = Boolean(setupLab?.quizPublished && (setupLab?.quizVersion ?? 0) > 0);
       const hasStudio = Boolean(setupLab?.studioReady || lab.labMode !== "THEORY_QUIZ_STUDIO");
       const position = inClass?.position ?? setupLab?.position;
       return {
@@ -139,7 +139,7 @@ export function LecturerCurriculumManager({
           <span>
             ⚙️ {t(
               `Sequential Course Labs & Studio Configuration (${labs.length} Labs)`,
-              `Quản lý nhanh Trạng thái Lab & Cấu hình 2D Studio (${labs.length} Lab)`,
+              `Quản lý nhanh Trạng thái Lab & Cấu hình Studio Live (${labs.length} Lab)`,
             )}
           </span>
           <span className="text-xs font-normal text-muted-foreground">
@@ -154,8 +154,8 @@ export function LecturerCurriculumManager({
             </h2>
             <p className="text-xs text-muted-foreground">
               {t(
-                "Each Lab card shows Theory, C1–C3 Source, Quiz Gate, and 2D Studio readiness.",
-                "Mỗi thẻ hiển thị đủ 4 chỉ báo: Lý thuyết, Sơ đồ C1–C3, Quiz và 2D Studio.",
+                "Each Lab card shows Theory, C1–C3 Source, Quiz Gate, and Studio Live readiness.",
+                "Mỗi thẻ hiển thị đủ 4 chỉ báo: Lý thuyết, Sơ đồ C1–C3, Quiz và Studio Live.",
               )}
             </p>
           </div>
@@ -217,12 +217,12 @@ export function LecturerCurriculumManager({
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed bg-card px-5 py-4">
               <div className="space-y-0.5">
                 <p className="text-sm font-medium">
-                  {t("Sequential Lab Roadmap", "Lộ trình thực hành 2D Studio & Kiến trúc")}
+                  {t("Sequential Lab Roadmap", "Lộ trình thực hành Studio Live & Kiến trúc")}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   {t(
-                    "Use the chapters above to inspect Lessons, Quizzes, and Essays, or open Lab Creation to author a custom interactive 2D Studio Lab.",
-                    "Sử dụng Đề cương 6 chương phía trên để xem Giáo trình, Quiz & Tự luận, hoặc mở tab Tạo Lab để soạn thêm bài thực hành 2D Studio mới.",
+                    "Use the chapters above to inspect Lessons, Quizzes, and Essays, or open Lab Creation to author a custom interactive Studio Live Lab.",
+                    "Sử dụng Đề cương 6 chương phía trên để xem Giáo trình, Quiz & Tự luận, hoặc mở tab Tạo Lab để soạn thêm bài thực hành Studio Live mới.",
                   )}
                 </p>
               </div>
@@ -297,7 +297,7 @@ export function LecturerCurriculumManager({
                             />
                             <ReadinessPill
                               ready={hasStudio}
-                              label={t("2D Studio", "2D Studio")}
+                              label={t("Studio Live", "Studio Live")}
                               icon={Zap}
                             />
                           </div>

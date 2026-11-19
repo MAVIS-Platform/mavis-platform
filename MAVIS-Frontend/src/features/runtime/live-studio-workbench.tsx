@@ -107,6 +107,7 @@ export function LiveStudioWorkbench({
   const data = liveData ?? EMPTY_STUDIO;
   const selected = target || services[0] || "";
   const graphRef = useRef<HTMLDivElement>(null);
+  const snapshotNoteRef = useRef<HTMLTextAreaElement>(null);
   const [tab, setTab] = useState<"stats" | "telemetry" | "logs" | "snapshots">("telemetry");
   const [showLeft, setShowLeft] = useState(true);
   const [showRight, setShowRight] = useState(true);
@@ -267,6 +268,32 @@ export function LiveStudioWorkbench({
           >
             <PanelRight aria-hidden="true" className="mr-1 size-3.5" />
             Inspector
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-7 border-slate-600 bg-slate-900 px-2 text-[11px] text-slate-200 hover:bg-slate-800 hover:text-white disabled:opacity-40"
+            disabled={
+              data.executionStatus !== "RUNNING" ||
+              !data.telemetry ||
+              capturing ||
+              capture.isPending ||
+              (data.snapshots?.length ?? 0) >= 8
+            }
+            onClick={() => {
+              setTab("snapshots");
+              if (explanation.trim() && !waiting) {
+                void captureSnapshot(
+                  graphRef.current?.querySelector<SVGSVGElement>("svg[data-studio-graph]") ?? null,
+                );
+              } else {
+                requestAnimationFrame(() => snapshotNoteRef.current?.focus());
+              }
+            }}
+          >
+            <Camera aria-hidden="true" className="mr-1 size-3.5" />
+            Snapshot
           </Button>
           <Button
             type="button"
@@ -704,8 +731,10 @@ export function LiveStudioWorkbench({
                   <label className="block text-[11px] text-slate-400">
                     Explain the observed behavior
                     <Textarea
+                      ref={snapshotNoteRef}
                       value={explanation}
                       maxLength={4000}
+                      placeholder="Describe what you observed (e.g. Scaled payment to 2 pods — p95 stayed 55 ms, 0% errors)…"
                       onChange={(event) => setExplanation(event.target.value)}
                       className="mt-1 min-h-12 bg-slate-950 text-[11px]"
                     />

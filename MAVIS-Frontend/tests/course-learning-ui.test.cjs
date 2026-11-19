@@ -1445,3 +1445,20 @@ test("Round 5 guards strip Theory theme metadata, check quizVersion > 0, hydrate
   assert.match(submissionV2, /activeReview\?\.labOutcome !== "PASSED"/);
   assert.match(apiError, /STUDIO_VALIDATION_REQUIRED/);
 });
+
+test("Round 6 reuses core ArchitecturePresentation in Lab Creation, fixes Step 2 readiness, and exposes top-bar Snapshot", () => {
+  const sourceSection = read("src/features/assignments/lab-source-section.tsx");
+  const theorySection = read("src/features/assignments/lab-theory-section.tsx");
+  const components = read("src/features/architecture/components.tsx");
+  const studioWorkbench = read("src/features/runtime/live-studio-workbench.tsx");
+  const curriculumMgr = read("src/features/courses/lecturer-curriculum-manager.tsx");
+
+  assert.match(sourceSection, /<ArchitecturePresentation[\s\S]*controlledKind=/);
+  assert.match(theorySection, /<ArchitecturePresentation[\s\S]*controlledKind=/);
+  assert.doesNotMatch(sourceSection, /guidedStatic/);
+  assert.doesNotMatch(theorySection, /guidedStatic/);
+  assert.match(sourceSection, /studioComposeReady/);
+  assert.match(components, /const \[origin, setOrigin\] = useState<[^>]+>\("all"\);/);
+  assert.match(studioWorkbench, /Snapshot[\s\S]*captureSnapshot/);
+  assert.doesNotMatch(curriculumMgr, /2D Studio/);
+});

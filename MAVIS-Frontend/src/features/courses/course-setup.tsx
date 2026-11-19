@@ -244,7 +244,9 @@ export function CourseSetupPanel({ workspaceId }: { workspaceId: string }) {
                   >
                     {runtimeReadiness.preflightCompatible && runtimeReadiness.runnerReady
                       ? t("Ready for Students", "Sẵn sàng cho Sinh viên")
-                      : t("Setup Incomplete", "Cần hoàn tất cấu hình")}
+                      : runtimeReadiness.preflightCompatible && !runtimeReadiness.configured
+                        ? t("Compose Ready (Run Step 5)", "Compose sẵn sàng (Chạy Bước 5)")
+                        : t("Setup Incomplete", "Cần hoàn tất cấu hình")}
                   </Badge>
                 </div>
                 {runtimeReadiness.prerequisites.slice(0, 2).map((item) => (

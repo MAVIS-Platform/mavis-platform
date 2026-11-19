@@ -77,8 +77,8 @@ export function TeacherDashboard() {
             </h1>
             <p className="text-sm leading-6 text-sky-100/90">
               {t(
-                "Create classes, author guided Labs with Quiz & 2D Studio, track student progress, and grade frozen submissions.",
-                "Quản lý lớp học, biên soạn bài Lab tương tác (Quiz & 2D Studio), theo dõi tiến độ sinh viên và chấm bài tập.",
+                "Create classes, author guided Labs with Quiz & Studio Live, track student progress, and grade frozen submissions.",
+                "Quản lý lớp học, biên soạn bài Lab tương tác (Quiz & Studio Live), theo dõi tiến độ sinh viên và chấm bài tập.",
               )}
             </p>
           </div>
