@@ -24,9 +24,9 @@ class MigrationUpgradeTest {
         if(target!=null) config.target(MigrationVersion.fromVersion(target));
         return config.load();
     }
-    @Test void cleanInstallAndV15UpgradePreserveHistoryAndExistingData() throws Exception {
+    @Test void cleanInstallAndUpgradesPreserveHistoryAndExistingData() throws Exception {
         try(var admin=DriverManager.getConnection(adminUrl,user,password);var commands=admin.createStatement()) {
-            for(String baseline:Arrays.asList(null,"15","20")) {
+            for(String baseline:Arrays.asList(null,"15","20","44")) {
                 boolean upgrade=baseline!=null;
                 String name="mavis_migration_"+UUID.randomUUID().toString().replace("-","");
                 commands.execute("CREATE DATABASE "+name);
@@ -35,10 +35,12 @@ class MigrationUpgradeTest {
                     if(upgrade) {
                         flyway(url,baseline).migrate();
                         try(var connection=DriverManager.getConnection(url,user,password);var sql=connection.createStatement()) {
-                            sql.execute(Files.readString(migrations.resolve("V21__Submission_Review.sql")));
+                            boolean currentHistory = "44".equals(baseline);
+                            if (!currentHistory) sql.execute(Files.readString(migrations.resolve("V21__Submission_Review.sql")));
                             sql.execute("INSERT INTO users(role_id,email,password_hash,full_name) SELECT id,'migration-preservation@example.invalid','fixture-only','Preserved learner' FROM roles WHERE code='STUDENT'");
-                            sql.execute(Files.readString(migrations.resolve("V22__User_Notifications.sql")));
+                            if (!currentHistory) sql.execute(Files.readString(migrations.resolve("V22__User_Notifications.sql")));
                             sql.execute("INSERT INTO user_notifications(recipient_id,event_key,category,title,body,target_path) SELECT id,'migration-preservation','ACCOUNT','Preserved notice','Fixture only','/profile' FROM users WHERE email='migration-preservation@example.invalid'");
+                            if (currentHistory) assertNullableReferences(sql, "NO");
                         }
                     }
                     var current=flyway(url,null);
@@ -73,9 +75,26 @@ class MigrationUpgradeTest {
                         try(var rows=sql.executeQuery("SELECT count(*) FROM information_schema.columns WHERE table_name='submission_reviews' AND column_name IN ('snapshot_grades','lab_outcome')")) { assertTrue(rows.next());assertEquals(2,rows.getInt(1)); }
                         try(var rows=sql.executeQuery("SELECT to_regclass('ai_usage_events')")) { assertTrue(rows.next());assertNotNull(rows.getString(1)); }
                         try(var rows=sql.executeQuery("SELECT to_regclass('user_notifications')")) { assertTrue(rows.next());assertNotNull(rows.getString(1)); }
+                        assertNullableReferences(sql, "YES");
                     }
                 } finally { commands.execute("DROP DATABASE "+name+" WITH (FORCE)"); }
             }
+        }
+    }
+
+    private static void assertNullableReferences(Statement sql, String nullable) throws SQLException {
+        try (var rows = sql.executeQuery("""
+                SELECT is_nullable FROM information_schema.columns
+                WHERE table_schema = 'public' AND (
+                    (table_name = 'course_quizzes' AND column_name = 'reference_model_id')
+                    OR (table_name = 'submission_snapshots' AND column_name IN (
+                        'project_id', 'source_snapshot_id', 'model_version_id')))
+                """)) {
+            for (int index = 0; index < 4; index++) {
+                assertTrue(rows.next());
+                assertEquals(nullable, rows.getString(1));
+            }
+            assertFalse(rows.next());
         }
     }
 }
