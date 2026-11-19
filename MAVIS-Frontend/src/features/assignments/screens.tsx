@@ -5,7 +5,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   BookOpen,
-  CircleHelp,
   Eye,
   GitBranch,
   Pencil,
@@ -19,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { DetailPanel } from "@/components/shared/data";
 import { Input } from "@/components/ui/input";
 import { ErrorState, RequestState } from "@/components/shared/request-state";
-import { useApi, useApiMutation, useApiQuery, usePermission, useSelection } from "@/hooks/use-api";
+import { useApiMutation, useApiQuery, usePermission, useSelection } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { isDeadlinePassed } from "@/features/submissions/submission-readiness";
 import {
@@ -34,14 +33,15 @@ import { ImportLabButton } from "./lab-transfer";
 import { LabPrerequisitesDialog } from "./lab-prerequisites-dialog";
 import type { Assignment } from "./requirements";
 
-function formatDeadline(value: string | undefined) {
-  if (!value || value === "No deadline") return "No deadline";
+function formatOptionalDate(value: string | undefined): string | null {
+  if (!value || value === "No deadline") return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(date);
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(date);
+}
+
+function formatDeadline(value: string | undefined) {
+  return formatOptionalDate(value) ?? "No deadline";
 }
 
 export function Assignments({ embedded = false }: { embedded?: boolean } = {}) {
@@ -59,7 +59,6 @@ function LecturerAssignments({ embedded = false }: { embedded?: boolean } = {}) 
   const query = useApiQuery("assignments", { workspaceId }, { enabled: Boolean(workspaceId) });
   const roadmap = useCourseRoadmap(workspaceId);
   const setup = useCourseSetup(workspaceId);
-  const client = useApi();
   const remove = useApiMutation("deleteAssignment");
   const [filter, setFilter] = useState<LibraryFilter>("all");
   const [search, setSearch] = useState("");
@@ -72,8 +71,8 @@ function LecturerAssignments({ embedded = false }: { embedded?: boolean } = {}) 
       const setupLab = setup.data?.labs.find((item) => item.assignmentId === lab.id) ?? null;
       const sourceReady = Boolean(lab.referenceSource?.modelId);
       const quizPublished = Boolean(setupLab?.quizPublished);
-      const readyForClass = sourceReady && quizPublished;
-      return { lab, inClass, setupLab, sourceReady, quizPublished, readyForClass };
+      const studioReady = Boolean(setupLab?.topologyFrozen);
+      return { lab, inClass, setupLab, sourceReady, quizPublished, studioReady };
     });
   }, [labs, roadmap.data?.labs, setup.data?.labs]);
 
@@ -94,22 +93,10 @@ function LecturerAssignments({ embedded = false }: { embedded?: boolean } = {}) 
   ];
 
   const content = (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold tracking-tight">{t("Lab Library", "Kho Lab")}</h2>
-          <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
-            {t(
-              "Every Lab you create lives here. Author it in Lab Creation, then choose which Labs open in this class — students see the class sequence in their roadmap.",
-              "Mọi Lab bạn tạo đều nằm ở đây. Soạn Lab trong Tạo Lab, sau đó chọn Lab nào mở trong lớp này — sinh viên thấy thứ tự lớp trong lộ trình học.",
-            )}
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {labs.length} {t("Labs", "Lab")} · {inClassCount} {t("in class", "trong lớp")} ·{" "}
-            {labs.length - inClassCount} {t("not in class", "chưa vào lớp")}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-start gap-2">
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-semibold tracking-tight">{t("Lab Library", "Kho Lab")}</h2>
+        <div className="flex flex-wrap items-center gap-2">
           <ImportLabButton workspaceId={workspaceId} />
           <Button asChild size="sm">
             <Link href={`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}`}>
@@ -154,7 +141,7 @@ function LecturerAssignments({ embedded = false }: { embedded?: boolean } = {}) 
               aria-hidden="true"
             />
             <Input
-              className="pl-8"
+              className="h-9 pl-8"
               value={search}
               placeholder={t("Search labs by title", "Tìm Lab theo tên")}
               aria-label={t("Search labs", "Tìm Lab")}
@@ -177,8 +164,8 @@ function LecturerAssignments({ embedded = false }: { embedded?: boolean } = {}) 
             {t("No Labs match this filter.", "Không có Lab nào khớp bộ lọc này.")}
           </p>
         ) : (
-          <ul className="grid gap-4 md:grid-cols-2">
-            {visible.map(({ lab, inClass, setupLab, sourceReady, quizPublished, readyForClass }) => {
+          <ul className="divide-y rounded-xl border bg-card">
+            {visible.map(({ lab, inClass, setupLab, sourceReady, quizPublished, studioReady }) => {
               const creatorHref = `/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(lab.id)}&tab=info`;
               const previewHref = `/lab?${new URLSearchParams({
                 workspace: workspaceId,
@@ -186,126 +173,118 @@ function LecturerAssignments({ embedded = false }: { embedded?: boolean } = {}) 
                 step: "1",
                 preview: "1",
               })}`;
-              const mode =
-                lab.labMode === "THEORY_QUIZ_STUDIO"
-                  ? t("2D Studio Lab", "Lab Thực Hành 2D Studio")
-                  : lab.labMode === "THEORY_QUIZ"
-                    ? t("Theory & Quiz", "Lab Lý Thuyết & Quiz")
-                    : t("Legacy Lab", "Lab cũ");
+              const formattedDue = formatOptionalDate(lab.dueAt);
               return (
                 <li
                   key={lab.id}
-                  className="flex flex-col justify-between gap-4 rounded-xl border border-slate-200 bg-card p-5 shadow-sm transition-all hover:border-indigo-400 dark:border-slate-800"
+                  className="flex flex-col gap-3 px-4 py-3.5 transition-colors hover:bg-muted/30 sm:flex-row sm:items-center sm:justify-between"
                 >
-                  <div className="flex min-w-0 items-start gap-3">
-                    <span
-                      className={cn(
-                        "mt-0.5 grid size-10 shrink-0 place-items-center rounded-xl border text-sm font-bold tabular-nums",
-                        inClass
-                          ? "border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300"
-                          : "bg-muted/40 text-muted-foreground",
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {inClass ? (
+                        <Badge variant="success">
+                          {t("In class", "Trong lớp")} · L{inClass.position}
+                        </Badge>
+                      ) : (
+                        <Badge variant="secondary">{t("Library draft", "Bản nháp kho")}</Badge>
                       )}
-                      aria-hidden="true"
-                    >
-                      {inClass ? `L${inClass.position}` : "–"}
-                    </span>
-                    <div className="min-w-0 flex-1 space-y-1.5">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        {inClass ? (
-                          <Badge variant="success">{t("In class", "Trong lớp")}</Badge>
-                        ) : (
-                          <Badge variant="secondary">{t("Library draft", "Bản nháp kho")}</Badge>
-                        )}
-                        <Badge variant="outline">{mode}</Badge>
-                      </div>
                       <Link
-                        className="block line-clamp-2 text-base font-semibold leading-snug hover:text-indigo-600 hover:underline"
+                        className="truncate text-sm font-semibold hover:text-primary hover:underline"
                         href={creatorHref}
                       >
                         {lab.title}
                       </Link>
-                      <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                        <span className="inline-flex items-center gap-1">
-                          <GitBranch className="size-3.5" aria-hidden="true" />
-                          {sourceReady
-                            ? t("Source ready", "Nguồn đã sẵn sàng")
-                            : t("No reference source", "Chưa gắn nguồn")}
-                        </span>
-                        <span className="inline-flex items-center gap-1">
-                          <CircleHelp className="size-3.5" aria-hidden="true" />
-                          {quizPublished
-                            ? t(`Quiz v${setupLab?.quizVersion} live`, `Quiz v${setupLab?.quizVersion} đã mở`)
-                            : t("Quiz not published", "Quiz chưa công bố")}
-                        </span>
-                        <span>
-                          {t("Due", "Hạn")}: {formatDeadline(lab.dueAt)}
-                        </span>
-                      </p>
+                      {sourceReady && (
+                        <Badge variant="outline" className="text-[11px]">
+                          C1–C3
+                        </Badge>
+                      )}
+                      {quizPublished && (
+                        <Badge variant="outline" className="text-[11px]">
+                          Quiz v{setupLab?.quizVersion}
+                        </Badge>
+                      )}
+                      {studioReady && (
+                        <Badge variant="outline" className="text-[11px]">
+                          Studio Live
+                        </Badge>
+                      )}
+                      {!sourceReady && !quizPublished && !studioReady && (
+                        <Badge variant="outline" className="text-[11px]">
+                          {t("Theory", "Lý thuyết")}
+                        </Badge>
+                      )}
                     </div>
+                    {formattedDue && (
+                      <p className="text-xs text-muted-foreground">
+                        {t("Due", "Hạn")}: {formattedDue}
+                      </p>
+                    )}
                   </div>
-                  <div className="space-y-2 border-t pt-3">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <Button asChild size="sm" className="bg-indigo-600 text-white hover:bg-indigo-700">
-                        <Link href={creatorHref}>
-                          <Pencil className="mr-1 size-3.5" aria-hidden="true" />
-                          {t("Edit in Lab Creation", "Chỉnh sửa & Cấu hình")}
+                  <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+                    <Button asChild size="sm" variant="outline">
+                      <Link href={creatorHref}>
+                        <Pencil className="mr-1 size-3.5" aria-hidden="true" />
+                        {t("Edit", "Sửa")}
+                      </Link>
+                    </Button>
+                    {inClass ? (
+                      <Button asChild size="sm" variant="outline">
+                        <Link href={previewHref}>
+                          <Eye className="mr-1 size-3.5" aria-hidden="true" />
+                          {t("Preview", "Xem trước")}
                         </Link>
                       </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => setPrerequisiteLab(lab)}
-                      >
-                        <GitBranch className="mr-1 size-3.5" aria-hidden="true" />
-                        {t("Prerequisites", "Điều kiện")}
-                      </Button>
-                      {inClass ? (
-                        <Button asChild size="sm" variant="outline">
-                          <Link href={previewHref}>
-                            <Eye className="mr-1 size-3.5" aria-hidden="true" />
-                            {t("Preview", "Xem trước")}
-                          </Link>
-                        </Button>
-                      ) : (
-                        <PublishCourseLab workspaceId={workspaceId} assignmentId={lab.id} />
-                      )}
+                    ) : (
+                      <PublishCourseLab workspaceId={workspaceId} assignmentId={lab.id} />
+                    )}
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setPrerequisiteLab(lab)}
+                    >
+                      <GitBranch className="mr-1 size-3.5" aria-hidden="true" />
+                      {t("Prerequisites", "Điều kiện")}
+                    </Button>
+                    {inClass && (
                       <Button asChild size="sm" variant="ghost">
-                        <Link href={`/submissions?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(lab.id)}`}>
+                        <Link
+                          href={`/submissions?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(lab.id)}`}
+                        >
                           {t("Submissions", "Bài nộp")}
                         </Link>
                       </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        className="ml-auto text-muted-foreground hover:text-destructive"
-                        disabled={remove.isPending || Boolean(inClass)}
-                        title={inClass ? t("Remove this Lab from the class before deleting it.", "Hãy gỡ Lab khỏi lớp trước khi xóa.") : undefined}
-                        onClick={() => {
-                          if (
-                            window.confirm(
-                              t(
-                                "Delete this Lab from the library? This cannot be undone.",
-                                "Xóa Lab này khỏi kho? Không thể hoàn tác.",
-                              ),
-                            )
-                          )
-                            remove.mutate({ workspaceId, assignmentId: lab.id });
-                        }}
-                      >
-                        <Trash2 className="size-3.5" aria-hidden="true" />
-                        <span className="sr-only">{t("Delete", "Xóa")}</span>
-                      </Button>
-                    </div>
-                    {!inClass && !readyForClass && client.mode === "backend" && (
-                      <p className="text-[11px] text-muted-foreground">
-                        {t(
-                          "Pin a source and publish a Quiz before adding it to the class.",
-                          "Cần ghim nguồn và công bố Quiz trước khi thêm vào lớp.",
-                        )}
-                      </p>
                     )}
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="text-muted-foreground hover:text-destructive"
+                      disabled={remove.isPending || Boolean(inClass)}
+                      title={
+                        inClass
+                          ? t(
+                              "Remove this Lab from the class before deleting it.",
+                              "Hãy gỡ Lab khỏi lớp trước khi xóa.",
+                            )
+                          : undefined
+                      }
+                      onClick={() => {
+                        if (
+                          window.confirm(
+                            t(
+                              "Delete this Lab from the library? This cannot be undone.",
+                              "Xóa Lab này khỏi kho? Không thể hoàn tác.",
+                            ),
+                          )
+                        )
+                          remove.mutate({ workspaceId, assignmentId: lab.id });
+                      }}
+                    >
+                      <Trash2 className="size-3.5" aria-hidden="true" />
+                      <span className="sr-only">{t("Delete", "Xóa")}</span>
+                    </Button>
                   </div>
                 </li>
               );
