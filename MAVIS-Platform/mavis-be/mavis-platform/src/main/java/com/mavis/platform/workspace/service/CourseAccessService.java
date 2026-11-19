@@ -108,8 +108,7 @@ public class CourseAccessService {
                 .filter(value -> workspaceId.equals(value.getWorkspace().getId()))
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Lab not found"));
         if (assignment.getLabOrder() != null) {
-            if (assignment.getStudioTopologySnapshot() == null) {
-                copyTopologySnapshot(assignment);
+            if (assignment.getStudioTopologySnapshot() == null && copyTopologySnapshot(assignment)) {
                 assignments.save(assignment);
             }
             return new Lab(assignmentId, assignment.getLabOrder(), assignment.getTitle(), "UNLOCKED", null);
@@ -222,8 +221,7 @@ public class CourseAccessService {
                         "Studio session has no verified Stop/Start/Scale evidence");
             }
         }
-        copyTopologySnapshot(assignment);
-        if (assignment.getStudioTopologySnapshot() == null) {
+        if (!copyTopologySnapshot(assignment)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST,
                     "The reference runtime profile has no prepared Studio topology for this source/model");
         }
@@ -254,20 +252,20 @@ public class CourseAccessService {
         });
     }
 
-    private void copyTopologySnapshot(Assignment assignment) {
+    private boolean copyTopologySnapshot(Assignment assignment) {
         var model = resolveStudioRuntimeModel(assignment);
         var snapshot = model == null ? null : model.getSourceSnapshot();
-        if (model == null || snapshot == null || snapshot.getProject() == null) return;
+        if (model == null || snapshot == null || snapshot.getProject() == null) return false;
         RuntimeConfiguration configuration = configurations.findById(snapshot.getProject().getId()).orElse(null);
         if (configuration == null
                 || !snapshot.getId().equals(configuration.getSourceSnapshotId())
                 || !model.getId().equals(configuration.getModelVersionId())
-                || configuration.getProfile() == null) return;
+                || configuration.getProfile() == null) return false;
         JsonNode topology = configuration.getProfile().get("studioTopology");
-        if (topology != null && topology.isObject()) {
-            assignment.setStudioTopologySnapshot(topology.deepCopy());
-            assignment.setStudioTopologyRevision(configuration.getRevision());
-        }
+        if (topology == null || !topology.isObject()) return false;
+        assignment.setStudioTopologySnapshot(topology.deepCopy());
+        assignment.setStudioTopologyRevision(configuration.getRevision());
+        return true;
     }
 
     private com.mavis.common.entity.ModelVersion resolveStudioRuntimeModel(Assignment assignment) {

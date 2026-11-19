@@ -302,9 +302,7 @@ public class SubmissionServiceImpl implements SubmissionService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Studio Lab phải được publish trước khi nộp");
         }
 
-        boolean skipQuiz = assignment.getAiPolicy() != null
-                && (assignment.getAiPolicy().path("skipQuiz").asBoolean(false)
-                    || "THEORY_ONLY".equalsIgnoreCase(assignment.getAiPolicy().path("labTier").asText()));
+        boolean skipQuiz = com.mavis.common.security.CourseLabPolicy.canSkipQuiz(assignment);
         JsonNode quizEvidence = null;
         if (!skipQuiz && assignment.getWorkspace() != null && assignment.getWorkspace().isCourseMode()
                 && com.mavis.common.security.CourseLabPolicy.isStudent(submitter)) {
@@ -384,6 +382,9 @@ public class SubmissionServiceImpl implements SubmissionService {
             if (studioEvidence == null) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "STUDIO_EVIDENCE_REQUIRED");
             }
+            if (studioEvidence.path("snapshots").isEmpty()) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "STUDIO_SNAPSHOT_REQUIRED");
+            }
         }
 
         ObjectMapper mapper = this.json != null ? this.json : new ObjectMapper();
@@ -398,12 +399,18 @@ public class SubmissionServiceImpl implements SubmissionService {
         }
         if (studioEvidence != null) {
             int index = 1;
+            Set<String> captureIds = new HashSet<>();
             for (JsonNode captured : studioEvidence.path("snapshots")) {
+                String captureId = captured.path("id").asText("");
+                String explanation = captured.path("explanation").asText("");
+                if (captureId.isBlank() || !captureIds.add(captureId) || explanation.isBlank()) {
+                    throw new BusinessException(ErrorCode.BAD_REQUEST, "STUDIO_SNAPSHOT_EVIDENCE_INVALID");
+                }
                 snapshots.add(StudentSnapshotItemDTO.builder()
-                        .snapshotId("STUDIO_" + captured.path("id").asText("snapshot" + index))
+                        .snapshotId("STUDIO_" + captureId)
                         .step("STEP_4_RUNTIME")
                         .title(captured.path("title").asText("Studio snapshot " + index))
-                        .writtenExplanation(captured.path("explanation").asText(""))
+                        .writtenExplanation(explanation)
                         .build());
                 index++;
             }
@@ -411,6 +418,23 @@ public class SubmissionServiceImpl implements SubmissionService {
         JsonNode studentSnapshots = mapper.valueToTree(snapshots);
         String digest = evidenceDigestV2(assignment, sourceSnapshot, quizEvidence, theoryEvidence,
                 studioEvidence, request.getSubmissionNotes());
+        if (assignment.getWorkspace() != null && assignment.getWorkspace().isCourseMode()
+                && com.mavis.common.security.CourseLabPolicy.isStudent(submitter)) {
+            var latest = submissionSnapshotRepository
+                    .findFirstByAssignmentIdAndSubmittedByIdOrderBySubmittedAtDescIdDesc(assignment.getId(), currentUserId);
+            if (latest.isPresent()) {
+                var previous = latest.get();
+                if (digest.equals(previous.getEvidencePackageDigest())) {
+                    return SubmissionResponseDTO.fromEntity(previous, 0L);
+                }
+                boolean needsRevision = submissionReviewRepository.findBySubmissionId(previous.getId())
+                        .filter(review -> "RETURNED".equals(review.getStatus())
+                                || "NEEDS_REVISION".equals(review.getLabOutcome())).isPresent();
+                if (!needsRevision) {
+                    throw new BusinessException(ErrorCode.CONFLICT, "LAB_SUBMISSION_AWAITING_REVIEW");
+                }
+            }
+        }
 
         SubmissionSnapshot submission = SubmissionSnapshot.builder()
                 .assignment(assignment)
@@ -437,17 +461,17 @@ public class SubmissionServiceImpl implements SubmissionService {
         var root = (com.fasterxml.jackson.databind.node.ObjectNode) json.createObjectNode();
         var array = root.putArray("answers");
         if (answers != null) {
-            int count = 0;
+            Set<String> sections = new HashSet<>();
             for (var answer : answers) {
                 if (answer == null) continue;
                 String text = answer.getAnswer() == null ? "" : answer.getAnswer().trim();
                 if (text.isEmpty()) continue;
-                if (++count > 5 || text.length() > 20000) {
+                if (sections.size() >= 5 || text.length() > 20000) {
                     throw new BusinessException(ErrorCode.BAD_REQUEST, "THEORY_ANSWER_INVALID");
                 }
                 String section = answer.getSectionId() == null || answer.getSectionId().isBlank()
                         ? "THEORY" : answer.getSectionId().trim().toUpperCase(java.util.Locale.ROOT);
-                if (!section.matches("[A-Z0-9_]{1,64}")) {
+                if (!section.matches("[A-Z0-9_]{1,64}") || !sections.add(section)) {
                     throw new BusinessException(ErrorCode.BAD_REQUEST, "THEORY_SECTION_INVALID");
                 }
                 array.addObject().put("sectionId", section)
@@ -467,7 +491,8 @@ public class SubmissionServiceImpl implements SubmissionService {
                 .append(source == null ? "" : Objects.toString(source.getArtifactHash(), "")).append('|')
                 .append(quiz == null ? "" : quiz.toString()).append('|')
                 .append(theory.toString()).append('|')
-                .append(studio == null ? "" : studio.path("receiptSignature").asText("")).append('|')
+                .append(studio == null ? "" : studio.path("receiptDigest").asText("") + "|" + studio.path("snapshots"))
+                .append('|')
                 .append(notes == null ? "" : notes.trim());
         return "sha256:" + com.mavis.common.utils.HashUtils.sha256Hex(
                 canonical.toString().getBytes(StandardCharsets.UTF_8));

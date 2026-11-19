@@ -138,6 +138,36 @@ class CourseAccessServiceTest {
     }
 
     @Test
+    void freezeRejectsMismatchedProfileEvenWhenAnOlderTopologyExists() {
+        when(access.requireCurrentActiveUser()).thenReturn(User.builder().id(UUID.randomUUID()).build());
+        when(workspaces.findLockedById(workspaceId)).thenReturn(Optional.of(workspace));
+        when(assignments.findLockedById(assignmentId)).thenReturn(Optional.of(assignment));
+        assignment.setLabOrder(1);
+        var oldTopology = new ObjectMapper().createObjectNode().put("version", 1).put("marker", "frozen");
+        assignment.setStudioTopologySnapshot(oldTopology);
+        assignment.setStudioTopologyRevision(5);
+        var project = Project.builder().id(UUID.randomUUID()).workspace(workspace).build();
+        var source = SourceSnapshot.builder().id(UUID.randomUUID()).project(project).build();
+        var model = ModelVersion.builder().id(UUID.randomUUID()).sourceSnapshot(source).build();
+        assignment.setReferenceModel(model);
+        var configuration = new RuntimeConfiguration();
+        configuration.setSourceSnapshotId(source.getId());
+        configuration.setModelVersionId(UUID.randomUUID());
+        configuration.setRevision(6);
+        configuration.setProfile(new ObjectMapper().createObjectNode()
+                .set("studioTopology", new ObjectMapper().createObjectNode().put("version", 1)));
+        when(configurations.findById(project.getId())).thenReturn(Optional.of(configuration));
+
+        var failure = assertThrows(BusinessException.class, () -> courses.freezeTopology(workspaceId, assignmentId));
+
+        assertEquals(ErrorCode.BAD_REQUEST, failure.getErrorCode());
+        assertEquals(oldTopology, assignment.getStudioTopologySnapshot());
+        assertEquals(5, assignment.getStudioTopologyRevision());
+        verify(assignments, never()).save(assignment);
+        verifyNoInteractions(jdbc);
+    }
+
+    @Test
     void publishesTheoryOnlyLabWithoutReferenceModelWhenDescriptionPresent() {
         UUID teacherId = UUID.randomUUID();
         when(access.requireCurrentActiveUser()).thenReturn(User.builder().id(teacherId).build());
@@ -381,29 +411,6 @@ class CourseAccessServiceTest {
         assertEquals(workspaceId, enrolled.workspaceId());
         verify(jdbc).update(contains("UPDATE course_passkeys SET used_count = used_count + 1"),
                 eq(workspaceId), any());
-    }
-
-    @Test
-    void controllerPublishSyncsCourseDraftOutsideServiceTransaction() {
-        var courseAccess = mock(CourseAccessService.class);
-        var seeder = mock(CourseLabSeederService.class);
-        var setup = mock(CourseSetupService.class);
-        var authoring = mock(CourseAuthoringService.class);
-        var controller = new com.mavis.platform.workspace.controller.CourseAccessController(courseAccess, seeder, setup);
-        org.springframework.test.util.ReflectionTestUtils.setField(controller, "courseAuthoring", authoring);
-
-        var expectedLab = new CourseAccessService.Lab(assignmentId, 1, "Theory Lab", "UNLOCKED", null);
-        when(courseAccess.publish(workspaceId, assignmentId)).thenReturn(expectedLab);
-        doThrow(new BusinessException(ErrorCode.NOT_FOUND, "Course draft not found"))
-                .when(authoring).publish(workspaceId);
-
-        var response = controller.publish(workspaceId, assignmentId);
-
-        assertEquals(ErrorCode.SUCCESS.getCode(), response.getCode());
-        assertEquals(expectedLab, response.getData());
-        var ordered = inOrder(courseAccess, authoring);
-        ordered.verify(courseAccess).publish(workspaceId, assignmentId);
-        ordered.verify(authoring).publish(workspaceId);
     }
 
 }

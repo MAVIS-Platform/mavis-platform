@@ -24,6 +24,15 @@ public class CourseLabPolicy {
         return currentQuizPass(lab, studentId).isPresent();
     }
 
+    public static boolean canSkipQuiz(Assignment lab) {
+        var policy = lab.getAiPolicy();
+        return !Boolean.TRUE.equals(lab.getRequireRuntimeTrace())
+                && !"THEORY_QUIZ_STUDIO".equalsIgnoreCase(lab.getLabMode())
+                && policy != null
+                && (policy.path("skipQuiz").asBoolean(false)
+                    || "THEORY_ONLY".equalsIgnoreCase(policy.path("labTier").asText()));
+    }
+
     public boolean hasPassedQuizVersion(UUID labId, UUID studentId, int version) {
         return Boolean.TRUE.equals(jdbc.queryForObject("""
                 SELECT EXISTS (SELECT FROM course_quiz_attempts

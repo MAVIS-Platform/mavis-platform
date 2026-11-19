@@ -595,28 +595,32 @@ class RuntimeStudioApiIntegrationTest extends ApiIntegrationContext {
                 .andExpect(status().isOk()).andReturn();
             String snapBeforeId = mapper.readTree(snapBeforeRes.getResponse().getContentAsString()).path("data").path("id").asText();
 
-            // Execute STOP payment -> START payment -> SCALE orders (1 -> 2)
+            // Execute STOP payment -> START payment -> SCALE orders (1 -> 4)
             for (var cmd : java.util.List.of(
                     Map.<String, Object>of("actionId", UUID.randomUUID().toString(), "action", "STOP", "service", "payment"),
                     Map.<String, Object>of("actionId", UUID.randomUUID().toString(), "action", "START", "service", "payment"),
-                    Map.<String, Object>of("actionId", UUID.randomUUID().toString(), "action", "SCALE", "service", "orders", "replicas", 2))) {
+                    Map.<String, Object>of("actionId", UUID.randomUUID().toString(), "action", "SCALE", "service", "orders", "replicas", 4))) {
                 String aid = (String) cmd.get("actionId");
                 mvc.perform(post(studioUrl + "/actions").header("Authorization", studentAuth)
                         .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(cmd)))
                     .andExpect(status().isOk());
-                while (System.nanoTime() < deadline && runnerProc.isAlive()) {
+                boolean confirmed = false;
+                while (System.nanoTime() < deadline && runnerProc.isAlive() && !confirmed) {
                     var stateData = mapper.readTree(mvc.perform(get(studioUrl).header("Authorization", studentAuth))
                         .andReturn().getResponse().getContentAsString()).path("data");
-                    boolean confirmed = false;
                     for (var act : stateData.path("actions")) {
-                        if (aid.equals(act.path("actionId").asText()) && "CONFIRMED".equals(act.path("status").asText())) {
-                            confirmed = true;
-                            break;
+                        if (!aid.equals(act.path("actionId").asText())) continue;
+                        String actionStatus = act.path("status").asText();
+                        org.junit.jupiter.api.Assertions.assertNotEquals("FAILED", actionStatus, "Studio action: " + cmd.get("action"));
+                        confirmed = "CONFIRMED".equals(actionStatus);
+                        if (confirmed && "SCALE".equals(cmd.get("action"))) {
+                            org.junit.jupiter.api.Assertions.assertEquals(4, act.path("result").path("replicasAfter").asInt());
                         }
+                        break;
                     }
-                    if (confirmed) break;
-                    Thread.sleep(500);
+                    if (!confirmed) Thread.sleep(500);
                 }
+                org.junit.jupiter.api.Assertions.assertTrue(confirmed, "Runner did not confirm " + cmd.get("action"));
             }
 
             // Wait for fresh post-SCALE telemetry sample
@@ -625,7 +629,11 @@ class RuntimeStudioApiIntegrationTest extends ApiIntegrationContext {
                 var stateData = mapper.readTree(mvc.perform(get(studioUrl).header("Authorization", studentAuth))
                     .andReturn().getResponse().getContentAsString()).path("data");
                 String obs = stateData.path("telemetry").path("observedAt").asText("");
-                if (!obs.isBlank() && !obs.equals(observedBefore)) {
+                boolean scaled = java.util.stream.StreamSupport.stream(
+                        stateData.path("telemetry").path("services").spliterator(), false)
+                        .anyMatch(service -> "orders".equals(service.path("service").asText())
+                                && service.path("runningReplicas").asInt() == 4);
+                if (!obs.isBlank() && !obs.equals(observedBefore) && scaled) {
                     observedAfter = obs;
                     break;
                 }
@@ -637,7 +645,7 @@ class RuntimeStudioApiIntegrationTest extends ApiIntegrationContext {
             var snapAfterRes = mvc.perform(post(studioUrl + "/snapshots").header("Authorization", studentAuth)
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(mapper.writeValueAsString(Map.of(
-                        "explanation", "After STOP/START payment and SCALE orders to 2 replicas on live Docker.",
+                        "explanation", "After STOP/START payment and SCALE orders to 4 replicas on live Docker.",
                         "imageData", png1x1,
                         "observedAt", observedAfter))))
                 .andExpect(status().isOk()).andReturn();
@@ -689,7 +697,7 @@ class RuntimeStudioApiIntegrationTest extends ApiIntegrationContext {
                 "snapshotGrades", java.util.List.of(
                     Map.of("snapshotId", "STEP_1_STATIC", "score", 9.0),
                     Map.of("snapshotId", snapBeforeId, "title", "Live Baseline", "score", 9.0, "comment", "Verified baseline"),
-                    Map.of("snapshotId", snapAfterId, "title", "Live Scaled 2 Replicas", "score", 9.5, "comment", "Verified scale to 2 replicas")
+                    Map.of("snapshotId", snapAfterId, "title", "Live Scaled 4 Replicas", "score", 9.5, "comment", "Verified scale to 4 replicas")
                 )
             );
             mvc.perform(put("/api/v1/submissions/" + submissionId + "/review").header("Authorization", lecturerAuth)

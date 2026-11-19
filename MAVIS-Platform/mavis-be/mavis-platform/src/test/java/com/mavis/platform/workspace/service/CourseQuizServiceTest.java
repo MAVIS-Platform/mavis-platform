@@ -230,6 +230,12 @@ class CourseQuizServiceTest {
         when(prevRow.getString(2)).thenReturn("[0,1]");
         when(prevRow.getInt(3)).thenReturn(2);
         when(prevRow.getBoolean(4)).thenReturn(true);
+        String submittedQuestions = row.getString(4);
+        when(prevRow.getString(5)).thenReturn(submittedQuestions);
+        when(row.getInt(1)).thenReturn(3);
+        when(row.getString(4)).thenReturn("""
+                [{"prompt":"Unattempted question","options":["A","B"],"correctOption":1}]
+                """);
         var replayAttemptId = UUID.randomUUID();
         when(jdbc.query(contains("FROM course_quiz_attempts"), any(RowMapper.class),
                 eq(labId), eq(studentId), eq(replayAttemptId)))
@@ -238,6 +244,8 @@ class CourseQuizServiceTest {
         var replayed = service.submit(workspaceId, labId, new CourseQuizService.Submit(replayAttemptId, 2, List.of(0, 1)));
         assertEquals("PASSED", replayed.status());
         assertEquals(2, replayed.correctCount());
+        assertEquals(2, replayed.totalQuestions());
+        assertEquals(2, replayed.questionResults().size());
 
         // 4. Conflicting replay with different answers for same attemptId -> CONFLICT
         var mismatch = assertThrows(BusinessException.class, () ->

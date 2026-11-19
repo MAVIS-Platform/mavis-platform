@@ -61,11 +61,32 @@ class CourseHttpAcceptanceTest {
                     String hash = encoder.encode(PASSWORD);
                     checkCourseAndPermissions(db, hash);
                     checkOtpLifecycle(db, hash);
+                    checkFreshCuratedCourseSeed(db);
                 }
             } finally {
                 admin.execute("DROP DATABASE " + name + " WITH (FORCE)");
             }
         }
+    }
+
+    private void checkFreshCuratedCourseSeed(JdbcTemplate db) throws Exception {
+        UUID teacher = db.queryForObject("SELECT id FROM users WHERE email = ?", UUID.class, "teacher@example.invalid");
+        UUID classroom = workspace(db, "Fresh curated workflow fixture", teacher);
+        String lecturer = login("teacher");
+        String coursePath = "workspaces/" + classroom;
+        String seed = coursePath + "/course-labs/seed-curated";
+        var preset = Map.of("preset", "STANDARD_DEMO");
+
+        send("POST", seed, login("other-learner"), preset, 403);
+        var labs = data(send("POST", seed, lecturer, preset, 200)).path("labs");
+        assertEquals(3, labs.size());
+        var published = data(send("GET", coursePath + "/course/published", lecturer, null, 200));
+        assertEquals(1, published.path("version").asInt());
+        assertFalse(published.path("snapshot").path("modules").isEmpty());
+        String lab2 = labs.get(1).path("assignmentId").asText();
+        assertEquals(1, data(send("GET", coursePath + "/course-labs/" + lab2 + "/quiz", lecturer, null, 200))
+                .path("version").asInt());
+        assertEquals(labs, data(send("POST", seed, lecturer, preset, 200)).path("labs"));
     }
 
     private void checkOtpLifecycle(JdbcTemplate db, String passwordHash) throws Exception {
@@ -179,7 +200,17 @@ class CourseHttpAcceptanceTest {
         send("POST", publish + lab1 + "/publish", student, null, 403);
         assertFalse(data(send("GET", roadmap, lecturer, null, 200)).path("guided").asBoolean());
         assertEquals(1, data(send("POST", publish + lab1 + "/publish", lecturer, null, 200)).path("position").asInt());
+        String course = workspace + "/course";
+        send("PUT", course + "/draft", lecturer, Map.of("title", "Architecture course"), 200);
+        addTheoryModule(course, lecturer, "Published module");
+        JsonNode originalCourse = data(send("POST", course + "/publish", lecturer, null, 200));
+        send("POST", course + "/draft", lecturer, null, 200);
+        addTheoryModule(course, lecturer, "Unrelated draft module");
         assertEquals(2, data(send("POST", publish + lab2 + "/publish", lecturer, null, 200)).path("position").asInt());
+        JsonNode courseAfterLabPublication = data(send("GET", course + "/published", lecturer, null, 200));
+        assertEquals(originalCourse.path("version"), courseAfterLabPublication.path("version"));
+        assertEquals(originalCourse.path("snapshot"), courseAfterLabPublication.path("snapshot"));
+        assertEquals(2, data(send("GET", course, lecturer, null, 200)).path("modules").size());
         assertEquals(2, data(send("GET", roadmap, admin, null, 200)).path("labs").size());
         send("GET", roadmap, foreignStudent, null, 403);
         send("GET", roadmap, student, null, 403);
@@ -317,6 +348,14 @@ class CourseHttpAcceptanceTest {
         send("POST", "course-enrollments/redeem", foreignStudent, Map.of("code", code), 400);
         send("POST", "auth/logout", student, null, 200);
         send("GET", roadmap, student, null, 401);
+    }
+
+    private void addTheoryModule(String course, String lecturer, String title) throws Exception {
+        JsonNode draft = data(send("POST", course + "/modules", lecturer, Map.of("title", title), 200));
+        JsonNode modules = draft.path("modules");
+        String moduleId = modules.get(modules.size() - 1).path("id").asText();
+        send("POST", course + "/modules/" + moduleId + "/items", lecturer,
+                Map.of("type", "THEORY", "title", title, "content", Map.of("body", "Course material")), 200);
     }
 
     private String login(String user) throws Exception {
@@ -536,7 +575,10 @@ class CourseHttpAcceptanceTest {
         assertTrue(passedQuiz.path("passed").asBoolean());
         assertEquals("PASSED", passedQuiz.path("latestStatus").asText());
         assertTrue(passedQuiz.path("runtimeUnlocked").asBoolean());
-        assertEquals(2, data(send("POST", quiz, lecturer, definition, 200)).path("version").asInt());
+        var nextDefinition = Map.of("lesson", "New Quiz", "questions", List.of(
+                Map.of("prompt", "Which service owns fulfillment?", "options", List.of("Orders", "Portal"), "correctOption", 0)));
+        assertEquals(2, data(send("POST", quiz, lecturer, nextDefinition, 200)).path("version").asInt());
+        assertEquals(first, data(send("POST", quiz + "/attempts", student, passed, 200)));
         send("POST", quiz + "/attempts", student,
                 Map.of("attemptId", UUID.randomUUID(), "version", 1, "answers", List.of(0, 1)), 409);
         JsonNode republishedQuiz = data(send("GET", quiz, student, null, 200));
@@ -564,9 +606,9 @@ class CourseHttpAcceptanceTest {
                 VALUES (?,?,?,?,'THEORY_QUIZ') RETURNING id
                 """, v2Classroom, teacher, mod2, "Lab V2 Theory 1");
         UUID lab4 = id(db, """
-                INSERT INTO assignments(workspace_id,created_by,reference_model_id,title,lab_mode)
-                VALUES (?,?,?,?,'THEORY_QUIZ') RETURNING id
-                """, v2Classroom, teacher, mod2, "Lab V2 Theory 2");
+                INSERT INTO assignments(workspace_id,created_by,title,description,lab_mode,ai_policy)
+                VALUES (?,?,?,?,'THEORY_QUIZ','{"labTier":"THEORY_ONLY"}'::jsonb) RETURNING id
+                """, v2Classroom, teacher, "Lab V2 Theory 2", "A theory Lab without a reference model");
 
         String v2Workspace = "workspaces/" + v2Classroom;
         String v2Publish = v2Workspace + "/course-labs/";
@@ -596,10 +638,17 @@ class CourseHttpAcceptanceTest {
         assertEquals("PASSED", data(send("POST", v2Quiz + "/attempts", student,
                 Map.of("attemptId", UUID.randomUUID(), "version", 1, "answers", List.of(0)), 200)).path("status").asText());
 
+        send("POST", "submissions", student, Map.of("assignmentId", lab3, "theoryAnswers", List.of(
+                Map.of("sectionId", "theory", "answer", "Initial explanation."),
+                Map.of("sectionId", " THEoRY ", "answer", "Duplicate explanation."))), 400);
         JsonNode initialSub = data(send("POST", "submissions", student, v2Submission, 200));
         assertTrue(initialSub.path("evidencePackageDigest").asText().startsWith("sha256:"));
         assertEquals(1, initialSub.path("studentSnapshots").size());
         assertEquals("THEORY_THEORY", initialSub.path("studentSnapshots").get(0).path("snapshotId").asText());
+        assertEquals(initialSub.path("id"), data(send("POST", "submissions", student, v2Submission, 200)).path("id"));
+        var whileAwaitingReview = new java.util.HashMap<>(v2Submission);
+        whileAwaitingReview.put("submissionNotes", "Attempt to replace submission before review");
+        send("POST", "submissions", student, whileAwaitingReview, 409);
 
         String firstReview = "submissions/" + initialSub.path("id").asText() + "/review";
         send("PUT", firstReview, lecturer, Map.of("expectedRevision", 0, "status", "DRAFT",
@@ -629,6 +678,12 @@ class CourseHttpAcceptanceTest {
                 "snapshotGrades", List.of(Map.of("snapshotId", "THEORY_THEORY", "score", new java.math.BigDecimal("9.00")))), 200));
         assertEquals("PASSED", graded.path("labOutcome").asText());
         send("GET", "assignments/" + lab4, student, null, 200);
+        JsonNode theoryOnly = data(send("POST", "submissions", student, Map.of(
+                "assignmentId", lab4, "theoryAnswers", List.of(Map.of("sectionId", "THEORY",
+                        "answer", "A theory-only explanation."))), 200));
+        assertFalse(theoryOnly.hasNonNull("modelVersionId"));
+        assertFalse(theoryOnly.hasNonNull("projectId"));
+        assertEquals("NOT_REQUIRED", theoryOnly.path("courseQuizEvidence").path("status").asText());
 
         String originalDigest = resubmitted.path("evidencePackageDigest").asText();
         JsonNode originalTheory = resubmitted.path("theoryEvidence");

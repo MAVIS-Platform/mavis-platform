@@ -29,6 +29,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -247,6 +248,12 @@ public class CourseAuthoringService {
         CourseDefinition course = courses.findByWorkspaceId(workspaceId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Course draft not found"));
         return view(course);
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<CourseView> findExistingForAuthoring(UUID workspaceId) {
+        access.requireWorkspaceLecturer(workspaceId);
+        return courses.findByWorkspaceId(workspaceId).map(this::view);
     }
 
     public CourseView saveDraft(UUID workspaceId, CourseRequest request) {

@@ -811,6 +811,7 @@ class Wf02AcceptanceMatrixTest {
         when(prevRow.getString(2)).thenReturn("[0,1,0,1]");
         when(prevRow.getInt(3)).thenReturn(4);
         when(prevRow.getBoolean(4)).thenReturn(true);
+        when(prevRow.getString(5)).thenReturn(QUIZ_FIXTURE_QUESTIONS);
         when(ctx.jdbc.query(contains("FROM course_quiz_attempts"), any(RowMapper.class),
                 eq(labId), eq(student.getId()), eq(retryId)))
                 .thenAnswer(call -> List.of(call.<RowMapper<?>>getArgument(1).mapRow(prevRow, 0)));
@@ -1013,6 +1014,14 @@ class Wf02AcceptanceMatrixTest {
         return svc;
     }
 
+    private static final String QUIZ_FIXTURE_QUESTIONS = """
+            [
+              {"prompt":"Q1","options":["A","B"],"correctOption":0},
+              {"prompt":"Q2","options":["A","B"],"correctOption":1},
+              {"prompt":"Q3","options":["A","B"],"correctOption":0},
+              {"prompt":"Q4","options":["A","B"],"correctOption":1}
+            ]""";
+
     private record QuizFixture(CourseQuizService service, Workspace workspace, Assignment lab, JdbcTemplate jdbc) {}
 
     private QuizFixture newQuizFixture(UUID wsId, UUID labId, UUID modelId, int version, int passPercent) throws Exception {
@@ -1031,13 +1040,7 @@ class Wf02AcceptanceMatrixTest {
         when(row.getInt(1)).thenReturn(version);
         when(row.getString(2)).thenReturn("Lesson");
         when(row.getInt(3)).thenReturn(passPercent);
-        when(row.getString(4)).thenReturn("""
-                [
-                  {"prompt":"Q1","options":["A","B"],"correctOption":0},
-                  {"prompt":"Q2","options":["A","B"],"correctOption":1},
-                  {"prompt":"Q3","options":["A","B"],"correctOption":0},
-                  {"prompt":"Q4","options":["A","B"],"correctOption":1}
-                ]""");
+        when(row.getString(4)).thenReturn(QUIZ_FIXTURE_QUESTIONS);
         when(jdbc.query(contains("FROM course_quizzes"), any(RowMapper.class), eq(labId), eq(modelId)))
                 .thenAnswer(call -> List.of(call.<RowMapper<?>>getArgument(1).mapRow(row, 0)));
 
