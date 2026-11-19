@@ -604,12 +604,10 @@ export function LabSourceSection({
           <Button
             type="button"
             size="sm"
-            variant={assignment.referenceSource?.modelId ? "default" : "outline"}
+            variant="default"
             onClick={() => onNavigate("theory")}
           >
-            {assignment.referenceSource?.modelId
-              ? t("Next Step 3: Lab Theory", "Sang Bước 3: Lý thuyết Lab")
-              : t("Skip (Theory-only) → Step 3: Lab Theory", "Bỏ qua (Chỉ lý thuyết) → Bước 3: Lý thuyết Lab")}
+            {t("Next", "Tiếp theo")}
             <ArrowRight className="ml-1.5 size-4" aria-hidden="true" />
           </Button>
         </div>
