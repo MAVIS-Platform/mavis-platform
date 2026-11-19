@@ -886,6 +886,24 @@ test("Lab v2 info removes diagram submission and theory is lesson + repo + C1-C3
   assert.ok(theory.includes("AssignmentSourceDetails"));
 });
 
+test("smartFormatMarkdown converts raw pasted text into headings, lists, paragraphs and callouts", () => {
+  const { smartFormatMarkdown } = require("../src/features/assignments/lab-theory-section.tsx");
+  const raw = [
+    "Chapter 1: Java Foundations",
+    "Line one of a broken",
+    "PDF paragraph.",
+    "• Bullet A",
+    "– Bullet B",
+    "Note: Always pin your version.",
+  ].join("\n");
+  const formatted = smartFormatMarkdown(raw);
+  assert.ok(formatted.includes("## Chapter 1: Java Foundations"));
+  assert.ok(formatted.includes("Line one of a broken PDF paragraph."));
+  assert.ok(formatted.includes("- Bullet A"));
+  assert.ok(formatted.includes("- Bullet B"));
+  assert.ok(formatted.includes("> **Note:** Always pin your version."));
+});
+
 test("MarkdownPreview renders safe headings, emphasis and links without raw HTML", () => {
   const React = require("react");
   const { renderToStaticMarkup } = require("react-dom/server");

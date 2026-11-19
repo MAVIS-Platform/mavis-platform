@@ -128,6 +128,74 @@ const LESSON_TEMPLATES = [
   },
 ] as const;
 
+export function smartFormatMarkdown(raw: string): string {
+  const normalized = raw.replace(/\r\n?/g, "\n").trim();
+  if (!normalized) return "";
+  const out: string[] = [];
+  let inCode = false;
+  let paragraph: string[] = [];
+
+  const flushParagraph = () => {
+    if (!paragraph.length) return;
+    out.push(paragraph.join(" "));
+    paragraph = [];
+  };
+
+  for (const rawLine of normalized.split("\n")) {
+    const line = rawLine.trimEnd();
+    const trimmed = line.trim();
+
+    if (trimmed.startsWith("```")) {
+      flushParagraph();
+      inCode = !inCode;
+      out.push(line);
+      continue;
+    }
+    if (inCode) {
+      out.push(line);
+      continue;
+    }
+    if (!trimmed) {
+      flushParagraph();
+      if (out.length && out[out.length - 1] !== "") out.push("");
+      continue;
+    }
+    if (/^#{1,6}\s+/.test(trimmed) || /^>\s+/.test(trimmed) || /^\|.*\|$/.test(trimmed)) {
+      flushParagraph();
+      out.push(trimmed);
+      continue;
+    }
+    if (/^[•▪◦●■–—]\s*/.test(trimmed)) {
+      flushParagraph();
+      out.push(`- ${trimmed.replace(/^[•▪◦●■–—]\s*/, "")}`);
+      continue;
+    }
+    if (/^([-*+]|\d+[.)])\s+/.test(trimmed)) {
+      flushParagraph();
+      out.push(trimmed);
+      continue;
+    }
+    if (/^(note|important|tip|warning|lưu ý|chú ý)\s*[:：]\s*/i.test(trimmed)) {
+      flushParagraph();
+      out.push(`> **${trimmed.replace(/\s*[:：]\s*/, ":** ")}`);
+      continue;
+    }
+    if (
+      /^(chapter|chương|phần|section|bài)\s+\d+([.:]\s*|\s+).+/i.test(trimmed) ||
+      (/^[A-ZÀ-Ỹ0-9][A-ZÀ-Ỹ0-9\s\-:&/]{3,70}$/.test(trimmed) && /[A-ZÀ-Ỹ]/.test(trimmed))
+    ) {
+      flushParagraph();
+      if (out.length && out[out.length - 1] !== "") out.push("");
+      out.push(`## ${trimmed}`);
+      out.push("");
+      continue;
+    }
+    paragraph.push(trimmed);
+  }
+  flushParagraph();
+  return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 function MarkdownEditor({
   label,
   value,
@@ -146,55 +214,68 @@ function MarkdownEditor({
     <div className="space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-xs font-medium text-foreground">{label}</span>
-        <div className="inline-flex rounded-lg border bg-muted/40 p-0.5 text-xs">
-          <button
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
             type="button"
-            onClick={() => setMode("write")}
-            className={`rounded-md px-2.5 py-1 font-medium transition-colors ${
-              mode === "write"
-                ? "bg-background text-foreground shadow-xs"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
+            size="sm"
+            variant="outline"
+            className="h-7 px-2.5 text-xs"
+            disabled={!value.trim()}
+            onClick={() => onChange(smartFormatMarkdown(value))}
           >
-            {t("Write", "Soạn thảo")}
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode("preview")}
-            className={`rounded-md px-2.5 py-1 font-medium transition-colors ${
-              mode === "preview"
-                ? "bg-background text-foreground shadow-xs"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {t("Student Preview (Coursera)", "Xem như Sinh viên (Coursera)")}
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode("split")}
-            className={`hidden rounded-md px-2.5 py-1 font-medium transition-colors lg:inline-block ${
-              mode === "split"
-                ? "bg-background text-foreground shadow-xs"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {t("Split view", "Song song")}
-          </button>
+            <Sparkles className="mr-1 size-3" aria-hidden="true" />
+            {t("Smart Format", "Định dạng thông minh")}
+          </Button>
+          <div className="inline-flex rounded-lg border bg-muted/40 p-0.5 text-xs">
+            <button
+              type="button"
+              onClick={() => setMode("write")}
+              className={`rounded-md px-2.5 py-1 font-medium transition-colors ${
+                mode === "write"
+                  ? "bg-background text-foreground shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {t("Write", "Soạn thảo")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("preview")}
+              className={`rounded-md px-2.5 py-1 font-medium transition-colors ${
+                mode === "preview"
+                  ? "bg-background text-foreground shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {t("Preview", "Xem trước")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("split")}
+              className={`hidden rounded-md px-2.5 py-1 font-medium transition-colors lg:inline-block ${
+                mode === "split"
+                  ? "bg-background text-foreground shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {t("Split view", "Song song")}
+            </button>
+          </div>
         </div>
       </div>
 
-      <div className={mode === "split" ? "grid items-start gap-4 lg:grid-cols-2" : "block"}>
+      <div className={mode === "split" ? "grid grid-cols-1 items-stretch gap-4 lg:grid-cols-2" : "block"}>
         {(mode === "write" || mode === "split") && (
           <Textarea
-            rows={12}
+            rows={14}
             value={value}
-            className="h-80 resize-none font-mono text-sm leading-6"
+            className="h-96 w-full resize-none rounded-xl border bg-background p-4 font-mono text-sm leading-6 shadow-2xs"
             onChange={(event) => onChange(event.target.value)}
           />
         )}
         {(mode === "preview" || mode === "split") && (
-          <div className="h-80 overflow-y-auto rounded-xl border bg-background p-5 shadow-2xs">
-            <div className="mb-4 flex flex-wrap items-center gap-2 border-b pb-3">
+          <div className="h-96 w-full overflow-y-auto rounded-xl border bg-background p-4 shadow-2xs">
+            <div className="mb-3 flex flex-wrap items-center gap-2 border-b pb-2.5">
               <span className="inline-flex items-center gap-1 rounded-full border border-teal-200 bg-teal-50 px-2.5 py-0.5 text-[11px] font-medium text-teal-800 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-300">
                 📖 {t("Theory Lesson", "Bài giảng lý thuyết")}
               </span>
@@ -590,10 +671,10 @@ export function LabTheorySection({
               <span className="text-xs font-semibold text-foreground">
                 {t("Create or import a lesson for this Lab", "Soạn mới hoặc nhập file bài giảng cho Lab")}
               </span>
-              <div className="flex flex-wrap gap-1.5">
-                <label className="inline-flex cursor-pointer items-center rounded-md border px-2.5 py-1 text-xs font-medium transition-colors hover:bg-muted">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <label className="inline-flex h-8 cursor-pointer items-center rounded-md border px-2.5 text-xs font-medium transition-colors hover:bg-muted">
                   <Upload className="mr-1 size-3.5" aria-hidden="true" />
-                  {t("Import Markdown (.md)", "Nhập file Markdown (.md)")}
+                  {t("Import (.md / .txt)", "Nhập (.md / .txt)")}
                   <input
                     className="sr-only"
                     type="file"
@@ -602,7 +683,8 @@ export function LabTheorySection({
                       const file = event.target.files?.[0];
                       if (!file) return;
                       void file.text().then((text) => {
-                        setNewBody(text);
+                        const isPlainText = /\.txt$/i.test(file.name);
+                        setNewBody(isPlainText ? smartFormatMarkdown(text) : text);
                         setDraftSource("IMPORT");
                         setAiNote("");
                         if (!newTitle.trim()) setNewTitle(file.name.replace(/\.(md|markdown|txt)$/i, ""));
@@ -623,23 +705,27 @@ export function LabTheorySection({
                     ? t("Drafting…", "Đang tạo nháp…")
                     : t("AI draft from evidence", "AI soạn từ bằng chứng")}
                 </Button>
-                {LESSON_TEMPLATES.map((template) => (
-                  <Button
-                    key={template.en}
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      setNewTitle(t(template.titleEn, template.titleVi));
-                      setNewBody(template.body);
-                      setEditorStyle(template.style);
-                      setDraftSource("LECTURER");
-                      setAiNote("");
-                    }}
-                  >
-                    {t(template.en, template.vi)}
-                  </Button>
-                ))}
+                <select
+                  aria-label={t("Lesson theme", "Mẫu trình bày")}
+                  className="h-8 rounded-md border bg-background px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+                  value=""
+                  onChange={(event) => {
+                    const template = LESSON_TEMPLATES.find((item) => item.style === event.target.value);
+                    if (!template) return;
+                    setNewTitle(t(template.titleEn, template.titleVi));
+                    setNewBody(template.body);
+                    setEditorStyle(template.style);
+                    setDraftSource("LECTURER");
+                    setAiNote("");
+                  }}
+                >
+                  <option value="">{t("Theme ▾", "Mẫu ▾")}</option>
+                  {LESSON_TEMPLATES.map((template) => (
+                    <option key={template.style} value={template.style}>
+                      {t(template.en, template.vi)}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
             <Input
