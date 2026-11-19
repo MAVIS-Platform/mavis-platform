@@ -59,6 +59,7 @@ export function LabToc({
   progress,
   preview,
   layout = "sidebar",
+  sticky = true,
 }: {
   steps: LabTocStep[];
   activeStep: 1 | 2 | 3 | 4;
@@ -67,13 +68,17 @@ export function LabToc({
   progress: number;
   preview?: boolean | undefined;
   layout?: "sidebar" | "stepper" | undefined;
+  sticky?: boolean | undefined;
 }) {
   const { t } = useLocale();
   if (layout === "stepper") {
     return (
       <nav
         aria-label={t("Lab 4-step workflow", "Quy trình 4 bước trong Lab")}
-        className="sticky top-14 z-20 space-y-2.5 rounded-xl border bg-card/95 p-3 shadow-sm backdrop-blur-md"
+        className={cn(
+          sticky && "sticky top-14 z-20",
+          "space-y-2.5 rounded-xl border bg-card/95 p-3 shadow-sm backdrop-blur-md",
+        )}
       >
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex min-w-0 flex-1 items-center gap-3">

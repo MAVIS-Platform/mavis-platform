@@ -31,7 +31,7 @@ public class SubmissionSnapshot {
     private Assignment assignment;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "project_id", nullable = false)
+    @JoinColumn(name = "project_id")
     private Project project;
 
     @ManyToOne(fetch = FetchType.LAZY)
@@ -39,11 +39,11 @@ public class SubmissionSnapshot {
     private User submittedBy;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "source_snapshot_id", nullable = false)
+    @JoinColumn(name = "source_snapshot_id")
     private SourceSnapshot sourceSnapshot;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "model_version_id", nullable = false)
+    @JoinColumn(name = "model_version_id")
     private ModelVersion modelVersion;
 
     @ManyToOne(fetch = FetchType.LAZY)

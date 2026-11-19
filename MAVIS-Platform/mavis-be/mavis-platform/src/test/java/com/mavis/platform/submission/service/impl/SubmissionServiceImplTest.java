@@ -1102,4 +1102,105 @@ class SubmissionServiceImplTest {
         assertThat(returnedOnly.get(0).getId()).isEqualTo(returnedId);
         verify(submissionReviewRepository, times(2)).findBySubmissionIdIn(anyList());
     }
+
+    @Test
+    @DisplayName("submitTheoryV2 accepts THEORY_QUIZ_STUDIO with verified HMAC receipt even when snapshots array is empty")
+    void studioV2SubmitsWithVerifiedReceiptAndEmptySnapshots() {
+        var labWorkspace = Workspace.builder().id(UUID.randomUUID()).courseMode(true).status("ACTIVE").build();
+        student.setRole(Role.builder().code("STUDENT").build());
+        assignment.setLabMode("THEORY_QUIZ_STUDIO");
+        assignment.setLabOrder(1);
+        assignment.setWorkspace(labWorkspace);
+        assignment.setReferenceModel(modelVersion);
+        project.setWorkspace(labWorkspace);
+
+        runtimeSession.setAssignment(assignment);
+        runtimeSession.setTriggeredBy(student);
+        runtimeSession.setModelVersion(modelVersion);
+        var scenarioPlan = objectMapper.createObjectNode().put("interactiveStudio", true);
+        scenarioPlan.putArray("infrastructureActions").addObject()
+                .put("action", "SCALE").put("service", "orders").put("replicas", 2);
+        runtimeSession.setScenarioConfig(scenarioPlan);
+        runtimeSession.setSandboxEnforcementConfirmed(true);
+        runtimeSession.setReceiptDigest("sha256:" + "b".repeat(64));
+
+        var control = objectMapper.createObjectNode().put("receiptSignature", "hmac-sha256:verified");
+        control.putArray("actions").addObject()
+                .put("action", "SCALE").put("service", "orders").put("replicas", 2);
+        control.putArray("snapshots");
+        runtimeSession.setStudioControl(control);
+
+        var receipt = objectMapper.createObjectNode();
+        receipt.putObject("outcome").putObject("trace").putArray("spans").addObject().put("spanId", "s1");
+        var action = receipt.putArray("infrastructureActions").addObject()
+                .put("action", "SCALE").put("service", "orders")
+                .put("replicasBefore", 1).put("replicasAfter", 2).put("confirmed", true);
+        action.putObject("metricsBefore");
+        action.putObject("metricsAfter");
+        runtimeSession.setRunnerReceiptJson(receipt);
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(student));
+        when(assignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));
+        when(workspaceRepository.findLockedById(labWorkspace.getId())).thenReturn(Optional.of(labWorkspace));
+        when(courseLabs.currentQuizPass(assignment, userId)).thenReturn(Optional.of(
+                new com.mavis.common.security.CourseLabPolicy.QuizPass(UUID.randomUUID(), 1, 5, 5, 100, OffsetDateTime.now())));
+        when(runtimeSessionRepository.findById(runtimeSessionId)).thenReturn(Optional.of(runtimeSession));
+        when(submissionSnapshotRepository.save(any())).thenAnswer(call -> {
+            SubmissionSnapshot saved = call.getArgument(0);
+            saved.setId(UUID.randomUUID());
+            saved.setSubmittedAt(OffsetDateTime.now());
+            return saved;
+        });
+
+        var request = SubmissionCreateRequest.builder()
+                .assignmentId(assignmentId)
+                .runtimeSessionId(runtimeSessionId)
+                .submissionNotes("Scaled orders to 2 replicas after starting payment.")
+                .theoryAnswers(List.of(new SubmissionCreateRequest.TheoryAnswerDTO(
+                        "THEORY", "Theory explanation", "Service boundaries verified in Studio Live.")))
+                .build();
+
+        SubmissionResponseDTO response = submissionService.submitAssignment(request);
+        assertThat(response.getRuntimeSessionId()).isEqualTo(runtimeSessionId);
+        assertThat(response.getStudioEvidence().path("receiptSignature").asText()).isEqualTo("hmac-sha256:verified");
+        assertThat(response.getStudioEvidence().path("snapshots").isArray()).isTrue();
+        assertThat(response.getStudioEvidence().path("snapshots").size()).isZero();
+    }
+
+    @Test
+    @DisplayName("submitTheoryV2 accepts THEORY_QUIZ submission without a reference model")
+    void theoryQuizV2SubmitsWithoutReferenceModel() {
+        var labWorkspace = Workspace.builder().id(UUID.randomUUID()).courseMode(true).status("ACTIVE").build();
+        student.setRole(Role.builder().code("STUDENT").build());
+        assignment.setLabMode("THEORY_QUIZ");
+        assignment.setLabOrder(2);
+        assignment.setWorkspace(labWorkspace);
+        assignment.setReferenceModel(null);
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(student));
+        when(assignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));
+        when(workspaceRepository.findLockedById(labWorkspace.getId())).thenReturn(Optional.of(labWorkspace));
+        when(courseLabs.currentQuizPass(assignment, userId)).thenReturn(Optional.of(
+                new com.mavis.common.security.CourseLabPolicy.QuizPass(UUID.randomUUID(), 1, 2, 2, 100, OffsetDateTime.now())));
+        when(submissionSnapshotRepository.save(any())).thenAnswer(call -> {
+            SubmissionSnapshot saved = call.getArgument(0);
+            saved.setId(UUID.randomUUID());
+            saved.setSubmittedAt(OffsetDateTime.now());
+            return saved;
+        });
+
+        var request = SubmissionCreateRequest.builder()
+                .assignmentId(assignmentId)
+                .submissionNotes("Clean Architecture enforces inward dependency rule.")
+                .theoryAnswers(List.of(new SubmissionCreateRequest.TheoryAnswerDTO(
+                        "THEORY", "Theory explanation", "Clean Architecture keeps domain entities independent of frameworks.")))
+                .build();
+
+        SubmissionResponseDTO response = submissionService.submitAssignment(request);
+        assertThat(response.getProjectId()).isNull();
+        assertThat(response.getModelVersionId()).isNull();
+        assertThat(response.getSourceSnapshotId()).isNull();
+        assertThat(response.getCourseQuizEvidence().path("status").asText()).isEqualTo("PASSED");
+        assertThat(response.getEvidencePackageDigest()).matches("sha256:[a-f0-9]{64}");
+    }
 }

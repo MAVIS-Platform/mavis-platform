@@ -938,6 +938,7 @@ export function LabWorkspace() {
 
           <LabToc
             layout="stepper"
+            sticky={displayedStep !== 4}
             steps={tocSteps}
             activeStep={displayedStep}
             moduleTitle={currentModule?.title}
@@ -975,6 +976,7 @@ export function LabWorkspace() {
               studioVerified={Boolean(verifiedStudioSession)}
               studioSessionId={verifiedStudioSession?.id}
               studioSessions={studioSessionsList}
+              studioSessionsReady={!studentStudioSessions.isPending && !studentContext.isPending}
               labMode={lab.labMode ?? (requiresRuntime ? "THEORY_QUIZ_STUDIO" : "THEORY_QUIZ")}
               showQuiz={roadmap.data?.guided === true}
               canAttemptQuiz={
@@ -1192,6 +1194,7 @@ function StepContent({
   studioVerified,
   studioSessionId,
   studioSessions,
+  studioSessionsReady = true,
   labMode,
   requiresRuntime,
   moduleTitle,
@@ -1227,6 +1230,7 @@ function StepContent({
   studioVerified: boolean;
   studioSessionId?: string | undefined;
   studioSessions: StudentLabStudioSession[];
+  studioSessionsReady?: boolean | undefined;
   labMode: string;
   requiresRuntime: boolean;
   referenceArchitecture: StudentLabReferenceArchitecture | null;
@@ -1261,6 +1265,9 @@ function StepContent({
       preview ||
       !requiresRuntime ||
       !runtimeReady ||
+      !studioSessionsReady ||
+      studioVerified ||
+      studioSessions.length > 0 ||
       activeStudioSessionId
     )
       return;
@@ -1273,6 +1280,9 @@ function StepContent({
     preview,
     requiresRuntime,
     runtimeReady,
+    studioSessionsReady,
+    studioVerified,
+    studioSessions.length,
     activeStudioSessionId,
     startStudio,
   ]);
@@ -1904,7 +1914,7 @@ function StepContent({
                           </ul>
                         </section>
                       )}
-                      <div className="h-[720px] overflow-hidden rounded-xl border border-slate-800">
+                      <div className="h-[780px] overflow-hidden rounded-xl border border-slate-800">
                         <LiveStudioWorkbench
                           sessions={studioSessions}
                           sessionId={activeStudioSessionId}

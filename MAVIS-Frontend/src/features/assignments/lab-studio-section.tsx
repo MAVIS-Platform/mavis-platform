@@ -296,7 +296,7 @@ export function LabStudioSection({
                   {t("Inline Studio Playtest Sandbox", "Khung chạy thử Studio ngay trong Soạn Lab")}
                 </p>
                 {startStudio.error && <ErrorState error={startStudio.error} />}
-                <div className="h-[680px] overflow-hidden rounded-xl border border-slate-800">
+                <div className="h-[780px] overflow-hidden rounded-xl border border-slate-800">
                   <LiveStudioWorkbench
                     sessions={sessionList}
                     sessionId={activeSessionId}

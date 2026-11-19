@@ -94,6 +94,21 @@ WITH expected(present) AS (VALUES
 SELECT CASE WHEN bool_and(present) THEN 'ready'
             ELSE 'missing' END FROM expected;
 """),
+    "V46__Nullable_Submission_Reference_Columns.sql": (46, """
+WITH expected(present) AS (VALUES
+    (EXISTS (SELECT FROM information_schema.columns WHERE table_schema = current_schema()
+             AND table_name = 'submission_snapshots' AND column_name = 'project_id'
+             AND is_nullable = 'YES')),
+    (EXISTS (SELECT FROM information_schema.columns WHERE table_schema = current_schema()
+             AND table_name = 'submission_snapshots' AND column_name = 'source_snapshot_id'
+             AND is_nullable = 'YES')),
+    (EXISTS (SELECT FROM information_schema.columns WHERE table_schema = current_schema()
+             AND table_name = 'submission_snapshots' AND column_name = 'model_version_id'
+             AND is_nullable = 'YES'))
+)
+SELECT CASE WHEN bool_and(present) THEN 'ready'
+            ELSE 'missing' END FROM expected;
+"""),
     "V44__Mavis_Announcements.sql": (44, """
 WITH expected(present) AS (VALUES
     (to_regclass('announcements') IS NOT NULL),

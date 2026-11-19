@@ -258,7 +258,7 @@ export function PreparedTopologyEditor({ projectId, configuration, onSaved }: {
         )}
         <ul className="space-y-2">
           {topology.connections.map((link, index) => (
-            <li key={index} className="grid gap-2 rounded-lg border p-3 md:grid-cols-[1fr_1fr_1.2fr_6rem_auto]">
+            <li key={index} className="grid gap-2 rounded-lg border p-3 md:grid-cols-[1fr_1fr_1.2fr_10rem_auto]">
               <label className="space-y-1 text-[11px] font-medium">
                 <span>{t("From", "Từ")}</span>
                 <select className="w-full rounded-md border bg-background px-2 py-1.5 text-sm" value={link.from}

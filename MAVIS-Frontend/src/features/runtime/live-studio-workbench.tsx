@@ -233,7 +233,13 @@ export function LiveStudioWorkbench({
           </Button>
         )}
         {!hideSwitchToSandbox && onSwitchToSandbox && (
-          <Button type="button" size="sm" variant="outline" onClick={onSwitchToSandbox}>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="border-slate-600 bg-slate-900 text-slate-200 hover:bg-slate-800 hover:text-white"
+            onClick={onSwitchToSandbox}
+          >
             Switch to Sandbox
           </Button>
         )}
@@ -265,6 +271,7 @@ export function LiveStudioWorkbench({
           <Button
             type="button"
             size="sm"
+            className="bg-emerald-600 text-white hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500"
             disabled={
               finish.isPending ||
               action.isPending ||
@@ -281,6 +288,7 @@ export function LiveStudioWorkbench({
             type="button"
             size="sm"
             variant="outline"
+            className="border-slate-600 bg-slate-900 text-slate-200 hover:bg-slate-800 hover:text-white disabled:opacity-40"
             disabled={cancel.isPending || data.executionStatus !== "RUNNING"}
             onClick={() => void cancelStudio()}
           >
@@ -289,9 +297,7 @@ export function LiveStudioWorkbench({
         </div>
       </div>
 
-      {(mutationError ||
-        data.executionStatus === "FAILED" ||
-        (data.telemetry?.warnings?.length ?? 0) > 0) && (
+      {(mutationError || data.executionStatus === "FAILED") && (
         <div
           role="alert"
           className="flex flex-wrap items-center gap-2 border-b border-rose-500/30 bg-rose-950/40 px-3 py-1.5 text-[11px] text-rose-200"
@@ -299,16 +305,14 @@ export function LiveStudioWorkbench({
           <AlertCircle aria-hidden="true" className="size-3.5 shrink-0 text-rose-300" />
           <span className="font-medium">
             {mutationError ??
-              (data.executionStatus === "FAILED"
-                ? "Studio Live session failed on Runner. Cancel or start a fresh session, or check Logs & Traces."
-                : data.telemetry?.warnings?.join(" · "))}
+              "Studio Live session failed on Runner. Cancel or start a fresh session, or check Logs & Traces."}
           </span>
         </div>
       )}
 
       <div className="flex min-h-0 flex-1">
         {showLeft && (
-          <aside className="w-[260px] shrink-0 overflow-x-hidden overflow-y-auto border-r border-slate-800 bg-[#0b101b] p-2.5">
+          <aside className="w-[228px] shrink-0 overflow-x-hidden overflow-y-auto border-r border-slate-800 bg-[#0b101b] p-2">
             <LiveSandboxParity
               data={data}
               selected={selected}
@@ -322,8 +326,7 @@ export function LiveStudioWorkbench({
           </aside>
         )}
 
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <div ref={graphRef} className="relative min-h-[380px] flex-1 bg-[#070b12] p-2.5">
+        <div ref={graphRef} className="relative min-h-[300px] min-w-0 flex-1 bg-[#070b12] p-2.5">
             {state.isError ? (
               <ErrorState error={state.error} onRetry={() => void state.refetch()} />
             ) : data.services.length > 0 || data.topology ? (
@@ -369,47 +372,63 @@ export function LiveStudioWorkbench({
             )}
           </div>
 
-          <div className="h-[242px] shrink-0 border-t border-slate-800 bg-[#0b101b]">
-            <div className="flex h-9 items-center gap-1 border-b border-slate-800 px-2">
-              {(
-                [
-                  ["stats", "Stats"],
-                  ["telemetry", `Service Telemetry & Impact (${data.services.length})`],
-                  ["logs", `Logs & Traces (${data.telemetry?.spans.length ?? 0})`],
-                  ["snapshots", `Snapshots (${data.snapshots?.length ?? 0})`],
-                ] as const
-              ).map(([id, label]) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => setTab(id)}
-                  className={`rounded px-2 py-1 text-[11px] font-semibold ${
-                    tab === id
-                      ? "bg-slate-800 text-slate-100"
-                      : "text-slate-400 hover:text-slate-200"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-              <div className="ml-auto flex items-center gap-2 text-[10px] text-slate-500">
-                <span className="rounded-full border border-slate-800 bg-slate-950/70 px-2 py-0.5 font-mono text-slate-300">
-                  {data.finishRequested
-                    ? "Finishing"
-                    : waiting
-                      ? "Waiting for Runner"
-                      : data.executionStatus}
-                  {" · "}
-                  {data.cleanupStatus}
-                </span>
-                <span className="inline-flex items-center gap-1">
-                  <RefreshCw aria-hidden="true" className="size-3" />
-                  {data.telemetry?.observedAt
-                    ? new Date(data.telemetry.observedAt).toLocaleTimeString()
-                    : "waiting for telemetry"}
-                </span>
-              </div>
+          {showRight && (
+            <aside className="w-[260px] shrink-0 overflow-x-hidden overflow-y-auto border-l border-slate-800 bg-[#0a0f18] p-2">
+              <LiveSandboxParity
+                data={data}
+                selected={selected}
+                busy={busy}
+                onSelect={studio.setService}
+                onCommand={send}
+                sections={["inspector", "hardware", "resilience", "load", "config"]}
+                compact
+                label="Live inspector"
+              />
+            </aside>
+          )}
+        </div>
+
+        <div className="h-[236px] shrink-0 border-t border-slate-800 bg-[#0b101b]">
+          <div className="flex h-9 items-center gap-1 overflow-x-auto border-b border-slate-800 px-2">
+            {(
+              [
+                ["stats", "Stats"],
+                ["telemetry", `Service Telemetry & Impact (${data.services.length})`],
+                ["logs", `Logs & Traces (${data.telemetry?.spans.length ?? 0})`],
+                ["snapshots", `Snapshots (${data.snapshots?.length ?? 0})`],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setTab(id)}
+                className={`shrink-0 whitespace-nowrap rounded px-2.5 py-1 text-[11px] font-semibold ${
+                  tab === id
+                    ? "bg-slate-800 text-slate-100"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+            <div className="ml-auto flex shrink-0 items-center gap-2 pl-2 text-[10px] text-slate-500">
+              <span className="whitespace-nowrap rounded-full border border-slate-800 bg-slate-950/70 px-2 py-0.5 font-mono text-slate-300">
+                {data.finishRequested
+                  ? "Finishing"
+                  : waiting
+                    ? "Waiting for Runner"
+                    : data.executionStatus}
+                {" · "}
+                {data.cleanupStatus}
+              </span>
+              <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap">
+                <RefreshCw aria-hidden="true" className="size-3" />
+                {data.telemetry?.observedAt
+                  ? new Date(data.telemetry.observedAt).toLocaleTimeString()
+                  : "waiting for telemetry"}
+              </span>
             </div>
+          </div>
             <div className="h-[calc(100%-2.25rem)] overflow-auto p-2.5">
               {tab === "stats" && (
                 <div className="space-y-2">
@@ -652,6 +671,11 @@ export function LiveStudioWorkbench({
                         No observed spans or service logs captured yet.
                       </p>
                     )}
+                  {(data.telemetry?.warnings?.length ?? 0) > 0 && (
+                    <p className="rounded border border-slate-800 bg-slate-950/60 px-2 py-1 font-mono text-[10px] text-slate-400">
+                      Telemetry notes: {data.telemetry?.warnings?.join(" · ")}
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -671,6 +695,7 @@ export function LiveStudioWorkbench({
                       type="button"
                       size="sm"
                       variant="outline"
+                      className="border-slate-600 bg-slate-900 text-slate-200 hover:bg-slate-800 hover:text-white"
                       onClick={() => void downloadReceipt()}
                     >
                       {data.receiptSignature ? "Download signed receipt" : "Download receipt"}
@@ -759,7 +784,7 @@ export function LiveStudioWorkbench({
                           type="button"
                           size="sm"
                           variant="outline"
-                          className="mt-1"
+                          className="mt-1 border-slate-600 bg-slate-900 text-slate-200 hover:bg-slate-800 hover:text-white"
                           onClick={() => void downloadSnapshot(snapshot.id)}
                         >
                           Download evidence
@@ -775,24 +800,7 @@ export function LiveStudioWorkbench({
                 </div>
               )}
             </div>
-          </div>
         </div>
-
-        {showRight && (
-          <aside className="w-[296px] shrink-0 overflow-x-hidden overflow-y-auto border-l border-slate-800 bg-[#0a0f18] p-2.5">
-            <LiveSandboxParity
-              data={data}
-              selected={selected}
-              busy={busy}
-              onSelect={studio.setService}
-              onCommand={send}
-              sections={["inspector", "hardware", "resilience", "load", "config"]}
-              compact
-              label="Live inspector"
-            />
-          </aside>
-        )}
-      </div>
     </div>
   );
 }

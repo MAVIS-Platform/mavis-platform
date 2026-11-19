@@ -237,7 +237,7 @@ public class SubmissionServiceImpl implements SubmissionService {
             }
         }
 
-        var studioEvidence = freezeStudioEvidence(runtimeSession);
+        var studioEvidence = freezeStudioEvidence(runtimeSession, true);
         List<StudentSnapshotItemDTO> studentSnapshots = request.getStudentSnapshots();
         if (studentLab) {
             studentSnapshots = guidedSnapshots(studentSnapshots, modelVersion,
@@ -288,16 +288,16 @@ public class SubmissionServiceImpl implements SubmissionService {
 
     private SubmissionResponseDTO submitTheoryV2(SubmissionCreateRequest request, Assignment assignment,
                                                   User submitter, UUID currentUserId) {
+        boolean studioMode = "THEORY_QUIZ_STUDIO".equalsIgnoreCase(assignment.getLabMode());
         ModelVersion referenceModel = assignment.getReferenceModel();
-        if (referenceModel == null || referenceModel.getSourceSnapshot() == null) {
+        if (studioMode && (referenceModel == null || referenceModel.getSourceSnapshot() == null)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Lab chưa có reference source đã phân tích");
         }
-        SourceSnapshot sourceSnapshot = referenceModel.getSourceSnapshot();
-        Project referenceProject = referenceModel.getProject();
-        if (referenceProject == null) {
+        SourceSnapshot sourceSnapshot = referenceModel != null ? referenceModel.getSourceSnapshot() : null;
+        Project referenceProject = referenceModel != null ? referenceModel.getProject() : null;
+        if (studioMode && referenceProject == null) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Reference source không thuộc project hợp lệ");
         }
-        boolean studioMode = "THEORY_QUIZ_STUDIO".equalsIgnoreCase(assignment.getLabMode());
         if (studioMode && assignment.getLabOrder() == null) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Studio Lab phải được publish trước khi nộp");
         }
@@ -311,18 +311,29 @@ public class SubmissionServiceImpl implements SubmissionService {
             var pass = courseLabs.currentQuizPass(assignment, currentUserId)
                     .orElseThrow(() -> new BusinessException(ErrorCode.FORBIDDEN,
                             "Pass the current Lab Quiz before submitting"));
-            quizEvidence = json.createObjectNode().put("status", "PASSED")
+            var node = json.createObjectNode().put("status", "PASSED")
                     .put("attemptId", pass.attemptId().toString()).put("quizVersion", pass.quizVersion())
                     .put("correctCount", pass.correctCount()).put("questionCount", pass.questionCount())
-                    .put("passPercent", pass.passPercent()).put("submittedAt", pass.submittedAt().toString())
-                    .put("referenceModelId", referenceModel.getId().toString())
-                    .put("referenceSnapshotId", sourceSnapshot.getId().toString())
-                    .put("artifactHash", sourceSnapshot.getArtifactHash()).put("commitSha", sourceSnapshot.getCommitSha());
+                    .put("passPercent", pass.passPercent()).put("submittedAt", pass.submittedAt().toString());
+            if (referenceModel != null) {
+                node.put("referenceModelId", referenceModel.getId().toString());
+            }
+            if (sourceSnapshot != null) {
+                node.put("referenceSnapshotId", sourceSnapshot.getId().toString())
+                        .put("artifactHash", sourceSnapshot.getArtifactHash())
+                        .put("commitSha", sourceSnapshot.getCommitSha());
+            }
+            quizEvidence = node;
         } else if (skipQuiz) {
-            quizEvidence = json.createObjectNode().put("status", "NOT_REQUIRED")
-                    .put("labTier", "THEORY_ONLY")
-                    .put("referenceModelId", referenceModel.getId().toString())
-                    .put("referenceSnapshotId", sourceSnapshot.getId().toString());
+            var node = json.createObjectNode().put("status", "NOT_REQUIRED")
+                    .put("labTier", "THEORY_ONLY");
+            if (referenceModel != null) {
+                node.put("referenceModelId", referenceModel.getId().toString());
+            }
+            if (sourceSnapshot != null) {
+                node.put("referenceSnapshotId", sourceSnapshot.getId().toString());
+            }
+            quizEvidence = node;
         }
 
         JsonNode theoryEvidence = theoryEvidence(request.getTheoryAnswers());
@@ -369,7 +380,7 @@ public class SubmissionServiceImpl implements SubmissionService {
             if (!runtimeSession.hasVerifiedStudioEvidence()) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "STUDIO_EVIDENCE_REQUIRED");
             }
-            studioEvidence = freezeStudioEvidence(runtimeSession);
+            studioEvidence = freezeStudioEvidence(runtimeSession, false);
             if (studioEvidence == null) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "STUDIO_EVIDENCE_REQUIRED");
             }
@@ -452,7 +463,8 @@ public class SubmissionServiceImpl implements SubmissionService {
                                     JsonNode theory, JsonNode studio, String notes) {
         StringBuilder canonical = new StringBuilder()
                 .append(assignment.getId()).append('|').append(assignment.getLabMode()).append('|')
-                .append(source.getId()).append('|').append(source.getArtifactHash()).append('|')
+                .append(source == null ? "" : source.getId()).append('|')
+                .append(source == null ? "" : Objects.toString(source.getArtifactHash(), "")).append('|')
                 .append(quiz == null ? "" : quiz.toString()).append('|')
                 .append(theory.toString()).append('|')
                 .append(studio == null ? "" : studio.path("receiptSignature").asText("")).append('|')
@@ -666,18 +678,23 @@ public class SubmissionServiceImpl implements SubmissionService {
         return sb.toString();
     }
 
-    private com.fasterxml.jackson.databind.node.ObjectNode freezeStudioEvidence(RuntimeSession runtime) {
+    private com.fasterxml.jackson.databind.node.ObjectNode freezeStudioEvidence(
+            RuntimeSession runtime, boolean requireSnapshots) {
         if (runtime == null || runtime.getScenarioConfig() == null
                 || !runtime.getScenarioConfig().path("interactiveStudio").asBoolean()) return null;
 
         var control = runtime.getStudioControl();
-        if (control == null || !control.path("snapshots").isArray() || control.path("snapshots").isEmpty()
-                || !runtime.hasVerifiedStudioEvidence() || control.path("receiptSignature").asText("").isBlank()) {
+        if (control == null
+                || (requireSnapshots && (!control.path("snapshots").isArray() || control.path("snapshots").isEmpty()))
+                || !runtime.hasVerifiedStudioEvidence()
+                || control.path("receiptSignature").asText("").isBlank()) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "STEP_4_SIGNED_RUNTIME_RECEIPT");
         }
         var evidence = com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode()
                 .put("sessionId", runtime.getId().toString()).put("receiptDigest", runtime.getReceiptDigest());
-        evidence.set("snapshots", control.path("snapshots").deepCopy());
+        evidence.set("snapshots", control.path("snapshots").isArray()
+                ? control.path("snapshots").deepCopy()
+                : com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.arrayNode());
         evidence.set("receiptSignature", control.path("receiptSignature").deepCopy());
         evidence.set("receipt", runtime.getRunnerReceiptJson().deepCopy());
         return evidence;

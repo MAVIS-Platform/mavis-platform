@@ -213,8 +213,8 @@ export function LabSubmissionV2({
             >
               <CheckCircle2 className="size-4 shrink-0 text-emerald-600" aria-hidden="true" />
               {t(
-                "2D Studio session verified — your runtime receipt will be sealed with this submission.",
-                "Phiên 2D Studio đã được xác minh — biên nhận thực nghiệm sẽ được niêm phong kèm bài nộp này.",
+                "Studio Live session verified — your runtime receipt will be sealed with this submission.",
+                "Phiên Studio Live đã được xác minh — biên nhận thực nghiệm sẽ được niêm phong kèm bài nộp này.",
               )}
             </p>
           )}
