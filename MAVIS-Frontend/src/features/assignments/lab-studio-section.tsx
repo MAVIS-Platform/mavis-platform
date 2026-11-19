@@ -20,7 +20,7 @@ import {
 import { PreparedTopologyEditor } from "@/features/runtime/prepared-topology-editor";
 import { LiveStudioWorkbench } from "@/features/runtime/live-studio-workbench";
 import { StudioExerciseEditor } from "./studio-exercise-editor";
-import { resolveLabTier, type Assignment } from "./requirements";
+import { type Assignment } from "./requirements";
 
 export function LabStudioSection({
   workspaceId,
@@ -72,8 +72,7 @@ export function LabStudioSection({
     ...(readiness.data?.warnings ?? []),
   ].filter(Boolean);
   const setupLab = setup.data?.labs?.find((item) => item.assignmentId === assignment.id);
-  const labTier = resolveLabTier(assignment);
-  const studioRequired = labTier === "THEORY_QUIZ_STUDIO";
+  const studioConfigured = Boolean(setupLab?.topologyFrozen || setupLab?.studioReady);
   const published = setupLab?.published === true;
   const sessionList = [
     ...(labSessions.data ?? []),
@@ -113,15 +112,15 @@ export function LabStudioSection({
           </Badge>
         </div>
 
-        {!studioRequired && (
+        {!studioConfigured && (
           <div
             role="status"
             className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-sky-300/60 bg-sky-50/70 px-4 py-3 text-xs text-sky-950 dark:border-sky-800/60 dark:bg-sky-950/20 dark:text-sky-100"
           >
             <p>
               {t(
-                "Studio Live is optional for this Lab structure — you can publish directly without Docker runtime exercises.",
-                "Cấu trúc Lab hiện tại không yêu cầu Studio Live — bạn có thể bỏ qua bước này để kiểm tra và thêm vào lớp.",
+                "Studio Live is optional — skip this step if this Lab does not need Docker runtime exercises.",
+                "Studio Live là tùy chọn — có thể bỏ qua bước này nếu bài Lab không cần thực hành Docker.",
               )}
             </p>
             <Button type="button" size="sm" variant="outline" onClick={() => onNavigate("publish")}>
@@ -131,22 +130,20 @@ export function LabStudioSection({
         )}
 
         {!projectId ? (
-          studioRequired ? (
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-amber-800 dark:text-amber-200">
-              <div className="flex items-start gap-2">
-                <Lock className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                <span>
-                  {t(
-                    "Attach and analyze the single unified Lab repository in Step 2 (Reference source) first.",
-                    "Hãy gắn và phân tích Repo chuẩn của bài Lab ở Bước 2 (Nguồn tham chiếu) trước.",
-                  )}
-                </span>
-              </div>
-              <Button type="button" size="sm" variant="outline" onClick={() => onNavigate("source")}>
-                {t("← Go to Step 2: Reference source", "← Sang Bước 2: Nguồn tham chiếu")}
-              </Button>
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-amber-800 dark:text-amber-200">
+            <div className="flex items-start gap-2">
+              <Lock className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              <span>
+                {t(
+                  "Attach and analyze the single unified Lab repository in Step 2 (Reference source) first.",
+                  "Hãy gắn và phân tích Repo chuẩn của bài Lab ở Bước 2 (Nguồn tham chiếu) trước.",
+                )}
+              </span>
             </div>
-          ) : null
+            <Button type="button" size="sm" variant="outline" onClick={() => onNavigate("source")}>
+              {t("← Go to Step 2: Reference source", "← Sang Bước 2: Nguồn tham chiếu")}
+            </Button>
+          </div>
         ) : (
           <>
             <StudioExerciseEditor

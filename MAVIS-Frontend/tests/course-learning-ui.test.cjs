@@ -876,8 +876,8 @@ test("Lab v2 info removes diagram submission and theory is lesson + repo + C1-C3
 
   assert.doesNotMatch(info, /Required architecture views/);
   assert.doesNotMatch(info, /DIAGRAM_REQUIREMENTS/);
-  assert.ok(info.includes("Theory + Quiz"));
-  assert.ok(info.includes("Theory + Quiz + Studio"));
+  assert.doesNotMatch(info, /Lab learning flow/);
+  assert.ok(read("src/features/assignments/lab-publish-section.tsx").includes("BR-06 Quiz Gate"));
   assert.ok(info.includes("Students do not submit diagrams"));
   assert.ok(theory.includes("MarkdownEditor"));
   assert.ok(theory.includes("MarkdownPreview"));

@@ -182,8 +182,32 @@ class CourseAccessServiceTest {
 
         assertEquals(1, published.position());
         assertEquals(Boolean.FALSE, assignment.getRequireRuntimeTrace());
+        assertEquals("THEORY_ONLY", assignment.getAiPolicy().path("labTier").asText());
+        assertTrue(assignment.getAiPolicy().path("skipQuiz").asBoolean());
         assertTrue(workspace.isCourseMode());
         verifyNoInteractions(referenceArchive);
+    }
+
+    @Test
+    void publishAutoDerivesTheoryQuizWhenPublishedQuizExistsWithoutStudio() {
+        UUID teacherId = UUID.randomUUID();
+        when(access.requireCurrentActiveUser()).thenReturn(User.builder().id(teacherId).build());
+        when(workspaces.findLockedById(workspaceId)).thenReturn(Optional.of(workspace));
+        assignment.setDescription("Architecture theory with Quiz");
+        assignment.setRequireRuntimeTrace(false);
+        when(assignments.findLockedById(assignmentId)).thenReturn(Optional.of(assignment));
+        when(assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId))
+                .thenReturn(List.of());
+        when(jdbc.queryForObject(
+                "SELECT coalesce(max(version), 0) FROM course_quizzes WHERE assignment_id = ?",
+                Integer.class,
+                assignmentId)).thenReturn(1);
+
+        courses.publish(workspaceId, assignmentId);
+
+        assertEquals("THEORY_QUIZ", assignment.getAiPolicy().path("labTier").asText());
+        assertFalse(assignment.getAiPolicy().path("skipQuiz").asBoolean());
+        assertEquals(Boolean.FALSE, assignment.getRequireRuntimeTrace());
     }
 
     @Test

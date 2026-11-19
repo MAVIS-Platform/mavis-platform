@@ -96,13 +96,27 @@ public class CourseQuizService {
                             """, Integer.class, assignmentId, parts.lesson(),
                             parts.threshold(), questions, assignmentId);
             if (!published.isEmpty()) {
+                enableQuizOnAssignmentIfSkipped(lab);
                 return view(new Definition(published.getFirst(), parts.lesson(), parts.threshold(),
                         parts.questions()), null);
             }
         }
         int next = nextVersion(assignmentId);
         insertVersion(assignmentId, modelId, next, parts, questions);
+        enableQuizOnAssignmentIfSkipped(lab);
         return view(new Definition(next, parts.lesson(), parts.threshold(), parts.questions()), null);
+    }
+
+    private void enableQuizOnAssignmentIfSkipped(Assignment lab) {
+        if (lab == null || lab.getAiPolicy() == null || !lab.getAiPolicy().isObject()) return;
+        boolean wasSkipped = lab.getAiPolicy().path("skipQuiz").asBoolean(false)
+                || "THEORY_ONLY".equalsIgnoreCase(lab.getAiPolicy().path("labTier").asText());
+        if (!wasSkipped) return;
+        var policy = ((com.fasterxml.jackson.databind.node.ObjectNode) lab.getAiPolicy()).deepCopy();
+        policy.put("skipQuiz", false);
+        policy.put("labTier", Boolean.TRUE.equals(lab.getRequireRuntimeTrace()) ? "THEORY_QUIZ_STUDIO" : "THEORY_QUIZ");
+        lab.setAiPolicy(policy);
+        assignments.save(lab);
     }
 
     @Transactional(readOnly = true)

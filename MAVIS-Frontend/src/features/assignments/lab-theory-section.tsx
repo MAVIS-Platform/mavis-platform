@@ -46,7 +46,7 @@ import {
   useStudentLabContext,
 } from "@/features/workspaces/course-access";
 import { AssignmentSourceDetails } from "./source-picker";
-import { resolveLabTier, type Assignment } from "./requirements";
+import { type Assignment } from "./requirements";
 
 type TheoryItem = {
   id: string;
@@ -1392,18 +1392,14 @@ export function LabTheorySection({
         </div>
       </details>
 
-      <div className="flex justify-end">
-        {resolveLabTier(assignment) === "THEORY_ONLY" ? (
-          <Button type="button" size="sm" onClick={() => onNavigate("publish")}>
-            {t("Next Step 6: Check & add to class", "Sang Bước 6: Kiểm tra & thêm vào lớp")}
-            <ArrowRight className="ml-1.5 size-4" aria-hidden="true" />
-          </Button>
-        ) : (
-          <Button type="button" size="sm" onClick={() => onNavigate("quiz")}>
-            {t("Next Step 4: Quiz", "Sang Bước 4: Câu hỏi Quiz")}
-            <ArrowRight className="ml-1.5 size-4" aria-hidden="true" />
-          </Button>
-        )}
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <Button type="button" size="sm" variant="outline" onClick={() => onNavigate("publish")}>
+          {t("Skip to Step 6: Check & add to class", "Sang thẳng Bước 6: Kiểm tra & thêm vào lớp")}
+        </Button>
+        <Button type="button" size="sm" onClick={() => onNavigate("quiz")}>
+          {t("Next Step 4: Quiz", "Sang Bước 4: Câu hỏi Quiz")}
+          <ArrowRight className="ml-1.5 size-4" aria-hidden="true" />
+        </Button>
       </div>
     </div>
   );

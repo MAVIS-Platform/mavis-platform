@@ -143,9 +143,44 @@ public class CourseAccessService {
         assignment.setLabOrder(next);
         copyTopologySnapshot(assignment);
         copyExerciseSnapshot(assignment);
+        syncDerivedLabComposition(assignment);
         workspace.setCourseMode(true);
         audit("COURSE_LAB_PUBLISHED", "ASSIGNMENT", assignmentId);
         return new Lab(assignmentId, next, assignment.getTitle(), "UNLOCKED", null);
+    }
+
+    private void syncDerivedLabComposition(Assignment assignment) {
+        boolean hasReference = assignment.getReferenceModel() != null;
+        boolean hasStudio = hasReference
+                && (assignment.getStudioTopologySnapshot() != null || Boolean.TRUE.equals(assignment.getRequireRuntimeTrace()));
+        boolean hasQuiz = hasPublishedQuiz(assignment.getId());
+        assignment.setRequireRuntimeTrace(hasStudio);
+        if (assignment.getLabMode() == null || !"LEGACY".equalsIgnoreCase(assignment.getLabMode())) {
+            assignment.setLabMode(hasStudio ? "THEORY_QUIZ_STUDIO" : "THEORY_QUIZ");
+        }
+        ObjectNode policy = assignment.getAiPolicy() instanceof ObjectNode existing
+                ? existing.deepCopy()
+                : JsonNodeFactory.instance.objectNode();
+        if (hasStudio) {
+            policy.put("labTier", "THEORY_QUIZ_STUDIO");
+            policy.put("skipQuiz", false);
+        } else if (hasQuiz) {
+            policy.put("labTier", "THEORY_QUIZ");
+            policy.put("skipQuiz", false);
+        } else {
+            policy.put("labTier", "THEORY_ONLY");
+            policy.put("skipQuiz", true);
+        }
+        assignment.setAiPolicy(policy);
+    }
+
+    private boolean hasPublishedQuiz(UUID assignmentId) {
+        if (jdbc == null || assignmentId == null) return false;
+        Integer version = jdbc.queryForObject(
+                "SELECT coalesce(max(version), 0) FROM course_quizzes WHERE assignment_id = ?",
+                Integer.class,
+                assignmentId);
+        return version != null && version > 0;
     }
 
     /**

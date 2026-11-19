@@ -702,6 +702,12 @@ public class CourseSetupService {
         if ("LEGACY".equalsIgnoreCase(currentMode) || "THEORY_QUIZ".equalsIgnoreCase(currentMode)) {
             lab.setLabMode("THEORY_QUIZ_STUDIO");
         }
+        ObjectNode policy = lab.getAiPolicy() instanceof ObjectNode existing
+                ? existing.deepCopy()
+                : json.createObjectNode();
+        policy.put("labTier", "THEORY_QUIZ_STUDIO");
+        policy.put("skipQuiz", false);
+        lab.setAiPolicy(policy);
         assignments.saveAndFlush(lab);
 
         return new AutoConfigureStudioResult(
