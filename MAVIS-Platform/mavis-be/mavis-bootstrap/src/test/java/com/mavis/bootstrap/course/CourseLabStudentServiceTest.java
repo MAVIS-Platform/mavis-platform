@@ -268,4 +268,64 @@ class CourseLabStudentServiceTest {
         var res = service.bootstrapSimulatedStudio(workspaceId, labId, sessionId);
         assertThat(res.studio().path("executionStatus").asText()).isEqualTo("RUNNING");
     }
+
+    @Test
+    void startLabStudioSessionReusesBaseModelAfterPriorRuntimeEnrichedSession() {
+        when(courseLabs.hasPassedCurrentQuiz(lab, student.getId())).thenReturn(true);
+        when(runtimeSessions.findByAssignmentIdAndTriggeredBy_IdOrderByCreatedAtDesc(labId, student.getId()))
+                .thenReturn(List.of());
+        when(runtimeSessions.findByProject_Workspace_IdAndTriggeredBy_IdOrderByCreatedAtDesc(workspaceId, student.getId()))
+                .thenReturn(List.of());
+
+        Project workingProject = Project.builder().id(UUID.randomUUID()).workspace(workspace).owner(student)
+                .assignment(lab).referenceSnapshotId(refSnapshot.getId()).projectType("STUDENT_WORKING").status("ACTIVE").build();
+        SourceSnapshot workingSnapshot = SourceSnapshot.builder().id(UUID.randomUUID()).project(workingProject)
+                .artifactHash(refSnapshot.getArtifactHash()).build();
+        when(projects.findByOwnerIdOrderByCreatedAtDesc(student.getId())).thenReturn(List.of(workingProject));
+        when(snapshots.findByProjectId(workingProject.getId())).thenReturn(List.of(workingSnapshot));
+        when(runtimeConfigurations.findById(refProject.getId())).thenReturn(Optional.of(new RuntimeConfiguration()));
+
+        ModelVersion rev1Base = ModelVersion.builder().id(UUID.randomUUID()).project(workingProject)
+                .sourceSnapshot(workingSnapshot).revision(1).origin("USER_CONFIRMED").isLatestValid(false).build();
+        ModelVersion rev2Enriched = ModelVersion.builder().id(UUID.randomUUID()).project(workingProject)
+                .sourceSnapshot(workingSnapshot).revision(2).origin("RUNTIME_ENRICHED").isLatestValid(true).build();
+        when(models.findByProjectIdOrderByRevisionDesc(workingProject.getId())).thenReturn(List.of(rev2Enriched, rev1Base));
+        ModelElement payEl = ModelElement.builder().id(UUID.randomUUID()).elementType("SERVICE_CONTAINER")
+                .name("payment-service").status("CONFIRMED").build();
+        when(elements.findByModelVersionId(rev1Base.getId())).thenReturn(List.of(payEl));
+
+        UUID secondSessionId = UUID.randomUUID();
+        when(runtimeSessionService.createRuntimeSession(any())).thenReturn(RuntimeSessionResponseDTO.builder().id(secondSessionId).build());
+        when(runtimeSessionService.approveAndStartSession(secondSessionId)).thenReturn(
+                RuntimeSessionResponseDTO.builder().id(secondSessionId).executionStatus("READY_FOR_DISPATCH").build());
+
+        var started = service.startLabStudioSession(workspaceId, labId);
+        assertThat(started.getId()).isEqualTo(secondSessionId);
+        verify(models, never()).saveAndFlush(any());
+        ArgumentCaptor<RuntimeSessionCreateRequest> reqCaptor = ArgumentCaptor.forClass(RuntimeSessionCreateRequest.class);
+        verify(runtimeSessionService).createRuntimeSession(reqCaptor.capture());
+        assertThat(reqCaptor.getValue().getModelVersionId()).isEqualTo(rev1Base.getId());
+
+        // When only a RUNTIME_ENRICHED revision exists (no base USER_CONFIRMED revision), bump from maxRevision instead of colliding on revision 1.
+        when(models.findByProjectIdOrderByRevisionDesc(workingProject.getId())).thenReturn(List.of(rev2Enriched));
+        when(models.findMaxRevisionByProjectId(workingProject.getId())).thenReturn(2);
+        when(models.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(workingProject.getId())).thenReturn(Optional.of(rev2Enriched));
+        when(models.saveAndFlush(any())).thenAnswer(inv -> {
+            ModelVersion m = inv.getArgument(0);
+            m.setId(UUID.randomUUID());
+            return m;
+        });
+        when(elements.findByModelVersionId(refModel.getId())).thenReturn(List.of(payEl));
+        when(elements.save(any())).thenAnswer(inv -> {
+            ModelElement el = inv.getArgument(0);
+            el.setId(payEl.getId());
+            return el;
+        });
+
+        service.startLabStudioSession(workspaceId, labId);
+        ArgumentCaptor<ModelVersion> savedModelCaptor = ArgumentCaptor.forClass(ModelVersion.class);
+        verify(models).saveAndFlush(savedModelCaptor.capture());
+        assertThat(savedModelCaptor.getValue().getRevision()).isEqualTo(3);
+        assertThat(savedModelCaptor.getValue().getIsLatestValid()).isFalse();
+    }
 }
