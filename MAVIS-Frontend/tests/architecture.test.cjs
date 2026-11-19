@@ -5168,6 +5168,7 @@ test("My Workspaces is a compact LMS class list with tabs and a module outline",
   assert.match(overviewHtml, /Students &amp; Access/);
   assert.doesNotMatch(overviewHtml, /aria-label="Class KPIs"/);
   assert.match(overviewHtml, /Class Passkey/);
+  assert.match(overviewHtml, /aria-label="Regenerate Class Passkey"/);
   assert.match(overviewHtml, /Foundations/);
   assert.match(overviewHtml, /Service boundaries/);
   assert.match(overviewHtml, /Lab 1 Architecture/);
