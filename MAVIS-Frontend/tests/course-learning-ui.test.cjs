@@ -904,6 +904,33 @@ test("smartFormatMarkdown converts raw pasted text into headings, lists, paragra
   assert.ok(formatted.includes("> **Note:** Always pin your version."));
 });
 
+test("MarkdownPreview supports whole-lesson presentation themes without altering text", () => {
+  const React = require("react");
+  const { renderToStaticMarkup } = require("react-dom/server");
+  const {
+    MarkdownPreview,
+    applyMarkdownTheme,
+    extractMarkdownTheme,
+  } = require("../src/components/shared/markdown-preview.tsx");
+
+  const withAcademic = applyMarkdownTheme("# Title\n\nBody text", "academic");
+  assert.ok(withAcademic.startsWith("<!-- theme: academic -->\n"));
+  assert.deepEqual(extractMarkdownTheme(withAcademic), {
+    theme: "academic",
+    body: "# Title\n\nBody text",
+  });
+  assert.equal(applyMarkdownTheme(withAcademic, "coursera"), "# Title\n\nBody text");
+
+  const docsHtml = renderToStaticMarkup(
+    React.createElement(MarkdownPreview, {
+      markdown: "<!-- theme: docs -->\n# Heading\n\nParagraph content.",
+    }),
+  );
+  assert.ok(docsHtml.includes('data-markdown-theme="docs"'));
+  assert.ok(!docsHtml.includes("theme: docs"));
+  assert.match(docsHtml, /<h1[^>]*>Heading<\/h1>/);
+});
+
 test("MarkdownPreview renders safe headings, emphasis and links without raw HTML", () => {
   const React = require("react");
   const { renderToStaticMarkup } = require("react-dom/server");

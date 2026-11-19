@@ -2,6 +2,117 @@
 
 import { Fragment, type ReactNode } from "react";
 
+export type MarkdownTheme = "coursera" | "academic" | "docs" | "notes";
+
+export const MARKDOWN_THEMES: ReadonlyArray<{
+  id: MarkdownTheme;
+  en: string;
+  vi: string;
+}> = [
+  { id: "coursera", en: "Coursera (Modern)", vi: "Coursera (Hiện đại)" },
+  { id: "academic", en: "Academic (Textbook)", vi: "Học thuật (Giáo trình)" },
+  { id: "docs", en: "Technical Docs", vi: "Tài liệu kỹ thuật (Docs)" },
+  { id: "notes", en: "Study Notes", vi: "Ghi chú ôn tập (Notes)" },
+];
+
+const THEME_DIRECTIVE_RE = /^\s*<!--\s*theme:\s*(coursera|academic|docs|notes)\s*-->\s*\r?\n?/i;
+
+/** Extracts an optional leading Markdown presentation theme directive without rendering it. */
+export function extractMarkdownTheme(raw: string): { theme: MarkdownTheme; body: string } {
+  const match = THEME_DIRECTIVE_RE.exec(raw);
+  if (!match) return { theme: "coursera", body: raw };
+  return {
+    theme: match[1]!.toLowerCase() as MarkdownTheme,
+    body: raw.slice(match[0].length),
+  };
+}
+
+/** Prepends a hidden theme directive for non-default themes, stripping any prior directive first. */
+export function applyMarkdownTheme(body: string, theme: MarkdownTheme): string {
+  const cleanBody = extractMarkdownTheme(body).body;
+  if (theme === "coursera") return cleanBody;
+  return `<!-- theme: ${theme} -->\n${cleanBody}`;
+}
+
+type ThemeClasses = {
+  root: string;
+  h1: string;
+  h2: string;
+  h3: string;
+  paragraph: string;
+  list: string;
+  subList: string;
+  blockquote: string;
+  codeBlock: string;
+  tableWrap: string;
+  thead: string;
+  th: string;
+  td: string;
+};
+
+const THEME_STYLES: Record<MarkdownTheme, ThemeClasses> = {
+  coursera: {
+    root: "space-y-2.5",
+    h1: "mt-4 text-xl font-bold tracking-tight text-foreground",
+    h2: "mt-4 border-b border-border/60 pb-1 text-lg font-semibold tracking-tight text-foreground",
+    h3: "mt-3 text-base font-semibold text-foreground",
+    paragraph: "text-sm leading-7 text-muted-foreground",
+    list: "ml-5 space-y-1.5 text-sm leading-7 text-muted-foreground",
+    subList: "ml-5 mt-1 list-disc space-y-1 text-sm leading-6 text-muted-foreground",
+    blockquote: "border-l-2 border-teal-500/70 bg-teal-50/40 px-3 py-1.5 text-sm italic text-muted-foreground dark:bg-teal-950/20",
+    codeBlock: "overflow-x-auto rounded-lg border bg-muted/40 p-3 text-xs leading-6",
+    tableWrap: "my-3 overflow-x-auto rounded-lg border border-border",
+    thead: "bg-muted/50 text-foreground",
+    th: "border-b px-3 py-2 font-semibold",
+    td: "px-3 py-2 align-top text-muted-foreground",
+  },
+  academic: {
+    root: "space-y-3 font-serif",
+    h1: "mt-4 border-b-2 border-foreground/20 pb-2 text-2xl font-bold tracking-tight text-foreground",
+    h2: "mt-5 text-lg font-bold tracking-normal text-foreground",
+    h3: "mt-4 text-base font-semibold text-foreground",
+    paragraph: "text-[15px] leading-8 text-foreground/90",
+    list: "ml-6 space-y-2 text-[15px] leading-7 text-foreground/90",
+    subList: "ml-5 mt-1 list-disc space-y-1 text-sm leading-7 text-foreground/85",
+    blockquote: "border-l-4 border-slate-500 bg-muted/40 px-4 py-2 text-sm leading-7 text-foreground/90 not-italic",
+    codeBlock: "overflow-x-auto rounded border border-slate-300 bg-muted/30 p-3 font-mono text-xs leading-6 dark:border-slate-700",
+    tableWrap: "my-4 overflow-x-auto rounded border border-foreground/20",
+    thead: "bg-muted/60 text-foreground",
+    th: "border-b border-foreground/20 px-3 py-2 font-semibold",
+    td: "border-b border-border/50 px-3 py-2 align-top text-foreground/85",
+  },
+  docs: {
+    root: "space-y-2.5",
+    h1: "mt-4 border-b border-border pb-1.5 text-xl font-bold tracking-tight text-foreground",
+    h2: "mt-5 border-l-4 border-primary pl-2.5 text-base font-bold uppercase tracking-wide text-foreground",
+    h3: "mt-3 text-sm font-bold text-primary",
+    paragraph: "text-sm leading-6 text-foreground/85",
+    list: "ml-5 space-y-1 text-sm leading-6 text-foreground/85",
+    subList: "ml-5 mt-1 list-disc space-y-1 text-xs leading-6 text-muted-foreground",
+    blockquote: "rounded-r-lg border-l-4 border-primary bg-primary/5 px-3.5 py-2 text-sm leading-6 text-foreground/90 not-italic",
+    codeBlock: "overflow-x-auto rounded-lg border border-slate-800 bg-slate-950 p-3.5 font-mono text-xs leading-6 text-slate-100",
+    tableWrap: "my-3 overflow-x-auto rounded-lg border border-border shadow-2xs",
+    thead: "bg-muted text-foreground",
+    th: "border-b px-3 py-2 font-mono text-[11px] font-semibold uppercase tracking-wide",
+    td: "px-3 py-2 align-top text-foreground/85",
+  },
+  notes: {
+    root: "space-y-3",
+    h1: "mt-4 rounded-xl border border-teal-500/25 bg-teal-500/10 px-3.5 py-2 text-lg font-bold text-foreground",
+    h2: "mt-4 rounded-lg bg-amber-500/10 px-3 py-1.5 text-base font-semibold text-amber-900 dark:text-amber-200",
+    h3: "mt-3 text-sm font-semibold text-teal-700 dark:text-teal-300",
+    paragraph: "text-sm leading-7 text-foreground/90",
+    list: "ml-5 space-y-2 text-sm leading-7 text-foreground/90",
+    subList: "ml-5 mt-1 list-disc space-y-1.5 text-sm leading-6 text-muted-foreground",
+    blockquote: "rounded-lg border border-amber-500/30 bg-amber-500/10 px-3.5 py-2 text-sm leading-6 text-foreground not-italic",
+    codeBlock: "overflow-x-auto rounded-xl border border-teal-500/20 bg-muted/50 p-3 text-xs leading-6",
+    tableWrap: "my-3 overflow-x-auto rounded-xl border border-amber-500/25",
+    thead: "bg-amber-500/10 text-foreground",
+    th: "border-b border-amber-500/20 px-3 py-2 font-semibold",
+    td: "px-3 py-2 align-top text-foreground/90",
+  },
+};
+
 const INLINE = /(\[[^\]]+\]\((?:https?:\/\/|\/)[^\s)]+\)|`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/g;
 
 const MOJIBAKE_REPLACEMENTS: ReadonlyArray<readonly [RegExp, string]> = [
@@ -78,13 +189,8 @@ function inline(text: string): ReactNode[] {
   });
 }
 
-function heading(level: number, text: string, key: number) {
-  const className =
-    level === 1
-      ? "mt-4 text-xl font-bold tracking-tight text-foreground"
-      : level === 2
-        ? "mt-4 text-lg font-semibold tracking-tight text-foreground"
-        : "mt-3 text-base font-semibold text-foreground";
+function heading(level: number, text: string, key: number, styles: ThemeClasses) {
+  const className = level === 1 ? styles.h1 : level === 2 ? styles.h2 : styles.h3;
   if (level === 1) return <h1 key={key} className={className}>{inline(text)}</h1>;
   if (level === 2) return <h2 key={key} className={className}>{inline(text)}</h2>;
   if (level === 3) return <h3 key={key} className={className}>{inline(text)}</h3>;
@@ -113,8 +219,19 @@ type ListItem = {
   subItems: Array<{ ordered: boolean; text: string }>;
 };
 
-export function MarkdownPreview({ markdown, className = "" }: { markdown: string; className?: string }) {
-  const lines = markdown.replace(/\r\n/g, "\n").split("\n");
+export function MarkdownPreview({
+  markdown,
+  className = "",
+  theme,
+}: {
+  markdown: string;
+  className?: string;
+  theme?: MarkdownTheme | undefined;
+}) {
+  const parsed = extractMarkdownTheme(markdown);
+  const activeTheme: MarkdownTheme = theme ?? parsed.theme;
+  const styles = THEME_STYLES[activeTheme];
+  const lines = parsed.body.replace(/\r\n/g, "\n").split("\n");
   const blocks: ReactNode[] = [];
   let paragraph: string[] = [];
   let list: { ordered: boolean; start: number; items: ListItem[] } | null = null;
@@ -124,7 +241,7 @@ export function MarkdownPreview({ markdown, className = "" }: { markdown: string
   const flushParagraph = () => {
     if (!paragraph.length) return;
     blocks.push(
-      <p key={blocks.length} className="text-sm leading-7 text-muted-foreground">
+      <p key={blocks.length} className={styles.paragraph}>
         {inline(paragraph.join(" "))}
       </p>,
     );
@@ -137,7 +254,7 @@ export function MarkdownPreview({ markdown, className = "" }: { markdown: string
       item.subItems.length > 0 ? (
         <li key={index} className="space-y-1">
           <span>{inline(item.text)}</span>
-          <ul className="ml-5 mt-1 list-disc space-y-1 text-sm leading-6 text-muted-foreground">
+          <ul className={styles.subList}>
             {item.subItems.map((sub, subIdx) => (
               <li key={subIdx}>{inline(sub.text)}</li>
             ))}
@@ -152,12 +269,12 @@ export function MarkdownPreview({ markdown, className = "" }: { markdown: string
         <ol
           key={blocks.length}
           start={list.start}
-          className="ml-5 list-decimal space-y-1.5 text-sm leading-7 text-muted-foreground"
+          className={`list-decimal ${styles.list}`}
         >
           {items}
         </ol>
       ) : (
-        <ul key={blocks.length} className="ml-5 list-disc space-y-1.5 text-sm leading-7 text-muted-foreground">
+        <ul key={blocks.length} className={`list-disc ${styles.list}`}>
           {items}
         </ul>
       ),
@@ -174,12 +291,12 @@ export function MarkdownPreview({ markdown, className = "" }: { markdown: string
     const bodyStart = tableRows.length > 1 && isTableSeparator(tableRows[1]!) ? 2 : 1;
     const bodyRows = tableRows.slice(bodyStart).map(splitTableCells);
     blocks.push(
-      <div key={blocks.length} className="my-3 overflow-x-auto rounded-lg border border-border">
+      <div key={blocks.length} className={styles.tableWrap}>
         <table className="w-full border-collapse text-left text-xs">
-          <thead className="bg-muted/50 text-foreground">
+          <thead className={styles.thead}>
             <tr>
               {headerCells.map((cell, cellIdx) => (
-                <th key={cellIdx} className="border-b px-3 py-2 font-semibold">
+                <th key={cellIdx} className={styles.th}>
                   {inline(cell)}
                 </th>
               ))}
@@ -189,7 +306,7 @@ export function MarkdownPreview({ markdown, className = "" }: { markdown: string
             {bodyRows.map((cells, rowIdx) => (
               <tr key={rowIdx} className="hover:bg-muted/20">
                 {cells.map((cell, cellIdx) => (
-                  <td key={cellIdx} className="px-3 py-2 align-top text-muted-foreground">
+                  <td key={cellIdx} className={styles.td}>
                     {inline(cell)}
                   </td>
                 ))}
@@ -207,7 +324,7 @@ export function MarkdownPreview({ markdown, className = "" }: { markdown: string
     if (code) {
       if (line.trim().startsWith("```")) {
         blocks.push(
-          <pre key={blocks.length} className="overflow-x-auto rounded-lg border bg-muted/40 p-3 text-xs leading-6">
+          <pre key={blocks.length} className={styles.codeBlock}>
             <code>{code.join("\n")}</code>
           </pre>,
         );
@@ -256,7 +373,7 @@ export function MarkdownPreview({ markdown, className = "" }: { markdown: string
       blocks.push(
         <blockquote
           key={blocks.length}
-          className="border-l-2 border-teal-500/70 bg-teal-50/40 px-3 py-1.5 text-sm italic text-muted-foreground dark:bg-teal-950/20"
+          className={styles.blockquote}
         >
           {inline(blockquoteMatch[1]!)}
         </blockquote>,
@@ -268,7 +385,7 @@ export function MarkdownPreview({ markdown, className = "" }: { markdown: string
     if (headingMatch) {
       flushParagraph();
       flushList();
-      blocks.push(heading(headingMatch[1]!.length, headingMatch[2]!, blocks.length));
+      blocks.push(heading(headingMatch[1]!.length, headingMatch[2]!, blocks.length, styles));
       continue;
     }
 
@@ -309,7 +426,7 @@ export function MarkdownPreview({ markdown, className = "" }: { markdown: string
   }
   if (code) {
     blocks.push(
-      <pre key={blocks.length} className="overflow-x-auto rounded-lg border bg-muted/40 p-3 text-xs leading-6">
+      <pre key={blocks.length} className={styles.codeBlock}>
         <code>{code.join("\n")}</code>
       </pre>,
     );
@@ -319,7 +436,15 @@ export function MarkdownPreview({ markdown, className = "" }: { markdown: string
   flushTable();
 
   if (!blocks.length) {
-    return <p className="text-sm text-muted-foreground">{sanitizeMojibake(markdown)}</p>;
+    return (
+      <div data-markdown-theme={activeTheme} className={`${styles.root} ${className}`.trim()}>
+        <p className={styles.paragraph}>{sanitizeMojibake(parsed.body)}</p>
+      </div>
+    );
   }
-  return <div className={`space-y-2.5 ${className}`}>{blocks}</div>;
+  return (
+    <div data-markdown-theme={activeTheme} className={`${styles.root} ${className}`.trim()}>
+      {blocks}
+    </div>
+  );
 }

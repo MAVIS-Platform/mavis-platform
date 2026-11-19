@@ -17,7 +17,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { MarkdownPreview } from "@/components/shared/markdown-preview";
+import {
+  MARKDOWN_THEMES,
+  MarkdownPreview,
+  applyMarkdownTheme,
+  extractMarkdownTheme,
+  type MarkdownTheme,
+} from "@/components/shared/markdown-preview";
 import { useApiQuery } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { ArchitectureDiagrams } from "@/features/architecture/architecture-diagrams";
@@ -72,61 +78,6 @@ type AttachedTheory = {
 function bodyOf(item: TheoryItem) {
   return typeof item.content["body"] === "string" ? item.content["body"] : "";
 }
-
-const LESSON_TEMPLATES = [
-  {
-    en: "Concept",
-    vi: "Khái niệm",
-    style: "CONCEPT",
-    titleEn: "Concept — <topic>",
-    titleVi: "Khái niệm — <chủ đề>",
-    body: [
-      "## Why it matters",
-      "",
-      "Explain the architectural idea and the problem it solves.",
-      "",
-      "## Where it appears in the sample repository",
-      "",
-      "- Point to the service, module or boundary students should inspect.",
-      "",
-      "## Check your understanding",
-      "",
-      "- Write one question students should be able to answer.",
-    ].join("\n"),
-  },
-  {
-    en: "Guided analysis",
-    vi: "Phân tích dẫn dắt",
-    style: "GUIDED",
-    titleEn: "Guided analysis — <topic>",
-    titleVi: "Phân tích dẫn dắt — <chủ đề>",
-    body: [
-      "## Goal",
-      "",
-      "State what students observe in the reference architecture.",
-      "",
-      "## Steps",
-      "",
-      "1. Open C1 and list the external actors.",
-      "2. Open C2 and trace the request path for one use case.",
-      "3. Open C3 and identify the component that owns the decision.",
-    ].join("\n"),
-  },
-  {
-    en: "Checklist",
-    vi: "Checklist",
-    style: "CHECKLIST",
-    titleEn: "Review checklist — <topic>",
-    titleVi: "Checklist rà soát — <chủ đề>",
-    body: [
-      "## Before the Quiz",
-      "",
-      "- [ ] I can explain the service boundary in my own words.",
-      "- [ ] I can point to the call path in C2.",
-      "- [ ] I know what evidence the Lab will ask me to capture.",
-    ].join("\n"),
-  },
-] as const;
 
 export function smartFormatMarkdown(raw: string): string {
   const normalized = raw.replace(/\r\n?/g, "\n").trim();
@@ -200,21 +151,45 @@ function MarkdownEditor({
   label,
   value,
   onChange,
+  theme,
+  onThemeChange,
   title,
   t,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
-  title?: string;
+  theme: MarkdownTheme;
+  onThemeChange: (next: MarkdownTheme) => void;
+  title?: string | undefined;
   t: (en: string, vi: string) => string;
 }) {
   const [mode, setMode] = useState<"write" | "preview" | "split">("write");
+  const activeThemeMeta = MARKDOWN_THEMES.find((item) => item.id === theme) ?? MARKDOWN_THEMES[0]!;
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-xs font-medium text-foreground">{label}</span>
         <div className="flex flex-wrap items-center gap-2">
+          <select
+            aria-label={t("Lesson theme", "Theme trình bày")}
+            className="h-7 rounded-md border bg-background px-2 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+            value={theme}
+            onChange={(event) => {
+              onThemeChange(event.target.value as MarkdownTheme);
+              if (mode === "write") {
+                setMode(
+                  typeof window !== "undefined" && window.innerWidth >= 1024 ? "split" : "preview",
+                );
+              }
+            }}
+          >
+            {MARKDOWN_THEMES.map((item) => (
+              <option key={item.id} value={item.id}>
+                {t("Theme", "Theme")}: {t(item.en, item.vi)}
+              </option>
+            ))}
+          </select>
           <Button
             type="button"
             size="sm"
@@ -277,12 +252,12 @@ function MarkdownEditor({
           <div className="h-96 w-full overflow-y-auto rounded-xl border bg-background p-4 shadow-2xs">
             <div className="mb-3 flex flex-wrap items-center gap-2 border-b pb-2.5">
               <span className="inline-flex items-center gap-1 rounded-full border border-teal-200 bg-teal-50 px-2.5 py-0.5 text-[11px] font-medium text-teal-800 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-300">
-                📖 {t("Theory Lesson", "Bài giảng lý thuyết")}
+                📖 {t(activeThemeMeta.en, activeThemeMeta.vi)}
               </span>
               {title && <span className="text-sm font-semibold text-foreground">{title}</span>}
             </div>
             {value.trim() ? (
-              <MarkdownPreview markdown={value} />
+              <MarkdownPreview markdown={value} theme={theme} />
             ) : (
               <p className="text-sm text-muted-foreground">
                 {t("Markdown preview appears here.", "Bản xem trước Markdown hiện ở đây.")}
@@ -334,11 +309,12 @@ export function LabTheorySection({
 
   const [newTitle, setNewTitle] = useState("");
   const [newBody, setNewBody] = useState("");
+  const [newTheme, setNewTheme] = useState<MarkdownTheme>("coursera");
   const [libraryItemId, setLibraryItemId] = useState("");
-  const [editorStyle, setEditorStyle] = useState("CUSTOM");
   const [draftSource, setDraftSource] = useState<"LECTURER" | "IMPORT" | "AI">("LECTURER");
   const [aiNote, setAiNote] = useState("");
   const [bodies, setBodies] = useState<Record<string, string>>({});
+  const [themes, setThemes] = useState<Record<string, MarkdownTheme>>({});
   const [c4Tab, setC4Tab] = useState<"CONTEXT" | "CONTAINER" | "COMPONENT" | "GRAPH">("CONTEXT");
   const [selectedGraphId, setSelectedGraphId] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<"idle" | "saving" | "saved">("idle");
@@ -375,9 +351,9 @@ export function LabTheorySection({
         method: "POST",
         body: JSON.stringify({
           title: newTitle.trim(),
-          body: newBody.trim(),
+          body: applyMarkdownTheme(newBody.trim(), newTheme),
           language: locale,
-          style: editorStyle,
+          style: "CUSTOM",
           source: draftSource,
         }),
       });
@@ -392,8 +368,8 @@ export function LabTheorySection({
       invalidateTheory();
       setNewTitle("");
       setNewBody("");
+      setNewTheme("coursera");
       setDraftSource("LECTURER");
-      setEditorStyle("CUSTOM");
       setAiNote("");
     },
   });
@@ -406,13 +382,15 @@ export function LabTheorySection({
           body: JSON.stringify({
             topic: newTitle.trim() || assignment.title,
             language: locale,
-            style: editorStyle,
+            style: "CUSTOM",
           }),
         },
       ),
     onSuccess: (draft) => {
+      const parsed = extractMarkdownTheme(draft.body);
       setNewTitle(draft.title);
-      setNewBody(draft.body);
+      setNewBody(parsed.body);
+      setNewTheme(parsed.theme);
       setDraftSource("AI");
       setAiNote(
         t(
@@ -489,13 +467,16 @@ export function LabTheorySection({
 
   useEffect(() => {
     if (!selectedModule) return;
-    setBodies(
-      Object.fromEntries(
-        selectedModule.items
-          .filter((item) => item.type === "THEORY")
-          .map((item) => [item.id, bodyOf(item)]),
-      ),
-    );
+    const nextBodies: Record<string, string> = {};
+    const nextThemes: Record<string, MarkdownTheme> = {};
+    for (const item of selectedModule.items) {
+      if (item.type !== "THEORY") continue;
+      const parsed = extractMarkdownTheme(bodyOf(item));
+      nextBodies[item.id] = parsed.body;
+      nextThemes[item.id] = parsed.theme;
+    }
+    setBodies(nextBodies);
+    setThemes(nextThemes);
   }, [selectedModule?.id, selectedModule?.items.length]);
 
   const theoryItems =
@@ -620,6 +601,9 @@ export function LabTheorySection({
                                     (it.type === "THEORY" &&
                                       (it.assignmentId === item.assignmentId || it.title === item.title)),
                                 ) ?? item;
+                              const fallback = extractMarkdownTheme(bodyOf(item));
+                              const cleanBody = bodies[item.id] ?? fallback.body;
+                              const activeItemTheme = themes[item.id] ?? fallback.theme;
                               await course.updateItem.mutateAsync({
                                 moduleId: mod.id,
                                 itemId: targetItem.id,
@@ -628,7 +612,10 @@ export function LabTheorySection({
                                 description: item.description ?? "",
                                 required: item.required,
                                 assignmentId: item.assignmentId ?? assignment.id,
-                                content: { body: bodies[item.id] ?? bodyOf(item), format: "markdown" },
+                                content: {
+                                  body: applyMarkdownTheme(cleanBody, activeItemTheme),
+                                  format: "markdown",
+                                },
                               });
                             })
                           }
@@ -643,8 +630,10 @@ export function LabTheorySection({
                     <MarkdownEditor
                       label={t("Lesson content (Markdown)", "Nội dung bài học (Markdown)")}
                       title={item.title}
-                      value={bodies[item.id] ?? bodyOf(item)}
+                      value={bodies[item.id] ?? extractMarkdownTheme(bodyOf(item)).body}
                       onChange={(value) => setBodies((current) => ({ ...current, [item.id]: value }))}
+                      theme={themes[item.id] ?? extractMarkdownTheme(bodyOf(item)).theme}
+                      onThemeChange={(next) => setThemes((current) => ({ ...current, [item.id]: next }))}
                       t={t}
                     />
                   </li>
@@ -684,7 +673,9 @@ export function LabTheorySection({
                       if (!file) return;
                       void file.text().then((text) => {
                         const isPlainText = /\.txt$/i.test(file.name);
-                        setNewBody(isPlainText ? smartFormatMarkdown(text) : text);
+                        const parsed = extractMarkdownTheme(text);
+                        setNewTheme(parsed.theme);
+                        setNewBody(isPlainText ? smartFormatMarkdown(parsed.body) : parsed.body);
                         setDraftSource("IMPORT");
                         setAiNote("");
                         if (!newTitle.trim()) setNewTitle(file.name.replace(/\.(md|markdown|txt)$/i, ""));
@@ -697,7 +688,12 @@ export function LabTheorySection({
                   type="button"
                   size="sm"
                   variant="outline"
-                  disabled={generateDraft.isPending}
+                  disabled={generateDraft.isPending || !reference?.modelId}
+                  title={
+                    !reference?.modelId
+                      ? t("Attach a Reference Repo in Step 2 first", "Gắn Repo ở Bước 2 trước để AI đọc bằng chứng")
+                      : undefined
+                  }
                   onClick={() => generateDraft.mutate()}
                 >
                   <Sparkles className="mr-1 size-3.5" aria-hidden="true" />
@@ -705,27 +701,6 @@ export function LabTheorySection({
                     ? t("Drafting…", "Đang tạo nháp…")
                     : t("AI draft from evidence", "AI soạn từ bằng chứng")}
                 </Button>
-                <select
-                  aria-label={t("Lesson theme", "Mẫu trình bày")}
-                  className="h-8 rounded-md border bg-background px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
-                  value=""
-                  onChange={(event) => {
-                    const template = LESSON_TEMPLATES.find((item) => item.style === event.target.value);
-                    if (!template) return;
-                    setNewTitle(t(template.titleEn, template.titleVi));
-                    setNewBody(template.body);
-                    setEditorStyle(template.style);
-                    setDraftSource("LECTURER");
-                    setAiNote("");
-                  }}
-                >
-                  <option value="">{t("Theme ▾", "Mẫu ▾")}</option>
-                  {LESSON_TEMPLATES.map((template) => (
-                    <option key={template.style} value={template.style}>
-                      {t(template.en, template.vi)}
-                    </option>
-                  ))}
-                </select>
               </div>
             </div>
             <Input
@@ -738,6 +713,8 @@ export function LabTheorySection({
               title={newTitle}
               value={newBody}
               onChange={setNewBody}
+              theme={newTheme}
+              onThemeChange={setNewTheme}
               t={t}
             />
             {aiNote && <p className="text-xs text-muted-foreground">{aiNote}</p>}
