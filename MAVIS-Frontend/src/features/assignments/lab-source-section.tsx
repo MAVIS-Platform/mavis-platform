@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -54,6 +54,7 @@ export function LabSourceSection({
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [previewKind, setPreviewKind] = useState<PreviewKind>("CONTAINER");
   const [selectedGraphId, setSelectedGraphId] = useState<string | null>(null);
+  const lastAutoSavedModelRef = useRef<string>(assignment.referenceSource?.modelId ?? "");
 
   const isPublished = assignment.labOrder != null;
   const dueAt =
@@ -67,6 +68,68 @@ export function LabSourceSection({
   const hasUnsavedSelection =
     !isPublished && Boolean(modelId) && modelId !== (reference?.modelId ?? "");
   const canSave = !isPublished && Boolean(modelId) && !sourcePending && !save.isPending;
+
+  useEffect(() => {
+    const savedId = reference?.modelId ?? "";
+    if (savedId) {
+      lastAutoSavedModelRef.current = savedId;
+    }
+  }, [reference?.modelId]);
+
+  useEffect(() => {
+    if (
+      isPublished ||
+      sourcePending ||
+      save.isPending ||
+      !modelId ||
+      modelId === (reference?.modelId ?? "") ||
+      modelId === lastAutoSavedModelRef.current
+    ) {
+      return;
+    }
+    lastAutoSavedModelRef.current = modelId;
+    save.mutate(
+      {
+        workspaceId,
+        assignmentId: assignment.id,
+        title: assignment.title,
+        description: assignment.instructions,
+        dueAt,
+        requireRuntimeTrace: assignment.requireRuntimeTrace === true,
+        requiredDiagramTypes: assignment.requiredDiagramTypes ?? [],
+        referenceModelId: modelId,
+        clearReferenceSource: false,
+      },
+      {
+        onSuccess: () => {
+          setImportModalOpen(false);
+          void cache.invalidateQueries({
+            queryKey: ["api", "student-lab-context", workspaceId, assignment.id],
+          });
+          void cache.invalidateQueries({
+            queryKey: ["api", "course-setup", workspaceId],
+          });
+        },
+        onError: () => {
+          lastAutoSavedModelRef.current = "";
+        },
+      },
+    );
+  }, [
+    isPublished,
+    sourcePending,
+    save,
+    modelId,
+    reference?.modelId,
+    workspaceId,
+    assignment.id,
+    assignment.title,
+    assignment.instructions,
+    dueAt,
+    assignment.requireRuntimeTrace,
+    assignment.requiredDiagramTypes,
+    cache,
+  ]);
 
   const studentCtx = useStudentLabContext(
     workspaceId,
@@ -178,6 +241,7 @@ export function LabSourceSection({
       },
       {
         onSuccess: () => {
+          lastAutoSavedModelRef.current = "";
           setModelId("");
           setPickedVersion(null);
           void cache.invalidateQueries({
@@ -241,11 +305,15 @@ export function LabSourceSection({
                           ? t("C1–C3 & Theory Ready", "Sẵn sàng C1–C3 & Lý thuyết")
                           : t("No services detected", "Chưa phát hiện thành phần")}
                   </Badge>
-                  {hasUnsavedSelection && (
+                  {save.isPending ? (
+                    <Badge variant="outline">
+                      {t("Saving to draft…", "Đang lưu vào bản nháp…")}
+                    </Badge>
+                  ) : hasUnsavedSelection ? (
                     <Badge variant="warning">
                       {t("Unsaved — click Save source", "Chưa lưu — bấm Lưu nguồn")}
                     </Badge>
-                  )}
+                  ) : null}
                 </div>
                 {reference && (
                   <p className="break-all text-xs text-muted-foreground">
