@@ -486,7 +486,7 @@ export function StudentCourseSyllabus({
           ref={isLearningWorkspace ? learningContentRef : undefined}
           className={
             isLearningWorkspace
-              ? "min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain pr-1"
+              ? "min-h-0 min-w-0 flex-1 overflow-y-scroll overscroll-contain pr-1 [scrollbar-gutter:stable]"
               : "min-w-0 space-y-6"
           }
         >
@@ -767,6 +767,10 @@ export function StudentCourseSyllabus({
                       canManage={false}
                       workspaceId={workspaceId}
                       assignmentId={activeItem.assignmentId}
+                      nextLessonTitle={nextEntry?.item.title}
+                      onNextLesson={
+                        nextEntry ? () => selectCurriculumItem(nextEntry.item) : undefined
+                      }
                     />
                   )}
 

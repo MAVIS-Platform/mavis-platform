@@ -1,39 +1,95 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { CheckCircle2, RotateCcw, XCircle } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { CheckCircle2, Clock3, FileQuestion, RotateCcw, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useLocale } from "@/lib/i18n/locale-context";
 import type { QuizQuestionData } from "./java-coursera-curriculum-data";
 
-const OPTION_LABELS = ["A", "B", "C", "D", "E", "F"];
+const PASS_PERCENT = 70;
+type QuizAttemptStatus = "NOT_STARTED" | "IN_PROGRESS" | "SUBMITTED";
+type StoredQuizAttempt = {
+  attemptId: string;
+  status: QuizAttemptStatus;
+  answers: Record<string, number>;
+  submittedAt?: string | undefined;
+  scorePercent?: number;
+};
 
-/**
- * Interactive 10-question Chapter Quiz player (for Students) and answer-key viewer
- * (for Lecturers), modeled after ONLINE-LEARNING-PLATFORM's DoQuiz UX.
- */
+function makeAttemptId() {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+/** The curriculum fixture has no quiz-attempt API. This explicit device-local store
+ * preserves attempts without presenting locally stored results as backend data. */
+function attemptStorageKey(
+  workspaceId: string,
+  assignmentId: string | null | undefined,
+  title: string,
+) {
+  return `mavis:curriculum-quiz-attempt:${workspaceId}:${assignmentId ?? "curriculum"}:${title}`;
+}
+
 export function ChapterQuizRunner({
   title,
   questions,
   canManage,
   workspaceId,
   assignmentId,
+  nextLessonTitle,
+  onNextLesson,
 }: {
   title: string;
   questions: QuizQuestionData[];
   canManage: boolean;
   workspaceId: string;
   assignmentId?: string | null | undefined;
+  nextLessonTitle?: string | undefined;
+  onNextLesson?: (() => void) | undefined;
 }) {
   const { t } = useLocale();
-  const [answers, setAnswers] = useState<Record<string, number>>({});
-  const [submitted, setSubmitted] = useState(false);
+  const storageKey = useMemo(
+    () => attemptStorageKey(workspaceId, assignmentId, title),
+    [assignmentId, title, workspaceId],
+  );
+  const [attempt, setAttempt] = useState<StoredQuizAttempt | null>(null);
+  const [isHydrated, setIsHydrated] = useState(false);
+  const [showFeedback, setShowFeedback] = useState(false);
+
+  useEffect(() => {
+    setIsHydrated(false);
+    setShowFeedback(false);
+    try {
+      const rawAttempt = window.localStorage.getItem(storageKey);
+      const parsedAttempt = rawAttempt ? (JSON.parse(rawAttempt) as StoredQuizAttempt) : null;
+      setAttempt(
+        parsedAttempt && ["NOT_STARTED", "IN_PROGRESS", "SUBMITTED"].includes(parsedAttempt.status)
+          ? parsedAttempt
+          : null,
+      );
+    } catch {
+      setAttempt(null);
+    } finally {
+      setIsHydrated(true);
+    }
+  }, [storageKey]);
+
+  const updateAttempt = (nextAttempt: StoredQuizAttempt) => {
+    setAttempt(nextAttempt);
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify(nextAttempt));
+    } catch {
+      // Interaction continues if browser storage is disabled.
+    }
+  };
 
   if (!questions.length) {
     return (
-      <div className="mt-3 rounded-xl border border-dashed bg-muted/20 p-4 text-xs text-muted-foreground">
+      <div className="mx-auto mt-6 max-w-[850px] rounded-xl border border-dashed bg-muted/20 p-4 text-sm text-muted-foreground">
         {t(
           "No multiple-choice questions available for this quiz yet.",
           "Chưa có câu hỏi trắc nghiệm cho bài kiểm tra này.",
@@ -42,214 +98,399 @@ export function ChapterQuizRunner({
     );
   }
 
-  const answeredCount = questions.filter((q) => typeof answers[q.id] === "number").length;
-  const correctCount = questions.filter((q) => answers[q.id] === q.correctOption).length;
-  const scoreOutOfTen = questions.length > 0 ? Math.round((correctCount / questions.length) * 100) / 10 : 0;
-  const passed = questions.length > 0 && correctCount * 100 >= questions.length * 70;
-  const showAnswers = canManage || submitted;
+  if (canManage)
+    return (
+      <QuizPreview
+        title={title}
+        questions={questions}
+        workspaceId={workspaceId}
+        assignmentId={assignmentId}
+      />
+    );
+  if (!isHydrated)
+    return (
+      <p className="mx-auto mt-8 max-w-[850px] text-sm text-muted-foreground">
+        {t("Loading quiz…", "Đang tải Quiz…")}
+      </p>
+    );
+
+  const currentAttempt = attempt ?? { attemptId: "", status: "NOT_STARTED" as const, answers: {} };
+  if (currentAttempt.status === "NOT_STARTED") {
+    return (
+      <QuizLanding
+        title={title}
+        questionCount={questions.length}
+        onStart={() =>
+          updateAttempt({ attemptId: makeAttemptId(), status: "IN_PROGRESS", answers: {} })
+        }
+      />
+    );
+  }
+
+  const correctCount = questions.filter(
+    (question) => currentAttempt.answers[question.id] === question.correctOption,
+  ).length;
+  const scorePercent =
+    currentAttempt.scorePercent ?? Math.round((correctCount / questions.length) * 100);
+  if (currentAttempt.status === "SUBMITTED") {
+    return (
+      <QuizResult
+        title={title}
+        scorePercent={scorePercent}
+        correctCount={correctCount}
+        questionCount={questions.length}
+        submittedAt={currentAttempt.submittedAt}
+        showFeedback={showFeedback}
+        questions={questions}
+        answers={currentAttempt.answers}
+        nextLessonTitle={nextLessonTitle}
+        onToggleFeedback={() => setShowFeedback((current) => !current)}
+        onRetry={() =>
+          updateAttempt({ attemptId: makeAttemptId(), status: "IN_PROGRESS", answers: {} })
+        }
+        onNextLesson={onNextLesson}
+      />
+    );
+  }
 
   return (
-    <div className="mt-3 space-y-4 rounded-2xl border bg-background p-4 shadow-xs sm:p-5">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-3">
+    <QuizTaking
+      title={title}
+      questions={questions}
+      answers={currentAttempt.answers}
+      onAnswer={(questionId, optionIndex) =>
+        updateAttempt({
+          ...currentAttempt,
+          answers: { ...currentAttempt.answers, [questionId]: optionIndex },
+        })
+      }
+      onSubmit={() =>
+        updateAttempt({
+          ...currentAttempt,
+          status: "SUBMITTED",
+          submittedAt: new Date().toISOString(),
+          scorePercent,
+        })
+      }
+    />
+  );
+}
+
+function QuizLanding({
+  title,
+  questionCount,
+  onStart,
+}: {
+  title: string;
+  questionCount: number;
+  onStart: () => void;
+}) {
+  const { t } = useLocale();
+  return (
+    <section className="mx-auto mt-6 max-w-[850px] overflow-hidden rounded-2xl border bg-background shadow-xs">
+      <div className="bg-sky-50 px-6 py-8 dark:bg-sky-950/30 sm:px-8">
+        <Badge
+          variant="outline"
+          className="border-sky-200 bg-background/80 text-sky-800 dark:border-sky-800 dark:text-sky-200"
+        >
+          {t("Graded assignment", "Bài kiểm tra tính điểm")}
+        </Badge>
+        <h2 className="mt-3 text-2xl font-bold tracking-tight sm:text-3xl">{title}</h2>
+        <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
+          {t(
+            "Complete this assessment to check your understanding and unlock the next learning step.",
+            "Hoàn thành bài kiểm tra để đánh giá mức độ hiểu bài và mở khóa bước học tiếp theo.",
+          )}
+        </p>
+        <Button type="button" className="mt-6 bg-primary px-5" onClick={onStart}>
+          {t("Start assignment", "Bắt đầu làm bài")}
+        </Button>
+      </div>
+      <div className="grid gap-5 p-6 sm:grid-cols-[minmax(0,1fr)_220px] sm:p-8">
         <div>
-          <h4 className="text-sm font-semibold">{title}</h4>
-          <p className="text-xs text-muted-foreground">
-            {canManage
-              ? t(
-                  `Lecturer Preview · ${questions.length} questions with answer key & explanations`,
-                  `Xem trước Bộ Đề Giảng Viên · ${questions.length} câu hỏi kèm đáp án & giải thích chi tiết`,
-                )
-              : t(
-                  `${questions.length} multiple-choice questions · Pass threshold ≥ 70%`,
-                  `${questions.length} câu hỏi trắc nghiệm · Ngưỡng đạt ≥ 70%`,
-                )}
+          <h3 className="font-semibold">{t("Before you begin", "Trước khi bắt đầu")}</h3>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            {t(
+              "Your answers are saved on this device while you work. Submit only when you are ready to receive your result.",
+              "Lựa chọn của bạn được lưu trên thiết bị này trong lúc làm bài. Chỉ nộp khi bạn sẵn sàng nhận kết quả.",
+            )}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {assignmentId && !canManage && (
-            <Button asChild size="sm" variant="outline">
-              <Link
-                href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignmentId)}&step=2`}
-              >
-                {t("Open in Lab Gate", "Mở tại Lab Quiz Gate")}
-              </Link>
+        <dl className="space-y-3 rounded-xl border bg-muted/20 p-4 text-sm">
+          <div className="flex items-center justify-between gap-3">
+            <dt className="text-muted-foreground">{t("Questions", "Số câu hỏi")}</dt>
+            <dd className="font-semibold">{questionCount}</dd>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <dt className="text-muted-foreground">{t("Passing score", "Ngưỡng đạt")}</dt>
+            <dd className="font-semibold">{PASS_PERCENT}%</dd>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <dt className="text-muted-foreground">{t("Time limit", "Thời lượng")}</dt>
+            <dd>{t("Not configured", "Chưa cấu hình")}</dd>
+          </div>
+        </dl>
+      </div>
+    </section>
+  );
+}
+
+function QuizTaking({
+  title,
+  questions,
+  answers,
+  onAnswer,
+  onSubmit,
+}: {
+  title: string;
+  questions: QuizQuestionData[];
+  answers: Record<string, number>;
+  onAnswer: (questionId: string, optionIndex: number) => void;
+  onSubmit: () => void;
+}) {
+  const { t } = useLocale();
+  const answeredCount = questions.filter(
+    (question) => typeof answers[question.id] === "number",
+  ).length;
+  const allAnswered = answeredCount === questions.length;
+  return (
+    <section className="mx-auto mt-6 max-w-[850px] pb-10">
+      <header className="border-b pb-5">
+        <Badge variant="outline">{t("Graded assignment", "Bài kiểm tra tính điểm")}</Badge>
+        <h2 className="mt-2 text-2xl font-bold tracking-tight">{title}</h2>
+        <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+          <span>
+            {t(
+              `${answeredCount}/${questions.length} answered`,
+              `Đã trả lời ${answeredCount}/${questions.length} câu`,
+            )}
+          </span>
+          <span aria-hidden="true">·</span>
+          <span>{t(`Passing score ${PASS_PERCENT}%`, `Ngưỡng đạt ${PASS_PERCENT}%`)}</span>
+        </div>
+      </header>
+      <ol className="mt-8 space-y-10">
+        {questions.map((question, questionIndex) => (
+          <li
+            key={question.id}
+            className="grid gap-3 sm:grid-cols-[2rem_minmax(0,1fr)_auto] sm:gap-5"
+          >
+            <span className="font-semibold tabular-nums text-muted-foreground">
+              {questionIndex + 1}.
+            </span>
+            <fieldset>
+              <legend className="text-base font-medium leading-7">{question.prompt}</legend>
+              <div className="mt-4 space-y-3">
+                {question.options.map((option, optionIndex) => {
+                  const inputId = `${question.id}-option-${optionIndex}`;
+                  return (
+                    <label
+                      key={inputId}
+                      htmlFor={inputId}
+                      className="flex cursor-pointer items-start gap-3 text-sm leading-6"
+                    >
+                      <input
+                        id={inputId}
+                        name={question.id}
+                        type="radio"
+                        value={optionIndex}
+                        checked={answers[question.id] === optionIndex}
+                        onChange={() => onAnswer(question.id, optionIndex)}
+                        className="mt-1 size-4 shrink-0 accent-primary"
+                      />
+                      <span>{option}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </fieldset>
+            <Badge variant="secondary" className="h-fit w-fit whitespace-nowrap text-xs">
+              {t("1 point", "1 điểm")}
+            </Badge>
+          </li>
+        ))}
+      </ol>
+      <div className="mt-10 flex flex-wrap items-center justify-between gap-3 border-t pt-5">
+        <p className="text-sm text-muted-foreground">
+          {allAnswered
+            ? t("All questions are answered.", "Bạn đã trả lời tất cả câu hỏi.")
+            : t(
+                "You can submit now, or finish the remaining questions first.",
+                "Bạn có thể nộp ngay hoặc hoàn thành các câu còn lại.",
+              )}
+        </p>
+        <Button type="button" disabled={answeredCount === 0} onClick={onSubmit}>
+          {t("Submit Quiz", "Nộp Quiz")}
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+function QuizResult({
+  title,
+  scorePercent,
+  correctCount,
+  questionCount,
+  submittedAt,
+  showFeedback,
+  questions,
+  answers,
+  nextLessonTitle,
+  onToggleFeedback,
+  onRetry,
+  onNextLesson,
+}: {
+  title: string;
+  scorePercent: number;
+  correctCount: number;
+  questionCount: number;
+  submittedAt?: string | undefined;
+  showFeedback: boolean;
+  questions: QuizQuestionData[];
+  answers: Record<string, number>;
+  nextLessonTitle?: string | undefined;
+  onToggleFeedback: () => void;
+  onRetry: () => void;
+  onNextLesson?: (() => void) | undefined;
+}) {
+  const { t } = useLocale();
+  const passed = scorePercent >= PASS_PERCENT;
+  const submittedLabel = submittedAt
+    ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(
+        new Date(submittedAt),
+      )
+    : t("Just now", "Vừa xong");
+  return (
+    <section className="mx-auto mt-6 max-w-[850px] overflow-hidden rounded-2xl border bg-background shadow-xs">
+      <div className="bg-sky-50 px-6 py-8 dark:bg-sky-950/30 sm:px-8">
+        <Badge
+          variant="outline"
+          className="border-sky-200 bg-background/80 text-sky-800 dark:border-sky-800 dark:text-sky-200"
+        >
+          {t("Graded assignment", "Bài kiểm tra tính điểm")}
+        </Badge>
+        <h2 className="mt-3 text-2xl font-bold tracking-tight sm:text-3xl">{title}</h2>
+        <p className="mt-3 text-sm text-muted-foreground">
+          {t("Your result is ready.", "Kết quả của bạn đã sẵn sàng.")}
+        </p>
+        <div className="mt-6 flex flex-wrap gap-3">
+          {onNextLesson && (
+            <Button type="button" onClick={onNextLesson}>
+              {t("Go to next lesson", "Sang bài tiếp theo")}
             </Button>
           )}
-          {assignmentId && canManage && (
-            <Button asChild size="sm" variant="outline">
-              <Link
-                href={`/assignments?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignmentId)}`}
-              >
-                {t("Edit Quiz Bank", "Sửa ngân hàng Quiz")}
-              </Link>
-            </Button>
-          )}
+          <Button type="button" variant="outline" onClick={onRetry}>
+            <RotateCcw className="mr-2 size-4" aria-hidden="true" />
+            {t("Try again", "Làm lại")}
+          </Button>
         </div>
       </div>
-
-      {submitted && !canManage && (
+      <div className="grid gap-5 p-6 sm:grid-cols-[minmax(0,1fr)_220px] sm:p-8">
         <div
-          className={`rounded-2xl border-2 p-5 text-center ${
-            passed
-              ? "border-emerald-400 bg-emerald-50/70 dark:border-emerald-700 dark:bg-emerald-950/30"
-              : "border-rose-300 bg-rose-50/70 dark:border-rose-800 dark:bg-rose-950/30"
-          }`}
+          className={`rounded-xl border p-5 ${passed ? "border-emerald-200 bg-emerald-50/70 dark:border-emerald-900 dark:bg-emerald-950/30" : "border-rose-200 bg-rose-50/70 dark:border-rose-900 dark:bg-rose-950/30"}`}
         >
-          <p className="text-3xl font-bold tabular-nums">
-            {scoreOutOfTen.toFixed(1)} / 10{" "}
-            <span className="text-base font-medium text-muted-foreground">
-              ({correctCount}/{questions.length} {t("correct", "câu đúng")})
-            </span>
+          <div className="flex items-center gap-2 font-semibold">
+            {passed ? (
+              <CheckCircle2 className="size-5 text-emerald-600" />
+            ) : (
+              <XCircle className="size-5 text-rose-600" />
+            )}
+            {passed ? t("You passed!", "Bạn đã đạt!") : t("Not passed yet", "Bạn chưa đạt")}
+          </div>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {t(`Passing score: ${PASS_PERCENT}%.`, `Ngưỡng đạt: ${PASS_PERCENT}%.`)}
           </p>
-          <p
-            className={`mt-1 text-sm font-bold ${
-              passed ? "text-emerald-700 dark:text-emerald-300" : "text-rose-700 dark:text-rose-300"
-            }`}
-          >
-            {passed
-              ? t("✅ PASSED (≥ 70%)", "✅ ĐÃ ĐẠT YÊU CẦU (≥ 70%)")
-              : t("❌ NEEDS RETRY (< 70%)", "❌ CHƯA ĐẠT — HÃY ÔN LẠI VÀ THỬ LẠI")}
+          <p className="mt-3 text-3xl font-bold tabular-nums">{scorePercent}%</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {t(
+              `${correctCount}/${questionCount} correct`,
+              `Đúng ${correctCount}/${questionCount} câu`,
+            )}
           </p>
           <Button
             type="button"
             size="sm"
             variant="outline"
-            className="mt-3"
-            onClick={() => {
-              setAnswers({});
-              setSubmitted(false);
-            }}
+            className="mt-4"
+            onClick={onToggleFeedback}
           >
-            <RotateCcw className="mr-1.5 size-3.5" aria-hidden="true" />
-            {t("Retake Quiz", "🔄 Làm Lại Bài Thi")}
+            {showFeedback ? t("Hide feedback", "Ẩn phản hồi") : t("View feedback", "Xem phản hồi")}
           </Button>
         </div>
+        <aside className="rounded-xl border p-4 text-sm">
+          <h3 className="font-semibold">{t("Submission", "Lần nộp bài")}</h3>
+          <p className="mt-3 flex items-start gap-2 text-muted-foreground">
+            <Clock3 className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+            <span>{t(`Submitted ${submittedLabel}`, `Đã nộp ${submittedLabel}`)}</span>
+          </p>
+          {nextLessonTitle && (
+            <p className="mt-4 text-xs text-muted-foreground">
+              {t("Next", "Tiếp theo")}: {nextLessonTitle}
+            </p>
+          )}
+        </aside>
+      </div>
+      {showFeedback && (
+        <ol className="space-y-6 border-t p-6 sm:p-8">
+          {questions.map((question, index) => {
+            const selectedOption = answers[question.id];
+            const isCorrect = selectedOption === question.correctOption;
+            return (
+              <li key={question.id} className="text-sm">
+                <p className="font-medium">
+                  {index + 1}. {question.prompt}
+                </p>
+                <p
+                  className={`mt-2 ${isCorrect ? "text-emerald-700 dark:text-emerald-300" : "text-rose-700 dark:text-rose-300"}`}
+                >
+                  {isCorrect ? t("Correct", "Chính xác") : t("Review needed", "Cần xem lại")}:{" "}
+                  {question.options[question.correctOption]}
+                </p>
+                {question.explanation && (
+                  <p className="mt-1 leading-6 text-muted-foreground">{question.explanation}</p>
+                )}
+              </li>
+            );
+          })}
+        </ol>
       )}
+    </section>
+  );
+}
 
-      <ol className="space-y-4">
-        {questions.map((question, qIndex) => {
-          const picked = answers[question.id];
-          return (
-            <li key={question.id} className="rounded-xl border bg-card p-4">
-              <p className="text-sm font-semibold leading-snug">
-                <span className="mr-1.5 font-mono text-teal-700 dark:text-teal-300">
-                  {t(`Q${qIndex + 1}.`, `Câu ${qIndex + 1}.`)}
-                </span>
-                {question.prompt}
-              </p>
-              <div className="mt-3 grid gap-2">
-                {question.options.map((option, optIdx) => {
-                  const isPicked = picked === optIdx;
-                  const isRight = optIdx === question.correctOption;
-                  let styleClass =
-                    "border-border bg-background hover:border-teal-400 dark:hover:border-teal-700";
-                  if (showAnswers) {
-                    if (isRight) {
-                      styleClass =
-                        "border-emerald-500 bg-emerald-50/80 text-emerald-950 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-100";
-                    } else if (isPicked && !isRight) {
-                      styleClass =
-                        "border-rose-400 bg-rose-50/80 text-rose-950 dark:border-rose-700 dark:bg-rose-950/40 dark:text-rose-100";
-                    }
-                  } else if (isPicked) {
-                    styleClass =
-                      "border-teal-600 bg-teal-50/80 text-teal-950 dark:border-teal-500 dark:bg-teal-950/40 dark:text-teal-100";
-                  }
-
-                  return (
-                    <button
-                      key={`${question.id}-opt-${optIdx}`}
-                      type="button"
-                      disabled={canManage || submitted}
-                      onClick={() =>
-                        setAnswers((prev) => ({
-                          ...prev,
-                          [question.id]: optIdx,
-                        }))
-                      }
-                      className={`flex w-full items-start gap-2.5 rounded-lg border px-3 py-2 text-left text-xs sm:text-sm transition-colors ${styleClass}`}
-                    >
-                      <span className="mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-full border font-mono text-[11px] font-bold">
-                        {OPTION_LABELS[optIdx] ?? optIdx + 1}
-                      </span>
-                      <span className="flex-1 leading-relaxed">{option}</span>
-                      {showAnswers && isRight && (
-                        <CheckCircle2
-                          className="mt-0.5 size-4 shrink-0 text-emerald-600"
-                          aria-label="Correct answer"
-                        />
-                      )}
-                      {showAnswers && isPicked && !isRight && (
-                        <XCircle
-                          className="mt-0.5 size-4 shrink-0 text-rose-600"
-                          aria-label="Wrong selection"
-                        />
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {showAnswers && question.explanation && (
-                <div className="mt-3 rounded-lg bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
-                  <Badge variant="outline" className="mr-2 text-[10px]">
-                    {t("Explanation", "Giải thích")}
-                  </Badge>
-                  <span>{question.explanation}</span>
-                </div>
-              )}
-            </li>
-          );
-        })}
-      </ol>
-
-      {!canManage && !submitted && (
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-muted-foreground">
-              {t("Answered", "Đã chọn")}: <strong>{answeredCount}</strong> / {questions.length}
-            </span>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-7 px-2 text-xs"
-              onClick={() => {
-                const next: Record<string, number> = {};
-                questions.forEach((q) => {
-                  next[q.id] = q.correctOption;
-                });
-                setAnswers(next);
-              }}
-            >
-              ✨ {t("Fill Sample Pass (≥ 70%)", "Điền nhanh đáp án mẫu (Đạt ≥ 70%)")}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-7 border-amber-300 px-2 text-xs text-amber-800 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-300"
-              onClick={() => {
-                const next: Record<string, number> = {};
-                questions.forEach((q) => {
-                  next[q.id] = (q.correctOption + 1) % Math.max(q.options.length, 2);
-                });
-                setAnswers(next);
-              }}
-            >
-              🧪 {t("Test Fail Case (DS-02b)", "Thử kịch bản < 60% (Demo DS-02b)")}
-            </Button>
-          </div>
-          <Button
-            type="button"
-            className="bg-emerald-600 text-white hover:bg-emerald-700"
-            disabled={answeredCount === 0}
-            onClick={() => setSubmitted(true)}
-          >
-            {t("Submit & Check Score", "Nộp Bài & Xem Điểm Ngay")}
-          </Button>
+function QuizPreview({
+  title,
+  questions,
+  workspaceId,
+  assignmentId,
+}: {
+  title: string;
+  questions: QuizQuestionData[];
+  workspaceId: string;
+  assignmentId?: string | null | undefined;
+}) {
+  const { t } = useLocale();
+  return (
+    <div className="mx-auto mt-6 max-w-[850px] rounded-xl border bg-muted/20 p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h4 className="font-semibold">{title}</h4>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {questions.length} {t("questions", "câu hỏi")}
+          </p>
         </div>
-      )}
+        {assignmentId && (
+          <Button asChild size="sm" variant="outline">
+            <Link
+              href={`/assignments?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignmentId)}`}
+            >
+              <FileQuestion className="mr-2 size-4" aria-hidden="true" />
+              {t("Edit Quiz Bank", "Sửa ngân hàng Quiz")}
+            </Link>
+          </Button>
+        )}
+      </div>
     </div>
   );
 }

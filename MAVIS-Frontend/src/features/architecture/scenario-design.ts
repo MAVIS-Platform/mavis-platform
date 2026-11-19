@@ -32,13 +32,7 @@ export const PARTICIPANT_RESOLUTION_STATUSES = [
 ] as const;
 export type ParticipantResolutionStatus = (typeof PARTICIPANT_RESOLUTION_STATUSES)[number];
 
-export const ABSTRACTION_LEVELS = [
-  "ACTOR",
-  "CONTAINER",
-  "COMPONENT",
-  "CLASS",
-  "EXTERNAL",
-] as const;
+export const ABSTRACTION_LEVELS = ["ACTOR", "CONTAINER", "COMPONENT", "CLASS", "EXTERNAL"] as const;
 export type ParticipantAbstractionLevel = (typeof ABSTRACTION_LEVELS)[number];
 
 export const PROVENANCE_ORIGINS = ["STATIC", "OBSERVED", "DESIGNED", "MIGRATED_V0"] as const;
@@ -116,7 +110,7 @@ export interface CombinedFragment {
   provenance: SequenceProvenanceOrigin;
 }
 
-export const interactionOperandSchema: z.ZodType<InteractionOperand> =
+export const interactionOperandSchema: z.ZodType<InteractionOperand, z.ZodTypeDef, unknown> =
   z.lazy(() =>
     z.object({
       operandId: z.string().min(1).max(160),
@@ -129,7 +123,7 @@ export const interactionOperandSchema: z.ZodType<InteractionOperand> =
     }),
   );
 
-export const combinedFragmentSchema: z.ZodType<CombinedFragment> = z.lazy(
+export const combinedFragmentSchema: z.ZodType<CombinedFragment, z.ZodTypeDef, unknown> = z.lazy(
   () =>
     z.object({
       fragmentId: z.string().min(1).max(160),
@@ -222,10 +216,7 @@ export function inferInitialMessageSortFromEdge(
 } {
   if (explicitSort) {
     const normalized = explicitSort.trim().toUpperCase();
-    if (
-      (MESSAGE_SORTS as readonly string[]).includes(normalized) &&
-      normalized !== "UNKNOWN"
-    ) {
+    if ((MESSAGE_SORTS as readonly string[]).includes(normalized) && normalized !== "UNKNOWN") {
       return { messageSort: normalized as MessageSort, isCertain: true };
     }
   }
@@ -236,10 +227,7 @@ export function inferInitialMessageSortFromEdge(
   return { messageSort: "UNKNOWN", isCertain: false };
 }
 
-export function allocateNextSequenceId(
-  prefix: string,
-  existingIds: Iterable<string>,
-): string {
+export function allocateNextSequenceId(prefix: string, existingIds: Iterable<string>): string {
   const used = new Set<string>();
   let maxNumber = 0;
   const pattern = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-(\\d+)$`);
@@ -335,7 +323,11 @@ export function validateInteractionDocument(
       modelElementRoles.set(p.modelElementId, seenRoles);
     }
 
-    if (p.resolutionStatus === "AMBIGUOUS" || p.resolutionStatus === "UNCERTAIN_MAPPING" || p.resolutionStatus === "UNMAPPED") {
+    if (
+      p.resolutionStatus === "AMBIGUOUS" ||
+      p.resolutionStatus === "UNCERTAIN_MAPPING" ||
+      p.resolutionStatus === "UNMAPPED"
+    ) {
       warnings.push({
         code: `PARTICIPANT_${p.resolutionStatus}`,
         severity: "warning",
@@ -361,10 +353,8 @@ export function validateInteractionDocument(
     }
     messageById.set(msg.messageId, { msg, order });
 
-    const isFoundEndpoint =
-      msg.endpointKind === "FOUND" || msg.fromParticipantId === "__FOUND__";
-    const isLostEndpoint =
-      msg.endpointKind === "LOST" || msg.toParticipantId === "__LOST__";
+    const isFoundEndpoint = msg.endpointKind === "FOUND" || msg.fromParticipantId === "__FOUND__";
+    const isLostEndpoint = msg.endpointKind === "LOST" || msg.toParticipantId === "__LOST__";
 
     if (!isFoundEndpoint && !participantById.has(msg.fromParticipantId)) {
       errors.push({
@@ -543,7 +533,10 @@ export function validateInteractionDocument(
       });
     }
     for (const op of frag.operands) {
-      if ((frag.operator === "alt" || frag.operator === "opt" || frag.operator === "loop") && !op.guard.trim()) {
+      if (
+        (frag.operator === "alt" || frag.operator === "opt" || frag.operator === "loop") &&
+        !op.guard.trim()
+      ) {
         warnings.push({
           code: "EMPTY_OPERAND_GUARD",
           severity: "warning",
@@ -727,9 +720,7 @@ export function ensureModelParticipantInInteraction(
   elementId: string,
   provenance: SequenceProvenanceOrigin = "DESIGNED",
 ): { participants: SequenceParticipant[]; participant: SequenceParticipant } {
-  const existing = participants.find(
-    (p) => p.modelElementId === elementId && !p.role,
-  );
+  const existing = participants.find((p) => p.modelElementId === elementId && !p.role);
   if (existing) {
     return { participants, participant: existing };
   }
@@ -870,9 +861,7 @@ export function addCustomMessageToInteraction(
 
   const sourceRelationshipIds = matchingEdges.map((e) => e.id);
   const evidenceIds = [
-    ...new Set(
-      matchingEdges.flatMap((e) => e.evidenceIds ?? e.evidence.map((ev) => ev.id)),
-    ),
+    ...new Set(matchingEdges.flatMap((e) => e.evidenceIds ?? e.evidence.map((ev) => ev.id))),
   ];
 
   const effectiveEndpointKind: MessageEndpointKind =
@@ -995,9 +984,7 @@ export function removeMessageFromInteraction(
     operands: frag.operands.map((op) => ({
       ...op,
       messageIds: op.messageIds.filter((mid) => mid !== removedId),
-      ...(op.nestedFragments
-        ? { nestedFragments: op.nestedFragments.map(cleanFragment) }
-        : {}),
+      ...(op.nestedFragments ? { nestedFragments: op.nestedFragments.map(cleanFragment) } : {}),
     })),
   });
 
@@ -1078,7 +1065,10 @@ const unescapeXml = (value: string) =>
     .replaceAll("&quot;", '"')
     .replaceAll("&amp;", "&");
 
-function formatStereotype(elementType: string, resolutionStatus: ParticipantResolutionStatus): string {
+function formatStereotype(
+  elementType: string,
+  resolutionStatus: ParticipantResolutionStatus,
+): string {
   const upper = (elementType ?? "").toUpperCase();
   const base =
     upper === "ACTOR" || upper === "PERSON"
@@ -1161,13 +1151,18 @@ export function interactionToDrawioXml(
     throw new Error("Scenario belongs to another model revision.");
   }
   if (doc.participants.length > 24) {
-    throw new Error("Use at most 24 participants per scenario; select an individual entrypoint for larger flows.");
+    throw new Error(
+      "Use at most 24 participants per scenario; select an individual entrypoint for larger flows.",
+    );
   }
 
   const validation = validateInteractionDocument(doc, model);
   const effectiveDoc: InteractionDocument = {
     ...doc,
-    semanticStatus: inputDoc.semanticStatus === "PARTIAL" && validation.semanticStatus === "COMPLETE" ? "PARTIAL" : validation.semanticStatus,
+    semanticStatus:
+      inputDoc.semanticStatus === "PARTIAL" && validation.semanticStatus === "COMPLETE"
+        ? "PARTIAL"
+        : validation.semanticStatus,
   };
 
   const legacySummary: ScenarioDesign =
@@ -1181,7 +1176,9 @@ export function interactionToDrawioXml(
   const LEFT_MARGIN = 50;
   const ROW_STEP = 96;
 
-  const colGaps = new Array<number>(Math.max(0, effectiveDoc.participants.length - 1)).fill(COL_STEP);
+  const colGaps = new Array<number>(Math.max(0, effectiveDoc.participants.length - 1)).fill(
+    COL_STEP,
+  );
   effectiveDoc.messages.forEach((msg, idx) => {
     const fIdx = participantIndex.get(msg.fromParticipantId);
     const tIdx = participantIndex.get(msg.toParticipantId);
@@ -1190,7 +1187,8 @@ export function interactionToDrawioXml(
     const maxCol = Math.max(fIdx, tIdx);
     const spanCols = maxCol - minCol;
     const labelText = formatMessageLabel(msg, idx);
-    const neededSpan = labelText.length > 96 ? snap4(COL_STEP + Math.ceil((labelText.length - 96) * 6.2)) : COL_STEP;
+    const neededSpan =
+      labelText.length > 96 ? snap4(COL_STEP + Math.ceil((labelText.length - 96) * 6.2)) : COL_STEP;
     const neededPerCol = snap4(Math.ceil(neededSpan / spanCols));
     for (let c = minCol; c < maxCol; c += 1) {
       if (neededPerCol > (colGaps[c] ?? COL_STEP)) {
@@ -1202,7 +1200,9 @@ export function interactionToDrawioXml(
   const defaultParticipantX: number[] = [];
   for (let idx = 0; idx < effectiveDoc.participants.length; idx += 1) {
     defaultParticipantX.push(
-      idx === 0 ? LEFT_MARGIN : (defaultParticipantX[idx - 1] ?? LEFT_MARGIN) + (colGaps[idx - 1] ?? COL_STEP),
+      idx === 0
+        ? LEFT_MARGIN
+        : (defaultParticipantX[idx - 1] ?? LEFT_MARGIN) + (colGaps[idx - 1] ?? COL_STEP),
     );
   }
 
@@ -1215,17 +1215,14 @@ export function interactionToDrawioXml(
 
   const headerHeight = Math.max(
     76,
-    ...effectiveDoc.participants.map(
-      (p) => wrapText(formatLifelineTitle(p), 24).length * 18 + 38,
-    ),
+    ...effectiveDoc.participants.map((p) => wrapText(formatLifelineTitle(p), 24).length * 18 + 38),
   );
   const topLifelineY = 140;
   const firstMessageY = topLifelineY + headerHeight + 68;
 
   const extraRefRows = effectiveDoc.interactionUses.length;
   const totalTimelineRows = Math.max(1, effectiveDoc.messages.length + extraRefRows);
-  const maxRightX =
-    participantX.length > 0 ? Math.max(...participantX) + COL_WIDTH + 80 : 760;
+  const maxRightX = participantX.length > 0 ? Math.max(...participantX) + COL_WIDTH + 80 : 760;
   const width = Math.max(820, maxRightX);
   const height = Math.max(480, firstMessageY + totalTimelineRows * ROW_STEP + 104);
 
@@ -1257,7 +1254,10 @@ export function interactionToDrawioXml(
 
   const cleanSdTitle = effectiveDoc.name.replace(/\s*\(\d+\s*steps?\)\s*$/i, "").trim();
   const sdHeaderLabel = cleanSdTitle.startsWith("sd ") ? cleanSdTitle : `sd ${cleanSdTitle}`;
-  const sdTabWidth = Math.min(Math.max(420, width - 80), Math.max(180, Math.round(sdHeaderLabel.length * 8.2 + 36)));
+  const sdTabWidth = Math.min(
+    Math.max(420, width - 80),
+    Math.max(180, Math.round(sdHeaderLabel.length * 8.2 + 36)),
+  );
 
   const cells: string[] = [
     '<mxCell id="0"/><mxCell id="1" parent="0"/>',
@@ -1291,16 +1291,14 @@ export function interactionToDrawioXml(
         : Math.max(0, effectiveDoc.participants.length - 1);
     const inset = depth * 14;
     const frameX = (participantX[minColIdx] ?? LEFT_MARGIN) - 18 + inset;
-    const frameRight =
-      (participantX[maxColIdx] ?? LEFT_MARGIN) + COL_WIDTH + 18 - inset;
+    const frameRight = (participantX[maxColIdx] ?? LEFT_MARGIN) + COL_WIDTH + 18 - inset;
     const frameWidth = Math.max(240, frameRight - frameX);
 
     const hasNested = frag.operands.some((op) => (op.nestedFragments?.length ?? 0) > 0);
     const topPad = depth === 0 ? (hasNested ? 62 : 38) : Math.max(22, 34 - (depth - 1) * 10);
     const bottomPad = depth === 0 ? (hasNested ? 36 : 26) : Math.max(18, 24 - (depth - 1) * 6);
     const topY = (allMsgYs.length > 0 ? Math.min(...allMsgYs) : firstMessageY) - topPad;
-    const bottomY =
-      (allMsgYs.length > 0 ? Math.max(...allMsgYs) : firstMessageY + 60) + bottomPad;
+    const bottomY = (allMsgYs.length > 0 ? Math.max(...allMsgYs) : firstMessageY + 60) + bottomPad;
     const frameHeight = Math.max(68, bottomY - topY);
 
     let operatorHeader: string = frag.operator;
@@ -1338,7 +1336,9 @@ export function interactionToDrawioXml(
         );
       }
       if (op.guard && op.guard.trim()) {
-        const guardText = op.guard.trim().startsWith("[") ? op.guard.trim() : `[${op.guard.trim()}]`;
+        const guardText = op.guard.trim().startsWith("[")
+          ? op.guard.trim()
+          : `[${op.guard.trim()}]`;
         const guardY = opIdx === 0 ? topY + 2 : opTopY + 5;
         const guardWidth = Math.min(250, Math.max(120, frameX + frameWidth - safeGuardX - 12));
         cells.push(
@@ -1390,7 +1390,10 @@ export function interactionToDrawioXml(
     const x = participantX[i]!;
     const createY = createdAtY.get(p.participantId);
     const destroyY = destroyedAtY.get(p.participantId);
-    const startY = createY !== undefined ? Math.max(topLifelineY, createY - Math.floor(headerHeight / 2)) : topLifelineY;
+    const startY =
+      createY !== undefined
+        ? Math.max(topLifelineY, createY - Math.floor(headerHeight / 2))
+        : topLifelineY;
     const endY = destroyY !== undefined ? Math.min(height - 30, destroyY + 12) : height - 30;
     const lifelineHeight = Math.max(headerHeight + 40, endY - startY);
 
@@ -1398,8 +1401,7 @@ export function interactionToDrawioXml(
     const titleLines = wrapText(formatLifelineTitle(p), 24);
     const displayValue = [stereotype, ...titleLines].join("\n");
 
-    const isUncertain =
-      p.resolutionStatus !== "RESOLVED" && p.resolutionStatus !== "DESIGNED_ROLE";
+    const isUncertain = p.resolutionStatus !== "RESOLVED" && p.resolutionStatus !== "DESIGNED_ROLE";
     const fillColor = isUncertain ? "#fef3c7" : "#eaf2ff";
     const strokeColor = isUncertain ? "#b45309" : "#52677f";
 
@@ -1446,10 +1448,8 @@ export function interactionToDrawioXml(
 
   // 5. Render Messages (distinct occurrence IDs, UML 2.5.1 arrowhead/dash styles, self-call loops, Found/Lost black circle endpoints)
   effectiveDoc.messages.forEach((msg, i) => {
-    const isFoundEndpoint =
-      msg.endpointKind === "FOUND" || msg.fromParticipantId === "__FOUND__";
-    const isLostEndpoint =
-      msg.endpointKind === "LOST" || msg.toParticipantId === "__LOST__";
+    const isFoundEndpoint = msg.endpointKind === "FOUND" || msg.fromParticipantId === "__FOUND__";
+    const isLostEndpoint = msg.endpointKind === "LOST" || msg.toParticipantId === "__LOST__";
     const fromIdx = participantIndex.get(msg.fromParticipantId);
     const toIdx = participantIndex.get(msg.toParticipantId);
     if (!isFoundEndpoint && fromIdx === undefined) return;
@@ -1458,11 +1458,17 @@ export function interactionToDrawioXml(
     const y = messageYById.get(msg.messageId) ?? firstMessageY + i * ROW_STEP;
     const fromStartY =
       createdAtY.get(msg.fromParticipantId) !== undefined
-        ? Math.max(topLifelineY, createdAtY.get(msg.fromParticipantId)! - Math.floor(headerHeight / 2))
+        ? Math.max(
+            topLifelineY,
+            createdAtY.get(msg.fromParticipantId)! - Math.floor(headerHeight / 2),
+          )
         : topLifelineY;
     const toStartY =
       createdAtY.get(msg.toParticipantId) !== undefined
-        ? Math.max(topLifelineY, createdAtY.get(msg.toParticipantId)! - Math.floor(headerHeight / 2))
+        ? Math.max(
+            topLifelineY,
+            createdAtY.get(msg.toParticipantId)! - Math.floor(headerHeight / 2),
+          )
         : topLifelineY;
     const fromEndY =
       destroyedAtY.get(msg.fromParticipantId) !== undefined
@@ -1484,22 +1490,14 @@ export function interactionToDrawioXml(
     const goingRight =
       isFoundEndpoint || (fromIdx !== undefined && toIdx !== undefined && fromIdx < toIdx);
     const goingLeft =
-      !isFoundEndpoint && !isLostEndpoint && fromIdx !== undefined && toIdx !== undefined && fromIdx > toIdx;
+      !isFoundEndpoint &&
+      !isLostEndpoint &&
+      fromIdx !== undefined &&
+      toIdx !== undefined &&
+      fromIdx > toIdx;
 
-    const exitXFraction = fromHasBar
-      ? goingRight
-        ? 0.527
-        : goingLeft
-          ? 0.473
-          : 0.527
-      : 0.5;
-    const entryXFraction = toHasBar
-      ? goingRight
-        ? 0.473
-        : goingLeft
-          ? 0.527
-          : 0.527
-      : 0.5;
+    const exitXFraction = fromHasBar ? (goingRight ? 0.527 : goingLeft ? 0.473 : 0.527) : 0.5;
+    const entryXFraction = toHasBar ? (goingRight ? 0.473 : goingLeft ? 0.527 : 0.527) : 0.5;
 
     let sourceCellId = `participant-${fromIdx ?? 0}`;
     let targetCellId = `participant-${toIdx ?? 0}`;
@@ -1559,10 +1557,15 @@ export function interactionToDrawioXml(
         ? (() => {
             const replyY = y + 22;
             const replyExitPos = Math.max(0.05, Math.min(0.98, (replyY - toStartY) / toHeight));
-            const replyEntryPos = Math.max(0.05, Math.min(0.98, (replyY - fromStartY) / fromHeight));
+            const replyEntryPos = Math.max(
+              0.05,
+              Math.min(0.98, (replyY - fromStartY) / fromHeight),
+            );
             const replyStatus = msg.httpStatusCode ?? 200;
             const replyDur = msg.durationMs != null ? `${msg.durationMs}ms` : "";
-            const replyLabel = replyDur ? `HTTP ${replyStatus} (${replyDur})` : `HTTP ${replyStatus}`;
+            const replyLabel = replyDur
+              ? `HTTP ${replyStatus} (${replyDur})`
+              : `HTTP ${replyStatus}`;
             const replyStyle = styleForMessageSort("REPLY");
             const replyExitPort = `exitX=${entryXFraction};exitY=${replyExitPos};exitPerimeter=0;`;
             const replyEntryPort = `entryX=${exitXFraction};entryY=${replyEntryPos};entryPerimeter=0;`;
@@ -1661,10 +1664,7 @@ export function extractInteractionFromDrawioXml(
       }
     >();
     const cellIdToParticipantId = new Map<string, string>();
-    const allCellsById = new Map<
-      string,
-      { attrs: Record<string, string>; body: string }
-    >();
+    const allCellsById = new Map<string, { attrs: Record<string, string>; body: string }>();
 
     let match: RegExpExecArray | null;
     while ((match = cellRegex.exec(xml)) !== null) {
@@ -1677,8 +1677,7 @@ export function extractInteractionFromDrawioXml(
       }
       const role = attrs["mavisRole"];
       const pId =
-        attrs["mavisParticipantId"] ??
-        (role === "participant" ? attrs["mavisId"] : undefined);
+        attrs["mavisParticipantId"] ?? (role === "participant" ? attrs["mavisId"] : undefined);
 
       if ((role === "found-message-origin" || role === "lost-message-target") && cellId && pId) {
         cellIdToParticipantId.set(cellId, pId);
@@ -1844,10 +1843,7 @@ export function extractInteractionFromDrawioXml(
           const expectedHeader = formatFragmentOperatorHeader(frag);
           const actualVal = (fragCell.attrs["value"] ?? "").trim();
           const actualOp = fragCell.attrs["mavisOperator"];
-          if (
-            actualVal !== expectedHeader.trim() ||
-            (actualOp && actualOp !== frag.operator)
-          ) {
+          if (actualVal !== expectedHeader.trim() || (actualOp && actualOp !== frag.operator)) {
             roundTripConflicts.push(
               `[EDITED_FRAGMENT_IN_DRAWIO] CombinedFragment "${frag.fragmentId}" header/operator was edited in Draw.io ("${actualVal}" vs "${expectedHeader}").`,
             );
@@ -1946,8 +1942,7 @@ export function extractInteractionFromDrawioXml(
 
     const updatedDoc: InteractionDocument = {
       ...baseUpdatedDoc,
-      semanticStatus:
-        roundTripConflicts.length > 0 ? "UNVERIFIED" : validation.semanticStatus,
+      semanticStatus: roundTripConflicts.length > 0 ? "UNVERIFIED" : validation.semanticStatus,
     };
 
     return {
@@ -2217,9 +2212,7 @@ export function projectObservedSequenceToInteraction(
 
   if (sortedSteps.length < indexedSteps.length) {
     extraLimitations.add("CAUSAL_CYCLE_DETECTED_IN_TRACE");
-    const remaining = indexedSteps
-      .filter((item) => !placedIds.has(item.msgId))
-      .sort(compareSteps);
+    const remaining = indexedSteps.filter((item) => !placedIds.has(item.msgId)).sort(compareSteps);
     sortedSteps.push(...remaining);
   }
 
@@ -2256,12 +2249,11 @@ export function projectObservedSequenceToInteraction(
 
     // 1. Try canonical IDs first (baseElId for pinned model, elId for enriched model)
     const matchedElement =
-      (baseElId && elementById.get(baseElId)) ||
-      (elId && elementById.get(elId)) ||
-      null;
+      (baseElId && elementById.get(baseElId)) || (elId && elementById.get(elId)) || null;
 
     if (matchedElement) {
-      const pid = explicitPid && explicitPid.trim() ? explicitPid.trim() : `part:${matchedElement.id}`;
+      const pid =
+        explicitPid && explicitPid.trim() ? explicitPid.trim() : `part:${matchedElement.id}`;
       const existing = participantMap.get(pid);
       if (existing) return existing;
       const p: SequenceParticipant = {
@@ -2281,7 +2273,8 @@ export function projectObservedSequenceToInteraction(
 
     // 2. If backend explicitly marked AMBIGUOUS or UNCERTAIN_MAPPING, honor it without guessing
     if (statusWire === "AMBIGUOUS") {
-      const pid = explicitPid && explicitPid.trim() ? explicitPid.trim() : `part:ambiguous:${lowerName}`;
+      const pid =
+        explicitPid && explicitPid.trim() ? explicitPid.trim() : `part:ambiguous:${lowerName}`;
       const existing = participantMap.get(pid);
       if (existing) return existing;
       const p: SequenceParticipant = {
@@ -2351,7 +2344,8 @@ export function projectObservedSequenceToInteraction(
 
     const resStatus: ParticipantResolutionStatus =
       statusWire === "UNCERTAIN_MAPPING" ? "UNCERTAIN_MAPPING" : "UNMAPPED";
-    const pid = explicitPid && explicitPid.trim() ? explicitPid.trim() : `part:service:${lowerName}`;
+    const pid =
+      explicitPid && explicitPid.trim() ? explicitPid.trim() : `part:service:${lowerName}`;
     const existing = participantMap.get(pid);
     if (existing) return existing;
     const p: SequenceParticipant = {
@@ -2401,9 +2395,7 @@ export function projectObservedSequenceToInteraction(
     let relIds: string[] = [];
     if (s.candidateRelationshipIds && s.candidateRelationshipIds.length > 0) {
       relIds = [
-        ...new Set(
-          s.candidateRelationshipIds.filter((cid) => modelEdgeIdSet.has(cid)),
-        ),
+        ...new Set(s.candidateRelationshipIds.filter((cid) => modelEdgeIdSet.has(cid))),
       ].sort((a, b) => a.localeCompare(b));
     }
     if (relIds.length === 0) {
@@ -2495,7 +2487,10 @@ export function projectObservedSequenceToInteraction(
       ...extraLimitations,
     ]),
   ];
-  if (parallelBranchMessageIds.length > 0 && !limitations.includes("PARALLEL_CAUSAL_BRANCHES_OBSERVED")) {
+  if (
+    parallelBranchMessageIds.length > 0 &&
+    !limitations.includes("PARALLEL_CAUSAL_BRANCHES_OBSERVED")
+  ) {
     limitations.push("PARALLEL_CAUSAL_BRANCHES_OBSERVED");
   }
   if (paginationSplitWarning && !limitations.includes("PAGINATED_TRACE_WINDOW")) {
@@ -2577,10 +2572,7 @@ export function createDesignedCopyFromObserved(
       traceId: observedDoc.provenance.traceId ?? null,
     },
     limitations: [
-      ...new Set([
-        ...observedDoc.limitations,
-        "DESIGNED_OVERLAY_COPIED_FROM_OBSERVED_TRACE",
-      ]),
+      ...new Set([...observedDoc.limitations, "DESIGNED_OVERLAY_COPIED_FROM_OBSERVED_TRACE"]),
     ],
   };
 }
@@ -2680,7 +2672,11 @@ function formatMicroStepLabel(
   if (/(Publisher|Producer|Sender)$/i.test(toName)) {
     return `Publish domain event via ${toName}`;
   }
-  if (/Service$/i.test(toName) && fromEl && /Controller|Handler|Consumer|Server/i.test(fromEl.name)) {
+  if (
+    /Service$/i.test(toName) &&
+    fromEl &&
+    /Controller|Handler|Consumer|Server/i.test(fromEl.name)
+  ) {
     return `Invoke ${toName}`;
   }
   return `Call ${toName}`;
@@ -2722,7 +2718,12 @@ export function detectSequenceFlows(
     for (const edge of allowedEdges) {
       let fromRootId = ownerOf(edge.from);
       let toRootId = ownerOf(edge.to);
-      if (edge.protocol === "MESSAGE_SUBSCRIBE" && elementById.get(fromRootId)?.elementType === "SERVICE_CONTAINER" && ["MESSAGE_CHANNEL", "QUEUE_BROKER"].includes(elementById.get(toRootId)?.elementType ?? "")) [fromRootId, toRootId] = [toRootId, fromRootId];
+      if (
+        edge.protocol === "MESSAGE_SUBSCRIBE" &&
+        elementById.get(fromRootId)?.elementType === "SERVICE_CONTAINER" &&
+        ["MESSAGE_CHANNEL", "QUEUE_BROKER"].includes(elementById.get(toRootId)?.elementType ?? "")
+      )
+        [fromRootId, toRootId] = [toRootId, fromRootId];
       if (fromRootId === toRootId) continue;
       const fromEl = elementById.get(edge.from);
       const toEl = elementById.get(edge.to);
@@ -2765,9 +2766,7 @@ export function detectSequenceFlows(
       incomingByRoot.set(step.toElementId, inc);
     }
 
-    const serviceContainers = model.elements.filter(
-      (el) => el.elementType === "SERVICE_CONTAINER",
-    );
+    const serviceContainers = model.elements.filter((el) => el.elementType === "SERVICE_CONTAINER");
 
     const inferMacroBusinessFlowMeta = (
       svc: ArchitecturalModel["elements"][number],
@@ -2793,10 +2792,11 @@ export function detectSequenceFlows(
       const lowerSvc = svc.name.toLowerCase();
       const hasOutboundCrossService = steps.some(
         (s) =>
-          s.fromElementId === svc.id &&
-          elementById.get(s.toElementId)?.elementType !== "DATABASE",
+          s.fromElementId === svc.id && elementById.get(s.toElementId)?.elementType !== "DATABASE",
       );
-      const isMainFlow = steps.length >= 2 && (hasOutboundCrossService || sagas.length > 0 || controllers.length > 0);
+      const isMainFlow =
+        steps.length >= 2 &&
+        (hasOutboundCrossService || sagas.length > 0 || controllers.length > 0);
       const stepTag = `${steps.length} step${steps.length === 1 ? "" : "s"}`;
 
       if (/order-history|history/i.test(lowerSvc)) {
@@ -2807,7 +2807,8 @@ export function detectSequenceFlows(
         };
       }
       if (/order/i.test(lowerSvc)) {
-        const sagaHint = sagas.length > 0 ? sagas.slice(0, 3).join(", ") : "CreateOrder / CancelOrder Saga";
+        const sagaHint =
+          sagas.length > 0 ? sagas.slice(0, 3).join(", ") : "CreateOrder / CancelOrder Saga";
         return {
           title: `Main Flow · Order Placement & Saga Orchestration Flow (${svc.name} · ${sagaHint} — ${stepTag})`,
           description: `Top-down Business Main Flow initiated from ${svc.name} orchestrating across ${peerNames.slice(0, 5).join(" → ")}.`,
@@ -2858,7 +2859,12 @@ export function detectSequenceFlows(
       }
 
       const roleDetail =
-        sagas[0] ?? controllers[0] ?? handlers[0] ?? (steps.some((s) => s.messageSort === "ASYNCH_SIGNAL") ? "Saga & Event Flow" : "Inter-Service Flow");
+        sagas[0] ??
+        controllers[0] ??
+        handlers[0] ??
+        (steps.some((s) => s.messageSort === "ASYNCH_SIGNAL")
+          ? "Saga & Event Flow"
+          : "Inter-Service Flow");
       return {
         title: `${isMainFlow ? "Main Flow" : "Sub-Flow"} · ${svc.name} (${roleDetail} — ${stepTag})`,
         description: `Macro sequence across services, message channels, and data stores initiated by or involving ${svc.name}.`,
@@ -2933,9 +2939,7 @@ export function detectSequenceFlows(
       }
 
       if (steps.length === 0) continue;
-      const participants = [
-        ...new Set(steps.flatMap((s) => [s.fromElementId, s.toElementId])),
-      ];
+      const participants = [...new Set(steps.flatMap((s) => [s.fromElementId, s.toElementId]))];
       const meta = inferMacroBusinessFlowMeta(svc, steps);
       macroServiceFlows.push({
         flowId: `macro:service:${svc.id}`,
@@ -2960,9 +2964,7 @@ export function detectSequenceFlows(
           Number(!/gateway|proxy/i.test(a.serviceName ?? "")) ||
         a.title.localeCompare(b.title),
     );
-    flows.push(
-      ...macroServiceFlows.map(({ _isMainFlow: _, ...rest }) => rest),
-    );
+    flows.push(...macroServiceFlows.map(({ _isMainFlow: _, ...rest }) => rest));
 
     if (allMacroSteps.length > 0) {
       const overviewSteps: DetectedSequenceStepSpec[] = [];
@@ -3144,9 +3146,7 @@ export function detectSequenceFlows(
         const steps: DetectedSequenceStepSpec[] = [];
         traceFromEntry(entry, new Set<string>(), steps);
         if (steps.length === 0) continue;
-        const participants = [
-          ...new Set(steps.flatMap((s) => [s.fromElementId, s.toElementId])),
-        ];
+        const participants = [...new Set(steps.flatMap((s) => [s.fromElementId, s.toElementId]))];
         serviceMicroFlows.push({
           flowId: `micro:${svc.id}:${entry.id}`,
           viewId: `scenarios:auto:micro:${svc.id}:${entry.id}`,
@@ -3204,7 +3204,15 @@ export function detectSequenceFlows(
     }
   }
 
-  return [...sourceMethodFlows(model, requestedLevel, requestedServiceId), ...flows.map((flow) => ({ ...flow, title: `Dependency preview · ${flow.serviceName ?? "system"} · ${flow.level.toLowerCase()}`, description: "Static dependency declarations only. Endpoint identity, invocation order and control flow have not been extracted." }))];
+  return [
+    ...sourceMethodFlows(model, requestedLevel, requestedServiceId),
+    ...flows.map((flow) => ({
+      ...flow,
+      title: `Dependency preview · ${flow.serviceName ?? "system"} · ${flow.level.toLowerCase()}`,
+      description:
+        "Static dependency declarations only. Endpoint identity, invocation order and control flow have not been extracted.",
+    })),
+  ];
 }
 
 export interface SequenceAiEnrichment {
@@ -3238,9 +3246,7 @@ export interface SequenceAiEnrichment {
  */
 export function compressCodeToAstSkeleton(rawCode: string, maxChars = 1600): string {
   if (!rawCode) return "";
-  const withoutComments = rawCode
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/\/\/[^\n]*/g, "");
+  const withoutComments = rawCode.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
   const lines = withoutComments.split(/\r?\n/);
   const kept: string[] = [];
   const seen = new Set<string>();
@@ -3249,7 +3255,11 @@ export function compressCodeToAstSkeleton(rawCode: string, maxChars = 1600): str
     const line = rawLine.trim().replace(/\s+/g, " ");
     if (!line || line === "{" || line === "}" || line === "};") continue;
     if (/^(?:import|package)\s+/.test(line)) continue;
-    if (/^(?:private|public|protected)?\s*(?:final\s+)?[A-Za-z0-9_<>[\]]+\s+get[A-Z]\w*\(\)\s*\{/.test(line))
+    if (
+      /^(?:private|public|protected)?\s*(?:final\s+)?[A-Za-z0-9_<>[\]]+\s+get[A-Z]\w*\(\)\s*\{/.test(
+        line,
+      )
+    )
       continue;
 
     const isImportant =
@@ -3257,7 +3267,9 @@ export function compressCodeToAstSkeleton(rawCode: string, maxChars = 1600): str
       /\b(?:class|interface|record|enum|function|def)\s+[A-Za-z0-9_]+/.test(line) ||
       /\b(?:if|else\s+if|else|for|while|switch|catch|return|throw)\b/.test(line) ||
       /\b[a-zA-Z0-9_]+\.[a-zA-Z0-9_]+\s*\(/.test(line) ||
-      /\b(?:public|protected|private|async)\s+[A-Za-z0-9_<>[\],\s]+\s+[a-zA-Z0-9_]+\s*\(/.test(line);
+      /\b(?:public|protected|private|async)\s+[A-Za-z0-9_<>[\],\s]+\s+[a-zA-Z0-9_]+\s*\(/.test(
+        line,
+      );
 
     if (isImportant && !seen.has(line)) {
       seen.add(line);
@@ -3328,7 +3340,9 @@ export function buildFlowCompactContext(
   const rawChars = rawJoined.length;
   const compressedChars = astSkeleton.length;
   const savedPercent =
-    rawChars > 0 ? Math.max(0, Math.min(99, Math.round((1 - compressedChars / rawChars) * 100))) : 0;
+    rawChars > 0
+      ? Math.max(0, Math.min(99, Math.round((1 - compressedChars / rawChars) * 100)))
+      : 0;
 
   const signature = `${model.id}|${flow.flowId}|${stepSpecs.map((s) => `${s.fromName}->${s.toName}:${s.defaultLabel}`).join(";")}|${astSkeleton}`;
   let hash = 2166136261;
