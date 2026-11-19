@@ -95,20 +95,7 @@ function LecturerAssignments({ embedded = false }: { embedded?: boolean } = {}) 
   const content = (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold tracking-tight">{t("Lab Library", "Kho Lab")}</h2>
-        <div className="flex flex-wrap items-center gap-2">
-          <ImportLabButton workspaceId={workspaceId} />
-          <Button asChild size="sm">
-            <Link href={`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}`}>
-              <Plus className="mr-1 size-4" aria-hidden="true" />
-              {t("Create a Lab", "Tạo Lab")}
-            </Link>
-          </Button>
-        </div>
-      </div>
-
-      {rows.length > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        {rows.length > 0 ? (
           <div
             role="group"
             aria-label={t("Filter labs", "Lọc Lab")}
@@ -135,21 +122,34 @@ function LecturerAssignments({ embedded = false }: { embedded?: boolean } = {}) 
               );
             })}
           </div>
-          <div className="relative w-full sm:w-64">
-            <Search
-              className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-              aria-hidden="true"
-            />
-            <Input
-              className="h-9 pl-8"
-              value={search}
-              placeholder={t("Search labs by title", "Tìm Lab theo tên")}
-              aria-label={t("Search labs", "Tìm Lab")}
-              onChange={(event) => setSearch(event.target.value)}
-            />
-          </div>
+        ) : (
+          <h2 className="text-lg font-semibold tracking-tight">{t("Lab Library", "Kho Lab")}</h2>
+        )}
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          {rows.length > 0 && (
+            <div className="relative w-full sm:w-56">
+              <Search
+                className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <Input
+                className="h-9 pl-8"
+                value={search}
+                placeholder={t("Search labs by title", "Tìm Lab theo tên")}
+                aria-label={t("Search labs", "Tìm Lab")}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+            </div>
+          )}
+          <ImportLabButton workspaceId={workspaceId} />
+          <Button asChild size="sm">
+            <Link href={`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}`}>
+              <Plus className="mr-1 size-4" aria-hidden="true" />
+              {t("Create a Lab", "Tạo Lab")}
+            </Link>
+          </Button>
         </div>
-      )}
+      </div>
 
       <RequestState
         query={query}
