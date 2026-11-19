@@ -3,13 +3,10 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import {
-  BookOpen,
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Code2,
-  FileCheck2,
   FileText,
   HelpCircle,
   Lock,
@@ -144,6 +141,7 @@ export function StudentCourseSyllabus({
     [syllabusModules],
   );
   const [selectedItemId, setSelectedItemId] = useState<string>("");
+  const [selectedModuleId, setSelectedModuleId] = useState<string>("");
   const [practicePanel, setPracticePanel] = useState<"none" | "quiz" | "essay">("none");
   const isLearningWorkspace = selectedItemId !== "";
 
@@ -160,6 +158,8 @@ export function StudentCourseSyllabus({
 
   const activeModule = activeEntry?.module ?? null;
   const activeItem = activeEntry?.item ?? null;
+  const courseContentModule =
+    syllabusModules.find((module) => module.id === selectedModuleId) ?? activeModule;
   const chapterQuizItem = activeModule?.items.find((i) => i.type === "QUIZ") ?? null;
   const chapterEssayItem = activeModule?.items.find((i) => i.type === "ESSAY") ?? null;
   const chapterLabItem =
@@ -180,6 +180,12 @@ export function StudentCourseSyllabus({
       : undefined) ?? selectedAssignment;
   const selectCurriculumItem = (item: OutlineItemData) => {
     setSelectedItemId(item.id);
+    const owningModule = syllabusModules.find((module) =>
+      module.items.some((candidate) => candidate.id === item.id),
+    );
+    if (owningModule) {
+      setSelectedModuleId(owningModule.id);
+    }
     setPracticePanel("none");
     if (item.assignmentId) {
       setSelectedLabId(item.assignmentId);
@@ -315,13 +321,18 @@ export function StudentCourseSyllabus({
               </p>
               <div className="space-y-1">
                 {syllabusModules.map((mod) => {
-                  const isActive = mod.id === activeModule?.id;
+                  const isActive = mod.id === courseContentModule?.id;
                   return (
                     <button
                       key={mod.id}
                       type="button"
                       disabled={mod.items.length === 0}
-                      onClick={() => mod.items[0] && selectCurriculumItem(mod.items[0])}
+                      onClick={() => {
+                        setSelectedModuleId(mod.id);
+                        setSelectedItemId("");
+                        setPracticePanel("none");
+                        setActiveTab("player");
+                      }}
                       className={`w-full rounded-lg px-3 py-2 text-left text-sm transition-colors ${
                         isActive
                           ? "bg-primary/10 font-semibold text-primary"
@@ -459,74 +470,21 @@ export function StudentCourseSyllabus({
           </section>
         )}
 
-        {!isLearningWorkspace && (
-          <div
-            className="flex flex-wrap items-center gap-2 rounded-2xl border bg-card p-2 shadow-sm"
-            role="tablist"
-            aria-label={t("Student course workspace sections", "Mục học tập trong lớp")}
-          >
-            <Button
-              type="button"
-              size="sm"
-              role="tab"
-              aria-selected={activeTab === "player"}
-              variant={activeTab === "player" ? "default" : "ghost"}
-              onClick={() => setActiveTab("player")}
-              className={activeTab === "player" ? "bg-teal-600 text-white hover:bg-teal-700" : ""}
-            >
-              <BookOpen className="mr-1.5 h-4 w-4" aria-hidden="true" />
-              {t("Course Content", "Nội dung khóa học")}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              role="tab"
-              aria-selected={activeTab === "submissions"}
-              variant={activeTab === "submissions" ? "default" : "ghost"}
-              onClick={() => setActiveTab("submissions")}
-              className={
-                activeTab === "submissions" ? "bg-teal-600 text-white hover:bg-teal-700" : ""
-              }
-            >
-              <FileCheck2 className="mr-1.5 h-4 w-4" aria-hidden="true" />
-              {t("2. My Submissions & Grades", "2. Bài Nộp & Điểm Số")}
-              {classSubmissions.length > 0 && (
-                <Badge variant="secondary" className="ml-1.5 px-1.5 py-0 text-[11px]">
-                  {classSubmissions.length}
-                </Badge>
-              )}
-            </Button>
-            {client.mode === "backend" && (
-              <Button
-                type="button"
-                size="sm"
-                role="tab"
-                aria-selected={activeTab === "library"}
-                variant={activeTab === "library" ? "default" : "ghost"}
-                onClick={() => setActiveTab("library")}
-                className={
-                  activeTab === "library" ? "bg-teal-600 text-white hover:bg-teal-700" : ""
-                }
-              >
-                <Code2 className="mr-1.5 h-4 w-4" aria-hidden="true" />
-                {t("Resources", "Tài nguyên")}
-              </Button>
-            )}
-          </div>
-        )}
-
         <div className="min-w-0 space-y-6">
-          {activeTab === "player" && !isLearningWorkspace && activeModule && (
+          {activeTab === "player" && !isLearningWorkspace && courseContentModule && (
             <section className="space-y-5 rounded-2xl border bg-card p-5 shadow-sm sm:p-6">
               <div className="border-b pb-4">
                 <Badge variant="outline" className="font-mono">
-                  {t(`Module ${activeModule.position}`, `Module ${activeModule.position}`)}
+                  {t(
+                    `Module ${courseContentModule.position}`,
+                    `Module ${courseContentModule.position}`,
+                  )}
                 </Badge>
                 <h2 className="mt-2 text-xl font-bold tracking-tight sm:text-2xl">
-                  {activeModule.title}
+                  {courseContentModule.title}
                 </h2>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  {activeModule.description ||
+                  {courseContentModule.description ||
                     t(
                       "Select a learning item to enter the focused Learning Workspace.",
                       "Chọn một nội dung để mở Không gian học tập tập trung.",
@@ -549,7 +507,7 @@ export function StudentCourseSyllabus({
               <div>
                 <h3 className="text-sm font-semibold">{t("Lesson roadmap", "Lộ trình bài học")}</h3>
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                  {activeModule.items.map((item) => {
+                  {courseContentModule.items.map((item) => {
                     const badgeMeta = itemBadgeMeta(item.type, t);
                     return (
                       <button
