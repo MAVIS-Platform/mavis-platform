@@ -570,7 +570,7 @@ public class CourseSetupService {
                 blocks.addObject()
                         .put("service", svcName)
                         .put("label", svcName)
-                        .put("canScale", true)
+                        .put("canScale", !isStatefulContainer(el, svcName))
                         .put("initiallyStopped", initialStoppedServices.contains(svcName));
             }
 
@@ -680,6 +680,10 @@ public class CourseSetupService {
         int nextTopoRev = (lab.getStudioTopologyRevision() != null ? lab.getStudioTopologyRevision() : 0) + 1;
         lab.setStudioTopologySnapshot(topology.deepCopy());
         lab.setStudioTopologyRevision(nextTopoRev);
+        if (exercise == null && labStudioExercises != null
+                && refModel != null && refModel.getProject() != null && refModel.getSourceSnapshot() != null) {
+            exercise = seedDefaultExercise(json, lab, refModel, blocks);
+        }
         if (exercise != null) {
             ObjectNode exerciseSnapshot = json.createObjectNode();
             exerciseSnapshot.put("runtimeProjectId",
@@ -717,5 +721,67 @@ public class CourseSetupService {
                 nextTopoRev,
                 true,
                 setup(workspaceId));
+    }
+
+    private static boolean isStatefulContainer(ModelElement el, String svcName) {
+        String type = el.getElementType() == null ? "" : el.getElementType().toUpperCase();
+        if ("DATABASE".equals(type) || "DATA_STORE".equals(type) || "MESSAGE_BROKER".equals(type)) {
+            return true;
+        }
+        String lower = svcName == null ? "" : svcName.toLowerCase();
+        return lower.contains("postgres")
+                || lower.contains("mysql")
+                || lower.contains("mariadb")
+                || lower.contains("mongo")
+                || lower.contains("redis")
+                || lower.contains("kafka")
+                || lower.contains("zookeeper")
+                || lower.contains("rabbit")
+                || lower.endsWith("-db")
+                || lower.equals("db");
+    }
+
+    private com.mavis.common.entity.LabStudioExercise seedDefaultExercise(
+            ObjectMapper json, Assignment lab, ModelVersion refModel, ArrayNode blocks) {
+        Set<String> svcNames = new LinkedHashSet<>();
+        for (JsonNode b : blocks) {
+            String s = b.path("service").asText("");
+            if (!s.isBlank()) svcNames.add(s);
+        }
+        String baselinePath = svcNames.contains("api-gateway")
+                ? "/api/gateway/orders"
+                : svcNames.contains("orders") ? "/orders" : "/health";
+        ArrayNode baseline = json.createArrayNode();
+        baseline.addObject()
+                .put("method", "GET")
+                .put("path", baselinePath)
+                .put("expectedStatus", 200);
+        ObjectNode initialState = json.createObjectNode();
+        initialState.putArray("stoppedServices");
+        initialState.putArray("stoppedControllers");
+        ArrayNode allowed = json.createArrayNode();
+        for (String act : List.of("START", "STOP", "SCALE", "CONNECT", "DISCONNECT")) {
+            allowed.add(act);
+        }
+        ObjectNode criteria = json.createObjectNode();
+        criteria.put("maxErrorRatePercent", 0);
+        criteria.putNull("maxP95Ms");
+        criteria.putNull("requiredTraceEdge");
+        criteria.putArray("minReplicas");
+
+        var draft = com.mavis.common.entity.LabStudioExercise.builder()
+                .assignment(lab)
+                .runtimeProjectId(refModel.getProject().getId())
+                .runtimeModelId(refModel.getId())
+                .runtimeSnapshotId(refModel.getSourceSnapshot().getId())
+                .baselineRequests(baseline)
+                .initialState(initialState)
+                .allowedActions(allowed)
+                .successCriteria(criteria)
+                .instructions("Start Studio Live, observe service health and traces, perform the required scaling or recovery actions, capture Before/After snapshots, and seal the receipt.")
+                .revision(1)
+                .build();
+        var saved = labStudioExercises.save(draft);
+        return saved != null ? saved : draft;
     }
 }

@@ -321,6 +321,42 @@ class CourseSetupServiceTest {
         assertEquals("DRAFT", result.labs().get(0).state());
     }
 
+    @Test void autoConfigureStudioDisablesScaleOnStatefulContainersAndSeedsDefaultExercise() {
+        var elements = mock(ModelElementRepository.class);
+        var relationships = mock(ModelRelationshipRepository.class);
+        var exercises = mock(com.mavis.common.repository.LabStudioExerciseRepository.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(setup, "elements", elements);
+        org.springframework.test.util.ReflectionTestUtils.setField(setup, "relationships", relationships);
+        org.springframework.test.util.ReflectionTestUtils.setField(setup, "labStudioExercises", exercises);
+
+        ModelElement gw = ModelElement.builder().id(UUID.randomUUID()).modelVersion(model)
+                .elementType("SERVICE_CONTAINER").name("api-gateway").languageStack("Java").build();
+        ModelElement db = ModelElement.builder().id(UUID.randomUUID()).modelVersion(model)
+                .elementType("DATABASE").name("sandbox-postgres").build();
+        ModelElement broker = ModelElement.builder().id(UUID.randomUUID()).modelVersion(model)
+                .elementType("SERVICE_CONTAINER").name("sandbox-kafka").build();
+        when(elements.findByModelVersionId(modelId)).thenReturn(List.of(gw, db, broker));
+        when(relationships.findByModelVersionId(modelId)).thenReturn(List.of());
+        when(exercises.findByAssignmentId(assignmentId)).thenReturn(Optional.empty());
+        when(exercises.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(assignments.findLockedById(assignmentId)).thenReturn(Optional.of(lab));
+        when(configurations.findById(projectId)).thenReturn(Optional.empty());
+        when(assignments.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(jdbc.queryForObject(org.mockito.ArgumentMatchers.contains("runtime_scenarios"), eq(Integer.class), eq(projectId)))
+                .thenReturn(0);
+
+        setup.autoConfigureStudio(workspaceId, assignmentId);
+
+        var blocks = lab.getStudioTopologySnapshot().path("blocks");
+        assertEquals(3, blocks.size());
+        assertTrue(blocks.get(0).path("canScale").asBoolean(), "api-gateway should be scalable");
+        assertFalse(blocks.get(1).path("canScale").asBoolean(), "sandbox-postgres must not be scalable");
+        assertFalse(blocks.get(2).path("canScale").asBoolean(), "sandbox-kafka must not be scalable");
+        assertNotNull(lab.getStudioExerciseSnapshot(), "default exercise should be auto-seeded");
+        assertEquals("/api/gateway/orders",
+                lab.getStudioExerciseSnapshot().path("baselineRequests").get(0).path("path").asText());
+    }
+
     private RuntimeConfiguration configuration(boolean withTopology) {
         ObjectNode profile = mapper.createObjectNode();
         var applications = profile.putObject("applications");

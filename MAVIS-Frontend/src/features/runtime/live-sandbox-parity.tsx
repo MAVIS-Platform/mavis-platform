@@ -37,6 +37,15 @@ export type LiveParitySection =
   | "config"
   | "snapshots";
 
+export type LiveBlockAuthoringControls = {
+  initialStoppedServices: readonly string[];
+  initialStoppedControllers: readonly string[];
+  scalableServices: readonly string[];
+  onToggleInitialStopped: (service: string, isController: boolean) => void;
+  onToggleScalable: (service: string) => void;
+  busy?: boolean | undefined;
+};
+
 type LiveSandboxParityProps = {
   data: Studio;
   selected: string;
@@ -50,6 +59,7 @@ type LiveSandboxParityProps = {
   sections?: readonly LiveParitySection[];
   compact?: boolean;
   label?: string;
+  authoring?: LiveBlockAuthoringControls | undefined;
 };
 
 const LIVE_SCENARIOS = [
@@ -162,6 +172,7 @@ export function LiveSandboxParity({
   sections,
   compact = false,
   label = "Live capability parity",
+  authoring,
 }: LiveSandboxParityProps) {
   const [search, setSearch] = useState("");
   const [draft, setDraft] = useState<string | null>(null);
@@ -324,6 +335,7 @@ export function LiveSandboxParity({
           title="Block library"
           capability={capability("prepared-block")}
           icon={<Boxes aria-hidden="true" className="size-3.5" />}
+          compact={compact}
         >
           <label className="relative block">
             <Search
@@ -339,41 +351,101 @@ export function LiveSandboxParity({
               className="h-8 rounded-md border-slate-700 bg-slate-950 pl-8 text-xs"
             />
           </label>
-          <ul className="max-h-48 space-y-1.5 overflow-y-auto pr-0.5">
+          <ul className="max-h-72 space-y-1.5 overflow-y-auto pr-0.5">
             {visibleBlocks.map((block) => {
               const live = runningReplicas(data, block.service);
+              const isSelected = selected === block.service;
+              const startsStopped = authoring
+                ? authoring.initialStoppedServices.includes(block.service)
+                : block.initiallyStopped === true;
+              const isScalable = authoring
+                ? authoring.scalableServices.includes(block.service)
+                : block.canScale === true;
+              const statusDot =
+                live === undefined
+                  ? startsStopped
+                    ? "bg-amber-400"
+                    : "bg-sky-400"
+                  : live === 0
+                    ? "bg-rose-400"
+                    : "bg-emerald-400";
               return (
                 <li
                   key={block.service}
-                  className="flex flex-wrap items-center gap-1.5 rounded-md border border-slate-800 bg-slate-950/60 p-1.5 text-[11px]"
+                  className={`space-y-1 rounded-md border p-1.5 text-[11px] transition-colors ${
+                    isSelected
+                      ? "border-sky-500/60 bg-sky-500/10"
+                      : "border-slate-800 bg-slate-950/60 hover:border-slate-700"
+                  }`}
                 >
-                  <button
-                    type="button"
-                    onClick={() => onSelect(block.service)}
-                    aria-label={`Inspect ${block.label}`}
-                    className="mr-auto max-w-full truncate font-semibold text-slate-100 hover:text-sky-200"
-                  >
-                    {block.label}
-                  </button>
-                  <span className="font-mono text-slate-400">
-                    {live === undefined ? "Waiting" : `${live} pods`}
-                  </span>
-                  <button
-                    type="button"
-                    disabled={busy || live === undefined || live > 0}
-                    onClick={() => void command("START", block.service)}
-                    className="h-5 rounded border border-slate-700 px-1 text-[10px] font-semibold text-slate-200 disabled:opacity-40"
-                  >
-                    Add
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy || !live}
-                    onClick={() => void command("STOP", block.service)}
-                    className="h-5 rounded border border-slate-700 px-1 text-[10px] font-semibold text-slate-200 disabled:opacity-40"
-                  >
-                    Remove
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <span className={`size-1.5 shrink-0 rounded-full ${statusDot}`} aria-hidden="true" />
+                    <button
+                      type="button"
+                      onClick={() => onSelect(block.service)}
+                      aria-label={`Inspect ${block.label}`}
+                      className="mr-auto max-w-full truncate font-semibold text-slate-100 hover:text-sky-200"
+                    >
+                      {block.label}
+                    </button>
+                    <span className="font-mono text-[10px] text-slate-400">
+                      {live === undefined
+                        ? startsStopped
+                          ? "Fault"
+                          : "Ready"
+                        : `${live}×`}
+                    </span>
+                    {!authoring || live !== undefined ? (
+                      <>
+                        <button
+                          type="button"
+                          disabled={busy || live === undefined || live > 0}
+                          onClick={() => void command("START", block.service)}
+                          className="h-5 rounded border border-slate-700 px-1.5 text-[10px] font-semibold text-slate-200 hover:border-emerald-500/50 hover:text-emerald-200 disabled:opacity-35"
+                        >
+                          {compact ? "Start" : "Add"}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busy || !live}
+                          onClick={() => void command("STOP", block.service)}
+                          className="h-5 rounded border border-slate-700 px-1.5 text-[10px] font-semibold text-slate-200 hover:border-rose-500/50 hover:text-rose-200 disabled:opacity-35"
+                        >
+                          {compact ? "Stop" : "Remove"}
+                        </button>
+                      </>
+                    ) : null}
+                  </div>
+                  {authoring && (
+                    <div className="flex items-center gap-1 pt-0.5">
+                      <button
+                        type="button"
+                        disabled={authoring.busy}
+                        onClick={() => authoring.onToggleInitialStopped(block.service, false)}
+                        title="Toggle whether students start with this service stopped (initial fault)"
+                        className={`h-5 rounded border px-1.5 text-[9.5px] font-medium transition-colors ${
+                          startsStopped
+                            ? "border-amber-500/50 bg-amber-500/15 text-amber-200"
+                            : "border-slate-800 bg-slate-900/80 text-slate-400 hover:text-slate-200"
+                        }`}
+                      >
+                        {startsStopped ? "Starts Down" : "Starts Up"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={authoring.busy}
+                        onClick={() => authoring.onToggleScalable(block.service)}
+                        title="Allow students to scale this service (1–8 replicas)"
+                        className={`h-5 rounded border px-1.5 text-[9.5px] font-medium transition-colors ${
+                          isScalable
+                            ? "border-sky-500/40 bg-sky-500/15 text-sky-200"
+                            : "border-slate-800 bg-slate-900/80 text-slate-500 hover:text-slate-300"
+                        }`}
+                      >
+                        {isScalable ? "Scalable" : "Fixed"}
+                      </button>
+                    </div>
+                  )}
                 </li>
               );
             })}
@@ -390,34 +462,56 @@ export function LiveSandboxParity({
                 {topology?.connections.map((link) => {
                   const linkRunning = runningReplicas(data, link.controllerService);
                   const connected = (linkRunning ?? 0) > 0;
+                  const startsCut = authoring
+                    ? authoring.initialStoppedControllers.includes(link.controllerService)
+                    : link.initiallyStopped === true;
                   return (
                     <li
                       key={`${link.from}:${link.to}:${link.controllerService}`}
-                      className="flex items-center justify-between gap-1.5 rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1 text-[10.5px]"
+                      className="space-y-1 rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1.5 text-[10.5px]"
                     >
-                      <div className="min-w-0">
-                        <p className="truncate font-mono text-slate-200">
-                          {link.from} → {link.to}
-                        </p>
-                        <p className="truncate font-mono text-[9.5px] text-slate-500">
-                          {link.controllerService}
-                          {link.protocol ? ` · ${link.protocol}` : ""}
-                        </p>
+                      <div className="flex items-center justify-between gap-1.5">
+                        <div className="min-w-0">
+                          <p className="truncate font-mono text-slate-200">
+                            {link.from} → {link.to}
+                          </p>
+                          <p className="truncate font-mono text-[9.5px] text-slate-500">
+                            {link.controllerService}
+                            {link.protocol ? ` · ${link.protocol}` : ""}
+                          </p>
+                        </div>
+                        {linkRunning !== undefined ? (
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() =>
+                              void command(connected ? "STOP" : "START", link.controllerService)
+                            }
+                            className={`h-6 shrink-0 rounded border px-2 text-[10px] font-semibold transition-colors disabled:opacity-40 ${
+                              connected
+                                ? "border-amber-500/40 bg-amber-500/15 text-amber-200 hover:bg-amber-500/25"
+                                : "border-emerald-500/40 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25"
+                            }`}
+                          >
+                            {connected ? "Disconnect" : "Connect"}
+                          </button>
+                        ) : authoring ? (
+                          <button
+                            type="button"
+                            disabled={authoring.busy}
+                            onClick={() =>
+                              authoring.onToggleInitialStopped(link.controllerService, true)
+                            }
+                            className={`h-5 shrink-0 rounded border px-1.5 text-[9.5px] font-medium ${
+                              startsCut
+                                ? "border-amber-500/50 bg-amber-500/15 text-amber-200"
+                                : "border-slate-800 bg-slate-900/80 text-slate-400"
+                            }`}
+                          >
+                            {startsCut ? "Starts Cut" : "Connected"}
+                          </button>
+                        ) : null}
                       </div>
-                      <button
-                        type="button"
-                        disabled={busy || linkRunning === undefined}
-                        onClick={() =>
-                          void command(connected ? "STOP" : "START", link.controllerService)
-                        }
-                        className={`h-6 shrink-0 rounded border px-2 text-[10px] font-semibold transition-colors disabled:opacity-40 ${
-                          connected
-                            ? "border-amber-500/40 bg-amber-500/15 text-amber-200 hover:bg-amber-500/25"
-                            : "border-emerald-500/40 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25"
-                        }`}
-                      >
-                        {connected ? "Disconnect" : "Connect"}
-                      </button>
                     </li>
                   );
                 })}
@@ -444,6 +538,7 @@ export function LiveSandboxParity({
           title={`Inspector · ${selectedBlock?.label ?? (selected || "service")}`}
           capability={capability("service-actions")}
           icon={<Server aria-hidden="true" className="size-3.5" />}
+          compact={compact}
         >
           <div className="flex flex-wrap items-baseline justify-between gap-1 text-[11px]">
             <span className="font-mono text-slate-300">{selected || "—"}</span>
@@ -456,7 +551,7 @@ export function LiveSandboxParity({
                     : "font-semibold text-emerald-300"
               }
             >
-              {running === undefined ? "Waiting" : running === 0 ? "Stopped" : "Running"}
+              {running === undefined ? "Preview" : running === 0 ? "Stopped" : "Running"}
             </span>
           </div>
           <p className="font-mono text-[10.5px] text-slate-400">
@@ -465,12 +560,14 @@ export function LiveSandboxParity({
           <div className="space-y-1.5">
             <div className="flex items-center justify-between gap-1 text-[10px] text-slate-400">
               <span className="flex items-center gap-1">
-                Custom replicas (Live 1–8)
-                <span
-                  className={`rounded-full border px-1.5 py-0.5 font-mono text-[8.5px] font-semibold ${BADGE[capability("replicas-1-8").state]}`}
-                >
-                  {capability("replicas-1-8").state}
-                </span>
+                {compact ? "Replicas (1–8)" : "Custom replicas (Live 1–8)"}
+                {!compact && (
+                  <span
+                    className={`rounded-full border px-1.5 py-0.5 font-mono text-[8.5px] font-semibold ${BADGE[capability("replicas-1-8").state]}`}
+                  >
+                    {capability("replicas-1-8").state}
+                  </span>
+                )}
               </span>
               <input
                 key={`${selected}:${running}`}
@@ -545,18 +642,20 @@ export function LiveSandboxParity({
               type="button"
               disabled={!canScale || busy || running === undefined || running === 0 || running >= 8}
               onClick={() => void command("SCALE", selected, (running ?? 0) + 1)}
-              className="h-7 min-w-0 shrink-0 whitespace-nowrap rounded border border-sky-500/40 bg-sky-500/15 px-2 text-[11px] font-semibold text-sky-200 transition-colors hover:bg-sky-500/25 disabled:opacity-40"
+              className={`h-7 min-w-0 shrink-0 whitespace-nowrap rounded border border-sky-500/40 bg-sky-500/15 px-2 text-[11px] font-semibold text-sky-200 transition-colors hover:bg-sky-500/25 disabled:opacity-40 ${compact ? "col-span-2" : ""}`}
             >
-              Clone
+              {compact ? "+1 Clone Replica" : "Clone"}
             </button>
-            <button
-              type="button"
-              disabled
-              title={capability("delete-block").reason}
-              className="flex h-7 min-w-0 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded border border-red-500/40 bg-red-500/15 px-2 text-[11px] font-semibold text-red-200 opacity-40"
-            >
-              <Trash2 aria-hidden="true" className="size-3 shrink-0" /> Delete
-            </button>
+            {!compact && (
+              <button
+                type="button"
+                disabled
+                title={capability("delete-block").reason}
+                className="flex h-7 min-w-0 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded border border-red-500/40 bg-red-500/15 px-2 text-[11px] font-semibold text-red-200 opacity-40"
+              >
+                <Trash2 aria-hidden="true" className="size-3 shrink-0" /> Delete
+              </button>
+            )}
           </div>
           {draft !== null && (
             <p className="text-[10px] text-slate-500">Press Enter or leave the field to apply.</p>
@@ -566,9 +665,10 @@ export function LiveSandboxParity({
 
       {show("hardware") && (
         <CapabilitySection
-          title="Hardware & Stress Simulation"
+          title={compact ? "Container Resources" : "Hardware & Stress Simulation"}
           capability={capability("hardware-stress")}
           icon={<Cpu aria-hidden="true" className="size-3.5" />}
+          compact={compact}
         >
           <div className="grid grid-cols-2 gap-1.5 text-[10px]">
             <ReadOnlyFact label="vCPU / pod" value={limits?.cpus ?? "—"} />
@@ -601,20 +701,23 @@ export function LiveSandboxParity({
 
       {show("resilience") && (
         <CapabilitySection
-          title="Resilience Policies"
+          title="Resilience Signals"
           capability={capability("resilience-policy")}
           icon={<ShieldCheck aria-hidden="true" className="size-3.5" />}
+          compact={compact}
         >
-          <div className="grid grid-cols-2 gap-1.5">
-            <ObservationCard label="Circuit Breaker" observed={circuitObserved} />
-            <ObservationCard label="Rate Limiter" observed={rateLimited} />
-            <ObservationCard label="Retry / Bulkhead" observed={retryObserved} />
-            <ObservationCard label="L1 Read Cache" observed={cacheObserved} />
+          <div className={compact ? "space-y-1" : "grid grid-cols-2 gap-1.5"}>
+            <ObservationCard label="Circuit Breaker" observed={circuitObserved} compact={compact} />
+            <ObservationCard label="Rate Limiter" observed={rateLimited} compact={compact} />
+            <ObservationCard label="Retry / Bulkhead" observed={retryObserved} compact={compact} />
+            <ObservationCard label="L1 Read Cache" observed={cacheObserved} compact={compact} />
           </div>
-          <p className="text-[11px] leading-relaxed text-slate-400">
-            Read-only observations from real logs and spans. Live never toggles application policy
-            code; the curated repository owns it.
-          </p>
+          {!compact && (
+            <p className="text-[11px] leading-relaxed text-slate-400">
+              Read-only observations from real logs and spans. Live never toggles application policy
+              code; the curated repository owns it.
+            </p>
+          )}
         </CapabilitySection>
       )}
 
@@ -623,9 +726,10 @@ export function LiveSandboxParity({
           title="Load & capacity"
           capability={capability("load-capacity")}
           icon={<Gauge aria-hidden="true" className="size-3.5" />}
+          compact={compact}
         >
           <div className="grid grid-cols-2 gap-1.5 text-[11px]">
-            <Metric label="Requests measured" value={requestCount?.toLocaleString()} />
+            <Metric label="Requests" value={requestCount?.toLocaleString()} />
             <Metric
               label="p95 latency"
               value={p95 === undefined ? undefined : `${Number(p95.toFixed(1))} ms`}
@@ -635,26 +739,23 @@ export function LiveSandboxParity({
               value={errorRate === undefined ? undefined : `${Number(errorRate.toFixed(2))}%`}
             />
             <Metric
-              label="Replicas after action"
+              label="Replicas"
               value={lastMeasured?.replicasAfter?.toLocaleString()}
             />
           </div>
-          {lastMeasured && (
-            <p className="text-[10px] text-slate-500">Session-wide last confirmed measurement.</p>
-          )}
           {failedRequests !== undefined && requestCount !== undefined && (
-            <p className="text-[11px] text-slate-400">
+            <p className="text-[10.5px] text-slate-400">
               <span className="font-mono text-slate-200">
                 {Math.max(0, requestCount - failedRequests).toLocaleString()}
               </span>{" "}
-              handled ·{" "}
+              ok ·{" "}
               <span className="font-mono text-rose-300">
                 {failedRequests.toLocaleString(undefined, { maximumFractionDigits: 1 })}
               </span>{" "}
-              failed in the last confirmed measurement.
+              failed
             </p>
           )}
-          {!lastMeasured && (
+          {!lastMeasured && !compact && (
             <p className="text-[11px] text-slate-400">
               Run a confirmed START, STOP or SCALE on a replayable GET/HEAD workload to populate
               measured values.
@@ -740,11 +841,13 @@ function CapabilitySection({
   title,
   capability,
   icon,
+  compact = false,
   children,
 }: {
   title: string;
   capability: LiveCapability;
   icon: ReactNode;
+  compact?: boolean | undefined;
   children: ReactNode;
 }) {
   return (
@@ -759,24 +862,38 @@ function CapabilitySection({
           </span>
           <h4 className="truncate text-xs font-semibold text-slate-100">{title}</h4>
         </div>
-        <span
-          className={`rounded-full border px-2 py-0.5 font-mono text-[9.5px] font-semibold ${BADGE[capability.state]}`}
-        >
-          {capability.state}
-        </span>
+        {!compact && (
+          <span
+            className={`rounded-full border px-2 py-0.5 font-mono text-[9.5px] font-semibold ${BADGE[capability.state]}`}
+          >
+            {capability.state}
+          </span>
+        )}
       </div>
       {children}
-      <p className="text-[10.5px] leading-relaxed text-slate-500">{capability.reason}</p>
+      {!compact && (
+        <p className="text-[10.5px] leading-relaxed text-slate-500">{capability.reason}</p>
+      )}
     </section>
   );
 }
 
-function ObservationCard({ label, observed }: { label: string; observed: boolean }) {
+function ObservationCard({
+  label,
+  observed,
+  compact = false,
+}: {
+  label: string;
+  observed: boolean;
+  compact?: boolean | undefined;
+}) {
   return (
-    <div className="flex items-center justify-between gap-1 rounded border border-slate-800 bg-slate-950/70 px-2 py-1 text-[10px]">
+    <div className="flex items-center justify-between gap-2 rounded border border-slate-800 bg-slate-950/70 px-2 py-1 text-[10px]">
       <span className="truncate text-slate-300">{label}</span>
-      <span className={observed ? "font-semibold text-emerald-300" : "text-slate-500"}>
-        {observed ? "Observed" : "Not observed"}
+      <span
+        className={`shrink-0 whitespace-nowrap ${observed ? "font-semibold text-emerald-300" : "text-slate-500"}`}
+      >
+        {observed ? "Observed" : compact ? "—" : "Not observed"}
       </span>
     </div>
   );
