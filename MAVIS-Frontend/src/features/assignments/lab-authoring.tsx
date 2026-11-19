@@ -235,53 +235,8 @@ export function LabAuthoring() {
 
   const hubContent = (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-card p-2">
-        {section === "create" ? (
-          <nav
-            aria-label={t("Lab creation steps", "Các bước tạo Lab")}
-            className="flex flex-wrap items-center gap-1"
-          >
-            {navItems.map((item, index) => {
-              const meta = TAB_LABELS[item.id];
-              const active = tab === item.id;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  disabled={!item.enabled}
-                  onClick={() => navigate(item.id)}
-                  aria-current={active ? "step" : undefined}
-                  className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors ${
-                    active
-                      ? "bg-primary text-primary-foreground shadow-2xs"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                  } disabled:cursor-not-allowed disabled:opacity-40`}
-                >
-                  {item.done ? (
-                    <CheckCircle2
-                      className={`size-3.5 shrink-0 ${
-                        active ? "text-primary-foreground" : "text-emerald-600 dark:text-emerald-400"
-                      }`}
-                      aria-hidden="true"
-                    />
-                  ) : (
-                    <span
-                      className={`grid size-4 shrink-0 place-items-center rounded-full border text-[10px] font-semibold ${
-                        active ? "border-primary-foreground/60" : "border-current/40"
-                      }`}
-                      aria-hidden="true"
-                    >
-                      {index + 1}
-                    </span>
-                  )}
-                  <span className="truncate">
-                    {t(meta.en, meta.vi)}
-                  </span>
-                </button>
-              );
-            })}
-          </nav>
-        ) : (
+      <div className="space-y-2 rounded-xl border bg-card p-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <nav
             aria-label={t("Lab workspace", "Không gian Lab")}
             className="flex flex-wrap items-center gap-1.5"
@@ -304,11 +259,9 @@ export function LabAuthoring() {
               );
             })}
           </nav>
-        )}
 
-        <div className="flex flex-wrap items-center gap-1.5">
           {section === "create" && (
-            <>
+            <div className="flex flex-wrap items-center gap-1.5">
               {assignment && (
                 <Badge variant={setupLab?.published ? "success" : "secondary"}>
                   {setupLab?.published ? t("Published", "Đã công bố") : t("Draft", "Bản nháp")}
@@ -365,26 +318,56 @@ export function LabAuthoring() {
                   </Link>
                 </Button>
               )}
-              {sectionItems
-                .filter((item) => item.id !== "create")
-                .map((item) => {
-                  const Icon = item.icon;
-                  return (
-                    <Button
-                      key={item.id}
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => changeSection(item.id)}
-                    >
-                      <Icon className="mr-1.5 size-3.5" aria-hidden="true" />
-                      {t(item.en, item.vi)}
-                    </Button>
-                  );
-                })}
-            </>
+            </div>
           )}
         </div>
+
+        {section === "create" && (
+          <nav
+            aria-label={t("Lab creation steps", "Các bước tạo Lab")}
+            className="flex flex-wrap items-center gap-1 border-t pt-2"
+          >
+            {navItems.map((item, index) => {
+              const meta = TAB_LABELS[item.id];
+              const active = tab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  disabled={!item.enabled}
+                  onClick={() => navigate(item.id)}
+                  aria-current={active ? "step" : undefined}
+                  className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors ${
+                    active
+                      ? "bg-primary text-primary-foreground shadow-2xs"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  } disabled:cursor-not-allowed disabled:opacity-40`}
+                >
+                  {item.done ? (
+                    <CheckCircle2
+                      className={`size-3.5 shrink-0 ${
+                        active ? "text-primary-foreground" : "text-emerald-600 dark:text-emerald-400"
+                      }`}
+                      aria-hidden="true"
+                    />
+                  ) : (
+                    <span
+                      className={`grid size-4 shrink-0 place-items-center rounded-full border text-[10px] font-semibold ${
+                        active ? "border-primary-foreground/60" : "border-current/40"
+                      }`}
+                      aria-hidden="true"
+                    >
+                      {index + 1}
+                    </span>
+                  )}
+                  <span className="truncate">
+                    {t(meta.en, meta.vi)}
+                  </span>
+                </button>
+              );
+            })}
+          </nav>
+        )}
       </div>
       {section === "create" ? content : section === "library" ? <Assignments embedded /> : <TheoryLibrary />}
     </div>

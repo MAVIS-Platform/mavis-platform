@@ -139,18 +139,10 @@ export function TheoryLibrary() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="max-w-2xl text-sm text-muted-foreground">
-            {t(
-              "Reusable Markdown lessons for this class. Write or import a .md file once, then attach it to any Lab.",
-              "Kho bài giảng Markdown dùng chung cho lớp. Soạn hoặc nhập file .md một lần, sau đó gắn vào bất kỳ bài Lab nào.",
-            )}
-          </p>
-          <p className="mt-1 text-xs tabular-nums text-muted-foreground">
-            {assets.data?.length ?? 0} {t("lessons", "bài học")}
-          </p>
-        </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-semibold tracking-tight">
+          {t("Theory Library", "Thư viện lý thuyết")}
+        </h2>
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
             <Search
@@ -158,7 +150,7 @@ export function TheoryLibrary() {
               aria-hidden="true"
             />
             <Input
-              className="h-9 w-full pl-8 sm:w-56"
+              className="h-9 w-full pl-8 sm:w-64"
               value={search}
               placeholder={t("Search lessons", "Tìm bài học")}
               aria-label={t("Search lessons", "Tìm bài học")}
@@ -248,31 +240,23 @@ export function TheoryLibrary() {
             <span>{t("Lesson title", "Tiêu đề bài học")}</span>
             <Input
               value={draft.title}
-              placeholder={t(
-                "e.g. Service boundaries and resilience patterns",
-                "Ví dụ: Ranh giới dịch vụ và mẫu chịu lỗi",
-              )}
               onChange={(event) => setDraft({ ...draft, title: event.target.value })}
             />
           </label>
 
-          <div className="grid items-start gap-4 lg:grid-cols-2">
+          <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-2">
             <label className="flex flex-col gap-1.5 text-xs font-medium">
               <span>{t("Lesson body (Markdown)", "Nội dung bài học (Markdown)")}</span>
               <Textarea
-                rows={12}
-                className="h-80 resize-none font-mono text-sm leading-6"
+                rows={14}
+                className="h-96 w-full resize-none rounded-xl border bg-background p-4 font-mono text-sm leading-6 shadow-2xs"
                 value={draft.body}
-                placeholder={t(
-                  "# Lesson heading\n\nWrite or import Markdown content for students…",
-                  "# Tiêu đề bài giảng\n\nViết hoặc nhập file Markdown cho sinh viên…",
-                )}
                 onChange={(event) => setDraft({ ...draft, body: event.target.value })}
               />
             </label>
             <div className="flex flex-col gap-1.5 text-xs font-medium">
               <span>{t("Student Preview", "Xem trước như sinh viên")}</span>
-              <div className="h-80 overflow-y-auto rounded-lg border bg-background p-4">
+              <div className="h-96 w-full overflow-y-auto rounded-xl border bg-background p-4 shadow-2xs">
                 {draft.body.trim() ? (
                   <MarkdownPreview markdown={draft.body} />
                 ) : (
@@ -314,22 +298,11 @@ export function TheoryLibrary() {
         {assets.isPending ? (
           <p className="p-4 text-sm text-muted-foreground">{t("Loading lessons…", "Đang tải bài học…")}</p>
         ) : visible.length === 0 ? (
-          <div className="space-y-2 p-4">
-            <p className="text-sm text-muted-foreground">
-              {assets.data?.length
-                ? t("No lesson matches this search.", "Không có bài nào khớp tìm kiếm.")
-                : t(
-                    "The library is empty. Create the first lesson or save one from a Lab's Theory step.",
-                    "Thư viện đang trống. Tạo bài đầu tiên hoặc lưu từ bước Lý thuyết của Lab.",
-                  )}
-            </p>
-            {!assets.data?.length && (
-              <Button type="button" size="sm" variant="outline" onClick={startNew}>
-                <Plus className="mr-1 size-4" aria-hidden="true" />
-                {t("Create the first lesson", "Tạo bài đầu tiên")}
-              </Button>
-            )}
-          </div>
+          <p className="p-6 text-sm text-muted-foreground">
+            {assets.data?.length
+              ? t("No lesson matches this search.", "Không có bài nào khớp tìm kiếm.")
+              : t("No lessons yet.", "Chưa có bài học nào.")}
+          </p>
         ) : (
           <ul className="divide-y">
             {visible.map((asset) => (
