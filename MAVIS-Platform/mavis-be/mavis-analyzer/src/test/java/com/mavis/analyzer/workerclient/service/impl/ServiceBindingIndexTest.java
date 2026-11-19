@@ -27,4 +27,17 @@ class ServiceBindingIndexTest {
         Files.writeString(root.resolve("mavis.bindings.json"),"{\"schemaVersion\":\"1.0\",\"bindings\":[{\"service\":\"s\",\"projects\":[\"../outside\"],\"sourceRoots\":[],\"endpoints\":[]}]}");
         assertThrows(java.io.IOException.class,()->ServiceBindingIndex.load(root));
     }
+    @Test void loadsBindingsFromSingleGitHubWrapperDirectoryAndMatchesPrefixedPaths()throws Exception{
+        Files.writeString(root.resolve(".mavis-extraction-seal"),"hash\ntree\n");
+        Path wrapper=Files.createDirectory(root.resolve("MAVIS-Platform-mavis-studio-live-demo-582811f"));
+        Files.writeString(wrapper.resolve("mavis.bindings.json"),"""
+            {"schemaVersion":"1.0","bindings":[
+              {"service":"orders","projects":["orders/Orders.csproj"],"sourceRoots":["orders"],"endpoints":["http://orders:8080"]}]}
+            """);
+        var index=ServiceBindingIndex.load(root);
+        assertEquals(64,index.hash().length());
+        assertEquals(Set.of("orders"),index.project("orders/Orders.csproj"));
+        assertEquals(Set.of("orders"),index.project("MAVIS-Platform-mavis-studio-live-demo-582811f/orders/Orders.csproj"));
+        assertEquals(Set.of("orders"),index.source("MAVIS-Platform-mavis-studio-live-demo-582811f/orders/Program.cs"));
+    }
 }

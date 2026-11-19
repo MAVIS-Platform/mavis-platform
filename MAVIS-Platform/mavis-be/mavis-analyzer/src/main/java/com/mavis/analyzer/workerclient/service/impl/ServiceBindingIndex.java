@@ -14,10 +14,29 @@ public final class ServiceBindingIndex {
     public record Document(String schemaVersion,List<Binding> bindings) {}
     private final List<Binding> bindings;
     private final String hash;
-    private ServiceBindingIndex(List<Binding> bindings,String hash){this.bindings=bindings;this.hash=hash;}
+    private final String rootPrefix;
+    private ServiceBindingIndex(List<Binding> bindings,String hash,String rootPrefix){this.bindings=bindings;this.hash=hash;this.rootPrefix=rootPrefix==null?"":rootPrefix;}
     public static ServiceBindingIndex load(Path root)throws IOException {
         Path file=root.resolve("mavis.bindings.json");
-        if(!Files.exists(file,LinkOption.NOFOLLOW_LINKS))return new ServiceBindingIndex(List.of(),null);
+        String prefix="";
+        if(!Files.exists(file,LinkOption.NOFOLLOW_LINKS) && Files.isDirectory(root,LinkOption.NOFOLLOW_LINKS)) {
+            List<Path> children;
+            try(var entries=Files.list(root)){
+                children=entries.filter(p->{
+                    String name=p.getFileName().toString();
+                    return !".mavis-extraction-seal".equalsIgnoreCase(name) && !"__MACOSX".equalsIgnoreCase(name) && !name.startsWith(".");
+                }).limit(2).toList();
+            }
+            if(children.size()==1) {
+                Path child=children.get(0);
+                if(!Files.isSymbolicLink(child) && Files.isDirectory(child,LinkOption.NOFOLLOW_LINKS)
+                        && Files.exists(child.resolve("mavis.bindings.json"),LinkOption.NOFOLLOW_LINKS)) {
+                    file=child.resolve("mavis.bindings.json");
+                    prefix=child.getFileName().toString()+"/";
+                }
+            }
+        }
+        if(!Files.exists(file,LinkOption.NOFOLLOW_LINKS))return new ServiceBindingIndex(List.of(),null,"");
         if(Files.isSymbolicLink(file) || !Files.isRegularFile(file,LinkOption.NOFOLLOW_LINKS))throw new IOException("Invalid service binding source");
         byte[] bytes;try(var stream=Files.newInputStream(file,LinkOption.NOFOLLOW_LINKS)){bytes=stream.readNBytes(262145);}
         if(bytes.length>262144)throw new IOException("Service bindings exceed budget");
@@ -30,14 +49,15 @@ public final class ServiceBindingIndex {
             for(String p:b.projects())path(p);for(String p:b.sourceRoots())path(p);
             for(String endpoint:b.endpoints())if(alias(endpoint)==null)throw new IOException("Invalid endpoint binding");
         }
-        try{return new ServiceBindingIndex(List.copyOf(document.bindings()),HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)));}
+        try{return new ServiceBindingIndex(List.copyOf(document.bindings()),HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)),prefix);}
         catch(java.security.NoSuchAlgorithmException e){throw new IllegalStateException(e);}
     }
     public String hash(){return hash;}
-    public Set<String> project(String project){var result=new TreeSet<String>();for(var b:bindings)if(b.projects().contains(project))result.add(b.service());return result;}
+    public Set<String> project(String project){String key=stripRoot(project);var result=new TreeSet<String>();for(var b:bindings)if(b.projects().contains(key))result.add(b.service());return result;}
     public Set<String> endpoint(String endpoint){String key=alias(endpoint);var result=new TreeSet<String>();if(key!=null)for(var b:bindings)if(b.endpoints().stream().anyMatch(e->key.equals(alias(e))))result.add(b.service());return result;}
-    public Set<String> source(String relative){int longest=-1;var result=new TreeSet<String>();for(var b:bindings)for(String prefix:b.sourceRoots())if(relative.equals(prefix)||relative.startsWith(prefix+"/")){
+    public Set<String> source(String relative){String key=stripRoot(relative);int longest=-1;var result=new TreeSet<String>();for(var b:bindings)for(String prefix:b.sourceRoots())if(key.equals(prefix)||key.startsWith(prefix+"/")){
         if(prefix.length()>longest){longest=prefix.length();result.clear();}if(prefix.length()==longest)result.add(b.service());}return result;}
+    private String stripRoot(String value){if(value==null)return "";String normalized=value.replace('\\','/');return !rootPrefix.isEmpty()&&normalized.startsWith(rootPrefix)?normalized.substring(rootPrefix.length()):normalized;}
     public static String alias(String value){
         if(value==null)return null;
         try{URI uri=URI.create(value.contains("://")?value:"http://"+value);String host=uri.getHost();

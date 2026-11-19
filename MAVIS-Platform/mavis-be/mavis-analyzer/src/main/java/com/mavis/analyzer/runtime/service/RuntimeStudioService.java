@@ -325,7 +325,8 @@ public class RuntimeStudioService {
     private JsonNode view(RuntimeSession session) {
         boolean interactive = session.getScenarioConfig() != null && session.getScenarioConfig().path("interactiveStudio").asBoolean();
         ObjectNode result = interactive ? control(session) : mapper.createObjectNode().put("finishRequested", false);
-        if (!result.has("actions")) result.putArray("actions");
+        if (!result.has("finishRequested") || !result.get("finishRequested").isBoolean()) result.put("finishRequested", false);
+        if (!result.has("actions") || !result.get("actions").isArray()) result.putArray("actions");
         for(JsonNode snapshot:result.withArray("snapshots"))
             ((ObjectNode)snapshot).remove(java.util.List.of("telemetry","actions","imageData"));
         String execution = session.getExecutionStatus() == null ? "UNKNOWN" : session.getExecutionStatus();

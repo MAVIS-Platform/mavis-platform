@@ -200,4 +200,18 @@ class RuntimeStudioServiceTest {
         assertEquals("CONFIRMED", state.path("cleanupStatus").asText());
         assertFalse(state.has("topology"));
     }
+
+    @Test void failedSessionWithReceiptOnlyControlStillReturnsValidState() {
+        session.setExecutionStatus("FAILED");
+        session.setCleanupStatus("CONFIRMED");
+        session.setStudioControl(mapper.createObjectNode().put("receiptSignature", "hmac-sha256:abc"));
+        when(sessions.findById(id)).thenReturn(Optional.of(session));
+
+        var state = service.state(id);
+
+        assertEquals("FAILED", state.path("executionStatus").asText());
+        assertTrue(state.get("finishRequested").isBoolean());
+        assertFalse(state.get("finishRequested").asBoolean());
+        assertTrue(state.get("actions").isArray());
+    }
 }

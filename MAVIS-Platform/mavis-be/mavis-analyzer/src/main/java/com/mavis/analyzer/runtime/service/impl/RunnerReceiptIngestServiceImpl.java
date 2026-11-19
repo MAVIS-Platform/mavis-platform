@@ -133,6 +133,8 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
             String signature=runnerServiceAuthGuard.requireReceiptSignature(incomingDigest);
             if(signature!=null) {
                 ObjectNode control=session.getStudioControl() instanceof ObjectNode existing?existing.deepCopy():objectMapper.createObjectNode();
+                if (!control.has("finishRequested") || !control.get("finishRequested").isBoolean()) control.put("finishRequested", false);
+                if (!control.has("actions") || !control.get("actions").isArray()) control.putArray("actions");
                 control.put("receiptSignature",signature);
                 session.setStudioControl(control);
             }

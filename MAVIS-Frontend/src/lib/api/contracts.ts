@@ -689,8 +689,8 @@ export const contracts = {
       memoryMiB:z.number().optional(),cpus:z.number().optional(),timeoutSeconds:z.number().optional(),
       services:z.record(z.string(), z.object({runtime:z.string(),containerPort:z.number(),readinessPath:z.string()})).optional(),
     }).optional(),
-    receiptDigest:z.string().nullable().optional(),telemetryReceivedAt:z.string().optional(),
-    receiptSignature:z.string().optional(),
+    receiptDigest:z.string().nullable().optional(),telemetryReceivedAt:z.string().nullable().optional(),
+    receiptSignature:z.string().nullable().optional(),
     telemetry:z.object({
       observedAt:z.string(),services:z.array(z.object({
         service:z.string(),replicas:z.number(),runningReplicas:z.number(),
@@ -704,11 +704,11 @@ export const contracts = {
     }).optional(),
     snapshots:z.array(z.object({id:z.string(),sessionId:z.string(),sourceSnapshotId:z.string(),modelVersionId:z.string(),
       capturedAt:z.string(),explanation:z.string(),digest:z.string()})).optional(),
-    sessionId:id, interactive:z.boolean(), services:z.array(z.string()), finishRequested:z.boolean(), executionStatus:z.string(),
+    sessionId:id, interactive:z.boolean(), services:z.array(z.string()), finishRequested:z.boolean().default(false), executionStatus:z.string(),
     cleanupStatus:z.string(), actions:z.array(z.object({
       actionId:z.string().uuid(), action:z.enum(["START","STOP","SCALE"]), service:z.string(),
       replicas:z.number().nullable().optional(), status:z.enum(["PENDING","RUNNING","CONFIRMED","FAILED","INTERRUPTED"]),
-      requestedAt:z.string(), completedAt:z.string().optional(), result:z.object({
+      requestedAt:z.string(), completedAt:z.string().nullable().optional(), result:z.object({
         action:z.string(),service:z.string(),replicasBefore:z.number(),replicasAfter:z.number(),confirmed:z.boolean(),
         metricsBefore:z.record(z.string(), z.unknown()),metricsAfter:z.record(z.string(), z.unknown()),
       }).nullable().optional(),

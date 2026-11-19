@@ -352,8 +352,10 @@ public class CourseAuthoringService {
         CourseModule moving = reordered.remove(index);
         reordered.add(target, moving);
         validateModuleOrder(reordered);
-        for (CourseModule module : ordered) {
-            module.setPosition(-module.getPosition());
+        int tempBase = ordered.stream().mapToInt(CourseModule::getPosition).max().orElse(0) + 10_000;
+        for (int i = 0; i < ordered.size(); i++) {
+            CourseModule module = ordered.get(i);
+            module.setPosition(tempBase + i + 1);
             modules.saveAndFlush(module);
         }
         int position = 1;
@@ -389,8 +391,10 @@ public class CourseAuthoringService {
         modules.flush();
 
         List<CourseModule> remaining = new java.util.ArrayList<>(modules.findByCourseIdOrderByPositionAsc(course.getId()));
-        for (CourseModule mod : remaining) {
-            mod.setPosition(-mod.getPosition());
+        int tempBase = remaining.stream().mapToInt(CourseModule::getPosition).max().orElse(0) + 10_000;
+        for (int i = 0; i < remaining.size(); i++) {
+            CourseModule mod = remaining.get(i);
+            mod.setPosition(tempBase + i + 1);
             modules.saveAndFlush(mod);
         }
         int position = 1;
@@ -437,7 +441,8 @@ public class CourseAuthoringService {
         CourseItem neighbor = ordered.get(target);
         int movingPosition = moving.getPosition();
         int neighborPosition = neighbor.getPosition();
-        moving.setPosition(-movingPosition);
+        int tempPosition = ordered.stream().mapToInt(CourseItem::getPosition).max().orElse(0) + 10_000;
+        moving.setPosition(tempPosition);
         items.saveAndFlush(moving);
         neighbor.setPosition(movingPosition);
         items.saveAndFlush(neighbor);
