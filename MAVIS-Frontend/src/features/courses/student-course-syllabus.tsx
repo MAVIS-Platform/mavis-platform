@@ -246,10 +246,10 @@ export function StudentCourseSyllabus({
 
   return (
     <div
-      className={`grid gap-6 lg:items-start ${
+      className={`grid gap-6 ${
         isLearningWorkspace
-          ? "lg:h-[calc(100dvh-var(--header-height)-var(--space-16))] lg:grid-cols-[300px_minmax(0,1fr)] lg:overflow-hidden"
-          : "lg:grid-cols-[260px_minmax(0,1fr)]"
+          ? "lg:h-[calc(100dvh_-_var(--header-height)_-_1.5rem)] lg:grid-cols-[300px_minmax(0,1fr)] lg:items-stretch lg:overflow-hidden"
+          : "lg:grid-cols-[260px_minmax(0,1fr)] lg:items-start"
       }`}
     >
       <aside
