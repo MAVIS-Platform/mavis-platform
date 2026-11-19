@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CheckCircle2,
   ChevronDown,
@@ -144,6 +144,13 @@ export function StudentCourseSyllabus({
   const [selectedModuleId, setSelectedModuleId] = useState<string>("");
   const [practicePanel, setPracticePanel] = useState<"none" | "quiz" | "essay">("none");
   const isLearningWorkspace = selectedItemId !== "";
+  const learningContentRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (isLearningWorkspace) {
+      learningContentRef.current?.scrollTo({ top: 0 });
+    }
+  }, [isLearningWorkspace, selectedItemId]);
 
   const activeEntry =
     flattenedItems.find((entry) => entry.item.id === selectedItemId) ?? flattenedItems[0] ?? null;
@@ -236,60 +243,54 @@ export function StudentCourseSyllabus({
     <div
       className={`grid gap-6 lg:items-start ${
         isLearningWorkspace
-          ? "lg:grid-cols-[300px_minmax(0,1fr)]"
+          ? "lg:h-[calc(100dvh-var(--header-height)-var(--space-16))] lg:grid-cols-[300px_minmax(0,1fr)] lg:overflow-hidden"
           : "lg:grid-cols-[260px_minmax(0,1fr)]"
       }`}
     >
-      <aside className="space-y-5 rounded-2xl border bg-card p-4 shadow-sm lg:sticky lg:top-6">
+      <aside
+        className={`rounded-2xl border bg-card p-4 shadow-sm ${
+          isLearningWorkspace
+            ? "flex min-h-0 flex-col gap-5 overflow-hidden"
+            : "space-y-5 lg:sticky lg:top-6"
+        }`}
+      >
         {isLearningWorkspace ? (
           <>
             <div className="border-b pb-4">
               <p className="text-xs font-semibold uppercase tracking-wide text-primary">
                 {t("Learning workspace", "Không gian học tập")}
               </p>
-              <h2 className="mt-1 line-clamp-2 text-base font-semibold">{workspace.name}</h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {t(
+                  `Module ${activeModule?.position ?? ""}`,
+                  `Module ${activeModule?.position ?? ""}`,
+                )}
+              </p>
+              <h2 className="mt-1 line-clamp-2 text-base font-semibold">{activeModule?.title}</h2>
             </div>
 
-            <nav aria-label={t("Learning content", "Nội dung học tập")} className="space-y-3">
-              {syllabusModules.map((mod) => {
-                const isActiveModule = mod.id === activeModule?.id;
+            <nav
+              aria-label={t("Learning content", "Nội dung học tập")}
+              className="min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain pr-1"
+            >
+              {activeModule?.items.map((item) => {
+                const selected = item.id === activeItem?.id;
                 return (
-                  <details key={mod.id} open={isActiveModule} className="group">
-                    <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-lg px-2 py-2 text-sm font-semibold hover:bg-muted">
-                      <span className="min-w-0">
-                        <span className="block text-xs text-muted-foreground">
-                          {t(`Module ${mod.position}`, `Module ${mod.position}`)}
-                        </span>
-                        <span className="line-clamp-1 block">{mod.title}</span>
-                      </span>
-                      <ChevronDown
-                        className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180"
-                        aria-hidden="true"
-                      />
-                    </summary>
-                    <div className="mt-1 space-y-1 border-l pl-2">
-                      {mod.items.map((item) => {
-                        const selected = item.id === activeItem?.id;
-                        return (
-                          <button
-                            key={item.id}
-                            type="button"
-                            onClick={() => selectCurriculumItem(item)}
-                            className={`w-full rounded-lg px-2.5 py-2 text-left text-xs transition-colors ${
-                              selected
-                                ? "bg-emerald-100 font-semibold text-emerald-950 dark:bg-emerald-950/40 dark:text-emerald-100"
-                                : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                            }`}
-                          >
-                            <span className="line-clamp-2 block">{item.title}</span>
-                            <span className="mt-0.5 block text-[10px] font-normal opacity-80">
-                              {itemBadgeMeta(item.type, t).label}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </details>
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => selectCurriculumItem(item)}
+                    className={`w-full rounded-lg px-2.5 py-2 text-left text-xs transition-colors ${
+                      selected
+                        ? "bg-emerald-100 font-semibold text-emerald-950 dark:bg-emerald-950/40 dark:text-emerald-100"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    }`}
+                  >
+                    <span className="line-clamp-2 block">{item.title}</span>
+                    <span className="mt-0.5 block text-[10px] font-normal opacity-80">
+                      {itemBadgeMeta(item.type, t).label}
+                    </span>
+                  </button>
                 );
               })}
             </nav>
@@ -297,7 +298,7 @@ export function StudentCourseSyllabus({
             <Button
               type="button"
               variant="outline"
-              className="w-full"
+              className="w-full shrink-0"
               onClick={() => {
                 setSelectedItemId("");
                 setPracticePanel("none");
@@ -378,7 +379,13 @@ export function StudentCourseSyllabus({
         )}
       </aside>
 
-      <div className="min-w-0 space-y-6">
+      <div
+        className={
+          isLearningWorkspace
+            ? "flex min-h-0 min-w-0 flex-col overflow-hidden"
+            : "min-w-0 space-y-6"
+        }
+      >
         {!isLearningWorkspace && (
           <section className="mavis-hero-surface p-6 text-white">
             <div className="flex flex-wrap items-start justify-between gap-4">
@@ -470,7 +477,14 @@ export function StudentCourseSyllabus({
           </section>
         )}
 
-        <div className="min-w-0 space-y-6">
+        <div
+          ref={isLearningWorkspace ? learningContentRef : undefined}
+          className={
+            isLearningWorkspace
+              ? "min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain pr-1"
+              : "min-w-0 space-y-6"
+          }
+        >
           {activeTab === "player" && !isLearningWorkspace && courseContentModule && (
             <section className="space-y-5 rounded-2xl border bg-card p-5 shadow-sm sm:p-6">
               <div className="border-b pb-4">
@@ -551,7 +565,7 @@ export function StudentCourseSyllabus({
             activeEntry &&
             activeModule &&
             activeItem && (
-              <div className="min-w-0">
+              <div className="min-w-0 pb-6">
                 {/* Focused learning workspace: Course Content navigation + wide lesson canvas. */}
                 <section className="min-w-0 space-y-6 rounded-2xl border bg-card p-5 shadow-sm sm:p-6">
                   <div className="flex flex-wrap items-start justify-between gap-3 border-b pb-4">
@@ -622,7 +636,7 @@ export function StudentCourseSyllabus({
                         </div>
 
                         {/* OLP-inspired Chapter Practice Box directly under Lesson */}
-                        <div className="space-y-4 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 dark:border-emerald-800/60 dark:bg-emerald-950/20 sm:p-5">
+                        <div className="hidden space-y-4 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 dark:border-emerald-800/60 dark:bg-emerald-950/20 sm:p-5">
                           <div>
                             <h3 className="text-sm font-bold text-emerald-950 dark:text-emerald-200">
                               📝{" "}
