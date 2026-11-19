@@ -28,7 +28,6 @@ import {
   emptyQuestion,
   parseQuizCsv,
   parseQuizJson,
-  questionErrors,
   quizErrors,
   quizToCsv,
   quizToJson,
@@ -56,7 +55,17 @@ function download(name: string, content: string, type: string) {
   URL.revokeObjectURL(url);
 }
 
-export function QuizBuilder({ workspaceId, assignmentId }: { workspaceId: string; assignmentId: string }) {
+export function QuizBuilder({
+  workspaceId,
+  assignmentId,
+  defaultTitle,
+  footerAction,
+}: {
+  workspaceId: string;
+  assignmentId: string;
+  defaultTitle?: string | undefined;
+  footerAction?: React.ReactNode | undefined;
+}) {
   const { t, locale } = useLocale();
   const cache = useQueryClient();
   const draftPath = `workspaces/${workspaceId}/course-labs/${assignmentId}/quiz/draft`;
@@ -79,12 +88,13 @@ export function QuizBuilder({ workspaceId, assignmentId }: { workspaceId: string
   });
   const curriculum = useCurriculum();
 
-  const [lesson, setLesson] = useState("");
+  const [lesson, setLesson] = useState(defaultTitle ?? "");
   const [passPercent, setPassPercent] = useState(DEFAULT_PASS_PERCENT);
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
   const [selected, setSelected] = useState(0);
   const [tab, setTab] = useState<Tab>("questions");
   const [message, setMessage] = useState("");
+  const [showValidation, setShowValidation] = useState(false);
   const [importText, setImportText] = useState("");
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [chapterId, setChapterId] = useState("");
@@ -94,23 +104,25 @@ export function QuizBuilder({ workspaceId, assignmentId }: { workspaceId: string
   useEffect(() => {
     if (hydrated.current) return;
     if (draft.data) {
-      setLesson(draft.data.lesson ?? "");
+      setLesson(draft.data.lesson || defaultTitle || "");
       setPassPercent(draft.data.passPercent ?? DEFAULT_PASS_PERCENT);
       setQuestions(draft.data.questions ?? []);
       hydrated.current = true;
     } else if (draft.isError && draft.error instanceof ApiError && draft.error.status === 404) {
+      setLesson((current) => current || defaultTitle || "");
       setQuestions([emptyQuestion()]);
       hydrated.current = true;
     }
-  }, [draft.data, draft.error, draft.isError]);
+  }, [defaultTitle, draft.data, draft.error, draft.isError]);
 
   const saveDraft = useMutation({
     mutationFn: () =>
       api<QuizDraft>(draftPath, {
         method: "PUT",
-        body: JSON.stringify({ lesson, passPercent, questions }),
+        body: JSON.stringify({ lesson: lesson.trim() || defaultTitle?.trim() || "Quiz", passPercent, questions }),
       }),
     onSuccess: () => {
+      setShowValidation(false);
       setMessage(t("Quiz draft saved.", "Đã lưu bản nháp Quiz."));
       void cache.invalidateQueries({ queryKey: ["api", "quiz-draft", workspaceId, assignmentId] });
     },
@@ -178,9 +190,27 @@ export function QuizBuilder({ workspaceId, assignmentId }: { workspaceId: string
     onSuccess: () => void cache.invalidateQueries({ queryKey: ["api", "quiz-bank", workspaceId] }),
   });
 
-  const errors = quizErrors({ lesson, passPercent, questions });
+  const effectiveLesson = lesson.trim() || defaultTitle?.trim() || "Quiz";
+  const errors = quizErrors({ lesson: effectiveLesson, passPercent, questions });
   const active = questions[selected];
-  const activeErrors = active ? questionErrors(active, selected) : [];
+
+  const saveDraftNow = () => {
+    setShowValidation(true);
+    if (errors.length) return;
+    if (!lesson.trim()) setLesson(effectiveLesson);
+    saveDraft.mutate();
+  };
+  const publishNow = async () => {
+    setShowValidation(true);
+    if (errors.length) return;
+    if (!lesson.trim()) setLesson(effectiveLesson);
+    try {
+      await saveDraft.mutateAsync();
+      await publish.mutateAsync();
+    } catch {
+      // Mutation errors render below.
+    }
+  };
 
   const update = (index: number, patch: Partial<QuizQuestion>) =>
     setQuestions((current) => current.map((question, position) => (position === index ? { ...question, ...patch } : question)));
@@ -248,67 +278,71 @@ export function QuizBuilder({ workspaceId, assignmentId }: { workspaceId: string
       setImportErrors([error instanceof Error ? error.message : String(error)]);
     }
   };
-  const publishNow = async () => {
-    if (errors.length) return;
-    try {
-      await saveDraft.mutateAsync();
-      await publish.mutateAsync();
-    } catch {
-      // Mutation errors render below.
-    }
-  };
-
   if (draft.isPending) {
     return <p className="text-sm text-muted-foreground">{t("Loading Quiz…", "Đang tải Quiz…")}</p>;
   }
 
   return (
     <section className="space-y-4 rounded-xl border bg-card p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="flex items-center gap-2 font-semibold">
-            <Library className="size-4 text-primary" aria-hidden="true" />
-            {t("Quiz builder", "Trình soạn Quiz")}
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {t(
-              "Generate questions from the Lab theory, write them by hand or import JSON/CSV, preview the gate, save a draft and publish an immutable version.",
-              "Tạo câu hỏi từ lý thuyết của Lab, soạn tay hoặc nhập JSON/CSV, xem trước gate, lưu nháp và công bố phiên bản bất biến.",
-            )}
-          </p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Library className="size-4 text-primary" aria-hidden="true" />
+          <h2 className="text-base font-semibold">{t("Quiz", "Quiz")}</h2>
+          <Badge variant={versions.data?.length ? "success" : "secondary"}>
+            {versions.data?.length
+              ? `v${versions.data[0]!.version}`
+              : t("Draft", "Bản nháp")}
+          </Badge>
         </div>
-        <Badge variant={versions.data?.length ? "success" : "secondary"}>
-          {versions.data?.length
-            ? t(`Latest v${versions.data[0]!.version}`, `Mới nhất v${versions.data[0]!.version}`)
-            : t("No published version", "Chưa công bố")}
-        </Badge>
+        <div className="flex items-center gap-2">
+          <Input
+            aria-label={t("AI question count", "Số câu AI tạo")}
+            className="h-8 w-16 text-center text-xs"
+            type="number"
+            min={1}
+            max={20}
+            value={aiCount}
+            onChange={(event) => setAiCount(Math.min(20, Math.max(1, Number(event.target.value) || 1)))}
+          />
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={generateFromTheory.isPending}
+            onClick={() => generateFromTheory.mutate()}
+          >
+            <Sparkles className="mr-1.5 size-3.5" aria-hidden="true" />
+            {generateFromTheory.isPending
+              ? t("Generating…", "Đang tạo…")
+              : t("Generate from theory", "AI tạo từ lý thuyết")}
+          </Button>
+        </div>
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_16rem]">
+      {generateFromTheory.error && (
+        <p role="alert" className="text-xs text-destructive">
+          {generateFromTheory.error.message}
+        </p>
+      )}
+
+      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
         <label className="space-y-1 text-xs font-medium">
-          <span>{t("Lesson text", "Nội dung bài học")}</span>
-          <Textarea
-            rows={3}
+          <span>{t("Quiz title", "Tiêu đề Quiz")}</span>
+          <Input
             value={lesson}
-            placeholder={t(
-              "Short lesson or instructions shown above the Quiz.",
-              "Bài học ngắn hoặc hướng dẫn hiển thị phía trên Quiz.",
-            )}
             onChange={(event) => setLesson(event.target.value)}
           />
         </label>
         <label className="space-y-1 text-xs font-medium">
-          <span>{t("Pass percent", "Ngưỡng đạt (%)")}</span>
+          <span>{t("Pass (%)", "Đạt (%)")}</span>
           <Input
+            className="w-24"
             type="number"
             min={1}
             max={100}
             value={passPercent}
             onChange={(event) => setPassPercent(Number(event.target.value))}
           />
-          <span className="block text-[11px] font-normal text-muted-foreground">
-            {t("Default 80%. Students must reach this score.", "Mặc định 80%. Sinh viên phải đạt ngưỡng này.")}
-          </span>
         </label>
       </div>
 
@@ -334,16 +368,18 @@ export function QuizBuilder({ workspaceId, assignmentId }: { workspaceId: string
       </div>
 
       {tab === "questions" && (
-        <div className="grid gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
+        <div className="grid gap-4 lg:grid-cols-[15rem_minmax(0,1fr)]">
           <div className="space-y-2">
-            <div className="flex flex-wrap gap-1">
-              {(["SINGLE_CHOICE", "MULTI_CHOICE", "TRUE_FALSE"] as const).map((type) => (
-                <Button key={type} type="button" size="sm" variant="outline" onClick={() => add(type)}>
-                  <Plus className="mr-1 size-3.5" aria-hidden="true" />
-                  {t(TYPE_LABELS[type].en, TYPE_LABELS[type].vi)}
-                </Button>
-              ))}
-            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="w-full justify-center"
+              onClick={() => add("SINGLE_CHOICE")}
+            >
+              <Plus className="mr-1 size-3.5" aria-hidden="true" />
+              {t("Add question", "Thêm câu hỏi")}
+            </Button>
             <ol className="space-y-1">
               {questions.map((question, index) => (
                 <li key={index}>
@@ -400,7 +436,7 @@ export function QuizBuilder({ workspaceId, assignmentId }: { workspaceId: string
               <label className="space-y-1 text-xs font-medium">
                 <span>{t("Question prompt", "Nội dung câu hỏi")}</span>
                 <Textarea
-                  rows={3}
+                  rows={2}
                   value={active.prompt}
                   onChange={(event) => update(selected, { prompt: event.target.value })}
                 />
@@ -477,11 +513,10 @@ export function QuizBuilder({ workspaceId, assignmentId }: { workspaceId: string
                 )}
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_8rem]">
+              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_5.5rem]">
                 <label className="space-y-1 text-xs font-medium">
-                  <span>{t("Explanation", "Giải thích")}</span>
-                  <Textarea
-                    rows={2}
+                  <span>{t("Explanation (optional)", "Giải thích (tùy chọn)")}</span>
+                  <Input
                     value={active.explanation ?? ""}
                     onChange={(event) => update(selected, { explanation: event.target.value })}
                   />
@@ -503,11 +538,6 @@ export function QuizBuilder({ workspaceId, assignmentId }: { workspaceId: string
                   <Library className="mr-1 size-3.5" aria-hidden="true" />
                   {t("Save to bank", "Lưu vào ngân hàng")}
                 </Button>
-                {activeErrors.length > 0 && (
-                  <ul className="text-xs text-destructive" role="alert">
-                    {activeErrors.map((error) => <li key={error}>{error}</li>)}
-                  </ul>
-                )}
               </div>
             </div>
           ) : (
@@ -746,7 +776,7 @@ export function QuizBuilder({ workspaceId, assignmentId }: { workspaceId: string
         </div>
       )}
 
-      {errors.length > 0 && tab === "questions" && (
+      {showValidation && errors.length > 0 && tab === "questions" && (
         <ul role="alert" className="space-y-1 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-800 dark:text-amber-200">
           {errors.slice(0, 6).map((error) => <li key={error}>{error}</li>)}
         </ul>
@@ -755,22 +785,15 @@ export function QuizBuilder({ workspaceId, assignmentId }: { workspaceId: string
       {saveDraft.error && <p role="alert" className="text-sm text-destructive">{saveDraft.error.message}</p>}
       {publish.error && <p role="alert" className="text-sm text-destructive">{publish.error.message}</p>}
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
-        <p className="text-xs text-muted-foreground">
-          {t(
-            "Saving writes a draft. Publishing creates the immutable Quiz version used by the gate.",
-            "Lưu sẽ ghi bản nháp. Công bố tạo phiên bản Quiz bất biến dùng cho gate.",
-          )}
-        </p>
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="outline" disabled={saveDraft.isPending || errors.length > 0} onClick={() => saveDraft.mutate()}>
-            <Save className="mr-1 size-4" aria-hidden="true" />
-            {saveDraft.isPending ? t("Saving…", "Đang lưu…") : t("Save draft", "Lưu nháp")}
-          </Button>
-          <Button type="button" disabled={publish.isPending || saveDraft.isPending || errors.length > 0} onClick={() => void publishNow()}>
-            {publish.isPending ? t("Publishing…", "Đang công bố…") : t("Publish version", "Công bố phiên bản")}
-          </Button>
-        </div>
+      <div className="flex flex-wrap items-center justify-end gap-2 border-t pt-4">
+        <Button type="button" size="sm" variant="outline" disabled={saveDraft.isPending} onClick={saveDraftNow}>
+          <Save className="mr-1 size-4" aria-hidden="true" />
+          {saveDraft.isPending ? t("Saving…", "Đang lưu…") : t("Save draft", "Lưu nháp")}
+        </Button>
+        <Button type="button" size="sm" disabled={publish.isPending || saveDraft.isPending} onClick={() => void publishNow()}>
+          {publish.isPending ? t("Publishing…", "Đang công bố…") : t("Publish version", "Công bố phiên bản")}
+        </Button>
+        {footerAction}
       </div>
     </section>
   );
