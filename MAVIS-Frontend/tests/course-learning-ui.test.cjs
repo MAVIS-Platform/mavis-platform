@@ -1418,3 +1418,15 @@ test("Learning Workspace keeps curriculum and previous/next navigation within th
   assert.match(syllabus, /activeModule\.items\[activeModuleItemIndex \+ 1\]/);
   assert.match(syllabus, /activeModule\.items\[activeModuleItemIndex - 1\]/);
 });
+
+test("Round 4 guards isolate per-Lab theory, adapt Theory Only labs, prevent sign-out 401, and allow repo-less feedback", () => {
+  const screens = read("src/features/courses/screens.tsx");
+  const appShell = read("src/components/app-shell.tsx");
+  const ops = read("src/lib/api/java-operations.ts");
+
+  assert.match(screens, /const exactLabTheory = moduleItems\.filter/);
+  assert.match(screens, /const hasReferenceArch = Boolean\(activeModelId \|\| referenceSnapshotId\)/);
+  assert.match(screens, /isTheoryOnlyLab \? \(\s*<DetailPanel[\s\S]*Quiz Gate Not Required/);
+  assert.match(appShell, /const canQueryAuth =\s*!signingOut/);
+  assert.match(ops, /pinned\["modelVersionId"\] != null && pinned\["modelVersionId"\] !== id\(input, "modelId"\)/);
+});

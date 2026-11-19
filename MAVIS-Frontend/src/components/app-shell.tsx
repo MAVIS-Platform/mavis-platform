@@ -113,9 +113,14 @@ function ManagedShellChrome(props: AppShellProps) {
   const api = useApi();
   const signOut = useApiMutation("signOut");
   const queryClient = useQueryClient();
+  const [signingOut, setSigningOut] = useState(false);
   const role = onPreviewNavigate
     ? (previewRole ?? "student")
     : (session.data?.user?.role ?? "student");
+  const canQueryAuth =
+    !signingOut &&
+    !onPreviewNavigate &&
+    (api.mode !== "backend" || Boolean(session.data?.user));
   const selection = useSelection();
   const pathname = usePathname();
   const route = existingRouteContext(pathname);
@@ -135,11 +140,11 @@ function ManagedShellChrome(props: AppShellProps) {
     {},
     {
       enabled:
+        canQueryAuth &&
         scope === "project" &&
         Boolean(selection.projectId) &&
         !props.contextName &&
-        (api.mode === "backend" || role === "student") &&
-        !onPreviewNavigate,
+        (api.mode === "backend" || role === "student"),
     },
   );
   const selectedProjectName = projectQuery.data?.find((p) => p.id === selection.projectId)?.name;
@@ -148,10 +153,10 @@ function ManagedShellChrome(props: AppShellProps) {
     { projectId: selection.projectId },
     {
       enabled:
+        canQueryAuth &&
         scope === "project" &&
         !!selection.projectId &&
         !props.contextName &&
-        !onPreviewNavigate &&
         projectQuery.isSuccess &&
         !selectedProjectName,
     },
@@ -159,10 +164,11 @@ function ManagedShellChrome(props: AppShellProps) {
   const workspaceQuery = useApiQuery(
     "workspaces",
     {},
-    { enabled: role !== "admin" && !onPreviewNavigate },
+    { enabled: canQueryAuth && role !== "admin" },
   );
   const router = useRouter();
   async function logout() {
+    setSigningOut(true);
     try {
       await signOut.mutateAsync({});
       await queryClient.cancelQueries();
@@ -170,6 +176,7 @@ function ManagedShellChrome(props: AppShellProps) {
       queryClient.setQueryData(["api", "session", {}], { user: null });
       router.replace("/login?signedOut=1");
     } catch {
+      setSigningOut(false);
       /* Mutation feedback is shown by the provider. */
     }
   }
@@ -189,7 +196,7 @@ function ManagedShellChrome(props: AppShellProps) {
       navigationQuery={props.navigationQuery ?? (params.toString() ? `?${params}` : "")}
       displayName={session.data?.user?.name ?? "Design preview"}
       apiMode={api.mode}
-      signOutPending={signOut.isPending}
+      signOutPending={signingOut || signOut.isPending}
       onSignOut={() => void logout()}
     />
   );

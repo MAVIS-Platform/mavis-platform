@@ -107,8 +107,8 @@ export function Step2StaticImpact({
               {t("3. Verify 3E & move on:", "3. Đối chiếu 3E & sang Quiz:")}
             </span>{" "}
             {t(
-              "Proceed to Step 3 Quiz to unlock the interactive 2D Studio Lab.",
-              "Chuyển sang Bước 3 làm Quiz kiểm tra kiến thức để mở khóa 2D Studio.",
+              "Proceed to Step 3 Quiz to unlock the interactive Studio Live Lab.",
+              "Chuyển sang Bước 3 làm Quiz kiểm tra kiến thức để mở khóa Studio Live.",
             )}
           </li>
         </ol>

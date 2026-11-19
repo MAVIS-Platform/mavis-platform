@@ -233,7 +233,7 @@ export function StudentCourseSyllabus({
     },
     {
       step: 4,
-      label: t("Step 4 · 2D Studio & Submit", "Bước 4 · Thực Hành 2D Studio & Nộp"),
+      label: t("Step 4 · Studio Live & Submit", "Bước 4 · Thực Hành Studio Live & Nộp"),
       hint: t("Verify session & explain", "Xác minh phiên & nộp bài giải"),
     },
   ];
@@ -652,8 +652,8 @@ export function StudentCourseSyllabus({
                             </h3>
                             <p className="mt-0.5 text-xs text-emerald-900/80 dark:text-emerald-300/80">
                               {t(
-                                "Test your understanding immediately with the 10-question Quiz, Case Study Essay, or 2D Studio Lab.",
-                                "Kiểm tra kiến thức ngay sau khi đọc lý thuyết với Quiz trắc nghiệm 10 câu, bài Tự luận Rubric hoặc phòng thực hành 2D Studio.",
+                                "Test your understanding immediately with the 10-question Quiz, Case Study Essay, or Studio Live Lab.",
+                                "Kiểm tra kiến thức ngay sau khi đọc lý thuyết với Quiz trắc nghiệm 10 câu, bài Tự luận Rubric hoặc phòng thực hành Studio Live.",
                               )}
                             </p>
                           </div>
@@ -713,7 +713,7 @@ export function StudentCourseSyllabus({
                                       className="mr-1.5 h-3.5 w-3.5 fill-current"
                                       aria-hidden="true"
                                     />
-                                    {t("Open 2D Studio Lab", "Mở Phòng Lab Thực Hành")}
+                                    {t("Open Studio Live Lab", "Mở Phòng Lab Thực Hành")}
                                   </Link>
                                 </Button>
                               )}
@@ -885,7 +885,7 @@ export function StudentCourseSyllabus({
                                   <Link
                                     href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(activeLabRecord.assignmentId)}&step=4`}
                                   >
-                                    {t("Jump to 2D Studio", "Mở Thẳng Studio Thực Hành")}
+                                    {t("Jump to Studio Live", "Mở Thẳng Studio Thực Hành")}
                                   </Link>
                                 </Button>
                               </div>
@@ -894,8 +894,8 @@ export function StudentCourseSyllabus({
                         ) : (
                           <p className="text-xs text-emerald-900/80 dark:text-emerald-300/80">
                             {t(
-                              "Read all 3 lessons in this chapter first; the interactive 2D Studio Lab is linked once published by your lecturer.",
-                              "Hãy đọc trọn vẹn 3 bài giảng và hoàn thành Quiz/Tự luận chương này; phòng Lab 2D Studio sẽ mở ngay khi giảng viên công bố Assignment.",
+                              "Read all 3 lessons in this chapter first; the interactive Studio Live Lab is linked once published by your lecturer.",
+                              "Hãy đọc trọn vẹn 3 bài giảng và hoàn thành Quiz/Tự luận chương này; phòng Lab Studio Live sẽ mở ngay khi giảng viên công bố Assignment.",
                             )}
                           </p>
                         )}

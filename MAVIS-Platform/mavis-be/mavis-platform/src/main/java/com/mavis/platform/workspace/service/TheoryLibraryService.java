@@ -261,15 +261,29 @@ public class TheoryLibraryService {
                 """, (rs, row) -> rs.getObject(1, UUID.class), lab.getId())
                 .stream().findFirst().orElse(null);
         if (moduleId != null) return moduleId;
+        String labModuleTitle = "Lab · " + (lab.getTitle() == null ? "Theory" : lab.getTitle());
         moduleId = jdbc.query("""
-                SELECT id FROM course_modules WHERE course_id =
-                    (SELECT id FROM course_definitions WHERE workspace_id = ?)
-                ORDER BY position LIMIT 1
-                """, (rs, row) -> rs.getObject(1, UUID.class), workspaceId)
+                SELECT cm.id FROM course_modules cm
+                WHERE cm.course_id = (SELECT id FROM course_definitions WHERE workspace_id = ?)
+                  AND cm.title = ?
+                ORDER BY cm.position LIMIT 1
+                """, (rs, row) -> rs.getObject(1, UUID.class), workspaceId, labModuleTitle)
+                .stream().findFirst().orElse(null);
+        if (moduleId != null) return moduleId;
+        moduleId = jdbc.query("""
+                SELECT cm.id FROM course_modules cm
+                WHERE cm.course_id = (SELECT id FROM course_definitions WHERE workspace_id = ?)
+                  AND cm.title NOT LIKE 'Lab · %'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM course_items ci
+                      WHERE ci.module_id = cm.id AND ci.assignment_id IS NOT NULL AND ci.assignment_id <> ?
+                  )
+                ORDER BY cm.position LIMIT 1
+                """, (rs, row) -> rs.getObject(1, UUID.class), workspaceId, lab.getId())
                 .stream().findFirst().orElse(null);
         if (moduleId != null) return moduleId;
         var created = authoring.addModule(workspaceId, new CourseAuthoringService.ModuleRequest(
-                "Lab · " + (lab.getTitle() == null ? "Theory" : lab.getTitle()), null, null));
+                labModuleTitle, null, null));
         return created.modules().getLast().id();
     }
 

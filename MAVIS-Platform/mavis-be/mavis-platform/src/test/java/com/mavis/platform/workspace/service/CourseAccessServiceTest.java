@@ -383,4 +383,24 @@ class CourseAccessServiceTest {
                 eq(workspaceId), any());
     }
 
+    @Test
+    void publishSyncsCourseDraftAndIgnoresUnchangedCourseConflict() {
+        UUID teacherId = UUID.randomUUID();
+        var authoring = mock(CourseAuthoringService.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(courses, "courseAuthoring", authoring);
+        when(access.requireCurrentActiveUser()).thenReturn(User.builder().id(teacherId).build());
+        when(workspaces.findLockedById(workspaceId)).thenReturn(Optional.of(workspace));
+        assignment.setDescription("Theory only reading");
+        when(assignments.findLockedById(assignmentId)).thenReturn(Optional.of(assignment));
+        when(assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId))
+                .thenReturn(List.of());
+        doThrow(new BusinessException(ErrorCode.CONFLICT, "This exact Course content has already been published"))
+                .when(authoring).publish(workspaceId);
+
+        var published = courses.publish(workspaceId, assignmentId);
+
+        assertEquals(1, published.position());
+        verify(authoring).publish(workspaceId);
+    }
+
 }

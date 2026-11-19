@@ -142,4 +142,35 @@ class TheoryLibraryServiceTest {
         assertEquals("# Payment", draft.body());
         assertEquals(1, draft.evidenceCount());
     }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void attachCreatesDedicatedModulePerLabInsteadOfReusingAnotherLabsModule() {
+        var workspace = Workspace.builder().id(workspaceId).name("Class").status("ACTIVE").build();
+        var labB = Assignment.builder().id(labId).workspace(workspace).title("Lab B - Pure Theory").build();
+        var asset = TheoryAsset.builder().id(assetId).workspace(workspace).title("Clean Boundaries")
+                .body("Body").style("CONCEPT").source("LECTURER").version(1).build();
+        UUID newModuleId = UUID.randomUUID();
+        when(assignments.findById(labId)).thenReturn(Optional.of(labB));
+        when(assets.findByIdAndWorkspaceId(assetId, workspaceId)).thenReturn(Optional.of(asset));
+        when(links.findByAssignmentIdAndAssetId(labId, assetId)).thenReturn(Optional.empty());
+        when(courses.findByWorkspaceId(workspaceId)).thenReturn(Optional.of(
+                CourseDefinition.builder().id(UUID.randomUUID()).status("DRAFT").build()));
+        when(links.findByAssignmentIdOrderByPositionAsc(labId)).thenReturn(List.of());
+        when(links.save(any(LabTheoryAsset.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(jdbc.query(anyString(), any(RowMapper.class), any())).thenReturn(List.of());
+        when(jdbc.query(anyString(), any(RowMapper.class), any(), any())).thenAnswer(invocation -> {
+            String sql = invocation.getArgument(0);
+            if (sql.contains("SELECT id FROM course_items")) return List.of(itemId);
+            return List.of();
+        });
+        when(authoring.addModule(eq(workspaceId), any())).thenReturn(new CourseAuthoringService.CourseView(
+                UUID.randomUUID(), workspaceId, "Course", "", "DRAFT", 2, 0,
+                List.of(new CourseAuthoringService.ModuleView(newModuleId, "Lab · Lab B - Pure Theory", null, 2, null, List.of()))));
+
+        service.attach(workspaceId, labId, assetId);
+
+        verify(authoring).addModule(eq(workspaceId), argThat(req -> "Lab · Lab B - Pure Theory".equals(req.title())));
+        verify(authoring).addItem(eq(workspaceId), eq(newModuleId), argThat(item -> labId.equals(item.assignmentId())));
+    }
 }

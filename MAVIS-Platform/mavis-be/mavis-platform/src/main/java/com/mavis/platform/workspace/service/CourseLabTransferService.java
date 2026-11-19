@@ -225,10 +225,13 @@ public class CourseLabTransferService {
                 JOIN course_modules cm ON cm.id = ci.module_id
                 JOIN course_definitions cd ON cd.id = cm.course_id
                 WHERE cd.workspace_id = ? AND ci.item_type = 'THEORY'
-                  AND cm.id IN (SELECT linked.module_id FROM course_items linked WHERE linked.assignment_id = ?)
+                  AND (
+                    ci.assignment_id = ?
+                    OR (ci.assignment_id IS NULL AND cm.id IN (SELECT linked.module_id FROM course_items linked WHERE linked.assignment_id = ?))
+                  )
                 ORDER BY cm.position, ci.position
                 """, (rs, row) -> new TheoryItem(rs.getString("title"), rs.getString("body")),
-                workspaceId, assignmentId);
+                workspaceId, assignmentId, assignmentId);
     }
 
     private Quiz quiz(UUID assignmentId) {

@@ -1162,7 +1162,8 @@ export async function executeJava(
     case "feedback": {
       const sub = id(input, "submissionId");
       const pinned = object.parse(await get(`submissions/${sub}`));
-      if (pinned["modelVersionId"] !== id(input, "modelId")) throw new ApiError("validation", 422);
+      if (pinned["modelVersionId"] != null && pinned["modelVersionId"] !== id(input, "modelId"))
+        throw new ApiError("validation", 422);
       await post(`submissions/${sub}/feedbacks`, {
         commentText: input["text"],
         elementId: input["elementId"] ?? null,

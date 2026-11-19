@@ -25,12 +25,14 @@ export function LabSubmissionV2({
   labMode,
   runtimeSessionId,
   initialReview,
+  hasReferenceArch = true,
 }: {
   workspaceId: string;
   assignmentId: string;
   labMode: string;
   runtimeSessionId?: string | undefined;
   initialReview?: StudentLabLatestReview | null | undefined;
+  hasReferenceArch?: boolean | undefined;
 }) {
   const { t } = useLocale();
   const cache = useQueryClient();
@@ -72,6 +74,7 @@ export function LabSubmissionV2({
     }
   }, [draftKey]);
   const studio = labMode === "THEORY_QUIZ_STUDIO";
+  const showArchRubric = studio || hasReferenceArch;
   const mine = useMemo(
     () => (submissions.data ?? []).filter((item) => item.assignmentId === assignmentId),
     [submissions.data, assignmentId],
@@ -184,10 +187,15 @@ export function LabSubmissionV2({
                   "Explain what you observed in Studio and connect it to the theory. The verified Studio session is attached automatically.",
                   "Giải thích điều bạn quan sát trong Studio và liên hệ với lý thuyết. Phiên Studio đã xác minh được đính kèm tự động.",
                 )
-              : t(
-                  "Explain the architecture and how the sample repository supports your answer. No diagram or model selection is required.",
-                  "Giải thích kiến trúc và cách repo mẫu chứng minh câu trả lời. Không cần chọn diagram hay model.",
-                )}
+              : hasReferenceArch
+                ? t(
+                    "Explain the architecture and how the sample repository supports your answer. No diagram or model selection is required.",
+                    "Giải thích kiến trúc và cách repo mẫu chứng minh câu trả lời. Không cần chọn diagram hay model.",
+                  )
+                : t(
+                    "Explain the key concepts from the Lab theory in your own words.",
+                    "Trình bày và giải thích các khái niệm trọng tâm từ bài lý thuyết bằng lời của bạn.",
+                  )}
           </p>
           <label className="block space-y-1 text-sm">
             <span className="font-medium">{t("Explanation", "Giải trình")}</span>
@@ -234,92 +242,94 @@ export function LabSubmissionV2({
               {submit.error.message}
             </p>
           )}
-          <div className="space-y-3 rounded-xl border border-teal-200/80 bg-teal-50/40 p-3.5 text-xs dark:border-teal-900 dark:bg-teal-950/20">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="font-semibold text-teal-950 dark:text-teal-200">
-                📊 {t("WF-04 Rubric 0–10 Estimate & C1–C3 Snapshot Bundler", "Dự báo Điểm Rubric 0–10 (WF-04) & Đóng gói Snapshot C1–C3")}
-              </span>
-              <Badge variant={passesRubricPreview ? "success" : "destructive"}>
-                {estimatedRubricScore.toFixed(1)} / 10.0 ·{" "}
-                {passesRubricPreview
-                  ? t("APPROVED Eligible (> 5.0)", "ĐẠT (> 5.0 → Mở Lab tiếp theo)")
-                  : t("DS-04b Revision Needed (≤ 5.0)", "Cần sửa (≤ 5.0 · DS-04b)")}
-              </Badge>
+          {showArchRubric && (
+            <div className="space-y-3 rounded-xl border border-teal-200/80 bg-teal-50/40 p-3.5 text-xs dark:border-teal-900 dark:bg-teal-950/20">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-semibold text-teal-950 dark:text-teal-200">
+                  📊 {t("WF-04 Rubric 0–10 Estimate & C1–C3 Snapshot Bundler", "Dự báo Điểm Rubric 0–10 (WF-04) & Đóng gói Snapshot C1–C3")}
+                </span>
+                <Badge variant={passesRubricPreview ? "success" : "destructive"}>
+                  {estimatedRubricScore.toFixed(1)} / 10.0 ·{" "}
+                  {passesRubricPreview
+                    ? t("APPROVED Eligible (> 5.0)", "ĐẠT (> 5.0 → Mở Lab tiếp theo)")
+                    : t("DS-04b Revision Needed (≤ 5.0)", "Cần sửa (≤ 5.0 · DS-04b)")}
+                </Badge>
+              </div>
+              <p className="text-muted-foreground">
+                {t(
+                  "30% Quiz Gate + 40% C1–C3 Snapshot Architecture + 30% Reverse BFS Mitigation Checklist",
+                  "Cấu trúc điểm: 30% Quiz Gate + 40% Kiến trúc C1–C3 Snapshot + 30% Giải pháp Reverse BFS Mitigation",
+                )}
+              </p>
+              <div className="flex flex-wrap gap-3">
+                <label className="inline-flex cursor-pointer items-center gap-1.5 font-medium">
+                  <input
+                    type="checkbox"
+                    checked={mitigations.circuitBreaker}
+                    onChange={(e) =>
+                      setMitigations((m) => ({ ...m, circuitBreaker: e.target.checked }))
+                    }
+                  />
+                  Circuit Breaker + Fallback
+                </label>
+                <label className="inline-flex cursor-pointer items-center gap-1.5 font-medium">
+                  <input
+                    type="checkbox"
+                    checked={mitigations.databasePerService}
+                    onChange={(e) =>
+                      setMitigations((m) => ({ ...m, databasePerService: e.target.checked }))
+                    }
+                  />
+                  Database-per-Service
+                </label>
+                <label className="inline-flex cursor-pointer items-center gap-1.5 font-medium">
+                  <input
+                    type="checkbox"
+                    checked={mitigations.idempotencyKey}
+                    onChange={(e) =>
+                      setMitigations((m) => ({ ...m, idempotencyKey: e.target.checked }))
+                    }
+                  />
+                  X-Idempotency-Key + Outbox
+                </label>
+              </div>
+              <div className="flex flex-wrap gap-2 pt-1">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7 border-emerald-300 bg-background px-2.5 text-xs text-emerald-800 hover:bg-emerald-50"
+                  onClick={() => {
+                    const sample =
+                      "Hồ sơ kiến trúc C1–C3 đạt chuẩn: Tách Database-per-Service giữa Order Service và Inventory Service, bảo vệ lời gọi đồng bộ OpenFeign bằng Resilience4j Circuit Breaker (CLOSED/OPEN/HALF_OPEN), và đảm bảo nhất quán Saga bằng Transactional Outbox + X-Idempotency-Key. Kết quả đo Reverse BFS & Studio Live kiểm chứng 0% cascading failure.";
+                    setMitigations({ circuitBreaker: true, databasePerService: true, idempotencyKey: true });
+                    setAnswer(sample);
+                    try {
+                      window.localStorage.setItem(draftKey, sample);
+                    } catch {}
+                  }}
+                >
+                  🚀 {t("Fill Passing Architectural Dossier (> 5.0)", "Điền Hồ Sơ Chuẩn Đạt Rubric (8.8/10)")}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7 border-rose-300 bg-background px-2.5 text-xs text-rose-800 hover:bg-rose-50"
+                  onClick={() => {
+                    const flawed = "Shared DB trực tiếp.";
+                    setMitigations({ circuitBreaker: false, databasePerService: false, idempotencyKey: false });
+                    setAnswer(flawed);
+                    try {
+                      window.localStorage.setItem(draftKey, flawed);
+                    } catch {}
+                  }}
+                >
+                  🧪 {t("Fill Flawed Draft to Test DS-04b (≤ 5.0)", "Điền Thiết Kế Lỗi Test DS-04b (≤ 5.0)")}
+                </Button>
+              </div>
             </div>
-            <p className="text-muted-foreground">
-              {t(
-                "30% Quiz Gate + 40% C1–C3 Snapshot Architecture + 30% Reverse BFS Mitigation Checklist",
-                "Cấu trúc điểm: 30% Quiz Gate + 40% Kiến trúc C1–C3 Snapshot + 30% Giải pháp Reverse BFS Mitigation",
-              )}
-            </p>
-            <div className="flex flex-wrap gap-3">
-              <label className="inline-flex cursor-pointer items-center gap-1.5 font-medium">
-                <input
-                  type="checkbox"
-                  checked={mitigations.circuitBreaker}
-                  onChange={(e) =>
-                    setMitigations((m) => ({ ...m, circuitBreaker: e.target.checked }))
-                  }
-                />
-                Circuit Breaker + Fallback
-              </label>
-              <label className="inline-flex cursor-pointer items-center gap-1.5 font-medium">
-                <input
-                  type="checkbox"
-                  checked={mitigations.databasePerService}
-                  onChange={(e) =>
-                    setMitigations((m) => ({ ...m, databasePerService: e.target.checked }))
-                  }
-                />
-                Database-per-Service
-              </label>
-              <label className="inline-flex cursor-pointer items-center gap-1.5 font-medium">
-                <input
-                  type="checkbox"
-                  checked={mitigations.idempotencyKey}
-                  onChange={(e) =>
-                    setMitigations((m) => ({ ...m, idempotencyKey: e.target.checked }))
-                  }
-                />
-                X-Idempotency-Key + Outbox
-              </label>
-            </div>
-            <div className="flex flex-wrap gap-2 pt-1">
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-7 border-emerald-300 bg-background px-2.5 text-xs text-emerald-800 hover:bg-emerald-50"
-                onClick={() => {
-                  const sample =
-                    "Hồ sơ kiến trúc C1–C3 đạt chuẩn: Tách Database-per-Service giữa Order Service và Inventory Service, bảo vệ lời gọi đồng bộ OpenFeign bằng Resilience4j Circuit Breaker (CLOSED/OPEN/HALF_OPEN), và đảm bảo nhất quán Saga bằng Transactional Outbox + X-Idempotency-Key. Kết quả đo Reverse BFS & 2D Studio kiểm chứng 0% cascading failure.";
-                  setMitigations({ circuitBreaker: true, databasePerService: true, idempotencyKey: true });
-                  setAnswer(sample);
-                  try {
-                    window.localStorage.setItem(draftKey, sample);
-                  } catch {}
-                }}
-              >
-                🚀 {t("Fill Passing Architectural Dossier (> 5.0)", "Điền Hồ Sơ Chuẩn Đạt Rubric (8.8/10)")}
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-7 border-rose-300 bg-background px-2.5 text-xs text-rose-800 hover:bg-rose-50"
-                onClick={() => {
-                  const flawed = "Shared DB trực tiếp.";
-                  setMitigations({ circuitBreaker: false, databasePerService: false, idempotencyKey: false });
-                  setAnswer(flawed);
-                  try {
-                    window.localStorage.setItem(draftKey, flawed);
-                  } catch {}
-                }}
-              >
-                🧪 {t("Fill Flawed Draft to Test DS-04b (≤ 5.0)", "Điền Thiết Kế Lỗi Test DS-04b (≤ 5.0)")}
-              </Button>
-            </div>
-          </div>
+          )}
 
           <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
             <span className="text-xs text-muted-foreground">
@@ -332,46 +342,52 @@ export function LabSubmissionV2({
               onClick={() => {
                 const nowIso = new Date().toISOString();
                 const trimmed = answer.trim();
-                const snapshots = [
-                  {
-                    snapshotId: `c1-context-${assignmentId}`,
-                    step: "STEP_4",
-                    title: "C1 System Context Boundary",
-                    targetViewOrService: "api-gateway",
-                    writtenExplanation: trimmed,
-                    capturedAt: nowIso,
-                  },
-                  {
-                    snapshotId: `c2-container-${assignmentId}`,
-                    step: "STEP_4",
-                    title: `C2 Containers (${mitigations.databasePerService ? "Database-per-Service" : "Shared DB Flaw"})`,
-                    targetViewOrService: "order-service",
-                    writtenExplanation: `CircuitBreaker=${mitigations.circuitBreaker}, DBPerService=${mitigations.databasePerService}`,
-                    capturedAt: nowIso,
-                  },
-                  {
-                    snapshotId: `c3-component-${assignmentId}`,
-                    step: "STEP_4",
-                    title: `C3 Component Contracts (${mitigations.idempotencyKey ? "Idempotent Outbox" : "Unprotected"})`,
-                    targetViewOrService: "InventoryClientPort",
-                    writtenExplanation: `IdempotencyKey=${mitigations.idempotencyKey}`,
-                    capturedAt: nowIso,
-                  },
-                ];
+                const snapshots = showArchRubric
+                  ? [
+                      {
+                        snapshotId: `c1-context-${assignmentId}`,
+                        step: "STEP_4",
+                        title: "C1 System Context Boundary",
+                        targetViewOrService: "api-gateway",
+                        writtenExplanation: trimmed,
+                        capturedAt: nowIso,
+                      },
+                      {
+                        snapshotId: `c2-container-${assignmentId}`,
+                        step: "STEP_4",
+                        title: `C2 Containers (${mitigations.databasePerService ? "Database-per-Service" : "Shared DB Flaw"})`,
+                        targetViewOrService: "order-service",
+                        writtenExplanation: `CircuitBreaker=${mitigations.circuitBreaker}, DBPerService=${mitigations.databasePerService}`,
+                        capturedAt: nowIso,
+                      },
+                      {
+                        snapshotId: `c3-component-${assignmentId}`,
+                        step: "STEP_4",
+                        title: `C3 Component Contracts (${mitigations.idempotencyKey ? "Idempotent Outbox" : "Unprotected"})`,
+                        targetViewOrService: "InventoryClientPort",
+                        writtenExplanation: `IdempotencyKey=${mitigations.idempotencyKey}`,
+                        capturedAt: nowIso,
+                      },
+                    ]
+                  : [];
                 submit.mutate(
                   {
                     assignmentId,
                     runtimeSessionId: studio ? runtimeSessionId! : null,
-                    submissionNotes: `${trimmed}\n[RubricPreview=${estimatedRubricScore}/10; CB=${mitigations.circuitBreaker}; DBPerService=${mitigations.databasePerService}; Idempotency=${mitigations.idempotencyKey}]`,
-                    theoryAnswers: [
-                      { sectionId: "THEORY", title: "Theory explanation", answer: trimmed },
-                      {
-                        sectionId: "MITIGATION",
-                        title: "Reverse BFS & Resilience Mitigations",
-                        answer: `ScorePreview=${estimatedRubricScore}/10 (${passesRubricPreview ? "APPROVED_ELIGIBLE" : "DS04B_REVISION"})`,
-                      },
-                    ],
-                    studentSnapshots: snapshots,
+                    submissionNotes: showArchRubric
+                      ? `${trimmed}\n[RubricPreview=${estimatedRubricScore}/10; CB=${mitigations.circuitBreaker}; DBPerService=${mitigations.databasePerService}; Idempotency=${mitigations.idempotencyKey}]`
+                      : trimmed,
+                    theoryAnswers: showArchRubric
+                      ? [
+                          { sectionId: "THEORY", title: "Theory explanation", answer: trimmed },
+                          {
+                            sectionId: "MITIGATION",
+                            title: "Reverse BFS & Resilience Mitigations",
+                            answer: `ScorePreview=${estimatedRubricScore}/10 (${passesRubricPreview ? "APPROVED_ELIGIBLE" : "DS04B_REVISION"})`,
+                          },
+                        ]
+                      : [{ sectionId: "THEORY", title: "Theory explanation", answer: trimmed }],
+                    ...(snapshots.length > 0 ? { studentSnapshots: snapshots } : {}),
                   },
                   {
                     onSuccess: () => {

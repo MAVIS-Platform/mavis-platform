@@ -218,7 +218,7 @@ export function CourseSetupPanel({ workspaceId }: { workspaceId: string }) {
 
           <div className="rounded-xl border bg-muted/20 p-3.5">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              {t("2D Studio Live Readiness", "Trạng Thái 2D Studio Live")}
+              {t("Studio Live Readiness", "Trạng Thái Studio Live")}
             </p>
             {!data.reference.projectId ? (
               <p className="mt-1 text-xs text-muted-foreground">

@@ -127,6 +127,59 @@ const learningSteps: LearningStep[] = [
   },
 ];
 
+function resolveStepMeta(
+  step: 1 | 2 | 3 | 4,
+  options: { hasReferenceArch: boolean; isTheoryOnlyLab: boolean; requiresRuntime: boolean },
+): LearningStep {
+  const base = learningSteps.find((s) => s.id === step) ?? learningSteps[0]!;
+  if (step === 1 && !options.hasReferenceArch) {
+    return {
+      ...base,
+      title: "Lab Theory & Reading",
+      shortTitle: "Theory",
+      description: "Read the lesson material carefully before moving to the next step.",
+      titleVi: "Lý thuyết & Bài đọc Lab",
+      shortTitleVi: "Lý thuyết",
+      descriptionVi: "Đọc kỹ nội dung bài học trước khi chuyển sang bước tiếp theo.",
+    };
+  }
+  if (step === 2 && !options.hasReferenceArch) {
+    return {
+      ...base,
+      title: "Reverse BFS Impact (Not Required)",
+      shortTitle: "Impact (N/A)",
+      description:
+        "Static graph impact analysis applies only to Labs with an analyzed reference repository.",
+      titleVi: "Lan truyền ngược (Không bắt buộc)",
+      shortTitleVi: "Tác động (K/Á)",
+      descriptionVi: "Phân tích lan truyền ngược chỉ áp dụng cho Lab có mã nguồn tham chiếu.",
+    };
+  }
+  if (step === 3 && options.isTheoryOnlyLab) {
+    return {
+      ...base,
+      title: "Quiz Gate (Not Required)",
+      shortTitle: "Quiz (Skipped)",
+      description: "This is a Theory Only Lab — Step 4 Submission is already unlocked.",
+      titleVi: "Quiz Gate (Không bắt buộc)",
+      shortTitleVi: "Quiz (Bỏ qua)",
+      descriptionVi: "Đây là Lab Chỉ Lý Thuyết — Bước 4 Nộp bài đã mở sẵn.",
+    };
+  }
+  if (step === 4 && !options.requiresRuntime) {
+    return {
+      ...base,
+      title: "Submit Lab Explanation",
+      shortTitle: "Submit Lab",
+      description: "Summarize your understanding and submit your sealed V2 dossier.",
+      titleVi: "Nộp Giải Trình Lab",
+      shortTitleVi: "Nộp bài",
+      descriptionVi: "Tổng hợp lập luận kiến trúc và nộp hồ sơ bài làm V2.",
+    };
+  }
+  return base;
+}
+
 function mapLayer(scope: string): ArchitecturalModel["elements"][number]["layer"] {
   const s = scope.toUpperCase();
   if (s.includes("EDGE") || s.includes("GATEWAY") || s.includes("FRONTEND")) return "edge";
@@ -550,9 +603,21 @@ export function LabWorkspace() {
     module.items.some((item) => item.assignmentId === assignmentId),
   );
   const moduleItems = currentModule?.items ?? [];
-  const theoryItems = moduleItems.filter(
-    (item) => item.type === "THEORY" && typeof item.content?.["body"] === "string",
+  const exactLabTheory = moduleItems.filter(
+    (item) =>
+      item.type === "THEORY" &&
+      item.assignmentId === assignmentId &&
+      typeof item.content?.["body"] === "string",
   );
+  const theoryItems =
+    exactLabTheory.length > 0
+      ? exactLabTheory
+      : moduleItems.filter(
+          (item) =>
+            item.type === "THEORY" &&
+            (!item.assignmentId || item.assignmentId === assignmentId) &&
+            typeof item.content?.["body"] === "string",
+        );
   const lab = assignments.data?.find((item) => item.id === assignmentId);
   const labTier = resolveLabTier(lab);
   const isTheoryOnlyLab = labTier === "THEORY_ONLY";
@@ -678,10 +743,15 @@ export function LabWorkspace() {
           }).toString()
         : null;
 
+  const hasReferenceArch = Boolean(activeModelId || referenceSnapshotId);
   const hasSubmitted = Boolean(studentContext.data?.latestSubmission);
   const stepComplete: Record<1 | 2 | 3 | 4, boolean> = {
-    1: Boolean(activeModelId),
-    2: Boolean(activeModelId) && runtimeReady,
+    1: hasReferenceArch
+      ? Boolean(activeModelId)
+      : Boolean(theoryItems.length > 0 || lab?.instructions?.trim() || hasSubmitted || runtimeReady),
+    2: hasReferenceArch
+      ? Boolean(activeModelId) && runtimeReady
+      : Boolean(runtimeReady || hasSubmitted),
     3: runtimeReady,
     4: requiresRuntime ? Boolean(verifiedStudioSession && hasSubmitted) : hasSubmitted,
   };
@@ -698,6 +768,7 @@ export function LabWorkspace() {
   const labHref = (step: 1 | 2 | 3 | 4, extraView?: InlineC4View) =>
     `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignmentId)}&step=${step}${extraView ? `&view=${extraView}` : ""}${preview ? "&preview=1" : ""}`;
   const tocSteps: LabTocStep[] = learningSteps.map((step) => {
+    const meta = resolveStepMeta(step.id, { hasReferenceArch, isTheoryOnlyLab, requiresRuntime });
     const available = stepAvailable(step.id);
     const state = stepComplete[step.id]
       ? "complete"
@@ -708,7 +779,7 @@ export function LabWorkspace() {
           : "locked";
     return {
       id: step.id,
-      label: t(step.shortTitle, step.shortTitleVi),
+      label: t(meta.shortTitle, meta.shortTitleVi),
       state,
       ...(state === "locked" ? { reason: stepReason(step.id) } : {}),
       ...(available ? { href: labHref(step.id) } : {}),
@@ -731,14 +802,23 @@ export function LabWorkspace() {
 
   const readiness = useMemo(
     () => [
-      {
-        label: t("Static architecture", "Kiến trúc tĩnh"),
-        state: activeModelId ? "READY" : referenceSnapshotId ? "IN PROGRESS" : "MISSING",
-      },
-      {
-        label: t("Theory and quiz", "Lý thuyết và quiz"),
-        state: runtimeReady ? "PASSED" : "IN PROGRESS",
-      },
+      ...(hasReferenceArch || requiresRuntime
+        ? [
+            {
+              label: t("Static architecture", "Kiến trúc tĩnh"),
+              state: activeModelId ? "READY" : referenceSnapshotId ? "IN PROGRESS" : "MISSING",
+            },
+          ]
+        : []),
+      isTheoryOnlyLab
+        ? {
+            label: t("Theory lesson", "Bài lý thuyết"),
+            state: "READY",
+          }
+        : {
+            label: t("Theory and quiz", "Lý thuyết và quiz"),
+            state: runtimeReady ? "PASSED" : "IN PROGRESS",
+          },
       ...(requiresRuntime
         ? [
             {
@@ -748,7 +828,16 @@ export function LabWorkspace() {
           ]
         : []),
     ],
-    [activeModelId, referenceSnapshotId, requiresRuntime, runtimeReady, verifiedStudioSession, t],
+    [
+      activeModelId,
+      hasReferenceArch,
+      isTheoryOnlyLab,
+      referenceSnapshotId,
+      requiresRuntime,
+      runtimeReady,
+      verifiedStudioSession,
+      t,
+    ],
   );
 
   if (!workspaceId)
@@ -831,7 +920,7 @@ export function LabWorkspace() {
                   </Badge>
                   <Badge className="border-teal-300/30 bg-teal-400/20 text-teal-50">
                     {requiresRuntime
-                      ? t("2D Studio Practice Lab", "Lab Thực Hành 2D Studio")
+                      ? t("Studio Live Practice Lab", "Lab Thực Hành Studio Live")
                       : isTheoryOnlyLab
                         ? t("Theory Only Lab", "Lab Chỉ Lý Thuyết")
                         : t("Theory & Quiz Lab", "Lab Lý Thuyết & Quiz")}
@@ -948,8 +1037,11 @@ export function LabWorkspace() {
           />
 
           {(() => {
-            const activeMeta = learningSteps.find((s) => s.id === displayedStep) ?? learningSteps[0];
-            if (!activeMeta) return null;
+            const activeMeta = resolveStepMeta(displayedStep, {
+              hasReferenceArch,
+              isTheoryOnlyLab,
+              requiresRuntime,
+            });
             return (
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-primary/20 bg-primary/5 px-4 py-2.5 text-xs text-foreground">
                 <p>
@@ -968,6 +1060,8 @@ export function LabWorkspace() {
           <div className="min-w-0 space-y-5">
             <StepContent
               requiresRuntime={requiresRuntime}
+              hasReferenceArch={hasReferenceArch}
+              isTheoryOnlyLab={isTheoryOnlyLab}
               runtimeReady={runtimeReady}
               runtimeSessionHref={labSessions[0] ? runtimeLink(labSessions[0].id) : null}
               studioHref={
@@ -1197,6 +1291,8 @@ function StepContent({
   studioSessionsReady = true,
   labMode,
   requiresRuntime,
+  hasReferenceArch,
+  isTheoryOnlyLab,
   moduleTitle,
   theoryItems,
   referenceArchitecture,
@@ -1233,6 +1329,8 @@ function StepContent({
   studioSessionsReady?: boolean | undefined;
   labMode: string;
   requiresRuntime: boolean;
+  hasReferenceArch: boolean;
+  isTheoryOnlyLab: boolean;
   referenceArchitecture: StudentLabReferenceArchitecture | null;
   inlineReferenceModel?: ArchitecturalModel | undefined;
   inlineC4View: InlineC4View;
@@ -1331,7 +1429,7 @@ function StepContent({
   const previewParam = preview ? "&preview=1" : "";
   const submitHref = `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=4${previewParam}#lab-submit`;
   const viewModelQuery = modelQuery ?? referenceModelQuery ?? null;
-  const current = learningSteps.find((item) => item.id === step)!;
+  const current = resolveStepMeta(step, { hasReferenceArch, isTheoryOnlyLab, requiresRuntime });
   const Icon = current.icon;
   const next = step < 4 ? ((step + 1) as 2 | 3 | 4) : undefined;
   const nextAvailable = Boolean(preview) || (next !== undefined && (next <= 3 || runtimeReady));
@@ -1397,261 +1495,291 @@ function StepContent({
                 </article>
               )}
 
-          <div className="space-y-4 rounded-2xl border bg-card p-5">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <Badge variant="secondary">
-                  {t(
-                    "Read-Only Structural Views (C1–C3 + Dependency Graph) · Static source evidence only (not runtime trace)",
-                    "Góc nhìn cấu trúc chỉ đọc (C1–C3 + Đồ thị phụ thuộc) · Chỉ từ bằng chứng mã nguồn tĩnh (không phải dấu vết runtime)",
-                  )}
-                </Badge>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  {t(
-                    "Switch inline between C1–C3 diagrams and the interactive Dependency Graph grounded directly on the Lecturer's curated reference snapshot.",
-                    "Chuyển đổi trực tiếp giữa các sơ đồ C1–C3 và Đồ thị phụ thuộc ngay tại đây dựa trên mã nguồn chuẩn do Giảng viên biên soạn.",
-                  )}
-                </p>
-              </div>
-              <Badge variant="outline" className="font-mono">
-                {modelRevision !== undefined
-                  ? `Model Revision r${modelRevision}`
-                  : "Revision pending"}
-              </Badge>
-            </div>
+          {hasReferenceArch ? (
+            <>
+              <div className="space-y-4 rounded-2xl border bg-card p-5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <Badge variant="secondary">
+                      {t(
+                        "Read-Only Structural Views (C1–C3 + Dependency Graph) · Static source evidence only (not runtime trace)",
+                        "Góc nhìn cấu trúc chỉ đọc (C1–C3 + Đồ thị phụ thuộc) · Chỉ từ bằng chứng mã nguồn tĩnh (không phải dấu vết runtime)",
+                      )}
+                    </Badge>
+                    <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                      {t(
+                        "Switch inline between C1–C3 diagrams and the interactive Dependency Graph grounded directly on the Lecturer's curated reference snapshot.",
+                        "Chuyển đổi trực tiếp giữa các sơ đồ C1–C3 và Đồ thị phụ thuộc ngay tại đây dựa trên mã nguồn chuẩn do Giảng viên biên soạn.",
+                      )}
+                    </p>
+                  </div>
+                  <Badge variant="outline" className="font-mono">
+                    {modelRevision !== undefined
+                      ? `Model Revision r${modelRevision}`
+                      : "Revision pending"}
+                  </Badge>
+                </div>
 
-            <div
-              className="flex flex-wrap gap-2"
-              role="tablist"
-              aria-label={t("Architecture views", "Góc nhìn kiến trúc")}
-            >
-              {(
-                [
-                  { id: "CONTEXT", label: "C1 System Context" },
-                  { id: "CONTAINER", label: "C2 Container" },
-                  { id: "COMPONENT", label: "C3 Component" },
-                  {
-                    id: "GRAPH",
-                    label: t("Service Dependency Graph", "Đồ thị phụ thuộc Service"),
-                  },
-                ] as const
-              ).map((tab) => (
-                <Button
-                  key={tab.id}
-                  type="button"
-                  size="sm"
-                  variant={inlineC4View === tab.id ? "default" : "outline"}
-                  onClick={() => onSelectInlineC4View(tab.id)}
+                <div
+                  className="flex flex-wrap gap-2"
+                  role="tablist"
+                  aria-label={t("Architecture views", "Góc nhìn kiến trúc")}
                 >
-                  {tab.label}
-                </Button>
-              ))}
-            </div>
-
-            {inlineC4View !== "GRAPH" ? (
-              activeModel && activeModel.elements.length > 0 ? (
-                <div className="space-y-4">
-                  <ArchitectureDiagrams
-                    model={activeModel}
-                    guidedStatic
-                    controlledKind={inlineC4View}
-                    hideKindSelector
-                    systemName={labTitle}
-                    selectedId={selectedGraphId}
-                    onSelect={setSelectedGraphId}
-                  />
-                  {selectedGraphId && (
-                    <ElementDetailsPanel model={activeModel} selectedId={selectedGraphId} />
-                  )}
-                </div>
-              ) : activeDiagramMermaid ? (
-                <DiagramPreview
-                  title={`C4 ${inlineC4View}`}
-                  content={activeDiagramMermaid}
-                  format="MERMAID"
-                  style="clean"
-                />
-              ) : (
-                <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
-                  {t(
-                    "Diagram projection is loading or unavailable for this view; switch to Dependency Graph to inspect elements.",
-                    "Chưa có dữ liệu sơ đồ cho góc nhìn này; hãy chuyển sang Đồ thị phụ thuộc để kiểm tra.",
-                  )}
-                </p>
-              )
-            ) : activeModel ? (
-              <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-                <div className="min-w-0 overflow-x-auto">
-                  <ArchitectureGraph
-                    model={activeModel}
-                    selectedId={selectedGraphId}
-                    onSelect={setSelectedGraphId}
-                  />
-                </div>
-                <div className="min-w-0">
-                  <ElementDetailsPanel model={activeModel} selectedId={selectedGraphId} />
-                </div>
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                {t("Loading architectural model…", "Đang tải mô hình kiến trúc…")}
-              </p>
-            )}
-          </div>
-
-          {referenceArchitecture?.evaluation?.findings &&
-          referenceArchitecture.evaluation.findings.length > 0 ? (
-            <DetailPanel
-              title={t(
-                "3E Static Evaluation Summary & Code Evidence",
-                "Tổng hợp Đánh giá Tĩnh 3E & Bằng chứng Mã nguồn",
-              )}
-            >
-              <div className="space-y-4">
-                <div className="divide-y rounded-xl border bg-background">
-                  {referenceArchitecture.evaluation.findings.map((finding) => (
-                    <div
-                      key={finding.id}
-                      className="flex flex-wrap items-start justify-between gap-3 p-3 text-xs"
+                  {(
+                    [
+                      { id: "CONTEXT", label: "C1 System Context" },
+                      { id: "CONTAINER", label: "C2 Container" },
+                      { id: "COMPONENT", label: "C3 Component" },
+                      {
+                        id: "GRAPH",
+                        label: t("Service Dependency Graph", "Đồ thị phụ thuộc Service"),
+                      },
+                    ] as const
+                  ).map((tab) => (
+                    <Button
+                      key={tab.id}
+                      type="button"
+                      size="sm"
+                      variant={inlineC4View === tab.id ? "default" : "outline"}
+                      onClick={() => onSelectInlineC4View(tab.id)}
                     >
-                      <div className="min-w-0 flex-1 space-y-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-mono font-semibold">{finding.ruleId}</span>
-                          <span className="font-medium">{getRuleName(finding.ruleId, "en")}</span>
-                        </div>
-                        {finding.message && (
-                          <p className="leading-5 text-muted-foreground">{finding.message}</p>
-                        )}
-                      </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        <StatusBadge status={finding.status} />
-                        <Badge variant="outline" className="font-mono text-[10px]">
-                          {finding.severity}
-                        </Badge>
-                      </div>
-                    </div>
+                      {tab.label}
+                    </Button>
                   ))}
                 </div>
-                {referenceArchitecture.evidences.length > 0 && (
-                  <div className="space-y-2">
-                    <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      {t("Verified Source Code Evidence", "Bằng chứng mã nguồn đã xác minh")}
-                    </h3>
-                    <div className="grid gap-2.5 md:grid-cols-2">
-                      {referenceArchitecture.evidences.slice(0, 8).map((ev) => (
-                        <div key={ev.id} className="rounded-xl border bg-muted/20 p-3 text-xs">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <span className="font-mono font-semibold text-foreground">
-                              {ev.locator || "Source location"}
-                            </span>
-                            {ev.sourceType && <Badge variant="outline">{ev.sourceType}</Badge>}
+
+                {inlineC4View !== "GRAPH" ? (
+                  activeModel && activeModel.elements.length > 0 ? (
+                    <div className="space-y-4">
+                      <ArchitectureDiagrams
+                        model={activeModel}
+                        guidedStatic
+                        controlledKind={inlineC4View}
+                        hideKindSelector
+                        systemName={labTitle}
+                        selectedId={selectedGraphId}
+                        onSelect={setSelectedGraphId}
+                      />
+                      {selectedGraphId && (
+                        <ElementDetailsPanel model={activeModel} selectedId={selectedGraphId} />
+                      )}
+                    </div>
+                  ) : activeDiagramMermaid ? (
+                    <DiagramPreview
+                      title={`C4 ${inlineC4View}`}
+                      content={activeDiagramMermaid}
+                      format="MERMAID"
+                      style="clean"
+                    />
+                  ) : (
+                    <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+                      {t(
+                        "Diagram projection is loading or unavailable for this view; switch to Dependency Graph to inspect elements.",
+                        "Chưa có dữ liệu sơ đồ cho góc nhìn này; hãy chuyển sang Đồ thị phụ thuộc để kiểm tra.",
+                      )}
+                    </p>
+                  )
+                ) : activeModel ? (
+                  <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+                    <div className="min-w-0 overflow-x-auto">
+                      <ArchitectureGraph
+                        model={activeModel}
+                        selectedId={selectedGraphId}
+                        onSelect={setSelectedGraphId}
+                      />
+                    </div>
+                    <div className="min-w-0">
+                      <ElementDetailsPanel model={activeModel} selectedId={selectedGraphId} />
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    {t("Loading architectural model…", "Đang tải mô hình kiến trúc…")}
+                  </p>
+                )}
+              </div>
+
+              {referenceArchitecture?.evaluation?.findings &&
+              referenceArchitecture.evaluation.findings.length > 0 ? (
+                <DetailPanel
+                  title={t(
+                    "3E Static Evaluation Summary & Code Evidence",
+                    "Tổng hợp Đánh giá Tĩnh 3E & Bằng chứng Mã nguồn",
+                  )}
+                >
+                  <div className="space-y-4">
+                    <div className="divide-y rounded-xl border bg-background">
+                      {referenceArchitecture.evaluation.findings.map((finding) => (
+                        <div
+                          key={finding.id}
+                          className="flex flex-wrap items-start justify-between gap-3 p-3 text-xs"
+                        >
+                          <div className="min-w-0 flex-1 space-y-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-mono font-semibold">{finding.ruleId}</span>
+                              <span className="font-medium">{getRuleName(finding.ruleId, "en")}</span>
+                            </div>
+                            {finding.message && (
+                              <p className="leading-5 text-muted-foreground">{finding.message}</p>
+                            )}
                           </div>
-                          {ev.excerpt && (
-                            <pre className="mt-2 overflow-x-auto rounded bg-background p-2 font-mono text-[11px] leading-relaxed text-muted-foreground">
-                              {ev.excerpt}
-                            </pre>
-                          )}
+                          <div className="flex shrink-0 items-center gap-2">
+                            <StatusBadge status={finding.status} />
+                            <Badge variant="outline" className="font-mono text-[10px]">
+                              {finding.severity}
+                            </Badge>
+                          </div>
                         </div>
                       ))}
                     </div>
+                    {referenceArchitecture.evidences.length > 0 && (
+                      <div className="space-y-2">
+                        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          {t("Verified Source Code Evidence", "Bằng chứng mã nguồn đã xác minh")}
+                        </h3>
+                        <div className="grid gap-2.5 md:grid-cols-2">
+                          {referenceArchitecture.evidences.slice(0, 8).map((ev) => (
+                            <div key={ev.id} className="rounded-xl border bg-muted/20 p-3 text-xs">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <span className="font-mono font-semibold text-foreground">
+                                  {ev.locator || "Source location"}
+                                </span>
+                                {ev.sourceType && <Badge variant="outline">{ev.sourceType}</Badge>}
+                              </div>
+                              {ev.excerpt && (
+                                <pre className="mt-2 overflow-x-auto rounded bg-background p-2 font-mono text-[11px] leading-relaxed text-muted-foreground">
+                                  {ev.excerpt}
+                                </pre>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            </DetailPanel>
-          ) : (
-            <StaticEvaluationSummary
-              modelId={modelId}
-              allowRunEvaluation={!isStudent && Boolean(viewModelQuery)}
-            />
-          )}
-
-          <DetailPanel
-            title={t(
-              "Evidence-Grounded AI Architecture Tutor (BR-05 & DS-02b)",
-              "Trợ lý AI Kiến trúc Có Bằng Chứng 3E (BR-05 & DS-02b)",
-            )}
-          >
-            <p className="text-xs text-muted-foreground">
-              {t(
-                "Ask questions grounded in C1–C3 static nodes and file paths, or test an out-of-scope refusal (DS-02b).",
-                "Hỏi AI dựa trên Node C1–C3 và đường dẫn mã nguồn chuẩn, hoặc kiểm thử kịch bản từ chối ngoài phạm vi (DS-02b).",
+                </DetailPanel>
+              ) : (
+                <StaticEvaluationSummary
+                  modelId={modelId}
+                  allowRunEvaluation={!isStudent && Boolean(viewModelQuery)}
+                />
               )}
-            </p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Button
-                type="button"
-                size="sm"
-                variant={tutorQuery === "grounded" ? "default" : "outline"}
-                onClick={() => setTutorQuery((cur) => (cur === "grounded" ? "none" : "grounded"))}
+
+              <DetailPanel
+                title={t(
+                  "Evidence-Grounded AI Architecture Tutor (BR-05 & DS-02b)",
+                  "Trợ lý AI Kiến trúc Có Bằng Chứng 3E (BR-05 & DS-02b)",
+                )}
               >
-                🔍 {t("Explain Selected C1–C3 Coupling & Contracts", "Giải thích Phụ thuộc & Hợp đồng C1–C3")}
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant={tutorQuery === "out_of_scope" ? "destructive" : "outline"}
-                onClick={() => setTutorQuery((cur) => (cur === "out_of_scope" ? "none" : "out_of_scope"))}
-              >
-                🧪 {t("Test Out-of-Scope Prompt (Demo DS-02b)", "Thử câu hỏi ngoài phạm vi: Giá Bitcoin 2030? (DS-02b)")}
-              </Button>
-            </div>
-            {tutorQuery === "grounded" && (
-              <div className="mt-3 space-y-1.5 rounded-xl border border-teal-200 bg-teal-50/60 p-3.5 text-xs dark:border-teal-800 dark:bg-teal-950/20">
-                <p className="font-semibold text-teal-950 dark:text-teal-200">
-                  ✅ {t("Evidence-Grounded Answer (Citing Static C1–C3 Model)", "Trả lời có đối chiếu Bằng chứng Tĩnh C1–C3")}
-                </p>
-                <p className="leading-5 text-muted-foreground">
-                  [Node:{" "}
-                  <code>{activeModel?.elements[0]?.name ?? "order-service"}</code>] · [File:{" "}
-                  <code>order-service/src/main/java/com/curated/order/PaymentClient.java</code>] ·
-                  [Contract:{" "}
-                  <code>
-                    {activeModel?.edges[0]?.protocol ?? "SERVICE_HTTP_CALL"}
-                  </code>
-                  ] —{" "}
+                <p className="text-xs text-muted-foreground">
                   {t(
-                    "Cross-container calls follow explicit OpenFeign/HTTP contracts separated from private database ownership.",
-                    "Lời gọi liên dịch vụ đi qua hợp đồng OpenFeign/HTTP rõ ràng, tách biệt hoàn toàn khỏi quyền sở hữu DB nội bộ.",
+                    "Ask questions grounded in C1–C3 static nodes and file paths, or test an out-of-scope refusal (DS-02b).",
+                    "Hỏi AI dựa trên Node C1–C3 và đường dẫn mã nguồn chuẩn, hoặc kiểm thử kịch bản từ chối ngoài phạm vi (DS-02b).",
                   )}
                 </p>
-              </div>
-            )}
-            {tutorQuery === "out_of_scope" && (
-              <div
-                role="alert"
-                className="mt-3 rounded-xl border border-destructive/40 bg-destructive/10 p-3.5 text-xs font-medium text-destructive"
-              >
-                {t(
-                  "Refused (BR-05 / DS-02b): Question is outside the verified C1–C3 static source architecture evidence of this Lab repository.",
-                  "Từ chối trả lời (BR-05 / DS-02b): Câu hỏi nằm ngoài phạm vi bằng chứng kiến trúc tĩnh C1–C3 của kho mã nguồn Lab hiện tại.",
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={tutorQuery === "grounded" ? "default" : "outline"}
+                    onClick={() => setTutorQuery((cur) => (cur === "grounded" ? "none" : "grounded"))}
+                  >
+                    🔍 {t("Explain Selected C1–C3 Coupling & Contracts", "Giải thích Phụ thuộc & Hợp đồng C1–C3")}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={tutorQuery === "out_of_scope" ? "destructive" : "outline"}
+                    onClick={() => setTutorQuery((cur) => (cur === "out_of_scope" ? "none" : "out_of_scope"))}
+                  >
+                    🧪 {t("Test Out-of-Scope Prompt (Demo DS-02b)", "Thử câu hỏi ngoài phạm vi: Giá Bitcoin 2030? (DS-02b)")}
+                  </Button>
+                </div>
+                {tutorQuery === "grounded" && (
+                  <div className="mt-3 space-y-1.5 rounded-xl border border-teal-200 bg-teal-50/60 p-3.5 text-xs dark:border-teal-800 dark:bg-teal-950/20">
+                    <p className="font-semibold text-teal-950 dark:text-teal-200">
+                      ✅ {t("Evidence-Grounded Answer (Citing Static C1–C3 Model)", "Trả lời có đối chiếu Bằng chứng Tĩnh C1–C3")}
+                    </p>
+                    <p className="leading-5 text-muted-foreground">
+                      [Node:{" "}
+                      <code>{activeModel?.elements[0]?.name ?? "order-service"}</code>] · [File:{" "}
+                      <code>order-service/src/main/java/com/curated/order/PaymentClient.java</code>] ·
+                      [Contract:{" "}
+                      <code>
+                        {activeModel?.edges[0]?.protocol ?? "SERVICE_HTTP_CALL"}
+                      </code>
+                      ] —{" "}
+                      {t(
+                        "Cross-container calls follow explicit OpenFeign/HTTP contracts separated from private database ownership.",
+                        "Lời gọi liên dịch vụ đi qua hợp đồng OpenFeign/HTTP rõ ràng, tách biệt hoàn toàn khỏi quyền sở hữu DB nội bộ.",
+                      )}
+                    </p>
+                  </div>
                 )}
-              </div>
-            )}
-          </DetailPanel>
+                {tutorQuery === "out_of_scope" && (
+                  <div
+                    role="alert"
+                    className="mt-3 rounded-xl border border-destructive/40 bg-destructive/10 p-3.5 text-xs font-medium text-destructive"
+                  >
+                    {t(
+                      "Refused (BR-05 / DS-02b): Question is outside the verified C1–C3 static source architecture evidence of this Lab repository.",
+                      "Từ chối trả lời (BR-05 / DS-02b): Câu hỏi nằm ngoài phạm vi bằng chứng kiến trúc tĩnh C1–C3 của kho mã nguồn Lab hiện tại.",
+                    )}
+                  </div>
+                )}
+              </DetailPanel>
+            </>
+          ) : (
+            <div className="rounded-xl border border-dashed bg-muted/20 px-4 py-3 text-xs text-muted-foreground">
+              {t(
+                "Theory-focused Lab — no reference repository or static C1–C3 diagrams are attached to this Lab.",
+                "Lab tập trung vào lý thuyết — không yêu cầu mã nguồn tham chiếu hay sơ đồ C1–C3.",
+              )}
+            </div>
+          )}
 
           <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-teal-200 bg-teal-50/70 p-5 dark:border-teal-800/60 dark:bg-teal-950/20">
             <div className="space-y-1">
               <p className="text-sm font-semibold text-teal-950 dark:text-teal-100">
-                {t(
-                  "Finished reading the Theory & C1–C3 Diagrams?",
-                  "Bạn đã nắm vững Lý thuyết & Kiến trúc C1–C3?",
-                )}
+                {hasReferenceArch
+                  ? t(
+                      "Finished reading the Theory & C1–C3 Diagrams?",
+                      "Bạn đã nắm vững Lý thuyết & Kiến trúc C1–C3?",
+                    )
+                  : t(
+                      "Finished reading the Theory lesson?",
+                      "Bạn đã đọc xong bài Lý thuyết?",
+                    )}
               </p>
               <p className="text-xs text-teal-900/80 dark:text-teal-300/80">
-                {t(
-                  "Proceed to trace upstream blast radius on the service graph in Step 2.",
-                  "Chuyển sang Bước 2 để thử nghiệm phân tích lan truyền lỗi trên đồ thị phụ thuộc.",
-                )}
+                {hasReferenceArch
+                  ? t(
+                      "Proceed to trace upstream blast radius on the service graph in Step 2.",
+                      "Chuyển sang Bước 2 để thử nghiệm phân tích lan truyền lỗi trên đồ thị phụ thuộc.",
+                    )
+                  : isTheoryOnlyLab
+                    ? t(
+                        "Theory Only Lab — proceed straight to Step 4 to submit your explanation.",
+                        "Lab Chỉ Lý Thuyết — chuyển thẳng sang Bước 4 để nộp phần giải trình.",
+                      )
+                    : t(
+                        "Proceed to Step 3 to complete the comprehension Quiz Gate.",
+                        "Chuyển sang Bước 3 để làm bài Quiz kiểm tra kiến thức.",
+                      )}
               </p>
             </div>
             <Button asChild className="bg-teal-600 text-white hover:bg-teal-700">
               <Link
-                href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=2${previewParam}`}
+                href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=${hasReferenceArch ? 2 : isTheoryOnlyLab ? 4 : 3}${previewParam}`}
               >
-                {t(
-                  "Next Step 2: Reverse BFS Impact Simulator →",
-                  "Sang Bước 2: Thử Nghiệm Lan Truyền Lỗi (BFS) →",
-                )}
+                {hasReferenceArch
+                  ? t(
+                      "Next Step 2: Reverse BFS Impact Simulator →",
+                      "Sang Bước 2: Thử Nghiệm Lan Truyền Lỗi (BFS) →",
+                    )
+                  : isTheoryOnlyLab
+                    ? t("Next Step: Submit Lab Explanation →", "Sang Bước 4: Nộp Giải Trình Lab →")
+                    : t("Next Step 3: Take Quiz Gate →", "Sang Bước 3: Làm Bài Quiz →")}
               </Link>
             </Button>
           </div>
@@ -1660,14 +1788,27 @@ function StepContent({
 
       {step === 2 && (
         <div className="space-y-5">
-          <Step2StaticImpact
-            projectId={projectId}
-            modelId={modelId}
-            modelQuery={modelQuery}
-            sourceLink={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=1${previewParam}`}
-            inlineModel={activeModel}
-            onOpenC1C3View={onOpenC1C3View}
-          />
+          {hasReferenceArch ? (
+            <Step2StaticImpact
+              projectId={projectId}
+              modelId={modelId}
+              modelQuery={modelQuery}
+              sourceLink={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=1${previewParam}`}
+              inlineModel={activeModel}
+              onOpenC1C3View={onOpenC1C3View}
+            />
+          ) : (
+            <DetailPanel
+              title={t("Reverse BFS Impact Explorer", "Khám phá tác động tĩnh theo Reverse BFS")}
+            >
+              <p className="text-sm text-muted-foreground">
+                {t(
+                  "This Theory-focused Lab has no reference repository attached, so static graph impact exploration is skipped.",
+                  "Lab lý thuyết này không gắn kho mã nguồn tham chiếu nên không cần phân tích đồ thị phụ thuộc tĩnh.",
+                )}
+              </p>
+            </DetailPanel>
+          )}
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-teal-200 bg-gradient-to-r from-teal-50/70 to-emerald-50/60 p-4">
             <Button asChild variant="outline">
               <Link
@@ -1681,12 +1822,14 @@ function StepContent({
             </Button>
             <Button asChild className="bg-teal-600 text-white hover:bg-teal-700">
               <Link
-                href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=3${previewParam}`}
+                href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=${isTheoryOnlyLab ? 4 : 3}${previewParam}`}
               >
-                {t(
-                  "Next Step 3: Take Quiz to Unlock Studio Lab →",
-                  "Sang Bước 3: Làm Bài Quiz Mở Khóa Phòng Lab →",
-                )}
+                {isTheoryOnlyLab
+                  ? t("Next Step: Submit Lab Explanation →", "Sang Bước 4: Nộp Giải Trình Lab →")
+                  : t(
+                      "Next Step 3: Take Quiz to Unlock Lab →",
+                      "Sang Bước 3: Làm Bài Quiz Mở Khóa Lab →",
+                    )}
               </Link>
             </Button>
           </div>
@@ -1695,7 +1838,28 @@ function StepContent({
 
       {step === 3 && (
         <div className="space-y-4">
-          {showQuiz ? (
+          {isTheoryOnlyLab ? (
+            <DetailPanel
+              title={t(
+                "Quiz Gate Not Required · Theory Only Lab",
+                "Không yêu cầu Quiz Gate · Lab Chỉ Lý Thuyết",
+              )}
+            >
+              <div className="space-y-4 rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4">
+                <p className="text-sm leading-6 text-foreground">
+                  {t(
+                    "This Lab uses the Theory Only flow. Step 4 Submission is already unlocked without a Quiz check.",
+                    "Lab này thuộc cấu trúc Chỉ Lý Thuyết. Bước 4 Nộp bài đã mở sẵn, không cần làm Quiz.",
+                  )}
+                </p>
+                <Button asChild className="bg-teal-600 text-white hover:bg-teal-700">
+                  <Link href={submitHref}>
+                    {t("Go to Step 4: Submit Lab Explanation →", "Sang Bước 4: Nộp Giải Trình Lab →")}
+                  </Link>
+                </Button>
+              </div>
+            </DetailPanel>
+          ) : showQuiz ? (
             <CourseQuiz
               workspaceId={workspaceId}
               labId={labId}
@@ -1944,6 +2108,7 @@ function StepContent({
                   labMode={labMode}
                   runtimeSessionId={verifiedSessionForSubmit}
                   initialReview={studentContext?.latestReview}
+                  hasReferenceArch={hasReferenceArch}
                 />
               )}
             </>

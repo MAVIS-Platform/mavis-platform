@@ -28,7 +28,7 @@ import { CourseWorkspaceShell } from "@/features/courses/course-workspace-shell"
 import { useCourseAuthoring, useCourseSetup } from "@/features/workspaces/course-access";
 import { TheoryLibrary } from "@/features/workspaces/theory-library";
 import { Assignments } from "./screens";
-import type { Assignment } from "./requirements";
+import { resolveLabTier, type Assignment } from "./requirements";
 import { LabInfoForm } from "./lab-info-form";
 import { LabTheorySection } from "./lab-theory-section";
 import { LabSourceSection } from "./lab-source-section";
@@ -114,6 +114,7 @@ export function LabAuthoring() {
     );
   const canManage = workspace?.myRole === "LECTURER" || session.data?.user?.role === "admin";
   const isPublished = Boolean(setupLab?.published || assignment?.labOrder != null);
+  const labTier = resolveLabTier(assignment);
 
   useEffect(() => {
     if (isTab(requestedTab) && requestedTab !== tab) {
@@ -131,24 +132,36 @@ export function LabAuthoring() {
   };
 
   const onSaved = (saved: Assignment) => {
+    const nextTab: Tab = resolveLabTier(saved) === "THEORY_ONLY" ? "theory" : "source";
     setCreatedAssignmentId(saved.id);
-    setTab("source");
+    setTab(nextTab);
     const query = new URLSearchParams(params?.toString() ?? "");
     query.set("assignment", saved.id);
     query.delete("step");
-    query.set("tab", "source");
+    query.set("tab", nextTab);
     router.replace(`/lab-authoring?${query.toString()}`);
   };
 
-  const navItems: Array<{ id: Tab; done: boolean; enabled: boolean }> = [
+  const navItems: Array<{ id: Tab; done: boolean; enabled: boolean; skipped?: boolean }> = [
     { id: "info", done: Boolean(assignment), enabled: true },
-    { id: "source", done: Boolean(assignment?.referenceSource?.modelId), enabled: Boolean(assignment) },
+    {
+      id: "source",
+      done: Boolean(assignment?.referenceSource?.modelId),
+      enabled: Boolean(assignment),
+      skipped: Boolean(assignment) && labTier === "THEORY_ONLY" && !assignment?.referenceSource?.modelId,
+    },
     { id: "theory", done: theoryReady, enabled: Boolean(assignment) },
-    { id: "quiz", done: Boolean(setupLab?.quizPublished), enabled: Boolean(assignment) },
+    {
+      id: "quiz",
+      done: Boolean(setupLab?.quizPublished),
+      enabled: Boolean(assignment),
+      skipped: Boolean(assignment) && labTier === "THEORY_ONLY",
+    },
     {
       id: "studio",
       done: Boolean(assignment && setupLab?.topologyFrozen),
       enabled: Boolean(assignment),
+      skipped: Boolean(assignment) && labTier !== "THEORY_QUIZ_STUDIO",
     },
     { id: "publish", done: isPublished, enabled: Boolean(assignment) },
   ];
@@ -370,7 +383,9 @@ export function LabAuthoring() {
                   className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors ${
                     active
                       ? "bg-primary text-primary-foreground shadow-2xs"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                      : item.skipped
+                        ? "text-muted-foreground opacity-65 hover:bg-muted hover:text-foreground"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
                   } disabled:cursor-not-allowed disabled:opacity-40`}
                 >
                   {item.done ? (
@@ -392,6 +407,7 @@ export function LabAuthoring() {
                   )}
                   <span className="truncate">
                     {t(meta.en, meta.vi)}
+                    {item.skipped && !item.done ? ` (${t("Optional", "Tùy chọn")})` : ""}
                   </span>
                 </button>
               );

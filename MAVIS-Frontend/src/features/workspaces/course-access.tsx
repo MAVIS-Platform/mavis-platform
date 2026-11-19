@@ -1491,6 +1491,8 @@ export function PublishCourseLab({
       void cache.invalidateQueries({ queryKey: roadmapKey(workspaceId) });
       void cache.invalidateQueries({ queryKey: ["api", "assignments"] });
       void cache.invalidateQueries({ queryKey: ["api", "course-setup", workspaceId] });
+      void cache.invalidateQueries({ queryKey: ["api", "course-published", workspaceId] });
+      void cache.invalidateQueries({ queryKey: ["api", "course-authoring", workspaceId] });
     },
   });
   const freeze = useMutation({

@@ -47,7 +47,7 @@ import {
   useStudentLabContext,
 } from "@/features/workspaces/course-access";
 import { AssignmentSourceDetails } from "./source-picker";
-import type { Assignment } from "./requirements";
+import { resolveLabTier, type Assignment } from "./requirements";
 
 type TheoryItem = {
   id: string;
@@ -291,7 +291,7 @@ export function LabTheorySection({
   workspaceId: string;
   workspaceName: string;
   assignment: Assignment;
-  onNavigate: (tab: "source" | "quiz") => void;
+  onNavigate: (tab: "source" | "quiz" | "publish") => void;
 }) {
   const { t, locale } = useLocale();
   const cache = useQueryClient();
@@ -362,11 +362,13 @@ export function LabTheorySection({
     },
   });
   const detachAsset = useMutation({
-    mutationFn: (assetId: string) =>
-      api<null>(
+    mutationFn: async (assetId: string) => {
+      await api<null>(
         `workspaces/${workspaceId}/course-labs/${assignment.id}/theory-assets/${assetId}`,
         { method: "DELETE" },
-      ),
+      );
+      await course.publish.mutateAsync().catch(() => undefined);
+    },
     onSuccess: () => invalidateTheory(),
   });
   const saveToLibrary = useMutation({
@@ -1407,10 +1409,17 @@ export function LabTheorySection({
       </details>
 
       <div className="flex justify-end">
-        <Button type="button" size="sm" onClick={() => onNavigate("quiz")}>
-          {t("Next Step 4: Quiz", "Sang Bước 4: Câu hỏi Quiz")}
-          <ArrowRight className="ml-1.5 size-4" aria-hidden="true" />
-        </Button>
+        {resolveLabTier(assignment) === "THEORY_ONLY" ? (
+          <Button type="button" size="sm" onClick={() => onNavigate("publish")}>
+            {t("Next Step 6: Check & add to class", "Sang Bước 6: Kiểm tra & thêm vào lớp")}
+            <ArrowRight className="ml-1.5 size-4" aria-hidden="true" />
+          </Button>
+        ) : (
+          <Button type="button" size="sm" onClick={() => onNavigate("quiz")}>
+            {t("Next Step 4: Quiz", "Sang Bước 4: Câu hỏi Quiz")}
+            <ArrowRight className="ml-1.5 size-4" aria-hidden="true" />
+          </Button>
+        )}
       </div>
     </div>
   );
