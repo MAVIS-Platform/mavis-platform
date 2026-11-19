@@ -179,7 +179,17 @@ class CourseHttpAcceptanceTest {
         send("POST", publish + lab1 + "/publish", student, null, 403);
         assertFalse(data(send("GET", roadmap, lecturer, null, 200)).path("guided").asBoolean());
         assertEquals(1, data(send("POST", publish + lab1 + "/publish", lecturer, null, 200)).path("position").asInt());
+        String course = workspace + "/course";
+        send("PUT", course + "/draft", lecturer, Map.of("title", "Architecture course"), 200);
+        addTheoryModule(course, lecturer, "Published module");
+        JsonNode originalCourse = data(send("POST", course + "/publish", lecturer, null, 200));
+        send("POST", course + "/draft", lecturer, null, 200);
+        addTheoryModule(course, lecturer, "Unrelated draft module");
         assertEquals(2, data(send("POST", publish + lab2 + "/publish", lecturer, null, 200)).path("position").asInt());
+        JsonNode courseAfterLabPublication = data(send("GET", course + "/published", lecturer, null, 200));
+        assertEquals(originalCourse.path("version"), courseAfterLabPublication.path("version"));
+        assertEquals(originalCourse.path("snapshot"), courseAfterLabPublication.path("snapshot"));
+        assertEquals(2, data(send("GET", course, lecturer, null, 200)).path("modules").size());
         assertEquals(2, data(send("GET", roadmap, admin, null, 200)).path("labs").size());
         send("GET", roadmap, foreignStudent, null, 403);
         send("GET", roadmap, student, null, 403);
@@ -317,6 +327,14 @@ class CourseHttpAcceptanceTest {
         send("POST", "course-enrollments/redeem", foreignStudent, Map.of("code", code), 400);
         send("POST", "auth/logout", student, null, 200);
         send("GET", roadmap, student, null, 401);
+    }
+
+    private void addTheoryModule(String course, String lecturer, String title) throws Exception {
+        JsonNode draft = data(send("POST", course + "/modules", lecturer, Map.of("title", title), 200));
+        JsonNode modules = draft.path("modules");
+        String moduleId = modules.get(modules.size() - 1).path("id").asText();
+        send("POST", course + "/modules/" + moduleId + "/items", lecturer,
+                Map.of("type", "THEORY", "title", title, "content", Map.of("body", "Course material")), 200);
     }
 
     private String login(String user) throws Exception {

@@ -383,27 +383,4 @@ class CourseAccessServiceTest {
                 eq(workspaceId), any());
     }
 
-    @Test
-    void controllerPublishSyncsCourseDraftOutsideServiceTransaction() {
-        var courseAccess = mock(CourseAccessService.class);
-        var seeder = mock(CourseLabSeederService.class);
-        var setup = mock(CourseSetupService.class);
-        var authoring = mock(CourseAuthoringService.class);
-        var controller = new com.mavis.platform.workspace.controller.CourseAccessController(courseAccess, seeder, setup);
-        org.springframework.test.util.ReflectionTestUtils.setField(controller, "courseAuthoring", authoring);
-
-        var expectedLab = new CourseAccessService.Lab(assignmentId, 1, "Theory Lab", "UNLOCKED", null);
-        when(courseAccess.publish(workspaceId, assignmentId)).thenReturn(expectedLab);
-        doThrow(new BusinessException(ErrorCode.NOT_FOUND, "Course draft not found"))
-                .when(authoring).publish(workspaceId);
-
-        var response = controller.publish(workspaceId, assignmentId);
-
-        assertEquals(ErrorCode.SUCCESS.getCode(), response.getCode());
-        assertEquals(expectedLab, response.getData());
-        var ordered = inOrder(courseAccess, authoring);
-        ordered.verify(courseAccess).publish(workspaceId, assignmentId);
-        ordered.verify(authoring).publish(workspaceId);
-    }
-
 }
