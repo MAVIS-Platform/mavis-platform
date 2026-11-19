@@ -7,11 +7,13 @@ import {
   ChevronDown,
   Circle,
   Code2,
+  FilePlus2,
   FileText,
   GitFork,
   HelpCircle,
   Lock,
   Play,
+  Plus,
   type LucideIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -191,27 +193,34 @@ export function CourseOutline({
   if (modules.length === 0) {
     if (!canManage) return null;
     return (
-      <section className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-dashed bg-card px-6 py-8">
-        <div className="space-y-1">
-          <p className="text-sm font-semibold text-foreground">
-            {t("No curriculum chapters yet.", "Chưa có chương học tập nào.")}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            {t(
-              "Modules and lessons created in Curriculum & Materials will appear here.",
-              "Các chương và học liệu tạo ở mục Chương trình học sẽ hiển thị tại đây.",
-            )}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button asChild size="sm" variant="outline">
-            <Link href={`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}`}>
-              {t("Create Labs", "Tạo Lab")}
+      <section className="flex min-h-[360px] flex-col items-center justify-center rounded-2xl border border-dashed border-border/80 bg-card/40 px-6 py-14 text-center">
+        <Link
+          href={`/workspace-overview?workspace=${encodeURIComponent(workspaceId)}&view=course-authoring`}
+          aria-label={t("Setup Curriculum", "Thiết lập Curriculum")}
+          className="group flex size-16 items-center justify-center rounded-2xl border-2 border-dashed border-muted-foreground/35 bg-muted/40 text-muted-foreground transition hover:scale-[1.03] hover:border-primary hover:bg-primary/10 hover:text-primary"
+        >
+          <Plus className="size-8 stroke-[1.75] transition-transform group-hover:rotate-90" aria-hidden="true" />
+        </Link>
+        <h2 className="mt-5 text-base font-semibold tracking-tight text-foreground">
+          {t("No curriculum chapters yet.", "Chưa có chương học tập nào.")}
+        </h2>
+        <p className="mt-1.5 max-w-md text-sm text-muted-foreground">
+          {t(
+            "Start by creating your first module in Curriculum & Materials, or build a standalone Lab first.",
+            "Bắt đầu bằng cách tạo chương đầu tiên ở Đề cương & Học liệu, hoặc tạo bài Lab trước.",
+          )}
+        </p>
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+          <Button asChild size="default">
+            <Link href={`/workspace-overview?workspace=${encodeURIComponent(workspaceId)}&view=course-authoring`}>
+              <Plus className="mr-1.5 size-4" aria-hidden="true" />
+              {t("Setup Curriculum", "Thiết lập Curriculum")}
             </Link>
           </Button>
-          <Button asChild size="sm">
-            <Link href={`/workspace-overview?workspace=${encodeURIComponent(workspaceId)}&view=course-authoring`}>
-              {t("Setup Curriculum", "Thiết lập Curriculum")}
+          <Button asChild size="default" variant="outline">
+            <Link href={`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}`}>
+              <FilePlus2 className="mr-1.5 size-4" aria-hidden="true" />
+              {t("Create Labs", "Tạo Lab")}
             </Link>
           </Button>
         </div>
