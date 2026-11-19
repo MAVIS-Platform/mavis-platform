@@ -150,14 +150,15 @@ public class CourseAccessService {
     }
 
     private void syncDerivedLabComposition(Assignment assignment) {
+        if ("LEGACY".equalsIgnoreCase(assignment.getLabMode())) {
+            return;
+        }
         boolean hasReference = assignment.getReferenceModel() != null;
         boolean hasStudio = hasReference
                 && (assignment.getStudioTopologySnapshot() != null || Boolean.TRUE.equals(assignment.getRequireRuntimeTrace()));
         boolean hasQuiz = hasPublishedQuiz(assignment.getId());
         assignment.setRequireRuntimeTrace(hasStudio);
-        if (assignment.getLabMode() == null || !"LEGACY".equalsIgnoreCase(assignment.getLabMode())) {
-            assignment.setLabMode(hasStudio ? "THEORY_QUIZ_STUDIO" : "THEORY_QUIZ");
-        }
+        assignment.setLabMode(hasStudio ? "THEORY_QUIZ_STUDIO" : "THEORY_QUIZ");
         ObjectNode policy = assignment.getAiPolicy() instanceof ObjectNode existing
                 ? existing.deepCopy()
                 : JsonNodeFactory.instance.objectNode();

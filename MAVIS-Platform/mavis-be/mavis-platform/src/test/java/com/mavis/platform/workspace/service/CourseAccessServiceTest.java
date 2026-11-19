@@ -173,6 +173,7 @@ class CourseAccessServiceTest {
         when(access.requireCurrentActiveUser()).thenReturn(User.builder().id(teacherId).build());
         when(workspaces.findLockedById(workspaceId)).thenReturn(Optional.of(workspace));
         assignment.setDescription("Chapter 1 Java fundamentals theory");
+        assignment.setLabMode("THEORY_QUIZ");
         assignment.setRequireRuntimeTrace(true);
         when(assignments.findLockedById(assignmentId)).thenReturn(Optional.of(assignment));
         when(assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId))
@@ -194,6 +195,7 @@ class CourseAccessServiceTest {
         when(access.requireCurrentActiveUser()).thenReturn(User.builder().id(teacherId).build());
         when(workspaces.findLockedById(workspaceId)).thenReturn(Optional.of(workspace));
         assignment.setDescription("Architecture theory with Quiz");
+        assignment.setLabMode("THEORY_QUIZ");
         assignment.setRequireRuntimeTrace(false);
         when(assignments.findLockedById(assignmentId)).thenReturn(Optional.of(assignment));
         when(assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId))
