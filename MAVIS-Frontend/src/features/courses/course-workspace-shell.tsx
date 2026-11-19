@@ -321,7 +321,6 @@ export function CourseWorkspaceShell({
   const pathname = usePathname();
   const members = workspace.members ?? [];
   const students = members.filter((member) => member.role.toUpperCase() === "STUDENT").length;
-  const lecturers = members.filter((member) => member.role.toUpperCase() === "LECTURER").length;
   const isStudent = workspace.myRole?.toUpperCase() === "STUDENT";
   const activeStaffTab = resolveStaffTab(pathname, active);
   const activeStudentTab = resolveStudentTab(pathname, active);
@@ -329,17 +328,8 @@ export function CourseWorkspaceShell({
   return (
     <div className="space-y-6">
       <header className="overflow-hidden rounded-2xl bg-gradient-to-r from-emerald-950 via-emerald-800 to-teal-600 p-5 text-white shadow-lg sm:p-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="min-w-0 space-y-2">
-            <p className="text-xs text-white/75">
-              <Link className="hover:text-white hover:underline" href={isStudent ? "/courses" : "/workspaces"}>
-                {t("Classes", "Lớp học")}
-              </Link>
-              <span aria-hidden="true"> / </span>
-              <span className="font-mono font-semibold text-white">
-                {workspace.code || t("Class", "Lớp")}
-              </span>
-            </p>
             <div className="flex flex-wrap items-center gap-2.5">
               <h1 className="text-xl font-bold tracking-tight sm:text-2xl">{workspace.name}</h1>
               {workspace.code && (
@@ -358,10 +348,11 @@ export function CourseWorkspaceShell({
               </Badge>
               {!isStudent && <ClassHeaderPasskey workspaceId={workspace.id} />}
             </div>
-            <p className="text-xs text-white/80">
-              {members.length} {t("members", "thành viên")} · {students}{" "}
-              {t("students", "sinh viên")} · {lecturers} {t("lecturers", "giảng viên")} ·{" "}
-              {workspace.myRole || t("Member", "Thành viên")}
+            <p className="inline-flex items-center gap-1.5 text-xs text-white/80">
+              <Users className="size-3.5" aria-hidden="true" />
+              <span>
+                {students} {t("students", "sinh viên")}
+              </span>
             </p>
           </div>
           {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
