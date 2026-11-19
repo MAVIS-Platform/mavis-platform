@@ -9,7 +9,7 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit --incremental false",
-    "test": "node --test tests/architecture.test.cjs tests/course-learning-ui.test.cjs tests/java-contract.test.cjs tests/edge-semantics.test.cjs tests/sequence-semantics.test.cjs tests/uml-m4-m8.test.cjs tests/evidence-grounding.test.cjs tests/source-method-sequence.test.cjs tests/ai-usage.test.cjs tests/import-workflow.test.cjs tests/runtime-planning.test.cjs tests/studio-live-capabilities.test.cjs tests/frontend-performance.test.cjs tests/design-system-i18n.test.cjs tests/landing-login-ui.test.cjs tests/student-portal-ui.test.cjs tests/lab-workspace-flow.test.cjs tests/studio-grading-ui.test.cjs tests/admin-i18n-polish.test.cjs",
+    "test": "node --test tests/architecture.test.cjs tests/course-learning-ui.test.cjs tests/java-contract.test.cjs tests/edge-semantics.test.cjs tests/sequence-semantics.test.cjs tests/uml-m4-m8.test.cjs tests/evidence-grounding.test.cjs tests/source-method-sequence.test.cjs tests/ai-usage.test.cjs tests/import-workflow.test.cjs tests/runtime-planning.test.cjs tests/studio-live-capabilities.test.cjs tests/frontend-performance.test.cjs tests/design-system-i18n.test.cjs tests/landing-login-ui.test.cjs tests/oauth-login.test.cjs tests/student-portal-ui.test.cjs tests/lab-workspace-flow.test.cjs tests/studio-grading-ui.test.cjs tests/admin-i18n-polish.test.cjs",
     "test:routes": "node tests/route-render-smoke.cjs",
     "test:connected": "node --test tests/connected-pipeline.test.cjs",
     "test:three-e-ui": "node tests/three-e-ui.browser.cjs",

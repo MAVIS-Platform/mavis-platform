@@ -19,6 +19,11 @@ export const publicErrors = {
   AUTH_VERIFICATION_UNAVAILABLE:
     "Email verification could not be completed. Please check your code or sign in if already verified.",
   AUTH_EMAIL_DELIVERY: "We couldn't send the email right now. Please try again later.",
+  AUTH_OAUTH_UNCONFIGURED: "Third-party sign-in is not configured for this workspace.",
+  AUTH_OAUTH_FAILED: "Third-party sign-in failed. Please try again.",
+  AUTH_OAUTH_EMAIL_UNVERIFIED:
+    "Your third-party account must have a verified email address to sign in.",
+  AUTH_OAUTH_CANCELLED: "Third-party sign-in was cancelled.",
   AUTH_NETWORK: "Unable to connect. Please check your internet connection and try again.",
   AUTH_SERVER: "Something went wrong. Please try again later.",
   AUTH_RATE_LIMIT: "Too many requests. Please wait a moment before trying again.",

@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.mavis.platform.auth.dto.RegisterResponse;
 import com.mavis.platform.auth.dto.VerifyEmailRequest;
+import com.mavis.platform.auth.dto.GithubLoginRequest;
 import com.mavis.platform.auth.dto.GoogleLoginRequest;
 
 @RestController
@@ -56,6 +57,12 @@ public class AuthController {
     public ResponseEntity<ApiResponse<AuthResponse>> googleLogin(@Valid @RequestBody GoogleLoginRequest request) {
         AuthResponse response = authService.googleLogin(request);
         return ResponseEntity.ok(ApiResponse.success("Đăng nhập Google thành công", response));
+    }
+
+    @PostMapping("/github")
+    public ResponseEntity<ApiResponse<AuthResponse>> githubLogin(@Valid @RequestBody GithubLoginRequest request) {
+        AuthResponse response = authService.githubLogin(request);
+        return ResponseEntity.ok(ApiResponse.success("Đăng nhập GitHub thành công", response));
     }
 
     @PostMapping("/forgot-password")

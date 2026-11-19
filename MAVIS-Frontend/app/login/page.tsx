@@ -1,8 +1,9 @@
 "use client";
 import Link from "next/link";
 import { loginDestination } from "@/lib/auth/login-destination";
-import { GoogleSignIn } from "@/features/auth/google-sign-in";
+import { SocialSignIn } from "@/features/auth/social-sign-in";
 import { LoginBackground } from "@/features/auth/login-background";
+import { publicErrorCode, publicErrors } from "@/lib/errors/api-error";
 import { useId, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -178,6 +179,18 @@ export default function LoginPage() {
               )}
             </p>
           </div>
+          {(() => {
+            const oauthCode = publicErrorCode(params.get("oauthError"));
+            if (!oauthCode) return null;
+            return (
+              <div
+                role="alert"
+                className="mb-5 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-3 text-sm text-destructive"
+              >
+                {t(publicErrors[oauthCode])}
+              </div>
+            );
+          })()}
           {(params.get("signedOut") === "1" ||
             params.get("verified") === "1" ||
             params.get("reset") === "1") && (
@@ -336,7 +349,7 @@ export default function LoginPage() {
           )}
           {api.mode === "backend" && (
             <>
-              <GoogleSignIn onSignedIn={finish} />
+              <SocialSignIn onSignedIn={finish} nextPath={params.get("next")} />
               <p className="mt-4 text-center text-sm text-muted-foreground">
                 {t("New to MAVIS?", "Chưa có tài khoản MAVIS?")}{" "}
                 <Link href="/auth/register" className="font-medium text-primary hover:underline">

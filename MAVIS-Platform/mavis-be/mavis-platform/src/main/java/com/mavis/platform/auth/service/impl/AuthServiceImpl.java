@@ -15,6 +15,7 @@ import com.mavis.common.repository.RoleRepository;
 import com.mavis.common.repository.UserOtpRepository;
 import com.mavis.common.repository.UserRepository;
 import com.mavis.platform.auth.dto.AuthResponse;
+import com.mavis.platform.auth.dto.GithubLoginRequest;
 import com.mavis.platform.auth.dto.GoogleLoginRequest;
 import com.mavis.platform.auth.dto.LoginRequest;
 import com.mavis.platform.auth.dto.RegisterRequest;
@@ -22,6 +23,7 @@ import com.mavis.platform.auth.dto.RegisterResponse;
 import com.mavis.platform.auth.dto.VerifyEmailRequest;
 import com.mavis.platform.auth.service.AuthService;
 import com.mavis.platform.auth.service.EmailService;
+import com.mavis.platform.auth.service.GithubOAuthClient;
 import com.mavis.platform.security.jwt.JwtUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,6 +36,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Collections;
+import java.util.Locale;
 import java.util.Optional;
 import java.security.SecureRandom;
 import java.util.UUID;
@@ -52,10 +55,17 @@ public class AuthServiceImpl implements AuthService {
     private final EmailService emailService;
     private final com.mavis.platform.security.jwt.RefreshSessionService refreshSessions;
     private final com.mavis.platform.auth.service.AuthAbuseGuard abuseGuard;
+    private final GithubOAuthClient githubOAuthClient;
 
     public AuthServiceImpl(UserRepository users, RoleRepository roles, UserOtpRepository otps,
                            PasswordEncoder passwords, JwtUtil jwt, EmailService email) {
-        this(users, roles, otps, passwords, jwt, email, null, null);
+        this(users, roles, otps, passwords, jwt, email, null, null, null);
+    }
+
+    public AuthServiceImpl(UserRepository users, RoleRepository roles, UserOtpRepository otps,
+                           PasswordEncoder passwords, JwtUtil jwt, EmailService email,
+                           GithubOAuthClient githubOAuthClient) {
+        this(users, roles, otps, passwords, jwt, email, null, null, githubOAuthClient);
     }
 
     @Value("${app.google.client-id:}")
@@ -165,63 +175,101 @@ public class AuthServiceImpl implements AuthService {
     @Transactional
     public AuthResponse googleLogin(GoogleLoginRequest request) {
         if (googleClientId == null || googleClientId.isBlank()) {
-            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR, "Hệ thống chưa được cấu hình Google Login");
+            throw new AuthException(AuthErrorCode.AUTH_OAUTH_UNCONFIGURED);
         }
 
         try {
             GoogleIdTokenVerifier verifier = new GoogleIdTokenVerifier.Builder(new NetHttpTransport(), new GsonFactory())
-                    .setAudience(Collections.singletonList(googleClientId))
+                    .setAudience(Collections.singletonList(googleClientId.trim()))
                     .build();
 
             GoogleIdToken idToken = verifier.verify(request.getIdToken());
             if (idToken == null) {
-                throw new BusinessException(ErrorCode.UNAUTHORIZED, "Google ID Token không hợp lệ");
+                throw new AuthException(AuthErrorCode.AUTH_OAUTH_FAILED);
             }
 
             GoogleIdToken.Payload payload = idToken.getPayload();
             String email = payload.getEmail();
-            String name = (String) payload.get("name");
-
-            // Kiểm tra user có tồn tại chưa
-            Optional<User> optionalUser = userRepository.findByEmail(email);
-            User user;
-
-            if (optionalUser.isPresent()) {
-                user = optionalUser.get();
-                if ("LOCKED".equals(user.getStatus()) || "INACTIVE".equals(user.getStatus())) {
-                    throw new AuthException(AuthErrorCode.LOGIN_LOCKED);
-                }
-                // Có thể update status thành ACTIVE nếu trước đó PENDING_VERIFICATION vì Google đã verify mail
-                if ("PENDING_VERIFICATION".equals(user.getStatus())) {
-                    user.setStatus("ACTIVE");
-                    userRepository.save(user);
-                }
-            } else {
-                // Tạo mới tài khoản (Tự động Active)
-                Role studentRole = roleRepository.findByCode("STUDENT")
-                        .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Role STUDENT not found"));
-
-                user = User.builder()
-                        .email(email)
-                        .fullName(name)
-                        // Bỏ trống hoặc gen pass ngẫu nhiên vì login bằng Google
-                        .passwordHash(passwordEncoder.encode(UUID.randomUUID().toString()))
-                        .role(studentRole)
-                        .status("ACTIVE")
-                        .build();
-                userRepository.save(user);
+            if (email == null || email.isBlank() || !Boolean.TRUE.equals(payload.getEmailVerified())) {
+                throw new AuthException(AuthErrorCode.AUTH_OAUTH_EMAIL_UNVERIFIED);
             }
+            String name = payload.get("name") instanceof String s ? s : null;
+            String picture = payload.get("picture") instanceof String s ? s : null;
 
-            String token = jwtUtil.generateToken(user.getEmail(), user.getId(), user.getRole().getCode());
-
-            return session(user, token);
+            return authenticateOAuthUser(email, name, picture);
 
         } catch (BusinessException e) {
             throw e;
         } catch (Exception e) {
             log.error("Google login failed ({})", e.getClass().getSimpleName());
-            throw new BusinessException(ErrorCode.UNAUTHORIZED, "Lỗi xác thực với Google");
+            throw new AuthException(AuthErrorCode.AUTH_OAUTH_FAILED);
         }
+    }
+
+    @Override
+    @Transactional
+    public AuthResponse githubLogin(GithubLoginRequest request) {
+        if (githubOAuthClient == null) {
+            throw new AuthException(AuthErrorCode.AUTH_OAUTH_UNCONFIGURED);
+        }
+        GithubOAuthClient.GithubUserProfile profile = githubOAuthClient.exchangeCodeForProfile(
+                request.getCode(), request.getRedirectUri());
+        String displayName = (profile.name() != null && !profile.name().isBlank())
+                ? profile.name()
+                : profile.login();
+        return authenticateOAuthUser(profile.email(), displayName, profile.avatarUrl());
+    }
+
+    // shortcut: links OAuth accounts by verified email; upgrade to an oauth_accounts table if users need independent provider email changes.
+    private AuthResponse authenticateOAuthUser(String rawEmail, String rawName, String avatarUrl) {
+        String email = rawEmail == null ? "" : rawEmail.trim().toLowerCase(Locale.ROOT);
+        if (email.isEmpty()) {
+            throw new AuthException(AuthErrorCode.AUTH_OAUTH_EMAIL_UNVERIFIED);
+        }
+
+        Optional<User> optionalUser = userRepository.findByEmail(email)
+                .or(() -> userRepository.findByEmailIgnoreCase(email));
+        User user;
+
+        if (optionalUser.isPresent()) {
+            user = optionalUser.get();
+            if ("LOCKED".equals(user.getStatus()) || "INACTIVE".equals(user.getStatus())) {
+                throw new AuthException(AuthErrorCode.LOGIN_LOCKED);
+            }
+            boolean dirty = false;
+            if ("PENDING_VERIFICATION".equals(user.getStatus())) {
+                user.setStatus("ACTIVE");
+                dirty = true;
+            }
+            if ((user.getAvatarUrl() == null || user.getAvatarUrl().isBlank())
+                    && avatarUrl != null && !avatarUrl.isBlank()) {
+                user.setAvatarUrl(avatarUrl.trim());
+                dirty = true;
+            }
+            if (dirty) {
+                userRepository.save(user);
+            }
+        } else {
+            Role studentRole = roleRepository.findByCode("STUDENT")
+                    .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Role STUDENT not found"));
+
+            String fullName = (rawName != null && !rawName.isBlank())
+                    ? rawName.trim()
+                    : email.substring(0, Math.max(1, email.indexOf('@')));
+
+            user = User.builder()
+                    .email(email)
+                    .fullName(fullName)
+                    .avatarUrl(avatarUrl != null && !avatarUrl.isBlank() ? avatarUrl.trim() : null)
+                    .passwordHash(passwordEncoder.encode(UUID.randomUUID().toString()))
+                    .role(studentRole)
+                    .status("ACTIVE")
+                    .build();
+            userRepository.save(user);
+        }
+
+        String token = jwtUtil.generateToken(user.getEmail(), user.getId(), user.getRole().getCode());
+        return session(user, token);
     }
 
     @Override

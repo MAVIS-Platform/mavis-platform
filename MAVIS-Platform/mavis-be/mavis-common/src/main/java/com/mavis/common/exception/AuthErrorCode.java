@@ -19,7 +19,10 @@ public enum AuthErrorCode {
     AUTH_PASSWORD_POLICY(ErrorCode.BAD_REQUEST, "Your password does not meet the requirements. Please review the password rules and try again."),
     AUTH_INPUT_INVALID(ErrorCode.BAD_REQUEST, "Please check the information entered and try again."),
     AUTH_VERIFICATION_UNAVAILABLE(ErrorCode.BAD_REQUEST, "Email verification could not be completed. Please check your code or sign in if already verified."),
-    AUTH_EMAIL_DELIVERY(ErrorCode.INTERNAL_SERVER_ERROR, "We couldn't send the email right now. Please try again later.");
+    AUTH_EMAIL_DELIVERY(ErrorCode.INTERNAL_SERVER_ERROR, "We couldn't send the email right now. Please try again later."),
+    AUTH_OAUTH_UNCONFIGURED(ErrorCode.INTERNAL_SERVER_ERROR, "Third-party sign-in is not configured for this workspace."),
+    AUTH_OAUTH_FAILED(ErrorCode.UNAUTHORIZED, "Third-party sign-in failed. Please try again."),
+    AUTH_OAUTH_EMAIL_UNVERIFIED(ErrorCode.FORBIDDEN, "Your third-party account must have a verified email address to sign in.");
 
     private final ErrorCode status;
     private final String message;

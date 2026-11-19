@@ -272,6 +272,13 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
     "Không thể hoàn tất xác minh email. Vui lòng kiểm tra mã hoặc đăng nhập nếu đã xác minh.",
   "We couldn't send the email right now. Please try again later.":
     "Hiện chưa thể gửi email. Vui lòng thử lại sau.",
+  "Third-party sign-in is not configured for this workspace.":
+    "Đăng nhập bên thứ 3 chưa được cấu hình cho không gian làm việc này.",
+  "Third-party sign-in failed. Please try again.":
+    "Đăng nhập bên thứ 3 thất bại. Vui lòng thử lại.",
+  "Your third-party account must have a verified email address to sign in.":
+    "Tài khoản bên thứ 3 cần có địa chỉ email đã xác minh để đăng nhập.",
+  "Third-party sign-in was cancelled.": "Đăng nhập bên thứ 3 đã bị hủy.",
   "Unable to connect. Please check your internet connection and try again.":
     "Không thể kết nối. Vui lòng kiểm tra kết nối Internet và thử lại.",
   "Something went wrong. Please try again later.": "Đã xảy ra lỗi. Vui lòng thử lại sau.",

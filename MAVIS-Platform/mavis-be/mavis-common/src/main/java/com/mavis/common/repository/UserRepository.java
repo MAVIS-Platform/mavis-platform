@@ -20,6 +20,9 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     @EntityGraph(attributePaths = {"role"})
     Optional<User> findByEmail(String email);
 
+    @EntityGraph(attributePaths = {"role"})
+    Optional<User> findByEmailIgnoreCase(String email);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<User> findForUpdateByEmail(String email);
 

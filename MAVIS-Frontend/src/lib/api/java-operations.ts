@@ -44,7 +44,17 @@ export async function currentSession(token: string | undefined, signal?: AbortSi
     throw error;
   }
 }
-export async function signIn(input: unknown, signal?: AbortSignal, google = false) {
+export async function signIn(
+  input: unknown,
+  signal?: AbortSignal,
+  provider: boolean | "login" | "google" | "github" = false,
+) {
+  const path =
+    provider === "github"
+      ? "auth/github"
+      : provider === true || provider === "google"
+        ? "auth/google"
+        : "auth/login";
   const raw = z
     .object({
       token: z.string().min(1),
@@ -56,7 +66,7 @@ export async function signIn(input: unknown, signal?: AbortSignal, google = fals
       email: z.string().email().nullish(),
     })
     .parse(
-      await javaRequest(google ? "auth/google" : "auth/login", undefined, {
+      await javaRequest(path, undefined, {
         method: "POST",
         body: JSON.stringify(input),
         ...(signal ? { signal } : {}),
