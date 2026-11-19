@@ -2,7 +2,17 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Activity, Lock, Play, Sparkles } from "lucide-react";
+import {
+  Activity,
+  AlertTriangle,
+  ArrowRight,
+  Container,
+  Lock,
+  Play,
+  RefreshCw,
+  SlidersHorizontal,
+  X,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/shared/request-state";
@@ -21,6 +31,8 @@ import { PreparedTopologyEditor } from "@/features/runtime/prepared-topology-edi
 import { LiveStudioWorkbench } from "@/features/runtime/live-studio-workbench";
 import { StudioExerciseEditor } from "./studio-exercise-editor";
 import { type Assignment } from "./requirements";
+
+type ConfigTab = "exercise" | "topology";
 
 export function LabStudioSection({
   workspaceId,
@@ -61,8 +73,12 @@ export function LabStudioSection({
     assignment.id,
     Boolean(projectId),
   );
+
   const [selectedSessionId, setSelectedSessionId] = useState("");
-  const [showPlaytest, setShowPlaytest] = useState(false);
+  const [canvasOpened, setCanvasOpened] = useState(false);
+  const [configModalOpen, setConfigModalOpen] = useState(false);
+  const [configTab, setConfigTab] = useState<ConfigTab>("exercise");
+
   const availableApplications = readiness.data?.applications?.length
     ? readiness.data.applications
     : (readiness.data?.detectedServices ?? []);
@@ -72,7 +88,11 @@ export function LabStudioSection({
     ...(readiness.data?.warnings ?? []),
   ].filter(Boolean);
   const setupLab = setup.data?.labs?.find((item) => item.assignmentId === assignment.id);
-  const studioConfigured = Boolean(setupLab?.topologyFrozen || setupLab?.studioReady);
+  const isRuntimeReady = Boolean(
+    readiness.data?.configured &&
+      readiness.data?.preflightCompatible &&
+      readiness.data?.runnerReady,
+  );
   const published = setupLab?.published === true;
   const sessionList = [
     ...(labSessions.data ?? []),
@@ -88,260 +108,296 @@ export function LabStudioSection({
     sessionList.find((session) => session.assignmentId === assignment.id)?.id ||
     sessionList[0]?.id ||
     "";
+  const showStudioCanvas = isRuntimeReady || canvasOpened || sessionList.length > 0;
+
+  const runPrepareRuntime = () => {
+    autoStudio.mutate(undefined, {
+      onSuccess: () => {
+        setCanvasOpened(true);
+        void runtimeConfig.refetch();
+        void readiness.refetch();
+        void setup.refetch();
+      },
+    });
+  };
 
   return (
-    <div className="space-y-5">
-      <section className="space-y-4 rounded-xl border bg-card p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="flex items-center gap-2 font-semibold">
-              <Activity className="size-4 text-primary" aria-hidden="true" />
-              {t("MAVIS Studio Live · Self-Contained Editor & Playtest", "MAVIS Studio Live · Cấu hình & Chạy thử trực tiếp")}
-            </h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {t(
-                "Auto-configure the runtime profile and Studio topology right here, refine blocks/links, and playtest without leaving Lab Creation.",
-                "Tự động cấu hình runtime profile và topology Studio Live ngay tại đây, tinh chỉnh block/kết nối và chạy thử không cần rời trang Soạn Lab.",
-              )}
-            </p>
-          </div>
-          <Badge variant={setupLab?.topologyFrozen ? "success" : "secondary"}>
-            {setupLab?.topologyFrozen
-              ? t("Topology frozen", "Đã đóng băng topology")
-              : t("Not frozen", "Chưa đóng băng")}
-          </Badge>
-        </div>
-
-        {!studioConfigured && (
-          <div
-            role="status"
-            className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-sky-300/60 bg-sky-50/70 px-4 py-3 text-xs text-sky-950 dark:border-sky-800/60 dark:bg-sky-950/20 dark:text-sky-100"
-          >
-            <p>
-              {t(
-                "Studio Live is optional — skip this step if this Lab does not need Docker runtime exercises.",
-                "Studio Live là tùy chọn — có thể bỏ qua bước này nếu bài Lab không cần thực hành Docker.",
-              )}
-            </p>
-            <Button type="button" size="sm" variant="outline" onClick={() => onNavigate("publish")}>
-              {t("Skip to Step 6: Check & add to class →", "Bỏ qua sang Bước 6: Kiểm tra & thêm vào lớp →")}
-            </Button>
-          </div>
-        )}
-
-        {!projectId ? (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-amber-800 dark:text-amber-200">
-            <div className="flex items-start gap-2">
-              <Lock className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-              <span>
-                {t(
-                  "Attach and analyze the single unified Lab repository in Step 2 (Reference source) first.",
-                  "Hãy gắn và phân tích Repo chuẩn của bài Lab ở Bước 2 (Nguồn tham chiếu) trước.",
-                )}
+    <div className="space-y-4">
+      <section className="space-y-4 rounded-2xl border bg-card p-5 shadow-xs">
+        {/* Compact Header */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3.5">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <Activity className="size-4 text-primary" aria-hidden="true" />
+            <h2 className="text-base font-semibold">{t("Studio Live", "Studio Live")}</h2>
+            {isRuntimeReady && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
+                <span className="size-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
+                {t("Runtime ready", "Runtime sẵn sàng")}
               </span>
-            </div>
-            <Button type="button" size="sm" variant="outline" onClick={() => onNavigate("source")}>
-              {t("← Go to Step 2: Reference source", "← Sang Bước 2: Nguồn tham chiếu")}
-            </Button>
+            )}
+            {setupLab?.topologyFrozen && (
+              <Badge variant="success">{t("Frozen", "Đã khóa")}</Badge>
+            )}
           </div>
-        ) : (
-          <>
-            <StudioExerciseEditor
-              workspaceId={workspaceId}
-              assignmentId={assignment.id}
-              labTitle={assignment.title}
-              applications={availableApplications}
-              defaultModelId={assignment.referenceSource?.modelId}
-              referenceSource={assignment.referenceSource}
-              onSaved={() => {
-                void exercise.refetch();
-                void readiness.refetch();
-                void runtimeConfig.refetch();
-                void setup.refetch();
-              }}
-            />
 
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/20 p-4">
-              <div className="space-y-1">
-                <p className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
-                  <Sparkles className="size-4 text-primary" aria-hidden="true" />
-                  {t(
-                    "Auto-Configure Studio Live Topology (1-Click)",
-                    "Tự động cấu hình Topology Studio Live (1 chạm)",
-                  )}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {t(
-                    "Extracts services, ports and controllers from the selected Studio repository and prepares the topology & baseline scenario.",
-                    "Trích xuất service, port và controller từ repo Studio đã chọn để khởi tạo topology và kịch bản kiểm tra.",
-                  )}
-                </p>
-              </div>
+          {projectId && (
+            <div className="flex flex-wrap items-center gap-2">
+              {showStudioCanvas && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={autoStudio.isPending}
+                  onClick={runPrepareRuntime}
+                >
+                  <RefreshCw
+                    className={`mr-1.5 size-3.5 ${autoStudio.isPending ? "animate-spin" : ""}`}
+                    aria-hidden="true"
+                  />
+                  {autoStudio.isPending
+                    ? t("Syncing…", "Đang đồng bộ…")
+                    : t("Sync Docker", "Đồng bộ Docker")}
+                </Button>
+              )}
               <Button
                 type="button"
-                disabled={autoStudio.isPending}
-                onClick={() =>
-                  autoStudio.mutate(undefined, {
-                    onSuccess: () => {
-                      void runtimeConfig.refetch();
-                      void readiness.refetch();
-                      void setup.refetch();
-                    },
-                  })
-                }
-              >
-                {autoStudio.isPending
-                  ? t("Configuring Studio…", "Đang cấu hình Studio…")
-                  : t("⚡ 1-Click Auto-Configure Studio", "⚡ Tự động cấu hình Studio Live")}
-              </Button>
-            </div>
-            {autoStudio.isSuccess && (
-              <p role="status" className="text-xs text-success">
-                {autoStudio.data.message ??
-                  t(
-                    "Auto-configured Studio Live topology",
-                    "Đã tự động cấu hình Topology Studio Live",
-                  )}{" "}
-                · {autoStudio.data.blockCount ?? autoStudio.data.containerCount ?? 0}{" "}
-                {t("blocks", "block dịch vụ")} ·{" "}
-                {autoStudio.data.connectionCount ?? autoStudio.data.linkCount ?? 0}{" "}
-                {t("connections", "kết nối điều khiển")}
-              </p>
-            )}
-            {autoStudio.error && <ErrorState error={autoStudio.error} />}
-
-            {readiness.data?.configured &&
-            readiness.data?.preflightCompatible &&
-            readiness.data?.runnerReady ? (
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-300 bg-emerald-50/70 p-4 text-sm text-emerald-950 dark:border-emerald-800/60 dark:bg-emerald-950/20 dark:text-emerald-100">
-                <div className="space-y-0.5">
-                  <p className="font-semibold">
-                    {t(
-                      "Studio Live is Ready for Students",
-                      "Studio Live đã sẵn sàng cho Sinh viên",
-                    )}
-                  </p>
-                  <p className="text-xs opacity-85">
-                    {readiness.data.applications?.length ?? 0}{" "}
-                    {t("interactive services prepared", "dịch vụ tương tác đã chuẩn bị")}
-                    {setupLab?.topologyFrozen
-                      ? ` · ${t("Topology locked & ready", "Topology đã đóng băng an toàn")}`
-                      : ""}
-                  </p>
-                </div>
-                <Badge variant="success">{t("Ready", "Sẵn sàng")}</Badge>
-              </div>
-            ) : (
-              <div className="rounded-xl border border-amber-300/80 bg-amber-50/70 p-4 text-xs text-amber-950 dark:border-amber-800/60 dark:bg-amber-950/20 dark:text-amber-100">
-                <p className="font-semibold">
-                  {t(
-                    "Studio Topology Needs Attention",
-                    "Studio Live Cần Kiểm Tra Cấu Hình",
-                  )}
-                </p>
-                {readinessBlockers.length > 0 ? (
-                  <ul className="mt-1.5 list-disc space-y-0.5 pl-4 opacity-90">
-                    {readinessBlockers.slice(0, 5).map((issue) => (
-                      <li key={issue}>{issue}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="mt-1 opacity-85">
-                    {t(
-                      "Click 'Auto-Configure Studio' above or customize services and edges in the topology editor below.",
-                      "Nhấn nút 'Tự động cấu hình Studio' ở trên hoặc tự chỉnh dịch vụ ở trình chỉnh sửa bên dưới.",
-                    )}
-                  </p>
-                )}
-              </div>
-            )}
-            {verifiedSession && (
-              <p role="status" className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-3 text-xs text-emerald-800 dark:text-emerald-200">
-                {t("Verified Studio session", "Phiên Studio đã xác minh")}:{" "}
-                <span className="font-mono">{verifiedSession.id.slice(0, 12)}…</span> ·{" "}
-                {t("linked to this Lab", "đã liên kết với Lab này")}
-              </p>
-            )}
-
-            {projectId && runtimeConfig.data && (
-              <PreparedTopologyEditor
-                projectId={projectId}
-                configuration={runtimeConfig.data}
-                onSaved={() => {
-                  void runtimeConfig.refetch();
-                  void readiness.refetch();
-                  void setup.refetch();
-                }}
-              />
-            )}
-            {projectId && !runtimeConfig.data && !runtimeConfig.isPending && (
-              <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
-                {t(
-                  "Click 1-Click Auto-Configure Studio above to initialize the runtime profile and Studio topology.",
-                  "Nhấn Tự động cấu hình Studio ở trên để khởi tạo runtime profile và topology Studio.",
-                )}
-              </p>
-            )}
-
-            <div className="flex flex-wrap items-center gap-2 border-t pt-4">
-              <Button
-                type="button"
+                size="sm"
                 variant="outline"
-                className={
-                  showPlaytest
-                    ? "border-primary/40 bg-primary/10 text-primary hover:bg-primary/15"
-                    : undefined
-                }
-                onClick={() => setShowPlaytest((open) => !open)}
+                onClick={() => setConfigModalOpen(true)}
               >
-                <Play className="mr-1.5 size-4" aria-hidden="true" />
-                {showPlaytest
-                  ? t("Hide Inline Studio Playtest", "Ẩn khung chạy thử Studio")
-                  : t("Playtest Studio Live Inline", "Chạy thử Studio Live trực tiếp")}
+                <SlidersHorizontal className="mr-1.5 size-3.5" aria-hidden="true" />
+                {t("Exercise & Config", "Bài tập & Cấu hình")}
               </Button>
-              {published ? (
+              {published && (
                 <PublishCourseLab
                   workspaceId={workspaceId}
                   assignmentId={assignment.id}
                   position={setupLab?.position}
                   sessionId={verifiedSession?.id}
                 />
-              ) : (
-                <Button type="button" variant="outline" onClick={() => onNavigate("publish")}>
-                  {t("Publish the Lab before freezing topology", "Công bố Lab trước khi đóng băng topology")}
-                </Button>
               )}
             </div>
+          )}
+        </div>
 
-            {showPlaytest && (
-              <div className="space-y-3 rounded-xl border bg-muted/15 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  {t("Inline Studio Playtest Sandbox", "Khung chạy thử Studio ngay trong Soạn Lab")}
-                </p>
-                {startStudio.error && <ErrorState error={startStudio.error} />}
-                <div className="h-[780px] overflow-hidden rounded-xl border border-slate-800">
-                  <LiveStudioWorkbench
-                    sessions={sessionList}
-                    sessionId={activeSessionId}
-                    projectId={projectId}
-                    onSelectSession={setSelectedSessionId}
-                    onStartSession={() =>
-                      startStudio.mutate(undefined, {
-                        onSuccess: (created) => {
-                          if (created?.id) setSelectedSessionId(created.id);
-                          void labSessions.refetch();
-                        },
-                      })
-                    }
-                    starting={startStudio.isPending}
-                    hideSwitchToSandbox
-                  />
-                </div>
+        {autoStudio.error && <ErrorState error={autoStudio.error} />}
+        {startStudio.error && <ErrorState error={startStudio.error} />}
+
+        {!projectId ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
+            <div className="flex items-center gap-2">
+              <Lock className="size-4 shrink-0" aria-hidden="true" />
+              <span>
+                {t(
+                  "Import a repository with Docker Compose in Step 2 first.",
+                  "Hãy nhập kho mã nguồn có Docker Compose ở Bước 2 trước.",
+                )}
+              </span>
+            </div>
+            <Button type="button" size="sm" variant="outline" onClick={() => onNavigate("source")}>
+              {t("Go to Step 2", "Về Bước 2")}
+            </Button>
+          </div>
+        ) : !showStudioCanvas ? (
+          /* Minimal Docker Runtime Preparation Stage */
+          <div className="flex min-h-[320px] flex-col items-center justify-center rounded-xl border border-dashed bg-muted/10 px-6 py-10 text-center">
+            <span className="flex size-14 items-center justify-center rounded-2xl border bg-background text-primary shadow-xs">
+              <Container className="size-7" aria-hidden="true" />
+            </span>
+            <h3 className="mt-4 text-base font-semibold text-foreground">
+              {t("Prepare Docker Runtime", "Chuẩn bị Docker Runtime")}
+            </h3>
+
+            {availableApplications.length > 0 && (
+              <div className="mt-3 flex max-w-xl flex-wrap items-center justify-center gap-1.5">
+                {availableApplications.map((svc) => (
+                  <span
+                    key={svc}
+                    className="rounded-md border bg-background px-2 py-0.5 font-mono text-xs text-foreground/85"
+                  >
+                    {svc}
+                  </span>
+                ))}
               </div>
             )}
-          </>
+
+            {readinessBlockers.length > 0 && (
+              <div className="mt-4 max-w-lg rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-left text-xs text-amber-700 dark:text-amber-300">
+                <p className="mb-1 flex items-center gap-1.5 font-medium">
+                  <AlertTriangle className="size-3.5 shrink-0" aria-hidden="true" />
+                  {t("Docker preflight check", "Kiểm tra Docker")}
+                </p>
+                <ul className="list-disc space-y-0.5 pl-4">
+                  {readinessBlockers.slice(0, 4).map((issue) => (
+                    <li key={issue}>{issue}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-2.5">
+              <Button
+                type="button"
+                disabled={autoStudio.isPending}
+                onClick={runPrepareRuntime}
+              >
+                <Play className="mr-1.5 size-4" aria-hidden="true" />
+                {autoStudio.isPending
+                  ? t("Preparing Docker runtime…", "Đang chuẩn bị Docker runtime…")
+                  : t("Prepare Runtime & Open Studio", "Chuẩn bị Runtime & Mở Studio")}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setCanvasOpened(true)}
+              >
+                {t("Open Studio Canvas", "Mở Studio ngay")}
+              </Button>
+            </div>
+          </div>
+        ) : (
+          /* Visual Studio Live Workbench — Core Interactive Workspace */
+          <div className="space-y-3">
+            {verifiedSession && (
+              <div className="flex items-center justify-between rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300">
+                <span>
+                  {t("Verified Studio session", "Phiên Studio đã xác minh")}:{" "}
+                  <code className="font-mono">{verifiedSession.id.slice(0, 12)}</code>
+                </span>
+                <span>{t("Linked to Lab", "Đã liên kết Lab")}</span>
+              </div>
+            )}
+            <div className="h-[800px] overflow-hidden rounded-xl border border-slate-800">
+              <LiveStudioWorkbench
+                sessions={sessionList}
+                sessionId={activeSessionId}
+                projectId={projectId}
+                onSelectSession={setSelectedSessionId}
+                onStartSession={() =>
+                  startStudio.mutate(undefined, {
+                    onSuccess: (created) => {
+                      if (created?.id) setSelectedSessionId(created.id);
+                      void labSessions.refetch();
+                    },
+                  })
+                }
+                starting={startStudio.isPending}
+                hideSwitchToSandbox
+              />
+            </div>
+          </div>
         )}
       </section>
+
+      <div className="flex justify-end">
+        <Button type="button" size="sm" onClick={() => onNavigate("publish")}>
+          {t("Next", "Tiếp theo")}
+          <ArrowRight className="ml-1.5 size-4" aria-hidden="true" />
+        </Button>
+      </div>
+
+      {/* Optional Advanced Config Modal (Exercise Prompt & Topology Blocks) */}
+      {configModalOpen && projectId && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={t("Studio Exercise & Topology Configuration", "Cấu hình Bài tập & Topology Studio")}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
+          onClick={() => setConfigModalOpen(false)}
+        >
+          <div
+            className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border bg-card text-card-foreground shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-3.5">
+              <div className="inline-flex items-center gap-1 rounded-lg bg-muted/40 p-1" role="tablist">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={configTab === "exercise"}
+                  onClick={() => setConfigTab("exercise")}
+                  className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                    configTab === "exercise"
+                      ? "bg-background text-foreground shadow-xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {t("Exercise Rules", "Kịch bản bài tập")}
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={configTab === "topology"}
+                  onClick={() => setConfigTab("topology")}
+                  className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                    configTab === "topology"
+                      ? "bg-background text-foreground shadow-xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {t("Docker Blocks & Wires", "Khối dịch vụ & Kết nối")}
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => setConfigModalOpen(false)}
+                className="rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                aria-label={t("Close", "Đóng")}
+              >
+                <X className="size-4" aria-hidden="true" />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto p-5">
+              {configTab === "exercise" ? (
+                <StudioExerciseEditor
+                  workspaceId={workspaceId}
+                  assignmentId={assignment.id}
+                  labTitle={assignment.title}
+                  applications={availableApplications}
+                  defaultModelId={assignment.referenceSource?.modelId}
+                  referenceSource={assignment.referenceSource}
+                  onSaved={() => {
+                    void exercise.refetch();
+                    void readiness.refetch();
+                    void runtimeConfig.refetch();
+                    void setup.refetch();
+                  }}
+                />
+              ) : runtimeConfig.data ? (
+                <PreparedTopologyEditor
+                  projectId={projectId}
+                  configuration={runtimeConfig.data}
+                  onSaved={() => {
+                    void runtimeConfig.refetch();
+                    void readiness.refetch();
+                    void setup.refetch();
+                  }}
+                />
+              ) : (
+                <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed p-8 text-center text-xs text-muted-foreground">
+                  <p>
+                    {t(
+                      "Docker runtime topology is not initialized yet.",
+                      "Topology Docker runtime chưa được khởi tạo.",
+                    )}
+                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={autoStudio.isPending}
+                    onClick={runPrepareRuntime}
+                  >
+                    {autoStudio.isPending
+                      ? t("Preparing…", "Đang chuẩn bị…")
+                      : t("Prepare Runtime", "Chuẩn bị Runtime")}
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
