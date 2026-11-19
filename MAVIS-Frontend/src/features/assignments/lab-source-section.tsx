@@ -5,13 +5,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   ArrowRight,
-  CheckCircle2,
-  Container,
   Download,
   FileCode2,
   FolderGit2,
   GitBranch,
-  Layers,
   Plus,
   Save,
   Trash2,
@@ -28,9 +25,10 @@ import { AssignmentSourcePicker } from "./source-picker";
 import type { Assignment } from "./requirements";
 
 type PreviewKind = "CONTEXT" | "CONTAINER" | "COMPONENT" | "GRAPH";
+type RepoDetailTab = "services" | "connections" | "deploy";
 
-const DEPLOY_FILE_PATTERN =
-  /(docker-compose[^/\\]*\.ya?ml|compose[^/\\]*\.ya?ml|dockerfile[^/\\]*|nginx[^/\\]*\.conf|k8s[^/\\]*\.ya?ml)/i;
+const CONFIG_FILE_PATTERN =
+  /(docker-compose[^/\\]*\.ya?ml|compose[^/\\]*\.ya?ml|dockerfile[^/\\]*|nginx[^/\\]*\.conf|k8s[^/\\]*\.ya?ml|pom\.xml|build\.gradle[^/\\]*|package\.json|[^/\\]+\.csproj|application[^/\\]*\.(ya?ml|properties))/i;
 
 export function LabSourceSection({
   workspaceId,
@@ -52,6 +50,7 @@ export function LabSourceSection({
   } | null>(null);
   const [sourcePending, setSourcePending] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
+  const [repoDetailTab, setRepoDetailTab] = useState<RepoDetailTab>("services");
   const [previewKind, setPreviewKind] = useState<PreviewKind>("CONTAINER");
   const [selectedGraphId, setSelectedGraphId] = useState<string | null>(null);
   const lastAutoSavedModelRef = useRef<string>(assignment.referenceSource?.modelId ?? "");
@@ -162,37 +161,168 @@ export function LabSourceSection({
     ...(readiness.data?.warnings ?? []),
   ].filter(Boolean);
 
-  const deploymentFiles = useMemo(() => {
+  const repoDissection = useMemo(() => {
     const model = modelQuery.data;
-    if (!model) return [];
-    const found = new Set<string>();
-    const collect = (loc?: string) => {
-      if (!loc) return;
-      const clean = loc.split(":")[0]?.trim();
-      if (clean && DEPLOY_FILE_PATTERN.test(clean)) {
-        found.add(clean);
+    if (!model) {
+      return {
+        services: [] as Array<{
+          id: string;
+          name: string;
+          kind: string;
+          technology: string;
+          componentCount: number;
+          outbound: string[];
+          files: string[];
+        }>,
+        connections: [] as Array<{
+          key: string;
+          from: string;
+          to: string;
+          protocols: string[];
+          count: number;
+          file: string;
+        }>,
+        configFiles: [] as string[],
+      };
+    }
+
+    const byId = new Map(model.elements.map((el) => [el.id, el]));
+    const resolveTopNode = (id: string) => {
+      let cur = byId.get(id);
+      const seen = new Set<string>();
+      while (cur?.parentId && byId.has(cur.parentId) && !seen.has(cur.id)) {
+        seen.add(cur.id);
+        cur = byId.get(cur.parentId);
+      }
+      return cur;
+    };
+
+    const topTypes = new Set([
+      "SERVICE_CONTAINER",
+      "DATABASE",
+      "DATA_STORE",
+      "MESSAGE_BROKER",
+      "QUEUE",
+      "EXTERNAL_SYSTEM",
+    ]);
+    const topElements = model.elements.filter(
+      (el) => topTypes.has(el.elementType ?? "") || !el.parentId,
+    );
+    const kindLabel = (el: (typeof model.elements)[number]) => {
+      switch (el.elementType) {
+        case "SERVICE_CONTAINER":
+          return "Service";
+        case "DATABASE":
+        case "DATA_STORE":
+          return "Database";
+        case "MESSAGE_BROKER":
+        case "QUEUE":
+          return "Broker";
+        case "EXTERNAL_SYSTEM":
+          return "External";
+        default:
+          return el.layer === "data" ? "Database" : "Component";
       }
     };
+
+    const childCount = new Map<string, number>();
     for (const el of model.elements) {
-      for (const ev of el.evidence ?? []) collect(ev.location);
+      if (el.parentId) {
+        childCount.set(el.parentId, (childCount.get(el.parentId) ?? 0) + 1);
+      }
     }
+
+    const outboundMap = new Map<string, Set<string>>();
+    const connMap = new Map<
+      string,
+      { from: string; to: string; protocols: Set<string>; count: number; file: string }
+    >();
+    const configFilesSet = new Set<string>();
+    const collectConfigFile = (loc?: string) => {
+      if (!loc) return;
+      const clean = loc.split(":")[0]?.trim();
+      if (clean && CONFIG_FILE_PATTERN.test(clean)) configFilesSet.add(clean);
+    };
+
+    for (const el of model.elements) {
+      for (const ev of el.evidence ?? []) collectConfigFile(ev.location);
+    }
+
     for (const edge of model.edges) {
-      for (const ev of edge.evidence ?? []) collect(ev.location);
+      for (const ev of edge.evidence ?? []) collectConfigFile(ev.location);
+      const fromTop = resolveTopNode(edge.from);
+      const toTop = resolveTopNode(edge.to);
+      if (!fromTop || !toTop || fromTop.id === toTop.id) continue;
+      const proto = edge.protocol || "CALL";
+      if (!outboundMap.has(fromTop.id)) outboundMap.set(fromTop.id, new Set());
+      outboundMap.get(fromTop.id)!.add(`${toTop.name} (${proto})`);
+
+      const key = `${fromTop.id}::${toTop.id}`;
+      const existing = connMap.get(key);
+      const sampleFile = edge.evidence?.[0]?.location?.split(":")[0]?.trim() ?? "";
+      if (existing) {
+        existing.protocols.add(proto);
+        existing.count += 1;
+        if (!existing.file && sampleFile) existing.file = sampleFile;
+      } else {
+        connMap.set(key, {
+          from: fromTop.name,
+          to: toTop.name,
+          protocols: new Set([proto]),
+          count: 1,
+          file: sampleFile,
+        });
+      }
     }
-    return Array.from(found).sort();
+
+    const services = topElements
+      .map((el) => {
+        const files = Array.from(
+          new Set(
+            (el.evidence ?? [])
+              .map((ev) => ev.location?.split(":")[0]?.trim())
+              .filter((p): p is string => Boolean(p)),
+          ),
+        );
+        return {
+          id: el.id,
+          name: el.name,
+          kind: kindLabel(el),
+          technology: el.technology || el.layer || "—",
+          componentCount: childCount.get(el.id) ?? 0,
+          outbound: Array.from(outboundMap.get(el.id) ?? []).slice(0, 4),
+          files: files.slice(0, 2),
+        };
+      })
+      .sort((a, b) => {
+        const rank = (k: string) =>
+          k === "Service" ? 0 : k === "Database" ? 1 : k === "Broker" ? 2 : 3;
+        return rank(a.kind) - rank(b.kind) || a.name.localeCompare(b.name);
+      });
+
+    const connections = Array.from(connMap.entries())
+      .map(([key, v]) => ({
+        key,
+        from: v.from,
+        to: v.to,
+        protocols: Array.from(v.protocols),
+        count: v.count,
+        file: v.file,
+      }))
+      .sort((a, b) => b.count - a.count || a.from.localeCompare(b.from));
+
+    return {
+      services,
+      connections,
+      configFiles: Array.from(configFilesSet).sort(),
+    };
   }, [modelQuery.data]);
 
-  const serviceBreakdown = useMemo(() => {
-    const elements = modelQuery.data?.elements ?? [];
-    const services = elements.filter((e) => e.elementType === "SERVICE_CONTAINER").length;
-    const datastores = elements.filter(
-      (e) => e.elementType === "DATABASE" || e.elementType === "DATA_STORE" || e.layer === "data",
-    ).length;
-    const brokers = elements.filter(
-      (e) => e.elementType === "MESSAGE_BROKER" || e.elementType === "QUEUE",
-    ).length;
-    return { services, datastores, brokers };
-  }, [modelQuery.data]);
+  const composeServiceNames = configuredApps.length > 0 ? configuredApps : detectedServices;
+  const staticNameSet = useMemo(
+    () => new Set(repoDissection.services.map((s) => s.name.toLowerCase())),
+    [repoDissection.services],
+  );
 
   const diagrams = studentCtx.data?.referenceArchitecture?.diagrams ?? [];
   const activeMermaid =
@@ -385,135 +515,261 @@ export function LabSourceSection({
               </p>
             )}
 
-            {/* Static Architecture + Docker / Deployment Info Grid */}
-            <div className="grid gap-3 md:grid-cols-2">
-              <div className="space-y-2 rounded-xl border bg-muted/15 p-3.5 text-xs">
-                <div className="flex items-center justify-between gap-2 font-semibold">
-                  <span className="inline-flex items-center gap-1.5">
-                    {staticReady ? (
-                      <CheckCircle2 className="size-4 text-emerald-600" aria-hidden="true" />
-                    ) : (
-                      <AlertTriangle className="size-4 text-amber-500" aria-hidden="true" />
-                    )}
-                    {t("Static Architecture Analysis", "Phân tích Kiến trúc Tĩnh")}
-                  </span>
-                  <Layers className="size-3.5 text-muted-foreground" aria-hidden="true" />
+            {/* Repository Dissection Tabs */}
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div
+                  className="inline-flex flex-wrap items-center gap-1 rounded-lg bg-muted/40 p-1"
+                  role="tablist"
+                  aria-label={t("Repository details", "Chi tiết kho mã nguồn")}
+                >
+                  {(
+                    [
+                      {
+                        id: "services" as const,
+                        label: `${t("Services & Nodes", "Services & Thành phần")} (${repoDissection.services.length})`,
+                      },
+                      {
+                        id: "connections" as const,
+                        label: `${t("Connections", "Kết nối")} (${repoDissection.connections.length})`,
+                      },
+                      {
+                        id: "deploy" as const,
+                        label: `${t("Docker & Deploy", "Docker & Triển khai")} (${composeServiceNames.length})`,
+                      },
+                    ] as const
+                  ).map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={repoDetailTab === item.id}
+                      onClick={() => setRepoDetailTab(item.id)}
+                      className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                        repoDetailTab === item.id
+                          ? "bg-background text-foreground shadow-xs"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
                 </div>
-                <p className="text-muted-foreground">
-                  {modelQuery.isPending
-                    ? t("Reading architecture model…", "Đang đọc mô hình kiến trúc…")
-                    : staticReady
-                      ? t(
-                          `${modelQuery.data!.elements.length} elements · ${modelQuery.data!.edges.length} relationships extracted.`,
-                          `Đã trích xuất ${modelQuery.data!.elements.length} thành phần · ${modelQuery.data!.edges.length} liên kết.`,
-                        )
-                      : t(
-                          "No architecture elements detected in this snapshot.",
-                          "Chưa phát hiện thành phần kiến trúc trong bản snapshot này.",
-                        )}
-                </p>
-                {staticReady && (
-                  <div className="flex flex-wrap gap-1.5 pt-0.5">
-                    <Badge variant="secondary" className="font-mono text-[11px]">
-                      {serviceBreakdown.services} {t("services", "service")}
-                    </Badge>
-                    {serviceBreakdown.datastores > 0 && (
-                      <Badge variant="secondary" className="font-mono text-[11px]">
-                        {serviceBreakdown.datastores} {t("datastores", "CSDL")}
-                      </Badge>
-                    )}
-                    {serviceBreakdown.brokers > 0 && (
-                      <Badge variant="secondary" className="font-mono text-[11px]">
-                        {serviceBreakdown.brokers} {t("brokers", "message broker")}
-                      </Badge>
-                    )}
-                  </div>
+                {modelQuery.data && (
+                  <span className="text-xs text-muted-foreground tabular-nums">
+                    {modelQuery.data.elements.length} {t("elements", "thành phần")} ·{" "}
+                    {modelQuery.data.edges.length} {t("edges", "liên kết")}
+                  </span>
                 )}
               </div>
 
-              <div className="space-y-2 rounded-xl border bg-muted/15 p-3.5 text-xs">
-                <div className="flex items-center justify-between gap-2 font-semibold">
-                  <span className="inline-flex items-center gap-1.5">
-                    {studioReady ? (
-                      <CheckCircle2 className="size-4 text-emerald-600" aria-hidden="true" />
-                    ) : (
-                      <AlertTriangle className="size-4 text-amber-500" aria-hidden="true" />
-                    )}
-                    {t("Docker & Deployment Setup", "Cấu hình Docker & Triển khai")}
-                  </span>
-                  <Container className="size-3.5 text-muted-foreground" aria-hidden="true" />
-                </div>
-
-                {readiness.isPending ? (
-                  <p className="text-muted-foreground">
-                    {t("Inspecting Dockerfile, Docker Compose & runtime probes…", "Đang kiểm tra Dockerfile, Docker Compose & health probe…")}
+              {repoDetailTab === "services" && (
+                modelQuery.isPending ? (
+                  <p className="py-4 text-xs text-muted-foreground">
+                    {t("Inspecting repository services and components…", "Đang phân tích các service và thành phần trong repo…")}
                   </p>
-                ) : readiness.isError ? (
-                  <p className="text-destructive">
-                    {readiness.error instanceof Error
-                      ? readiness.error.message
-                      : t("Could not check runtime readiness.", "Không kiểm tra được trạng thái runtime.")}
-                  </p>
-                ) : studioConfiguredReady ? (
-                  <p className="text-muted-foreground">
-                    {t(
-                      `Docker Compose & runtime runner verified (${configuredApps.length} configured services).`,
-                      `Đã xác thực Docker Compose & runner (${configuredApps.length} service đã cấu hình).`,
-                    )}
-                  </p>
-                ) : studioComposeReady ? (
-                  <p className="text-muted-foreground">
-                    {t(
-                      `Docker Compose preflight passed (${detectedServices.length} services detected) — ready to auto-configure in Step 5.`,
-                      `Docker Compose đạt chuẩn (${detectedServices.length} service được phát hiện) — sẵn sàng cấu hình tự động ở Bước 5.`,
-                    )}
+                ) : repoDissection.services.length === 0 ? (
+                  <p className="rounded-xl border border-dashed p-4 text-xs text-muted-foreground">
+                    {t("No top-level services or nodes detected in this snapshot.", "Chưa phát hiện service hay thành phần cấp cao trong bản snapshot này.")}
                   </p>
                 ) : (
-                  <div className="space-y-1 text-amber-700 dark:text-amber-300">
-                    {studioMissing.length > 0 ? (
-                      <ul className="list-disc space-y-0.5 pl-4">
-                        {studioMissing.slice(0, 4).map((item) => (
-                          <li key={item}>{item}</li>
+                  <div className="overflow-x-auto rounded-xl border">
+                    <table className="w-full text-left text-xs">
+                      <thead className="border-b bg-muted/40 text-muted-foreground">
+                        <tr>
+                          <th className="px-3.5 py-2 font-medium">{t("Service / Node", "Service / Node")}</th>
+                          <th className="px-3.5 py-2 font-medium">{t("Type & Stack", "Loại & Công nghệ")}</th>
+                          <th className="px-3.5 py-2 font-medium">{t("Components", "Thành phần con")}</th>
+                          <th className="px-3.5 py-2 font-medium">{t("Outbound Dependencies", "Phụ thuộc gọi ra")}</th>
+                          <th className="px-3.5 py-2 font-medium">{t("Source Evidence", "Tệp nguồn")}</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {repoDissection.services.map((svc) => (
+                          <tr key={svc.id} className="align-top hover:bg-muted/20">
+                            <td className="px-3.5 py-2.5 font-mono font-semibold text-foreground">
+                              {svc.name}
+                            </td>
+                            <td className="px-3.5 py-2.5 text-muted-foreground">
+                              <span className="font-medium text-foreground/85">{svc.kind}</span>
+                              {svc.technology && svc.technology !== "—" ? ` · ${svc.technology}` : ""}
+                            </td>
+                            <td className="px-3.5 py-2.5 tabular-nums text-muted-foreground">
+                              {svc.componentCount > 0 ? svc.componentCount : "—"}
+                            </td>
+                            <td className="px-3.5 py-2.5 text-muted-foreground">
+                              {svc.outbound.length > 0 ? (
+                                <div className="flex flex-wrap gap-1">
+                                  {svc.outbound.map((dep) => (
+                                    <span
+                                      key={dep}
+                                      className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[11px] text-foreground/85"
+                                    >
+                                      {dep}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : (
+                                "—"
+                              )}
+                            </td>
+                            <td className="px-3.5 py-2.5 font-mono text-[11px] text-muted-foreground">
+                              {svc.files.length > 0 ? svc.files.join(", ") : "—"}
+                            </td>
+                          </tr>
                         ))}
-                      </ul>
-                    ) : (
-                      <p>
-                        {t(
-                          "Missing Docker Compose / Dockerfile or health probe configuration for Studio Live.",
-                          "Thiếu cấu hình Docker Compose / Dockerfile hoặc health probe cho Studio Live.",
-                        )}
-                      </p>
-                    )}
+                      </tbody>
+                    </table>
                   </div>
-                )}
+                )
+              )}
 
-                {(detectedServices.length > 0 || configuredApps.length > 0) && (
-                  <div className="flex flex-wrap gap-1.5 pt-0.5">
-                    {(configuredApps.length > 0 ? configuredApps : detectedServices).map((svc) => (
-                      <Badge key={svc} variant="outline" className="font-mono text-[11px]">
-                        {svc}
-                      </Badge>
-                    ))}
-                  </div>
-                )}
-
-                {deploymentFiles.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-1.5 pt-1 text-[11px] text-muted-foreground">
-                    <FileCode2 className="size-3.5 shrink-0" aria-hidden="true" />
-                    {deploymentFiles.slice(0, 6).map((file) => (
-                      <code key={file} className="rounded bg-background px-1.5 py-0.5 font-mono">
-                        {file}
-                      </code>
-                    ))}
-                  </div>
-                )}
-
-                {runtimeMappings.length > 0 && (
-                  <p className="text-[11px] text-muted-foreground">
-                    {t("Mappings:", "Ánh xạ:")} {runtimeMappings.slice(0, 4).join(" · ")}
+              {repoDetailTab === "connections" && (
+                repoDissection.connections.length === 0 ? (
+                  <p className="rounded-xl border border-dashed p-4 text-xs text-muted-foreground">
+                    {t("No inter-service connections detected.", "Chưa phát hiện kết nối giữa các service.")}
                   </p>
-                )}
-              </div>
+                ) : (
+                  <div className="overflow-x-auto rounded-xl border">
+                    <table className="w-full text-left text-xs">
+                      <thead className="border-b bg-muted/40 text-muted-foreground">
+                        <tr>
+                          <th className="px-3.5 py-2 font-medium">{t("Caller", "Nguồn gọi")}</th>
+                          <th className="px-3.5 py-2 font-medium">{t("Target", "Đích")}</th>
+                          <th className="px-3.5 py-2 font-medium">{t("Protocol", "Giao thức")}</th>
+                          <th className="px-3.5 py-2 font-medium">{t("Refs", "Số lượt")}</th>
+                          <th className="px-3.5 py-2 font-medium">{t("Evidence File", "Tệp bằng chứng")}</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {repoDissection.connections.map((conn) => (
+                          <tr key={conn.key} className="align-middle hover:bg-muted/20">
+                            <td className="px-3.5 py-2 font-mono font-medium text-foreground">{conn.from}</td>
+                            <td className="px-3.5 py-2 font-mono text-foreground">{conn.to}</td>
+                            <td className="px-3.5 py-2">
+                              <div className="flex flex-wrap gap-1">
+                                {conn.protocols.map((p) => (
+                                  <span
+                                    key={p}
+                                    className="rounded border bg-muted/40 px-1.5 py-0.5 font-mono text-[11px]"
+                                  >
+                                    {p}
+                                  </span>
+                                ))}
+                              </div>
+                            </td>
+                            <td className="px-3.5 py-2 tabular-nums text-muted-foreground">{conn.count}</td>
+                            <td className="px-3.5 py-2 font-mono text-[11px] text-muted-foreground">
+                              {conn.file || "—"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )
+              )}
+
+              {repoDetailTab === "deploy" && (
+                <div className="space-y-3 text-xs">
+                  {readiness.isPending ? (
+                    <p className="py-3 text-muted-foreground">
+                      {t("Inspecting Docker Compose, Dockerfiles & runtime probes…", "Đang kiểm tra Docker Compose, Dockerfile & health probe…")}
+                    </p>
+                  ) : readiness.isError ? (
+                    <p className="text-destructive">
+                      {readiness.error instanceof Error
+                        ? readiness.error.message
+                        : t("Could not inspect deployment readiness.", "Không kiểm tra được cấu hình triển khai.")}
+                    </p>
+                  ) : (
+                    <>
+                      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-muted/15 px-3.5 py-2.5">
+                        <span className="font-medium text-foreground">
+                          {studioConfiguredReady
+                            ? t("Docker Compose & Studio runner configured and verified.", "Docker Compose & Studio runner đã cấu hình và xác thực.")
+                            : studioComposeReady
+                              ? t("Docker Compose preflight passed — ready to boot in Step 5 (Studio Live).", "Docker Compose đạt kiểm tra preflight — sẵn sàng chạy ở Bước 5 (Studio Live).")
+                              : t("Docker Compose / Studio Live setup incomplete.", "Cấu hình Docker Compose / Studio Live chưa đầy đủ.")}
+                        </span>
+                        <span className="font-mono text-[11px] text-muted-foreground">
+                          {readiness.data?.preflightCompatible ? "preflight: pass" : "preflight: check"}
+                          {" · "}
+                          {readiness.data?.runnerReady ? "runner: ready" : "runner: pending"}
+                        </span>
+                      </div>
+
+                      {!studioReady && studioMissing.length > 0 && (
+                        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-amber-700 dark:text-amber-300">
+                          <p className="mb-1 flex items-center gap-1.5 font-medium">
+                            <AlertTriangle className="size-3.5" aria-hidden="true" />
+                            {t("Preflight findings", "Chi tiết cần bổ sung")}
+                          </p>
+                          <ul className="list-disc space-y-0.5 pl-4">
+                            {studioMissing.slice(0, 5).map((item) => (
+                              <li key={item}>{item}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {composeServiceNames.length > 0 && (
+                        <div className="overflow-x-auto rounded-xl border">
+                          <table className="w-full text-left text-xs">
+                            <thead className="border-b bg-muted/40 text-muted-foreground">
+                              <tr>
+                                <th className="px-3.5 py-2 font-medium">{t("Compose Service", "Service trong Compose")}</th>
+                                <th className="px-3.5 py-2 font-medium">{t("Architecture Match", "Khớp mô hình tĩnh")}</th>
+                                <th className="px-3.5 py-2 font-medium">{t("Runtime Mapping", "Ánh xạ Runtime")}</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y">
+                              {composeServiceNames.map((svc) => {
+                                const mapped = staticNameSet.has(svc.toLowerCase());
+                                const mappingEntry = runtimeMappings.find((m) =>
+                                  m.toLowerCase().includes(svc.toLowerCase()),
+                                );
+                                return (
+                                  <tr key={svc} className="hover:bg-muted/20">
+                                    <td className="px-3.5 py-2 font-mono font-medium text-foreground">{svc}</td>
+                                    <td className="px-3.5 py-2 text-muted-foreground">
+                                      {mapped
+                                        ? t("Matched static service", "Khớp service tĩnh")
+                                        : t("Infrastructure / sandbox container", "Hạ tầng / container hỗ trợ")}
+                                    </td>
+                                    <td className="px-3.5 py-2 font-mono text-[11px] text-muted-foreground">
+                                      {mappingEntry || "—"}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+
+                      {repoDissection.configFiles.length > 0 && (
+                        <div className="space-y-1.5 rounded-xl border bg-muted/15 p-3">
+                          <p className="flex items-center gap-1.5 font-medium text-foreground">
+                            <FileCode2 className="size-3.5 text-muted-foreground" aria-hidden="true" />
+                            {t("Build & Deployment Files Detected", "Tệp build & triển khai phát hiện được")}
+                          </p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {repoDissection.configFiles.slice(0, 12).map((file) => (
+                              <code
+                                key={file}
+                                className="rounded border bg-background px-2 py-0.5 font-mono text-[11px] text-foreground/85"
+                              >
+                                {file}
+                              </code>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           </section>
 
