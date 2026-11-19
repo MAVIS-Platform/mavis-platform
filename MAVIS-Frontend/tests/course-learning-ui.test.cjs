@@ -1304,7 +1304,7 @@ test("Lecturer flow, 1-Click Login, MockAdapter JAVA-MS-2026, and clean routes h
   assert.equal(allowedBackendPath("workspaces/bootstrap-java-coursera"), true);
 
   const loginSrc = read("app/login/page.tsx");
-  assert.ok(loginSrc.includes("1-Click Test Login"));
+  assert.ok(!loginSrc.includes("1-Click Test Login"));
   assert.ok(loginSrc.includes("gv.java@mavis.edu.vn"));
   assert.ok(loginSrc.includes("sv.java@mavis.edu.vn"));
   assert.ok(loginSrc.includes("admin@mavis.edu.vn"));
