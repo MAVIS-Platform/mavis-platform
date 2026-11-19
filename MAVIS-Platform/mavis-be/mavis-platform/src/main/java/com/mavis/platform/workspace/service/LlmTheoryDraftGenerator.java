@@ -92,6 +92,53 @@ public class LlmTheoryDraftGenerator {
         return new Draft(draft.title(), draft.body(), draft.providerMode(), evidence.size());
     }
 
+    /**
+     * Re-structures imported lecturer material into clean Markdown without inventing new content.
+     */
+    public Optional<Draft> formatImportedContent(String titleHint, String rawMarkdown, boolean vietnamese) {
+        if (rawMarkdown == null || rawMarkdown.isBlank()) {
+            return Optional.empty();
+        }
+        if (settings != null && !settings.enabled("gemini-ai")) {
+            return Optional.empty();
+        }
+        Optional<String> keyOpt = resolveApiKey();
+        if (keyOpt.isEmpty()) {
+            return Optional.empty();
+        }
+        String clipped = rawMarkdown.length() > 24_000 ? rawMarkdown.substring(0, 24_000) : rawMarkdown;
+        String prompt = buildFormatOnlyPrompt(titleHint, clipped, vietnamese);
+        String apiKey = keyOpt.get();
+        try {
+            String response = apiKey.startsWith("sk-")
+                    ? sendOpenAi(apiKey, prompt)
+                    : sendGemini(apiKey, prompt);
+            return Optional.of(parse(response, titleHint == null || titleHint.isBlank() ? "Imported lesson" : titleHint));
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            log.warn("AI format of imported theory was interrupted: {}", error.getMessage());
+            return Optional.empty();
+        } catch (BusinessException | IOException error) {
+            log.warn("AI format of imported theory fell back to deterministic formatting: {}", error.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    private String buildFormatOnlyPrompt(String titleHint, String sourceContent, boolean vietnamese) {
+        StringBuilder prompt = new StringBuilder();
+        prompt.append("You are an academic Markdown editor. Reformat and structure ONLY the provided SOURCE_CONTENT into crisp, readable Markdown. ")
+                .append("Preserve 100% of the factual knowledge and examples from SOURCE_CONTENT; NEVER invent new facts, APIs, claims, or sections not supported by SOURCE_CONTENT. ")
+                .append("Organize with ## and ### headings, concise paragraphs, bullet lists, Markdown tables where structured comparisons/tabular data exist, fenced code blocks with language tags (e.g. ```java, ```csharp, ```yaml), and > **Note:** callouts for warnings/tips. ")
+                .append(vietnamese
+                        ? "Keep the source language or polish Vietnamese headings naturally while keeping code identifiers in English. "
+                        : "Keep the source language and technical identifiers intact. ")
+                .append("Return ONLY a JSON object {\"title\":\"...\",\"body\":\"# ...\"}.\n\n")
+                .append("TITLE_HINT: ").append(titleHint == null || titleHint.isBlank() ? "Lesson" : titleHint).append("\n\n")
+                .append("SOURCE_CONTENT:\n")
+                .append(sourceContent);
+        return prompt.toString();
+    }
+
     private String buildPrompt(String topic, boolean vietnamese, String style, List<String> evidence) {
         StringBuilder prompt = new StringBuilder();
         prompt.append("You write one Markdown lesson for a software architecture course. ")

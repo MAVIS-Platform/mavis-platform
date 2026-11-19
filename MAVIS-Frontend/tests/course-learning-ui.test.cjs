@@ -1014,6 +1014,8 @@ test("BFF allows Quiz draft, publish, versions and question bank paths", () => {
     `workspaces/${workspace}/course-labs/${lab}/export`,
     `workspaces/${workspace}/course-labs/import`,
     `workspaces/${workspace}/theory-assets`,
+    `workspaces/${workspace}/theory-assets/import-file`,
+    `workspaces/${workspace}/theory-assets/import-url`,
     `workspaces/${workspace}/theory-assets/${lab}`,
     `workspaces/${workspace}/course-labs/${lab}/theory-assets`,
     `workspaces/${workspace}/course-labs/${lab}/theory-assets/${question}`,
@@ -1027,6 +1029,7 @@ test("BFF allows Quiz draft, publish, versions and question bank paths", () => {
     assert.equal(allowedBackendPath(path), true, path);
   }
   assert.equal(allowedBackendPath(`workspaces/${workspace}/quiz-bank/unsafe`), false);
+  assert.equal(allowedBackendPath(`workspaces/${workspace}/theory-assets/unsafe`), false);
 });
 
 test("Lab Library is available inside Lab Creation and Quiz can be generated from Lab theory", () => {
@@ -1062,6 +1065,9 @@ test("Lab Library is available inside Lab Creation and Quiz can be generated fro
   assert.ok(transfer.includes("course-labs/import"));
   assert.ok(theory.includes("Theory library"));
   assert.ok(theory.includes("/theory-assets"));
+  assert.ok(theory.includes("theory-assets/import-file"));
+  assert.ok(theory.includes("theory-assets/import-url"));
+  assert.ok(theory.includes(".pdf,.docx,.pptx"));
   assert.ok(theory.includes("AI draft from evidence"));
   assert.ok(theory.includes("Save to library & attach"));
   const prerequisites = read("src/features/assignments/lab-prerequisites-dialog.tsx");

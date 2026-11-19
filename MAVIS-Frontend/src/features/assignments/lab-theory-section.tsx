@@ -6,11 +6,13 @@ import {
   ArrowRight,
   BookOpen,
   GitBranch,
+  Globe,
   Library,
   Save,
   Sparkles,
   Trash2,
   Upload,
+  X,
 } from "lucide-react";
 import { api } from "@/lib/mainflow-api";
 import { Button } from "@/components/ui/button";
@@ -310,6 +312,14 @@ export function LabTheorySection({
   const [newTitle, setNewTitle] = useState("");
   const [newBody, setNewBody] = useState("");
   const [newTheme, setNewTheme] = useState<MarkdownTheme>("coursera");
+  const [newSourceUrl, setNewSourceUrl] = useState("");
+  const [importOpen, setImportOpen] = useState(false);
+  const [importTab, setImportTab] = useState<"file" | "url">("file");
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [pageFrom, setPageFrom] = useState("");
+  const [pageTo, setPageTo] = useState("");
+  const [importUrl, setImportUrl] = useState("");
+  const [importAiFormat, setImportAiFormat] = useState(true);
   const [libraryItemId, setLibraryItemId] = useState("");
   const [draftSource, setDraftSource] = useState<"LECTURER" | "IMPORT" | "AI">("LECTURER");
   const [aiNote, setAiNote] = useState("");
@@ -355,6 +365,7 @@ export function LabTheorySection({
           language: locale,
           style: "CUSTOM",
           source: draftSource,
+          sourceUrl: newSourceUrl || null,
         }),
       });
       await api<AttachedTheory>(`workspaces/${workspaceId}/course-labs/${assignment.id}/theory-assets`, {
@@ -369,8 +380,75 @@ export function LabTheorySection({
       setNewTitle("");
       setNewBody("");
       setNewTheme("coursera");
+      setNewSourceUrl("");
       setDraftSource("LECTURER");
       setAiNote("");
+    },
+  });
+  type ImportResponse = {
+    title: string;
+    body: string;
+    sourceType: string;
+    sourceUrl: string | null;
+    aiFormatted: boolean;
+    pageCount: number;
+    extractedPages: number;
+    warnings: string[];
+  };
+  const importDocument = useMutation({
+    mutationFn: async () => {
+      if (importTab === "file") {
+        if (!importFile) throw new Error(t("Choose a file to import.", "Hãy chọn file tài liệu."));
+        const form = new FormData();
+        form.append("file", importFile);
+        if (pageFrom.trim()) form.append("pageFrom", pageFrom.trim());
+        if (pageTo.trim()) form.append("pageTo", pageTo.trim());
+        form.append("aiFormat", String(importAiFormat));
+        form.append("language", locale);
+        return api<ImportResponse>(`workspaces/${workspaceId}/theory-assets/import-file`, {
+          method: "POST",
+          body: form,
+        });
+      }
+      if (!importUrl.trim()) {
+        throw new Error(t("Enter a valid https:// URL.", "Hãy nhập URL https:// hợp lệ."));
+      }
+      return api<ImportResponse>(`workspaces/${workspaceId}/theory-assets/import-url`, {
+        method: "POST",
+        body: JSON.stringify({
+          url: importUrl.trim(),
+          aiFormat: importAiFormat,
+          language: locale,
+        }),
+      });
+    },
+    onSuccess: (res) => {
+      const parsed = extractMarkdownTheme(res.body);
+      setNewTitle((cur) => (cur.trim() && newBody.trim() ? cur : res.title));
+      setNewBody(parsed.body);
+      setNewTheme(parsed.theme);
+      setNewSourceUrl(res.sourceUrl ?? "");
+      setDraftSource("IMPORT");
+      const metaParts = [
+        res.sourceType === "PDF" && res.pageCount > 0
+          ? t(
+              `Imported PDF (${res.extractedPages}/${res.pageCount} pages)`,
+              `Đã nhập PDF (${res.extractedPages}/${res.pageCount} trang)`,
+            )
+          : res.sourceType === "URL"
+            ? t("Imported from web URL", "Đã nhập từ trang Web / Roadmap")
+            : t(`Imported ${res.sourceType}`, `Đã nhập file ${res.sourceType}`),
+        res.aiFormatted
+          ? t("AI formatted (original content preserved)", "Đã chuẩn hóa bằng AI (giữ nguyên gốc)")
+          : t("Smart formatted", "Đã chuẩn hóa bố cục"),
+      ];
+      if (res.warnings.length > 0) metaParts.push(res.warnings.join(" "));
+      setAiNote(metaParts.join(" · "));
+      setImportOpen(false);
+      setImportFile(null);
+      setImportUrl("");
+      setPageFrom("");
+      setPageTo("");
     },
   });
   const generateDraft = useMutation({
@@ -661,29 +739,18 @@ export function LabTheorySection({
                 {t("Create or import a lesson for this Lab", "Soạn mới hoặc nhập file bài giảng cho Lab")}
               </span>
               <div className="flex flex-wrap items-center gap-1.5">
-                <label className="inline-flex h-8 cursor-pointer items-center rounded-md border px-2.5 text-xs font-medium transition-colors hover:bg-muted">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    importDocument.reset();
+                    setImportOpen(true);
+                  }}
+                >
                   <Upload className="mr-1 size-3.5" aria-hidden="true" />
-                  {t("Import (.md / .txt)", "Nhập (.md / .txt)")}
-                  <input
-                    className="sr-only"
-                    type="file"
-                    accept=".md,.markdown,.txt,text/markdown,text/plain"
-                    onChange={(event) => {
-                      const file = event.target.files?.[0];
-                      if (!file) return;
-                      void file.text().then((text) => {
-                        const isPlainText = /\.txt$/i.test(file.name);
-                        const parsed = extractMarkdownTheme(text);
-                        setNewTheme(parsed.theme);
-                        setNewBody(isPlainText ? smartFormatMarkdown(parsed.body) : parsed.body);
-                        setDraftSource("IMPORT");
-                        setAiNote("");
-                        if (!newTitle.trim()) setNewTitle(file.name.replace(/\.(md|markdown|txt)$/i, ""));
-                      });
-                      event.target.value = "";
-                    }}
-                  />
-                </label>
+                  {t("Import document", "Nhập tài liệu")}
+                </Button>
                 <Button
                   type="button"
                   size="sm"
@@ -703,6 +770,149 @@ export function LabTheorySection({
                 </Button>
               </div>
             </div>
+            {importOpen && (
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="theory-import-title"
+                className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4 backdrop-blur-xs"
+              >
+                <div className="w-full max-w-lg space-y-4 rounded-2xl border bg-card p-5 shadow-xl">
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 id="theory-import-title" className="text-base font-semibold">
+                      {t("Import theory document", "Nhập tài liệu lý thuyết")}
+                    </h3>
+                    <button
+                      type="button"
+                      aria-label={t("Close", "Đóng")}
+                      className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                      onClick={() => setImportOpen(false)}
+                    >
+                      <X className="size-4" aria-hidden="true" />
+                    </button>
+                  </div>
+
+                  <div className="inline-flex w-full rounded-lg border bg-muted/40 p-0.5 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setImportTab("file")}
+                      className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 font-medium transition-colors ${
+                        importTab === "file"
+                          ? "bg-background text-foreground shadow-xs"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <Upload className="size-3.5" aria-hidden="true" />
+                      {t("Upload file (PDF / DOCX / PPTX / MD)", "Tải file (PDF / DOCX / PPTX / MD)")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setImportTab("url")}
+                      className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 font-medium transition-colors ${
+                        importTab === "url"
+                          ? "bg-background text-foreground shadow-xs"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <Globe className="size-3.5" aria-hidden="true" />
+                      {t("Web / Roadmap URL", "Link Web / Roadmap")}
+                    </button>
+                  </div>
+
+                  {importTab === "file" ? (
+                    <div className="space-y-3">
+                      <Input
+                        type="file"
+                        aria-label={t("Document file", "File tài liệu")}
+                        accept=".pdf,.docx,.pptx,.md,.markdown,.txt"
+                        onChange={(event) => {
+                          setImportFile(event.target.files?.[0] ?? null);
+                          setPageFrom("");
+                          setPageTo("");
+                        }}
+                      />
+                      {importFile && /\.pdf$/i.test(importFile.name) && (
+                        <div className="grid grid-cols-2 gap-3 rounded-lg border bg-muted/20 p-3">
+                          <label className="space-y-1 text-xs font-medium">
+                            <span>{t("From page (optional)", "Từ trang (tùy chọn)")}</span>
+                            <Input
+                              type="number"
+                              min={1}
+                              value={pageFrom}
+                              onChange={(event) => setPageFrom(event.target.value)}
+                            />
+                          </label>
+                          <label className="space-y-1 text-xs font-medium">
+                            <span>{t("To page (max 50 pages)", "Đến trang (tối đa 50)")}</span>
+                            <Input
+                              type="number"
+                              min={1}
+                              value={pageTo}
+                              onChange={(event) => setPageTo(event.target.value)}
+                            />
+                          </label>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <label className="block space-y-1.5 text-xs font-medium">
+                      <span>{t("Public webpage or roadmap URL", "Địa chỉ trang Web hoặc Roadmap công khai")}</span>
+                      <Input
+                        type="url"
+                        placeholder="https://roadmap.sh/..."
+                        value={importUrl}
+                        onChange={(event) => setImportUrl(event.target.value)}
+                      />
+                    </label>
+                  )}
+
+                  <label className="flex cursor-pointer items-center gap-2 rounded-lg border bg-muted/20 px-3 py-2 text-xs font-medium">
+                    <input
+                      type="checkbox"
+                      checked={importAiFormat}
+                      onChange={(event) => setImportAiFormat(event.target.checked)}
+                    />
+                    <Sparkles className="size-3.5 text-primary" aria-hidden="true" />
+                    <span>
+                      {t(
+                        "AI smart formatting (preserve original content)",
+                        "AI định dạng chuẩn hóa (giữ nguyên nội dung gốc)",
+                      )}
+                    </span>
+                  </label>
+
+                  {importDocument.error && (
+                    <p role="alert" className="text-xs text-destructive">
+                      {importDocument.error.message}
+                    </p>
+                  )}
+
+                  <div className="flex justify-end gap-2 pt-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setImportOpen(false)}
+                    >
+                      {t("Cancel", "Hủy")}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={
+                        importDocument.isPending ||
+                        (importTab === "file" ? !importFile : !importUrl.trim())
+                      }
+                      onClick={() => importDocument.mutate()}
+                    >
+                      {importDocument.isPending
+                        ? t("Importing…", "Đang nhập…")
+                        : t("Import & Format", "Nhập & chuẩn hóa")}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
             <Input
               aria-label={t("Lesson title", "Tên bài học")}
               value={newTitle}
