@@ -1281,6 +1281,9 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
             composeYaml = profileNode.get("sandboxCompose").asText();
         } else if (snapshot != null && snapshot.getId() != null && sourceSnapshotRepository.findById(snapshot.getId()).isPresent()) {
             PreflightCheckResponseDTO check = runComposePreflight(snapshot.getId());
+            boolean needsRemediation = composeYaml.isBlank()
+                    || !overrides.isEmpty()
+                    || (check.getRunnerIssues() != null && !check.getRunnerIssues().isEmpty());
             String candidate = check.getSandboxComposeYaml();
             List<String> unresolved = check.getUnresolvableRunnerIssues();
             if (!overrides.isEmpty() && composePreflightValidator != null && candidate != null && !candidate.isBlank()) {
@@ -1290,7 +1293,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                     unresolved = rem.unresolvableIssues();
                 }
             }
-            if ((unresolved == null || unresolved.isEmpty()) && candidate != null && !candidate.isBlank()) {
+            if (needsRemediation && (unresolved == null || unresolved.isEmpty()) && candidate != null && !candidate.isBlank()) {
                 composeYaml = candidate;
             }
         } else if (!composeYaml.isBlank() && composePreflightValidator != null) {
