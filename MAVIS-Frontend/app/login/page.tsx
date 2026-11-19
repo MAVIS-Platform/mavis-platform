@@ -161,18 +161,17 @@ export default function LoginPage() {
           </div>
         </section>
         <section
-          className="mx-auto w-full min-w-0 max-w-md rounded-2xl border bg-card p-5 shadow-sm sm:p-6"
+          className="mx-auto w-full min-w-0 max-w-md rounded-2xl border border-border/80 bg-card p-6 sm:p-8"
           aria-labelledby="login-title"
         >
-          <div className="mb-5">
-            <p className="mb-2 text-xs font-medium uppercase tracking-[0.16em] text-primary">
+          <div className="mb-6">
+            <p className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-primary">
               {t("Your workspace awaits", "Không gian làm việc của bạn")}
             </p>
-            <h2 id="login-title" className="text-2xl font-semibold tracking-tight">
-              {t("Welcome back", "Chào mừng bạn quay lại")}{" "}
-              <span aria-hidden="true" className="text-green-600">✓</span>
+            <h2 id="login-title" className="text-balance text-2xl font-semibold tracking-tight">
+              {t("Welcome back", "Chào mừng bạn quay lại")}
             </h2>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            <p className="mt-2 text-pretty text-sm text-muted-foreground">
               {t(
                 "Sign in to continue exploring your architecture.",
                 "Đăng nhập để tiếp tục khám phá kiến trúc và bài Lab của bạn.",
@@ -323,7 +322,7 @@ export default function LoginPage() {
               </div>
               {real.isError && <ErrorState error={real.error} />}
               <Button
-                className="h-11 w-full text-sm font-medium"
+                className="h-11 w-full rounded-xl text-sm font-semibold transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.98]"
                 disabled={real.isPending}
                 type="submit"
               >
@@ -339,29 +338,25 @@ export default function LoginPage() {
                   </>
                 )}
               </Button>
-              <p className="text-center text-xs leading-5 text-muted-foreground">
-                {t(
-                  "Use the verified account provided for your workspace.",
-                  "Sử dụng tài khoản đã xác minh được cung cấp cho không gian làm việc của bạn.",
-                )}
-              </p>
             </form>
           )}
           {api.mode === "backend" && (
             <>
               <SocialSignIn onSignedIn={finish} nextPath={params.get("next")} />
-              <p className="mt-4 text-center text-sm text-muted-foreground">
-                {t("New to MAVIS?", "Chưa có tài khoản MAVIS?")}{" "}
-                <Link href="/auth/register" className="font-medium text-primary hover:underline">
-                  {t("Create an account", "Tạo tài khoản mới")}
-                </Link>
-              </p>
-              <p className="mt-2 text-center text-xs text-muted-foreground">
-                {t("Need to verify your email?", "Cần xác minh email?")}{" "}
-                <Link href="/auth/verify" className="text-primary hover:underline">
-                  {t("Enter verification code", "Nhập mã xác minh")}
-                </Link>
-              </p>
+              <div className="mt-6 space-y-2 text-center">
+                <p className="text-sm text-muted-foreground">
+                  {t("New to MAVIS?", "Chưa có tài khoản MAVIS?")}{" "}
+                  <Link href="/auth/register" className="font-medium text-primary hover:underline">
+                    {t("Create an account", "Tạo tài khoản mới")}
+                  </Link>
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {t("Need to verify your email?", "Cần xác minh email?")}{" "}
+                  <Link href="/auth/verify" className="text-primary hover:underline">
+                    {t("Enter verification code", "Nhập mã xác minh")}
+                  </Link>
+                </p>
+              </div>
             </>
           )}
           <div className="mt-5 flex items-center justify-center gap-2 border-t pt-3 text-xs text-muted-foreground">

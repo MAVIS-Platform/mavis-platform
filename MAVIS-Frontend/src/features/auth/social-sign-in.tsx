@@ -1,8 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { LoaderCircle } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { useApiMutation } from "@/hooks/use-api";
 import { ErrorState } from "@/components/shared/request-state";
 import { useLocale } from "@/lib/i18n/locale-context";
@@ -28,7 +26,7 @@ type AuthConfig = {
 
 function GoogleMark() {
   return (
-    <svg className="size-4 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
+    <svg className="size-5 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
       <path
         fill="#4285F4"
         d="M23.49 12.27c0-.79-.07-1.54-.2-2.27H12v4.3h6.44a5.5 5.5 0 0 1-2.39 3.61v3h3.87c2.26-2.08 3.57-5.15 3.57-8.64Z"
@@ -51,11 +49,14 @@ function GoogleMark() {
 
 function GithubMark() {
   return (
-    <svg className="size-4 shrink-0 fill-current" viewBox="0 0 24 24" aria-hidden="true">
+    <svg className="size-5 shrink-0 fill-current" viewBox="0 0 24 24" aria-hidden="true">
       <path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55 0-.27-.01-1.16-.02-2.11-3.2.7-3.87-1.36-3.87-1.36-.52-1.33-1.28-1.68-1.28-1.68-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.19 1.76 1.19 1.02 1.75 2.69 1.24 3.35.95.1-.74.4-1.24.73-1.53-2.55-.29-5.23-1.28-5.23-5.68 0-1.25.45-2.28 1.18-3.08-.12-.29-.51-1.46.11-3.04 0 0 .97-.31 3.17 1.18a11.02 11.02 0 0 1 5.78 0c2.2-1.49 3.17-1.18 3.17-1.18.62 1.58.23 2.75.11 3.04.74.8 1.18 1.83 1.18 3.08 0 4.41-2.69 5.39-5.25 5.67.41.36.78 1.06.78 2.14 0 1.55-.01 2.79-.01 3.17 0 .31.21.66.79.55A11.51 11.51 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z" />
     </svg>
   );
 }
+
+const circleButtonClass =
+  "relative flex size-12 items-center justify-center rounded-full border border-border/80 bg-background/60 text-foreground transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] hover:border-foreground/30 hover:bg-muted/80 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:pointer-events-none disabled:opacity-40";
 
 export function SocialSignIn({
   onSignedIn,
@@ -65,7 +66,7 @@ export function SocialSignIn({
   nextPath?: string | null;
 }) {
   const { t } = useLocale();
-  const googleContainer = useRef<HTMLDivElement>(null);
+  const googleOverlay = useRef<HTMLDivElement>(null);
   const callback = useRef(onSignedIn);
   callback.current = onSignedIn;
 
@@ -75,6 +76,7 @@ export function SocialSignIn({
 
   const submitting = useRef(false);
   const [config, setConfig] = useState<AuthConfig | null>(null);
+  const [googleReady, setGoogleReady] = useState(false);
   const [googleFailed, setGoogleFailed] = useState(false);
   const [githubPending, setGithubPending] = useState(false);
 
@@ -83,13 +85,13 @@ export function SocialSignIn({
     let script: HTMLScriptElement | undefined;
 
     const mountGoogle = (clientId: string) => {
-      if (!live || !googleContainer.current) return;
+      if (!live || !googleOverlay.current) return;
       const google = (window as unknown as { google?: GoogleApi }).google;
       if (!google) {
         setGoogleFailed(true);
         return;
       }
-      googleContainer.current.innerHTML = "";
+      googleOverlay.current.innerHTML = "";
       google.accounts.id.initialize({
         client_id: clientId,
         callback: async (response) => {
@@ -105,14 +107,15 @@ export function SocialSignIn({
           }
         },
       });
-      const isDark = document.documentElement.classList.contains("dark");
-      google.accounts.id.renderButton(googleContainer.current, {
-        theme: isDark ? "filled_black" : "outline",
+      // Render Google's official circular icon button invisibly over our themed circle so the native
+      // Google account picker works reliably without rendering Google's mismatched white iframe box.
+      google.accounts.id.renderButton(googleOverlay.current, {
+        type: "icon",
+        shape: "circle",
         size: "large",
-        text: "continue_with",
-        shape: "rectangular",
-        width: Math.min(360, googleContainer.current.clientWidth || 360),
+        theme: "outline",
       });
+      setGoogleReady(true);
     };
 
     void fetch("/api/auth-config")
@@ -150,82 +153,75 @@ export function SocialSignIn({
     };
   }, []);
 
-  const githubEnabled = Boolean(config?.githubClientId);
   const googleEnabled = Boolean(config?.googleClientId);
+  const githubEnabled = Boolean(config?.githubClientId);
+  const busy = googleLogin.isPending || githubPending;
   const githubHref = nextPath
     ? `/api/auth/github/start?next=${encodeURIComponent(nextPath)}`
     : "/api/auth/github/start";
 
   function startGithub() {
-    if (!githubEnabled || githubPending || googleLogin.isPending) return;
+    if (!githubEnabled || busy) return;
     setGithubPending(true);
     window.location.assign(githubHref);
   }
 
   return (
-    <div className="mt-5 space-y-3">
-      <div className="flex items-center gap-3 text-xs text-muted-foreground">
-        <span className="h-px flex-1 bg-border" />
+    <div className="mt-6 space-y-4">
+      <div className="flex items-center gap-3 text-xs font-medium text-muted-foreground">
+        <span className="h-px flex-1 bg-border/70" />
         <span>{t("Or continue with", "Hoặc tiếp tục với")}</span>
-        <span className="h-px flex-1 bg-border" />
+        <span className="h-px flex-1 bg-border/70" />
       </div>
 
-      <div className="space-y-2.5">
-        {googleEnabled ? (
-          <div ref={googleContainer} className="flex min-h-10 w-full justify-center" />
-        ) : (
-          <Button
-            type="button"
-            variant="outline"
-            className="h-11 w-full justify-center gap-2.5 text-sm font-medium"
-            disabled
-            title={t(
-              "Set MAVIS_GOOGLE_CLIENT_ID to enable Google sign-in.",
-              "Cấu hình MAVIS_GOOGLE_CLIENT_ID để bật đăng nhập Google.",
-            )}
+      <div className="flex items-start justify-center gap-6">
+        <div className="flex flex-col items-center gap-2">
+          <div
+            className={`${circleButtonClass} overflow-hidden focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-card ${
+              !googleEnabled || busy ? "pointer-events-none opacity-40" : "cursor-pointer"
+            }`}
+            title={
+              googleEnabled
+                ? t("Continue with Google", "Tiếp tục với Google")
+                : t("Google sign-in is not configured", "Đăng nhập Google chưa được cấu hình")
+            }
           >
             <GoogleMark />
-            <span>{t("Continue with Google", "Tiếp tục với Google")}</span>
-            {config !== null && (
-              <span className="text-xs font-normal text-muted-foreground">
-                ({t("Not configured", "Chưa cấu hình")})
-              </span>
-            )}
-          </Button>
-        )}
+            <div
+              ref={googleOverlay}
+              aria-label={t("Continue with Google", "Tiếp tục với Google")}
+              className={`absolute inset-0 flex items-center justify-center overflow-hidden rounded-full transition-opacity duration-300 ${
+                googleReady ? "scale-125 opacity-[0.001]" : "pointer-events-none opacity-0"
+              }`}
+            />
+          </div>
+          <span className="text-xs font-medium text-muted-foreground">Google</span>
+        </div>
 
-        <Button
-          type="button"
-          variant="outline"
-          className="h-11 w-full justify-center gap-2.5 text-sm font-medium"
-          disabled={!githubEnabled || githubPending || googleLogin.isPending}
-          onClick={startGithub}
-          title={
-            githubEnabled
-              ? t("Sign in quickly with GitHub", "Đăng nhập nhanh bằng GitHub")
-              : t(
-                  "Set MAVIS_GITHUB_CLIENT_ID and MAVIS_GITHUB_CLIENT_SECRET to enable GitHub sign-in.",
-                  "Cấu hình MAVIS_GITHUB_CLIENT_ID và MAVIS_GITHUB_CLIENT_SECRET để bật đăng nhập GitHub.",
-                )
-          }
-        >
-          {githubPending ? <LoaderCircle className="size-4 animate-spin" /> : <GithubMark />}
-          <span>
-            {githubPending
-              ? t("Redirecting to GitHub…", "Đang chuyển đến GitHub…")
-              : t("Continue with GitHub", "Tiếp tục với GitHub")}
-          </span>
-          {config !== null && !githubEnabled && (
-            <span className="text-xs font-normal text-muted-foreground">
-              ({t("Not configured", "Chưa cấu hình")})
-            </span>
-          )}
-        </Button>
+        <div className="flex flex-col items-center gap-2">
+          <button
+            type="button"
+            className={circleButtonClass}
+            aria-label={t("Continue with GitHub", "Tiếp tục với GitHub")}
+            disabled={!githubEnabled || busy}
+            onClick={startGithub}
+            title={
+              githubEnabled
+                ? t("Continue with GitHub", "Tiếp tục với GitHub")
+                : t("GitHub sign-in is not configured", "Đăng nhập GitHub chưa được cấu hình")
+            }
+          >
+            <GithubMark />
+          </button>
+          <span className="text-xs font-medium text-muted-foreground">GitHub</span>
+        </div>
       </div>
 
-      {googleLogin.isPending && (
-        <p role="status" className="text-center text-sm text-muted-foreground">
-          {t("Signing in with Google…", "Đang đăng nhập bằng Google…")}
+      {busy && (
+        <p role="status" className="text-center text-xs font-medium text-muted-foreground">
+          {githubPending
+            ? t("Redirecting to GitHub…", "Đang chuyển đến GitHub…")
+            : t("Signing in with Google…", "Đang đăng nhập bằng Google…")}
         </p>
       )}
       {googleLogin.isError && <ErrorState error={googleLogin.error} />}
