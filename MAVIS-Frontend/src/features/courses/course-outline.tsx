@@ -7,7 +7,6 @@ import {
   ChevronDown,
   Circle,
   Code2,
-  FilePlus2,
   FileText,
   GitFork,
   HelpCircle,
@@ -193,38 +192,24 @@ export function CourseOutline({
   if (modules.length === 0) {
     if (!canManage) return null;
     return (
-      <section className="flex min-h-[360px] flex-col items-center justify-center rounded-2xl border border-dashed border-border/80 bg-card/40 px-6 py-14 text-center">
-        <Link
-          href={`/workspace-overview?workspace=${encodeURIComponent(workspaceId)}&view=course-authoring`}
-          aria-label={t("Setup Curriculum", "Thiết lập Curriculum")}
-          className="group flex size-16 items-center justify-center rounded-2xl border-2 border-dashed border-muted-foreground/35 bg-muted/40 text-muted-foreground transition hover:scale-[1.03] hover:border-primary hover:bg-primary/10 hover:text-primary"
-        >
-          <Plus className="size-8 stroke-[1.75] transition-transform group-hover:rotate-90" aria-hidden="true" />
-        </Link>
+      <Link
+        href={`/workspace-overview?workspace=${encodeURIComponent(workspaceId)}&view=course-authoring`}
+        aria-label={t("Setup Curriculum", "Thiết lập Curriculum")}
+        className="group flex min-h-[360px] flex-col items-center justify-center rounded-2xl border border-dashed border-border/80 bg-card/40 px-6 py-14 text-center transition hover:border-primary/60 hover:bg-card/70"
+      >
+        <span className="flex size-20 items-center justify-center rounded-2xl border-2 border-dashed border-muted-foreground/35 bg-muted/40 text-muted-foreground transition group-hover:scale-[1.04] group-hover:border-primary group-hover:bg-primary/10 group-hover:text-primary">
+          <Plus className="size-9 stroke-[1.75] transition-transform group-hover:rotate-90" aria-hidden="true" />
+        </span>
         <h2 className="mt-5 text-base font-semibold tracking-tight text-foreground">
           {t("No curriculum chapters yet.", "Chưa có chương học tập nào.")}
         </h2>
         <p className="mt-1.5 max-w-md text-sm text-muted-foreground">
           {t(
-            "Start by creating your first module in Curriculum & Materials, or build a standalone Lab first.",
-            "Bắt đầu bằng cách tạo chương đầu tiên ở Đề cương & Học liệu, hoặc tạo bài Lab trước.",
+            "Click to create your first module in Curriculum & Materials.",
+            "Bấm để tạo chương đầu tiên trong Đề cương & Học liệu.",
           )}
         </p>
-        <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-          <Button asChild size="default">
-            <Link href={`/workspace-overview?workspace=${encodeURIComponent(workspaceId)}&view=course-authoring`}>
-              <Plus className="mr-1.5 size-4" aria-hidden="true" />
-              {t("Setup Curriculum", "Thiết lập Curriculum")}
-            </Link>
-          </Button>
-          <Button asChild size="default" variant="outline">
-            <Link href={`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}`}>
-              <FilePlus2 className="mr-1.5 size-4" aria-hidden="true" />
-              {t("Create Labs", "Tạo Lab")}
-            </Link>
-          </Button>
-        </div>
-      </section>
+      </Link>
     );
   }
 
