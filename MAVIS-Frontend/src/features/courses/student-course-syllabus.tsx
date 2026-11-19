@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import {
   BookOpen,
-  Activity,
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
@@ -14,7 +13,6 @@ import {
   FileText,
   HelpCircle,
   Lock,
-  Network,
   Play,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -315,67 +313,6 @@ export function StudentCourseSyllabus({
         )}
       </section>
 
-      <section
-        aria-label={t("Module learning journey", "Hành trình học theo Module")}
-        className="rounded-2xl border bg-card p-4 shadow-sm sm:p-5"
-      >
-        <div className="mb-4">
-          <h2 className="text-base font-semibold">
-            {t("Module learning journey", "Hành trình học theo Module")}
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {t(
-              "Theory and Quiz build repository knowledge. MAVIS Studio then supports two practical workflows before evidence is submitted for review.",
-              "Lý thuyết và Quiz xây dựng kiến thức repository. MAVIS Studio sau đó hỗ trợ hai luồng thực hành trước khi nộp minh chứng để chấm.",
-            )}
-          </p>
-        </div>
-        <ol className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-          {[
-            {
-              title: t("1. Module knowledge", "1. Kiến thức Module"),
-              detail: t("Theory and repository context", "Lý thuyết và ngữ cảnh repository"),
-              icon: BookOpen,
-            },
-            {
-              title: t("2. Quiz", "2. Quiz"),
-              detail: t("Policy-controlled learning gate", "Điều kiện học theo policy"),
-              icon: HelpCircle,
-            },
-            {
-              title: t("3. Studio · Workflow 2", "3. Studio · Workflow 2"),
-              detail: t(
-                "Repository analysis: C1–C3, graph, evidence, AI",
-                "Phân tích repository: C1–C3, graph, bằng chứng, AI",
-              ),
-              icon: Network,
-            },
-            {
-              title: t("4. Studio · Workflow 3", "4. Studio · Workflow 3"),
-              detail: t(
-                "Runtime experiment: Docker, telemetry, before/after",
-                "Thực nghiệm runtime: Docker, telemetry, trước/sau",
-              ),
-              icon: Activity,
-            },
-            {
-              title: t("5. Workflow 4", "5. Workflow 4"),
-              detail: t(
-                "Evidence submission and lecturer review",
-                "Nộp minh chứng và giảng viên chấm",
-              ),
-              icon: FileCheck2,
-            },
-          ].map(({ title, detail, icon: Icon }) => (
-            <li key={title} className="rounded-xl border bg-background p-3.5">
-              <Icon className="size-4 text-primary" aria-hidden="true" />
-              <h3 className="mt-2 text-sm font-semibold">{title}</h3>
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">{detail}</p>
-            </li>
-          ))}
-        </ol>
-      </section>
-
       <div
         className="flex flex-wrap items-center gap-2 rounded-2xl border bg-card p-2 shadow-sm"
         role="tablist"
@@ -391,7 +328,7 @@ export function StudentCourseSyllabus({
           className={activeTab === "player" ? "bg-teal-600 text-white hover:bg-teal-700" : ""}
         >
           <BookOpen className="mr-1.5 h-4 w-4" aria-hidden="true" />
-          {t("1. Module learning", "1. Học theo Module")}
+          {t("Course Content", "Nội dung khóa học")}
         </Button>
         <Button
           type="button"
@@ -421,15 +358,15 @@ export function StudentCourseSyllabus({
             className={activeTab === "library" ? "bg-teal-600 text-white hover:bg-teal-700" : ""}
           >
             <Code2 className="mr-1.5 h-4 w-4" aria-hidden="true" />
-            {t("3. Java & C# Reference Library", "3. Giáo Trình Java & C#")}
+            {t("Resources", "Tài nguyên")}
           </Button>
         )}
       </div>
 
       <div className="min-w-0 space-y-6">
         {activeTab === "player" && activeEntry && activeModule && activeItem && (
-          <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)] lg:items-start">
-            {/* Right Wide Content Column (ordered second on desktop, first visually in reading flow via order-2) */}
+          <div className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)] lg:items-start">
+            {/* Focused learning workspace: Course Content navigation + wide lesson canvas. */}
             <section className="min-w-0 space-y-6 rounded-2xl border bg-card p-5 shadow-sm sm:p-6 lg:order-2">
               <div className="flex flex-wrap items-start justify-between gap-3 border-b pb-4">
                 <div className="min-w-0 space-y-1.5">
@@ -757,11 +694,11 @@ export function StudentCourseSyllabus({
               <div className="flex items-center justify-between gap-2 border-b pb-3">
                 <div>
                   <h2 className="text-sm font-semibold">
-                    📑 {t("Course Syllabus Menu", "Nội Dung Môn Học")}
+                    📑 {t("Course Content", "Nội dung khóa học")}
                   </h2>
                   <p className="text-xs text-muted-foreground">
-                    {syllabusModules.length} {t("chapters", "chương")} · {flattenedItems.length}{" "}
-                    {t("activities", "hoạt động")}
+                    {syllabusModules.length} {t("modules", "module")} · {flattenedItems.length}{" "}
+                    {t("items", "nội dung")}
                   </p>
                 </div>
                 {summary.totalLabs > 0 && (
