@@ -221,10 +221,10 @@ export function MxGraphNativeSvgPreview({ xml }: { xml: string }) {
   }
 
   return (
-    <div className="h-[680px] w-full overflow-auto bg-white p-4">
+    <div className="h-[640px] w-full overflow-auto rounded-lg bg-slate-50 p-3">
       <svg
         viewBox={parsed.viewBox}
-        className="mx-auto h-full min-h-[520px] w-full min-w-[720px]"
+        className="mx-auto h-full w-full"
         role="img"
         aria-label="Architecture diagram SVG preview"
       >

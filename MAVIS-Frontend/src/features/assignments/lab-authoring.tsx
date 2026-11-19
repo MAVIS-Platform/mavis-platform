@@ -316,7 +316,7 @@ export function LabAuthoring() {
                       `/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(nextId)}&tab=info`,
                     );
                   }}
-                  className="h-8 max-w-[200px] rounded-md border bg-background px-2.5 text-xs font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                  className="h-8 w-48 overflow-hidden text-ellipsis whitespace-nowrap rounded-md border bg-background px-2.5 text-xs font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                 >
                   <option value="">
                     {t("Switch Lab…", "Chuyển nhanh bài Lab…")}

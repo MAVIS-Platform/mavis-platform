@@ -435,7 +435,7 @@ export function CourseWorkspaceShell({
             <p className="inline-flex items-center gap-1.5 text-xs text-white/80">
               <Users className="size-3.5" aria-hidden="true" />
               <span>
-                {students} {t("students", "sinh viên")}
+                {students} {students === 1 ? t("student", "sinh viên") : t("students", "sinh viên")}
               </span>
             </p>
           </div>

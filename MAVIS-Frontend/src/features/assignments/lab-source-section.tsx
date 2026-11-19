@@ -275,6 +275,7 @@ export function LabSourceSection({
       }
     }
 
+    const seenServiceKey = new Set<string>();
     const services = topElements
       .map((el) => {
         const files = Array.from(
@@ -293,6 +294,12 @@ export function LabSourceSection({
           outbound: Array.from(outboundMap.get(el.id) ?? []).slice(0, 4),
           files: files.slice(0, 2),
         };
+      })
+      .filter((svc) => {
+        const key = `${svc.name.trim().toLowerCase()}::${svc.kind}`;
+        if (seenServiceKey.has(key)) return false;
+        seenServiceKey.add(key);
+        return true;
       })
       .sort((a, b) => {
         const rank = (k: string) =>

@@ -439,43 +439,43 @@ export function LiveStudioWorkbench({
             aria-label="Select active or recent runtime session"
             value={activeSessionId}
             onChange={(event) => onSelectSession(event.target.value)}
-            className="h-7 max-w-[230px] rounded border border-slate-700 bg-slate-950 px-2 text-[11px] text-slate-100"
+            className="h-7 w-40 shrink-0 overflow-hidden text-ellipsis whitespace-nowrap rounded border border-slate-700 bg-slate-950 px-2 text-[11px] text-slate-100"
           >
             {sessions.length > 0 ? (
               sessions.map((session) => (
                 <option key={session.id} value={session.id}>
-                  {session.id.slice(0, 8)} · {session.scenarioName ?? "Studio Session"} ·{" "}
-                  {session.executionStatus}
+                  {session.id.slice(0, 8)} · {session.executionStatus ?? "SESSION"}
                 </option>
               ))
             ) : (
-              <option value="">No live Docker sessions yet</option>
+              <option value="">No live sessions</option>
             )}
           </select>
         </label>
 
-        {onStartSession ? (
-          <Button
-            type="button"
-            size="sm"
-            className="h-7 bg-emerald-600 px-2.5 text-[11px] text-white hover:bg-emerald-500"
-            disabled={starting}
-            onClick={onStartSession}
-          >
-            <Play aria-hidden="true" className="mr-1 size-3" />
-            {starting
-              ? "Starting Docker…"
-              : projectName
-                ? `Start ${projectName}`
-                : "Start Live Docker"}
-          </Button>
-        ) : (
-          <Button asChild size="sm" className="h-7 px-2.5 text-[11px]">
-            <Link href={startHref}>
-              {projectName ? `Prepare and start ${projectName}` : "Prepare and start Live project"}
-            </Link>
-          </Button>
-        )}
+        {data.executionStatus !== "RUNNING" &&
+          (onStartSession ? (
+            <Button
+              type="button"
+              size="sm"
+              className="h-7 bg-emerald-600 px-2.5 text-[11px] text-white hover:bg-emerald-500"
+              disabled={starting}
+              onClick={onStartSession}
+            >
+              <Play aria-hidden="true" className="mr-1 size-3" />
+              {starting
+                ? "Starting Docker…"
+                : projectName
+                  ? `Start ${projectName}`
+                  : "Start Live Docker"}
+            </Button>
+          ) : (
+            <Button asChild size="sm" className="h-7 px-2.5 text-[11px]">
+              <Link href={startHref}>
+                {projectName ? `Prepare and start ${projectName}` : "Prepare and start Live project"}
+              </Link>
+            </Button>
+          ))}
 
         {!hideSwitchToSandbox && onSwitchToSandbox && (
           <Button
@@ -780,13 +780,13 @@ export function LiveStudioWorkbench({
 
         <div ref={graphRef} className="relative min-h-[300px] min-w-0 flex-1 bg-[#070b12] p-2.5">
           {isPreviewMode && effectivePreviewTopology && (
-            <div className="pointer-events-none absolute inset-x-0 top-3 z-10 flex justify-center px-4">
-              <div className="pointer-events-auto inline-flex items-center gap-2 rounded-full border border-slate-700/80 bg-slate-950/85 px-3 py-1 text-[11px] text-slate-300 shadow-lg backdrop-blur-sm">
-                <span className="size-1.5 rounded-full bg-sky-400" aria-hidden="true" />
+            <div className="pointer-events-none absolute bottom-3 left-3 z-10">
+              <div className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full border border-slate-700/80 bg-slate-950/90 px-2.5 py-1 text-[10.5px] text-slate-300 shadow-lg backdrop-blur-sm">
+                <span className="size-1.5 shrink-0 rounded-full bg-sky-400" aria-hidden="true" />
                 <span>
                   {authoring
-                    ? "Prepared Topology Preview · Toggle initial faults on blocks or start real Docker"
-                    : "Prepared Topology Preview · Click Start Live Docker to boot containers"}
+                    ? "Preview · Toggle faults or Start Live Docker"
+                    : "Preview · Click Start Live Docker"}
                 </span>
               </div>
             </div>
@@ -851,7 +851,7 @@ export function LiveStudioWorkbench({
 
       {/* Bottom Telemetry, Logs & Snapshots Drawer */}
       <div className="h-[224px] shrink-0 border-t border-slate-800 bg-[#0b101b]">
-        <div className="flex h-9 items-center gap-1 overflow-x-auto border-b border-slate-800 px-2">
+        <div className="flex h-9 items-center gap-1 overflow-x-auto border-b border-slate-800 px-2.5 pr-4">
           {(
             [
               ["stats", "Stats"],
@@ -887,7 +887,7 @@ export function LiveStudioWorkbench({
               <RefreshCw aria-hidden="true" className="size-3" />
               {data.telemetry?.observedAt
                 ? new Date(data.telemetry.observedAt).toLocaleTimeString()
-                : "waiting for telemetry"}
+                : "No telemetry"}
             </span>
           </div>
         </div>

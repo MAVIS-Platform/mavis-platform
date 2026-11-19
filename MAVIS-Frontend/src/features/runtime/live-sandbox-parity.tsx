@@ -345,7 +345,7 @@ export function LiveSandboxParity({
             <Input
               type="search"
               aria-label="Search Live blocks"
-              placeholder="Search prepared blocks…"
+              placeholder={compact ? "Search blocks…" : "Search prepared blocks…"}
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               className="h-8 rounded-md border-slate-700 bg-slate-950 pl-8 text-xs"
@@ -372,36 +372,42 @@ export function LiveSandboxParity({
               return (
                 <li
                   key={block.service}
-                  className={`space-y-1 rounded-md border p-1.5 text-[11px] transition-colors ${
+                  className={`space-y-1.5 rounded-md border p-2 text-[11px] transition-colors ${
                     isSelected
                       ? "border-sky-500/60 bg-sky-500/10"
                       : "border-slate-800 bg-slate-950/60 hover:border-slate-700"
                   }`}
                 >
-                  <div className="flex items-center gap-1.5">
-                    <span className={`size-1.5 shrink-0 rounded-full ${statusDot}`} aria-hidden="true" />
-                    <button
-                      type="button"
-                      onClick={() => onSelect(block.service)}
-                      aria-label={`Inspect ${block.label}`}
-                      className="mr-auto max-w-full truncate font-semibold text-slate-100 hover:text-sky-200"
-                    >
-                      {block.label}
-                    </button>
-                    <span className="font-mono text-[10px] text-slate-400">
+                  <div className="flex items-center justify-between gap-1.5">
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <span className={`size-1.5 shrink-0 rounded-full ${statusDot}`} aria-hidden="true" />
+                      <button
+                        type="button"
+                        onClick={() => onSelect(block.service)}
+                        aria-label={`Inspect ${block.label}`}
+                        className="truncate text-left font-mono text-[11px] font-semibold text-slate-100 hover:text-sky-200"
+                      >
+                        {block.label}
+                      </button>
+                    </div>
+                    <span className="shrink-0 rounded bg-slate-900 px-1.5 py-0.5 font-mono text-[9.5px] text-slate-300">
                       {live === undefined
                         ? startsStopped
                           ? "Fault"
                           : "Ready"
-                        : `${live}×`}
+                        : live === 0
+                          ? "Down"
+                          : `${live}×`}
                     </span>
-                    {!authoring || live !== undefined ? (
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1">
+                    {(!authoring || !compact || live !== undefined) && (
                       <>
                         <button
                           type="button"
                           disabled={busy || live === undefined || live > 0}
                           onClick={() => void command("START", block.service)}
-                          className="h-5 rounded border border-slate-700 px-1.5 text-[10px] font-semibold text-slate-200 hover:border-emerald-500/50 hover:text-emerald-200 disabled:opacity-35"
+                          className="h-5 rounded border border-slate-700 px-1.5 text-[9.5px] font-semibold text-slate-200 hover:border-emerald-500/50 hover:text-emerald-200 disabled:opacity-35"
                         >
                           {compact ? "Start" : "Add"}
                         </button>
@@ -409,43 +415,43 @@ export function LiveSandboxParity({
                           type="button"
                           disabled={busy || !live}
                           onClick={() => void command("STOP", block.service)}
-                          className="h-5 rounded border border-slate-700 px-1.5 text-[10px] font-semibold text-slate-200 hover:border-rose-500/50 hover:text-rose-200 disabled:opacity-35"
+                          className="h-5 rounded border border-slate-700 px-1.5 text-[9.5px] font-semibold text-slate-200 hover:border-rose-500/50 hover:text-rose-200 disabled:opacity-35"
                         >
                           {compact ? "Stop" : "Remove"}
                         </button>
                       </>
-                    ) : null}
+                    )}
+                    {authoring && (
+                      <>
+                        <button
+                          type="button"
+                          disabled={authoring.busy}
+                          onClick={() => authoring.onToggleInitialStopped(block.service, false)}
+                          title="Toggle whether students start with this service stopped (initial fault)"
+                          className={`h-5 rounded border px-1.5 text-[9.5px] font-medium transition-colors ${
+                            startsStopped
+                              ? "border-amber-500/50 bg-amber-500/15 text-amber-200"
+                              : "border-slate-800 bg-slate-900/80 text-slate-400 hover:text-slate-200"
+                          }`}
+                        >
+                          {startsStopped ? "Starts Down" : "Starts Up"}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={authoring.busy}
+                          onClick={() => authoring.onToggleScalable(block.service)}
+                          title="Allow students to scale this service (1–8 replicas)"
+                          className={`h-5 rounded border px-1.5 text-[9.5px] font-medium transition-colors ${
+                            isScalable
+                              ? "border-sky-500/40 bg-sky-500/15 text-sky-200"
+                              : "border-slate-800 bg-slate-900/80 text-slate-500 hover:text-slate-300"
+                          }`}
+                        >
+                          {isScalable ? "Scalable" : "Fixed"}
+                        </button>
+                      </>
+                    )}
                   </div>
-                  {authoring && (
-                    <div className="flex items-center gap-1 pt-0.5">
-                      <button
-                        type="button"
-                        disabled={authoring.busy}
-                        onClick={() => authoring.onToggleInitialStopped(block.service, false)}
-                        title="Toggle whether students start with this service stopped (initial fault)"
-                        className={`h-5 rounded border px-1.5 text-[9.5px] font-medium transition-colors ${
-                          startsStopped
-                            ? "border-amber-500/50 bg-amber-500/15 text-amber-200"
-                            : "border-slate-800 bg-slate-900/80 text-slate-400 hover:text-slate-200"
-                        }`}
-                      >
-                        {startsStopped ? "Starts Down" : "Starts Up"}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={authoring.busy}
-                        onClick={() => authoring.onToggleScalable(block.service)}
-                        title="Allow students to scale this service (1–8 replicas)"
-                        className={`h-5 rounded border px-1.5 text-[9.5px] font-medium transition-colors ${
-                          isScalable
-                            ? "border-sky-500/40 bg-sky-500/15 text-sky-200"
-                            : "border-slate-800 bg-slate-900/80 text-slate-500 hover:text-slate-300"
-                        }`}
-                      >
-                        {isScalable ? "Scalable" : "Fixed"}
-                      </button>
-                    </div>
-                  )}
                 </li>
               );
             })}
