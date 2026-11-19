@@ -1340,6 +1340,7 @@ export function LabTheorySection({
                       key={`${modelQuery.data.id}:${c4Tab}`}
                       model={modelQuery.data}
                       mode={c4Tab === "GRAPH" ? "graph" : "diagram"}
+                      guidedStatic
                       controlledKind={c4Tab === "GRAPH" ? undefined : c4Tab}
                       hideKindSelector
                       systemName={assignment.title}

@@ -1453,10 +1453,8 @@ test("Round 6 reuses core ArchitecturePresentation in Lab Creation, fixes Step 2
   const studioWorkbench = read("src/features/runtime/live-studio-workbench.tsx");
   const curriculumMgr = read("src/features/courses/lecturer-curriculum-manager.tsx");
 
-  assert.match(sourceSection, /<ArchitecturePresentation[\s\S]*controlledKind=/);
-  assert.match(theorySection, /<ArchitecturePresentation[\s\S]*controlledKind=/);
-  assert.doesNotMatch(sourceSection, /guidedStatic/);
-  assert.doesNotMatch(theorySection, /guidedStatic/);
+  assert.match(sourceSection, /<ArchitecturePresentation[\s\S]*guidedStatic[\s\S]*controlledKind=/);
+  assert.match(theorySection, /<ArchitecturePresentation[\s\S]*guidedStatic[\s\S]*controlledKind=/);
   assert.match(sourceSection, /studioComposeReady/);
   assert.match(components, /const \[origin, setOrigin\] = useState<[^>]+>\("all"\);/);
   assert.match(studioWorkbench, /Snapshot[\s\S]*captureSnapshot/);
