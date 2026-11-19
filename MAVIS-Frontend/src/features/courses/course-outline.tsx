@@ -191,10 +191,18 @@ export function CourseOutline({
   if (modules.length === 0) {
     if (!canManage) return null;
     return (
-      <section className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-dashed bg-card px-5 py-4">
-        <p className="text-sm font-medium text-muted-foreground">
-          {t("No curriculum chapters yet.", "Chưa có chương học tập nào.")}
-        </p>
+      <section className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-dashed bg-card px-6 py-8">
+        <div className="space-y-1">
+          <p className="text-sm font-semibold text-foreground">
+            {t("No curriculum chapters yet.", "Chưa có chương học tập nào.")}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "Modules and lessons created in Curriculum & Materials will appear here.",
+              "Các chương và học liệu tạo ở mục Chương trình học sẽ hiển thị tại đây.",
+            )}
+          </p>
+        </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button asChild size="sm" variant="outline">
             <Link href={`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}`}>

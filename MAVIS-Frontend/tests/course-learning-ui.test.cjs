@@ -1366,7 +1366,7 @@ test("Lecturer flow, 1-Click Login, MockAdapter JAVA-MS-2026, and clean routes h
   const teacherDashSrc = read("src/features/workspaces/teacher-dashboard.tsx");
   assert.ok(!workspacesSrc.includes("/workspace-members"));
   assert.ok(!teacherDashSrc.includes("/workspace-members"));
-  assert.ok(workspacesSrc.includes("#class-passkey"));
+  assert.ok(workspacesSrc.includes("ClassPasskeyDialog"));
   assert.ok(teacherDashSrc.includes("#class-passkey"));
 
   const managerSrc = read("src/features/courses/lecturer-curriculum-manager.tsx");

@@ -14,8 +14,6 @@ import { CreateWorkspace, WorkspaceControls } from "./manage";
 import {
   CoursePasskey,
   CourseRoadmap,
-  useCourseAuthoring,
-  useCourseRoadmap,
   useWorkspaceGradebook,
 } from "./course-access";
 import { ReferenceManagement } from "./reference-manage";
@@ -25,7 +23,6 @@ import { Courses, CourseRoadmap as CourseRoadmapScreen } from "@/features/course
 import { CourseOutline } from "@/features/courses/course-outline";
 import { CourseBuilder } from "@/features/courses/course-builder";
 import { CourseSetupPanel } from "@/features/courses/course-setup";
-import { JAVA_COURSERA_MODULES } from "@/features/courses/java-coursera-curriculum-data";
 import { useLocale } from "@/lib/i18n/locale-context";
 
 const WORKSPACES_PER_PAGE = 6;
@@ -358,32 +355,6 @@ export function WorkspaceOverview() {
       : canManage && requestedView === "course-setup"
         ? "setup"
         : "outline";
-  const assignmentsQuery = useApiQuery(
-    "assignments",
-    { workspaceId: workspace?.id ?? "" },
-    { enabled: Boolean(workspace?.id && canManage) },
-  );
-  const authoring = useCourseAuthoring(workspace?.id ?? "", Boolean(workspace?.id && canManage));
-  const roadmap = useCourseRoadmap(workspace?.id ?? "");
-  const studentCount = (workspace?.members ?? []).filter(
-    (member) => member.role.toUpperCase() === "STUDENT",
-  ).length;
-  const rawModuleCount = authoring.data?.modules?.length ?? 0;
-  const isJavaCourseraWorkspace = workspace?.code?.toUpperCase() === "JAVA-MS-2026";
-  const moduleCount =
-    rawModuleCount > 0
-      ? rawModuleCount
-      : isJavaCourseraWorkspace
-        ? JAVA_COURSERA_MODULES.length
-        : 0;
-  const itemCount =
-    rawModuleCount > 0
-      ? (authoring.data?.modules?.reduce((sum, mod) => sum + mod.items.length, 0) ?? 0)
-      : isJavaCourseraWorkspace
-        ? JAVA_COURSERA_MODULES.reduce((sum, mod) => sum + mod.items.length, 0)
-        : 0;
-  const totalLabs = assignmentsQuery.data?.length ?? 0;
-  const publishedLabs = roadmap.data?.labs?.length ?? 0;
 
   return (
     <RequestState query={query} empty={!workspace}>
@@ -415,65 +386,6 @@ export function WorkspaceOverview() {
           }
         >
           <div className="space-y-5">
-            {canManage && activeTab !== "authoring" && (
-              <section
-                aria-label={t("Class KPIs", "Chỉ số lớp học")}
-                className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
-              >
-                <div className="rounded-xl border bg-card p-4">
-                  <p className="text-xs font-medium text-muted-foreground">
-                    {t("Enrolled Students", "Sinh viên tham gia")}
-                  </p>
-                  <p className="mt-1 text-2xl font-semibold">{studentCount}</p>
-                </div>
-                <div className="rounded-xl border bg-card p-4">
-                  <p className="text-xs font-medium text-muted-foreground">
-                    {t("Curriculum Modules & Items", "Chương & Học liệu")}
-                  </p>
-                  <p className="mt-1 text-2xl font-semibold">
-                    {moduleCount}{" "}
-                    <span className="text-sm font-normal text-muted-foreground">
-                      ({itemCount} {t("items", "mục")})
-                    </span>
-                  </p>
-                </div>
-                <div className="rounded-xl border bg-card p-4">
-                  <p className="text-xs font-medium text-muted-foreground">
-                    {t("Labs Published", "Lab đã công bố")}
-                  </p>
-                  <p className="mt-1 text-2xl font-semibold">
-                    {publishedLabs}/{totalLabs}
-                  </p>
-                </div>
-                <div className="rounded-xl border bg-card p-4">
-                  <p className="text-xs font-medium text-muted-foreground">
-                    {t("Course Status", "Trạng thái khóa học")}
-                  </p>
-                  <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-lg font-semibold">
-                      {authoring.data?.publishedVersion ||
-                      (isJavaCourseraWorkspace && publishedLabs >= 6)
-                        ? `v${authoring.data?.publishedVersion || 1} · ${t("Published", "Đã xuất bản")} (${publishedLabs}/${totalLabs || 6} Lab)`
-                        : t("Draft / Setup", "Nháp / Thiết lập")}
-                    </p>
-                    {authoring.data?.status === "DRAFT" && rawModuleCount > 0 && (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="h-7 px-2.5 text-xs"
-                        disabled={authoring.publish.isPending}
-                        onClick={() => authoring.publish.mutate()}
-                      >
-                        {authoring.publish.isPending
-                          ? t("Publishing…", "Đang công bố…")
-                          : t("Publish course", "Công bố Course")}
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </section>
-            )}
             {activeTab === "outline" && !canManage && (
               <CourseRoadmap
                 key={`student-roadmap-${workspace.id}`}
