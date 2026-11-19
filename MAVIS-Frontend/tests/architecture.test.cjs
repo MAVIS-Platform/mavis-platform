@@ -812,7 +812,7 @@ test("project navigation preserves every destination and keeps role menus intact
     globalNavigation.admin.flatMap((g) => g.items).some((i) => i.href === "/administration/studio"),
     false,
   );
-  assert.equal(globalNavigation.student.flatMap((g) => g.items).length, 3);
+  assert.equal(globalNavigation.student.flatMap((g) => g.items).length, 4);
   assert.equal(globalNavigation.lecturer.flatMap((g) => g.items).length, 3);
 });
 
@@ -851,24 +851,25 @@ test("lecturer workspace navigation exposes unified class command destinations w
   );
 });
 
-test("student contextual navigation never exposes legacy 12-item projectNavigation", () => {
-  const { contextualNavigation, studentWorkspaceNavigation } = require("../src/lib/navigation.ts");
+test("student workspace navigation is consolidated into the global Learning group", () => {
+  const { contextualNavigation, globalNavigation } = require("../src/lib/navigation.ts");
   for (const scope of ["project", "workspace"]) {
     const groups = contextualNavigation("student", scope);
-    assert.deepEqual(groups, studentWorkspaceNavigation);
-    const items = groups.flatMap((g) => g.items);
-    assert.equal(items.length, 3);
-    assert.deepEqual(
-      items.map((i) => i.href),
-      ["/courses", "/roadmap", "/submissions"],
-    );
-    assert.equal(
-      items.some((i) =>
-        ["diagrams", "model", "impact", "runtime-config", "sessions", "scenarios"].includes(i.id),
-      ),
-      false,
-    );
+    assert.deepEqual(groups, []);
   }
+  const items = globalNavigation.student.flatMap((g) => g.items);
+  assert.deepEqual(
+    items.map((i) => i.href),
+    ["/courses", "/workspaces", "/roadmap", "/submissions"],
+  );
+  assert.equal(items.filter((i) => i.href === "/roadmap").length, 1);
+  assert.equal(items.filter((i) => i.href === "/submissions").length, 1);
+  assert.equal(
+    items.some((i) =>
+      ["diagrams", "model", "impact", "runtime-config", "sessions", "scenarios"].includes(i.id),
+    ),
+    false,
+  );
 });
 
 test("status presentation uses sentence case while retaining data, styling and localized wording", () => {
@@ -1157,7 +1158,7 @@ test("flat sidebar links remain accessible when collapsed without child tree clu
   assert.ok(html.includes('href="/submissions?workspace=class-1"'));
 });
 
-test("non-live project sidebar never exposes legacy projectNavigation to lecturer or student", () => {
+test("non-live project sidebar never exposes legacy projectNavigation and is hidden for students", () => {
   const React = require("react"),
     { renderToStaticMarkup } = require("react-dom/server"),
     { ThemeProvider } = require("../src/components/theme-provider.tsx");
@@ -1201,7 +1202,8 @@ test("non-live project sidebar never exposes legacy projectNavigation to lecture
       ),
     ),
   );
-  assert.ok(studentHtml.includes("Lab Roadmap &amp; Course"));
+  assert.ok(!studentHtml.includes("Lab Roadmap &amp; Course"));
+  assert.ok(!studentHtml.includes('aria-label="Global navigation"'));
   assert.ok(!studentHtml.includes("Architecture Graph Explorer"));
   assert.ok(!studentHtml.includes("Architecture Model Editor"));
 });

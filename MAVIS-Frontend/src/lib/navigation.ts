@@ -56,6 +56,7 @@ export const globalNavigation: Record<AppRole, readonly NavigationGroup[]> = {
       label: "Learning",
       items: [
         { id: "courses", label: "My Courses", icon: GraduationCap, href: "/courses" },
+        { id: "workspaces", label: "My Classes", icon: Users, href: "/workspaces" },
         {
           id: "roadmap",
           label: "Lab Roadmap & Course",
@@ -221,32 +222,6 @@ export const lecturerReviewNavigation: readonly NavigationGroup[] = [
   },
 ];
 
-export const studentWorkspaceNavigation: readonly NavigationGroup[] = [
-  {
-    label: "Learning Space",
-    items: [
-      {
-        id: "courses",
-        label: "My Classes",
-        icon: GraduationCap,
-        href: "/courses",
-      },
-      {
-        id: "roadmap",
-        label: "Lab Roadmap & Course",
-        icon: Map,
-        href: "/roadmap",
-      },
-      {
-        id: "submissions",
-        label: "Submissions & Grades",
-        icon: ClipboardCheck,
-        href: "/submissions",
-      },
-    ],
-  },
-];
-
 export const submissionReviewNavigation: readonly NavigationGroup[] = [
   {
     label: "Submitted snapshot · read-only",
@@ -277,9 +252,6 @@ export function contextualNavigation(
 ): readonly NavigationGroup[] {
   if (live && scope === "project") return projectNavigation;
   if (role === "student" && scope === "review") return studentReviewNavigation;
-  if (role === "student" && (scope === "workspace" || scope === "project")) {
-    return studentWorkspaceNavigation;
-  }
   if (role === "lecturer" && (scope === "workspace" || scope === "project")) {
     return lecturerWorkspaceNavigation;
   }

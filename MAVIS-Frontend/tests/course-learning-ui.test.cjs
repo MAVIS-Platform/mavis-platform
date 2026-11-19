@@ -62,8 +62,9 @@ test("lecturer and student course cards share deterministic cover artwork", () =
   assert.match(cover, /hash % coverColors\.length/);
 });
 
-test("student navigation locks class sidebar to 3 clean course items and preserves all-role destinations", () => {
+test("student navigation keeps one unified Learning section and preserves all-role destinations", () => {
   const navigation = read("src/lib/navigation.ts");
+  const shell = read("src/components/app-shell.tsx");
 
   for (const label of [
     "My Courses",
@@ -83,6 +84,11 @@ test("student navigation locks class sidebar to 3 clean course items and preserv
   assert.match(navigation, /href:\s*"\/workspaces"/);
   assert.match(navigation, /href:\s*"\/workspace-overview"/);
   assert.match(navigation, /href:\s*"\/administration\/health"/);
+  assert.doesNotMatch(navigation, /studentWorkspaceNavigation/);
+  assert.doesNotMatch(shell, /Learning workspace/);
+  assert.match(shell, /children:\s*workspaceEntries/);
+  assert.match(shell, /const showSidebar = live \|\| role !== "student"/);
+  assert.match(shell, /showSidebar && <Sidebar/);
 });
 
 test("student course landing prioritizes joined classes, defers curriculum and keeps Passkey deep-link", () => {

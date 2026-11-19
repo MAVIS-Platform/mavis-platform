@@ -293,39 +293,39 @@ function ShellChrome({
         ) {
           return [];
         }
-        return (item.id === "workspaces" || (role === "student" && item.id === "courses")) &&
-          !live &&
-          !onPreviewNavigate &&
-          workspaces.length > 0
-          ? [
-              item,
-              ...workspaces.map((w) => {
-                const entry: NavigationItem = {
-                  id: `workspace:${w.id}`,
-                  label:
-                    w.code && !w.name.toLowerCase().includes(w.code.toLowerCase())
-                      ? `${w.code} · ${w.name}`
-                      : w.name,
-                  icon: BookOpen,
-                  href:
-                    role === "student"
-                      ? `/roadmap?workspace=${encodeURIComponent(w.id)}`
-                      : `/workspace-overview?workspace=${encodeURIComponent(w.id)}`,
-                };
-                if (role !== "lecturer") return entry;
-                return {
-                  ...entry,
-                  children: (lecturerWorkspaceNavigation[0]?.items ?? [])
-                    .filter((destination) => Boolean(destination.href))
-                    .map((destination) => ({
-                      ...destination,
-                      id: `workspace:${w.id}:${destination.id}`,
-                      href: `${destination.href!}${destination.href!.includes("?") ? "&" : "?"}workspace=${encodeURIComponent(w.id)}`,
-                    })),
-                };
-              }),
-            ]
-          : [item];
+        const shouldAddCourses = role === "student" && item.id === "courses";
+        const shouldAddLecturerWorkspaces = role === "lecturer" && item.id === "workspaces";
+        if (!shouldAddCourses && !shouldAddLecturerWorkspaces) return [item];
+        if (live || onPreviewNavigate || workspaces.length === 0) return [item];
+
+        const workspaceEntries = workspaces.map((w) => {
+          const entry: NavigationItem = {
+            id: `workspace:${w.id}`,
+            label:
+              w.code && !w.name.toLowerCase().includes(w.code.toLowerCase())
+                ? `${w.code} · ${w.name}`
+                : w.name,
+            icon: BookOpen,
+            href:
+              role === "student"
+                ? `/roadmap?workspace=${encodeURIComponent(w.id)}`
+                : `/workspace-overview?workspace=${encodeURIComponent(w.id)}`,
+          };
+          if (role !== "lecturer") return entry;
+          return {
+            ...entry,
+            children: (lecturerWorkspaceNavigation[0]?.items ?? [])
+              .filter((destination) => Boolean(destination.href))
+              .map((destination) => ({
+                ...destination,
+                id: `workspace:${w.id}:${destination.id}`,
+                href: `${destination.href!}${destination.href!.includes("?") ? "&" : "?"}workspace=${encodeURIComponent(w.id)}`,
+              })),
+          };
+        });
+        return shouldAddCourses
+          ? [{ ...item, children: workspaceEntries }]
+          : [item, ...workspaceEntries];
       }),
     })),
   );
@@ -360,6 +360,7 @@ function ShellChrome({
     .flatMap((group) => group.items)
     .find((item) => item.id === activeId);
   const title = pageTitle ?? activeItem?.label ?? route.title;
+  const showSidebar = live || role !== "student";
 
   useEffect(() => {
     const compactViewport = window.matchMedia("(max-width: 1279px)").matches;
@@ -443,10 +444,10 @@ function ShellChrome({
             currentKind={scope === "global" ? "page" : "location"}
             activeId={
               scope === "global"
-                ? activeId === "workspaces" || (role === "student" && activeId === "courses")
+                ? activeId === "workspaces" || (role === "lecturer" && activeId === "courses")
                   ? activeWorkspaceNavId
                   : activeId
-                : selectedWorkspaceId && (role === "student" || role === "lecturer")
+                : selectedWorkspaceId && role === "lecturer"
                   ? activeWorkspaceNavId
                   : activeId
             }
@@ -464,9 +465,7 @@ function ShellChrome({
                         ? "Submission review"
                         : scope === "project"
                           ? "Project workspace"
-                          : role === "student"
-                            ? "Learning workspace"
-                            : "Teaching workspace",
+                          : "Teaching workspace",
                     )}
                   </p>
                   <p className="mt-1 break-words text-xs font-medium">{context}</p>
@@ -505,43 +504,47 @@ function ShellChrome({
         >
           Skip to content
         </a>
-        <Sidebar collapsed={collapsed}>{navigation(collapsed)}</Sidebar>
+        {showSidebar && <Sidebar collapsed={collapsed}>{navigation(collapsed)}</Sidebar>}
         <div className="flex min-w-0 flex-1 flex-col">
           <Header>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="hidden shrink-0 md:inline-flex"
-              onClick={toggleSidebar}
-              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-              aria-expanded={!collapsed}
-            >
-              {collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
-            </Button>
-            <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-              <SheetTrigger asChild>
+            {showSidebar && (
+              <>
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="shrink-0 md:hidden"
-                  aria-label="Open navigation"
+                  className="hidden shrink-0 md:inline-flex"
+                  onClick={toggleSidebar}
+                  aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+                  aria-expanded={!collapsed}
                 >
-                  <Menu />
+                  {collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
                 </Button>
-              </SheetTrigger>
-              <SheetContent
-                side="left"
-                className="flex w-(--drawer-width) flex-col gap-0 bg-sidebar p-0"
-              >
-                <SheetHeader className="sr-only">
-                  <SheetTitle>MAVIS navigation</SheetTitle>
-                  <SheetDescription>
-                    Global and contextual navigation for {roleLabels[role]}.
-                  </SheetDescription>
-                </SheetHeader>
-                {navigation(false)}
-              </SheetContent>
-            </Sheet>
+                <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+                  <SheetTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="shrink-0 md:hidden"
+                      aria-label="Open navigation"
+                    >
+                      <Menu />
+                    </Button>
+                  </SheetTrigger>
+                  <SheetContent
+                    side="left"
+                    className="flex w-(--drawer-width) flex-col gap-0 bg-sidebar p-0"
+                  >
+                    <SheetHeader className="sr-only">
+                      <SheetTitle>MAVIS navigation</SheetTitle>
+                      <SheetDescription>
+                        Global and contextual navigation for {roleLabels[role]}.
+                      </SheetDescription>
+                    </SheetHeader>
+                    {navigation(false)}
+                  </SheetContent>
+                </Sheet>
+              </>
+            )}
             <Breadcrumbs
               items={[
                 {
@@ -829,15 +832,14 @@ function NavigationGroups({
         const items = (
           <ul className="space-y-1">
             {group.items.map((item) => {
-              const isWorkspace =
-                item.id.startsWith("workspace:") && Boolean(item.children?.length);
+              const hasChildren = Boolean(item.children?.length);
               const expanded =
                 expandedGroups?.[item.id] ??
                 expandedItems[item.id] ??
-                activeId.startsWith(`${item.id}:`);
+                (item.id === "courses" || activeId.startsWith(`${item.id}:`));
               return (
                 <li key={item.id}>
-                  <div className={cn("flex items-center gap-1", isWorkspace && "mb-0.5")}>
+                  <div className={cn("flex items-center gap-1", hasChildren && "mb-0.5")}>
                     <div className="min-w-0 flex-1">
                       <NavigationEntry
                         item={item}
@@ -848,7 +850,7 @@ function NavigationGroups({
                         currentKind={currentKind}
                       />
                     </div>
-                    {isWorkspace && !collapsed && (
+                    {hasChildren && !collapsed && (
                       <Collapsible
                         open={expanded}
                         onOpenChange={(open) => {
@@ -966,8 +968,8 @@ function NavigationEntry({
 }) {
   const { t } = useLocale();
   const workspaceDepth = item.id.startsWith("workspace:") ? item.id.split(":").length - 1 : 0;
-  const isWorkspaceRoot = workspaceDepth === 1 && Boolean(item.children?.length);
-  const isWorkspaceChild = workspaceDepth >= 2;
+  const isWorkspaceRoot = Boolean(item.children?.length);
+  const isWorkspaceChild = workspaceDepth >= 1 && !isWorkspaceRoot;
   const className = cn(
     "flex w-full items-center gap-2.5 text-left transition-colors",
     collapsed && "min-h-9 justify-center rounded-md px-0",
