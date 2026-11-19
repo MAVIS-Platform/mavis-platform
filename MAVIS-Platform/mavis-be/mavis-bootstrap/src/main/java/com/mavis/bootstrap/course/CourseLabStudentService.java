@@ -571,18 +571,22 @@ public class CourseLabStudentService {
         }
 
         final SourceSnapshot resolvedSnapshot = snapshot;
-        ModelVersion model = models.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(resolvedProject.getId())
+        ModelVersion model = models.findByProjectIdOrderByRevisionDesc(resolvedProject.getId()).stream()
                 .filter(m -> !"RUNTIME_ENRICHED".equalsIgnoreCase(m.getOrigin()))
                 .filter(m -> m.getSourceSnapshot() != null && resolvedSnapshot.getId().equals(m.getSourceSnapshot().getId()))
+                .findFirst()
                 .orElse(null);
         if (model == null) {
+            Integer maxRevision = models.findMaxRevisionByProjectId(resolvedProject.getId());
+            int nextRevision = (maxRevision == null ? 0 : maxRevision) + 1;
+            boolean hasValid = models.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(resolvedProject.getId()).isPresent();
             model = models.saveAndFlush(ModelVersion.builder()
                     .project(resolvedProject)
                     .sourceSnapshot(resolvedSnapshot)
-                    .revision(1)
+                    .revision(nextRevision)
                     .schemaVersion(refModel.getSchemaVersion() != null ? refModel.getSchemaVersion() : "1.0")
                     .origin("USER_CONFIRMED")
-                    .isLatestValid(true)
+                    .isLatestValid(!hasValid)
                     .createdBy(actor)
                     .build());
             cloneModelElements(refModel, model);
