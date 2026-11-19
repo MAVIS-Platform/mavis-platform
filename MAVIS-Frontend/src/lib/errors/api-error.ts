@@ -66,6 +66,15 @@ export const publicErrors = {
   GITHUB_COMMIT: "Commit SHA must be a full 40-character hexadecimal string.",
   GITHUB_IMPORT:
     "Unable to download or process the GitHub archive. Verify the commit SHA, archive size limits, and Java/C# source files, or upload a ZIP instead.",
+  STUDIO_VALIDATION_REQUIRED:
+    "Run a verified Studio Playtest session (with at least one Stop/Start/Scale action) before freezing this Lab's topology.",
+  STUDIO_PUBLISH_FIRST: "Publish the Lab to the class before freezing its Studio topology.",
+  STUDIO_EVIDENCE_MISSING:
+    "Complete a verified Stop, Start, or Scale action in Studio Playtest before freezing.",
+  STUDIO_TOPOLOGY_MISSING:
+    "Run Auto-Configure Studio first so this Lab has a prepared Studio topology.",
+  LAB_PUBLISH_CONTENT_REQUIRED:
+    "Add a Lab description, attach a Theory lesson, or pin a Reference Source before adding to class.",
 } as const;
 export type PublicErrorCode = keyof typeof publicErrors;
 // Match only reviewed business messages. Arbitrary upstream text can contain secrets.
@@ -148,6 +157,19 @@ export function backendErrorCode(
     )
       return "SUBMISSION_RUNTIME_REQUIRED";
   }
+  if (message === "Run a verified Studio validation session before freezing this Lab's exercise")
+    return "STUDIO_VALIDATION_REQUIRED";
+  if (message === "Publish the Lab before freezing its Studio topology")
+    return "STUDIO_PUBLISH_FIRST";
+  if (message === "Studio session has no verified Stop/Start/Scale evidence")
+    return "STUDIO_EVIDENCE_MISSING";
+  if (message === "The reference runtime profile has no prepared Studio topology for this source/model")
+    return "STUDIO_TOPOLOGY_MISSING";
+  if (
+    message ===
+    "Add a Lab description, attach a Theory lesson, or pin a published Reference Source before publishing the Lab"
+  )
+    return "LAB_PUBLISH_CONTENT_REQUIRED";
   return undefined;
 }
 export function publicErrorCode(value: unknown): PublicErrorCode | undefined {

@@ -360,9 +360,9 @@ export function CourseWorkspaceShell({
         {showTabs && (
           <nav
             aria-label={t("Class sections", "Các mục của lớp")}
-            className="mt-5 flex flex-nowrap items-center justify-between gap-2 overflow-x-auto rounded-xl bg-black/20 p-1.5 backdrop-blur-sm"
+            className="mt-5 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-black/20 p-1.5 backdrop-blur-sm"
           >
-            <div className="flex flex-nowrap gap-1">
+            <div className="flex flex-wrap gap-1">
               {(isStudent ? STUDENT_TABS : STAFF_TABS).map((tab) => {
                 const Icon = tab.icon;
                 const isCurrent = isStudent

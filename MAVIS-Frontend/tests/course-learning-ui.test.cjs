@@ -1430,3 +1430,18 @@ test("Round 4 guards isolate per-Lab theory, adapt Theory Only labs, prevent sig
   assert.match(appShell, /const canQueryAuth =\s*!signingOut/);
   assert.match(ops, /pinned\["modelVersionId"\] != null && pinned\["modelVersionId"\] !== id\(input, "modelId"\)/);
 });
+
+test("Round 5 guards strip Theory theme metadata, check quizVersion > 0, hydrate latestSubmission, and preserve Studio freeze errors", () => {
+  const theoryLib = read("src/features/workspaces/theory-library.tsx");
+  const labScreens = read("src/features/assignments/screens.tsx");
+  const authoring = read("src/features/assignments/lab-authoring.tsx");
+  const submissionV2 = read("src/features/courses/lab-submission-v2.tsx");
+  const apiError = read("src/lib/errors/api-error.ts");
+
+  assert.match(theoryLib, /extractMarkdownTheme\(asset\.body\)\s*\.body/);
+  assert.match(labScreens, /setupLab\?\.quizPublished && \(setupLab\?\.quizVersion \?\? 0\) > 0/);
+  assert.match(authoring, /setupLab\?\.quizPublished && \(setupLab\?\.quizVersion \?\? 0\) > 0/);
+  assert.match(submissionV2, /const latest =\s*mine\[0\] \?\?\s*\(initialSubmission/);
+  assert.match(submissionV2, /activeReview\?\.labOutcome !== "PASSED"/);
+  assert.match(apiError, /STUDIO_VALIDATION_REQUIRED/);
+});

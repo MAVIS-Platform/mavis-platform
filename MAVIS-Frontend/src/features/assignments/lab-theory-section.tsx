@@ -233,7 +233,7 @@ function MarkdownEditor({
             <button
               type="button"
               onClick={() => setMode("split")}
-              className={`hidden rounded-md px-2.5 py-1 font-medium transition-colors lg:inline-block ${
+              className={`hidden rounded-md px-2.5 py-1 font-medium transition-colors md:inline-block ${
                 mode === "split"
                   ? "bg-background text-foreground shadow-xs"
                   : "text-muted-foreground hover:text-foreground"
@@ -245,7 +245,7 @@ function MarkdownEditor({
         </div>
       </div>
 
-      <div className={mode === "split" ? "grid grid-cols-1 items-stretch gap-4 lg:grid-cols-2" : "block"}>
+      <div className={mode === "split" ? "grid grid-cols-1 items-stretch gap-4 md:grid-cols-2" : "block"}>
         {(mode === "write" || mode === "split") && (
           <Textarea
             aria-label={label}

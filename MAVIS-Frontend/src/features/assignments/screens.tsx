@@ -72,7 +72,7 @@ function LecturerAssignments({ embedded = false }: { embedded?: boolean } = {}) 
       const inClass = roadmap.data?.labs.find((item) => item.assignmentId === lab.id) ?? null;
       const setupLab = setup.data?.labs.find((item) => item.assignmentId === lab.id) ?? null;
       const sourceReady = Boolean(lab.referenceSource?.modelId);
-      const quizPublished = Boolean(setupLab?.quizPublished);
+      const quizPublished = Boolean(setupLab?.quizPublished && (setupLab?.quizVersion ?? 0) > 0);
       const studioReady = Boolean(setupLab?.topologyFrozen);
       return { lab, inClass, setupLab, sourceReady, quizPublished, studioReady };
     });
@@ -145,7 +145,7 @@ function LecturerAssignments({ embedded = false }: { embedded?: boolean } = {}) 
           )}
           <ImportLabButton workspaceId={workspaceId} />
           <Button asChild size="sm">
-            <Link href={`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}`}>
+            <Link href={`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&tab=info`}>
               <Plus className="mr-1 size-4" aria-hidden="true" />
               {t("Create a Lab", "Tạo Lab")}
             </Link>
@@ -213,7 +213,7 @@ function LecturerAssignments({ embedded = false }: { embedded?: boolean } = {}) 
                       )}
                       {!sourceReady && !quizPublished && !studioReady && (
                         <Badge variant="outline" className="text-[11px]">
-                          {t("Theory", "Lý thuyết")}
+                          {t("Theory Only", "Chỉ lý thuyết")}
                         </Badge>
                       )}
                     </div>

@@ -81,8 +81,10 @@ export function LabAuthoring() {
   const requestedAssignmentId = params?.get("assignment") || "";
   const [createdAssignmentId, setCreatedAssignmentId] = useState("");
   const requestedTab = params?.get("tab") ?? params?.get("step") ?? null;
-  const [tab, setTab] = useState<Tab>(isTab(requestedTab) ? requestedTab : "info");
   const activeAssignmentId = requestedAssignmentId || createdAssignmentId;
+  const [tab, setTab] = useState<Tab>(
+    activeAssignmentId && isTab(requestedTab) ? requestedTab : "info",
+  );
 
   const workspaces = useApiQuery("workspaces", {});
   const workspace = workspaces.data?.find((item) => item.id === workspaceId);
@@ -117,10 +119,14 @@ export function LabAuthoring() {
   const labTier = resolveLabTier(assignment);
 
   useEffect(() => {
+    if (!activeAssignmentId) {
+      if (tab !== "info") setTab("info");
+      return;
+    }
     if (isTab(requestedTab) && requestedTab !== tab) {
       setTab(requestedTab);
     }
-  }, [requestedTab, tab]);
+  }, [activeAssignmentId, requestedTab, tab]);
 
   const navigate = (next: Tab) => {
     setTab(next);
@@ -153,7 +159,7 @@ export function LabAuthoring() {
     { id: "theory", done: theoryReady, enabled: Boolean(assignment) },
     {
       id: "quiz",
-      done: Boolean(setupLab?.quizPublished),
+      done: Boolean(setupLab?.quizPublished && (setupLab?.quizVersion ?? 0) > 0),
       enabled: Boolean(assignment),
       skipped: Boolean(assignment) && labTier === "THEORY_ONLY",
     },

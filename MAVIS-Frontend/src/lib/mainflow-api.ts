@@ -2,6 +2,7 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    public errorCode?: string,
   ) {
     super(message);
   }
@@ -18,7 +19,11 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   });
   const body = await response.json().catch(() => null);
   if (!response.ok)
-    throw new ApiError(response.status, body?.message ?? `Request failed (${response.status})`);
+    throw new ApiError(
+      response.status,
+      body?.message ?? `Request failed (${response.status})`,
+      typeof body?.errorCode === "string" ? body.errorCode : undefined,
+    );
   return body?.data as T;
 }
 export type Project = { id: string; name: string };

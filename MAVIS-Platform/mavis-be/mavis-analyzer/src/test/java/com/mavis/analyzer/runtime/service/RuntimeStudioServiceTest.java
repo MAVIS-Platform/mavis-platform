@@ -183,4 +183,21 @@ class RuntimeStudioServiceTest {
         assertTrue(session.hasVerifiedStudioEvidence());
         assertFalse(session.getStudioControl().path("receiptSignature").asText("").isBlank());
     }
+
+    @Test void failedSessionWithUnmappedTopologyBlockStillReturnsReadableState() throws Exception {
+        session.setExecutionStatus("FAILED");
+        session.setCleanupStatus("CONFIRMED");
+        session.setConfirmedServiceMappings(Map.of());
+        var profile = mapper.readTree("""
+          {"studioTopology":{"version":1,"blocks":[{"service":"orders","label":"Orders"}],"connections":[]}}
+          """);
+        ((ObjectNode) session.getScenarioConfig()).set("profile", profile);
+        when(sessions.findById(id)).thenReturn(Optional.of(session));
+
+        var state = service.state(id);
+
+        assertEquals("FAILED", state.path("executionStatus").asText());
+        assertEquals("CONFIRMED", state.path("cleanupStatus").asText());
+        assertFalse(state.has("topology"));
+    }
 }

@@ -334,9 +334,14 @@ public class RuntimeStudioService {
                 if (Set.of("PENDING", "RUNNING").contains(action.path("status").asText()))
                     ((ObjectNode) action).put("status", "INTERRUPTED");
         var services = result.putArray("services");
-        var topology = PreparedStudioTopology.read(
-            session.getScenarioConfig() == null ? null : session.getScenarioConfig().path("profile"),
-            session.getConfirmedServiceMappings() == null ? Set.of() : session.getConfirmedServiceMappings().keySet(), mapper);
+        JsonNode topology = null;
+        try {
+            topology = PreparedStudioTopology.read(
+                session.getScenarioConfig() == null ? null : session.getScenarioConfig().path("profile"),
+                session.getConfirmedServiceMappings() == null ? Set.of() : session.getConfirmedServiceMappings().keySet(), mapper);
+        } catch (BusinessException ignored) {
+            // Read-only state polling on failed/unmapped sessions must still surface status & cleanupState.
+        }
         if (topology != null) result.set("topology", topology);
         result.set("serviceMappings", mapper.valueToTree(session.getConfirmedServiceMappings() == null ? java.util.Map.of() : session.getConfirmedServiceMappings()));
         appendPinnedLimits(result, session);

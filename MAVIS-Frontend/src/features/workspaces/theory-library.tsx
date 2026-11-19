@@ -353,7 +353,11 @@ export function TheoryLibrary() {
                 <div className="min-w-0">
                   <p className="truncate text-[15px] font-semibold">{asset.title}</p>
                   <p className="line-clamp-1 text-xs text-muted-foreground">
-                    {asset.body.replace(/[#*_>`-]/g, " ").replace(/\s+/g, " ").trim().slice(0, 160)}
+                    {extractMarkdownTheme(asset.body)
+                      .body.replace(/[#*_>`-]/g, " ")
+                      .replace(/\s+/g, " ")
+                      .trim()
+                      .slice(0, 160)}
                   </p>
                 </div>
                 <span className="text-xs tabular-nums text-muted-foreground">

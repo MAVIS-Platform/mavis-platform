@@ -263,7 +263,9 @@ export function LabInfoForm({
         <Button type="submit" disabled={save.isPending || !title.trim()}>
           {save.isPending
             ? t("Saving Lab draft…", "Đang lưu bản nháp Lab…")
-            : t("Next Step 2: Reference Source", "Sang Bước 2: Nguồn tham chiếu")}
+            : labTier === "THEORY_ONLY"
+              ? t("Next Step 3: Lab Theory", "Sang Bước 3: Lý thuyết Lab")
+              : t("Next Step 2: Reference Source", "Sang Bước 2: Nguồn tham chiếu")}
           <ArrowRight className="ml-1.5 size-4" aria-hidden="true" />
         </Button>
       </div>

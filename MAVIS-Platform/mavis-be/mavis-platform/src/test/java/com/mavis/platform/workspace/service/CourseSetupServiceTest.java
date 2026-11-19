@@ -271,6 +271,42 @@ class CourseSetupServiceTest {
                                 && profile.toString().contains("\"orders-payment-route\":{\"runtime\":\"dotnet8-linux-x64-glibc\",\"containerPort\":8080")));
     }
 
+    @Test void autoConfigureExcludesNonComposeServiceNames() {
+        var elements = mock(ModelElementRepository.class);
+        var relationships = mock(ModelRelationshipRepository.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(setup, "elements", elements);
+        org.springframework.test.util.ReflectionTestUtils.setField(setup, "relationships", relationships);
+        ModelElement orders = ModelElement.builder().id(UUID.randomUUID()).modelVersion(model)
+                .elementType("SERVICE_CONTAINER").name("order-service").build();
+        ModelElement syntheticDb = ModelElement.builder().id(UUID.randomUUID()).modelVersion(model)
+                .elementType("DATABASE").name("testseed @ postgres-db").build();
+        when(elements.findByModelVersionId(modelId)).thenReturn(List.of(orders, syntheticDb));
+        when(relationships.findByModelVersionId(modelId)).thenReturn(List.of());
+        when(assignments.findLockedById(assignmentId)).thenReturn(Optional.of(lab));
+        when(configurations.findById(projectId)).thenReturn(Optional.empty());
+        when(assignments.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(jdbc.queryForObject(contains("runtime_scenarios"), eq(Integer.class), eq(projectId))).thenReturn(0);
+
+        var result = setup.autoConfigureStudio(workspaceId, assignmentId);
+
+        assertEquals(1, result.blockCount());
+        assertFalse(lab.getStudioTopologySnapshot().toString().contains("testseed @ postgres-db"));
+        verify(jdbc, atLeastOnce()).update(contains("INSERT INTO runtime_configurations"),
+                eq(projectId), eq(snapshotId), eq(modelId), argThat(profile ->
+                        profile.toString().contains("order-service") && !profile.toString().contains("testseed @ postgres-db")));
+    }
+
+    @Test void draftLabNeverReportsTopologyFrozen() {
+        lab.setLabOrder(null);
+        lab.setStudioTopologySnapshot(mapper.createObjectNode().put("version", 1));
+
+        var result = setup.setup(workspaceId);
+
+        assertFalse(result.labs().get(0).published());
+        assertFalse(result.labs().get(0).topologyFrozen());
+        assertEquals("DRAFT", result.labs().get(0).state());
+    }
+
     private RuntimeConfiguration configuration(boolean withTopology) {
         ObjectNode profile = mapper.createObjectNode();
         var applications = profile.putObject("applications");

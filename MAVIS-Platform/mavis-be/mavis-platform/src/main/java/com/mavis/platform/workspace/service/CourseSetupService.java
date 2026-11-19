@@ -48,6 +48,9 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class CourseSetupService {
+    private static final java.util.regex.Pattern COMPOSE_SERVICE_NAME =
+            java.util.regex.Pattern.compile("^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$");
+
     private final AccessPolicyService access;
     private final WorkspaceRepository workspaces;
     private final AssignmentRepository assignments;
@@ -336,7 +339,7 @@ public class CourseSetupService {
         boolean requiresRuntime = Boolean.TRUE.equals(lab.getRequireRuntimeTrace());
         boolean studioReady = runtimeReference.referenceReady() && runtimeReference.runtimeMatchesSource()
                 && runtimeReference.runtimeConfigured() && runtimeReference.topologyConfigured();
-        boolean topologyFrozen = lab.getStudioTopologySnapshot() != null
+        boolean topologyFrozen = published && lab.getStudioTopologySnapshot() != null
                 && lab.getStudioTopologySnapshot().isObject();
         boolean skipQuiz = lab.getAiPolicy() != null
                 && (lab.getAiPolicy().path("skipQuiz").asBoolean(false)
@@ -499,6 +502,8 @@ public class CourseSetupService {
                                 || "DATABASE".equalsIgnoreCase(el.getElementType())
                                 || "MESSAGE_BROKER".equalsIgnoreCase(el.getElementType())
                                 || "API_GATEWAY".equalsIgnoreCase(el.getElementType()))
+                        .filter(el -> el.getName() != null
+                                && COMPOSE_SERVICE_NAME.matcher(el.getName().trim()).matches())
                         .toList()
                 : List.of();
 

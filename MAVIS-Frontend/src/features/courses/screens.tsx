@@ -2107,6 +2107,7 @@ function StepContent({
                   assignmentId={labId}
                   labMode={labMode}
                   runtimeSessionId={verifiedSessionForSubmit}
+                  initialSubmission={studentContext?.latestSubmission}
                   initialReview={studentContext?.latestReview}
                   hasReferenceArch={hasReferenceArch}
                 />

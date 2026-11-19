@@ -24,6 +24,7 @@ export function LabSubmissionV2({
   assignmentId,
   labMode,
   runtimeSessionId,
+  initialSubmission,
   initialReview,
   hasReferenceArch = true,
 }: {
@@ -31,6 +32,7 @@ export function LabSubmissionV2({
   assignmentId: string;
   labMode: string;
   runtimeSessionId?: string | undefined;
+  initialSubmission?: { id: string; submittedAt?: string | null } | null | undefined;
   initialReview?: StudentLabLatestReview | null | undefined;
   hasReferenceArch?: boolean | undefined;
 }) {
@@ -79,7 +81,17 @@ export function LabSubmissionV2({
     () => (submissions.data ?? []).filter((item) => item.assignmentId === assignmentId),
     [submissions.data, assignmentId],
   );
-  const latest = mine[0];
+  const latest =
+    mine[0] ??
+    (initialSubmission
+      ? {
+          id: initialSubmission.id,
+          submittedAt: initialSubmission.submittedAt ?? "",
+          evidencePackageDigest: undefined as string | undefined,
+          studentSnapshots: undefined as Array<{ writtenExplanation?: string | null }> | undefined,
+          submissionNotes: undefined as string | undefined,
+        }
+      : undefined);
   const review = useApiQuery(
     "submissionReview",
     { submissionId: latest?.id ?? "" },
@@ -96,7 +108,8 @@ export function LabSubmissionV2({
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="flex items-center gap-2 font-semibold text-emerald-700 dark:text-emerald-300">
                 <CheckCircle2 className="size-4" aria-hidden="true" />
-                {t("Submitted", "Đã nộp")} · {new Date(latest.submittedAt).toLocaleString()}
+                {t("Submitted", "Đã nộp")}
+                {latest.submittedAt ? ` · ${new Date(latest.submittedAt).toLocaleString()}` : ""}
               </p>
               <div className="flex flex-wrap items-center gap-2">
                 {latest.evidencePackageDigest && (
@@ -148,27 +161,29 @@ export function LabSubmissionV2({
                   {t("View submission and grade", "Xem bài nộp và điểm")} <ArrowRight />
                 </Link>
               </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  if (!answer.trim()) {
-                    const prior =
-                      latest.studentSnapshots?.[0]?.writtenExplanation ||
-                      latest.submissionNotes ||
-                      "";
-                    if (prior) {
-                      setAnswer(prior);
-                      try {
-                        window.localStorage.setItem(draftKey, prior);
-                      } catch {}
+              {activeReview?.labOutcome !== "PASSED" && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    if (!answer.trim()) {
+                      const prior =
+                        latest.studentSnapshots?.[0]?.writtenExplanation ||
+                        latest.submissionNotes ||
+                        "";
+                      if (prior) {
+                        setAnswer(prior);
+                        try {
+                          window.localStorage.setItem(draftKey, prior);
+                        } catch {}
+                      }
                     }
-                  }
-                  setRevising(true);
-                }}
-              >
-                {t("Revise and resubmit", "Sửa và nộp lại")}
-              </Button>
+                    setRevising(true);
+                  }}
+                >
+                  {t("Revise and resubmit", "Sửa và nộp lại")}
+                </Button>
+              )}
             </div>
           </div>
         </DetailPanel>

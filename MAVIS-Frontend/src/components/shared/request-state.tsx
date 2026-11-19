@@ -47,9 +47,9 @@ export function ErrorState({
   return (
     <div
       role="alert"
-      className="space-y-3 rounded-lg border border-destructive/30 bg-destructive-subtle p-4 text-sm"
+      className="space-y-3 rounded-lg border border-destructive/30 bg-destructive-subtle p-4 text-sm text-red-900 dark:text-red-200"
     >
-      <p>{t(normalizeError(error).message)}</p>
+      <p className="font-medium">{t(normalizeError(error).message)}</p>
       {onRetry && (
         <Button variant="outline" size="sm" onClick={onRetry}>
           {t("Retry")}

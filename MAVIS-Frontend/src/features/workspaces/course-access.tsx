@@ -10,7 +10,7 @@ import { DetailPanel } from "@/components/shared/data";
 import { FormField } from "@/components/shared/forms";
 import { useApi } from "@/hooks/use-api";
 import { ApiError as ProxyError, api } from "@/lib/mainflow-api";
-import { ApiError, fromStatus } from "@/lib/errors/api-error";
+import { ApiError, backendErrorCode, fromStatus, publicErrorCode } from "@/lib/errors/api-error";
 import { useLocale } from "@/lib/i18n/locale-context";
 import type { Response } from "@/lib/api/contracts";
 
@@ -73,7 +73,12 @@ async function courseApi<T>(path: string, init?: RequestInit): Promise<T> {
   try {
     return await api<T>(path, init);
   } catch (error) {
-    if (error instanceof ProxyError) throw fromStatus(error.status);
+    if (error instanceof ProxyError) {
+      const code =
+        publicErrorCode(error.errorCode) ?? backendErrorCode(path, error.status, error.message);
+      if (code) throw new ApiError(fromStatus(error.status).kind, error.status, code);
+      throw fromStatus(error.status);
+    }
     throw error;
   }
 }
