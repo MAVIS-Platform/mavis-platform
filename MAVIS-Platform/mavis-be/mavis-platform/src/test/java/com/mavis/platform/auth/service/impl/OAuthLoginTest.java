@@ -61,7 +61,7 @@ class OAuthLoginTest {
         when(users.findByEmailIgnoreCase("student.dev@example.com")).thenReturn(Optional.empty());
         when(roles.findByCode("STUDENT")).thenReturn(Optional.of(studentRole));
         when(passwords.encode(anyString())).thenReturn("random-hash");
-        when(users.save(any(User.class))).thenAnswer(inv -> {
+        when(users.saveAndFlush(any(User.class))).thenAnswer(inv -> {
             User u = inv.getArgument(0);
             if (u.getId() == null) u.setId(UUID.randomUUID());
             return u;
@@ -79,7 +79,7 @@ class OAuthLoginTest {
         assertEquals("STUDENT", res.getRole());
 
         var captor = ArgumentCaptor.forClass(User.class);
-        verify(users).save(captor.capture());
+        verify(users).saveAndFlush(captor.capture());
         assertEquals("ACTIVE", captor.getValue().getStatus());
         assertEquals("https://avatars.example/u/1", captor.getValue().getAvatarUrl());
     }

@@ -272,7 +272,8 @@ public class AuthServiceImpl implements AuthService {
                     .role(studentRole)
                     .status("ACTIVE")
                     .build();
-            userRepository.save(user);
+            // Flush before RefreshSessionService inserts into refresh_sessions via JdbcTemplate.
+            user = userRepository.saveAndFlush(user);
         }
 
         String token = jwtUtil.generateToken(user.getEmail(), user.getId(), user.getRole().getCode());
