@@ -554,7 +554,10 @@ class CourseHttpAcceptanceTest {
         assertTrue(passedQuiz.path("passed").asBoolean());
         assertEquals("PASSED", passedQuiz.path("latestStatus").asText());
         assertTrue(passedQuiz.path("runtimeUnlocked").asBoolean());
-        assertEquals(2, data(send("POST", quiz, lecturer, definition, 200)).path("version").asInt());
+        var nextDefinition = Map.of("lesson", "New Quiz", "questions", List.of(
+                Map.of("prompt", "Which service owns fulfillment?", "options", List.of("Orders", "Portal"), "correctOption", 0)));
+        assertEquals(2, data(send("POST", quiz, lecturer, nextDefinition, 200)).path("version").asInt());
+        assertEquals(first, data(send("POST", quiz + "/attempts", student, passed, 200)));
         send("POST", quiz + "/attempts", student,
                 Map.of("attemptId", UUID.randomUUID(), "version", 1, "answers", List.of(0, 1)), 409);
         JsonNode republishedQuiz = data(send("GET", quiz, student, null, 200));
