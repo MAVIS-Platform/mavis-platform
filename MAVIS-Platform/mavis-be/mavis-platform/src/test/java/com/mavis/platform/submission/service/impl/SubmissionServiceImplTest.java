@@ -1104,8 +1104,8 @@ class SubmissionServiceImplTest {
     }
 
     @Test
-    @DisplayName("submitTheoryV2 accepts THEORY_QUIZ_STUDIO with verified HMAC receipt even when snapshots array is empty")
-    void studioV2SubmitsWithVerifiedReceiptAndEmptySnapshots() {
+    @DisplayName("Studio submission needs a verified receipt and explained captures")
+    void studioV2RequiresExplainedSnapshotsInAdditionToVerifiedReceipt() {
         var labWorkspace = Workspace.builder().id(UUID.randomUUID()).courseMode(true).status("ACTIVE").build();
         student.setRole(Role.builder().code("STUDENT").build());
         assignment.setLabMode("THEORY_QUIZ_STUDIO");
@@ -1127,7 +1127,7 @@ class SubmissionServiceImplTest {
         var control = objectMapper.createObjectNode().put("receiptSignature", "hmac-sha256:verified");
         control.putArray("actions").addObject()
                 .put("action", "SCALE").put("service", "orders").put("replicas", 2);
-        control.putArray("snapshots");
+        var captures = control.putArray("snapshots");
         runtimeSession.setStudioControl(control);
 
         var receipt = objectMapper.createObjectNode();
@@ -1160,11 +1160,25 @@ class SubmissionServiceImplTest {
                         "THEORY", "Theory explanation", "Service boundaries verified in Studio Live.")))
                 .build();
 
+        assertThatThrownBy(() -> submissionService.submitAssignment(request))
+                .isInstanceOf(BusinessException.class).hasMessageContaining("STUDIO_SNAPSHOT_REQUIRED");
+        var capture = captures.addObject().put("id", "capture-1").put("title", "Scale observation");
+        assertThatThrownBy(() -> submissionService.submitAssignment(request))
+                .isInstanceOf(BusinessException.class).hasMessageContaining("STUDIO_SNAPSHOT_EVIDENCE_INVALID");
+        capture.put("explanation", "Orders scaled from one replica to two.");
+        captures.add(capture.deepCopy());
+        assertThatThrownBy(() -> submissionService.submitAssignment(request))
+                .isInstanceOf(BusinessException.class).hasMessageContaining("STUDIO_SNAPSHOT_EVIDENCE_INVALID");
+        verify(submissionSnapshotRepository, never()).save(any());
+        captures.remove(1);
+
         SubmissionResponseDTO response = submissionService.submitAssignment(request);
         assertThat(response.getRuntimeSessionId()).isEqualTo(runtimeSessionId);
         assertThat(response.getStudioEvidence().path("receiptSignature").asText()).isEqualTo("hmac-sha256:verified");
         assertThat(response.getStudioEvidence().path("snapshots").isArray()).isTrue();
-        assertThat(response.getStudioEvidence().path("snapshots").size()).isZero();
+        assertThat(response.getStudioEvidence().path("snapshots").size()).isEqualTo(1);
+        assertThat(response.getStudentSnapshots().path(1).path("snapshotId").asText())
+                .isEqualTo("STUDIO_capture-1");
     }
 
     @Test

@@ -342,9 +342,7 @@ public class CourseSetupService {
         boolean topologyFrozen = hasFrozenTopology(lab);
         boolean studioReady = runtimeReference.referenceReady() && runtimeReference.runtimeMatchesSource()
                 && runtimeReference.runtimeConfigured() && (topologyFrozen || runtimeReference.topologyConfigured());
-        boolean skipQuiz = lab.getAiPolicy() != null
-                && (lab.getAiPolicy().path("skipQuiz").asBoolean(false)
-                    || "THEORY_ONLY".equalsIgnoreCase(lab.getAiPolicy().path("labTier").asText()));
+        boolean skipQuiz = com.mavis.common.security.CourseLabPolicy.canSkipQuiz(lab);
         int quizVersion = quizVersion(lab);
         boolean quizReady = skipQuiz || quizVersion > 0;
         String state = !published ? "DRAFT"

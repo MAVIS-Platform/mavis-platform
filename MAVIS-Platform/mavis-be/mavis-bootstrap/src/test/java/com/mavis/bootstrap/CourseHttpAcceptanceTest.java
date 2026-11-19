@@ -585,9 +585,9 @@ class CourseHttpAcceptanceTest {
                 VALUES (?,?,?,?,'THEORY_QUIZ') RETURNING id
                 """, v2Classroom, teacher, mod2, "Lab V2 Theory 1");
         UUID lab4 = id(db, """
-                INSERT INTO assignments(workspace_id,created_by,reference_model_id,title,lab_mode)
-                VALUES (?,?,?,?,'THEORY_QUIZ') RETURNING id
-                """, v2Classroom, teacher, mod2, "Lab V2 Theory 2");
+                INSERT INTO assignments(workspace_id,created_by,title,description,lab_mode,ai_policy)
+                VALUES (?,?,?,?,'THEORY_QUIZ','{"labTier":"THEORY_ONLY"}'::jsonb) RETURNING id
+                """, v2Classroom, teacher, "Lab V2 Theory 2", "A theory Lab without a reference model");
 
         String v2Workspace = "workspaces/" + v2Classroom;
         String v2Publish = v2Workspace + "/course-labs/";
@@ -617,10 +617,17 @@ class CourseHttpAcceptanceTest {
         assertEquals("PASSED", data(send("POST", v2Quiz + "/attempts", student,
                 Map.of("attemptId", UUID.randomUUID(), "version", 1, "answers", List.of(0)), 200)).path("status").asText());
 
+        send("POST", "submissions", student, Map.of("assignmentId", lab3, "theoryAnswers", List.of(
+                Map.of("sectionId", "theory", "answer", "Initial explanation."),
+                Map.of("sectionId", " THEoRY ", "answer", "Duplicate explanation."))), 400);
         JsonNode initialSub = data(send("POST", "submissions", student, v2Submission, 200));
         assertTrue(initialSub.path("evidencePackageDigest").asText().startsWith("sha256:"));
         assertEquals(1, initialSub.path("studentSnapshots").size());
         assertEquals("THEORY_THEORY", initialSub.path("studentSnapshots").get(0).path("snapshotId").asText());
+        assertEquals(initialSub.path("id"), data(send("POST", "submissions", student, v2Submission, 200)).path("id"));
+        var whileAwaitingReview = new java.util.HashMap<>(v2Submission);
+        whileAwaitingReview.put("submissionNotes", "Attempt to replace submission before review");
+        send("POST", "submissions", student, whileAwaitingReview, 409);
 
         String firstReview = "submissions/" + initialSub.path("id").asText() + "/review";
         send("PUT", firstReview, lecturer, Map.of("expectedRevision", 0, "status", "DRAFT",
@@ -650,6 +657,12 @@ class CourseHttpAcceptanceTest {
                 "snapshotGrades", List.of(Map.of("snapshotId", "THEORY_THEORY", "score", new java.math.BigDecimal("9.00")))), 200));
         assertEquals("PASSED", graded.path("labOutcome").asText());
         send("GET", "assignments/" + lab4, student, null, 200);
+        JsonNode theoryOnly = data(send("POST", "submissions", student, Map.of(
+                "assignmentId", lab4, "theoryAnswers", List.of(Map.of("sectionId", "THEORY",
+                        "answer", "A theory-only explanation."))), 200));
+        assertFalse(theoryOnly.hasNonNull("modelVersionId"));
+        assertFalse(theoryOnly.hasNonNull("projectId"));
+        assertEquals("NOT_REQUIRED", theoryOnly.path("courseQuizEvidence").path("status").asText());
 
         String originalDigest = resubmitted.path("evidencePackageDigest").asText();
         JsonNode originalTheory = resubmitted.path("theoryEvidence");
