@@ -64,6 +64,13 @@ public class AuthServiceImpl implements AuthService {
 
     public AuthServiceImpl(UserRepository users, RoleRepository roles, UserOtpRepository otps,
                            PasswordEncoder passwords, JwtUtil jwt, EmailService email,
+                           com.mavis.platform.security.jwt.RefreshSessionService refreshSessions,
+                           com.mavis.platform.auth.service.AuthAbuseGuard abuseGuard) {
+        this(users, roles, otps, passwords, jwt, email, refreshSessions, abuseGuard, null);
+    }
+
+    public AuthServiceImpl(UserRepository users, RoleRepository roles, UserOtpRepository otps,
+                           PasswordEncoder passwords, JwtUtil jwt, EmailService email,
                            GithubOAuthClient githubOAuthClient) {
         this(users, roles, otps, passwords, jwt, email, null, null, githubOAuthClient);
     }
