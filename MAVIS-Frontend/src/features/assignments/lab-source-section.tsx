@@ -291,20 +291,10 @@ export function LabSourceSection({
             <div className="flex flex-wrap items-start justify-between gap-3 border-b pb-4">
               <div className="min-w-0 space-y-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <GitBranch className="size-4 text-teal-600" aria-hidden="true" />
+                  <GitBranch className="size-4 text-muted-foreground" aria-hidden="true" />
                   <h2 className="font-semibold">
-                    {reference?.projectName ||
-                      t("Analyzed repository", "Kho mã nguồn đã phân tích")}
+                    {t("Lab Studio Setup", "Cấu hình Lab Studio")}
                   </h2>
-                  <Badge variant={staticReady && studioReady ? "success" : staticReady ? "outline" : "warning"}>
-                    {modelQuery.isPending
-                      ? t("Checking…", "Đang kiểm tra…")
-                      : staticReady && studioReady
-                        ? t("C1–C3 + Studio Live Ready", "Sẵn sàng C1–C3 + Studio Live")
-                        : staticReady
-                          ? t("C1–C3 & Theory Ready", "Sẵn sàng C1–C3 & Lý thuyết")
-                          : t("No services detected", "Chưa phát hiện thành phần")}
-                  </Badge>
                   {save.isPending ? (
                     <Badge variant="outline">
                       {t("Saving to draft…", "Đang lưu vào bản nháp…")}
