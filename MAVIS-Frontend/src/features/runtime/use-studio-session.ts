@@ -22,6 +22,7 @@ export function useStudioSession(sessionId: string) {
 
   const [explanation, setExplanation] = useState("");
   const [capturing, setCapturing] = useState(false);
+  const [actionError, setActionError] = useState<Error | null>(null);
   const [downloadError, setDownloadError] = useState<Error | null>(null);
   const [chaosTarget, setChaosTarget] = useState("");
   const [service, setService] = useState("");
@@ -78,11 +79,15 @@ export function useStudioSession(sessionId: string) {
             ...(kind === "SCALE" ? { replicas: requestedReplicas } : {}),
           };
     pending.current = command;
+    setActionError(null);
     try {
       await action.mutateAsync({ sessionId, ...command });
       pending.current = null;
       await state.refetch();
-    } catch {
+    } catch (error) {
+      setActionError(
+        error instanceof Error ? error : new Error("Studio action was not confirmed"),
+      );
       await state.refetch();
     }
   }
@@ -179,6 +184,7 @@ export function useStudioSession(sessionId: string) {
     explanation,
     setExplanation,
     capturing,
+    actionError,
     downloadError,
     setDownloadError,
     chaosTarget,

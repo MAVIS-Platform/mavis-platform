@@ -61,6 +61,9 @@ public class CourseAccessService {
     private com.mavis.common.repository.ModelVersionRepository modelVersions;
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.mavis.common.repository.LabTheoryAssetRepository labTheoryAssets;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
     @org.springframework.context.annotation.Lazy
     private CourseLabSeederService seeder;
 
@@ -113,8 +116,11 @@ public class CourseAccessService {
         }
         var model = assignment.getReferenceModel();
         if (model == null) {
-            if (assignment.getDescription() == null || assignment.getDescription().isBlank()) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "Attach a published reference model and a pinned source archive before publishing the Lab");
+            boolean hasTheoryAsset = labTheoryAssets != null
+                    && !labTheoryAssets.findByAssignmentIdOrderByPositionAsc(assignmentId).isEmpty();
+            if ((assignment.getDescription() == null || assignment.getDescription().isBlank()) && !hasTheoryAsset) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST,
+                        "Add a Lab description, attach a Theory lesson, or pin a published Reference Source before publishing the Lab");
             }
             assignment.setRequireRuntimeTrace(false);
         } else {

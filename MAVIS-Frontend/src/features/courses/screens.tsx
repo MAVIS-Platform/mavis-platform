@@ -1293,7 +1293,9 @@ function StepContent({
 
   const liveStudioVerified =
     studioVerified ||
-    Boolean(studioStateQuery.data?.finishRequested || studioStateQuery.data?.receiptDigest) ||
+    Boolean(
+      studioStateQuery.data?.receiptDigest || studioStateQuery.data?.executionStatus === "COMPLETED",
+    ) ||
     studioSessions.some((s) => s.id === activeStudioSessionId && s.studioVerified);
   const verifiedSessionForSubmit =
     studioSessionId ?? (liveStudioVerified ? activeStudioSessionId : undefined);
@@ -1324,10 +1326,13 @@ function StepContent({
   const next = step < 4 ? ((step + 1) as 2 | 3 | 4) : undefined;
   const nextAvailable = Boolean(preview) || (next !== undefined && (next <= 3 || runtimeReady));
   const needsSandboxBootstrap = Boolean(
+    !preview &&
     activeStudioSessionId &&
     studioStateQuery.isSuccess &&
-    studioStateQuery.data.services.length === 0 &&
-    !studioStateQuery.data.telemetry,
+    (studioStateQuery.data.executionStatus === "FAILED" ||
+      (studioStateQuery.data.services.length === 0 &&
+        !studioStateQuery.data.telemetry &&
+        !(studioStateQuery.data as Record<string, unknown>)["simulatedSandbox"])),
   );
 
   return (
@@ -1899,7 +1904,7 @@ function StepContent({
                           </ul>
                         </section>
                       )}
-                      <div className="min-h-[640px] overflow-hidden rounded-xl border border-slate-800">
+                      <div className="h-[720px] overflow-hidden rounded-xl border border-slate-800">
                         <LiveStudioWorkbench
                           sessions={studioSessions}
                           sessionId={activeStudioSessionId}

@@ -185,21 +185,14 @@ function MarkdownEditor({
         <span className="text-xs font-medium text-foreground">{label}</span>
         <div className="flex flex-wrap items-center gap-2">
           <select
-            aria-label={t("Lesson theme", "Theme trình bày")}
+            aria-label={t("Lesson theme", "Chủ đề trình bày")}
             className="h-7 rounded-md border bg-background px-2 text-xs font-medium text-foreground transition-colors hover:bg-muted"
             value={theme}
-            onChange={(event) => {
-              onThemeChange(event.target.value as MarkdownTheme);
-              if (mode === "write") {
-                setMode(
-                  typeof window !== "undefined" && window.innerWidth >= 1024 ? "split" : "preview",
-                );
-              }
-            }}
+            onChange={(event) => onThemeChange(event.target.value as MarkdownTheme)}
           >
             {MARKDOWN_THEMES.map((item) => (
               <option key={item.id} value={item.id}>
-                {t("Theme", "Theme")}: {t(item.en, item.vi)}
+                {t("Theme", "Chủ đề")}: {t(item.en, item.vi)}
               </option>
             ))}
           </select>
@@ -255,7 +248,13 @@ function MarkdownEditor({
       <div className={mode === "split" ? "grid grid-cols-1 items-stretch gap-4 lg:grid-cols-2" : "block"}>
         {(mode === "write" || mode === "split") && (
           <Textarea
+            aria-label={label}
             rows={14}
+            maxLength={50000}
+            placeholder={t(
+              "Write Markdown lesson content, paste notes, or use Import document / Smart Format…",
+              "Nhập nội dung bài học Markdown, dán tài liệu hoặc dùng Nhập tài liệu / Định dạng thông minh…",
+            )}
             value={value}
             className="h-96 w-full resize-none rounded-xl border bg-background p-4 font-mono text-sm leading-6 shadow-2xs"
             onChange={(event) => onChange(event.target.value)}
@@ -327,6 +326,7 @@ export function LabTheorySection({
   const [importOpen, setImportOpen] = useState(false);
   const [importTab, setImportTab] = useState<"file" | "url">("file");
   const [importFile, setImportFile] = useState<File | null>(null);
+  const [importValidation, setImportValidation] = useState("");
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pageFrom, setPageFrom] = useState("");
@@ -341,6 +341,7 @@ export function LabTheorySection({
   const [c4Tab, setC4Tab] = useState<"CONTEXT" | "CONTAINER" | "COMPONENT" | "GRAPH">("CONTEXT");
   const [selectedGraphId, setSelectedGraphId] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const [savingItemId, setSavingItemId] = useState<string | null>(null);
   const [authorMode, setAuthorMode] = useState<"write" | "library">("write");
 
   const attachAsset = useMutation({
@@ -410,8 +411,21 @@ export function LabTheorySection({
   };
   const importDocument = useMutation({
     mutationFn: async () => {
+      setImportValidation("");
       if (importTab === "file") {
         if (!importFile) throw new Error(t("Choose a file to import.", "Hãy chọn file tài liệu."));
+        if (pageFrom.trim() || pageTo.trim()) {
+          const fromNum = pageFrom.trim() ? Number(pageFrom) : 1;
+          const toNum = pageTo.trim() ? Number(pageTo) : fromNum + 49;
+          if (!Number.isFinite(fromNum) || !Number.isFinite(toNum) || fromNum < 1 || toNum < fromNum) {
+            throw new Error(
+              t("Page range must have start >= 1 and end >= start.", "Khoảng trang phải có trang đầu >= 1 và trang cuối >= trang đầu."),
+            );
+          }
+          if (toNum - fromNum + 1 > 50) {
+            throw new Error(t("Import at most 50 PDF pages at once.", "Mỗi lần chỉ nhập tối đa 50 trang PDF."));
+          }
+        }
         const form = new FormData();
         form.append("file", importFile);
         if (pageFrom.trim()) form.append("pageFrom", pageFrom.trim());
@@ -459,6 +473,7 @@ export function LabTheorySection({
       setAiNote(metaParts.join(" · "));
       setImportOpen(false);
       setImportFile(null);
+      setImportValidation("");
       setDragOver(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
       setImportUrl("");
@@ -474,10 +489,32 @@ export function LabTheorySection({
   }
 
   function selectImportFile(file: File | null) {
+    importDocument.reset();
+    if (file) {
+      if (!/\.(pdf|docx|pptx|md|markdown|txt)$/i.test(file.name)) {
+        setImportFile(null);
+        setImportValidation(
+          t(
+            "Unsupported file type. Choose PDF, DOCX, PPTX, MD, or TXT.",
+            "Định dạng không hỗ trợ. Chọn PDF, DOCX, PPTX, MD hoặc TXT.",
+          ),
+        );
+        if (fileInputRef.current) fileInputRef.current.value = "";
+        return;
+      }
+      if (file.size === 0 || file.size > 20 * 1024 * 1024) {
+        setImportFile(null);
+        setImportValidation(
+          t("File must be non-empty and up to 20 MB.", "File phải có dung lượng từ 1 B đến tối đa 20 MB."),
+        );
+        if (fileInputRef.current) fileInputRef.current.value = "";
+        return;
+      }
+    }
+    setImportValidation("");
     setImportFile(file);
     setPageFrom("");
     setPageTo("");
-    importDocument.reset();
     if (!file && fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -515,6 +552,7 @@ export function LabTheorySection({
     syncStatus === "saving" ||
     course.startDraft.isPending ||
     course.updateItem.isPending ||
+    course.deleteItem.isPending ||
     course.publish.isPending;
 
   const modules = (course.data?.modules as TheoryModule[] | undefined) ?? [];
@@ -524,12 +562,14 @@ export function LabTheorySection({
   const selectedModule = linkedModule ?? modules[0];
 
   async function saveWithAutoPublish(
+    itemId: string,
     task: (
       activeCourse: NonNullable<typeof course.data>,
       activeModule: TheoryModule,
     ) => Promise<void>,
   ) {
     if (!selectedModule || !course.data) return;
+    setSavingItemId(itemId);
     setSyncStatus("saving");
     try {
       if (isPublished) {
@@ -547,14 +587,21 @@ export function LabTheorySection({
       } else {
         await task(course.data, selectedModule);
       }
+      invalidateTheory();
       setSyncStatus("saved");
     } catch {
       setSyncStatus("idle");
+    } finally {
+      setSavingItemId(null);
     }
   }
 
   const libraryAssets = libraryQuery.data ?? [];
   const attachedAssets = attachedQuery.data ?? [];
+  const attachedCourseItemIds = new Set(
+    attachedAssets.map((a) => a.courseItemId).filter((id): id is string => Boolean(id)),
+  );
+  const attachedAssetIds = new Set(attachedAssets.map((a) => a.assetId));
   const selectedLibraryAsset = libraryAssets.find((asset) => asset.id === libraryItemId);
   const reference = assignment.referenceSource;
   const studentCtx = useStudentLabContext(
@@ -590,7 +637,9 @@ export function LabTheorySection({
 
   const theoryItems =
     selectedModule?.items.filter(
-      (item) => item.type === "THEORY" && (!item.assignmentId || item.assignmentId === assignment.id),
+      (item) =>
+        item.type === "THEORY" &&
+        (item.assignmentId === assignment.id || attachedCourseItemIds.has(item.id)),
     ) ?? [];
 
   return (
@@ -671,9 +720,10 @@ export function LabTheorySection({
             </p>
             <ul className="space-y-3">
               {theoryItems.map((item) => {
-                const linkedAsset = attachedAssets.find(
-                  (asset) => asset.courseItemId === item.id || asset.title === item.title,
-                );
+                const linkedAsset =
+                  attachedAssets.find((asset) => asset.courseItemId === item.id) ??
+                  attachedAssets.find((asset) => asset.title === item.title);
+                const cardBusy = savingBusy && savingItemId === item.id;
                 return (
                   <li key={item.id} className="space-y-3 rounded-xl border bg-muted/15 p-4">
                     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -684,25 +734,34 @@ export function LabTheorySection({
                         <span className="text-sm font-semibold">{item.title}</span>
                       </div>
                       <div className="flex items-center gap-1.5">
-                        {linkedAsset && (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            disabled={detachAsset.isPending}
-                            aria-label={t("Detach lesson", "Gỡ bài học")}
-                            onClick={() => detachAsset.mutate(linkedAsset.assetId)}
-                          >
-                            <Trash2 className="mr-1 size-3.5" aria-hidden="true" />
-                            {t("Detach", "Gỡ")}
-                          </Button>
-                        )}
                         <Button
                           type="button"
                           size="sm"
-                          disabled={savingBusy}
+                          variant="ghost"
+                          disabled={detachAsset.isPending || cardBusy}
+                          aria-label={t("Detach lesson", "Gỡ bài học")}
+                          onClick={() => {
+                            if (linkedAsset) {
+                              detachAsset.mutate(linkedAsset.assetId);
+                            } else {
+                              void saveWithAutoPublish(item.id, async (_draft, mod) => {
+                                await course.deleteItem.mutateAsync({
+                                  moduleId: mod.id,
+                                  itemId: item.id,
+                                });
+                              });
+                            }
+                          }}
+                        >
+                          <Trash2 className="mr-1 size-3.5" aria-hidden="true" />
+                          {t("Detach", "Gỡ")}
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={cardBusy}
                           onClick={() =>
-                            void saveWithAutoPublish(async (_draft, mod) => {
+                            void saveWithAutoPublish(item.id, async (_draft, mod) => {
                               const targetItem =
                                 mod.items.find(
                                   (it) =>
@@ -713,6 +772,7 @@ export function LabTheorySection({
                               const fallback = extractMarkdownTheme(bodyOf(item));
                               const cleanBody = bodies[item.id] ?? fallback.body;
                               const activeItemTheme = themes[item.id] ?? fallback.theme;
+                              const themedBody = applyMarkdownTheme(cleanBody, activeItemTheme);
                               await course.updateItem.mutateAsync({
                                 moduleId: mod.id,
                                 itemId: targetItem.id,
@@ -722,15 +782,30 @@ export function LabTheorySection({
                                 required: item.required,
                                 assignmentId: item.assignmentId ?? assignment.id,
                                 content: {
-                                  body: applyMarkdownTheme(cleanBody, activeItemTheme),
+                                  body: themedBody,
                                   format: "markdown",
                                 },
                               });
+                              if (linkedAsset) {
+                                await api(
+                                  `workspaces/${workspaceId}/theory-assets/${linkedAsset.assetId}`,
+                                  {
+                                    method: "PUT",
+                                    body: JSON.stringify({
+                                      title: item.title,
+                                      body: themedBody,
+                                      language: locale,
+                                      style: "CUSTOM",
+                                      source: linkedAsset.source || "LECTURER",
+                                    }),
+                                  },
+                                ).catch(() => undefined);
+                              }
                             })
                           }
                         >
                           <Save className="mr-1 size-3.5" aria-hidden="true" />
-                          {savingBusy
+                          {cardBusy
                             ? t("Saving…", "Đang lưu…")
                             : t("Save lesson", "Lưu bài học")}
                         </Button>
@@ -740,9 +815,15 @@ export function LabTheorySection({
                       label={t("Lesson content (Markdown)", "Nội dung bài học (Markdown)")}
                       title={item.title}
                       value={bodies[item.id] ?? extractMarkdownTheme(bodyOf(item)).body}
-                      onChange={(value) => setBodies((current) => ({ ...current, [item.id]: value }))}
+                      onChange={(value) => {
+                        setSyncStatus("idle");
+                        setBodies((current) => ({ ...current, [item.id]: value }));
+                      }}
                       theme={themes[item.id] ?? extractMarkdownTheme(bodyOf(item)).theme}
-                      onThemeChange={(next) => setThemes((current) => ({ ...current, [item.id]: next }))}
+                      onThemeChange={(next) => {
+                        setSyncStatus("idle");
+                        setThemes((current) => ({ ...current, [item.id]: next }));
+                      }}
                       t={t}
                     />
                   </li>
@@ -1023,12 +1104,12 @@ export function LabTheorySection({
                   />
                 </div>
 
-                {importDocument.error && (
+                {(importValidation || importDocument.error) && (
                   <p
                     role="alert"
                     className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive"
                   >
-                    {importDocument.error.message}
+                    {importValidation || importDocument.error?.message}
                   </p>
                 )}
 
@@ -1061,11 +1142,15 @@ export function LabTheorySection({
                 </DialogFooter>
               </DialogContent>
             </Dialog>
-            <Input
-              aria-label={t("Lesson title", "Tên bài học")}
-              value={newTitle}
-              onChange={(event) => setNewTitle(event.target.value)}
-            />
+            <label className="block space-y-1 text-xs font-medium">
+              <span>{t("Lesson title", "Tên bài học")}</span>
+              <Input
+                maxLength={255}
+                placeholder={t("e.g. Service Boundaries & OpenFeign Contracts", "VD: Ranh giới Service & Hợp đồng OpenFeign")}
+                value={newTitle}
+                onChange={(event) => setNewTitle(event.target.value)}
+              />
+            </label>
             <MarkdownEditor
               label={t("Lesson content (Markdown)", "Nội dung bài học (Markdown)")}
               title={newTitle}
@@ -1115,7 +1200,16 @@ export function LabTheorySection({
               <Badge variant="outline">{libraryAssets.length}</Badge>
             </div>
 
-            {libraryAssets.length === 0 ? (
+            {(libraryQuery.error || attachedQuery.error) && (
+              <p role="alert" className="text-xs text-destructive">
+                {(libraryQuery.error ?? attachedQuery.error)?.message}
+              </p>
+            )}
+            {libraryQuery.isPending ? (
+              <p className="text-xs text-muted-foreground">
+                {t("Loading theory library…", "Đang tải thư viện lý thuyết…")}
+              </p>
+            ) : libraryAssets.length === 0 ? (
               <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
                 {t(
                   "The library is empty. Switch to 'Write / Import / AI' and click 'Save to library & attach'.",
@@ -1131,22 +1225,40 @@ export function LabTheorySection({
                   onChange={(event) => setLibraryItemId(event.target.value)}
                 >
                   <option value="">{t("Choose a library lesson…", "Chọn bài trong thư viện…")}</option>
-                  {libraryAssets.map((asset) => (
-                    <option key={asset.id} value={asset.id}>
-                      {asset.title}
-                    </option>
-                  ))}
+                  {libraryAssets.map((asset) => {
+                    const already = attachedAssetIds.has(asset.id);
+                    return (
+                      <option key={asset.id} value={asset.id}>
+                        {asset.title}
+                        {already ? ` (${t("Attached", "Đã gắn")})` : ""}
+                      </option>
+                    );
+                  })}
                 </select>
                 {selectedLibraryAsset && (
                   <div className="max-h-48 space-y-2 overflow-y-auto rounded-lg border bg-background p-4 text-xs">
-                    <p className="text-sm font-semibold">{selectedLibraryAsset.title}</p>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-sm font-semibold">{selectedLibraryAsset.title}</p>
+                      {attachedAssetIds.has(selectedLibraryAsset.id) && (
+                        <Badge variant="success">{t("Attached", "Đã gắn")}</Badge>
+                      )}
+                    </div>
                     <MarkdownPreview markdown={selectedLibraryAsset.body.slice(0, 800)} />
+                    {selectedLibraryAsset.body.length > 800 && (
+                      <p className="text-[11px] text-muted-foreground">
+                        … ({t("preview truncated", "bản xem trước rút gọn")})
+                      </p>
+                    )}
                   </div>
                 )}
                 <Button
                   type="button"
                   size="sm"
-                  disabled={!selectedLibraryAsset || attachAsset.isPending}
+                  disabled={
+                    !selectedLibraryAsset ||
+                    attachAsset.isPending ||
+                    attachedAssetIds.has(selectedLibraryAsset.id)
+                  }
                   onClick={() => {
                     if (selectedLibraryAsset) attachAsset.mutate(selectedLibraryAsset.id);
                   }}
@@ -1154,7 +1266,9 @@ export function LabTheorySection({
                   <BookOpen className="mr-1 size-4" aria-hidden="true" />
                   {attachAsset.isPending
                     ? t("Attaching…", "Đang gắn…")
-                    : t("Attach to this Lab", "Gắn vào Lab này")}
+                    : selectedLibraryAsset && attachedAssetIds.has(selectedLibraryAsset.id)
+                      ? t("Already attached", "Đã gắn vào Lab này")
+                      : t("Attach to this Lab", "Gắn vào Lab này")}
                 </Button>
               </>
             )}
@@ -1207,8 +1321,13 @@ export function LabTheorySection({
                           key={item.id}
                           type="button"
                           size="sm"
+                          role="tab"
+                          aria-selected={c4Tab === item.id}
                           variant={c4Tab === item.id ? "default" : "outline"}
-                          onClick={() => setC4Tab(item.id)}
+                          onClick={() => {
+                            setC4Tab(item.id);
+                            setSelectedGraphId(null);
+                          }}
                         >
                           {item.label}
                         </Button>

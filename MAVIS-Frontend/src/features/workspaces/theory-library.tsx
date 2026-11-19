@@ -1,12 +1,19 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Plus, Search, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { MarkdownPreview } from "@/components/shared/markdown-preview";
+import {
+  MARKDOWN_THEMES,
+  MarkdownPreview,
+  applyMarkdownTheme,
+  extractMarkdownTheme,
+  type MarkdownTheme,
+} from "@/components/shared/markdown-preview";
 import { useSelection } from "@/hooks/use-api";
 import { api } from "@/lib/mainflow-api";
 import { useLocale } from "@/lib/i18n/locale-context";
@@ -54,12 +61,15 @@ function shortDate(value: string) {
 
 export function TheoryLibrary() {
   const { t, locale } = useLocale();
-  const { workspaceId } = useSelection();
+  const params = useSearchParams();
+  const selection = useSelection();
+  const workspaceId = params?.get("workspace") || selection.workspaceId;
   const cache = useQueryClient();
   const course = useCourseAuthoring(workspaceId);
   const [search, setSearch] = useState("");
   const [editorId, setEditorId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
+  const [editTheme, setEditTheme] = useState<MarkdownTheme>("coursera");
   const [error, setError] = useState("");
 
   const assets = useQuery({
@@ -88,20 +98,26 @@ export function TheoryLibrary() {
   };
 
   const save = useMutation({
-    mutationFn: () =>
-      editorId && editorId !== "new"
+    mutationFn: () => {
+      const payload = {
+        ...draft,
+        body: applyMarkdownTheme(draft.body.trim(), editTheme),
+      };
+      return editorId && editorId !== "new"
         ? api<TheoryAsset>(`workspaces/${workspaceId}/theory-assets/${editorId}`, {
             method: "PUT",
-            body: JSON.stringify(draft),
+            body: JSON.stringify(payload),
           })
         : api<TheoryAsset>(`workspaces/${workspaceId}/theory-assets`, {
             method: "POST",
-            body: JSON.stringify({ ...draft, language: locale }),
-          }),
+            body: JSON.stringify({ ...payload, language: locale }),
+          });
+    },
     onSuccess: () => {
       invalidate();
       setEditorId(null);
       setDraft(EMPTY_DRAFT);
+      setEditTheme("coursera");
       setError("");
     },
     onError: (cause) => setError(cause instanceof Error ? cause.message : String(cause)),
@@ -120,13 +136,16 @@ export function TheoryLibrary() {
   const startNew = () => {
     setEditorId("new");
     setDraft({ ...EMPTY_DRAFT, language: locale });
+    setEditTheme("coursera");
     setError("");
   };
   const startEdit = (asset: TheoryAsset) => {
+    const parsed = extractMarkdownTheme(asset.body);
     setEditorId(asset.id);
+    setEditTheme(parsed.theme);
     setDraft({
       title: asset.title,
-      body: asset.body,
+      body: parsed.body,
       language: asset.language,
       style: asset.style,
       source: asset.source,
@@ -208,6 +227,18 @@ export function TheoryLibrary() {
                 : t("Edit theory lesson", "Sửa bài lý thuyết")}
             </h2>
             <div className="flex items-center gap-2">
+              <select
+                aria-label={t("Lesson theme", "Chủ đề trình bày")}
+                className="h-8 rounded-md border bg-background px-2 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+                value={editTheme}
+                onChange={(event) => setEditTheme(event.target.value as MarkdownTheme)}
+              >
+                {MARKDOWN_THEMES.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {t("Theme", "Chủ đề")}: {t(item.en, item.vi)}
+                  </option>
+                ))}
+              </select>
               <label className="inline-flex cursor-pointer items-center rounded-md border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-muted">
                 <Upload className="mr-1.5 size-3.5" aria-hidden="true" />
                 {t("Import Markdown (.md)", "Nhập file Markdown (.md)")}
@@ -219,9 +250,11 @@ export function TheoryLibrary() {
                     const file = event.target.files?.[0];
                     if (!file) return;
                     void file.text().then((text) => {
+                      const parsed = extractMarkdownTheme(text);
+                      setEditTheme(parsed.theme);
                       setDraft((current) => ({
                         ...current,
-                        body: text,
+                        body: parsed.body,
                         source: "IMPORT",
                         title: current.title || file.name.replace(/\.(md|markdown|txt)$/i, ""),
                       }));
@@ -230,15 +263,14 @@ export function TheoryLibrary() {
                   }}
                 />
               </label>
-              <Button type="button" size="sm" variant="ghost" onClick={() => setEditorId(null)}>
-                {t("Cancel", "Huỷ")}
-              </Button>
             </div>
           </div>
 
           <label className="block space-y-1.5 text-xs font-medium">
             <span>{t("Lesson title", "Tiêu đề bài học")}</span>
             <Input
+              maxLength={255}
+              placeholder={t("e.g. Service Discovery & API Gateway", "VD: Service Discovery & API Gateway")}
               value={draft.title}
               onChange={(event) => setDraft({ ...draft, title: event.target.value })}
             />
@@ -249,6 +281,8 @@ export function TheoryLibrary() {
               <span>{t("Lesson body (Markdown)", "Nội dung bài học (Markdown)")}</span>
               <Textarea
                 rows={14}
+                maxLength={50000}
+                placeholder={t("Write or paste Markdown content…", "Nhập hoặc dán nội dung Markdown…")}
                 className="h-96 w-full resize-none rounded-xl border bg-background p-4 font-mono text-sm leading-6 shadow-2xs"
                 value={draft.body}
                 onChange={(event) => setDraft({ ...draft, body: event.target.value })}
@@ -258,7 +292,7 @@ export function TheoryLibrary() {
               <span>{t("Student Preview", "Xem trước như sinh viên")}</span>
               <div className="h-96 w-full overflow-y-auto rounded-xl border bg-background p-4 shadow-2xs">
                 {draft.body.trim() ? (
-                  <MarkdownPreview markdown={draft.body} />
+                  <MarkdownPreview markdown={draft.body} theme={editTheme} />
                 ) : (
                   <p className="text-sm font-normal text-muted-foreground">
                     {t("Markdown preview appears here.", "Bản xem trước Markdown hiện ở đây.")}
@@ -297,6 +331,12 @@ export function TheoryLibrary() {
         </div>
         {assets.isPending ? (
           <p className="p-4 text-sm text-muted-foreground">{t("Loading lessons…", "Đang tải bài học…")}</p>
+        ) : assets.isError ? (
+          <p role="alert" className="p-4 text-sm text-destructive">
+            {assets.error instanceof Error
+              ? assets.error.message
+              : t("Could not load theory library.", "Không tải được thư viện lý thuyết.")}
+          </p>
         ) : visible.length === 0 ? (
           <p className="p-6 text-sm text-muted-foreground">
             {assets.data?.length

@@ -78,21 +78,30 @@ public class CourseQuizService {
         var lab = labForAuthoring(workspaceId, assignmentId);
         RequestParts parts = validateRequest(request);
         String questions = encode(parts.questions());
+        UUID modelId = lab.getReferenceModel() == null ? null : lab.getReferenceModel().getId();
         if (reuseMatchingVersion) {
-            var published = jdbc.queryForList("""
-                    SELECT version FROM course_quizzes
-                    WHERE assignment_id = ? AND reference_model_id = ? AND lesson = ? AND pass_percent = ?
-                      AND questions = CAST(? AS jsonb)
-                      AND version = (SELECT max(version) FROM course_quizzes WHERE assignment_id = ?)
-                    """, Integer.class, assignmentId, lab.getReferenceModel().getId(), parts.lesson(),
-                    parts.threshold(), questions, assignmentId);
+            var published = modelId != null
+                    ? jdbc.queryForList("""
+                            SELECT version FROM course_quizzes
+                            WHERE assignment_id = ? AND reference_model_id = ? AND lesson = ? AND pass_percent = ?
+                              AND questions = CAST(? AS jsonb)
+                              AND version = (SELECT max(version) FROM course_quizzes WHERE assignment_id = ?)
+                            """, Integer.class, assignmentId, modelId, parts.lesson(),
+                            parts.threshold(), questions, assignmentId)
+                    : jdbc.queryForList("""
+                            SELECT version FROM course_quizzes
+                            WHERE assignment_id = ? AND reference_model_id IS NULL AND lesson = ? AND pass_percent = ?
+                              AND questions = CAST(? AS jsonb)
+                              AND version = (SELECT max(version) FROM course_quizzes WHERE assignment_id = ?)
+                            """, Integer.class, assignmentId, parts.lesson(),
+                            parts.threshold(), questions, assignmentId);
             if (!published.isEmpty()) {
                 return view(new Definition(published.getFirst(), parts.lesson(), parts.threshold(),
                         parts.questions()), null);
             }
         }
         int next = nextVersion(assignmentId);
-        insertVersion(assignmentId, lab.getReferenceModel().getId(), next, parts, questions);
+        insertVersion(assignmentId, modelId, next, parts, questions);
         return view(new Definition(next, parts.lesson(), parts.threshold(), parts.questions()), null);
     }
 
@@ -138,7 +147,8 @@ public class CourseQuizService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "QUIZ_DRAFT_NOT_FOUND",
                         "Save a Quiz draft before publishing"));
         int next = nextVersion(assignmentId);
-        insertVersion(assignmentId, lab.getReferenceModel().getId(), next, draft, encode(draft.questions()));
+        UUID modelId = lab.getReferenceModel() == null ? null : lab.getReferenceModel().getId();
+        insertVersion(assignmentId, modelId, next, draft, encode(draft.questions()));
         jdbc.update("DELETE FROM course_quiz_drafts WHERE assignment_id = ?", assignmentId);
         return view(new Definition(next, draft.lesson(), draft.threshold(), draft.questions()), null);
     }
@@ -147,12 +157,21 @@ public class CourseQuizService {
     public List<Version> versions(UUID workspaceId, UUID assignmentId) {
         access.requireWorkspaceLecturer(workspaceId);
         var lab = labForAuthoring(workspaceId, assignmentId, false);
+        UUID modelId = lab.getReferenceModel() == null ? null : lab.getReferenceModel().getId();
+        if (modelId == null) {
+            return jdbc.query("""
+                    SELECT version, lesson, pass_percent, published_at FROM course_quizzes
+                    WHERE assignment_id = ? AND reference_model_id IS NULL ORDER BY version DESC
+                    """, (rs, row) -> new Version(rs.getInt(1), rs.getString(2), rs.getInt(3),
+                            rs.getObject(4, OffsetDateTime.class)),
+                    assignmentId);
+        }
         return jdbc.query("""
                 SELECT version, lesson, pass_percent, published_at FROM course_quizzes
                 WHERE assignment_id = ? AND reference_model_id = ? ORDER BY version DESC
                 """, (rs, row) -> new Version(rs.getInt(1), rs.getString(2), rs.getInt(3),
                         rs.getObject(4, OffsetDateTime.class)),
-                assignmentId, lab.getReferenceModel().getId());
+                assignmentId, modelId);
     }
 
     @Transactional(readOnly = true)
@@ -177,7 +196,7 @@ public class CourseQuizService {
         var user = access.requireCurrentActiveUser();
         var labOpt = assignments.findById(assignmentId)
                 .filter(value -> workspaceId.equals(value.getWorkspace().getId()))
-                .filter(value -> value.getLabOrder() != null && value.getReferenceModel() != null
+                .filter(value -> value.getLabOrder() != null
                         && "ACTIVE".equals(value.getWorkspace().getStatus()));
         if (labOpt.isEmpty()) {
             return null;
@@ -304,16 +323,15 @@ public class CourseQuizService {
     private Assignment labForAuthoring(UUID workspaceId, UUID assignmentId, boolean lock) {
         return (lock ? assignments.findLockedById(assignmentId) : assignments.findById(assignmentId))
                 .filter(value -> workspaceId.equals(value.getWorkspace().getId()))
-                .filter(value -> value.getReferenceModel() != null
-                        && "ACTIVE".equals(value.getWorkspace().getStatus()))
+                .filter(value -> "ACTIVE".equals(value.getWorkspace().getStatus()))
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
-                        "Active Course Lab with a pinned reference model not found"));
+                        "Active Course Lab not found"));
     }
 
     private Assignment lab(UUID workspaceId, UUID assignmentId, boolean lock) {
         return (lock ? assignments.findLockedById(assignmentId) : assignments.findById(assignmentId))
                 .filter(value -> workspaceId.equals(value.getWorkspace().getId()))
-                .filter(value -> value.getLabOrder() != null && value.getReferenceModel() != null
+                .filter(value -> value.getLabOrder() != null
                         && "ACTIVE".equals(value.getWorkspace().getStatus()))
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Active published Lab not found"));
     }
@@ -332,12 +350,21 @@ public class CourseQuizService {
     }
 
     private Optional<Definition> findCurrent(Assignment lab) {
+        UUID modelId = lab.getReferenceModel() == null ? null : lab.getReferenceModel().getId();
+        if (modelId == null) {
+            return jdbc.query("""
+                    SELECT version, lesson, pass_percent, questions::text FROM course_quizzes
+                    WHERE assignment_id = ? AND reference_model_id IS NULL ORDER BY version DESC LIMIT 1
+                    """, (rs, row) -> new Definition(rs.getInt(1), rs.getString(2), rs.getInt(3),
+                            normalizeQuestions(decode(rs.getString(4), new TypeReference<List<Question>>() {}))),
+                    lab.getId()).stream().findFirst();
+        }
         return jdbc.query("""
                 SELECT version, lesson, pass_percent, questions::text FROM course_quizzes
                 WHERE assignment_id = ? AND reference_model_id = ? ORDER BY version DESC LIMIT 1
                 """, (rs, row) -> new Definition(rs.getInt(1), rs.getString(2), rs.getInt(3),
                         normalizeQuestions(decode(rs.getString(4), new TypeReference<List<Question>>() {}))),
-                lab.getId(), lab.getReferenceModel().getId()).stream().findFirst();
+                lab.getId(), modelId).stream().findFirst();
     }
 
     private Definition current(Assignment lab) {

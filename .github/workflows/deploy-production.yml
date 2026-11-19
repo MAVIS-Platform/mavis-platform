@@ -233,6 +233,7 @@ jobs:
             MAVIS-Platform/mavis-be/mavis-bootstrap/src/main/resources/db/migration/V41__Lab_Studio_Exercise.sql \
             MAVIS-Platform/mavis-be/mavis-bootstrap/src/main/resources/db/migration/V42__Passkey_Crud_And_Essay_Submissions.sql \
             MAVIS-Platform/mavis-be/mavis-bootstrap/src/main/resources/db/migration/V43__Seed_Three_Role_Accounts_And_Java_Course.sql \
-            MAVIS-Platform/mavis-be/mavis-bootstrap/src/main/resources/db/migration/V44__Mavis_Announcements.sql "$target:$incoming/"
+            MAVIS-Platform/mavis-be/mavis-bootstrap/src/main/resources/db/migration/V44__Mavis_Announcements.sql \
+            MAVIS-Platform/mavis-be/mavis-bootstrap/src/main/resources/db/migration/V45__Nullable_Quiz_Reference_Model.sql "$target:$incoming/"
           prefix="ghcr.io/${REPOSITORY,,}"
           printf '%s\n%s\n' "$GH_TOKEN" "${MAVIS_AI_API_KEY:-}" | retry_ssh "bash '$incoming/deploy-vps.sh' '$COMMIT' '$prefix' '$GH_USER'" "run remote deployment"

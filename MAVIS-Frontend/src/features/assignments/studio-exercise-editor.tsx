@@ -85,6 +85,8 @@ export function StudioExerciseEditor({
   const { t } = useLocale();
   const cache = useQueryClient();
   const [form, setForm] = useState<Form>(EMPTY);
+  const [extraReplicas, setExtraReplicas] = useState<ReplicaTarget[]>([]);
+  const [savedNotice, setSavedNotice] = useState(false);
   const [error, setError] = useState("");
   const exercise = useQuery({
     queryKey: ["api", "studio-exercise", workspaceId, assignmentId],
@@ -99,6 +101,7 @@ export function StudioExerciseEditor({
   useEffect(() => {
     const current = exercise.data;
     if (!current) {
+      setExtraReplicas([]);
       setForm((prev) => ({
         ...EMPTY,
         runtimeModelId: prev.runtimeModelId || referenceSource?.modelId || defaultModelId || "",
@@ -106,6 +109,7 @@ export function StudioExerciseEditor({
       return;
     }
     const replica = current.successCriteria?.minReplicas?.[0];
+    setExtraReplicas(current.successCriteria?.minReplicas?.slice(1) ?? []);
     setForm({
       runtimeModelId: referenceSource?.modelId ?? current.runtimeModelId ?? defaultModelId ?? "",
       baselineRequests:
@@ -126,6 +130,74 @@ export function StudioExerciseEditor({
       instructions: current.instructions ?? "",
     });
   }, [exercise.data, referenceSource?.modelId, defaultModelId]);
+
+  const applyPreset = () => {
+    const hasCommerce =
+      applications.includes("api-gateway") || applications.includes("order-service");
+    const hasOrdersDemo =
+      applications.includes("orders") ||
+      applications.includes("payment") ||
+      applications.includes("orders-payment-route");
+    setSavedNotice(false);
+    setExtraReplicas([]);
+    if (hasCommerce && !hasOrdersDemo) {
+      const targetScale = applications.includes("order-service")
+        ? "order-service"
+        : applications[0] ?? "api-gateway";
+      const stopTarget = applications.includes("payment-service")
+        ? ["payment-service"]
+        : applications.length > 1
+          ? [applications[applications.length - 1]!]
+          : [];
+      setForm((current) => ({
+        ...current,
+        baselineRequests: [{ method: "GET", path: "/api/gateway/orders", expectedStatus: 200 }],
+        stoppedServices: stopTarget,
+        stoppedControllers: "",
+        allowedActions: [...ACTIONS],
+        maxErrorRatePercent: "0",
+        maxP95Ms: "2500",
+        traceFrom: "api-gateway",
+        traceTo: targetScale === "api-gateway" ? "" : targetScale,
+        replicaService: targetScale,
+        replicaCount: "2",
+        instructions: t(
+          `The stack starts with ${stopTarget.join(", ") || "a downstream service"} stopped. (1) START stopped services so GET /api/gateway/orders succeeds with 0% errors, (2) SCALE ${targetScale} to 2 replicas, capture Before/After snapshots, and click Finish Studio to seal the RuntimeReceipt.`,
+          `Hệ thống bắt đầu với ${stopTarget.join(", ") || "dịch vụ phụ"} đang dừng. (1) Bật (START) service để GET /api/gateway/orders đạt 0% lỗi, (2) Nhân bản (SCALE) ${targetScale} lên 2 replicas, chụp Snapshot và nhấn Finish Studio để ký RuntimeReceipt.`,
+        ),
+      }));
+      return;
+    }
+    const nonControllers = applications.filter((app) => app !== "orders-payment-route");
+    const primary = applications.includes("orders")
+      ? "orders"
+      : nonControllers[0] ?? applications[0] ?? "orders";
+    const secondary = applications.includes("payment")
+      ? "payment"
+      : nonControllers.find((app) => app !== primary) ?? (hasOrdersDemo ? "payment" : "");
+    const controller = applications.includes("orders-payment-route")
+      ? "orders-payment-route"
+      : "";
+    setForm((current) => ({
+      ...current,
+      baselineRequests: [
+        { method: "GET", path: primary === "orders" ? "/orders" : "/health", expectedStatus: 200 },
+      ],
+      stoppedServices: secondary ? [secondary] : [],
+      stoppedControllers: controller,
+      allowedActions: [...ACTIONS],
+      maxErrorRatePercent: "0",
+      maxP95Ms: "2500",
+      traceFrom: primary,
+      traceTo: secondary,
+      replicaService: primary,
+      replicaCount: "2",
+      instructions: t(
+        `The stack starts with ${secondary || primary}${controller ? ` and ${controller}` : ""} stopped. (1) START ${secondary || primary}${controller ? ` & connect ${controller}` : ""} to restore 0% error rate, (2) SCALE ${primary} to at least 2 replicas, capture Before/After snapshots, and click Finish Studio to seal the RuntimeReceipt.`,
+        `Hệ thống bắt đầu với ${secondary || primary}${controller ? ` và ${controller}` : ""} đang dừng. (1) Bật (START) ${secondary || primary}${controller ? ` và nối ${controller}` : ""} về 0% lỗi, (2) Scale ${primary} lên tối thiểu 2 replicas, chụp Snapshot và nhấn Finish Studio.`,
+      ),
+    }));
+  };
 
   const save = useMutation({
     mutationFn: () => {
@@ -186,21 +258,26 @@ export function StudioExerciseEditor({
               maxErrorRatePercent: form.maxErrorRatePercent ? Number(form.maxErrorRatePercent) : null,
               maxP95Ms: form.maxP95Ms ? Number(form.maxP95Ms) : null,
               requiredTraceEdge: edge,
-              minReplicas: replica ? [replica] : [],
+              minReplicas: [...(replica ? [replica] : []), ...extraReplicas],
             },
             instructions: form.instructions.trim(),
           }),
         },
       );
     },
+    onMutate: () => setSavedNotice(false),
     onSuccess: () => {
       setError("");
+      setSavedNotice(true);
       void cache.invalidateQueries({
         queryKey: ["api", "studio-exercise", workspaceId, assignmentId],
       });
       onSaved?.();
     },
-    onError: (cause) => setError(cause instanceof Error ? cause.message : String(cause)),
+    onError: (cause) => {
+      setSavedNotice(false);
+      setError(cause instanceof Error ? cause.message : String(cause));
+    },
   });
 
   return (
@@ -223,41 +300,18 @@ export function StudioExerciseEditor({
           <div className="space-y-0.5">
             <p className="text-xs font-semibold text-foreground">
               {t(
-                "Curated Studio Live Exercise Preset (orders → orders-payment-route → payment)",
-                "Mẫu Đề Chuẩn Studio Live (orders → orders-payment-route → payment)",
+                "Recommended Studio Live Exercise Preset",
+                "Mẫu Đề Chuẩn Studio Live (theo Repo đã chọn)",
               )}
             </p>
             <p className="text-[11px] text-muted-foreground">
               {t(
-                "One-click fill for MAVIS-Platform/mavis-studio-live-demo & mavis-studio-live-seed: baseline GET /orders, stopped payment & route-controller, scale orders to 2.",
-                "Điền nhanh cấu hình chuẩn cho repo mavis-studio-live-demo & mavis-studio-live-seed: GET /orders, dừng sẵn payment & route-controller, scale orders lên 2.",
+                "One-click fill matching the detected services in this repository (mavis-studio-live-demo, mavis-commerce-seed, or custom Docker Compose).",
+                "Điền nhanh cấu hình chuẩn khớp với danh sách service phát hiện được trong repo này (mavis-studio-live-demo, mavis-commerce-seed hoặc Docker Compose).",
               )}
             </p>
           </div>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() =>
-              setForm((current) => ({
-                ...current,
-                baselineRequests: [{ method: "GET", path: "/orders", expectedStatus: 200 }],
-                stoppedServices: ["payment"],
-                stoppedControllers: "orders-payment-route",
-                allowedActions: [...ACTIONS],
-                maxErrorRatePercent: "0",
-                maxP95Ms: "2500",
-                traceFrom: "orders",
-                traceTo: "payment",
-                replicaService: "orders",
-                replicaCount: "2",
-                instructions: t(
-                  "The stack starts with payment and orders-payment-route stopped (GET /orders returns 502 / 100% error rate). (1) START payment, (2) CONNECT orders -> payment (START orders-payment-route) to restore 0% error rate, (3) SCALE orders to at least 2 replicas, capture Before/After snapshots, and click Finish Studio to seal the HMAC-SHA256 RuntimeReceipt.",
-                  "Hệ thống bắt đầu với dịch vụ payment và tuyến điều khiển orders-payment-route đang dừng (GET /orders trả lỗi 502 / 100% error rate). Hãy: (1) Bật (START) dịch vụ payment, (2) Kết nối dây (START orders-payment-route) để khôi phục luồng gọi orders -> payment về 0% lỗi, (3) Nhân bản (SCALE) dịch vụ orders lên tối thiểu 2 replicas, chụp Snapshot Before/After và nhấn Finish Studio để ký biên nhận RuntimeReceipt (HMAC-SHA256).",
-                ),
-              }))
-            }
-          >
+          <Button type="button" size="sm" variant="outline" onClick={applyPreset}>
             {t("⚡ Fill Curated Studio Preset", "⚡ Điền nhanh Đề chuẩn Studio Live")}
           </Button>
         </div>
@@ -266,8 +320,8 @@ export function StudioExerciseEditor({
           <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
             <GitBranch className="size-3.5 text-teal-600" aria-hidden="true" />
             {t(
-              "Unified Lab Repository (shared with Step 3 C1–C3 Reference Source):",
-              "Repo dùng chung từ Bước 3 (Nguồn tham chiếu C1–C3 & Studio Live):",
+              "Unified Lab Repository (shared with Step 2 Reference Source):",
+              "Repo dùng chung từ Bước 2 (Nguồn tham chiếu C1–C3 & Studio Live):",
             )}
           </span>
           <span className="font-mono text-muted-foreground">
@@ -275,7 +329,7 @@ export function StudioExerciseEditor({
               ? `${referenceSource.projectName} · r${referenceSource.revision}`
               : form.runtimeModelId
                 ? `model ${form.runtimeModelId.slice(0, 8)}`
-                : t("Not pinned in Step 3 yet", "Chưa gắn ở Bước 3")}
+                : t("Not pinned in Step 2 yet", "Chưa gắn ở Bước 2")}
           </span>
         </div>
 
@@ -509,6 +563,11 @@ export function StudioExerciseEditor({
           {exercise.data && (
             <span className="text-xs text-muted-foreground">
               {t("Revision", "Bản")} {exercise.data.revision}
+            </span>
+          )}
+          {savedNotice && (
+            <span role="status" className="text-xs font-medium text-emerald-700 dark:text-emerald-300">
+              {t("✓ Saved", "✓ Đã lưu đề Studio")}
             </span>
           )}
           {error && (

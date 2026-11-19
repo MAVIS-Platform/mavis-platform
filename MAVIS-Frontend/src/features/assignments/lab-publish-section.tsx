@@ -48,22 +48,29 @@ export function LabPublishSection({
     assignment.id,
     Boolean(studioProjectId),
   );
-  const verifiedSession =
-    (labSessions.data ?? []).find(
-      (session) => session.assignmentId === assignment.id && session.studioVerified,
-    ) ?? (labSessions.data ?? []).find((session) => session.studioVerified);
+  const verifiedSession = (labSessions.data ?? []).find(
+    (session) => session.assignmentId === assignment.id && session.studioVerified,
+  );
   const course = useCourseAuthoring(workspaceId);
   const modules = course.data?.modules ?? [];
+  const attachedTheory = useQuery({
+    queryKey: ["api", "lab-theory-assets", workspaceId, assignment.id],
+    queryFn: ({ signal }) =>
+      api<Array<{ assetId: string; courseItemId?: string | null }>>(
+        `workspaces/${workspaceId}/course-labs/${assignment.id}/theory-assets`,
+        { signal },
+      ),
+    retry: false,
+  });
   const theoryReady =
-    Boolean(assignment.instructions?.trim()) ||
-    modules.some(
-      (module) =>
-        module.items.some((item) => item.type === "THEORY" && item.assignmentId === assignment.id) ||
-        (module.items.some((item) => item.assignmentId === assignment.id) &&
-          module.items.some((item) => item.type === "THEORY")),
+    (attachedTheory.data?.length ?? 0) > 0 ||
+    modules.some((module) =>
+      module.items.some((item) => item.type === "THEORY" && item.assignmentId === assignment.id),
     );
   const labTier = resolveLabTier(assignment);
-  const published = setupLab?.published === true;
+  const published = setupLab?.published === true || assignment.labOrder != null;
+  const canFreeze =
+    labTier === "THEORY_QUIZ_STUDIO" && Boolean(assignment.referenceSource?.modelId);
   const previewHref = `/lab?${new URLSearchParams({
     workspace: workspaceId,
     assignment: assignment.id,
@@ -84,7 +91,9 @@ export function LabPublishSection({
       label: t("Lab information", "Thông tin Lab"),
       required: true,
       done: Boolean(assignment.title),
-      detail: t("Title and description saved.", "Đã lưu tên và mô tả."),
+      detail: assignment.instructions?.trim()
+        ? t("Title and description saved.", "Đã lưu tên và mô tả.")
+        : t("Title saved.", "Đã lưu tên Lab."),
       tab: "info",
     },
     {
@@ -174,45 +183,40 @@ export function LabPublishSection({
                 </div>
                 <p className="text-xs text-muted-foreground">{row.detail}</p>
               </div>
-              {!row.done && row.id !== "publish" && (
+              {row.id !== "publish" && (
                 <Button type="button" size="sm" variant="outline" onClick={() => onNavigate(row.tab)}>
-                  {t("Open", "Mở")}
+                  {row.done ? t("Edit", "Sửa") : t("Open", "Mở")}
                 </Button>
               )}
             </li>
           ))}
         </ul>
 
-        {assignment.requireRuntimeTrace && readiness.data && !readiness.data.runnerReady && (
-          <p className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs leading-5 text-amber-800 dark:text-amber-200">
-            {t(
-              "The runtime profile is not fully ready. Freeze is available, but real Studio execution still depends on the Runner and images.",
-              "Runtime profile chưa sẵn sàng hoàn toàn. Có thể đóng băng topology, nhưng phiên Studio thật vẫn phụ thuộc Runner và image.",
-            )}
-          </p>
-        )}
+        {labTier === "THEORY_QUIZ_STUDIO" &&
+          assignment.requireRuntimeTrace &&
+          readiness.data &&
+          !readiness.data.runnerReady && (
+            <p className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs leading-5 text-amber-800 dark:text-amber-200">
+              {t(
+                "The runtime profile is not fully ready. Freeze is available, but real Studio execution still depends on the Runner and images.",
+                "Runtime profile chưa sẵn sàng hoàn toàn. Có thể đóng băng topology, nhưng phiên Studio thật vẫn phụ thuộc Runner và image.",
+              )}
+            </p>
+          )}
 
         <div className="flex flex-wrap items-center gap-2 border-t pt-4">
-          {published ? (
-            <>
-              <Button asChild>
-                <Link href={previewHref}>{t("Preview as student", "Xem trước như sinh viên")}</Link>
-              </Button>
-              <PublishCourseLab
-                workspaceId={workspaceId}
-                assignmentId={assignment.id}
-                position={setupLab?.position}
-                sessionId={verifiedSession?.id}
-              />
-            </>
-          ) : (
-            <PublishCourseLab
-              workspaceId={workspaceId}
-              assignmentId={assignment.id}
-              position={setupLab?.position}
-              sessionId={verifiedSession?.id}
-            />
+          {published && (
+            <Button asChild size="sm">
+              <Link href={previewHref}>{t("Preview as student", "Xem trước như sinh viên")}</Link>
+            </Button>
           )}
+          <PublishCourseLab
+            workspaceId={workspaceId}
+            assignmentId={assignment.id}
+            position={setupLab?.position}
+            sessionId={verifiedSession?.id}
+            canFreeze={canFreeze}
+          />
           <ExportLabButton
             workspaceId={workspaceId}
             assignmentId={assignment.id}

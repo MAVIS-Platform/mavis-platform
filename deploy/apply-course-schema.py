@@ -85,6 +85,15 @@ SELECT CASE WHEN bool_and(present) THEN 'ready'
             WHEN bool_or(present) THEN 'partial'
             ELSE 'missing' END FROM expected;
 """),
+    "V45__Nullable_Quiz_Reference_Model.sql": (45, """
+WITH expected(present) AS (VALUES
+    (EXISTS (SELECT FROM information_schema.columns WHERE table_schema = current_schema()
+             AND table_name = 'course_quizzes' AND column_name = 'reference_model_id'
+             AND is_nullable = 'YES'))
+)
+SELECT CASE WHEN bool_and(present) THEN 'ready'
+            ELSE 'missing' END FROM expected;
+"""),
     "V44__Mavis_Announcements.sql": (44, """
 WITH expected(present) AS (VALUES
     (to_regclass('announcements') IS NOT NULL),

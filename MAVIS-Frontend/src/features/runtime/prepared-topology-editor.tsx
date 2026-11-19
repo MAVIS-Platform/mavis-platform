@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -82,6 +82,10 @@ export function PreparedTopologyEditor({ projectId, configuration, onSaved }: {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
+  useEffect(() => {
+    setTopology(readTopology(configuration.profile?.["studioTopology"]));
+  }, [configuration.revision, configuration.profile]);
+
   const applications =
     configuration.profile?.["applications"] && typeof configuration.profile["applications"] === "object"
       ? Object.keys(configuration.profile["applications"] as Record<string, unknown>)
@@ -162,11 +166,15 @@ export function PreparedTopologyEditor({ projectId, configuration, onSaved }: {
       });
       setMessage(t("Prepared topology saved.", "Đã lưu topology Studio."));
       onSaved();
-    } catch {
-      setError(t(
-        "Could not save the topology. Check the pinned service names, route-controller mappings and runtime configuration.",
-        "Không lưu được topology. Kiểm tra service đã ghim, mapping route-controller và cấu hình runtime.",
-      ));
+    } catch (cause) {
+      setError(
+        cause instanceof Error && cause.message
+          ? cause.message
+          : t(
+              "Could not save the topology. Check the pinned service names, route-controller mappings and runtime configuration.",
+              "Không lưu được topology. Kiểm tra service đã ghim, mapping route-controller và cấu hình runtime.",
+            ),
+      );
     }
   };
 
@@ -269,7 +277,20 @@ export function PreparedTopologyEditor({ projectId, configuration, onSaved }: {
               </label>
               <label className="space-y-1 text-[11px] font-medium">
                 <span>{t("Route-controller service", "Service route-controller")}</span>
-                <Input value={link.controllerService} onChange={(event) => updateConnection(index, { controllerService: event.target.value })} />
+                <select
+                  className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
+                  value={link.controllerService}
+                  onChange={(event) => updateConnection(index, { controllerService: event.target.value })}
+                >
+                  <option value="">{t("Select service", "Chọn service")}</option>
+                  {Array.from(new Set([...services, ...(link.controllerService ? [link.controllerService] : [])])).map(
+                    (service) => (
+                      <option key={service} value={service}>
+                        {service}
+                      </option>
+                    ),
+                  )}
+                </select>
               </label>
               <label className="space-y-1 text-[11px] font-medium">
                 <span>{t("Protocol", "Giao thức")}</span>

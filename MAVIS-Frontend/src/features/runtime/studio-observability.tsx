@@ -2613,7 +2613,7 @@ export function StudioObservability({
           ))}
         </section>
       )}
-      {workerImpact.data && (
+      {!canvasOnly && workerImpact.data && (
         <section className="space-y-1 rounded-lg border p-3 text-sm">
           <h4 className="font-medium">{t("Worker verified impact paths")}</h4>
           {workerImpact.data.paths.map((path, index) => (
@@ -2630,21 +2630,22 @@ export function StudioObservability({
           )}
         </section>
       )}
-      {workerImpact.isError && (
+      {!canvasOnly && workerImpact.isError && (
         <p role="status" className="text-sm">
           {t("Worker impact is unavailable. Static reference paths are shown above.")}
         </p>
       )}
-      {reference.data?.elements
-        .find((element) => element.id === modelId)
-        ?.evidence.map((evidence) => (
-          <details key={evidence.id} className="text-sm">
-            <summary>{evidence.location}</summary>
-            <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded bg-muted p-2">
-              {evidence.snippet}
-            </pre>
-          </details>
-        ))}
+      {!canvasOnly &&
+        reference.data?.elements
+          .find((element) => element.id === modelId)
+          ?.evidence.map((evidence) => (
+            <details key={evidence.id} className="text-sm">
+              <summary>{evidence.location}</summary>
+              <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded bg-muted p-2">
+                {evidence.snippet}
+              </pre>
+            </details>
+          ))}
       {!canvasOnly && telemetry && (
         <div className="space-y-3">
           <h4 className="font-medium">{t("Service metrics and logs")}</h4>

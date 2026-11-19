@@ -1472,11 +1472,13 @@ export function PublishCourseLab({
   assignmentId,
   position,
   sessionId,
+  canFreeze = true,
 }: {
   workspaceId: string;
   assignmentId: string;
   position?: number | undefined;
   sessionId?: string | undefined;
+  canFreeze?: boolean | undefined;
 }) {
   const t = useCourseText();
   const cache = useQueryClient();
@@ -1509,17 +1511,19 @@ export function PublishCourseLab({
         <span className="text-sm font-medium">
           {t(`In class · Lab ${labPosition}`, `Trong lớp · Lab ${labPosition}`)}
         </span>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={freeze.isPending}
-          onClick={() => freeze.mutate()}
-        >
-          {freeze.isPending
-            ? t("Freezing…", "Đang đóng băng…")
-            : t("Freeze Studio topology", "Đóng băng topology Studio")}
-        </Button>
+        {canFreeze && (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={freeze.isPending}
+            onClick={() => freeze.mutate()}
+          >
+            {freeze.isPending
+              ? t("Freezing…", "Đang đóng băng…")
+              : t("Freeze Studio topology", "Đóng băng topology Studio")}
+          </Button>
+        )}
         {freeze.isSuccess && (
           <span role="status" className="text-xs text-success">
             {t("Topology frozen", "Đã đóng băng topology")}
@@ -1554,10 +1558,11 @@ export function PublishCourseLab({
       </Button>
       {publish.error && (
         <p role="alert" className="text-sm text-destructive">
-          {t(
-            "Could not add this Lab to the class. Check the pinned source and class status.",
-            "Chưa thể thêm Lab vào lớp. Hãy kiểm tra nguồn đã ghim và trạng thái lớp.",
-          )}
+          {publish.error.message ||
+            t(
+              "Could not add this Lab to the class. Check the pinned source and class status.",
+              "Chưa thể thêm Lab vào lớp. Hãy kiểm tra nguồn đã ghim và trạng thái lớp.",
+            )}
         </p>
       )}
     </div>

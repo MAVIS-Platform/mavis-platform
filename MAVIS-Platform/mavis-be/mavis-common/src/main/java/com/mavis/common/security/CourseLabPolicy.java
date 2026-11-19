@@ -35,7 +35,21 @@ public class CourseLabPolicy {
                            int passPercent, OffsetDateTime submittedAt) {}
 
     public Optional<QuizPass> currentQuizPass(Assignment lab, UUID studentId) {
-        if (lab.getReferenceModel() == null) return Optional.empty();
+        UUID modelId = lab.getReferenceModel() == null ? null : lab.getReferenceModel().getId();
+        if (modelId == null) {
+            return jdbc.query("""
+                    SELECT a.attempt_id, a.quiz_version, a.correct_count, jsonb_array_length(q.questions),
+                           q.pass_percent, a.submitted_at
+                    FROM course_quiz_attempts a
+                    JOIN course_quizzes q ON q.assignment_id = a.assignment_id AND q.version = a.quiz_version
+                    WHERE a.assignment_id = ? AND a.student_id = ? AND a.passed
+                      AND q.version = (SELECT max(current.version) FROM course_quizzes current
+                                       WHERE current.assignment_id = a.assignment_id AND current.reference_model_id IS NULL)
+                    ORDER BY a.submitted_at DESC, a.attempt_id DESC LIMIT 1
+                    """, (rs, row) -> new QuizPass(rs.getObject(1, UUID.class), rs.getInt(2), rs.getInt(3),
+                    rs.getInt(4), rs.getInt(5), rs.getObject(6, OffsetDateTime.class)),
+                    lab.getId(), studentId).stream().findFirst();
+        }
         return jdbc.query("""
                 SELECT a.attempt_id, a.quiz_version, a.correct_count, jsonb_array_length(q.questions),
                        q.pass_percent, a.submitted_at
@@ -47,7 +61,7 @@ public class CourseLabPolicy {
                 ORDER BY a.submitted_at DESC, a.attempt_id DESC LIMIT 1
                 """, (rs, row) -> new QuizPass(rs.getObject(1, UUID.class), rs.getInt(2), rs.getInt(3),
                 rs.getInt(4), rs.getInt(5), rs.getObject(6, OffsetDateTime.class)),
-                lab.getId(), studentId, lab.getReferenceModel().getId()).stream().findFirst();
+                lab.getId(), studentId, modelId).stream().findFirst();
     }
 
     public void requireRuntimeReadiness(Project project) {

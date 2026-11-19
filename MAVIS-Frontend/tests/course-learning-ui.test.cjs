@@ -1056,7 +1056,7 @@ test("Lab Library is available inside Lab Creation and Quiz can be generated fro
   assert.ok(assignments.includes("In class"));
   assert.ok(assignments.includes("<PublishCourseLab"));
   assert.ok(authoring.includes("Back to Lab Library"));
-  assert.ok(quiz.includes("${draftPath}/generate"));
+  assert.ok(quiz.includes("/quiz/generate"));
   assert.ok(quiz.includes("Generate from theory"));
   assert.ok(quiz.includes("sourceTheoryItems"));
   assert.ok(assignments.includes("ImportLabButton"));

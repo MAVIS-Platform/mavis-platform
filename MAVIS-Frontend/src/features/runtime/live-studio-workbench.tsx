@@ -2,13 +2,13 @@
 
 import Link from "next/link";
 import { useRef, useState } from "react";
-import { Camera, RefreshCw, Server, Trash2 } from "lucide-react";
+import { AlertCircle, Camera, PanelLeft, PanelRight, RefreshCw, Server } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ErrorState } from "@/components/shared/request-state";
 import type { Response } from "@/lib/api/contracts";
 import { StudioObservability, type StudioQuickAction } from "./studio-observability";
-import { LiveSandboxParity } from "./live-sandbox-parity";
+import { LiveSandboxParity, summarizeServiceStats } from "./live-sandbox-parity";
 import { useStudioSession } from "./use-studio-session";
 
 type Studio = Response<"studioState">;
@@ -95,6 +95,7 @@ export function LiveStudioWorkbench({
     explanation,
     setExplanation,
     capturing,
+    actionError,
     downloadError,
     send,
     finishStudio,
@@ -106,7 +107,24 @@ export function LiveStudioWorkbench({
   const data = liveData ?? EMPTY_STUDIO;
   const selected = target || services[0] || "";
   const graphRef = useRef<HTMLDivElement>(null);
-  const [tab, setTab] = useState<"stats" | "telemetry" | "snapshots">("telemetry");
+  const [tab, setTab] = useState<"stats" | "telemetry" | "logs" | "snapshots">("telemetry");
+  const [showLeft, setShowLeft] = useState(true);
+  const [showRight, setShowRight] = useState(true);
+
+  const confirmedActions = data.actions.filter((item) => item.status === "CONFIRMED" && item.result);
+  const firstConfirmed = confirmedActions[0];
+  const lastConfirmed = confirmedActions[confirmedActions.length - 1];
+  const totalRunningReplicas = data.services.reduce(
+    (sum, service) => sum + (runningFor(data, service) ?? 0),
+    0,
+  );
+  const mutationError =
+    actionError?.message ??
+    (finish.error ? (finish.error instanceof Error ? finish.error.message : String(finish.error)) : null) ??
+    (cancel.error ? (cancel.error instanceof Error ? cancel.error.message : String(cancel.error)) : null) ??
+    (capture.error ? (capture.error instanceof Error ? capture.error.message : String(capture.error)) : null) ??
+    downloadError?.message ??
+    null;
 
   const blocks =
     data.topology?.blocks ??
@@ -219,7 +237,31 @@ export function LiveStudioWorkbench({
             Switch to Sandbox
           </Button>
         )}
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex flex-wrap items-center gap-1.5">
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            aria-pressed={showLeft}
+            aria-label="Toggle blocks sidebar"
+            onClick={() => setShowLeft((value) => !value)}
+            className="h-7 px-2 text-[11px] text-slate-300 hover:bg-slate-800 hover:text-white"
+          >
+            <PanelLeft aria-hidden="true" className="mr-1 size-3.5" />
+            Blocks
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            aria-pressed={showRight}
+            aria-label="Toggle inspector sidebar"
+            onClick={() => setShowRight((value) => !value)}
+            className="h-7 px-2 text-[11px] text-slate-300 hover:bg-slate-800 hover:text-white"
+          >
+            <PanelRight aria-hidden="true" className="mr-1 size-3.5" />
+            Inspector
+          </Button>
           <Button
             type="button"
             size="sm"
@@ -247,19 +289,38 @@ export function LiveStudioWorkbench({
         </div>
       </div>
 
+      {(mutationError ||
+        data.executionStatus === "FAILED" ||
+        (data.telemetry?.warnings?.length ?? 0) > 0) && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center gap-2 border-b border-rose-500/30 bg-rose-950/40 px-3 py-1.5 text-[11px] text-rose-200"
+        >
+          <AlertCircle aria-hidden="true" className="size-3.5 shrink-0 text-rose-300" />
+          <span className="font-medium">
+            {mutationError ??
+              (data.executionStatus === "FAILED"
+                ? "Studio Live session failed on Runner. Cancel or start a fresh session, or check Logs & Traces."
+                : data.telemetry?.warnings?.join(" · "))}
+          </span>
+        </div>
+      )}
+
       <div className="flex min-h-0 flex-1">
-        <aside className="w-[286px] shrink-0 overflow-x-hidden overflow-y-auto border-r border-slate-800 bg-[#0b101b] p-2.5">
-          <LiveSandboxParity
-            data={data}
-            selected={selected}
-            busy={busy}
-            onSelect={studio.setService}
-            onCommand={send}
-            sections={["scenarios", "library"]}
-            compact
-            label="Live block library"
-          />
-        </aside>
+        {showLeft && (
+          <aside className="w-[260px] shrink-0 overflow-x-hidden overflow-y-auto border-r border-slate-800 bg-[#0b101b] p-2.5">
+            <LiveSandboxParity
+              data={data}
+              selected={selected}
+              busy={busy}
+              onSelect={studio.setService}
+              onCommand={send}
+              sections={["scenarios", "library"]}
+              compact
+              label="Live block library"
+            />
+          </aside>
+        )}
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div ref={graphRef} className="relative min-h-[380px] flex-1 bg-[#070b12] p-2.5">
@@ -274,7 +335,7 @@ export function LiveStudioWorkbench({
                 canvasOnly
                 defaultView="3D"
                 nodeNames={nodeNames}
-                {...(configuredEdges ? { configuredEdges } : {})}
+                {...(configuredEdges && configuredEdges.length > 0 ? { configuredEdges } : {})}
                 onConnect={connect}
                 onDisconnect={disconnect}
                 onQuickAction={quickAction}
@@ -314,6 +375,7 @@ export function LiveStudioWorkbench({
                 [
                   ["stats", "Stats"],
                   ["telemetry", `Service Telemetry & Impact (${data.services.length})`],
+                  ["logs", `Logs & Traces (${data.telemetry?.spans.length ?? 0})`],
                   ["snapshots", `Snapshots (${data.snapshots?.length ?? 0})`],
                 ] as const
               ).map(([id, label]) => (
@@ -351,6 +413,39 @@ export function LiveStudioWorkbench({
             <div className="h-[calc(100%-2.25rem)] overflow-auto p-2.5">
               {tab === "stats" && (
                 <div className="space-y-2">
+                  <div className="mavis-tabular grid grid-cols-2 gap-1.5 text-[10.5px] sm:grid-cols-3 lg:grid-cols-6">
+                    {[
+                      ["Running replicas", String(totalRunningReplicas)],
+                      [
+                        "Last requests",
+                        lastConfirmed?.result
+                          ? metric(lastConfirmed.result.metricsAfter["requestCount"])
+                          : "—",
+                      ],
+                      [
+                        "Last p95",
+                        lastConfirmed?.result
+                          ? `${metric(lastConfirmed.result.metricsAfter["p95LatencyMs"])} ms`
+                          : "—",
+                      ],
+                      [
+                        "Error rate",
+                        lastConfirmed?.result
+                          ? `${metric(lastConfirmed.result.metricsAfter["errorRatePercent"])}%`
+                          : "—",
+                      ],
+                      ["Observed spans", String(data.telemetry?.spans.length ?? 0)],
+                      ["Confirmed actions", String(confirmedActions.length)],
+                    ].map(([kpiLabel, kpiValue]) => (
+                      <div
+                        key={kpiLabel}
+                        className="rounded border border-slate-800 bg-slate-950/70 px-2 py-1"
+                      >
+                        <p className="truncate text-[10px] text-slate-400">{kpiLabel}</p>
+                        <p className="mt-0.5 font-mono font-semibold text-slate-100">{kpiValue}</p>
+                      </div>
+                    ))}
+                  </div>
                   <div className="grid grid-cols-1 gap-1.5 text-[11px] sm:grid-cols-2 lg:grid-cols-4">
                     {checklist.map(([label, done]) => (
                       <div
@@ -399,11 +494,10 @@ export function LiveStudioWorkbench({
                     <tr>
                       <th className="px-1 py-1">Service</th>
                       <th className="px-1 py-1">Status</th>
-                      <th className="px-1 py-1">CPU / pod</th>
+                      <th className="px-1 py-1">CPU total</th>
                       <th className="px-1 py-1">RAM total</th>
                       <th className="px-1 py-1">p95</th>
                       <th className="px-1 py-1">Replicas</th>
-                      <th className="px-1 py-1 text-right">Control</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -411,22 +505,30 @@ export function LiveStudioWorkbench({
                       const telemetry = data.telemetry?.services.find(
                         (item) => item.service === service,
                       );
+                      const agg = summarizeServiceStats(telemetry?.stats);
                       const running = runningFor(data, service);
                       const result = lastResultFor(data, service);
                       const scale = canScaleFor(service);
                       return (
                         <tr key={service} className="border-t border-slate-800/80">
-                          <td className="px-1 py-1 font-mono text-slate-200">{service}</td>
+                          <td className="px-1 py-1 font-mono text-slate-200">
+                            {service}
+                            {agg.containers > 1 && (
+                              <span className="ml-1.5 text-[10px] text-slate-500">
+                                ({agg.containers} pods)
+                              </span>
+                            )}
+                          </td>
                           <td
                             className={`px-1 py-1 font-semibold ${running === 0 ? "text-rose-300" : running === undefined ? "text-slate-400" : "text-emerald-300"}`}
                           >
                             {running === undefined ? "Waiting" : running === 0 ? "Down" : "Running"}
                           </td>
                           <td className="mavis-tabular px-1 py-1 font-mono text-slate-300">
-                            {telemetry?.stats[0]?.cpu ?? "—"}
+                            {agg.cpu}
                           </td>
                           <td className="mavis-tabular px-1 py-1 font-mono text-slate-300">
-                            {telemetry?.stats[0]?.memory ?? "—"}
+                            {agg.memory}
                           </td>
                           <td className="mavis-tabular px-1 py-1 font-mono text-slate-300">
                             {result ? `${metric(result.metricsAfter["p95LatencyMs"])} ms` : "—"}
@@ -461,28 +563,96 @@ export function LiveStudioWorkbench({
                               </button>
                             </span>
                           </td>
-                          <td className="px-1 py-1 text-right">
-                            <button
-                              type="button"
-                              disabled
-                              title="Live keeps the prepared service definition; use Remove/STOP instead."
-                              className="inline-grid size-5 place-items-center rounded border border-slate-800 text-slate-600"
-                            >
-                              <Trash2 aria-hidden="true" className="size-3" />
-                            </button>
-                          </td>
                         </tr>
                       );
                     })}
                     {data.services.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="px-1 py-3 text-center text-slate-500">
+                        <td colSpan={6} className="px-1 py-3 text-center text-slate-500">
                           Select a Live session to see real telemetry.
                         </td>
                       </tr>
                     )}
                   </tbody>
                 </table>
+              )}
+
+              {tab === "logs" && (
+                <div className="space-y-2 text-[11px]">
+                  {(data.telemetry?.spans.length ?? 0) > 0 && (
+                    <div>
+                      <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                        Observed Spans ({data.telemetry?.spans.length})
+                      </p>
+                      <table className="mavis-tabular w-full text-left font-mono text-[10.5px]">
+                        <thead className="text-[10px] text-slate-500">
+                          <tr>
+                            <th className="px-1 py-0.5">Service</th>
+                            <th className="px-1 py-0.5">Operation</th>
+                            <th className="px-1 py-0.5">HTTP</th>
+                            <th className="px-1 py-0.5">Status</th>
+                            <th className="px-1 py-0.5">Duration</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {data.telemetry?.spans.slice(0, 25).map((span) => {
+                            const ns = span.durationNanoseconds
+                              ? Number(span.durationNanoseconds)
+                              : NaN;
+                            const durationMs = Number.isFinite(ns)
+                              ? `${(ns / 1e6).toFixed(1)} ms`
+                              : "—";
+                            return (
+                              <tr key={span.spanId} className="border-t border-slate-800/70">
+                                <td className="px-1 py-0.5 text-slate-200">{span.runtimeService}</td>
+                                <td className="max-w-[200px] truncate px-1 py-0.5 text-slate-300">
+                                  {span.operationName ?? "—"}
+                                </td>
+                                <td className="px-1 py-0.5 text-slate-300">
+                                  {span.httpStatusCode ?? "—"}
+                                </td>
+                                <td
+                                  className={`px-1 py-0.5 ${span.spanStatus === "ERROR" ? "text-rose-300" : "text-emerald-300"}`}
+                                >
+                                  {span.spanStatus ?? "—"}
+                                </td>
+                                <td className="px-1 py-0.5 text-slate-400">{durationMs}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  {(data.telemetry?.services.filter((s) => s.logs?.trim()).length ?? 0) > 0 && (
+                    <div className="space-y-1.5">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                        Service Logs
+                      </p>
+                      {data.telemetry?.services
+                        .filter((item) => item.logs?.trim())
+                        .map((item) => (
+                          <div
+                            key={item.service}
+                            className="rounded border border-slate-800 bg-slate-950/60 p-1.5"
+                          >
+                            <p className="mb-1 font-mono text-[10px] font-semibold text-slate-300">
+                              {item.service}
+                            </p>
+                            <pre className="max-h-24 overflow-auto whitespace-pre-wrap rounded bg-slate-950/80 p-1.5 font-mono text-[10px] text-slate-300">
+                              {item.logs}
+                            </pre>
+                          </div>
+                        ))}
+                    </div>
+                  )}
+                  {(data.telemetry?.spans.length ?? 0) === 0 &&
+                    (data.telemetry?.services.filter((s) => s.logs?.trim()).length ?? 0) === 0 && (
+                      <p className="py-3 text-center text-slate-500">
+                        No observed spans or service logs captured yet.
+                      </p>
+                    )}
+                </div>
               )}
 
               {tab === "snapshots" && (
@@ -538,6 +708,43 @@ export function LiveStudioWorkbench({
                   {downloadError && (
                     <p className="text-[11px] text-rose-300">{downloadError.message}</p>
                   )}
+                  {firstConfirmed?.result && lastConfirmed?.result && (
+                    <div className="mavis-tabular rounded border border-slate-800 bg-slate-950/70 p-2 text-[10.5px]">
+                      <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                        Before vs After Confirmed Metrics
+                      </p>
+                      <div className="grid grid-cols-2 gap-2 font-mono sm:grid-cols-4">
+                        <div>
+                          <span className="block text-[10px] text-slate-500">Requests</span>
+                          <span className="text-slate-200">
+                            {metric(firstConfirmed.result.metricsBefore["requestCount"])} →{" "}
+                            {metric(lastConfirmed.result.metricsAfter["requestCount"])}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="block text-[10px] text-slate-500">p95 latency</span>
+                          <span className="text-slate-200">
+                            {metric(firstConfirmed.result.metricsBefore["p95LatencyMs"])} ms →{" "}
+                            {metric(lastConfirmed.result.metricsAfter["p95LatencyMs"])} ms
+                          </span>
+                        </div>
+                        <div>
+                          <span className="block text-[10px] text-slate-500">Error rate</span>
+                          <span className="text-slate-200">
+                            {metric(firstConfirmed.result.metricsBefore["errorRatePercent"])}% →{" "}
+                            {metric(lastConfirmed.result.metricsAfter["errorRatePercent"])}%
+                          </span>
+                        </div>
+                        <div>
+                          <span className="block text-[10px] text-slate-500">Replicas delta</span>
+                          <span className="text-slate-200">
+                            {firstConfirmed.result.service}: {firstConfirmed.result.replicasBefore}{" "}
+                            → {lastConfirmed.result.service}: {lastConfirmed.result.replicasAfter}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   <div className="grid gap-1.5 md:grid-cols-2">
                     {data.snapshots?.map((snapshot) => (
                       <div
@@ -571,18 +778,20 @@ export function LiveStudioWorkbench({
           </div>
         </div>
 
-        <aside className="w-[320px] shrink-0 overflow-x-hidden overflow-y-auto border-l border-slate-800 bg-[#0a0f18] p-2.5">
-          <LiveSandboxParity
-            data={data}
-            selected={selected}
-            busy={busy}
-            onSelect={studio.setService}
-            onCommand={send}
-            sections={["inspector", "hardware", "resilience", "load", "config"]}
-            compact
-            label="Live inspector"
-          />
-        </aside>
+        {showRight && (
+          <aside className="w-[296px] shrink-0 overflow-x-hidden overflow-y-auto border-l border-slate-800 bg-[#0a0f18] p-2.5">
+            <LiveSandboxParity
+              data={data}
+              selected={selected}
+              busy={busy}
+              onSelect={studio.setService}
+              onCommand={send}
+              sections={["inspector", "hardware", "resilience", "load", "config"]}
+              compact
+              label="Live inspector"
+            />
+          </aside>
+        )}
       </div>
     </div>
   );

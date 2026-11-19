@@ -53,7 +53,9 @@ type LibraryFilter = "all" | "class" | "draft";
 
 function LecturerAssignments({ embedded = false }: { embedded?: boolean } = {}) {
   const { t } = useLocale();
-  const { workspaceId } = useSelection();
+  const params = useSearchParams();
+  const selection = useSelection();
+  const workspaceId = params?.get("workspace") || selection.workspaceId;
   const workspacesQuery = useApiQuery("workspaces", {});
   const workspace = workspacesQuery.data?.find((item) => item.id === workspaceId);
   const query = useApiQuery("assignments", { workspaceId }, { enabled: Boolean(workspaceId) });

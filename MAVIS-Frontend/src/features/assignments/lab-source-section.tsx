@@ -1,9 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, ArrowRight, ArrowUpRight, CheckCircle2, GitBranch, Network, Save } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, GitBranch, Save, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useApiMutation, useApiQuery } from "@/hooks/use-api";
@@ -39,6 +38,7 @@ export function LabSourceSection({
   const [previewKind, setPreviewKind] = useState<PreviewKind>("CONTAINER");
   const [selectedGraphId, setSelectedGraphId] = useState<string | null>(null);
 
+  const isPublished = assignment.labOrder != null;
   const dueAt =
     assignment.dueAt && assignment.dueAt !== "No deadline" ? assignment.dueAt : null;
   const reference = assignment.referenceSource;
@@ -46,7 +46,9 @@ export function LabSourceSection({
     (modelId && pickedVersion?.modelId === modelId ? pickedVersion.projectId : undefined) ||
     reference?.projectId;
   const referenceModel = modelId || reference?.modelId;
-  const canSave = Boolean(modelId) && !sourcePending && !save.isPending;
+  const hasUnsavedSelection =
+    !isPublished && Boolean(modelId) && modelId !== (reference?.modelId ?? "");
+  const canSave = !isPublished && Boolean(modelId) && !sourcePending && !save.isPending;
 
   const studentCtx = useStudentLabContext(
     workspaceId,
@@ -93,6 +95,37 @@ export function LabSourceSection({
           void cache.invalidateQueries({
             queryKey: ["api", "student-lab-context", workspaceId, assignment.id],
           });
+          void cache.invalidateQueries({
+            queryKey: ["api", "course-setup", workspaceId],
+          });
+        },
+      },
+    );
+  };
+
+  const clearSource = () => {
+    if (isPublished || !reference?.modelId || save.isPending) return;
+    save.mutate(
+      {
+        workspaceId,
+        assignmentId: assignment.id,
+        title: assignment.title,
+        description: assignment.instructions,
+        dueAt,
+        requireRuntimeTrace: false,
+        requiredDiagramTypes: assignment.requiredDiagramTypes ?? [],
+        clearReferenceSource: true,
+      },
+      {
+        onSuccess: () => {
+          setModelId("");
+          setPickedVersion(null);
+          void cache.invalidateQueries({
+            queryKey: ["api", "student-lab-context", workspaceId, assignment.id],
+          });
+          void cache.invalidateQueries({
+            queryKey: ["api", "course-setup", workspaceId],
+          });
         },
       },
     );
@@ -101,48 +134,85 @@ export function LabSourceSection({
   return (
     <div className="space-y-5">
       <section className="space-y-4 rounded-2xl border bg-card p-5 shadow-xs">
-        <h2 className="flex items-center gap-2 font-semibold">
-          <GitBranch className="size-4 text-teal-600" aria-hidden="true" />
-          {t("Reference repository and pinned analysis", "Repo tham chiếu và phân tích đã ghim")}
-        </h2>
-        <AssignmentSourcePicker
-          key={assignment.id}
-          workspaceId={workspaceId}
-          title={assignment.title}
-          initial={assignment.referenceSource}
-          onChange={(id, pending) => {
-            setModelId(id);
-            setSourcePending(pending);
-          }}
-          onVersionChange={(version) => {
-            if (version.modelId) setPickedVersion(version);
-          }}
-        />
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
-          <p className="text-xs text-muted-foreground">
-            {modelId
-              ? t("A pinned model is selected. Save it to the Lab.", "Đã chọn model ghim. Lưu vào Lab.")
-              : t(
-                  "Choose an analyzed model version to pin it to this Lab.",
-                  "Chọn phiên bản model đã phân tích để ghim vào Lab.",
-                )}
-          </p>
-          <Button
-            type="button"
-            className="bg-teal-600 text-white hover:bg-teal-700"
-            disabled={!canSave}
-            onClick={saveSource}
-          >
-            <Save className="mr-1 size-4" aria-hidden="true" />
-            {save.isPending
-              ? t("Saving source…", "Đang lưu nguồn…")
-              : t("Save source to Lab", "Lưu nguồn vào Lab")}
-          </Button>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="flex items-center gap-2 font-semibold">
+            <GitBranch className="size-4 text-teal-600" aria-hidden="true" />
+            {t("Reference repository and pinned analysis", "Repo tham chiếu và phân tích đã ghim")}
+          </h2>
+          {hasUnsavedSelection && (
+            <Badge variant="warning">
+              {t("Unsaved selection — click Save source to Lab", "Chưa lưu — bấm Lưu nguồn vào Lab")}
+            </Badge>
+          )}
         </div>
+        {isPublished ? (
+          <p className="rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-xs text-muted-foreground">
+            {t(
+              "This Lab is already published to the class sequence; its pinned reference source is locked to preserve student consistency.",
+              "Lab này đã được công bố vào lớp nên nguồn tham chiếu được khóa để giữ nhất quán cho sinh viên.",
+            )}
+          </p>
+        ) : (
+          <AssignmentSourcePicker
+            key={assignment.id}
+            workspaceId={workspaceId}
+            title={assignment.title}
+            initial={assignment.referenceSource}
+            onChange={(id, pending) => {
+              setModelId(id);
+              setSourcePending(pending);
+            }}
+            onVersionChange={(version) => {
+              if (version.modelId) setPickedVersion(version);
+            }}
+          />
+        )}
+        {!isPublished && (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+            <p className="text-xs text-muted-foreground">
+              {hasUnsavedSelection
+                ? t("Click Save source to Lab to pin this analyzed version.", "Bấm 'Lưu nguồn vào Lab' để ghim phiên bản đã phân tích này.")
+                : modelId
+                  ? t("Pinned reference model is saved on this Lab.", "Model tham chiếu đang được ghim vào Lab này.")
+                  : t(
+                      "Choose an analyzed model version to pin it to this Lab, or skip if Theory-only.",
+                      "Chọn phiên bản model đã phân tích để ghim vào Lab, hoặc bỏ qua nếu Lab thuần lý thuyết.",
+                    )}
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              {reference?.modelId && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={save.isPending}
+                  onClick={clearSource}
+                >
+                  <Trash2 className="mr-1 size-3.5" aria-hidden="true" />
+                  {t("Clear source", "Gỡ nguồn")}
+                </Button>
+              )}
+              <Button
+                type="button"
+                size="sm"
+                className="bg-teal-600 text-white hover:bg-teal-700"
+                disabled={!canSave}
+                onClick={saveSource}
+              >
+                <Save className="mr-1 size-4" aria-hidden="true" />
+                {save.isPending
+                  ? t("Saving source…", "Đang lưu nguồn…")
+                  : t("Save source to Lab", "Lưu nguồn vào Lab")}
+              </Button>
+            </div>
+          </div>
+        )}
         {save.error && <p role="alert" className="text-sm text-destructive">{save.error.message}</p>}
         {save.isSuccess && (
           <p role="status" className="text-sm text-emerald-700">
-            {t("Reference source pinned to this Lab.", "Đã ghim nguồn tham chiếu vào Lab.")}
+            {assignment.referenceSource
+              ? t("Reference source pinned to this Lab.", "Đã ghim nguồn tham chiếu vào Lab.")
+              : t("Reference source cleared.", "Đã gỡ nguồn tham chiếu.")}
           </p>
         )}
       </section>
@@ -161,11 +231,13 @@ export function LabSourceSection({
               {t("Repository readiness report", "Báo cáo mức độ sẵn sàng của Repo")}
             </h3>
             <Badge variant={staticReady && studioReady ? "success" : staticReady ? "outline" : "warning"}>
-              {staticReady && studioReady
-                ? t("Ready for C1–C3 + Studio Live", "Đạt chuẩn C1–C3 + Studio Live")
-                : staticReady
-                  ? t("Ready for C1–C3 & Theory", "Đạt chuẩn C1–C3 & Lý thuyết")
-                  : t("Checking…", "Đang kiểm tra…")}
+              {modelQuery.isPending
+                ? t("Checking…", "Đang kiểm tra…")
+                : staticReady && studioReady
+                  ? t("Ready for C1–C3 + Studio Live", "Đạt chuẩn C1–C3 + Studio Live")
+                  : staticReady
+                    ? t("Ready for C1–C3 & Theory", "Đạt chuẩn C1–C3 & Lý thuyết")
+                    : t("No services detected", "Chưa phát hiện thành phần kiến trúc")}
             </Badge>
           </div>
           <div className="grid gap-3 md:grid-cols-2">
@@ -205,6 +277,12 @@ export function LabSourceSection({
                 <p className="mt-1 text-muted-foreground">
                   {t("Checking Docker & runtime prerequisites…", "Đang kiểm tra cấu hình Docker & runtime…")}
                 </p>
+              ) : readiness.isError ? (
+                <p className="mt-1 text-destructive">
+                  {readiness.error instanceof Error
+                    ? readiness.error.message
+                    : t("Could not check runtime readiness.", "Không kiểm tra được trạng thái runtime.")}
+                </p>
               ) : studioReady ? (
                 <p className="mt-1 text-muted-foreground">
                   {t(
@@ -241,7 +319,7 @@ export function LabSourceSection({
             <h3 className="font-semibold">
               {t("Generated architecture views (C1–C3 & Dependency Graph)", "Xem trước Sơ đồ Kiến trúc (C1–C3 & Đồ thị phụ thuộc)")}
             </h3>
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap gap-1.5" role="tablist">
               {(
                 [
                   { id: "CONTEXT", label: "C1 Context" },
@@ -254,8 +332,13 @@ export function LabSourceSection({
                   key={tabItem.id}
                   type="button"
                   size="sm"
+                  role="tab"
+                  aria-selected={previewKind === tabItem.id}
                   variant={previewKind === tabItem.id ? "default" : "outline"}
-                  onClick={() => setPreviewKind(tabItem.id)}
+                  onClick={() => {
+                    setPreviewKind(tabItem.id);
+                    setSelectedGraphId(null);
+                  }}
                 >
                   {tabItem.label}
                 </Button>
@@ -308,46 +391,11 @@ export function LabSourceSection({
                 {modelQuery.isPending || studentCtx.isPending
                   ? t("Loading C1–C3 preview…", "Đang tải bản xem trước C1–C3…")
                   : t(
-                      "Diagram preview not available yet — use the full view links below.",
-                      "Chưa có dữ liệu sơ đồ xem trước — dùng liên kết mở toàn màn hình bên dưới.",
+                      "Diagram preview is not available for this level — switch to Dependency Graph to inspect elements.",
+                      "Chưa có dữ liệu sơ đồ xem trước cho cấp độ này — chuyển sang Đồ thị phụ thuộc để kiểm tra.",
                     )}
               </p>
             )}
-          </div>
-
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            {[
-              { kind: "CONTEXT", label: "C1 System Context" },
-              { kind: "CONTAINER", label: "C2 Container" },
-              { kind: "COMPONENT", label: "C3 Component" },
-            ].map((view) => (
-              <Button key={view.kind} asChild variant="outline" size="sm" className="justify-between">
-                <Link
-                  href={`/diagrams?${new URLSearchParams({
-                    project: referenceProject,
-                    model: referenceModel,
-                    kind: view.kind,
-                  })}`}
-                >
-                  <span>{view.label}</span>
-                  <ArrowUpRight className="ml-2 size-3.5 shrink-0" aria-hidden="true" />
-                </Link>
-              </Button>
-            ))}
-            <Button asChild variant="outline" size="sm" className="justify-between">
-              <Link
-                href={`/architecture?${new URLSearchParams({
-                  project: referenceProject,
-                  model: referenceModel,
-                })}`}
-              >
-                <span className="flex items-center gap-1.5">
-                  <Network className="size-3.5" aria-hidden="true" />
-                  {t("Full Dependency Graph", "Mở đồ thị đầy đủ")}
-                </span>
-                <ArrowUpRight className="ml-2 size-3.5 shrink-0" aria-hidden="true" />
-              </Link>
-            </Button>
           </div>
         </section>
       )}

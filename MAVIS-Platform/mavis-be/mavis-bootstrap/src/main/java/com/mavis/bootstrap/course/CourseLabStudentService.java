@@ -218,7 +218,7 @@ public class CourseLabStudentService {
         ReferenceArchitectureView referenceArchitecture = buildReferenceArchitecture(lab.getReferenceModel());
 
         CourseQuizService.Quiz quiz = null;
-        if (lab.getLabOrder() != null && lab.getReferenceModel() != null) {
+        if (lab.getLabOrder() != null) {
             quiz = courseQuizService.getIfPublished(workspaceId, assignmentId);
         }
 

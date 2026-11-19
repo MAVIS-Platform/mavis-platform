@@ -183,10 +183,14 @@ public class RuntimeStudioService {
             result.putObject("metricsBefore")
                     .put("runningReplicas", before)
                     .put("errorRate", before == 0 ? 1.0 : 0.0)
+                    .put("errorRatePercent", before == 0 ? 100.0 : 0.0)
+                    .put("requestCount", 3)
                     .put("p95LatencyMs", before == 0 ? 0.0 : Math.max(12.0, 48.0 / Math.max(1, before)));
             result.putObject("metricsAfter")
                     .put("runningReplicas", after)
                     .put("errorRate", after == 0 ? 1.0 : 0.0)
+                    .put("errorRatePercent", after == 0 ? 100.0 : 0.0)
+                    .put("requestCount", 3)
                     .put("p95LatencyMs", after == 0 ? 0.0 : Math.max(12.0, 48.0 / Math.max(1, after)));
             action.put("status", "CONFIRMED");
             action.put("completedAt", OffsetDateTime.now().toString());

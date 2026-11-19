@@ -100,6 +100,59 @@ function observedLogs(data: Studio) {
     .toLowerCase();
 }
 
+function parseMemoryMiB(raw?: string): number | undefined {
+  if (!raw) return undefined;
+  const usage = raw.split("/")[0]?.trim() ?? "";
+  const match = usage.match(/^([\d.]+)\s*(KiB|KB|K|MiB|MB|M|GiB|GB|G|B)?$/i);
+  if (!match) return undefined;
+  const value = Number(match[1]);
+  if (!Number.isFinite(value)) return undefined;
+  const unit = (match[2] ?? "MiB").toLowerCase();
+  if (unit === "gib" || unit === "gb" || unit === "g") return value * (unit === "gb" ? 953.674 : 1024);
+  if (unit === "kib" || unit === "kb" || unit === "k") return value / 1024;
+  if (unit === "b") return value / (1024 * 1024);
+  return value;
+}
+
+export function summarizeServiceStats(
+  stats?: ReadonlyArray<{ cpu?: string | null; memory?: string | null }>,
+): { cpu: string; memory: string; containers: number } {
+  if (!stats || stats.length === 0) return { cpu: "—", memory: "—", containers: 0 };
+  if (stats.length === 1) {
+    return {
+      cpu: stats[0]?.cpu?.trim() || "—",
+      memory: stats[0]?.memory?.trim() || "—",
+      containers: 1,
+    };
+  }
+  let cpuSum = 0;
+  let hasCpu = false;
+  let memSum = 0;
+  let hasMem = false;
+  for (const item of stats) {
+    const cpuMatch = item.cpu?.match(/[\d.]+/);
+    if (cpuMatch) {
+      const n = Number(cpuMatch[0]);
+      if (Number.isFinite(n)) {
+        cpuSum += n;
+        hasCpu = true;
+      }
+    }
+    const miB = parseMemoryMiB(item.memory ?? undefined);
+    if (miB !== undefined) {
+      memSum += miB;
+      hasMem = true;
+    }
+  }
+  const cpu = hasCpu ? `${Number(cpuSum.toFixed(1))}%` : (stats[0]?.cpu ?? "—");
+  const memory = hasMem
+    ? memSum >= 1024
+      ? `${Number((memSum / 1024).toFixed(2))}GiB`
+      : `${Number(memSum.toFixed(memSum < 10 ? 1 : 0))}MiB`
+    : (stats[0]?.memory ?? "—");
+  return { cpu, memory, containers: stats.length };
+}
+
 export function LiveSandboxParity({
   data,
   selected,
@@ -118,6 +171,7 @@ export function LiveSandboxParity({
   const canScale = topology ? selectedBlock?.canScale === true : Boolean(selected);
   const running = runningReplicas(data, selected);
   const observed = serviceTelemetry(data, selected);
+  const observedStats = summarizeServiceStats(observed?.stats);
   const limits = data.limits;
   const selectedLimit = limits?.services?.[selected];
   const lastMeasured = useMemo(
@@ -223,34 +277,47 @@ export function LiveSandboxParity({
         </p>
       )}
 
-      {show("scenarios") && (
-        <CapabilitySection
-          title="Cluster Scenarios"
-          capability={capability("cluster-scenario")}
-          icon={<Activity aria-hidden="true" className="size-3.5" />}
-        >
-          <select
-            aria-label="Live cluster scenario"
-            disabled
-            value="FLASH_SALE"
-            onChange={() => undefined}
-            className="min-h-7 w-full rounded-md border border-slate-700 bg-slate-950 px-2 text-xs text-slate-400 disabled:opacity-70"
+      {show("scenarios") &&
+        (compact ? (
+          <details className="rounded-xl border border-slate-800 bg-slate-950/30 px-2.5 py-2">
+            <summary className="cursor-pointer select-none text-[11px] font-medium text-slate-400 hover:text-slate-200">
+              Sandbox-only: Cluster Scenarios (unavailable in Live)
+            </summary>
+            <div className="mt-2 space-y-2 text-[11px] text-slate-400">
+              <p className="leading-relaxed">
+                Sandbox injects synthetic traffic, outages and latency. Live only measures the
+                Lab&apos;s real workload.
+              </p>
+            </div>
+          </details>
+        ) : (
+          <CapabilitySection
+            title="Cluster Scenarios"
+            capability={capability("cluster-scenario")}
+            icon={<Activity aria-hidden="true" className="size-3.5" />}
           >
-            {LIVE_SCENARIOS.map(([id, label]) => (
-              <option key={id} value={id}>
-                {label}
-              </option>
-            ))}
-          </select>
-          <Button type="button" variant="outline" size="sm" disabled className="w-full">
-            <Play aria-hidden="true" className="size-3" /> Apply scenario
-          </Button>
-          <p className="text-[11px] leading-relaxed text-slate-400">
-            Sandbox injects synthetic traffic, outages and latency. Live only measures the
-            Lab&apos;s real workload.
-          </p>
-        </CapabilitySection>
-      )}
+            <select
+              aria-label="Live cluster scenario"
+              disabled
+              value="FLASH_SALE"
+              onChange={() => undefined}
+              className="min-h-7 w-full rounded-md border border-slate-700 bg-slate-950 px-2 text-xs text-slate-400 disabled:opacity-70"
+            >
+              {LIVE_SCENARIOS.map(([id, label]) => (
+                <option key={id} value={id}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <Button type="button" variant="outline" size="sm" disabled className="w-full">
+              <Play aria-hidden="true" className="size-3" /> Apply scenario
+            </Button>
+            <p className="text-[11px] leading-relaxed text-slate-400">
+              Sandbox injects synthetic traffic, outages and latency. Live only measures the
+              Lab&apos;s real workload.
+            </p>
+          </CapabilitySection>
+        ))}
 
       {show("library") && (
         <CapabilitySection
@@ -314,16 +381,61 @@ export function LiveSandboxParity({
               <li className="px-1 text-[11px] text-slate-400">No matching prepared blocks.</li>
             )}
           </ul>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled
-            title={capability("custom-block").reason}
-            className="w-full"
-          >
-            + Custom block
-          </Button>
+          {(topology?.connections.length ?? 0) > 0 && (
+            <div className="space-y-1.5 border-t border-slate-800/80 pt-2">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                Connections ({topology?.connections.length})
+              </p>
+              <ul className="space-y-1">
+                {topology?.connections.map((link) => {
+                  const linkRunning = runningReplicas(data, link.controllerService);
+                  const connected = (linkRunning ?? 0) > 0;
+                  return (
+                    <li
+                      key={`${link.from}:${link.to}:${link.controllerService}`}
+                      className="flex items-center justify-between gap-1.5 rounded-md border border-slate-800 bg-slate-950/60 px-2 py-1 text-[10.5px]"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate font-mono text-slate-200">
+                          {link.from} → {link.to}
+                        </p>
+                        <p className="truncate font-mono text-[9.5px] text-slate-500">
+                          {link.controllerService}
+                          {link.protocol ? ` · ${link.protocol}` : ""}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={busy || linkRunning === undefined}
+                        onClick={() =>
+                          void command(connected ? "STOP" : "START", link.controllerService)
+                        }
+                        className={`h-6 shrink-0 rounded border px-2 text-[10px] font-semibold transition-colors disabled:opacity-40 ${
+                          connected
+                            ? "border-amber-500/40 bg-amber-500/15 text-amber-200 hover:bg-amber-500/25"
+                            : "border-emerald-500/40 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25"
+                        }`}
+                      >
+                        {connected ? "Disconnect" : "Connect"}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+          {!compact && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled
+              title={capability("custom-block").reason}
+              className="w-full"
+            >
+              + Custom block
+            </Button>
+          )}
         </CapabilitySection>
       )}
 
@@ -348,8 +460,7 @@ export function LiveSandboxParity({
             </span>
           </div>
           <p className="font-mono text-[10.5px] text-slate-400">
-            CPU {observed?.stats[0]?.cpu ?? "—"} · RAM {observed?.stats[0]?.memory ?? "—"} ·
-            replicas {running ?? "—"}
+            CPU {observedStats.cpu} · RAM {observedStats.memory} · replicas {running ?? "—"}
           </p>
           <div className="space-y-1.5">
             <div className="flex items-center justify-between gap-1 text-[10px] text-slate-400">
@@ -382,7 +493,7 @@ export function LiveSandboxParity({
                 className="h-6 w-14 rounded border border-slate-700 bg-slate-950 px-1.5 text-center font-mono text-xs font-semibold text-slate-100 disabled:opacity-40"
               />
             </div>
-            <div className="grid grid-cols-5 gap-1">
+            <div className="grid grid-cols-4 gap-1">
               {[1, 2, 4, 8].map((preset) => (
                 <button
                   key={preset}
@@ -395,19 +506,23 @@ export function LiveSandboxParity({
                   ×{preset}
                 </button>
               ))}
-              {[16, 32].map((preset) => (
-                <button
-                  key={preset}
-                  type="button"
-                  aria-label={`Scale ${selected} to ${preset}`}
-                  disabled
-                  title="BR-07 bounds a Live session to 8 replicas."
-                  className="h-6 rounded border border-slate-800 bg-slate-950/40 font-mono text-[10.5px] font-semibold text-slate-600"
-                >
-                  ×{preset}
-                </button>
-              ))}
             </div>
+            {!compact && (
+              <div className="grid grid-cols-2 gap-1">
+                {[16, 32].map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    aria-label={`Scale ${selected} to ${preset}`}
+                    disabled
+                    title="BR-07 bounds a Live session to 8 replicas."
+                    className="h-6 rounded border border-slate-800 bg-slate-950/40 font-mono text-[10.5px] font-semibold text-slate-600"
+                  >
+                    ×{preset}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-1.5">
             <button
@@ -468,15 +583,19 @@ export function LiveSandboxParity({
               {selectedLimit.readinessPath}
             </p>
           )}
-          <DisabledField
-            label="Incoming Traffic (req/s)"
-            placeholder="Measured by the Lab workload"
-          />
-          <DisabledField label="Network / Query Lag (+ms)" placeholder="Not injected in Live" />
-          <p className="text-[11px] leading-relaxed text-slate-400">
-            CPU, RAM and timeout come from the approved execution profile. Edit them in Runtime
-            Configuration, not from the canvas.
-          </p>
+          {!compact && (
+            <>
+              <DisabledField
+                label="Incoming Traffic (req/s)"
+                placeholder="Measured by the Lab workload"
+              />
+              <DisabledField label="Network / Query Lag (+ms)" placeholder="Not injected in Live" />
+              <p className="text-[11px] leading-relaxed text-slate-400">
+                CPU, RAM and timeout come from the approved execution profile. Edit them in Runtime
+                Configuration, not from the canvas.
+              </p>
+            </>
+          )}
         </CapabilitySection>
       )}
 
@@ -544,28 +663,51 @@ export function LiveSandboxParity({
         </CapabilitySection>
       )}
 
-      {show("config") && (
-        <CapabilitySection
-          title="Current configuration"
-          capability={capability("telemetry")}
-          icon={<Layers aria-hidden="true" className="size-3.5" />}
-        >
-          <dl className="grid grid-cols-2 gap-1.5 text-[11px]">
-            <Fact label="Running pods" value={running?.toLocaleString() ?? "—"} />
-            <Fact label="CPU observed" value={observed?.stats[0]?.cpu ?? "—"} />
-            <Fact label="RAM observed" value={observed?.stats[0]?.memory ?? "—"} />
-            <Fact
-              label="Session timeout"
-              value={limits?.timeoutSeconds === undefined ? "—" : `${limits.timeoutSeconds}s`}
-            />
-          </dl>
-          {selectedLimit && (
-            <p className="break-words font-mono text-[10px] text-slate-400">
-              readiness {selectedLimit.readinessPath}
-            </p>
-          )}
-        </CapabilitySection>
-      )}
+      {show("config") &&
+        (compact ? (
+          <details className="rounded-xl border border-slate-800 bg-slate-950/30 px-2.5 py-2">
+            <summary className="cursor-pointer select-none text-[11px] font-medium text-slate-400 hover:text-slate-200">
+              Current configuration &amp; limits ({limits?.timeoutSeconds ?? "—"}s timeout)
+            </summary>
+            <div className="mt-2 space-y-2">
+              <dl className="grid grid-cols-2 gap-1.5 text-[11px]">
+                <Fact label="Running pods" value={running?.toLocaleString() ?? "—"} />
+                <Fact label="CPU observed" value={observedStats.cpu} />
+                <Fact label="RAM observed" value={observedStats.memory} />
+                <Fact
+                  label="Session timeout"
+                  value={limits?.timeoutSeconds === undefined ? "—" : `${limits.timeoutSeconds}s`}
+                />
+              </dl>
+              {selectedLimit && (
+                <p className="break-words font-mono text-[10px] text-slate-400">
+                  readiness {selectedLimit.readinessPath}
+                </p>
+              )}
+            </div>
+          </details>
+        ) : (
+          <CapabilitySection
+            title="Current configuration"
+            capability={capability("telemetry")}
+            icon={<Layers aria-hidden="true" className="size-3.5" />}
+          >
+            <dl className="grid grid-cols-2 gap-1.5 text-[11px]">
+              <Fact label="Running pods" value={running?.toLocaleString() ?? "—"} />
+              <Fact label="CPU observed" value={observedStats.cpu} />
+              <Fact label="RAM observed" value={observedStats.memory} />
+              <Fact
+                label="Session timeout"
+                value={limits?.timeoutSeconds === undefined ? "—" : `${limits.timeoutSeconds}s`}
+              />
+            </dl>
+            {selectedLimit && (
+              <p className="break-words font-mono text-[10px] text-slate-400">
+                readiness {selectedLimit.readinessPath}
+              </p>
+            )}
+          </CapabilitySection>
+        ))}
 
       {show("snapshots") && (
         <CapabilitySection

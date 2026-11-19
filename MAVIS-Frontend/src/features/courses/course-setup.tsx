@@ -39,10 +39,12 @@ function stepHref(stepId: string, data: CourseSetup, workspaceId: string) {
   if (stepId === "workspace") return `/members?workspace=${encodeURIComponent(workspaceId)}`;
   if (stepId === "runtime" || stepId === "studio") {
     return targetLabId
-      ? `/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(targetLabId)}&step=studio`
+      ? `/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(targetLabId)}&tab=studio`
       : workspace;
   }
-  if (stepId === "passkey") return "#class-passkey";
+  if (stepId === "passkey") {
+    return `/workspace-overview?workspace=${encodeURIComponent(workspaceId)}#class-passkey`;
+  }
   if (stepId === "preview")
     return data.previewAssignmentId
       ? `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(data.previewAssignmentId)}&step=1`

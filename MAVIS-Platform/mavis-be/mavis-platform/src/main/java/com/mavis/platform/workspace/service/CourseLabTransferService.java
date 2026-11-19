@@ -42,7 +42,7 @@ public class CourseLabTransferService {
     public static final String FORMAT = "mavis.lab.bundle";
     public static final int VERSION = 1;
     private static final int MAX_THEORY_ITEMS = 50;
-    private static final int MAX_THEORY_BODY = 20_000;
+    private static final int MAX_THEORY_BODY = 50_000;
     private static final int MAX_QUESTIONS = 50;
     private static final Set<String> LAB_MODES = Set.of("LEGACY", "THEORY_QUIZ", "THEORY_QUIZ_STUDIO");
 

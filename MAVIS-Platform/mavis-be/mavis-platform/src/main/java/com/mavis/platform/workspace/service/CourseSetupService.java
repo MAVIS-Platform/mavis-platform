@@ -354,7 +354,13 @@ public class CourseSetupService {
     }
 
     private int quizVersion(Assignment lab) {
-        if (lab.getReferenceModel() == null) return 0;
+        if (lab.getReferenceModel() == null) {
+            Integer version = jdbc.queryForObject("""
+                    SELECT coalesce(max(version), 0) FROM course_quizzes
+                    WHERE assignment_id = ? AND reference_model_id IS NULL
+                    """, Integer.class, lab.getId());
+            return version == null ? 0 : version;
+        }
         Integer version = jdbc.queryForObject("""
                 SELECT coalesce(max(version), 0) FROM course_quizzes
                 WHERE assignment_id = ? AND reference_model_id = ?
@@ -600,7 +606,10 @@ public class CourseSetupService {
         if (refModel != null && refModel.getProject() != null && refModel.getSourceSnapshot() != null) {
             UUID refProjectId = refModel.getProject().getId();
             RuntimeConfiguration cfg = configurations.findById(refProjectId).orElse(null);
-            ObjectNode profile = json.createObjectNode();
+            ObjectNode profile = cfg != null && cfg.getProfile() != null && cfg.getProfile().isObject()
+                    ? ((ObjectNode) cfg.getProfile()).deepCopy()
+                    : json.createObjectNode();
+            JsonNode prevApps = profile.get("applications");
             ObjectNode apps = profile.putObject("applications");
             Set<String> applicationNames = new LinkedHashSet<>();
             for (JsonNode b : blocks) {
@@ -611,10 +620,12 @@ public class CourseSetupService {
             // mapped even though they are not draggable blocks.
             applicationNames.addAll(controllerNames);
             for (String svc : applicationNames) {
+                JsonNode existingApp = prevApps != null ? prevApps.get(svc) : null;
+                String existingReadiness = existingApp != null ? existingApp.path("readinessPath").asText("") : "";
                 apps.putObject(svc)
                         .put("runtime", runtimeByName.getOrDefault(svc, "java"))
                         .put("containerPort", containerPortByName.getOrDefault(svc, 8080))
-                        .put("readinessPath", "/health");
+                        .put("readinessPath", existingReadiness.isBlank() ? "/health" : existingReadiness);
             }
             ObjectNode mappingsNode = profile.putObject("serviceMappings");
             serviceMappings.forEach((k, v) -> mappingsNode.put(k, v.toString()));
@@ -660,8 +671,26 @@ public class CourseSetupService {
         int nextTopoRev = (lab.getStudioTopologyRevision() != null ? lab.getStudioTopologyRevision() : 0) + 1;
         lab.setStudioTopologySnapshot(topology.deepCopy());
         lab.setStudioTopologyRevision(nextTopoRev);
+        if (exercise != null) {
+            ObjectNode exerciseSnapshot = json.createObjectNode();
+            exerciseSnapshot.put("runtimeProjectId",
+                    exercise.getRuntimeProjectId() == null ? null : exercise.getRuntimeProjectId().toString());
+            exerciseSnapshot.put("runtimeModelId",
+                    exercise.getRuntimeModelId() == null ? null : exercise.getRuntimeModelId().toString());
+            exerciseSnapshot.put("runtimeSnapshotId",
+                    exercise.getRuntimeSnapshotId() == null ? null : exercise.getRuntimeSnapshotId().toString());
+            exerciseSnapshot.set("baselineRequests", exercise.getBaselineRequests());
+            exerciseSnapshot.set("initialState", exercise.getInitialState());
+            exerciseSnapshot.set("allowedActions", exercise.getAllowedActions());
+            exerciseSnapshot.set("successCriteria", exercise.getSuccessCriteria());
+            exerciseSnapshot.put("instructions", exercise.getInstructions());
+            exerciseSnapshot.put("revision", exercise.getRevision());
+            lab.setStudioExerciseSnapshot(exerciseSnapshot);
+            lab.setStudioExerciseRevision(exercise.getRevision());
+        }
         lab.setRequireRuntimeTrace(true);
-        if ("LEGACY".equalsIgnoreCase(lab.getLabMode() == null ? "LEGACY" : lab.getLabMode())) {
+        String currentMode = lab.getLabMode() == null ? "LEGACY" : lab.getLabMode();
+        if ("LEGACY".equalsIgnoreCase(currentMode) || "THEORY_QUIZ".equalsIgnoreCase(currentMode)) {
             lab.setLabMode("THEORY_QUIZ_STUDIO");
         }
         assignments.saveAndFlush(lab);

@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApi, useApiQuery } from "@/hooks/use-api";
+import { useLocale } from "@/lib/i18n/locale-context";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { SelectField } from "@/components/shared/forms";
@@ -26,6 +27,7 @@ export function AssignmentSourcePicker({
 }) {
   const api = useApi(),
     cache = useQueryClient();
+  const { t } = useLocale();
   const [mode, setMode] = useState(initial?.projectId ? "existing" : "github"),
     [repository, setRepository] = useState("");
   const [lookup, setLookup] = useState(""),
@@ -39,6 +41,11 @@ export function AssignmentSourcePicker({
   const [message, setMessage] = useState("");
   const lock = useRef(false),
     createdProject = useRef("");
+  const onChangeRef = useRef(onChange);
+  const onVersionChangeRef = useRef(onVersionChange);
+  onChangeRef.current = onChange;
+  onVersionChangeRef.current = onVersionChange;
+  const lastEmittedRef = useRef("");
   const projects = useApiQuery("workspaceProjects", { workspaceId });
   const versions = useApiQuery("modelVersions", { projectId }, { enabled: !!projectId });
   const snapshots = useApiQuery("snapshots", { projectId }, { enabled: !!projectId });
@@ -46,10 +53,11 @@ export function AssignmentSourcePicker({
     const timer = setTimeout(() => setLookup(repository.trim()), 500);
     return () => clearTimeout(timer);
   }, [repository]);
+  const validGithubUrl = /^https?:\/\/github\.com\/[^/\s]+\/[^/\s]+/i.test(lookup);
   const branches = useApiQuery(
     "githubBranches",
     { repositoryUrl: lookup },
-    { enabled: mode === "github" && !!lookup },
+    { enabled: mode === "github" && validGithubUrl },
   );
   const selectedBranch = branches.data?.branches.includes(branch)
     ? branch
@@ -61,26 +69,34 @@ export function AssignmentSourcePicker({
     !job.error;
   const prepare = useMutation({
     mutationFn: async () => {
-      if (!title.trim()) throw new Error("Enter the assignment title first.");
+      if (!title.trim()) {
+        throw new Error(t("Enter the Lab title in Step 1 first.", "Hãy nhập tên Lab ở Bước 1 trước."));
+      }
       if (
         mode === "zip" &&
         (!file || !/\.zip$/i.test(file.name) || !file.size || file.size > 100 * 1024 * 1024)
-      )
-        throw new Error("Choose a non-empty ZIP archive up to 100 MB.");
+      ) {
+        throw new Error(
+          t("Choose a non-empty ZIP archive up to 100 MB.", "Hãy chọn file ZIP hợp lệ không rỗng tối đa 100 MB."),
+        );
+      }
       if (
         mode === "github" &&
         (!selectedBranch || lookup !== repository.trim() || !branches.isSuccess)
-      )
-        throw new Error("Wait for the repository branches, then select a branch.");
-      if (mode === "github" && commit && !/^[a-f0-9]{40}$/i.test(commit.trim()))
-        throw new Error("Use the full 40-character commit SHA.");
+      ) {
+        throw new Error(
+          t("Wait for the repository branches, then select a branch.", "Đợi tải danh sách nhánh rồi chọn nhánh cần phân tích."),
+        );
+      }
+      if (mode === "github" && commit && !/^[a-f0-9]{40}$/i.test(commit.trim())) {
+        throw new Error(t("Use the full 40-character commit SHA.", "Hãy nhập đủ 40 ký tự Commit SHA."));
+      }
       setSnapshotId("");
       setModelId("");
       setJobId("");
       setMessage("");
       let target = projectId || createdProject.current;
       if (!target) {
-        if (!title.trim()) throw new Error("Enter the assignment title first.");
         const project = await api.execute("createReferenceProject", {
           workspaceId,
           name: `${title.trim().slice(0, 220)} · reference`,
@@ -118,7 +134,9 @@ export function AssignmentSourcePicker({
   const retry = useMutation({
     mutationFn: async (overrideSnapshotId?: string) => {
       const targetSnapshot = overrideSnapshotId || snapshotId;
-      if (!targetSnapshot) throw new Error("No snapshot selected for analysis.");
+      if (!targetSnapshot) {
+        throw new Error(t("No snapshot selected for analysis.", "Chưa chọn snapshot để phân tích."));
+      }
       setSnapshotId(targetSnapshot);
       const next = await api.execute("startAnalysis", {
         projectId,
@@ -138,25 +156,36 @@ export function AssignmentSourcePicker({
     setModelId(job.data.modelId);
     setMessage(
       job.data.status === "partial"
-        ? "Analysis completed with limitations. Review this version before assigning it."
-        : "Source analyzed. This exact version will be attached when you save the assignment.",
+        ? t(
+            "Analysis completed with limitations. Review this version before saving it to the Lab.",
+            "Phân tích hoàn tất nhưng có cảnh báo. Hãy kiểm tra trước khi lưu vào Lab.",
+          )
+        : t(
+            "Source analyzed. Click 'Save source to Lab' below to pin this version.",
+            "Đã phân tích xong. Bấm 'Lưu nguồn vào Lab' bên dưới để ghim phiên bản này.",
+          ),
     );
     void cache.invalidateQueries({ queryKey: ["api", "modelVersions"] });
     void cache.invalidateQueries({ queryKey: ["api", "snapshots"] });
-  }, [job.data?.modelId, job.data?.status, snapshotId, projectId, cache]);
+  }, [job.data?.modelId, job.data?.status, snapshotId, projectId, cache, t]);
   const busy = prepare.isPending || retry.isPending || running;
   const pending = (mode !== "existing" || !!projectId) && !modelId;
   useEffect(() => {
-    onChange(modelId, busy || pending);
-    onVersionChange?.({ modelId, projectId, snapshotId }, busy || pending);
-  }, [modelId, busy, pending, onChange, onVersionChange, projectId, snapshotId]);
+    const busyOrPending = busy || pending;
+    const key = `${modelId}|${projectId}|${snapshotId}|${busyOrPending}`;
+    if (key === lastEmittedRef.current) return;
+    lastEmittedRef.current = key;
+    onChangeRef.current(modelId, busyOrPending);
+    onVersionChangeRef.current?.({ modelId, projectId, snapshotId }, busyOrPending);
+  }, [modelId, busy, pending, projectId, snapshotId]);
   const imported = snapshots.data?.find((s) => s.id === snapshotId);
   function changeMode(next: string) {
     setMode(next);
-    setModelId("");
+    setProjectId(next === "existing" ? (initial?.projectId ?? "") : "");
+    setModelId(next === "existing" ? (initial?.modelId ?? "") : "");
+    setSnapshotId(next === "existing" ? (initial?.snapshotId ?? "") : "");
     setJobId("");
     setMessage("");
-    setSnapshotId("");
     prepare.reset();
     retry.reset();
   }
@@ -176,9 +205,9 @@ export function AssignmentSourcePicker({
       <div className="flex flex-wrap gap-2">
         {(
           [
-            ["github", "GitHub repository"],
-            ["zip", "Upload ZIP"],
-            ["existing", "Imported repo"],
+            ["github", t("GitHub repository", "Repo GitHub")],
+            ["zip", t("Upload ZIP", "Tải file ZIP")],
+            ["existing", t("Imported repo", "Repo đã nhập")],
           ] as const
         ).map(([id, label]) => (
           <Button
@@ -196,7 +225,7 @@ export function AssignmentSourcePicker({
       {mode === "existing" ? (
         <>
           <SelectField
-            label="Teaching reference project"
+            label={t("Reference project in this class", "Dự án tham chiếu trong lớp")}
             value={projectId}
             onChange={(value) => {
               setProjectId(value);
@@ -204,7 +233,7 @@ export function AssignmentSourcePicker({
               setSnapshotId("");
             }}
             options={[
-              { value: "", label: "Select a curated reference project…" },
+              { value: "", label: t("Select an analyzed project…", "Chọn dự án đã phân tích…") },
               ...(projects.data ?? [])
                 .filter((p) => p.projectType === "TEACHER_REFERENCE" || p.isReferenceTemplate)
                 .map((p) => ({ value: p.id, label: p.name })),
@@ -213,7 +242,7 @@ export function AssignmentSourcePicker({
           {projectId && (
             sortedVersions.length > 0 ? (
               <SelectField
-                label="Analyzed revision (Model Version)"
+                label={t("Analyzed revision (Model Version)", "Phiên bản đã phân tích (Model Version)")}
                 value={modelId}
                 onChange={(value) => {
                   setModelId(value);
@@ -221,16 +250,20 @@ export function AssignmentSourcePicker({
                 }}
                 options={sortedVersions.map((m, idx) => ({
                   value: m.id,
-                  label: `Revision ${m.revision}${idx === 0 ? " (Latest)" : ""} · ${snapshots.data?.find((s) => s.id === m.snapshotId)?.name ?? m.snapshotId.slice(0, 8)}`,
+                  label: `Revision ${m.revision}${idx === 0 ? t(" (Latest)", " (Mới nhất)") : ""} · ${snapshots.data?.find((s) => s.id === m.snapshotId)?.name ?? m.snapshotId.slice(0, 8)}`,
                 }))}
               />
             ) : versions.isFetching || snapshots.isFetching ? (
-              <p className="text-xs text-muted-foreground">Loading analyzed revisions…</p>
+              <p className="text-xs text-muted-foreground">
+                {t("Loading analyzed revisions…", "Đang tải các phiên bản đã phân tích…")}
+              </p>
             ) : (snapshots.data?.length ?? 0) > 0 ? (
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-dashed bg-background/60 p-3 text-xs">
                 <span className="text-muted-foreground">
-                  This project has {snapshots.data!.length} source snapshot(s) but no analyzed
-                  revision yet.
+                  {t(
+                    `This project has ${snapshots.data!.length} source snapshot(s) but no analyzed revision yet.`,
+                    `Dự án này có ${snapshots.data!.length} bản chụp mã nguồn nhưng chưa có bản phân tích nào.`,
+                  )}
                 </span>
                 <Button
                   type="button"
@@ -240,14 +273,15 @@ export function AssignmentSourcePicker({
                     retry.mutate(latestSnap.id);
                   }}
                 >
-                  Analyze latest snapshot
+                  {t("Analyze latest snapshot", "Phân tích bản chụp mới nhất")}
                 </Button>
               </div>
             ) : (
               <div className="rounded-lg border border-dashed bg-background/60 p-3 text-xs text-muted-foreground">
-                This reference project has no source code or analyzed revisions yet. Switch to{" "}
-                <strong>GitHub repository</strong> or <strong>Upload ZIP</strong> above to import
-                and analyze source code, or select <strong>No reference source</strong>.
+                {t(
+                  "This project has no source code or analyzed revisions yet. Switch to GitHub repository or Upload ZIP above, or skip this step for a Theory-only Lab.",
+                  "Dự án này chưa có mã nguồn hoặc bản phân tích. Hãy chuyển sang tab Repo GitHub / Tải file ZIP, hoặc bỏ qua nếu là Lab thuần lý thuyết.",
+                )}
               </div>
             )
           )}
@@ -256,12 +290,12 @@ export function AssignmentSourcePicker({
         <>
           {mode === "github" ? (
             <>
-              <label className="block text-sm">
-                GitHub repository URL
+              <label className="block space-y-1 text-sm">
+                <span>{t("GitHub repository URL", "Đường dẫn GitHub repository")}</span>
                 <Input
-                  aria-label="Assignment GitHub repository URL"
+                  aria-label={t("GitHub repository URL", "Đường dẫn GitHub repository")}
                   value={repository}
-                  placeholder="https://github.com/owner/repository"
+                  placeholder="https://github.com/MAVIS-Platform/mavis-studio-live-demo"
                   onChange={(e) => {
                     setRepository(e.target.value);
                     setModelId("");
@@ -270,7 +304,7 @@ export function AssignmentSourcePicker({
                 />
               </label>
               <SelectField
-                label="Branch"
+                label={t("Branch", "Nhánh (Branch)")}
                 value={selectedBranch}
                 onChange={(value) => {
                   setBranch(value);
@@ -280,17 +314,19 @@ export function AssignmentSourcePicker({
                 options={[
                   {
                     value: "",
-                    label: branches.isFetching ? "Loading branches…" : "Select repository branch",
+                    label: branches.isFetching
+                      ? t("Loading branches…", "Đang tải danh sách nhánh…")
+                      : t("Select repository branch", "Chọn nhánh repository"),
                   },
                   ...(branches.data?.branches ?? []).map((value) => ({ value, label: value })),
                 ]}
               />
-              <label className="block text-sm">
-                Commit SHA (optional)
+              <label className="block space-y-1 text-sm">
+                <span>{t("Commit SHA (optional)", "Commit SHA (tùy chọn)")}</span>
                 <Input
                   value={commit}
-                  aria-label="Assignment commit SHA"
-                  placeholder="40-character SHA"
+                  aria-label={t("Commit SHA", "Commit SHA")}
+                  placeholder={t("Leave blank for branch HEAD or paste 40-char SHA", "Để trống để lấy mới nhất hoặc dán 40 ký tự SHA")}
                   onChange={(e) => {
                     setCommit(e.target.value);
                     setModelId("");
@@ -300,10 +336,10 @@ export function AssignmentSourcePicker({
               </label>
             </>
           ) : (
-            <label className="block text-sm">
-              Project ZIP (up to 100 MB)
+            <label className="block space-y-1 text-sm">
+              <span>{t("Project ZIP (up to 100 MB)", "File nén ZIP dự án (tối đa 100 MB)")}</span>
               <Input
-                aria-label="Assignment project ZIP"
+                aria-label={t("Project ZIP", "File ZIP dự án")}
                 type="file"
                 accept=".zip"
                 onChange={(e) => {
@@ -328,51 +364,62 @@ export function AssignmentSourcePicker({
               }
             }}
           >
-            Import & analyze source
+            {busy
+              ? t("Importing & analyzing…", "Đang nhập & phân tích…")
+              : t("Import & analyze source", "Nhập & phân tích mã nguồn")}
           </Button>
         </>
       )}
       {running && (
-        <p role="status" className="text-sm">
-          Analyzing reference source… You can continue writing the assignment above.
+        <p role="status" className="text-sm text-muted-foreground">
+          {t(
+            "Analyzing reference source… You can continue editing other steps while this runs.",
+            "Đang phân tích mã nguồn tham chiếu… Bạn vẫn có thể chuẩn bị các bước khác.",
+          )}
         </p>
       )}
       {job.data && ["failed", "cancelled", "timed-out"].includes(job.data.status) && (
-        <p role="alert">
-          Analysis <StatusLabel status={job.data.status} />.{" "}
-          <Button type="button" variant="outline" onClick={() => retry.mutate()}>
-            Retry analysis
+        <p role="alert" className="flex flex-wrap items-center gap-2 text-sm text-destructive">
+          <span>{t("Analysis status:", "Trạng thái phân tích:")} <StatusLabel status={job.data.status} /></span>
+          <Button type="button" size="sm" variant="outline" onClick={() => retry.mutate(undefined)}>
+            {t("Retry analysis", "Thử phân tích lại")}
           </Button>
         </p>
       )}
       {snapshotId && !jobId && prepare.error && (
         <Button
           type="button"
+          size="sm"
           variant="outline"
           onClick={() => {
             prepare.reset();
-            retry.mutate();
+            retry.mutate(undefined);
           }}
         >
-          Retry analysis of imported source
+          {t("Retry analysis of imported source", "Thử phân tích lại mã nguồn vừa nhập")}
         </Button>
       )}
       {job.error && (
-        <Button type="button" variant="outline" onClick={() => void job.refetch()}>
-          Reconnect to analysis
+        <Button type="button" size="sm" variant="outline" onClick={() => void job.refetch()}>
+          {t("Reconnect to analysis", "Kết nối lại tiến trình phân tích")}
         </Button>
       )}
       {modelId && (
-        <p role="status" className="break-all text-sm">
-          Pinned source: {imported?.name ?? initial?.projectName ?? "Selected reference"} ·{" "}
+        <p role="status" className="break-all rounded-lg border bg-background px-3 py-2 text-xs text-foreground">
+          {t("Selected source:", "Nguồn đang chọn:")}{" "}
+          <strong>{imported?.name ?? initial?.projectName ?? t("Selected reference", "Dự án tham chiếu")}</strong> ·{" "}
           {modelId === initial?.modelId
-            ? `revision ${initial.revision}`
-            : `revision ${versions.data?.find((m) => m.id === modelId)?.revision ?? "ready"}`}
-          <br />
-          {message}
+            ? `Revision ${initial.revision}`
+            : `Revision ${versions.data?.find((m) => m.id === modelId)?.revision ?? t("ready", "sẵn sàng")}`}
+          {message ? (
+            <>
+              <br />
+              <span className="text-muted-foreground">{message}</span>
+            </>
+          ) : null}
         </p>
       )}
-      {[prepare.error, retry.error, branches.error, projects.error, versions.error, job.error]
+      {[prepare.error, retry.error, mode === "github" ? branches.error : null, projects.error, versions.error, job.error]
         .filter(Boolean)
         .map((error, index) => (
           <p role="alert" key={index} className="text-sm text-destructive">
@@ -390,31 +437,34 @@ export function AssignmentSourceDetails({
   source: Assignment["referenceSource"];
   assignmentId: string;
 }) {
+  const { t } = useLocale();
   if (!source) return null;
   return (
     <section className="space-y-2 rounded-xl border bg-muted/20 p-4">
-      <h3 className="text-sm font-semibold">Assigned reference source · {source.projectName}</h3>
+      <h3 className="text-sm font-semibold">
+        {t("Pinned reference source", "Nguồn tham chiếu đang ghim")} · {source.projectName}
+      </h3>
       <dl className="grid gap-2 break-all text-sm sm:grid-cols-2">
         <div>
-          <dt className="text-muted-foreground">Source</dt>
+          <dt className="text-muted-foreground">{t("Source", "Nguồn")}</dt>
           <dd>
             {source.sourceType} {source.repositoryUrl}
           </dd>
         </div>
         <div>
-          <dt className="text-muted-foreground">Branch / commit</dt>
+          <dt className="text-muted-foreground">{t("Branch / commit", "Nhánh / commit")}</dt>
           <dd>
-            {source.branch ?? "ZIP archive"} · {source.commitSha ?? source.artifactHash}
+            {source.branch ?? t("ZIP archive", "Tệp nén ZIP")} · {source.commitSha ?? source.artifactHash}
           </dd>
         </div>
         <div>
-          <dt className="text-muted-foreground">Pinned analysis</dt>
+          <dt className="text-muted-foreground">{t("Pinned analysis", "Bản phân tích đã ghim")}</dt>
           <dd>
             Revision {source.revision} · {source.modelId}
           </dd>
         </div>
         <div>
-          <dt className="text-muted-foreground">Source snapshot</dt>
+          <dt className="text-muted-foreground">{t("Source snapshot", "Mã snapshot")}</dt>
           <dd>{source.snapshotId}</dd>
         </div>
       </dl>
@@ -423,7 +473,7 @@ export function AssignmentSourceDetails({
         href={`/api/backend/assignments/${encodeURIComponent(assignmentId)}/reference-source`}
         download
       >
-        Download assigned source ZIP
+        {t("Download assigned source ZIP", "Tải file ZIP mã nguồn đã ghim")}
       </a>
     </section>
   );

@@ -99,7 +99,13 @@ export function QuizBuilder({
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [chapterId, setChapterId] = useState("");
   const [aiCount, setAiCount] = useState(5);
+  const [showAnswerKey, setShowAnswerKey] = useState(false);
+  const [copiedJson, setCopiedJson] = useState(false);
   const hydrated = useRef(false);
+
+  useEffect(() => {
+    hydrated.current = false;
+  }, [assignmentId]);
 
   useEffect(() => {
     if (hydrated.current) return;
@@ -148,6 +154,9 @@ export function QuizBuilder({
       setPassPercent(result.passPercent ?? DEFAULT_PASS_PERCENT);
       setQuestions(result.questions ?? []);
       setSelected(0);
+      setTab("questions");
+      setShowValidation(false);
+      void cache.invalidateQueries({ queryKey: ["api", "quiz-draft", workspaceId, assignmentId] });
       setMessage(t("Curriculum chapter loaded into the draft.", "Đã nạp bài giáo trình vào bản nháp."));
     },
   });
@@ -165,7 +174,7 @@ export function QuizBuilder({
   const generateFromTheory = useMutation({
     mutationFn: () =>
       api<{ providerMode: string; sourceTheoryItems: number; questions: QuizQuestion[] }>(
-        `${draftPath}/generate`,
+        `workspaces/${workspaceId}/course-labs/${assignmentId}/quiz/generate`,
         {
           method: "POST",
           body: JSON.stringify({ count: aiCount, locale }),
@@ -177,6 +186,7 @@ export function QuizBuilder({
       setQuestions([...kept, ...incoming]);
       setSelected(kept.length);
       setTab("questions");
+      setShowValidation(false);
       setMessage(
         t(
           `Generated ${incoming.length} question(s) from ${result.sourceTheoryItems} theory item(s). Review and edit them before saving or publishing.`,
@@ -196,13 +206,19 @@ export function QuizBuilder({
 
   const saveDraftNow = () => {
     setShowValidation(true);
-    if (errors.length) return;
+    if (errors.length) {
+      setMessage("");
+      return;
+    }
     if (!lesson.trim()) setLesson(effectiveLesson);
     saveDraft.mutate();
   };
   const publishNow = async () => {
     setShowValidation(true);
-    if (errors.length) return;
+    if (errors.length) {
+      setMessage("");
+      return;
+    }
     if (!lesson.trim()) setLesson(effectiveLesson);
     try {
       await saveDraft.mutateAsync();
@@ -212,17 +228,22 @@ export function QuizBuilder({
     }
   };
 
-  const update = (index: number, patch: Partial<QuizQuestion>) =>
+  const update = (index: number, patch: Partial<QuizQuestion>) => {
+    setMessage("");
     setQuestions((current) => current.map((question, position) => (position === index ? { ...question, ...patch } : question)));
+  };
   const add = (type: QuizQuestionType) => {
+    setMessage("");
     setQuestions((current) => [...current, emptyQuestion(type)]);
     setSelected(questions.length);
   };
   const remove = (index: number) => {
+    setMessage("");
     setQuestions((current) => current.filter((_, position) => position !== index));
     setSelected((current) => Math.max(0, Math.min(current, questions.length - 2)));
   };
   const duplicate = (index: number) => {
+    setMessage("");
     const copy = { ...questions[index]!, options: [...questions[index]!.options] };
     setQuestions((current) => [...current.slice(0, index + 1), copy, ...current.slice(index + 1)]);
     setSelected(index + 1);
@@ -230,6 +251,7 @@ export function QuizBuilder({
   const move = (index: number, direction: -1 | 1) => {
     const target = index + direction;
     if (target < 0 || target >= questions.length) return;
+    setMessage("");
     setQuestions((current) => {
       const copy = [...current];
       [copy[index], copy[target]] = [copy[target]!, copy[index]!];
@@ -239,13 +261,41 @@ export function QuizBuilder({
   };
   const changeType = (type: QuizQuestionType) => {
     if (!active) return;
-    const base = emptyQuestion(type);
-    update(selected, {
-      ...base,
-      prompt: active.prompt,
-      explanation: active.explanation ?? "",
-      points: active.points ?? 1,
-    });
+    if (type === "TRUE_FALSE") {
+      const base = emptyQuestion(type);
+      update(selected, {
+        ...base,
+        prompt: active.prompt,
+        explanation: active.explanation ?? "",
+        points: active.points ?? 1,
+      });
+      return;
+    }
+    const existingOptions = active.options.length >= 2 ? [...active.options] : ["", ""];
+    if (type === "MULTI_CHOICE") {
+      const firstCorrect =
+        active.correctOption != null && active.correctOption < existingOptions.length
+          ? active.correctOption
+          : 0;
+      update(selected, {
+        type,
+        options: existingOptions,
+        correctOptions: active.correctOptions?.length ? active.correctOptions : [firstCorrect],
+        correctOption: null,
+      });
+    } else {
+      const firstCorrect =
+        active.correctOptions?.[0] ??
+        (active.correctOption != null && active.correctOption < existingOptions.length
+          ? active.correctOption
+          : 0);
+      update(selected, {
+        type,
+        options: existingOptions,
+        correctOption: firstCorrect,
+        correctOptions: null,
+      });
+    }
   };
   const setCorrect = (optionIndex: number, checked: boolean) => {
     if (!active) return;
@@ -294,16 +344,19 @@ export function QuizBuilder({
               : t("Draft", "Bản nháp")}
           </Badge>
         </div>
-        <div className="flex items-center gap-2">
-          <Input
-            aria-label={t("AI question count", "Số câu AI tạo")}
-            className="h-8 w-16 text-center text-xs"
-            type="number"
-            min={1}
-            max={20}
-            value={aiCount}
-            onChange={(event) => setAiCount(Math.min(20, Math.max(1, Number(event.target.value) || 1)))}
-          />
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span>{t("Questions", "Số câu")}</span>
+            <Input
+              aria-label={t("AI question count", "Số câu AI tạo")}
+              className="h-8 w-14 text-center text-xs"
+              type="number"
+              min={1}
+              max={20}
+              value={aiCount}
+              onChange={(event) => setAiCount(Math.min(20, Math.max(1, Number(event.target.value) || 1)))}
+            />
+          </label>
           <Button
             type="button"
             size="sm"
@@ -324,13 +377,22 @@ export function QuizBuilder({
           {generateFromTheory.error.message}
         </p>
       )}
+      {draft.isError && !(draft.error instanceof ApiError && draft.error.status === 404) && (
+        <p role="alert" className="text-xs text-destructive">
+          {draft.error.message}
+        </p>
+      )}
 
       <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
         <label className="space-y-1 text-xs font-medium">
           <span>{t("Quiz title", "Tiêu đề Quiz")}</span>
           <Input
+            placeholder={t("e.g. Microservice Boundaries Check", "VD: Kiểm tra ranh giới Microservices")}
             value={lesson}
-            onChange={(event) => setLesson(event.target.value)}
+            onChange={(event) => {
+              setLesson(event.target.value);
+              setMessage("");
+            }}
           />
         </label>
         <label className="space-y-1 text-xs font-medium">
@@ -341,7 +403,9 @@ export function QuizBuilder({
             min={1}
             max={100}
             value={passPercent}
-            onChange={(event) => setPassPercent(Number(event.target.value))}
+            onChange={(event) =>
+              setPassPercent(Math.min(100, Math.max(1, Math.round(Number(event.target.value) || 1))))
+            }
           />
         </label>
       </div>
@@ -407,6 +471,7 @@ export function QuizBuilder({
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="outline">#{selected + 1}</Badge>
                 <select
+                  aria-label={t("Question type", "Loại câu hỏi")}
                   className="rounded-md border bg-background px-2 py-1 text-sm"
                   value={active.type}
                   onChange={(event) => changeType(event.target.value as QuizQuestionType)}
@@ -418,16 +483,47 @@ export function QuizBuilder({
                   ))}
                 </select>
                 <div className="ml-auto flex gap-1">
-                  <Button type="button" size="sm" variant="ghost" disabled={selected === 0} onClick={() => move(selected, -1)}>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    disabled={selected === 0}
+                    aria-label={t("Move question up", "Chuyển câu lên")}
+                    title={t("Move up", "Chuyển lên")}
+                    onClick={() => move(selected, -1)}
+                  >
                     <ChevronUp className="size-4" aria-hidden="true" />
                   </Button>
-                  <Button type="button" size="sm" variant="ghost" disabled={selected >= questions.length - 1} onClick={() => move(selected, 1)}>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    disabled={selected >= questions.length - 1}
+                    aria-label={t("Move question down", "Chuyển câu xuống")}
+                    title={t("Move down", "Chuyển xuống")}
+                    onClick={() => move(selected, 1)}
+                  >
                     <ChevronDown className="size-4" aria-hidden="true" />
                   </Button>
-                  <Button type="button" size="sm" variant="ghost" onClick={() => duplicate(selected)}>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    aria-label={t("Duplicate question", "Nhân bản câu hỏi")}
+                    title={t("Duplicate", "Nhân bản")}
+                    onClick={() => duplicate(selected)}
+                  >
                     <Copy className="size-4" aria-hidden="true" />
                   </Button>
-                  <Button type="button" size="sm" variant="ghost" onClick={() => remove(selected)}>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    disabled={questions.length <= 1}
+                    aria-label={t("Delete question", "Xóa câu hỏi")}
+                    title={t("Delete", "Xóa")}
+                    onClick={() => remove(selected)}
+                  >
                     <Trash2 className="size-4 text-destructive" aria-hidden="true" />
                   </Button>
                 </div>
@@ -437,6 +533,7 @@ export function QuizBuilder({
                 <span>{t("Question prompt", "Nội dung câu hỏi")}</span>
                 <Textarea
                   rows={2}
+                  placeholder={t("Enter question prompt…", "Nhập nội dung câu hỏi…")}
                   value={active.prompt}
                   onChange={(event) => update(selected, { prompt: event.target.value })}
                 />
@@ -462,6 +559,7 @@ export function QuizBuilder({
                       />
                       <Input
                         value={option}
+                        placeholder={`${t("Option", "Đáp án")} ${optionIndex + 1}`}
                         aria-label={`${t("Option", "Đáp án")} ${optionIndex + 1}`}
                         onChange={(event) => {
                           const options = [...active.options];
@@ -474,6 +572,8 @@ export function QuizBuilder({
                           type="button"
                           size="sm"
                           variant="ghost"
+                          aria-label={`${t("Remove option", "Xóa đáp án")} ${optionIndex + 1}`}
+                          title={t("Remove option", "Xóa đáp án")}
                           onClick={() => {
                             update(selected, {
                               options: active.options.filter((_, position) => position !== optionIndex),
@@ -517,6 +617,7 @@ export function QuizBuilder({
                 <label className="space-y-1 text-xs font-medium">
                   <span>{t("Explanation (optional)", "Giải thích (tùy chọn)")}</span>
                   <Input
+                    placeholder={t("Why this answer is correct…", "Giải thích ngắn cho đáp án…")}
                     value={active.explanation ?? ""}
                     onChange={(event) => update(selected, { explanation: event.target.value })}
                   />
@@ -528,16 +629,25 @@ export function QuizBuilder({
                     min={1}
                     max={100}
                     value={active.points ?? 1}
-                    onChange={(event) => update(selected, { points: Number(event.target.value) })}
+                    onChange={(event) =>
+                      update(selected, {
+                        points: Math.min(100, Math.max(1, Math.round(Number(event.target.value) || 1))),
+                      })
+                    }
                   />
                 </label>
               </div>
 
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Button type="button" size="sm" variant="outline" disabled={saveToBank.isPending} onClick={() => saveToBank.mutate(active)}>
                   <Library className="mr-1 size-3.5" aria-hidden="true" />
                   {t("Save to bank", "Lưu vào ngân hàng")}
                 </Button>
+                {saveToBank.error && (
+                  <span role="alert" className="text-xs text-destructive">
+                    {saveToBank.error.message}
+                  </span>
+                )}
               </div>
             </div>
           ) : (
@@ -548,10 +658,20 @@ export function QuizBuilder({
 
       {tab === "preview" && (
         <div className="space-y-3">
-          <div className="flex items-center gap-2">
-            <Eye className="size-4 text-primary" aria-hidden="true" />
-            <h3 className="font-semibold">{t("Student preview", "Xem trước như sinh viên")}</h3>
-            <Badge variant="outline">{passPercent}%</Badge>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Eye className="size-4 text-primary" aria-hidden="true" />
+              <h3 className="font-semibold">{t("Student preview", "Xem trước như sinh viên")}</h3>
+              <Badge variant="outline">{passPercent}%</Badge>
+            </div>
+            <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={showAnswerKey}
+                onChange={(event) => setShowAnswerKey(event.target.checked)}
+              />
+              {t("Show answer key", "Hiện đáp án đúng")}
+            </label>
           </div>
           {lesson && <p className="whitespace-pre-wrap rounded-lg border bg-muted/20 p-3 text-sm">{lesson}</p>}
           <ol className="space-y-3">
@@ -564,15 +684,16 @@ export function QuizBuilder({
                       question.type === "MULTI_CHOICE"
                         ? (question.correctOptions ?? []).includes(optionIndex)
                         : question.correctOption === optionIndex;
+                    const reveal = showAnswerKey && correct;
                     return (
-                      <li key={optionIndex} className={correct ? "font-medium text-emerald-700 dark:text-emerald-300" : ""}>
-                        {correct ? "✓ " : "○ "}
+                      <li key={optionIndex} className={reveal ? "font-medium text-emerald-700 dark:text-emerald-300" : ""}>
+                        {reveal ? "✓ " : "○ "}
                         {option}
                       </li>
                     );
                   })}
                 </ul>
-                {question.explanation && (
+                {showAnswerKey && question.explanation && (
                   <p className="text-xs text-muted-foreground">{t("Explanation", "Giải thích")}: {question.explanation}</p>
                 )}
               </li>
@@ -583,48 +704,6 @@ export function QuizBuilder({
 
       {tab === "import" && (
         <div className="space-y-4">
-          <div className="space-y-2 rounded-lg border border-primary/20 bg-primary/5 p-3">
-            <h3 className="flex items-center gap-2 text-sm font-semibold">
-              <Sparkles className="size-4 text-primary" aria-hidden="true" />
-              {t("Generate from theory", "Tạo câu hỏi từ lý thuyết")}
-            </h3>
-            <p className="text-xs text-muted-foreground">
-              {t(
-                "Builds questions from the theory you added to this Lab, so they stay tied to the lesson and the sample repository. Treat the output as a draft: review every question, then edit or keep it before saving.",
-                "Tạo câu hỏi từ phần lý thuyết bạn đã thêm cho Lab, để câu hỏi bám sát bài học và repo mẫu. Kết quả chỉ là bản nháp: hãy kiểm tra từng câu, sửa hoặc giữ lại trước khi lưu.",
-              )}
-            </p>
-            <div className="flex flex-wrap items-end gap-2">
-              <label className="space-y-1 text-xs font-medium">
-                <span>{t("Questions", "Số câu hỏi")}</span>
-                <Input
-                  className="w-24"
-                  type="number"
-                  min={1}
-                  max={20}
-                  value={aiCount}
-                  onChange={(event) => setAiCount(Math.min(20, Math.max(1, Number(event.target.value) || 1)))}
-                />
-              </label>
-              <Button
-                type="button"
-                size="sm"
-                disabled={generateFromTheory.isPending}
-                onClick={() => generateFromTheory.mutate()}
-              >
-                <Sparkles className="mr-1 size-4" aria-hidden="true" />
-                {generateFromTheory.isPending
-                  ? t("Generating…", "Đang tạo…")
-                  : t("Generate from theory", "Tạo từ lý thuyết")}
-              </Button>
-            </div>
-            {generateFromTheory.error && (
-              <p role="alert" className="text-xs text-destructive">
-                {generateFromTheory.error.message}
-              </p>
-            )}
-          </div>
-
           <div className="space-y-2">
             <h3 className="font-semibold">{t("Import questions", "Nhập câu hỏi")}</h3>
             <p className="text-xs text-muted-foreground">
@@ -660,15 +739,37 @@ export function QuizBuilder({
                   }}
                 />
               </label>
-              <Button type="button" size="sm" variant="outline" onClick={() => void navigator.clipboard?.writeText(quizToJson({ lesson, passPercent, questions }))}>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={questions.length === 0}
+                onClick={() => {
+                  void navigator.clipboard?.writeText(quizToJson({ lesson, passPercent, questions }));
+                  setCopiedJson(true);
+                  setTimeout(() => setCopiedJson(false), 2000);
+                }}
+              >
                 <Download className="mr-1 size-4" aria-hidden="true" />
-                {t("Copy JSON", "Sao chép JSON")}
+                {copiedJson ? t("Copied!", "Đã chép!") : t("Copy JSON", "Sao chép JSON")}
               </Button>
-              <Button type="button" size="sm" variant="outline" onClick={() => download("quiz-export.csv", quizToCsv(questions), "text/csv")}>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={questions.length === 0}
+                onClick={() => download("quiz-export.csv", quizToCsv(questions), "text/csv")}
+              >
                 <Download className="mr-1 size-4" aria-hidden="true" />
                 {t("Export CSV", "Xuất CSV")}
               </Button>
-              <Button type="button" size="sm" variant="outline" onClick={() => download("quiz-export.json", quizToJson({ lesson, passPercent, questions }), "application/json")}>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={questions.length === 0}
+                onClick={() => download("quiz-export.json", quizToJson({ lesson, passPercent, questions }), "application/json")}
+              >
                 <Download className="mr-1 size-4" aria-hidden="true" />
                 {t("Export JSON", "Xuất JSON")}
               </Button>
@@ -689,6 +790,7 @@ export function QuizBuilder({
             </p>
             <div className="flex flex-wrap items-end gap-2">
               <select
+                aria-label={t("Curriculum chapter", "Bài giáo trình")}
                 className="min-w-64 rounded-md border bg-background px-3 py-2 text-sm"
                 value={chapterId}
                 onChange={(event) => setChapterId(event.target.value)}
@@ -721,6 +823,7 @@ export function QuizBuilder({
           </div>
           {bank.isPending && <p className="text-sm text-muted-foreground">{t("Loading bank…", "Đang tải ngân hàng…")}</p>}
           {bank.isError && <p role="alert" className="text-sm text-destructive">{bank.error.message}</p>}
+          {deleteBank.error && <p role="alert" className="text-sm text-destructive">{deleteBank.error.message}</p>}
           {!bank.isPending && !bank.isError && !bank.data?.length && (
             <p className="text-sm text-muted-foreground">{t("The bank is empty. Save a question from the editor.", "Ngân hàng trống. Lưu câu hỏi từ trình soạn.")}</p>
           )}
@@ -730,7 +833,7 @@ export function QuizBuilder({
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium">{entry.question.prompt}</p>
                   <p className="text-xs text-muted-foreground">
-                    {entry.question.type} · {entry.question.options?.length ?? 0} options
+                    {entry.question.type} · {entry.question.options?.length ?? 0} {t("options", "đáp án")}
                   </p>
                 </div>
                 <Button
@@ -745,7 +848,14 @@ export function QuizBuilder({
                 >
                   {t("Add to quiz", "Thêm vào Quiz")}
                 </Button>
-                <Button type="button" size="sm" variant="ghost" onClick={() => deleteBank.mutate(entry.id)}>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  aria-label={t("Delete from bank", "Xóa khỏi ngân hàng")}
+                  title={t("Delete from bank", "Xóa khỏi ngân hàng")}
+                  onClick={() => deleteBank.mutate(entry.id)}
+                >
                   <Trash2 className="size-4 text-destructive" aria-hidden="true" />
                 </Button>
               </li>
@@ -761,7 +871,8 @@ export function QuizBuilder({
             <h3 className="font-semibold">{t("Published versions", "Phiên bản đã công bố")}</h3>
           </div>
           {versions.isPending && <p className="text-sm text-muted-foreground">{t("Loading versions…", "Đang tải phiên bản…")}</p>}
-          {!versions.isPending && !versions.data?.length && (
+          {versions.isError && <p role="alert" className="text-sm text-destructive">{versions.error.message}</p>}
+          {!versions.isPending && !versions.isError && !versions.data?.length && (
             <p className="text-sm text-muted-foreground">{t("No published Quiz yet.", "Chưa công bố Quiz.")}</p>
           )}
           <ul className="divide-y rounded-lg border">
@@ -776,7 +887,7 @@ export function QuizBuilder({
         </div>
       )}
 
-      {showValidation && errors.length > 0 && tab === "questions" && (
+      {showValidation && errors.length > 0 && (
         <ul role="alert" className="space-y-1 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-800 dark:text-amber-200">
           {errors.slice(0, 6).map((error) => <li key={error}>{error}</li>)}
         </ul>

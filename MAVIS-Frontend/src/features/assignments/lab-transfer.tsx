@@ -165,7 +165,7 @@ export function ImportLabButton({ workspaceId }: { workspaceId: string }) {
           </p>
           <Link
             className="text-primary hover:underline"
-            href={`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(result.assignmentId)}&tab=theory`}
+            href={`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(result.assignmentId)}&tab=source`}
           >
             {t("Review the imported Lab", "Kiểm tra Lab vừa nhập")}
           </Link>

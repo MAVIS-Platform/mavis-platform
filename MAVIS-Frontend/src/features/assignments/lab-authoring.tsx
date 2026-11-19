@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
   BookOpen,
@@ -17,6 +18,7 @@ import {
   Rocket,
   type LucideIcon,
 } from "lucide-react";
+import { api } from "@/lib/mainflow-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ErrorState, LoadingState, RequestState } from "@/components/shared/request-state";
@@ -95,20 +97,35 @@ export function LabAuthoring() {
   const setupLab = setup.data?.labs?.find((item) => item.assignmentId === activeAssignmentId);
   const course = useCourseAuthoring(workspaceId, Boolean(workspace));
   const modules = course.data?.modules ?? [];
+  const attachedTheory = useQuery({
+    queryKey: ["api", "lab-theory-assets", workspaceId, activeAssignmentId],
+    queryFn: ({ signal }) =>
+      api<Array<{ assetId: string; courseItemId?: string | null }>>(
+        `workspaces/${workspaceId}/course-labs/${activeAssignmentId}/theory-assets`,
+        { signal },
+      ),
+    enabled: Boolean(workspaceId && activeAssignmentId && workspace),
+    retry: false,
+  });
   const theoryReady =
-    Boolean(assignment?.instructions?.trim()) ||
-    modules.some(
-      (module) =>
-        module.items.some((item) => item.type === "THEORY" && item.assignmentId === activeAssignmentId) ||
-        (module.items.some((item) => item.assignmentId === activeAssignmentId) &&
-          module.items.some((item) => item.type === "THEORY")),
+    (attachedTheory.data?.length ?? 0) > 0 ||
+    modules.some((module) =>
+      module.items.some((item) => item.type === "THEORY" && item.assignmentId === activeAssignmentId),
     );
   const canManage = workspace?.myRole === "LECTURER" || session.data?.user?.role === "admin";
+  const isPublished = Boolean(setupLab?.published || assignment?.labOrder != null);
+
+  useEffect(() => {
+    if (isTab(requestedTab) && requestedTab !== tab) {
+      setTab(requestedTab);
+    }
+  }, [requestedTab, tab]);
 
   const navigate = (next: Tab) => {
     setTab(next);
     const query = new URLSearchParams(params?.toString() ?? "");
     if (activeAssignmentId) query.set("assignment", activeAssignmentId);
+    query.delete("step");
     query.set("tab", next);
     router.replace(`/lab-authoring?${query.toString()}`);
   };
@@ -118,6 +135,7 @@ export function LabAuthoring() {
     setTab("source");
     const query = new URLSearchParams(params?.toString() ?? "");
     query.set("assignment", saved.id);
+    query.delete("step");
     query.set("tab", "source");
     router.replace(`/lab-authoring?${query.toString()}`);
   };
@@ -132,13 +150,18 @@ export function LabAuthoring() {
       done: Boolean(assignment && setupLab?.topologyFrozen),
       enabled: Boolean(assignment),
     },
-    { id: "publish", done: Boolean(setupLab?.published), enabled: Boolean(assignment) },
+    { id: "publish", done: isPublished, enabled: Boolean(assignment) },
   ];
 
   if (!workspaceId) {
     return (
       <p className="text-sm text-muted-foreground">{t("Select a class first.", "Hãy chọn lớp trước.")}</p>
     );
+  }
+
+  if (workspaces.isPending || assignments.isPending || session.isPending) return <LoadingState />;
+  if (assignments.isError) {
+    return <ErrorState error={assignments.error} onRetry={() => void assignments.refetch()} />;
   }
 
   if (!canManage) {
@@ -154,11 +177,6 @@ export function LabAuthoring() {
         </Button>
       </section>
     );
-  }
-
-  if (workspaces.isPending || assignments.isPending) return <LoadingState />;
-  if (assignments.isError) {
-    return <ErrorState error={assignments.error} onRetry={() => void assignments.refetch()} />;
   }
 
   const sectionItems: Array<{
@@ -190,6 +208,7 @@ export function LabAuthoring() {
       )}
       {tab === "theory" && assignment && (
         <LabTheorySection
+          key={assignment.id}
           workspaceId={workspaceId}
           workspaceName={workspace?.name ?? "Course"}
           assignment={assignment}
@@ -198,6 +217,7 @@ export function LabAuthoring() {
       )}
       {tab === "source" && assignment && (
         <LabSourceSection
+          key={assignment.id}
           workspaceId={workspaceId}
           assignment={assignment}
           onNavigate={navigate}
@@ -205,6 +225,7 @@ export function LabAuthoring() {
       )}
       {tab === "quiz" && assignment && (
         <LabQuizSection
+          key={assignment.id}
           workspaceId={workspaceId}
           assignmentId={assignment.id}
           assignment={assignment}
@@ -213,6 +234,7 @@ export function LabAuthoring() {
       )}
       {tab === "studio" && assignment && (
         <LabStudioSection
+          key={assignment.id}
           workspaceId={workspaceId}
           assignment={assignment}
           onNavigate={navigate}
@@ -220,6 +242,7 @@ export function LabAuthoring() {
       )}
       {tab === "publish" && assignment && (
         <LabPublishSection
+          key={assignment.id}
           workspaceId={workspaceId}
           assignment={assignment}
           onNavigate={navigate}
@@ -263,8 +286,8 @@ export function LabAuthoring() {
           {section === "create" && (
             <div className="flex flex-wrap items-center gap-1.5">
               {assignment && (
-                <Badge variant={setupLab?.published ? "success" : "secondary"}>
-                  {setupLab?.published ? t("Published", "Đã công bố") : t("Draft", "Bản nháp")}
+                <Badge variant={isPublished ? "success" : "secondary"}>
+                  {isPublished ? t("Published", "Đã công bố") : t("Draft", "Bản nháp")}
                 </Badge>
               )}
               {allLabs.length > 0 && (
@@ -281,7 +304,7 @@ export function LabAuthoring() {
                   className="h-8 max-w-[200px] rounded-md border bg-background px-2.5 text-xs font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                 >
                   <option value="">
-                    {t("Switch Lab…", "Chuyển bài học…")}
+                    {t("Switch Lab…", "Chuyển nhanh bài Lab…")}
                   </option>
                   {allLabs.map((item) => (
                     <option key={item.id} value={item.id}>
@@ -290,19 +313,21 @@ export function LabAuthoring() {
                   ))}
                 </select>
               )}
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  setCreatedAssignmentId("");
-                  setTab("info");
-                  router.push(`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&tab=info`);
-                }}
-              >
-                <Plus className="mr-1 size-3.5" aria-hidden="true" />
-                {t("New Lab", "Tạo Lab mới")}
-              </Button>
+              {assignment && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setCreatedAssignmentId("");
+                    setTab("info");
+                    router.push(`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&tab=info`);
+                  }}
+                >
+                  <Plus className="mr-1 size-3.5" aria-hidden="true" />
+                  {t("New Lab", "Tạo Lab mới")}
+                </Button>
+              )}
               {assignment && (
                 <Button asChild size="sm" variant="outline">
                   <Link
@@ -335,6 +360,11 @@ export function LabAuthoring() {
                   key={item.id}
                   type="button"
                   disabled={!item.enabled}
+                  title={
+                    !item.enabled
+                      ? t("Save Lab information first", "Hãy lưu thông tin Lab trước")
+                      : undefined
+                  }
                   onClick={() => navigate(item.id)}
                   aria-current={active ? "step" : undefined}
                   className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors ${
