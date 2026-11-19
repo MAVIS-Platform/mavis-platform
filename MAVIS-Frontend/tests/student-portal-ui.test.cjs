@@ -42,14 +42,25 @@ test("Student global navigation excludes Free Studio Sandbox and locks to guided
     false,
     "Student navigation must not contain /studio or Free Studio Sandbox",
   );
-  assert.equal(studentItems.some((item) => item.href === "/courses"), true);
-  assert.equal(studentItems.some((item) => item.href === "/roadmap"), true);
-  assert.equal(studentItems.some((item) => item.href === "/submissions"), true);
+  assert.equal(
+    studentItems.some((item) => item.href === "/courses"),
+    true,
+  );
+  assert.equal(
+    studentItems.some((item) => item.href === "/roadmap"),
+    true,
+  );
+  assert.equal(
+    studentItems.some((item) => item.href === "/submissions"),
+    true,
+  );
 });
 
-test("AppShell renders Learning workspace for Student instead of Teaching workspace", () => {
+test("AppShell hides the sidebar for Student immersive learning", () => {
   const shell = read("src/components/app-shell.tsx");
-  assert.match(shell, /role === "student"\s*\?\s*"Learning workspace"\s*:\s*"Teaching workspace"/);
+  assert.match(shell, /const showSidebar = live \|\| role !== "student"/);
+  assert.match(shell, /showSidebar && <Sidebar/);
+  assert.doesNotMatch(shell, /"Learning workspace"/);
 });
 
 test("Student Courses & Syllabus portals use theme-adaptive mavis-hero-surface without Free Studio Sandbox CTA", () => {
@@ -67,7 +78,10 @@ test("Student Courses & Syllabus portals use theme-adaptive mavis-hero-surface w
     "Student /courses Hero must not display Free Studio Sandbox button",
   );
   assert.match(syllabus, /mavis-hero-surface[^"]*text-white/);
-  assert.match(submissions, /href=\{`\/roadmap\?workspace=\$\{encodeURIComponent\(workspace\.id\)\}`\}/);
+  assert.match(
+    submissions,
+    /href=\{`\/roadmap\?workspace=\$\{encodeURIComponent\(workspace\.id\)\}`\}/,
+  );
   assert.match(access, /border-destructive\/30 bg-destructive\/10/);
   assert.match(access, /border-l-emerald-500/);
   assert.match(access, /border-l-primary/);
