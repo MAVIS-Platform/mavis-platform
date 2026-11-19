@@ -22,6 +22,7 @@ public sealed class StudioInfrastructureActionTests : IDisposable
         public string RemainingVolumesOutput { get; set; } = "";
         public string RemainingNetworksOutput { get; set; } = "";
         public bool TimeoutNextProbe { get; set; }
+        public int StudioProbesNotReady { get; set; }
 
         public Task<DockerCommandResult> RunAsync(IReadOnlyList<string> args, string directory, int timeout, CancellationToken ct)
         {
@@ -81,9 +82,16 @@ public sealed class StudioInfrastructureActionTests : IDisposable
                 TimeoutNextProbe = false;
                 throw new OperationCanceledException();
             }
-            var outcome = new HttpScenarioOutcome("s1", "Passed",
+            bool ready = true;
+            if (StudioProbesNotReady > 0 && input.Contains("\"studio-readiness\"", StringComparison.Ordinal))
+            {
+                StudioProbesNotReady--;
+                ready = false;
+            }
+            var outcome = new HttpScenarioOutcome("s1", ready ? "Passed" : "Failed",
             [
-                new HttpStepOutcome("step-1", "Passed", 200, "4bf92f3577b34da6a3ce929d0e0e4736", "00f067aa0ba902b7", 42L)
+                new HttpStepOutcome("step-1", ready ? "Passed" : "Failed", ready ? 200 : 503,
+                    "4bf92f3577b34da6a3ce929d0e0e4736", "00f067aa0ba902b7", 42L)
             ]);
             var json = JsonSerializer.Serialize(outcome, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
             return Task.FromResult(new DockerCommandResult(0, json));
@@ -163,7 +171,7 @@ public sealed class StudioInfrastructureActionTests : IDisposable
     public async Task ExecutesStopStartAndScale1To4WithBeforeAfterMetrics()
     {
         Directory.CreateDirectory(_root);
-        var docker = new MockDocker();
+        var docker = new MockDocker { StudioProbesNotReady = 10 };
         var def = CreateDefinition(
         [
             new("STOP", "payment-service"),

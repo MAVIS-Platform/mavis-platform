@@ -321,11 +321,13 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
         var app = definition.Profile.Applications[service];
         var probe = new HttpScenarioDefinition("studio-readiness",
             [new("ready", service, "GET", app.ReadinessPath, 200, AllowClientError: app.AllowClientErrorReadiness)], 3);
-        for (var attempt = 0; attempt < 10; attempt++)
+        using var readinessDeadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        readinessDeadline.CancelAfter(TimeSpan.FromSeconds(30));
+        while (!readinessDeadline.IsCancellationRequested)
         {
             ct.ThrowIfCancellationRequested();
             try {
-                var outcome = await RunInsideNetwork(probe, _endpoints, new Dictionary<string, string>(), ct);
+                var outcome = await RunInsideNetwork(probe, _endpoints, new Dictionary<string, string>(), readinessDeadline.Token);
                 if (outcome.Status == "Passed") return true;
             } catch (OperationCanceledException) when (!ct.IsCancellationRequested) {
                 if (!await ScenarioContainerCleanup.RemoveAsync(docker, _directory!, ResourceProject, ct))
@@ -333,6 +335,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             }
             await Task.Delay(500, ct);
         }
+        ct.ThrowIfCancellationRequested();
         return false;
     }
 
