@@ -158,16 +158,18 @@ export function StudentCourseSyllabus({
   const activeItem = activeEntry?.item ?? null;
   const activeModuleItemIndex =
     activeModule?.items.findIndex((item) => item.id === activeItem?.id) ?? -1;
-  const prevEntry =
+  const prevItem =
     activeModule && activeModuleItemIndex > 0
-      ? { module: activeModule, item: activeModule.items[activeModuleItemIndex - 1] }
-      : null;
-  const nextEntry =
+      ? activeModule.items[activeModuleItemIndex - 1]
+      : undefined;
+  const prevEntry = activeModule && prevItem ? { module: activeModule, item: prevItem } : null;
+  const nextItem =
     activeModule &&
     activeModuleItemIndex >= 0 &&
     activeModuleItemIndex < activeModule.items.length - 1
-      ? { module: activeModule, item: activeModule.items[activeModuleItemIndex + 1] }
-      : null;
+      ? activeModule.items[activeModuleItemIndex + 1]
+      : undefined;
+  const nextEntry = activeModule && nextItem ? { module: activeModule, item: nextItem } : null;
   const courseContentModule =
     syllabusModules.find((module) => module.id === selectedModuleId) ?? activeModule;
   const chapterQuizItem = activeModule?.items.find((i) => i.type === "QUIZ") ?? null;
