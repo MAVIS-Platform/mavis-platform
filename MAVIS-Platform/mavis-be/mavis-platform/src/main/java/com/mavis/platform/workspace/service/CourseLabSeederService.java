@@ -351,14 +351,7 @@ public class CourseLabSeederService {
             return;
         }
         try {
-            CourseAuthoringService.CourseView existing = null;
-            try {
-                existing = courseAuthoring.get(workspaceId);
-            } catch (BusinessException ex) {
-                if (ex.getErrorCode() != ErrorCode.NOT_FOUND) {
-                    throw ex;
-                }
-            }
+            var existing = courseAuthoring.findExistingForAuthoring(workspaceId).orElse(null);
             boolean upToDate = false;
             if (existing != null
                     && "PUBLISHED".equals(existing.status())
@@ -461,8 +454,9 @@ public class CourseLabSeederService {
             }
             courseAuthoring.publish(workspaceId);
             log.info("Published 6-module Java Coursera outline for workspace {}", workspaceId);
-        } catch (Exception ex) {
-            log.warn("Could not publish Java Coursera outline for workspace {}: {}", workspaceId, ex.getMessage(), ex);
+        } catch (RuntimeException ex) {
+            log.warn("Could not publish Java Coursera outline for workspace {}", workspaceId);
+            throw ex;
         }
     }
 
@@ -495,14 +489,7 @@ public class CourseLabSeederService {
             return;
         }
         try {
-            CourseAuthoringService.CourseView existing = null;
-            try {
-                existing = courseAuthoring.get(workspaceId);
-            } catch (BusinessException ex) {
-                if (ex.getErrorCode() != ErrorCode.NOT_FOUND) {
-                    throw ex;
-                }
-            }
+            var existing = courseAuthoring.findExistingForAuthoring(workspaceId).orElse(null);
             if (existing != null && existing.modules() != null && !existing.modules().isEmpty()) {
                 return;
             }
@@ -564,8 +551,9 @@ public class CourseLabSeederService {
                 }
             }
             courseAuthoring.publish(workspaceId);
-        } catch (Exception ignored) {
-            // Do not fail seeding if optional authoring synchronization encounters incomplete mock state in tests.
+        } catch (RuntimeException ex) {
+            log.warn("Could not publish curated course outline for workspace {}", workspaceId);
+            throw ex;
         }
     }
 

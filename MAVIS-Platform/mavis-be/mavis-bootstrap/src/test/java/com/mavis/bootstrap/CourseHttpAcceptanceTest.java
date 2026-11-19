@@ -61,11 +61,32 @@ class CourseHttpAcceptanceTest {
                     String hash = encoder.encode(PASSWORD);
                     checkCourseAndPermissions(db, hash);
                     checkOtpLifecycle(db, hash);
+                    checkFreshCuratedCourseSeed(db);
                 }
             } finally {
                 admin.execute("DROP DATABASE " + name + " WITH (FORCE)");
             }
         }
+    }
+
+    private void checkFreshCuratedCourseSeed(JdbcTemplate db) throws Exception {
+        UUID teacher = db.queryForObject("SELECT id FROM users WHERE email = ?", UUID.class, "teacher@example.invalid");
+        UUID classroom = workspace(db, "Fresh curated workflow fixture", teacher);
+        String lecturer = login("teacher");
+        String coursePath = "workspaces/" + classroom;
+        String seed = coursePath + "/course-labs/seed-curated";
+        var preset = Map.of("preset", "STANDARD_DEMO");
+
+        send("POST", seed, login("other-learner"), preset, 403);
+        var labs = data(send("POST", seed, lecturer, preset, 200)).path("labs");
+        assertEquals(3, labs.size());
+        var published = data(send("GET", coursePath + "/course/published", lecturer, null, 200));
+        assertEquals(1, published.path("version").asInt());
+        assertFalse(published.path("snapshot").path("modules").isEmpty());
+        String lab2 = labs.get(1).path("assignmentId").asText();
+        assertEquals(1, data(send("GET", coursePath + "/course-labs/" + lab2 + "/quiz", lecturer, null, 200))
+                .path("version").asInt());
+        assertEquals(labs, data(send("POST", seed, lecturer, preset, 200)).path("labs"));
     }
 
     private void checkOtpLifecycle(JdbcTemplate db, String passwordHash) throws Exception {

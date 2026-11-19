@@ -393,7 +393,7 @@ class CourseLabSeederServiceTest {
         UUID courseId = UUID.randomUUID();
         CourseAuthoringService.CourseView staleDraft = new CourseAuthoringService.CourseView(
                 courseId, workspaceId, "Java Mc", "Test", "DRAFT", 2, 0, List.of());
-        when(courseAuthoring.get(workspaceId)).thenReturn(staleDraft);
+        when(courseAuthoring.findExistingForAuthoring(workspaceId)).thenReturn(Optional.of(staleDraft));
         AtomicInteger moduleCounter = new AtomicInteger(0);
         when(courseAuthoring.saveDraft(eq(workspaceId), any())).thenAnswer(inv -> {
             CourseAuthoringService.CourseRequest req = inv.getArgument(1);
