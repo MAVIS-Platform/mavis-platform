@@ -91,18 +91,10 @@ export function LabSourceSection({
   return (
     <div className="space-y-5">
       <section className="space-y-4 rounded-2xl border bg-card p-5 shadow-xs">
-        <div>
-          <h2 className="flex items-center gap-2 font-semibold">
-            <GitBranch className="size-4 text-teal-600" aria-hidden="true" />
-            {t("Reference repository and pinned analysis", "Repo tham chiếu và phân tích đã ghim")}
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {t(
-              "Import a GitHub repository at a full commit SHA or a ZIP snapshot, run static analysis, then pin the model version to this Lab.",
-              "Nhập repo GitHub với commit SHA đầy đủ hoặc snapshot ZIP, chạy phân tích tĩnh rồi ghim phiên bản model vào Lab.",
-            )}
-          </p>
-        </div>
+        <h2 className="flex items-center gap-2 font-semibold">
+          <GitBranch className="size-4 text-teal-600" aria-hidden="true" />
+          {t("Reference repository and pinned analysis", "Repo tham chiếu và phân tích đã ghim")}
+        </h2>
         <AssignmentSourcePicker
           key={assignment.id}
           workspaceId={workspaceId}
@@ -279,8 +271,15 @@ export function LabSourceSection({
 
       {onNavigate && (
         <div className="flex justify-end">
-          <Button type="button" size="sm" onClick={() => onNavigate("theory")}>
-            {t("Next Step 3: Lab Theory", "Sang Bước 3: Lý thuyết Lab")}
+          <Button
+            type="button"
+            size="sm"
+            variant={assignment.referenceSource?.modelId ? "default" : "outline"}
+            onClick={() => onNavigate("theory")}
+          >
+            {assignment.referenceSource?.modelId
+              ? t("Next Step 3: Lab Theory", "Sang Bước 3: Lý thuyết Lab")
+              : t("Skip (Theory-only) → Step 3: Lab Theory", "Bỏ qua (Chỉ lý thuyết) → Bước 3: Lý thuyết Lab")}
             <ArrowRight className="ml-1.5 size-4" aria-hidden="true" />
           </Button>
         </div>

@@ -138,6 +138,25 @@ class CourseAccessServiceTest {
     }
 
     @Test
+    void publishesTheoryOnlyLabWithoutReferenceModelWhenDescriptionPresent() {
+        UUID teacherId = UUID.randomUUID();
+        when(access.requireCurrentActiveUser()).thenReturn(User.builder().id(teacherId).build());
+        when(workspaces.findLockedById(workspaceId)).thenReturn(Optional.of(workspace));
+        assignment.setDescription("Chapter 1 Java fundamentals theory");
+        assignment.setRequireRuntimeTrace(true);
+        when(assignments.findLockedById(assignmentId)).thenReturn(Optional.of(assignment));
+        when(assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId))
+                .thenReturn(List.of());
+
+        var published = courses.publish(workspaceId, assignmentId);
+
+        assertEquals(1, published.position());
+        assertEquals(Boolean.FALSE, assignment.getRequireRuntimeTrace());
+        assertTrue(workspace.isCourseMode());
+        verifyNoInteractions(referenceArchive);
+    }
+
+    @Test
     void refusesUnpinnedReferenceAndPasskeyBeforePublishing() {
         when(workspaces.findLockedById(workspaceId)).thenReturn(Optional.of(workspace));
         when(assignments.findLockedById(assignmentId)).thenReturn(Optional.of(assignment));

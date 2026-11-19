@@ -74,6 +74,7 @@ export function LabPublishSection({
   const rows: Array<{
     id: string;
     label: string;
+    required?: boolean;
     done: boolean;
     detail: string;
     tab: Tab;
@@ -81,8 +82,9 @@ export function LabPublishSection({
     {
       id: "info",
       label: t("Lab information", "Thông tin Lab"),
+      required: true,
       done: Boolean(assignment.title),
-      detail: t("Title and instructions saved.", "Đã lưu tên và hướng dẫn."),
+      detail: t("Title and description saved.", "Đã lưu tên và mô tả."),
       tab: "info",
     },
     {
@@ -91,7 +93,7 @@ export function LabPublishSection({
       done: Boolean(assignment.referenceSource?.modelId),
       detail: assignment.referenceSource?.modelId
         ? t(`Pinned model ${assignment.referenceSource.modelId.slice(0, 8)}`, `Model đã ghim ${assignment.referenceSource.modelId.slice(0, 8)}`)
-        : t("Attach a pinned reference model.", "Gắn model tham chiếu đã ghim."),
+        : t("Optional for Theory-only Labs. Required for C1–C3 or Studio Live.", "Tùy chọn nếu Lab thuần lý thuyết. Bắt buộc nếu có C1–C3 hoặc Studio Live."),
       tab: "source",
     },
     {
@@ -99,8 +101,8 @@ export function LabPublishSection({
       label: t("Theory", "Lý thuyết"),
       done: theoryReady,
       detail: theoryReady
-        ? t("A theory item is linked to this Lab's module.", "Đã có nội dung lý thuyết cho bài Lab này.")
-        : t("Add or review the lesson in the Theory step.", "Thêm hoặc kiểm tra bài học ở bước Lý thuyết."),
+        ? t("Lesson content saved.", "Đã có nội dung lý thuyết.")
+        : t("Optional — add a lesson in Step 3.", "Tùy chọn — thêm bài học ở Bước 3."),
       tab: "theory",
     },
     ...(labTier !== "THEORY_ONLY"
@@ -111,7 +113,7 @@ export function LabPublishSection({
             done: Boolean(setupLab?.quizPublished),
             detail: setupLab?.quizPublished
               ? t(`Version ${setupLab.quizVersion}`, `Phiên bản ${setupLab.quizVersion}`)
-              : t("Publish a Quiz version.", "Công bố phiên bản Quiz."),
+              : t("Optional — skip if no Quiz Gate.", "Tùy chọn — bỏ qua nếu không dùng Quiz."),
             tab: "quiz" as Tab,
           },
         ]
@@ -124,7 +126,7 @@ export function LabPublishSection({
             done: Boolean(setupLab?.topologyFrozen),
             detail: setupLab?.topologyFrozen
               ? t("Topology is frozen into the published Lab.", "Topology đã được đóng băng vào Lab.")
-              : t("Configure runtime, publish, then freeze topology.", "Cấu hình runtime, công bố rồi đóng băng topology."),
+              : t("Optional — skip if no Docker Studio Live.", "Tùy chọn — bỏ qua nếu không dùng Studio Live."),
             tab: "studio" as Tab,
           },
         ]
@@ -135,7 +137,7 @@ export function LabPublishSection({
       done: published,
       detail: published
         ? t(`Lab ${setupLab?.position ?? ""} is in the class sequence.`, `Lab ${setupLab?.position ?? ""} đã vào thứ tự lớp.`)
-        : t("Add the Lab to the class sequence.", "Thêm Lab vào thứ tự lớp."),
+        : t("Ready to add to class.", "Sẵn sàng thêm vào lớp."),
       tab: "publish",
     },
   ];
@@ -143,19 +145,11 @@ export function LabPublishSection({
   return (
     <div className="space-y-5">
       <section className="space-y-4 rounded-xl border bg-card p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="flex items-center gap-2 font-semibold">
-              <Rocket className="size-4 text-primary" aria-hidden="true" />
-              {t("Check and add to class", "Kiểm tra và thêm vào lớp")}
-            </h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {t(
-                "The Lab is already saved in your Lab Library. These checks decide whether it is ready to open in this class; adding it appends it to the class sequence and unlocks it after the preceding Lab.",
-                "Lab đã được lưu trong Kho Lab. Các kiểm tra này quyết định Lab đã sẵn sàng mở trong lớp chưa; thêm vào lớp sẽ nối Lab vào cuối thứ tự và mở khóa sau Lab trước.",
-              )}
-            </p>
-          </div>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="flex items-center gap-2 font-semibold">
+            <Rocket className="size-4 text-primary" aria-hidden="true" />
+            {t("Check and add to class", "Kiểm tra và thêm vào lớp")}
+          </h2>
           <Badge variant={published ? "success" : "secondary"}>
             {published ? t("In class", "Trong lớp") : t("Not in class", "Chưa vào lớp")}
           </Badge>
@@ -170,12 +164,19 @@ export function LabPublishSection({
                 <Circle className="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
               )}
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium">{row.label}</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-medium">{row.label}</p>
+                  {row.id !== "publish" && (
+                    <Badge variant={row.required ? "outline" : "secondary"} className="text-[10px]">
+                      {row.required ? t("Required", "Bắt buộc") : t("Optional", "Tùy chọn")}
+                    </Badge>
+                  )}
+                </div>
                 <p className="text-xs text-muted-foreground">{row.detail}</p>
               </div>
-              {!row.done && (
+              {!row.done && row.id !== "publish" && (
                 <Button type="button" size="sm" variant="outline" onClick={() => onNavigate(row.tab)}>
-                  {t("Fix", "Sửa")}
+                  {t("Open", "Mở")}
                 </Button>
               )}
             </li>

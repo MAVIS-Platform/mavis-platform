@@ -112,20 +112,27 @@ public class CourseAccessService {
             return new Lab(assignmentId, assignment.getLabOrder(), assignment.getTitle(), "UNLOCKED", null);
         }
         var model = assignment.getReferenceModel();
-        var snapshot = model == null ? null : model.getSourceSnapshot();
-        if (snapshot == null || !Boolean.TRUE.equals(snapshot.getIsPublished())
-                || snapshot.getProject().getWorkspace() == null
-                || !"TEACHER_REFERENCE".equals(snapshot.getProject().getProjectType())
-                || !Boolean.TRUE.equals(snapshot.getProject().getIsReferenceTemplate())
-                || !workspaceId.equals(snapshot.getProject().getWorkspace().getId())
-                || snapshot.getArtifactHash() == null || !snapshot.getArtifactHash().matches("[a-fA-F0-9]{64}")
-                || snapshot.getStoragePath() == null || snapshot.getStoragePath().isBlank()
-                || "DELETED".equals(snapshot.getProject().getStatus())
-                || ("GITHUB_COMMIT".equals(snapshot.getSourceType())
-                    && (snapshot.getCommitSha() == null || !snapshot.getCommitSha().matches("[a-fA-F0-9]{40}")))) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "Attach a published reference model and a pinned source archive before publishing the Lab");
+        if (model == null) {
+            if (assignment.getDescription() == null || assignment.getDescription().isBlank()) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "Attach a published reference model and a pinned source archive before publishing the Lab");
+            }
+            assignment.setRequireRuntimeTrace(false);
+        } else {
+            var snapshot = model.getSourceSnapshot();
+            if (snapshot == null || !Boolean.TRUE.equals(snapshot.getIsPublished())
+                    || snapshot.getProject().getWorkspace() == null
+                    || !"TEACHER_REFERENCE".equals(snapshot.getProject().getProjectType())
+                    || !Boolean.TRUE.equals(snapshot.getProject().getIsReferenceTemplate())
+                    || !workspaceId.equals(snapshot.getProject().getWorkspace().getId())
+                    || snapshot.getArtifactHash() == null || !snapshot.getArtifactHash().matches("[a-fA-F0-9]{64}")
+                    || snapshot.getStoragePath() == null || snapshot.getStoragePath().isBlank()
+                    || "DELETED".equals(snapshot.getProject().getStatus())
+                    || ("GITHUB_COMMIT".equals(snapshot.getSourceType())
+                        && (snapshot.getCommitSha() == null || !snapshot.getCommitSha().matches("[a-fA-F0-9]{40}")))) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "Attach a published reference model and a pinned source archive before publishing the Lab");
+            }
+            referenceArchive.resolve(snapshot, true);
         }
-        referenceArchive.resolve(snapshot, true);
         int next = assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId)
                 .stream().mapToInt(Assignment::getLabOrder).max().orElse(0) + 1;
         assignment.setLabOrder(next);
