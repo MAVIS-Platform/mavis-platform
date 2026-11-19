@@ -110,6 +110,20 @@ class CourseSetupServiceTest {
                 .filter(step -> step.id().equals("studio")).allMatch(step -> "ACTION".equals(step.state())));
     }
 
+    @Test void publishedLabUsesFrozenTopologyWhenLiveProfileHasNoTopology() {
+        when(configurations.findById(projectId)).thenReturn(Optional.of(configuration(false)));
+
+        var result = setup.setup(workspaceId);
+
+        assertFalse(result.reference().topologyConfigured());
+        assertTrue(result.labs().getFirst().topologyFrozen());
+        assertEquals("READY", result.labs().getFirst().state());
+        assertEquals(assignmentId, result.previewAssignmentId());
+        assertEquals("open-lab", result.nextAction());
+        assertEquals("DONE", result.steps().stream()
+                .filter(step -> step.id().equals("studio")).findFirst().orElseThrow().state());
+    }
+
     @Test void multipleReferenceProjectsSurfaceTheReferenceThatStillNeedsConfiguration() {
         UUID secondProjectId = UUID.randomUUID();
         UUID secondSnapshotId = UUID.randomUUID();

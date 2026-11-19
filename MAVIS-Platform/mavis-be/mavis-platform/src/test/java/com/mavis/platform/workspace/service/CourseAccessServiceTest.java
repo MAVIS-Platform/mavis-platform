@@ -138,6 +138,36 @@ class CourseAccessServiceTest {
     }
 
     @Test
+    void freezeRejectsMismatchedProfileEvenWhenAnOlderTopologyExists() {
+        when(access.requireCurrentActiveUser()).thenReturn(User.builder().id(UUID.randomUUID()).build());
+        when(workspaces.findLockedById(workspaceId)).thenReturn(Optional.of(workspace));
+        when(assignments.findLockedById(assignmentId)).thenReturn(Optional.of(assignment));
+        assignment.setLabOrder(1);
+        var oldTopology = new ObjectMapper().createObjectNode().put("version", 1).put("marker", "frozen");
+        assignment.setStudioTopologySnapshot(oldTopology);
+        assignment.setStudioTopologyRevision(5);
+        var project = Project.builder().id(UUID.randomUUID()).workspace(workspace).build();
+        var source = SourceSnapshot.builder().id(UUID.randomUUID()).project(project).build();
+        var model = ModelVersion.builder().id(UUID.randomUUID()).sourceSnapshot(source).build();
+        assignment.setReferenceModel(model);
+        var configuration = new RuntimeConfiguration();
+        configuration.setSourceSnapshotId(source.getId());
+        configuration.setModelVersionId(UUID.randomUUID());
+        configuration.setRevision(6);
+        configuration.setProfile(new ObjectMapper().createObjectNode()
+                .set("studioTopology", new ObjectMapper().createObjectNode().put("version", 1)));
+        when(configurations.findById(project.getId())).thenReturn(Optional.of(configuration));
+
+        var failure = assertThrows(BusinessException.class, () -> courses.freezeTopology(workspaceId, assignmentId));
+
+        assertEquals(ErrorCode.BAD_REQUEST, failure.getErrorCode());
+        assertEquals(oldTopology, assignment.getStudioTopologySnapshot());
+        assertEquals(5, assignment.getStudioTopologyRevision());
+        verify(assignments, never()).save(assignment);
+        verifyNoInteractions(jdbc);
+    }
+
+    @Test
     void publishesTheoryOnlyLabWithoutReferenceModelWhenDescriptionPresent() {
         UUID teacherId = UUID.randomUUID();
         when(access.requireCurrentActiveUser()).thenReturn(User.builder().id(teacherId).build());

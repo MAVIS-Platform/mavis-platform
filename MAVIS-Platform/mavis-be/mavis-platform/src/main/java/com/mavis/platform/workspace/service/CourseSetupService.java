@@ -161,7 +161,7 @@ public class CourseSetupService {
             ReferenceSetup labRef = labReferences.get(i);
             if (!labRef.runtimeConfigured()) allRuntimeConfigured = false;
             if (!labRef.runtimeMatchesSource()) allRuntimeMatchesSource = false;
-            if (!labRef.topologyConfigured()) allTopologiesConfigured = false;
+            if (!labRef.topologyConfigured() && !hasFrozenTopology(ordered.get(i))) allTopologiesConfigured = false;
         }
         boolean allPublished = !labs.isEmpty() && labs.stream().allMatch(LabSetup::published);
         boolean allQuizzes = !labs.isEmpty() && labs.stream().filter(LabSetup::published).allMatch(LabSetup::quizPublished);
@@ -252,9 +252,11 @@ public class CourseSetupService {
             ReferenceSetup fallback) {
         for (int i = 0; i < ordered.size(); i++) {
             ReferenceSetup ref = labReferences.get(i);
-            boolean requiresRuntime = Boolean.TRUE.equals(ordered.get(i).getRequireRuntimeTrace());
+            Assignment lab = ordered.get(i);
+            boolean requiresRuntime = Boolean.TRUE.equals(lab.getRequireRuntimeTrace());
             if (!ref.referenceReady()) return ref;
-            if (requiresRuntime && (!ref.runtimeConfigured() || !ref.runtimeMatchesSource() || !ref.topologyConfigured())) {
+            if (requiresRuntime && (!ref.runtimeConfigured() || !ref.runtimeMatchesSource()
+                    || (!ref.topologyConfigured() && !hasFrozenTopology(lab)))) {
                 return ref;
             }
         }
@@ -337,10 +339,9 @@ public class CourseSetupService {
         ReferenceSetup runtimeReference = runtimeModel == null ? reference : reference(runtimeModel);
         boolean referenceReady = reference.referenceReady() || runtimeReference.referenceReady();
         boolean requiresRuntime = Boolean.TRUE.equals(lab.getRequireRuntimeTrace());
+        boolean topologyFrozen = hasFrozenTopology(lab);
         boolean studioReady = runtimeReference.referenceReady() && runtimeReference.runtimeMatchesSource()
-                && runtimeReference.runtimeConfigured() && runtimeReference.topologyConfigured();
-        boolean topologyFrozen = published && lab.getStudioTopologySnapshot() != null
-                && lab.getStudioTopologySnapshot().isObject();
+                && runtimeReference.runtimeConfigured() && (topologyFrozen || runtimeReference.topologyConfigured());
         boolean skipQuiz = lab.getAiPolicy() != null
                 && (lab.getAiPolicy().path("skipQuiz").asBoolean(false)
                     || "THEORY_ONLY".equalsIgnoreCase(lab.getAiPolicy().path("labTier").asText()));
@@ -354,6 +355,11 @@ public class CourseSetupService {
         return new LabSetup(lab.getId(), published ? lab.getLabOrder() : 0, lab.getTitle(),
                 published, referenceReady, requiresRuntime, studioReady, topologyFrozen,
                 quizReady, quizVersion, state);
+    }
+
+    private static boolean hasFrozenTopology(Assignment lab) {
+        return lab.getLabOrder() != null && lab.getStudioTopologySnapshot() != null
+                && lab.getStudioTopologySnapshot().isObject();
     }
 
     private int quizVersion(Assignment lab) {
