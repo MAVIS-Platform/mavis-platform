@@ -26,7 +26,7 @@ export function AssignmentSourcePicker({
 }) {
   const api = useApi(),
     cache = useQueryClient();
-  const [mode, setMode] = useState("existing"),
+  const [mode, setMode] = useState(initial?.projectId ? "existing" : "github"),
     [repository, setRepository] = useState("");
   const [lookup, setLookup] = useState(""),
     [branch, setBranch] = useState(""),
@@ -173,22 +173,18 @@ export function AssignmentSourcePicker({
 
   return (
     <fieldset className="space-y-4 rounded-xl border bg-muted/20 p-4" disabled={busy}>
-      <legend className="px-1 text-sm font-semibold">Assignment project & source version</legend>
-      <p className="text-sm text-muted-foreground">
-        Attach a class reference here. Import, analyze and select its exact version without leaving
-        this assignment.
-      </p>
       <div className="flex flex-wrap gap-2">
         {(
           [
-            ["existing", "Existing version / no source"],
             ["github", "GitHub repository"],
             ["zip", "Upload ZIP"],
+            ["existing", "Imported repo"],
           ] as const
         ).map(([id, label]) => (
           <Button
             type="button"
             key={id}
+            size="sm"
             variant={mode === id ? "default" : "outline"}
             aria-pressed={mode === id}
             onClick={() => changeMode(id)}
@@ -260,54 +256,12 @@ export function AssignmentSourcePicker({
         <>
           {mode === "github" ? (
             <>
-              <div className="space-y-1.5 rounded-lg border bg-background/80 p-3">
-                <p className="text-xs font-semibold text-foreground">
-                  Curated Organization Repositories (MAVIS-Platform · BR-03 / BR-07)
-                </p>
-                <p className="text-[11px] text-muted-foreground">
-                  Select an official prepared repository with digest-pinned Docker images, /health probes, and prepared route-controllers for MAVIS Studio Live:
-                </p>
-                <div className="flex flex-wrap gap-1.5 pt-1">
-                  {[
-                    {
-                      label: "⚡ Studio Live Defense Demo (mavis-studio-live-demo)",
-                      url: "https://github.com/MAVIS-Platform/mavis-studio-live-demo",
-                    },
-                    {
-                      label: "🧪 Studio Live Seed (mavis-studio-live-seed)",
-                      url: "https://github.com/MAVIS-Platform/mavis-studio-live-seed",
-                    },
-                    {
-                      label: "☕ Java Microservices Seed (mavis-commerce-seed)",
-                      url: "https://github.com/MAVIS-Platform/mavis-commerce-seed",
-                    },
-                  ].map((preset) => (
-                    <Button
-                      key={preset.url}
-                      type="button"
-                      size="sm"
-                      variant={repository === preset.url ? "default" : "outline"}
-                      className="h-7 px-2.5 text-xs"
-                      onClick={() => {
-                        setRepository(preset.url);
-                        setLookup(preset.url);
-                        setBranch("main");
-                        setCommit("");
-                        setModelId("");
-                        setJobId("");
-                      }}
-                    >
-                      {preset.label}
-                    </Button>
-                  ))}
-                </div>
-              </div>
               <label className="block text-sm">
                 GitHub repository URL
                 <Input
                   aria-label="Assignment GitHub repository URL"
                   value={repository}
-                  placeholder="https://github.com/MAVIS-Platform/mavis-studio-live-demo"
+                  placeholder="https://github.com/owner/repository"
                   onChange={(e) => {
                     setRepository(e.target.value);
                     setModelId("");
@@ -332,11 +286,11 @@ export function AssignmentSourcePicker({
                 ]}
               />
               <label className="block text-sm">
-                Commit SHA (optional; overrides branch)
+                Commit SHA (optional)
                 <Input
                   value={commit}
                   aria-label="Assignment commit SHA"
-                  placeholder="Full 40-character SHA"
+                  placeholder="40-character SHA"
                   onChange={(e) => {
                     setCommit(e.target.value);
                     setModelId("");
@@ -344,10 +298,6 @@ export function AssignmentSourcePicker({
                   }}
                 />
               </label>
-              <p className="text-xs text-muted-foreground">
-                Public repositories only. Use ZIP for a private repository. The resolved commit is
-                pinned, even when the branch changes later.
-              </p>
             </>
           ) : (
             <label className="block text-sm">

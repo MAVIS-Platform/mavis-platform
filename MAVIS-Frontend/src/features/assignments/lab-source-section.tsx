@@ -3,16 +3,17 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, ArrowUpRight, GitBranch, Network, Save } from "lucide-react";
+import { AlertTriangle, ArrowRight, ArrowUpRight, CheckCircle2, GitBranch, Network, Save } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useApiMutation, useApiQuery } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { ArchitectureDiagrams } from "@/features/architecture/architecture-diagrams";
 import { DiagramPreview } from "@/features/architecture/diagram-preview";
 import { ArchitectureGraph, ElementDetailsPanel } from "@/features/architecture/components";
-import { useStudentLabContext } from "@/features/workspaces/course-access";
+import { useRuntimeSetupReadiness, useStudentLabContext } from "@/features/workspaces/course-access";
 import { AssignmentSourceDetails, AssignmentSourcePicker } from "./source-picker";
-import { resolveLabTier, type Assignment } from "./requirements";
+import type { Assignment } from "./requirements";
 
 type PreviewKind = "CONTEXT" | "CONTAINER" | "COMPONENT" | "GRAPH";
 
@@ -60,6 +61,15 @@ export function LabSourceSection({
     },
     { enabled: Boolean(referenceProject && referenceModel) },
   );
+  const readiness = useRuntimeSetupReadiness(referenceProject ?? null);
+  const staticReady = (modelQuery.data?.elements.length ?? 0) > 0;
+  const studioReady = Boolean(
+    readiness.data?.preflightCompatible && readiness.data?.runnerReady,
+  );
+  const studioMissing = [
+    ...(readiness.data?.prerequisites ?? []),
+    ...(readiness.data?.warnings ?? []),
+  ].filter(Boolean);
   const diagrams = studentCtx.data?.referenceArchitecture?.diagrams ?? [];
   const activeMermaid =
     diagrams.find((item) => item.level?.toUpperCase() === previewKind)?.mermaidDsl ?? null;
@@ -145,19 +155,92 @@ export function LabSourceSection({
       )}
 
       {referenceProject && referenceModel && (
-        <section className="space-y-4 rounded-2xl border bg-card p-5 shadow-xs">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h3 className="font-semibold">
-                {t("Generated architecture views (C1–C3 & Dependency Graph)", "Xem trước Sơ đồ Kiến trúc (C1–C3 & Đồ thị phụ thuộc)")}
-              </h3>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {t(
-                  "Students view these exact C1–C3 diagrams & Dependency Graph inline inside Step 1 & Step 2.",
-                  "Sinh viên sẽ xem trực tiếp các sơ đồ C1–C3 & Đồ thị phụ thuộc này trong Bước 1 & Bước 2.",
+        <section className="space-y-3 rounded-2xl border bg-card p-5 shadow-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold">
+              {t("Repository readiness report", "Báo cáo mức độ sẵn sàng của Repo")}
+            </h3>
+            <Badge variant={staticReady && studioReady ? "success" : staticReady ? "outline" : "warning"}>
+              {staticReady && studioReady
+                ? t("Ready for C1–C3 + Studio Live", "Đạt chuẩn C1–C3 + Studio Live")
+                : staticReady
+                  ? t("Ready for C1–C3 & Theory", "Đạt chuẩn C1–C3 & Lý thuyết")
+                  : t("Checking…", "Đang kiểm tra…")}
+            </Badge>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="rounded-xl border bg-muted/15 p-3 text-xs">
+              <div className="flex items-center gap-1.5 font-semibold">
+                {staticReady ? (
+                  <CheckCircle2 className="size-4 text-emerald-600" aria-hidden="true" />
+                ) : (
+                  <AlertTriangle className="size-4 text-amber-500" aria-hidden="true" />
                 )}
+                <span>{t("Static C1–C3 & AI Theory", "Kiến trúc tĩnh C1–C3 & Lý thuyết AI")}</span>
+              </div>
+              <p className="mt-1 text-muted-foreground">
+                {modelQuery.isPending
+                  ? t("Analyzing model…", "Đang đọc mô hình…")
+                  : staticReady
+                    ? t(
+                        `${modelQuery.data!.elements.length} elements · ${modelQuery.data!.edges.length} relationships extracted.`,
+                        `Đã trích xuất ${modelQuery.data!.elements.length} thành phần · ${modelQuery.data!.edges.length} liên kết.`,
+                      )
+                    : t(
+                        "No architecture elements detected in this snapshot.",
+                        "Chưa phát hiện thành phần kiến trúc trong bản snapshot này.",
+                      )}
               </p>
             </div>
+            <div className="rounded-xl border bg-muted/15 p-3 text-xs">
+              <div className="flex items-center gap-1.5 font-semibold">
+                {studioReady ? (
+                  <CheckCircle2 className="size-4 text-emerald-600" aria-hidden="true" />
+                ) : (
+                  <AlertTriangle className="size-4 text-amber-500" aria-hidden="true" />
+                )}
+                <span>{t("Studio Live (Docker Runtime)", "Studio Live (Chạy Docker thật)")}</span>
+              </div>
+              {readiness.isPending ? (
+                <p className="mt-1 text-muted-foreground">
+                  {t("Checking Docker & runtime prerequisites…", "Đang kiểm tra cấu hình Docker & runtime…")}
+                </p>
+              ) : studioReady ? (
+                <p className="mt-1 text-muted-foreground">
+                  {t(
+                    `Ready (${readiness.data?.applications.length ?? 0} services: ${(readiness.data?.applications ?? []).join(", ")})`,
+                    `Sẵn sàng (${readiness.data?.applications.length ?? 0} service: ${(readiness.data?.applications ?? []).join(", ")})`,
+                  )}
+                </p>
+              ) : (
+                <div className="mt-1 space-y-1 text-amber-700 dark:text-amber-300">
+                  {studioMissing.length > 0 ? (
+                    <ul className="list-disc space-y-0.5 pl-4">
+                      {studioMissing.slice(0, 4).map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p>
+                      {t(
+                        "Missing Docker Compose / health probe configuration for Studio Live.",
+                        "Thiếu cấu hình Docker Compose hoặc health probe cho Studio Live.",
+                      )}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {referenceProject && referenceModel && (
+        <section className="space-y-4 rounded-2xl border bg-card p-5 shadow-xs">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h3 className="font-semibold">
+              {t("Generated architecture views (C1–C3 & Dependency Graph)", "Xem trước Sơ đồ Kiến trúc (C1–C3 & Đồ thị phụ thuộc)")}
+            </h3>
             <div className="flex flex-wrap gap-1.5">
               {(
                 [
