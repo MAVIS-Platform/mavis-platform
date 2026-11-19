@@ -2,13 +2,13 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
-import { BookOpen, CheckCircle2, Clock3, ClipboardCheck, Plus, Search, Users } from "lucide-react";
+import { CheckCircle2, Clock3, ClipboardCheck, Plus, Search, Users } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { CourseCover } from "@/components/course-cover";
 import { useApiMutation, useApiQuery, useSession, useSelection } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
 import { ErrorState, RequestState } from "@/components/shared/request-state";
-import { SearchInput, SelectField } from "@/components/shared/forms";
+import { Pagination, SearchInput, SelectField } from "@/components/shared/forms";
 import { DataTable, DetailPanel } from "@/components/shared/data";
 import { CreateWorkspace, WorkspaceControls } from "./manage";
 import {
@@ -28,6 +28,8 @@ import { CourseSetupPanel } from "@/features/courses/course-setup";
 import { JAVA_COURSERA_MODULES } from "@/features/courses/java-coursera-curriculum-data";
 import { useLocale } from "@/lib/i18n/locale-context";
 
+const WORKSPACES_PER_PAGE = 6;
+
 export function Workspaces() {
   const { t } = useLocale();
   const query = useApiQuery("workspaces", {});
@@ -36,6 +38,7 @@ export function Workspaces() {
   const [showCreate, setShowCreate] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "archived">("all");
+  const [page, setPage] = useState(1);
   const canCreate = ["lecturer", "admin"].includes(session.data?.user?.role ?? "");
   const submissions = useApiQuery("submissions", {}, { enabled: canCreate });
   const selected = query.data?.find((w) => w.id === workspaceId);
@@ -52,6 +55,12 @@ export function Workspaces() {
       );
     });
   }, [query.data, search, statusFilter]);
+  const pageCount = Math.max(1, Math.ceil(visibleWorkspaces.length / WORKSPACES_PER_PAGE));
+  const currentPage = Math.min(page, pageCount);
+  const pagedWorkspaces = visibleWorkspaces.slice(
+    (currentPage - 1) * WORKSPACES_PER_PAGE,
+    currentPage * WORKSPACES_PER_PAGE,
+  );
   const pendingReviews = (submissions.data ?? []).filter(
     (submission) => !submission.reviewStatus || submission.reviewStatus === "PENDING",
   ).length;
@@ -64,19 +73,16 @@ export function Workspaces() {
     }
     return counts;
   }, [submissions.data]);
-  const activeCount = (query.data ?? []).filter(
-    (workspace) => (workspace.status ?? "ACTIVE") !== "ARCHIVED",
-  ).length;
-  const totalStudents = (query.data ?? []).reduce(
-    (sum, workspace) =>
-      sum +
-      (workspace.members ?? []).filter((member) => member.role.toUpperCase() === "STUDENT").length,
-    0,
-  );
   if (workspaceId && selected) return <WorkspaceOverview />;
   if (session.data?.user && !canCreate) return <Courses />;
   return (
-    <div className={canCreate ? "space-y-8 rounded-lg bg-background p-6 md:p-8" : "space-y-6"}>
+    <div
+      className={
+        canCreate
+          ? "flex min-h-[calc(100svh-var(--header-height)-4rem)] flex-col gap-8 rounded-lg bg-background p-6 md:p-8"
+          : "space-y-6"
+      }
+    >
       {canCreate ? (
         <div className="space-y-7">
           <header className="mavis-hero-surface px-6 py-7 text-white md:px-8">
@@ -109,60 +115,44 @@ export function Workspaces() {
             </div>
           </header>
 
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto]">
-            <div className="flex flex-wrap items-center gap-4 rounded-xl border bg-card p-5 shadow-sm">
-              <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-950/40">
-                <ClipboardCheck className="size-6" aria-hidden="true" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                  {t("Needs your attention", "Cần bạn xem xét")}
-                </p>
-                <p className="mt-1 text-lg font-semibold">
-                  {submissions.isSuccess ? pendingReviews : "—"}{" "}
-                  {t("submissions to review", "bài nộp chờ chấm")}
-                </p>
-                <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
-                  {(query.data ?? [])
-                    .filter((w) => pendingByWorkspace.has(w.id))
-                    .map(
-                      (w) =>
-                        w.name +
-                        " · " +
-                        pendingByWorkspace.get(w.id) +
-                        " " +
-                        t("submission(s)", "bài nộp"),
-                    )
-                    .join(" · ") || t("Your classes are up to date.", "Các lớp đã được cập nhật.")}
-                </p>
-              </div>
-              <Button
-                asChild
-                variant="outline"
-                className="rounded-lg border-blue-200 text-[#0056d2] hover:bg-blue-50"
-              >
-                <Link href="/submissions">
-                  {t("Review submissions", "Chấm bài nộp")}
-                  <span className="ml-2" aria-hidden="true">
-                    →
-                  </span>
-                </Link>
-              </Button>
+          <div className="flex flex-wrap items-center gap-4 rounded-xl border bg-card p-5 shadow-sm">
+            <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-950/40">
+              <ClipboardCheck className="size-6" aria-hidden="true" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                {t("Needs your attention", "Cần bạn xem xét")}
+              </p>
+              <p className="mt-1 text-lg font-semibold">
+                {submissions.isSuccess ? pendingReviews : "—"}{" "}
+                {t("submissions to review", "bài nộp chờ chấm")}
+              </p>
+              <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
+                {(query.data ?? [])
+                  .filter((w) => pendingByWorkspace.has(w.id))
+                  .map(
+                    (w) =>
+                      w.name +
+                      " · " +
+                      pendingByWorkspace.get(w.id) +
+                      " " +
+                      t("submission(s)", "bài nộp"),
+                  )
+                  .join(" · ") || t("Your classes are up to date.", "Các lớp đã được cập nhật.")}
+              </p>
             </div>
-            <div className="grid grid-cols-2 divide-x rounded-xl border bg-card p-5 shadow-sm lg:min-w-72">
-              <div className="pr-6">
-                <BookOpen className="mb-3 size-4 text-blue-600" aria-hidden="true" />
-                <p className="text-3xl font-semibold tracking-tight">{activeCount}</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {t("Active classes", "Lớp đang hoạt động")}
-                </p>
-              </div>
-              <div className="pl-6">
-                <Users className="mb-3 size-4 text-teal-600" aria-hidden="true" />
-                <p className="text-3xl font-semibold tracking-tight">{totalStudents}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{t("Students", "Sinh viên")}</p>
-              </div>
-            </div>
+            <Button
+              asChild
+              variant="outline"
+              className="rounded-lg border-blue-200 text-[#0056d2] hover:bg-blue-50"
+            >
+              <Link href="/submissions">
+                {t("Review submissions", "Chấm bài nộp")}
+                <span className="ml-2" aria-hidden="true">
+                  →
+                </span>
+              </Link>
+            </Button>
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -177,7 +167,10 @@ export function Workspaces() {
                 value={search}
                 placeholder={t("Search by class name or code", "Tìm theo tên hoặc mã lớp")}
                 aria-label={t("Search classes", "Tìm lớp")}
-                onChange={(event) => setSearch(event.target.value)}
+                onChange={(event) => {
+                  setSearch(event.target.value);
+                  setPage(1);
+                }}
               />
             </div>
             <div
@@ -196,7 +189,10 @@ export function Workspaces() {
                   key={id}
                   type="button"
                   aria-pressed={statusFilter === id}
-                  onClick={() => setStatusFilter(id)}
+                  onClick={() => {
+                    setStatusFilter(id);
+                    setPage(1);
+                  }}
                   className={
                     statusFilter === id
                       ? "rounded-full bg-[#0056d2] px-4 py-2 text-sm text-white"
@@ -219,16 +215,11 @@ export function Workspaces() {
 
       {canCreate && showCreate && <CreateWorkspace onClose={() => setShowCreate(false)} />}
 
-      <RequestState
-        query={query}
-        empty={!query.data?.length}
-        emptyMessage={t(
-          "You have no classes yet. Create the first class above.",
-          "Bạn chưa có lớp nào. Hãy tạo lớp đầu tiên ở trên.",
-        )}
-      >
-        <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-          {visibleWorkspaces.map((workspace) => {
+      <RequestState query={query} empty={false}>
+        {Boolean(query.data?.length) && (
+          <>
+            <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+              {pagedWorkspaces.map((workspace) => {
             const pending = pendingByWorkspace.get(workspace.id) ?? 0;
             const members = workspace.members ?? [];
             const students = members.filter(
@@ -318,18 +309,25 @@ export function Workspaces() {
               </article>
             );
           })}
-          {visibleWorkspaces.length === 0 && (
-            <p className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground md:col-span-2">
-              {t(
-                "No class matches this search or filter.",
-                "Không có lớp nào khớp tìm kiếm hoặc bộ lọc.",
+              {visibleWorkspaces.length === 0 && (
+                <p className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground md:col-span-2 xl:col-span-3">
+                  {t(
+                    "No class matches this search or filter.",
+                    "Không có lớp nào khớp tìm kiếm hoặc bộ lọc.",
+                  )}
+                </p>
               )}
-            </p>
-          )}
-        </div>
+            </div>
+            {pageCount > 1 && (
+              <div className="mt-6">
+                <Pagination page={currentPage} pageCount={pageCount} onPageChange={setPage} />
+              </div>
+            )}
+          </>
+        )}
       </RequestState>
       {canCreate && (
-        <footer className="border-t pt-8 text-center text-sm text-muted-foreground">
+        <footer className="mt-auto border-t pt-8 text-center text-sm text-muted-foreground">
           © MAVIS — Architecture Learning &amp; Analysis
         </footer>
       )}

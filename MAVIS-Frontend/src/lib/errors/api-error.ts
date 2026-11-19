@@ -75,6 +75,22 @@ export const publicErrors = {
     "Run Auto-Configure Studio first so this Lab has a prepared Studio topology.",
   LAB_PUBLISH_CONTENT_REQUIRED:
     "Add a Lab description, attach a Theory lesson, or pin a Reference Source before adding to class.",
+  WORKSPACE_CODE_EXISTS:
+    "A class with this code already exists. Choose a different class code.",
+  WORKSPACE_MEMBER_EXISTS: "This user is already a member of this class.",
+  WORKSPACE_CREATOR_PROTECTED: "The class creator cannot be removed from the class.",
+  WORKSPACE_ARCHIVED: "This class is archived and cannot be modified.",
+  PASSKEY_ALREADY_EXISTS: "This passkey already exists. Choose a different passkey.",
+  INVALID_PASSKEY_FORMAT: "Passkey format is invalid. Use letters, numbers, or hyphens.",
+  INVALID_OR_EXPIRED_PASSKEY:
+    "Invalid or expired passkey. Check with your lecturer and try again.",
+  COURSE_CAPACITY_REACHED: "This class has reached its maximum student capacity.",
+  ALREADY_ENROLLED: "You are already enrolled in this class.",
+  ASSIGNMENT_HAS_SUBMISSIONS: "Cannot delete a Lab that already has student submissions.",
+  ASSIGNMENT_PUBLISHED_PROTECTED:
+    "Published Labs are part of the course roadmap and cannot be deleted.",
+  ASSIGNMENT_PINNED_SOURCE: "A published Lab keeps its pinned reference source.",
+  ACCOUNT_EMAIL_EXISTS: "An account with this email already exists.",
 } as const;
 export type PublicErrorCode = keyof typeof publicErrors;
 // Match only reviewed business messages. Arbitrary upstream text can contain secrets.
@@ -170,6 +186,22 @@ export function backendErrorCode(
     "Add a Lab description, attach a Theory lesson, or pin a published Reference Source before publishing the Lab"
   )
     return "LAB_PUBLISH_CONTENT_REQUIRED";
+  if (path === "workspaces" && status === 400 && message.startsWith("Mã lớp học đã tồn tại"))
+    return "WORKSPACE_CODE_EXISTS";
+  if (status === 400 && message === "Người dùng đã là thành viên của lớp học này")
+    return "WORKSPACE_MEMBER_EXISTS";
+  if (status === 400 && message === "Không thể xóa người tạo khỏi lớp học")
+    return "WORKSPACE_CREATOR_PROTECTED";
+  if (status === 409 && (message === "This workspace is archived" || message === "Workspace is archived"))
+    return "WORKSPACE_ARCHIVED";
+  if (status === 400 && message.startsWith("Không thể xóa đề bài tập đã có sinh viên nộp bài"))
+    return "ASSIGNMENT_HAS_SUBMISSIONS";
+  if (status === 409 && message === "Published Labs are part of the course roadmap")
+    return "ASSIGNMENT_PUBLISHED_PROTECTED";
+  if (status === 409 && message === "A published Lab keeps its pinned source")
+    return "ASSIGNMENT_PINNED_SOURCE";
+  if (status === 409 && message.startsWith("Email đã tồn tại trong hệ thống"))
+    return "ACCOUNT_EMAIL_EXISTS";
   return undefined;
 }
 export function publicErrorCode(value: unknown): PublicErrorCode | undefined {
