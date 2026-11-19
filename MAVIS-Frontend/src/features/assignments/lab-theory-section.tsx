@@ -428,29 +428,6 @@ export function LabTheorySection({
 
   return (
     <div className="space-y-5">
-      {!reference?.modelId && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-teal-500/30 bg-teal-500/5 px-4 py-3 text-xs text-teal-900 dark:text-teal-200">
-          <div className="space-y-0.5">
-            <p className="font-semibold">
-              💡{" "}
-              {t(
-                "Tip: Pin your Reference Repository in Step 3 first to generate Theory from code evidence",
-                "Gợi ý: Gắn Repo chuẩn ở Bước 3 trước để AI tự động sinh Lý thuyết bám sát mã nguồn",
-              )}
-            </p>
-            <p className="text-muted-foreground">
-              {t(
-                "Once a repository is analyzed and pinned in Step 3, click 'AI draft from evidence' below to generate a lesson grounded in its C1–C3 services and classes.",
-                "Sau khi nạp & phân tích Repo ở Bước 3, bạn chỉ cần bấm 'AI soạn từ bằng chứng' bên dưới để sinh bài giảng Lý thuyết bám sát các Service & Class của Repo đó.",
-              )}
-            </p>
-          </div>
-          <Button type="button" size="sm" variant="outline" onClick={() => onNavigate("source")}>
-            {t("Go to Step 3: Pin Repo first", "Sang Bước 3: Gắn Repo trước")}
-            <ArrowRight className="ml-1.5 size-3.5" aria-hidden="true" />
-          </Button>
-        </div>
-      )}
       {course.data?.status === "DRAFT" && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-2.5 text-xs text-amber-800 dark:text-amber-200">
           <span>

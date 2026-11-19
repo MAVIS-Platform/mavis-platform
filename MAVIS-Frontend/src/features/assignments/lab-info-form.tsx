@@ -36,18 +36,6 @@ export function LabInfoForm({
   );
   const [guideTab, setGuideTab] = useState<"write" | "preview">("write");
 
-  const applyDaysOffset = (days: number | null) => {
-    if (days === null) {
-      setDue("");
-      return;
-    }
-    const target = new Date(Date.now() + days * 86_400_000);
-    const localIso = new Date(target.getTime() - target.getTimezoneOffset() * 60_000)
-      .toISOString()
-      .slice(0, 10);
-    setDue(localIso);
-  };
-
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
     if (!title.trim()) return;
@@ -92,7 +80,7 @@ export function LabInfoForm({
           <span className="text-xs text-muted-foreground tabular-nums">{title.length}/255</span>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-[minmax(0,1.4fr)_minmax(15rem,0.6fr)]">
+        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto]">
           <label className="space-y-1.5 text-sm font-medium">
             <span>{t("Lab title", "Tên Lab")}</span>
             <Input
@@ -100,57 +88,26 @@ export function LabInfoForm({
               required
               maxLength={255}
               value={title}
-              placeholder={t(
-                "e.g. Service resilience and failure handling",
-                "Ví dụ: Khả năng chịu lỗi và xử lý sự cố dịch vụ",
-              )}
               onChange={(event) => setTitle(event.target.value)}
             />
           </label>
-          <div className="space-y-1.5 text-sm font-medium">
-            <div className="flex flex-wrap items-center justify-between gap-1.5">
-              <span>{t("Due date (optional)", "Hạn nộp (không bắt buộc)")}</span>
-              <div className="inline-flex flex-wrap items-center gap-1 text-[11px]">
-                <button
-                  type="button"
-                  onClick={() => applyDaysOffset(null)}
-                  className={`rounded-md border px-2 py-0.5 font-medium transition ${
-                    !due
-                      ? "border-teal-500 bg-teal-500/15 text-teal-700 dark:text-teal-300"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {t("No deadline", "Không giới hạn")}
-                </button>
-                {[
-                  { days: 7, en: "+7d", vi: "+7 ngày" },
-                  { days: 14, en: "+14d", vi: "+14 ngày" },
-                  { days: 30, en: "+30d", vi: "+30 ngày" },
-                ].map((preset) => (
-                  <button
-                    key={preset.days}
-                    type="button"
-                    onClick={() => applyDaysOffset(preset.days)}
-                    className="rounded-md border px-2 py-0.5 font-medium text-muted-foreground transition hover:border-teal-400 hover:text-foreground"
-                  >
-                    {t(preset.en, preset.vi)}
-                  </button>
-                ))}
-              </div>
-            </div>
+          <label className="space-y-1.5 text-sm font-medium">
+            <span>{t("Due date (optional)", "Hạn nộp (không bắt buộc)")}</span>
             <Input
               type="date"
+              className="w-40"
               aria-label={t("Due date (optional)", "Hạn nộp (không bắt buộc)")}
               value={due}
               onChange={(event) => setDue(event.target.value)}
             />
-          </div>
+          </label>
         </div>
 
+        {/* Instructions, learning goals and completion criteria */}
         <div className="space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <label htmlFor="lab-instructions-input" className="text-sm font-medium">
-              {t("Instructions, learning goals and completion criteria", "Hướng dẫn, mục tiêu và tiêu chí hoàn thành")}
+              {t("Description", "Mô tả")}
             </label>
             <div className="inline-flex rounded-lg border bg-muted/40 p-0.5 text-xs">
               <button
@@ -184,10 +141,6 @@ export function LabInfoForm({
               maxLength={10000}
               rows={6}
               value={instructions}
-              placeholder={t(
-                "Describe the learning goal, what students should investigate, the required evidence and the completion criteria (Markdown supported).",
-                "Nêu mục tiêu học tập, nội dung sinh viên cần khảo sát, bằng chứng cần nộp và tiêu chí hoàn thành (hỗ trợ Markdown).",
-              )}
               onChange={(event) => setInstructions(event.target.value)}
             />
           ) : (
@@ -195,25 +148,15 @@ export function LabInfoForm({
               {instructions.trim() ? (
                 <MarkdownPreview markdown={instructions} />
               ) : (
-                <p className="text-xs text-muted-foreground">
-                  {t(
-                    "Formatted Markdown instructions for students appear here.",
-                    "Bản hướng dẫn định dạng Markdown cho sinh viên hiển thị tại đây.",
-                  )}
-                </p>
+                <p className="text-xs text-muted-foreground">—</p>
               )}
             </div>
           )}
         </div>
       </section>
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-xs text-muted-foreground">
-          {t(
-            "Saving creates a draft Lab (Theory + Quiz + Studio). Students do not submit diagrams. Attach the reference source and publish it in the next steps.",
-            "Lưu sẽ tạo Lab nháp (Lý thuyết + Quiz + Studio). Sinh viên không nộp diagram. Gắn nguồn tham chiếu và công bố ở các bước tiếp theo.",
-          )}
-        </p>
+      {/* Saving creates a draft Lab (Theory + Quiz + Studio). Students do not submit diagrams. Attach the reference source and publish it in the next steps. */}
+      <div className="flex justify-end">
         <Button disabled={save.isPending || !title.trim()}>
           {save.isPending
             ? t("Saving Lab draft…", "Đang lưu bản nháp Lab…")

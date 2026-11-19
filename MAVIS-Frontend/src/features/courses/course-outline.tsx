@@ -191,30 +191,19 @@ export function CourseOutline({
   if (modules.length === 0) {
     if (!canManage) return null;
     return (
-      <section className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-dashed bg-card px-5 py-6">
-        <div className="space-y-1">
-          <h2 className="text-base font-semibold text-foreground">
-            {t(
-              "No curriculum chapters (milestones) set up yet",
-              "Chưa thiết lập Chương / Mốc học tập cho lớp này",
-            )}
-          </h2>
-          <p className="max-w-2xl text-xs leading-5 text-muted-foreground">
-            {t(
-              "Create your Labs in Lab Creation first, then open Curriculum & Materials to add Chapters/Milestones (Milestone 1, Milestone 2, …) and assign Labs into each milestone.",
-              "Hãy tạo các bài Lab ở tab Tạo Lab trước, sau đó vào Đề cương & Học liệu (Curriculum & Materials) để tạo các Chương / Mốc (Mốc 1, Mốc 2, …) và gắn bài Lab vào từng Mốc.",
-            )}
-          </p>
-        </div>
+      <section className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-dashed bg-card px-5 py-4">
+        <p className="text-sm font-medium text-muted-foreground">
+          {t("No curriculum chapters yet.", "Chưa có chương học tập nào.")}
+        </p>
         <div className="flex flex-wrap items-center gap-2">
           <Button asChild size="sm" variant="outline">
             <Link href={`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}`}>
-              {t("Create Labs", "Tạo bài Lab")}
+              {t("Create Labs", "Tạo Lab")}
             </Link>
           </Button>
           <Button asChild size="sm">
             <Link href={`/workspace-overview?workspace=${encodeURIComponent(workspaceId)}&view=course-authoring`}>
-              {t("Setup Curriculum Milestones", "Thiết lập Chương / Mốc (Curriculum)")}
+              {t("Setup Curriculum", "Thiết lập Curriculum")}
             </Link>
           </Button>
         </div>
