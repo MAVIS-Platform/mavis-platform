@@ -268,7 +268,12 @@ export function LabStudioSection({
             <div className="flex flex-wrap items-center gap-2 border-t pt-4">
               <Button
                 type="button"
-                variant={showPlaytest ? "secondary" : "outline"}
+                variant="outline"
+                className={
+                  showPlaytest
+                    ? "border-primary/40 bg-primary/10 text-primary hover:bg-primary/15"
+                    : undefined
+                }
                 onClick={() => setShowPlaytest((open) => !open)}
               >
                 <Play className="mr-1.5 size-4" aria-hidden="true" />

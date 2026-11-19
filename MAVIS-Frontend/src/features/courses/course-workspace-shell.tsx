@@ -374,7 +374,7 @@ export function CourseWorkspaceShell({
                     href={tab.href(workspace.id)}
                     aria-current={isCurrent ? "page" : undefined}
                     className={cn(
-                      "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-colors sm:text-sm",
+                      "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors",
                       isCurrent
                         ? "bg-white text-emerald-950 shadow-sm"
                         : "text-white/85 hover:bg-white/15 hover:text-white",

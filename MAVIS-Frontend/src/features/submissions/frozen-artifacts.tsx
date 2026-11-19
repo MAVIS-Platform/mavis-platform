@@ -45,10 +45,9 @@ function SubmissionEvidenceHeader({ submission }: { submission: Submission }) {
         <div className="rounded-lg border bg-muted/20 p-3 text-xs">
           <p className="font-medium">Course Quiz Gate Proof</p>
           <p className="text-muted-foreground">
-            {submission.courseQuizEvidence.status} · {submission.courseQuizEvidence.correctCount}/
-            {submission.courseQuizEvidence.questionCount} (
-            {submission.courseQuizEvidence.passPercent}
-            %) · Quiz v{submission.courseQuizEvidence.quizVersion}
+            {submission.courseQuizEvidence.status === "NOT_REQUIRED"
+              ? "NOT_REQUIRED · Theory Only"
+              : `${submission.courseQuizEvidence.status} · ${submission.courseQuizEvidence.correctCount ?? 0}/${submission.courseQuizEvidence.questionCount ?? 0} (${submission.courseQuizEvidence.passPercent ?? 0}%) · Quiz v${submission.courseQuizEvidence.quizVersion ?? 1}`}
           </p>
         </div>
       )}

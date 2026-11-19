@@ -1388,3 +1388,24 @@ test("Lecturer flow, 1-Click Login, MockAdapter JAVA-MS-2026, and clean routes h
   assert.ok(mockSrc.includes("workspace-java-ms-2026"));
   assert.ok(mockSrc.includes("JAVA-MS-2026"));
 });
+
+test("courseQuizEvidenceSchema accepts Theory-only PASSED and NOT_REQUIRED payloads without referenceModelId", () => {
+  const { courseQuizEvidenceSchema } = require("../src/types/domain.ts");
+  const passedWithoutModel = courseQuizEvidenceSchema.parse({
+    status: "PASSED",
+    attemptId: "a1",
+    quizVersion: 1,
+    correctCount: 2,
+    questionCount: 2,
+    passPercent: 100,
+    submittedAt: "2026-11-19T00:00:00Z",
+  });
+  assert.equal(passedWithoutModel.status, "PASSED");
+  assert.equal(passedWithoutModel.referenceModelId, undefined);
+
+  const notRequired = courseQuizEvidenceSchema.parse({
+    status: "NOT_REQUIRED",
+    labTier: "THEORY_ONLY",
+  });
+  assert.equal(notRequired.status, "NOT_REQUIRED");
+});

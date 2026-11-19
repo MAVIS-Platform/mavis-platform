@@ -138,10 +138,16 @@ function MySubmissions() {
               label: t("Evidence", "Minh chứng"),
               render: (s: Submission) => (
                 <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                  {s.courseQuizEvidence && (
-                    <Badge variant="outline">
-                      Quiz {s.courseQuizEvidence.correctCount}/{s.courseQuizEvidence.questionCount}
-                    </Badge>
+                  {s.courseQuizEvidence &&
+                    s.courseQuizEvidence.correctCount != null &&
+                    s.courseQuizEvidence.questionCount != null && (
+                      <Badge variant="outline">
+                        Quiz {s.courseQuizEvidence.correctCount}/
+                        {s.courseQuizEvidence.questionCount}
+                      </Badge>
+                    )}
+                  {s.courseQuizEvidence?.status === "NOT_REQUIRED" && (
+                    <Badge variant="outline">{t("Theory Only", "Chỉ lý thuyết")}</Badge>
                   )}
                   {s.runtime?.studioVerified && (
                     <Badge variant="success">{t("Studio Verified", "Đã xác minh Studio")}</Badge>

@@ -241,7 +241,7 @@ export async function executeJava(
         workspaceId: z.string().uuid().nullish(),
         workspaceName: z.string().nullish(),
         assignmentId: z.string().uuid(),
-        projectId: z.string().uuid(),
+        projectId: z.string().uuid().nullish(),
         submittedById: z.string().uuid(),
         submittedAt: z.string(),
         assignmentTitle: z.string().nullish(),
@@ -269,8 +269,8 @@ export async function executeJava(
         reviewSummary: z.string().nullish(),
         gradedByName: z.string().nullish(),
         gradedAt: z.string().nullish(),
-        sourceSnapshotId: z.string().uuid(),
-        modelVersionId: z.string().uuid(),
+        sourceSnapshotId: z.string().uuid().nullish(),
+        modelVersionId: z.string().uuid().nullish(),
         runtimeSessionId: z.string().uuid().nullish(),
       })
       .parse(raw);
@@ -280,18 +280,21 @@ export async function executeJava(
     let feedback: unknown;
     let runtime: any = null;
     if (theoryOnly) {
+      const refModelId = sub.modelVersionId ?? `theory-model:${sub.assignmentId}`;
+      const refProjectId = sub.projectId ?? `theory-project:${sub.assignmentId}`;
+      const refSnapshotId = sub.sourceSnapshotId ?? `theory-snapshot:${sub.assignmentId}`;
       m = {
-        id: sub.modelVersionId,
-        projectId: sub.projectId,
-        snapshotId: sub.sourceSnapshotId,
+        id: refModelId,
+        projectId: refProjectId,
+        snapshotId: refSnapshotId,
         revision: 1,
         label: "Reference model",
         elements: [],
         edges: [],
       };
       source = {
-        id: sub.sourceSnapshotId,
-        projectId: sub.projectId,
+        id: refSnapshotId,
+        projectId: refProjectId,
         name: "Reference source",
         createdAt: sub.submittedAt,
         validation: "valid",
@@ -299,6 +302,8 @@ export async function executeJava(
       };
       feedback = await get(`submissions/${sub.id}/feedbacks`).catch(() => []);
     } else {
+      if (!sub.modelVersionId || !sub.sourceSnapshotId || !sub.projectId)
+        throw new ApiError("contract", 502);
       [m, source, feedback, runtime] = await Promise.all([
         model(sub.modelVersionId, includeDetails),
         snapshot(sub.sourceSnapshotId),

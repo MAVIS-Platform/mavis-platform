@@ -47,11 +47,16 @@ export function SubmissionVersionHeader({ submission }: { submission: Submission
         {submission.submissionNotes && (
           <p className="whitespace-pre-wrap text-sm">{submission.submissionNotes}</p>
         )}
-        {quiz && (
+        {quiz && quiz.status === "PASSED" && quiz.correctCount != null && quiz.questionCount != null && (
           <p className="text-sm">
             {t("Lab Quiz passed", "Đã đạt Quiz của Lab")} · {quiz.correctCount}/{quiz.questionCount}
             {" · "}
-            {t("Version", "Phiên bản")} {quiz.quizVersion}
+            {t("Version", "Phiên bản")} {quiz.quizVersion ?? 1}
+          </p>
+        )}
+        {quiz && quiz.status === "NOT_REQUIRED" && (
+          <p className="text-sm">
+            {t("Theory-only Lab (no Quiz required)", "Lab chỉ lý thuyết (không yêu cầu Quiz)")}
           </p>
         )}
         <SubmissionExport submissionId={submission.id} />
@@ -81,11 +86,16 @@ export function SubmissionVersionHeader({ submission }: { submission: Submission
       {submission.submissionNotes && (
         <p className="whitespace-pre-wrap text-sm">{submission.submissionNotes}</p>
       )}
-      {quiz && (
+      {quiz && quiz.status === "PASSED" && quiz.correctCount != null && quiz.questionCount != null && (
         <p className="text-sm">
           {t("Lab Quiz passed", "Đã đạt Quiz của Lab")} · {quiz.correctCount}/{quiz.questionCount}
           {" · "}
-          {t("Version", "Phiên bản")} {quiz.quizVersion}
+          {t("Version", "Phiên bản")} {quiz.quizVersion ?? 1}
+        </p>
+      )}
+      {quiz && quiz.status === "NOT_REQUIRED" && (
+        <p className="text-sm">
+          {t("Theory-only Lab (no Quiz required)", "Lab chỉ lý thuyết (không yêu cầu Quiz)")}
         </p>
       )}
       <SubmissionExport submissionId={submission.id} />

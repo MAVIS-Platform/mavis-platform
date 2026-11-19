@@ -292,17 +292,18 @@ export const assignmentSchema = z.object({
   dueAt: z.string(),
 });
 export const courseQuizEvidenceSchema = z.object({
-  status: z.literal("PASSED"),
-  attemptId: z.string(),
-  quizVersion: z.number().int().positive(),
-  correctCount: z.number().int().nonnegative(),
-  questionCount: z.number().int().positive(),
-  passPercent: z.number().int().min(1).max(100),
-  submittedAt: z.string(),
-  referenceModelId: z.string(),
-  referenceSnapshotId: z.string(),
-  artifactHash: z.string(),
-  commitSha: z.string().nullable(),
+  status: z.enum(["PASSED", "NOT_REQUIRED"]),
+  attemptId: z.string().nullish(),
+  quizVersion: z.number().int().positive().nullish(),
+  correctCount: z.number().int().nonnegative().nullish(),
+  questionCount: z.number().int().positive().nullish(),
+  passPercent: z.number().int().min(1).max(100).nullish(),
+  submittedAt: z.string().nullish(),
+  labTier: z.string().nullish(),
+  referenceModelId: z.string().nullish(),
+  referenceSnapshotId: z.string().nullish(),
+  artifactHash: z.string().nullish(),
+  commitSha: z.string().nullish(),
 });
 
 export const studentSnapshotSchema = z.object({
