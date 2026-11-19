@@ -829,6 +829,7 @@ test("lecturer workspace navigation exposes unified class command destinations w
     "lab-authoring": "/lab-authoring",
     "assignment-submissions": "/submissions",
     members: "/members",
+    settings: "/members?tab=settings",
   });
   assert.deepEqual(contextualNavigation("lecturer", "project"), lecturerWorkspaceNavigation);
   assert.ok(
@@ -5017,10 +5018,10 @@ test("My Workspaces is a compact LMS class list with tabs and a module outline",
   };
   const renderComp = (Comp, workspaceId, search = "") => {
     const RoutedComp =
-      Comp === WorkspaceOverview
+      Comp === WorkspaceOverview || Comp === WorkspaceMembers
         ? loadRoutedComponent("src/features/workspaces/screens.tsx", {
             "next/navigation": { useSearchParams: () => new URLSearchParams(search) },
-          }).WorkspaceOverview
+          })[Comp === WorkspaceOverview ? "WorkspaceOverview" : "WorkspaceMembers"]
         : Comp;
     return renderToStaticMarkup(
       React.createElement(
@@ -5201,15 +5202,18 @@ test("My Workspaces is a compact LMS class list with tabs and a module outline",
   client.setQueryData(["api", "session", {}], {
     user: { id: "u1", name: "Lecturer", email: "lec@example.com", role: "lecturer" },
   });
-  assert.match(membersHtml, /Add students in bulk/);
+  assert.doesNotMatch(membersHtml, /Add students in bulk/);
   assert.match(membersHtml, /Student A/);
+  assert.match(membersHtml, /Settings/);
+  const settingsHtml = renderComp(WorkspaceMembers, "ws-swd", "tab=settings");
+  assert.match(settingsHtml, /Enrollment Passkeys/);
   assert.match(
-    membersHtml,
+    settingsHtml,
     /Class settings/,
-    "Class rename/archive lives in a separate settings area",
+    "Class rename/archive lives in the dedicated Settings tab",
   );
-  assert.match(membersHtml, /Rename/);
-  assert.match(membersHtml, /Archive workspace/);
+  assert.match(settingsHtml, /Rename/);
+  assert.match(settingsHtml, /Archive workspace/);
   const { WorkspaceSelector } = require("../src/features/workspaces/components.tsx");
   assert.equal(
     renderComp(WorkspaceSelector, "ws-swd"),

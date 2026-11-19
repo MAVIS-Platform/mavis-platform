@@ -13,6 +13,7 @@ import {
   LayoutGrid,
   Map,
   RefreshCw,
+  Settings,
   Users,
   X,
   Zap,
@@ -37,6 +38,7 @@ export type CourseWorkspaceTab =
   | "lab-authoring"
   | "submissions"
   | "members"
+  | "settings"
   | "results";
 
 type UnifiedStaffTab = Exclude<CourseWorkspaceTab, "results">;
@@ -84,6 +86,13 @@ const STAFF_TABS: Array<{
     icon: Users,
     href: (ws) => `/members?workspace=${encodeURIComponent(ws)}`,
   },
+  {
+    id: "settings",
+    en: "Settings",
+    vi: "Cài đặt",
+    icon: Settings,
+    href: (ws) => `/members?workspace=${encodeURIComponent(ws)}&tab=settings`,
+  },
 ];
 
 const STUDENT_TABS: Array<{
@@ -126,6 +135,9 @@ function resolveStaffTab(pathname: string | null, active: CourseWorkspaceTab): U
   }
   if (pathname === "/submissions" || active === "submissions" || active === "results") {
     return "submissions";
+  }
+  if (active === "settings") {
+    return "settings";
   }
   if (pathname === "/members" || active === "members") {
     return "members";

@@ -431,6 +431,7 @@ export function WorkspaceOverview() {
 
 export function WorkspaceMembers() {
   const { t } = useLocale();
+  const params = useSearchParams();
   const { workspaceId } = useSelection();
   const session = useSession();
   const query = useApiQuery("workspaces", {});
@@ -439,11 +440,18 @@ export function WorkspaceMembers() {
   const [roleFilter, setRoleFilter] = useState("ALL");
   const workspace = query.data?.find((w) => w.id === workspaceId);
   const canManage = workspace?.myRole === "LECTURER" || session.data?.user?.role === "admin";
-  const gradebook = useWorkspaceGradebook(workspaceId ?? "", Boolean(workspaceId && canManage));
+  const activeTab = canManage && params?.get("tab") === "settings" ? "settings" : "members";
+  const gradebook = useWorkspaceGradebook(
+    workspaceId ?? "",
+    Boolean(workspaceId && canManage && activeTab === "members"),
+  );
   const studentStatsById = new Map(
     (gradebook.data?.students ?? []).map((entry) => [entry.studentId, entry]),
   );
   const totalLabs = gradebook.data?.labs.length ?? 0;
+  const studentCount = (workspace?.members ?? []).filter(
+    (m) => m.role.toUpperCase() === "STUDENT",
+  ).length;
   const filteredMembers = (workspace?.members ?? []).filter((m) => {
     const matchesSearch =
       !search.trim() ||
@@ -455,141 +463,198 @@ export function WorkspaceMembers() {
   return (
     <RequestState query={query} empty={!workspace}>
       {workspace && (
-        <CourseWorkspaceShell workspace={workspace} active="members">
-          <div className="space-y-4">
-            {canManage && (
-              <div className="rounded-xl border bg-card p-4">
-                <WorkspaceControls key={workspace.id} workspace={workspace} mode="members" />
-              </div>
-            )}
-            {canManage && (
+        <CourseWorkspaceShell workspace={workspace} active={activeTab}>
+          {activeTab === "settings" && canManage ? (
+            <div className="space-y-5">
               <div id="class-passkey">
                 <CoursePasskey workspaceId={workspace.id} />
               </div>
-            )}
-            {canManage && (
-              <details className="rounded-xl border bg-card p-4">
-                <summary className="cursor-pointer text-sm font-medium">
-                  {t("Class settings", "Thiết lập lớp")}
-                </summary>
+              <section className="rounded-2xl border bg-card p-5 shadow-xs">
+                <div className="space-y-0.5">
+                  <h3 className="text-base font-semibold">
+                    {t("Class settings", "Cài đặt chung của lớp")}
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    {t(
+                      "Update class name, description, or archive this class when the term ends.",
+                      "Cập nhật tên lớp, mô tả hoặc lưu trữ lớp học khi kết thúc học kỳ.",
+                    )}
+                  </p>
+                </div>
                 <WorkspaceControls
                   key={`${workspace.id}-settings`}
                   workspace={workspace}
                   mode="overview"
                 />
-              </details>
-            )}
-            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_12rem]">
-              <SearchInput
-                label={t("Filter members", "Lọc thành viên")}
-                value={search}
-                onChange={setSearch}
-              />
-              <SelectField
-                label={t("Role", "Vai trò")}
-                value={roleFilter}
-                onChange={setRoleFilter}
-                options={[
-                  { value: "ALL", label: t("All roles", "Tất cả vai trò") },
-                  { value: "STUDENT", label: t("Student", "Sinh viên") },
-                  { value: "LECTURER", label: t("Lecturer", "Giảng viên") },
+              </section>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {canManage && studentCount === 0 && (
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed bg-card/50 px-4 py-3 text-xs text-muted-foreground">
+                  <span>
+                    {t(
+                      "No students have joined yet. Share the Class Passkey in the header so students can enroll.",
+                      "Chưa có sinh viên nào tham gia. Hãy chia sẻ mã Passkey trên thanh tiêu đề để sinh viên ghi danh.",
+                    )}
+                  </span>
+                  <Link
+                    href={`/members?workspace=${encodeURIComponent(workspace.id)}&tab=settings`}
+                    className="font-medium text-primary hover:underline"
+                  >
+                    {t("Manage passkeys →", "Quản lý Passkey →")}
+                  </Link>
+                </div>
+              )}
+              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_12rem]">
+                <SearchInput
+                  label={t("Filter students", "Tìm kiếm sinh viên")}
+                  value={search}
+                  onChange={setSearch}
+                />
+                <SelectField
+                  label={t("Role", "Vai trò")}
+                  value={roleFilter}
+                  onChange={setRoleFilter}
+                  options={[
+                    { value: "ALL", label: t("All roles", "Tất cả vai trò") },
+                    { value: "STUDENT", label: t("Student", "Sinh viên") },
+                    { value: "LECTURER", label: t("Lecturer", "Giảng viên") },
+                  ]}
+                />
+              </div>
+              {remove.error && <ErrorState error={remove.error} />}
+              <DataTable
+                rows={filteredMembers}
+                rowKey={(m) => m.id}
+                caption={t("Class roster & progress", "Danh sách sinh viên & tiến độ học")}
+                columns={[
+                  { key: "name", label: t("Name", "Họ tên"), render: (m) => m.name },
+                  {
+                    key: "role",
+                    label: t("Role", "Vai trò"),
+                    render: (m) => (
+                      <span className="inline-flex rounded-full border bg-muted/40 px-2 py-0.5 text-[11px] font-medium capitalize text-muted-foreground">
+                        {m.role.toLowerCase()}
+                      </span>
+                    ),
+                  },
+                  {
+                    key: "status",
+                    label: t("Status", "Trạng thái"),
+                    render: (m) => {
+                      if (m.role.toUpperCase() !== "STUDENT") {
+                        return <span className="text-xs text-muted-foreground">—</span>;
+                      }
+                      const stats = studentStatsById.get(m.id);
+                      const passed = stats?.passedLabs ?? 0;
+                      const completed = totalLabs > 0 && passed >= totalLabs;
+                      const inProgress = passed > 0 || stats?.averageScore != null;
+                      return completed ? (
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
+                          <span className="size-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
+                          {t("Completed", "Hoàn thành")}
+                        </span>
+                      ) : inProgress ? (
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-500/25 bg-sky-500/10 px-2.5 py-0.5 text-[11px] font-medium text-sky-700 dark:text-sky-400">
+                          <span className="size-1.5 rounded-full bg-sky-500" aria-hidden="true" />
+                          {t("In Progress", "Đang học")}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/50 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+                          <span className="size-1.5 rounded-full bg-muted-foreground" aria-hidden="true" />
+                          {t("Enrolled", "Đã tham gia")}
+                        </span>
+                      );
+                    },
+                  },
+                  {
+                    key: "progress",
+                    label: t("Learning Progress", "Tiến độ học tập"),
+                    render: (m) => {
+                      if (m.role.toUpperCase() !== "STUDENT") {
+                        return <span className="text-xs text-muted-foreground">—</span>;
+                      }
+                      const stats = studentStatsById.get(m.id);
+                      const passed = stats?.passedLabs ?? 0;
+                      const pct = totalLabs > 0 ? Math.round((passed / totalLabs) * 100) : 0;
+                      return (
+                        <div className="min-w-36 space-y-1">
+                          <div className="flex justify-between text-[11px] font-medium">
+                            <span className="text-emerald-700 dark:text-emerald-400">
+                              {passed}/{totalLabs} Labs
+                            </span>
+                            <span className="text-muted-foreground">{pct}%</span>
+                          </div>
+                          <div
+                            role="progressbar"
+                            aria-label={t("Student Lab progress", "Tiến độ Lab sinh viên")}
+                            aria-valuemin={0}
+                            aria-valuemax={totalLabs || 1}
+                            aria-valuenow={passed}
+                            className="h-1.5 w-full overflow-hidden rounded-full bg-muted"
+                          >
+                            <div
+                              className="h-full rounded-full bg-emerald-500 transition-all"
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    },
+                  },
+                  {
+                    key: "avgScore",
+                    label: t("Average Score", "Điểm trung bình"),
+                    render: (m) => {
+                      if (m.role.toUpperCase() !== "STUDENT") {
+                        return <span className="text-xs text-muted-foreground">—</span>;
+                      }
+                      const stats = studentStatsById.get(m.id);
+                      if (stats?.averageScore == null) {
+                        return <span className="text-xs text-muted-foreground">—</span>;
+                      }
+                      return (
+                        <span
+                          className={
+                            stats.averageScore > 50
+                              ? "font-semibold text-emerald-700 dark:text-emerald-400"
+                              : "font-semibold text-amber-700 dark:text-amber-400"
+                          }
+                        >
+                          {stats.averageScore}/100
+                        </span>
+                      );
+                    },
+                  },
+                  ...(canManage
+                    ? [
+                        {
+                          key: "actions",
+                          label: t("Actions", "Thao tác"),
+                          render: (m: { id: string; name: string; role: string }) =>
+                            workspace &&
+                            m.id !== workspace.createdById &&
+                            m.id !== session.data?.user?.id ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={remove.isPending}
+                                onClick={() => {
+                                  if (window.confirm(`Remove ${m.name} from this class?`))
+                                    remove.mutate({ workspaceId: workspace.id, userId: m.id });
+                                }}
+                              >
+                                {t("Remove", "Xóa")}
+                              </Button>
+                            ) : null,
+                        },
+                      ]
+                    : []),
                 ]}
               />
             </div>
-            {remove.error && <ErrorState error={remove.error} />}
-            <DataTable
-              rows={filteredMembers}
-              rowKey={(m) => m.id}
-              caption={t("Class members", "Thành viên lớp")}
-              columns={[
-                { key: "name", label: t("Name", "Họ tên"), render: (m) => m.name },
-                { key: "role", label: t("Role", "Vai trò"), render: (m) => m.role },
-                {
-                  key: "progress",
-                  label: t("Learning Progress", "Tiến Độ Học Tập"),
-                  render: (m) => {
-                    if (m.role.toUpperCase() !== "STUDENT") {
-                      return <span className="text-xs text-muted-foreground">—</span>;
-                    }
-                    const stats = studentStatsById.get(m.id);
-                    const passed = stats?.passedLabs ?? 0;
-                    const pct = totalLabs > 0 ? Math.round((passed / totalLabs) * 100) : 0;
-                    return (
-                      <div className="min-w-36 space-y-1">
-                        <div className="flex justify-between text-[11px] font-medium">
-                          <span className="text-emerald-700 dark:text-emerald-400">
-                            {passed}/{totalLabs} Labs
-                          </span>
-                          <span className="text-muted-foreground">{pct}%</span>
-                        </div>
-                        <div
-                          role="progressbar"
-                          aria-label={t("Student Lab progress", "Tiến độ Lab sinh viên")}
-                          aria-valuemin={0}
-                          aria-valuemax={totalLabs || 1}
-                          aria-valuenow={passed}
-                          className="h-1.5 w-full overflow-hidden rounded-full bg-muted"
-                        >
-                          <div
-                            className="h-full rounded-full bg-emerald-500 transition-all"
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                      </div>
-                    );
-                  },
-                },
-                {
-                  key: "avgScore",
-                  label: t("Average Score", "Điểm Trung Bình"),
-                  render: (m) => {
-                    if (m.role.toUpperCase() !== "STUDENT") {
-                      return <span className="text-xs text-muted-foreground">—</span>;
-                    }
-                    const stats = studentStatsById.get(m.id);
-                    if (stats?.averageScore == null) {
-                      return <span className="text-xs text-muted-foreground">—</span>;
-                    }
-                    return (
-                      <span
-                        className={
-                          stats.averageScore > 50
-                            ? "font-semibold text-emerald-700 dark:text-emerald-400"
-                            : "font-semibold text-amber-700 dark:text-amber-400"
-                        }
-                      >
-                        {stats.averageScore}/100
-                      </span>
-                    );
-                  },
-                },
-                ...(canManage
-                  ? [
-                      {
-                        key: "actions",
-                        label: t("Actions", "Thao tác"),
-                        render: (m: { id: string; name: string; role: string }) =>
-                          workspace &&
-                          m.id !== workspace.createdById &&
-                          m.id !== session.data?.user?.id ? (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={remove.isPending}
-                              onClick={() => {
-                                if (window.confirm(`Remove ${m.name} from this class?`))
-                                  remove.mutate({ workspaceId: workspace.id, userId: m.id });
-                              }}
-                            >
-                              {t("Remove", "Xóa")}
-                            </Button>
-                          ) : null,
-                      },
-                    ]
-                  : []),
-              ]}
-            />
-          </div>
+          )}
         </CourseWorkspaceShell>
       )}
     </RequestState>
