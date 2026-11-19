@@ -26,21 +26,12 @@ export function LabInfoForm({
   const save = useApiMutation(assignment ? "updateAssignment" : "createAssignment");
   const [title, setTitle] = useState(assignment?.title ?? "");
   const [instructions, setInstructions] = useState(assignment?.instructions ?? "");
-  const [due, setDue] = useState(() => {
-    if (!assignment?.dueAt || assignment.dueAt === "No deadline") return "";
-    const parsed = new Date(assignment.dueAt);
-    if (Number.isNaN(parsed.getTime())) return "";
-    return new Date(parsed.getTime() - parsed.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-  });
   const [guideTab, setGuideTab] = useState<"write" | "preview">("write");
   const [stayMessage, setStayMessage] = useState("");
 
   const persist = (advance: boolean) => {
     if (!title.trim()) return;
     setStayMessage("");
-    const dueIso = due
-      ? new Date(`${due.slice(0, 10)}T23:59:59`).toISOString()
-      : null;
     const existingPolicy =
       assignment?.aiPolicy && typeof assignment.aiPolicy === "object"
         ? (assignment.aiPolicy as Record<string, unknown>)
@@ -50,7 +41,7 @@ export function LabInfoForm({
       ...(assignment ? { assignmentId: assignment.id } : {}),
       title: title.trim(),
       description: instructions,
-      dueAt: dueIso,
+      dueAt: null,
       requireRuntimeTrace: assignment?.requireRuntimeTrace ?? false,
       labMode: assignment?.labMode ?? "THEORY_QUIZ",
       aiPolicy: existingPolicy,
@@ -65,7 +56,6 @@ export function LabInfoForm({
         if (!assignment) {
           setTitle("");
           setInstructions("");
-          setDue("");
         }
         if (advance) {
           onSaved?.(saved);
@@ -94,29 +84,17 @@ export function LabInfoForm({
           <span className="text-xs text-muted-foreground tabular-nums">{title.length}/255</span>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto]">
-          <label className="space-y-1.5 text-sm font-medium">
-            <span>{t("Lab title", "Tên Lab")}</span>
-            <Input
-              aria-label={t("Lab title", "Tên Lab")}
-              required
-              maxLength={255}
-              placeholder={t("e.g. Lab 1 · Inspect Microservice Boundaries", "VD: Lab 1 · Phân tích ranh giới Microservices")}
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-            />
-          </label>
-          <label className="space-y-1.5 text-sm font-medium">
-            <span>{t("Due date (optional)", "Hạn nộp (không bắt buộc)")}</span>
-            <Input
-              type="date"
-              className="w-40"
-              aria-label={t("Due date (optional)", "Hạn nộp (không bắt buộc)")}
-              value={due}
-              onChange={(event) => setDue(event.target.value)}
-            />
-          </label>
-        </div>
+        <label className="block space-y-1.5 text-sm font-medium">
+          <span>{t("Lab title", "Tên Lab")}</span>
+          <Input
+            aria-label={t("Lab title", "Tên Lab")}
+            required
+            maxLength={255}
+            placeholder={t("e.g. Lab 1 · Inspect Microservice Boundaries", "VD: Lab 1 · Phân tích ranh giới Microservices")}
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+          />
+        </label>
 
         {/* Instructions, learning goals and completion criteria */}
         <div className="space-y-2">
