@@ -278,28 +278,9 @@ export function LabSourceSection({
       )}
 
       {onNavigate && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-4">
-          <p className="text-xs text-muted-foreground">
-            {resolveLabTier(assignment) === "THEORY_ONLY"
-              ? t(
-                  "Reference source pinned? Proceed to Check & Add to Class.",
-                  "Đã ghim nguồn tham chiếu C1–C3? Chuyển sang bước Kiểm tra & Thêm vào lớp.",
-                )
-              : t(
-                  "Reference source pinned? Proceed to Step 4 to create the Gatekeeper Quiz.",
-                  "Đã ghim nguồn tham chiếu C1–C3? Chuyển sang Bước 4 để soạn Câu hỏi Quiz mở khóa.",
-                )}
-          </p>
-          <Button
-            type="button"
-            size="sm"
-            onClick={() =>
-              onNavigate(resolveLabTier(assignment) === "THEORY_ONLY" ? "publish" : "quiz")
-            }
-          >
-            {resolveLabTier(assignment) === "THEORY_ONLY"
-              ? t("Next Step: Check & Publish", "Sang Bước Kiểm tra & Công bố")
-              : t("Next Step 4: Quiz", "Sang Bước 4: Câu hỏi Quiz")}
+        <div className="flex justify-end">
+          <Button type="button" size="sm" onClick={() => onNavigate("theory")}>
+            {t("Next Step 3: Lab Theory", "Sang Bước 3: Lý thuyết Lab")}
             <ArrowRight className="ml-1.5 size-4" aria-hidden="true" />
           </Button>
         </div>

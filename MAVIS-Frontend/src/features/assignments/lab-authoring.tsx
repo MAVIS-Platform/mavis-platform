@@ -115,17 +115,17 @@ export function LabAuthoring() {
 
   const onSaved = (saved: Assignment) => {
     setCreatedAssignmentId(saved.id);
-    setTab("theory");
+    setTab("source");
     const query = new URLSearchParams(params?.toString() ?? "");
     query.set("assignment", saved.id);
-    query.set("tab", "theory");
+    query.set("tab", "source");
     router.replace(`/lab-authoring?${query.toString()}`);
   };
 
   const navItems: Array<{ id: Tab; done: boolean; enabled: boolean }> = [
     { id: "info", done: Boolean(assignment), enabled: true },
-    { id: "theory", done: theoryReady, enabled: Boolean(assignment) },
     { id: "source", done: Boolean(assignment?.referenceSource?.modelId), enabled: Boolean(assignment) },
+    { id: "theory", done: theoryReady, enabled: Boolean(assignment) },
     { id: "quiz", done: Boolean(setupLab?.quizPublished), enabled: Boolean(assignment) },
     {
       id: "studio",

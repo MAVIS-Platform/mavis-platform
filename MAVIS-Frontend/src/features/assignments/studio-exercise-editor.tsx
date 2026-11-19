@@ -148,8 +148,8 @@ export function StudioExerciseEditor({
       if (!source) {
         throw new Error(
           t(
-            "Pin the Lab Reference Repository in Step 3 before saving the Studio exercise.",
-            "Hãy gắn Repo tham chiếu ở Bước 3 trước khi lưu đề Studio.",
+            "Pin the Lab Reference Repository in Step 2 before saving the Studio exercise.",
+            "Hãy gắn Repo tham chiếu ở Bước 2 trước khi lưu đề Studio.",
           ),
         );
       }

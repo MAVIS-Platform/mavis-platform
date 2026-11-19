@@ -109,13 +109,13 @@ export function LabStudioSection({
               <Lock className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
               <span>
                 {t(
-                  "Attach and analyze the single unified Lab repository in Step 3 (Reference source) first. Both C1–C3 static views and Studio Live run on that same pinned repository.",
-                  "Hãy gắn và phân tích Repo chuẩn của bài Lab ở Bước 3 (Nguồn tham chiếu) trước. Cả sơ đồ tĩnh C1–C3 lẫn thực hành Studio Live đều dùng chung 1 Repo duy nhất đó.",
+                  "Attach and analyze the single unified Lab repository in Step 2 (Reference source) first.",
+                  "Hãy gắn và phân tích Repo chuẩn của bài Lab ở Bước 2 (Nguồn tham chiếu) trước.",
                 )}
               </span>
             </div>
             <Button type="button" size="sm" variant="outline" onClick={() => onNavigate("source")}>
-              {t("← Go to Step 3: Reference source", "← Sang Bước 3: Gắn Nguồn tham chiếu")}
+              {t("← Go to Step 2: Reference source", "← Sang Bước 2: Nguồn tham chiếu")}
             </Button>
           </div>
         ) : (

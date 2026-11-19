@@ -86,15 +86,6 @@ export function LabPublishSection({
       tab: "info",
     },
     {
-      id: "theory",
-      label: t("Theory", "Lý thuyết"),
-      done: theoryReady,
-      detail: theoryReady
-        ? t("A theory item is linked to this Lab's module.", "Đã có nội dung lý thuyết cho bài Lab này.")
-        : t("Add or review the lesson in the Theory step.", "Thêm hoặc kiểm tra bài học ở bước Lý thuyết."),
-      tab: "theory",
-    },
-    {
       id: "source",
       label: t("Reference source", "Nguồn tham chiếu"),
       done: Boolean(assignment.referenceSource?.modelId),
@@ -102,6 +93,15 @@ export function LabPublishSection({
         ? t(`Pinned model ${assignment.referenceSource.modelId.slice(0, 8)}`, `Model đã ghim ${assignment.referenceSource.modelId.slice(0, 8)}`)
         : t("Attach a pinned reference model.", "Gắn model tham chiếu đã ghim."),
       tab: "source",
+    },
+    {
+      id: "theory",
+      label: t("Theory", "Lý thuyết"),
+      done: theoryReady,
+      detail: theoryReady
+        ? t("A theory item is linked to this Lab's module.", "Đã có nội dung lý thuyết cho bài Lab này.")
+        : t("Add or review the lesson in the Theory step.", "Thêm hoặc kiểm tra bài học ở bước Lý thuyết."),
+      tab: "theory",
     },
     ...(labTier !== "THEORY_ONLY"
       ? [

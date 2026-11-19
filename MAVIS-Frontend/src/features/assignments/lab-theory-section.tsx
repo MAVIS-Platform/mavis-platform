@@ -189,10 +189,6 @@ function MarkdownEditor({
             rows={12}
             value={value}
             className="h-80 resize-none font-mono text-sm leading-6"
-            placeholder={t(
-              "# Lesson heading\n\nWrite the lesson in Markdown or import a .md file.\n\n- Key idea\n- Example from the sample repository",
-              "# Tiêu đề bài học\n\nViết bài học bằng Markdown hoặc nhập tệp .md.\n\n- Ý chính\n- Ví dụ từ repo mẫu",
-            )}
             onChange={(event) => onChange(event.target.value)}
           />
         )}
@@ -459,25 +455,17 @@ export function LabTheorySection({
       )}
 
       <section className="space-y-5 rounded-xl border bg-card p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3 border-b pb-4">
-          <div className="space-y-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <BookOpen className="size-4 text-primary" aria-hidden="true" />
-              <h2 className="text-base font-semibold">
-                {t("Lab Theory Lesson", "Bài giảng lý thuyết của Lab")}
-              </h2>
-              {theoryItems.length > 0 && (
-                <Badge variant="success">
-                  {theoryItems.length} {t("attached", "đã gắn")}
-                </Badge>
-              )}
-            </div>
-            <p className="max-w-3xl text-xs leading-5 text-muted-foreground">
-              {t(
-                "Write Markdown, import a .md/.txt file, generate an AI draft, or pick an existing lesson from the Theory library.",
-                "Viết Markdown, nhập tệp .md/.txt, dùng AI soạn tự động hoặc chọn bài có sẵn từ Thư viện lý thuyết.",
-              )}
-            </p>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <BookOpen className="size-4 text-primary" aria-hidden="true" />
+            <h2 className="text-base font-semibold">
+              {t("Lab Theory Lesson", "Bài giảng lý thuyết của Lab")}
+            </h2>
+            {theoryItems.length > 0 && (
+              <Badge variant="success">
+                {theoryItems.length} {t("attached", "đã gắn")}
+              </Badge>
+            )}
           </div>
           <div className="inline-flex rounded-lg border bg-muted/40 p-0.5 text-xs">
             <button
@@ -656,10 +644,6 @@ export function LabTheorySection({
             </div>
             <Input
               aria-label={t("Lesson title", "Tên bài học")}
-              placeholder={t(
-                "e.g. Lesson 1: Service boundaries & resilience",
-                "Ví dụ: Bài 1: Ranh giới dịch vụ & xử lý lỗi",
-              )}
               value={newTitle}
               onChange={(event) => setNewTitle(event.target.value)}
             />
@@ -773,7 +757,7 @@ export function LabTheorySection({
               {t("Revision", "Revision")} {reference.revision}
             </Badge>
           ) : (
-            <Badge variant="secondary">{t("Configure in Step 3", "Gắn ở Bước 3")}</Badge>
+            <Badge variant="secondary">{t("Configure in Step 2", "Gắn ở Bước 2")}</Badge>
           )}
         </summary>
         <div className="mt-4 space-y-4">
@@ -870,28 +854,21 @@ export function LabTheorySection({
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
               <p className="text-sm text-amber-800 dark:text-amber-200">
                 {t(
-                  "Attach and analyze the sample repository in Step 3 so students can inspect C1–C3.",
-                  "Gắn và phân tích repo mẫu ở Bước 3 để sinh viên xem sơ đồ C1–C3.",
+                  "Attach and analyze the sample repository in Step 2 so students can inspect C1–C3.",
+                  "Gắn và phân tích repo mẫu ở Bước 2 để sinh viên xem sơ đồ C1–C3.",
                 )}
               </p>
               <Button type="button" size="sm" variant="outline" onClick={() => onNavigate("source")}>
-                {t("Go to Step 3: Reference source", "Sang Bước 3: Nguồn tham chiếu")}
-                <ArrowRight className="ml-1 size-3.5" aria-hidden="true" />
+                {t("← Step 2: Reference source", "← Bước 2: Nguồn tham chiếu")}
               </Button>
             </div>
           )}
         </div>
       </details>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-4">
-        <p className="text-xs text-muted-foreground">
-          {t(
-            "Done writing Theory? Pin your Sample Repository & verify C1–C3 Diagrams in Step 3.",
-            "Đã soạn xong Lý thuyết? Tiếp tục gắn Nguồn tham chiếu & kiểm tra Sơ đồ C1–C3 ở Bước 3.",
-          )}
-        </p>
-        <Button type="button" size="sm" onClick={() => onNavigate("source")}>
-          {t("Next Step 3: Reference Source (C1–C3)", "Sang Bước 3: Nguồn tham chiếu (C1–C3)")}
+      <div className="flex justify-end">
+        <Button type="button" size="sm" onClick={() => onNavigate("quiz")}>
+          {t("Next Step 4: Quiz", "Sang Bước 4: Câu hỏi Quiz")}
           <ArrowRight className="ml-1.5 size-4" aria-hidden="true" />
         </Button>
       </div>
