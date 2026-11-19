@@ -67,10 +67,6 @@ public class CourseAccessService {
     @org.springframework.context.annotation.Lazy
     private CourseLabSeederService seeder;
 
-    @org.springframework.beans.factory.annotation.Autowired(required = false)
-    @org.springframework.context.annotation.Lazy
-    private CourseAuthoringService courseAuthoring;
-
     public record Lab(UUID assignmentId, int position, String title, String state, String reason) {}
     public record Roadmap(boolean guided, String enrollmentStatus, List<Lab> labs) {}
     public record Passkey(String code, OffsetDateTime expiresAt) {}
@@ -116,7 +112,6 @@ public class CourseAccessService {
                 copyTopologySnapshot(assignment);
                 assignments.save(assignment);
             }
-            publishCourseDraftIfReady(workspaceId);
             return new Lab(assignmentId, assignment.getLabOrder(), assignment.getTitle(), "UNLOCKED", null);
         }
         var model = assignment.getReferenceModel();
@@ -150,18 +145,8 @@ public class CourseAccessService {
         copyTopologySnapshot(assignment);
         copyExerciseSnapshot(assignment);
         workspace.setCourseMode(true);
-        publishCourseDraftIfReady(workspaceId);
         audit("COURSE_LAB_PUBLISHED", "ASSIGNMENT", assignmentId);
         return new Lab(assignmentId, next, assignment.getTitle(), "UNLOCKED", null);
-    }
-
-    private void publishCourseDraftIfReady(UUID workspaceId) {
-        if (courseAuthoring == null) return;
-        try {
-            courseAuthoring.publish(workspaceId);
-        } catch (BusinessException ignored) {
-            // Ignore when no course draft exists, digest is unchanged, or an unrelated manual draft module is incomplete.
-        }
     }
 
     /**

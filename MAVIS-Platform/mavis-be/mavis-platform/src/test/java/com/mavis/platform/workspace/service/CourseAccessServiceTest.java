@@ -384,23 +384,26 @@ class CourseAccessServiceTest {
     }
 
     @Test
-    void publishSyncsCourseDraftAndIgnoresUnchangedCourseConflict() {
-        UUID teacherId = UUID.randomUUID();
+    void controllerPublishSyncsCourseDraftOutsideServiceTransaction() {
+        var courseAccess = mock(CourseAccessService.class);
+        var seeder = mock(CourseLabSeederService.class);
+        var setup = mock(CourseSetupService.class);
         var authoring = mock(CourseAuthoringService.class);
-        org.springframework.test.util.ReflectionTestUtils.setField(courses, "courseAuthoring", authoring);
-        when(access.requireCurrentActiveUser()).thenReturn(User.builder().id(teacherId).build());
-        when(workspaces.findLockedById(workspaceId)).thenReturn(Optional.of(workspace));
-        assignment.setDescription("Theory only reading");
-        when(assignments.findLockedById(assignmentId)).thenReturn(Optional.of(assignment));
-        when(assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId))
-                .thenReturn(List.of());
-        doThrow(new BusinessException(ErrorCode.CONFLICT, "This exact Course content has already been published"))
+        var controller = new com.mavis.platform.workspace.controller.CourseAccessController(courseAccess, seeder, setup);
+        org.springframework.test.util.ReflectionTestUtils.setField(controller, "courseAuthoring", authoring);
+
+        var expectedLab = new CourseAccessService.Lab(assignmentId, 1, "Theory Lab", "UNLOCKED", null);
+        when(courseAccess.publish(workspaceId, assignmentId)).thenReturn(expectedLab);
+        doThrow(new BusinessException(ErrorCode.NOT_FOUND, "Course draft not found"))
                 .when(authoring).publish(workspaceId);
 
-        var published = courses.publish(workspaceId, assignmentId);
+        var response = controller.publish(workspaceId, assignmentId);
 
-        assertEquals(1, published.position());
-        verify(authoring).publish(workspaceId);
+        assertEquals(ErrorCode.SUCCESS.getCode(), response.getCode());
+        assertEquals(expectedLab, response.getData());
+        var ordered = inOrder(courseAccess, authoring);
+        ordered.verify(courseAccess).publish(workspaceId, assignmentId);
+        ordered.verify(authoring).publish(workspaceId);
     }
 
 }
