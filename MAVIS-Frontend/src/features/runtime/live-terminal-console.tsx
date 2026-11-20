@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Activity, Check, Copy, Search, Terminal } from "lucide-react";
 import type { Response } from "@/lib/api/contracts";
+import { TraceWaterfallPanel } from "./studio-red-charts";
 
 type Studio = Response<"studioState">;
 
@@ -246,6 +247,8 @@ type LiveTerminalConsoleProps = {
   statusLabel: string;
   systemError?: string | null | undefined;
   diagnosticLines?: readonly string[] | undefined;
+  selectedTraceId?: string | null | undefined;
+  onSelectTrace?: ((traceId: string | null) => void) | undefined;
 };
 
 export function LiveTerminalConsole({
@@ -257,8 +260,19 @@ export function LiveTerminalConsole({
   statusLabel,
   systemError = null,
   diagnosticLines = [],
+  selectedTraceId,
+  onSelectTrace,
 }: LiveTerminalConsoleProps) {
   const [view, setView] = useState<"console" | "traces">("console");
+  const [localTraceId, setLocalTraceId] = useState<string | null>(null);
+  const activeTraceId = selectedTraceId !== undefined ? selectedTraceId : localTraceId;
+  const setActiveTraceId = (tid: string | null) => {
+    setLocalTraceId(tid);
+    onSelectTrace?.(tid);
+  };
+  useEffect(() => {
+    if (selectedTraceId) setView("traces");
+  }, [selectedTraceId]);
   const [serviceFilter, setServiceFilter] = useState<string>("ALL");
   const [levelFilter, setLevelFilter] = useState<"ALL" | "WARN" | "ERROR">("ALL");
   const [query, setQuery] = useState("");
@@ -837,6 +851,15 @@ export function LiveTerminalConsole({
           style={{ scrollbarWidth: "thin", scrollbarColor: "#334155 #05080f" }}
           className="min-h-0 flex-1 overflow-auto font-mono text-[11px]"
         >
+          {activeTraceId && (
+            <div className="p-2 pb-0">
+              <TraceWaterfallPanel
+                spans={spans}
+                traceId={activeTraceId}
+                onClose={() => setActiveTraceId(null)}
+              />
+            </div>
+          )}
           {filteredSpans.length > 0 ? (
             <table className="mavis-tabular w-full whitespace-nowrap text-left">
               <thead className="sticky top-0 bg-[#0a0f1a] text-[10px] uppercase tracking-wide text-slate-500">
@@ -873,8 +896,14 @@ export function LiveTerminalConsole({
                           ? "text-amber-300"
                           : "text-emerald-300";
                   const barPct = ms !== null ? Math.min(100, Math.max(4, (ms / maxSpanMs) * 100)) : 0;
+                  const rowSelected = activeTraceId === span.traceId;
                   return (
-                    <tr key={`${span.traceId}:${span.spanId}`} className="hover:bg-slate-900/60">
+                    <tr
+                      key={`${span.traceId}:${span.spanId}`}
+                      onClick={() => setActiveTraceId(rowSelected ? null : span.traceId)}
+                      title="Click to inspect full trace waterfall"
+                      className={`cursor-pointer hover:bg-slate-900/60 ${rowSelected ? "bg-sky-950/40" : ""}`}
+                    >
                       <td className="px-2.5 py-1 text-slate-500">{span.traceId.slice(0, 8)}</td>
                       <td className={`px-2.5 py-1 font-semibold ${color.text}`}>
                         {span.runtimeService}

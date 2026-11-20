@@ -2195,23 +2195,48 @@ export function StudioObservability({
             );
           })}
 
-          {/* Observed Live OTel Trace Edges + Animated SVG Traffic Pulses */}
-          {telemetry?.interactions
-            .filter((edge) => !traceId || edge.traceId === traceId)
-            .map((edge, index) => {
+          {/* Observed Live OTel Trace Edges + OTel servicegraph RED overlay */}
+          {(() => {
+            const sgByPair = new Map(
+              (telemetry?.serviceGraph ?? []).map((sg) => [`${sg.client}->${sg.server}`, sg]),
+            );
+            const rawEdges = (telemetry?.interactions ?? []).filter(
+              (edge) => !traceId || edge.traceId === traceId,
+            );
+            // Deduplicate per (from, to) pair in live view so 200 recent spans don't stack 200 identical SVG paths.
+            const deduped = traceId
+              ? rawEdges
+              : [...new Map(rawEdges.map((edge) => [`${edge.fromService}->${edge.toService}`, edge])).values()];
+            return deduped.map((edge, index) => {
               const from = positions.get(edge.fromService);
               const to = positions.get(edge.toService);
               if (!from || !to) return null;
               const span = spansByTraceAndId.get(`${edge.traceId}:${edge.childSpanId}`);
+              const sg = sgByPair.get(`${edge.fromService}->${edge.toService}`);
               const status = span?.httpStatusCode;
               const httpError = typeof status === "number" && status >= 400 && status <= 599;
-              const edgeSevered = httpError || span?.spanStatus?.toUpperCase() === "ERROR";
-              const faultLabel = span?.circuitOpen ? "CIRCUIT OPEN" : httpError ? `${status} ✕` : "CALL FAILED";
+              const edgeSevered =
+                httpError ||
+                span?.spanStatus?.toUpperCase() === "ERROR" ||
+                (sg !== undefined && sg.errorRatePercent >= 5);
+              const edgeDegraded =
+                !edgeSevered &&
+                sg !== undefined &&
+                (sg.errorRatePercent > 0 || (sg.p95Ms ?? 0) >= 250);
+              const faultLabel = span?.circuitOpen
+                ? "CIRCUIT OPEN"
+                : sg && sg.errorRatePercent >= 5
+                  ? `${Number(sg.rps.toFixed(1))} rps · ${Math.round(sg.errorRatePercent)}% err`
+                  : httpError
+                    ? `${status} ✕`
+                    : "CALL FAILED";
               const durationNs = span?.durationNanoseconds?.trim();
               const durationMs = durationNs ? Number(durationNs) / 1_000_000 : NaN;
-              const latencyLabel = Number.isFinite(durationMs) && durationMs >= 0
-                ? `${simulated ? "≈ " : ""}${durationMs > 0 && durationMs < 0.1 ? "<0.1" : Number(durationMs.toFixed(durationMs < 10 ? 1 : 0))} ms`
-                : null;
+              const latencyLabel = sg
+                ? `${Number(sg.rps.toFixed(1))} rps${sg.p95Ms != null ? ` · ${Math.round(sg.p95Ms)}ms` : ""}`
+                : Number.isFinite(durationMs) && durationMs >= 0
+                  ? `${simulated ? "≈ " : ""}${durationMs > 0 && durationMs < 0.1 ? "<0.1" : Number(durationMs.toFixed(durationMs < 10 ? 1 : 0))} ms`
+                  : null;
               const wireLabel = edgeSevered ? faultLabel : latencyLabel;
               const badgeWidth = wireLabel ? Math.max(42, wireLabel.length * 6 + 12) : 0;
               const targetReplicas = resolveLiveReplicas(edge.toService);
@@ -2229,7 +2254,22 @@ export function StudioObservability({
               );
               const wireSelected = activeWire?.from === edge.fromService && activeWire.to === edge.toService;
               const wireName = `${nodeNames?.[edge.fromService] ?? edge.fromService} → ${nodeNames?.[edge.toService] ?? edge.toService}`;
-              const edgeColor = wireSelected ? "#7dd3fc" : edgeSevered ? "#f43f5e" : "#64748b";
+              const edgeColor = wireSelected
+                ? "#7dd3fc"
+                : edgeSevered
+                  ? "#f43f5e"
+                  : edgeDegraded
+                    ? "#f59e0b"
+                    : sg && sg.rps > 0
+                      ? "#10b981"
+                      : "#64748b";
+              const strokeWeight = wireSelected
+                ? "3.2"
+                : sg && sg.rps > 0
+                  ? String(Math.min(3.6, Math.max(1.8, 1.5 + Math.log2(sg.rps + 1) * 0.55)).toFixed(1))
+                  : edgeSevered
+                    ? "2.0"
+                    : "1.5";
               return (
                 <g
                   key={edge.traceId + index}
@@ -2263,7 +2303,8 @@ export function StudioObservability({
                 >
                   <title>
                     {span?.operationName || wireName}
-                    {latencyLabel ? ` · ${simulated ? "Simulated latency" : "Trace duration"}: ${latencyLabel}` : ""}
+                    {sg ? ` · ${Number(sg.rps.toFixed(1))} rps · err ${Number(sg.errorRatePercent.toFixed(1))}%` : ""}
+                    {latencyLabel && !sg ? ` · ${simulated ? "Simulated latency" : "Trace duration"}: ${latencyLabel}` : ""}
                     {typeof status === "number" ? ` · HTTP ${status}` : ""}
                   </title>
                   <path d={pathD} fill="none" stroke="transparent" strokeWidth="16"
@@ -2275,10 +2316,10 @@ export function StudioObservability({
                     pointerEvents="none"
                     className="group-hover:stroke-sky-300 group-focus-visible:stroke-sky-300 group-focus-visible:stroke-[3] group-focus-visible:opacity-100"
                     strokeDasharray={edgeSevered ? "6 4" : undefined}
-                    strokeWidth={wireSelected ? "3" : edgeSevered ? "2.0" : "1.5"}
-                    opacity={wireSelected || edgeSevered ? "0.95" : "0.6"}
+                    strokeWidth={strokeWeight}
+                    opacity={wireSelected || edgeSevered || (sg && sg.rps > 0) ? "0.95" : "0.6"}
                   />
-                  {renderWireArrow(from, to, getNodeLabel(nodeNames?.[edge.toService] ?? edge.toService, view), wireSelected || edgeSevered ? edgeColor : "#94a3b8", true, view === "3D" ? sculptureScale(targetReplicas) : 1)}
+                  {renderWireArrow(from, to, getNodeLabel(nodeNames?.[edge.toService] ?? edge.toService, view), wireSelected || edgeSevered || edgeDegraded || (sg && sg.rps > 0) ? edgeColor : "#94a3b8", true, view === "3D" ? sculptureScale(targetReplicas) : 1)}
                   {wireLabel && (
                     <g data-studio-wire-metric>
                       <rect
@@ -2288,14 +2329,14 @@ export function StudioObservability({
                         height="18"
                         rx="8"
                         fill="#090d16"
-                        stroke={edgeSevered ? "#f43f5e" : wireSelected ? "#7dd3fc" : "#334155"}
+                        stroke={edgeSevered ? "#f43f5e" : edgeDegraded ? "#f59e0b" : wireSelected ? "#7dd3fc" : sg && sg.rps > 0 ? "#10b981" : "#334155"}
                         strokeWidth="1"
                       />
                       <text
                         x={mx}
                         y={my + 3.5}
                         textAnchor="middle"
-                        fill={edgeSevered ? "#fda4af" : "#e2e8f0"}
+                        fill={edgeSevered ? "#fda4af" : edgeDegraded ? "#fde68a" : "#e2e8f0"}
                         fontFamily="monospace"
                         fontSize="10"
                         fontWeight="600"
@@ -2322,7 +2363,8 @@ export function StudioObservability({
                   </circle>
                 </g>
               );
-            })}
+            });
+          })()}
 
           {/* Interactive Draggable 2D/3D Service Blocks + True Volumetric 3D Isometric Server Racks & Stacked Replica Cubes */}
           {[...positions.entries()]

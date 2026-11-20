@@ -62,6 +62,7 @@ import {
   type StudioSetupPanel,
 } from "./live-sandbox-parity";
 import { LiveTerminalConsole } from "./live-terminal-console";
+import { StudioRedCharts } from "./studio-red-charts";
 import { resolveRunningReplicas, useStudioSession } from "./use-studio-session";
 
 type LiveRuntimeReplay = {
@@ -413,6 +414,10 @@ export function LiveStudioWorkbench({
   const graphRef = useRef<HTMLDivElement>(null);
   const snapshotNoteRef = useRef<HTMLInputElement>(null);
   const [tab, setTab] = useState<"stats" | "telemetry" | "logs" | "snapshots">("telemetry");
+  const [inspectedTraceId, setInspectedTraceId] = useState<string | null>(null);
+  useEffect(() => {
+    setInspectedTraceId(null);
+  }, [sessionId]);
   const [showLeft, setShowLeft] = useState(true);
   const [showRight, setShowRight] = useState(true);
   const [leftWidth, setLeftWidth] = useState(268);
@@ -1894,6 +1899,17 @@ export function LiveStudioWorkbench({
                   </div>
                 </header>
 
+                <StudioRedCharts
+                  history={data.telemetryHistory}
+                  actions={data.actions}
+                  serviceGraph={data.telemetry?.serviceGraph}
+                  spans={data.telemetry?.spans}
+                  onSelectTrace={(tid) => {
+                    setInspectedTraceId(tid);
+                    setTab("logs");
+                  }}
+                />
+
                 <section aria-label="Traffic & reliability">
                   <h3 className="mb-2 text-xs font-semibold text-slate-200">
                     Traffic &amp; reliability
@@ -2455,6 +2471,8 @@ export function LiveStudioWorkbench({
               statusLabel={statusLabel}
               systemError={terminalSystemError}
               diagnosticLines={failedDiagnostics}
+              selectedTraceId={inspectedTraceId}
+              onSelectTrace={setInspectedTraceId}
             />
           </div>
 

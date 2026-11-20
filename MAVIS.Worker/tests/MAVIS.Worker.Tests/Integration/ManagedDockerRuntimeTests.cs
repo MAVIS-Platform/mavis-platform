@@ -81,6 +81,7 @@ public sealed class ManagedDockerRuntimeTests
         Assert.Equal(prepared ? 5 : 3,handler.Acknowledged);
         Assert.True(handler.Telemetry.Count>=4);
         Assert.Contains(handler.Telemetry,sample=>sample.GetProperty("spans").GetArrayLength()>0);
+        Assert.Contains(handler.Telemetry,sample=>sample.TryGetProperty("probe",out var probe)&&probe.ValueKind==JsonValueKind.Object);
         Assert.All(handler.Telemetry,sample=>Assert.Equal(prepared ? 3 : 2,sample.GetProperty("services").GetArrayLength()));
         Assert.False(Directory.Exists(Path.Combine(root,project)));
         Assert.NotEmpty(outcome.Trace!.Spans);
@@ -195,6 +196,8 @@ public sealed class ManagedDockerRuntimeTests
             => Record(args, () => docker.RunAsync(args, directory, timeout, ct));
         public Task<DockerCommandResult> RunWithInputAsync(IReadOnlyList<string> args, string directory, int timeout, string input, CancellationToken ct)
             => Record(args, () => docker.RunWithInputAsync(args, directory, timeout, input, ct));
+        public Task<IAsyncDisposable?> StartLineStreamAsync(IReadOnlyList<string> args, string directory, string? input, Action<string> onLine, CancellationToken ct)
+            => docker.StartLineStreamAsync(args, directory, input, onLine, ct);
         private async Task<DockerCommandResult> Record(IReadOnlyList<string> args, Func<Task<DockerCommandResult>> run)
         {
             var timer = System.Diagnostics.Stopwatch.StartNew();

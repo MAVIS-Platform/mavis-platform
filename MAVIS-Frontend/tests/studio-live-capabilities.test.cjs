@@ -238,3 +238,79 @@ test("BFF path allowlist opens only GET /studio/stream and blocks runner callbac
   assert.equal(allowedBackendPath(`analyzer/runtime/sessions/${sid}/studio/telemetry`), false);
   assert.equal(allowedBackendPath(`analyzer/runtime/sessions/${sid}/recovery-result`), false);
 });
+
+test("Phase B RED series, 30s before/after window, and trace waterfall compute accurately", () => {
+  const {
+    buildRedSeries,
+    computeBeforeAfterWindow,
+    buildTraceWaterfall,
+  } = require("../src/features/runtime/studio-red-charts.tsx");
+
+  const t0 = Date.parse("2026-11-20T20:00:00Z");
+  const history = [
+    { observedAt: new Date(t0).toISOString(), probe: { rps: 5, p50Ms: 10, p95Ms: 20, p99Ms: 30, errorRatePercent: 0 } },
+    { observedAt: new Date(t0 + 10_000).toISOString(), probe: { rps: 5, p50Ms: 12, p95Ms: 24, p99Ms: 35, errorRatePercent: 0 } },
+    { observedAt: new Date(t0 + 25_000).toISOString(), probe: { rps: 5, p50Ms: 80, p95Ms: 160, p99Ms: 220, errorRatePercent: 100 } },
+    { observedAt: new Date(t0 + 35_000).toISOString(), probe: { rps: 5, p50Ms: 90, p95Ms: 180, p99Ms: 240, errorRatePercent: 100 } },
+  ];
+  const actions = [
+    {
+      actionId: "11111111-1111-1111-1111-111111111111",
+      action: "STOP",
+      service: "payment",
+      status: "CONFIRMED",
+      requestedAt: new Date(t0 + 18_000).toISOString(),
+      completedAt: new Date(t0 + 20_000).toISOString(),
+    },
+  ];
+
+  const { points, markers } = buildRedSeries(history, actions);
+  assert.equal(points.length, 4);
+  assert.equal(markers.length, 1);
+  assert.equal(markers[0].label, "STOP payment");
+  assert.ok(markers[0].xRatio > 0.5 && markers[0].xRatio < 0.65);
+
+  const diff = computeBeforeAfterWindow(history, actions);
+  assert.ok(diff);
+  assert.equal(diff.beforeSamples, 2);
+  assert.equal(diff.afterSamples, 2);
+  assert.equal(diff.p95BeforeMs, 22);
+  assert.equal(diff.p95AfterMs, 170);
+  assert.equal(diff.errorBeforePct, 0);
+  assert.equal(diff.errorAfterPct, 100);
+
+  const { rows, totalMs } = buildTraceWaterfall(
+    [
+      {
+        traceId: "t1",
+        spanId: "s1",
+        parentSpanId: null,
+        runtimeService: "gateway",
+        operationName: "GET /orders",
+        startTimeUnixNano: "1000000000",
+        durationNanoseconds: "50000000",
+        httpStatusCode: 503,
+        spanStatus: "Error",
+      },
+      {
+        traceId: "t1",
+        spanId: "s2",
+        parentSpanId: "s1",
+        runtimeService: "payment",
+        operationName: "POST /charge",
+        startTimeUnixNano: "1010000000",
+        durationNanoseconds: "30000000",
+        httpStatusCode: 503,
+        spanStatus: "Error",
+      },
+    ],
+    "t1",
+  );
+  assert.equal(rows.length, 2);
+  assert.equal(totalMs, 50);
+  assert.equal(rows[0].depth, 0);
+  assert.equal(rows[1].depth, 1);
+  assert.equal(rows[1].offsetPct, 20);
+  assert.equal(rows[1].widthPct, 60);
+  assert.equal(rows[1].isError, true);
+});
