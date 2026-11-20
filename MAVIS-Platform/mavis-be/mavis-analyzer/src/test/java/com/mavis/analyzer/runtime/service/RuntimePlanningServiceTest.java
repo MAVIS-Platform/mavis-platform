@@ -423,7 +423,10 @@ class RuntimePlanningServiceTest {
                 .build());
 
         assertThatThrownBy(() -> planningService.start(projectId, new StartRequest(snapshotId, scenarioId, 1, 1, true, null)))
-                .hasMessageContaining("uses build:");
+                .isInstanceOfSatisfying(com.mavis.common.exception.BusinessException.class, failure -> {
+                    assertThat(failure.getStableCode()).isEqualTo("PREFLIGHT_FAILED");
+                    assertThat(failure.getErrorCode()).isEqualTo(com.mavis.common.exception.ErrorCode.UNPROCESSABLE_ENTITY);
+                });
         verify(runtime, org.mockito.Mockito.never()).createRuntimeSession(any());
     }
 
