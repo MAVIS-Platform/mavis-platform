@@ -3230,9 +3230,9 @@
     "phase": "V2 · Module 2",
     "title": "Chương 04: SERVICE DISCOVERY TRONG DOCKER / .NET & EXTERNALIZED CONFIGURATION",
     "minutes": 45,
-    "objective": "Hiểu cơ chế Server-Side Service Discovery qua Docker Compose Embedded DNS (chuẩn gọn nhẹ của hệ sinh thái .NET Container, không cần dựng thêm Eureka Server nặng nề). Cấu hình dịch vụ bên ngoài theo đúng thứ tự ưu tiên của ASP.NET Core Configuration (`appsettings.json` $\\to$ Environment Variables). Áp dụng Options Pattern (`IOptions<T>` + `ValidateDataAnnotations` + `ValidateOnStart`) để phát hiện thiếu biến môi trường ngay lúc khởi động (Fail-Fast).",
-    "lesson": "### 4.1. Service Discovery trong .NET Container: Sức mạnh của Docker DNS\n\nKhác với hệ sinh thái Spring Cloud truyền thống hay dựng thêm một dịch vụ Eureka Server riêng, kiến trúc .NET Container hiện đại (`[MS24]` Ch.4) ưu tiên **Server-Side Discovery** có sẵn của nền tảng container (**Docker Compose DNS** khi chạy local/MAVIS Sandbox, và **Kubernetes Service DNS** khi chạy Production):\n\n```\n                    Mạng nội bộ Docker (mavis-net)\n+--------------------+                          +------------------------+\n|   Ordering.API     |  http://catalog-api:8080 |  Docker Embedded DNS   |\n|  (Typed HttpClient)| -----------------------> |  catalog-api ->        |\n+--------------------+                          |   172.20.0.4 (Replica1)|\n                                                |   172.20.0.5 (Replica2)|\n                                                +------------------------+\n                                                      |           |\n                                                      v           v\n                                                [catalog-api#1] [catalog-api#2]\n```\n\n* **Ưu điểm lớn**: Mã nguồn C# hoàn toàn **không phụ thuộc thư viện Discovery ngoài** (không cần SDK đăng ký heartbeat). Chỉ cần gọi tên service trong `docker-compose.yml` (ví dụ `http://catalog-api:8080`), Docker DNS tự động phân giải và cân bằng tải Round-Robin giữa các replica đang chạy!\n* *(Lưu ý nâng cao: Từ .NET 8/9, Microsoft bổ sung thêm `Microsoft.Extensions.ServiceDiscovery` dùng chung chuẩn cho cả Docker, Kubernetes và .NET Aspire).*\n\n### 4.2. Externalized Configuration & Options Pattern (`IOptions<T>`)\n\nTheo nguyên tắc 12-Factor App và `[MS24]`, **cùng một Docker Image `.NET` phải chạy được ở Dev, Staging và Production** chỉ bằng cách thay đổi biến môi trường.\n\nTrong ASP.NET Core, biến môi trường dùng **dấu gạch dưới kép (`__`)** để ghi đè cấu hình lồng nhau trong `appsettings.json`:\n* Trong `appsettings.json`: `\"ServiceUrls\": { \"CatalogApi\": \"http://localhost:5001\" }`\n* Trong `docker-compose.yml`: `ServiceUrls__CatalogApi=http://catalog-api:8080`\n\n#### Cấu hình mạnh kiểu (Strongly-Typed) kèm kiểm tra Fail-Fast lúc khởi động\n\nKhông bao giờ viết rải rác `Configuration[\"Jwt:Secret\"]` khắp mã nguồn! Hãy dùng **Options Pattern** kèm `ValidateOnStart()`:\n\n```csharp\npublic sealed class ServiceUrlOptions\n{\n    public const string SectionName = \"ServiceUrls\";\n\n    [Required, Url]\n    public string CatalogApi { get; init; } = string.Empty;\n\n    [Required, Url]\n    public string BasketApi { get; init; } = string.Empty;\n}\n\n// Trong Program.cs: Fail-Fast ngay lúc container khởi động nếu quên truyền biến môi trường!\nbuilder.Services\n    .AddOptions<ServiceUrlOptions>()\n    .Bind(builder.Configuration.GetSection(ServiceUrlOptions.SectionName))\n    .ValidateDataAnnotations()\n    .ValidateOnStart();\n```\n\n### 4.3. Góc nhìn trên nền tảng MAVIS\n\n* **Khớp địa chỉ tĩnh**: `MAVIS.Worker` kết hợp đọc `appsettings.json` + `docker-compose.yml` để phân giải cấu hình URL (`ServiceUrls__CatalogApi` $\\to$ nút `catalog-api`), giúp nối chính xác cạnh `SERVICE_HTTP_CALL` giữa các nút C2 mà không bị đứt đoạn.\n* **An toàn Secret (`D2`)**: Tuyệt đối không đặt mật khẩu DB thật hay `Jwt__Secret` production trong `appsettings.json`; dùng User Secrets (`dotnet user-secrets`) ở local và biến môi trường `.env` trong Docker.",
-    "exercise": "### 4.4. Bài tập thực hành Lab 04\n\n* Kiểm tra file `appsettings.json` và `docker-compose.yml` của các dịch vụ .NET: xác nhận cách ghi đè cấu hình bằng dấu gạch dưới kép (`ConnectionStrings__DefaultConnection`, `ServiceUrls__CatalogApi`).\n* Thử cấu hình `ValidateOnStart()` cho một lớp Options và quan sát ứng dụng báo lỗi rõ ràng ngay lúc start khi cố tình bỏ trống biến cấu hình bắt buộc.",
+    "objective": "Hiểu cơ chế Server-Side Service Discovery qua Docker Compose Embedded DNS (chuẩn gọn nhẹ của hệ sinh thái .NET Container, không cần dựng thêm Eureka Server nặng nề). Cấu hình dịch vụ bên ngoài theo đúng thứ tự ưu tiên của ASP.NET Core Configuration (`appsettings.json` → Environment Variables). Áp dụng Options Pattern (`IOptions<T>` + `ValidateDataAnnotations` + `ValidateOnStart`) để phát hiện thiếu biến môi trường ngay lúc khởi động (Fail-Fast).",
+    "lesson": "### 4.1. Service Discovery trong .NET Container: Sức mạnh của Docker DNS\r\n\r\nKhác với hệ sinh thái Spring Cloud truyền thống hay dựng thêm một dịch vụ Eureka Server riêng, kiến trúc .NET Container hiện đại (`[MS24]` Ch.4) ưu tiên **Server-Side Discovery** có sẵn của nền tảng container (**Docker Compose DNS** khi chạy local/MAVIS Sandbox, và **Kubernetes Service DNS** khi chạy Production):\r\n\r\n```\r\n                    Mạng nội bộ Docker (mavis-net)\r\n+--------------------+                          +------------------------+\r\n|   Ordering.API     |  http://catalog-api:8080 |  Docker Embedded DNS   |\r\n|  (Typed HttpClient)| -----------------------> |  catalog-api ->        |\r\n+--------------------+                          |   172.20.0.4 (Replica1)|\r\n                                                |   172.20.0.5 (Replica2)|\r\n                                                +------------------------+\r\n                                                      |           |\r\n                                                      v           v\r\n                                                [catalog-api#1] [catalog-api#2]\r\n```\r\n\r\n* **Ưu điểm lớn**: Mã nguồn C# hoàn toàn **không phụ thuộc thư viện Discovery ngoài** (không cần SDK đăng ký heartbeat). Chỉ cần gọi tên service trong `docker-compose.yml` (ví dụ `http://catalog-api:8080`), Docker DNS tự động phân giải và cân bằng tải Round-Robin giữa các replica đang chạy!\r\n* *(Lưu ý nâng cao: Từ .NET 8/9, Microsoft bổ sung thêm `Microsoft.Extensions.ServiceDiscovery` dùng chung chuẩn cho cả Docker, Kubernetes và .NET Aspire).*\r\n\r\n### 4.2. Externalized Configuration & Options Pattern (`IOptions<T>`)\r\n\r\nTheo nguyên tắc 12-Factor App và `[MS24]`, **cùng một Docker Image `.NET` phải chạy được ở Dev, Staging và Production** chỉ bằng cách thay đổi biến môi trường.\r\n\r\nTrong ASP.NET Core, biến môi trường dùng **dấu gạch dưới kép (`__`)** để ghi đè cấu hình lồng nhau trong `appsettings.json`:\r\n* Trong `appsettings.json`: `\"ServiceUrls\": { \"CatalogApi\": \"http://localhost:5001\" }`\r\n* Trong `docker-compose.yml`: `ServiceUrls__CatalogApi=http://catalog-api:8080`\r\n\r\n#### Cấu hình mạnh kiểu (Strongly-Typed) kèm kiểm tra Fail-Fast lúc khởi động\r\n\r\nKhông bao giờ viết rải rác `Configuration[\"Jwt:Secret\"]` khắp mã nguồn! Hãy dùng **Options Pattern** kèm `ValidateOnStart()`:\r\n\r\n```csharp\r\npublic sealed class ServiceUrlOptions\r\n{\r\n    public const string SectionName = \"ServiceUrls\";\r\n\r\n    [Required, Url]\r\n    public string CatalogApi { get; init; } = string.Empty;\r\n\r\n    [Required, Url]\r\n    public string BasketApi { get; init; } = string.Empty;\r\n}\r\n\r\n// Trong Program.cs: Fail-Fast ngay lúc container khởi động nếu quên truyền biến môi trường!\r\nbuilder.Services\r\n    .AddOptions<ServiceUrlOptions>()\r\n    .Bind(builder.Configuration.GetSection(ServiceUrlOptions.SectionName))\r\n    .ValidateDataAnnotations()\r\n    .ValidateOnStart();\r\n```\r\n\r\n### 4.3. Góc nhìn trên nền tảng MAVIS\r\n\r\n* **Khớp địa chỉ tĩnh**: `MAVIS.Worker` kết hợp đọc `appsettings.json` + `docker-compose.yml` để phân giải cấu hình URL (`ServiceUrls__CatalogApi` → nút `catalog-api`), giúp nối chính xác cạnh `SERVICE_HTTP_CALL` giữa các nút C2 mà không bị đứt đoạn.\r\n* **An toàn Secret (`D2`)**: Tuyệt đối không đặt mật khẩu DB thật hay `Jwt__Secret` production trong `appsettings.json`; dùng User Secrets (`dotnet user-secrets`) ở local và biến môi trường `.env` trong Docker.",
+    "exercise": "### 4.4. Bài tập thực hành Lab 04\r\n\r\n* Kiểm tra file `appsettings.json` và `docker-compose.yml` của các dịch vụ .NET: xác nhận cách ghi đè cấu hình bằng dấu gạch dưới kép (`ConnectionStrings__DefaultConnection`, `ServiceUrls__CatalogApi`).\r\n* Thử cấu hình `ValidateOnStart()` cho một lớp Options và quan sát ứng dụng báo lỗi rõ ràng ngay lúc start khi cố tình bỏ trống biến cấu hình bắt buộc.",
     "sources": [
       {
         "publisher": "Microsoft Learn",
@@ -3253,11 +3253,11 @@
     "questions": [
       {
         "id": "csharp-v2-ch04-q1",
-        "prompt": "Trong môi trường Docker Compose của hệ thống .NET Microservices, tại sao `Ordering.API` có thể gọi `http://catalog-api:8080` mà không cần hard-code địa chỉ IP?",
+        "prompt": "Trong môi trường Docker Compose của hệ thống .NET Microservices, tại sao Ordering.API có thể gọi http://catalog-api:8080 mà không cần hard-code địa chỉ IP?",
         "type": "SINGLE_CHOICE",
         "options": [
-          "Vì Docker Compose cung cấp sẵn **Embedded DNS (Server-Side Discovery)** tự động phân giải tên dịch vụ trong `docker-compose.yml` sang địa chỉ IP động của các container đang chạy",
-          "Vì mọi container Docker đều dùng chung địa chỉ `127.0.0.1`",
+          "Vì Docker Compose cung cấp sẵn Embedded DNS (Server-Side Discovery) tự động phân giải tên dịch vụ trong docker-compose.yml sang địa chỉ IP động của các container đang chạy",
+          "Vì mọi container Docker đều dùng chung địa chỉ 127.0.0.1",
           "Vì ASP.NET Core tự động dò quét tất cả các cổng trên Internet",
           "Vì Entity Framework Core tự gán IP cố định"
         ],
@@ -3267,27 +3267,27 @@
       },
       {
         "id": "csharp-v2-ch04-q2",
-        "prompt": "Để ghi đè khóa cấu hình lồng nhau `\"ConnectionStrings\": { \"CatalogDb\": \"...\" }` trong `appsettings.json` bằng biến môi trường trên Linux Docker container, ta đặt tên biến môi trường như thế nào?",
+        "prompt": "Để ghi đè khóa cấu hình lồng nhau \"ConnectionStrings\": { \"CatalogDb\": \"...\" } trong appsettings.json bằng biến môi trường trên Linux Docker container, ta đặt tên biến môi trường như thế nào?",
         "type": "SINGLE_CHOICE",
         "options": [
-          "`ConnectionStrings.CatalogDb`",
-          "`ConnectionStrings__CatalogDb` (dùng dấu gạch dưới kép `__`)",
-          "`ConnectionStrings/CatalogDb`",
-          "`ConnectionStrings->CatalogDb`"
+          "ConnectionStrings.CatalogDb",
+          "ConnectionStrings__CatalogDb (dùng dấu gạch dưới kép __)",
+          "ConnectionStrings/CatalogDb",
+          "ConnectionStrings->CatalogDb"
         ],
         "correctOption": 1,
-        "explanation": "Hệ điều hành Linux/bash không hỗ trợ dấu hai chấm (`:`) ổn định trong tên biến môi trường, nên ASP.NET Core chuẩn hóa dùng hai dấu gạch dưới (`__`).",
+        "explanation": "Hệ điều hành Linux/bash không hỗ trợ dấu hai chấm (:) ổn định trong tên biến môi trường, nên ASP.NET Core chuẩn hóa dùng hai dấu gạch dưới (__).",
         "points": 1
       },
       {
         "id": "csharp-v2-ch04-q3",
-        "prompt": "Lợi ích trực tiếp của việc gắn `.ValidateDataAnnotations().ValidateOnStart()` cho lớp `IOptions<T>` trong `Program.cs` là gì?",
+        "prompt": "Lợi ích trực tiếp của việc gắn .ValidateDataAnnotations().ValidateOnStart() cho lớp IOptions<T> trong Program.cs là gì?",
         "type": "SINGLE_CHOICE",
         "options": [
           "Tự động sinh mật khẩu ngẫu nhiên cho cơ sở dữ liệu",
-          "**Fail-Fast**: ứng dụng báo lỗi ngay lập tức lúc khởi động nếu thiếu hoặc sai định dạng biến môi trường, thay vì chạy ngầm rồi mới crash khi có khách gọi API",
-          "Giảm kích thước file `.dll`",
-          "Bỏ qua file `appsettings.json`"
+          "Fail-Fast: ứng dụng báo lỗi ngay lập tức lúc khởi động nếu thiếu hoặc sai định dạng biến môi trường, thay vì chạy ngầm rồi mới crash khi có khách gọi API",
+          "Giảm kích thước file .dll",
+          "Bỏ qua file appsettings.json"
         ],
         "correctOption": 1,
         "explanation": "Phát hiện sai cấu hình ngay lúc khởi chạy container giúp tránh triển khai bản lỗi lên môi trường chạy thật.",
@@ -3295,16 +3295,16 @@
       },
       {
         "id": "csharp-v2-ch04-q4",
-        "prompt": "Khi chạy ở máy cục bộ (Development), nơi nào an toàn nhất để lưu chuỗi kết nối hoặc `Jwt:Secret` mà **không bao giờ bị đẩy nhầm lên GitHub**?",
+        "prompt": "Khi chạy ở máy cục bộ (Development), nơi nào an toàn nhất để lưu chuỗi kết nối hoặc Jwt:Secret mà không bao giờ bị đẩy nhầm lên GitHub?",
         "type": "SINGLE_CHOICE",
         "options": [
-          "Ghi thẳng vào `appsettings.json` và commit lên nhánh `main`",
-          "Dùng **Secret Manager (`dotnet user-secrets`)** hoặc file `.env` đã được khai báo trong `.gitignore`",
-          "Ghi vào file `README.md`",
-          "Hard-code thành `const string` trong `Program.cs`"
+          "Ghi thẳng vào appsettings.json và commit lên nhánh main",
+          "Dùng Secret Manager (dotnet user-secrets) hoặc file .env đã được khai báo trong .gitignore",
+          "Ghi vào file README.md",
+          "Hard-code thành const string trong Program.cs"
         ],
         "correctOption": 1,
-        "explanation": "`dotnet user-secrets` lưu cấu hình bí mật ở thư mục profile ngoài kho Git, tránh hoàn toàn rủi ro rò rỉ secret.",
+        "explanation": "dotnet user-secrets lưu cấu hình bí mật ở thư mục profile ngoài kho Git, tránh hoàn toàn rủi ro rò rỉ secret.",
         "points": 1
       }
     ]
@@ -3316,8 +3316,8 @@
     "title": "Chương 05: API GATEWAY VỚI YARP (REVERSE PROXY) & BẢO MẬT JWT BEARER / RBAC",
     "minutes": 45,
     "objective": "Thiết kế API Gateway / BFF bằng YARP (Yet Another Reverse Proxy) — thư viện chính chủ Microsoft trên .NET 8. Cấu hình Rate Limiting tích hợp sẵn của ASP.NET Core 8 ngay tại lớp Gateway để chống quá tải. Triển khai bảo mật Stateless JWT Bearer Authentication và phân quyền Policy-based / Role-based Authorization (RBAC).",
-    "lesson": "### 5.1. API Gateway & BFF trong kiến trúc .NET (`[MS24]` Ch.4)\n\nTương tự nguyên lý chuẩn của kiến trúc phân tán, client (Web/Mobile) **không gọi thẳng** tới từng `.csproj` nội bộ mà đi qua một **API Gateway** (hoặc các **BFF** tách riêng cho Web và Mobile):\n* Che giấu cấu trúc mạng và địa chỉ nội bộ của hàng loạt microservice.\n* Thực hiện các tác vụ cắt ngang tại biên: **Routing**, **SSL Termination**, **CORS**, **Rate Limiting** và **Xác thực JWT sơ bộ**.\n* Tránh **Single Point of Failure (SPOF)** bằng cách giữ Gateway hoàn toàn **stateless** (không lưu session trên RAM) để nhân bản nhiều bản sao dễ dàng.\n\n```\n[Web / Mobile Client]  (HTTPS + Authorization: Bearer <JWT>)\n            |\n            v\n+-------------------------------------------------------------+\n|            ApiGateway (.NET 8 + YARP Reverse Proxy)         |\n|  - Route /api/v1/catalog/**   --> http://catalog-api:8080   |\n|  - Route /api/v1/basket/**    --> http://basket-api:8080    |\n|  - Route /api/v1/orders/**    --> http://ordering-api:8080  |\n|  - Built-in Rate Limiter + JWT Authentication + CORS        |\n+-------------------------------------------------------------+\n       |                       |                       |\n       v                       v                       v\n  [Catalog.API]           [Basket.API]           [Ordering.API]\n```\n\n### 5.2. Cấu hình API Gateway cực gọn bằng YARP (.NET 8)\n\nChỉ cần cài gói NuGet `Yarp.ReverseProxy`, toàn bộ định tuyến được khai báo rõ ràng trong `appsettings.json`:\n\n```json\n{\n  \"ReverseProxy\": {\n    \"Routes\": {\n      \"catalog-route\": {\n        \"ClusterId\": \"catalog-cluster\",\n        \"Match\": { \"Path\": \"/api/v1/catalog/{**catch-all}\" }\n      },\n      \"basket-route\": {\n        \"ClusterId\": \"basket-cluster\",\n        \"AuthorizationPolicy\": \"AuthenticatedUser\",\n        \"Match\": { \"Path\": \"/api/v1/basket/{**catch-all}\" }\n      },\n      \"ordering-route\": {\n        \"ClusterId\": \"ordering-cluster\",\n        \"AuthorizationPolicy\": \"AuthenticatedUser\",\n        \"Match\": { \"Path\": \"/api/v1/orders/{**catch-all}\" }\n      }\n    },\n    \"Clusters\": {\n      \"catalog-cluster\": {\n        \"Destinations\": { \"d1\": { \"Address\": \"http://catalog-api:8080\" } }\n      },\n      \"basket-cluster\": {\n        \"Destinations\": { \"d1\": { \"Address\": \"http://basket-api:8080\" } }\n      },\n      \"ordering-cluster\": {\n        \"Destinations\": { \"d1\": { \"Address\": \"http://ordering-api:8080\" } }\n      }\n    }\n  }\n}\n```\n\n```csharp\n// ApiGateway/Program.cs\nvar builder = WebApplication.CreateBuilder(args);\n\nbuilder.Services.AddReverseProxy()\n    .LoadFromConfig(builder.Configuration.GetSection(\"ReverseProxy\"));\n\nbuilder.Services.AddRateLimiter(options =>\n{\n    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;\n    options.AddFixedWindowLimiter(\"fixed\", opt =>\n    {\n        opt.Window = TimeSpan.FromMinutes(1);\n        opt.PermitLimit = 100;\n    });\n});\n\nvar app = builder.Build();\napp.UseRateLimiter();\napp.UseAuthentication();\napp.UseAuthorization();\napp.MapReverseProxy().RequireRateLimiting(\"fixed\");\napp.Run();\n```\n\n### 5.3. Bảo mật JWT Bearer & Phân quyền RBAC (`[MS24]` Ch.11)\n\nTrong ASP.NET Core 8, cơ chế bảo mật **Stateless JWT** kết hợp **Defense in Depth** (xác thực ở Gateway và kiểm tra quyền chi tiết ở từng Microservice):\n\n```csharp\n// Cấu hình xác thực JWT Bearer chuẩn trong Program.cs\nbuilder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)\n    .AddJwtBearer(options =>\n    {\n        options.TokenValidationParameters = new TokenValidationParameters\n        {\n            ValidateIssuer = true,\n            ValidateAudience = true,\n            ValidateLifetime = true,\n            ValidateIssuerSigningKey = true,\n            ValidIssuer = builder.Configuration[\"Jwt:Issuer\"],\n            ValidAudience = builder.Configuration[\"Jwt:Audience\"],\n            IssuerSigningKey = new SymmetricSecurityKey(\n                Encoding.UTF8.GetBytes(builder.Configuration[\"Jwt:SigningKey\"]!)),\n            ClockSkew = TimeSpan.FromSeconds(30)\n        };\n    });\n\nbuilder.Services.AddAuthorizationBuilder()\n    .AddPolicy(\"AuthenticatedUser\", p => p.RequireAuthenticatedUser())\n    .AddPolicy(\"AdminOnly\", p => p.RequireRole(\"Admin\"));\n```\n\nVà tại tầng Endpoint/Controller của Microservice đích:\n* `[Authorize]` $\\rightarrow$ Yêu cầu có JWT hợp lệ (thiếu/sai trả **`401 Unauthorized`**).\n* `[Authorize(Policy = \"AdminOnly\")]` $\\rightarrow$ Đã đăng nhập nhưng sai vai trò trả **`403 Forbidden`**.\n* **Kiểm tra quyền sở hữu tài nguyên (Resource-based Authorization)**: Khi khách xem đơn hàng `GET /api/v1/orders/{id}`, `Ordering.API` bắt buộc đối chiếu `order.CustomerId == currentUserId` để chống lỗ hổng **IDOR** (xem trộm đơn của người khác).\n\n### 5.4. Góc nhìn trên nền tảng MAVIS\n\n* **Trích xuất định tuyến YARP**: Phân hệ đọc cấu hình của MAVIS đọc phần `ReverseProxy.Routes` và `ReverseProxy.Clusters` để vẽ các cạnh từ `ApiGateway` tới các dịch vụ đích trên sơ đồ **C2 Container**.\n* **Kiểm chứng trên MAVIS Studio**: Tắt `ApiGateway` sẽ chặn toàn bộ điểm vào từ client ngoài — bài thực hành kinh điển để phân tích tính sẵn sàng cao (*High Availability*).",
-    "exercise": "### 5.5. Bài tập thực hành Lab 05\n\n* Kiểm tra các Route & Cluster trong `ApiGateway/appsettings.json` trên MAVIS và đối chiếu với sơ đồ C2.\n* Giải thích tại sao `catalog-route` (xem danh mục sản phẩm công khai) không bắt buộc `AuthorizationPolicy`, trong khi `ordering-route` bắt buộc `AuthenticatedUser` và kiểm tra thêm quyền sở hữu đơn hàng ở `Ordering.API`.",
+    "lesson": "### 5.1. API Gateway & BFF trong kiến trúc .NET (`[MS24]` Ch.4)\r\n\r\nTương tự nguyên lý chuẩn của kiến trúc phân tán, client (Web/Mobile) **không gọi thẳng** tới từng `.csproj` nội bộ mà đi qua một **API Gateway** (hoặc các **BFF** tách riêng cho Web và Mobile):\r\n* Che giấu cấu trúc mạng và địa chỉ nội bộ của hàng loạt microservice.\r\n* Thực hiện các tác vụ cắt ngang tại biên: **Routing**, **SSL Termination**, **CORS**, **Rate Limiting** và **Xác thực JWT sơ bộ**.\r\n* Tránh **Single Point of Failure (SPOF)** bằng cách giữ Gateway hoàn toàn **stateless** (không lưu session trên RAM) để nhân bản nhiều bản sao dễ dàng.\r\n\r\n```\r\n[Web / Mobile Client]  (HTTPS + Authorization: Bearer <JWT>)\r\n            |\r\n            v\r\n+-------------------------------------------------------------+\r\n|            ApiGateway (.NET 8 + YARP Reverse Proxy)         |\r\n|  - Route /api/v1/catalog/**   --> http://catalog-api:8080   |\r\n|  - Route /api/v1/basket/**    --> http://basket-api:8080    |\r\n|  - Route /api/v1/orders/**    --> http://ordering-api:8080  |\r\n|  - Built-in Rate Limiter + JWT Authentication + CORS        |\r\n+-------------------------------------------------------------+\r\n       |                       |                       |\r\n       v                       v                       v\r\n  [Catalog.API]           [Basket.API]           [Ordering.API]\r\n```\r\n\r\n### 5.2. Cấu hình API Gateway cực gọn bằng YARP (.NET 8)\r\n\r\nChỉ cần cài gói NuGet `Yarp.ReverseProxy`, toàn bộ định tuyến được khai báo rõ ràng trong `appsettings.json`:\r\n\r\n```json\r\n{\r\n  \"ReverseProxy\": {\r\n    \"Routes\": {\r\n      \"catalog-route\": {\r\n        \"ClusterId\": \"catalog-cluster\",\r\n        \"Match\": { \"Path\": \"/api/v1/catalog/{**catch-all}\" }\r\n      },\r\n      \"basket-route\": {\r\n        \"ClusterId\": \"basket-cluster\",\r\n        \"AuthorizationPolicy\": \"AuthenticatedUser\",\r\n        \"Match\": { \"Path\": \"/api/v1/basket/{**catch-all}\" }\r\n      },\r\n      \"ordering-route\": {\r\n        \"ClusterId\": \"ordering-cluster\",\r\n        \"AuthorizationPolicy\": \"AuthenticatedUser\",\r\n        \"Match\": { \"Path\": \"/api/v1/orders/{**catch-all}\" }\r\n      }\r\n    },\r\n    \"Clusters\": {\r\n      \"catalog-cluster\": {\r\n        \"Destinations\": { \"d1\": { \"Address\": \"http://catalog-api:8080\" } }\r\n      },\r\n      \"basket-cluster\": {\r\n        \"Destinations\": { \"d1\": { \"Address\": \"http://basket-api:8080\" } }\r\n      },\r\n      \"ordering-cluster\": {\r\n        \"Destinations\": { \"d1\": { \"Address\": \"http://ordering-api:8080\" } }\r\n      }\r\n    }\r\n  }\r\n}\r\n```\r\n\r\n```csharp\r\n// ApiGateway/Program.cs\r\nvar builder = WebApplication.CreateBuilder(args);\r\n\r\nbuilder.Services.AddReverseProxy()\r\n    .LoadFromConfig(builder.Configuration.GetSection(\"ReverseProxy\"));\r\n\r\nbuilder.Services.AddRateLimiter(options =>\r\n{\r\n    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;\r\n    options.AddFixedWindowLimiter(\"fixed\", opt =>\r\n    {\r\n        opt.Window = TimeSpan.FromMinutes(1);\r\n        opt.PermitLimit = 100;\r\n    });\r\n});\r\n\r\nvar app = builder.Build();\r\napp.UseRateLimiter();\r\napp.UseAuthentication();\r\napp.UseAuthorization();\r\napp.MapReverseProxy().RequireRateLimiting(\"fixed\");\r\napp.Run();\r\n```\r\n\r\n### 5.3. Bảo mật JWT Bearer & Phân quyền RBAC (`[MS24]` Ch.11)\r\n\r\nTrong ASP.NET Core 8, cơ chế bảo mật **Stateless JWT** kết hợp **Defense in Depth** (xác thực ở Gateway và kiểm tra quyền chi tiết ở từng Microservice):\r\n\r\n```csharp\r\n// Cấu hình xác thực JWT Bearer chuẩn trong Program.cs\r\nbuilder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)\r\n    .AddJwtBearer(options =>\r\n    {\r\n        options.TokenValidationParameters = new TokenValidationParameters\r\n        {\r\n            ValidateIssuer = true,\r\n            ValidateAudience = true,\r\n            ValidateLifetime = true,\r\n            ValidateIssuerSigningKey = true,\r\n            ValidIssuer = builder.Configuration[\"Jwt:Issuer\"],\r\n            ValidAudience = builder.Configuration[\"Jwt:Audience\"],\r\n            IssuerSigningKey = new SymmetricSecurityKey(\r\n                Encoding.UTF8.GetBytes(builder.Configuration[\"Jwt:SigningKey\"]!)),\r\n            ClockSkew = TimeSpan.FromSeconds(30)\r\n        };\r\n    });\r\n\r\nbuilder.Services.AddAuthorizationBuilder()\r\n    .AddPolicy(\"AuthenticatedUser\", p => p.RequireAuthenticatedUser())\r\n    .AddPolicy(\"AdminOnly\", p => p.RequireRole(\"Admin\"));\r\n```\r\n\r\nVà tại tầng Endpoint/Controller của Microservice đích:\r\n* `[Authorize]` → Yêu cầu có JWT hợp lệ (thiếu/sai trả **`401 Unauthorized`**).\r\n* `[Authorize(Policy = \"AdminOnly\")]` → Đã đăng nhập nhưng sai vai trò trả **`403 Forbidden`**.\r\n* **Kiểm tra quyền sở hữu tài nguyên (Resource-based Authorization)**: Khi khách xem đơn hàng `GET /api/v1/orders/{id}`, `Ordering.API` bắt buộc đối chiếu `order.CustomerId == currentUserId` để chống lỗ hổng **IDOR** (xem trộm đơn của người khác).\r\n\r\n### 5.4. Góc nhìn trên nền tảng MAVIS\r\n\r\n* **Trích xuất định tuyến YARP**: Phân hệ đọc cấu hình của MAVIS đọc phần `ReverseProxy.Routes` và `ReverseProxy.Clusters` để vẽ các cạnh từ `ApiGateway` tới các dịch vụ đích trên sơ đồ **C2 Container**.\r\n* **Kiểm chứng trên MAVIS Studio**: Tắt `ApiGateway` sẽ chặn toàn bộ điểm vào từ client ngoài — bài thực hành kinh điển để phân tích tính sẵn sàng cao (*High Availability*).",
+    "exercise": "### 5.5. Bài tập thực hành Lab 05\r\n\r\n* Kiểm tra các Route & Cluster trong `ApiGateway/appsettings.json` trên MAVIS và đối chiếu với sơ đồ C2.\r\n* Giải thích tại sao `catalog-route` (xem danh mục sản phẩm công khai) không bắt buộc `AuthorizationPolicy`, trong khi `ordering-route` bắt buộc `AuthenticatedUser` và kiểm tra thêm quyền sở hữu đơn hàng ở `Ordering.API`.",
     "sources": [
       {
         "publisher": "Microsoft Learn",
@@ -3337,35 +3337,35 @@
         "type": "SINGLE_CHOICE",
         "options": [
           "Entity Framework Core",
-          "**YARP (Yet Another Reverse Proxy)**",
+          "YARP (Yet Another Reverse Proxy)",
           "WinForms",
           "SignalR Hub"
         ],
         "correctOption": 1,
-        "explanation": "YARP do chính đội .NET phát triển, tích hợp sâu với middleware ASP.NET Core 8 (Auth, Rate Limiting, OpenTelemetry) và đã thay thế Ocelot trong mẫu `eShop` hiện đại.",
+        "explanation": "YARP do chính đội .NET phát triển, tích hợp sâu với middleware ASP.NET Core 8 (Auth, Rate Limiting, OpenTelemetry) và đã thay thế Ocelot trong mẫu eShop hiện đại.",
         "points": 1
       },
       {
         "id": "csharp-v2-ch05-q2",
-        "prompt": "Khi bật **Rate Limiter** tại API Gateway và một client gửi vượt quá số yêu cầu cho phép trong cửa sổ thời gian, mã trạng thái HTTP chuẩn mực nào cần trả về?",
+        "prompt": "Khi bật Rate Limiter tại API Gateway và một client gửi vượt quá số yêu cầu cho phép trong cửa sổ thời gian, mã trạng thái HTTP chuẩn mực nào cần trả về?",
         "type": "SINGLE_CHOICE",
         "options": [
-          "`200 OK`",
-          "`404 Not Found`",
-          "`429 Too Many Requests`",
-          "`502 Bad Gateway`"
+          "200 OK",
+          "404 Not Found",
+          "429 Too Many Requests",
+          "502 Bad Gateway"
         ],
         "correctOption": 2,
-        "explanation": "`429 Too Many Requests` thông báo chính xác rằng client đang gọi quá giới hạn tần suất cho phép.",
+        "explanation": "429 Too Many Requests thông báo chính xác rằng client đang gọi quá giới hạn tần suất cho phép.",
         "points": 1
       },
       {
         "id": "csharp-v2-ch05-q3",
-        "prompt": "Hành động kiểm tra `order.CustomerId == currentUserId` bên trong `Ordering.API` giúp ngăn chặn lỗ hổng bảo mật nào?",
+        "prompt": "Hành động kiểm tra order.CustomerId == currentUserId bên trong Ordering.API giúp ngăn chặn lỗ hổng bảo mật nào?",
         "type": "SINGLE_CHOICE",
         "options": [
           "SQL Injection",
-          "**IDOR (Insecure Direct Object Reference / Broken Object Level Authorization)** — người dùng đã đăng nhập cố tình đoán ID để xem hoặc hủy đơn hàng của người khác",
+          "IDOR (Insecure Direct Object Reference / Broken Object Level Authorization) — người dùng đã đăng nhập cố tình đoán ID để xem hoặc hủy đơn hàng của người khác",
           "Cross-Site Scripting (XSS)",
           "Deadlock cơ sở dữ liệu"
         ],
@@ -3384,7 +3384,7 @@
           "Vì trình duyệt không hỗ trợ HTTPS qua Gateway"
         ],
         "correctOption": 1,
-        "explanation": "Gateway chỉ nên xử lý *cross-cutting concerns* (routing, auth, rate limit, tracing) để giữ ranh giới Bounded Context sạch sẽ.",
+        "explanation": "Gateway chỉ nên xử lý cross-cutting concerns (routing, auth, rate limit, tracing) để giữ ranh giới Bounded Context sạch sẽ.",
         "points": 1
       }
     ]
@@ -3396,8 +3396,8 @@
     "title": "Chương 06: GIAO TIẾP ĐỒNG BỘ VỚI `IHttpClientFactory` (TYPED CLIENT), ROSLYN `CALL_SITE` & REVERSE BFS",
     "minutes": 45,
     "objective": "Hiểu vì sao khởi tạo `new HttpClient()` thủ công trong vòng lặp/request gây ra thảm họa Socket Exhaustion và DNS Stale. Triển khai giao tiếp đồng bộ chuẩn mực bằng `IHttpClientFactory` + Typed `HttpClient` (kèm so sánh khi nào nên cân nhắc gRPC). Hiểu cách Roslyn trích xuất bằng chứng `CALL_SITE` từ Typed Client và vận dụng Cycle-Safe Reverse BFS + DFS 3 màu để phân tích tác động thay đổi.",
-    "lesson": "### 6.1. Tại sao KHÔNG ĐƯỢC viết `using var client = new HttpClient()`? (`[MS24]` Ch.8)\n\nĐây là sai lầm số 1 của lập trình viên C# khi viết Microservices:\n1. **Socket Exhaustion (Cạn kiệt cổng mạng)**: Khi bạn bọc `new HttpClient()` trong `using`, dù đối tượng C# đã `Dispose()`, socket TCP phía hệ điều hành vẫn bị giữ ở trạng thái `TIME_WAIT` trong $60\\text{–}240$ giây. Dưới tải cao, máy chủ nhanh chóng hết sạch cổng kết nối và chết hàng loạt với `SocketException`!\n2. **Stale DNS (Nếu dùng 1 `static HttpClient` duy nhất)**: Một `static HttpClient` giữ kết nối sống mãi nên không nhận ra địa chỉ IP mới khi container đích trong Docker/Kubernetes khởi động lại hoặc scale!\n\n**Giải pháp chính chủ của Microsoft: `IHttpClientFactory` + Typed Client**:\n* Quản lý một hồ (pool) `HttpMessageHandler` tái sử dụng socket thông minh và tự động xoay vòng định kỳ (mặc định 2 phút) để luôn cập nhật DNS mới.\n* Tích hợp mượt mà với **Polly v8 Resilience** (Chương 10) và **OpenTelemetry Tracing** (Chương 11).\n\n### 6.2. Triển khai Typed `HttpClient` chuẩn .NET 8 (Tối ưu cho Roslyn `CALL_SITE`)\n\n```csharp\n// Ordering.API/Clients/CatalogApiClient.cs\npublic interface ICatalogApiClient\n{\n    Task<CatalogItemDto?> GetItemAsync(int productId, CancellationToken ct);\n    Task<bool> ReserveStockAsync(int productId, int quantity, CancellationToken ct);\n}\n\npublic sealed class CatalogApiClient(HttpClient httpClient) : ICatalogApiClient\n{\n    public async Task<CatalogItemDto?> GetItemAsync(int productId, CancellationToken ct)\n    {\n        var response = await httpClient.GetAsync($\"/api/v1/catalog/items/{productId}\", ct);\n        if (response.StatusCode == HttpStatusCode.NotFound) return null;\n        response.EnsureSuccessStatusCode();\n        return await response.Content.ReadFromJsonAsync<CatalogItemDto>(ct);\n    }\n\n    public async Task<bool> ReserveStockAsync(int productId, int quantity, CancellationToken ct)\n    {\n        var payload = new ReserveStockRequest(quantity);\n        var response = await httpClient.PostAsJsonAsync(\n            $\"/api/v1/catalog/items/{productId}/reserve\", payload, ct);\n        return response.IsSuccessStatusCode;\n    }\n}\n```\n\nĐăng ký trong `Ordering.API/Program.cs`:\n\n```csharp\nbuilder.Services.AddHttpClient<ICatalogApiClient, CatalogApiClient>((sp, client) =>\n{\n    var urls = sp.GetRequiredService<IOptions<ServiceUrlOptions>>().Value;\n    client.BaseAddress = new Uri(urls.CatalogApi);\n    client.Timeout = TimeSpan.FromSeconds(5);\n});\n```\n\n> **Khi nào dùng gRPC thay cho REST/HTTP trong .NET (`[MS24]` Ch.4)?**\n> Với giao tiếp nội bộ giữa hai Microservice cần băng thông cực nhỏ, độ trễ siêu thấp và hợp đồng kiểu mạnh (*strongly-typed Protobuf*), ASP.NET Core hỗ trợ **gRPC** trên HTTP/2 cực mạnh. Còn khi cần dễ đọc, dễ debug bằng trình duyệt/Postman và tương thích rộng, **REST/JSON qua Typed `HttpClient`** vẫn là lựa chọn tiêu chuẩn hàng đầu.\n\n### 6.3. Độ khả dụng chuỗi gọi đồng bộ & Phân tích tác động Reverse BFS (`D2` & `D4`)\n\nMọi lời gọi đồng bộ giữa các service đều làm giảm độ khả dụng tổng thể theo công thức xác suất nối tiếp:\n\n$$\nA_{\\text{total}} = \\prod_{i=1}^{n} A_i\n$$\n\nNếu `ApiGateway` $\\to$ `Ordering.API` $\\to$ `Catalog.API` cùng gọi đồng bộ và mỗi dịch vụ có độ khả dụng $99\\%$ ($0.99$), độ khả dụng chuỗi chỉ còn $0.99^3 \\approx 97.03\\%$.\n\n#### Cách MAVIS dùng Roslyn + Reverse BFS để bảo vệ kiến trúc:\n1. **Bằng chứng `CALL_SITE` (`D2`)**: Roslyn tìm thấy đăng ký `AddHttpClient<ICatalogApiClient, CatalogApiClient>` gắn với `BaseAddress = CatalogApi` và điểm gọi thật `httpClient.PostAsJsonAsync(\"/api/v1/catalog/items/{productId}/reserve\", ...)` tại `CatalogApiClient.cs:19` $\\rightarrow$ xác nhận cạnh `SERVICE_HTTP_CALL` có bằng chứng đầy đủ (nếu chỉ có URL nằm trong `appsettings.json` mà không có code gọi, MAVIS gắn `NEEDS_REVIEW` / `UNVERIFIED_METADATA_ONLY`).\n2. **Cycle-Safe Reverse BFS (`D4`)**: Khi bạn muốn thay đổi hợp đồng API của `Catalog.API`, thuật toán Reverse BFS (FIFO Queue + tập `visited`, độ phức tạp $O(|V| + |E|)$) duyệt ngược các cạnh gọi để liệt kê chính xác:\n   * **`Direct Callers (hop = 1)`**: `Ordering.API`, `ApiGateway`\n   * **`Indirect Callers (hop >= 2)`**: Các BFF/Client gọi qua `ApiGateway`\n   * **`Isolated Nodes`**: Các nút không phụ thuộc `Catalog.API` (nếu một nút cô lập có 0 upstream callers, bán kính ảnh hưởng $= 1$, không lan truyền dây chuyền).\n3. **Phát hiện phụ thuộc vòng bằng DFS 3 màu (`WHITE`, `GRAY`, `BLACK`)**: Tránh báo động giả trên đồ thị DAG hình thoi; chỉ kết luận có **Cyclic Dependency** khi gặp cạnh đi về đỉnh đang có màu `GRAY` (*back-edge*).\n\n```\nĐồ thị gọi xuôi (Call Graph):\n  ApiGateway ──> Ordering.API ──> Catalog.API\n      |               |                ^\n      |               +──> Basket.API  |\n      +────────────────────────────────+\n\nReverse BFS từ target = Catalog.API:\n  - Hop 0 (Target)         : Catalog.API\n  - Hop 1 (Direct Callers) : Ordering.API, ApiGateway\n  - Isolated from target   : Basket.API (không gọi Catalog.API)\n```\n\n### 6.4. Góc nhìn trên nền tảng MAVIS\n\n* **Step 1 & Step 2**: Khi dùng Typed `HttpClient` sạch sẽ như trên, `MAVIS.Worker` (Roslyn) trích xuất đầy đủ cạnh `SERVICE_HTTP_CALL` kèm đường dẫn tương đối và dòng mã nguồn thật, đồng thời kiểm tra **Contract Drift** (đối chiếu route gọi ở `CatalogApiClient` với `[Route]`/`[HttpPost]` bên `CatalogItemsController`).",
-    "exercise": "### 6.5. Bài tập thực hành Lab 06\n\n* Soi một lớp `Typed HttpClient` trong repo .NET mẫu ở **MAVIS Step 1**: xác minh đường dẫn URL và số dòng `CALL_SITE`.\n* Chạy **Reverse BFS** ở **Step 2** cho `Catalog.API` và cho một dịch vụ cô lập (không có caller nào gọi tới), đối chiếu danh sách `Direct Callers` và `Indirect Callers`.",
+    "lesson": "### 6.1. Tại sao KHÔNG ĐƯỢC viết `using var client = new HttpClient()`? (`[MS24]` Ch.8)\r\n\r\nĐây là sai lầm số 1 của lập trình viên C# khi viết Microservices:\r\n1. **Socket Exhaustion (Cạn kiệt cổng mạng)**: Khi bạn bọc `new HttpClient()` trong `using`, dù đối tượng C# đã `Dispose()`, socket TCP phía hệ điều hành vẫn bị giữ ở trạng thái `TIME_WAIT` trong 60–240 giây. Dưới tải cao, máy chủ nhanh chóng hết sạch cổng kết nối và chết hàng loạt với `SocketException`!\r\n2. **Stale DNS (Nếu dùng 1 `static HttpClient` duy nhất)**: Một `static HttpClient` giữ kết nối sống mãi nên không nhận ra địa chỉ IP mới khi container đích trong Docker/Kubernetes khởi động lại hoặc scale!\r\n\r\n**Giải pháp chính chủ của Microsoft: `IHttpClientFactory` + Typed Client**:\r\n* Quản lý một hồ (pool) `HttpMessageHandler` tái sử dụng socket thông minh và tự động xoay vòng định kỳ (mặc định 2 phút) để luôn cập nhật DNS mới.\r\n* Tích hợp mượt mà với **Polly v8 Resilience** (Chương 10) và **OpenTelemetry Tracing** (Chương 11).\r\n\r\n### 6.2. Triển khai Typed `HttpClient` chuẩn .NET 8 (Tối ưu cho Roslyn `CALL_SITE`)\r\n\r\n```csharp\r\n// Ordering.API/Clients/CatalogApiClient.cs\r\npublic interface ICatalogApiClient\r\n{\r\n    Task<CatalogItemDto?> GetItemAsync(int productId, CancellationToken ct);\r\n    Task<bool> ReserveStockAsync(int productId, int quantity, CancellationToken ct);\r\n}\r\n\r\npublic sealed class CatalogApiClient(HttpClient httpClient) : ICatalogApiClient\r\n{\r\n    public async Task<CatalogItemDto?> GetItemAsync(int productId, CancellationToken ct)\r\n    {\r\n        var response = await httpClient.GetAsync($\"/api/v1/catalog/items/{productId}\", ct);\r\n        if (response.StatusCode == HttpStatusCode.NotFound) return null;\r\n        response.EnsureSuccessStatusCode();\r\n        return await response.Content.ReadFromJsonAsync<CatalogItemDto>(ct);\r\n    }\r\n\r\n    public async Task<bool> ReserveStockAsync(int productId, int quantity, CancellationToken ct)\r\n    {\r\n        var payload = new ReserveStockRequest(quantity);\r\n        var response = await httpClient.PostAsJsonAsync(\r\n            $\"/api/v1/catalog/items/{productId}/reserve\", payload, ct);\r\n        return response.IsSuccessStatusCode;\r\n    }\r\n}\r\n```\r\n\r\nĐăng ký trong `Ordering.API/Program.cs`:\r\n\r\n```csharp\r\nbuilder.Services.AddHttpClient<ICatalogApiClient, CatalogApiClient>((sp, client) =>\r\n{\r\n    var urls = sp.GetRequiredService<IOptions<ServiceUrlOptions>>().Value;\r\n    client.BaseAddress = new Uri(urls.CatalogApi);\r\n    client.Timeout = TimeSpan.FromSeconds(5);\r\n});\r\n```\r\n\r\n> **Khi nào dùng gRPC thay cho REST/HTTP trong .NET (`[MS24]` Ch.4)?**\r\n> Với giao tiếp nội bộ giữa hai Microservice cần băng thông cực nhỏ, độ trễ siêu thấp và hợp đồng kiểu mạnh (*strongly-typed Protobuf*), ASP.NET Core hỗ trợ **gRPC** trên HTTP/2 cực mạnh. Còn khi cần dễ đọc, dễ debug bằng trình duyệt/Postman và tương thích rộng, **REST/JSON qua Typed `HttpClient`** vẫn là lựa chọn tiêu chuẩn hàng đầu.\r\n\r\n### 6.3. Độ khả dụng chuỗi gọi đồng bộ & Phân tích tác động Reverse BFS (`D2` & `D4`)\r\n\r\nMọi lời gọi đồng bộ giữa các service đều làm giảm độ khả dụng tổng thể theo công thức xác suất nối tiếp:\r\n\r\nA_total = ∏(i=1..n) Aᵢ\r\n\r\nNếu `ApiGateway` → `Ordering.API` → `Catalog.API` cùng gọi đồng bộ và mỗi dịch vụ có độ khả dụng 99% (0.99), độ khả dụng chuỗi chỉ còn 0.99³ ≈ 97.03%.\r\n\r\n#### Cách MAVIS dùng Roslyn + Reverse BFS để bảo vệ kiến trúc:\r\n1. **Bằng chứng `CALL_SITE` (`D2`)**: Roslyn tìm thấy đăng ký `AddHttpClient<ICatalogApiClient, CatalogApiClient>` gắn với `BaseAddress = CatalogApi` và điểm gọi thật `httpClient.PostAsJsonAsync(\"/api/v1/catalog/items/{productId}/reserve\", ...)` tại `CatalogApiClient.cs:19` → xác nhận cạnh `SERVICE_HTTP_CALL` có bằng chứng đầy đủ (nếu chỉ có URL nằm trong `appsettings.json` mà không có code gọi, MAVIS gắn `NEEDS_REVIEW` / `UNVERIFIED_METADATA_ONLY`).\r\n2. **Cycle-Safe Reverse BFS (`D4`)**: Khi bạn muốn thay đổi hợp đồng API của `Catalog.API`, thuật toán Reverse BFS (FIFO Queue + tập `visited`, độ phức tạp O(|V| + |E|)) duyệt ngược các cạnh gọi để liệt kê chính xác:\r\n   * **`Direct Callers (hop = 1)`**: `Ordering.API`, `ApiGateway`\r\n   * **`Indirect Callers (hop >= 2)`**: Các BFF/Client gọi qua `ApiGateway`\r\n   * **`Isolated Nodes`**: Các nút không phụ thuộc `Catalog.API` (nếu một nút cô lập có 0 upstream callers, bán kính ảnh hưởng = 1, không lan truyền dây chuyền).\r\n3. **Phát hiện phụ thuộc vòng bằng DFS 3 màu (`WHITE`, `GRAY`, `BLACK`)**: Tránh báo động giả trên đồ thị DAG hình thoi; chỉ kết luận có **Cyclic Dependency** khi gặp cạnh đi về đỉnh đang có màu `GRAY` (*back-edge*).\r\n\r\n```\r\nĐồ thị gọi xuôi (Call Graph):\r\n  ApiGateway ──> Ordering.API ──> Catalog.API\r\n      |               |                ^\r\n      |               +──> Basket.API  |\r\n      +────────────────────────────────+\r\n\r\nReverse BFS từ target = Catalog.API:\r\n  - Hop 0 (Target)         : Catalog.API\r\n  - Hop 1 (Direct Callers) : Ordering.API, ApiGateway\r\n  - Isolated from target   : Basket.API (không gọi Catalog.API)\r\n```\r\n\r\n### 6.4. Góc nhìn trên nền tảng MAVIS\r\n\r\n* **Step 1 & Step 2**: Khi dùng Typed `HttpClient` sạch sẽ như trên, `MAVIS.Worker` (Roslyn) trích xuất đầy đủ cạnh `SERVICE_HTTP_CALL` kèm đường dẫn tương đối và dòng mã nguồn thật, đồng thời kiểm tra **Contract Drift** (đối chiếu route gọi ở `CatalogApiClient` với `[Route]`/`[HttpPost]` bên `CatalogItemsController`).",
+    "exercise": "### 6.5. Bài tập thực hành Lab 06\r\n\r\n* Soi một lớp `Typed HttpClient` trong repo .NET mẫu ở **MAVIS Step 1**: xác minh đường dẫn URL và số dòng `CALL_SITE`.\r\n* Chạy **Reverse BFS** ở **Step 2** cho `Catalog.API` và cho một dịch vụ cô lập (không có caller nào gọi tới), đối chiếu danh sách `Direct Callers` và `Indirect Callers`.",
     "sources": [
       {
         "publisher": "Microsoft Learn",
@@ -3408,58 +3408,58 @@
     "questions": [
       {
         "id": "csharp-v2-ch06-q1",
-        "prompt": "Hậu quả nghiêm trọng nhất khi tạo `using var client = new HttpClient()` liên tục trong mỗi HTTP Request ở hệ thống .NET chịu tải cao là gì?",
+        "prompt": "Hậu quả nghiêm trọng nhất khi tạo using var client = new HttpClient() liên tục trong mỗi HTTP Request ở hệ thống .NET chịu tải cao là gì?",
         "type": "SINGLE_CHOICE",
         "options": [
-          "Dẫn tới **Socket Exhaustion** (cạn kiệt cổng TCP do socket nằm ở trạng thái `TIME_WAIT`) và gây `SocketException` hàng loạt",
+          "Dẫn tới Socket Exhaustion (cạn kiệt cổng TCP do socket nằm ở trạng thái TIME_WAIT) và gây SocketException hàng loạt",
           "Làm mất toàn bộ dữ liệu trong bảng SQL",
           "Khiến trình biên dịch C# báo lỗi cú pháp",
           "Làm giảm độ phân giải ảnh"
         ],
         "correctOption": 0,
-        "explanation": "`IHttpClientFactory` ra đời để giải quyết đồng thời cả Socket Exhaustion lẫn vấn đề DNS cũ của `static HttpClient`.",
+        "explanation": "IHttpClientFactory ra đời để giải quyết đồng thời cả Socket Exhaustion lẫn vấn đề DNS cũ của static HttpClient.",
         "points": 1
       },
       {
         "id": "csharp-v2-ch06-q2",
-        "prompt": "Khi một dự án .NET chỉ khai báo URL của `Catalog.API` trong `appsettings.json` nhưng trong mã nguồn C# hoàn toàn không có lệnh `HttpClient` nào gọi tới, MAVIS sẽ xử lý cạnh này như thế nào theo nguyên tắc trung thực nhận thức (`D2`)?",
+        "prompt": "Khi một dự án .NET chỉ khai báo URL của Catalog.API trong appsettings.json nhưng trong mã nguồn C# hoàn toàn không có lệnh HttpClient nào gọi tới, MAVIS sẽ xử lý cạnh này như thế nào theo nguyên tắc trung thực nhận thức (D2)?",
         "type": "SINGLE_CHOICE",
         "options": [
           "Tự động khẳng định chắc chắn hai dịch vụ gọi nhau mỗi giây",
-          "Đánh dấu cạnh ở trạng thái **`NEEDS_REVIEW` (`UNVERIFIED_METADATA_ONLY`)** vì thiếu bằng chứng điểm gọi mã nguồn (`CALL_SITE`)",
-          "Tự động xóa file `appsettings.json`",
-          "Báo lỗi `HTTP 500`"
+          "Đánh dấu cạnh ở trạng thái NEEDS_REVIEW (UNVERIFIED_METADATA_ONLY) vì thiếu bằng chứng điểm gọi mã nguồn (CALL_SITE)",
+          "Tự động xóa file appsettings.json",
+          "Báo lỗi HTTP 500"
         ],
         "correctOption": 1,
-        "explanation": "MAVIS phân biệt rõ bằng chứng gọi thật trong mã nguồn (`CALL_SITE`) với thông tin cấu hình thuần túy để không tạo cạnh ảo.",
+        "explanation": "MAVIS phân biệt rõ bằng chứng gọi thật trong mã nguồn (CALL_SITE) với thông tin cấu hình thuần túy để không tạo cạnh ảo.",
         "points": 1
       },
       {
         "id": "csharp-v2-ch06-q3",
-        "prompt": "Khi chạy **Reverse BFS** xuất phát từ nút mục tiêu `Basket.API`, và `Basket.API` chỉ được gọi trực tiếp bởi `Ordering.API`, còn `ApiGateway` gọi vào `Ordering.API`, thì khoảng cách `hop` của `ApiGateway` là bao nhiêu?",
+        "prompt": "Khi chạy Reverse BFS xuất phát từ nút mục tiêu Basket.API, và Basket.API chỉ được gọi trực tiếp bởi Ordering.API, còn ApiGateway gọi vào Ordering.API, thì khoảng cách hop của ApiGateway là bao nhiêu?",
         "type": "SINGLE_CHOICE",
         "options": [
-          "`hop = 0`",
-          "`hop = 1` (Direct Caller)",
-          "`hop = 2` (Indirect Caller)",
-          "`Isolated` (không liên quan)"
+          "hop = 0",
+          "hop = 1 (Direct Caller)",
+          "hop = 2 (Indirect Caller)",
+          "Isolated (không liên quan)"
         ],
         "correctOption": 2,
-        "explanation": "Duyệt ngược: `Basket.API` (0) $\\leftarrow$ `Ordering.API` (1) $\\leftarrow$ `ApiGateway` (2).",
+        "explanation": "Duyệt ngược: Basket.API (0) ← Ordering.API (1) ← ApiGateway (2).",
         "points": 1
       },
       {
         "id": "csharp-v2-ch06-q4",
-        "prompt": "Một dịch vụ cô lập (không có dịch vụ nào khác gọi tới nó — 0 upstream callers) bị sự cố thì bán kính ảnh hưởng (*Blast Radius*) trong thuật toán Reverse BFS bằng bao nhiêu?",
+        "prompt": "Một dịch vụ cô lập (không có dịch vụ nào khác gọi tới nó — 0 upstream callers) bị sự cố thì bán kính ảnh hưởng (Blast Radius) trong thuật toán Reverse BFS bằng bao nhiêu?",
         "type": "SINGLE_CHOICE",
         "options": [
-          "$0$",
-          "$1$ (chỉ ảnh hưởng chính bản thân nút đó, không lan truyền dây chuyền sang dịch vụ khác)",
+          "0",
+          "1 (chỉ ảnh hưởng chính bản thân nút đó, không lan truyền dây chuyền sang dịch vụ khác)",
           "Bằng tổng số dịch vụ trong toàn hệ thống",
           "Vô hạn"
         ],
         "correctOption": 1,
-        "explanation": "Đúng theo quy tắc kiểm thử ngoại lệ `DS-03b` của MAVIS: nút cô lập có tập caller rỗng nên tác động gói gọn tại chính nó.",
+        "explanation": "Đúng theo quy tắc kiểm thử ngoại lệ DS-03b của MAVIS: nút cô lập có tập caller rỗng nên tác động gói gọn tại chính nó.",
         "points": 1
       }
     ]
