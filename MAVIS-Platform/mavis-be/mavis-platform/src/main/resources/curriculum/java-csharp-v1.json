@@ -2978,5 +2978,95 @@
         "points": 1
       }
     ]
+  },
+  {
+    "id": "csharp-v2-ch01",
+    "track": "C#",
+    "phase": "V2 · Module 1",
+    "title": "Chương 01: CONTAINERIZED .NET MICROSERVICES, MÔ HÌNH C4 (C1–C3) & CẤU TRÚC SOLUTION",
+    "minutes": 45,
+    "objective": "Giải thích bản chất Microservices đóng gói Container trong hệ sinh thái .NET và vì sao mỗi microservice chỉ sở hữu một miền nghiệp vụ độc lập. Phân biệt rạch ròi 3 cấp độ cấu trúc tĩnh C1 (Context), C2 (Container), C3 (Component) đối với một Solution C#/.NET. Tổ chức cấu trúc thư mục `.sln` và các dự án `.csproj` sạch sẽ để cả lập trình viên lẫn bộ phân tích tĩnh Roslyn (`MAVIS.Worker`) đọc hiểu chính xác.",
+    "lesson": "### 1.1. Bản chất Containerized Microservices theo chuẩn Microsoft (`[MS24]`)\n\nTrong hướng dẫn kiến trúc chính thức của Microsoft (`eShopOnContainers`), một hệ thống Microservices .NET không phải là một ứng dụng ASP.NET Core lớn chia thành nhiều thư mục (`Folder`), mà là **tập hợp các tiến trình thực thi độc lập (Autonomous Processes)**, mỗi tiến trình là một dự án Web API (`.csproj`) được đóng gói vào **Docker Container riêng**, triển khai độc lập, mở rộng (scale) độc lập và **sở hữu cơ sở dữ liệu riêng**.\n\nSo sánh nhanh 3 mô hình phổ biến trong .NET:\n\n| Tiêu chí | Monolithic ASP.NET Core | Modular Monolith | .NET Microservices |\n| --- | --- | --- | --- |\n| **Đơn vị triển khai** | 1 tiến trình Web App duy nhất | 1 tiến trình, chia rõ các module Class Library độc lập | Nhiều tiến trình Web API độc lập (mỗi service 1 container) |\n| **Cơ sở dữ liệu** | 1 `DbContext` chung toàn hệ thống | 1 DB chia nhiều schema riêng biệt | **Database-per-Service** (mỗi service sở hữu DB/Cache riêng) |\n| **Scale theo nút thắt** | Phải nhân bản cả ứng dụng | Phải nhân bản cả ứng dụng | Scale chọn lọc đúng service chịu tải cao (ví dụ `Catalog.API` $1 \\to 4$) |\n| **Độ phức tạp vận hành** | Thấp — lý tưởng cho dự án nhỏ | Trung bình — bước đệm rất tốt | Cao — đòi hỏi Docker, Resilience, Event Bus, Observability |\n\n> **Lời khuyên thực chiến của Microsoft (`[MS24]` Ch.4)**: Nếu ứng dụng mới khởi đầu và đội ngũ nhỏ, đừng ép tách 15 microservice ngay từ tuần đầu. Hãy thiết kế **3–4 dịch vụ cốt lõi rõ ràng theo miền nghiệp vụ** (như `Catalog.API`, `Basket.API`, `Ordering.API`, `ApiGateway`) — đủ tinh gọn để vận hành, nhưng thể hiện trọn vẹn bản chất phân tán.\n\n### 1.2. Ánh xạ Mô hình C4 (C1–C3) sang hệ sinh thái C# / .NET\n\nĐể quản lý kiến trúc rõ ràng và không bị rối, mỗi tầng C4 tương ứng trực tiếp với một đơn vị kỹ thuật trong .NET:\n\n```\n[C1: System Context]   Tác nhân bên ngoài (Customer, Admin) <---> Hệ thống E-Commerce .NET\n        |\n        v (Phóng to thành các Container chạy độc lập)\n[C2: Container]        Các dự án thực thi (.csproj / Docker Container) & Data Store:\n                       - ApiGateway (YARP)\n                       - Catalog.API      --> PostgreSQL (catalog_db)\n                       - Basket.API       --> Redis (basket_cache)\n                       - Ordering.API     --> PostgreSQL (ordering_db)\n                       - RabbitMQ (Event Bus)\n        |\n        v (Phóng to bên trong 1 dự án .csproj)\n[C3: Component]        Các lớp nghiệp vụ C# bên trong 1 service:\n                       - OrdersController / OrderEndpoints\n                       - OrderService (hoặc MediatR CommandHandler)\n                       - CatalogHttpClient (Typed HttpClient)\n                       - OrderingDbContext / OrderRepository\n```\n\n* **Nguyên tắc C4 của MAVIS (`BR-05`)**: Phân tích tĩnh mã nguồn C# bằng Roslyn chỉ xuất 4 góc nhìn cấu trúc (`C4_CONTEXT`, `C4_CONTAINER`, `C4_COMPONENT`, `DEPENDENCY_GRAPH`), **chặn sinh UML hành vi tĩnh** (`Sequence`, `Activity`, `State`) vì hành vi theo thời gian phải thu từ **OpenTelemetry Spans** lúc chạy thật.\n\n### 1.3. Tổ chức Solution (`.sln`) sạch cho hệ thống Microservices .NET\n\nMột lỗi rất thường gặp ở sinh viên C# là tạo một thư viện dùng chung `SharedDomain.csproj` nhét toàn bộ Entity và `DbContext` vào rồi tham chiếu chéo khắp nơi — biến hệ thống thành **Distributed Monolith**. Chuẩn đúng là chỉ chia sẻ những mảnh hạ tầng thuần kỹ thuật (*BuildingBlocks* như `EventBus.Abstractions`, `ServiceDefaults`), tuyệt đối **KHÔNG chia sẻ Entity hay DbContext giữa các service**:\n\n```\nMyShop.Microservices.sln\n├── src/\n│   ├── BuildingBlocks/\n│   │   └── EventBus.Contracts/        # Chỉ chứa Integration Event DTO tối giản (record)\n│   ├── Gateways/\n│   │   └── ApiGateway/                # YARP Reverse Proxy + JWT Auth (ApiGateway.csproj)\n│   └── Services/\n│       ├── Catalog/\n│       │   └── Catalog.API/           # Bounded Context Danh mục + CatalogDbContext\n│       ├── Basket/\n│       │   └── Basket.API/            # Bounded Context Giỏ hàng + Redis\n│       └── Ordering/\n│           └── Ordering.API/          # Bounded Context Đặt hàng + OrderingDbContext\n└── docker-compose.yml\n```\n\n### 1.4. Góc nhìn trên nền tảng MAVIS (`MAVIS.Worker` — Roslyn SDK)\n\nKhác với cách đọc regex thô sơ dễ đoán nhầm, **`MAVIS.Worker`** biên dịch cây cú pháp và mô hình ngữ nghĩa (**SyntaxTree + SemanticModel**) của **Microsoft Roslyn SDK** trên từng file `.csproj`:\n* Nhận diện tự động dự án Web API (`Microsoft.NET.Sdk.Web`) $\\rightarrow$ ánh xạ thành nút **C2 Container**.\n* Phân tích các lớp kế thừa `ControllerBase`, Minimal API `MapGet/MapPost`, lớp kế thừa `DbContext`, và các lời gọi `HttpClient` $\\rightarrow$ dựng sơ đồ **C3 Component** kèm bằng chứng `file:line`.",
+    "exercise": "### 1.5. Bài tập thực hành Lab 01\n\n* Mở một Solution .NET Microservices mẫu trên MAVIS ở **Step 1 (Static View)**.\n* So sánh sự tương ứng giữa từng dự án `.csproj` trong Solution với các nút Container trên sơ đồ **C2 (`C4_CONTAINER`)**.\n* Xác minh quy tắc không có dự án nào tham chiếu trực tiếp tới `DbContext` hay Entity của một Microservice khác.",
+    "sources": [
+      {
+        "publisher": "Microsoft Learn",
+        "title": ".NET Microservices: Architecture for Containerized .NET Applications",
+        "url": "https://learn.microsoft.com/en-us/dotnet/architecture/microservices/"
+      },
+      {
+        "publisher": "O'Reilly / Production-Ready Microservices",
+        "title": "Susan J. Fowler — Production-Ready Microservices",
+        "url": "https://www.oreilly.com/library/view/production-ready-microservices/9781491965962/"
+      },
+      {
+        "publisher": "Simon Brown",
+        "title": "The C4 Model for Visualising Software Architecture",
+        "url": "https://c4model.com/"
+      },
+      {
+        "publisher": "Microsoft Learn (.NET 8 / YARP)",
+        "title": "ASP.NET Core 8 & YARP Reverse Proxy Documentation",
+        "url": "https://learn.microsoft.com/en-us/aspnet/core/"
+      }
+    ],
+    "questions": [
+      {
+        "id": "csharp-v2-ch01-q1",
+        "prompt": "Theo tài liệu kiến trúc *.NET Microservices* của Microsoft (`eShopOnContainers`), đặc trưng quan trọng nhất giúp phân biệt Microservices với ứng dụng Monolithic chia nhiều thư mục là gì?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Microservices viết bằng ngôn ngữ C# 12 còn Monolith viết bằng C# 7",
+          "Mỗi Microservice là một tiến trình độc lập có vòng đời triển khai, mở rộng (scale) và sở hữu dữ liệu riêng biệt",
+          "Microservices bắt buộc phải dùng chung một `DbContext` duy nhất để đảm bảo tốc độ",
+          "Microservices không sử dụng giao thức HTTP"
+        ],
+        "correctOption": 1,
+        "explanation": "Độc lập về triển khai, mở rộng và quyền sở hữu dữ liệu (*autonomy & data sovereignty*) là bản chất cốt lõi của Microservices.",
+        "points": 1
+      },
+      {
+        "id": "csharp-v2-ch01-q2",
+        "prompt": "Trong sơ đồ **C2 (Container)** của C4 Model cho hệ thống .NET Microservices, thành phần nào sau đây được biểu diễn là một **Container**?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Một phương thức `CalculateTotal()` bên trong lớp `Order`",
+          "Một dịch vụ Web API chạy độc lập (như `Ordering.API`), một API Gateway (YARP), một cơ sở dữ liệu PostgreSQL hoặc một Redis instance",
+          "Một thuộc tính `decimal Price` trong `record` DTO",
+          "Một biến cục bộ trong `Program.cs`"
+        ],
+        "correctOption": 1,
+        "explanation": "Trong C4 Model, Container là đơn vị thực thi hoặc lưu trữ dữ liệu chạy độc lập; lớp/thành phần code nằm ở tầng C3 (Component).",
+        "points": 1
+      },
+      {
+        "id": "csharp-v2-ch01-q3",
+        "prompt": "Tại sao việc tạo một project `SharedModels.csproj` chứa toàn bộ Entity và `DbContext` dùng chung cho tất cả các .NET Microservice là một **Anti-Pattern**?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Vì trình biên dịch C# không hỗ trợ tham chiếu giữa hai file `.csproj`",
+          "Vì nó tạo ra khớp nối chặt (*tight coupling*) — thay đổi một cột dữ liệu ở một service sẽ ép toàn bộ các service khác phải sửa, biên dịch lại và triển khai đồng loạt (Distributed Monolith)",
+          "Vì Docker không thể build Solution có hơn 2 project",
+          "Vì Entity Framework Core chỉ chạy được trong project tên `Program`"
+        ],
+        "correctOption": 1,
+        "explanation": "Chia sẻ mô hình dữ liệu miền xuyên service phá hủy tính tự chủ của từng Bounded Context.",
+        "points": 1
+      },
+      {
+        "id": "csharp-v2-ch01-q4",
+        "prompt": "Bộ phân tích tĩnh C# của MAVIS (`MAVIS.Worker`) sử dụng công nghệ nào để hiểu chính xác cấu trúc mã nguồn, kiểu dữ liệu và vị trí dòng gọi API (`file:line`)?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Đọc văn bản bằng biểu thức chính quy (Regex) thuần túy",
+          "**Microsoft Roslyn SDK** (phân tích cây cú pháp `SyntaxTree` và mô hình ngữ nghĩa `SemanticModel`)",
+          "Chụp ảnh màn hình giao diện Visual Studio",
+          "Chỉ đọc file `README.md` của kho mã nguồn"
+        ],
+        "correctOption": 1,
+        "explanation": "Roslyn là nền tảng biên dịch chính chủ của C#, cho phép trích xuất chính xác symbol, kiểu trả về, route và điểm gọi `CALL_SITE` mà không suy đoán bừa.",
+        "points": 1
+      }
+    ]
   }
 ]
