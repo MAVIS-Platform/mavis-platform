@@ -47,10 +47,29 @@ export function Step2StaticImpact({
     if (selectedTargetId && model.elements.some((el) => el.id === selectedTargetId)) {
       return selectedTargetId;
     }
+    const baseline = computeArchitectureImpact(model, model.elements[0]!.id, scope);
+    const candidates = baseline.candidateTargets;
+    let bestId = "";
+    let bestScore = -1;
+    for (const candidate of candidates) {
+      const probe = computeArchitectureImpact(model, candidate.id, scope);
+      const isDownstreamType =
+        candidate.elementType === "SERVICE_CONTAINER" || candidate.elementType === "DATABASE" ? 1 : 0;
+      const score =
+        probe.indirectImpactCount * 1000 +
+        probe.directImpactCount * 50 +
+        probe.upstreamImpacted.length * 10 +
+        isDownstreamType;
+      if (score > bestScore) {
+        bestScore = score;
+        bestId = candidate.id;
+      }
+    }
+    if (bestId && bestScore > 1) return bestId;
     const preferred =
       model.elements.find((el) => el.elementType === "SERVICE_CONTAINER") ?? model.elements[0]!;
     return preferred.id;
-  }, [model, selectedTargetId]);
+  }, [model, selectedTargetId, scope]);
 
   const impact = useMemo(() => {
     if (!model || !activeTargetId) return null;
