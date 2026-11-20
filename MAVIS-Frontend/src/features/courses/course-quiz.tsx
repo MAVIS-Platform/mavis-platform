@@ -163,9 +163,17 @@ function AttemptForm({
   return (
     <div className="space-y-5">
       {quiz.lesson && (
-        <div className="rounded-xl border bg-muted/20 p-4">
-          <MarkdownPreview markdown={quiz.lesson} />
-        </div>
+        <details className="rounded-xl border bg-muted/20 p-3.5">
+          <summary className="cursor-pointer select-none text-xs font-semibold text-teal-800 dark:text-teal-300">
+            {t(
+              "Reference Theory & Lesson Summary (Click to expand)",
+              "Xem nhanh lý thuyết tham chiếu trước khi làm Quiz (Nhấn để mở)",
+            )}
+          </summary>
+          <div className="mt-3 border-t pt-3">
+            <MarkdownPreview markdown={quiz.lesson} />
+          </div>
+        </details>
       )}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-teal-200/80 bg-gradient-to-r from-teal-50/80 via-emerald-50/50 to-white px-4 py-3">
         <div className="flex flex-wrap items-center gap-3 text-sm text-slate-700">
