@@ -922,18 +922,18 @@ class Wf02AcceptanceMatrixTest {
     }
 
     @Test
-    @DisplayName("TC-N01: Full 30-chapter curriculum load and Quiz scoring benchmark executes within <= 2000 ms")
+    @DisplayName("TC-N01: Full 54-chapter curriculum load and Quiz scoring benchmark executes within <= 2000 ms")
     void tcN01QuizScoringAndCurriculumBenchmarkWithin2Seconds() throws Exception {
         long t0 = System.nanoTime();
         var curriculum = new CourseCurriculum(json);
         var previews = curriculum.previews();
-        assertEquals(30, previews.size());
+        assertEquals(54, previews.size());
         for (var chapter : previews) {
             var q = curriculum.quizFor(chapter.id());
             assertEquals(4, q.questions().size());
         }
         var qctx = newQuizFixture(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), 1, 75);
-        for (int i = 0; i < 30; i++) {
+        for (int i = 0; i < previews.size(); i++) {
             var res = qctx.service.submit(
                     qctx.workspace.getId(), qctx.lab.getId(),
                     new CourseQuizService.Submit(UUID.randomUUID(), 1, List.of(0, 1, 0, 1)));

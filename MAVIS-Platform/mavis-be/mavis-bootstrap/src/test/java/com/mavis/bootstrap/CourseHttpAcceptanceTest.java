@@ -382,7 +382,7 @@ class CourseHttpAcceptanceTest {
             throws Exception {
         send("GET", "course-curriculum", null, null, 401);
         JsonNode catalog = data(send("GET", "course-curriculum", student, null, 200));
-        assertEquals(30, catalog.size());
+        assertEquals(54, catalog.size());
         int javaChapters = 0;
         int csharpChapters = 0;
         var stages = new java.util.HashSet<String>();
@@ -393,10 +393,15 @@ class CourseHttpAcceptanceTest {
             if ("Java".equals(chapter.path("track").asText())) javaChapters++;
             if ("C#".equals(chapter.path("track").asText())) csharpChapters++;
         }
-        assertEquals(18, javaChapters);
-        assertEquals(12, csharpChapters);
-        assertEquals(java.util.Set.of("Java/foundation", "Java/lab", "Java/advanced",
-                "C#/foundation", "C#/lab", "C#/advanced"), stages);
+        assertEquals(30, javaChapters);
+        assertEquals(24, csharpChapters);
+        assertEquals(java.util.Set.of(
+                "Java/foundation", "Java/lab", "Java/advanced",
+                "Java/V2 · Module 1", "Java/V2 · Module 2", "Java/V2 · Module 3",
+                "Java/V2 · Module 4", "Java/V2 · Module 5",
+                "C#/foundation", "C#/lab", "C#/advanced",
+                "C#/V2 · Module 1", "C#/V2 · Module 2", "C#/V2 · Module 3",
+                "C#/V2 · Module 4", "C#/V2 · Module 5"), stages);
         String quiz = workspace + "/course-labs/" + lab1 + "/quiz";
         var java = Map.of("chapterId", "java-01");
         send("POST", quiz + "/curriculum", student, java, 403);
