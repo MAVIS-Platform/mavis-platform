@@ -811,14 +811,19 @@ public class SubmissionServiceImpl implements SubmissionService {
                     throw new BusinessException(ErrorCode.BAD_REQUEST, "SUBMISSION_SNAPSHOT_IDS_INVALID");
                 }
                 String explanation = item.getWrittenExplanation();
-                if (explanation == null || explanation.isBlank() || explanation.length() > 5000) {
+                if (explanation == null || explanation.isBlank()) {
+                    throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "SUBMISSION_SNAPSHOT_EXPLANATIONS_REQUIRED",
+                            "SUBMISSION_SNAPSHOT_EXPLANATIONS_REQUIRED");
+                }
+                if (explanation.length() > 5000) {
                     throw new BusinessException(ErrorCode.BAD_REQUEST, "SUBMISSION_SNAPSHOT_EXPLANATIONS_REQUIRED");
                 }
                 explanations.put(id, explanation.strip());
             }
         }
         if (required.stream().anyMatch(id -> !capturedById.containsKey(id) && !explanations.containsKey(id))) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "SUBMISSION_SNAPSHOT_EXPLANATIONS_REQUIRED");
+            throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "SUBMISSION_SNAPSHOT_EXPLANATIONS_REQUIRED",
+                    "SUBMISSION_SNAPSHOT_EXPLANATIONS_REQUIRED");
         }
 
         List<StudentSnapshotItemDTO> snapshots = new ArrayList<>();

@@ -130,7 +130,7 @@ export function backendErrorCode(
   }
   if (path === "submissions") {
     if (status === 409 && message === "LAB_SUBMISSION_ALREADY_PASSED") return "SUBMISSION_LAB_PASSED";
-    if (status === 400 && message === "SUBMISSION_SNAPSHOT_EXPLANATIONS_REQUIRED")
+    if ((status === 422 || status === 400) && message === "SUBMISSION_SNAPSHOT_EXPLANATIONS_REQUIRED")
       return "SUBMISSION_SNAPSHOT_EXPLANATIONS_REQUIRED";
     if (status === 400 && message === "SUBMISSION_SNAPSHOT_IDS_INVALID")
       return "SUBMISSION_SNAPSHOT_IDS_INVALID";

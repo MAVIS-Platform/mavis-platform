@@ -439,15 +439,19 @@ class CourseHttpAcceptanceTest {
                 send("POST", "submissions", student, incomplete, 422).body()).path("errorCode").asText());
         incomplete.put("runtimeSessionId", submission.get("runtimeSessionId"));
         incomplete.remove("studentSnapshots");
-        send("POST", "submissions", student, incomplete, 400);
+        assertEquals("SUBMISSION_SNAPSHOT_EXPLANATIONS_REQUIRED", json.readTree(
+                send("POST", "submissions", student, incomplete, 422).body()).path("errorCode").asText());
         var staticEvidence = Map.of("snapshotId", "STEP_1_STATIC", "step", "STEP_1_STATIC",
                 "writtenExplanation", "The gateway routes orders.");
         incomplete.put("studentSnapshots", List.of(staticEvidence));
-        send("POST", "submissions", student, incomplete, 400);
+        send("POST", "submissions", student, incomplete, 422);
         incomplete.put("studentSnapshots", List.of(staticEvidence, staticEvidence));
         send("POST", "submissions", student, incomplete, 400);
         incomplete.put("studentSnapshots", List.of(staticEvidence, Map.of(
                 "snapshotId", "STEP_4_RUNTIME", "step", "STEP_4_RUNTIME", "writtenExplanation", "   ")));
+        send("POST", "submissions", student, incomplete, 422);
+        incomplete.put("studentSnapshots", List.of(staticEvidence, Map.of(
+                "snapshotId", "STEP_4_RUNTIME", "step", "STEP_4_RUNTIME", "writtenExplanation", "x".repeat(5001))));
         send("POST", "submissions", student, incomplete, 400);
         incomplete.put("studentSnapshots", List.of(staticEvidence, Map.of(
                 "snapshotId", "unknown", "step", "unknown", "writtenExplanation", "Fake evidence.")));

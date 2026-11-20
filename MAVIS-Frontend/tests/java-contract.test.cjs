@@ -801,6 +801,20 @@ test("submission reports missing Studio receipts with actionable guidance", asyn
   }
 });
 
+test("submission preserves missing Snapshot explanation guidance", async t => {
+  environment(t);
+  const { javaRequest } = require("../src/lib/api/java-client.ts");
+  const errorCode = "SUBMISSION_SNAPSHOT_EXPLANATIONS_REQUIRED";
+  t.mock.method(globalThis, "fetch", async () =>
+    Response.json({ code: 422, errorCode }, { status: 422 }),
+  );
+  await assert.rejects(javaRequest("submissions", undefined, { method: "POST" }), {
+    status: 422,
+    code: errorCode,
+    message: "Add an explanation for each required Snapshot (up to 5,000 characters each).",
+  });
+});
+
 test("public auth contract rejects incomplete and nonnumeric OTPs for both purposes",()=>{
  const {contracts}=require("../src/lib/api/contracts.ts");
  for(const otpCode of ["","12345","1234567","12x456","１２３４５６","123 56"])
