@@ -3068,5 +3068,80 @@
         "points": 1
       }
     ]
+  },
+  {
+    "id": "csharp-v2-ch02",
+    "track": "C#",
+    "phase": "V2 · Module 1",
+    "title": "Chương 02: DOMAIN-DRIVEN DESIGN (DDD), BOUNDED CONTEXT & CQRS TRONG .NET",
+    "minutes": 45,
+    "objective": "Phân biệt rõ khi nào một .NET Microservice chỉ cần CRUD đơn giản và khi nào nên áp dụng DDD + CQRS (không áp dụng máy móc). Xây dựng đúng Bounded Context, Aggregate Root, Value Object, Domain Event bằng C# 12 hiện đại. Tránh bẫy Anemic Domain Model (mô hình miền rỗng tuếch chỉ toàn getter/setter) ở các dịch vụ nghiệp vụ cốt lõi.",
+    "lesson": "### 2.1. Không phải Microservice nào cũng cần DDD phức tạp! (`[MS24]` Ch.7)\n\nMột điểm cực kỳ thực tế và giá trị trong sách của Microsoft (`[MS24]` Ch.7) là sự **tỉnh táo kiến trúc**:\n\n```\n+------------------------------------------+     +------------------------------------------+\n|     DATA-DRIVEN CRUD MICROSERVICE        |     |     DDD & CQRS MICROSERVICE              |\n|     (Ví dụ: Catalog.API, Basket.API)     |     |     (Ví dụ: Ordering.API)                |\n|                                          |     |                                          |\n|  - Nghiệp vụ đơn giản (đọc/ghi/lọc).     |     |  - Nghiệp vụ phức tạp, nhiều trạng thái  |\n|  - Cấu trúc gọn nhẹ: Controller/Endpoint |     |    và quy tắc bất biến (invariants).     |\n|    -> Service -> EF Core DbContext.      |     |  - Tách tầng Domain, Application, Infra. |\n|  - KHÔNG cần vẽ vời Aggregate/CQRS thừa! |     |  - Dùng Aggregate Root, Value Object,    |\n|                                          |     |    Command/Query tách bạch.              |\n+------------------------------------------+     +------------------------------------------+\n```\n\n> **Bài học Senior**: Nếu `Catalog.API` chỉ làm thêm/sửa/xóa/tìm kiếm mặt hàng, áp dụng kiến trúc 2–3 lớp gọn nhẹ giúp code cực dễ đọc và bảo trì. Hãy dồn sức cho **DDD** tại dịch vụ lõi phức tạp như `Ordering.API`!\n\n### 2.2. Bounded Context & Thiết kế Rich Domain Model trong C# 12\n\nMỗi Microservice đại diện cho một **Bounded Context**. Trong `Ordering.API`, khái niệm `Order` là một **Aggregate Root** bảo vệ toàn bộ tính bất biến (*invariants*) bên trong nó — tuyệt đối không phơi `public set;` bừa bãi để tầng ngoài muốn sửa trạng thái kiểu gì cũng được (lỗi *Anemic Domain Model*):\n\n```csharp\nnamespace Ordering.API.Domain;\n\n// Value Object bất biến bằng C# 12 record\npublic sealed record Address(string Street, string City, string District);\n\n// Aggregate Root: Order kiểm soát toàn bộ thay đổi trạng thái và danh sách OrderItem\npublic sealed class Order\n{\n    private readonly List<OrderItem> _items = [];\n\n    public Guid Id { get; private set; }\n    public Guid CustomerId { get; private set; }          // Tham chiếu bằng ID, KHÔNG giữ đối tượng Customer!\n    public OrderStatus Status { get; private set; }\n    public Address ShippingAddress { get; private set; } = default!;\n    public IReadOnlyCollection<OrderItem> Items => _items.AsReadOnly();\n    public decimal TotalAmount => _items.Sum(i => i.UnitPrice * i.Quantity);\n\n    private Order() { } // Dành cho EF Core\n\n    public static Order CreateDraft(Guid customerId, Address address)\n    {\n        if (customerId == Guid.Empty)\n            throw new DomainException(\"CustomerId is required.\");\n\n        return new Order\n        {\n            Id = Guid.NewGuid(),\n            CustomerId = customerId,\n            ShippingAddress = address,\n            Status = OrderStatus.Submitted\n        };\n    }\n\n    public void AddItem(int productId, string productNameSnapshot, decimal unitPrice, int quantity)\n    {\n        if (Status != OrderStatus.Submitted)\n            throw new DomainException(\"Cannot add items to a processed order.\");\n        if (unitPrice <= 0 || quantity <= 0)\n            throw new DomainException(\"Price and quantity must be greater than zero.\");\n\n        var existing = _items.FirstOrDefault(x => x.ProductId == productId);\n        if (existing is not null)\n        {\n            existing.AddUnits(quantity);\n            return;\n        }\n        _items.Add(new OrderItem(productId, productNameSnapshot, unitPrice, quantity));\n    }\n\n    public void MarkAsConfirmed()\n    {\n        if (_items.Count == 0)\n            throw new DomainException(\"Cannot confirm an empty order.\");\n        Status = OrderStatus.Confirmed;\n    }\n\n    public void Cancel(string reason)\n    {\n        if (Status == OrderStatus.Shipped)\n            throw new DomainException(\"Cannot cancel an order that has already shipped.\");\n        Status = OrderStatus.Cancelled;\n    }\n}\n```\n\n### 2.3. CQRS nhẹ nhàng & hiệu quả trong .NET (`[MS24]` Ch.7)\n\nMicrosoft trình bày **CQRS (Command Query Responsibility Segregation)** ở cấp độ một Microservice rất dễ áp dụng:\n* **Nhánh Ghi (Commands)**: Đi qua **Domain Model + EF Core `DbContext`** để đảm bảo chặt chẽ mọi quy tắc nghiệp vụ, ràng buộc bất biến và giao dịch nguyên tử (ví dụ `CreateOrderCommand`, `CancelOrderCommand`).\n* **Nhánh Đọc (Queries)**: Không cần lôi nguyên cả Aggregate nặng nề với EF Change Tracker! Có thể dùng **EF Core `.AsNoTracking().Select(...)`** (projection thẳng ra `record` DTO) hoặc **Dapper** chạy câu SQL đọc tối ưu siêu nhanh.\n\n```csharp\n// Query đọc siêu nhẹ: Tắt EF Core Change Tracking và chiếu thẳng sang DTO record\npublic async Task<OrderSummaryDto?> GetOrderSummaryAsync(Guid orderId, CancellationToken ct)\n{\n    return await _dbContext.Orders\n        .AsNoTracking()\n        .Where(o => o.Id == orderId)\n        .Select(o => new OrderSummaryDto(\n            o.Id,\n            o.Status.ToString(),\n            o.Items.Sum(i => i.UnitPrice * i.Quantity),\n            o.Items.Count))\n        .FirstOrDefaultAsync(ct);\n}\n```\n\n### 2.4. Góc nhìn trên nền tảng MAVIS\n\n* Khi tách đúng Bounded Context và giữ chặt ranh giới Aggregate, đồ thị **C3 Component** của dịch vụ trên MAVIS hiện lên phân tầng rõ ràng (`Endpoints/Controllers` $\\to$ `Services/Handlers` $\\to$ `Domain / DbContext`), không bị dây nhợ đan chéo (*Spaghetti Dependencies*) và không vi phạm quy tắc 3E.",
+    "exercise": "### 2.5. Bài tập thực hành Lab 02\n\n* Phân loại các Microservice trong hệ thống bán hàng .NET mẫu: dịch vụ nào nên dùng **CRUD đơn giản**, dịch vụ nào nên dùng **DDD Aggregate**.\n* Thiết kế 1 lớp **Aggregate Root** và 1 **Value Object** bằng C# `record`, đảm bảo toàn bộ thuộc tính đóng gói bằng `private set` và có ít nhất 2 quy tắc kiểm tra bất biến (*invariant checks*).",
+    "sources": [
+      {
+        "publisher": "Microsoft Learn",
+        "title": ".NET Microservices: Architecture for Containerized .NET Applications",
+        "url": "https://learn.microsoft.com/en-us/dotnet/architecture/microservices/"
+      }
+    ],
+    "questions": [
+      {
+        "id": "csharp-v2-ch02-q1",
+        "prompt": "Theo hướng dẫn kiến trúc .NET Microservices của Microsoft, ta nên áp dụng mô hình **DDD đầy đủ (Aggregate, Value Object, Domain Event)** cho dịch vụ nào?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Bắt buộc cho mọi dịch vụ, kể cả dịch vụ tra cứu danh mục tĩnh đơn giản nhất",
+          "Chỉ ưu tiên cho các dịch vụ có quy tắc nghiệp vụ phức tạp (như `Ordering.API`); các dịch vụ CRUD đơn giản nên dùng kiến trúc gọn nhẹ để tránh phức tạp hóa thừa thãi",
+          "Chỉ áp dụng cho API Gateway",
+          "Không bao giờ dùng DDD trong C#"
+        ],
+        "correctOption": 1,
+        "explanation": "Chọn kiến trúc phù hợp độ phức tạp của từng Bounded Context là nguyên tắc cốt lõi của Microsoft trong `eShopOnContainers`.",
+        "points": 1
+      },
+      {
+        "id": "csharp-v2-ch02-q2",
+        "prompt": "Hiện tượng **Anemic Domain Model** (mô hình miền rỗng) là gì?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Một lớp thực thể chỉ chứa toàn thuộc tính `public get; set;` mà không có bất kỳ phương thức kiểm soát quy tắc nghiệp vụ hay tính bất biến nào",
+          "Một lớp sử dụng `IReadOnlyCollection<T>`",
+          "Một cơ sở dữ liệu có ít hơn 5 bảng",
+          "Việc sử dụng `record` làm Value Object"
+        ],
+        "correctOption": 0,
+        "explanation": "Khi Entity chỉ là túi chứa dữ liệu có `public set`, bất kỳ nơi nào cũng có thể gán trạng thái sai nghiệp vụ (như `order.Status = Shipped` khi đơn chưa có mặt hàng nào).",
+        "points": 1
+      },
+      {
+        "id": "csharp-v2-ch02-q3",
+        "prompt": "Trong nhánh **Query (Đọc)** của mô hình CQRS với EF Core 8, tại sao nên gọi `.AsNoTracking()` kết hợp `.Select(...)` sang DTO?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Để tắt cơ chế theo dõi thay đổi (*Change Tracker*) không cần thiết khi chỉ đọc dữ liệu, giúp giảm tiêu thụ RAM và tăng tốc độ truy vấn",
+          "Vì EF Core không cho phép chạy `FirstOrDefaultAsync` nếu không có `.AsNoTracking()`",
+          "Để tự động ghi đè dữ liệu vào cơ sở dữ liệu",
+          "Để bỏ qua bước kiểm tra quyền bảo mật JWT"
+        ],
+        "correctOption": 0,
+        "explanation": "Change Tracker chỉ cần cho nhánh Command (cập nhật/xóa); tắt nó ở nhánh Query giảm đáng kể chi phí bộ nhớ và CPU.",
+        "points": 1
+      },
+      {
+        "id": "csharp-v2-ch02-q4",
+        "prompt": "Vì sao `Order.Items` trong Aggregate Root được phơi ra kiểu `IReadOnlyCollection<OrderItem>` thay vì `List<OrderItem>` có `public set`?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Để ép mọi thao tác thêm/xóa mặt hàng phải đi qua phương thức `order.AddItem(...)` của Aggregate Root, đảm bảo các quy tắc bất biến luôn được kiểm tra",
+          "Vì C# 12 không hỗ trợ `List<T>` trong class",
+          "Vì `IReadOnlyCollection` tự động mã hóa dữ liệu JSON",
+          "Vì EF Core không ánh xạ được danh sách riêng tư"
+        ],
+        "correctOption": 0,
+        "explanation": "Aggregate Root là người gác cổng duy nhất đảm bảo trạng thái hợp lệ cho toàn bộ cụm Aggregate.",
+        "points": 1
+      }
+    ]
   }
 ]
