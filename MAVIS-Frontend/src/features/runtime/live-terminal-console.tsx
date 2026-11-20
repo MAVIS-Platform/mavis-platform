@@ -213,16 +213,20 @@ type LiveTerminalConsoleProps = {
   data: Studio;
   projectName?: string | undefined;
   isPreviewMode: boolean;
+  isBooting?: boolean | undefined;
   waiting: boolean;
   statusLabel: string;
+  systemError?: string | null | undefined;
 };
 
 export function LiveTerminalConsole({
   data,
   projectName,
   isPreviewMode,
+  isBooting = false,
   waiting,
   statusLabel,
+  systemError = null,
 }: LiveTerminalConsoleProps) {
   const [view, setView] = useState<"console" | "traces">("console");
   const [serviceFilter, setServiceFilter] = useState<string>("ALL");
@@ -230,15 +234,118 @@ export function LiveTerminalConsole({
   const [query, setQuery] = useState("");
   const [wrap, setWrap] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [runnerEvents, setRunnerEvents] = useState<TerminalLogEntry[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const lastTrackedStateRef = useRef<string>("");
+  const lastTrackedErrorRef = useRef<string>("");
+  const eventSeqRef = useRef(0);
 
-  const entries = useMemo(() => buildTerminalEntries(data), [data]);
+  // Reset client-side runner timeline only when switching to a different live session
+  useEffect(() => {
+    setRunnerEvents([]);
+    lastTrackedStateRef.current = "";
+    lastTrackedErrorRef.current = "";
+  }, [data.sessionId]);
+
+  // Stream real Docker provisioning / lifecycle transitions directly into the terminal
+  useEffect(() => {
+    const rawStatus =
+      isBooting && data.executionStatus === "NOT_STARTED"
+        ? "STARTING"
+        : data.executionStatus;
+    const stateKey = `${isBooting ? "BOOT" : "IDLE"}:${rawStatus}`;
+    if (stateKey === lastTrackedStateRef.current) return;
+    lastTrackedStateRef.current = stateKey;
+
+    if (isPreviewMode && !isBooting && rawStatus === "NOT_STARTED") return;
+
+    let message = "";
+    let level: TerminalLogLevel = "INFO";
+    if (isBooting) {
+      message =
+        rawStatus === "STARTING" || rawStatus === "PENDING" || rawStatus === "QUEUED"
+          ? `Provisioning Docker Compose containers on Runner (${rawStatus}) — waiting for health checks (~15–45s)…`
+          : `Runner stage -> ${rawStatus} (attaching stdout/stderr & OpenTelemetry collector)…`;
+    } else if (rawStatus === "RUNNING") {
+      message =
+        "Containers ready (RUNNING) — streaming container stdout/stderr & OpenTelemetry traces.";
+    } else if (rawStatus === "FAILED") {
+      level = "ERROR";
+      message =
+        "Runner session FAILED — inspect container logs above or click Run to start a fresh session.";
+    } else if (rawStatus === "COMPLETED") {
+      message = "Session completed and runtime evidence sealed.";
+    } else if (rawStatus === "CANCELLED") {
+      level = "WARN";
+      message = "Session cancelled; containers cleaned up.";
+    }
+    if (!message) return;
+
+    const now = new Date();
+    const seq = eventSeqRef.current++;
+    setRunnerEvents((prev) => [
+      ...prev.slice(-49),
+      {
+        id: `runner-state-${seq}`,
+        seq: -10000 + seq,
+        service: "mavis-runner",
+        sourceLabel: "mavis-runner",
+        timestampMs: now.getTime(),
+        timestampLabel: formatClock(now),
+        level,
+        message,
+      },
+    ]);
+  }, [data.executionStatus, isBooting, isPreviewMode]);
+
+  // Stream runtime / setup errors straight into the terminal instead of top page banners
+  useEffect(() => {
+    const trimmed = systemError?.trim() ?? "";
+    if (!trimmed) {
+      lastTrackedErrorRef.current = "";
+      return;
+    }
+    if (trimmed === lastTrackedErrorRef.current) return;
+    lastTrackedErrorRef.current = trimmed;
+    const now = new Date();
+    const seq = eventSeqRef.current++;
+    setRunnerEvents((prev) => [
+      ...prev.slice(-49),
+      {
+        id: `runner-err-${seq}`,
+        seq: -10000 + seq,
+        service: "mavis-runner",
+        sourceLabel: "mavis-runner",
+        timestampMs: now.getTime(),
+        timestampLabel: formatClock(now),
+        level: "ERROR",
+        message: trimmed,
+      },
+    ]);
+  }, [systemError]);
+
+  const entries = useMemo(() => {
+    const base = buildTerminalEntries(data);
+    if (runnerEvents.length === 0) return base;
+    return [...runnerEvents, ...base].sort((a, b) => {
+      if (a.timestampMs !== null && b.timestampMs !== null && a.timestampMs !== b.timestampMs) {
+        return a.timestampMs - b.timestampMs;
+      }
+      return a.seq - b.seq;
+    });
+  }, [data, runnerEvents]);
   const spans = data.telemetry?.spans ?? [];
 
   const serviceList = useMemo(() => {
     const names = new Set<string>(data.services);
     for (const entry of entries) {
-      if (entry.service && entry.service !== "otel-collector") names.add(entry.service);
+      if (
+        entry.service &&
+        entry.service !== "otel-collector" &&
+        entry.service !== "mavis-runner"
+      ) {
+        names.add(entry.service);
+      }
     }
     for (const span of spans) {
       if (span.runtimeService) names.add(span.runtimeService);
@@ -305,8 +412,16 @@ export function LiveTerminalConsole({
   }, [filteredEntries.length, view]);
 
   const projectSlug = useMemo(() => {
-    const raw = (projectName || data.sessionId || "mavis-stack").trim().toLowerCase();
-    return raw.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "mavis-stack";
+    if (projectName?.trim()) {
+      const cleaned = projectName
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "");
+      if (cleaned) return cleaned;
+    }
+    if (data.sessionId) return `studio-${data.sessionId.slice(0, 8)}`;
+    return "studio-live";
   }, [projectName, data.sessionId]);
 
   const observedClock = useMemo(() => {
@@ -524,27 +639,41 @@ export function LiveTerminalConsole({
               <span
                 aria-hidden="true"
                 className={`size-1.5 rounded-full ${
-                  isPreviewMode
-                    ? "bg-slate-500"
-                    : waiting
-                      ? "animate-pulse bg-amber-400"
-                      : "animate-pulse bg-emerald-400"
+                  isBooting || waiting
+                    ? "animate-pulse bg-amber-400"
+                    : data.executionStatus === "FAILED" || Boolean(systemError)
+                      ? "bg-rose-400"
+                      : isPreviewMode
+                        ? "bg-slate-500"
+                        : data.executionStatus === "RUNNING"
+                          ? "animate-pulse bg-emerald-400"
+                          : "bg-slate-400"
                 }`}
               />
               <span
                 className={
-                  isPreviewMode
-                    ? "text-slate-400"
-                    : waiting
-                      ? "text-amber-300"
-                      : "text-emerald-300"
+                  isBooting || waiting
+                    ? "text-amber-300"
+                    : data.executionStatus === "FAILED" || Boolean(systemError)
+                      ? "text-rose-300"
+                      : isPreviewMode
+                        ? "text-slate-400"
+                        : data.executionStatus === "RUNNING"
+                          ? "text-emerald-300"
+                          : "text-slate-300"
                 }
               >
-                {isPreviewMode
-                  ? "STANDBY · PREVIEW"
+                {isBooting
+                  ? `BOOTING · ${data.executionStatus === "NOT_STARTED" ? "STARTING" : data.executionStatus}`
                   : waiting
-                    ? `BOOTING · ${statusLabel}`
-                    : `LIVE${observedClock ? ` · ${observedClock}` : ""}`}
+                    ? "APPLYING"
+                    : data.executionStatus === "FAILED"
+                      ? "FAILED"
+                      : isPreviewMode
+                        ? "STANDBY · PREVIEW"
+                        : data.executionStatus === "RUNNING"
+                          ? `LIVE${observedClock ? ` · ${observedClock}` : ""}`
+                          : statusLabel}
               </span>
             </span>
           </div>
@@ -562,6 +691,7 @@ export function LiveTerminalConsole({
                 return (
                   <div
                     key={entry.id}
+                    role={entry.level === "ERROR" ? "alert" : undefined}
                     className={`flex items-start rounded-sm px-1 py-0.5 hover:bg-slate-800/35 ${rowTone}`}
                   >
                     <span className="w-7 shrink-0 select-none pr-2 text-right text-[10px] tabular-nums text-slate-600">
@@ -588,6 +718,15 @@ export function LiveTerminalConsole({
                   </div>
                 );
               })}
+              {(isBooting || data.executionStatus === "RUNNING") && (
+                <div className="flex items-center gap-1.5 px-1 pt-1 text-slate-500">
+                  <span className="text-emerald-400">{projectSlug}$</span>
+                  <span
+                    aria-hidden="true"
+                    className="inline-block h-3.5 w-1.5 animate-pulse bg-emerald-400/80"
+                  />
+                </div>
+              )}
             </div>
           ) : entries.length > 0 ? (
             <div className="flex items-center justify-between gap-2 py-3 text-slate-400">

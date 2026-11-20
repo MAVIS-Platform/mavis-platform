@@ -11,7 +11,6 @@ import {
   type ReactNode,
 } from "react";
 import {
-  AlertCircle,
   ArrowRight,
   Camera,
   Check,
@@ -947,6 +946,29 @@ export function LiveStudioWorkbench({
     starting || BOOTING_STATUSES.has(data.executionStatus.toUpperCase()),
   );
   const lastSessionFailed = data.executionStatus === "FAILED" || liveData?.executionStatus === "FAILED";
+  const terminalSystemError =
+    mutationError ??
+    (lastSessionFailed
+      ? "Studio Live session failed on Runner. Cancel or click Run to start a fresh session."
+      : null);
+
+  // Auto-open the Logs & Traces terminal on boot start or new error so all status/errors stay inside the terminal
+  const wasBootingRef = useRef(false);
+  const lastOpenedErrorRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (isBooting && !wasBootingRef.current) {
+      setTab("logs");
+      setBottomCollapsed(false);
+    }
+    wasBootingRef.current = isBooting;
+  }, [isBooting]);
+  useEffect(() => {
+    if (terminalSystemError && terminalSystemError !== lastOpenedErrorRef.current) {
+      setTab("logs");
+      setBottomCollapsed(false);
+    }
+    lastOpenedErrorRef.current = terminalSystemError;
+  }, [terminalSystemError]);
 
   const presetTargets = useMemo(() => {
     const isStateful = (name: string) =>
@@ -1334,41 +1356,6 @@ export function LiveStudioWorkbench({
         </div>
       </div>
 
-      {isBooting && !mutationError && (
-        <div
-          role="status"
-          className="flex flex-wrap items-center gap-2 border-b border-sky-500/30 bg-sky-950/35 px-3 py-1.5 text-[11px] text-sky-200"
-        >
-          <RefreshCw aria-hidden="true" className="size-3.5 shrink-0 animate-spin text-sky-300" />
-          <span>
-            Provisioning real Docker containers on Runner ({data.executionStatus === "NOT_STARTED" ? "STARTING" : data.executionStatus}) — live telemetry, traces and Start/Stop/Scale controls activate automatically once containers pass health checks (~15–45s).
-          </span>
-        </div>
-      )}
-
-      {(mutationError || lastSessionFailed) && (
-        <div
-          role="alert"
-          className="flex flex-wrap items-center gap-2 border-b border-rose-500/30 bg-rose-950/40 px-3 py-1.5 text-[11px] text-rose-200"
-        >
-          <AlertCircle aria-hidden="true" className="size-3.5 shrink-0 text-rose-300" />
-          <span className="flex-1 font-medium">
-            {mutationError ??
-              "Studio Live session failed on Runner. Cancel or start a fresh session, or check Logs & Traces."}
-          </span>
-          {authoring?.error && authoring.onClearError && (
-            <button
-              type="button"
-              onClick={authoring.onClearError}
-              aria-label="Dismiss error"
-              className="rounded px-1.5 py-0.5 text-[10px] text-rose-300 hover:bg-rose-500/20 hover:text-rose-100"
-            >
-              ×
-            </button>
-          )}
-        </div>
-      )}
-
       {/* Main 3-Column IDE Layout: Full-Height Resizable Left Blocks | Center (Canvas + Resizable Bottom Dock) | Full-Height Resizable Right Setup */}
       <div className="flex min-h-0 flex-1 overflow-hidden">
         {showLeft && (
@@ -1581,7 +1568,19 @@ export function LiveStudioWorkbench({
                       : "text-slate-400 hover:text-slate-200"
                   }`}
                 >
-                  {label}
+                  <span className="inline-flex items-center gap-1.5">
+                    {label}
+                    {id === "logs" && (terminalSystemError || isBooting) && (
+                      <span
+                        aria-hidden="true"
+                        className={`size-1.5 rounded-full ${
+                          terminalSystemError
+                            ? "bg-rose-400"
+                            : "animate-pulse bg-amber-400"
+                        }`}
+                      />
+                    )}
+                  </span>
                 </button>
               ))}
               <div className="ml-auto flex shrink-0 items-center gap-1.5 pl-1 text-[10px] text-slate-500">
@@ -2272,15 +2271,17 @@ export function LiveStudioWorkbench({
             );
           })()}
 
-          {tab === "logs" && (
+          <div className={tab === "logs" ? "flex h-full min-h-0 flex-1 flex-col" : "hidden"}>
             <LiveTerminalConsole
               data={data}
               projectName={projectName}
               isPreviewMode={isPreviewMode}
+              isBooting={isBooting}
               waiting={waiting}
               statusLabel={statusLabel}
+              systemError={terminalSystemError}
             />
-          )}
+          </div>
 
           {tab === "snapshots" && (
             <section aria-label="Snapshots and runtime recording" className="space-y-3">

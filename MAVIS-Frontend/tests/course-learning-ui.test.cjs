@@ -1519,6 +1519,8 @@ test("Lecturer Studio Live authoring uses unified single top bar, non-red health
   assert.match(standalone, /stripTransientRuntimeProfile/);
   assert.match(apiErrors, /STUDIO_TOPOLOGY_INVALID/);
   assert.match(parity, /isPreview[\s\S]*"Starts Down"[\s\S]*"Prepared"/);
+  assert.doesNotMatch(live, /Provisioning real Docker containers on Runner/);
+  assert.match(live, /<LiveTerminalConsole[\s\S]*isBooting=\{isBooting\}[\s\S]*systemError=\{terminalSystemError\}/);
 });
 
 test("Studio Live project terminal parser multiplexes compose logs, stack traces, runner actions and warnings", () => {
