@@ -5,6 +5,7 @@ import {
   Activity,
   Boxes,
   Camera,
+  ChevronRight,
   Cpu,
   CreditCard,
   Database,
@@ -20,6 +21,7 @@ import {
   Server,
   ShieldCheck,
   ShoppingCart,
+  Target,
   Trash2,
   Wrench,
   X,
@@ -146,6 +148,8 @@ function renderLiveBlockIcon(name: string) {
   return <Server aria-hidden="true" className="size-3.5 shrink-0 text-slate-300" />;
 }
 
+export type StudioSetupPanel = "service" | "mission" | "presets" | "drills";
+
 type LiveSandboxParityProps = {
   data: Studio;
   selected: string;
@@ -160,6 +164,8 @@ type LiveSandboxParityProps = {
   compact?: boolean;
   label?: string;
   authoring?: LiveBlockAuthoringControls | undefined;
+  activeSetupPanel?: StudioSetupPanel | undefined;
+  onSelectSetupPanel?: ((panel: StudioSetupPanel) => void) | undefined;
 };
 
 const LIVE_SCENARIOS = [
@@ -273,6 +279,8 @@ export function LiveSandboxParity({
   compact = false,
   label = "Live capability parity",
   authoring,
+  activeSetupPanel = "service",
+  onSelectSetupPanel,
 }: LiveSandboxParityProps) {
   const [search, setSearch] = useState("");
   const [draft, setDraft] = useState<string | null>(null);
@@ -479,18 +487,21 @@ export function LiveSandboxParity({
                   }`}
                 >
                   <div className="flex items-center justify-between gap-1.5">
-                    <div className="flex min-w-0 items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onSelect(block.service);
+                        onSelectSetupPanel?.("service");
+                      }}
+                      aria-label={`Inspect ${block.label}`}
+                      className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                    >
                       <span className={`size-1.5 shrink-0 rounded-full ${statusDot}`} aria-hidden="true" />
                       {compact && renderLiveBlockIcon(block.service)}
-                      <button
-                        type="button"
-                        onClick={() => onSelect(block.service)}
-                        aria-label={`Inspect ${block.label}`}
-                        className="truncate text-left font-mono text-[11px] font-semibold text-slate-100 hover:text-sky-200"
-                      >
+                      <span className="truncate font-mono text-[11px] font-semibold text-slate-100 hover:text-sky-200">
                         {block.label}
-                      </button>
-                    </div>
+                      </span>
+                    </button>
                     <div className="flex shrink-0 items-center gap-1">
                       <span className="rounded bg-slate-900 px-1.5 py-0.5 font-mono text-[9.5px] text-slate-300">
                         {live === undefined
@@ -515,58 +526,42 @@ export function LiveSandboxParity({
                       )}
                     </div>
                   </div>
-                  <div className="flex flex-wrap items-center gap-1">
-                    {(!authoring || !compact || live !== undefined) && (
-                      <>
-                        <button
-                          type="button"
-                          disabled={busy || live === undefined || live > 0}
-                          onClick={() => void command("START", block.service)}
-                          className="h-5 rounded border border-slate-700 px-1.5 text-[9.5px] font-semibold text-slate-200 hover:border-emerald-500/50 hover:text-emerald-200 disabled:opacity-35"
-                        >
-                          {compact ? "Start" : "Add"}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={busy || !live}
-                          onClick={() => void command("STOP", block.service)}
-                          className="h-5 rounded border border-slate-700 px-1.5 text-[9.5px] font-semibold text-slate-200 hover:border-rose-500/50 hover:text-rose-200 disabled:opacity-35"
-                        >
-                          {compact ? "Stop" : "Remove"}
-                        </button>
-                      </>
-                    )}
-                    {authoring && (
-                      <>
-                        <button
-                          type="button"
-                          disabled={authoring.busy}
-                          onClick={() => authoring.onToggleInitialStopped(block.service, false)}
-                          title="Toggle whether students start with this service stopped (initial fault)"
-                          className={`h-5 rounded border px-1.5 text-[9.5px] font-medium transition-colors ${
-                            startsStopped
-                              ? "border-amber-500/50 bg-amber-500/15 text-amber-200"
-                              : "border-slate-800 bg-slate-900/80 text-slate-400 hover:text-slate-200"
-                          }`}
+                  {!compact ? (
+                    <div className="flex flex-wrap items-center gap-1">
+                      <button
+                        type="button"
+                        disabled={busy || live === undefined || live > 0}
+                        onClick={() => void command("START", block.service)}
+                        className="h-5 rounded border border-slate-700 px-1.5 text-[9.5px] font-semibold text-slate-200 hover:border-emerald-500/50 hover:text-emerald-200 disabled:opacity-35"
+                      >
+                        Add
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy || !live}
+                        onClick={() => void command("STOP", block.service)}
+                        className="h-5 rounded border border-slate-700 px-1.5 text-[9.5px] font-semibold text-slate-200 hover:border-rose-500/50 hover:text-rose-200 disabled:opacity-35"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ) : (
+                    authoring && (
+                      <div className="flex items-center gap-1.5 text-[9.5px] text-slate-400">
+                        <span
+                          className={
+                            startsStopped ? "text-amber-300" : "text-slate-500"
+                          }
                         >
                           {startsStopped ? "Starts Down" : "Starts Up"}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={authoring.busy}
-                          onClick={() => authoring.onToggleScalable(block.service)}
-                          title="Allow students to scale this service (1–8 replicas)"
-                          className={`h-5 rounded border px-1.5 text-[9.5px] font-medium transition-colors ${
-                            isScalable
-                              ? "border-sky-500/40 bg-sky-500/15 text-sky-200"
-                              : "border-slate-800 bg-slate-900/80 text-slate-500 hover:text-slate-300"
-                          }`}
-                        >
+                        </span>
+                        <span className="text-slate-700">·</span>
+                        <span className={isScalable ? "text-sky-300" : "text-slate-500"}>
                           {isScalable ? "Scalable" : "Fixed"}
-                        </button>
-                      </>
-                    )}
-                  </div>
+                        </span>
+                      </div>
+                    )
+                  )}
                 </li>
               );
             })}
@@ -738,94 +733,74 @@ export function LiveSandboxParity({
               </div>
             </div>
           )}
-          {compact && authoring?.onApplyPreset && (
+          {compact && (authoring || data.executionStatus === "RUNNING") && (
             <div className="space-y-1.5 border-t border-slate-800/80 pt-2.5">
               <p className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
                 <Zap aria-hidden="true" className="size-3 text-amber-400" />
-                Lab Exercise Presets
+                Studio Functions
               </p>
-              <div className="grid grid-cols-2 gap-1">
-                {(
-                  [
-                    ["outage", "Outage Recovery", "1 service Starts Down"],
-                    ["scale", "Scale Out ×2", "Min 2 replicas target"],
-                    ["chaos-scale", "Fault + Scale", "Stop 1 + Scale ×2"],
-                    ["healthy", "Reset Healthy", "Clear all initial faults"],
-                  ] as const
-                ).map(([id, title, sub]) => (
+              <div className="space-y-1">
+                {authoring && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => onSelectSetupPanel?.("mission")}
+                      className={`flex w-full items-center justify-between gap-2 rounded-md border px-2.5 py-2 text-left transition-colors ${
+                        activeSetupPanel === "mission"
+                          ? "border-sky-500/60 bg-sky-500/15 text-sky-100"
+                          : "border-slate-800 bg-slate-950/70 text-slate-200 hover:border-slate-700 hover:bg-slate-900"
+                      }`}
+                    >
+                      <div className="flex min-w-0 items-center gap-2">
+                        <Target aria-hidden="true" className="size-3.5 shrink-0 text-sky-400" />
+                        <div className="min-w-0">
+                          <p className="truncate text-[11px] font-semibold">Mission &amp; Pass Criteria</p>
+                          <p className="truncate text-[9.5px] text-slate-400">Setup instructions &amp; grading</p>
+                        </div>
+                      </div>
+                      <ChevronRight aria-hidden="true" className="size-3.5 shrink-0 text-slate-500" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onSelectSetupPanel?.("presets")}
+                      className={`flex w-full items-center justify-between gap-2 rounded-md border px-2.5 py-2 text-left transition-colors ${
+                        activeSetupPanel === "presets"
+                          ? "border-amber-500/60 bg-amber-500/15 text-amber-100"
+                          : "border-slate-800 bg-slate-950/70 text-slate-200 hover:border-slate-700 hover:bg-slate-900"
+                      }`}
+                    >
+                      <div className="flex min-w-0 items-center gap-2">
+                        <Zap aria-hidden="true" className="size-3.5 shrink-0 text-amber-400" />
+                        <div className="min-w-0">
+                          <p className="truncate text-[11px] font-semibold">Lab Exercise Presets</p>
+                          <p className="truncate text-[9.5px] text-slate-400">1-click scenario templates</p>
+                        </div>
+                      </div>
+                      <ChevronRight aria-hidden="true" className="size-3.5 shrink-0 text-slate-500" />
+                    </button>
+                  </>
+                )}
+                {!authoring && data.executionStatus === "RUNNING" && (
                   <button
-                    key={id}
                     type="button"
-                    disabled={authoring.busy}
-                    onClick={() => authoring.onApplyPreset?.(id)}
-                    className="rounded-md border border-slate-800 bg-slate-950/70 px-2 py-1.5 text-left transition-colors hover:border-sky-500/40 hover:bg-slate-900 disabled:opacity-40"
+                    onClick={() => onSelectSetupPanel?.("drills")}
+                    className={`flex w-full items-center justify-between gap-2 rounded-md border px-2.5 py-2 text-left transition-colors ${
+                      activeSetupPanel === "drills"
+                        ? "border-emerald-500/60 bg-emerald-500/15 text-emerald-100"
+                        : "border-slate-800 bg-slate-950/70 text-slate-200 hover:border-slate-700 hover:bg-slate-900"
+                    }`}
                   >
-                    <p className="truncate text-[10px] font-semibold text-slate-200">{title}</p>
-                    <p className="truncate text-[9px] text-slate-500">{sub}</p>
+                    <div className="flex min-w-0 items-center gap-2">
+                      <RotateCcw aria-hidden="true" className="size-3.5 shrink-0 text-emerald-400" />
+                      <div className="min-w-0">
+                        <p className="truncate text-[11px] font-semibold">Quick Live Drills</p>
+                        <p className="truncate text-[9.5px] text-slate-400">Fault, scale &amp; recovery</p>
+                      </div>
+                    </div>
+                    <ChevronRight aria-hidden="true" className="size-3.5 shrink-0 text-slate-500" />
                   </button>
-                ))}
+                )}
               </div>
-            </div>
-          )}
-          {compact && !authoring && data.executionStatus === "RUNNING" && (
-            <div className="space-y-1.5 border-t border-slate-800/80 pt-2.5">
-              <p className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                <Zap aria-hidden="true" className="size-3 text-emerald-400" />
-                Quick Live Drills
-              </p>
-              {(() => {
-                const stoppedBlock = blocks.find((b) => runningReplicas(data, b.service) === 0);
-                const scalableBlock =
-                  blocks.find((b) => b.service === selected && b.canScale && (runningReplicas(data, b.service) ?? 0) > 0) ??
-                  blocks.find((b) => b.canScale && (runningReplicas(data, b.service) ?? 0) > 0);
-                const stoppableBlock =
-                  blocks.find((b) => b.service === selected && (runningReplicas(data, b.service) ?? 0) > 0) ??
-                  blocks.find(
-                    (b) =>
-                      !/gateway|edge|postgres|db|kafka/.test(b.service.toLowerCase()) &&
-                      (runningReplicas(data, b.service) ?? 0) > 0,
-                  );
-                return (
-                  <div className="space-y-1">
-                    <button
-                      type="button"
-                      disabled={busy || !stoppableBlock}
-                      onClick={() => stoppableBlock && void command("STOP", stoppableBlock.service)}
-                      className="flex w-full items-center justify-between rounded-md border border-rose-500/30 bg-rose-500/10 px-2 py-1.5 text-[10.5px] font-medium text-rose-200 hover:bg-rose-500/20 disabled:opacity-35"
-                    >
-                      <span>Inject Service Fault</span>
-                      <span className="font-mono text-[9.5px] text-rose-300/80">
-                        {stoppableBlock?.service ?? "—"}
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      disabled={busy || !scalableBlock}
-                      onClick={() => scalableBlock && void command("SCALE", scalableBlock.service, 2)}
-                      className="flex w-full items-center justify-between rounded-md border border-sky-500/30 bg-sky-500/10 px-2 py-1.5 text-[10.5px] font-medium text-sky-200 hover:bg-sky-500/20 disabled:opacity-35"
-                    >
-                      <span>Scale Out ×2 Pods</span>
-                      <span className="font-mono text-[9.5px] text-sky-300/80">
-                        {scalableBlock?.service ?? "—"}
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      disabled={busy || !stoppedBlock}
-                      onClick={() => stoppedBlock && void command("START", stoppedBlock.service)}
-                      className="flex w-full items-center justify-between rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1.5 text-[10.5px] font-medium text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-35"
-                    >
-                      <span className="flex items-center gap-1">
-                        <RotateCcw aria-hidden="true" className="size-3" />
-                        Recover Stopped
-                      </span>
-                      <span className="font-mono text-[9.5px] text-emerald-300/80">
-                        {stoppedBlock?.service ?? "All up"}
-                      </span>
-                    </button>
-                  </div>
-                );
-              })()}
             </div>
           )}
           {!compact && (
@@ -864,9 +839,96 @@ export function LiveSandboxParity({
               {running === undefined ? "Preview" : running === 0 ? "Stopped" : "Running"}
             </span>
           </div>
-          <p className="font-mono text-[10.5px] text-slate-400">
-            CPU {observedStats.cpu} · RAM {observedStats.memory} · replicas {running ?? "—"}
+          <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 font-mono text-[10.5px] text-slate-400">
+            <span className="whitespace-nowrap">CPU {observedStats.cpu}</span>
+            <span aria-hidden="true">·</span>
+            <span className="whitespace-nowrap">RAM {observedStats.memory}</span>
+            <span aria-hidden="true">·</span>
+            <span className="whitespace-nowrap">replicas {running ?? "—"}</span>
           </p>
+          {compact && authoring && selected && (
+            <div className="space-y-2 rounded-lg border border-slate-800 bg-slate-950/70 p-2">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                Lab Exercise Setup · {selected}
+              </p>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2 text-[10.5px]">
+                  <span className="text-slate-400">Initial State</span>
+                  <div className="inline-flex overflow-hidden rounded-md border border-slate-700 bg-slate-900">
+                    <button
+                      type="button"
+                      disabled={authoring.busy}
+                      onClick={() => {
+                        if (authoring.initialStoppedServices.includes(selected)) {
+                          authoring.onToggleInitialStopped(selected, false);
+                        }
+                      }}
+                      className={`px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                        !authoring.initialStoppedServices.includes(selected)
+                          ? "bg-emerald-500/20 text-emerald-200"
+                          : "text-slate-400 hover:text-slate-200"
+                      }`}
+                    >
+                      Starts Up
+                    </button>
+                    <button
+                      type="button"
+                      disabled={authoring.busy}
+                      onClick={() => {
+                        if (!authoring.initialStoppedServices.includes(selected)) {
+                          authoring.onToggleInitialStopped(selected, false);
+                        }
+                      }}
+                      className={`border-l border-slate-700 px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                        authoring.initialStoppedServices.includes(selected)
+                          ? "bg-amber-500/20 text-amber-200"
+                          : "text-slate-400 hover:text-slate-200"
+                      }`}
+                    >
+                      Starts Down
+                    </button>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between gap-2 text-[10.5px]">
+                  <span className="text-slate-400">Student Scaling</span>
+                  <div className="inline-flex overflow-hidden rounded-md border border-slate-700 bg-slate-900">
+                    <button
+                      type="button"
+                      disabled={authoring.busy}
+                      onClick={() => {
+                        if (!authoring.scalableServices.includes(selected)) {
+                          authoring.onToggleScalable(selected);
+                        }
+                      }}
+                      className={`px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                        authoring.scalableServices.includes(selected)
+                          ? "bg-sky-500/20 text-sky-200"
+                          : "text-slate-400 hover:text-slate-200"
+                      }`}
+                    >
+                      Scalable
+                    </button>
+                    <button
+                      type="button"
+                      disabled={authoring.busy}
+                      onClick={() => {
+                        if (authoring.scalableServices.includes(selected)) {
+                          authoring.onToggleScalable(selected);
+                        }
+                      }}
+                      className={`border-l border-slate-700 px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                        !authoring.scalableServices.includes(selected)
+                          ? "bg-slate-700/70 text-slate-200"
+                          : "text-slate-400 hover:text-slate-200"
+                      }`}
+                    >
+                      Fixed 1×
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between gap-1 text-[10px] text-slate-400">
               <span className="flex items-center gap-1">

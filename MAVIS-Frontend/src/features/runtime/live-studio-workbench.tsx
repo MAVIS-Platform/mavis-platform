@@ -12,11 +12,12 @@ import {
   PanelRight,
   Play,
   RefreshCw,
+  RotateCcw,
   Save,
   Server,
   Sparkles,
   Target,
-  X,
+  Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,6 +29,7 @@ import {
   LiveSandboxParity,
   summarizeServiceStats,
   type LiveBlockAuthoringControls,
+  type StudioSetupPanel,
 } from "./live-sandbox-parity";
 import { useStudioSession } from "./use-studio-session";
 
@@ -238,7 +240,7 @@ export function LiveStudioWorkbench({
   const [showLeft, setShowLeft] = useState(true);
   const [showRight, setShowRight] = useState(true);
   const [expanded, setExpanded] = useState(false);
-  const [showMissionDrawer, setShowMissionDrawer] = useState(false);
+  const [setupPanel, setSetupPanel] = useState<StudioSetupPanel>("service");
   const [missionDraft, setMissionDraft] = useState(authoring?.instructions ?? "");
   const [baselineDraft, setBaselineDraft] = useState(authoring?.baselinePath ?? "/health");
   const [maxErrDraft, setMaxErrDraft] = useState(authoring?.maxErrorRatePercent ?? "0");
@@ -575,9 +577,16 @@ export function LiveStudioWorkbench({
                 type="button"
                 size="sm"
                 variant="outline"
-                onClick={() => setShowMissionDrawer((v) => !v)}
+                onClick={() => {
+                  if (showRight && setupPanel === "mission") {
+                    setSetupPanel("service");
+                  } else {
+                    setSetupPanel("mission");
+                    setShowRight(true);
+                  }
+                }}
                 className={`h-7 px-2 text-[11px] ${
-                  showMissionDrawer
+                  showRight && setupPanel === "mission"
                     ? "border-sky-500/60 bg-sky-500/15 text-sky-200 hover:bg-sky-500/25"
                     : "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800 hover:text-white"
                 }`}
@@ -698,113 +707,6 @@ export function LiveStudioWorkbench({
         </div>
       </div>
 
-      {/* Inline Visual Mission Drawer (Teacher Authoring directly inside Studio Live) */}
-      {authoring && showMissionDrawer && (
-        <div className="border-b border-slate-800 bg-[#0d1422] px-4 py-3 text-xs">
-          <div className="flex flex-wrap items-center justify-between gap-2 pb-2">
-            <span className="font-semibold text-slate-100">
-              Lab Exercise Mission &amp; Pass Target
-            </span>
-            <div className="flex items-center gap-2">
-              {authoring.saved && (
-                <span className="inline-flex items-center gap-1 text-[11px] text-emerald-400">
-                  <Check aria-hidden="true" className="size-3" /> Saved
-                </span>
-              )}
-              <button
-                type="button"
-                onClick={() => setShowMissionDrawer(false)}
-                aria-label="Close mission panel"
-                className="rounded p-0.5 text-slate-400 hover:bg-slate-800 hover:text-white"
-              >
-                <X aria-hidden="true" className="size-3.5" />
-              </button>
-            </div>
-          </div>
-          <div className="grid gap-3 md:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_auto]">
-            <label className="space-y-1 text-[11px] text-slate-400">
-              <span>Student Mission</span>
-              <Textarea
-                value={missionDraft}
-                onChange={(e) => setMissionDraft(e.target.value)}
-                placeholder="e.g. Start stopped services, scale order-service to 2 pods, capture Before/After snapshots."
-                className="min-h-14 border-slate-700 bg-slate-950 text-xs text-slate-100"
-              />
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              <label className="space-y-1 text-[11px] text-slate-400">
-                <span>Probe GET Path</span>
-                <Input
-                  value={baselineDraft}
-                  onChange={(e) => setBaselineDraft(e.target.value)}
-                  placeholder="/api/gateway/orders"
-                  className="h-7 border-slate-700 bg-slate-950 font-mono text-[11px] text-slate-100"
-                />
-              </label>
-              <label className="space-y-1 text-[11px] text-slate-400">
-                <span>Max Error %</span>
-                <Input
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={maxErrDraft}
-                  onChange={(e) => setMaxErrDraft(e.target.value)}
-                  placeholder="0"
-                  className="h-7 border-slate-700 bg-slate-950 font-mono text-[11px] text-slate-100"
-                />
-              </label>
-              <label className="space-y-1 text-[11px] text-slate-400">
-                <span>Scale Service</span>
-                <select
-                  value={replicaSvcDraft}
-                  onChange={(e) => setReplicaSvcDraft(e.target.value)}
-                  className="h-7 w-full rounded border border-slate-700 bg-slate-950 px-1.5 font-mono text-[11px] text-slate-100"
-                >
-                  <option value="">None</option>
-                  {blocks.map((b) => (
-                    <option key={b.service} value={b.service}>
-                      {b.service}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="space-y-1 text-[11px] text-slate-400">
-                <span>Min Replicas</span>
-                <Input
-                  type="number"
-                  min={1}
-                  max={8}
-                  value={replicaCountDraft}
-                  onChange={(e) => setReplicaCountDraft(e.target.value)}
-                  placeholder="2"
-                  className="h-7 border-slate-700 bg-slate-950 font-mono text-[11px] text-slate-100"
-                />
-              </label>
-            </div>
-            <div className="flex items-end">
-              <Button
-                type="button"
-                size="sm"
-                disabled={authoring.saving}
-                onClick={() =>
-                  authoring.onSaveMission({
-                    instructions: missionDraft,
-                    baselinePath: baselineDraft,
-                    maxErrorRatePercent: maxErrDraft,
-                    replicaService: replicaSvcDraft,
-                    replicaCount: replicaCountDraft,
-                  })
-                }
-                className="h-8 bg-teal-600 px-3 text-xs text-white hover:bg-teal-500"
-              >
-                <Save aria-hidden="true" className="mr-1.5 size-3.5" />
-                {authoring.saving ? "Saving…" : "Save"}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {isBooting && !mutationError && (
         <div
           role="status"
@@ -830,138 +732,135 @@ export function LiveStudioWorkbench({
         </div>
       )}
 
-      {/* Main 3-Zone Visual Canvas */}
-      <div className="flex min-h-0 flex-1">
+      {/* Main 3-Column IDE Layout: Full-Height Left Blocks | Center (Canvas + Bounded Bottom Dock) | Full-Height Right Setup */}
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         {showLeft && (
-          <aside className="w-[252px] shrink-0 overflow-x-hidden overflow-y-auto border-r border-slate-800 bg-[#0b101b] p-2">
+          <aside className="h-full w-[252px] shrink-0 overflow-x-hidden overflow-y-auto border-r border-slate-800 bg-[#0b101b] p-2.5">
             <LiveSandboxParity
               data={data}
               selected={selected}
               busy={isPreviewMode ? false : busy}
-              onSelect={studio.setService}
+              onSelect={(svc) => {
+                studio.setService(svc);
+                setSetupPanel("service");
+              }}
               onCommand={dispatchCommand}
               sections={["library"]}
               compact
               label="Live block library"
               authoring={authoring}
+              activeSetupPanel={setupPanel}
+              onSelectSetupPanel={(panel) => {
+                setSetupPanel(panel);
+                setShowRight(true);
+              }}
             />
           </aside>
         )}
 
-        <div ref={graphRef} className="relative min-h-[300px] min-w-0 flex-1 bg-[#070b12] p-2.5">
-          {isPreviewMode && effectivePreviewTopology && (
-            <div className="pointer-events-none absolute bottom-3 left-3 z-10">
-              <div className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full border border-slate-700/80 bg-slate-950/90 px-2.5 py-1 text-[10.5px] text-slate-300 shadow-lg backdrop-blur-sm">
-                <span className="size-1.5 shrink-0 rounded-full bg-sky-400" aria-hidden="true" />
-                <span>
-                  {authoring
-                    ? "Preview · Toggle faults or Start Live Docker"
-                    : "Preview · Click Start Live Docker"}
+        {/* Center Column: Interactive 3D/2D Canvas + Strictly Bounded Bottom Telemetry Dock */}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#070b12]">
+          <div ref={graphRef} className="relative min-h-[240px] min-w-0 flex-1 overflow-hidden p-2.5">
+            {isPreviewMode && effectivePreviewTopology && (
+              <div className="pointer-events-none absolute bottom-3 left-3 z-10">
+                <div className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full border border-slate-700/80 bg-slate-950/90 px-2.5 py-1 text-[10.5px] text-slate-300 shadow-lg backdrop-blur-sm">
+                  <span className="size-1.5 shrink-0 rounded-full bg-sky-400" aria-hidden="true" />
+                  <span>
+                    {authoring
+                      ? "Preview · Select a block or drag tools onto nodes"
+                      : "Preview · Click Start Live Docker"}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {state.isError ? (
+              <ErrorState error={state.error} onRetry={() => void state.refetch()} />
+            ) : data.services.length > 0 || data.topology ? (
+              <StudioObservability
+                data={data}
+                selected={selected}
+                onSelect={(svc) => {
+                  studio.setService(svc);
+                  setSetupPanel("service");
+                }}
+                busy={isPreviewMode ? false : busy}
+                canvasOnly
+                defaultView="3D"
+                nodeNames={nodeNames}
+                {...(configuredEdges && configuredEdges.length > 0 ? { configuredEdges } : {})}
+                onConnect={connect}
+                onDisconnect={disconnect}
+                onQuickAction={quickAction}
+              />
+            ) : (
+              <div className="grid h-full place-items-center rounded-lg border border-dashed border-slate-700 bg-slate-950/40 p-6 text-center">
+                <div className="max-w-md space-y-2.5">
+                  <Server aria-hidden="true" className="mx-auto size-8 text-slate-500" />
+                  <p className="text-sm font-semibold text-slate-100">
+                    No live Docker session selected
+                  </p>
+                  {onStartSession ? (
+                    <Button type="button" size="sm" disabled={isBooting} onClick={onStartSession}>
+                      {isBooting ? "Starting Studio session…" : "Start Studio Live session"}
+                    </Button>
+                  ) : (
+                    <Button asChild size="sm">
+                      <Link href={startHref}>
+                        {projectName
+                          ? `Prepare and start ${projectName}`
+                          : "Prepare and start Live project"}
+                      </Link>
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Bottom Telemetry, Logs & Snapshots Dock — aligned strictly inside the center column */}
+          <div className="flex h-[214px] min-w-0 shrink-0 flex-col overflow-hidden border-t border-slate-800 bg-[#0b101b]">
+            <div className="flex h-9 shrink-0 items-center gap-1 overflow-x-auto border-b border-slate-800 px-3">
+              {(
+                [
+                  ["stats", "Stats"],
+                  ["telemetry", `Service Telemetry & Impact (${data.services.length})`],
+                  ["logs", `Logs & Traces (${data.telemetry?.spans.length ?? 0})`],
+                  ["snapshots", `Snapshots (${data.snapshots?.length ?? 0})`],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setTab(id)}
+                  className={`shrink-0 whitespace-nowrap rounded px-2.5 py-1 text-[11px] font-semibold ${
+                    tab === id
+                      ? "bg-slate-800 text-slate-100"
+                      : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+              <div className="ml-auto flex shrink-0 items-center gap-2 pl-2 text-[10px] text-slate-500">
+                <span className="whitespace-nowrap rounded-full border border-slate-800 bg-slate-950/70 px-2 py-0.5 font-mono text-slate-300">
+                  {data.finishRequested
+                    ? "Finishing"
+                    : waiting
+                      ? "Waiting for Runner"
+                      : data.executionStatus}
+                  {" · "}
+                  {data.cleanupStatus}
+                </span>
+                <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap">
+                  <RefreshCw aria-hidden="true" className="size-3" />
+                  {data.telemetry?.observedAt
+                    ? new Date(data.telemetry.observedAt).toLocaleTimeString()
+                    : "No telemetry"}
                 </span>
               </div>
             </div>
-          )}
-
-          {state.isError ? (
-            <ErrorState error={state.error} onRetry={() => void state.refetch()} />
-          ) : data.services.length > 0 || data.topology ? (
-            <StudioObservability
-              data={data}
-              selected={selected}
-              onSelect={studio.setService}
-              busy={isPreviewMode ? false : busy}
-              canvasOnly
-              defaultView="3D"
-              nodeNames={nodeNames}
-              {...(configuredEdges && configuredEdges.length > 0 ? { configuredEdges } : {})}
-              onConnect={connect}
-              onDisconnect={disconnect}
-              onQuickAction={quickAction}
-            />
-          ) : (
-            <div className="grid h-full place-items-center rounded-lg border border-dashed border-slate-700 bg-slate-950/40 p-6 text-center">
-              <div className="max-w-md space-y-2.5">
-                <Server aria-hidden="true" className="mx-auto size-8 text-slate-500" />
-                <p className="text-sm font-semibold text-slate-100">
-                  No live Docker session selected
-                </p>
-                {onStartSession ? (
-                  <Button type="button" size="sm" disabled={starting} onClick={onStartSession}>
-                    {starting ? "Starting Studio session…" : "Start Studio Live session"}
-                  </Button>
-                ) : (
-                  <Button asChild size="sm">
-                    <Link href={startHref}>
-                      {projectName
-                        ? `Prepare and start ${projectName}`
-                        : "Prepare and start Live project"}
-                    </Link>
-                  </Button>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {showRight && (
-          <aside className="w-[252px] shrink-0 overflow-x-hidden overflow-y-auto border-l border-slate-800 bg-[#0a0f18] p-2">
-            <LiveSandboxParity
-              data={data}
-              selected={selected}
-              busy={busy}
-              onSelect={studio.setService}
-              onCommand={send}
-              sections={["inspector", "hardware", "resilience", "load"]}
-              compact
-              label="Live inspector"
-            />
-          </aside>
-        )}
-      </div>
-
-      {/* Bottom Telemetry, Logs & Snapshots Drawer */}
-      <div className="h-[224px] shrink-0 border-t border-slate-800 bg-[#0b101b]">
-        <div className="flex h-9 items-center gap-1 overflow-x-auto border-b border-slate-800 px-2.5 pr-4">
-          {(
-            [
-              ["stats", "Stats"],
-              ["telemetry", `Service Telemetry & Impact (${data.services.length})`],
-              ["logs", `Logs & Traces (${data.telemetry?.spans.length ?? 0})`],
-              ["snapshots", `Snapshots (${data.snapshots?.length ?? 0})`],
-            ] as const
-          ).map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setTab(id)}
-              className={`shrink-0 whitespace-nowrap rounded px-2.5 py-1 text-[11px] font-semibold ${
-                tab === id
-                  ? "bg-slate-800 text-slate-100"
-                  : "text-slate-400 hover:text-slate-200"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-          <div className="ml-auto flex shrink-0 items-center gap-2 pl-2 text-[10px] text-slate-500">
-            <span className="whitespace-nowrap rounded-full border border-slate-800 bg-slate-950/70 px-2 py-0.5 font-mono text-slate-300">
-              {data.finishRequested
-                ? "Finishing"
-                : waiting
-                  ? "Waiting for Runner"
-                  : data.executionStatus}
-              {" · "}
-              {data.cleanupStatus}
-            </span>
-            <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap">
-              <RefreshCw aria-hidden="true" className="size-3" />
-              {data.telemetry?.observedAt
-                ? new Date(data.telemetry.observedAt).toLocaleTimeString()
-                : "No telemetry"}
-            </span>
-          </div>
-        </div>
-        <div className="h-[calc(100%-2.25rem)] overflow-auto p-2.5">
+            <div className="min-h-0 min-w-0 flex-1 overflow-auto px-3 py-2.5">
           {tab === "stats" && (
             <div className="space-y-2">
               <div className="mavis-tabular grid grid-cols-2 gap-1.5 text-[10.5px] sm:grid-cols-3 lg:grid-cols-6">
@@ -1366,7 +1265,292 @@ export function LiveStudioWorkbench({
               </div>
             </div>
           )}
+            </div>
+          </div>
         </div>
+
+        {/* Full-Height Right Setup & Inspector Panel (Context-sensitive to Left Block / Function) */}
+        {showRight && (
+          <aside className="h-full w-[288px] shrink-0 overflow-x-hidden overflow-y-auto border-l border-slate-800 bg-[#0a0f18] p-2.5">
+            {setupPanel === "mission" && authoring ? (
+              <section aria-label="Mission setup" className="space-y-3 text-xs">
+                <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-2">
+                  <div className="flex items-center gap-1.5 font-semibold text-slate-100">
+                    <Target aria-hidden="true" className="size-3.5 text-sky-400" />
+                    <span>Mission &amp; Pass Criteria</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSetupPanel("service")}
+                    className="rounded border border-slate-700 bg-slate-900 px-2 py-0.5 text-[10px] text-slate-300 hover:bg-slate-800 hover:text-white"
+                  >
+                    Service Setup
+                  </button>
+                </div>
+
+                <label className="block space-y-1 text-[11px] text-slate-400">
+                  <span>Student Mission</span>
+                  <Textarea
+                    value={missionDraft}
+                    onChange={(e) => setMissionDraft(e.target.value)}
+                    placeholder="e.g. Start stopped services, scale order-service to 2 pods, capture Before/After snapshots."
+                    className="min-h-24 border-slate-700 bg-slate-950 text-xs text-slate-100"
+                  />
+                </label>
+
+                <label className="block space-y-1 text-[11px] text-slate-400">
+                  <span>Baseline Probe GET Path</span>
+                  <Input
+                    value={baselineDraft}
+                    onChange={(e) => setBaselineDraft(e.target.value)}
+                    placeholder="/api/gateway/orders"
+                    className="h-8 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
+                  />
+                </label>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="block space-y-1 text-[11px] text-slate-400">
+                    <span>Max Error %</span>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={maxErrDraft}
+                      onChange={(e) => setMaxErrDraft(e.target.value)}
+                      placeholder="0"
+                      className="h-8 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
+                    />
+                  </label>
+                  <label className="block space-y-1 text-[11px] text-slate-400">
+                    <span>Min Replicas</span>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={8}
+                      value={replicaCountDraft}
+                      onChange={(e) => setReplicaCountDraft(e.target.value)}
+                      placeholder="2"
+                      className="h-8 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
+                    />
+                  </label>
+                </div>
+
+                <label className="block space-y-1 text-[11px] text-slate-400">
+                  <span>Target Scale Service</span>
+                  <select
+                    value={replicaSvcDraft}
+                    onChange={(e) => setReplicaSvcDraft(e.target.value)}
+                    className="h-8 w-full rounded-md border border-slate-700 bg-slate-950 px-2 font-mono text-xs text-slate-100"
+                  >
+                    <option value="">None</option>
+                    {blocks.map((b) => (
+                      <option key={b.service} value={b.service}>
+                        {b.service}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <div className="flex items-center justify-between gap-2 pt-1">
+                  {authoring.saved ? (
+                    <span className="inline-flex items-center gap-1 text-[11px] text-emerald-400">
+                      <Check aria-hidden="true" className="size-3.5" /> Saved
+                    </span>
+                  ) : (
+                    <span className="text-[10.5px] text-slate-500">Applies immediately to Lab</span>
+                  )}
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={authoring.saving}
+                    onClick={() =>
+                      authoring.onSaveMission({
+                        instructions: missionDraft,
+                        baselinePath: baselineDraft,
+                        maxErrorRatePercent: maxErrDraft,
+                        replicaService: replicaSvcDraft,
+                        replicaCount: replicaCountDraft,
+                      })
+                    }
+                    className="h-8 bg-teal-600 px-3 text-xs text-white hover:bg-teal-500"
+                  >
+                    <Save aria-hidden="true" className="mr-1.5 size-3.5" />
+                    {authoring.saving ? "Saving…" : "Save Mission"}
+                  </Button>
+                </div>
+              </section>
+            ) : setupPanel === "presets" && authoring?.onApplyPreset ? (
+              <section aria-label="Lab Exercise Presets setup" className="space-y-3 text-xs">
+                <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-2">
+                  <div className="flex items-center gap-1.5 font-semibold text-slate-100">
+                    <Zap aria-hidden="true" className="size-3.5 text-amber-400" />
+                    <span>Lab Exercise Presets</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSetupPanel("service")}
+                    className="rounded border border-slate-700 bg-slate-900 px-2 py-0.5 text-[10px] text-slate-300 hover:bg-slate-800 hover:text-white"
+                  >
+                    Service Setup
+                  </button>
+                </div>
+                <p className="text-[11px] leading-relaxed text-slate-400">
+                  Apply a 1-click real Docker scenario to this Lab&apos;s detected services.
+                </p>
+                <div className="space-y-2">
+                  {(
+                    [
+                      [
+                        "outage",
+                        "Outage Recovery",
+                        "Marks 1 core service as Starts Down and requires 0% error rate after recovery.",
+                        "border-amber-500/35 bg-amber-500/10 hover:border-amber-400",
+                      ],
+                      [
+                        "scale",
+                        "Horizontal Scale ×2",
+                        "Enables scaling on the primary stateless service and targets ≥ 2 replicas.",
+                        "border-sky-500/35 bg-sky-500/10 hover:border-sky-400",
+                      ],
+                      [
+                        "chaos-scale",
+                        "Fault + Scale Drill",
+                        "Combines 1 stopped dependency with scaling the primary service to 2 pods.",
+                        "border-purple-500/35 bg-purple-500/10 hover:border-purple-400",
+                      ],
+                      [
+                        "healthy",
+                        "Reset Healthy Baseline",
+                        "Clears all initial faults and restores every service to Starts Up.",
+                        "border-slate-700 bg-slate-950/70 hover:border-slate-500",
+                      ],
+                    ] as const
+                  ).map(([id, title, desc, tone]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      disabled={authoring.busy}
+                      onClick={() => authoring.onApplyPreset?.(id)}
+                      className={`w-full rounded-lg border p-2.5 text-left transition-colors disabled:opacity-40 ${tone}`}
+                    >
+                      <p className="text-[11.5px] font-semibold text-slate-100">{title}</p>
+                      <p className="mt-1 text-[10.5px] leading-relaxed text-slate-400">{desc}</p>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ) : setupPanel === "drills" && !authoring && data.executionStatus === "RUNNING" ? (
+              <section aria-label="Quick Live Drills setup" className="space-y-3 text-xs">
+                <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-2">
+                  <div className="flex items-center gap-1.5 font-semibold text-slate-100">
+                    <RotateCcw aria-hidden="true" className="size-3.5 text-emerald-400" />
+                    <span>Quick Live Drills</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSetupPanel("service")}
+                    className="rounded border border-slate-700 bg-slate-900 px-2 py-0.5 text-[10px] text-slate-300 hover:bg-slate-800 hover:text-white"
+                  >
+                    Service Setup
+                  </button>
+                </div>
+                {(() => {
+                  const stoppedBlock = blocks.find((b) => runningFor(data, b.service) === 0);
+                  const scalableBlock =
+                    blocks.find(
+                      (b) =>
+                        b.service === selected &&
+                        b.canScale &&
+                        (runningFor(data, b.service) ?? 0) > 0,
+                    ) ??
+                    blocks.find((b) => b.canScale && (runningFor(data, b.service) ?? 0) > 0);
+                  const stoppableBlock =
+                    blocks.find(
+                      (b) => b.service === selected && (runningFor(data, b.service) ?? 0) > 0,
+                    ) ??
+                    blocks.find(
+                      (b) =>
+                        !/gateway|edge|postgres|db|kafka/.test(b.service.toLowerCase()) &&
+                        (runningFor(data, b.service) ?? 0) > 0,
+                    );
+                  return (
+                    <div className="space-y-2">
+                      <button
+                        type="button"
+                        disabled={busy || !stoppableBlock}
+                        onClick={() =>
+                          stoppableBlock && void dispatchCommand("STOP", stoppableBlock.service)
+                        }
+                        className="w-full rounded-lg border border-rose-500/35 bg-rose-500/10 p-2.5 text-left transition-colors hover:border-rose-400 disabled:opacity-40"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-semibold text-rose-200">Inject Service Fault</span>
+                          <code className="font-mono text-[10px] text-rose-300">
+                            {stoppableBlock?.service ?? "—"}
+                          </code>
+                        </div>
+                        <p className="mt-1 text-[10.5px] text-slate-400">
+                          Stops the running Docker container to observe real error propagation.
+                        </p>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy || !scalableBlock}
+                        onClick={() =>
+                          scalableBlock && void dispatchCommand("SCALE", scalableBlock.service, 2)
+                        }
+                        className="w-full rounded-lg border border-sky-500/35 bg-sky-500/10 p-2.5 text-left transition-colors hover:border-sky-400 disabled:opacity-40"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-semibold text-sky-200">Scale Out ×2 Pods</span>
+                          <code className="font-mono text-[10px] text-sky-300">
+                            {scalableBlock?.service ?? "—"}
+                          </code>
+                        </div>
+                        <p className="mt-1 text-[10.5px] text-slate-400">
+                          Scales the service to 2 real replicas to compare p95 latency.
+                        </p>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy || !stoppedBlock}
+                        onClick={() =>
+                          stoppedBlock && void dispatchCommand("START", stoppedBlock.service)
+                        }
+                        className="w-full rounded-lg border border-emerald-500/35 bg-emerald-500/10 p-2.5 text-left transition-colors hover:border-emerald-400 disabled:opacity-40"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-semibold text-emerald-200">Recover Stopped</span>
+                          <code className="font-mono text-[10px] text-emerald-300">
+                            {stoppedBlock?.service ?? "All up"}
+                          </code>
+                        </div>
+                        <p className="mt-1 text-[10.5px] text-slate-400">
+                          Restarts a stopped container and restores cluster health.
+                        </p>
+                      </button>
+                    </div>
+                  );
+                })()}
+              </section>
+            ) : (
+              <LiveSandboxParity
+                data={data}
+                selected={selected}
+                busy={isPreviewMode ? false : busy}
+                onSelect={(svc) => {
+                  studio.setService(svc);
+                  setSetupPanel("service");
+                }}
+                onCommand={dispatchCommand}
+                sections={["inspector", "hardware", "resilience", "load"]}
+                compact
+                label="Live inspector"
+                authoring={authoring}
+              />
+            )}
+          </aside>
+        )}
       </div>
     </div>
   );
