@@ -18,6 +18,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useLocale } from "@/lib/i18n/locale-context";
+import { formatCourseLabTitle } from "@/lib/format/course-display";
 import { ApiError } from "@/lib/errors/api-error";
 import { useApiQuery } from "@/hooks/use-api";
 import { useCourseAuthoring, useCourseRoadmap, usePublishedCourse } from "@/features/workspaces/course-access";
@@ -126,7 +127,7 @@ export function CourseOutline({
   const courseStatus = published
     ? `v${published.version}`
     : isCatalogFallback
-      ? t("Coursera Standard · 6 Chapters", "Giáo trình chuẩn · 6 Chương")
+      ? t("Coursera Standard V2", "Giáo trình chuẩn V2")
       : draft?.status ?? "";
   const labs = new Map((roadmap.data?.labs ?? []).map((lab) => [lab.assignmentId, lab]));
   const assignmentById = new Map((assignments.data ?? []).map((assignment) => [assignment.id, assignment]));
@@ -167,7 +168,7 @@ export function CourseOutline({
           {legacyLabs.map((lab) => (
             <li key={lab.assignmentId} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
               <div className="min-w-0">
-                <p className="font-medium">{lab.position}. {lab.title}</p>
+                <p className="font-medium">{formatCourseLabTitle(lab.title, lab.position, lab.assignmentId)}</p>
                 <p className="text-sm text-muted-foreground">
                   {lab.state === "PASSED" ? t("Lab passed", "Đã đạt Lab")
                     : lab.state === "UNLOCKED" ? t("Ready to continue", "Có thể tiếp tục học")

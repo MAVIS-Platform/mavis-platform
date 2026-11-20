@@ -1695,10 +1695,10 @@ export function SeedCuratedCourseLabs({
           onClick={() => seed.mutate("JAVA_COURSERA_FULL")}
         >
           {seed.isPending && activePreset === "JAVA_COURSERA_FULL"
-            ? t("Seeding Coursera Java 6-Module Course…", "Đang nạp Giáo trình Java 6 Chương…")
+            ? t("Seeding Coursera V2 5-Module Course…", "Đang nạp Giáo trình Chuẩn Coursera V2…")
             : t(
-                "☕ Seed Full Coursera Java 6-Module Course (Lessons + Quizzes + Essays)",
-                "☕ Khởi tạo Giáo trình Java Microservices Chuẩn Coursera (6 Chương + Quiz + Tự luận)",
+                "☕ Seed Full Coursera V2 Course (Modules + Quizzes + Essays)",
+                "☕ Khởi tạo Giáo trình Microservices Chuẩn Coursera V2 (Module + Quiz + Tự luận)",
               )}
         </Button>
         <Button
@@ -1721,10 +1721,10 @@ export function SeedCuratedCourseLabs({
           onClick={() => seed.mutate("FULL_CURRICULUM")}
         >
           {seed.isPending && activePreset === "FULL_CURRICULUM"
-            ? t("Seeding Full 13-Lab Curriculum…", "Đang khởi tạo 13 Lab Giáo trình…")
+            ? t("Seeding Full Java & C# Curriculum…", "Đang khởi tạo Bộ Lab Giáo trình Java & C#…")
             : t(
-                "📚 Seed Full 12 Java + 1 C# Curriculum",
-                "📚 Khởi tạo trọn bộ 13 Lab (12 Java + 1 C#)",
+                "📚 Seed Full Java & C# Curriculum Labs",
+                "📚 Khởi tạo trọn bộ Lab Giáo trình (Java & C#)",
               )}
         </Button>
       </div>
