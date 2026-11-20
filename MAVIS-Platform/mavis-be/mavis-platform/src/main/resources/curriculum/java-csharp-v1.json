@@ -3471,8 +3471,8 @@
     "title": "Chương 07: DATABASE-PER-SERVICE VỚI EF CORE 8, ANTI-PATTERN SHARED DB & REDIS CACHE",
     "minutes": 45,
     "objective": "Thiết kế Database-per-Service đúng chuẩn với mỗi Microservice sở hữu một lớp `DbContext` và một chuỗi kết nối (database/schema) độc lập. Nhận diện và loại bỏ lỗi Shared Database Anti-Pattern trên sơ đồ C2. Áp dụng Polyglot Persistence trong .NET: PostgreSQL (EF Core) cho dữ liệu giao dịch (`Catalog`, `Ordering`) kết hợp Redis (`StackExchange.Redis` / `IDistributedCache`) cho dữ liệu tốc độ cao (`Basket`, Cache-Aside).",
-    "lesson": "### 7.1. Quyền sở hữu dữ liệu (Data Sovereignty) trong `eShopOnContainers` (`[MS24]` Ch.4)\n\nNguyên tắc tối thượng của Microsoft: **Dữ liệu của một Microservice là tài sản riêng tư (*private*) của chính dịch vụ đó**. Dịch vụ khác muốn đọc hoặc thay đổi dữ liệu đó **bắt buộc phải đi qua API công khai (HTTP/gRPC) hoặc lắng nghe sự kiện bất đồng bộ (Event Bus)** — tuyệt đối không chọc thẳng SQL sang database của nhau!\n\n```\nSAI (Shared DB Anti-Pattern ❌):           ĐÚNG (Polyglot & Database-per-Service ✅):\n[Catalog.API]   [Ordering.API]             [Catalog.API]     [Basket.API]     [Ordering.API]\n      \\               /                          |                |                 |\n       v             v                           v                v                 v\n    +-------------------+                 [(catalog_db)]     [(Redis)]       [(ordering_db)]\n    |   shared_shop_db  |                   PostgreSQL      In-Memory          PostgreSQL\n    +-------------------+                 CatalogDbContext  IDistributedCache OrderingDbContext\n```\n\n### 7.2. Cô lập EF Core 8 `DbContext` & Migration độc lập\n\nMỗi Microservice dùng EF Core phải có lớp `DbContext` riêng (ví dụ `CatalogDbContext` trong `Catalog.API`, `OrderingDbContext` trong `Ordering.API`) với bảng lịch sử migration riêng (có thể tách schema riêng như `catalog`, `ordering` nếu tạm chạy chung máy chủ PostgreSQL trong môi trường học tập):\n\n```csharp\npublic sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options) : DbContext(options)\n{\n    public DbSet<CatalogItem> CatalogItems => Set<CatalogItem>();\n\n    protected override void OnModelCreating(ModelBuilder modelBuilder)\n    {\n        modelBuilder.HasDefaultSchema(\"catalog\"); // Tách schema rõ ràng nếu dùng chung PostgreSQL instance\n        modelBuilder.Entity<CatalogItem>(entity =>\n        {\n            entity.HasKey(e => e.Id);\n            entity.HasIndex(e => e.Sku).IsUnique();\n            entity.Property(e => e.UnitPrice).HasPrecision(18, 2);\n            entity.Property(e => e.RowVersion).IsRowVersion(); // Optimistic Concurrency!\n        });\n    }\n}\n```\n\n### 7.3. Redis cho Giỏ hàng (`Basket.API`) & Cache-Aside (`IDistributedCache`)\n\nTrong mẫu `eShopOnContainers`, Microsoft dùng **Redis** cho `Basket.API` vì giỏ hàng là dữ liệu dạng khóa-giá trị (Key = `basket:{customerId}`), đọc/ghi cực nhanh, cần thời gian sống tự hủy (**TTL**) và không đòi hỏi các truy vấn JOIN phức tạp:\n\n```csharp\npublic sealed class RedisBasketRepository(IDistributedCache cache) : IBasketRepository\n{\n    private static readonly DistributedCacheEntryOptions DefaultTtl = new()\n    {\n        AbsoluteExpirationRelativeToNow = TimeSpan.FromDays(7)\n    };\n\n    public async Task<CustomerBasket?> GetBasketAsync(string customerId, CancellationToken ct)\n    {\n        var json = await cache.GetStringAsync($\"basket:{customerId}\", ct);\n        return json is null ? null : JsonSerializer.Deserialize<CustomerBasket>(json);\n    }\n\n    public async Task<CustomerBasket> UpdateBasketAsync(CustomerBasket basket, CancellationToken ct)\n    {\n        var json = JsonSerializer.Serialize(basket);\n        await cache.SetStringAsync($\"basket:{basket.CustomerId}\", json, DefaultTtl, ct);\n        return basket;\n    }\n\n    public Task DeleteBasketAsync(string customerId, CancellationToken ct)\n        => cache.RemoveAsync($\"basket:{customerId}\", ct);\n}\n```\n\n### 7.4. Góc nhìn trên nền tảng MAVIS\n\n* **3E Rule — `SHARED_DATABASE`**: Bộ phân tích tĩnh của MAVIS kiểm tra các `ConnectionStrings` trong `appsettings.json` và biến môi trường trong `docker-compose.yml`. Nếu hai dự án `.csproj` (ví dụ `Catalog.API` và `Ordering.API`) cùng trỏ về một `Database` và cùng `Schema`, MAVIS sẽ bật cảnh báo đỏ **SHARED_DATABASE** trên sơ đồ C2.",
-    "exercise": "### 7.5. Bài tập thực hành Lab 07\n\n* Quan sát sơ đồ **C2 Container** trên MAVIS: xác nhận mỗi dịch vụ .NET có đường kết nối riêng tới kho lưu trữ của mình (`Catalog.API -> catalog_db`, `Basket.API -> redis`, `Ordering.API -> ordering_db`).\n* Giải thích lý do **Polyglot Persistence** chọn Redis cho `Basket.API` nhưng chọn PostgreSQL cho `Ordering.API`.",
+    "lesson": "### 7.1. Quyền sở hữu dữ liệu (Data Sovereignty) trong `eShopOnContainers` (`[MS24]` Ch.4)\r\n\r\nNguyên tắc tối thượng của Microsoft: **Dữ liệu của một Microservice là tài sản riêng tư (*private*) của chính dịch vụ đó**. Dịch vụ khác muốn đọc hoặc thay đổi dữ liệu đó **bắt buộc phải đi qua API công khai (HTTP/gRPC) hoặc lắng nghe sự kiện bất đồng bộ (Event Bus)** — tuyệt đối không chọc thẳng SQL sang database của nhau!\r\n\r\n```\r\nSAI (Shared DB Anti-Pattern ❌):           ĐÚNG (Polyglot & Database-per-Service ✅):\r\n[Catalog.API]   [Ordering.API]             [Catalog.API]     [Basket.API]     [Ordering.API]\r\n      \\               /                          |                |                 |\r\n       v             v                           v                v                 v\r\n    +-------------------+                 [(catalog_db)]     [(Redis)]       [(ordering_db)]\r\n    |   shared_shop_db  |                   PostgreSQL      In-Memory          PostgreSQL\r\n    +-------------------+                 CatalogDbContext  IDistributedCache OrderingDbContext\r\n```\r\n\r\n### 7.2. Cô lập EF Core 8 `DbContext` & Migration độc lập\r\n\r\nMỗi Microservice dùng EF Core phải có lớp `DbContext` riêng (ví dụ `CatalogDbContext` trong `Catalog.API`, `OrderingDbContext` trong `Ordering.API`) với bảng lịch sử migration riêng (có thể tách schema riêng như `catalog`, `ordering` nếu tạm chạy chung máy chủ PostgreSQL trong môi trường học tập):\r\n\r\n```csharp\r\npublic sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options) : DbContext(options)\r\n{\r\n    public DbSet<CatalogItem> CatalogItems => Set<CatalogItem>();\r\n\r\n    protected override void OnModelCreating(ModelBuilder modelBuilder)\r\n    {\r\n        modelBuilder.HasDefaultSchema(\"catalog\"); // Tách schema rõ ràng nếu dùng chung PostgreSQL instance\r\n        modelBuilder.Entity<CatalogItem>(entity =>\r\n        {\r\n            entity.HasKey(e => e.Id);\r\n            entity.HasIndex(e => e.Sku).IsUnique();\r\n            entity.Property(e => e.UnitPrice).HasPrecision(18, 2);\r\n            entity.Property(e => e.RowVersion).IsRowVersion(); // Optimistic Concurrency!\r\n        });\r\n    }\r\n}\r\n```\r\n\r\n### 7.3. Redis cho Giỏ hàng (`Basket.API`) & Cache-Aside (`IDistributedCache`)\r\n\r\nTrong mẫu `eShopOnContainers`, Microsoft dùng **Redis** cho `Basket.API` vì giỏ hàng là dữ liệu dạng khóa-giá trị (Key = `basket:{customerId}`), đọc/ghi cực nhanh, cần thời gian sống tự hủy (**TTL**) và không đòi hỏi các truy vấn JOIN phức tạp:\r\n\r\n```csharp\r\npublic sealed class RedisBasketRepository(IDistributedCache cache) : IBasketRepository\r\n{\r\n    private static readonly DistributedCacheEntryOptions DefaultTtl = new()\r\n    {\r\n        AbsoluteExpirationRelativeToNow = TimeSpan.FromDays(7)\r\n    };\r\n\r\n    public async Task<CustomerBasket?> GetBasketAsync(string customerId, CancellationToken ct)\r\n    {\r\n        var json = await cache.GetStringAsync($\"basket:{customerId}\", ct);\r\n        return json is null ? null : JsonSerializer.Deserialize<CustomerBasket>(json);\r\n    }\r\n\r\n    public async Task<CustomerBasket> UpdateBasketAsync(CustomerBasket basket, CancellationToken ct)\r\n    {\r\n        var json = JsonSerializer.Serialize(basket);\r\n        await cache.SetStringAsync($\"basket:{basket.CustomerId}\", json, DefaultTtl, ct);\r\n        return basket;\r\n    }\r\n\r\n    public Task DeleteBasketAsync(string customerId, CancellationToken ct)\r\n        => cache.RemoveAsync($\"basket:{customerId}\", ct);\r\n}\r\n```\r\n\r\n### 7.4. Góc nhìn trên nền tảng MAVIS\r\n\r\n* **3E Rule — `SHARED_DATABASE`**: Bộ phân tích tĩnh của MAVIS kiểm tra các `ConnectionStrings` trong `appsettings.json` và biến môi trường trong `docker-compose.yml`. Nếu hai dự án `.csproj` (ví dụ `Catalog.API` và `Ordering.API`) cùng trỏ về một `Database` và cùng `Schema`, MAVIS sẽ bật cảnh báo đỏ **SHARED_DATABASE** trên sơ đồ C2.",
+    "exercise": "### 7.5. Bài tập thực hành Lab 07\r\n\r\n* Quan sát sơ đồ **C2 Container** trên MAVIS: xác nhận mỗi dịch vụ .NET có đường kết nối riêng tới kho lưu trữ của mình (`Catalog.API -> catalog_db`, `Basket.API -> redis`, `Ordering.API -> ordering_db`).\r\n* Giải thích lý do **Polyglot Persistence** chọn Redis cho `Basket.API` nhưng chọn PostgreSQL cho `Ordering.API`.",
     "sources": [
       {
         "publisher": "Microsoft Learn",
@@ -3488,7 +3488,7 @@
     "questions": [
       {
         "id": "csharp-v2-ch07-q1",
-        "prompt": "Thuật ngữ **Polyglot Persistence** trong kiến trúc .NET Microservices có nghĩa là gì?",
+        "prompt": "Thuật ngữ Polyglot Persistence trong kiến trúc .NET Microservices có nghĩa là gì?",
         "type": "SINGLE_CHOICE",
         "options": [
           "Viết một Microservice bằng nhiều ngôn ngữ lập trình cùng lúc",
@@ -3502,25 +3502,25 @@
       },
       {
         "id": "csharp-v2-ch07-q2",
-        "prompt": "Trong EF Core 8, việc cấu hình `RowVersion` / Concurrency Token cho cột `AvailableStock` trong `CatalogItem` nhằm giải quyết bài toán gì?",
+        "prompt": "Trong EF Core 8, việc cấu hình RowVersion / Concurrency Token cho cột AvailableStock trong CatalogItem nhằm giải quyết bài toán gì?",
         "type": "SINGLE_CHOICE",
         "options": [
           "Giảm dung lượng file JSON",
-          "**Optimistic Concurrency Control** — ngăn chặn lỗi ghi đè mất dữ liệu (*Lost Update*) khi hai đơn hàng đồng thời trừ tồn kho của cùng một sản phẩm",
+          "Optimistic Concurrency Control — ngăn chặn lỗi ghi đè mất dữ liệu (Lost Update) khi hai đơn hàng đồng thời trừ tồn kho của cùng một sản phẩm",
           "Tự động sao lưu cơ sở dữ liệu lên đám mây",
           "Tắt hoàn toàn khóa chính của bảng"
         ],
         "correctOption": 1,
-        "explanation": "Khi hai giao dịch đọc cùng số tồn kho và cùng ghi đè, EF Core sẽ phát hiện phiên bản đã thay đổi và ném `DbUpdateConcurrencyException` để xử lý an toàn.",
+        "explanation": "Khi hai giao dịch đọc cùng số tồn kho và cùng ghi đè, EF Core sẽ phát hiện phiên bản đã thay đổi và ném DbUpdateConcurrencyException để xử lý an toàn.",
         "points": 1
       },
       {
         "id": "csharp-v2-ch07-q3",
-        "prompt": "Điều gì sẽ xảy ra trên MAVIS nếu cả `Catalog.API` và `Ordering.API` cùng cấu hình chuỗi kết nối tới chung một database `shop_db` và cùng schema `public`?",
+        "prompt": "Điều gì sẽ xảy ra trên MAVIS nếu cả Catalog.API và Ordering.API cùng cấu hình chuỗi kết nối tới chung một database shop_db và cùng schema public?",
         "type": "SINGLE_CHOICE",
         "options": [
           "MAVIS tăng điểm kiến trúc lên tối đa",
-          "Quy tắc 3E của MAVIS phát hiện và cảnh báo mùi kiến trúc **`SHARED_DATABASE`** trên sơ đồ C2",
+          "Quy tắc 3E của MAVIS phát hiện và cảnh báo mùi kiến trúc SHARED_DATABASE trên sơ đồ C2",
           "Roslyn không thể biên dịch mã C#",
           "Redis tự động thay thế PostgreSQL"
         ],
@@ -3530,7 +3530,7 @@
       },
       {
         "id": "csharp-v2-ch07-q4",
-        "prompt": "Khi lưu giỏ hàng (`Basket`) hoặc cache sản phẩm trong Redis, tại sao việc thiết lập **TTL (`AbsoluteExpirationRelativeToNow` / `SlidingExpiration`)** là thực hành bắt buộc?",
+        "prompt": "Khi lưu giỏ hàng (Basket) hoặc cache sản phẩm trong Redis, tại sao việc thiết lập TTL (AbsoluteExpirationRelativeToNow / SlidingExpiration) là thực hành bắt buộc?",
         "type": "SINGLE_CHOICE",
         "options": [
           "Để tránh rò rỉ bộ nhớ RAM vô hạn trên Redis do dữ liệu rác/giỏ hàng bỏ quên tích tụ theo thời gian, đồng thời giới hạn thời gian tồn tại dữ liệu cũ",
@@ -3551,8 +3551,8 @@
     "title": "Chương 08: GIAO TIẾP BẤT ĐỒNG BỘ (EVENT BUS / RABBITMQ), IDEMPOTENCY & INTEGRATION EVENT OUTBOX",
     "minutes": 45,
     "objective": "Thiết kế Integration Events (khác với *Domain Events* nội bộ) và truyền thông bất đồng bộ qua Event Bus (RabbitMQ / MassTransit) trong .NET 8. Xây dựng Idempotent Event Handler chống xử lý trùng lặp trong cơ chế *At-Least-Once Delivery*. Giải quyết lỗi Dual-Write bằng Integration Event Log (Transactional Outbox Pattern) theo đúng mô hình `eShopOnContainers`.",
-    "lesson": "### 8.1. Domain Event vs. Integration Event trong .NET (`[MS24]` Ch.7)\n\nRất nhiều sinh viên nhầm lẫn hai khái niệm này:\n* **Domain Event**: Xảy ra và được xử lý **bên trong ranh giới 1 Microservice** (in-process, cùng transaction cục bộ) để tách lỏng các thành phần nội bộ (ví dụ: khi `Order` chuyển sang `Confirmed` thì ghi log nội bộ).\n* **Integration Event**: Được phát ra **bên ngoài qua Message Broker (RabbitMQ / Kafka)** để thông báo cho **các Microservice khác** cập nhật dữ liệu nhất quán cuối cùng (ví dụ: `OrderCreatedIntegrationEvent` phát từ `Ordering.API` để `Basket.API` tự động xóa giỏ hàng và `Catalog.API` cập nhật thống kê).\n\n```\n+---------------+  Publish(OrderCreatedIntegrationEvent)  +--------------------+  Consume  +---------------+\n| Ordering.API  | --------------------------------------> | RabbitMQ Event Bus | --------> |  Basket.API   |\n+---------------+                                         |  (Topic Exchange)  |           | (Clear Cart)  |\n  (Trả 201 ngay                                           +--------------------+           +---------------+\n   cho khách!)                                                      |\n                                                                    +----------> [Notification / Analytics]\n```\n\n### 8.2. Hợp đồng Integration Event & Idempotent Consumer bằng .NET 8 (MassTransit / RabbitMQ)\n\nMọi Integration Event bắt buộc phải mang **`EventId` (`Guid`)** và **`OccurredAtUtc`** để consumer nhận diện và khử trùng lặp:\n\n```csharp\n// BuildingBlocks/EventBus.Contracts/OrderEvents.cs\npublic sealed record OrderCreatedIntegrationEvent(\n    Guid EventId,\n    DateTime OccurredAtUtc,\n    Guid OrderId,\n    string CustomerId,\n    decimal TotalAmount\n);\n```\n\n```csharp\n// Basket.API/Consumers/OrderCreatedConsumer.cs (Idempotent Consumer)\npublic sealed class OrderCreatedConsumer(\n    IBasketRepository basketRepository,\n    IProcessedEventStore processedEventStore,\n    ILogger<OrderCreatedConsumer> logger) : IConsumer<OrderCreatedIntegrationEvent>\n{\n    public async Task Consume(ConsumeContext<OrderCreatedIntegrationEvent> context)\n    {\n        var evt = context.Message;\n\n        // 1. Chống xử lý trùng lặp (At-Least-Once Delivery)\n        if (await processedEventStore.HasProcessedAsync(evt.EventId, context.CancellationToken))\n        {\n            logger.LogInformation(\"Duplicate event {EventId} skipped.\", evt.EventId);\n            return;\n        }\n\n        // 2. Xóa giỏ hàng của khách (Bản thân thao tác Delete cũng mang tính idempotent!)\n        await basketRepository.DeleteBasketAsync(evt.CustomerId, context.CancellationToken);\n        await processedEventStore.MarkProcessedAsync(evt.EventId, context.CancellationToken);\n    }\n}\n```\n\n### 8.3. Giải quyết Dual-Write bằng Integration Event Log (Outbox Pattern) (`[MS24]` Ch.6)\n\nTrong `eShopOnContainers`, Microsoft chỉ rõ rằng việc gọi `await _dbContext.SaveChangesAsync()` rồi ngay sau đó gọi `await _eventBus.PublishAsync(evt)` là **không nguyên tử (Dual-Write)** — nếu container bị ngắt điện giữa hai dòng lệnh, đơn hàng đã lưu nhưng `Basket.API` không bao giờ nhận được sự kiện xóa giỏ hàng!\n\n**Giải pháp chuẩn của Microsoft — `IntegrationEventLog` (Transactional Outbox)**:\n1. Mở một giao dịch EF Core duy nhất trên `OrderingDbContext`.\n2. Lưu `Order` vào bảng `orders` **VÀ** lưu bản ghi `IntegrationEventLogEntry` (`State = NotPublished`) vào bảng `integration_event_logs` **trong cùng một `Commit()`**.\n3. Một `BackgroundService` (hoặc **MassTransit EF Core Outbox** tích hợp sẵn) quét các bản ghi `NotPublished`, đẩy lên RabbitMQ, rồi cập nhật `State = Published`.\n\n### 8.4. Góc nhìn trên nền tảng MAVIS\n\n* **Phân biệt Sync vs. Async**: MAVIS tách rõ lời gọi đồng bộ (`Typed HttpClient`) với kết nối qua Message Broker (`RabbitMQ`).\n* **Thí nghiệm trên MAVIS Studio**: Khi sinh viên **Stop** `Basket.API` hoặc `Notification.API` lúc hệ thống chạy, `Ordering.API` vẫn tiếp tục tạo đơn thành công bình thường; tin nhắn được RabbitMQ giữ an toàn trong Queue và tự động giao bù ngay khi container chạy lại!",
-    "exercise": "### 8.5. Bài tập thực hành Lab 08\n\n* Định nghĩa 2 bản ghi `record` Integration Event (`OrderCreatedIntegrationEvent`, `OrderCancelledIntegrationEvent`) có đủ `EventId`, `OccurredAtUtc`, `CorrelationId`.\n* Trình bày cơ chế ngăn chặn lỗi xử lý trùng sự kiện và lỗi Dual-Write khi `Ordering.API` phát sự kiện lên RabbitMQ.",
+    "lesson": "### 8.1. Domain Event vs. Integration Event trong .NET (`[MS24]` Ch.7)\r\n\r\nRất nhiều sinh viên nhầm lẫn hai khái niệm này:\r\n* **Domain Event**: Xảy ra và được xử lý **bên trong ranh giới 1 Microservice** (in-process, cùng transaction cục bộ) để tách lỏng các thành phần nội bộ (ví dụ: khi `Order` chuyển sang `Confirmed` thì ghi log nội bộ).\r\n* **Integration Event**: Được phát ra **bên ngoài qua Message Broker (RabbitMQ / Kafka)** để thông báo cho **các Microservice khác** cập nhật dữ liệu nhất quán cuối cùng (ví dụ: `OrderCreatedIntegrationEvent` phát từ `Ordering.API` để `Basket.API` tự động xóa giỏ hàng và `Catalog.API` cập nhật thống kê).\r\n\r\n```\r\n+---------------+  Publish(OrderCreatedIntegrationEvent)  +--------------------+  Consume  +---------------+\r\n| Ordering.API  | --------------------------------------> | RabbitMQ Event Bus | --------> |  Basket.API   |\r\n+---------------+                                         |  (Topic Exchange)  |           | (Clear Cart)  |\r\n  (Trả 201 ngay                                           +--------------------+           +---------------+\r\n   cho khách!)                                                      |\r\n                                                                    +----------> [Notification / Analytics]\r\n```\r\n\r\n### 8.2. Hợp đồng Integration Event & Idempotent Consumer bằng .NET 8 (MassTransit / RabbitMQ)\r\n\r\nMọi Integration Event bắt buộc phải mang **`EventId` (`Guid`)** và **`OccurredAtUtc`** để consumer nhận diện và khử trùng lặp:\r\n\r\n```csharp\r\n// BuildingBlocks/EventBus.Contracts/OrderEvents.cs\r\npublic sealed record OrderCreatedIntegrationEvent(\r\n    Guid EventId,\r\n    DateTime OccurredAtUtc,\r\n    Guid OrderId,\r\n    string CustomerId,\r\n    decimal TotalAmount\r\n);\r\n```\r\n\r\n```csharp\r\n// Basket.API/Consumers/OrderCreatedConsumer.cs (Idempotent Consumer)\r\npublic sealed class OrderCreatedConsumer(\r\n    IBasketRepository basketRepository,\r\n    IProcessedEventStore processedEventStore,\r\n    ILogger<OrderCreatedConsumer> logger) : IConsumer<OrderCreatedIntegrationEvent>\r\n{\r\n    public async Task Consume(ConsumeContext<OrderCreatedIntegrationEvent> context)\r\n    {\r\n        var evt = context.Message;\r\n\r\n        // 1. Chống xử lý trùng lặp (At-Least-Once Delivery)\r\n        if (await processedEventStore.HasProcessedAsync(evt.EventId, context.CancellationToken))\r\n        {\r\n            logger.LogInformation(\"Duplicate event {EventId} skipped.\", evt.EventId);\r\n            return;\r\n        }\r\n\r\n        // 2. Xóa giỏ hàng của khách (Bản thân thao tác Delete cũng mang tính idempotent!)\r\n        await basketRepository.DeleteBasketAsync(evt.CustomerId, context.CancellationToken);\r\n        await processedEventStore.MarkProcessedAsync(evt.EventId, context.CancellationToken);\r\n    }\r\n}\r\n```\r\n\r\n### 8.3. Giải quyết Dual-Write bằng Integration Event Log (Outbox Pattern) (`[MS24]` Ch.6)\r\n\r\nTrong `eShopOnContainers`, Microsoft chỉ rõ rằng việc gọi `await _dbContext.SaveChangesAsync()` rồi ngay sau đó gọi `await _eventBus.PublishAsync(evt)` là **không nguyên tử (Dual-Write)** — nếu container bị ngắt điện giữa hai dòng lệnh, đơn hàng đã lưu nhưng `Basket.API` không bao giờ nhận được sự kiện xóa giỏ hàng!\r\n\r\n**Giải pháp chuẩn của Microsoft — `IntegrationEventLog` (Transactional Outbox)**:\r\n1. Mở một giao dịch EF Core duy nhất trên `OrderingDbContext`.\r\n2. Lưu `Order` vào bảng `orders` **VÀ** lưu bản ghi `IntegrationEventLogEntry` (`State = NotPublished`) vào bảng `integration_event_logs` **trong cùng một `Commit()`**.\r\n3. Một `BackgroundService` (hoặc **MassTransit EF Core Outbox** tích hợp sẵn) quét các bản ghi `NotPublished`, đẩy lên RabbitMQ, rồi cập nhật `State = Published`.\r\n\r\n### 8.4. Góc nhìn trên nền tảng MAVIS\r\n\r\n* **Phân biệt Sync vs. Async**: MAVIS tách rõ lời gọi đồng bộ (`Typed HttpClient`) với kết nối qua Message Broker (`RabbitMQ`).\r\n* **Thí nghiệm trên MAVIS Studio**: Khi sinh viên **Stop** `Basket.API` hoặc `Notification.API` lúc hệ thống chạy, `Ordering.API` vẫn tiếp tục tạo đơn thành công bình thường; tin nhắn được RabbitMQ giữ an toàn trong Queue và tự động giao bù ngay khi container chạy lại!",
+    "exercise": "### 8.5. Bài tập thực hành Lab 08\r\n\r\n* Định nghĩa 2 bản ghi `record` Integration Event (`OrderCreatedIntegrationEvent`, `OrderCancelledIntegrationEvent`) có đủ `EventId`, `OccurredAtUtc`, `CorrelationId`.\r\n* Trình bày cơ chế ngăn chặn lỗi xử lý trùng sự kiện và lỗi Dual-Write khi `Ordering.API` phát sự kiện lên RabbitMQ.",
     "sources": [
       {
         "publisher": "Microsoft Learn",
@@ -3563,11 +3563,11 @@
     "questions": [
       {
         "id": "csharp-v2-ch08-q1",
-        "prompt": "Điểm khác biệt cốt lõi giữa **Domain Event** và **Integration Event** trong kiến trúc .NET Microservices của Microsoft là gì?",
+        "prompt": "Điểm khác biệt cốt lõi giữa Domain Event và Integration Event trong kiến trúc .NET Microservices của Microsoft là gì?",
         "type": "SINGLE_CHOICE",
         "options": [
           "Domain Event dùng nội bộ trong cùng một Microservice (cùng tiến trình/giao dịch); Integration Event được phát qua Message Broker (RabbitMQ/Kafka) để đồng bộ giữa các Microservice khác nhau",
-          "Integration Event không được phép có thuộc tính `Guid`",
+          "Integration Event không được phép có thuộc tính Guid",
           "Domain Event bắt buộc phải gửi qua giao thức HTTP POST",
           "Hai khái niệm hoàn toàn giống hệt nhau"
         ],
@@ -3577,13 +3577,13 @@
       },
       {
         "id": "csharp-v2-ch08-q2",
-        "prompt": "Tại sao trong `eShopOnContainers`, Microsoft bổ sung bảng **`IntegrationEventLog` (Transactional Outbox)** cùng cơ sở dữ liệu với `OrderingDbContext`?",
+        "prompt": "Tại sao trong eShopOnContainers, Microsoft bổ sung bảng IntegrationEventLog (Transactional Outbox) cùng cơ sở dữ liệu với OrderingDbContext?",
         "type": "SINGLE_CHOICE",
         "options": [
-          "Để tránh lỗi **Dual-Write** — đảm bảo dữ liệu đơn hàng và sự kiện cần phát được ghi nguyên tử trong cùng một giao dịch CSDL cục bộ trước khi đẩy ra RabbitMQ",
+          "Để tránh lỗi Dual-Write — đảm bảo dữ liệu đơn hàng và sự kiện cần phát được ghi nguyên tử trong cùng một giao dịch CSDL cục bộ trước khi đẩy ra RabbitMQ",
           "Để thay thế hoàn toàn RabbitMQ",
           "Để tăng kích thước file log văn bản",
-          "Vì EF Core không hỗ trợ lưu bảng `orders` nếu thiếu bảng này"
+          "Vì EF Core không hỗ trợ lưu bảng orders nếu thiếu bảng này"
         ],
         "correctOption": 0,
         "explanation": "Outbox đảm bảo không bao giờ mất sự kiện hoặc phát sự kiện \"ma\" khi hệ thống sập giữa chừng.",
@@ -3591,13 +3591,13 @@
       },
       {
         "id": "csharp-v2-ch08-q3",
-        "prompt": "Vì sao mọi Event Consumer lắng nghe RabbitMQ phải kiểm tra `EventId` hoặc đảm bảo tính **Idempotent**?",
+        "prompt": "Vì sao mọi Event Consumer lắng nghe RabbitMQ phải kiểm tra EventId hoặc đảm bảo tính Idempotent?",
         "type": "SINGLE_CHOICE",
         "options": [
-          "Vì RabbitMQ có thể gửi lại cùng một thông điệp hơn một lần (*At-Least-Once Delivery*) nếu kết nối bị ngắt trước khi Consumer gửi xác nhận `ACK`",
+          "Vì RabbitMQ có thể gửi lại cùng một thông điệp hơn một lần (At-Least-Once Delivery) nếu kết nối bị ngắt trước khi Consumer gửi xác nhận ACK",
           "Vì RabbitMQ tự động nhân đôi mọi sự kiện lên gấp 10 lần",
-          "Vì C# không hỗ trợ chạy `async/await` trong Consumer",
-          "Vì `Guid` trong .NET luôn bị trùng lặp"
+          "Vì C# không hỗ trợ chạy async/await trong Consumer",
+          "Vì Guid trong .NET luôn bị trùng lặp"
         ],
         "correctOption": 0,
         "explanation": "Cơ chế Idempotent Consumer đảm bảo xử lý lặp lại vẫn giữ nguyên trạng thái nghiệp vụ đúng đắn.",
@@ -3605,16 +3605,16 @@
       },
       {
         "id": "csharp-v2-ch08-q4",
-        "prompt": "Trong kiến trúc bất đồng bộ dùng RabbitMQ, nếu `Notification.API` tạm thời bị **Stop** để nâng cấp phiên bản, hành vi nào sau đây là chuẩn xác?",
+        "prompt": "Trong kiến trúc bất đồng bộ dùng RabbitMQ, nếu Notification.API tạm thời bị Stop để nâng cấp phiên bản, hành vi nào sau đây là chuẩn xác?",
         "type": "SINGLE_CHOICE",
         "options": [
-          "`Ordering.API` bị treo hoàn toàn cho đến khi `Notification.API` khởi động lại",
-          "`Ordering.API` vẫn tiếp nhận đơn hàng bình thường; thông điệp nằm chờ an toàn trong Queue của RabbitMQ và sẽ được `Notification.API` tiêu thụ khi bật lại",
-          "Toàn bộ đơn hàng trong `ordering_db` bị rollback",
-          "`ApiGateway` tự động tắt theo"
+          "Ordering.API bị treo hoàn toàn cho đến khi Notification.API khởi động lại",
+          "Ordering.API vẫn tiếp nhận đơn hàng bình thường; thông điệp nằm chờ an toàn trong Queue của RabbitMQ và sẽ được Notification.API tiêu thụ khi bật lại",
+          "Toàn bộ đơn hàng trong ordering_db bị rollback",
+          "ApiGateway tự động tắt theo"
         ],
         "correctOption": 1,
-        "explanation": "Giao tiếp bất đồng bộ qua Message Broker tạo ra **Temporal Decoupling**, giúp hệ thống chịu lỗi và bảo trì độc lập từng dịch vụ.",
+        "explanation": "Giao tiếp bất đồng bộ qua Message Broker tạo ra Temporal Decoupling, giúp hệ thống chịu lỗi và bảo trì độc lập từng dịch vụ.",
         "points": 1
       }
     ]
@@ -3626,8 +3626,8 @@
     "title": "Chương 09: GIAO DỊCH PHÂN TÁN VỚI SAGA PATTERN & NHẤT QUÁN CUỐI CÙNG",
     "minutes": 45,
     "objective": "Hiểu rõ vì sao .NET Microservices từ chối giao thức khóa phân tán cổ điển MSDTC / 2PC và chấp nhận Eventual Consistency. Triển khai luồng Saga kèm Compensating Transactions (giao dịch bù trừ) và Idempotency Key khi đặt hàng xuyên qua nhiều dịch vụ (`Ordering.API`, `Catalog.API`, `Basket.API`). Phân biệt khi nào dùng Choreography (lắng nghe sự kiện qua RabbitMQ) và khi nào dùng Orchestration (điều phối tập trung bằng State Machine / Orchestrator).",
-    "lesson": "### 9.1. Từ chối MSDTC / 2PC để đón nhận Eventual Consistency (`[MS24]` Ch.4)\n\nTrong các hệ thống .NET Framework cũ (WCF / SQL Server cổ điển), lập trình viên từng dùng `TransactionScope` kèm **MSDTC (Two-Phase Commit)**. Trong kiến trúc Microservices hiện đại chạy trên Linux Docker Container, **2PC bị loại bỏ hoàn toàn** vì:\n* Khóa tài nguyên xuyên mạng gây tắc nghẽn nghiêm trọng và giảm mạnh độ khả dụng.\n* Các kho lưu trữ hiện đại (Redis, RabbitMQ, NoSQL) không hỗ trợ 2PC.\n\nThay vào đó, hệ thống đảm bảo tính nhất quán theo mô hình **Eventual Consistency** (sau một khoảng thời gian ngắn tính bằng mili-giây hoặc giây, toàn bộ các service hội tụ về trạng thái đúng) thông qua **Saga Pattern**:\n\n```\nLUỒNG THÀNH CÔNG (Happy Path):\n[T1: Ordering.API]        [T2: Catalog.API]          [T3: Ordering.API]        [T4: Basket.API (Async)]\nCreate Order (Pending) -> Reserve Stock (OK)      -> Mark Confirmed         -> Clear Customer Basket\n                                                     & Publish Event\n\nLUỒNG THẤT BẠI (Compensation Path — Ví dụ mặt hàng thứ 2 hết hàng!):\n[T1: Ordering.API]        [T2a: Reserve Item 1 OK]   [T2b: Reserve Item 2 FAIL ❌]\nCreate Order (Pending) -> Stock Item 1 (-2 kg)    -> HTTP 409 Insufficient Stock!\n                                                           |\n[C1: Ordering.API]     <- [C2a: Catalog.API] <-------------+\nMark Order Cancelled      Release Stock Item 1 (+2 kg — Bù trừ!)\n```\n\n### 9.2. Minh họa Orchestration Saga & Idempotency Key trong ASP.NET Core 8\n\n```csharp\npublic sealed class CreateOrderSagaService(\n    OrderingDbContext dbContext,\n    ICatalogApiClient catalogClient,\n    IPublishEndpoint eventBus) : ICreateOrderSagaService\n{\n    public async Task<OrderResponse> PlaceOrderAsync(\n        Guid customerId, CreateOrderRequest request, string idempotencyKey, CancellationToken ct)\n    {\n        // 0. Chống gửi đúp bằng Idempotency-Key (Semantic/Request Guard)\n        var existing = await dbContext.Orders\n            .AsNoTracking()\n            .FirstOrDefaultAsync(o => o.IdempotencyKey == idempotencyKey, ct);\n        if (existing is not null)\n            return OrderMapper.ToResponse(existing);\n\n        // T1 (Semantic Lock): Lưu đơn ở trạng thái Submitted/Pending trước\n        var order = Order.CreateDraft(customerId, request.ShippingAddress, idempotencyKey);\n        foreach (var item in request.Items)\n            order.AddItem(item.ProductId, item.ProductName, item.UnitPrice, item.Quantity);\n\n        dbContext.Orders.Add(order);\n        await dbContext.SaveChangesAsync(ct);\n\n        var reserved = new List<(int ProductId, int Quantity)>();\n        try\n        {\n            // T2: Giữ tồn kho từng mặt hàng tại Catalog.API\n            foreach (var item in request.Items)\n            {\n                var ok = await catalogClient.ReserveStockAsync(item.ProductId, item.Quantity, ct);\n                if (!ok) throw new DomainException($\"Insufficient stock for product {item.ProductId}\");\n                reserved.Add((item.ProductId, item.Quantity));\n            }\n\n            // T3 (Pivot Transaction): Xác nhận đơn & phát Integration Event cho Basket.API\n            order.MarkAsConfirmed();\n            await dbContext.SaveChangesAsync(ct);\n\n            await eventBus.Publish(new OrderCreatedIntegrationEvent(\n                Guid.NewGuid(), DateTime.UtcNow, order.Id, customerId.ToString(), order.TotalAmount), ct);\n\n            return OrderMapper.ToResponse(order);\n        }\n        catch (Exception ex)\n        {\n            // BÙ TRỪ (Compensating Transactions): Trả lại kho các món đã giữ + Đánh dấu hủy đơn!\n            foreach (var (productId, qty) in reserved)\n                await catalogClient.ReleaseStockAsync(productId, qty, CancellationToken.None);\n\n            order.Cancel($\"Saga compensation triggered: {ex.Message}\");\n            await dbContext.SaveChangesAsync(CancellationToken.None);\n            throw;\n        }\n    }\n}\n```\n\n> **Mẹo quan trọng trong khối `catch` bù trừ**: Dùng `CancellationToken.None` (hoặc token có timeout riêng) cho bước hoàn kho & hủy đơn để tránh việc client vừa đóng trình duyệt đã làm hủy ngang luôn cả thao tác bù trừ!\n\n### 9.3. So sánh Choreography vs. Orchestration trong .NET\n\n* **Choreography** (`eShopOnContainers` dùng cho luồng ngắn): `Ordering.API` phát `OrderStatusChangedToAwaitingValidation` $\\to$ `Catalog.API` kiểm tra tồn kho rồi phát lại `OrderStockConfirmed` hoặc `OrderStockRejected` $\\to$ `Ordering.API` lắng nghe và chuyển trạng thái. Phù hợp luồng 2–3 bước, ghép lỏng tuyệt đối.\n* **Orchestration** (dùng **MassTransit Saga State Machine** hoặc Orchestrator Service): Phù hợp khi quy trình có $\\ge 4$ bước phức tạp (Đặt hàng $\\to$ Kiểm kho $\\to$ Thanh toán $\\to$ Vận chuyển $\\to$ Hóa đơn), giúp nhìn rõ toàn bộ vòng đời trạng thái tại một nơi duy nhất.\n\n### 9.4. Góc nhìn trên nền tảng MAVIS\n\n* Khi mô phỏng lỗi trên **MAVIS Studio**, sinh viên có thể gửi đơn hàng nhiều mặt hàng hoặc ngắt `Catalog.API` giữa chừng để kiểm chứng trạng thái cuối cùng trên `ordering_db` chuyển sạch sang `Cancelled` thay vì treo vĩnh viễn ở `Submitted`.",
-    "exercise": "### 9.5. Bài tập thực hành Lab 09\n\n* Vẽ sơ đồ trạng thái (`Submitted` $\\to$ `Confirmed` / `Cancelled`) và liệt kê các giao dịch cục bộ (`T1..T3`) cùng giao dịch bù trừ (`C1..C2`) cho kịch bản đặt giỏ hàng gồm 2 mặt hàng, trong đó mặt hàng thứ 2 hết tồn kho.\n* Giải thích vì sao nên tách **Idempotency-Key** từ HTTP header cho yêu cầu `POST /api/v1/orders`.",
+    "lesson": "### 9.1. Từ chối MSDTC / 2PC để đón nhận Eventual Consistency (`[MS24]` Ch.4)\r\n\r\nTrong các hệ thống .NET Framework cũ (WCF / SQL Server cổ điển), lập trình viên từng dùng `TransactionScope` kèm **MSDTC (Two-Phase Commit)**. Trong kiến trúc Microservices hiện đại chạy trên Linux Docker Container, **2PC bị loại bỏ hoàn toàn** vì:\r\n* Khóa tài nguyên xuyên mạng gây tắc nghẽn nghiêm trọng và giảm mạnh độ khả dụng.\r\n* Các kho lưu trữ hiện đại (Redis, RabbitMQ, NoSQL) không hỗ trợ 2PC.\r\n\r\nThay vào đó, hệ thống đảm bảo tính nhất quán theo mô hình **Eventual Consistency** (sau một khoảng thời gian ngắn tính bằng mili-giây hoặc giây, toàn bộ các service hội tụ về trạng thái đúng) thông qua **Saga Pattern**:\r\n\r\n```\r\nLUỒNG THÀNH CÔNG (Happy Path):\r\n[T1: Ordering.API]        [T2: Catalog.API]          [T3: Ordering.API]        [T4: Basket.API (Async)]\r\nCreate Order (Pending) -> Reserve Stock (OK)      -> Mark Confirmed         -> Clear Customer Basket\r\n                                                     & Publish Event\r\n\r\nLUỒNG THẤT BẠI (Compensation Path — Ví dụ mặt hàng thứ 2 hết hàng!):\r\n[T1: Ordering.API]        [T2a: Reserve Item 1 OK]   [T2b: Reserve Item 2 FAIL ❌]\r\nCreate Order (Pending) -> Stock Item 1 (-2 kg)    -> HTTP 409 Insufficient Stock!\r\n                                                           |\r\n[C1: Ordering.API]     <- [C2a: Catalog.API] <-------------+\r\nMark Order Cancelled      Release Stock Item 1 (+2 kg — Bù trừ!)\r\n```\r\n\r\n### 9.2. Minh họa Orchestration Saga & Idempotency Key trong ASP.NET Core 8\r\n\r\n```csharp\r\npublic sealed class CreateOrderSagaService(\r\n    OrderingDbContext dbContext,\r\n    ICatalogApiClient catalogClient,\r\n    IPublishEndpoint eventBus) : ICreateOrderSagaService\r\n{\r\n    public async Task<OrderResponse> PlaceOrderAsync(\r\n        Guid customerId, CreateOrderRequest request, string idempotencyKey, CancellationToken ct)\r\n    {\r\n        // 0. Chống gửi đúp bằng Idempotency-Key (Semantic/Request Guard)\r\n        var existing = await dbContext.Orders\r\n            .AsNoTracking()\r\n            .FirstOrDefaultAsync(o => o.IdempotencyKey == idempotencyKey, ct);\r\n        if (existing is not null)\r\n            return OrderMapper.ToResponse(existing);\r\n\r\n        // T1 (Semantic Lock): Lưu đơn ở trạng thái Submitted/Pending trước\r\n        var order = Order.CreateDraft(customerId, request.ShippingAddress, idempotencyKey);\r\n        foreach (var item in request.Items)\r\n            order.AddItem(item.ProductId, item.ProductName, item.UnitPrice, item.Quantity);\r\n\r\n        dbContext.Orders.Add(order);\r\n        await dbContext.SaveChangesAsync(ct);\r\n\r\n        var reserved = new List<(int ProductId, int Quantity)>();\r\n        try\r\n        {\r\n            // T2: Giữ tồn kho từng mặt hàng tại Catalog.API\r\n            foreach (var item in request.Items)\r\n            {\r\n                var ok = await catalogClient.ReserveStockAsync(item.ProductId, item.Quantity, ct);\r\n                if (!ok) throw new DomainException($\"Insufficient stock for product {item.ProductId}\");\r\n                reserved.Add((item.ProductId, item.Quantity));\r\n            }\r\n\r\n            // T3 (Pivot Transaction): Xác nhận đơn & phát Integration Event cho Basket.API\r\n            order.MarkAsConfirmed();\r\n            await dbContext.SaveChangesAsync(ct);\r\n\r\n            await eventBus.Publish(new OrderCreatedIntegrationEvent(\r\n                Guid.NewGuid(), DateTime.UtcNow, order.Id, customerId.ToString(), order.TotalAmount), ct);\r\n\r\n            return OrderMapper.ToResponse(order);\r\n        }\r\n        catch (Exception ex)\r\n        {\r\n            // BÙ TRỪ (Compensating Transactions): Trả lại kho các món đã giữ + Đánh dấu hủy đơn!\r\n            foreach (var (productId, qty) in reserved)\r\n                await catalogClient.ReleaseStockAsync(productId, qty, CancellationToken.None);\r\n\r\n            order.Cancel($\"Saga compensation triggered: {ex.Message}\");\r\n            await dbContext.SaveChangesAsync(CancellationToken.None);\r\n            throw;\r\n        }\r\n    }\r\n}\r\n```\r\n\r\n> **Mẹo quan trọng trong khối `catch` bù trừ**: Dùng `CancellationToken.None` (hoặc token có timeout riêng) cho bước hoàn kho & hủy đơn để tránh việc client vừa đóng trình duyệt đã làm hủy ngang luôn cả thao tác bù trừ!\r\n\r\n### 9.3. So sánh Choreography vs. Orchestration trong .NET\r\n\r\n* **Choreography** (`eShopOnContainers` dùng cho luồng ngắn): `Ordering.API` phát `OrderStatusChangedToAwaitingValidation` → `Catalog.API` kiểm tra tồn kho rồi phát lại `OrderStockConfirmed` hoặc `OrderStockRejected` → `Ordering.API` lắng nghe và chuyển trạng thái. Phù hợp luồng 2–3 bước, ghép lỏng tuyệt đối.\r\n* **Orchestration** (dùng **MassTransit Saga State Machine** hoặc Orchestrator Service): Phù hợp khi quy trình có ≥ 4 bước phức tạp (Đặt hàng → Kiểm kho → Thanh toán → Vận chuyển → Hóa đơn), giúp nhìn rõ toàn bộ vòng đời trạng thái tại một nơi duy nhất.\r\n\r\n### 9.4. Góc nhìn trên nền tảng MAVIS\r\n\r\n* Khi mô phỏng lỗi trên **MAVIS Studio**, sinh viên có thể gửi đơn hàng nhiều mặt hàng hoặc ngắt `Catalog.API` giữa chừng để kiểm chứng trạng thái cuối cùng trên `ordering_db` chuyển sạch sang `Cancelled` thay vì treo vĩnh viễn ở `Submitted`.",
+    "exercise": "### 9.5. Bài tập thực hành Lab 09\r\n\r\n* Vẽ sơ đồ trạng thái (`Submitted` → `Confirmed` / `Cancelled`) và liệt kê các giao dịch cục bộ (`T1..T3`) cùng giao dịch bù trừ (`C1..C2`) cho kịch bản đặt giỏ hàng gồm 2 mặt hàng, trong đó mặt hàng thứ 2 hết tồn kho.\r\n* Giải thích vì sao nên tách **Idempotency-Key** từ HTTP header cho yêu cầu `POST /api/v1/orders`.",
     "sources": [
       {
         "publisher": "Manning / Microservices.io",
@@ -3648,11 +3648,11 @@
     "questions": [
       {
         "id": "csharp-v2-ch09-q1",
-        "prompt": "Tại sao giao thức giao dịch phân tán **2PC (Two-Phase Commit / MSDTC)** không được khuyến nghị dùng giữa các .NET Microservice hiện đại?",
+        "prompt": "Tại sao giao thức giao dịch phân tán 2PC (Two-Phase Commit / MSDTC) không được khuyến nghị dùng giữa các .NET Microservice hiện đại?",
         "type": "SINGLE_CHOICE",
         "options": [
           "Vì gây khóa tài nguyên kéo dài xuyên mạng, giảm độ khả dụng và không được hỗ trợ bởi nhiều hạ tầng hiện đại (Redis, RabbitMQ, NoSQL)",
-          "Vì C# không có lệnh `try-catch`",
+          "Vì C# không có lệnh try-catch",
           "Vì 2PC chỉ chạy được với định dạng XML",
           "Vì Docker không hỗ trợ kết nối TCP"
         ],
@@ -3662,11 +3662,11 @@
       },
       {
         "id": "csharp-v2-ch09-q2",
-        "prompt": "Trong quy trình đặt hàng dùng Saga, khách đặt 2 sản phẩm: sản phẩm 1 đã trừ kho thành công, sản phẩm 2 báo hết hàng. Hành động **Compensating Transaction** đúng đắn là gì?",
+        "prompt": "Trong quy trình đặt hàng dùng Saga, khách đặt 2 sản phẩm: sản phẩm 1 đã trừ kho thành công, sản phẩm 2 báo hết hàng. Hành động Compensating Transaction đúng đắn là gì?",
         "type": "SINGLE_CHOICE",
         "options": [
-          "Xóa toàn bộ bảng sản phẩm trong `catalog_db`",
-          "Gọi thao tác cộng hoàn trả lại số lượng đã trừ của sản phẩm 1 và cập nhật trạng thái đơn hàng thành `Cancelled`",
+          "Xóa toàn bộ bảng sản phẩm trong catalog_db",
+          "Gọi thao tác cộng hoàn trả lại số lượng đã trừ của sản phẩm 1 và cập nhật trạng thái đơn hàng thành Cancelled",
           "Giữ nguyên số lượng đã trừ của sản phẩm 1 và báo đơn thành công",
           "Chờ 24 giờ rồi khởi động lại máy chủ"
         ],
@@ -3676,27 +3676,27 @@
       },
       {
         "id": "csharp-v2-ch09-q3",
-        "prompt": "Vai trò của header **`Idempotency-Key`** khi client gửi yêu cầu `POST /api/v1/orders` là gì?",
+        "prompt": "Vai trò của header Idempotency-Key khi client gửi yêu cầu POST /api/v1/orders là gì?",
         "type": "SINGLE_CHOICE",
         "options": [
           "Tăng tốc độ tải trang CSS",
-          "Đảm bảo nếu mạng chập chờn khiến client gửi lặp lại cùng một yêu cầu đặt hàng nhiều lần, server chỉ tạo **đúng 1 đơn hàng duy nhất** và trả lại kết quả cũ",
+          "Đảm bảo nếu mạng chập chờn khiến client gửi lặp lại cùng một yêu cầu đặt hàng nhiều lần, server chỉ tạo đúng 1 đơn hàng duy nhất và trả lại kết quả cũ",
           "Thay thế hoàn toàn JWT xác thực người dùng",
           "Tự động giảm giá đơn hàng 10%"
         ],
         "correctOption": 1,
-        "explanation": "`POST` vốn không tự nhiên idempotent; gắn `Idempotency-Key` chống triệt để lỗi tạo đơn hàng trùng lặp.",
+        "explanation": "POST vốn không tự nhiên idempotent; gắn Idempotency-Key chống triệt để lỗi tạo đơn hàng trùng lặp.",
         "points": 1
       },
       {
         "id": "csharp-v2-ch09-q4",
-        "prompt": "Tại sao trong khối `catch` thực hiện bù trừ (`ReleaseStockAsync` và `order.Cancel`), ta thường không truyền trực tiếp `CancellationToken` của HTTP Request gốc?",
+        "prompt": "Tại sao trong khối catch thực hiện bù trừ (ReleaseStockAsync và order.Cancel), ta thường không truyền trực tiếp CancellationToken của HTTP Request gốc?",
         "type": "SINGLE_CHOICE",
         "options": [
-          "Vì nếu người dùng vừa bấm hủy trình duyệt đúng lúc lỗi xảy ra, `CancellationToken` gốc đã bị hủy sẽ làm gián đoạn luôn cả lệnh hoàn kho bù trừ",
-          "Vì C# cấm dùng `CancellationToken` trong khối `catch`",
-          "Vì RabbitMQ không nhận `CancellationToken`",
-          "Vì `CancellationToken` làm chậm câu lệnh SQL"
+          "Vì nếu người dùng vừa bấm hủy trình duyệt đúng lúc lỗi xảy ra, CancellationToken gốc đã bị hủy sẽ làm gián đoạn luôn cả lệnh hoàn kho bù trừ",
+          "Vì C# cấm dùng CancellationToken trong khối catch",
+          "Vì RabbitMQ không nhận CancellationToken",
+          "Vì CancellationToken làm chậm câu lệnh SQL"
         ],
         "correctOption": 0,
         "explanation": "Thao tác bù trừ phải chạy trọn vẹn để giữ nhất quán dữ liệu ngay cả khi phía client đã ngắt kết nối.",
