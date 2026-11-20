@@ -448,7 +448,6 @@ export function LabSourceSection({
                     {" · "}
                     {reference.branch ?? t("ZIP archive", "Tệp ZIP")}
                     {reference.commitSha ? ` · ${reference.commitSha.slice(0, 8)}` : ""}
-                    {` · Rev ${reference.revision}`}
                   </p>
                 )}
               </div>
