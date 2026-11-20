@@ -3388,5 +3388,80 @@
         "points": 1
       }
     ]
+  },
+  {
+    "id": "csharp-v2-ch06",
+    "track": "C#",
+    "phase": "V2 · Module 2",
+    "title": "Chương 06: GIAO TIẾP ĐỒNG BỘ VỚI `IHttpClientFactory` (TYPED CLIENT), ROSLYN `CALL_SITE` & REVERSE BFS",
+    "minutes": 45,
+    "objective": "Hiểu vì sao khởi tạo `new HttpClient()` thủ công trong vòng lặp/request gây ra thảm họa Socket Exhaustion và DNS Stale. Triển khai giao tiếp đồng bộ chuẩn mực bằng `IHttpClientFactory` + Typed `HttpClient` (kèm so sánh khi nào nên cân nhắc gRPC). Hiểu cách Roslyn trích xuất bằng chứng `CALL_SITE` từ Typed Client và vận dụng Cycle-Safe Reverse BFS + DFS 3 màu để phân tích tác động thay đổi.",
+    "lesson": "### 6.1. Tại sao KHÔNG ĐƯỢC viết `using var client = new HttpClient()`? (`[MS24]` Ch.8)\n\nĐây là sai lầm số 1 của lập trình viên C# khi viết Microservices:\n1. **Socket Exhaustion (Cạn kiệt cổng mạng)**: Khi bạn bọc `new HttpClient()` trong `using`, dù đối tượng C# đã `Dispose()`, socket TCP phía hệ điều hành vẫn bị giữ ở trạng thái `TIME_WAIT` trong $60\\text{–}240$ giây. Dưới tải cao, máy chủ nhanh chóng hết sạch cổng kết nối và chết hàng loạt với `SocketException`!\n2. **Stale DNS (Nếu dùng 1 `static HttpClient` duy nhất)**: Một `static HttpClient` giữ kết nối sống mãi nên không nhận ra địa chỉ IP mới khi container đích trong Docker/Kubernetes khởi động lại hoặc scale!\n\n**Giải pháp chính chủ của Microsoft: `IHttpClientFactory` + Typed Client**:\n* Quản lý một hồ (pool) `HttpMessageHandler` tái sử dụng socket thông minh và tự động xoay vòng định kỳ (mặc định 2 phút) để luôn cập nhật DNS mới.\n* Tích hợp mượt mà với **Polly v8 Resilience** (Chương 10) và **OpenTelemetry Tracing** (Chương 11).\n\n### 6.2. Triển khai Typed `HttpClient` chuẩn .NET 8 (Tối ưu cho Roslyn `CALL_SITE`)\n\n```csharp\n// Ordering.API/Clients/CatalogApiClient.cs\npublic interface ICatalogApiClient\n{\n    Task<CatalogItemDto?> GetItemAsync(int productId, CancellationToken ct);\n    Task<bool> ReserveStockAsync(int productId, int quantity, CancellationToken ct);\n}\n\npublic sealed class CatalogApiClient(HttpClient httpClient) : ICatalogApiClient\n{\n    public async Task<CatalogItemDto?> GetItemAsync(int productId, CancellationToken ct)\n    {\n        var response = await httpClient.GetAsync($\"/api/v1/catalog/items/{productId}\", ct);\n        if (response.StatusCode == HttpStatusCode.NotFound) return null;\n        response.EnsureSuccessStatusCode();\n        return await response.Content.ReadFromJsonAsync<CatalogItemDto>(ct);\n    }\n\n    public async Task<bool> ReserveStockAsync(int productId, int quantity, CancellationToken ct)\n    {\n        var payload = new ReserveStockRequest(quantity);\n        var response = await httpClient.PostAsJsonAsync(\n            $\"/api/v1/catalog/items/{productId}/reserve\", payload, ct);\n        return response.IsSuccessStatusCode;\n    }\n}\n```\n\nĐăng ký trong `Ordering.API/Program.cs`:\n\n```csharp\nbuilder.Services.AddHttpClient<ICatalogApiClient, CatalogApiClient>((sp, client) =>\n{\n    var urls = sp.GetRequiredService<IOptions<ServiceUrlOptions>>().Value;\n    client.BaseAddress = new Uri(urls.CatalogApi);\n    client.Timeout = TimeSpan.FromSeconds(5);\n});\n```\n\n> **Khi nào dùng gRPC thay cho REST/HTTP trong .NET (`[MS24]` Ch.4)?**\n> Với giao tiếp nội bộ giữa hai Microservice cần băng thông cực nhỏ, độ trễ siêu thấp và hợp đồng kiểu mạnh (*strongly-typed Protobuf*), ASP.NET Core hỗ trợ **gRPC** trên HTTP/2 cực mạnh. Còn khi cần dễ đọc, dễ debug bằng trình duyệt/Postman và tương thích rộng, **REST/JSON qua Typed `HttpClient`** vẫn là lựa chọn tiêu chuẩn hàng đầu.\n\n### 6.3. Độ khả dụng chuỗi gọi đồng bộ & Phân tích tác động Reverse BFS (`D2` & `D4`)\n\nMọi lời gọi đồng bộ giữa các service đều làm giảm độ khả dụng tổng thể theo công thức xác suất nối tiếp:\n\n$$\nA_{\\text{total}} = \\prod_{i=1}^{n} A_i\n$$\n\nNếu `ApiGateway` $\\to$ `Ordering.API` $\\to$ `Catalog.API` cùng gọi đồng bộ và mỗi dịch vụ có độ khả dụng $99\\%$ ($0.99$), độ khả dụng chuỗi chỉ còn $0.99^3 \\approx 97.03\\%$.\n\n#### Cách MAVIS dùng Roslyn + Reverse BFS để bảo vệ kiến trúc:\n1. **Bằng chứng `CALL_SITE` (`D2`)**: Roslyn tìm thấy đăng ký `AddHttpClient<ICatalogApiClient, CatalogApiClient>` gắn với `BaseAddress = CatalogApi` và điểm gọi thật `httpClient.PostAsJsonAsync(\"/api/v1/catalog/items/{productId}/reserve\", ...)` tại `CatalogApiClient.cs:19` $\\rightarrow$ xác nhận cạnh `SERVICE_HTTP_CALL` có bằng chứng đầy đủ (nếu chỉ có URL nằm trong `appsettings.json` mà không có code gọi, MAVIS gắn `NEEDS_REVIEW` / `UNVERIFIED_METADATA_ONLY`).\n2. **Cycle-Safe Reverse BFS (`D4`)**: Khi bạn muốn thay đổi hợp đồng API của `Catalog.API`, thuật toán Reverse BFS (FIFO Queue + tập `visited`, độ phức tạp $O(|V| + |E|)$) duyệt ngược các cạnh gọi để liệt kê chính xác:\n   * **`Direct Callers (hop = 1)`**: `Ordering.API`, `ApiGateway`\n   * **`Indirect Callers (hop >= 2)`**: Các BFF/Client gọi qua `ApiGateway`\n   * **`Isolated Nodes`**: Các nút không phụ thuộc `Catalog.API` (nếu một nút cô lập có 0 upstream callers, bán kính ảnh hưởng $= 1$, không lan truyền dây chuyền).\n3. **Phát hiện phụ thuộc vòng bằng DFS 3 màu (`WHITE`, `GRAY`, `BLACK`)**: Tránh báo động giả trên đồ thị DAG hình thoi; chỉ kết luận có **Cyclic Dependency** khi gặp cạnh đi về đỉnh đang có màu `GRAY` (*back-edge*).\n\n```\nĐồ thị gọi xuôi (Call Graph):\n  ApiGateway ──> Ordering.API ──> Catalog.API\n      |               |                ^\n      |               +──> Basket.API  |\n      +────────────────────────────────+\n\nReverse BFS từ target = Catalog.API:\n  - Hop 0 (Target)         : Catalog.API\n  - Hop 1 (Direct Callers) : Ordering.API, ApiGateway\n  - Isolated from target   : Basket.API (không gọi Catalog.API)\n```\n\n### 6.4. Góc nhìn trên nền tảng MAVIS\n\n* **Step 1 & Step 2**: Khi dùng Typed `HttpClient` sạch sẽ như trên, `MAVIS.Worker` (Roslyn) trích xuất đầy đủ cạnh `SERVICE_HTTP_CALL` kèm đường dẫn tương đối và dòng mã nguồn thật, đồng thời kiểm tra **Contract Drift** (đối chiếu route gọi ở `CatalogApiClient` với `[Route]`/`[HttpPost]` bên `CatalogItemsController`).",
+    "exercise": "### 6.5. Bài tập thực hành Lab 06\n\n* Soi một lớp `Typed HttpClient` trong repo .NET mẫu ở **MAVIS Step 1**: xác minh đường dẫn URL và số dòng `CALL_SITE`.\n* Chạy **Reverse BFS** ở **Step 2** cho `Catalog.API` và cho một dịch vụ cô lập (không có caller nào gọi tới), đối chiếu danh sách `Direct Callers` và `Indirect Callers`.",
+    "sources": [
+      {
+        "publisher": "Microsoft Learn",
+        "title": ".NET Microservices: Architecture for Containerized .NET Applications",
+        "url": "https://learn.microsoft.com/en-us/dotnet/architecture/microservices/"
+      }
+    ],
+    "questions": [
+      {
+        "id": "csharp-v2-ch06-q1",
+        "prompt": "Hậu quả nghiêm trọng nhất khi tạo `using var client = new HttpClient()` liên tục trong mỗi HTTP Request ở hệ thống .NET chịu tải cao là gì?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Dẫn tới **Socket Exhaustion** (cạn kiệt cổng TCP do socket nằm ở trạng thái `TIME_WAIT`) và gây `SocketException` hàng loạt",
+          "Làm mất toàn bộ dữ liệu trong bảng SQL",
+          "Khiến trình biên dịch C# báo lỗi cú pháp",
+          "Làm giảm độ phân giải ảnh"
+        ],
+        "correctOption": 0,
+        "explanation": "`IHttpClientFactory` ra đời để giải quyết đồng thời cả Socket Exhaustion lẫn vấn đề DNS cũ của `static HttpClient`.",
+        "points": 1
+      },
+      {
+        "id": "csharp-v2-ch06-q2",
+        "prompt": "Khi một dự án .NET chỉ khai báo URL của `Catalog.API` trong `appsettings.json` nhưng trong mã nguồn C# hoàn toàn không có lệnh `HttpClient` nào gọi tới, MAVIS sẽ xử lý cạnh này như thế nào theo nguyên tắc trung thực nhận thức (`D2`)?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Tự động khẳng định chắc chắn hai dịch vụ gọi nhau mỗi giây",
+          "Đánh dấu cạnh ở trạng thái **`NEEDS_REVIEW` (`UNVERIFIED_METADATA_ONLY`)** vì thiếu bằng chứng điểm gọi mã nguồn (`CALL_SITE`)",
+          "Tự động xóa file `appsettings.json`",
+          "Báo lỗi `HTTP 500`"
+        ],
+        "correctOption": 1,
+        "explanation": "MAVIS phân biệt rõ bằng chứng gọi thật trong mã nguồn (`CALL_SITE`) với thông tin cấu hình thuần túy để không tạo cạnh ảo.",
+        "points": 1
+      },
+      {
+        "id": "csharp-v2-ch06-q3",
+        "prompt": "Khi chạy **Reverse BFS** xuất phát từ nút mục tiêu `Basket.API`, và `Basket.API` chỉ được gọi trực tiếp bởi `Ordering.API`, còn `ApiGateway` gọi vào `Ordering.API`, thì khoảng cách `hop` của `ApiGateway` là bao nhiêu?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "`hop = 0`",
+          "`hop = 1` (Direct Caller)",
+          "`hop = 2` (Indirect Caller)",
+          "`Isolated` (không liên quan)"
+        ],
+        "correctOption": 2,
+        "explanation": "Duyệt ngược: `Basket.API` (0) $\\leftarrow$ `Ordering.API` (1) $\\leftarrow$ `ApiGateway` (2).",
+        "points": 1
+      },
+      {
+        "id": "csharp-v2-ch06-q4",
+        "prompt": "Một dịch vụ cô lập (không có dịch vụ nào khác gọi tới nó — 0 upstream callers) bị sự cố thì bán kính ảnh hưởng (*Blast Radius*) trong thuật toán Reverse BFS bằng bao nhiêu?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "$0$",
+          "$1$ (chỉ ảnh hưởng chính bản thân nút đó, không lan truyền dây chuyền sang dịch vụ khác)",
+          "Bằng tổng số dịch vụ trong toàn hệ thống",
+          "Vô hạn"
+        ],
+        "correctOption": 1,
+        "explanation": "Đúng theo quy tắc kiểm thử ngoại lệ `DS-03b` của MAVIS: nút cô lập có tập caller rỗng nên tác động gói gọn tại chính nó.",
+        "points": 1
+      }
+    ]
   }
 ]
