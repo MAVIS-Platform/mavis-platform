@@ -1500,6 +1500,8 @@ test("Lecturer Studio Live authoring uses unified single top bar, non-red health
   assert.doesNotMatch(parity, /Scale ×8 Max Load/);
   assert.doesNotMatch(live, /Preview · Select a block/);
   assert.match(live, /Cluster Overview[\s\S]*Traffic &amp; reliability[\s\S]*Resource capacity/);
+  assert.doesNotMatch(live, /Decrease \$\{service\} replicas|Increase \$\{service\} replicas/);
+  assert.match(live, /Service Telemetry[\s\S]*Net I\/O[\s\S]*Req \/ Err%[\s\S]*detailed telemetry/);
 });
 
 test("Step 2 Reference Architecture and C1-C3 native SVG preview eliminate Draw.io iframes and use theme-adaptive blueprint styling", () => {

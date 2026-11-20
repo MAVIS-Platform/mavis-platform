@@ -572,11 +572,6 @@ export function LiveStudioWorkbench({
     await send(actionType, serviceName, replicas);
   }
 
-  function scaleTo(service: string, value: number) {
-    if (!Number.isInteger(value) || value < 1 || value > 8 || !canScaleFor(service)) return;
-    void send("SCALE", service, value);
-  }
-
   const captureLiveReplayFrame = useCallback(
     (label: string, elapsedMs = 0): EvidenceFrame | null => {
       const svg = graphRef.current?.querySelector<SVGSVGElement>("svg[data-studio-graph]");
@@ -1680,112 +1675,394 @@ export function LiveStudioWorkbench({
             );
           })()}
 
-          {tab === "telemetry" && (
-            <table className="w-full text-left text-[11px]">
-              <thead className="text-[10px] uppercase tracking-wide text-slate-500">
-                <tr>
-                  <th className="px-1 py-1">Service</th>
-                  <th className="px-1 py-1">Status</th>
-                  <th className="px-1 py-1">CPU total</th>
-                  <th className="px-1 py-1">RAM total</th>
-                  <th className="px-1 py-1">p95</th>
-                  <th className="px-1 py-1">Replicas</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.services.map((service) => {
-                  const telemetry = data.telemetry?.services.find(
-                    (item) => item.service === service,
-                  );
-                  const agg = summarizeServiceStats(telemetry?.stats);
-                  const running = runningFor(data, service);
-                  const result = lastResultFor(data, service);
-                  const scale = canScaleFor(service);
-                  return (
-                    <tr key={service} className="border-t border-slate-800/80">
-                      <td className="px-1 py-1 font-mono text-slate-200">
-                        {service}
-                        {agg.containers > 1 && (
-                          <span className="ml-1.5 text-[10px] text-slate-500">
-                            ({agg.containers} pods)
+          {tab === "telemetry" && (() => {
+            const observedDate = data.telemetry?.observedAt
+              ? new Date(data.telemetry.observedAt)
+              : null;
+            const observedLabel =
+              observedDate && Number.isFinite(observedDate.getTime())
+                ? `Observed ${observedDate.toLocaleTimeString()}`
+                : isPreviewMode
+                  ? "Preview · Live metrics populate when Docker runs"
+                  : "Waiting for container telemetry";
+
+            const rows = data.services.map((service) => {
+              const telemetry = data.telemetry?.services.find(
+                (item) => item.service === service,
+              );
+              const agg = summarizeServiceStats(telemetry?.stats);
+              const running = runningFor(data, service);
+              const desired = telemetry?.replicas;
+              const result = lastResultFor(data, service);
+              const svcLimit = data.limits?.services?.[service];
+              const netStats = (telemetry?.stats ?? [])
+                .map((st) => st.network?.trim())
+                .filter((v): v is string => Boolean(v));
+              const netIo =
+                netStats.length === 0
+                  ? "—"
+                  : netStats.length === 1
+                    ? netStats[0]!
+                    : `${netStats[0]} (+${netStats.length - 1})`;
+              const serviceSpans = (data.telemetry?.spans ?? []).filter(
+                (span) => span.runtimeService === service,
+              );
+              const errorSpanCount = serviceSpans.filter(
+                (span) =>
+                  span.spanStatus === "ERROR" ||
+                  (span.httpStatusCode ?? 0) >= 500 ||
+                  span.circuitOpen === true,
+              ).length;
+              const spanDurationsMs = serviceSpans
+                .map((span) =>
+                  span.durationNanoseconds ? Number(span.durationNanoseconds) / 1e6 : NaN,
+                )
+                .filter((ms) => Number.isFinite(ms) && ms >= 0)
+                .sort((a, b) => a - b);
+              const spanP95Ms =
+                spanDurationsMs.length > 0
+                  ? spanDurationsMs[
+                      Math.min(
+                        spanDurationsMs.length - 1,
+                        Math.floor(spanDurationsMs.length * 0.95),
+                      )
+                    ]
+                  : undefined;
+              const spanAvgMs =
+                spanDurationsMs.length > 0
+                  ? spanDurationsMs.reduce((sum, ms) => sum + ms, 0) / spanDurationsMs.length
+                  : undefined;
+              const rawP95 = result?.metricsAfter["p95LatencyMs"];
+              const p95Ms =
+                typeof rawP95 === "number" && Number.isFinite(rawP95) ? rawP95 : spanP95Ms;
+              const rawReq = result?.metricsAfter["requestCount"];
+              const reqCount =
+                typeof rawReq === "number" && Number.isFinite(rawReq) ? rawReq : undefined;
+              const rawErr = result?.metricsAfter["errorRatePercent"];
+              const errRate =
+                typeof rawErr === "number" && Number.isFinite(rawErr) ? rawErr : undefined;
+              const statusLabel = isPreviewMode
+                ? running === 0
+                  ? "Starts Down"
+                  : "Prepared"
+                : running === undefined
+                  ? "Waiting"
+                  : running === 0
+                    ? "Down"
+                    : "Running";
+              const statusClass = isPreviewMode
+                ? running === 0
+                  ? "text-amber-300"
+                  : "text-sky-300"
+                : running === 0
+                  ? "text-rose-300"
+                  : running === undefined
+                    ? "text-slate-400"
+                    : "text-emerald-300";
+              const dotClass = isPreviewMode
+                ? running === 0
+                  ? "bg-amber-400"
+                  : "bg-sky-400"
+                : running === 0
+                  ? "bg-rose-400"
+                  : running === undefined
+                    ? "bg-slate-500"
+                    : "bg-emerald-400";
+              return {
+                service,
+                telemetry,
+                agg,
+                running,
+                desired,
+                svcLimit,
+                netIo,
+                serviceSpans,
+                errorSpanCount,
+                spanAvgMs,
+                p95Ms,
+                reqCount,
+                errRate,
+                statusLabel,
+                statusClass,
+                dotClass,
+              };
+            });
+
+            const activeRow = canvasSelected
+              ? rows.find((row) => row.service === canvasSelected)
+              : undefined;
+            const outboundPeers = activeRow
+              ? (data.topology?.connections ?? [])
+                  .filter((conn) => conn.from === activeRow.service)
+                  .map((conn) => conn.to)
+              : [];
+            const inboundPeers = activeRow
+              ? (data.topology?.connections ?? [])
+                  .filter((conn) => conn.to === activeRow.service)
+                  .map((conn) => conn.from)
+              : [];
+
+            return (
+              <section aria-label="Service telemetry" className="space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h2 className="text-xs font-semibold text-slate-200">
+                    Service Telemetry ({rows.length})
+                  </h2>
+                  <span className="text-[11px] text-slate-400">
+                    {observedLabel} · Read-only
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto rounded-lg border border-slate-800">
+                  <table className="mavis-tabular w-full whitespace-nowrap text-left text-xs">
+                    <thead className="bg-slate-900 text-[11px] text-slate-400">
+                      <tr>
+                        {[
+                          "Service",
+                          "Status",
+                          "Replicas",
+                          "CPU",
+                          "RAM",
+                          "Net I/O",
+                          "p95",
+                          "Req / Err%",
+                          "Spans",
+                        ].map((heading) => (
+                          <th key={heading} scope="col" className="px-2.5 py-2 font-medium">
+                            {heading}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800">
+                      {rows.map((row) => {
+                        const isSelected = row.service === canvasSelected;
+                        return (
+                          <tr
+                            key={row.service}
+                            className={
+                              isSelected ? "bg-sky-950/35" : "hover:bg-slate-900/80"
+                            }
+                          >
+                            <td className="px-2.5 py-1.5">
+                              <button
+                                type="button"
+                                aria-pressed={isSelected}
+                                onClick={() =>
+                                  studio.setService(isSelected ? "" : row.service)
+                                }
+                                className="inline-flex items-center gap-1.5 font-mono font-medium text-sky-200 hover:underline"
+                              >
+                                <span>{row.service}</span>
+                                {row.svcLimit?.runtime && (
+                                  <span className="rounded border border-slate-700/80 bg-slate-900 px-1 py-0.5 font-sans text-[10px] font-normal text-slate-400">
+                                    {row.svcLimit.runtime}
+                                  </span>
+                                )}
+                              </button>
+                            </td>
+                            <td className={`px-2.5 py-1.5 font-medium ${row.statusClass}`}>
+                              <span className="inline-flex items-center gap-1.5">
+                                <span
+                                  aria-hidden="true"
+                                  className={`size-1.5 rounded-full ${row.dotClass}`}
+                                />
+                                {row.statusLabel}
+                              </span>
+                            </td>
+                            <td className="px-2.5 py-1.5 font-mono tabular-nums text-slate-200">
+                              {row.running === undefined
+                                ? "—"
+                                : row.desired !== undefined && row.desired !== row.running
+                                  ? `${row.running}/${row.desired}`
+                                  : row.running}
+                              {row.agg.containers > 1 && (
+                                <span className="ml-1 text-[10px] text-slate-400">
+                                  ({row.agg.containers} active)
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-2.5 py-1.5 font-mono tabular-nums text-slate-200">
+                              {row.agg.cpu}
+                            </td>
+                            <td className="px-2.5 py-1.5 font-mono tabular-nums text-slate-200">
+                              {row.agg.memory}
+                            </td>
+                            <td className="px-2.5 py-1.5 font-mono tabular-nums text-slate-300">
+                              {row.netIo}
+                            </td>
+                            <td className="px-2.5 py-1.5 font-mono tabular-nums text-slate-200">
+                              {row.p95Ms !== undefined ? `${metric(row.p95Ms)} ms` : "—"}
+                            </td>
+                            <td className="px-2.5 py-1.5 font-mono tabular-nums text-slate-300">
+                              {row.reqCount !== undefined || row.errRate !== undefined ? (
+                                <span>
+                                  {row.reqCount !== undefined
+                                    ? `${row.reqCount.toLocaleString()} req`
+                                    : "—"}
+                                  {" · "}
+                                  <span
+                                    className={
+                                      row.errRate !== undefined && row.errRate > 0
+                                        ? "text-rose-300"
+                                        : "text-slate-300"
+                                    }
+                                  >
+                                    {row.errRate !== undefined
+                                      ? `${metric(row.errRate)}%`
+                                      : "—"}
+                                  </span>
+                                </span>
+                              ) : (
+                                "—"
+                              )}
+                            </td>
+                            <td className="px-2.5 py-1.5 font-mono tabular-nums text-slate-300">
+                              <span>{row.serviceSpans.length}</span>
+                              {row.errorSpanCount > 0 && (
+                                <span className="ml-1 text-rose-300">
+                                  ({row.errorSpanCount} err)
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {rows.length === 0 && (
+                        <tr>
+                          <td colSpan={9} className="px-3 py-3 text-center text-slate-500">
+                            Start a Live session to observe container telemetry.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {activeRow && (
+                  <div
+                    aria-label={`${activeRow.service} detailed telemetry`}
+                    className="space-y-2 rounded-lg border border-slate-800 bg-slate-900/70 p-3"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-xs font-semibold text-slate-100">
+                          {activeRow.service}
+                        </span>
+                        <span className={`text-[11px] font-medium ${activeRow.statusClass}`}>
+                          {activeRow.statusLabel}
+                        </span>
+                        {activeRow.svcLimit && (
+                          <span className="font-mono text-[11px] text-slate-400">
+                            :{activeRow.svcLimit.containerPort} {activeRow.svcLimit.readinessPath}
                           </span>
                         )}
-                      </td>
-                      <td
-                        className={`px-1 py-1 font-semibold ${
-                          isPreviewMode
-                            ? running === 0
-                              ? "text-amber-300"
-                              : "text-sky-300"
-                            : running === 0
-                              ? "text-rose-300"
-                              : running === undefined
-                                ? "text-slate-400"
-                                : "text-emerald-300"
-                        }`}
-                      >
-                        {isPreviewMode
-                          ? running === 0
-                            ? "Starts Down"
-                            : "Prepared"
-                          : running === undefined
-                            ? "Waiting"
-                            : running === 0
-                              ? "Down"
-                              : "Running"}
-                      </td>
-                      <td className="mavis-tabular px-1 py-1 font-mono text-slate-300">
-                        {agg.cpu}
-                      </td>
-                      <td className="mavis-tabular px-1 py-1 font-mono text-slate-300">
-                        {agg.memory}
-                      </td>
-                      <td className="mavis-tabular px-1 py-1 font-mono text-slate-300">
-                        {result ? `${metric(result.metricsAfter["p95LatencyMs"])} ms` : "—"}
-                      </td>
-                      <td className="mavis-tabular px-1 py-1 font-mono text-slate-300">
-                        <span className="inline-flex items-center gap-1">
-                          <button
-                            type="button"
-                            aria-label={`Decrease ${service} replicas`}
-                            disabled={busy || running === undefined || running === 0 || !scale}
-                            onClick={() => {
-                              if (running === 1) void send("STOP", service);
-                              else if (running !== undefined && running > 1)
-                                scaleTo(service, running - 1);
-                            }}
-                            className="grid size-5 place-items-center rounded border border-slate-700 text-slate-300 disabled:opacity-30"
-                          >
-                            −
-                          </button>
-                          <span>{running ?? "—"}</span>
-                          <button
-                            type="button"
-                            aria-label={`Increase ${service} replicas`}
-                            disabled={busy || running === undefined || running >= 8 || !scale}
-                            onClick={() => {
-                              if (running === 0) void send("START", service);
-                              else if (running !== undefined) scaleTo(service, running + 1);
-                            }}
-                            className="grid size-5 place-items-center rounded border border-slate-700 text-slate-300 disabled:opacity-30"
-                          >
-                            +
-                          </button>
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-                {data.services.length === 0 && (
-                  <tr>
-                    <td colSpan={6} className="px-1 py-3 text-center text-slate-500">
-                      Start a Live session to observe container telemetry.
-                    </td>
-                  </tr>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-400">
+                        {data.limits?.cpus !== undefined && (
+                          <span className="font-mono">
+                            Quota: {data.limits.cpus} vCPU
+                            {data.limits.memoryMiB !== undefined
+                              ? ` · ${data.limits.memoryMiB} MiB`
+                              : ""}
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => studio.setService("")}
+                          className="text-slate-400 hover:text-slate-200"
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    </div>
+
+                    <dl className="mavis-tabular grid grid-cols-2 gap-2 text-[11px] sm:grid-cols-4 lg:grid-cols-6">
+                      {[
+                        [
+                          "Replicas",
+                          activeRow.running === undefined
+                            ? "—"
+                            : activeRow.desired !== undefined
+                              ? `${activeRow.running} / ${activeRow.desired} ready`
+                              : String(activeRow.running),
+                        ],
+                        ["CPU", activeRow.agg.cpu],
+                        ["RAM", activeRow.agg.memory],
+                        ["Net I/O", activeRow.netIo],
+                        [
+                          "Latency (p95 / avg)",
+                          activeRow.p95Ms !== undefined
+                            ? `${metric(activeRow.p95Ms)} ms${
+                                activeRow.spanAvgMs !== undefined
+                                  ? ` / ${metric(activeRow.spanAvgMs)} ms`
+                                  : ""
+                              }`
+                            : "—",
+                        ],
+                        [
+                          "Spans / Errors",
+                          `${activeRow.serviceSpans.length} / ${activeRow.errorSpanCount}`,
+                        ],
+                      ].map(([k, v]) => (
+                        <div
+                          key={k}
+                          className="rounded border border-slate-800/80 bg-slate-950/60 px-2 py-1.5"
+                        >
+                          <dt className="text-[10px] text-slate-400">{k}</dt>
+                          <dd className="mt-0.5 font-mono text-xs text-slate-100">{v}</dd>
+                        </div>
+                      ))}
+                    </dl>
+
+                    {(activeRow.telemetry?.stats.length ?? 0) > 0 && (
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                          Containers ({activeRow.telemetry!.stats.length})
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {activeRow.telemetry!.stats.map((st, idx) => (
+                            <span
+                              key={st.containerId ?? idx}
+                              className="rounded border border-slate-800 bg-slate-950/70 px-2 py-1 font-mono text-[10.5px] text-slate-300"
+                            >
+                              {st.containerId ? st.containerId.slice(0, 12) : `pod-${idx + 1}`}
+                              {" · CPU "}
+                              {st.cpu?.trim() || "—"}
+                              {" · RAM "}
+                              {st.memory?.trim() || "—"}
+                              {st.network?.trim() ? ` · Net ${st.network.trim()}` : ""}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {(outboundPeers.length > 0 || inboundPeers.length > 0) && (
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-400">
+                        {outboundPeers.length > 0 && (
+                          <span>
+                            Calls →{" "}
+                            <span className="font-mono text-slate-200">
+                              {outboundPeers.join(", ")}
+                            </span>
+                          </span>
+                        )}
+                        {inboundPeers.length > 0 && (
+                          <span>
+                            Called by ←{" "}
+                            <span className="font-mono text-slate-200">
+                              {inboundPeers.join(", ")}
+                            </span>
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 )}
-              </tbody>
-            </table>
-          )}
+              </section>
+            );
+          })()}
 
           {tab === "logs" && (
             <div className="space-y-2 text-[11px]">
