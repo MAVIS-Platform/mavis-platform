@@ -125,8 +125,7 @@ function MySubmissions() {
                     className="font-medium text-foreground underline underline-offset-4 hover:text-primary"
                     href={`/submissions/${encodeURIComponent(s.id)}`}
                   >
-                    {s.labOrder ? `Lab ${String(s.labOrder).padStart(2, "0")} · ` : ""}
-                    {s.assignmentTitle || s.assignmentId}
+                    {formatCourseLabTitle(s.assignmentTitle, s.labOrder, s.assignmentId)}
                   </Link>
                   {s.labMode && (
                     <div className="text-[11px] font-mono text-muted-foreground">{s.labMode}</div>
@@ -464,7 +463,7 @@ function ClassGradebookMatrix({
       "Email",
       "Passed Labs",
       "Average Score",
-      ...data.labs.map((lab) => lab.title),
+      ...data.labs.map((lab) => formatCourseLabTitle(lab.title, lab.labOrder, lab.assignmentId)),
     ];
     const lines = [
       headers.map(escape).join(","),
@@ -534,8 +533,7 @@ function ClassGradebookMatrix({
                   <th className="px-3 py-3 font-semibold">{t("Avg Score", "Điểm TB")}</th>
                   {gradebook.data.labs.map((lab) => (
                     <th key={lab.assignmentId} className="min-w-36 px-3 py-3 font-semibold">
-                      {lab.labOrder ? `Lab ${String(lab.labOrder).padStart(2, "0")} · ` : ""}
-                      {lab.title}
+                      {formatCourseLabTitle(lab.title, lab.labOrder, lab.assignmentId)}
                     </th>
                   ))}
                 </tr>
@@ -702,7 +700,7 @@ function SubmissionList({ rows }: { rows: import("@/types/domain").Submission[] 
           {
             key: "assignment",
             label: "Assignment",
-            render: (s) => s.assignmentTitle || s.assignmentId,
+            render: (s) => formatCourseLabTitle(s.assignmentTitle, s.labOrder, s.assignmentId),
           },
           { key: "student", label: "Student", render: (s) => s.studentName || s.studentId },
           { key: "model", label: "Frozen model", render: (s) => `Revision ${s.model.revision}` },
