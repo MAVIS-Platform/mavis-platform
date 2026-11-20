@@ -686,6 +686,10 @@ export function ArchitectureSvgViewer({
 
   const parsed = useMemo(() => parseDiagramXml(xml), [xml]);
 
+  useEffect(() => {
+    setZoom(1);
+  }, [xml]);
+
   if (!parsed) {
     return (
       <div className="flex h-[320px] items-center justify-center bg-muted/15 p-6 text-sm text-muted-foreground">
@@ -694,7 +698,7 @@ export function ArchitectureSvgViewer({
     );
   }
 
-  const canvasHeight = Math.max(300, Math.min(580, Math.round(parsed.vbH * 0.88 + 44)));
+  const canvasHeight = Math.max(320, Math.min(640, Math.round(parsed.vbH + 56)));
   const edgeStrokeDefault = isDark ? "#7c8fa8" : "#64748b";
   const edgeStrokeSelected = isDark ? "#38bdf8" : "#2563eb";
   const dotColor = isDark ? "rgba(148, 163, 184, 0.14)" : "rgba(100, 116, 139, 0.22)";
@@ -747,7 +751,7 @@ export function ArchitectureSvgViewer({
 
       {/* Drafting Canvas */}
       <div
-        className="w-full overflow-auto"
+        className="flex w-full overflow-auto p-3"
         style={{
           height: canvasHeight,
           backgroundColor: isDark ? "#080d17" : "#f8fafc",
@@ -755,23 +759,26 @@ export function ArchitectureSvgViewer({
           backgroundSize: "18px 18px",
         }}
       >
-        <div
-          className="flex min-h-full min-w-full items-center justify-center p-4"
+        <svg
+          viewBox={parsed.viewBox}
+          preserveAspectRatio="xMidYMid meet"
+          className="m-auto block shrink-0 select-none"
           style={
-            zoom !== 1
+            zoom <= 1
               ? {
                   width: `${Math.round(zoom * 100)}%`,
                   height: `${Math.round(zoom * 100)}%`,
+                  maxWidth: `${Math.round(parsed.vbW * zoom)}px`,
+                  maxHeight: `${Math.round(parsed.vbH * zoom)}px`,
                 }
-              : undefined
+              : {
+                  width: `${Math.round(parsed.vbW * zoom)}px`,
+                  height: `${Math.round(parsed.vbH * zoom)}px`,
+                }
           }
+          role="img"
+          aria-label="Architecture diagram SVG preview"
         >
-          <svg
-            viewBox={parsed.viewBox}
-            className="h-full w-full max-w-full select-none"
-            role="img"
-            aria-label="Architecture diagram SVG preview"
-          >
             <defs>
               <marker
                 id={arrowId}
@@ -1098,7 +1105,6 @@ export function ArchitectureSvgViewer({
               );
             })}
           </svg>
-        </div>
       </div>
 
       {/* Crisp HTML Legend Bar */}

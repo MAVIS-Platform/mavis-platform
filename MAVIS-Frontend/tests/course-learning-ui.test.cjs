@@ -1517,6 +1517,8 @@ test("Step 2 Reference Architecture and C1-C3 native SVG preview eliminate Draw.
   assert.match(svgViewer, /shape === "channel"/);
   assert.match(svgViewer, /exitX !== null && edge\.exitY !== null/);
   assert.match(svgViewer, /aria-label="Architecture diagram SVG preview"/);
+  assert.match(svgViewer, /preserveAspectRatio="xMidYMid meet"/);
+  assert.match(svgViewer, /maxHeight: `\$\{Math\.round\(parsed\.vbH \* zoom\)\}px`/);
   assert.doesNotMatch(svgViewer, /<iframe|diagrams\.net|127\.0\.0\.1:8090/);
   assert.doesNotMatch(drawioEditor, /<iframe|diagrams\.net|Draw\.io Local|Draw\.io Cloud|127\.0\.0\.1:8090/);
   assert.doesNotMatch(drawioSnapshot, /<iframe|diagrams\.net|127\.0\.0\.1:8090/);
