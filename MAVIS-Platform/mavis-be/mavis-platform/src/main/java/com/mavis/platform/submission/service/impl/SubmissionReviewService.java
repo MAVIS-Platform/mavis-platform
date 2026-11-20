@@ -83,7 +83,7 @@ public class SubmissionReviewService {
         if(!java.util.Set.of("DRAFT","RETURNED","GRADED").contains(request.status()) || request.expectedRevision()<0 || request.summary()==null || request.summary().length()>10000 ||
             (request.score()!=null && (request.score().signum()<0 || request.score().compareTo(new BigDecimal("100"))>0 || request.score().scale()>2)))throw new BusinessException(ErrorCode.BAD_REQUEST,"Invalid review");
 
-        boolean guidedLab = submission.getAssignment().getLabOrder() != null;
+        boolean guidedLab = submission.isGuidedLab();
         boolean publishing = "GRADED".equals(request.status());
         List<SnapshotGrade> normalizedGrades = request.snapshotGrades() == null ? List.of() : request.snapshotGrades();
         boolean hasSnapshotGrades = !normalizedGrades.isEmpty();

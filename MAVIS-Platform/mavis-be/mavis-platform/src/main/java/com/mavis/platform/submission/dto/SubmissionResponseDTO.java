@@ -108,7 +108,7 @@ public class SubmissionResponseDTO {
                 .workspaceId(workspace != null ? workspace.getId() : null)
                 .workspaceName(workspace != null ? workspace.getName() : null)
                 .assignmentId(assignment != null ? assignment.getId() : null)
-                .guidedLab(assignment != null && assignment.getLabOrder() != null)
+                .guidedLab(s.isGuidedLab())
                 .assignmentTitle(assignment != null ? assignment.getTitle() : null)
                 .labOrder(assignment != null ? assignment.getLabOrder() : null)
                 .projectId(s.getProject() != null ? s.getProject().getId() : null)
