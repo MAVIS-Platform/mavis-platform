@@ -3878,5 +3878,85 @@
         "points": 1
       }
     ]
+  },
+  {
+    "id": "csharp-v2-ch12",
+    "track": "C#",
+    "phase": "V2 · Module 5",
+    "title": "Chương 12: DOCKER MULTI-STAGE BUILD (.NET 8), KIỂM THỬ & PRODUCTION-READINESS CHECKLIST",
+    "minutes": 60,
+    "objective": "Viết Multi-Stage `Dockerfile` chuẩn .NET 8 (dùng `sdk:8.0` để build $\\to$ `aspnet:8.0` cực nhẹ để chạy, chạy non-root user `app` có sẵn trong .NET 8, mặc định cổng `8080`). Viết `docker-compose.yml` chuẩn xác cho MAVIS Sandbox (có `healthcheck`, `depends_on: condition: service_healthy`, không khóa cứng `container_name` và cổng host ở dịch vụ cần Scale $1 \\to 8$). Áp dụng chiến lược kiểm thử .NET Microservices (xUnit, `WebApplicationFactory<Program>`, Testcontainers) và đánh giá hệ thống theo Production-Readiness Checklist.",
+    "lesson": "### 12.1. Multi-Stage `Dockerfile` chuẩn .NET 8 (Gọn nhẹ & Non-Root mặc định)\n\nTừ **.NET 8**, image chính chủ `mcr.microsoft.com/dotnet/aspnet:8.0` mang lại hai nâng cấp rất giá trị cho bảo mật và vận hành:\n1. Có sẵn người dùng không có quyền root tên **`app`** (`USER $APP_UID`).\n2. Cổng mặc định chuyển từ `80` (cần quyền root) sang **`8080`** (`ASPNETCORE_HTTP_PORTS=8080`).\n\n```dockerfile\n# Stage 1: Restore & Publish bằng .NET 8 SDK\nFROM mcr.microsoft.com/dotnet/sdk:8.0-alpine AS build\nWORKDIR /src\n\n# Tận dụng Docker Layer Cache: copy .csproj và restore trước khi copy toàn bộ source\nCOPY [\"src/Services/Catalog/Catalog.API/Catalog.API.csproj\", \"src/Services/Catalog/Catalog.API/\"]\nCOPY [\"src/BuildingBlocks/EventBus.Contracts/EventBus.Contracts.csproj\", \"src/BuildingBlocks/EventBus.Contracts/\"]\nRUN dotnet restore \"src/Services/Catalog/Catalog.API/Catalog.API.csproj\"\n\nCOPY . .\nWORKDIR \"/src/src/Services/Catalog/Catalog.API\"\nRUN dotnet publish \"Catalog.API.csproj\" -c Release -o /app/publish /p:UseAppHost=false\n\n# Stage 2: Runtime siêu gọn chỉ chứa ASP.NET Core 8 Runtime + Non-Root User\nFROM mcr.microsoft.com/dotnet/aspnet:8.0-alpine AS final\nWORKDIR /app\nCOPY --from=build /app/publish .\n\nUSER $APP_UID\nEXPOSE 8080\nHEALTHCHECK --interval=15s --timeout=5s --retries=5 \\\n  CMD wget -qO- http://localhost:8080/health/ready || exit 1\n\nENTRYPOINT [\"dotnet\", \"Catalog.API.dll\"]\n```\n\n### 12.2. `docker-compose.yml` chuẩn sẵn sàng cho MAVIS Studio (`Scale 1 -> 8`)\n\n```yaml\nservices:\n  catalog-db:\n    image: postgres:16-alpine\n    environment:\n      POSTGRES_DB: catalog_db\n      POSTGRES_USER: ${DB_USER:-postgres}\n      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}\n    healthcheck:\n      test: [\"CMD-SHELL\", \"pg_isready -U postgres -d catalog_db\"]\n      interval: 10s\n      timeout: 5s\n      retries: 5\n    networks: [mavis-net]\n\n  catalog-api:\n    build:\n      context: .\n      dockerfile: src/Services/Catalog/Catalog.API/Dockerfile\n    environment:\n      ASPNETCORE_ENVIRONMENT: Production\n      ConnectionStrings__CatalogDb: Host=catalog-db;Port=5432;Database=catalog_db;Username=${DB_USER:-postgres};Password=${DB_PASSWORD:-postgres}\n      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4317}\n    depends_on:\n      catalog-db:\n        condition: service_healthy\n    networks: [mavis-net]\n    # KHÔNG đặt container_name hay ports cố định (vd: 5001:8080) để scale thoải mái 1 -> 8!\n\n  api-gateway:\n    build:\n      context: .\n      dockerfile: src/Gateways/ApiGateway/Dockerfile\n    ports:\n      - \"8080:8080\"   # Chỉ phơi cổng host tại điểm vào duy nhất!\n    depends_on:\n      catalog-api:\n        condition: service_healthy\n    networks: [mavis-net]\n\nnetworks:\n  mavis-net:\n    driver: bridge\n```\n\n### 12.3. Chiến lược Kiểm thử Microservices trong .NET (`[MS24]` Ch.9)\n\n| Tầng kiểm thử | Công cụ chuẩn .NET 8 | Mục tiêu kiểm chứng |\n| --- | --- | --- |\n| **Unit Test** (Nhiều nhất, chạy ms) | **xUnit** + **NSubstitute / Moq** + **FluentAssertions** | Test Domain Aggregate (`Order.AddItem`, `Cancel`), Value Object, Saga state logic. |\n| **Integration / Component Test** | **`WebApplicationFactory<Program>`** + **Testcontainers for .NET** | Khởi chạy toàn bộ pipeline ASP.NET Core trong bộ nhớ kết nối PostgreSQL/Redis thật trong container tạm, test đầy đủ routing, auth, validation, EF Core query. |\n| **End-to-End (E2E) Test** (Ít, chọn lọc) | Docker Compose + kịch bản HTTP | Kiểm chứng luồng đặt hàng xuyên suốt từ `ApiGateway` qua các service. |\n\n### 12.4. Production-Readiness Checklist cho .NET Microservices (`[F16]` Appendix A)\n\n1. **Ổn định & Tin cậy**: Multi-stage build non-root; DI lifetime sạch (không Captive Dependency); có `AddStandardResilienceHandler` (Timeout, Retry + Jitter, Circuit Breaker); có Outbox & Idempotency Key; pipeline triển khai qua Staging $\\to$ Canary ($5\\%\\text{–}10\\%$) $\\to$ Production.\n2. **Hiệu năng & Mở rộng**: Tách Database-per-Service; dùng `.AsNoTracking()` cho truy vấn đọc; truyền đủ `CancellationToken`; bỏ `container_name` và cổng host cứng để scale ngang mượt mà.\n3. **Giám sát & Bảo mật**: Có `/health/live` & `/health/ready`; tích hợp OpenTelemetry OTLP; xử lý lỗi qua `IExceptionHandler` (`ProblemDetails`, không lộ stack trace); không hard-code secret.\n4. **Tài liệu & Kiến trúc**: Sơ đồ C1–C3 và tài liệu OpenAPI (Swagger) luôn đồng bộ với mã nguồn.\n\n### 12.5. Góc nhìn trên nền tảng MAVIS\n\n* **Step 3 & Step 4 (`WF-04`)**: Sinh viên thực hiện trọn vẹn 4 bước — kiểm tra tĩnh Roslyn (C1–C3 & 3E) $\\to$ Reverse BFS & vượt Quiz Gate ($\\ge 70\\%$) $\\to$ quan sát OTel Traces $\\to$ thực hành **Stop / Scale ($1 \\to 4$)** trên **MAVIS Studio** và nộp gói Snapshot Before/After + giải trình để giảng viên chấm theo thang Rubric $0\\text{–}10$ (đạt $> 5.0$ để mở Lab kế tiếp).",
+    "exercise": "### 12.6. Bài tập thực hành Lab 12 (Tổng kết khóa học)\n\n* Kiểm tra toàn bộ `Dockerfile` và `docker-compose.yml` của kho .NET mẫu theo **Production-Readiness Checklist**.\n* Thực hiện kịch bản **Scale** `Catalog.API` từ $1 \\to 4$ container trên **MAVIS Studio**, chụp Snapshot **Before vs. After** và giải thích cách Docker DNS cân bằng tải lưu lượng mà không cần sửa mã nguồn `Ordering.API` hay `ApiGateway`.",
+    "sources": [
+      {
+        "publisher": "Microsoft Learn",
+        "title": ".NET Microservices: Architecture for Containerized .NET Applications",
+        "url": "https://learn.microsoft.com/en-us/dotnet/architecture/microservices/"
+      },
+      {
+        "publisher": "O'Reilly / Production-Ready Microservices",
+        "title": "Susan J. Fowler — Production-Ready Microservices",
+        "url": "https://www.oreilly.com/library/view/production-ready-microservices/9781491965962/"
+      }
+    ],
+    "questions": [
+      {
+        "id": "csharp-v2-ch12-q1",
+        "prompt": "Trong `Dockerfile` Multi-Stage của .NET 8, tại sao nên `COPY` file `.csproj` và chạy `dotnet restore` **trước** khi `COPY . .` toàn bộ mã nguồn C#?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Để tận dụng **Docker Layer Caching** — khi chỉ sửa code `.cs` mà không đổi gói NuGet, Docker tái sử dụng lại lớp restore cũ giúp tốc độ build nhanh hơn rất nhiều",
+          "Vì lệnh `dotnet publish` sẽ bị lỗi cú pháp nếu không làm vậy",
+          "Để xóa bỏ toàn bộ file `.cs` trước khi biên dịch",
+          "Để ép container chạy bằng quyền `root`"
+        ],
+        "correctOption": 0,
+        "explanation": "Tối ưu tầng cache là thực hành cốt lõi giúp CI/CD build Microservices trong vài giây thay vì vài phút.",
+        "points": 1
+      },
+      {
+        "id": "csharp-v2-ch12-q2",
+        "prompt": "Từ phiên bản **.NET 8**, image chính thức `mcr.microsoft.com/dotnet/aspnet:8.0` mang lại cải tiến bảo mật mặc định nào?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Tắt hoàn toàn giao thức HTTP",
+          "Hỗ trợ sẵn người dùng không có quyền quản trị (`USER $APP_UID` — non-root) và đổi cổng mặc định từ `80` sang **`8080`**",
+          "Gỡ bỏ hoàn toàn Entity Framework Core",
+          "Tự động mã hóa file `Dockerfile`"
+        ],
+        "correctOption": 1,
+        "explanation": "Chạy container bằng non-root user (`$APP_UID`) giảm mạnh rủi ro leo thang đặc quyền nếu ứng dụng bị tấn công.",
+        "points": 1
+      },
+      {
+        "id": "csharp-v2-ch12-q3",
+        "prompt": "Công cụ nào trong hệ sinh thái .NET 8 cho phép viết **Integration Test** chạy toàn bộ pipeline Middleware, Routing, DI và Controller của một ASP.NET Core Microservice mà không cần triển khai lên máy chủ thật?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "`Console.WriteLine`",
+          "**`WebApplicationFactory<Program>`** (kết hợp xUnit và Testcontainers)",
+          "`Task.Delay`",
+          "`Microsoft Paint`"
+        ],
+        "correctOption": 1,
+        "explanation": "`WebApplicationFactory<Program>` dựng một `TestServer` in-memory chuẩn xác giúp kiểm thử hành vi HTTP + DB thật siêu nhanh và tin cậy.",
+        "points": 1
+      },
+      {
+        "id": "csharp-v2-ch12-q4",
+        "prompt": "Vì sao khi cấu hình `docker-compose.yml` cho một dịch vụ .NET cần chạy thử nghiệm **Scale $1 \\to 4$** trên MAVIS Studio, ta phải **bỏ** dòng `ports: [\"5001:8080\"]` và `container_name`?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Vì 4 bản sao container chạy song song trên cùng một máy chủ không thể cùng chiếm chung một cổng host (`5001`) hay trùng một `container_name` duy nhất",
+          "Vì .NET 8 chỉ chạy được trên cổng `80`",
+          "Vì Docker không cho phép chạy quá 1 container .NET",
+          "Vì YARP không thể định tuyến tới cổng `8080`"
+        ],
+        "correctOption": 0,
+        "explanation": "Chỉ phơi cổng host ở `ApiGateway`; các dịch vụ nội bộ giao tiếp qua mạng nội bộ Docker và để Docker DNS tự cân bằng tải giữa các replica.",
+        "points": 1
+      }
+    ]
   }
 ]
