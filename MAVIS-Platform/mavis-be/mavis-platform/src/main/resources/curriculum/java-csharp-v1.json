@@ -2798,5 +2798,100 @@
         "points": 1
       }
     ]
+  },
+  {
+    "id": "java-v2-ch11",
+    "track": "Java",
+    "phase": "V2 · Module 4",
+    "title": "Chương 11: OBSERVABILITY TOÀN DIỆN (ACTUATOR HEALTH CHECK, LOGGING & OPENTELEMETRY TRACING)",
+    "minutes": 45,
+    "objective": "Nắm vững 3 trụ cột của Observability: Logs, Metrics, và Distributed Traces. Cấu hình Spring Boot Actuator Health Checks phân biệt rõ Liveness Probe và Readiness Probe. Hiểu cơ chế truyền ngữ cảnh W3C Trace Context (`traceparent`) trong OpenTelemetry (`Trace ID`, `Span ID`, `Parent Span ID`) để dựng lại chính xác chuỗi gọi runtime trên MAVIS.",
+    "lesson": "### 11.1. Tại sao Microservices \"mù\" nếu không có Observability?\n\nTrong Monolith, một yêu cầu chạy trong một tiến trình duy nhất — chỉ cần mở một file log là thấy toàn bộ stack trace. Trong Microservices, một cú nhấp chuột \"Đặt hàng\" đi xuyên qua `api-gateway` $\\to$ `order-service` $\\to$ `catalog-service` $\\to$ `Kafka` $\\to$ `notification-service`. Nếu khách báo *\"đơn hàng bị chậm 5 giây hoặc lỗi 500\"*, làm sao biết nút nào gây ra?\n\nCâu trả lời là **3 trụ cột Observability (`[R19]` §11.3)**:\n\n| Trụ cột | Cho bạn biết điều gì? | Công cụ chuẩn trong Java / MAVIS |\n| :--- | :--- | :--- |\n| **Logs (Nhật ký có cấu trúc)** | Sự kiện chi tiết đã xảy ra tại một thời điểm (kèm `traceId`, `spanId`, `serviceName` dạng JSON). | SLF4J + Logback JSON + Correlation/Trace ID |\n| **Metrics (Chỉ số định lượng)** | Sức khỏe tổng thể theo thời gian: **RED Metrics** (*Rate* — lưu lượng req/s, *Errors* — tỷ lệ lỗi, *Duration* — độ trễ $p50, p95, p99$). | Spring Boot Actuator + Micrometer + OpenTelemetry / Prometheus |\n| **Distributed Traces (Vết phân tán)** | Hành trình đầy đủ xuyên suốt nhiều dịch vụ của **một request cụ thể**, chỉ rõ từng chặng mất bao nhiêu mili-giây. | **OpenTelemetry (OTel) Java Agent / Micrometer Tracing + OTLP Collector** |\n\n### 11.2. Health Check API: Liveness vs. Readiness (`[R19]` §11.3.1)\n\nMọi Microservice chuẩn đều phải cung cấp endpoint kiểm tra sức khỏe qua **Spring Boot Actuator**:\n\n```yaml\nmanagement:\n  endpoints:\n    web:\n      exposure:\n        include: health,info,metrics,prometheus\n  endpoint:\n    health:\n      probes:\n        enabled: true          # Bật sẵn /actuator/health/liveness và /readiness\n      show-details: when_authorized\n```\n\nPhân biệt rõ 2 khái niệm cực hay bị hỏi khi bảo vệ:\n- **Liveness Probe (`/actuator/health/liveness`)**: *\"Tiến trình ứng dụng có còn sống không hay đã rơi vào deadlock/treo cứng?\"* $\\rightarrow$ Nếu thất bại, Docker/Kubernetes sẽ **khởi động lại (restart)** container.\n- **Readiness Probe (`/actuator/health/readiness`)**: *\"Dịch vụ đã sẵn sàng nhận traffic chưa (ví dụ: đã kết nối DB xong, đã nạp cache xong chưa)?\"* $\\rightarrow$ Nếu thất bại, LoadBalancer **tạm ngừng gửi request mới** vào container đó, nhưng **KHÔNG giết/restart** container.\n\n### 11.3. OpenTelemetry Distributed Tracing hoạt động như thế nào?\n\nMỗi request đi vào API Gateway được cấp một **`Trace ID`** duy nhất. Mỗi bước xử lý tại một dịch vụ tạo ra một **`Span`** (có `Span ID`, thời gian bắt đầu, thời gian kết thúc, mã trạng thái HTTP/lỗi) và tham chiếu tới **`Parent Span ID`** của bước gọi nó.\n\nKhi `order-service` gọi `catalog-service`, OpenTelemetry tự động chèn header chuẩn W3C `traceparent` vào HTTP request (và Kafka message header) để nối liền các mảnh ghép thành một cây nhân quả hoàn chỉnh:\n\n```text\nTrace ID: 4bf92f3577b34da6a3ce929d0e0e4736 (Tổng thời gian: 145 ms)\n├── Span A [api-gateway: POST /api/v1/orders]                 |================== 145ms ==================|\n    └── Span B [order-service: OrderController.create]          |=============== 130ms ================|\n        ├── Span C [PostgreSQL: INSERT INTO orders]               |== 15ms ==|\n        ├── Span D [catalog-service: POST .../reserve]                       |========= 85ms =========|\n        │   └── Span E [PostgreSQL: UPDATE products]                            |==== 40ms ====|\n        └── Span F [Kafka Produce: order.created]                                                      |= 12ms =|\n```\n\n#### Tích hợp Zero-Code Instrumentation trong Docker\nVới **OpenTelemetry Java Agent (`opentelemetry-javaagent.jar`)**, ta không cần sửa hàng trăm file code mà chỉ cần gắn tham số JVM trong Docker:\n```bash\njava -javaagent:/opt/otel/opentelemetry-javaagent.jar \\\n     -Dotel.service.name=order-service \\\n     -Dotel.exporter.otlp.endpoint=http://otel-collector:4318 \\\n     -jar /app/app.jar\n```\n\n### 11.4. Góc nhìn trên nền tảng MAVIS\n- **Step 3 (Live Runtime Observation)**: `MAVIS.Runner` tự động tiêm OpenTelemetry instrumentation vào Docker Compose stack của bài Lab, thu thập dữ liệu qua OTLP Collector, dựng **thứ tự nhân quả (Causal Order)** và chiếu trực tiếp lưu lượng sống, độ trễ và nút lỗi lên đồ thị 2D/3D!\n- **So sánh Static vs. Runtime**: Sinh viên kiểm chứng trực tiếp xem cạnh nào tồn tại trong code tĩnh (Step 1) và cạnh nào thực sự chạy trong kịch bản HTTP thực tế (Step 3).",
+    "exercise": "### 11.5. Bài tập thực hành Lab 11\n- Khởi chạy phiên Runtime trong **MAVIS Step 3**.\n- Gửi kịch bản tạo đơn hàng, mở khung **OpenTelemetry Trace Waterfall** để tìm: (1) `Trace ID` chung của cả luồng, (2) mối quan hệ `Parent Span -> Child Span`, và (3) nút dịch vụ chiếm tỷ trọng độ trễ cao nhất (bottleneck).",
+    "sources": [
+      {
+        "publisher": "Manning / Microservices.io",
+        "title": "Chris Richardson — Microservices Patterns",
+        "url": "https://microservices.io/patterns/"
+      },
+      {
+        "publisher": "Spring Cloud",
+        "title": "Mastering Microservices with Java & Spring Cloud Reference",
+        "url": "https://docs.spring.io/spring-cloud/reference/"
+      },
+      {
+        "publisher": "O'Reilly / Production-Ready Microservices",
+        "title": "Susan J. Fowler — Production-Ready Microservices",
+        "url": "https://www.oreilly.com/library/view/production-ready-microservices/9781491965962/"
+      },
+      {
+        "publisher": "CNCF OpenTelemetry",
+        "title": "OpenTelemetry Concepts & Instrumentation Docs",
+        "url": "https://opentelemetry.io/docs/"
+      },
+      {
+        "publisher": "Spring & Oracle Java 21",
+        "title": "Spring Boot 3 & Java 21 Official Documentation",
+        "url": "https://docs.spring.io/spring-boot/reference/"
+      }
+    ],
+    "questions": [
+      {
+        "id": "java-v2-ch11-q1",
+        "prompt": "Trong 3 trụ cột của Observability (*Logs, Metrics, Traces*), trụ cột nào cho phép lần theo hành trình và độ trễ từng bước của **một request cụ thể** đi xuyên qua nhiều Microservice?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Application Metrics",
+          "Distributed Tracing (với `Trace ID` và `Span ID`)",
+          "Static Code Analysis",
+          "Health Check Liveness"
+        ],
+        "correctOption": 1,
+        "explanation": "Distributed Tracing gắn chung một `Trace ID` xuyên suốt các dịch vụ và tách từng chặng thành các `Span` có quan hệ cha-con.",
+        "points": 1
+      },
+      {
+        "id": "java-v2-ch11-q2",
+        "prompt": "Sự khác biệt giữa **Liveness Probe** và **Readiness Probe** trong Spring Boot Actuator là gì?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Liveness kiểm tra để quyết định có cần **restart** container bị treo hay không; Readiness kiểm tra xem container đã sẵn sàng **nhận traffic** từ LoadBalancer hay chưa",
+          "Liveness chỉ chạy ở môi trường dev, Readiness chỉ chạy ở production",
+          "Readiness sẽ xóa database khi kiểm tra thất bại",
+          "Hai probe hoàn toàn giống nhau"
+        ],
+        "correctOption": 0,
+        "explanation": "Nếu service đang quá tải hoặc đang khởi động chậm (Readiness fail), hạ tầng chỉ cần tạm ngắt traffic vào nó thay vì giết/restart liên tục.",
+        "points": 1
+      },
+      {
+        "id": "java-v2-ch11-q3",
+        "prompt": "Nhóm chỉ số **RED Metrics** tiêu chuẩn để giám sát một Microservice gồm 3 đại lượng nào?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "RAM, Encryption, Disk",
+          "Rate (lưu lượng yêu cầu/giây), Errors (tỷ lệ lỗi), Duration (độ trễ xử lý)",
+          "Retry, Eureka, Docker",
+          "Read, Edit, Delete"
+        ],
+        "correctOption": 1,
+        "explanation": "RED Metrics đo trực tiếp trải nghiệm của người dùng/client đối với từng service endpoint.",
+        "points": 1
+      },
+      {
+        "id": "java-v2-ch11-q4",
+        "prompt": "OpenTelemetry nối được `Span` ở `catalog-service` thành con của `Span` ở `order-service` nhờ cơ chế nào?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Hai dịch vụ đọc chung một file tạm trên ổ cứng",
+          "Truyền ngữ cảnh vết (Context Propagation) thông qua HTTP/Messaging header chuẩn W3C (`traceparent`)",
+          "Tự động đoán dựa trên tên lớp Java",
+          "Chạy cùng một cổng TCP 8080"
+        ],
+        "correctOption": 1,
+        "explanation": "Header `traceparent` mang theo `trace-id` và `parent-id` đi xuyên qua ranh giới mạng.",
+        "points": 1
+      }
+    ]
   }
 ]
