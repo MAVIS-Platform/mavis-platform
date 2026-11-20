@@ -424,13 +424,19 @@ export function StudentCourseSyllabus({
                     <strong className="font-semibold text-white">
                       {lecturerNames.length
                         ? lecturerNames.join(" · ")
-                        : "Thầy Hoàng (gv.java@mavis.edu.vn)"}
+                        : t("Assigned Lecturer", "Giảng viên phụ trách lớp")}
                     </strong>
                   </span>
                   {summary.nextActiveLab && (
                     <span className="inline-flex items-center gap-1 rounded-full border border-emerald-300/35 bg-emerald-400/20 px-2.5 py-0.5 text-emerald-50">
                       ▶ {t("Up next", "Bài tiếp theo")}:{" "}
-                      <strong className="font-semibold">{summary.nextActiveLab.title}</strong>
+                      <strong className="font-semibold">
+                        {formatCourseLabTitle(
+                          summary.nextActiveLab.title,
+                          summary.nextActiveLab.position,
+                          summary.nextActiveLab.assignmentId,
+                        )}
+                      </strong>
                     </span>
                   )}
                 </div>

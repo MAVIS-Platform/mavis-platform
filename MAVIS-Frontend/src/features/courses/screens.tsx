@@ -1676,27 +1676,43 @@ function StepContent({
                     🧪 {t("Test Out-of-Scope Prompt (Demo DS-02b)", "Thử câu hỏi ngoài phạm vi: Giá Bitcoin 2030? (DS-02b)")}
                   </Button>
                 </div>
-                {tutorQuery === "grounded" && (
-                  <div className="mt-3 space-y-1.5 rounded-xl border border-teal-200 bg-teal-50/60 p-3.5 text-xs dark:border-teal-800 dark:bg-teal-950/20">
-                    <p className="font-semibold text-teal-950 dark:text-teal-200">
-                      ✅ {t("Evidence-Grounded Answer (Citing Static C1–C3 Model)", "Trả lời có đối chiếu Bằng chứng Tĩnh C1–C3")}
-                    </p>
-                    <p className="leading-5 text-muted-foreground">
-                      [Node:{" "}
-                      <code>{activeModel?.elements[0]?.name ?? "order-service"}</code>] · [File:{" "}
-                      <code>order-service/src/main/java/com/curated/order/PaymentClient.java</code>] ·
-                      [Contract:{" "}
-                      <code>
-                        {activeModel?.edges[0]?.protocol ?? "SERVICE_HTTP_CALL"}
-                      </code>
-                      ] —{" "}
-                      {t(
-                        "Cross-container calls follow explicit OpenFeign/HTTP contracts separated from private database ownership.",
-                        "Lời gọi liên dịch vụ đi qua hợp đồng OpenFeign/HTTP rõ ràng, tách biệt hoàn toàn khỏi quyền sở hữu DB nội bộ.",
-                      )}
-                    </p>
-                  </div>
-                )}
+                {tutorQuery === "grounded" && (() => {
+                  const firstEl = activeModel?.elements[0];
+                  const firstEdge = activeModel?.edges[0];
+                  const isDotNet = activeModel?.elements.some(
+                    (el) =>
+                      (el.technology ?? "").toLowerCase().includes(".net") ||
+                      (el.evidence?.[0]?.location ?? "").toLowerCase().endsWith(".cs") ||
+                      el.name.toLowerCase().includes("fruit"),
+                  );
+                  const evidenceLocation =
+                    firstEl?.evidence?.[0]?.location ??
+                    firstEdge?.evidence?.[0]?.location ??
+                    (isDotNet
+                      ? "src/Services/PaymentService/Program.cs"
+                      : "order-service/src/main/java/com/curated/order/PaymentClient.java");
+                  return (
+                    <div className="mt-3 space-y-1.5 rounded-xl border border-teal-200 bg-teal-50/60 p-3.5 text-xs dark:border-teal-800 dark:bg-teal-950/20">
+                      <p className="font-semibold text-teal-950 dark:text-teal-200">
+                        ✅ {t("Evidence-Grounded Answer (Citing Static C1–C3 Model)", "Trả lời có đối chiếu Bằng chứng Tĩnh C1–C3")}
+                      </p>
+                      <p className="leading-5 text-muted-foreground">
+                        [Node:{" "}
+                        <code>{firstEl?.name ?? "order-service"}</code>] · [File:{" "}
+                        <code>{evidenceLocation}</code>] ·
+                        [Contract:{" "}
+                        <code>
+                          {firstEdge?.protocol ?? "SERVICE_HTTP_CALL"}
+                        </code>
+                        ] —{" "}
+                        {t(
+                          "Cross-container calls follow explicit HTTP/RPC contracts separated from private database ownership.",
+                          "Lời gọi liên dịch vụ đi qua hợp đồng API/Event rõ ràng, tách biệt hoàn toàn khỏi quyền sở hữu DB nội bộ.",
+                        )}
+                      </p>
+                    </div>
+                  );
+                })()}
                 {tutorQuery === "out_of_scope" && (
                   <div
                     role="alert"
