@@ -192,6 +192,36 @@ function estimateMinutes(chapterNumber, lessonBody) {
   return 45;
 }
 
+function sanitizeQuizPlainText(rawText, { stripLeadingNumber = false } = {}) {
+  if (!rawText) return '';
+  let text = String(rawText).trim();
+
+  // Convert any math notation inside quiz text to Unicode before stripping code ticks.
+  text = text
+    .replace(/\$\$([\s\S]*?)\$\$/g, (_, inner) => convertLatexExprToUnicode(inner))
+    .replace(/\$(?!\{)(?!\s)([^$\n]+?)(?<!\s)\$/g, (_, inner) => convertLatexExprToUnicode(inner))
+    .replace(/\\rightarrow|\\to\b/g, '→')
+    .replace(/\\leftarrow\b/g, '←')
+    .replace(/\\ge\b/g, '≥')
+    .replace(/\\le\b/g, '≤')
+    .replace(/\\times\b/g, '×')
+    .replace(/\\approx\b/g, '≈');
+
+  // Unescape markdown brackets and strip inline markdown bold/italic/code wrappers.
+  text = text
+    .replace(/\\([\[\]*_`])/g, '$1')
+    .replace(/\*\*([^*\n]+?)\*\*/g, '$1')
+    .replace(/`([^`\n]+?)`/g, '$1')
+    .replace(/(^|[\s(])\*([^*\n]+?)\*(?=[\s).,;:?!]|$)/g, '$1$2')
+    .replace(/\*\*|`/g, '');
+
+  if (stripLeadingNumber) {
+    text = text.replace(/^\s*(?:Câu\s*\d+(?:\.\d+)?[:.\s-]*|\d+[.)]\s+)/i, '');
+  }
+
+  return text.replace(/\r?\n/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
 function parseQuestions(quizSection, qIdPrefix) {
   let cleanQuiz = quizSection;
   const stopIdx = cleanQuiz.search(/^(?:---|\s*#\s+(?:🏛️|🌐|🗄️|🛡️|🚀|📎))/m);
@@ -213,7 +243,7 @@ function parseQuestions(quizSection, qIdPrefix) {
     if (!promptMatch) {
       throw new Error(`Missing question prompt for ${qIdPrefix}-q${idx + 1}`);
     }
-    const prompt = promptMatch[1].trim();
+    const prompt = sanitizeQuizPlainText(promptMatch[1], { stripLeadingNumber: true });
 
     const optMatches = [...block.matchAll(/^\s*[-*]\s*([A-D])\.\s+(.+)$/gm)];
     if (optMatches.length !== 4) {
@@ -223,7 +253,7 @@ function parseQuestions(quizSection, qIdPrefix) {
       if (m[1] !== letters[optIdx]) {
         throw new Error(`Out-of-order option ${m[1]} at ${qIdPrefix}-q${idx + 1}`);
       }
-      return m[2].trim();
+      return sanitizeQuizPlainText(m[2]);
     });
 
     const ansMatch = block.match(/\*\*Đáp án đúng:\s*([A-D])\.?\*\*\s*(?:\*Giải thích\*:\s*([\s\S]*))?/i);
@@ -234,7 +264,7 @@ function parseQuestions(quizSection, qIdPrefix) {
     if (correctOption < 0 || correctOption >= options.length) {
       throw new Error(`Invalid correctOption index for ${qIdPrefix}-q${idx + 1}`);
     }
-    const explanation = (ansMatch[2] || '').replace(/\r?\n/g, ' ').replace(/\s+/g, ' ').trim();
+    const explanation = sanitizeQuizPlainText(ansMatch[2] || '');
     if (!explanation) {
       throw new Error(`Blank explanation for ${qIdPrefix}-q${idx + 1}`);
     }
