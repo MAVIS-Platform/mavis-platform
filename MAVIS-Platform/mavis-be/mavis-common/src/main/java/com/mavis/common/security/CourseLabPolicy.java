@@ -93,6 +93,7 @@ public class CourseLabPolicy {
                 SELECT r.assignment_id FROM course_lab_results r
                 JOIN assignments a ON a.id = r.assignment_id
                 WHERE a.workspace_id = ? AND r.student_id = ? AND r.passed
+                  AND a.lab_order IS NOT NULL
                 """, UUID.class, workspaceId, studentId));
     }
 
