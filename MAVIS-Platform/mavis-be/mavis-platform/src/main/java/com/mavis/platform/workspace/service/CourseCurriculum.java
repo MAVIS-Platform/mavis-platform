@@ -46,6 +46,10 @@ public class CourseCurriculum {
             text.append("\n").append(source.publisher()).append(" · ").append(source.title())
                     .append("\n").append(source.url());
         }
-        return new CourseQuizService.Publish(text.toString(), null, chapter.questions());
+        Integer passPercent = (chapter.id() != null
+                && (chapter.id().startsWith("java-v2-") || chapter.id().startsWith("csharp-v2-")))
+                ? com.mavis.platform.workspace.curriculum.V2CurriculumJsonLoader.DEFAULT_V2_PASS_PERCENT
+                : null;
+        return new CourseQuizService.Publish(text.toString(), passPercent, chapter.questions());
     }
 }

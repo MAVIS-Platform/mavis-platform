@@ -20,6 +20,7 @@ import java.util.stream.Collectors;
  * into Coursera catalog specs for both Java 21 and C# .NET 8 tracks.
  */
 public final class V2CurriculumJsonLoader {
+    public static final int DEFAULT_V2_PASS_PERCENT = 70;
     private static final java.util.regex.Pattern LEADING_LAB_PREFIX =
             java.util.regex.Pattern.compile("^(?:Lab\\s*0?\\d+(?:\\s*\\([^)]*\\))?\\s*[·:\\-]\\s*)+",
                     java.util.regex.Pattern.CASE_INSENSITIVE);
@@ -114,7 +115,7 @@ public final class V2CurriculumJsonLoader {
                         q.explanation(),
                         q.points()))
                 .toList();
-        return new CourseQuizService.Publish(lessonMarkdown, 70, questions);
+        return new CourseQuizService.Publish(lessonMarkdown, DEFAULT_V2_PASS_PERCENT, questions);
     }
 
     private static String truncate255(String value) {
