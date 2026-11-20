@@ -235,7 +235,11 @@ class CourseLabStudentServiceTest {
             el.setId(payEl.getId());
             return el;
         });
-        when(runtimeConfigurations.findById(refProject.getId())).thenReturn(Optional.of(new RuntimeConfiguration()));
+        String compose = "services:\n  payment-service:\n    image: sha256:" + "d".repeat(64);
+        var referenceConfiguration = new RuntimeConfiguration();
+        referenceConfiguration.setSourceSnapshotId(refSnapshot.getId());
+        referenceConfiguration.setProfile(json.createObjectNode().put("sandboxCompose", compose));
+        when(runtimeConfigurations.findById(refProject.getId())).thenReturn(Optional.of(referenceConfiguration));
 
         UUID createdId = UUID.randomUUID();
         when(runtimeSessionService.createRuntimeSession(any())).thenReturn(RuntimeSessionResponseDTO.builder().id(createdId).build());
@@ -248,6 +252,8 @@ class CourseLabStudentServiceTest {
         verify(runtimeSessionService).createRuntimeSession(reqCaptor.capture());
         assertThat(reqCaptor.getValue().getAssignmentId()).isEqualTo(labId);
         assertThat(reqCaptor.getValue().getScenarioConfig().path("interactiveStudio").asBoolean()).isTrue();
+        assertThat(reqCaptor.getValue().getScenarioConfig().path("profile").path("sandboxCompose").asText())
+                .isEqualTo(compose);
         assertThat(reqCaptor.getValue().getConfirmedServiceMappings()).containsKey("payment-service");
     }
 

@@ -143,6 +143,34 @@ class RuntimeSessionServiceImplTest {
                 .referenceModel(ModelVersion.builder().sourceSnapshot(reference).build()).build());
     }
 
+    @Test
+    void guidedStudioRejectsUnresolvedSeedImageBeforeSavingSession(@TempDir Path directory) throws IOException {
+        var workspace = com.mavis.common.entity.Workspace.builder().id(UUID.randomUUID()).build();
+        project.setWorkspace(workspace);
+        var assignmentId = UUID.randomUUID();
+        var assignment = com.mavis.common.entity.Assignment.builder().id(assignmentId)
+                .workspace(workspace).referenceModel(validModel).build();
+        var assignments = mock(com.mavis.common.repository.AssignmentRepository.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(runtimeSessionService, "assignmentRepository", assignments);
+        when(assignments.findById(assignmentId)).thenReturn(Optional.of(assignment));
+        when(modelVersionRepository.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(projectId))
+                .thenReturn(Optional.of(validModel));
+        Path compose = directory.resolve("docker-compose.yml");
+        Files.writeString(compose, "services:\n  orders:\n    image: mavis/orders:curated\n");
+        snapshot.setStoragePath(compose.toString());
+
+        var config = objectMapper.createObjectNode().put("interactiveStudio", true);
+        var request = RuntimeSessionCreateRequest.builder().projectId(projectId).sourceSnapshotId(snapshotId)
+                .assignmentId(assignmentId).scenarioConfig(config).build();
+
+        assertThatThrownBy(() -> runtimeSessionService.createRuntimeSession(request))
+                .isInstanceOfSatisfying(BusinessException.class, failure -> {
+                    assertThat(failure.getErrorCode()).isEqualTo(com.mavis.common.exception.ErrorCode.UNPROCESSABLE_ENTITY);
+                    assertThat(failure.getStableCode()).isEqualTo("PREFLIGHT_FAILED");
+                });
+        verify(runtimeSessionRepository, never()).save(any());
+    }
+
     private UUID projectId;
     private UUID snapshotId;
     private Project project;
