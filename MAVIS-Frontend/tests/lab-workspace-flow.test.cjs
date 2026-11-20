@@ -75,14 +75,14 @@ test("LabWorkspace unifies navigation into a single sticky horizontal stepper wi
   assert.match(html, /Finish Runtime Studio first\./);
 });
 
-test("LabWorkspace uses the Module Quiz as the sole Runtime Studio prerequisite", () => {
+test("LabWorkspace keeps module prerequisites outside the three-phase Lab UI", () => {
   const screens = read("src/features/courses/screens.tsx");
-  assert.match(screens, /Pass this module's Quiz to unlock MAVIS Runtime Studio/);
-  assert.match(screens, /Pass the Module Quiz to unlock MAVIS Runtime Studio/);
+  assert.match(screens, /Runtime Studio is not available yet/);
+  assert.match(screens, /Runtime Studio chưa sẵn sàng/);
   assert.doesNotMatch(
     screens,
     /<CourseQuiz/,
-    "The Lab workspace must not embed a second Quiz Gate.",
+    "The Lab workspace must not embed a course quiz.",
   );
 });
 

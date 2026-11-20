@@ -1066,12 +1066,12 @@ function StandaloneStudioContent() {
           <div className="m-auto max-w-md space-y-3 rounded-2xl border border-slate-800 bg-[#0b101b] p-6 text-center">
             <Lock className="mx-auto size-7 text-amber-400" aria-hidden="true" />
             <h1 className="text-base font-semibold text-white">
-              {t("Quiz Gate Required", "Cần vượt qua Quiz Gate")}
+              {t("Runtime access required", "Cần điều kiện truy cập Runtime")}
             </h1>
             <p className="text-xs leading-5 text-slate-400">
               {t(
-                "Pass the Module Quiz before starting your MAVIS Runtime Studio session.",
-                "Hoàn thành Quiz của Module để mở khóa phiên MAVIS Runtime Studio.",
+                "Complete the required course work before starting your MAVIS Runtime Studio session.",
+                "Hoàn tất các yêu cầu của khóa học trước khi bắt đầu phiên MAVIS Runtime Studio.",
               )}
             </p>
             <Button asChild size="sm">

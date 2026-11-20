@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CheckCircle2,
@@ -67,6 +68,7 @@ export function StudentCourseSyllabus({
   workspace: Response<"workspaces">[number];
 }) {
   const { t } = useLocale();
+  const router = useRouter();
   const client = useApi();
   const workspaceId = workspace.id;
   const roadmap = useCourseRoadmap(workspaceId);
@@ -188,6 +190,12 @@ export function StudentCourseSyllabus({
     (chapterAssignmentId ? labs.find((l) => l.assignmentId === chapterAssignmentId) : undefined) ??
     selectedLab;
   const selectCurriculumItem = (item: OutlineItemData) => {
+    if (item.assignmentId && ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(item.type)) {
+      router.push(
+        `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(item.assignmentId)}&step=1`,
+      );
+      return;
+    }
     setSelectedItemId(item.id);
     const owningModule = syllabusModules.find((module) =>
       module.items.some((candidate) => candidate.id === item.id),
@@ -211,40 +219,6 @@ export function StudentCourseSyllabus({
         ),
     ),
   );
-
-  const stepDescriptions: Array<{
-    step?: 1 | 2 | 3;
-    label: string;
-    hint: string;
-    kind: "STATIC" | "QUIZ" | "RUNTIME" | "SUBMIT";
-  }> = [
-    {
-      step: 1,
-      kind: "STATIC",
-      label: t("Static Studio", "Static Studio"),
-      hint: t("Snapshot, C1–C3 and source evidence", "Snapshot, C1–C3 và bằng chứng mã nguồn"),
-    },
-    {
-      kind: "QUIZ",
-      label: t("Module Quiz", "Quiz của Module"),
-      hint: t("Required before Runtime Studio", "Điều kiện mở Runtime Studio"),
-    },
-    {
-      step: 2,
-      kind: "RUNTIME",
-      label: t("MAVIS Runtime Studio", "MAVIS Runtime Studio"),
-      hint: t(
-        "Scenario, telemetry and observed impact",
-        "Kịch bản, telemetry và tác động quan sát được",
-      ),
-    },
-    {
-      step: 3,
-      kind: "SUBMIT",
-      label: t("Evidence & Submit", "Evidence & Submit"),
-      hint: t("Receipt, evidence and submission", "Receipt, evidence và nộp bài"),
-    },
-  ];
 
   const resumeLabHref = summary.nextActiveLab
     ? `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(summary.nextActiveLab.assignmentId)}&step=1`
@@ -803,125 +777,6 @@ export function StudentCourseSyllabus({
                         active={workspace.status !== "ARCHIVED"}
                       />
                     )}
-
-                  {["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(activeItem.type) && (
-                    <div className="space-y-6">
-                      <div className="space-y-4 rounded-xl border border-emerald-200 bg-emerald-50/70 p-4 dark:border-emerald-800/60 dark:bg-emerald-950/20 sm:p-5">
-                        <div>
-                          <h3 className="text-sm font-semibold text-emerald-950 dark:text-emerald-200">
-                            {t("Lab journey", "Lộ trình Lab")}
-                          </h3>
-                          <p className="text-xs text-emerald-900/80 dark:text-emerald-300/80">
-                            {t(
-                              "Static analysis and the module Quiz lead into MAVIS Runtime Studio, then evidence and submission.",
-                              "Static Studio và Quiz của Module dẫn đến MAVIS Runtime Studio, sau đó là evidence và nộp bài.",
-                            )}
-                          </p>
-                        </div>
-
-                        {activeLabRecord ? (
-                          <>
-                            <div className="grid gap-3 sm:grid-cols-2">
-                              {stepDescriptions.map((s) => {
-                                const stepHref = s.step
-                                  ? `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(activeLabRecord.assignmentId)}&step=${s.step}`
-                                  : null;
-                                return activeLabRecord.state === "LOCKED" ? (
-                                  <div
-                                    key={s.kind}
-                                    className="rounded-xl border border-border/70 bg-background/70 p-3 opacity-70"
-                                  >
-                                    <p className="text-xs font-semibold text-muted-foreground">
-                                      {s.label}
-                                    </p>
-                                    <p className="mt-0.5 text-xs text-muted-foreground">{s.hint}</p>
-                                  </div>
-                                ) : s.kind === "QUIZ" ? (
-                                  <button
-                                    key={s.kind}
-                                    type="button"
-                                    onClick={() =>
-                                      chapterQuizItem && selectCurriculumItem(chapterQuizItem)
-                                    }
-                                    disabled={!chapterQuizItem}
-                                    className="group rounded-xl border border-emerald-200/80 bg-background p-3 text-left transition-all hover:border-emerald-500 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-800/50"
-                                  >
-                                    <p className="text-xs font-semibold text-emerald-800 group-hover:text-emerald-600 dark:text-emerald-300">
-                                      {s.label}
-                                    </p>
-                                    <p className="mt-0.5 text-xs text-muted-foreground">{s.hint}</p>
-                                  </button>
-                                ) : stepHref ? (
-                                  <Link
-                                    key={s.kind}
-                                    href={stepHref}
-                                    className="group rounded-xl border border-emerald-200/80 bg-background p-3 transition-all hover:border-emerald-500 hover:shadow-sm dark:border-emerald-800/50"
-                                  >
-                                    <p className="text-xs font-semibold text-emerald-800 group-hover:text-emerald-600 dark:text-emerald-300">
-                                      {s.label}
-                                    </p>
-                                    <p className="mt-0.5 text-xs text-muted-foreground">{s.hint}</p>
-                                  </Link>
-                                ) : null;
-                              })}
-                            </div>
-
-                            {activeLabRecord.state === "LOCKED" ? (
-                              <div
-                                role="alert"
-                                className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200"
-                              >
-                                <Lock className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-                                <span>
-                                  <strong>BR-03 (DS-01b):</strong>{" "}
-                                  {t(
-                                    "This Lab is currently locked. Pass and receive approval (> 5.0/10) on the previous Lab first to unlock it sequentially.",
-                                    "Bài Lab này đang khóa — Bạn cần hoàn thành và đạt phê duyệt (> 5.0 điểm) ở bài Lab trước để mở khóa tuần tự.",
-                                  )}
-                                  {activeLabRecord.reason ? ` (${activeLabRecord.reason})` : ""}
-                                </span>
-                              </div>
-                            ) : (
-                              <div className="flex flex-wrap items-center gap-3 pt-1">
-                                <Button
-                                  asChild
-                                  size="lg"
-                                  className="bg-emerald-600 text-white shadow-sm hover:bg-emerald-700"
-                                >
-                                  <Link
-                                    href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(activeLabRecord.assignmentId)}&step=1`}
-                                  >
-                                    <Play
-                                      className="mr-2 h-4 w-4 fill-current"
-                                      aria-hidden="true"
-                                    />
-                                    {t(
-                                      "Start / Continue This Lab",
-                                      "Bắt Đầu / Tiếp Tục Làm Bài Lab Này",
-                                    )}
-                                  </Link>
-                                </Button>
-                                <Button asChild variant="outline" size="lg">
-                                  <Link
-                                    href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(activeLabRecord.assignmentId)}&step=2`}
-                                  >
-                                    {t("Open Runtime Studio", "Mở Runtime Studio")}
-                                  </Link>
-                                </Button>
-                              </div>
-                            )}
-                          </>
-                        ) : (
-                          <p className="text-xs text-emerald-900/80 dark:text-emerald-300/80">
-                            {t(
-                              "Read all 3 lessons in this chapter first; the interactive Studio Live Lab is linked once published by your lecturer.",
-                              "Hãy đọc trọn vẹn 3 bài giảng và hoàn thành Quiz/Tự luận chương này; phòng Lab Studio Live sẽ mở ngay khi giảng viên công bố Assignment.",
-                            )}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  )}
                 </section>
 
                 {/* Left Sidebar Menu Column: OLP 6-Chapter Accordion */}

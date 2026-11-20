@@ -567,10 +567,6 @@ export function LabWorkspace() {
     module.items.some((item) => item.assignmentId === assignmentId),
   );
   const moduleItems = currentModule?.items ?? [];
-  const moduleQuizItem = moduleItems.find((item) => item.type === "QUIZ");
-  const moduleQuizHref = moduleQuizItem
-    ? `/roadmap?workspace=${encodeURIComponent(workspaceId)}&item=${encodeURIComponent(moduleQuizItem.id)}`
-    : `/roadmap?workspace=${encodeURIComponent(workspaceId)}`;
   const lab = assignments.data?.find((item) => item.id === assignmentId);
   const labTier = resolveLabTier(lab);
   const isTheoryOnlyLab = labTier === "THEORY_ONLY";
@@ -593,7 +589,6 @@ export function LabWorkspace() {
     isTheoryOnlyLab ||
     (!quiz.isError && quiz.data?.runtimeUnlocked === true) ||
     studentContext.data?.quiz?.runtimeUnlocked === true;
-  const quizPassPercent = quiz.data?.passPercent ?? studentContext.data?.quiz?.passPercent ?? 70;
   const requiresRuntime =
     lab?.requireRuntimeTrace === true || lab?.labMode === "THEORY_QUIZ_STUDIO";
   const displayedStep = activeStep;
@@ -713,10 +708,7 @@ export function LabWorkspace() {
   };
   const stepReason = (id: 1 | 2 | 3) => {
     if (id === 2 && !runtimeReady)
-      return t(
-        "Pass this module's Quiz to unlock MAVIS Runtime Studio.",
-        "Hãy đạt Quiz của Module để mở khóa MAVIS Runtime Studio.",
-      );
+      return t("Runtime Studio is not available yet.", "Runtime Studio hiện chưa sẵn sàng.");
     if (id === 3 && requiresRuntime && !verifiedStudioSession)
       return t(
         "Finish MAVIS Runtime Studio and create a verified receipt before submitting.",
@@ -744,16 +736,18 @@ export function LabWorkspace() {
       ...(available ? { href: labHref(step.id) } : {}),
     };
   });
-  const tocItems: LabTocItem[] = moduleItems.map((item) => {
-    const step = stepForItemType(item.type);
-    return {
-      id: item.id,
-      title: item.title,
-      type: item.type,
-      current: item.assignmentId === assignmentId,
-      ...(stepAvailable(step) ? { href: labHref(step) } : {}),
-    };
-  });
+  const tocItems: LabTocItem[] = moduleItems
+    .filter((item) => item.type !== "QUIZ")
+    .map((item) => {
+      const step = stepForItemType(item.type);
+      return {
+        id: item.id,
+        title: item.title,
+        type: item.type,
+        current: item.assignmentId === assignmentId,
+        ...(stepAvailable(step) ? { href: labHref(step) } : {}),
+      };
+    });
 
   useEffect(() => {
     if (workspaceId && workspaceId !== selection.workspaceId) selection.setWorkspaceId(workspaceId);
@@ -775,7 +769,7 @@ export function LabWorkspace() {
             state: "READY",
           }
         : {
-            label: t("Theory and quiz", "Lý thuyết và quiz"),
+            label: t("Course prerequisite", "Điều kiện khóa học"),
             state: runtimeReady ? "PASSED" : "IN PROGRESS",
           },
       ...(requiresRuntime
@@ -1025,7 +1019,6 @@ export function LabWorkspace() {
               hasReferenceArch={hasReferenceArch}
               isTheoryOnlyLab={isTheoryOnlyLab}
               runtimeReady={runtimeReady}
-              quizPassPercent={quizPassPercent}
               runtimeSessionHref={labSessions[0] ? runtimeLink(labSessions[0].id) : null}
               studioHref={
                 verifiedStudioSession ? runtimeLink(verifiedStudioSession.id) + "&studio=1" : null
@@ -1046,7 +1039,6 @@ export function LabWorkspace() {
               labId={lab.id}
               labOrder={lab.labOrder}
               labTitle={lab.title}
-              moduleQuizHref={moduleQuizHref}
               projectId={projectId}
               modelQuery={modelQuery}
               referenceModelQuery={referenceModelQuery}
@@ -1260,7 +1252,6 @@ function StepContent({
   labId,
   labOrder,
   labTitle,
-  moduleQuizHref,
   projectId,
   modelQuery,
   referenceModelQuery,
@@ -1270,7 +1261,6 @@ function StepContent({
   isStudent,
   preview,
   runtimeReady,
-  quizPassPercent = 70,
   studioVerified,
   studioSessionId,
   studioSessions,
@@ -1290,7 +1280,6 @@ function StepContent({
   labId: string;
   labOrder?: number | null | undefined;
   labTitle?: string | undefined;
-  moduleQuizHref: string;
   projectId: string;
   modelQuery: string | null;
   referenceModelQuery?: string | null | undefined;
@@ -1301,7 +1290,6 @@ function StepContent({
   preview?: boolean | undefined;
   hasActiveAnalysisJob?: boolean | undefined;
   runtimeReady: boolean;
-  quizPassPercent?: number | undefined;
   runtimeSessionHref: string | null;
   studioHref: string | null;
   studioVerified: boolean;
@@ -1454,8 +1442,8 @@ function StepContent({
                 {isTheoryOnlyLab
                   ? t("Complete the static evidence.", "Hoàn tất evidence tĩnh.")
                   : t(
-                      "Pass the Module Quiz before Runtime Studio.",
-                      "Đạt Quiz của Module trước Runtime Studio.",
+                      "Review the static evidence before continuing to Runtime Studio.",
+                      "Hoàn tất việc xem evidence tĩnh trước khi chuyển sang Runtime Studio.",
                     )}
               </p>
             </div>
@@ -1750,8 +1738,8 @@ function StepContent({
               <p className="text-xs text-teal-900/80 dark:text-teal-300/80">
                 {hasReferenceArch
                   ? t(
-                      "Use the static graph to form an impact hypothesis, then complete the Module Quiz before opening Runtime Studio.",
-                      "Dùng đồ thị tĩnh để lập giả thuyết tác động, sau đó hoàn thành Quiz của Module trước khi mở Runtime Studio.",
+                      "Use the static graph to form an impact hypothesis, then continue to Runtime Studio.",
+                      "Dùng đồ thị tĩnh để lập giả thuyết tác động, sau đó chuyển sang Runtime Studio.",
                     )
                   : isTheoryOnlyLab
                     ? t(
@@ -1759,16 +1747,22 @@ function StepContent({
                         "Lab này không yêu cầu Runtime Studio; hãy chuyển sang evidence và nộp bài khi hoàn tất phần tĩnh.",
                       )
                     : t(
-                        "The Module Quiz is the only prerequisite for Runtime Studio.",
-                        "Quiz của Module là điều kiện duy nhất để mở Runtime Studio.",
+                        "Continue to the Runtime Studio phase when it is available.",
+                        "Chuyển sang giai đoạn Runtime Studio khi sẵn sàng.",
                       )}
               </p>
             </div>
             <Button asChild className="bg-teal-600 text-white hover:bg-teal-700">
-              <Link href={isTheoryOnlyLab ? submitHref : moduleQuizHref}>
+              <Link
+                href={
+                  isTheoryOnlyLab
+                    ? submitHref
+                    : `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=2${previewParam}`
+                }
+              >
                 {isTheoryOnlyLab
                   ? t("Continue to Evidence & Submit →", "Sang Evidence & Submit →")
-                  : t("Open Module Quiz →", "Mở Quiz của Module →")}
+                  : t("Continue to Runtime Studio →", "Sang Runtime Studio →")}
               </Link>
             </Button>
           </div>
@@ -1897,20 +1891,14 @@ function StepContent({
         <div className="space-y-5">
           {!runtimeReady && !preview ? (
             <DetailPanel
-              title={t(
-                "Runtime Studio Locked · Module Quiz Required",
-                "Runtime Studio đang khóa · Cần đạt Quiz của Module",
-              )}
+              title={t("Runtime Studio is not available", "Runtime Studio chưa sẵn sàng")}
             >
               <p className="text-sm text-muted-foreground">
                 {t(
-                  "Pass the Module Quiz to unlock MAVIS Runtime Studio.",
-                  "Hãy đạt Quiz của Module để mở khóa MAVIS Runtime Studio.",
+                  "Complete the required course work, then return here to start MAVIS Runtime Studio.",
+                  "Hoàn tất các yêu cầu của khóa học, sau đó quay lại đây để bắt đầu MAVIS Runtime Studio.",
                 )}
               </p>
-              <Button asChild size="sm" variant="outline">
-                <Link href={moduleQuizHref}>{t("Open Module Quiz", "Mở Quiz của Module")}</Link>
-              </Button>
             </DetailPanel>
           ) : (
             <>
@@ -2141,7 +2129,7 @@ function StepContent({
               </Link>
             ) : (
               <span>
-                {t("Pass the Module Quiz to continue", "Hãy đạt Quiz của Module để tiếp tục")}
+                {t("Runtime Studio is not available yet", "Runtime Studio hiện chưa sẵn sàng")}
               </span>
             )}
           </Button>

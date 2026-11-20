@@ -142,7 +142,7 @@ test("Lab UI keeps unavailable progress gates honest and runs the 3-phase Studio
     /state:\s*activeModelId\s*\?\s*"READY"\s*:\s*referenceSnapshotId\s*\?\s*"IN PROGRESS"\s*:\s*"MISSING"/,
   );
   assert.match(course, /job\.status === "completed" && job\.analysisState !== "PARTIAL"/);
-  assert.match(course, /Pass this module's Quiz to unlock MAVIS Runtime Studio/);
+  assert.match(course, /Runtime Studio is not available yet/);
   assert.doesNotMatch(course, /<CourseQuiz/);
   assert.match(quiz, /queryKey: \["api", "course-quiz", workspaceId, labId\]/);
   assert.match(quiz, /api<Result>\(`\$\{path\}\/attempts`/);
@@ -162,8 +162,8 @@ test("guided Lab launches standalone full-screen Runtime Studio without external
   assert.ok(standalone.includes("useBootstrapLabStudio("));
   assert.ok(standalone.includes("step=2"));
   assert.ok(standalone.includes("step=3#lab-submit"));
-  assert.ok(standalone.includes("Pass the Module Quiz"));
-  assert.ok(!standalone.includes("Step 3 Quiz Gate"));
+  assert.ok(standalone.includes("Runtime access required"));
+  assert.ok(!standalone.includes("Quiz Gate Required"));
   assert.ok(screenPage.includes('if (screen === "studio-live") return <StandaloneStudioLive />;'));
   assert.ok(!stepContentSource.includes("href={`/sessions?"));
   assert.ok(!stepContentSource.includes("href={`/diagrams?"));
@@ -538,7 +538,7 @@ test("Static Studio provides the Reverse BFS hypothesis before Runtime Studio va
   assert.ok(course.includes("compare predicted and observed impact"));
 });
 
-test("Studio in the guided Lab unlocks Runtime Studio after the Module Quiz and connects to Studio Live", () => {
+test("Studio in the guided Lab keeps Runtime Studio as a separate phase and connects to Studio Live", () => {
   const course = read("src/features/courses/screens.tsx");
   const standalone = read("src/features/runtime/standalone-studio-live.tsx");
   assert.match(course, /if \(id === 2\) return runtimeReady/);
@@ -1429,11 +1429,10 @@ test("Learning Workspace keeps curriculum and previous/next navigation within th
   assert.match(syllabus, /const activeModuleItemIndex =\s*activeModule\?\.items\.findIndex/);
   assert.match(syllabus, /activeModule\.items\[activeModuleItemIndex \+ 1\]/);
   assert.match(syllabus, /activeModule\.items\[activeModuleItemIndex - 1\]/);
-  assert.match(syllabus, /label: t\("Static Studio", "Static Studio"\)/);
-  assert.match(syllabus, /label: t\("Module Quiz", "Quiz của Module"\)/);
-  assert.match(syllabus, /label: t\("MAVIS Runtime Studio", "MAVIS Runtime Studio"\)/);
-  assert.match(syllabus, /label: t\("Evidence & Submit", "Evidence & Submit"\)/);
-  assert.match(syllabus, /selectCurriculumItem\(chapterQuizItem\)/);
+  assert.match(syllabus, /router\.push\(/);
+  assert.match(syllabus, /\["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"\]\.includes\(item\.type\)/);
+  assert.doesNotMatch(syllabus, /Lab journey/);
+  assert.doesNotMatch(syllabus, /Module Quiz/);
   assert.doesNotMatch(syllabus, /4-Step Guided Learning Checklist/);
 });
 
