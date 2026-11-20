@@ -99,9 +99,12 @@ jobs:
             exit 1
           fi
 
+  runtime-docker:
+    uses: ./.github/workflows/bm04-docker-qa.yml
+
   images:
     if: github.event_name != 'pull_request'
-    needs: verify
+    needs: [verify, runtime-docker]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:

@@ -1,6 +1,7 @@
 name: BM04 real Docker QA
 
 on:
+  workflow_call:
   workflow_dispatch:
   push:
     branches: [chore/be-regression-verify]
