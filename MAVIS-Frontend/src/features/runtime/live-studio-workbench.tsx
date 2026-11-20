@@ -1070,23 +1070,28 @@ export function LiveStudioWorkbench({
           </>
         )}
 
-        <span
-          className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[10px] font-semibold ${statusTone}`}
-        >
+        {(data.executionStatus === "RUNNING" ||
+          isBooting ||
+          data.executionStatus === "COMPLETED" ||
+          data.executionStatus === "FAILED") && (
           <span
-            className={`size-1.5 rounded-full ${
-              data.executionStatus === "RUNNING"
-                ? "animate-pulse bg-emerald-400"
-                : isBooting
-                  ? "animate-pulse bg-sky-400"
-                  : data.executionStatus === "FAILED"
-                    ? "bg-rose-400"
-                    : "bg-slate-400"
-            }`}
-            aria-hidden="true"
-          />
-          {statusLabel}
-        </span>
+            className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[10px] font-semibold ${statusTone}`}
+          >
+            <span
+              className={`size-1.5 rounded-full ${
+                data.executionStatus === "RUNNING"
+                  ? "animate-pulse bg-emerald-400"
+                  : isBooting
+                    ? "animate-pulse bg-sky-400"
+                    : data.executionStatus === "FAILED"
+                      ? "bg-rose-400"
+                      : "bg-slate-400"
+              }`}
+              aria-hidden="true"
+            />
+            {statusLabel}
+          </span>
+        )}
 
         {(!authoring || !isPreviewMode || isBooting) && (
           <label className="flex min-w-0 items-center gap-1.5 text-[11px] text-slate-400">
@@ -1134,13 +1139,7 @@ export function LiveStudioWorkbench({
               ) : (
                 <Play aria-hidden="true" className="mr-1 size-3" />
               )}
-              {isBooting
-                ? `${authoring ? "Booting Docker" : "Booting Docker"} (${data.executionStatus === "NOT_STARTED" ? "STARTING" : data.executionStatus})…`
-                : authoring
-                  ? "Test Live Docker"
-                  : projectName
-                    ? `Start ${projectName}`
-                    : "Start Live Docker"}
+              {isBooting ? "Booting…" : "Run"}
             </Button>
           ) : (
             <Button asChild size="sm" className="h-7 px-2.5 text-[11px]">

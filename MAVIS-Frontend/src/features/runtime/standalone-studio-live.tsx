@@ -815,21 +815,11 @@ function StandaloneStudioContent() {
         <span className="hidden sm:inline">{t("Back", "Quay lại")}</span>
       </Link>
 
-      <div className="flex min-w-0 items-center gap-1.5">
+      <div className="flex min-w-0 items-center gap-1.5" title={labTitle || undefined}>
         <Activity className="size-3.5 shrink-0 text-emerald-400" aria-hidden="true" />
         <span className="shrink-0 text-xs font-semibold tracking-tight text-white">
           Studio Live
         </span>
-        {labTitle && (
-          <>
-            <span className="text-slate-600" aria-hidden="true">
-              /
-            </span>
-            <span className="max-w-[160px] truncate text-xs text-slate-300" title={labTitle}>
-              {labTitle}
-            </span>
-          </>
-        )}
       </div>
 
       {isAuthorMode && setupLab?.topologyFrozen && (

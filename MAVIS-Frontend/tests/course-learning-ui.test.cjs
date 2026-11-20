@@ -1475,7 +1475,8 @@ test("Lecturer Studio Live authoring uses unified single top bar, non-red health
 
   assert.match(live, /standaloneHeader\?\.left/);
   assert.match(live, /aria-label="Lecturer setup panel tabs"/);
-  assert.match(live, /Test Live Docker/);
+  assert.doesNotMatch(live, /Test Live Docker/);
+  assert.match(live, /isBooting \? "Booting…" : "Run"/);
   assert.match(live, /Step 1 · Pick Lab Scenario/);
   assert.match(live, /Student Will Receive/);
   assert.match(live, /isTerminalAuthorSession/);

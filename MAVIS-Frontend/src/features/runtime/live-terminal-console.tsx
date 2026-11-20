@@ -635,8 +635,8 @@ export function LiveTerminalConsole({
                     mavis-runner
                   </span>
                   <span className="pl-2 text-slate-400">
-                    Click <span className="text-emerald-300">Test Live Docker</span> in the top bar
-                    to run containers and stream real service stdout/stderr + OpenTelemetry traces.
+                    Click <span className="text-emerald-300">Run</span> in the top bar
+                    to boot containers and stream real service stdout/stderr + OpenTelemetry traces.
                   </span>
                 </div>
               )}
