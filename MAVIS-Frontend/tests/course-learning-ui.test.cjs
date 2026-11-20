@@ -1502,6 +1502,76 @@ test("Lecturer Studio Live authoring uses unified single top bar, non-red health
   assert.match(live, /Cluster Overview[\s\S]*Traffic &amp; reliability[\s\S]*Resource capacity/);
   assert.doesNotMatch(live, /Decrease \$\{service\} replicas|Increase \$\{service\} replicas/);
   assert.match(live, /Service Telemetry[\s\S]*Net I\/O[\s\S]*Req \/ Err%[\s\S]*detailed telemetry/);
+  assert.match(live, /<LiveTerminalConsole/);
+});
+
+test("Studio Live project terminal parser multiplexes compose logs, stack traces, runner actions and warnings", () => {
+  const { buildTerminalEntries } = require("../src/features/runtime/live-terminal-console.tsx");
+  const entries = buildTerminalEntries({
+    sessionId: "s-1",
+    interactive: true,
+    services: ["api-gateway", "order-service"],
+    finishRequested: false,
+    executionStatus: "RUNNING",
+    cleanupStatus: "PENDING",
+    actions: [
+      {
+        actionId: "00000000-0000-4000-8000-000000000001",
+        action: "SCALE",
+        service: "order-service",
+        replicas: 2,
+        status: "CONFIRMED",
+        requestedAt: "2026-11-20T09:15:15.000Z",
+        completedAt: "2026-11-20T09:15:16.000Z",
+        result: {
+          action: "SCALE",
+          service: "order-service",
+          replicasBefore: 1,
+          replicasAfter: 2,
+          confirmed: true,
+          metricsBefore: {},
+          metricsAfter: { requestCount: 12, p95LatencyMs: 38, errorRatePercent: 0 },
+        },
+      },
+    ],
+    telemetry: {
+      observedAt: "2026-11-20T09:15:17.000Z",
+      services: [
+        {
+          service: "api-gateway",
+          replicas: 1,
+          runningReplicas: 1,
+          stats: [],
+          logs: [
+            "api-gateway-1  | 2026-11-20T09:15:14.000Z ERROR Upstream timeout calling order-service",
+            "api-gateway-1  |   at com.mavis.Gateway.route(Gateway.java:42)",
+          ].join("\n"),
+        },
+        {
+          service: "order-service",
+          replicas: 2,
+          runningReplicas: 2,
+          stats: [],
+          logs: "order-service-1 | 2026-11-20T09:15:12.000Z INFO Started OrderApplication in 1.8s",
+        },
+      ],
+      spans: [],
+      interactions: [],
+      warnings: ["Collector dropped 1 span"],
+    },
+  });
+
+  assert.equal(entries.length, 5);
+  assert.equal(entries[0].sourceLabel, "order-service-1");
+  assert.equal(entries[0].level, "INFO");
+  assert.equal(entries[1].sourceLabel, "api-gateway-1");
+  assert.equal(entries[1].level, "ERROR");
+  assert.equal(entries[2].level, "ERROR");
+  assert.match(entries[2].message, /Gateway\.java:42/);
+  assert.equal(entries[3].sourceLabel, "mavis-runner");
+  assert.match(entries[3].message, /\[CONFIRMED\] SCALE order-service -> 2/);
+  assert.equal(entries[4].sourceLabel, "otel-collector");
+  assert.equal(entries[4].level, "WARN");
 });
 
 test("Step 2 Reference Architecture and C1-C3 native SVG preview eliminate Draw.io iframes and use theme-adaptive blueprint styling", () => {

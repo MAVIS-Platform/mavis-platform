@@ -60,6 +60,7 @@ import {
   type LiveBlockAuthoringControls,
   type StudioSetupPanel,
 } from "./live-sandbox-parity";
+import { LiveTerminalConsole } from "./live-terminal-console";
 import { useStudioSession } from "./use-studio-session";
 
 type LiveRuntimeReplay = {
@@ -1353,8 +1354,28 @@ export function LiveStudioWorkbench({
                   ],
                   [
                     "logs",
-                    `Logs & Traces (${data.telemetry?.spans.length ?? 0})`,
-                    `Logs & Traces (${data.telemetry?.spans.length ?? 0})`,
+                    `Logs & Traces (${
+                      (data.telemetry?.services ?? []).reduce(
+                        (sum, svc) =>
+                          sum +
+                          (svc.logs
+                            ? svc.logs.split(/\r?\n/).filter((line) => line.trim().length > 0)
+                                .length
+                            : 0),
+                        0,
+                      ) + (data.telemetry?.spans.length ?? 0)
+                    })`,
+                    `Logs & Traces (${
+                      (data.telemetry?.services ?? []).reduce(
+                        (sum, svc) =>
+                          sum +
+                          (svc.logs
+                            ? svc.logs.split(/\r?\n/).filter((line) => line.trim().length > 0)
+                                .length
+                            : 0),
+                        0,
+                      ) + (data.telemetry?.spans.length ?? 0)
+                    })`,
                   ],
                   [
                     "snapshots",
@@ -1419,7 +1440,11 @@ export function LiveStudioWorkbench({
             {!bottomCollapsed && (
             <div
               style={{ scrollbarWidth: "thin", scrollbarColor: "#334155 #0b101b" }}
-              className="min-h-0 min-w-0 flex-1 overflow-auto px-3 py-2.5"
+              className={
+                tab === "logs"
+                  ? "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-2"
+                  : "min-h-0 min-w-0 flex-1 overflow-auto px-3 py-2.5"
+              }
             >
           {tab === "stats" && (() => {
             const downServicesCount = blocks.filter(
@@ -2065,96 +2090,13 @@ export function LiveStudioWorkbench({
           })()}
 
           {tab === "logs" && (
-            <div className="space-y-2 text-[11px]">
-              {(data.telemetry?.spans.length ?? 0) > 0 && (
-                <div>
-                  <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                    Observed Spans ({data.telemetry?.spans.length})
-                  </p>
-                  <table className="mavis-tabular w-full text-left font-mono text-[10.5px]">
-                    <thead className="text-[10px] text-slate-500">
-                      <tr>
-                        <th className="px-1 py-0.5">Service</th>
-                        <th className="px-1 py-0.5">Operation</th>
-                        <th className="px-1 py-0.5">HTTP</th>
-                        <th className="px-1 py-0.5">Status</th>
-                        <th className="px-1 py-0.5">Duration</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.telemetry?.spans.slice(0, 25).map((span) => {
-                        const ns = span.durationNanoseconds
-                          ? Number(span.durationNanoseconds)
-                          : NaN;
-                        const durationMs = Number.isFinite(ns)
-                          ? `${(ns / 1e6).toFixed(1)} ms`
-                          : "—";
-                        const derivedStatus =
-                          span.spanStatus && span.spanStatus !== "UNSET"
-                            ? span.spanStatus
-                            : typeof span.httpStatusCode === "number"
-                              ? span.httpStatusCode >= 400
-                                ? "ERROR"
-                                : "OK"
-                              : "OK";
-                        const isErr = derivedStatus.toUpperCase() === "ERROR";
-                        return (
-                          <tr key={span.spanId} className="border-t border-slate-800/70">
-                            <td className="px-1 py-0.5 text-slate-200">{span.runtimeService}</td>
-                            <td className="max-w-[200px] truncate px-1 py-0.5 text-slate-300">
-                              {span.operationName ||
-                                (span.httpStatusCode ? `HTTP ${span.httpStatusCode}` : "Trace span")}
-                            </td>
-                            <td className="px-1 py-0.5 text-slate-300">
-                              {span.httpStatusCode ?? "—"}
-                            </td>
-                            <td
-                              className={`px-1 py-0.5 ${isErr ? "text-rose-300" : "text-emerald-300"}`}
-                            >
-                              {derivedStatus}
-                            </td>
-                            <td className="px-1 py-0.5 text-slate-400">{durationMs}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-              {(data.telemetry?.services.filter((s) => s.logs?.trim()).length ?? 0) > 0 && (
-                <div className="space-y-1.5">
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                    Service Logs
-                  </p>
-                  {data.telemetry?.services
-                    .filter((item) => item.logs?.trim())
-                    .map((item) => (
-                      <div
-                        key={item.service}
-                        className="rounded border border-slate-800 bg-slate-950/60 p-1.5"
-                      >
-                        <p className="mb-1 font-mono text-[10px] font-semibold text-slate-300">
-                          {item.service}
-                        </p>
-                        <pre className="max-h-24 overflow-auto whitespace-pre-wrap rounded bg-slate-950/80 p-1.5 font-mono text-[10px] text-slate-300">
-                          {item.logs}
-                        </pre>
-                      </div>
-                    ))}
-                </div>
-              )}
-              {(data.telemetry?.spans.length ?? 0) === 0 &&
-                (data.telemetry?.services.filter((s) => s.logs?.trim()).length ?? 0) === 0 && (
-                  <p className="py-3 text-center text-slate-500">
-                    No observed spans or service logs captured yet.
-                  </p>
-                )}
-              {(data.telemetry?.warnings?.length ?? 0) > 0 && (
-                <p className="rounded border border-slate-800 bg-slate-950/60 px-2 py-1 font-mono text-[10px] text-slate-400">
-                  Telemetry notes: {data.telemetry?.warnings?.join(" · ")}
-                </p>
-              )}
-            </div>
+            <LiveTerminalConsole
+              data={data}
+              projectName={projectName}
+              isPreviewMode={isPreviewMode}
+              waiting={waiting}
+              statusLabel={statusLabel}
+            />
           )}
 
           {tab === "snapshots" && (
