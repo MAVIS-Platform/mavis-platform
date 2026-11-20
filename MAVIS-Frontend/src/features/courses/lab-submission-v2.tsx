@@ -7,6 +7,7 @@ import { ArrowRight, CheckCircle2, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useApiMutation, useApiQuery, useSession } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
+import { formatTenScaleScore } from "@/lib/format/course-display";
 import { DetailPanel } from "@/components/shared/data";
 import { Badge } from "@/components/ui/badge";
 import type { StudentLabLatestReview } from "@/features/workspaces/course-access";
@@ -229,7 +230,7 @@ export function LabSubmissionV2({
                     </Badge>
                   {activeReview.score !== null && (
                     <span className="rounded-md bg-emerald-100 px-2 py-0.5 font-bold text-emerald-900">
-                      {activeReview.score}/100
+                      {formatTenScaleScore(activeReview.score, activeReview.scoreTenScale)}
                     </span>
                   )}
                   </div>
@@ -508,9 +509,15 @@ export function LabSubmissionV2({
                       setRevising(false);
                       void cache.invalidateQueries({ queryKey: ["api", "submissions"] });
                       void cache.invalidateQueries({ queryKey: ["api", "submission"] });
+                      void cache.invalidateQueries({ queryKey: ["api", "workspaceSubmissions"] });
                       void cache.invalidateQueries({
                         queryKey: ["api", "student-lab-context", workspaceId, assignmentId],
                       });
+                      void cache.invalidateQueries({ queryKey: ["api", "course-roadmap", workspaceId] });
+                      void cache.invalidateQueries({
+                        queryKey: ["api", "workspace-gradebook", workspaceId],
+                      });
+                      void cache.invalidateQueries({ queryKey: ["api", "workspaces"] });
                     },
                   },
                 );

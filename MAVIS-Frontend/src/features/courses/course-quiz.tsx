@@ -96,6 +96,9 @@ export function CourseQuiz({
             void cache.invalidateQueries({
               queryKey: ["api", "student-lab-context", workspaceId, labId],
             });
+            void cache.invalidateQueries({ queryKey: ["api", "course-roadmap", workspaceId] });
+            void cache.invalidateQueries({ queryKey: ["api", "workspace-gradebook", workspaceId] });
+            void cache.invalidateQueries({ queryKey: ["api", "workspaces"] });
           }}
         />
       )}
