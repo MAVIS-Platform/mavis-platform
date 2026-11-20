@@ -328,4 +328,64 @@ class CourseLabStudentServiceTest {
         assertThat(savedModelCaptor.getValue().getRevision()).isEqualTo(3);
         assertThat(savedModelCaptor.getValue().getIsLatestValid()).isFalse();
     }
+
+    @Test
+    void startLabStudioSessionClonesRelationshipsAndTargetsGatewayForBaselineProbe() {
+        lab.setStudioTopologySnapshot(null);
+        when(courseLabs.hasPassedCurrentQuiz(lab, student.getId())).thenReturn(true);
+        when(runtimeSessions.findByAssignmentIdAndTriggeredBy_IdOrderByCreatedAtDesc(labId, student.getId()))
+                .thenReturn(List.of());
+        when(runtimeSessions.findByProject_Workspace_IdAndTriggeredBy_IdOrderByCreatedAtDesc(workspaceId, student.getId()))
+                .thenReturn(List.of());
+        when(projects.findByOwnerIdOrderByCreatedAtDesc(student.getId())).thenReturn(List.of());
+        when(projects.saveAndFlush(any())).thenAnswer(inv -> {
+            Project p = inv.getArgument(0);
+            p.setId(UUID.randomUUID());
+            return p;
+        });
+        when(snapshots.saveAndFlush(any())).thenAnswer(inv -> {
+            SourceSnapshot s = inv.getArgument(0);
+            s.setId(UUID.randomUUID());
+            return s;
+        });
+        when(models.saveAndFlush(any())).thenAnswer(inv -> {
+            ModelVersion m = inv.getArgument(0);
+            m.setId(UUID.randomUUID());
+            return m;
+        });
+
+        ModelElement catalogEl = ModelElement.builder().id(UUID.randomUUID()).elementType("SERVICE_CONTAINER").name("catalog-service").status("CONFIRMED").build();
+        ModelElement gatewayEl = ModelElement.builder().id(UUID.randomUUID()).elementType("SERVICE_CONTAINER").name("api-gateway").status("CONFIRMED").build();
+        ModelElement orderEl = ModelElement.builder().id(UUID.randomUUID()).elementType("SERVICE_CONTAINER").name("order-service").status("CONFIRMED").build();
+        ModelRelationship gwToOrder = ModelRelationship.builder()
+                .id(UUID.randomUUID())
+                .modelVersion(refModel)
+                .sourceElement(gatewayEl)
+                .targetElement(orderEl)
+                .relationType("CALLS")
+                .originLayer("STATIC")
+                .build();
+        when(elements.findByModelVersionId(any())).thenReturn(List.of(catalogEl, gatewayEl, orderEl));
+        when(elements.save(any())).thenAnswer(inv -> {
+            ModelElement el = inv.getArgument(0);
+            el.setId(UUID.randomUUID());
+            return el;
+        });
+        when(relationships.findByModelVersionId(refModel.getId())).thenReturn(List.of(gwToOrder));
+        when(runtimeConfigurations.findById(refProject.getId())).thenReturn(Optional.of(new RuntimeConfiguration()));
+
+        UUID createdId = UUID.randomUUID();
+        when(runtimeSessionService.createRuntimeSession(any())).thenReturn(RuntimeSessionResponseDTO.builder().id(createdId).build());
+        when(runtimeSessionService.approveAndStartSession(createdId)).thenReturn(
+                RuntimeSessionResponseDTO.builder().id(createdId).executionStatus("READY_FOR_DISPATCH").assignmentId(labId).build());
+
+        service.startLabStudioSession(workspaceId, labId);
+
+        verify(relationships).save(any(ModelRelationship.class));
+        ArgumentCaptor<RuntimeSessionCreateRequest> reqCaptor = ArgumentCaptor.forClass(RuntimeSessionCreateRequest.class);
+        verify(runtimeSessionService).createRuntimeSession(reqCaptor.capture());
+        var firstStep = reqCaptor.getValue().getScenarioConfig().path("scenario").path("steps").get(0);
+        assertThat(firstStep.path("service").asText()).isEqualTo("api-gateway");
+        assertThat(firstStep.path("path").asText()).isEqualTo("/api/gateway/orders");
+    }
 }

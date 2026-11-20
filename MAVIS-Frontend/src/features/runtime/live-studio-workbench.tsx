@@ -72,6 +72,17 @@ const EMPTY_STUDIO: Studio = {
   actions: [],
 };
 
+const BOOTING_STATUSES = new Set([
+  "PENDING",
+  "STARTING",
+  "QUEUED",
+  "PROVISIONING",
+  "READY_FOR_DISPATCH",
+  "READY_FOR_EXECUTION",
+  "ALLOCATED",
+  "DISPATCHED",
+]);
+
 function confirmedResult(data: Studio, service: string) {
   return [...data.actions]
     .reverse()
@@ -110,6 +121,8 @@ export function LiveStudioWorkbench({
   hideSwitchToSandbox,
   standalone,
   previewTopology,
+  previewModelId,
+  previewServiceMappings,
   authoring,
 }: {
   sessions: readonly SessionOption[];
@@ -123,6 +136,8 @@ export function LiveStudioWorkbench({
   hideSwitchToSandbox?: boolean | undefined;
   standalone?: boolean | undefined;
   previewTopology?: Studio["topology"] | undefined;
+  previewModelId?: string | undefined;
+  previewServiceMappings?: Record<string, string> | undefined;
   authoring?: LiveStudioAuthoringProps | undefined;
 }) {
   const startHref = projectId
@@ -182,6 +197,9 @@ export function LiveStudioWorkbench({
     ];
     return {
       ...EMPTY_STUDIO,
+      ...(projectId ? { projectId } : {}),
+      ...(previewModelId ? { modelVersionId: previewModelId } : {}),
+      ...(previewServiceMappings ? { serviceMappings: previewServiceMappings } : {}),
       services: previewServices,
       topology: effectivePreviewTopology,
       telemetry: {
@@ -203,7 +221,14 @@ export function LiveStudioWorkbench({
         interactions: [],
       },
     };
-  }, [isPreviewMode, liveData, effectivePreviewTopology]);
+  }, [
+    isPreviewMode,
+    liveData,
+    effectivePreviewTopology,
+    projectId,
+    previewModelId,
+    previewServiceMappings,
+  ]);
 
   const services = liveServices.length > 0 ? liveServices : data.services;
   const selected = target || services[0] || "";
@@ -402,10 +427,14 @@ export function LiveStudioWorkbench({
     ],
   ] as const;
 
+  const isBooting = Boolean(
+    starting || BOOTING_STATUSES.has(data.executionStatus.toUpperCase()),
+  );
+
   const statusTone =
     data.executionStatus === "RUNNING"
       ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
-      : starting || data.executionStatus === "PENDING" || data.executionStatus === "STARTING"
+      : isBooting
         ? "border-sky-500/40 bg-sky-500/15 text-sky-300"
         : data.executionStatus === "COMPLETED"
           ? "border-teal-500/40 bg-teal-500/15 text-teal-200"
@@ -418,7 +447,7 @@ export function LiveStudioWorkbench({
       ? waiting
         ? "APPLYING"
         : "LIVE"
-      : starting || data.executionStatus === "PENDING" || data.executionStatus === "STARTING"
+      : isBooting
         ? "BOOTING"
         : data.executionStatus === "COMPLETED"
           ? "SEALED"
@@ -446,7 +475,7 @@ export function LiveStudioWorkbench({
             className={`size-1.5 rounded-full ${
               data.executionStatus === "RUNNING"
                 ? "animate-pulse bg-emerald-400"
-                : starting
+                : isBooting
                   ? "animate-pulse bg-sky-400"
                   : data.executionStatus === "FAILED"
                     ? "bg-rose-400"
@@ -481,13 +510,17 @@ export function LiveStudioWorkbench({
             <Button
               type="button"
               size="sm"
-              className="h-7 bg-emerald-600 px-2.5 text-[11px] text-white hover:bg-emerald-500"
-              disabled={starting}
+              className="h-7 bg-emerald-600 px-2.5 text-[11px] text-white hover:bg-emerald-500 disabled:bg-sky-900/70 disabled:text-sky-200"
+              disabled={isBooting}
               onClick={onStartSession}
             >
-              <Play aria-hidden="true" className="mr-1 size-3" />
-              {starting
-                ? "Starting Docker…"
+              {isBooting ? (
+                <RefreshCw aria-hidden="true" className="mr-1 size-3 animate-spin" />
+              ) : (
+                <Play aria-hidden="true" className="mr-1 size-3" />
+              )}
+              {isBooting
+                ? `Booting Docker (${data.executionStatus === "NOT_STARTED" ? "STARTING" : data.executionStatus})…`
                 : projectName
                   ? `Start ${projectName}`
                   : "Start Live Docker"}
@@ -640,7 +673,7 @@ export function LiveStudioWorkbench({
             size="sm"
             variant="outline"
             className="h-7 border-slate-600 bg-slate-900 px-2 text-[11px] text-slate-200 hover:bg-slate-800 hover:text-white disabled:opacity-40"
-            disabled={cancel.isPending || data.executionStatus !== "RUNNING"}
+            disabled={cancel.isPending || (data.executionStatus !== "RUNNING" && !isBooting)}
             onClick={() => void cancelStudio()}
           >
             Cancel
@@ -769,6 +802,18 @@ export function LiveStudioWorkbench({
               </Button>
             </div>
           </div>
+        </div>
+      )}
+
+      {isBooting && !mutationError && (
+        <div
+          role="status"
+          className="flex flex-wrap items-center gap-2 border-b border-sky-500/30 bg-sky-950/35 px-3 py-1.5 text-[11px] text-sky-200"
+        >
+          <RefreshCw aria-hidden="true" className="size-3.5 shrink-0 animate-spin text-sky-300" />
+          <span>
+            Provisioning real Docker containers on Runner ({data.executionStatus === "NOT_STARTED" ? "STARTING" : data.executionStatus}) — live telemetry, traces and Start/Stop/Scale controls activate automatically once containers pass health checks (~15–45s).
+          </span>
         </div>
       )}
 

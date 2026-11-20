@@ -92,11 +92,18 @@ export function useStudioSession(sessionId: string) {
     }
   }
 
+  const prevStatusRef = useRef<string | undefined>(undefined);
   useEffect(() => {
-    if (data?.executionStatus === "COMPLETED" || data?.receiptDigest) {
+    const status = data?.executionStatus;
+    if (!status) return;
+    const changed = prevStatusRef.current !== undefined && prevStatusRef.current !== status;
+    prevStatusRef.current = status;
+    if (changed || status === "COMPLETED" || data?.receiptDigest) {
       void queryClient.invalidateQueries({ queryKey: ["api", "student-lab-studio-sessions"] });
       void queryClient.invalidateQueries({ queryKey: ["api", "runtimeReadSessions"] });
-      void queryClient.invalidateQueries({ queryKey: ["api", "student-lab-context"] });
+      if (status === "COMPLETED" || data?.receiptDigest) {
+        void queryClient.invalidateQueries({ queryKey: ["api", "student-lab-context"] });
+      }
     }
   }, [data?.executionStatus, data?.receiptDigest, queryClient]);
 

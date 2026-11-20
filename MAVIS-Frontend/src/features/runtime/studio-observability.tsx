@@ -1066,19 +1066,46 @@ export function StudioObservability({
   );
   const affected = new Set(impact?.upstreamImpacted.map((item) => item.elementId) ?? []);
 
-  const staticEdges = useMemo(
-    () =>
-      configuredEdges ?? reference.data?.edges.flatMap((edge) => {
-        const from = Object.entries(data.serviceMappings ?? {}).find(
-          ([, id]) => id === edge.from,
-        )?.[0];
-        const to = Object.entries(data.serviceMappings ?? {}).find(([, id]) => id === edge.to)?.[0];
-        return from && to
-          ? [{ from, to, id: edge.id, protocol: edge.protocol ?? "HTTP" }]
-          : [];
-      }) ?? [],
-    [reference.data, data.serviceMappings, configuredEdges],
-  );
+  const staticEdges = useMemo(() => {
+    if (configuredEdges) return configuredEdges;
+    const model = reference.data;
+    if (!model?.edges?.length) return [];
+    const serviceByElementId = new Map<string, string>();
+    for (const [svc, id] of Object.entries(data.serviceMappings ?? {})) {
+      if (id) serviceByElementId.set(id, svc);
+    }
+    const serviceByLowerName = new Map(
+      data.services.map((svc) => [svc.toLowerCase(), svc] as const),
+    );
+    const elementsById = new Map(model.elements.map((el) => [el.id, el] as const));
+    const resolveService = (elementId: string): string | undefined => {
+      const direct = serviceByElementId.get(elementId);
+      if (direct) return direct;
+      let cur = elementsById.get(elementId);
+      const visited = new Set<string>();
+      while (cur && !visited.has(cur.id)) {
+        visited.add(cur.id);
+        const mapped = serviceByElementId.get(cur.id);
+        if (mapped) return mapped;
+        const byName = serviceByLowerName.get(cur.name.toLowerCase());
+        if (byName) return byName;
+        cur = cur.parentId ? elementsById.get(cur.parentId) : undefined;
+      }
+      return undefined;
+    };
+    const seenPairs = new Set<string>();
+    const resolved: Array<{ from: string; to: string; id: string; protocol: string }> = [];
+    for (const edge of model.edges) {
+      const from = resolveService(edge.from);
+      const to = resolveService(edge.to);
+      if (!from || !to || from === to) continue;
+      const pairKey = `${from}->${to}`;
+      if (seenPairs.has(pairKey)) continue;
+      seenPairs.add(pairKey);
+      resolved.push({ from, to, id: edge.id, protocol: edge.protocol ?? "HTTP" });
+    }
+    return resolved;
+  }, [reference.data, data.serviceMappings, data.services, configuredEdges]);
 
   // Compute deterministic topological tier for LAYERED layout (invariant under STOP/START/SCALE so nodes never jump)
   const serviceDepth = useMemo(() => {
@@ -1976,12 +2003,12 @@ export function StudioObservability({
                   y1={from.y}
                   x2={to.x}
                   y2={to.y}
-                  stroke={targetStopped ? "var(--destructive)" : activeWire?.from === edge.from && activeWire.to === edge.to ? "#7dd3fc" : "currentColor"}
+                  stroke={targetStopped ? "var(--destructive)" : activeWire?.from === edge.from && activeWire.to === edge.to ? "#7dd3fc" : "#64748b"}
                   strokeDasharray={targetStopped ? "6 4" : "5 5"}
-                  strokeWidth={targetStopped ? "2.2" : "1.5"}
-                  opacity={targetStopped ? "0.9" : ".28"}
+                  strokeWidth={targetStopped ? "2.2" : "1.8"}
+                  opacity={targetStopped ? "0.95" : "0.72"}
                 />
-                {renderWireArrow(from, to, getNodeLabel(nodeNames?.[edge.to] ?? edge.to, view), targetStopped ? "var(--destructive)" : "#64748b", false, view === "3D" ? sculptureScale(resolveLiveReplicas(edge.to)) : 1)}
+                {renderWireArrow(from, to, getNodeLabel(nodeNames?.[edge.to] ?? edge.to, view), targetStopped ? "var(--destructive)" : "#94a3b8", false, view === "3D" ? sculptureScale(resolveLiveReplicas(edge.to)) : 1)}
                 {targetStopped && (
                   <g>
                     <rect

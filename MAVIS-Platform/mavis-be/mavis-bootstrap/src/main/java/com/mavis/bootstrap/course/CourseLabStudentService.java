@@ -350,11 +350,15 @@ public class CourseLabStudentService {
             }
         }
         if (stepsNode.isEmpty()) {
+            String defaultPath = primaryService.toLowerCase(Locale.ROOT).contains("gateway")
+                    && appsNode != null && appsNode.has("order-service")
+                    ? "/api/gateway/orders"
+                    : "/health";
             stepsNode.addObject()
                     .put("id", "studio-smoke")
                     .put("service", primaryService)
                     .put("method", "GET")
-                    .put("path", "/health")
+                    .put("path", defaultPath)
                     .put("expectedStatus", 200);
         }
         scenarioNode.put("timeoutSeconds", 300);
@@ -590,8 +594,13 @@ public class CourseLabStudentService {
                     .createdBy(actor)
                     .build());
             cloneModelElements(refModel, model);
-        } else if (elements.findByModelVersionId(model.getId()).isEmpty()) {
-            cloneModelElements(refModel, model);
+        } else {
+            List<ModelElement> existingElements = elements.findByModelVersionId(model.getId());
+            if (existingElements.isEmpty()) {
+                cloneModelElements(refModel, model);
+            } else if (relationships.findByModelVersionId(model.getId()).isEmpty()) {
+                backfillModelRelationships(refModel, model, existingElements);
+            }
         }
 
         return new StudentWorkspaceBundle(resolvedProject, resolvedSnapshot, model);
@@ -633,6 +642,49 @@ public class CourseLabStudentService {
                 copied.put(src.getId(), saved);
             }
         }
+        cloneModelRelationships(sourceModel, targetModel, copied);
+    }
+
+    private void backfillModelRelationships(
+            ModelVersion sourceModel, ModelVersion targetModel, List<ModelElement> targetElements) {
+        List<ModelElement> sourceElements = elements.findByModelVersionId(sourceModel.getId());
+        if (sourceElements == null || sourceElements.isEmpty()) return;
+        Map<String, ModelElement> targetByKey = new HashMap<>();
+        for (ModelElement el : targetElements) {
+            if (el.getName() != null) {
+                targetByKey.putIfAbsent(
+                        (el.getElementType() + ":" + el.getName()).toLowerCase(Locale.ROOT), el);
+            }
+        }
+        Map<UUID, ModelElement> mapped = new HashMap<>();
+        for (ModelElement src : sourceElements) {
+            if (src.getId() == null || src.getName() == null) continue;
+            ModelElement match = targetByKey.get(
+                    (src.getElementType() + ":" + src.getName()).toLowerCase(Locale.ROOT));
+            if (match != null) mapped.put(src.getId(), match);
+        }
+        cloneModelRelationships(sourceModel, targetModel, mapped);
+    }
+
+    private void cloneModelRelationships(
+            ModelVersion sourceModel, ModelVersion targetModel, Map<UUID, ModelElement> copiedBySourceId) {
+        List<ModelRelationship> sourceRels = relationships.findByModelVersionId(sourceModel.getId());
+        if (sourceRels == null || sourceRels.isEmpty()) return;
+        for (ModelRelationship rel : sourceRels) {
+            if (rel.getSourceElement() == null || rel.getTargetElement() == null) continue;
+            ModelElement srcCopy = copiedBySourceId.get(rel.getSourceElement().getId());
+            ModelElement dstCopy = copiedBySourceId.get(rel.getTargetElement().getId());
+            if (srcCopy == null || dstCopy == null || Objects.equals(srcCopy.getId(), dstCopy.getId())) continue;
+            relationships.save(ModelRelationship.builder()
+                    .modelVersion(targetModel)
+                    .sourceElement(srcCopy)
+                    .targetElement(dstCopy)
+                    .relationType(rel.getRelationType() != null ? rel.getRelationType() : "CALLS")
+                    .originLayer(rel.getOriginLayer() != null ? rel.getOriginLayer() : "STATIC")
+                    .direction(rel.getDirection() != null ? rel.getDirection() : "DIRECTED")
+                    .properties(rel.getProperties())
+                    .build());
+        }
     }
 
     private ObjectNode exerciseToNode(com.mavis.common.entity.LabStudioExercise exercise) {
@@ -672,6 +724,12 @@ public class CourseLabStudentService {
         }
         for (String svc : activeBlocks) {
             if (outbound.contains(svc) && !inbound.contains(svc)) return svc;
+        }
+        for (String svc : activeBlocks) {
+            String lower = svc.toLowerCase(Locale.ROOT);
+            if (lower.contains("gateway") || lower.contains("edge") || lower.contains("ingress") || lower.equals("bff")) {
+                return svc;
+            }
         }
         for (String svc : activeBlocks) {
             if (outbound.contains(svc)) return svc;

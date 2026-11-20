@@ -217,6 +217,20 @@ function StandaloneStudioContent() {
         : undefined,
     [isAuthorMode, runtimeConfig.data?.profile, readiness.data?.topology],
   );
+  const previewModelId =
+    runtimeConfig.data?.modelId ??
+    assignment?.referenceSource?.modelId ??
+    exercise.data?.runtimeModelId ??
+    studentContext.data?.assignment?.referenceSource?.modelId ??
+    undefined;
+  const previewServiceMappings = useMemo(() => {
+    const raw = runtimeConfig.data?.profile?.["serviceMappings"];
+    if (!raw || typeof raw !== "object") return undefined;
+    const entries = Object.entries(raw as Record<string, unknown>).filter(
+      (entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].length > 0,
+    );
+    return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+  }, [runtimeConfig.data?.profile]);
 
   const availableApplications = readiness.data?.applications?.length
     ? readiness.data.applications
@@ -1085,6 +1099,8 @@ function StandaloneStudioContent() {
             starting={startStudio.isPending}
             hideSwitchToSandbox
             previewTopology={previewTopology}
+            previewModelId={previewModelId}
+            previewServiceMappings={previewServiceMappings}
             authoring={authoringProps}
           />
         )}
