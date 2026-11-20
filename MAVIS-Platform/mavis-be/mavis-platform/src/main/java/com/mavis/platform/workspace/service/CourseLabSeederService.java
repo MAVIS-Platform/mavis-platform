@@ -169,6 +169,21 @@ public class CourseLabSeederService {
         }
     }
 
+    public static boolean isCourseraLabsAligned(List<Assignment> existingLabs, List<CourseraModuleSpec> modules) {
+        if (existingLabs == null || modules == null || existingLabs.size() != modules.size()) {
+            return false;
+        }
+        for (int i = 0; i < modules.size(); i++) {
+            Assignment lab = existingLabs.get(i);
+            if (lab == null
+                    || !Integer.valueOf(i + 1).equals(lab.getLabOrder())
+                    || !modules.get(i).labTitle().equals(lab.getTitle())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void ensureJavaCourseraPopulated(UUID workspaceId) {
         ensureCourseraTrackPopulated(workspaceId, CourseraTrackSpec.javaV2());
@@ -198,7 +213,8 @@ public class CourseLabSeederService {
                 WHERE c.workspace_id = ? AND c.status = 'PUBLISHED'
                 """, Integer.class, workspaceId);
         int expectedModules = track.modules().size();
-        if (existingLabs.size() >= expectedModules && publishedModules != null && publishedModules >= expectedModules) {
+        if (isCourseraLabsAligned(existingLabs, track.modules())
+                && publishedModules != null && publishedModules >= expectedModules) {
             return;
         }
         Authentication previous = SecurityContextHolder.getContext().getAuthentication();
@@ -340,19 +356,64 @@ public class CourseLabSeederService {
                 .orElseGet(() -> seedReferenceModel(workspaceId, workspace, lecturer));
         ensureReferenceRuntimeSetup(refModel, java.util.Map.of());
 
-        int nextOrder = existingLabs.stream()
-                .map(Assignment::getLabOrder)
-                .filter(java.util.Objects::nonNull)
-                .mapToInt(Integer::intValue)
-                .max()
-                .orElse(0);
-
-        List<Assignment> orderedLabs = new ArrayList<>();
-        for (CourseraModuleSpec modSpec : track.modules()) {
+        List<CourseraModuleSpec> catalogModules = track.modules();
+        Set<UUID> matchedIds = new LinkedHashSet<>();
+        List<Assignment> matchedByIndex = new ArrayList<>(catalogModules.size());
+        for (CourseraModuleSpec modSpec : catalogModules) {
             Assignment match = existingLabs.stream()
                     .filter(a -> modSpec.labTitle().equals(a.getTitle()))
+                    .filter(a -> a.getId() == null || !matchedIds.contains(a.getId()))
                     .findFirst()
                     .orElse(null);
+            if (match != null && match.getId() != null) {
+                matchedIds.add(match.getId());
+            }
+            matchedByIndex.add(match);
+        }
+
+        List<Assignment> staleLabs = existingLabs.stream()
+                .filter(a -> a.getId() != null ? !matchedIds.contains(a.getId()) : !matchedByIndex.contains(a))
+                .toList();
+
+        boolean needsReorder = !staleLabs.isEmpty();
+        if (!needsReorder) {
+            for (int i = 0; i < catalogModules.size(); i++) {
+                Assignment m = matchedByIndex.get(i);
+                if (m != null && !Integer.valueOf(i + 1).equals(m.getLabOrder())) {
+                    needsReorder = true;
+                    break;
+                }
+            }
+        }
+
+        if (needsReorder) {
+            // Clear colliding lab_order values first to satisfy uq_workspace_lab_order on PostgreSQL.
+            for (Assignment stale : staleLabs) {
+                stale.setLabOrder(null);
+                assignments.saveAndFlush(stale);
+                if (stale.getId() != null) {
+                    try {
+                        jdbc.update("DELETE FROM lab_prerequisites WHERE assignment_id = ? OR prerequisite_assignment_id = ?",
+                                stale.getId(), stale.getId());
+                    } catch (Exception ex) {
+                        log.debug("Skipped pruning lab_prerequisites for detached lab {}: {}", stale.getId(), ex.getMessage());
+                    }
+                }
+            }
+            for (int i = 0; i < catalogModules.size(); i++) {
+                Assignment m = matchedByIndex.get(i);
+                if (m != null && m.getLabOrder() != null && !Integer.valueOf(i + 1).equals(m.getLabOrder())) {
+                    m.setLabOrder(null);
+                    assignments.saveAndFlush(m);
+                }
+            }
+        }
+
+        List<Assignment> orderedLabs = new ArrayList<>(catalogModules.size());
+        for (int i = 0; i < catalogModules.size(); i++) {
+            int targetOrder = i + 1;
+            CourseraModuleSpec modSpec = catalogModules.get(i);
+            Assignment match = matchedByIndex.get(i);
             if (match == null) {
                 boolean runtime = modSpec.visualLab() != null && modSpec.visualLab().requireRuntimeTrace();
                 List<String> diagramTypes = modSpec.visualLab() != null
@@ -368,12 +429,15 @@ public class CourseLabSeederService {
                         .ruleSetVersion("SWD_DEFAULT_V1")
                         .requireRuntimeTrace(runtime)
                         .referenceModel(refModel)
-                        .labOrder(++nextOrder);
+                        .labOrder(targetOrder);
                 if (runtime) {
                     labBuilder.studioTopologySnapshot(buildDefaultStudioTopology())
                             .studioTopologyRevision(1);
                 }
                 match = assignments.saveAndFlush(labBuilder.build());
+            } else if (!Integer.valueOf(targetOrder).equals(match.getLabOrder())) {
+                match.setLabOrder(targetOrder);
+                match = assignments.saveAndFlush(match);
             }
             quizzes.publishCurriculum(workspaceId, match.getId(), JavaCourseraCatalog.toQuizPublishRequest(modSpec));
             orderedLabs.add(match);

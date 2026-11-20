@@ -97,7 +97,7 @@ public class CourseAuthoringService {
             String status = rs.getString("status");
             int labCount = rs.getInt("lab_count");
             int modCount = rs.getInt("mod_count");
-            if (!"ACTIVE".equals(status) || (labCount >= 5 && modCount >= 5)) {
+            if (!"ACTIVE".equals(status) || (labCount == 5 && modCount == 5)) {
                 return null;
             }
             if ("JAVA-MS-2026".equalsIgnoreCase(code) || "CSHARP-MS-2026".equalsIgnoreCase(code)) {

@@ -35,7 +35,9 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -46,6 +48,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -619,5 +622,104 @@ class CourseLabSeederServiceTest {
                 eq(Integer.class),
                 eq(workspaceId));
         verify(assignments, times(5)).saveAndFlush(any(Assignment.class));
+    }
+
+    @Test
+    void realignsLegacyV1LabsAndUnlocksV2Lab01AtLabOrder1() throws Exception {
+        UUID workspaceId = UUID.randomUUID();
+        User lecturer = User.builder().id(UUID.randomUUID()).email("gv.java@mavis.edu.vn").build();
+        Workspace workspace = Workspace.builder()
+                .id(workspaceId).code("JAVA-MS-2026").name("Java V2").status("ACTIVE").courseMode(true).build();
+        Project refProject = Project.builder().id(UUID.randomUUID()).workspace(workspace).build();
+        SourceSnapshot refSnapshot = SourceSnapshot.builder().id(UUID.randomUUID()).project(refProject).build();
+        ModelVersion refModel = ModelVersion.builder()
+                .id(UUID.randomUUID()).project(refProject).sourceSnapshot(refSnapshot).build();
+
+        List<Assignment> legacyV1Labs = new ArrayList<>();
+        for (int i = 1; i <= 6; i++) {
+            legacyV1Labs.add(Assignment.builder()
+                    .id(UUID.randomUUID())
+                    .workspace(workspace)
+                    .title("Legacy V1 Lab 0" + i)
+                    .labOrder(i)
+                    .referenceModel(refModel)
+                    .build());
+        }
+
+        List<Assignment> v2Labs = new ArrayList<>();
+        var v2Modules = JavaCourseraCatalog.modules();
+        for (int i = 0; i < v2Modules.size(); i++) {
+            v2Labs.add(Assignment.builder()
+                    .id(UUID.randomUUID())
+                    .workspace(workspace)
+                    .title(v2Modules.get(i).labTitle())
+                    .labOrder(7 + i)
+                    .referenceModel(refModel)
+                    .build());
+        }
+
+        List<Assignment> corrupted11Labs = new ArrayList<>(legacyV1Labs);
+        corrupted11Labs.addAll(v2Labs);
+        List<UUID> expectedV2Ids = v2Labs.stream().map(Assignment::getId).toList();
+
+        assertThat(CourseLabSeederService.isCourseraLabsAligned(corrupted11Labs, v2Modules)).isFalse();
+
+        AccessPolicyService access = mock(AccessPolicyService.class);
+        WorkspaceRepository workspaces = mock(WorkspaceRepository.class);
+        AssignmentRepository assignments = mock(AssignmentRepository.class);
+        CourseQuizService quizzes = mock(CourseQuizService.class);
+        CourseAccessService courses = mock(CourseAccessService.class);
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        ObjectMapper json = new ObjectMapper();
+        CourseCurriculum curriculum = new CourseCurriculum(json);
+
+        when(access.requireCurrentActiveUser()).thenReturn(lecturer);
+        when(workspaces.findLockedById(workspaceId)).thenReturn(Optional.of(workspace));
+        when(assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId))
+                .thenReturn(corrupted11Labs);
+        when(jdbc.queryForObject(contains("FROM runtime_configurations"), eq(Integer.class), any()))
+                .thenReturn(1);
+        when(jdbc.queryForObject(contains("FROM runtime_scenarios"), eq(Integer.class), any()))
+                .thenReturn(1);
+
+        // Guard against any save violating unique index uq_workspace_lab_order (workspace_id, lab_order).
+        Map<Integer, UUID> activeOrders = new HashMap<>();
+        for (Assignment a : corrupted11Labs) {
+            activeOrders.put(a.getLabOrder(), a.getId());
+        }
+        when(assignments.saveAndFlush(any(Assignment.class))).thenAnswer(inv -> {
+            Assignment saved = inv.getArgument(0);
+            activeOrders.entrySet().removeIf(entry -> saved.getId().equals(entry.getValue())
+                    && !entry.getKey().equals(saved.getLabOrder()));
+            if (saved.getLabOrder() != null) {
+                UUID holder = activeOrders.get(saved.getLabOrder());
+                if (holder != null && !holder.equals(saved.getId())) {
+                    throw new AssertionError("Duplicate lab_order violation for order " + saved.getLabOrder());
+                }
+                activeOrders.put(saved.getLabOrder(), saved.getId());
+            }
+            return saved;
+        });
+        when(courses.roadmap(workspaceId)).thenReturn(new CourseAccessService.Roadmap(true, "IN_PROGRESS", List.of()));
+
+        CourseLabSeederService seeder = new CourseLabSeederService(
+                access, workspaces, assignments,
+                mock(ProjectRepository.class), mock(SourceSnapshotRepository.class),
+                mock(ModelVersionRepository.class), mock(ModelElementRepository.class),
+                mock(ModelRelationshipRepository.class), mock(DiagramVersionRepository.class),
+                mock(EvaluationRunRepository.class), mock(EvidenceRepository.class),
+                curriculum, quizzes, courses, jdbc, json, tempDir.toString());
+
+        seeder.seedCurated(workspaceId, CourseLabSeederService.PRESET_JAVA_COURSERA);
+
+        assertThat(legacyV1Labs).allSatisfy(stale -> assertThat(stale.getLabOrder()).isNull());
+        for (int i = 0; i < v2Modules.size(); i++) {
+            assertThat(v2Labs.get(i).getId()).isEqualTo(expectedV2Ids.get(i));
+            assertThat(v2Labs.get(i).getLabOrder()).isEqualTo(i + 1);
+        }
+        assertThat(CourseLabSeederService.isCourseraLabsAligned(v2Labs, v2Modules)).isTrue();
+        verify(jdbc, times(6)).update(
+                contains("DELETE FROM lab_prerequisites"), any(UUID.class), any(UUID.class));
+        verify(quizzes, times(5)).publishCurriculum(eq(workspaceId), any(UUID.class), any());
     }
 }

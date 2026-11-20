@@ -624,14 +624,15 @@ public class CourseAccessService {
         boolean student = CourseLabPolicy.isStudent(actor);
         var passed = student ? labs.passedAssignments(workspaceId, actor.getId()) : Set.<UUID>of();
         var assignmentsInOrder = assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId);
-        if (assignmentsInOrder.size() < 5
-                && seeder != null
+        if (seeder != null
                 && !CourseLabSeederService.isSeeding(workspaceId)
                 && "ACTIVE".equals(workspace.getStatus())) {
-            if (JavaCourseraCatalog.COURSE_CODE.equalsIgnoreCase(workspace.getCode())) {
+            if (JavaCourseraCatalog.COURSE_CODE.equalsIgnoreCase(workspace.getCode())
+                    && !CourseLabSeederService.isCourseraLabsAligned(assignmentsInOrder, JavaCourseraCatalog.modules())) {
                 seeder.ensureJavaCourseraPopulated(workspaceId);
                 assignmentsInOrder = assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId);
-            } else if (CsharpCourseraCatalog.COURSE_CODE.equalsIgnoreCase(workspace.getCode())) {
+            } else if (CsharpCourseraCatalog.COURSE_CODE.equalsIgnoreCase(workspace.getCode())
+                    && !CourseLabSeederService.isCourseraLabsAligned(assignmentsInOrder, CsharpCourseraCatalog.modules())) {
                 seeder.ensureCsharpCourseraPopulated(workspaceId);
                 assignmentsInOrder = assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId);
             }
