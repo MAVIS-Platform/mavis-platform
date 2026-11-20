@@ -38,3 +38,44 @@ export function formatTenScaleScore(
   const ten = toTenScaleScore(scoreOutOf100, explicitTenScale);
   return ten === null ? "—" : `${ten.toFixed(2)} / 10`;
 }
+
+const REDUNDANT_QUESTION_PREFIX = /^(?:(?:Câu|Question|Q)\s*#?\s*\d+\s*[:.)\-–]\s*|\d+\s*[.)]\s+)/i;
+
+export function sanitizeQuizPlainText(text: string | null | undefined): string {
+  if (!text) return "";
+  let s = text.trim();
+  const latexReplacements: Array<[RegExp, string]> = [
+    [/\\(?:leq|le)\b/g, "≤"],
+    [/\\(?:geq|ge)\b/g, "≥"],
+    [/\\(?:neq|ne)\b/g, "≠"],
+    [/\\approx\b/g, "≈"],
+    [/\\times\b/g, "×"],
+    [/\\(?:rightarrow|to)\b/g, "→"],
+    [/\\leftrightarrow\b/g, "↔"],
+    [/\\alpha\b/g, "α"],
+    [/\\beta\b/g, "β"],
+    [/\\gamma\b/g, "γ"],
+    [/\\delta\b/gi, "Δ"],
+    [/\\mu\b/g, "μ"],
+    [/\\infty\b/g, "∞"],
+    [/\\(?:textbf|textit|textrm|mathrm|text|code)\{([^}]*)\}/g, "$1"],
+    [/\$\$([^$]+)\$\$/g, "$1"],
+    [/\$([^$]+)\$/g, "$1"],
+    [/\*\*([^*]+)\*\*/g, "$1"],
+    [/`([^`]+)`/g, "$1"],
+  ];
+  for (const [pattern, replacement] of latexReplacements) {
+    s = s.replace(pattern, replacement);
+  }
+  return s.replace(/\s{2,}/g, " ").trim();
+}
+
+export function formatQuizQuestionPrompt(prompt: string | null | undefined): string {
+  let clean = sanitizeQuizPlainText(prompt);
+  while (REDUNDANT_QUESTION_PREFIX.test(clean)) {
+    const next = clean.replace(REDUNDANT_QUESTION_PREFIX, "").trim();
+    if (next === clean) break;
+    clean = next;
+  }
+  return clean;
+}

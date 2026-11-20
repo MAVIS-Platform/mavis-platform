@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { MarkdownPreview } from "@/components/shared/markdown-preview";
 import { api, ApiError } from "@/lib/mainflow-api";
 import { useLocale } from "@/lib/i18n/locale-context";
+import { formatQuizQuestionPrompt, sanitizeQuizPlainText } from "@/lib/format/course-display";
 
 type QuestionType = "SINGLE_CHOICE" | "MULTI_CHOICE" | "TRUE_FALSE";
 type Question = {
@@ -219,11 +220,11 @@ function AttemptForm({
             {quiz.questions.map((question, index) => (
               <li key={question.id ?? index} className="space-y-1 rounded-lg border p-3">
                 <p className="text-sm font-medium">
-                  {index + 1}. {question.prompt}
+                  {index + 1}. {formatQuizQuestionPrompt(question.prompt)}
                 </p>
                 <ul className="space-y-1 text-sm text-muted-foreground">
                   {question.options.map((option, optionIndex) => (
-                    <li key={optionIndex}>{option}</li>
+                    <li key={optionIndex}>{sanitizeQuizPlainText(option)}</li>
                   ))}
                 </ul>
               </li>
@@ -274,11 +275,11 @@ function AttemptForm({
                         <XCircle className="size-4 text-destructive" aria-hidden="true" />
                       )}
                       {t("Question", "Câu")} {index + 1}:{" "}
-                      {quiz.questions[index]?.prompt ?? ""}
+                      {formatQuizQuestionPrompt(quiz.questions[index]?.prompt)}
                     </p>
                     {result.explanation && (
                       <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                        💡 {result.explanation}
+                        💡 {sanitizeQuizPlainText(result.explanation)}
                       </p>
                     )}
                   </li>
@@ -336,7 +337,7 @@ function AttemptForm({
                     {t("Question", "Câu")} {index + 1}
                   </span>
                   <span>
-                    {index + 1}. {question.prompt}
+                    {formatQuizQuestionPrompt(question.prompt)}
                   </span>
                   {multi && (
                     <span className="text-xs font-normal text-muted-foreground">
@@ -364,7 +365,7 @@ function AttemptForm({
                           checked={isChecked}
                           onChange={() => toggle(index, optionIndex, multi)}
                         />
-                        <span className="leading-6">{option}</span>
+                        <span className="leading-6">{sanitizeQuizPlainText(option)}</span>
                       </label>
                     );
                   })}
@@ -401,11 +402,13 @@ function AttemptForm({
                         )}
                         {t("Question", "Câu")} {index + 1}:{" "}
                         {result.correct ? t("Correct", "Đúng") : t("Incorrect", "Sai")}
-                        {quiz.questions[index]?.prompt ? ` — ${quiz.questions[index].prompt}` : ""}
+                        {quiz.questions[index]?.prompt
+                          ? ` — ${formatQuizQuestionPrompt(quiz.questions[index].prompt)}`
+                          : ""}
                       </p>
                       {result.explanation && (
                         <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                          💡 {result.explanation}
+                          💡 {sanitizeQuizPlainText(result.explanation)}
                         </p>
                       )}
                     </li>
