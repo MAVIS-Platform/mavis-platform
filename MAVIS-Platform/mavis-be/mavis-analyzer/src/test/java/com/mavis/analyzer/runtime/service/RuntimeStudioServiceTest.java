@@ -158,6 +158,27 @@ class RuntimeStudioServiceTest {
             new RuntimeStudioService.ActionRequest(UUID.randomUUID(), "STOP", "orders", null)));
     }
 
+    @Test void bootstrapCannotReplaceAllocatedOrStartingRunnerSession() {
+        for (String status : java.util.List.of("ALLOCATED", "RUNNING", "CANCELLING")) {
+            session.setExecutionStatus(status);
+            var failure = assertThrows(BusinessException.class, () -> service.bootstrapSimulatedSandbox(id));
+            assertEquals(com.mavis.common.exception.ErrorCode.CONFLICT, failure.getErrorCode());
+            assertEquals(status, session.getExecutionStatus());
+            assertNull(session.getStudioControl());
+        }
+        verify(sessions, never()).save(any());
+    }
+
+    @Test void bootstrapPreservesObservedRunnerTelemetry() {
+        var telemetry = mapper.createObjectNode().put("observedAt", "2026-11-20T10:00:00Z");
+        var control = mapper.createObjectNode();
+        control.set("telemetry", telemetry);
+        session.setStudioControl(control);
+        assertEquals(telemetry, service.bootstrapSimulatedSandbox(id).path("telemetry"));
+        assertFalse(session.getStudioControl().has("simulatedSandbox"));
+        verify(sessions, never()).save(any());
+    }
+
     @Test void simulatedSandboxCompletesWithoutVerifiedRunnerEvidence() {
         session.setExecutionStatus("READY_FOR_DISPATCH");
         session.setSourceSnapshot(SourceSnapshot.builder().id(UUID.randomUUID()).build());

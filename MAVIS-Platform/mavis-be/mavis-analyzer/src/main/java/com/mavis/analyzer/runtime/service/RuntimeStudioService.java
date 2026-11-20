@@ -218,6 +218,10 @@ public class RuntimeStudioService {
         if ("RUNNING".equals(exec) && control.hasNonNull("telemetry") && !control.path("simulatedSandbox").asBoolean(false)) {
             return view(session);
         }
+        if (!control.path("simulatedSandbox").asBoolean(false)
+                && Set.of("ALLOCATED", "RUNNING", "CANCELLING").contains(exec)) {
+            throw error(ErrorCode.CONFLICT, "The Runner owns this session. Wait for telemetry or cancel it before starting a simulation.");
+        }
         session.setScenarioStatus("APPROVED");
         session.setExecutionStatus("RUNNING");
         if (session.getStartedAt() == null) {
