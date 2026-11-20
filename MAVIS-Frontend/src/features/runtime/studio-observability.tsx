@@ -2312,11 +2312,14 @@ export function StudioObservability({
                       <circle cx={qx2} cy={qy2} r="3" fill={edgeColor} opacity="0.65" />
                     </>
                   )}
-                  {!edgeSevered && (span || !onConnect) && (
-                    <circle r="3.3" fill="#38bdf8" opacity="0.8" pointerEvents="none">
-                      <animateMotion dur={`${speedSec}s`} repeatCount="indefinite" path={pathD} />
-                    </circle>
-                  )}
+                  <circle
+                    r={edgeSevered ? "3.6" : "3.8"}
+                    fill={edgeSevered ? "#f43f5e" : "#38bdf8"}
+                    opacity="0.9"
+                    pointerEvents="none"
+                  >
+                    <animateMotion dur={`${speedSec}s`} repeatCount="indefinite" path={pathD} />
+                  </circle>
                 </g>
               );
             })}
@@ -2961,7 +2964,11 @@ export async function captureStudioImage(svg: SVGSVGElement, wholeDiagram = fals
   }
 }
 
-export function serializeStudioGraph(svg: SVGSVGElement, wholeDiagram = false): string {
+export function serializeStudioGraph(
+  svg: SVGSVGElement,
+  wholeDiagram = false,
+  preserveMotion = false,
+): string {
   const clone = svg.cloneNode(true) as SVGSVGElement;
   const styles = getComputedStyle(svg);
   clone.setAttribute(
@@ -2999,8 +3006,10 @@ export function serializeStudioGraph(svg: SVGSVGElement, wholeDiagram = false): 
           }
         }
       }
-      sceneClone.querySelectorAll("[data-studio-cut-wire], [data-studio-link-preview], [data-studio-connect-port], circle:has(animateMotion)")
-        .forEach((element) => element.remove());
+      const stripSelector = preserveMotion
+        ? "[data-studio-cut-wire], [data-studio-link-preview], [data-studio-connect-port]"
+        : "[data-studio-cut-wire], [data-studio-link-preview], [data-studio-connect-port], circle:has(animateMotion)";
+      sceneClone.querySelectorAll(stripSelector).forEach((element) => element.remove());
     }
   }
   clone.querySelectorAll("[fill],[stroke]").forEach((element) => {

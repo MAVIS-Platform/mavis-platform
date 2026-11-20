@@ -28,7 +28,10 @@ export function startStudioRecording(svg: SVGSVGElement) {
     if (ended) return;
     let url = "";
     try {
-      const clone = new DOMParser().parseFromString(serializeStudioGraph(svg, true), "image/svg+xml");
+      const clone = new DOMParser().parseFromString(
+        serializeStudioGraph(svg, true, true),
+        "image/svg+xml",
+      );
       // Freeze each SMIL traffic pulse at its actual position for this video frame.
       const currentTime = typeof svg.getCurrentTime === "function" ? svg.getCurrentTime() : 0;
       clone.querySelectorAll("animateMotion").forEach((motion) => {

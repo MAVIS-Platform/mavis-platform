@@ -134,6 +134,21 @@ export function StudioEvidenceReplay({ frames, onSound }: {
       </div>
       <p className="text-slate-200">Step {index + 1}/{frames.length} · {(frame.elapsedMs / 1000).toFixed(1)}s · {frame.label}</p>
       <p className="text-slate-400">{frame.totals.pods} pods · {frame.totals.handledRps} req/s handled · {frame.totals.droppedRps} req/s dropped</p>
+      {frame.connections.length > 0 && (
+        <ul aria-label="Step traffic flows" className="flex flex-wrap gap-1 pt-0.5 font-mono text-[10px]">
+          {frame.connections.slice(0, 8).map((conn, idx) => (
+            <li
+              key={`${conn.from}-${conn.to}-${idx}`}
+              className="rounded border border-slate-800 bg-slate-900/80 px-1.5 py-0.5 text-slate-300"
+            >
+              <span className="text-sky-300">{conn.from}</span>
+              <span className="mx-1 text-slate-500">→</span>
+              <span className="text-emerald-300">{conn.to}</span>
+              {conn.protocol && <span className="ml-1 text-slate-400">· {conn.protocol}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

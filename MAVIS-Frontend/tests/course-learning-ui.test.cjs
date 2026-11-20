@@ -1503,6 +1503,13 @@ test("Lecturer Studio Live authoring uses unified single top bar, non-red health
   assert.doesNotMatch(live, /Decrease \$\{service\} replicas|Increase \$\{service\} replicas/);
   assert.match(live, /Service Telemetry[\s\S]*Net I\/O[\s\S]*Req \/ Err%[\s\S]*detailed telemetry/);
   assert.match(live, /<LiveTerminalConsole/);
+  const recording = read("src/features/runtime/studio-recording.ts");
+  const evidence = read("src/features/runtime/studio-evidence.tsx");
+  assert.match(obs, /preserveMotion = false/);
+  assert.match(recording, /serializeStudioGraph\(svg, true, true\)/);
+  assert.match(evidence, /aria-label="Step traffic flows"/);
+  assert.match(live, /Screenshot PNG[\s\S]*Record runtime replay[\s\S]*Capture evidence snapshot/);
+  assert.match(live, /aria-label="Runtime traffic flows"/);
 });
 
 test("Studio Live project terminal parser multiplexes compose logs, stack traces, runner actions and warnings", () => {
