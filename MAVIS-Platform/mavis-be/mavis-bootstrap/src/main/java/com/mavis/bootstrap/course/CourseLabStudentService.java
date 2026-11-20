@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.mavis.analyzer.runtime.dto.RuntimeSessionCreateRequest;
 import com.mavis.analyzer.runtime.dto.RuntimeSessionResponseDTO;
+import com.mavis.analyzer.runtime.service.RuntimePlanningService;
 import com.mavis.analyzer.runtime.service.RuntimeSessionService;
 import com.mavis.analyzer.runtime.service.RuntimeStudioService;
 import com.mavis.common.entity.Assignment;
@@ -79,6 +80,7 @@ public class CourseLabStudentService {
     private final RuntimeConfigurationRepository runtimeConfigurations;
     private final RuntimeSessionRepository runtimeSessions;
     private final RuntimeSessionService runtimeSessionService;
+    private final RuntimePlanningService runtimePlanningService;
     private final RuntimeStudioService runtimeStudioService;
     private final AssignmentService assignmentService;
     private final CourseQuizService courseQuizService;
@@ -106,6 +108,7 @@ public class CourseLabStudentService {
             RuntimeConfigurationRepository runtimeConfigurations,
             RuntimeSessionRepository runtimeSessions,
             RuntimeSessionService runtimeSessionService,
+            RuntimePlanningService runtimePlanningService,
             RuntimeStudioService runtimeStudioService,
             AssignmentService assignmentService,
             CourseQuizService courseQuizService,
@@ -128,6 +131,7 @@ public class CourseLabStudentService {
         this.runtimeConfigurations = runtimeConfigurations;
         this.runtimeSessions = runtimeSessions;
         this.runtimeSessionService = runtimeSessionService;
+        this.runtimePlanningService = runtimePlanningService;
         this.runtimeStudioService = runtimeStudioService;
         this.assignmentService = assignmentService;
         this.courseQuizService = courseQuizService;
@@ -326,6 +330,11 @@ public class CourseLabStudentService {
         JsonNode resolvedTopology = applyExerciseInitialState(activeExercise,
                 resolveStudioTopology(lab, runtimeModel, !isStudentActor));
         ObjectNode appsNode = resolveApplicationsNode(runtimeModel, resolvedTopology);
+        appsNode.elements().forEachRemaining(app -> {
+            if (app instanceof ObjectNode appObj && !appObj.has("allowClientErrorReadiness")) {
+                appObj.put("allowClientErrorReadiness", true);
+            }
+        });
         Map<String, String> serviceMappings = buildServiceMappings(working.model(), appsNode);
 
         ObjectNode scenarioConfig = json.createObjectNode();
@@ -333,12 +342,14 @@ public class CourseLabStudentService {
         ObjectNode profileNode = scenarioConfig.putObject("profile");
         profileNode.set("applications", appsNode);
         UUID runtimeSnapshotId = runtimeModel.getSourceSnapshot().getId();
-        runtimeConfigurations.findById(runtimeModel.getProject().getId())
+        RuntimeConfiguration refConfiguration = runtimeConfigurations.findById(runtimeModel.getProject().getId())
                 .filter(configuration -> runtimeSnapshotId.equals(configuration.getSourceSnapshotId()))
-                .map(RuntimeConfiguration::getProfile)
-                .map(profile -> profile.path("sandboxCompose").asText(""))
-                .filter(prepared -> !prepared.isBlank())
-                .ifPresent(prepared -> profileNode.put("sandboxCompose", prepared));
+                .orElse(null);
+        JsonNode refProfile = refConfiguration != null ? refConfiguration.getProfile() : null;
+        String preparedCompose = refProfile != null ? refProfile.path("sandboxCompose").asText("") : "";
+        if (!preparedCompose.isBlank()) {
+            profileNode.put("sandboxCompose", preparedCompose);
+        }
         if (resolvedTopology != null && resolvedTopology.isObject()) {
             profileNode.set("studioTopology", resolvedTopology.deepCopy());
         }
@@ -376,6 +387,26 @@ public class CourseLabStudentService {
         scenarioNode.put("timeoutSeconds", 300);
         scenarioConfig.putArray("infrastructureActions");
 
+        // Re-hydrate relocated Compose secrets (e.g. sandbox-postgres POSTGRES_PASSWORD) and sealed project inputs.
+        Map<String, String> protectedEnvironment = Map.of();
+        if (runtimePlanningService != null) {
+            var preparedEnv = runtimePlanningService.prepareStudioExecutionEnvironment(
+                    runtimeModel.getProject().getId(),
+                    working.snapshot().getId(),
+                    refProfile,
+                    appsNode,
+                    stepsNode,
+                    preparedCompose);
+            if (preparedEnv != null) {
+                if (preparedEnv.bindings() != null && !preparedEnv.bindings().isEmpty()) {
+                    profileNode.set("environmentBindings", preparedEnv.bindings());
+                }
+                if (preparedEnv.protectedEnvironment() != null && !preparedEnv.protectedEnvironment().isEmpty()) {
+                    protectedEnvironment = preparedEnv.protectedEnvironment();
+                }
+            }
+        }
+
         RuntimeSessionCreateRequest createRequest = RuntimeSessionCreateRequest.builder()
                 .projectId(working.project().getId())
                 .sourceSnapshotId(working.snapshot().getId())
@@ -387,6 +418,9 @@ public class CourseLabStudentService {
                 .build();
 
         RuntimeSessionResponseDTO created = runtimeSessionService.createRuntimeSession(createRequest);
+        if (!protectedEnvironment.isEmpty() && runtimePlanningService != null) {
+            runtimePlanningService.storeSessionEnvironment(created.getId(), protectedEnvironment);
+        }
         return runtimeSessionService.approveAndStartSession(created.getId());
     }
 

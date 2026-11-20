@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.mavis.analyzer.runtime.dto.RuntimeSessionCreateRequest;
 import com.mavis.analyzer.runtime.dto.RuntimeSessionResponseDTO;
+import com.mavis.analyzer.runtime.service.RuntimePlanningService;
 import com.mavis.analyzer.runtime.service.RuntimeSessionService;
 import com.mavis.analyzer.runtime.service.RuntimeStudioService;
 import com.mavis.common.entity.Assignment;
@@ -75,6 +76,7 @@ class CourseLabStudentServiceTest {
     private RuntimeConfigurationRepository runtimeConfigurations;
     private RuntimeSessionRepository runtimeSessions;
     private RuntimeSessionService runtimeSessionService;
+    private RuntimePlanningService runtimePlanningService;
     private RuntimeStudioService runtimeStudioService;
     private AssignmentService assignmentService;
     private CourseQuizService courseQuizService;
@@ -110,6 +112,7 @@ class CourseLabStudentServiceTest {
         runtimeConfigurations = mock(RuntimeConfigurationRepository.class);
         runtimeSessions = mock(RuntimeSessionRepository.class);
         runtimeSessionService = mock(RuntimeSessionService.class);
+        runtimePlanningService = mock(RuntimePlanningService.class);
         runtimeStudioService = mock(RuntimeStudioService.class);
         assignmentService = mock(AssignmentService.class);
         courseQuizService = mock(CourseQuizService.class);
@@ -120,7 +123,8 @@ class CourseLabStudentServiceTest {
         service = new CourseLabStudentService(
                 access, courseLabs, assignments, projects, snapshots, models, elements,
                 relationships, diagrams, evidences, evaluations, evaluationFindings,
-                runtimeConfigurations, runtimeSessions, runtimeSessionService, runtimeStudioService,
+                runtimeConfigurations, runtimeSessions, runtimeSessionService, runtimePlanningService,
+                runtimeStudioService,
                 assignmentService, courseQuizService, submissionService, submissionReviewService,
                 labStudioExercises, json);
 
@@ -277,6 +281,13 @@ class CourseLabStudentServiceTest {
         referenceConfiguration.setProfile(json.createObjectNode().put("sandboxCompose", compose));
         when(runtimeConfigurations.findById(refProject.getId())).thenReturn(Optional.of(referenceConfiguration));
 
+        ObjectNode envBindings = json.createObjectNode();
+        envBindings.putArray("sandbox-postgres").addObject()
+                .put("name", "POSTGRES_PASSWORD").put("reference", "POSTGRES_PASSWORD");
+        when(runtimePlanningService.prepareStudioExecutionEnvironment(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new RuntimePlanningService.PreparedExecutionEnvironment(
+                        java.util.Map.of("POSTGRES_PASSWORD", "sandbox-db-secret"), envBindings));
+
         UUID createdId = UUID.randomUUID();
         when(runtimeSessionService.createRuntimeSession(any())).thenReturn(RuntimeSessionResponseDTO.builder().id(createdId).build());
         when(runtimeSessionService.approveAndStartSession(createdId)).thenReturn(
@@ -290,7 +301,10 @@ class CourseLabStudentServiceTest {
         assertThat(reqCaptor.getValue().getScenarioConfig().path("interactiveStudio").asBoolean()).isTrue();
         assertThat(reqCaptor.getValue().getScenarioConfig().path("profile").path("sandboxCompose").asText())
                 .isEqualTo(compose);
+        assertThat(reqCaptor.getValue().getScenarioConfig().path("profile").path("environmentBindings")
+                .path("sandbox-postgres").get(0).path("name").asText()).isEqualTo("POSTGRES_PASSWORD");
         assertThat(reqCaptor.getValue().getConfirmedServiceMappings()).containsKey("payment-service");
+        verify(runtimePlanningService).storeSessionEnvironment(createdId, java.util.Map.of("POSTGRES_PASSWORD", "sandbox-db-secret"));
     }
 
     @Test

@@ -2659,6 +2659,57 @@ public class RuntimePlanningService {
     &&p.path("scenarioRunnerImage").asText().matches("([A-Za-z0-9./:_-]+@)?sha256:[0-9a-f]{64}");
  }
 
+ public record PreparedExecutionEnvironment(Map<String,String> protectedEnvironment,ObjectNode bindings){}
+
+ /** Builds per-service environmentBindings and encrypted runtime env values for Studio Lab sessions. */
+ public PreparedExecutionEnvironment prepareStudioExecutionEnvironment(
+   UUID projectId,UUID snapshotId,JsonNode profile,JsonNode apps,ArrayNode steps,String effectiveComposeYaml){
+  if(projectId==null||snapshotId==null||apps==null||!apps.isObject()){
+   return new PreparedExecutionEnvironment(Map.of(),json.createObjectNode());
+  }
+  var pre=runtime.runComposePreflight(snapshotId);
+  if(pre==null){
+   return new PreparedExecutionEnvironment(Map.of(),json.createObjectNode());
+  }
+  var execEnv=buildExecutionEnvironment(projectId,profile,pre,apps);
+  ObjectNode bindings=execEnv.bindings();
+  String composeYaml=(effectiveComposeYaml!=null&&!effectiveComposeYaml.isBlank())
+    ?effectiveComposeYaml
+    :pre.getSandboxComposeYaml();
+  if(composeYaml!=null&&!composeYaml.isBlank()&&composeValidator!=null){
+   var effective=composeValidator.validate(composeYaml,Map.of());
+   if(effective.getComposeServices()!=null&&!effective.getComposeServices().isEmpty()){
+    Set<String> allowed=new LinkedHashSet<>(effective.getComposeServices());
+    List<String> stale=new ArrayList<>();
+    bindings.fieldNames().forEachRemaining(svc->{if(!allowed.contains(svc))stale.add(svc);});
+    stale.forEach(bindings::remove);
+   }
+  }
+  Set<String> referenced=new LinkedHashSet<>();
+  bindings.elements().forEachRemaining(arr->{
+   if(arr.isArray())arr.forEach(b->{String ref=b.path("reference").asText("");if(!ref.isBlank())referenced.add(ref);});
+  });
+  if(steps!=null){
+   for(JsonNode step:steps){
+    if(step==null||!step.isObject())continue;
+    if(step.hasNonNull("bodyReference"))referenced.add(step.get("bodyReference").asText(""));
+    if(step.path("environmentVariables").isObject())step.path("environmentVariables").elements().forEachRemaining(v->referenced.add(v.asText("")));
+    if(step.path("envHeaders").isArray())step.path("envHeaders").forEach(h->referenced.add(h.path("reference").asText("")));
+    if(step.path("secretHeaders").isObject())step.path("secretHeaders").elements().forEachRemaining(v->referenced.add(v.asText("")));
+   }
+  }
+  Map<String,String> filteredEnv=new LinkedHashMap<>();
+  execEnv.protectedEnvironment().forEach((k,v)->{if(referenced.contains(k))filteredEnv.put(k,v);});
+  Map<String,String> bounded=capProtectedEnvironment(filteredEnv,bindings,steps);
+  return new PreparedExecutionEnvironment(bounded,bindings);
+ }
+
+ public void storeSessionEnvironment(UUID sessionId,Map<String,String> values){
+  if(sessionId!=null&&values!=null&&!values.isEmpty()){
+   environments.store(sessionId,values);
+  }
+ }
+
  private record ExecutionEnvironment(Map<String,String> protectedEnvironment,ObjectNode bindings){}
 
  private ExecutionEnvironment buildExecutionEnvironment(UUID projectId,JsonNode profile,PreflightCheckResponseDTO pre,JsonNode apps){

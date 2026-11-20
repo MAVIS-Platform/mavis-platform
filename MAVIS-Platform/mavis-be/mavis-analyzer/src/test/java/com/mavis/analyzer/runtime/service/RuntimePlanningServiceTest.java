@@ -1573,4 +1573,42 @@ class RuntimePlanningServiceTest {
         assertThat(smokeFlow.steps()).allSatisfy(st -> assertThat(st.method()).isEqualTo("GET"));
         assertThat(smokeFlow.suggestedName()).isEqualTo("Read-Only Smoke & Health Verification Scenario");
     }
+
+    @Test
+    @DisplayName("STUDIO ENV: Binds relocated sandbox-postgres secrets and drops bindings for services outside sandboxCompose")
+    void prepareStudioExecutionEnvironmentBindsRelocatedSecretsAndFiltersUnknownServices() {
+        ReflectionTestUtils.setField(planningService, "composeValidator", new ComposePreflightValidator());
+        ObjectNode apps = json.createObjectNode();
+        apps.putObject("order-service").put("runtime", "java").put("containerPort", 8081);
+        var steps = json.createArrayNode();
+        steps.addObject().put("id", "smoke").put("service", "order-service").put("method", "GET").put("path", "/health").put("expectedStatus", 200);
+
+        String pinnedCompose = """
+                services:
+                  order-service:
+                    image: sha256:%s
+                  sandbox-postgres:
+                    image: postgres@sha256:%s
+                """.formatted("a".repeat(64), "b".repeat(64));
+
+        when(runtime.runComposePreflight(snapshotId)).thenReturn(PreflightCheckResponseDTO.builder()
+                .compatible(true)
+                .composeServices(List.of("order-service", "sandbox-postgres", "stale-service"))
+                .detectedServices(List.of("order-service", "sandbox-postgres", "stale-service"))
+                .relocatedComposeSecrets(Map.of(
+                        "sandbox-postgres", Map.of("POSTGRES_PASSWORD", "ephemeral-pg-pass"),
+                        "order-service", Map.of("SPRING_DATASOURCE_PASSWORD", "ephemeral-pg-pass"),
+                        "stale-service", Map.of("UNUSED_SECRET", "drop-me")))
+                .build());
+        when(runtime.getProjectExecutionEnvironment(projectId)).thenReturn(Map.of());
+
+        var prepared = planningService.prepareStudioExecutionEnvironment(
+                projectId, snapshotId, json.createObjectNode(), apps, steps, pinnedCompose);
+
+        assertThat(prepared.bindings().has("sandbox-postgres")).isTrue();
+        assertThat(prepared.bindings().has("order-service")).isTrue();
+        assertThat(prepared.bindings().has("stale-service")).isFalse();
+        assertThat(prepared.protectedEnvironment()).containsValue("ephemeral-pg-pass");
+        assertThat(prepared.protectedEnvironment()).doesNotContainValue("drop-me");
+    }
 }
