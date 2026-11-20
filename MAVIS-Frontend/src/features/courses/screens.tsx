@@ -1106,6 +1106,7 @@ export function LabWorkspace() {
               step={displayedStep}
               workspaceId={workspaceId}
               labId={lab.id}
+              labOrder={lab.labOrder}
               labTitle={lab.title}
               labInstructions={lab.instructions}
               moduleTitle={currentModule?.title}
@@ -1292,6 +1293,7 @@ function StepContent({
   step,
   workspaceId,
   labId,
+  labOrder,
   labTitle,
   labInstructions,
   projectId,
@@ -1325,6 +1327,7 @@ function StepContent({
   step: 1 | 2 | 3 | 4;
   workspaceId: string;
   labId: string;
+  labOrder?: number | null | undefined;
   labTitle?: string | undefined;
   labInstructions?: string | undefined;
   moduleTitle?: string | undefined;
@@ -2007,6 +2010,8 @@ function StepContent({
                 <LabSubmissionV2
                   workspaceId={workspaceId}
                   assignmentId={labId}
+                  labOrder={labOrder}
+                  labTitle={labTitle}
                   labMode={labMode}
                   runtimeSessionId={verifiedSessionForSubmit}
                   initialSubmission={studentContext?.latestSubmission}
