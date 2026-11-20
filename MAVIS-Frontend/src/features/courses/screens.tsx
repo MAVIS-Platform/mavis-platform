@@ -1083,6 +1083,7 @@ export function LabWorkspace() {
               hasReferenceArch={hasReferenceArch}
               isTheoryOnlyLab={isTheoryOnlyLab}
               runtimeReady={runtimeReady}
+              quizPassPercent={quizPassPercent}
               runtimeSessionHref={labSessions[0] ? runtimeLink(labSessions[0].id) : null}
               studioHref={
                 verifiedStudioSession ? runtimeLink(verifiedStudioSession.id) + "&studio=1" : null
@@ -1307,6 +1308,7 @@ function StepContent({
   isStudent,
   preview,
   runtimeReady,
+  quizPassPercent = 70,
   studioVerified,
   studioSessionId,
   studioSessions,
@@ -1344,6 +1346,7 @@ function StepContent({
   preview?: boolean | undefined;
   hasActiveAnalysisJob?: boolean | undefined;
   runtimeReady: boolean;
+  quizPassPercent?: number | undefined;
   runtimeSessionHref: string | null;
   studioHref: string | null;
   studioVerified: boolean;

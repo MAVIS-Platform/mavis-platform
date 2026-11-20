@@ -230,7 +230,10 @@ export function LabSubmissionV2({
                     </Badge>
                   {activeReview.score !== null && (
                     <span className="rounded-md bg-emerald-100 px-2 py-0.5 font-bold text-emerald-900">
-                      {formatTenScaleScore(activeReview.score, activeReview.scoreTenScale)}
+                      {formatTenScaleScore(
+                        activeReview.score,
+                        "scoreTenScale" in activeReview ? activeReview.scoreTenScale : undefined,
+                      )}
                     </span>
                   )}
                   </div>
