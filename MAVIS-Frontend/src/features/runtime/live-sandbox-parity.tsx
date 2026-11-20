@@ -459,7 +459,7 @@ export function LiveSandboxParity({
               className="h-8 rounded-md border-slate-700 bg-slate-950 pl-8 text-xs"
             />
           </label>
-          <ul className="max-h-72 space-y-1.5 overflow-y-auto pr-0.5">
+          <ul className={compact ? "space-y-1.5" : "max-h-72 space-y-1.5 overflow-y-auto pr-0.5"}>
             {visibleBlocks.map((block) => {
               const live = runningReplicas(data, block.service);
               const isSelected = selected === block.service;
@@ -665,12 +665,14 @@ export function LiveSandboxParity({
             })()}
           {compact && (
             <div className="space-y-1.5 border-t border-slate-800/80 pt-2.5">
-              <div className="flex items-center justify-between gap-1">
-                <p className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+              <div className="flex items-center justify-between gap-2">
+                <p className="flex shrink-0 items-center gap-1 whitespace-nowrap text-[10px] font-semibold uppercase tracking-wide text-slate-400">
                   <Wrench aria-hidden="true" className="size-3 text-sky-400" />
                   Action Toolbox
                 </p>
-                <span className="text-[9.5px] text-slate-500">Drag onto node or click</span>
+                <span className="truncate whitespace-nowrap text-[9.5px] text-slate-500">
+                  Drag or click
+                </span>
               </div>
               <div className="space-y-1">
                 {LIVE_ACTION_TOOLS.map((tool) => {

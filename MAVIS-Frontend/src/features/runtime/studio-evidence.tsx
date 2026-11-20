@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 export type EvidenceFrame = {
   elapsedMs: number;
@@ -152,15 +152,27 @@ export async function deleteStudioEvidence(id: string) {
   }
 }
 
-export function StudioVideo({ blob, durationMs }: { blob: Blob; durationMs: number }) {
+export function StudioVideo({
+  blob,
+  durationMs,
+  posterSvg,
+}: {
+  blob: Blob;
+  durationMs: number;
+  posterSvg?: string | undefined;
+}) {
   const [url, setUrl] = useState("");
+  const poster = useMemo(
+    () => (posterSvg ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(posterSvg)}` : undefined),
+    [posterSvg],
+  );
   useEffect(() => {
     const source = URL.createObjectURL(blob);
     setUrl(source);
     return () => URL.revokeObjectURL(source);
   }, [blob]);
   return <div className="my-2 space-y-2">
-    <video aria-label="Recorded Studio video" controls src={url || undefined} className="max-h-72 w-full rounded-md" />
+    <video aria-label="Recorded Studio video" controls poster={poster} src={url || undefined} className="max-h-72 w-full rounded-md bg-[#070b14]" />
     <p>{(durationMs / 1000).toFixed(1)} seconds recorded</p>
     {url && <a className="text-sky-200 hover:underline" href={url}
       download={blob.type.includes("mp4") ? "mavis-recording.mp4" : "mavis-recording.webm"}>Download video</a>}

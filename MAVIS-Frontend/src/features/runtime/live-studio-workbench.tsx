@@ -7,6 +7,8 @@ import {
   ArrowRight,
   Camera,
   Check,
+  ChevronDown,
+  ChevronUp,
   Maximize2,
   Minimize2,
   PanelLeft,
@@ -275,12 +277,15 @@ export function LiveStudioWorkbench({
   ]);
 
   const services = liveServices.length > 0 ? liveServices : data.services;
-  const selected = target || services[0] || "";
+  const selected = services.includes(studio.service)
+    ? studio.service
+    : target || services[0] || "";
   const graphRef = useRef<HTMLDivElement>(null);
   const snapshotNoteRef = useRef<HTMLTextAreaElement>(null);
   const [tab, setTab] = useState<"stats" | "telemetry" | "logs" | "snapshots">("telemetry");
   const [showLeft, setShowLeft] = useState(true);
   const [showRight, setShowRight] = useState(true);
+  const [dockExpanded, setDockExpanded] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [setupPanel, setSetupPanel] = useState<StudioSetupPanel>(() =>
     authoring ? "presets" : "service",
@@ -822,11 +827,17 @@ export function LiveStudioWorkbench({
             >
               {authoring && <option value="">Design Preview</option>}
               {sessions.length > 0 ? (
-                sessions.map((session) => (
-                  <option key={session.id} value={session.id}>
-                    {session.id.slice(0, 8)} · {session.executionStatus ?? "SESSION"}
-                  </option>
-                ))
+                sessions.map((session) => {
+                  const displayStatus =
+                    session.id === activeSessionId && liveData?.executionStatus
+                      ? liveData.executionStatus
+                      : (session.executionStatus ?? "SESSION");
+                  return (
+                    <option key={session.id} value={session.id}>
+                      {session.id.slice(0, 8)} · {displayStatus}
+                    </option>
+                  );
+                })
               ) : (
                 !authoring && <option value="">No live sessions</option>
               )}
@@ -1171,7 +1182,7 @@ export function LiveStudioWorkbench({
       {/* Main 3-Column IDE Layout: Full-Height Left Blocks | Center (Canvas + Bounded Bottom Dock) | Full-Height Right Setup */}
       <div className="flex min-h-0 flex-1 overflow-hidden">
         {showLeft && (
-          <aside className="h-full w-[252px] shrink-0 overflow-x-hidden overflow-y-auto border-r border-slate-800 bg-[#0b101b] p-2.5">
+          <aside className="h-full w-[268px] shrink-0 overflow-x-hidden overflow-y-auto border-r border-slate-800 bg-[#0b101b] p-2.5">
             <LiveSandboxParity
               data={data}
               selected={selected}
@@ -1255,24 +1266,38 @@ export function LiveStudioWorkbench({
           </div>
 
           {/* Bottom Telemetry, Logs & Snapshots Dock — aligned strictly inside the center column */}
-          <div className="flex h-[214px] min-w-0 shrink-0 flex-col overflow-hidden border-t border-slate-800 bg-[#0b101b]">
-            <div className="flex h-9 shrink-0 items-center gap-1 overflow-x-auto border-b border-slate-800 px-3">
+          <div
+            className={`flex min-w-0 shrink-0 flex-col overflow-hidden border-t border-slate-800 bg-[#0b101b] transition-[height] duration-150 ${
+              dockExpanded ? "h-[396px]" : "h-[232px]"
+            }`}
+          >
+            <div className="flex h-9 shrink-0 items-center gap-1 border-b border-slate-800 px-2.5">
               {(
                 [
-                  ["stats", "Stats"],
-                  ["telemetry", `Service Telemetry & Impact (${data.services.length})`],
-                  ["logs", `Logs & Traces (${data.telemetry?.spans.length ?? 0})`],
+                  ["stats", "Stats", "Stats"],
+                  [
+                    "telemetry",
+                    `Telemetry (${data.services.length})`,
+                    `Service Telemetry & Impact (${data.services.length})`,
+                  ],
+                  [
+                    "logs",
+                    `Logs & Traces (${data.telemetry?.spans.length ?? 0})`,
+                    `Logs & Traces (${data.telemetry?.spans.length ?? 0})`,
+                  ],
                   [
                     "snapshots",
                     `Snapshots & Replay (${(data.snapshots?.length ?? 0) + liveReplays.length})`,
+                    `Snapshots & Replay (${(data.snapshots?.length ?? 0) + liveReplays.length})`,
                   ],
                 ] as const
-              ).map(([id, label]) => (
+              ).map(([id, label, ariaLabel]) => (
                 <button
                   key={id}
                   type="button"
+                  aria-label={ariaLabel}
                   onClick={() => setTab(id)}
-                  className={`shrink-0 whitespace-nowrap rounded px-2.5 py-1 text-[11px] font-semibold ${
+                  className={`shrink-0 whitespace-nowrap rounded px-2 py-1 text-[11px] font-semibold ${
                     tab === id
                       ? "bg-slate-800 text-slate-100"
                       : "text-slate-400 hover:text-slate-200"
@@ -1281,22 +1306,33 @@ export function LiveStudioWorkbench({
                   {label}
                 </button>
               ))}
-              <div className="ml-auto flex shrink-0 items-center gap-2 pl-2 text-[10px] text-slate-500">
-                <span className="whitespace-nowrap rounded-full border border-slate-800 bg-slate-950/70 px-2 py-0.5 font-mono text-slate-300">
+              <div className="ml-auto flex shrink-0 items-center gap-1.5 pl-1 text-[10px] text-slate-500">
+                <span className="hidden whitespace-nowrap rounded-full border border-slate-800 bg-slate-950/70 px-2 py-0.5 font-mono text-slate-300 2xl:inline-flex">
                   {data.finishRequested
                     ? "Finishing"
                     : waiting
                       ? "Waiting for Runner"
-                      : data.executionStatus}
-                  {" · "}
-                  {data.cleanupStatus}
+                      : statusLabel}
                 </span>
-                <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap">
-                  <RefreshCw aria-hidden="true" className="size-3" />
-                  {data.telemetry?.observedAt
-                    ? new Date(data.telemetry.observedAt).toLocaleTimeString()
-                    : "No telemetry"}
-                </span>
+                {data.telemetry?.observedAt && (
+                  <span className="hidden shrink-0 items-center gap-1 whitespace-nowrap xl:inline-flex">
+                    <RefreshCw aria-hidden="true" className="size-3" />
+                    {new Date(data.telemetry.observedAt).toLocaleTimeString()}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  aria-label={dockExpanded ? "Collapse telemetry dock" : "Expand telemetry dock"}
+                  title={dockExpanded ? "Collapse dock" : "Expand dock"}
+                  onClick={() => setDockExpanded((v) => !v)}
+                  className="grid size-6 shrink-0 place-items-center rounded border border-slate-800 bg-slate-950/70 text-slate-400 transition-colors hover:border-slate-700 hover:text-slate-100"
+                >
+                  {dockExpanded ? (
+                    <ChevronDown aria-hidden="true" className="size-3.5" />
+                  ) : (
+                    <ChevronUp aria-hidden="true" className="size-3.5" />
+                  )}
+                </button>
               </div>
             </div>
             <div className="min-h-0 min-w-0 flex-1 overflow-auto px-3 py-2.5">
@@ -1509,19 +1545,29 @@ export function LiveStudioWorkbench({
                         const durationMs = Number.isFinite(ns)
                           ? `${(ns / 1e6).toFixed(1)} ms`
                           : "—";
+                        const derivedStatus =
+                          span.spanStatus && span.spanStatus !== "UNSET"
+                            ? span.spanStatus
+                            : typeof span.httpStatusCode === "number"
+                              ? span.httpStatusCode >= 400
+                                ? "ERROR"
+                                : "OK"
+                              : "OK";
+                        const isErr = derivedStatus.toUpperCase() === "ERROR";
                         return (
                           <tr key={span.spanId} className="border-t border-slate-800/70">
                             <td className="px-1 py-0.5 text-slate-200">{span.runtimeService}</td>
                             <td className="max-w-[200px] truncate px-1 py-0.5 text-slate-300">
-                              {span.operationName ?? "—"}
+                              {span.operationName ||
+                                (span.httpStatusCode ? `HTTP ${span.httpStatusCode}` : "Trace span")}
                             </td>
                             <td className="px-1 py-0.5 text-slate-300">
                               {span.httpStatusCode ?? "—"}
                             </td>
                             <td
-                              className={`px-1 py-0.5 ${span.spanStatus === "ERROR" ? "text-rose-300" : "text-emerald-300"}`}
+                              className={`px-1 py-0.5 ${isErr ? "text-rose-300" : "text-emerald-300"}`}
                             >
-                              {span.spanStatus ?? "—"}
+                              {derivedStatus}
                             </td>
                             <td className="px-1 py-0.5 text-slate-400">{durationMs}</td>
                           </tr>
@@ -1753,6 +1799,7 @@ export function LiveStudioWorkbench({
                           <StudioVideo
                             blob={replayItem.video}
                             durationMs={replayItem.durationMs ?? 0}
+                            posterSvg={replayItem.frame.svg}
                           />
                         )}
                         <StudioEvidenceReplay frames={replayItem.replay} />

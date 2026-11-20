@@ -754,6 +754,11 @@ export function useAutoConfigureStudio(workspaceId: string, assignmentId: string
       void cache.invalidateQueries({ queryKey: ["api", "assignments"] });
       void cache.invalidateQueries({ queryKey: ["api", "course-setup", workspaceId] });
       void cache.invalidateQueries({ queryKey: ["api", "course-authoring", workspaceId] });
+      void cache.invalidateQueries({ queryKey: ["api", "runtimeConfiguration"] });
+      void cache.invalidateQueries({ queryKey: ["api", "runtime-setup-readiness"] });
+      void cache.invalidateQueries({
+        queryKey: ["api", "studio-exercise", workspaceId, assignmentId],
+      });
       void cache.invalidateQueries({
         queryKey: ["api", "student-lab-context", workspaceId, assignmentId],
       });

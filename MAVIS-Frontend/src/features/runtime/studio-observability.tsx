@@ -1165,7 +1165,7 @@ export function StudioObservability({
   const [view, setView] = useState<"2D" | "3D">(defaultView);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("LAYERED");
   const [snapToGrid, setSnapToGrid] = useState(true);
-  const [zoom, setZoom] = useState(1);
+  const [zoom, setZoom] = useState(() => (canvasOnly && defaultView === "3D" ? 1.28 : 1));
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [camera, setCamera] = useState({ yaw: 0.78, pitch: 0.52 });
   const [customOffsets, setCustomOffsets] = useState<Record<string, { x: number; y: number }>>({});
@@ -1533,12 +1533,16 @@ export function StudioObservability({
   }
 
   function resolveLiveReplicas(serviceName: string): number {
-    const live = telemetry?.services.find((item) => item.service === serviceName);
-    if (live) return live.runningReplicas;
+    // Prefer latest confirmed Docker action over potentially lagging telemetry poll
     const confirmed = [...data.actions]
       .reverse()
       .find((item) => item.service === serviceName && item.status === "CONFIRMED");
-    return confirmed?.result?.replicasAfter ?? 1;
+    if (confirmed?.result?.replicasAfter !== undefined) {
+      return confirmed.result.replicasAfter;
+    }
+    const live = telemetry?.services.find((item) => item.service === serviceName);
+    if (live) return live.runningReplicas;
+    return 1;
   }
 
   function applyPaletteToolToService(tool: DragPaletteItem, targetService: string) {

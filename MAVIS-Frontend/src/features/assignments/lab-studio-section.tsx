@@ -136,11 +136,15 @@ export function LabStudioSection({
   const runPrepareRuntime = (openAfter: boolean) => {
     autoStudio.mutate(undefined, {
       onSuccess: () => {
-        void exercise.refetch();
-        void runtimeConfig.refetch();
-        void readiness.refetch();
-        void setup.refetch();
-        if (openAfter) router.push(studioLiveHref);
+        const synced = Promise.all([
+          exercise.refetch(),
+          runtimeConfig.refetch(),
+          readiness.refetch(),
+          setup.refetch(),
+        ]);
+        if (openAfter) {
+          void synced.finally(() => router.push(studioLiveHref));
+        }
       },
     });
   };

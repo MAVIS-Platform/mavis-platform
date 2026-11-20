@@ -401,18 +401,30 @@ function StandaloneStudioContent() {
       const runtimeModelId = ref?.modelId ?? exercise.data?.runtimeModelId;
       const runtimeSnapshotId = ref?.snapshotId ?? exercise.data?.runtimeSnapshotId;
 
-      if (input.nextTopology && runtimeConfig.data && projectId) {
-        await saveConfig.mutateAsync({
-          projectId,
-          profileId: runtimeConfig.data.profileId,
-          snapshotId: runtimeConfig.data.snapshotId ?? undefined,
-          modelId: runtimeConfig.data.modelId ?? undefined,
-          expectedRevision: runtimeConfig.data.revision,
-          profile: {
-            ...runtimeConfig.data.profile,
-            studioTopology: input.nextTopology,
-          },
-        });
+      if (input.nextTopology && projectId) {
+        // Guard against stale React Query cache right after Prepare Runtime (modelId null / rev 0)
+        const cfg =
+          runtimeConfig.data?.configured &&
+          runtimeConfig.data.modelId &&
+          runtimeConfig.data.snapshotId
+            ? runtimeConfig.data
+            : ((await runtimeConfig.refetch()).data ?? runtimeConfig.data);
+        const targetSnapshotId = cfg?.snapshotId ?? runtimeSnapshotId ?? undefined;
+        const targetModelId = cfg?.modelId ?? runtimeModelId ?? undefined;
+        if (cfg && targetSnapshotId && targetModelId) {
+          const savedCfg = await saveConfig.mutateAsync({
+            projectId,
+            profileId: cfg.profileId,
+            snapshotId: targetSnapshotId,
+            modelId: targetModelId,
+            expectedRevision: cfg.revision,
+            profile: {
+              ...cfg.profile,
+              studioTopology: input.nextTopology,
+            },
+          });
+          cache.setQueryData(["api", "runtimeConfiguration", { projectId }], savedCfg);
+        }
       }
 
       if (runtimeProjectId && runtimeModelId && runtimeSnapshotId) {
