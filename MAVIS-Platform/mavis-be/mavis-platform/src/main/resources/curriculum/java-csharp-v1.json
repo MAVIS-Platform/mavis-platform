@@ -3788,5 +3788,95 @@
         "points": 1
       }
     ]
+  },
+  {
+    "id": "csharp-v2-ch11",
+    "track": "C#",
+    "phase": "V2 · Module 4",
+    "title": "Chương 11: OBSERVABILITY TOÀN DIỆN (HEALTH CHECKS, STRUCTURED LOGGING & OPENTELEMETRY .NET)",
+    "minutes": 45,
+    "objective": "Thiết lập ASP.NET Core Health Checks tách bạch rõ `/health/live` (Liveness) và `/health/ready` (Readiness) kiểm tra kết nối PostgreSQL / Redis / RabbitMQ. Tích hợp OpenTelemetry .NET SDK (Traces, Metrics, Logs) xuất chuẩn OTLP sang Collector của MAVIS chỉ trong vài chục dòng cấu hình. Đọc hiểu vết phân tán (`TraceId`, `SpanId`, `Activity`, header `traceparent`) xuyên suốt từ `ApiGateway` $\\to$ `Ordering.API` $\\to$ `Catalog.API` $\\to$ `PostgreSQL` / `RabbitMQ`.",
+    "lesson": "### 11.1. Health Checks chuẩn trong ASP.NET Core 8: `/health/live` vs. `/health/ready`\n\nKhác với việc chỉ tạo một endpoint giả luôn trả `\"OK\"`, ASP.NET Core cung cấp hệ thống **Health Checks** chuẩn hóa có khả năng gắn thẻ (`tags`) để tách riêng hai mục đích sống còn:\n* **`/health/live` (Liveness)**: Chỉ kiểm tra tiến trình ASP.NET Core có còn phản hồi không (không kiểm tra DB/RabbitMQ để tránh hiệu ứng \"chết chùm\" khi DB chập chờn khiến Docker restart đồng loạt mọi container!).\n* **`/health/ready` (Readiness)**: Kiểm tra tiến trình **và các phụ thuộc thiết yếu** (`PostgreSQL`, `Redis`, `RabbitMQ`) có sẵn sàng nhận traffic chưa.\n\n```csharp\n// Đăng ký Health Checks trong Program.cs\nbuilder.Services.AddHealthChecks()\n    .AddCheck(\"self\", () => HealthCheckResult.Healthy(), tags: [\"live\"])\n    .AddNpgSql(builder.Configuration.GetConnectionString(\"OrderingDb\")!, name: \"postgres\", tags: [\"ready\"])\n    .AddRabbitMQ(builder.Configuration.GetConnectionString(\"RabbitMq\")!, name: \"rabbitmq\", tags: [\"ready\"]);\n\n// Ánh xạ 2 endpoint chuẩn\napp.MapHealthChecks(\"/health/live\", new HealthCheckOptions\n{\n    Predicate = r => r.Tags.Contains(\"live\")\n});\napp.MapHealthChecks(\"/health/ready\", new HealthCheckOptions\n{\n    Predicate = r => r.Tags.Contains(\"ready\")\n});\n```\n\n### 11.2. OpenTelemetry .NET — Một đường ống thống nhất cho Traces, Metrics & Logs\n\nĐiểm cực sướng trong .NET 8 là lớp `System.Diagnostics.Activity` của chính .NET đã tuân thủ sẵn chuẩn **W3C Trace Context (`traceparent`)**! Khi cài gói `OpenTelemetry.Extensions.Hosting`, `OpenTelemetry.Instrumentation.AspNetCore`, `OpenTelemetry.Instrumentation.Http`, `OpenTelemetry.Exporter.OpenTelemetryProtocol`, toàn bộ HTTP đến/đi, EF Core và RabbitMQ đều tự động nối thành một cây Trace hoàn chỉnh:\n\n```csharp\n// Cấu hình OpenTelemetry .NET chuẩn xuất qua OTLP (dùng chung cho mọi service!)\nbuilder.Services.AddOpenTelemetry()\n    .ConfigureResource(resource => resource.AddService(\n        serviceName: builder.Environment.ApplicationName))\n    .WithTracing(tracing => tracing\n        .AddAspNetCoreInstrumentation(opt =>\n        {\n            // Bỏ qua các request healthcheck để đỡ làm rác biểu đồ trace\n            opt.Filter = ctx => !ctx.Request.Path.StartsWithSegments(\"/health\");\n        })\n        .AddHttpClientInstrumentation()\n        .AddEntityFrameworkCoreInstrumentation()\n        .AddOtlpExporter())      // Tự đọc OTEL_EXPORTER_OTLP_ENDPOINT từ biến môi trường!\n    .WithMetrics(metrics => metrics\n        .AddAspNetCoreInstrumentation()\n        .AddHttpClientInstrumentation()\n        .AddRuntimeInstrumentation()\n        .AddOtlpExporter());\n\n// Gắn TraceId & SpanId vào Structured Logging\nbuilder.Logging.AddOpenTelemetry(logging =>\n{\n    logging.IncludeFormattedMessage = true;\n    logging.IncludeScopes = true;\n    logging.AddOtlpExporter();\n});\n```\n\n#### Luồng Trace thực tế trên một yêu cầu Đặt hàng .NET:\n\n```\nTraceId: 7d2a9f10c3b84e21a904f8b7d123c456  (Tổng: 118 ms)\n├── [ApiGateway]   POST /api/v1/orders                     |================= 118 ms =================|\n    └── [Ordering.API] OrdersController.PlaceOrder          |============== 106 ms ==============|\n        ├── [PostgreSQL] INSERT INTO ordering.orders          |== 14 ms ==|\n        ├── [Catalog.API] POST /api/v1/catalog/items/3/reserve            |====== 62 ms ======|\n        │   └── [PostgreSQL] UPDATE catalog.catalog_items                   |=== 24 ms ===|\n        └── [RabbitMQ] Publish OrderCreatedIntegrationEvent                                 |= 9 ms =|\n```\n\n### 11.3. Góc nhìn trên nền tảng MAVIS\n\n* **Step 3 (Live Runtime Observation)**: `MAVIS.Runner` truyền biến môi trường `OTEL_EXPORTER_OTLP_ENDPOINT` vào từng container .NET trong Docker Compose. Nhờ cấu hình chuẩn ở trên, toàn bộ vết gọi (`Spans`), chỉ số **RED Metrics** (*Rate, Errors, Duration*) và thông tin lỗi sẽ chảy thẳng về đồ thị sống 2D/3D của MAVIS!\n* **So sánh Static (Roslyn) vs. Runtime (OTel)**: Sinh viên kiểm chứng trực tiếp sự khớp nối giữa cạnh tĩnh `Ordering.API -> Catalog.API` và vết gọi thực tế lúc chạy.",
+    "exercise": "### 11.4. Bài tập thực hành Lab 11\n\n* Gửi kịch bản đặt hàng trong **MAVIS Step 3** và mở bảng **OpenTelemetry Trace**.\n* Xác định `TraceId` chung, chỉ ra thành phần chiếm độ trễ lớn nhất và kiểm tra xem các lời gọi `/health/live` có được lọc sạch khỏi trace nghiệp vụ hay chưa.",
+    "sources": [
+      {
+        "publisher": "Microsoft Learn",
+        "title": ".NET Microservices: Architecture for Containerized .NET Applications",
+        "url": "https://learn.microsoft.com/en-us/dotnet/architecture/microservices/"
+      },
+      {
+        "publisher": "O'Reilly / Production-Ready Microservices",
+        "title": "Susan J. Fowler — Production-Ready Microservices",
+        "url": "https://www.oreilly.com/library/view/production-ready-microservices/9781491965962/"
+      },
+      {
+        "publisher": "CNCF OpenTelemetry",
+        "title": "OpenTelemetry Concepts & Instrumentation Docs",
+        "url": "https://opentelemetry.io/docs/"
+      },
+      {
+        "publisher": "Microsoft Learn (.NET 8 / YARP)",
+        "title": "ASP.NET Core 8 & YARP Reverse Proxy Documentation",
+        "url": "https://learn.microsoft.com/en-us/aspnet/core/"
+      }
+    ],
+    "questions": [
+      {
+        "id": "csharp-v2-ch11-q1",
+        "prompt": "Tại sao endpoint **Liveness (`/health/live`)** KHÔNG nên kiểm tra kết nối tới cơ sở dữ liệu hay dịch vụ bên ngoài?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Vì nếu cơ sở dữ liệu chỉ chập chờn $2$ giây mà Liveness trả `Unhealthy`, Docker/Kubernetes sẽ khởi động lại (restart) đồng loạt mọi container dịch vụ gây sập nặng thêm; việc kiểm tra DB nên đặt ở **Readiness (`/health/ready`)**",
+          "Vì ASP.NET Core không cho phép kiểm tra PostgreSQL trong Health Checks",
+          "Vì Liveness chỉ chạy trên Windows",
+          "Vì Liveness không trả về mã HTTP"
+        ],
+        "correctOption": 0,
+        "explanation": "Liveness chỉ kiểm tra bản thân tiến trình có bị treo/deadlock không; Readiness mới quyết định container có đủ điều kiện (DB/Redis sẵn sàng) để nhận traffic hay chưa.",
+        "points": 1
+      },
+      {
+        "id": "csharp-v2-ch11-q2",
+        "prompt": "Biến môi trường tiêu chuẩn nào của **OpenTelemetry** giúp dịch vụ .NET tự biết địa chỉ gửi dữ liệu Traces và Metrics về Collector của MAVIS mà không cần hard-code trong C#?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "`DOTNET_ENVIRONMENT`",
+          "`OTEL_EXPORTER_OTLP_ENDPOINT`",
+          "`ASPNETCORE_URLS`",
+          "`POSTGRES_PASSWORD`"
+        ],
+        "correctOption": 1,
+        "explanation": "`AddOtlpExporter()` tự động đọc biến môi trường chuẩn W3C/CNCF `OTEL_EXPORTER_OTLP_ENDPOINT`.",
+        "points": 1
+      },
+      {
+        "id": "csharp-v2-ch11-q3",
+        "prompt": "Trong .NET 8, OpenTelemetry tự động gắn kết các Span giữa `ApiGateway`, `Ordering.API` và `Catalog.API` vào chung một cây vết phân tán nhờ cơ chế nào?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Truyền tiêu chuẩn W3C **`traceparent`** trong HTTP Header (quản lý nội tại bởi `System.Diagnostics.Activity`)",
+          "Lưu chung file log vào thư mục `C:\\Temp`",
+          "So khớp tên phương thức C# giống nhau",
+          "Chia sẻ chung một biến `static` giữa các container"
+        ],
+        "correctOption": 0,
+        "explanation": "`HttpClientInstrumentation` tự động chèn header `traceparent` lúc gửi đi và `AspNetCoreInstrumentation` tự động đọc lại ở dịch vụ nhận.",
+        "points": 1
+      },
+      {
+        "id": "csharp-v2-ch11-q4",
+        "prompt": "Tại sao nên cấu hình bộ lọc bỏ qua các đường dẫn `/health` trong `AddAspNetCoreInstrumentation`?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Để tránh các đợt kiểm tra sức khỏe định kỳ mỗi vài giây từ Docker làm ngập rác hệ thống thu thập Trace và làm lệch thống kê độ trễ nghiệp vụ",
+          "Vì `/health` luôn gây lỗi `500`",
+          "Vì OpenTelemetry không đọc được phương thức `GET`",
+          "Để tăng gấp đôi dung lượng RAM sử dụng"
+        ],
+        "correctOption": 0,
+        "explanation": "Lọc nhiễu healthcheck giúp biểu đồ trace tập trung 100% vào lưu lượng nghiệp vụ thật.",
+        "points": 1
+      }
+    ]
   }
 ]
