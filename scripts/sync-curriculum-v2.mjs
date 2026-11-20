@@ -124,13 +124,65 @@ function resolveSources(track, rawSourcesLine, chapterTitle) {
   return sources;
 }
 
+function convertLatexExprToUnicode(expr) {
+  let out = expr.trim();
+  const supMap = { 0: '⁰', 1: '¹', 2: '²', 3: '³', 4: '⁴', 5: '⁵', 6: '⁶', 7: '⁷', 8: '⁸', 9: '⁹' };
+  const subMap = { i: 'ᵢ', n: 'ₙ' };
+
+  out = out
+    .replace(/\\text\{([^}]*)\}/g, '$1')
+    .replace(/\\prod_\{([^}]*)\}\^\{([^}]*)\}/g, '∏($1..$2)')
+    .replace(/\\prod/g, '∏')
+    .replace(/\\rightarrow|\\to\b/g, '→')
+    .replace(/\\leftarrow\b/g, '←')
+    .replace(/\\ge\b/g, '≥')
+    .replace(/\\le\b/g, '≤')
+    .replace(/\\times\b/g, '×')
+    .replace(/\\approx\b/g, '≈')
+    .replace(/\\dots\b/g, '…')
+    .replace(/\\%/g, '%')
+    .replace(/\^\{([0-9]+)\}/g, (_, d) => [...d].map((c) => supMap[c] || c).join(''))
+    .replace(/\^([0-9])/g, (_, d) => supMap[d] || `^${d}`)
+    .replace(/_\{([a-zA-Z0-9_-]+)\}/g, '_$1')
+    .replace(/_([in])\b/g, (_, s) => subMap[s] || `_${s}`)
+    .replace(/[ \t]+/g, ' ');
+  return out.trim();
+}
+
+function sanitizeLatexMarkdown(markdown) {
+  if (!markdown) return markdown;
+  const preserved = [];
+  const mask = (segment) => {
+    const token = `\u0000CODE${preserved.length}\u0000`;
+    preserved.push(segment);
+    return token;
+  };
+
+  let text = markdown.replace(/```[\s\S]*?```/g, mask).replace(/`[^`\n]+`/g, mask);
+
+  text = text.replace(/\$\$([\s\S]*?)\$\$/g, (_, inner) => convertLatexExprToUnicode(inner));
+  text = text.replace(/\$(?!\{)(?!\s)([^$\n]+?)(?<!\s)\$/g, (_, inner) => convertLatexExprToUnicode(inner));
+
+  text = text
+    .replace(/\\rightarrow|\\to\b/g, '→')
+    .replace(/\\leftarrow\b/g, '←')
+    .replace(/\\ge\b/g, '≥')
+    .replace(/\\le\b/g, '≤')
+    .replace(/\\times\b/g, '×')
+    .replace(/\\approx\b/g, '≈')
+    .replace(/\\\[/g, '[')
+    .replace(/\\\]/g, ']');
+
+  return text.replace(/\u0000CODE(\d+)\u0000/g, (_, idx) => preserved[Number(idx)]);
+}
+
 function cleanObjective(rawObjectiveBlock) {
   const lines = rawObjectiveBlock
     .split(/\r?\n/)
     .map((l) => l.trim())
     .filter(Boolean)
     .map((l) => l.replace(/^\d+\.\s*/, '').replace(/^[-*]\s*/, '').replace(/\*\*/g, ''));
-  return lines.join(' ');
+  return sanitizeLatexMarkdown(lines.join(' '));
 }
 
 function estimateMinutes(chapterNumber, lessonBody) {
@@ -250,8 +302,8 @@ function parseChapter(track, chapterNumber) {
   }
 
   const lessonStart = section.search(/^###\s+\d+\.\d+/m);
-  const lessonBody = section.slice(lessonStart, labMatch.index).trim();
-  const exerciseBody = section.slice(labMatch.index, quizMatch.index).trim();
+  const lessonBody = sanitizeLatexMarkdown(section.slice(lessonStart, labMatch.index).trim());
+  const exerciseBody = sanitizeLatexMarkdown(section.slice(labMatch.index, quizMatch.index).trim());
   const quizSection = section.slice(quizMatch.index).trim();
 
   if (lessonBody.length < 400) {
@@ -263,7 +315,7 @@ function parseChapter(track, chapterNumber) {
 
   const chPadded = String(chapterNumber).padStart(2, '0');
   const chapterId = `${cfg.idPrefix}${chPadded}`;
-  const cleanTitle = `Chương ${chPadded}: ${headingMatch[2].trim()}`;
+  const cleanTitle = sanitizeLatexMarkdown(`Chương ${chPadded}: ${headingMatch[2].trim()}`);
   const objective = cleanObjective(objMatch[1]);
   const sources = resolveSources(track, srcMatch[1], cleanTitle);
   const questions = parseQuestions(quizSection, chapterId);
