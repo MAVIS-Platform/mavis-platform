@@ -704,22 +704,17 @@ test("Stage 1 reference views, Step 4 submit bridge, and student BFF endpoints a
   assert.ok(composer.includes("Run Static Analysis Now"));
 });
 
-test("Curated course seeding remains available without a standalone library card", () => {
+test("Curated library UI stays removed while the seeding API remains available", () => {
   const access = read("src/features/workspaces/course-access.tsx");
   const course = read("src/features/courses/screens.tsx");
   const assignments = read("src/features/assignments/screens.tsx");
   const { allowedBackendPath } = require("../src/lib/api/backend-path.ts");
 
-  assert.ok(access.includes("export function SeedCuratedCourseLabs"));
-  assert.ok(access.includes("course-labs/seed-curated"));
-  assert.ok(access.includes("STANDARD_DEMO"));
-  assert.ok(access.includes("FULL_CURRICULUM"));
+  assert.doesNotMatch([access, course, assignments].join("\n"), /SeedCuratedCourseLabs|MAVIS Curated Course & Lab Library/);
   assert.equal(
     allowedBackendPath("workspaces/11111111-1111-1111-1111-111111111111/course-labs/seed-curated"),
     true,
   );
-  assert.equal(course.includes("<SeedCuratedCourseLabs workspaceId={workspaceId}"), false);
-  assert.equal(assignments.includes("<SeedCuratedCourseLabs workspaceId={workspaceId}"), false);
 });
 
 test("Course builder exposes immutable publishing and BFF routes for structured roadmap content", () => {
