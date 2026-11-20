@@ -1147,7 +1147,6 @@ export function LabTheorySection({
               <span>{t("Lesson title", "Tên bài học")}</span>
               <Input
                 maxLength={255}
-                placeholder={t("e.g. Service Boundaries & OpenFeign Contracts", "VD: Ranh giới Service & Hợp đồng OpenFeign")}
                 value={newTitle}
                 onChange={(event) => setNewTitle(event.target.value)}
               />

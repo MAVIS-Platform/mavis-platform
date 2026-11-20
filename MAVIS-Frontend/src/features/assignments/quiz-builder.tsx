@@ -387,7 +387,6 @@ export function QuizBuilder({
         <label className="space-y-1 text-xs font-medium">
           <span>{t("Quiz title", "Tiêu đề Quiz")}</span>
           <Input
-            placeholder={t("e.g. Microservice Boundaries Check", "VD: Kiểm tra ranh giới Microservices")}
             value={lesson}
             onChange={(event) => {
               setLesson(event.target.value);

@@ -1732,7 +1732,6 @@ export function LiveStudioWorkbench({
                   ref={snapshotNoteRef}
                   value={explanation}
                   maxLength={4000}
-                  placeholder="Describe what you observed (e.g. Scaled payment to 2 pods — p95 stayed 55 ms, 0% errors)…"
                   onChange={(event) => setExplanation(event.target.value)}
                   className="mt-1 min-h-12 bg-slate-950 text-[11px]"
                 />
@@ -2036,7 +2035,6 @@ export function LiveStudioWorkbench({
                   <Textarea
                     value={missionDraft}
                     onChange={(e) => setMissionDraft(e.target.value)}
-                    placeholder="e.g. Start stopped services, scale order-service to 2 pods, capture Before/After snapshots."
                     className="min-h-20 border-slate-700 bg-slate-950 text-xs text-slate-100"
                   />
                 </label>

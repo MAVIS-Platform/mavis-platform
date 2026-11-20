@@ -90,7 +90,6 @@ export function LabInfoForm({
             aria-label={t("Lab title", "Tên Lab")}
             required
             maxLength={255}
-            placeholder={t("e.g. Lab 1 · Inspect Microservice Boundaries", "VD: Lab 1 · Phân tích ranh giới Microservices")}
             value={title}
             onChange={(event) => setTitle(event.target.value)}
           />
@@ -137,10 +136,6 @@ export function LabInfoForm({
               aria-label={t("Description", "Mô tả")}
               maxLength={10000}
               rows={5}
-              placeholder={t(
-                "Outline goals, tasks, or evaluation focus for students…",
-                "Nhập mục tiêu, yêu cầu hoặc tiêu chí đánh giá cho sinh viên…",
-              )}
               value={instructions}
               onChange={(event) => {
                 setInstructions(event.target.value);
