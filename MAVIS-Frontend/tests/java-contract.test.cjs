@@ -1368,3 +1368,17 @@ test("SR-06: analysisState derived states (PARTIAL, COMPLETED_WITH_REVIEW, COMPL
  assert.equal(analysisStatusBadgeProps(failed).variant,"destructive");
  assert.equal(failed.message,"WORKER_FAILED");
 });
+
+test("admin audit accepts structured JSON and preserves historical string details", async t => {
+ environment(t);
+ const entry = {id:project, createdAt:"2026-11-20T00:00:00Z", action:"WORKSPACE_UPDATED"};
+ const payload = [{...entry, details:{name:"QA workspace"}}, {...entry, id:node, details:"legacy"}, {...entry, id:job, details:null}];
+ t.mock.method(globalThis,"fetch",async (url,options)=>{
+  assert.ok(String(url).endsWith("/api/v1/admin/audit-logs"));
+  assert.equal(options.headers.get("Authorization"),"Bearer jwt");
+  return Response.json({code:200,data:payload});
+ });
+ const results = await executeJava("audit",{},"jwt",new AbortController().signal);
+ assert.deepEqual(results.map(result=>result.details),[JSON.stringify({name:"QA workspace"}),"legacy",null]);
+ assert.equal(validateResponse("audit",{},results).length,3);
+});
