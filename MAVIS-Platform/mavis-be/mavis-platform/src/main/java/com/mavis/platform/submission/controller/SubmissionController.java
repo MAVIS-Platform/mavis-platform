@@ -36,6 +36,16 @@ public class SubmissionController {
         return ApiResponse.success("Nộp bài tập thành công", response);
     }
 
+    @GetMapping("/api/v1/workspaces/{workspaceId}/submissions")
+    @Operation(summary = "Lấy danh sách bài nộp trên toàn bộ các Lab đang hoạt động của lớp học (Giảng viên chấm bài)")
+    public ApiResponse<List<SubmissionResponseDTO>> getSubmissionsByWorkspace(
+            @PathVariable UUID workspaceId,
+            @RequestParam(required = false) String reviewStatus,
+            @RequestParam(required = false) String labOutcome) {
+        List<SubmissionResponseDTO> submissions = submissionService.getSubmissionsByWorkspace(workspaceId, reviewStatus, labOutcome);
+        return ApiResponse.success("Lấy danh sách bài nộp của lớp học thành công", submissions);
+    }
+
     @GetMapping("/api/v1/assignments/{assignmentId}/submissions")
     @Operation(summary = "Lấy danh sách bài nộp của một đề bài (Giảng viên chấm bài)",
             description = "Tối ưu hóa 8-way EntityGraph + batch review để nạp toàn bộ danh sách bài nộp của lớp học")

@@ -500,6 +500,28 @@ public class SubmissionServiceImpl implements SubmissionService {
 
     @Override
     @Transactional(readOnly = true)
+    public List<SubmissionResponseDTO> getSubmissionsByWorkspace(UUID workspaceId, String reviewStatus, String labOutcome) {
+        accessPolicyService.requireWorkspaceLecturer(workspaceId);
+        Workspace workspace = workspaceRepository.findById(workspaceId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Workspace not found"));
+
+        List<Assignment> allAssignments = assignmentRepository.findByWorkspaceIdOrderByCreatedAtDesc(workspaceId);
+        boolean hasOrdered = workspace.isCourseMode() && allAssignments.stream().anyMatch(a -> a.getLabOrder() != null);
+        List<UUID> activeAssignmentIds = allAssignments.stream()
+                .filter(a -> !hasOrdered || a.getLabOrder() != null)
+                .map(Assignment::getId)
+                .toList();
+        if (activeAssignmentIds.isEmpty()) {
+            return List.of();
+        }
+        List<SubmissionSnapshot> submissions =
+                submissionSnapshotRepository.findByAssignmentIdInOrderBySubmittedAtDesc(activeAssignmentIds);
+        List<SubmissionResponseDTO> mapped = mapToResponseListWithFeedbackCount(submissions, true);
+        return filterAndSortLecturerSubmissions(mapped, reviewStatus, labOutcome);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<SubmissionResponseDTO> getSubmissionsByAssignment(UUID assignmentId) {
         return getSubmissionsByAssignment(assignmentId, null, null);
     }
@@ -514,14 +536,21 @@ public class SubmissionServiceImpl implements SubmissionService {
         accessPolicyService.requireWorkspaceLecturer(assignment.getWorkspace().getId());
         List<SubmissionSnapshot> submissions = submissionSnapshotRepository.findByAssignmentIdOrderBySubmittedAtDesc(assignmentId);
         List<SubmissionResponseDTO> mapped = mapToResponseListWithFeedbackCount(submissions, true);
-        if ((reviewStatus == null || reviewStatus.isBlank()) && (labOutcome == null || labOutcome.isBlank())) {
-            return mapped;
-        }
+        return filterAndSortLecturerSubmissions(mapped, reviewStatus, labOutcome);
+    }
+
+    private static List<SubmissionResponseDTO> filterAndSortLecturerSubmissions(
+            List<SubmissionResponseDTO> mapped, String reviewStatus, String labOutcome) {
+        Comparator<SubmissionResponseDTO> ordering = Comparator
+                .comparing((SubmissionResponseDTO s) -> "PENDING".equalsIgnoreCase(s.getReviewStatus()) ? 0 : 1)
+                .thenComparing(SubmissionResponseDTO::getSubmittedAt,
+                        Comparator.nullsLast(Comparator.reverseOrder()));
         return mapped.stream()
                 .filter(s -> reviewStatus == null || reviewStatus.isBlank()
                         || reviewStatus.trim().equalsIgnoreCase(s.getReviewStatus()))
                 .filter(s -> labOutcome == null || labOutcome.isBlank()
                         || labOutcome.trim().equalsIgnoreCase(s.getLabOutcome()))
+                .sorted(ordering)
                 .toList();
     }
 
