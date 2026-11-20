@@ -38,6 +38,7 @@ export function validateResponse<K extends Operation>(
   };
   const idKey = ids[operation];
   if (operation === "assignmentSubmissions" && Array.isArray(value) && value.some(v => !record(v) || v["assignmentId"] !== request["assignmentId"])) fail();
+  if (operation === "workspaceSubmissions" && Array.isArray(value) && value.some(v => !record(v) || (v["workspaceId"] != null && v["workspaceId"] !== request["workspaceId"]))) fail();
   if (idKey && (!record(value) || value["id"] !== request[idKey])) fail();
   if (
     Array.isArray(value) &&

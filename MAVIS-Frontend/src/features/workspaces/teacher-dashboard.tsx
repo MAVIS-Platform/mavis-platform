@@ -96,7 +96,7 @@ export function TeacherDashboard() {
               variant="outline"
               className="border-white/30 bg-white/12 text-white hover:bg-white/20 hover:text-white"
             >
-              <Link href="/submissions">
+              <Link href="/submissions?status=PENDING">
                 <ClipboardCheck className="mr-1.5 h-4 w-4" aria-hidden="true" />
                 {t("Grading Queue", "Hàng Đợi Chấm Bài")}
               </Link>
@@ -279,7 +279,9 @@ export function TeacherDashboard() {
                           variant="outline"
                           onClick={() => selection.setWorkspaceId(workspace.id)}
                         >
-                          <Link href={`/submissions?workspace=${encodeURIComponent(workspace.id)}`}>
+                          <Link
+                            href={`/submissions?workspace=${encodeURIComponent(workspace.id)}${pending > 0 ? "&status=PENDING" : ""}`}
+                          >
                             {t("Grading", "Chấm bài")}
                           </Link>
                         </Button>

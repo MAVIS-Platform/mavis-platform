@@ -144,7 +144,18 @@ export function Workspaces() {
               variant="outline"
               className="rounded-lg border-blue-200 text-[#0056d2] hover:bg-blue-50"
             >
-              <Link href="/submissions">
+              <Link
+                href={(() => {
+                  const firstPendingWs = (query.data ?? []).find(
+                    (w) => (pendingByWorkspace.get(w.id) ?? 0) > 0,
+                  )?.id;
+                  return firstPendingWs
+                    ? `/submissions?workspace=${encodeURIComponent(firstPendingWs)}&status=PENDING`
+                    : pendingReviews > 0
+                      ? "/submissions?status=PENDING"
+                      : "/submissions";
+                })()}
+              >
                 {t("Review submissions", "Chấm bài nộp")}
                 <span className="ml-2" aria-hidden="true">
                   →
@@ -305,7 +316,13 @@ export function Workspaces() {
                       <Link href={workspaceUrl}>{t("Open class", "Mở lớp")}</Link>
                     </Button>
                     <Button asChild variant="outline" className="border-[#0056d2] text-[#0056d2]">
-                      <Link href={"/submissions?workspace=" + encodeURIComponent(workspace.id)}>
+                      <Link
+                        href={
+                          "/submissions?workspace=" +
+                          encodeURIComponent(workspace.id) +
+                          (pending > 0 ? "&status=PENDING" : "")
+                        }
+                      >
                         {t("Submissions", "Bài nộp")}
                       </Link>
                     </Button>

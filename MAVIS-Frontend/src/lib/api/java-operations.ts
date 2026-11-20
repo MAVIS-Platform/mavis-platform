@@ -275,6 +275,7 @@ export async function executeJava(
         studentSnapshots: z.array(studentSnapshotSchema).nullish(),
         reviewStatus: z.string().nullish(),
         reviewScore: z.number().nullish(),
+        reviewScoreTenScale: z.number().nullish(),
         labOutcome: z.string().nullish(),
         reviewSummary: z.string().nullish(),
         gradedByName: z.string().nullish(),
@@ -371,6 +372,11 @@ export async function executeJava(
       ...(sub.studentSnapshots ? { studentSnapshots: sub.studentSnapshots } : {}),
       reviewStatus: sub.reviewStatus ?? null,
       reviewScore: sub.reviewScore ?? null,
+      reviewScoreTenScale:
+        sub.reviewScoreTenScale ??
+        (sub.reviewScore !== null && sub.reviewScore !== undefined
+          ? Math.round((sub.reviewScore / 10) * 100) / 100
+          : null),
       labOutcome: sub.labOutcome ?? null,
       reviewSummary: sub.reviewSummary ?? null,
       gradedByName: sub.gradedByName ?? null,
@@ -1113,6 +1119,19 @@ export async function executeJava(
           .parse(await get(workspaceId ? `submissions/me?workspaceId=${workspaceId}` : "submissions/me"))
           .map((row) => coursework(row, false)),
       );
+    }
+    case "workspaceSubmissions": {
+      const workspaceId = id(input, "workspaceId");
+      const query = new URLSearchParams();
+      if (typeof input["reviewStatus"] === "string" && input["reviewStatus"]) {
+        query.set("reviewStatus", input["reviewStatus"]);
+      }
+      if (typeof input["labOutcome"] === "string" && input["labOutcome"]) {
+        query.set("labOutcome", input["labOutcome"]);
+      }
+      const suffix = query.toString() ? `?${query}` : "";
+      const rows = list.parse(await get(`workspaces/${workspaceId}/submissions${suffix}`));
+      return Promise.all(rows.map((row) => coursework(row, false)));
     }
     case "assignmentSubmissions": {
       const workspaceId = id(input, "workspaceId"),
