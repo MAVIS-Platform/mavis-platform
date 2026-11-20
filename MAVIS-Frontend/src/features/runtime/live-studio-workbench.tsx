@@ -287,9 +287,8 @@ export function LiveStudioWorkbench({
   ]);
 
   const services = liveServices.length > 0 ? liveServices : data.services;
-  const selected = services.includes(studio.service)
-    ? studio.service
-    : target || services[0] || "";
+  const canvasSelected = services.includes(studio.service) ? studio.service : "";
+  const selected = canvasSelected || target || services[0] || "";
   const graphRef = useRef<HTMLDivElement>(null);
   const snapshotNoteRef = useRef<HTMLTextAreaElement>(null);
   const [tab, setTab] = useState<"stats" | "telemetry" | "logs" | "snapshots">("telemetry");
@@ -1191,11 +1190,11 @@ export function LiveStudioWorkbench({
           >
             <LiveSandboxParity
               data={data}
-              selected={selected}
+              selected={canvasSelected}
               busy={isPreviewMode ? false : busy}
               onSelect={(svc) => {
                 studio.setService(svc);
-                setSetupPanel("service");
+                if (svc) setSetupPanel("service");
               }}
               onCommand={dispatchCommand}
               sections={["library"]}
@@ -1267,10 +1266,10 @@ export function LiveStudioWorkbench({
             ) : data.services.length > 0 || data.topology ? (
               <StudioObservability
                 data={data}
-                selected={selected}
+                selected={canvasSelected}
                 onSelect={(svc) => {
                   studio.setService(svc);
-                  setSetupPanel("service");
+                  if (svc) setSetupPanel("service");
                 }}
                 busy={isPreviewMode ? false : busy}
                 canvasOnly

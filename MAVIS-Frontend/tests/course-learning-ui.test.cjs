@@ -1495,6 +1495,9 @@ test("Lecturer Studio Live authoring uses unified single top bar, non-red health
   assert.match(obs, /confirmed\?\.result\?\.replicasAfter !== undefined/);
   assert.match(obs, /isImpactedByOutage/);
   assert.doesNotMatch(obs, /isStopped \|\| isAffected/);
+  assert.match(live, /const canvasSelected = services\.includes\(studio\.service\) \? studio\.service : "";/);
+  assert.match(obs, /else if \(clickedBlankCanvas && selected\) onSelect\(""\);/);
+  assert.doesNotMatch(obs, /const accentColor = isStopped \? s : "#(38bdf8|2dd4bf|a78bfa)"/);
 });
 
 test("Step 2 Reference Architecture and C1-C3 native SVG preview eliminate Draw.io iframes and use theme-adaptive blueprint styling", () => {

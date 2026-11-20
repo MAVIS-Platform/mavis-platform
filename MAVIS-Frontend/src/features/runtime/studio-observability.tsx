@@ -182,27 +182,24 @@ function getArchetypeTheme(
                                 ? { badgeText: "STREAM", typeLabel: "EVENT BROKER" }
                                 : { badgeText: "COMPUTE", typeLabel: "APP SERVER" };
 
-  // Meta / Linear / Cloudcraft SE Standard Palette:
-  // Unified dark graphite CAD chassis (#0f172a body, #1e293b top cap, #64748b structural wireframe)
-  // with restrained semantic accent strictly on the inner functional emblem & icon.
-  const accent = isEdge
-    ? "#38bdf8"
-    : isData
-      ? "#34d399"
-      : isInfra
-        ? "#cbd5e1"
-        : "#94a3b8";
-
+  // Unified Studio Sandbox dark graphite CAD chassis when idle/unselected:
+  // ZERO glowing neon colors on unselected blocks — ONLY the clicked/selected block lights up in cyan.
   const base = {
-    stroke: "#64748b",
+    stroke: "#475569",
     cardFill: "#0f172a",
-    iconBg: "#1e293b",
-    accent,
+    iconBg: "#1b263b",
+    accent: "#94a3b8",
     ...badgeAndType,
   };
 
   if (isDropTarget || isSelected) {
-    return { ...base, stroke: "#38bdf8", iconBg: "#0f2942", accent: "#38bdf8" };
+    return {
+      ...base,
+      stroke: "#38bdf8",
+      cardFill: "#0c2238",
+      iconBg: "#123456",
+      accent: "#7dd3fc",
+    };
   }
   return base;
 }
@@ -581,11 +578,11 @@ function render3DSeNodeSculpture(
         {/* Right Gateway Pillar */}
         {renderIsoBox(cx + 18, gy + 4, 11, 6, 24, s, fill, 1.3, top)}
         {/* Top Bridging Gateway Arch Header */}
-        {renderIsoBox(cx, headerY, 34, 14, headerHeight, a, fill, 1.6, top)}
+        {renderIsoBox(cx, headerY, 34, 14, headerHeight, s, fill, 1.5, top)}
         {/* API routing arrow centered on the roof */}
         <path
           d={`M ${cx - 12},${roofY} L ${cx + 12},${roofY} M ${cx + 7},${roofY - 3} L ${cx + 12},${roofY} L ${cx + 7},${roofY + 3}`}
-          stroke="#ffffff"
+          stroke={a}
           strokeWidth="1.8"
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -871,87 +868,53 @@ function render3DSeNodeSculpture(
     );
   }
 
-  // 14. ORDER / CART / CHECKOUT: 3D Stepped Fulfillment Deck + Stacked Order Parcels
+  // 14. ORDER / CART / CHECKOUT: Clean Studio Sandbox Stepped Fulfillment Module
   if (n.includes("order") || n.includes("cart") || n.includes("checkout")) {
     const by = cy - 1;
-    const accentColor = isStopped ? s : "#38bdf8";
+    const baseH = isStopped ? 9 : 10;
+    const upperH = isStopped ? 7 : 8;
+    const roofY = by - baseH - upperH - 1;
     return (
       <g>
-        {/* Wide Base Order Deck */}
-        {renderIsoBox(cx, by, 34, 16, 8, s, fill, 1.4, top)}
-        {/* Left Stacked Fulfillment Parcel */}
-        {renderIsoBox(cx - 10, by - 9, 15, 7.5, 13, accentColor, fill, 1.5, top)}
-        {/* Right Secondary Order Cube */}
-        {renderIsoBox(cx + 10, by - 7, 13, 6.5, 9, s, fill, 1.3, top)}
-        {/* Order Checkmark Emblem on Tall Parcel Roof */}
-        <path
-          d={`M ${cx - 14},${by - 22} L ${cx - 10.5},${by - 19} L ${cx - 5},${by - 24.5}`}
-          fill="none"
-          stroke="#ffffff"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        {/* Active Flow LEDs on Base Tray */}
-        <circle cx={cx - 18} cy={by - 3.5} r="1.6" fill={accentColor} />
-        <circle cx={cx - 11} cy={by - 0.5} r="1.6" fill={isStopped ? "#ef4444" : "#10b981"} />
+        {/* Solid Isometric Base Chassis */}
+        {renderIsoBox(cx, by, 33, 15.5, baseH, s, fill, 1.4, top)}
+        {/* Centered Upper Processing Deck */}
+        {renderIsoBox(cx, by - baseH - 1, 22, 10.5, upperH, s, fill, 1.4, top)}
+        {/* Subtle Status LED on Base Wall */}
+        <circle cx={cx - 19} cy={by - baseH * 0.42} r="1.5" fill={a} />
+        <circle cx={cx - 13} cy={by - baseH * 0.42 + 2.6} r="1.5" fill={isStopped ? "#f43f5e" : "#10b981"} />
+        {/* Crisp Cart Emblem Centered on Upper Deck */}
+        {renderNodeFunctionGlyph(name, archetype, cx, roofY, a)}
       </g>
     );
   }
 
-  // 15. PAYMENT / BILLING / LEDGER / WALLET: 3D Payment Vault Base + Upright Tilted Ledger Card Slab
+  // 15. PAYMENT / BILLING / LEDGER / WALLET: Clean Studio Sandbox Isometric Vault Unit
   if (n.includes("payment") || n.includes("billing") || n.includes("ledger") || n.includes("wallet")) {
     const by = cy - 1;
-    const accentColor = isStopped ? s : "#2dd4bf";
+    const h = isStopped ? 14 : 16;
+    const roofY = by - h;
     return (
       <g>
-        {/* Vault Pedestal */}
-        {renderIsoBox(cx, by, 28, 13, 8, s, fill, 1.4, top)}
-        {/* Upright Isometric Payment Card / Ledger Monolith */}
-        <polygon
-          points={`${cx - 21},${by - 10} ${cx + 15},${by - 25} ${cx + 21},${by - 22} ${cx + 21},${by - 4} ${cx - 15},${by + 11} ${cx - 21},${by + 8}`}
-          fill={fill}
-          stroke={accentColor}
-          strokeWidth="1.6"
-          strokeLinejoin="round"
-        />
-        {/* Card Front Face Sheen */}
-        <polygon
-          points={`${cx - 15},${by - 7} ${cx + 21},${by - 22} ${cx + 21},${by - 4} ${cx - 15},${by + 11}`}
-          fill={top}
-          stroke={accentColor}
-          strokeWidth="1.4"
-          strokeLinejoin="round"
-        />
-        {/* Magnetic Transaction Stripe across Upright Card */}
-        <line
-          x1={cx - 13}
-          y1={by - 2}
-          x2={cx + 19}
-          y2={by - 15.5}
-          stroke={accentColor}
-          strokeWidth="3.2"
-          strokeLinecap="round"
-          opacity="0.85"
-        />
-        {/* EMV Security Chip & Contactless Pulse */}
-        <polygon
-          points={`${cx - 9},${by + 2} ${cx - 2},${by - 1} ${cx - 2},${by + 4} ${cx - 9},${by + 7}`}
-          fill="#fbbf24"
-          opacity={isStopped ? "0.35" : "0.95"}
-        />
-        <path
-          d={`M ${cx + 8},${by - 3} A 5 5 0 0 1 ${cx + 13},${by - 6}`}
+        {/* Grounded Isometric Security Vault Chassis */}
+        {renderIsoBox(cx, by, 32, 15, h, s, fill, 1.5, top)}
+        {/* Recessed Metallic Ledger Seam across Front Walls */}
+        <polyline
+          points={`${cx - 32},${by - h * 0.45} ${cx},${by + 15 - h * 0.45} ${cx + 32},${by - h * 0.45}`}
           fill="none"
-          stroke="#ffffff"
-          strokeWidth="1.6"
-          strokeLinecap="round"
+          stroke={a}
+          strokeWidth="1.2"
+          opacity="0.65"
         />
+        {/* Vault Status LED */}
+        <circle cx={cx - 19} cy={by - h * 0.72} r="1.5" fill={isStopped ? "#f43f5e" : "#10b981"} />
+        {/* Crisp Payment Card Emblem Centered on Vault Roof */}
+        {renderNodeFunctionGlyph(name, archetype, cx, roofY, a)}
       </g>
     );
   }
 
-  // 16. CATALOG / PRODUCT / INVENTORY / WAREHOUSE: 3D Tiered 3-Shelf Showcase Rack
+  // 16. CATALOG / PRODUCT / INVENTORY / WAREHOUSE: Clean Studio Sandbox 2-Bay Modular Storage Rack
   if (
     n.includes("catalog") ||
     n.includes("product") ||
@@ -960,32 +923,26 @@ function render3DSeNodeSculpture(
     n.includes("item")
   ) {
     const by = cy - 1;
-    const accentColor = isStopped ? s : "#a78bfa";
+    const tierH = isStopped ? 7.5 : 8.5;
+    const roofY = by - tierH * 2 - 2.5;
     return (
       <g>
-        {/* Bottom Tier Shelf */}
-        {renderIsoBox(cx, by, 30, 14, 4.5, s, fill, 1.3, top)}
-        {/* Vertical Corner Stanchions */}
-        <g stroke={accentColor} strokeWidth="1.5" opacity="0.8">
-          <line x1={cx - 26} y1={by - 4} x2={cx - 26} y2={by - 24} />
-          <line x1={cx} y1={by + 9} x2={cx} y2={by - 11} />
-          <line x1={cx + 26} y1={by - 4} x2={cx + 26} y2={by - 24} />
-        </g>
-        {/* Middle Tier Shelf */}
-        {renderIsoBox(cx, by - 10, 29, 13.5, 4, s, fill, 1.3, top)}
-        {/* Top Showcase Tier Shelf */}
-        {renderIsoBox(cx, by - 20, 28, 13, 4.5, accentColor, fill, 1.5, top)}
-        {/* Mini Catalog Item Cubes displayed on Top Shelf */}
-        {renderIsoBox(cx - 8, by - 24, 6.5, 3.2, 5.5, accentColor, top, 1.2, accentColor)}
-        {renderIsoBox(cx + 8, by - 23, 6.5, 3.2, 4, "#ffffff", top, 1.1, top)}
+        {/* Lower Storage Blade */}
+        {renderIsoBox(cx, by, 32, 15, tierH, s, fill, 1.4, top)}
+        {/* Upper Aligned Index Blade */}
+        {renderIsoBox(cx, by - tierH - 2.5, 32, 15, tierH, s, fill, 1.4, top)}
+        {/* Subtle Bay Status LEDs */}
+        <circle cx={cx - 19} cy={by - tierH * 0.45} r="1.4" fill={a} />
+        <circle cx={cx - 19} cy={by - tierH * 1.45 - 2.5} r="1.4" fill={isStopped ? "#f43f5e" : "#10b981"} />
+        {/* Crisp Inventory Cube Emblem Centered on Top Blade */}
+        {renderNodeFunctionGlyph(name, archetype, cx, roofY, a)}
       </g>
     );
   }
 
-  // 17. USER / ACCOUNT / CUSTOMER / PROFILE: 3D Identity Pedestal & Floating Profile Ring
+  // 17. USER / ACCOUNT / CUSTOMER / PROFILE: Clean Studio Sandbox Identity Pedestal
   if (n.includes("user") || n.includes("account") || n.includes("customer") || n.includes("profile") || n.includes("member")) {
     const by = cy - 2;
-    const accentColor = isStopped ? s : "#38bdf8";
     return (
       <g>
         <path
@@ -994,50 +951,45 @@ function render3DSeNodeSculpture(
           stroke={s}
           strokeWidth="1.5"
         />
-        <ellipse cx={cx} cy={by - 10} rx="26" ry="11" fill={top} stroke={accentColor} strokeWidth="1.5" />
-        {/* Floating Sculpted Identity Silhouette */}
-        <circle cx={cx} cy={by - 25} r="6.5" fill={top} stroke={accentColor} strokeWidth="1.8" />
+        <ellipse cx={cx} cy={by - 10} rx="26" ry="11" fill={top} stroke={s} strokeWidth="1.5" />
+        <circle cx={cx} cy={by - 25} r="6.5" fill={top} stroke={a} strokeWidth="1.6" />
         <path
           d={`M ${cx - 13},${by - 10} C ${cx - 13},${by - 18} ${cx + 13},${by - 18} ${cx + 13},${by - 10}`}
           fill={fill}
-          stroke="#ffffff"
-          strokeWidth="1.8"
+          stroke={a}
+          strokeWidth="1.6"
           strokeLinecap="round"
         />
       </g>
     );
   }
 
-  // 18. NOTIFICATION / MAIL / ALERT / SMS: 3D Broadcast Beacon Tower
+  // 18. NOTIFICATION / MAIL / ALERT / SMS: Clean Studio Sandbox Broadcast Tower
   if (n.includes("notif") || n.includes("mail") || n.includes("alert") || n.includes("sms") || n.includes("push")) {
     const by = cy - 1;
-    const accentColor = isStopped ? s : "#fbbf24";
     return (
       <g>
         {renderIsoBox(cx, by, 26, 12, 9, s, fill, 1.4, top)}
-        <line x1={cx} y1={by - 10} x2={cx} y2={by - 28} stroke={accentColor} strokeWidth="2.4" strokeLinecap="round" />
-        <circle cx={cx} cy={by - 29} r="3.4" fill="#ffffff" stroke={accentColor} strokeWidth="1.6" />
-        <path d={`M ${cx - 9},${by - 25} A 10 10 0 0 1 ${cx - 9},${by - 33}`} fill="none" stroke={accentColor} strokeWidth="1.6" strokeLinecap="round" />
-        <path d={`M ${cx + 9},${by - 25} A 10 10 0 0 0 ${cx + 9},${by - 33}`} fill="none" stroke={accentColor} strokeWidth="1.6" strokeLinecap="round" />
-        <path d={`M ${cx - 15},${by - 22} A 16 16 0 0 1 ${cx - 15},${by - 36}`} fill="none" stroke={accentColor} strokeWidth="1.3" opacity="0.65" strokeLinecap="round" />
-        <path d={`M ${cx + 15},${by - 22} A 16 16 0 0 0 ${cx + 15},${by - 36}`} fill="none" stroke={accentColor} strokeWidth="1.3" opacity="0.65" strokeLinecap="round" />
+        <line x1={cx} y1={by - 10} x2={cx} y2={by - 27} stroke={a} strokeWidth="2.2" strokeLinecap="round" />
+        <circle cx={cx} cy={by - 28} r="3.2" fill={top} stroke={a} strokeWidth="1.5" />
+        <path d={`M ${cx - 9},${by - 24} A 10 10 0 0 1 ${cx - 9},${by - 32}`} fill="none" stroke={a} strokeWidth="1.4" strokeLinecap="round" />
+        <path d={`M ${cx + 9},${by - 24} A 10 10 0 0 0 ${cx + 9},${by - 32}`} fill="none" stroke={a} strokeWidth="1.4" strokeLinecap="round" />
       </g>
     );
   }
 
-  // 19. SHIPPING / DELIVERY / LOGISTICS: 3D Dispatch Conveyor Hub
+  // 19. SHIPPING / DELIVERY / LOGISTICS: Clean Studio Sandbox Dispatch Hub
   if (n.includes("ship") || n.includes("deliver") || n.includes("logistic") || n.includes("dispatch")) {
     const by = cy - 1;
-    const accentColor = isStopped ? s : "#34d399";
     return (
       <g>
-        {renderIsoBox(cx, by, 35, 16, 7, s, fill, 1.4, top)}
-        {renderIsoBox(cx - 11, by - 7, 11, 5.5, 10, accentColor, fill, 1.4, top)}
+        {renderIsoBox(cx, by, 34, 15.5, 8, s, fill, 1.4, top)}
+        {renderIsoBox(cx - 10, by - 8, 11, 5.5, 9, s, fill, 1.4, top)}
         <path
           d={`M ${cx + 2},${by - 9} L ${cx + 11},${by - 6} L ${cx + 5},${by - 2} M ${cx + 10},${by - 12} L ${cx + 19},${by - 9} L ${cx + 13},${by - 5}`}
           fill="none"
-          stroke="#ffffff"
-          strokeWidth="1.8"
+          stroke={a}
+          strokeWidth="1.6"
           strokeLinecap="round"
           strokeLinejoin="round"
         />
@@ -1045,19 +997,18 @@ function render3DSeNodeSculpture(
     );
   }
 
-  // 20. GENERIC MICROSERVICE: 3D Dual-Blade Server Tower + Status LEDs
+  // 20. GENERIC MICROSERVICE: Clean Studio Sandbox Container Unit + Domain Emblem
   const cyBase = cy - 1;
-  const h = isStopped ? 11 : 12.5;
-  const roofY = cyBase - h - 10;
+  const h = isStopped ? 14 : 16;
+  const roofY = cyBase - h;
   return (
     <g>
-      {renderIsoBox(cx, cyBase, 30, 14, h, s, fill, 1.4, top)}
-      {renderIsoBox(cx, cyBase - h - 1, 26, 12, 9.5, a, fill, 1.4, top)}
+      {renderIsoBox(cx, cyBase, 33, 16, h, s, fill, 1.5, top)}
       {/* Container Status LEDs on Front-Left Wall */}
-      <circle cx={cx - 18} cy={cyBase - h * 0.45} r="1.6" fill={a} />
-      <circle cx={cx - 11} cy={cyBase - h * 0.45 + 3} r="1.6" fill={isStopped ? "#ef4444" : "#10b981"} />
-      {/* Domain Emblem on Tower Roof */}
-      {renderNodeFunctionGlyph(name, archetype, cx, roofY, "#ffffff")}
+      <circle cx={cx - 19} cy={cyBase - h * 0.45} r="1.5" fill={a} />
+      <circle cx={cx - 12} cy={cyBase - h * 0.45 + 3} r="1.5" fill={isStopped ? "#f43f5e" : "#10b981"} />
+      {/* Domain Emblem on Container Roof */}
+      {renderNodeFunctionGlyph(name, archetype, cx, roofY, a)}
     </g>
   );
 }
@@ -1179,7 +1130,7 @@ export function StudioObservability({
   const [selectedWire, setSelectedWire] = useState<{ from: string; to: string } | null>(null);
   const [exportError, setExportError] = useState(false);
 
-  const cameraDrag = useRef<{ x: number; y: number; mode: "ROTATE" | "PAN" } | null>(null);
+  const cameraDrag = useRef<{ x: number; y: number; mode: "ROTATE" | "PAN"; moved: boolean } | null>(null);
   const nodeDrag = useRef<{
     service: string;
     startX: number;
@@ -1508,12 +1459,13 @@ export function StudioObservability({
     onDisconnect?.(from, to);
   }
 
-  function renderConnectPort(name: string, x: number, y: number) {
+  function renderConnectPort(name: string, x: number, y: number, active = false) {
     if (!onConnect || busy) return null;
+    const stroke = active ? "#7dd3fc" : "#475569";
     return (
       <g
         data-studio-connect-port={name}
-        className="cursor-crosshair opacity-65 hover:opacity-100"
+        className={`cursor-crosshair transition-opacity hover:opacity-100 ${active ? "opacity-95" : "opacity-35"}`}
         onPointerDown={(event) => {
           if (event.button !== 0 || activePointer.current !== null || !svg.current) return;
           event.preventDefault();
@@ -1526,8 +1478,8 @@ export function StudioObservability({
       >
         <title>{t("Drag to connect to another service")}</title>
         <circle cx={x} cy={y} r="10" fill="transparent" />
-        <circle cx={x} cy={y} r="6" fill="#0b1220" stroke="#7dd3fc" strokeWidth="1.4" />
-        <path d={`M ${x - 2.5} ${y} h 5 M ${x} ${y - 2.5} v 5`} stroke="#7dd3fc" strokeWidth="1.3" />
+        <circle cx={x} cy={y} r="6" fill="#0b1220" stroke={stroke} strokeWidth="1.35" />
+        <path d={`M ${x - 2.5} ${y} h 5 M ${x} ${y - 2.5} v 5`} stroke={stroke} strokeWidth="1.25" />
       </g>
     );
   }
@@ -1966,6 +1918,7 @@ export function StudioObservability({
               x: event.clientX,
               y: event.clientY,
               mode: view === "3D" && event.button === 2 ? "ROTATE" : "PAN",
+              moved: false,
             };
             event.currentTarget.setPointerCapture(event.pointerId);
           }}
@@ -1974,9 +1927,15 @@ export function StudioObservability({
             const from = linkSource.current;
             const to = from ? nodeAt(event.clientX, event.clientY) : null;
             const moved = nodeDrag.current?.moved;
+            const clickedBlankCanvas =
+              !from &&
+              !nodeDrag.current &&
+              cameraDrag.current?.mode === "PAN" &&
+              !cameraDrag.current.moved;
             endPointerInteraction();
             if (from && to && from !== to) onConnect?.(from, to);
             else if (moved) onSound?.("place");
+            else if (clickedBlankCanvas && selected) onSelect("");
           }}
           onPointerCancel={endPointerInteraction}
           onPointerMove={(event) => {
@@ -2026,6 +1985,7 @@ export function StudioObservability({
               x: event.clientX,
               y: event.clientY,
               mode: cameraDrag.current.mode,
+              moved: cameraDrag.current.moved || Math.abs(dx) > 2 || Math.abs(dy) > 2,
             };
             if (cameraDrag.current.mode === "ROTATE") {
               setCamera((value) => ({
@@ -2468,9 +2428,19 @@ export function StudioObservability({
                     }}
                     className="cursor-grab outline-none focus:outline-none active:cursor-grabbing"
                   >
-                    {/* Pure 3D Software Engineering Sculpture (no base tray underneath) */}
+                    {/* Pure 3D Software Engineering Sculpture (glows ONLY when selected/clicked or crashed) */}
                     <title>{nodeName}</title>
-                    <g data-studio-sculpture transform={`translate(${point.x} ${point.y + 8}) scale(${scale}) translate(${-point.x} ${-point.y - 8})`}>
+                    <g
+                      data-studio-sculpture
+                      transform={`translate(${point.x} ${point.y + 8}) scale(${scale}) translate(${-point.x} ${-point.y - 8})`}
+                      style={
+                        isSelected || isDropTarget
+                          ? { filter: "drop-shadow(0 0 8px rgba(56, 189, 248, 0.5))" }
+                          : isStopped
+                            ? { filter: "drop-shadow(0 0 6px rgba(244, 63, 94, 0.45))" }
+                            : undefined
+                      }
+                    >
                       {render3DSeNodeSculpture(name, archetype, point.x, point.y, isStopped, theme)}
                     </g>
 
@@ -2484,9 +2454,14 @@ export function StudioObservability({
                       rx="12"
                       fill="#0b111e"
                       fillOpacity="0.96"
-                      stroke={healthColor ?? (isSelected ? "#38bdf8" : "#334155")}
-                      strokeOpacity={isSelected || isStopped ? "0.95" : "0.85"}
-                      strokeWidth={isSelected || isStopped ? 1.6 : 1.1}
+                      stroke={healthColor ?? (isSelected ? "#38bdf8" : "#263348")}
+                      strokeOpacity={isSelected || isStopped ? "1" : "0.85"}
+                      strokeWidth={isSelected || isStopped ? 1.8 : 1}
+                      style={
+                        isSelected && !healthColor
+                          ? { filter: "drop-shadow(0 0 6px rgba(56, 189, 248, 0.35))" }
+                          : undefined
+                      }
                     />
                     {/* Left Functional Component Icon Badge inside the Pill */}
                     <rect
@@ -2495,20 +2470,20 @@ export function StudioObservability({
                       width="16"
                       height="16"
                       rx="8"
-                      fill={healthFill ?? "#1e293b"}
+                      fill={healthFill ?? (isSelected ? "#0c4a6e" : "#162033")}
                     />
                     {renderNodeFunctionGlyph(
                       name,
                       archetype,
                       point.x - labelWidth / 2 + 12,
                       point.y + 22,
-                      isStopped ? "#fda4af" : theme.accent,
+                      isStopped ? "#fda4af" : isSelected ? "#38bdf8" : "#94a3b8",
                     )}
                     <text
                       x={point.x - 4}
                       y={point.y + 25.5}
                       textAnchor="middle"
-                      fill="#f1f5f9"
+                      fill={isSelected ? "#ffffff" : "#cbd5e1"}
                       fontSize="11"
                       fontWeight="600"
                     >
@@ -2521,19 +2496,19 @@ export function StudioObservability({
                       width="25"
                       height="16"
                       rx="8"
-                      fill={healthFill ?? (isSelected ? "#0c4a6e" : "#1e293b")}
+                      fill={healthFill ?? (isSelected ? "#0c4a6e" : "#162033")}
                     />
                     <text
                       x={point.x + labelWidth / 2 - 18.5}
                       y={point.y + 25}
                       textAnchor="middle"
-                      fill={healthTint ?? (isSelected ? "#7dd3fc" : "#cbd5e1")}
+                      fill={healthTint ?? (isSelected ? "#7dd3fc" : "#94a3b8")}
                       fontSize="9.5"
                       fontWeight="600"
                     >
                       {pillBadgeText}
                     </text>
-                    {renderConnectPort(name, point.x + 29 * scale, point.y + 8 - 18 * scale)}
+                    {renderConnectPort(name, point.x + 29 * scale, point.y + 8 - 18 * scale, isSelected || isDropTarget)}
                   </g>
                 );
               }
@@ -2617,7 +2592,7 @@ export function StudioObservability({
                       {isStopped ? "×0" : live ? `×${live.runningReplicas}` : "—"}
                     </text>
                   </g>
-                  {renderConnectPort(name, point.x + 34, point.y - 9)}
+                  {renderConnectPort(name, point.x + 34, point.y - 9, isSelected || isDropTarget)}
                 </g>
               );
             })}
