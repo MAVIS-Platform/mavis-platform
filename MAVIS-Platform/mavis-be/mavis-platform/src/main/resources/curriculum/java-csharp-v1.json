@@ -3618,5 +3618,90 @@
         "points": 1
       }
     ]
+  },
+  {
+    "id": "csharp-v2-ch09",
+    "track": "C#",
+    "phase": "V2 · Module 3",
+    "title": "Chương 09: GIAO DỊCH PHÂN TÁN VỚI SAGA PATTERN & NHẤT QUÁN CUỐI CÙNG",
+    "minutes": 45,
+    "objective": "Hiểu rõ vì sao .NET Microservices từ chối giao thức khóa phân tán cổ điển MSDTC / 2PC và chấp nhận Eventual Consistency. Triển khai luồng Saga kèm Compensating Transactions (giao dịch bù trừ) và Idempotency Key khi đặt hàng xuyên qua nhiều dịch vụ (`Ordering.API`, `Catalog.API`, `Basket.API`). Phân biệt khi nào dùng Choreography (lắng nghe sự kiện qua RabbitMQ) và khi nào dùng Orchestration (điều phối tập trung bằng State Machine / Orchestrator).",
+    "lesson": "### 9.1. Từ chối MSDTC / 2PC để đón nhận Eventual Consistency (`[MS24]` Ch.4)\n\nTrong các hệ thống .NET Framework cũ (WCF / SQL Server cổ điển), lập trình viên từng dùng `TransactionScope` kèm **MSDTC (Two-Phase Commit)**. Trong kiến trúc Microservices hiện đại chạy trên Linux Docker Container, **2PC bị loại bỏ hoàn toàn** vì:\n* Khóa tài nguyên xuyên mạng gây tắc nghẽn nghiêm trọng và giảm mạnh độ khả dụng.\n* Các kho lưu trữ hiện đại (Redis, RabbitMQ, NoSQL) không hỗ trợ 2PC.\n\nThay vào đó, hệ thống đảm bảo tính nhất quán theo mô hình **Eventual Consistency** (sau một khoảng thời gian ngắn tính bằng mili-giây hoặc giây, toàn bộ các service hội tụ về trạng thái đúng) thông qua **Saga Pattern**:\n\n```\nLUỒNG THÀNH CÔNG (Happy Path):\n[T1: Ordering.API]        [T2: Catalog.API]          [T3: Ordering.API]        [T4: Basket.API (Async)]\nCreate Order (Pending) -> Reserve Stock (OK)      -> Mark Confirmed         -> Clear Customer Basket\n                                                     & Publish Event\n\nLUỒNG THẤT BẠI (Compensation Path — Ví dụ mặt hàng thứ 2 hết hàng!):\n[T1: Ordering.API]        [T2a: Reserve Item 1 OK]   [T2b: Reserve Item 2 FAIL ❌]\nCreate Order (Pending) -> Stock Item 1 (-2 kg)    -> HTTP 409 Insufficient Stock!\n                                                           |\n[C1: Ordering.API]     <- [C2a: Catalog.API] <-------------+\nMark Order Cancelled      Release Stock Item 1 (+2 kg — Bù trừ!)\n```\n\n### 9.2. Minh họa Orchestration Saga & Idempotency Key trong ASP.NET Core 8\n\n```csharp\npublic sealed class CreateOrderSagaService(\n    OrderingDbContext dbContext,\n    ICatalogApiClient catalogClient,\n    IPublishEndpoint eventBus) : ICreateOrderSagaService\n{\n    public async Task<OrderResponse> PlaceOrderAsync(\n        Guid customerId, CreateOrderRequest request, string idempotencyKey, CancellationToken ct)\n    {\n        // 0. Chống gửi đúp bằng Idempotency-Key (Semantic/Request Guard)\n        var existing = await dbContext.Orders\n            .AsNoTracking()\n            .FirstOrDefaultAsync(o => o.IdempotencyKey == idempotencyKey, ct);\n        if (existing is not null)\n            return OrderMapper.ToResponse(existing);\n\n        // T1 (Semantic Lock): Lưu đơn ở trạng thái Submitted/Pending trước\n        var order = Order.CreateDraft(customerId, request.ShippingAddress, idempotencyKey);\n        foreach (var item in request.Items)\n            order.AddItem(item.ProductId, item.ProductName, item.UnitPrice, item.Quantity);\n\n        dbContext.Orders.Add(order);\n        await dbContext.SaveChangesAsync(ct);\n\n        var reserved = new List<(int ProductId, int Quantity)>();\n        try\n        {\n            // T2: Giữ tồn kho từng mặt hàng tại Catalog.API\n            foreach (var item in request.Items)\n            {\n                var ok = await catalogClient.ReserveStockAsync(item.ProductId, item.Quantity, ct);\n                if (!ok) throw new DomainException($\"Insufficient stock for product {item.ProductId}\");\n                reserved.Add((item.ProductId, item.Quantity));\n            }\n\n            // T3 (Pivot Transaction): Xác nhận đơn & phát Integration Event cho Basket.API\n            order.MarkAsConfirmed();\n            await dbContext.SaveChangesAsync(ct);\n\n            await eventBus.Publish(new OrderCreatedIntegrationEvent(\n                Guid.NewGuid(), DateTime.UtcNow, order.Id, customerId.ToString(), order.TotalAmount), ct);\n\n            return OrderMapper.ToResponse(order);\n        }\n        catch (Exception ex)\n        {\n            // BÙ TRỪ (Compensating Transactions): Trả lại kho các món đã giữ + Đánh dấu hủy đơn!\n            foreach (var (productId, qty) in reserved)\n                await catalogClient.ReleaseStockAsync(productId, qty, CancellationToken.None);\n\n            order.Cancel($\"Saga compensation triggered: {ex.Message}\");\n            await dbContext.SaveChangesAsync(CancellationToken.None);\n            throw;\n        }\n    }\n}\n```\n\n> **Mẹo quan trọng trong khối `catch` bù trừ**: Dùng `CancellationToken.None` (hoặc token có timeout riêng) cho bước hoàn kho & hủy đơn để tránh việc client vừa đóng trình duyệt đã làm hủy ngang luôn cả thao tác bù trừ!\n\n### 9.3. So sánh Choreography vs. Orchestration trong .NET\n\n* **Choreography** (`eShopOnContainers` dùng cho luồng ngắn): `Ordering.API` phát `OrderStatusChangedToAwaitingValidation` $\\to$ `Catalog.API` kiểm tra tồn kho rồi phát lại `OrderStockConfirmed` hoặc `OrderStockRejected` $\\to$ `Ordering.API` lắng nghe và chuyển trạng thái. Phù hợp luồng 2–3 bước, ghép lỏng tuyệt đối.\n* **Orchestration** (dùng **MassTransit Saga State Machine** hoặc Orchestrator Service): Phù hợp khi quy trình có $\\ge 4$ bước phức tạp (Đặt hàng $\\to$ Kiểm kho $\\to$ Thanh toán $\\to$ Vận chuyển $\\to$ Hóa đơn), giúp nhìn rõ toàn bộ vòng đời trạng thái tại một nơi duy nhất.\n\n### 9.4. Góc nhìn trên nền tảng MAVIS\n\n* Khi mô phỏng lỗi trên **MAVIS Studio**, sinh viên có thể gửi đơn hàng nhiều mặt hàng hoặc ngắt `Catalog.API` giữa chừng để kiểm chứng trạng thái cuối cùng trên `ordering_db` chuyển sạch sang `Cancelled` thay vì treo vĩnh viễn ở `Submitted`.",
+    "exercise": "### 9.5. Bài tập thực hành Lab 09\n\n* Vẽ sơ đồ trạng thái (`Submitted` $\\to$ `Confirmed` / `Cancelled`) và liệt kê các giao dịch cục bộ (`T1..T3`) cùng giao dịch bù trừ (`C1..C2`) cho kịch bản đặt giỏ hàng gồm 2 mặt hàng, trong đó mặt hàng thứ 2 hết tồn kho.\n* Giải thích vì sao nên tách **Idempotency-Key** từ HTTP header cho yêu cầu `POST /api/v1/orders`.",
+    "sources": [
+      {
+        "publisher": "Manning / Microservices.io",
+        "title": "Chris Richardson — Microservices Patterns",
+        "url": "https://microservices.io/patterns/"
+      },
+      {
+        "publisher": "Microsoft Learn",
+        "title": ".NET Microservices: Architecture for Containerized .NET Applications",
+        "url": "https://learn.microsoft.com/en-us/dotnet/architecture/microservices/"
+      },
+      {
+        "publisher": "O'Reilly / Production-Ready Microservices",
+        "title": "Susan J. Fowler — Production-Ready Microservices",
+        "url": "https://www.oreilly.com/library/view/production-ready-microservices/9781491965962/"
+      }
+    ],
+    "questions": [
+      {
+        "id": "csharp-v2-ch09-q1",
+        "prompt": "Tại sao giao thức giao dịch phân tán **2PC (Two-Phase Commit / MSDTC)** không được khuyến nghị dùng giữa các .NET Microservice hiện đại?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Vì gây khóa tài nguyên kéo dài xuyên mạng, giảm độ khả dụng và không được hỗ trợ bởi nhiều hạ tầng hiện đại (Redis, RabbitMQ, NoSQL)",
+          "Vì C# không có lệnh `try-catch`",
+          "Vì 2PC chỉ chạy được với định dạng XML",
+          "Vì Docker không hỗ trợ kết nối TCP"
+        ],
+        "correctOption": 0,
+        "explanation": "2PC đánh đổi quá lớn về hiệu năng, tính sẵn sàng và tạo khớp nối chặt giữa các dịch vụ.",
+        "points": 1
+      },
+      {
+        "id": "csharp-v2-ch09-q2",
+        "prompt": "Trong quy trình đặt hàng dùng Saga, khách đặt 2 sản phẩm: sản phẩm 1 đã trừ kho thành công, sản phẩm 2 báo hết hàng. Hành động **Compensating Transaction** đúng đắn là gì?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Xóa toàn bộ bảng sản phẩm trong `catalog_db`",
+          "Gọi thao tác cộng hoàn trả lại số lượng đã trừ của sản phẩm 1 và cập nhật trạng thái đơn hàng thành `Cancelled`",
+          "Giữ nguyên số lượng đã trừ của sản phẩm 1 và báo đơn thành công",
+          "Chờ 24 giờ rồi khởi động lại máy chủ"
+        ],
+        "correctOption": 1,
+        "explanation": "Giao dịch bù trừ đảo ngược tác động nghiệp vụ của các bước trước đó đã commit cục bộ.",
+        "points": 1
+      },
+      {
+        "id": "csharp-v2-ch09-q3",
+        "prompt": "Vai trò của header **`Idempotency-Key`** khi client gửi yêu cầu `POST /api/v1/orders` là gì?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Tăng tốc độ tải trang CSS",
+          "Đảm bảo nếu mạng chập chờn khiến client gửi lặp lại cùng một yêu cầu đặt hàng nhiều lần, server chỉ tạo **đúng 1 đơn hàng duy nhất** và trả lại kết quả cũ",
+          "Thay thế hoàn toàn JWT xác thực người dùng",
+          "Tự động giảm giá đơn hàng 10%"
+        ],
+        "correctOption": 1,
+        "explanation": "`POST` vốn không tự nhiên idempotent; gắn `Idempotency-Key` chống triệt để lỗi tạo đơn hàng trùng lặp.",
+        "points": 1
+      },
+      {
+        "id": "csharp-v2-ch09-q4",
+        "prompt": "Tại sao trong khối `catch` thực hiện bù trừ (`ReleaseStockAsync` và `order.Cancel`), ta thường không truyền trực tiếp `CancellationToken` của HTTP Request gốc?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Vì nếu người dùng vừa bấm hủy trình duyệt đúng lúc lỗi xảy ra, `CancellationToken` gốc đã bị hủy sẽ làm gián đoạn luôn cả lệnh hoàn kho bù trừ",
+          "Vì C# cấm dùng `CancellationToken` trong khối `catch`",
+          "Vì RabbitMQ không nhận `CancellationToken`",
+          "Vì `CancellationToken` làm chậm câu lệnh SQL"
+        ],
+        "correctOption": 0,
+        "explanation": "Thao tác bù trừ phải chạy trọn vẹn để giữ nhất quán dữ liệu ngay cả khi phía client đã ngắt kết nối.",
+        "points": 1
+      }
+    ]
   }
 ]
