@@ -164,7 +164,7 @@ public class RuntimePlanningService {
   if(snapshotId==null)throw new BusinessException(ErrorCode.BAD_REQUEST,"No source snapshot available");
   var source=sources.findById(snapshotId).orElseThrow(()->new BusinessException(ErrorCode.NOT_FOUND));
   if(!source.getProject().getId().equals(id))throw new BusinessException(ErrorCode.BAD_REQUEST,"Snapshot scope mismatch");
-  var res=imageBuilder.buildSnapshotImages(id,java.nio.file.Paths.get(source.getStoragePath()),r!=null?r.services():null);
+  var res=imageBuilder.buildSnapshotImages(id,snapshotId,java.nio.file.Paths.get(source.getStoragePath()),r!=null?r.services():null);
   if(!res.builtImages().isEmpty()){
    if(c==null){
     var model=models.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(id).orElse(null);

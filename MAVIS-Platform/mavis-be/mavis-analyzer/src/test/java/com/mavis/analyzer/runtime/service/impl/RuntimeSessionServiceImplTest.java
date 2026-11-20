@@ -90,6 +90,27 @@ class RuntimeSessionServiceImplTest {
     private com.mavis.common.security.CourseLabPolicy courseLabPolicy;
 
     @Test
+    void preflightKeepsImageOverridesScopedToTheirSnapshot(@TempDir Path root) throws Exception {
+        Path compose = root.resolve("docker-compose.yml");
+        Files.writeString(compose, "services:\n  orders:\n    image: example/orders@sha256:" + "a".repeat(64) + "\n");
+        snapshot.setStoragePath(compose.toString());
+        var configurations = mock(RuntimeConfigurationRepository.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(runtimeSessionService, "runtimeConfigurationRepository", configurations);
+        var config = new com.mavis.common.entity.RuntimeConfiguration();
+        config.setProjectId(projectId);
+        config.setSourceSnapshotId(UUID.randomUUID());
+        ObjectNode profile = objectMapper.createObjectNode();
+        profile.putObject("serviceImageOverrides").put("orders", "sha256:" + "b".repeat(64));
+        config.setProfile(profile);
+        when(configurations.findById(projectId)).thenReturn(Optional.of(config));
+
+        assertThat(runtimeSessionService.runComposePreflight(snapshotId).getServiceImageOverrides()).isEmpty();
+        config.setSourceSnapshotId(snapshotId);
+        assertThat(runtimeSessionService.runComposePreflight(snapshotId).getServiceImageOverrides())
+                .containsEntry("orders", "sha256:" + "b".repeat(64));
+    }
+
+    @Test
     void guidedRuntimeRejectsModelFromAnotherSnapshotInTheSameProject() {
         configureGuidedRuntime();
         validModel.setSourceSnapshot(SourceSnapshot.builder().id(UUID.randomUUID()).project(project).build());
