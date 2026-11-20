@@ -209,7 +209,10 @@ function TeachingSubmissions() {
   const [viewMode, setViewMode] = useState<"queue" | "essays" | "gradebook">(
     params.get("view") === "results" ? "gradebook" : "queue",
   );
-  const [reviewStatusFilter, setReviewStatusFilter] = useState("ALL");
+  const requestedStatus = (params.get("status") ?? "").toUpperCase();
+  const [reviewStatusFilter, setReviewStatusFilter] = useState(
+    ["PENDING", "DRAFT", "GRADED", "RETURNED"].includes(requestedStatus) ? requestedStatus : "ALL",
+  );
   const [outcomeFilter, setOutcomeFilter] = useState("ALL");
   const assignments = useApiQuery("assignments", { workspaceId }, { enabled: !!workspaceId });
   const sortedAssignments = useMemo(() => {
