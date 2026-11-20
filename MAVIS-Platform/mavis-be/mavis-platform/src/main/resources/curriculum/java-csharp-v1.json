@@ -1973,5 +1973,100 @@
         "correctOption": 2
       }
     ]
+  },
+  {
+    "id": "java-v2-ch01",
+    "track": "Java",
+    "phase": "V2 · Module 1",
+    "title": "Chương 01: TỪ MONOLITH ĐẾN MICROSERVICES & MÔ HÌNH C4 (C1–C3)",
+    "minutes": 45,
+    "objective": "Giải thích được hiện tượng *\"Monolithic Hell\"* và phân tích Scale Cube (3 trục mở rộng X, Y, Z). So sánh rạch ròi ưu – nhược điểm giữa Monolith, Modular Monolith và Microservices (hiểu rằng Microservices *không phải viên đạn bạc*). Đọc và phân biệt chính xác 3 cấp độ cấu trúc tĩnh C1 (System Context), C2 (Container), C3 (Component) và hiểu vì sao MAVIS tách biệt cấu trúc tĩnh với vết gọi runtime.",
+    "lesson": "### 1.1. Bản chất vấn đề: \"Monolithic Hell\" và Khối lập phương mở rộng (Scale Cube)\n\nKhi một ứng dụng khởi đầu còn nhỏ, kiến trúc **Monolithic** (đóng gói toàn bộ giao diện, nghiệp vụ, truy cập dữ liệu vào một file `.jar`/`.war` duy nhất cùng một cơ sở dữ liệu) là lựa chọn **đơn giản và hiệu quả nhất**: dễ phát triển, dễ kiểm thử cục bộ, dễ triển khai và giao dịch ACID trên một DB duy nhất.\n\nTuy nhiên, khi quy mô đội ngũ và nghiệp vụ phình to (như ví dụ hệ thống giao đồ ăn FTGO trong `[R19]` hay hệ thống đặt bàn nhà hàng OTRS trong `[S16]`), ứng dụng rơi vào **\"Monolithic Hell\"** với các triệu chứng điển hình:\n- **Mã nguồn quá lớn và chồng chéo**: Không lập trình viên nào nắm hết toàn bộ codebase; thời gian khởi động IDE và build/deploy kéo dài hàng chục phút.\n- **Rào cản triển khai liên tục (Continuous Delivery)**: Sửa một dòng code nhỏ ở chức năng *Gửi email* buộc phải build, test và deploy lại cả chức năng *Thanh toán*. Một lỗi rò rỉ bộ nhớ (OutOfMemoryError) ở module ít quan trọng làm sập toàn bộ hệ thống.\n- **Khó mở rộng chọn lọc (1D Scaling)**: Chức năng *Tìm kiếm sản phẩm* cần nhiều RAM/CPU nhưng phải nhân bản cả những module không cần thiết.\n- **Khóa chặt công nghệ (Technology Lock-in)**: Rất khó nâng cấp phiên bản Java/Spring hoặc áp dụng công nghệ mới cho riêng một bài toán.\n\nĐể giải quyết bài toán mở rộng một cách khoa học, `[R19]` giới thiệu **Scale Cube** (trích từ *The Art of Scalability*):\n\n```text\n                  Trục Y: Phân rã chức năng (Functional Decomposition)\n                  --> Tách thành các MICROSERVICES độc lập!\n                       ^\n                      /\n                     /\n                    +-------------------------> Trục X: Nhân bản ngang (Horizontal Duplication)\n                    |                           --> Chạy N bản sao sau Load Balancer\n                    |\n                    v\n                  Trục Z: Phân vùng dữ liệu (Data Partitioning / Sharding)\n                  --> Định tuyến theo userId, khu vực địa lý...\n```\n\n> **Định nghĩa cốt lõi (`[R19]` Ch.1)**: Kiến trúc Microservices là phong cách kiến trúc áp dụng **Trục Y của Scale Cube**, phân rã ứng dụng thành một tập hợp các dịch vụ nhỏ, khớp nối lỏng lẻo (**loosely coupled**), có thể phát triển, kiểm thử và triển khai độc lập (**independently deployable**), mỗi dịch vụ tự sở hữu cơ sở dữ liệu riêng (**Database-per-Service**).\n\n### 1.2. Đánh đổi thực tế: Microservices KHÔNG phải \"Viên đạn bạc\"\n\nMột kỹ sư kiến trúc giỏi luôn nhìn cả hai mặt (`[R19]` §1.5 & `[F16]` Ch.1):\n\n| Tiêu chí | Monolithic Architecture | Microservices Architecture |\n| :--- | :--- | :--- |\n| **Độ phức tạp ban đầu** | Thấp, phù hợp startup / dự án nhỏ | Cao ngay từ đầu (mạng, CI/CD, Docker, giám sát) |\n| **Triển khai & Rollback** | Triển khai cả khối; lỗi 1 chỗ ảnh hưởng toàn cục | Triển khai và rollback độc lập từng dịch vụ |\n| **Mở rộng (Scaling)** | Chỉ mở rộng toàn bộ khối (Trục X) | Mở rộng chính xác dịch vụ bị nghẽn (Trục X + Y) |\n| **Giao dịch dữ liệu** | ACID đơn giản trên 1 CSDL | Không dùng 2PC; phải dùng Saga & Eventual Consistency |\n| **Độ tin cậy gọi nội bộ** | Gọi hàm trong bộ nhớ (in-process, nanosecond) | Gọi qua mạng (HTTP/gRPC/Kafka — có trễ, có rớt mạng!) |\n| **Tổ chức đội ngũ** | Đội lớn dễ giẫm chân nhau | Phù hợp đội nhỏ tự chủ (*Two-Pizza Teams*, Định luật Conway) |\n\n### 1.3. Mô hình C4 (C1–C3) — \"Google Maps\" cho Kiến trúc Phần mềm\n\nĐể tránh tình trạng vẽ sơ đồ hộp-và-mũi-tên tự do không ai hiểu nổi, ngành phần mềm chuẩn hóa bằng **C4 Model** của Simon Brown. Giống như phóng to bản đồ Google Maps:\n\n```text\n[C1: System Context]   Bản đồ thế giới  --> Ai dùng hệ thống? Hệ thống giao tiếp với bên ngoài nào?\n        |\n        v (Phóng to vào Hệ thống)\n[C2: Container]        Bản đồ thành phố --> Có những ứng dụng/service độc lập & Database nào?\n        |                                   (VD: api-gateway, order-service, catalog-db, kafka)\n        v (Phóng to vào 1 Service)\n[C3: Component]        Bản đồ đường phố --> Bên trong 1 service gồm những thành phần code nào?\n                                            (VD: OrderController -> OrderService -> OrderRepository)\n```\n\n- **Quy tắc cách ly tầng (C4 Level Isolation)**: Không bao giờ vẽ lẫn lộn một class Java (`OrderRepository` ở tầng C3) nối trực tiếp ra người dùng cuối (`Customer` ở tầng C1) trên cùng một góc nhìn.\n- **Tại sao phân tích tĩnh chỉ xuất C1–C3 & Dependency Graph, KHÔNG xuất sơ đồ UML hành vi (Sequence/Activity/State)?**\n  Bởi vì mã nguồn tĩnh chỉ chứa *cấu trúc khai báo* (ai tham chiếu ai), không chứa trạng thái dữ liệu runtime, nhánh điều kiện động hay độ trễ mạng thực tế. Trong MAVIS, thứ tự gọi thực tế theo thời gian được dựng từ **OpenTelemetry Trace Spans** ở bước Runtime!\n\n### 1.4. Góc nhìn trên nền tảng MAVIS\n- **Step 1 (Static View)**: Khi MAVIS quét một kho mã nguồn Java mẫu (Curated Repo), hệ thống đọc `docker-compose.yml`, `pom.xml`, `application.yml` để dựng tầng **C2 (Container)** và dùng **JavaParser AST** để trích xuất các lớp `@RestController`, `@Service`, `@Repository` lên tầng **C3 (Component)** kèm bằng chứng vị trí file và dòng code (`file:line`).\n- **Step 4 (MAVIS Studio)**: Áp dụng trực tiếp **Trục X của Scale Cube** — sinh viên có thể tăng số replica của một dịch vụ bị nghẽn từ $1 \\to 4$ (hoặc tối đa $8$) container ngay khi hệ thống đang chạy để đo sự cải thiện độ trễ.\n\n### 1.5. Cạm bẫy thường gặp (Anti-Patterns)\n1. **Distributed Monolith (Khối đơn phân tán)**: Tách ra 6 service nhưng phải deploy đồng loạt cả 6 service cùng lúc mỗi khi sửa một trường JSON. Đây là thảm họa tồi tệ nhất vì hứng đủ độ phức tạp của hệ phân tán mà mất sạch lợi ích độc lập.\n2. **Nanoservice (`[S16]` Ch.8)**: Tách dịch vụ quá vụn (mỗi bảng 1–2 API thành 1 microservice), khiến chi phí mạng (network latency) và chi phí vận hành lớn hơn nhiều so với giá trị nghiệp vụ.",
+    "exercise": "### 1.6. Bài tập thực hành Lab 01\n- Mở dự án Microservices Java mẫu trong MAVIS ở **Step 1 (Static View)**.\n- Chuyển lần lượt qua 3 góc nhìn `C4_CONTEXT (C1)` $\\rightarrow$ `C4_CONTAINER (C2)` $\\rightarrow$ `C4_COMPONENT (C3)`.\n- Liệt kê toàn bộ các Container thuộc nhóm **Application Service**, **Infrastructure** (Gateway, Discovery, Broker) và **Data Store** (Database/Cache); giải thích vai trò của từng dịch vụ theo trục Y của Scale Cube.",
+    "sources": [
+      {
+        "publisher": "Manning / Microservices.io",
+        "title": "Chris Richardson — Microservices Patterns",
+        "url": "https://microservices.io/patterns/"
+      },
+      {
+        "publisher": "Spring Cloud",
+        "title": "Mastering Microservices with Java & Spring Cloud Reference",
+        "url": "https://docs.spring.io/spring-cloud/reference/"
+      },
+      {
+        "publisher": "O'Reilly / Production-Ready Microservices",
+        "title": "Susan J. Fowler — Production-Ready Microservices",
+        "url": "https://www.oreilly.com/library/view/production-ready-microservices/9781491965962/"
+      },
+      {
+        "publisher": "Simon Brown",
+        "title": "The C4 Model for Visualising Software Architecture",
+        "url": "https://c4model.com/"
+      },
+      {
+        "publisher": "Spring & Oracle Java 21",
+        "title": "Spring Boot 3 & Java 21 Official Documentation",
+        "url": "https://docs.spring.io/spring-boot/reference/"
+      }
+    ],
+    "questions": [
+      {
+        "id": "java-v2-ch01-q1",
+        "prompt": "Theo mô hình *Scale Cube* trong *Microservices Patterns* (Chris Richardson), kiến trúc Microservices tương ứng với trục mở rộng nào?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Trục X — Nhân bản toàn bộ ứng dụng phía sau Load Balancer",
+          "Trục Y — Phân rã ứng dụng theo chức năng nghiệp vụ thành các dịch vụ độc lập",
+          "Trục Z — Phân vùng cơ sở dữ liệu theo định danh người dùng",
+          "Kết hợp đồng thời bắt buộc cả 3 trục ngay từ ngày đầu triển khai"
+        ],
+        "correctOption": 1,
+        "explanation": "Trục Y (Functional Decomposition) tách ứng dụng theo chức năng/nghiệp vụ thành các service độc lập; sau đó mỗi service có thể tiếp tục scale theo Trục X hoặc Trục Z riêng biệt.",
+        "points": 1
+      },
+      {
+        "id": "java-v2-ch01-q2",
+        "prompt": "Trong mô hình C4, sơ đồ nào mô tả các tiến trình thực thi độc lập (như `api-gateway`, `order-service`, `PostgreSQL DB`, `Kafka`) và giao thức giao tiếp giữa chúng?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "C1 — System Context Diagram",
+          "C2 — Container Diagram",
+          "C3 — Component Diagram",
+          "C4 — Code / Class Diagram"
+        ],
+        "correctOption": 1,
+        "explanation": "Trong C4 Model, \"Container\" không chỉ là Docker container mà là mọi đơn vị triển khai/thực thi độc lập (web app, microservice, database, message broker) — được biểu diễn ở tầng C2.",
+        "points": 1
+      },
+      {
+        "id": "java-v2-ch01-q3",
+        "prompt": "Tại sao nền tảng MAVIS chặn việc sinh sơ đồ *UML Sequence / Activity / State* từ phân tích mã nguồn tĩnh (`BR-05`)?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Vì JavaParser không đọc được cú pháp Java 21",
+          "Vì phân tích tĩnh chỉ xác định chính xác cấu trúc khai báo (C1–C3); thứ tự gọi và hành vi phụ thuộc dữ liệu phải quan sát từ vết thực thi runtime (OpenTelemetry spans)",
+          "Vì UML đã bị loại bỏ hoàn toàn khỏi ngành phần mềm",
+          "Vì sơ đồ Sequence tốn quá nhiều dung lượng cơ sở dữ liệu"
+        ],
+        "correctOption": 1,
+        "explanation": "Mã nguồn tĩnh không phản ánh luồng rẽ nhánh theo dữ liệu thật, retry hay lỗi mạng; do đó MAVIS giữ Static View thuần cấu trúc (C1–C3 + Dependency Graph) và dùng OpenTelemetry ở Runtime để dựng chuỗi tương tác nhân quả.",
+        "points": 1
+      },
+      {
+        "id": "java-v2-ch01-q4",
+        "prompt": "Dấu hiệu rõ nhất cho thấy một hệ thống đang rơi vào bẫy **Distributed Monolith** là gì?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Hệ thống sử dụng Java 21 và Docker Compose",
+          "Các dịch vụ có nhiều đường gọi REST qua API Gateway",
+          "Các dịch vụ bị gắn chặt đến mức thay đổi một dịch vụ buộc phải sửa và triển khai lại đồng loạt nhiều dịch vụ khác cùng lúc",
+          "Mỗi dịch vụ có một cơ sở dữ liệu PostgreSQL riêng"
+        ],
+        "correctOption": 2,
+        "explanation": "Mất khả năng triển khai độc lập (*independent deployability*) là đặc trưng cốt lõi của Distributed Monolith.",
+        "points": 1
+      }
+    ]
   }
 ]
