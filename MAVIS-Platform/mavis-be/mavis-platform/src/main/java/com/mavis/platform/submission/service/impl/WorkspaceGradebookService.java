@@ -99,7 +99,12 @@ public class WorkspaceGradebookService {
         Workspace workspace = workspaceRepository.findById(workspaceId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Workspace not found"));
 
-        List<Assignment> orderedLabs = new ArrayList<>(assignmentRepository.findByWorkspaceIdOrderByCreatedAtDesc(workspaceId));
+        List<Assignment> fetched = assignmentRepository.findByWorkspaceIdOrderByCreatedAtDesc(workspaceId);
+        boolean filterOrderedOnly = workspace.isCourseMode()
+                && fetched.stream().anyMatch(a -> a.getLabOrder() != null);
+        List<Assignment> orderedLabs = new ArrayList<>(filterOrderedOnly
+                ? fetched.stream().filter(a -> a.getLabOrder() != null).toList()
+                : fetched);
         orderedLabs.sort(Comparator
                 .comparing((Assignment a) -> a.getLabOrder() == null ? Integer.MAX_VALUE : a.getLabOrder())
                 .thenComparing(Assignment::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())));
