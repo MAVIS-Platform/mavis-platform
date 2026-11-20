@@ -83,7 +83,7 @@ public class CourseAuthoringService {
         if (workspaceId == null || seeder == null || CourseLabSeederService.isSeeding(workspaceId)) {
             return;
         }
-        Boolean needsHeal = jdbc.query("""
+        String healTarget = jdbc.query("""
                 SELECT w.code, w.status,
                        (SELECT COUNT(*) FROM assignments a WHERE a.workspace_id = w.id AND a.lab_order IS NOT NULL) AS lab_count,
                        (SELECT COUNT(*) FROM course_modules cm JOIN course_definitions c ON c.id = cm.course_id
@@ -91,18 +91,24 @@ public class CourseAuthoringService {
                 FROM workspaces w WHERE w.id = ?
                 """, rs -> {
             if (!rs.next()) {
-                return Boolean.FALSE;
+                return null;
             }
             String code = rs.getString("code");
             String status = rs.getString("status");
             int labCount = rs.getInt("lab_count");
             int modCount = rs.getInt("mod_count");
-            return "JAVA-MS-2026".equalsIgnoreCase(code)
-                    && "ACTIVE".equals(status)
-                    && (labCount < 6 || modCount < 6);
+            if (!"ACTIVE".equals(status) || (labCount >= 5 && modCount >= 5)) {
+                return null;
+            }
+            if ("JAVA-MS-2026".equalsIgnoreCase(code) || "CSHARP-MS-2026".equalsIgnoreCase(code)) {
+                return code;
+            }
+            return null;
         }, workspaceId);
-        if (Boolean.TRUE.equals(needsHeal)) {
+        if ("JAVA-MS-2026".equalsIgnoreCase(healTarget)) {
             seeder.ensureJavaCourseraPopulated(workspaceId);
+        } else if ("CSHARP-MS-2026".equalsIgnoreCase(healTarget)) {
+            seeder.ensureCsharpCourseraPopulated(workspaceId);
         }
     }
 
