@@ -33,6 +33,8 @@ public static class ComposeOverrideBuilder
                 ["cap_drop"] = new[] { "ALL" }, ["security_opt"] = new[] { "no-new-privileges:true" },
                 ["pids_limit"] = 256, ["mem_limit"] = profile.MemoryMiB + "m", ["cpus"] = profile.Cpus,
                 ["read_only"] = true, ["tmpfs"] = new[] { "/tmp:rw,noexec,nosuid,size=64m" }, ["restart"] = "no",
+                // Preserve the source/image probe while allowing cold startup within the approved deadline.
+                ["healthcheck"] = new { start_period = Math.Clamp(profile.TimeoutSeconds, 1, 300) + "s" },
                 ["networks"] = new[] { "default" }
             };
             var protectedEnvironment = new Dictionary<string,string>();

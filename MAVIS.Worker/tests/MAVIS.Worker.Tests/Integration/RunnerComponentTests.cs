@@ -217,8 +217,12 @@ public sealed class RunnerComponentTests
         var javaEnvironment = javaOverride.RootElement.GetProperty("services").GetProperty("node-api").GetProperty("environment");
         Assert.False(javaEnvironment.TryGetProperty("MANAGEMENT_ENDPOINT_HEALTH_STATUS_HTTP_MAPPING_DOWN", out _));
         Assert.False(javaEnvironment.TryGetProperty("MANAGEMENT_ENDPOINT_HEALTH_STATUS_HTTP_MAPPING_OUT_OF_SERVICE", out _));
+        var warmup = javaOverride.RootElement.GetProperty("services").GetProperty("node-api").GetProperty("healthcheck");
+        Assert.Equal("120s", warmup.GetProperty("start_period").GetString());
+        Assert.False(warmup.TryGetProperty("test", out _));
+        Assert.False(warmup.TryGetProperty("disable", out _));
         using var muslOverride = JsonDocument.Parse(ComposeOverrideBuilder.Build(preflight,
-            profile with { Applications = new Dictionary<string, RuntimeServiceProfile> {
+            profile with { TimeoutSeconds = 300, Applications = new Dictionary<string, RuntimeServiceProfile> {
                 ["node-api"] = new("dotnet8-linux-x64-musl", 8080),
                 ["order-svc"] = new("passthrough", 3001) } },
             Path.Combine(Path.GetTempPath(), "collector.yaml"), values));
@@ -226,6 +230,7 @@ public sealed class RunnerComponentTests
         Assert.Equal("/mavis-otel/dotnet-musl/linux-musl-x64/OpenTelemetry.AutoInstrumentation.Native.so", muslEnvironment.GetProperty("CORECLR_PROFILER_PATH").GetString());
         Assert.Equal("/mavis-otel/dotnet-musl", muslEnvironment.GetProperty("OTEL_DOTNET_AUTO_HOME").GetString());
         Assert.Equal("console", muslEnvironment.GetProperty("OTEL_DOTNET_AUTO_LOGGER").GetString());
+        Assert.Equal("300s", muslOverride.RootElement.GetProperty("services").GetProperty("node-api").GetProperty("healthcheck").GetProperty("start_period").GetString());
         Assert.False(nodeEnv.TryGetProperty("OTEL_DOTNET_AUTO_LOGGER", out _));
         Assert.Equal("/mavis-otel/dotnet-musl/net/OpenTelemetry.AutoInstrumentation.StartupHook.dll", muslEnvironment.GetProperty("DOTNET_STARTUP_HOOKS").GetString());
         Assert.Equal("node_secret_1", nodeEnv.GetProperty("DB_PASSWORD").GetString());
