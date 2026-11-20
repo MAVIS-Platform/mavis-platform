@@ -330,4 +330,37 @@ class RuntimeStudioServiceTest {
         assertEquals("frame-2", captured.path("telemetry").path("observedAt").asText());
         verify(sessions, times(1)).save(session);
     }
+
+    @Test void pauseResumeAndThrottleCpuValidateParametersAndAcknowledgeCleanly() {
+        // THROTTLE_CPU requires cpuPercent; PAUSE forbids cpuPercent
+        assertThrows(BusinessException.class, () -> service.submit(id,
+                new RuntimeStudioService.ActionRequest(UUID.randomUUID(), "THROTTLE_CPU", "orders", null, null)));
+        assertThrows(BusinessException.class, () -> service.submit(id,
+                new RuntimeStudioService.ActionRequest(UUID.randomUUID(), "PAUSE", "orders", null, 50)));
+
+        UUID throttleId = UUID.randomUUID();
+        service.submit(id, new RuntimeStudioService.ActionRequest(throttleId, "THROTTLE_CPU", "orders", null, 25));
+        var cmd = service.poll(id, session.getResourceProject());
+        assertEquals(25, cmd.path("command").path("cpuPercent").asInt());
+        var throttleResult = mapper.createObjectNode().put("confirmed", true).put("action", "THROTTLE_CPU")
+                .put("service", "orders").put("replicasBefore", 1).put("replicasAfter", 1);
+        throttleResult.putObject("metricsAfter").put("cpuPercent", 25);
+        service.acknowledge(id, new RuntimeStudioService.AckRequest(throttleId, id, session.getResourceProject(), "CONFIRMED", throttleResult));
+
+        UUID pauseId = UUID.randomUUID();
+        service.submit(id, new RuntimeStudioService.ActionRequest(pauseId, "PAUSE", "orders", null));
+        service.poll(id, session.getResourceProject());
+        var pauseResult = mapper.createObjectNode().put("confirmed", true).put("action", "PAUSE")
+                .put("service", "orders").put("replicasBefore", 1).put("replicasAfter", 0);
+        service.acknowledge(id, new RuntimeStudioService.AckRequest(pauseId, id, session.getResourceProject(), "CONFIRMED", pauseResult));
+
+        UUID resumeId = UUID.randomUUID();
+        service.submit(id, new RuntimeStudioService.ActionRequest(resumeId, "RESUME", "orders", null));
+        service.poll(id, session.getResourceProject());
+        var resumeResult = mapper.createObjectNode().put("confirmed", true).put("action", "RESUME")
+                .put("service", "orders").put("replicasBefore", 0).put("replicasAfter", 1);
+        service.acknowledge(id, new RuntimeStudioService.AckRequest(resumeId, id, session.getResourceProject(), "CONFIRMED", resumeResult));
+
+        assertEquals(3, session.getStudioControl().path("actions").size());
+    }
 }

@@ -11,7 +11,7 @@ public sealed record RuntimeRunDefinition(string SessionId, string ModelVersionI
     string? ResourceProject = null, bool ProtectedEnvironmentAvailable = false,
     IReadOnlyList<RuntimeInfrastructureActionDefinition>? InfrastructureActions = null, bool InteractiveStudio = false);
 
-public sealed record RuntimeInfrastructureActionDefinition(string Action, string Service, int? Replicas = null);
+public sealed record RuntimeInfrastructureActionDefinition(string Action, string Service, int? Replicas = null, int? CpuPercent = null);
 public sealed record RuntimeInfrastructureActionResult(string Action, string Service, int ReplicasBefore, int ReplicasAfter,
     JsonObject MetricsBefore, JsonObject MetricsAfter, DateTimeOffset PerformedAt, bool Confirmed);
 
@@ -317,7 +317,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
                     var status = "FAILED";
                     var resultCount = _observedActions.Count;
                     try {
-                        await ExecuteActionsAsync([new(item.Action, item.Service, item.Replicas)], ct);
+                        await ExecuteActionsAsync([new(item.Action, item.Service, item.Replicas, item.CpuPercent)], ct);
                         result = _observedActions.Last();
                         status = result.Confirmed ? "CONFIRMED" : "FAILED";
                     } catch (Exception) when (!ct.IsCancellationRequested) {
@@ -357,48 +357,67 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
         {
             var action = item.Action?.Trim().ToUpperInvariant();
             var service = item.Service?.Trim();
-            if (action is not ("STOP" or "START" or "SCALE") || string.IsNullOrWhiteSpace(service) ||
+            if (action is not ("STOP" or "START" or "SCALE" or "PAUSE" or "RESUME" or "THROTTLE_CPU") || string.IsNullOrWhiteSpace(service) ||
                 !definition.Profile.Applications.ContainsKey(service))
                 throw new RuntimeStageException("INFRASTRUCTURE_ACTION_INVALID");
             if (action == "SCALE" && item.Replicas is not (>= 1 and <= 8))
                 throw new RuntimeStageException("REPLICA_BOUNDS_EXCEEDED");
+            if (action == "THROTTLE_CPU" && item.CpuPercent is not (>= 10 and <= 100))
+                throw new RuntimeStageException("CPU_THROTTLE_BOUNDS_EXCEEDED");
 
             Stage = "INFRASTRUCTURE_" + action;
-            var before = await ReadServiceMetrics(service, ct);
+            var before = await ReadServiceState(service, ct);
             var actionWaitTimeout = ComposeOverrideBuilder.IsKernelSandboxedRuntime(IsolationRuntime) ? "60" : "30";
+            double? appliedCpus = null;
             if (action == "STOP") await Require(["stop", "--timeout", "5", service], ct);
             else if (action == "START") await Require(["start", service], ct);
+            else if (action == "PAUSE") await Require(["pause", service], ct);
+            else if (action == "RESUME") await Require(["unpause", service], ct);
+            else if (action == "THROTTLE_CPU")
+            {
+                if (before.runningIds.Length == 0) throw new RuntimeStageException("INFRASTRUCTURE_ACTION_UNCONFIRMED");
+                appliedCpus = Math.Min(definition.Profile.Cpus, Math.Max(0.05, Math.Round(definition.Profile.Cpus * item.CpuPercent!.Value / 100.0, 2)));
+                var cpuArg = appliedCpus.Value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+                var updated = await docker.RunAsync(new[] { "update", "--cpus", cpuArg }.Concat(before.runningIds).ToArray(), _directory!, 15, ct);
+                if (updated.ExitCode != 0) throw new RuntimeStageException("DOCKER_UPDATE_FAILED");
+            }
             else await Require(["up", "--detach", "--no-deps", "--no-recreate", "--no-build", "--pull", "never",
                 "--wait", "--wait-timeout", actionWaitTimeout, "--scale", service + "=" + item.Replicas, service], ct);
-            var after = await ReadServiceMetrics(service, ct);
+            var after = await ReadServiceState(service, ct);
             var expected = action switch
             {
                 "STOP" => before.running > 0 && after.running == 0,
                 "START" => before.running == 0 && after.running >= 1,
+                "PAUSE" => before.running > 0 && after.running == 0 && after.paused > 0,
+                "RESUME" => before.paused > 0 && after.running >= 1 && after.paused == 0,
+                "THROTTLE_CPU" => before.running > 0 && after.running == before.running,
                 _ => before.running > 0 && after.running == item.Replicas && before.running != after.running
             };
-            if (expected && action is "START" or "SCALE")
+            if (expected && action is "START" or "SCALE" or "RESUME")
                 expected = await WaitForServiceReadyAsync(service, ct);
             var performedAt = DateTimeOffset.UtcNow;
             results.Add(new(action, service, before.running, after.running,
-                Metrics(before, beforeWorkload), Metrics(after, null), performedAt, expected));
+                Metrics(before, beforeWorkload, null, null), Metrics(after, null, item.CpuPercent, appliedCpus), performedAt, expected));
             var afterWorkload = expected && beforeWorkload is not null ? await ExecuteWorkloadAsync(ct) : null;
             if (afterWorkload is not null)
                 RememberTraceSteps(afterWorkload);
-            results[^1] = results[^1] with { MetricsAfter = Metrics(after, afterWorkload) };
+            results[^1] = results[^1] with { MetricsAfter = Metrics(after, afterWorkload, item.CpuPercent, appliedCpus) };
             beforeWorkload = afterWorkload;
             _scenario = afterWorkload ?? _scenario;
             if (!expected) throw new RuntimeStageException("INFRASTRUCTURE_ACTION_UNCONFIRMED");
         }
         return results;
 
-        static JsonObject Metrics((int total, int running) value, HttpScenarioOutcome? workload)
+        static JsonObject Metrics((int total, int running, int paused, string[] runningIds) value, HttpScenarioOutcome? workload, int? cpuPercent, double? appliedCpus)
         {
             var metrics = new JsonObject
             {
                 ["replicas"] = value.total,
                 ["runningReplicas"] = value.running
             };
+            if (value.paused > 0) metrics["pausedReplicas"] = value.paused;
+            if (cpuPercent is int pct) metrics["cpuPercent"] = pct;
+            if (appliedCpus is double cpus) metrics["targetCpus"] = cpus;
             if (workload is not null)
             {
                 var traceIds=new JsonArray();
@@ -440,16 +459,11 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
         return false;
     }
 
-    private async Task<(int total, int running)> ReadServiceMetrics(string service, CancellationToken ct)
-    {
-        var (total, running, _) = await ReadServiceState(service, ct);
-        return (total, running);
-    }
-
-    private async Task<(int total, int running, string[] runningIds)> ReadServiceState(string service, CancellationToken ct)
+    private async Task<(int total, int running, int paused, string[] runningIds)> ReadServiceState(string service, CancellationToken ct)
     {
         var ps = await Require(["ps", "--all", "--format", "{{.ID}}|{{.State}}", service], ct);
         var total = 0;
+        var paused = 0;
         var runningIds = new List<string>();
         foreach (var rawLine in ps.StandardOutput.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
         {
@@ -457,10 +471,13 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             var id = parts[0].Trim();
             if (string.IsNullOrEmpty(id)) continue;
             total++;
-            if (parts.Length > 1 && parts[1].Trim().Equals("running", StringComparison.OrdinalIgnoreCase))
+            var state = parts.Length > 1 ? parts[1].Trim() : "";
+            if (state.Equals("running", StringComparison.OrdinalIgnoreCase))
                 runningIds.Add(id);
+            else if (state.Equals("paused", StringComparison.OrdinalIgnoreCase))
+                paused++;
         }
-        return (total, runningIds.Count, runningIds.ToArray());
+        return (total, runningIds.Count, paused, runningIds.ToArray());
     }
 
     private async Task<List<(string Service, int Total, int Running, string[] Ids)>> ReadAllServiceStatesAsync(CancellationToken ct)

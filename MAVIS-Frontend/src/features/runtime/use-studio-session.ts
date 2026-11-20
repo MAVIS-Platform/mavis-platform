@@ -6,7 +6,7 @@ import { useApi, useApiMutation, useApiQuery } from "@/hooks/use-api";
 import { contracts, type Response as ApiResponse } from "@/lib/api/contracts";
 import { captureStudioImage } from "./studio-observability";
 
-type StudioAction = "START" | "STOP" | "SCALE";
+type StudioAction = "START" | "STOP" | "SCALE" | "PAUSE" | "RESUME" | "THROTTLE_CPU";
 type StudioState = ApiResponse<"studioState">;
 const TERMINAL_STUDIO_STATUSES = new Set([
   "COMPLETED",
@@ -85,6 +85,7 @@ export function useStudioSession(sessionId: string) {
     action: StudioAction;
     service: string;
     replicas?: number;
+    cpuPercent?: number;
   } | null>(null);
   const prevStatusRef = useRef<string | undefined>(undefined);
 
@@ -198,7 +199,12 @@ export function useStudioSession(sessionId: string) {
     data.finishRequested ||
     data.executionStatus !== "RUNNING";
 
-  async function send(kind: StudioAction, targetService = target, overrideReplicas?: number) {
+  async function send(
+    kind: StudioAction,
+    targetService = target,
+    overrideReplicas?: number,
+    cpuPercent?: number,
+  ) {
     if (!data) return;
     const requestedReplicas = overrideReplicas ?? replicas;
     if (overrideReplicas !== undefined) {
@@ -209,13 +215,15 @@ export function useStudioSession(sessionId: string) {
       previous &&
       previous.action === kind &&
       previous.service === targetService &&
-      previous.replicas === (kind === "SCALE" ? requestedReplicas : undefined)
+      previous.replicas === (kind === "SCALE" ? requestedReplicas : undefined) &&
+      previous.cpuPercent === (kind === "THROTTLE_CPU" ? cpuPercent : undefined)
         ? previous
         : {
             actionId: crypto.randomUUID(),
             action: kind,
             service: targetService,
             ...(kind === "SCALE" ? { replicas: requestedReplicas } : {}),
+            ...(kind === "THROTTLE_CPU" && cpuPercent !== undefined ? { cpuPercent } : {}),
           };
     pending.current = command;
     setActionError(null);

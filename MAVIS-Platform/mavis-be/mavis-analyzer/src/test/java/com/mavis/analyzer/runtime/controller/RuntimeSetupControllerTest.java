@@ -88,5 +88,47 @@ class RuntimeSetupControllerTest {
         assertEquals(List.of("COLLECTOR_IMAGE_NOT_PINNED"), readiness.runnerIssues());
         assertEquals(1, readiness.topology().path("blocks").size());
         assertEquals(List.of("Runner images are not configured"), readiness.prerequisites());
+        assertEquals("NEEDS_FIX", readiness.readinessGrade());
+    }
+
+    @Test
+    void computesReadinessGradeTraceCoverageAndDeterministicContractYaml() {
+        UUID projectId = UUID.randomUUID();
+        UUID verifiedId = UUID.randomUUID();
+        var mapper = new ObjectMapper();
+        var planning = mock(RuntimePlanningService.class);
+        var probe = mock(RunnerHealthProbe.class);
+        var sessions = mock(com.mavis.common.repository.RuntimeSessionRepository.class);
+        when(probe.probe()).thenReturn(new RunnerHealthProbe.Health(true, List.of()));
+
+        var profile = mapper.createObjectNode();
+        var apps = profile.putObject("applications");
+        apps.putObject("orders").put("runtime", "java").put("containerPort", 8080).put("readinessPath", "/actuator/health");
+        apps.putObject("payment").put("runtime", "dotnet8-linux-x64-glibc").put("containerPort", 8081).put("readinessPath", "/health");
+        profile.putObject("serviceMappings").put("orders", UUID.randomUUID().toString()).put("payment", UUID.randomUUID().toString());
+        profile.putArray("detectedServices").add("orders").add("payment").add("postgres");
+        profile.putArray("runnerIssues");
+
+        when(planning.configuration(projectId)).thenReturn(new RuntimePlanningService.ConfigurationView(
+                projectId, UUID.randomUUID(), UUID.randomUUID(), "SPRING_BOOT_DOTNET_COMPOSE_V1",
+                profile, 2, true, true, true, List.of(), List.of(), true));
+
+        var receipt = mapper.createObjectNode();
+        receipt.putObject("outcome").putObject("trace").putArray("spans").addObject().put("runtimeService", "orders");
+        var verified = com.mavis.common.entity.RuntimeSession.builder()
+                .id(verifiedId).executionStatus("COMPLETED").receiptDigest("sha256:abc").runnerReceiptJson(receipt).build();
+        when(sessions.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(verified));
+
+        var controller = new RuntimeSetupController(planning, probe);
+        org.springframework.test.util.ReflectionTestUtils.setField(controller, "runtimeSessions", sessions);
+        var readiness = controller.readiness(projectId).getData();
+
+        assertEquals("READY", readiness.readinessGrade());
+        assertEquals(50, readiness.traceCoveragePercent());
+        assertEquals(verifiedId.toString(), readiness.verifiedSessionId());
+        assertTrue(readiness.remediationSteps().stream().anyMatch(s -> s.contains("50%")));
+        assertNotNull(readiness.suggestedContractYaml());
+        assertTrue(readiness.suggestedContractYaml().contains("orders:\n    runtime: java\n    port: 8080\n    readinessPath: \"/actuator/health\""));
+        assertTrue(readiness.suggestedContractYaml().contains("postgres:\n    role: infra"));
     }
 }

@@ -839,6 +839,11 @@ export type RuntimeSetupReadiness = {
   detectedServices: string[];
   runnerIssues: string[];
   topology: Record<string, unknown> | null;
+  readinessGrade?: "READY" | "NEEDS_FIX" | "BLOCKED" | undefined;
+  traceCoveragePercent?: number | null | undefined;
+  verifiedSessionId?: string | null | undefined;
+  remediationSteps?: string[] | undefined;
+  suggestedContractYaml?: string | null | undefined;
 };
 
 export function useRuntimeSetupReadiness(projectId: string | null) {

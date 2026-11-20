@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CheckCircle2, Circle, Rocket } from "lucide-react";
+import { CheckCircle2, Circle, Copy, Rocket } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/mainflow-api";
@@ -30,6 +31,7 @@ export function LabPublishSection({
   onNavigate: (tab: Tab) => void;
 }) {
   const { t } = useLocale();
+  const [copiedContract, setCopiedContract] = useState(false);
   const setup = useCourseSetup(workspaceId);
   const setupLab = setup.data?.labs?.find((item) => item.assignmentId === assignment.id);
   const exercise = useQuery({
@@ -201,6 +203,61 @@ export function LabPublishSection({
             </li>
           ))}
         </ul>
+
+        {readiness.data?.readinessGrade && (
+          <div className="space-y-2.5 rounded-lg border bg-muted/30 p-3.5 text-xs">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="font-semibold">
+                  {t("Lab Readiness Report", "Báo cáo sẵn sàng Lab")}
+                </span>
+                <Badge
+                  variant={
+                    readiness.data.readinessGrade === "READY"
+                      ? "success"
+                      : readiness.data.readinessGrade === "NEEDS_FIX"
+                        ? "warning"
+                        : "destructive"
+                  }
+                >
+                  {readiness.data.readinessGrade}
+                </Badge>
+                {readiness.data.traceCoveragePercent != null && (
+                  <span className="font-mono text-[11px] text-muted-foreground">
+                    {t(
+                      `OTel trace coverage: ${readiness.data.traceCoveragePercent}%`,
+                      `Độ phủ OTel trace: ${readiness.data.traceCoveragePercent}%`,
+                    )}
+                  </span>
+                )}
+              </div>
+              {readiness.data.suggestedContractYaml && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    void navigator.clipboard?.writeText(readiness.data!.suggestedContractYaml!);
+                    setCopiedContract(true);
+                    window.setTimeout(() => setCopiedContract(false), 2000);
+                  }}
+                >
+                  <Copy className="mr-1.5 size-3.5" aria-hidden="true" />
+                  {copiedContract
+                    ? t("Copied mavis-runtime.yaml", "Đã chép mavis-runtime.yaml")
+                    : t("Copy mavis-runtime.yaml", "Chép mavis-runtime.yaml")}
+                </Button>
+              )}
+            </div>
+            {(readiness.data.remediationSteps?.length ?? 0) > 0 && (
+              <ul className="list-disc space-y-1 pl-4 text-muted-foreground">
+                {readiness.data.remediationSteps!.map((step) => (
+                  <li key={step}>{step}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
 
         {!hasContent && (
           <p className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs leading-5 text-amber-800 dark:text-amber-200">

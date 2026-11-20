@@ -1585,7 +1585,7 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
             return false;
         }
         String type = action.getAction().trim().toUpperCase(Locale.ROOT);
-        if (!Set.of("STOP", "START", "SCALE").contains(type)) {
+        if (!Set.of("STOP", "START", "SCALE", "PAUSE", "RESUME", "THROTTLE_CPU").contains(type)) {
             return false;
         }
         Integer before = action.getReplicasBefore();
@@ -1594,9 +1594,13 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
             return false;
         }
         return switch (type) {
-            case "STOP" -> before > 0 && after == 0;
-            case "START" -> before == 0 && after > 0;
+            case "STOP", "PAUSE" -> before > 0 && after == 0;
+            case "START", "RESUME" -> before == 0 && after > 0;
             case "SCALE" -> before > 0 && after > 0 && !before.equals(after);
+            case "THROTTLE_CPU" -> {
+                int pct = action.getMetricsAfter() != null ? action.getMetricsAfter().path("cpuPercent").asInt(0) : 0;
+                yield before > 0 && before.equals(after) && pct >= 10 && pct <= 100;
+            }
             default -> false;
         };
     }

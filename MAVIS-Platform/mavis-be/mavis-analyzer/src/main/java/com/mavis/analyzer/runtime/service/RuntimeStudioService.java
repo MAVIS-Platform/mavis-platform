@@ -35,8 +35,15 @@ public class RuntimeStudioService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private StudioTelemetryHub telemetryHub;
 
-    public record ActionRequest(@NotNull UUID actionId, @NotNull @Pattern(regexp="START|STOP|SCALE") String action,
-                                @NotBlank @Size(max=128) String service, @Min(1) @Max(8) Integer replicas) {}
+    public record ActionRequest(@NotNull UUID actionId,
+                                @NotNull @Pattern(regexp="START|STOP|SCALE|PAUSE|RESUME|THROTTLE_CPU") String action,
+                                @NotBlank @Size(max=128) String service,
+                                @Min(1) @Max(8) Integer replicas,
+                                @Min(10) @Max(100) Integer cpuPercent) {
+        public ActionRequest(UUID actionId, String action, String service, Integer replicas) {
+            this(actionId, action, service, replicas, null);
+        }
+    }
     public record AckRequest(@NotNull UUID actionId, @NotNull UUID sessionId, @NotBlank String resourceProject,
                              @NotNull @Pattern(regexp="CONFIRMED|FAILED") String status, JsonNode result) {}
     public record TelemetryRequest(@NotNull UUID sessionId, @NotBlank String resourceProject,
@@ -193,7 +200,8 @@ public class RuntimeStudioService {
             if (request.actionId().toString().equals(action.path("actionId").asText())) {
                 if (!request.action().equals(action.path("action").asText()) ||
                     !request.service().equals(action.path("service").asText()) ||
-                    (request.replicas() == null ? action.hasNonNull("replicas") : request.replicas() != action.path("replicas").asInt()))
+                    (request.replicas() == null ? action.hasNonNull("replicas") : request.replicas() != action.path("replicas").asInt()) ||
+                    (request.cpuPercent() == null ? action.hasNonNull("cpuPercent") : request.cpuPercent() != action.path("cpuPercent").asInt()))
                     throw error(ErrorCode.CONFLICT, "Action ID was already used for a different command.");
                 return view(session);
             }
@@ -208,7 +216,8 @@ public class RuntimeStudioService {
                 allowed |= request.service().equals(block.path("service").asText()) &&
                     (!"SCALE".equals(request.action()) || block.path("canScale").asBoolean());
             for (var link : topology.path("connections"))
-                allowed |= request.service().equals(link.path("controllerService").asText()) && !"SCALE".equals(request.action());
+                allowed |= request.service().equals(link.path("controllerService").asText()) &&
+                    !("SCALE".equals(request.action()) || "THROTTLE_CPU".equals(request.action()));
             if (!allowed) throw error(ErrorCode.BAD_REQUEST, "Action is not enabled for this prepared block or connection.");
         }
         if (control.path("finishRequested").asBoolean()) throw error(ErrorCode.CONFLICT, "Studio is finishing.");
@@ -222,21 +231,28 @@ public class RuntimeStudioService {
             throw error(ErrorCode.BAD_REQUEST, "Service is outside the confirmed session scope.");
         if (("SCALE".equals(request.action())) != (request.replicas() != null))
             throw error(ErrorCode.BAD_REQUEST, "Replicas are required only for SCALE.");
+        if (("THROTTLE_CPU".equals(request.action())) != (request.cpuPercent() != null))
+            throw error(ErrorCode.BAD_REQUEST, "cpuPercent (10-100) is required only for THROTTLE_CPU.");
         ObjectNode action = mapper.valueToTree(request);
         action.put("requestedAt", OffsetDateTime.now().toString());
         if (control.path("simulatedSandbox").asBoolean(false)) {
             int before = currentSimulatedReplicas(control, request.service());
             int after = switch (request.action()) {
-                case "STOP" -> 0;
-                case "START" -> Math.max(1, before == 0 ? 1 : before);
+                case "STOP", "PAUSE" -> 0;
+                case "START", "RESUME" -> Math.max(1, before == 0 ? 1 : before);
                 case "SCALE" -> request.replicas() == null ? 1 : request.replicas();
+                case "THROTTLE_CPU" -> before;
                 default -> before;
             };
-            if (("STOP".equals(request.action()) && before == 0)
-                    || ("START".equals(request.action()) && before > 0)
+            if ((Set.of("STOP", "PAUSE").contains(request.action()) && before == 0)
+                    || (Set.of("START", "RESUME").contains(request.action()) && before > 0)
+                    || ("THROTTLE_CPU".equals(request.action()) && before == 0)
                     || ("SCALE".equals(request.action()) && before == after)) {
                 throw error(ErrorCode.CONFLICT, "Service already in requested replica state.");
             }
+            double throttleFactor = "THROTTLE_CPU".equals(request.action()) && request.cpuPercent() != null
+                    ? 100.0 / Math.max(10, request.cpuPercent())
+                    : 1.0;
             ObjectNode result = mapper.createObjectNode()
                     .put("action", request.action())
                     .put("service", request.service())
@@ -249,12 +265,15 @@ public class RuntimeStudioService {
                     .put("errorRatePercent", before == 0 ? 100.0 : 0.0)
                     .put("requestCount", 3)
                     .put("p95LatencyMs", before == 0 ? 0.0 : Math.max(12.0, 48.0 / Math.max(1, before)));
-            result.putObject("metricsAfter")
+            ObjectNode metricsAfter = result.putObject("metricsAfter")
                     .put("runningReplicas", after)
                     .put("errorRate", after == 0 ? 1.0 : 0.0)
                     .put("errorRatePercent", after == 0 ? 100.0 : 0.0)
                     .put("requestCount", 3)
-                    .put("p95LatencyMs", after == 0 ? 0.0 : Math.max(12.0, 48.0 / Math.max(1, after)));
+                    .put("p95LatencyMs", after == 0 ? 0.0 : Math.max(12.0, (48.0 / Math.max(1, after)) * throttleFactor));
+            if (request.cpuPercent() != null) {
+                metricsAfter.put("cpuPercent", request.cpuPercent());
+            }
             action.put("status", "CONFIRMED");
             action.put("completedAt", OffsetDateTime.now().toString());
             action.set("result", result);
@@ -561,9 +580,13 @@ public class RuntimeStudioService {
         int after = result.path("replicasAfter").asInt();
         if (before < 0 || before > 8 || after < 0 || after > 8) return false;
         return switch (action) {
-            case "STOP" -> before > 0 && after == 0;
-            case "START" -> before == 0 && after > 0;
+            case "STOP", "PAUSE" -> before > 0 && after == 0;
+            case "START", "RESUME" -> before == 0 && after > 0;
             case "SCALE" -> before > 0 && after > 0 && before != after;
+            case "THROTTLE_CPU" -> {
+                int pct = result.path("metricsAfter").path("cpuPercent").asInt(0);
+                yield before > 0 && after == before && pct >= 10 && pct <= 100;
+            }
             default -> false;
         };
     }

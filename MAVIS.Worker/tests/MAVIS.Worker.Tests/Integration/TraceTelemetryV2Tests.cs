@@ -220,6 +220,78 @@ public sealed class TraceTelemetryV2Tests
         Assert.Null(LiveProbeRunner.Percentile([], 0.95));
     }
 
+    [Fact]
+    public async Task PauseResumeAndThrottleCpuConfirmRealDockerStateAndCpus()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mavis-faults-" + Guid.NewGuid().ToString("N"));
+        var project = "mavisrun-" + Guid.NewGuid().ToString("N");
+        var dir = Path.Combine(root, project);
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var digest = new string('a', 64);
+            var profile = new RunnerExecutionProfile("collector@sha256:" + digest, "mavis-agents-v1",
+                new Dictionary<string, RuntimeServiceProfile> { ["orders"] = new("java", 8080) },
+                Cpus: 1.0, ApprovedForLocalPoc: true, ScenarioRunnerImage: "sha256:" + digest);
+            var definition = new RuntimeRunDefinition("s1", "m1", "snap1", "prof1",
+                $"services:\n  orders:\n    image: orders@sha256:{digest}\n",
+                profile, new("s1", [new("req", "orders", "GET", "/orders", 200)]),
+                new Dictionary<string, string> { ["orders"] = "id-1" },
+                "cfg", "scn", project,
+                InfrastructureActions: [
+                    new("THROTTLE_CPU", "orders", CpuPercent: 25),
+                    new("PAUSE", "orders"),
+                    new("RESUME", "orders")
+                ]);
+            var docker = new FaultActionMockDocker();
+            var session = new DockerComposeSession(definition, root, "receivers: {}", docker);
+            typeof(DockerComposeSession).GetField("_directory", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+                .SetValue(session, dir);
+
+            var results = await session.ExecuteInfrastructureActionsAsync(CancellationToken.None);
+
+            Assert.Equal(3, results.Count);
+            Assert.All(results, r => Assert.True(r.Confirmed));
+            Assert.Equal("THROTTLE_CPU", results[0].Action);
+            Assert.Equal(25, results[0].MetricsAfter["cpuPercent"]!.GetValue<int>());
+            Assert.Equal(0.25, results[0].MetricsAfter["targetCpus"]!.GetValue<double>());
+            Assert.Contains(docker.Calls, c => c[0] == "update" && c.Contains("--cpus") && c.Contains("0.25"));
+            Assert.Equal("PAUSE", results[1].Action);
+            Assert.Equal(1, results[1].ReplicasBefore);
+            Assert.Equal(0, results[1].ReplicasAfter);
+            Assert.Equal("RESUME", results[2].Action);
+            Assert.Equal(0, results[2].ReplicasBefore);
+            Assert.Equal(1, results[2].ReplicasAfter);
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
+    }
+
+    private sealed class FaultActionMockDocker : IDockerCommands
+    {
+        private string _state = "running";
+        public List<IReadOnlyList<string>> Calls { get; } = [];
+
+        public Task<DockerCommandResult> RunAsync(IReadOnlyList<string> args, string workingDirectory, int timeoutSeconds, CancellationToken ct)
+        {
+            Calls.Add(args);
+            if (args[0] == "compose")
+            {
+                if (args.Contains("ps")) return Task.FromResult(new DockerCommandResult(0, $"orders-1|{_state}\n"));
+                if (args.Contains("pause")) { _state = "paused"; return Task.FromResult(new DockerCommandResult(0, "")); }
+                if (args.Contains("unpause")) { _state = "running"; return Task.FromResult(new DockerCommandResult(0, "")); }
+            }
+            return Task.FromResult(new DockerCommandResult(0, ""));
+        }
+
+        public Task<DockerCommandResult> RunWithInputAsync(IReadOnlyList<string> args, string workingDirectory, int timeoutSeconds, string input, CancellationToken ct)
+        {
+            var outcome = new HttpScenarioOutcome("s1", "Passed",
+                [new HttpStepOutcome("req", "Passed", 200, new string('1', 32), new string('2', 16), 4)]);
+            var json = System.Text.Json.JsonSerializer.Serialize(outcome, new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase });
+            return Task.FromResult(new DockerCommandResult(0, json));
+        }
+    }
+
     private sealed class BackToBackStudioDocker : IDockerCommands
     {
         private readonly Dictionary<string, int> _running = new(StringComparer.Ordinal) { ["orders"] = 1, ["payment"] = 1 };

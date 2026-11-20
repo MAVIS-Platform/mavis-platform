@@ -3316,20 +3316,75 @@ export function LiveStudioWorkbench({
                 })()}
               </section>
             ) : (
-              <LiveSandboxParity
-                data={data}
-                selected={selected}
-                busy={isPreviewMode ? false : busy}
-                onSelect={(svc) => {
-                  studio.setService(svc);
-                  setSetupPanel("service");
-                }}
-                onCommand={dispatchCommand}
-                sections={["inspector", "hardware", "resilience", "load"]}
-                compact
-                label="Live inspector"
-                authoring={authoring}
-              />
+              <div className="space-y-3">
+                <LiveSandboxParity
+                  data={data}
+                  selected={selected}
+                  busy={isPreviewMode ? false : busy}
+                  onSelect={(svc) => {
+                    studio.setService(svc);
+                    setSetupPanel("service");
+                  }}
+                  onCommand={dispatchCommand}
+                  sections={["inspector", "hardware", "resilience", "load"]}
+                  compact
+                  label="Live inspector"
+                  authoring={authoring}
+                />
+                {!isPreviewMode && selected && data.executionStatus === "RUNNING" && (
+                  <section
+                    aria-label="Live Docker fault injection"
+                    className="space-y-2 rounded-lg border border-amber-500/25 bg-slate-900/70 p-2.5 text-xs"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-amber-200">Fault Injection (Docker)</span>
+                      <code className="font-mono text-[10px] text-slate-400">{selected}</code>
+                    </div>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={busy || (runningFor(data, selected) ?? 0) === 0}
+                        onClick={() => void studio.send("PAUSE", selected)}
+                        className="h-7 whitespace-nowrap border-amber-500/40 bg-amber-500/10 text-[11px] text-amber-200 hover:bg-amber-500/20"
+                      >
+                        Pause (Freeze)
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={busy || (runningFor(data, selected) ?? 1) > 0}
+                        onClick={() => void studio.send("RESUME", selected)}
+                        className="h-7 whitespace-nowrap border-emerald-500/40 bg-emerald-500/10 text-[11px] text-emerald-200 hover:bg-emerald-500/20"
+                      >
+                        Resume
+                      </Button>
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-[10px] uppercase tracking-wide text-slate-500">
+                        CPU Throttle (cgroup)
+                      </span>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {[25, 50, 100].map((pct) => (
+                          <Button
+                            key={pct}
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={busy || (runningFor(data, selected) ?? 0) === 0}
+                            onClick={() => void studio.send("THROTTLE_CPU", selected, undefined, pct)}
+                            className="h-7 whitespace-nowrap border-slate-700 bg-slate-950/60 font-mono text-[11px] text-slate-200 hover:border-sky-400"
+                          >
+                            {pct}%
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                  </section>
+                )}
+              </div>
             )}
           </aside>
         )}
