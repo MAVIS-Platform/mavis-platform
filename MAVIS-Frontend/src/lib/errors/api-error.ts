@@ -80,6 +80,10 @@ export const publicErrors = {
     "Complete a verified Stop, Start, or Scale action in Studio Playtest before freezing.",
   STUDIO_TOPOLOGY_MISSING:
     "Run Auto-Configure Studio first so this Lab has a prepared Studio topology.",
+  STUDIO_TOPOLOGY_INVALID:
+    "Only application services configured in the Docker runtime profile can be added as Studio blocks.",
+  RUNTIME_PROFILE_INVALID:
+    "Runtime profile is invalid or exceeds limits. Re-sync Docker configuration and try again.",
   LAB_PUBLISH_CONTENT_REQUIRED:
     "Add a Lab description, attach a Theory lesson, or pin a Reference Source before adding to class.",
   WORKSPACE_CODE_EXISTS:
@@ -188,6 +192,10 @@ export function backendErrorCode(
     return "STUDIO_EVIDENCE_MISSING";
   if (message === "The reference runtime profile has no prepared Studio topology for this source/model")
     return "STUDIO_TOPOLOGY_MISSING";
+  if (message.startsWith("Invalid prepared Studio topology"))
+    return "STUDIO_TOPOLOGY_INVALID";
+  if (message === "Profile must be a bounded object without literal secrets")
+    return "RUNTIME_PROFILE_INVALID";
   if (
     message ===
     "Add a Lab description, attach a Theory lesson, or pin a published Reference Source before publishing the Lab"

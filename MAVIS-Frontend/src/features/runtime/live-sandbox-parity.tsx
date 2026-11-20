@@ -981,20 +981,33 @@ export function LiveSandboxParity({
           icon={<Server aria-hidden="true" className="size-3.5" />}
           compact={compact}
         >
-          <div className="flex flex-wrap items-baseline justify-between gap-1 text-[11px]">
-            <span className="font-mono text-slate-300">{selected || "—"}</span>
-            <span
-              className={
-                running === undefined
-                  ? "text-slate-400"
-                  : running === 0
-                    ? "font-semibold text-rose-300"
-                    : "font-semibold text-emerald-300"
-              }
-            >
-              {running === undefined ? "Preview" : running === 0 ? "Stopped" : "Running"}
-            </span>
-          </div>
+          {(() => {
+            const isPreview = data.executionStatus !== "RUNNING" && !data.telemetry?.observedAt;
+            const statusText = isPreview
+              ? running === 0
+                ? "Starts Down"
+                : "Prepared"
+              : running === undefined
+                ? "Waiting"
+                : running === 0
+                  ? "Stopped"
+                  : "Running";
+            const statusTone = isPreview
+              ? running === 0
+                ? "font-semibold text-amber-300"
+                : "font-semibold text-sky-300"
+              : running === undefined
+                ? "text-slate-400"
+                : running === 0
+                  ? "font-semibold text-rose-300"
+                  : "font-semibold text-emerald-300";
+            return (
+              <div className="flex flex-wrap items-baseline justify-between gap-1 text-[11px]">
+                <span className="font-mono text-slate-300">{selected || "—"}</span>
+                <span className={statusTone}>{statusText}</span>
+              </div>
+            );
+          })()}
           <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 font-mono text-[10.5px] text-slate-400">
             <span className="whitespace-nowrap">CPU {observedStats.cpu}</span>
             <span aria-hidden="true">·</span>

@@ -197,6 +197,7 @@ export type LiveStudioAuthoringProps = LiveBlockAuthoringControls & {
   saving?: boolean | undefined;
   saved?: boolean | undefined;
   error?: string | undefined;
+  onClearError?: (() => void) | undefined;
   hasVerifiedSession?: boolean | undefined;
   publishHref?: string | undefined;
   onSaveMission: (patch: {
@@ -1351,10 +1352,20 @@ export function LiveStudioWorkbench({
           className="flex flex-wrap items-center gap-2 border-b border-rose-500/30 bg-rose-950/40 px-3 py-1.5 text-[11px] text-rose-200"
         >
           <AlertCircle aria-hidden="true" className="size-3.5 shrink-0 text-rose-300" />
-          <span className="font-medium">
+          <span className="flex-1 font-medium">
             {mutationError ??
               "Studio Live session failed on Runner. Cancel or start a fresh session, or check Logs & Traces."}
           </span>
+          {authoring?.error && authoring.onClearError && (
+            <button
+              type="button"
+              onClick={authoring.onClearError}
+              aria-label="Dismiss error"
+              className="rounded px-1.5 py-0.5 text-[10px] text-rose-300 hover:bg-rose-500/20 hover:text-rose-100"
+            >
+              ×
+            </button>
+          )}
         </div>
       )}
 

@@ -156,13 +156,37 @@ export function PreparedTopologyEditor({ projectId, configuration, onSaved }: {
       }
     }
     try {
+      const transientKeys = new Set([
+        "detectedServices",
+        "composeServices",
+        "servicePorts",
+        "serviceStacks",
+        "detectedEndpoints",
+        "databaseChecks",
+        "requiredEnvVars",
+        "runnerIssues",
+        "infrastructureServices",
+        "serviceHealthPaths",
+        "serviceHealthConfidence",
+        "serviceHealthReasons",
+        "sandboxComposeYaml",
+        "sandboxComposeChanges",
+        "unresolvableRunnerIssues",
+        "recommendedServiceMappings",
+        "modelServiceNames",
+        "localImageBuildAvailable",
+        "configuredSecretKeys",
+      ]);
+      const baseProfile = Object.fromEntries(
+        Object.entries(configuration.profile ?? {}).filter(([key]) => !transientKeys.has(key)),
+      );
       await save.mutateAsync({
         projectId,
         profileId: configuration.profileId,
         snapshotId: configuration.snapshotId ?? undefined,
         modelId: configuration.modelId ?? undefined,
         expectedRevision: configuration.revision,
-        profile: { ...configuration.profile, studioTopology: compiled(topology) },
+        profile: { ...baseProfile, studioTopology: compiled(topology) },
       });
       setMessage(t("Prepared topology saved.", "Đã lưu topology Studio."));
       onSaved();

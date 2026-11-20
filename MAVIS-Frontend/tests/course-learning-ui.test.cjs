@@ -1512,8 +1512,13 @@ test("Lecturer Studio Live authoring uses unified single top bar, non-red health
   assert.match(live, /Screenshot PNG[\s\S]*Record runtime replay[\s\S]*Capture evidence snapshot/);
   assert.match(live, /aria-label="Runtime traffic flows"/);
   const exerciseEditor = read("src/features/assignments/studio-exercise-editor.tsx");
+  const apiErrors = read("src/lib/errors/api-error.ts");
   assert.match(standalone, /data-theme="dark"[\s\S]*bg-\[#0b101b\]/);
   assert.doesNotMatch(exerciseEditor, /Recommended Studio Live Exercise Preset|Studio exercise \(teacher\)/);
+  assert.doesNotMatch(standalone, /composePoolServices[\s\S]{0,400}detectedServices/);
+  assert.match(standalone, /stripTransientRuntimeProfile/);
+  assert.match(apiErrors, /STUDIO_TOPOLOGY_INVALID/);
+  assert.match(parity, /isPreview[\s\S]*"Starts Down"[\s\S]*"Prepared"/);
 });
 
 test("Studio Live project terminal parser multiplexes compose logs, stack traces, runner actions and warnings", () => {

@@ -22,7 +22,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ErrorState, LoadingState } from "@/components/shared/request-state";
 import { RequireSession } from "@/features/auth/access";
-import { useApi, useApiMutation, useApiQuery, useSession } from "@/hooks/use-api";
+import { useApi, useApiQuery, useSession } from "@/hooks/use-api";
 import type { Response } from "@/lib/api/contracts";
 import { ApiError } from "@/lib/errors/api-error";
 import { api } from "@/lib/mainflow-api";
@@ -167,9 +167,37 @@ function StandaloneStudioContent() {
     enabled: Boolean(workspaceId && assignmentId && isAuthorMode),
     retry: false,
   });
+const TRANSIENT_RUNTIME_PROFILE_KEYS = new Set([
+  "detectedServices",
+  "composeServices",
+  "servicePorts",
+  "serviceStacks",
+  "detectedEndpoints",
+  "databaseChecks",
+  "requiredEnvVars",
+  "runnerIssues",
+  "infrastructureServices",
+  "serviceHealthPaths",
+  "serviceHealthConfidence",
+  "serviceHealthReasons",
+  "sandboxComposeYaml",
+  "sandboxComposeChanges",
+  "unresolvableRunnerIssues",
+  "recommendedServiceMappings",
+  "modelServiceNames",
+  "localImageBuildAvailable",
+  "configuredSecretKeys",
+]);
+
+function stripTransientRuntimeProfile(profile: Record<string, unknown> | undefined) {
+  if (!profile) return {};
+  return Object.fromEntries(
+    Object.entries(profile).filter(([key]) => !TRANSIENT_RUNTIME_PROFILE_KEYS.has(key)),
+  );
+}
+
   const setup = useCourseSetup(isAuthorMode ? workspaceId : "");
   const autoStudio = useAutoConfigureStudio(workspaceId, assignmentId);
-  const saveConfig = useApiMutation("saveRuntimeConfiguration");
 
   // Student data
   const studentContext = useStudentLabContext(
@@ -240,26 +268,17 @@ function StandaloneStudioContent() {
   const availableApplications = readiness.data?.applications?.length
     ? readiness.data.applications
     : (readiness.data?.detectedServices ?? []);
+  // PreparedStudioTopology only accepts services registered under profile.applications
+  // (infra containers like sandbox-postgres / sandbox-kafka run automatically and are rejected with HTTP 400).
   const composePoolServices = useMemo(() => {
     const profileApps =
       runtimeConfig.data?.profile?.["applications"] &&
       typeof runtimeConfig.data.profile["applications"] === "object"
         ? Object.keys(runtimeConfig.data.profile["applications"] as Record<string, unknown>)
         : [];
-    const profileMappings =
-      runtimeConfig.data?.profile?.["serviceMappings"] &&
-      typeof runtimeConfig.data.profile["serviceMappings"] === "object"
-        ? Object.keys(runtimeConfig.data.profile["serviceMappings"] as Record<string, unknown>)
-        : [];
-    return Array.from(
-      new Set([
-        ...(readiness.data?.detectedServices ?? []),
-        ...(readiness.data?.applications ?? []),
-        ...profileApps,
-        ...profileMappings,
-      ].filter(Boolean)),
-    );
-  }, [readiness.data?.detectedServices, readiness.data?.applications, runtimeConfig.data?.profile]);
+    const allowed = profileApps.length > 0 ? profileApps : (readiness.data?.applications ?? []);
+    return Array.from(new Set(allowed.filter(Boolean)));
+  }, [readiness.data?.applications, runtimeConfig.data?.profile]);
   const readinessBlockers = [
     ...(readiness.data?.runnerIssues ?? []),
     ...(readiness.data?.prerequisites ?? []),
@@ -414,14 +433,14 @@ function StandaloneStudioContent() {
           const targetSnapshotId = latestCfg?.snapshotId ?? runtimeSnapshotId ?? undefined;
           const targetModelId = latestCfg?.modelId ?? runtimeModelId ?? undefined;
           if (!latestCfg || !targetSnapshotId || !targetModelId) return;
-          const savedCfg = await saveConfig.mutateAsync({
+          const savedCfg = await client.execute("saveRuntimeConfiguration", {
             projectId,
             profileId: latestCfg.profileId,
             snapshotId: targetSnapshotId,
             modelId: targetModelId,
             expectedRevision: latestCfg.revision,
             profile: {
-              ...latestCfg.profile,
+              ...stripTransientRuntimeProfile(latestCfg.profile),
               studioTopology: input.nextTopology,
             },
           });
@@ -551,10 +570,11 @@ function StandaloneStudioContent() {
             exercise.data?.successCriteria?.minReplicas?.[0]?.count == null
               ? ""
               : String(exercise.data.successCriteria.minReplicas[0].count),
-          busy: saveVisualExercise.isPending || saveConfig.isPending,
-          saving: saveVisualExercise.isPending || saveConfig.isPending,
+          busy: saveVisualExercise.isPending,
+          saving: saveVisualExercise.isPending,
           saved: visualSaved,
           error: visualError || undefined,
+          onClearError: () => setVisualError(""),
           hasVerifiedSession: Boolean(verifiedSession),
           publishHref,
           onToggleInitialStopped: (service, isController) => {
@@ -1125,14 +1145,18 @@ function StandaloneStudioContent() {
             projectId={projectId ?? undefined}
             projectName={!isAuthorMode ? labTitle || undefined : undefined}
             onSelectSession={setSelectedSessionId}
-            onStartSession={() =>
+            onStartSession={() => {
+              setVisualError("");
               startStudio.mutate(undefined, {
                 onSuccess: (created) => {
                   if (created?.id) setSelectedSessionId(created.id);
                   void labSessions.refetch();
                 },
-              })
-            }
+                onError: (cause) => {
+                  setVisualError(cause instanceof Error ? cause.message : String(cause));
+                },
+              });
+            }}
             starting={startStudio.isPending}
             hideSwitchToSandbox
             previewTopology={previewTopology}
