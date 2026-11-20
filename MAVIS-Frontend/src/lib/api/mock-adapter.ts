@@ -804,6 +804,14 @@ export class MockAdapter implements ApiAdapter {
         const assignment={referenceSource:this.assignmentReference(p.workspaceId,p.referenceModelId),id:crypto.randomUUID(),workspaceId:p.workspaceId,title:p.title,instructions:p.description??"",dueAt:p.dueAt??"No deadline",requiredDiagramTypes:p.requiredDiagramTypes,ruleSetVersion:p.ruleSetVersion??"SWD_DEFAULT_V1",requireRuntimeTrace:p.requireRuntimeTrace,aiPolicy:p.aiPolicy??null,labOrder:p.labOrder??null};
         this.courseworkAssignments.push(assignment); return assignment;
       }
+      case "workspaceSubmissions": {
+        const p = contracts.workspaceSubmissions.input.parse(raw);
+        this.classroom(p.workspaceId, true);
+        const ids = new Set(
+          this.courseworkAssignments.filter((a) => a.workspaceId === p.workspaceId).map((a) => a.id),
+        );
+        return this.submissions.filter((s) => ids.has(s.assignmentId));
+      }
       case "assignmentSubmissions": {
         const p=contracts.assignmentSubmissions.input.parse(raw); this.classroom(p.workspaceId,true);
         this.find(this.courseworkAssignments,a=>a.id===p.assignmentId&&a.workspaceId===p.workspaceId);

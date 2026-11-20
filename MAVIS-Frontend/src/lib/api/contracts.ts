@@ -893,6 +893,14 @@ export const contracts = {
     z.array(z.object({ id, workspaceId: id, snapshot: d.snapshotSchema, model: d.modelSchema })),
   ),
   submissions: contract(z.object({ workspaceId: id.optional() }), z.array(d.submissionSchema)),
+  workspaceSubmissions: contract(
+    z.object({
+      workspaceId: id,
+      reviewStatus: z.string().optional(),
+      labOutcome: z.string().optional(),
+    }),
+    z.array(d.submissionSchema),
+  ),
   assignmentSubmissions: contract(
     z.object({
       workspaceId: id,

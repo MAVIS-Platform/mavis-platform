@@ -350,6 +350,7 @@ export const submissionSchema = z
     studentSnapshots: z.array(studentSnapshotSchema).nullish(),
     reviewStatus: z.string().nullable().optional(),
     reviewScore: z.number().nullable().optional(),
+    reviewScoreTenScale: z.number().nullable().optional(),
     labOutcome: z.string().nullable().optional(),
     reviewSummary: z.string().nullable().optional(),
     gradedByName: z.string().nullable().optional(),

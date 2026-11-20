@@ -65,7 +65,7 @@ export function operationPermission(operation: Operation): Permission | undefine
     ].includes(operation)
   )
     return "workspace:manage";
-  if (operation === "assignmentSubmissions") return "submission:review";
+  if (["assignmentSubmissions", "workspaceSubmissions"].includes(operation)) return "submission:review";
   if (["announcements", "catalogCourses"].includes(operation)) return "workspace:read";
   if (operation === "createReferenceProject") return "workspace:manage";
   if (operation === "submit") return "submission:create";
