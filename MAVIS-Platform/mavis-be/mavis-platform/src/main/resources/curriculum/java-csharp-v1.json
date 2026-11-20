@@ -2638,5 +2638,80 @@
         "points": 1
       }
     ]
+  },
+  {
+    "id": "java-v2-ch09",
+    "track": "Java",
+    "phase": "V2 · Module 3",
+    "title": "Chương 09: GIAO DỊCH PHÂN TÁN VỚI SAGA PATTERN (CHOREOGRAPHY & ORCHESTRATION)",
+    "minutes": 45,
+    "objective": "Hiểu vì sao 2PC (Two-Phase Commit / XA) không phù hợp với kiến trúc Microservices hiện đại. Thiết kế Saga Pattern với chuỗi giao dịch cục bộ và giao dịch bù trừ (Compensating Transactions). So sánh Choreography-based Saga vs. Orchestration-based Saga và biết cách xử lý vấn đề thiếu cô lập (*Lack of Isolation* — Semantic Lock).",
+    "lesson": "### 9.1. Tại sao không dùng Two-Phase Commit (2PC)?\n\nTrong Monolith, một giao dịch ACID duy nhất bao trùm cả việc tạo đơn hàng, trừ tồn kho và trừ tiền. Khi tách thành 3 cơ sở dữ liệu độc lập (`order_db`, `catalog_db`, `payment_db`), giao dịch phân tán kiểu cổ điển **2PC** gặp 3 rào cản chí mạng (`[R19]` §4.1.2):\n1. Nhiều công nghệ hiện đại (như Kafka, Redis, MongoDB) **không hỗ trợ 2PC**.\n2. **Độ khả dụng thấp**: Chỉ cần 1 dịch vụ tham gia sập giữa chừng, toàn bộ giao dịch bị treo và khóa tài nguyên.\n3. **Thông lượng (throughput) kém**: Khóa hàng dữ liệu xuyên mạng trong suốt 2 pha làm sụt giảm hiệu năng nghiêm trọng.\n\n### 9.2. Bản chất Saga Pattern & Giao dịch bù trừ (Compensating Transaction)\n\n**Saga** là một chuỗi các **giao dịch cục bộ (Local Transactions)**. Mỗi giao dịch cục bộ cập nhật CSDL riêng của dịch vụ mình rồi kích hoạt bước tiếp theo. Nếu bước thứ $k$ thất bại vì vi phạm nghiệp vụ (ví dụ: hết tồn kho hoặc thẻ thanh toán bị từ chối), Saga thực thi ngược lại các **Giao dịch bù trừ (Compensating Transactions)** cho các bước $k-1, k-2, \\dots, 1$ đã thành công trước đó!\n\n```text\nLUỒNG THÀNH CÔNG (Happy Path):\n[T1: Order PENDING] ──> [T2: Reserve Stock] ──> [T3: Charge Payment] ──> [T4: Order CONFIRMED]\n\nLUỒNG THẤT BẠI Ở T3 (Compensation Path):\n[T1: Order PENDING] ──> [T2: Reserve Stock] ──> [T3: Payment FAILED ❌]\n                                                      |\n[C1: Order CANCELLED] <── [C2: Release Stock] <───────+\n```\n\n> **Lưu ý quan trọng**: Giao dịch bù trừ **không phải là `ROLLBACK` của SQL**! Nó là một hành động nghiệp vụ mới đảo ngược tác động ngữ nghĩa (ví dụ: tạo đơn ở trạng thái `PENDING` $\\rightarrow$ bù trừ bằng cách đổi trạng thái thành `CANCELLED`; trừ 5 sản phẩm $\\rightarrow$ bù trừ bằng cách cộng trả lại 5 sản phẩm vào kho).\n\n### 9.3. Phân biệt 2 cách điều phối Saga (`[R19]` §4.2)\n\n| Tiêu chí | Choreography (Vũ đạo — Phi tập trung) | Orchestration (Nhạc trưởng — Tập trung) |\n| :--- | :--- | :--- |\n| **Cách hoạt động** | Không có người chỉ huy; mỗi dịch vụ lắng nghe sự kiện từ dịch vụ trước rồi tự phát sự kiện tiếp theo. | Có một **Saga Orchestrator** (thường nằm ở `order-service`) gửi từng lệnh (Command) tới các dịch vụ tham gia và theo dõi phản hồi. |\n| **Ưu điểm** | Đơn giản với luồng ngắn ($2$–$3$ bước), không có điểm tập trung. | Luồng nghiệp vụ rõ ràng ở một chỗ, **không bị phụ thuộc vòng**, dễ quản lý khi luồng dài ($\\ge 4$ bước) và nhiều nhánh lỗi. |\n| **Nhược điểm** | Luồng dài rất khó theo dõi tổng thể; dễ sinh phụ thuộc vòng (Cyclic Dependency) giữa các service. | Cần tránh nhét quá nhiều logic nghiệp vụ vào Orchestrator (giữ Orchestrator chỉ làm nhiệm vụ điều phối trạng thái). |\n\n### 9.4. Xử lý sự thiếu cô lập (ACD thay vì ACID) (`[R19]` §4.3)\n\nSaga đảm bảo **ACD** (*Atomicity, Consistency, Durability*) nhưng **KHÔNG có Isolation (I)**: trong lúc Saga đang chạy dở dang (đơn hàng vừa tạo xong nhưng chưa thanh toán xong), một giao dịch khác có thể nhìn thấy dữ liệu tạm thời (*Dirty Read*) hoặc sửa đè lên đơn hàng đó (*Lost Update*).\n\n**Biện pháp đối phó chuẩn (`[R19]` §4.3.2)**:\n- **Semantic Lock (Khóa ngữ nghĩa)**: Giao dịch đầu tiên đặt cờ trạng thái trung gian như `APPROVAL_PENDING` / `PAYMENT_PENDING`. Mọi thao tác khác (như khách bấm hủy/sửa đơn) phải kiểm tra trạng thái này để từ chối hoặc chờ Saga kết thúc.\n- **Commutative Updates (Cập nhật giao hoán)**: Thiết kế các thao tác bù trừ có thể chạy theo bất kỳ thứ tự nào vẫn ra kết quả đúng (ví dụ: cộng/trừ số lượng thay vì ghi đè số tuyệt đối).\n- **Idempotency Key (Khóa chống lặp)**: Client gửi kèm một `Idempotency-Key` duy nhất (UUID) cho mỗi lần bấm \"Đặt hàng\" để tránh việc khách bấm đúp nút mạng lag tạo ra 2 đơn hàng giống hệt nhau.\n\n#### Ví dụ mã nguồn minh họa Orchestration Saga đơn giản kèm Compensation\n\n```java\n@Service\npublic class CreateOrderSagaOrchestrator {\n\n    private final OrderRepository orderRepository;\n    private final CatalogFeignClient catalogClient;\n    private final KafkaTemplate<String, Object> kafkaTemplate;\n\n    public OrderResponse execute(CreateOrderRequest req, String idempotencyKey) {\n        // 0. Chống đặt trùng bằng Idempotency Key\n        Optional<Order> existing = orderRepository.findByIdempotencyKey(idempotencyKey);\n        if (existing.isPresent()) {\n            return OrderMapper.toResponse(existing.get());\n        }\n\n        // Bước T1 (Semantic Lock): Tạo đơn với trạng thái PENDING\n        Order order = orderRepository.save(Order.createPending(req, idempotencyKey));\n        List<ReservedItem> reservedItems = new ArrayList<>();\n\n        try {\n            // Bước T2: Giữ tồn kho từng mặt hàng\n            for (OrderItemRequest item : req.items()) {\n                catalogClient.reserveStock(item.productId(), new ReserveStockRequest(item.quantity()));\n                reservedItems.add(new ReservedItem(item.productId(), item.quantity()));\n            }\n\n            // Bước T3 (Pivot Transaction): Xác nhận đơn hàng\n            order.markConfirmed();\n            orderRepository.save(order);\n            kafkaTemplate.send(\"order.created\", order.getId().toString(), OrderCreatedEvent.from(order));\n            return OrderMapper.toResponse(order);\n\n        } catch (Exception ex) {\n            // BÙ TRỪ (Compensating Transactions): Hoàn trả lại toàn bộ hàng đã giữ + Hủy đơn!\n            compensateReservedStock(reservedItems);\n            order.markCancelled(\"Saga failed: \" + ex.getMessage());\n            orderRepository.save(order);\n            throw new BusinessException(\"ORDER_SAGA_FAILED\", \"Order failed and was safely compensated\");\n        }\n    }\n\n    private void compensateReservedStock(List<ReservedItem> reservedItems) {\n        for (ReservedItem item : reservedItems) {\n            catalogClient.releaseStock(item.productId(), new ReleaseStockRequest(item.quantity()));\n        }\n    }\n}\n```\n\n### 9.5. Góc nhìn trên nền tảng MAVIS\n- **Kiểm chứng trên MAVIS Studio**: Sinh viên có thể quan sát luồng đặt hàng khi tồn kho không đủ hoặc khi một dịch vụ tham gia bị dừng giữa chừng — đối chiếu bằng chứng trạng thái đơn hàng chuyển `PENDING -> CANCELLED` và số lượng tồn kho được hoàn trả nguyên vẹn.",
+    "exercise": "### 9.6. Bài tập thực hành Lab 09\n- Vẽ bảng các bước Saga (`T1, T2, T3` và bù trừ `C1, C2`) cho quy trình **Đặt hàng gồm 3 sản phẩm khác nhau** khi sản phẩm thứ 3 bị hết tồn kho.\n- Giải thích vai trò của `Pivot Transaction` (điểm không quay đầu) và trạng thái `PENDING` (*Semantic Lock*) trong quy trình vừa thiết kế.",
+    "sources": [
+      {
+        "publisher": "Manning / Microservices.io",
+        "title": "Chris Richardson — Microservices Patterns",
+        "url": "https://microservices.io/patterns/"
+      }
+    ],
+    "questions": [
+      {
+        "id": "java-v2-ch09-q1",
+        "prompt": "Trong **Saga Pattern**, khi bước thứ 3 của một giao dịch phân tán thất bại, hệ thống khôi phục tính nhất quán dữ liệu bằng cách nào?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Gọi lệnh `ROLLBACK` toàn cục trên tất cả các cơ sở dữ liệu cùng lúc bằng giao thức 2PC",
+          "Thực thi các **Giao dịch bù trừ (Compensating Transactions)** để đảo ngược tác động nghiệp vụ của các bước đã thành công trước đó",
+          "Khởi động lại toàn bộ container Docker",
+          "Xóa toàn bộ dữ liệu trong cơ sở dữ liệu"
+        ],
+        "correctOption": 1,
+        "explanation": "Mỗi bước của Saga đã commit cục bộ nên không thể SQL rollback; hệ thống phải chạy các hành động nghiệp vụ bù trừ tương ứng.",
+        "points": 1
+      },
+      {
+        "id": "java-v2-ch09-q2",
+        "prompt": "Trong 4 tính chất `ACID`, tính chất nào mà **Saga Pattern KHÔNG tự động đảm bảo**, buộc lập trình viên phải bổ sung các biện pháp như *Semantic Lock*?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Atomicity (Tính nguyên tử)",
+          "Consistency (Tính nhất quán)",
+          "Isolation (Tính cô lập)",
+          "Durability (Tính bền vững)"
+        ],
+        "correctOption": 2,
+        "explanation": "Saga chỉ đảm bảo ACD; vì các giao dịch cục bộ commit ngay nên dữ liệu trung gian có thể bị giao dịch khác nhìn thấy nếu không có biện pháp đối phó như Semantic Lock.",
+        "points": 1
+      },
+      {
+        "id": "java-v2-ch09-q3",
+        "prompt": "Khi nào nên chọn **Orchestration-based Saga** thay vì **Choreography-based Saga**?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Khi luồng giao dịch phức tạp có từ 4 bước trở lên, nhiều nhánh xử lý lỗi và cần một nơi điều phối tập trung dễ theo dõi, tránh phụ thuộc vòng",
+          "Khi hệ thống chỉ có 1 dịch vụ Monolith duy nhất",
+          "Khi không muốn bất kỳ dịch vụ nào biết trạng thái hiện tại của đơn hàng",
+          "Khi muốn tăng tối đa phụ thuộc vòng giữa các dịch vụ"
+        ],
+        "correctOption": 0,
+        "explanation": "Choreography gọn nhẹ với luồng 2–3 bước, nhưng Orchestration vượt trội về khả năng kiểm soát và bảo trì khi luồng nghiệp vụ phức tạp.",
+        "points": 1
+      },
+      {
+        "id": "java-v2-ch09-q4",
+        "prompt": "Vai trò của trạng thái `PENDING` (kỹ thuật **Semantic Lock**) trên đơn hàng trong lúc Saga đang thực thi là gì?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Khóa cứng toàn bộ bảng `orders` ở tầng PostgreSQL",
+          "Báo hiệu cho các thao tác đồng thời khác biết đơn hàng đang trong tiến trình xử lý dở dang, ngăn chặn sửa đổi xung đột hoặc đọc nhầm trạng thái cuối",
+          "Tăng tốc độ mạng giữa các dịch vụ",
+          "Tự động mã hóa đơn hàng"
+        ],
+        "correctOption": 1,
+        "explanation": "Semantic Lock bảo vệ tính đúng đắn ở tầng nghiệp vụ thay vì giữ khóa CSDL xuyên mạng.",
+        "points": 1
+      }
+    ]
   }
 ]
