@@ -110,30 +110,28 @@ export interface CombinedFragment {
   provenance: SequenceProvenanceOrigin;
 }
 
-export const interactionOperandSchema: z.ZodType<InteractionOperand> =
-  z.lazy(() =>
-    z.object({
-      operandId: z.string().min(1).max(160),
-      guard: z.string().max(200).default(""),
-      minIterations: z.number().int().nonnegative().nullable().optional(),
-      maxIterations: z.union([z.number().int().nonnegative(), z.string()]).nullable().optional(),
-      messageIds: z.array(z.string()).default([]),
-      nestedFragments: z.array(combinedFragmentSchema).optional(),
-      interactionUseIds: z.array(z.string()).optional(),
-    }),
-  );
+export const interactionOperandSchema = z.lazy(() =>
+  z.object({
+    operandId: z.string().min(1).max(160),
+    guard: z.string().max(200).default(""),
+    minIterations: z.number().int().nonnegative().nullable().optional(),
+    maxIterations: z.union([z.number().int().nonnegative(), z.string()]).nullable().optional(),
+    messageIds: z.array(z.string()).default([]),
+    nestedFragments: z.array(combinedFragmentSchema).optional(),
+    interactionUseIds: z.array(z.string()).optional(),
+  }),
+) as unknown as z.ZodType<InteractionOperand>;
 
-export const combinedFragmentSchema: z.ZodType<CombinedFragment> = z.lazy(
-  () =>
-    z.object({
-      fragmentId: z.string().min(1).max(160),
-      operator: z.enum(ALL_FRAGMENT_OPERATORS),
-      label: z.string().max(200).nullable().optional(),
-      coveredParticipantIds: z.array(z.string()).default([]),
-      operands: z.array(interactionOperandSchema).min(1),
-      provenance: z.enum(PROVENANCE_ORIGINS).default("DESIGNED"),
-    }),
-);
+export const combinedFragmentSchema = z.lazy(() =>
+  z.object({
+    fragmentId: z.string().min(1).max(160),
+    operator: z.enum(ALL_FRAGMENT_OPERATORS),
+    label: z.string().max(200).nullable().optional(),
+    coveredParticipantIds: z.array(z.string()).default([]),
+    operands: z.array(interactionOperandSchema).min(1),
+    provenance: z.enum(PROVENANCE_ORIGINS).default("DESIGNED"),
+  }),
+) as unknown as z.ZodType<CombinedFragment>;
 
 export const interactionUseSchema = z.object({
   interactionUseId: z.string().min(1).max(160),
@@ -3444,7 +3442,7 @@ export function buildAutoSequenceInteraction(
             sourceRelationshipIds: [...step.sourceRelationshipIds],
             evidenceIds: [...step.evidenceIds],
           },
-    );
+    ) as unknown as z.ZodType<CombinedFragment>;
   }
   const declarations = [...groupedSteps.values()].map(
     (step, index) =>

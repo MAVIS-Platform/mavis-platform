@@ -271,7 +271,7 @@ export async function executeJava(
           .optional(),
         courseQuizEvidence: courseQuizEvidenceSchema.nullish(),
         theoryEvidence: z.record(z.string(), z.unknown()).nullish(),
-        studioEvidence:z.record(z.string(), z.unknown()).nullish(),
+        studioEvidence: z.record(z.string(), z.unknown()).nullish(),
         studentSnapshots: z.array(studentSnapshotSchema).nullish(),
         reviewStatus: z.string().nullish(),
         reviewScore: z.number().nullish(),
@@ -368,7 +368,7 @@ export async function executeJava(
       ...(sub.evidencePackageDigest ? { evidencePackageDigest: sub.evidencePackageDigest } : {}),
       courseQuizEvidence: sub.courseQuizEvidence ?? null,
       theoryEvidence: sub.theoryEvidence ?? null,
-      studioEvidence:sub.studioEvidence??null,
+      studioEvidence: sub.studioEvidence ?? null,
       ...(sub.studentSnapshots ? { studentSnapshots: sub.studentSnapshots } : {}),
       reviewStatus: sub.reviewStatus ?? null,
       reviewScore: sub.reviewScore ?? null,
@@ -630,9 +630,7 @@ export async function executeJava(
       snapshotId: value.sourceSnapshotId,
       modelId: value.modelVersionId ?? null,
       enrichedModelId: value.enrichedModelVersionId ?? null,
-      ...(value.assignmentId !== undefined
-        ? { assignmentId: value.assignmentId ?? null }
-        : {}),
+      ...(value.assignmentId !== undefined ? { assignmentId: value.assignmentId ?? null } : {}),
       ...(value.labTitle !== undefined ? { labTitle: value.labTitle ?? null } : {}),
       scenarioName: value.scenarioName ?? null,
       profileName: value.profileName ?? null,
@@ -651,7 +649,9 @@ export async function executeJava(
       ...(value.infrastructureActions
         ? { infrastructureActions: value.infrastructureActions }
         : {}),
-      ...(value.beforeAfterComparison ? { beforeAfterComparison: value.beforeAfterComparison } : {}),
+      ...(value.beforeAfterComparison
+        ? { beforeAfterComparison: value.beforeAfterComparison }
+        : {}),
       ...(value.studioVerified !== undefined ? { studioVerified: value.studioVerified } : {}),
       ...(value.capturedSpanCount !== undefined
         ? { capturedSpanCount: value.capturedSpanCount ?? null }
@@ -744,17 +744,19 @@ export async function executeJava(
       );
     }
     case "studioState":
-      return get(`analyzer/runtime/sessions/${id(input,"sessionId")}/studio`);
+      return get(`analyzer/runtime/sessions/${id(input, "sessionId")}/studio`);
     case "studioAction":
-      return post(`analyzer/runtime/sessions/${id(input,"sessionId")}/studio/actions`,input);
+      return post(`analyzer/runtime/sessions/${id(input, "sessionId")}/studio/actions`, input);
     case "studioFinish":
-      return post(`analyzer/runtime/sessions/${id(input,"sessionId")}/studio/finish`,{});
+      return post(`analyzer/runtime/sessions/${id(input, "sessionId")}/studio/finish`, {});
     case "studioCapture":
-      return post(`analyzer/runtime/sessions/${id(input,"sessionId")}/studio/snapshots`,input);
+      return post(`analyzer/runtime/sessions/${id(input, "sessionId")}/studio/snapshots`, input);
     case "studioSnapshot":
-      return get(`analyzer/runtime/sessions/${id(input,"sessionId")}/studio/snapshots/${id(input,"snapshotId")}`);
+      return get(
+        `analyzer/runtime/sessions/${id(input, "sessionId")}/studio/snapshots/${id(input, "snapshotId")}`,
+      );
     case "studioReceipt":
-      return get(`analyzer/runtime/sessions/${id(input,"sessionId")}/studio/receipt`);
+      return get(`analyzer/runtime/sessions/${id(input, "sessionId")}/studio/receipt`);
     case "runtimeSessions":
       return Promise.all(
         list
@@ -783,7 +785,8 @@ export async function executeJava(
       if (input["category"]) params.set("category", String(input["category"]));
       return get(`notifications?${params}`);
     }
-    case "announcements": return get("announcements");
+    case "announcements":
+      return get("announcements");
     case "adminAnnouncements": {
       const params = new URLSearchParams();
       if (input["status"]) params.set("status", String(input["status"]));
@@ -791,16 +794,31 @@ export async function executeJava(
       const query = params.toString();
       return get(`admin/announcements${query ? `?${query}` : ""}`);
     }
-    case "createAnnouncement": return post("admin/announcements", input);
+    case "createAnnouncement":
+      return post("admin/announcements", input);
     case "updateAnnouncement":
-      return javaRequest(`admin/announcements/${id(input, "announcementId")}`, token, { method: "PUT", body: JSON.stringify(input), signal });
-    case "publishAnnouncement": return post(`admin/announcements/${id(input, "announcementId")}/publish`, {});
-    case "unpublishAnnouncement": return post(`admin/announcements/${id(input, "announcementId")}/unpublish`, {});
+      return javaRequest(`admin/announcements/${id(input, "announcementId")}`, token, {
+        method: "PUT",
+        body: JSON.stringify(input),
+        signal,
+      });
+    case "publishAnnouncement":
+      return post(`admin/announcements/${id(input, "announcementId")}/publish`, {});
+    case "unpublishAnnouncement":
+      return post(`admin/announcements/${id(input, "announcementId")}/unpublish`, {});
     case "deleteAnnouncement":
-      await javaRequest(`admin/announcements/${id(input, "announcementId")}`, token, { method: "DELETE", signal });
+      await javaRequest(`admin/announcements/${id(input, "announcementId")}`, token, {
+        method: "DELETE",
+        signal,
+      });
       return { ok: true };
     case "catalogCourses": {
-      const params = new URLSearchParams({ q: String(input["q"]), sort: String(input["sort"]), page: String(input["page"]), size: String(input["size"]) });
+      const params = new URLSearchParams({
+        q: String(input["q"]),
+        sort: String(input["sort"]),
+        page: String(input["page"]),
+        size: String(input["size"]),
+      });
       if (input["category"]) params.set("category", String(input["category"]));
       if (input["difficulty"]) params.set("difficulty", String(input["difficulty"]));
       return get(`courses?${params}`);
@@ -882,7 +900,9 @@ export async function executeJava(
             actorId: z.string().nullish(),
             actorName: z.string().nullish(),
             actorEmail: z.string().nullish(),
-            details: z.json().nullish(),
+            // z.json() is only available in Zod v4; the application currently uses v3.
+            // Preserve both structured payloads and historical string details from the API.
+            details: z.unknown().nullish(),
             targetId: z.string().nullish(),
           }),
         )
@@ -894,9 +914,10 @@ export async function executeJava(
           actorId: a.actorId ?? "SYSTEM",
           actorName: a.actorName ?? null,
           actorEmail: a.actorEmail ?? null,
-          details: typeof a.details === "string" || a.details == null
-            ? a.details ?? null
-            : JSON.stringify(a.details),
+          details:
+            typeof a.details === "string" || a.details == null
+              ? (a.details ?? null)
+              : JSON.stringify(a.details),
           resourceId: a.targetId ?? "SYSTEM",
         }));
     case "adminJobs":
@@ -1116,7 +1137,9 @@ export async function executeJava(
           : null;
       return Promise.all(
         list
-          .parse(await get(workspaceId ? `submissions/me?workspaceId=${workspaceId}` : "submissions/me"))
+          .parse(
+            await get(workspaceId ? `submissions/me?workspaceId=${workspaceId}` : "submissions/me"),
+          )
           .map((row) => coursework(row, false)),
       );
     }
