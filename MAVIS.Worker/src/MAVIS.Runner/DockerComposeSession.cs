@@ -417,9 +417,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
                 }
             }
             var logs=await Command(["logs","--no-color","--tail","10",service],ct);
-            var text=logs.StandardOutput;
-            foreach(var secret in (secrets?.Values ?? []).Where(value=>!string.IsNullOrWhiteSpace(value)).OrderByDescending(value=>value.Length))
-                text=text.Replace(secret,"[REDACTED]",StringComparison.Ordinal);
+            var text=RedactSecrets(logs.StandardOutput + (string.IsNullOrEmpty(logs.StandardError) ? "" : "\n" + logs.StandardError));
             services.Add(new {service,replicas=metrics.total,runningReplicas=metrics.running,stats,logs=text[..Math.Min(text.Length,4000)]});
         }
         var trace=await ReadTraceEvidenceAsync(ct,live:true);
@@ -609,7 +607,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
                 if (string.IsNullOrWhiteSpace(service)) continue;
                 var serviceStates = states.GetValueOrDefault(service) ?? [];
                 var logs = await Command(["logs", "--no-color", "--tail", "25", service], diagCts.Token);
-                var text = RedactSecrets(logs.StandardOutput);
+                var text = RedactSecrets(logs.StandardOutput + (string.IsNullOrEmpty(logs.StandardError) ? "" : "\n" + logs.StandardError));
                 diagServices.Add(new
                 {
                     service,

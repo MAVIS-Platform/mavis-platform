@@ -216,6 +216,7 @@ public sealed class RuntimeLifecycleTests
         public string UpStdErr { get; init; } = "container mavisrun-sandbox-postgres-1 exited (1)";
         public string PsTable { get; init; } = "sandbox-postgres|exited||1\norder-service|created||0\n";
         public string CrashLogs { get; init; } = "Error: password=SECRET_DB_PASS is required";
+        public bool CrashLogsOnStderr { get; init; }
         public List<IReadOnlyList<string>> Commands { get; } = [];
 
         public Task<DockerCommandResult> RunAsync(IReadOnlyList<string> args, string directory, int timeout, CancellationToken ct)
@@ -230,7 +231,8 @@ public sealed class RuntimeLifecycleTests
                     : new DockerCommandResult(0, args[^1]));
             if (args.Contains("up")) return Task.FromResult(new DockerCommandResult(1, "", UpStdErr));
             if (args.Contains("ps") && args.Contains("--format")) return Task.FromResult(new DockerCommandResult(0, PsTable));
-            if (args.Contains("logs")) return Task.FromResult(new DockerCommandResult(0, CrashLogs));
+            if (args.Contains("logs")) return Task.FromResult(CrashLogsOnStderr
+                ? new DockerCommandResult(0, "", CrashLogs) : new DockerCommandResult(0, CrashLogs));
             return Task.FromResult(new DockerCommandResult(0, ""));
         }
     }
@@ -249,8 +251,10 @@ public sealed class RuntimeLifecycleTests
         }
     }
 
-    [Fact]
-    public async Task StartupDiagnosticsPrioritizeFailedBrokerAfterManyHealthyServicesAndRetainRedaction()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task StartupDiagnosticsPrioritizeFailedBrokerAfterManyHealthyServicesAndRetainRedaction(bool stderr)
     {
         var root = Path.Combine(Path.GetTempPath(), "mavis-diagnostics-" + Guid.NewGuid().ToString("N"));
         var digest = new string('b', 64);
@@ -265,7 +269,7 @@ public sealed class RuntimeLifecycleTests
         var docker = new CrashInspectDocker
         {
             PsTable = string.Concat(names.Where(name => name != "kafka").Select(name => name + "|running|healthy|0\n")) + "kafka|exited||1\n",
-            CrashLogs = "Permission denied password=SECRET_DB_PASS"
+            CrashLogs = "Permission denied password=SECRET_DB_PASS", CrashLogsOnStderr = stderr
         };
         var transport = new DiagnosticTransport();
         using var studio = new JavaRuntimeClient(new Uri("https://java.invalid"), "fixture-only", transport);
