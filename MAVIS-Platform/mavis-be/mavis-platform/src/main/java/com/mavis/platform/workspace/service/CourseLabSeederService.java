@@ -33,6 +33,7 @@ import com.mavis.platform.workspace.curriculum.CourseraCurriculumModels.LessonSp
 import com.mavis.platform.workspace.curriculum.CourseraCurriculumModels.RubricCriterion;
 import com.mavis.platform.workspace.curriculum.CsharpCourseraCatalog;
 import com.mavis.platform.workspace.curriculum.JavaCourseraCatalog;
+import com.mavis.platform.workspace.curriculum.V2CurriculumJsonLoader;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -149,6 +150,8 @@ public class CourseLabSeederService {
             String courseDescription,
             List<CourseraModuleSpec> modules,
             List<LessonSpec> allLessons,
+            List<String> runtimeServices,
+            boolean csharpTrack,
             String auditAction) {
         static CourseraTrackSpec javaV2() {
             return new CourseraTrackSpec(
@@ -156,6 +159,8 @@ public class CourseLabSeederService {
                     JavaCourseraCatalog.COURSE_DESCRIPTION,
                     JavaCourseraCatalog.modules(),
                     JavaCourseraCatalog.allLessons(),
+                    List.of("api-gateway", "order-service", "payment-service", "inventory-service"),
+                    false,
                     "COURSE_JAVA_COURSERA_SEEDED");
         }
 
@@ -165,7 +170,15 @@ public class CourseLabSeederService {
                     CsharpCourseraCatalog.COURSE_DESCRIPTION,
                     CsharpCourseraCatalog.modules(),
                     CsharpCourseraCatalog.allLessons(),
+                    CsharpCourseraCatalog.CURATED_SERVICES,
+                    true,
                     "COURSE_CSHARP_COURSERA_SEEDED");
+        }
+
+        CourseQuizService.Publish toQuizPublish(CourseraModuleSpec modSpec) {
+            return csharpTrack
+                    ? CsharpCourseraCatalog.toQuizPublishRequest(modSpec)
+                    : JavaCourseraCatalog.toQuizPublishRequest(modSpec);
         }
     }
 
@@ -361,7 +374,8 @@ public class CourseLabSeederService {
         List<Assignment> matchedByIndex = new ArrayList<>(catalogModules.size());
         for (CourseraModuleSpec modSpec : catalogModules) {
             Assignment match = existingLabs.stream()
-                    .filter(a -> modSpec.labTitle().equals(a.getTitle()))
+                    .filter(a -> modSpec.labTitle().equals(a.getTitle())
+                            || V2CurriculumJsonLoader.isSameLabTitle(modSpec.labTitle(), a.getTitle()))
                     .filter(a -> a.getId() == null || !matchedIds.contains(a.getId()))
                     .findFirst()
                     .orElse(null);
@@ -390,6 +404,7 @@ public class CourseLabSeederService {
             // Clear colliding lab_order values first to satisfy uq_workspace_lab_order on PostgreSQL.
             for (Assignment stale : staleLabs) {
                 stale.setLabOrder(null);
+                stale.setAiPolicy(markArchivedV1(stale.getAiPolicy()));
                 assignments.saveAndFlush(stale);
                 if (stale.getId() != null) {
                     try {
@@ -431,15 +446,19 @@ public class CourseLabSeederService {
                         .referenceModel(refModel)
                         .labOrder(targetOrder);
                 if (runtime) {
-                    labBuilder.studioTopologySnapshot(buildDefaultStudioTopology())
+                    labBuilder.studioTopologySnapshot(buildStudioTopologyForServices(track.runtimeServices()))
                             .studioTopologyRevision(1);
                 }
                 match = assignments.saveAndFlush(labBuilder.build());
-            } else if (!Integer.valueOf(targetOrder).equals(match.getLabOrder())) {
+            } else if (!Integer.valueOf(targetOrder).equals(match.getLabOrder())
+                    || !modSpec.labTitle().equals(match.getTitle())
+                    || !modSpec.labDescription().equals(match.getDescription())) {
                 match.setLabOrder(targetOrder);
+                match.setTitle(modSpec.labTitle());
+                match.setDescription(modSpec.labDescription());
                 match = assignments.saveAndFlush(match);
             }
-            quizzes.publishCurriculum(workspaceId, match.getId(), JavaCourseraCatalog.toQuizPublishRequest(modSpec));
+            quizzes.publishCurriculum(workspaceId, match.getId(), track.toQuizPublish(modSpec));
             orderedLabs.add(match);
         }
 
@@ -897,17 +916,27 @@ public class CourseLabSeederService {
         }
     }
 
+    private ObjectNode markArchivedV1(com.fasterxml.jackson.databind.JsonNode existingPolicy) {
+        ObjectNode node = (existingPolicy != null && existingPolicy.isObject())
+                ? ((ObjectNode) existingPolicy).deepCopy()
+                : json.createObjectNode();
+        node.put("archivedV1", true);
+        node.put("archivedReason", "REPLACED_BY_V2_CATALOG");
+        return node;
+    }
+
     public ObjectNode buildDefaultStudioTopology() {
+        return buildStudioTopologyForServices(
+                List.of("api-gateway", "order-service", "payment-service", "inventory-service"));
+    }
+
+    private ObjectNode buildStudioTopologyForServices(List<String> serviceNames) {
         ObjectNode topology = json.createObjectNode().put("version", 1);
         ArrayNode blocks = topology.putArray("blocks");
-        for (String[] item : List.of(
-                new String[]{"api-gateway", "API Gateway"},
-                new String[]{"order-service", "Order Service"},
-                new String[]{"payment-service", "Payment Service"},
-                new String[]{"inventory-service", "Inventory Service"})) {
+        for (String svc : serviceNames) {
             blocks.addObject()
-                    .put("service", item[0])
-                    .put("label", item[1])
+                    .put("service", svc)
+                    .put("label", svc)
                     .put("canScale", true)
                     .put("initiallyStopped", false);
         }

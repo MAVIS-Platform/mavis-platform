@@ -33,6 +33,16 @@ public interface SubmissionService {
      */
     List<SubmissionResponseDTO> getSubmissionsByAssignment(UUID assignmentId);
 
+    default List<SubmissionResponseDTO> getSubmissionsByWorkspace(
+            UUID workspaceId, String reviewStatus, String labOutcome) {
+        return getMySubmissions(workspaceId).stream()
+                .filter(s -> reviewStatus == null || reviewStatus.isBlank()
+                        || reviewStatus.equalsIgnoreCase(s.getReviewStatus()))
+                .filter(s -> labOutcome == null || labOutcome.isBlank()
+                        || labOutcome.equalsIgnoreCase(s.getLabOutcome()))
+                .toList();
+    }
+
     default List<SubmissionResponseDTO> getSubmissionsByAssignment(UUID assignmentId, String reviewStatus, String labOutcome) {
         return getSubmissionsByAssignment(assignmentId).stream()
                 .filter(s -> reviewStatus == null || reviewStatus.isBlank()

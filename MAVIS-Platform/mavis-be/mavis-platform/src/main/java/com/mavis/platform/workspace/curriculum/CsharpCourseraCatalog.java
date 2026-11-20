@@ -59,7 +59,7 @@ public final class CsharpCourseraCatalog {
                 1,
                 "Module 1 · Nền Tảng Kiến Trúc .NET 8 Microservices, DDD/CQRS & Phân Tầng C3",
                 "Đọc cấu trúc Solution .sln/.csproj theo C4 Model, phân biệt CRUD vs DDD + CQRS và kiểm soát DI Lifetime + ProblemDetails RFC 7807.",
-                "Lab 01 (.NET) · Project Trái Cây Solution Structure, DDD & DI Captive Dependency Audit",
+                "Project Trái Cây Solution Structure, DDD & DI Captive Dependency Audit",
                 "Khám phá cấu trúc .sln của Project Trái Cây (fruit-shop-dotnet-microservices) ở Static View C1–C3 và kiểm tra ranh giới DI Lifetime.",
                 "csharp-v2-ch01",
                 List.of(
@@ -104,7 +104,7 @@ public final class CsharpCourseraCatalog {
                 2,
                 "Module 2 · Docker Service Discovery, YARP API Gateway & Typed HttpClient (Roslyn Reverse BFS)",
                 "Cấu hình Docker DNS & IOptions<T> ValidateOnStart, YARP Reverse Proxy + JWT Bearer/RBAC và Typed HttpClient để Roslyn dựng Reverse BFS.",
-                "Lab 02 (.NET) · YARP Gateway Routes, Roslyn CALL_SITE & Cycle-Safe Reverse BFS",
+                "YARP Gateway Routes, Roslyn CALL_SITE & Cycle-Safe Reverse BFS",
                 "Kiểm tra cấu hình YARP Gateway, trích xuất CALL_SITE giữa FruitOrdering.API -> FruitCatalog.API và phân tích vùng ảnh hưởng Reverse BFS.",
                 "csharp-v2-ch04",
                 List.of(
@@ -149,7 +149,7 @@ public final class CsharpCourseraCatalog {
                 3,
                 "Module 3 · Database-per-Service (EF Core 8 & Redis), Event Bus & Saga Pattern",
                 "Phân tách DbContext độc lập cho mỗi .NET service, triển khai Redis IDistributedCache, Event Bus RabbitMQ/Outbox và Saga bù trừ hoàn kho.",
-                "Lab 03 (.NET) · Polyglot Persistence (PostgreSQL/Redis), MassTransit Event Bus & Saga",
+                "Polyglot Persistence (PostgreSQL/Redis), MassTransit Event Bus & Saga",
                 "Kiểm tra cô lập DbContext giữa FruitCatalog.API, FruitOrdering.API, Redis ở FruitBasket.API và luồng Saga Eventual Consistency.",
                 "csharp-v2-ch07",
                 List.of(
@@ -194,7 +194,7 @@ public final class CsharpCourseraCatalog {
                 4,
                 "Module 4 · Khả Năng Chịu Lỗi (Polly v8) & Observability (.NET Health Checks / OpenTelemetry)",
                 "Cấu hình Microsoft.Extensions.Http.Resilience (Polly v8), tách bạch /health/live vs /health/ready, Serilog và OpenTelemetry .NET Traces.",
-                "Lab 04 (.NET) · Polly v8 Circuit Breaker Chaos Test & OpenTelemetry Trace Diff",
+                "Polly v8 Circuit Breaker Chaos Test & OpenTelemetry Trace Diff",
                 "Thực hành dừng FruitCatalog.API trên MAVIS Studio để kích hoạt Polly v8 Circuit Breaker + Fallback và đối chiếu p95 Latency Trước/Sau.",
                 "csharp-v2-ch10",
                 List.of(
@@ -237,7 +237,7 @@ public final class CsharpCourseraCatalog {
                 5,
                 "Module 5 · Docker Multi-Stage (.NET 8), Testing & Capstone Project Trái Cây",
                 "Đóng gói Docker Multi-Stage cho ASP.NET Core 8 (Non-Root), kiểm thử WebApplicationFactory + Testcontainers và đối soát 10 tiêu chí Project Trái Cây.",
-                "Lab 05 (.NET) · Project Trái Cây Scale 1→8 Replicas & Production-Readiness Audit",
+                "Project Trái Cây Scale 1→8 Replicas & Production-Readiness Audit",
                 "Scale replica FruitCatalog.API & FruitOrdering.API trên MAVIS Studio (1 -> 4+ instances), kiểm tra Round-Robin và Production-Readiness Checklist.",
                 "csharp-v2-ch12",
                 List.of(
