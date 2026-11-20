@@ -172,10 +172,12 @@ public sealed class RunnerComponentTests
         Assert.Equal(3, result.Spans.Count);
     }
 
-    [Fact]
-    public void PassthroughRuntimeAndScopedEnvironmentBindingsOmitJvmAgentAndIsolateSecrets()
+    [Theory]
+    [InlineData("[CMD, /bin/true]")]
+    [InlineData("/bin/true")]
+    public void PassthroughRuntimeAndScopedEnvironmentBindingsOmitJvmAgentAndIsolateSecrets(string healthProbe)
     {
-        var compose = $"services:\n  node-api:\n    image: node@sha256:{Digest}\n  order-svc:\n    image: order@sha256:{Digest}\n  postgres:\n    image: postgres@sha256:{Digest}\n    user: postgres\n    volumes:\n      - type: volume\n        source: postgres_data\n        target: /var/lib/postgresql/data\nvolumes:\n  postgres_data: {{}}\n";
+        var compose = $"services:\n  node-api:\n    image: node@sha256:{Digest}\n    healthcheck:\n      test: {healthProbe}\n  order-svc:\n    image: order@sha256:{Digest}\n  postgres:\n    image: postgres@sha256:{Digest}\n    user: postgres\n    volumes:\n      - type: volume\n        source: postgres_data\n        target: /var/lib/postgresql/data\nvolumes:\n  postgres_data: {{}}\n";
         var preflight = ComposePreflight.Check(compose);
         Assert.True(preflight.Compatible);
 
@@ -201,6 +203,7 @@ public sealed class RunnerComponentTests
         using var overrideDoc = JsonDocument.Parse(ComposeOverrideBuilder.Build(preflight, profile, Path.Combine(Path.GetTempPath(), "collector.yaml"), values));
         var nodeConfig = overrideDoc.RootElement.GetProperty("services").GetProperty("node-api");
         Assert.False(nodeConfig.TryGetProperty("volumes", out _));
+        Assert.False(overrideDoc.RootElement.GetProperty("services").GetProperty("order-svc").TryGetProperty("healthcheck", out _));
         var nodeEnv = nodeConfig.GetProperty("environment");
         Assert.Equal("node-api", nodeEnv.GetProperty("OTEL_SERVICE_NAME").GetString());
         Assert.Equal("http://mavis-collector:4318", nodeEnv.GetProperty("OTEL_EXPORTER_OTLP_ENDPOINT").GetString());

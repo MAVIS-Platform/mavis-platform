@@ -6,7 +6,8 @@ namespace MAVIS.Runner;
 
 public sealed record PreflightIssue(string Code, string? Service = null);
 public sealed record ComposePreflightResult(bool Compatible, IReadOnlyList<string> Services,
-    IReadOnlyList<PreflightIssue> Errors, IReadOnlyList<string> Limitations, IReadOnlyDictionary<string, string>? PinnedImages = null);
+    IReadOnlyList<PreflightIssue> Errors, IReadOnlyList<string> Limitations, IReadOnlyDictionary<string, string>? PinnedImages = null,
+    IReadOnlySet<string>? HealthcheckServices = null);
 
 /// <summary>Strict image-only Linux PoC profile. Validation is not a container security boundary.</summary>
 public static class ComposePreflight
@@ -20,6 +21,7 @@ public static class ComposePreflight
         var errors = new List<PreflightIssue>();
         var names = new List<string>();
         var images = new Dictionary<string, string>();
+        var healthchecks = new HashSet<string>(StringComparer.Ordinal);
         var limitations = new[] { "IMAGE_ONLY_POC_PROFILE", "NO_BUILD_OR_START_PERFORMED", "IMAGE_OS_AND_INSTRUMENTATION_UNVERIFIED",
             "RUNNER_ISOLATION_AND_EGRESS_MUST_BE_ENFORCED_AT_EXECUTION", "PROFILE_NOT_YET_ACCEPTANCE_VALIDATED" };
         try
@@ -73,6 +75,11 @@ public static class ComposePreflight
                 var name = (pair.Key as YamlScalarNode)?.Value;
                 if (!ValidName(name) || pair.Value is not YamlMappingNode service) { errors.Add(new("INVALID_SERVICE")); continue; }
                 names.Add(name!);
+                if (TryGet(service, "healthcheck", out var healthcheck) && healthcheck is YamlMappingNode probe
+                    && TryGet(probe, "test", out var test)
+                    && ((test is YamlSequenceNode sequenceTest && sequenceTest.Children.Count > 0 && sequenceTest.Children[0].ToString() != "NONE")
+                        || (test is YamlScalarNode scalarTest && !string.IsNullOrWhiteSpace(scalarTest.Value))))
+                    healthchecks.Add(name!);
                 foreach (var option in service.Children)
                     if (option.Key is not YamlScalarNode key || !ServiceKeys.Contains(key.Value ?? "")) errors.Add(new("UNSUPPORTED_OR_UNSAFE_SERVICE_OPTION", name));
                 if (!TryGet(service, "image", out var image) || image is not YamlScalarNode imageScalar || string.IsNullOrWhiteSpace(imageScalar.Value) ||
@@ -108,7 +115,7 @@ public static class ComposePreflight
         }
         catch (YamlException) { errors.Add(new("INVALID_COMPOSE_YAML")); }
         catch (ArgumentException) { errors.Add(new("INVALID_COMPOSE_YAML")); }
-        return new(errors.Count == 0, names, errors, limitations, images);
+        return new(errors.Count == 0, names, errors, limitations, images, healthchecks);
     }
 
     private static bool ValidName(string? name) => name is { Length: > 0 and <= 63 } &&
