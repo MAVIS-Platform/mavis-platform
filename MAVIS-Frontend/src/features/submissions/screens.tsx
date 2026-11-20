@@ -474,11 +474,16 @@ function ClassGradebookMatrix({
           student.fullName,
           student.email,
           `${student.passedLabs}/${data.labs.length}`,
-          student.averageScore !== null ? String(student.averageScore) : "",
+          student.averageScore !== null
+            ? formatTenScaleScore(student.averageScore, student.averageScoreTenScale)
+            : "",
           ...data.labs.map((lab) => {
             const cell = cellMap.get(lab.assignmentId);
             if (!cell) return "";
-            const score = cell.reviewScore !== null ? `${cell.reviewScore}/100` : "—";
+            const score =
+              cell.reviewScore !== null
+                ? formatTenScaleScore(cell.reviewScore, cell.reviewScoreTenScale)
+                : "—";
             const outcome = cell.labOutcome ?? (cell.submissionId ? "PENDING" : "NOT_SUBMITTED");
             const quiz = cell.quizBestScore !== null ? `Quiz ${cell.quizBestScore}%` : "No quiz";
             return `${score} (${outcome} · ${quiz})`;
@@ -548,7 +553,9 @@ function ClassGradebookMatrix({
                         {student.passedLabs}/{gradebook.data.labs.length}
                       </td>
                       <td className="px-3 py-3 font-semibold">
-                        {student.averageScore !== null ? `${student.averageScore}` : "—"}
+                        {student.averageScore !== null
+                          ? formatTenScaleScore(student.averageScore, student.averageScoreTenScale)
+                          : "—"}
                       </td>
                       {gradebook.data.labs.map((lab) => {
                         const cell = cellMap.get(lab.assignmentId);
@@ -568,7 +575,7 @@ function ClassGradebookMatrix({
                               >
                                 <Badge variant={outcomeVariant}>
                                   {cell.reviewScore !== null
-                                    ? `${cell.reviewScore}/100`
+                                    ? formatTenScaleScore(cell.reviewScore, cell.reviewScoreTenScale)
                                     : cell.labOutcome === "PASSED"
                                       ? "PASS"
                                       : cell.reviewStatus ?? "PENDING"}
@@ -763,7 +770,7 @@ function SubmissionResult({ submission }: { submission: Submission }) {
       <span className="text-xs">
         <StatusLabel status={submission.reviewStatus} />
         {submission.reviewScore !== null && submission.reviewScore !== undefined
-          ? ` · ${submission.reviewScore}/100`
+          ? ` · ${formatTenScaleScore(submission.reviewScore, submission.reviewScoreTenScale)}`
           : ""}
         {outcome && (
           <Badge className="ml-2" variant={outcome === "PASS" ? "success" : "warning"}>
@@ -786,7 +793,7 @@ function SubmissionResultQuery({ submissionId }: { submissionId: string }) {
       ) : query.data ? (
         <>
           <StatusLabel status={query.data.status} />
-          {query.data.score !== null ? ` · ${query.data.score}/100` : ""}
+          {query.data.score !== null ? ` · ${formatTenScaleScore(query.data.score)}` : ""}
           {outcome && (
             <Badge className="ml-2" variant={outcome === "PASS" ? "success" : "warning"}>
               {outcome === "PASS" ? "Pass" : "Needs revision"}

@@ -781,6 +781,7 @@ export type GradebookCell = {
   submittedAt: string | null;
   reviewStatus: string | null;
   reviewScore: number | null;
+  reviewScoreTenScale?: number | null;
   labOutcome: string | null;
 };
 
@@ -790,6 +791,7 @@ export type GradebookStudent = {
   email: string;
   passedLabs: number;
   averageScore: number | null;
+  averageScoreTenScale?: number | null;
   cells: GradebookCell[];
 };
 
