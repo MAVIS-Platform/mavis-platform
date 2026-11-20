@@ -691,19 +691,15 @@ export function LabSourceSection({
                     </p>
                   ) : (
                     <>
-                      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-muted/15 px-3.5 py-2.5">
+                      <div className="flex items-center justify-between gap-2 rounded-xl border bg-muted/15 px-3.5 py-2.5">
                         <span className="font-medium text-foreground">
-                          {studioConfiguredReady
-                            ? t("Docker Compose & Studio runner configured and verified.", "Docker Compose & Studio runner đã cấu hình và xác thực.")
-                            : studioComposeReady
-                              ? t("Docker Compose preflight passed — ready to boot in Step 5 (Studio Live).", "Docker Compose đạt kiểm tra preflight — sẵn sàng chạy ở Bước 5 (Studio Live).")
-                              : t("Docker Compose / Studio Live setup incomplete.", "Cấu hình Docker Compose / Studio Live chưa đầy đủ.")}
+                          {studioConfiguredReady || studioComposeReady
+                            ? t("Docker check passed", "Kiểm tra Docker thành công")
+                            : t("Docker check incomplete", "Kiểm tra Docker chưa đạt")}
                         </span>
-                        <span className="font-mono text-[11px] text-muted-foreground">
-                          {readiness.data?.preflightCompatible ? "preflight: pass" : "preflight: check"}
-                          {" · "}
-                          {readiness.data?.runnerReady ? "runner: ready" : "runner: pending"}
-                        </span>
+                        <Badge variant={studioConfiguredReady || studioComposeReady ? "success" : "secondary"}>
+                          {studioConfiguredReady || studioComposeReady ? t("Pass", "Đạt") : t("Check", "Cần kiểm tra")}
+                        </Badge>
                       </div>
 
                       {!studioReady && studioMissing.length > 0 && (
