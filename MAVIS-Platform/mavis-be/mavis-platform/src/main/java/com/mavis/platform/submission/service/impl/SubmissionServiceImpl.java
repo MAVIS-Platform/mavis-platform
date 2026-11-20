@@ -56,15 +56,39 @@ public class SubmissionServiceImpl implements SubmissionService {
     @Transactional(readOnly = true)
     public List<SubmissionResponseDTO> getMySubmissions(UUID workspaceId) {
         User user = accessPolicyService.requireCurrentActiveUser();
-        boolean admin = user.getRole()!=null && "SYSTEM_ADMIN".equalsIgnoreCase(user.getRole().getCode());
-        List<SubmissionResponseDTO> all = mapToResponseListWithFeedbackCount(
-                submissionSnapshotRepository.findVisibleTo(user.getId(), admin));
-        if (workspaceId == null) {
-            return all;
+        boolean admin = user.getRole() != null && "SYSTEM_ADMIN".equalsIgnoreCase(user.getRole().getCode());
+        boolean revealDraft = admin || (user.getRole() != null && !"STUDENT".equalsIgnoreCase(user.getRole().getCode()));
+        List<SubmissionSnapshot> visible = submissionSnapshotRepository.findVisibleTo(user.getId(), admin);
+        if (visible.isEmpty()) {
+            return Collections.emptyList();
         }
-        return all.stream()
-                .filter(s -> workspaceId.equals(s.getWorkspaceId()))
+        Set<UUID> workspacesWithOrderedLabs = visible.stream()
+                .map(SubmissionSnapshot::getAssignment)
+                .filter(Objects::nonNull)
+                .filter(a -> a.getLabOrder() != null && a.getWorkspace() != null && a.getWorkspace().getId() != null)
+                .map(a -> a.getWorkspace().getId())
+                .collect(Collectors.toSet());
+        List<SubmissionSnapshot> activeVisible = visible.stream()
+                .filter(s -> workspaceId == null
+                        || (s.getAssignment() != null && s.getAssignment().getWorkspace() != null
+                                && workspaceId.equals(s.getAssignment().getWorkspace().getId())))
+                .filter(s -> !isObsoleteDetachedCourseLab(s.getAssignment(), workspacesWithOrderedLabs))
                 .toList();
+        return mapToResponseListWithFeedbackCount(activeVisible, revealDraft);
+    }
+
+    private static boolean isObsoleteDetachedCourseLab(Assignment assignment, Set<UUID> workspacesWithOrderedLabs) {
+        if (assignment == null || assignment.getWorkspace() == null || !assignment.getWorkspace().isCourseMode()) {
+            return false;
+        }
+        if (assignment.getLabOrder() != null) {
+            return false;
+        }
+        if (assignment.getAiPolicy() != null && assignment.getAiPolicy().path("archivedV1").asBoolean(false)) {
+            return true;
+        }
+        UUID wsId = assignment.getWorkspace().getId();
+        return wsId != null && workspacesWithOrderedLabs.contains(wsId);
     }
 
     @Override
