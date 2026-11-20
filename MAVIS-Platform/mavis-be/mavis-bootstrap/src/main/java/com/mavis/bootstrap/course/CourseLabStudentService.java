@@ -288,7 +288,7 @@ public class CourseLabStudentService {
                 : (exercise != null ? exerciseToNode(exercise) : frozenExercise);
         UUID runtimeModelId = activeExercise != null && activeExercise.hasNonNull("runtimeModelId")
                 ? UUID.fromString(activeExercise.path("runtimeModelId").asText())
-                : exercise == null ? null : exercise.getRuntimeModelId();
+                : null;
         if (runtimeModelId == null
                 && (refModel == null || refModel.getSourceSnapshot() == null || refModel.getProject() == null)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Lab chưa được gắn kiến trúc tham chiếu hợp lệ");
@@ -302,6 +302,11 @@ public class CourseLabStudentService {
                 throw new BusinessException(ErrorCode.BAD_REQUEST,
                         "Studio runtime source has no project or snapshot");
             }
+        }
+
+        if (runtimeModel.getProject().getWorkspace() == null
+                || !workspaceId.equals(runtimeModel.getProject().getWorkspace().getId())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "Studio runtime source belongs to another workspace");
         }
 
         for (RuntimeSessionResponseDTO existing : listStudioSessions(workspaceId, assignmentId)) {

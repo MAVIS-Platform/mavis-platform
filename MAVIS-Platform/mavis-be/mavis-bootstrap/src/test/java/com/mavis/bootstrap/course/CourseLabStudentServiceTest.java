@@ -80,6 +80,7 @@ class CourseLabStudentServiceTest {
     private CourseQuizService courseQuizService;
     private SubmissionService submissionService;
     private SubmissionReviewService submissionReviewService;
+    private com.mavis.common.repository.LabStudioExerciseRepository labStudioExercises;
     private final ObjectMapper json = new ObjectMapper();
     private CourseLabStudentService service;
 
@@ -115,12 +116,13 @@ class CourseLabStudentServiceTest {
         submissionService = mock(SubmissionService.class);
         submissionReviewService = mock(SubmissionReviewService.class);
 
+        labStudioExercises = mock(com.mavis.common.repository.LabStudioExerciseRepository.class);
         service = new CourseLabStudentService(
                 access, courseLabs, assignments, projects, snapshots, models, elements,
                 relationships, diagrams, evidences, evaluations, evaluationFindings,
                 runtimeConfigurations, runtimeSessions, runtimeSessionService, runtimeStudioService,
                 assignmentService, courseQuizService, submissionService, submissionReviewService,
-                mock(com.mavis.common.repository.LabStudioExerciseRepository.class), json);
+                labStudioExercises, json);
 
         workspaceId = UUID.randomUUID();
         labId = UUID.randomUUID();
@@ -192,6 +194,40 @@ class CourseLabStudentServiceTest {
         assertThat(ctx.quiz().passed()).isTrue();
         assertThat(ctx.latestSubmission().getId()).isEqualTo(subId);
         assertThat(ctx.latestReview().labOutcome()).isEqualTo("PASSED");
+    }
+
+    @Test
+    void frozenExerciseDoesNotFallBackToEditedDraftRuntimeModel() {
+        when(courseLabs.hasPassedCurrentQuiz(lab, student.getId())).thenReturn(true);
+        var draft = new com.mavis.common.entity.LabStudioExercise();
+        draft.setRuntimeModelId(UUID.randomUUID());
+        when(labStudioExercises.findByAssignmentId(labId)).thenReturn(Optional.of(draft));
+        lab.setStudioExerciseSnapshot(json.createObjectNode().put("instructions", "Published exercise"));
+        var existing = RuntimeSession.builder().id(UUID.randomUUID()).assignment(lab)
+                .executionStatus("RUNNING").triggeredBy(student).build();
+        when(runtimeSessions.findByAssignmentIdAndTriggeredBy_IdOrderByCreatedAtDesc(labId, student.getId()))
+                .thenReturn(List.of(existing));
+
+        assertThat(service.startLabStudioSession(workspaceId, labId).getId()).isEqualTo(existing.getId());
+        verify(models, never()).findById(draft.getRuntimeModelId());
+        verify(runtimeSessionService, never()).createRuntimeSession(any());
+    }
+
+    @Test
+    void runtimeSourceFromAnotherClassIsRejectedBeforeProvisioning() {
+        when(courseLabs.hasPassedCurrentQuiz(lab, student.getId())).thenReturn(true);
+        var foreignProject = Project.builder().id(UUID.randomUUID())
+                .workspace(Workspace.builder().id(UUID.randomUUID()).build()).build();
+        var foreignModel = ModelVersion.builder().id(UUID.randomUUID()).project(foreignProject)
+                .sourceSnapshot(SourceSnapshot.builder().id(UUID.randomUUID()).project(foreignProject).build()).build();
+        lab.setStudioExerciseSnapshot(json.createObjectNode().put("runtimeModelId", foreignModel.getId().toString()));
+        when(models.findById(foreignModel.getId())).thenReturn(Optional.of(foreignModel));
+
+        assertThatThrownBy(() -> service.startLabStudioSession(workspaceId, labId))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        failure -> assertThat(failure.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN));
+        verify(projects, never()).saveAndFlush(any());
+        verify(runtimeSessionService, never()).createRuntimeSession(any());
     }
 
     @Test
