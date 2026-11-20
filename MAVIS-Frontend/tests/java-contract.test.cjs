@@ -785,6 +785,22 @@ test("auth errors use structured backend codes and safe fallbacks through the BF
  assert.equal(response.status,429);assert.equal(response.headers.get("retry-after"),"120");assert.equal((await response.json()).code,"AUTH_RESEND_LIMIT");
 });
 
+test("submission reports missing Studio receipts with actionable guidance", async t => {
+  environment(t);
+  const { javaRequest } = require("../src/lib/api/java-client.ts");
+  const receiptError = "STEP_4_SIGNED_RUNTIME_RECEIPT";
+  for (const status of [422, 400]) {
+    t.mock.method(globalThis, "fetch", async () =>
+      Response.json({ code: status, errorCode: receiptError, message: receiptError }, { status }),
+    );
+    await assert.rejects(javaRequest("submissions", undefined, { method: "POST" }), {
+      status,
+      code: "SUBMISSION_STUDIO_RECEIPT_REQUIRED",
+      message: "Select a verified Studio receipt for the selected model version.",
+    });
+  }
+});
+
 test("public auth contract rejects incomplete and nonnumeric OTPs for both purposes",()=>{
  const {contracts}=require("../src/lib/api/contracts.ts");
  for(const otpCode of ["","12345","1234567","12x456","１２３４５６","123 56"])

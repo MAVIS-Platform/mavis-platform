@@ -134,7 +134,7 @@ export function backendErrorCode(
       return "SUBMISSION_SNAPSHOT_EXPLANATIONS_REQUIRED";
     if (status === 400 && message === "SUBMISSION_SNAPSHOT_IDS_INVALID")
       return "SUBMISSION_SNAPSHOT_IDS_INVALID";
-    if (status === 400 && message === "STEP_4_SIGNED_RUNTIME_RECEIPT")
+    if ((status === 422 || status === 400) && message === "STEP_4_SIGNED_RUNTIME_RECEIPT")
       return "SUBMISSION_STUDIO_RECEIPT_REQUIRED";
     if (status === 403 && message === "Pass the current Lab Quiz before submitting")
       return "SUBMISSION_QUIZ_REQUIRED";
