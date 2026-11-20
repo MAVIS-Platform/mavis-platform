@@ -618,6 +618,6 @@ class CourseLabSeederServiceTest {
                 org.mockito.ArgumentMatchers.contains("JOIN course_definitions"),
                 eq(Integer.class),
                 eq(workspaceId));
-        verify(assignments, times(6)).saveAndFlush(any(Assignment.class));
+        verify(assignments, times(5)).saveAndFlush(any(Assignment.class));
     }
 }
