@@ -101,12 +101,12 @@ class CourseQuizServiceTest {
         assertThrows(BusinessException.class, () -> CourseQuizService.score(questions, List.of(2)));
     }
 
-    @Test void curriculumManifestCoversAll30ChaptersAnd120ValidatedQuestions() throws Exception {
+    @Test void curriculumManifestCoversAll54ChaptersAnd216ValidatedQuestions() throws Exception {
         var curriculum = new CourseCurriculum(new ObjectMapper());
         var previews = curriculum.previews();
-        assertEquals(30, previews.size());
-        assertEquals(18, previews.stream().filter(p -> "Java".equals(p.track())).count());
-        assertEquals(12, previews.stream().filter(p -> "C#".equals(p.track())).count());
+        assertEquals(54, previews.size());
+        assertEquals(30, previews.stream().filter(p -> "Java".equals(p.track())).count());
+        assertEquals(24, previews.stream().filter(p -> "C#".equals(p.track())).count());
 
         int totalQuestions = 0;
         for (var preview : previews) {
@@ -124,7 +124,7 @@ class CourseQuizServiceTest {
                 assertTrue(publish.lesson().contains(preview.sources().getFirst().url()));
             }
         }
-        assertEquals(120, totalQuestions);
+        assertEquals(216, totalQuestions);
     }
 
     @Test void publishCurriculumReusesMatchingVersionAndBumpsWhenChanged() {
