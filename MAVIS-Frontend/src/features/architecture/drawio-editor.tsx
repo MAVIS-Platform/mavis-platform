@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   DRAWIO_THEME_OPTIONS,
   palette,
@@ -36,47 +36,322 @@ function validXml(xml: string) {
   );
 }
 
+interface ParsedSvgNode {
+  id: string;
+  mavisId: string;
+  role: string;
+  parent: string;
+  label: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  startSize: number;
+  dashed: boolean;
+  isGroup: boolean;
+  shape: "boundary" | "cylinder" | "channel" | "card";
+}
+
+interface ParsedSvgEdgeLabel {
+  id: string;
+  edgeId: string;
+  label: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+interface ParsedSvgEdge {
+  id: string;
+  mavisId: string;
+  source: string;
+  target: string;
+  label: string;
+  dashed: boolean;
+  exitX: number | null;
+  exitY: number | null;
+  entryX: number | null;
+  entryY: number | null;
+  points: Array<{ x: number; y: number }>;
+}
+
+function getSvgNodePalette(role: string, shape: ParsedSvgNode["shape"], isDark: boolean) {
+  if (shape === "boundary" || role === "boundary") {
+    return isDark
+      ? {
+          fill: "rgba(15, 23, 42, 0.52)",
+          stroke: "#334155",
+          accent: "#38bdf8",
+          headerFill: "rgba(30, 41, 59, 0.72)",
+          title: "#e2e8f0",
+          tag: "#94a3b8",
+          sub: "#94a3b8",
+        }
+      : {
+          fill: "rgba(241, 245, 249, 0.65)",
+          stroke: "#94a3b8",
+          accent: "#0284c7",
+          headerFill: "rgba(226, 232, 240, 0.85)",
+          title: "#1e293b",
+          tag: "#475569",
+          sub: "#64748b",
+        };
+  }
+  if (shape === "cylinder" || role === "DATABASE" || role === "DATASTORE_GROUP") {
+    return isDark
+      ? {
+          fill: "#072019",
+          stroke: "#10b981",
+          accent: "#34d399",
+          headerFill: "#0b2e24",
+          title: "#ecfdf5",
+          tag: "#6ee7b7",
+          sub: "#94a3b8",
+        }
+      : {
+          fill: "#ecfdf5",
+          stroke: "#059669",
+          accent: "#10b981",
+          headerFill: "#d1fae5",
+          title: "#064e3b",
+          tag: "#047857",
+          sub: "#475569",
+        };
+  }
+  if (
+    shape === "channel" ||
+    role === "MESSAGE_CHANNEL" ||
+    role === "QUEUE_BROKER" ||
+    role === "CHANNEL_GROUP"
+  ) {
+    return isDark
+      ? {
+          fill: "#1a112d",
+          stroke: "#a855f7",
+          accent: "#c084fc",
+          headerFill: "#251842",
+          title: "#f5f3ff",
+          tag: "#d8b4fe",
+          sub: "#94a3b8",
+        }
+      : {
+          fill: "#f5f3ff",
+          stroke: "#7c3aed",
+          accent: "#8b5cf6",
+          headerFill: "#ede9fe",
+          title: "#2e1065",
+          tag: "#6d28d9",
+          sub: "#475569",
+        };
+  }
+  if (role === "COMPONENT" || role === "LOGICAL_COMPONENT" || role === "CLASS_INTERFACE" || role === "PACKAGE") {
+    return isDark
+      ? {
+          fill: "#0c2126",
+          stroke: "#14b8a6",
+          accent: "#2dd4bf",
+          headerFill: "#112f36",
+          title: "#f0fdfa",
+          tag: "#5eead4",
+          sub: "#94a3b8",
+        }
+      : {
+          fill: "#f0fdfa",
+          stroke: "#0d9488",
+          accent: "#14b8a6",
+          headerFill: "#ccfbf1",
+          title: "#134e4a",
+          tag: "#0f766e",
+          sub: "#475569",
+        };
+  }
+  if (role === "EXTERNAL_SYSTEM") {
+    return isDark
+      ? {
+          fill: "#1c1917",
+          stroke: "#78716c",
+          accent: "#f59e0b",
+          headerFill: "#292524",
+          title: "#f5f5f4",
+          tag: "#fcd34d",
+          sub: "#a8a29e",
+        }
+      : {
+          fill: "#fafaf9",
+          stroke: "#78716c",
+          accent: "#d97706",
+          headerFill: "#f5f5f4",
+          title: "#1c1917",
+          tag: "#b45309",
+          sub: "#57534e",
+        };
+  }
+  if (role === "SYSTEM" || role === "SOFTWARE_SYSTEM" || role === "PERSON") {
+    return isDark
+      ? {
+          fill: "#0c1f36",
+          stroke: "#38bdf8",
+          accent: "#38bdf8",
+          headerFill: "#102b4a",
+          title: "#f0f9ff",
+          tag: "#7dd3fc",
+          sub: "#94a3b8",
+        }
+      : {
+          fill: "#eff6ff",
+          stroke: "#2563eb",
+          accent: "#2563eb",
+          headerFill: "#dbeafe",
+          title: "#0f172a",
+          tag: "#1d4ed8",
+          sub: "#475569",
+        };
+  }
+  return isDark
+    ? {
+        fill: "#0f1b30",
+        stroke: "#3b82f6",
+        accent: "#60a5fa",
+        headerFill: "#142642",
+        title: "#f1f5f9",
+        tag: "#93c5fd",
+        sub: "#94a3b8",
+      }
+    : {
+        fill: "#f0f7ff",
+        stroke: "#3b82f6",
+        accent: "#2563eb",
+        headerFill: "#dbeafe",
+        title: "#0f172a",
+        tag: "#1e40af",
+        sub: "#475569",
+      };
+}
+
+function clipRectEdge(
+  from: { x: number; y: number; width: number; height: number },
+  towards: { x: number; y: number },
+) {
+  const cx = from.x + from.width / 2;
+  const cy = from.y + from.height / 2;
+  const dx = towards.x - cx;
+  const dy = towards.y - cy;
+  if (Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01) return { x: cx, y: cy };
+  const scale = Math.min(
+    Math.abs(dx) > 0.01 ? from.width / 2 / Math.abs(dx) : Infinity,
+    Math.abs(dy) > 0.01 ? from.height / 2 / Math.abs(dy) : Infinity,
+  );
+  return { x: cx + dx * scale, y: cy + dy * scale };
+}
+
+function buildRoundedPolylinePath(pts: Array<{ x: number; y: number }>, radius = 6): string {
+  if (pts.length === 0) return "";
+  if (pts.length === 1) return `M ${pts[0]!.x} ${pts[0]!.y}`;
+  if (pts.length === 2) return `M ${pts[0]!.x} ${pts[0]!.y} L ${pts[1]!.x} ${pts[1]!.y}`;
+  const cmds = [`M ${pts[0]!.x} ${pts[0]!.y}`];
+  for (let i = 1; i < pts.length - 1; i++) {
+    const prev = pts[i - 1]!;
+    const curr = pts[i]!;
+    const next = pts[i + 1]!;
+    const d1 = Math.hypot(curr.x - prev.x, curr.y - prev.y);
+    const d2 = Math.hypot(next.x - curr.x, next.y - curr.y);
+    const r = Math.min(radius, d1 / 2, d2 / 2);
+    if (r < 1) {
+      cmds.push(`L ${curr.x} ${curr.y}`);
+      continue;
+    }
+    const p1x = curr.x - ((curr.x - prev.x) / d1) * r;
+    const p1y = curr.y - ((curr.y - prev.y) / d1) * r;
+    const p2x = curr.x + ((next.x - curr.x) / d2) * r;
+    const p2y = curr.y + ((next.y - curr.y) / d2) * r;
+    cmds.push(`L ${p1x} ${p1y} Q ${curr.x} ${curr.y} ${p2x} ${p2y}`);
+  }
+  const last = pts[pts.length - 1]!;
+  cmds.push(`L ${last.x} ${last.y}`);
+  return cmds.join(" ");
+}
+
+function wrapSvgLines(lines: string[], maxChars: number, maxLines: number): string[] {
+  const out: string[] = [];
+  for (const rawLine of lines) {
+    if (rawLine.length <= maxChars) {
+      out.push(rawLine);
+    } else {
+      const words = rawLine.split(/\s+/);
+      let acc = "";
+      for (const word of words) {
+        if (!acc) {
+          acc = word.length > maxChars ? word.slice(0, Math.max(4, maxChars - 1)) + "…" : word;
+        } else if (acc.length + 1 + word.length <= maxChars) {
+          acc += " " + word;
+        } else {
+          out.push(acc);
+          acc = word.length > maxChars ? word.slice(0, Math.max(4, maxChars - 1)) + "…" : word;
+        }
+        if (out.length >= maxLines) break;
+      }
+      if (acc && out.length < maxLines) out.push(acc);
+    }
+    if (out.length >= maxLines) break;
+  }
+  return out.slice(0, maxLines);
+}
+
 /**
- * Built-in Native SVG Renderer for <mxGraphModel> XML so the user can always view
- * the diagram immediately even if both Docker Draw.io (port 8090) and external network are unavailable.
+ * Built-in Native SVG Renderer for <mxGraphModel> XML so architecture diagrams render
+ * crisply in dark and light mode without requiring an external Draw.io iframe.
  */
-export function MxGraphNativeSvgPreview({ xml }: { xml: string }) {
+export function MxGraphNativeSvgPreview({
+  xml,
+  selectedId,
+  onSelect,
+}: {
+  xml: string;
+  selectedId?: string | null;
+  onSelect?: (id: string) => void;
+}) {
+  const uid = useId().replace(/:/g, "");
+  const arrowId = `mavis-arrow-${uid}`;
+  const arrowActiveId = `mavis-arrow-active-${uid}`;
+  const shadowId = `mavis-shadow-${uid}`;
+  const [zoom, setZoom] = useState(1);
+  const [isDark, setIsDark] = useState(() =>
+    typeof document !== "undefined" && document.documentElement.classList.contains("dark"),
+  );
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const root = document.documentElement;
+    const sync = () => setIsDark(root.classList.contains("dark"));
+    sync();
+    const observer = new MutationObserver(sync);
+    observer.observe(root, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, []);
+
   const parsed = useMemo(() => {
     if (!xml) return null;
     try {
       const doc = new DOMParser().parseFromString(xml, "text/xml");
       if (doc.querySelector("parsererror")) return null;
 
-      interface NodeBox {
-        id: string;
-        parent: string;
-        label: string;
-        x: number;
-        y: number;
-        width: number;
-        height: number;
-        fillColor: string;
-        strokeColor: string;
-        fontColor: string;
-        dashed: boolean;
-        isGroup: boolean;
-      }
-      interface EdgeLine {
-        id: string;
-        source: string;
-        target: string;
-        label: string;
-        strokeColor: string;
-        dashed: boolean;
-        points: Array<{ x: number; y: number }>;
-      }
-
-      const nodesById = new Map<string, NodeBox>();
-      const edges: EdgeLine[] = [];
+      const nodesById = new Map<string, ParsedSvgNode>();
+      const edgeLabels: ParsedSvgEdgeLabel[] = [];
+      const edges: ParsedSvgEdge[] = [];
+      let title = "";
+      let scopeMeta = "";
+      let hasLegend = false;
 
       const getStyleProp = (style: string, key: string, fallback: string): string => {
         const m = new RegExp(`(?:^|;)${key}=([^;]+)`).exec(style);
         return m?.[1]?.trim() || fallback;
+      };
+      const getStyleNum = (style: string, key: string): number | null => {
+        const raw = getStyleProp(style, key, "");
+        if (!raw) return null;
+        const parsedNum = Number(raw);
+        return Number.isFinite(parsedNum) ? parsedNum : null;
       };
 
       const cleanLabel = (raw: string): string =>
@@ -93,7 +368,7 @@ export function MxGraphNativeSvgPreview({ xml }: { xml: string }) {
           .split("\n")
           .map((s) => s.trim())
           .filter(Boolean)
-          .slice(0, 5)
+          .slice(0, 6)
           .join("\n");
 
       const allElements = Array.from(doc.querySelectorAll("mxCell"));
@@ -110,6 +385,21 @@ export function MxGraphNativeSvgPreview({ xml }: { xml: string }) {
           parentObj?.getAttribute("label") || cell.getAttribute("value") || "";
         const label = cleanLabel(rawLabel);
         const parent = cell.getAttribute("parent") || "1";
+        const role = cell.getAttribute("mavisRole") || "";
+        const mavisId = cell.getAttribute("mavisId") || "";
+
+        if (id === "mavis_title") {
+          title = label.split("\n")[0] ?? "";
+          continue;
+        }
+        if (id === "mavis_scope") {
+          scopeMeta = (label.split("\n")[0] ?? "").replace(/^mavis-[a-z0-9-]+\s*·\s*/i, "");
+          continue;
+        }
+        if (id === "mavis_legend" || role === "legend") {
+          hasLegend = true;
+          continue;
+        }
 
         if (cell.getAttribute("vertex") === "1") {
           const geo = cell.querySelector("mxGeometry");
@@ -117,34 +407,59 @@ export function MxGraphNativeSvgPreview({ xml }: { xml: string }) {
           const x = Number(geo.getAttribute("x") || 0);
           const y = Number(geo.getAttribute("y") || 0);
           const width = Math.max(40, Number(geo.getAttribute("width") || 160));
-          const height = Math.max(28, Number(geo.getAttribute("height") || 72));
+          const height = Math.max(24, Number(geo.getAttribute("height") || 72));
+
+          if (role === "edge-label" || id.startsWith("label_")) {
+            if (label) {
+              edgeLabels.push({
+                id,
+                edgeId: cell.getAttribute("mavisEdgeId") || "",
+                label,
+                x,
+                y,
+                width,
+                height,
+              });
+            }
+            continue;
+          }
+
           const fillColor = getStyleProp(style, "fillColor", "#f8fafc");
-          const strokeColor = getStyleProp(style, "strokeColor", "#475569");
-          const fontColor = getStyleProp(style, "fontColor", "#0f172a");
           const dashed = getStyleProp(style, "dashed", "0") === "1";
+          const startSize = getStyleNum(style, "startSize") ?? 36;
           const isGroup =
+            role === "boundary" ||
             style.includes("swimlane") ||
             style.includes("container=1") ||
             fillColor === "none";
+          const shape: ParsedSvgNode["shape"] = isGroup
+            ? "boundary"
+            : role === "DATABASE" || style.includes("cylinder")
+              ? "cylinder"
+              : role === "MESSAGE_CHANNEL" ||
+                  role === "QUEUE_BROKER" ||
+                  style.includes("shape=process")
+                ? "channel"
+                : "card";
 
           nodesById.set(id, {
             id,
+            mavisId,
+            role,
             parent,
             label,
             x,
             y,
             width,
             height,
-            fillColor: fillColor === "none" ? "rgba(241,245,249,0.35)" : fillColor,
-            strokeColor: strokeColor === "none" ? "#cbd5e1" : strokeColor,
-            fontColor,
+            startSize,
             dashed,
             isGroup,
+            shape,
           });
         } else if (cell.getAttribute("edge") === "1") {
           const source = cell.getAttribute("source") || "";
           const target = cell.getAttribute("target") || "";
-          const strokeColor = getStyleProp(style, "strokeColor", "#475569");
           const dashed = getStyleProp(style, "dashed", "0") === "1";
           const pts: Array<{ x: number; y: number }> = [];
           const arr = cell.querySelector('mxGeometry > Array[as="points"]');
@@ -159,11 +474,15 @@ export function MxGraphNativeSvgPreview({ xml }: { xml: string }) {
           }
           edges.push({
             id,
+            mavisId,
             source,
             target,
             label,
-            strokeColor: strokeColor === "none" ? "#64748b" : strokeColor,
             dashed,
+            exitX: getStyleNum(style, "exitX"),
+            exitY: getStyleNum(style, "exitY"),
+            entryX: getStyleNum(style, "entryX"),
+            entryY: getStyleNum(style, "entryY"),
             points: pts,
           });
         }
@@ -187,7 +506,7 @@ export function MxGraphNativeSvgPreview({ xml }: { xml: string }) {
         return res;
       };
 
-      const resolvedNodes: NodeBox[] = [];
+      const resolvedNodes: ParsedSvgNode[] = [];
       for (const n of nodesById.values()) {
         const pos = resolveAbs(n.id);
         resolvedNodes.push({ ...n, x: pos.x, y: pos.y });
@@ -195,17 +514,50 @@ export function MxGraphNativeSvgPreview({ xml }: { xml: string }) {
 
       if (resolvedNodes.length === 0) return null;
 
-      const minX = Math.min(...resolvedNodes.map((n) => n.x)) - 40;
-      const minY = Math.min(...resolvedNodes.map((n) => n.y)) - 40;
-      const maxX = Math.max(...resolvedNodes.map((n) => n.x + n.width)) + 40;
-      const maxY = Math.max(...resolvedNodes.map((n) => n.y + n.height)) + 40;
-
       const resolvedById = new Map(resolvedNodes.map((n) => [n.id, n]));
+      const validEdges = edges.filter(
+        (e) => resolvedById.has(e.source) && resolvedById.has(e.target),
+      );
+
+      const xCoords = [
+        ...resolvedNodes.flatMap((n) => [n.x, n.x + n.width]),
+        ...edgeLabels.flatMap((l) => [l.x, l.x + l.width]),
+        ...validEdges.flatMap((e) => e.points.map((p) => p.x)),
+      ];
+      const yCoords = [
+        ...resolvedNodes.flatMap((n) => [n.y, n.y + n.height]),
+        ...edgeLabels.flatMap((l) => [l.y, l.y + l.height]),
+        ...validEdges.flatMap((e) => e.points.map((p) => p.y)),
+      ];
+
+      const padX = 48;
+      const padY = 40;
+      const rawMinX = Math.min(...xCoords);
+      const rawMaxX = Math.max(...xCoords);
+      const rawMinY = Math.min(...yCoords);
+      const rawMaxY = Math.max(...yCoords);
+      const contentW = rawMaxX - rawMinX;
+      const contentH = rawMaxY - rawMinY;
+      const vbW = Math.max(520, contentW + padX * 2);
+      const vbH = Math.max(240, contentH + padY * 2);
+      const vbX = rawMinX - (vbW - contentW) / 2;
+      const vbY = rawMinY - (vbH - contentH) / 2;
+
       return {
+        title,
+        scopeMeta,
+        hasLegend,
         nodes: resolvedNodes.sort((a, b) => (a.isGroup === b.isGroup ? 0 : a.isGroup ? -1 : 1)),
-        edges: edges.filter((e) => resolvedById.has(e.source) && resolvedById.has(e.target)),
+        edges: validEdges,
+        edgeLabels,
         resolvedById,
-        viewBox: `${minX} ${minY} ${Math.max(600, maxX - minX)} ${Math.max(420, maxY - minY)}`,
+        vbW,
+        vbH,
+        viewBox: `${vbX} ${vbY} ${vbW} ${vbH}`,
+        hasBoundary: resolvedNodes.some((n) => n.shape === "boundary"),
+        hasDatabase: resolvedNodes.some((n) => n.shape === "cylinder"),
+        hasChannel: resolvedNodes.some((n) => n.shape === "channel"),
+        hasDashedEdge: validEdges.some((e) => e.dashed),
       };
     } catch {
       return null;
@@ -214,121 +566,468 @@ export function MxGraphNativeSvgPreview({ xml }: { xml: string }) {
 
   if (!parsed) {
     return (
-      <div className="flex h-[520px] items-center justify-center bg-slate-50 p-6 text-sm text-slate-500">
-        Đang chuẩn bị dữ liệu sơ đồ...
+      <div className="flex h-[320px] items-center justify-center bg-muted/15 p-6 text-sm text-muted-foreground">
+        Preparing architecture diagram…
       </div>
     );
   }
 
+  const canvasHeight = Math.max(300, Math.min(580, Math.round(parsed.vbH * 0.88 + 44)));
+  const edgeStrokeDefault = isDark ? "#7c8fa8" : "#64748b";
+  const edgeStrokeSelected = isDark ? "#38bdf8" : "#2563eb";
+  const dotColor = isDark ? "rgba(148, 163, 184, 0.14)" : "rgba(100, 116, 139, 0.22)";
+
   return (
-    <div className="h-[640px] w-full overflow-auto rounded-lg bg-slate-50 p-3">
-      <svg
-        viewBox={parsed.viewBox}
-        className="mx-auto h-full w-full"
-        role="img"
-        aria-label="Architecture diagram SVG preview"
-      >
-        <defs>
-          <marker
-            id="mavis-svg-arrow"
-            viewBox="0 0 10 10"
-            refX="9"
-            refY="5"
-            markerWidth="6"
-            markerHeight="6"
-            orient="auto-start-reverse"
+    <div className="flex flex-col overflow-hidden bg-background/40">
+      {/* Compact Blueprint Header & Zoom Controls */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 bg-muted/15 px-4 py-2 text-xs">
+        <div className="flex flex-wrap items-center gap-2 text-muted-foreground">
+          {parsed.title && (
+            <span className="font-medium text-foreground">{parsed.title}</span>
+          )}
+          {parsed.scopeMeta && (
+            <span className="rounded-md bg-muted/60 px-2 py-0.5 text-[11px] tabular-nums text-muted-foreground">
+              {parsed.scopeMeta}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-1 rounded-lg border border-border/70 bg-background/80 p-0.5 text-[11px]">
+          <button
+            type="button"
+            onClick={() => setZoom((z) => Math.max(0.6, Math.round((z - 0.15) * 100) / 100))}
+            className="rounded px-2 py-0.5 font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
+            aria-label="Zoom out"
           >
-            <path d="M 0 1 L 10 5 L 0 9 z" fill="#475569" />
-          </marker>
-        </defs>
-        {parsed.edges.map((edge) => {
-          const s = parsed.resolvedById.get(edge.source)!;
-          const t = parsed.resolvedById.get(edge.target)!;
-          const sx = s.x + s.width / 2;
-          const sy = s.y + s.height / 2;
-          const tx = t.x + t.width / 2;
-          const ty = t.y + t.height / 2;
-          const allPts = [{ x: sx, y: sy }, ...edge.points, { x: tx, y: ty }];
-          const polyPoints = allPts.map((p) => `${p.x},${p.y}`).join(" ");
-          const mid = allPts[Math.floor(allPts.length / 2)] ?? {
-            x: (sx + tx) / 2,
-            y: (sy + ty) / 2,
-          };
-          return (
-            <g key={edge.id}>
-              <polyline
-                fill="none"
-                stroke={edge.strokeColor}
-                strokeWidth={1.75}
-                strokeDasharray={edge.dashed ? "6,4" : undefined}
-                points={polyPoints}
-                markerEnd="url(#mavis-svg-arrow)"
-              />
-              {edge.label && (
-                <g transform={`translate(${mid.x}, ${mid.y - 6})`}>
-                  <rect
-                    x={-Math.min(110, edge.label.length * 3.4 + 8)}
-                    y={-11}
-                    width={Math.min(220, edge.label.length * 6.8 + 16)}
-                    height={18}
-                    rx={4}
-                    fill="#ffffff"
-                    fillOpacity={0.92}
-                    stroke="#e2e8f0"
-                    strokeWidth={0.8}
-                  />
-                  <text
-                    textAnchor="middle"
-                    dominantBaseline="middle"
-                    fontSize={10.5}
-                    fontWeight={500}
-                    fill="#334155"
-                  >
-                    {edge.label.split("\n")[0]}
-                  </text>
-                </g>
-              )}
-            </g>
-          );
-        })}
-        {parsed.nodes.map((node) => {
-          const lines = node.label.split("\n");
-          return (
-            <g key={node.id} transform={`translate(${node.x}, ${node.y})`}>
-              <rect
-                width={node.width}
-                height={node.height}
-                rx={node.isGroup ? 10 : 8}
-                fill={node.fillColor}
-                stroke={node.strokeColor}
-                strokeWidth={node.isGroup ? 1.5 : 1.75}
-                strokeDasharray={node.dashed ? "6,4" : undefined}
-              />
-              {lines.map((line, idx) => (
-                <text
-                  key={idx}
-                  x={node.width / 2}
-                  y={
-                    node.isGroup
-                      ? 20 + idx * 15
-                      : Math.max(
-                          20,
-                          node.height / 2 - ((lines.length - 1) * 15) / 2 + idx * 15,
-                        )
+            −
+          </button>
+          <span className="min-w-[42px] text-center font-mono tabular-nums text-foreground/85">
+            {Math.round(zoom * 100)}%
+          </span>
+          <button
+            type="button"
+            onClick={() => setZoom((z) => Math.min(2, Math.round((z + 0.15) * 100) / 100))}
+            className="rounded px-2 py-0.5 font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
+            aria-label="Zoom in"
+          >
+            +
+          </button>
+          {zoom !== 1 && (
+            <button
+              type="button"
+              onClick={() => setZoom(1)}
+              className="ml-0.5 rounded border-l border-border/60 px-2 py-0.5 text-muted-foreground transition hover:bg-muted hover:text-foreground"
+            >
+              Reset
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Drafting Canvas */}
+      <div
+        className="w-full overflow-auto"
+        style={{
+          height: canvasHeight,
+          backgroundColor: isDark ? "#080d17" : "#f8fafc",
+          backgroundImage: `radial-gradient(${dotColor} 1px, transparent 1px)`,
+          backgroundSize: "18px 18px",
+        }}
+      >
+        <div
+          className="flex min-h-full min-w-full items-center justify-center p-4"
+          style={
+            zoom !== 1
+              ? {
+                  width: `${Math.round(zoom * 100)}%`,
+                  height: `${Math.round(zoom * 100)}%`,
+                }
+              : undefined
+          }
+        >
+          <svg
+            viewBox={parsed.viewBox}
+            className="h-full w-full max-w-full select-none"
+            role="img"
+            aria-label="Architecture diagram SVG preview"
+          >
+            <defs>
+              <marker
+                id={arrowId}
+                viewBox="0 0 10 10"
+                refX="8.5"
+                refY="5"
+                markerWidth="6.5"
+                markerHeight="6.5"
+                orient="auto-start-reverse"
+              >
+                <path d="M 0 1.2 L 9.5 5 L 0 8.8 z" fill={edgeStrokeDefault} />
+              </marker>
+              <marker
+                id={arrowActiveId}
+                viewBox="0 0 10 10"
+                refX="8.5"
+                refY="5"
+                markerWidth="6.5"
+                markerHeight="6.5"
+                orient="auto-start-reverse"
+              >
+                <path d="M 0 1.2 L 9.5 5 L 0 8.8 z" fill={edgeStrokeSelected} />
+              </marker>
+              <filter id={shadowId} x="-8%" y="-10%" width="116%" height="126%">
+                <feDropShadow
+                  dx="0"
+                  dy="4"
+                  stdDeviation="5"
+                  floodColor={isDark ? "#000000" : "#0f172a"}
+                  floodOpacity={isDark ? 0.42 : 0.08}
+                />
+              </filter>
+            </defs>
+
+            {/* Layer 1: Boundaries / Swimlanes */}
+            {parsed.nodes
+              .filter((n) => n.shape === "boundary")
+              .map((node) => {
+                const c = getSvgNodePalette(node.role, "boundary", isDark);
+                const headerH = Math.min(36, Math.max(28, node.startSize));
+                const titleLine = node.label.split("\n")[0] ?? "";
+                return (
+                  <g key={node.id} transform={`translate(${node.x}, ${node.y})`}>
+                    <rect
+                      width={node.width}
+                      height={node.height}
+                      rx={12}
+                      fill={c.fill}
+                      stroke={c.stroke}
+                      strokeWidth={1.4}
+                      strokeDasharray={node.dashed ? "6,4" : undefined}
+                    />
+                    <rect
+                      x={1}
+                      y={1}
+                      width={Math.min(node.width - 2, Math.max(180, titleLine.length * 7.2 + 28))}
+                      height={headerH - 4}
+                      rx={10}
+                      fill={c.headerFill}
+                    />
+                    <text
+                      x={14}
+                      y={headerH / 2}
+                      dominantBaseline="middle"
+                      fontSize={12}
+                      fontWeight={600}
+                      fill={c.title}
+                    >
+                      {titleLine}
+                    </text>
+                  </g>
+                );
+              })}
+
+            {/* Layer 2: Edges using exact ELK port anchors */}
+            {parsed.edges.map((edge) => {
+              const s = parsed.resolvedById.get(edge.source)!;
+              const t = parsed.resolvedById.get(edge.target)!;
+              const firstTarget = edge.points[0] ?? {
+                x: t.x + t.width / 2,
+                y: t.y + t.height / 2,
+              };
+              const lastSource = edge.points.at(-1) ?? {
+                x: s.x + s.width / 2,
+                y: s.y + s.height / 2,
+              };
+              const startPt =
+                edge.exitX !== null && edge.exitY !== null
+                  ? { x: s.x + s.width * edge.exitX, y: s.y + s.height * edge.exitY }
+                  : clipRectEdge(s, firstTarget);
+              const endPt =
+                edge.entryX !== null && edge.entryY !== null
+                  ? { x: t.x + t.width * edge.entryX, y: t.y + t.height * edge.entryY }
+                  : clipRectEdge(t, lastSource);
+              const allPts = [startPt, ...edge.points, endPt];
+              const pathD = buildRoundedPolylinePath(allPts, 6);
+              const isSelected = Boolean(selectedId && edge.mavisId && selectedId === edge.mavisId);
+              const mid = allPts[Math.floor(allPts.length / 2)] ?? {
+                x: (startPt.x + endPt.x) / 2,
+                y: (startPt.y + endPt.y) / 2,
+              };
+
+              return (
+                <g
+                  key={edge.id}
+                  onClick={
+                    onSelect && edge.mavisId ? () => onSelect(edge.mavisId) : undefined
                   }
-                  textAnchor="middle"
-                  dominantBaseline="middle"
-                  fontSize={idx === 0 ? 12.5 : 10.5}
-                  fontWeight={idx === 0 ? 700 : 400}
-                  fill={node.fontColor}
+                  className={onSelect && edge.mavisId ? "cursor-pointer" : undefined}
                 >
-                  {line.length > 38 ? line.slice(0, 36) + "…" : line}
-                </text>
-              ))}
-            </g>
-          );
-        })}
-      </svg>
+                  <path
+                    d={pathD}
+                    fill="none"
+                    stroke="transparent"
+                    strokeWidth={12}
+                  />
+                  <path
+                    d={pathD}
+                    fill="none"
+                    stroke={isSelected ? edgeStrokeSelected : edgeStrokeDefault}
+                    strokeWidth={isSelected ? 2.4 : 1.65}
+                    strokeDasharray={edge.dashed ? "6,4" : undefined}
+                    markerEnd={
+                      isSelected ? `url(#${arrowActiveId})` : `url(#${arrowId})`
+                    }
+                  />
+                  {edge.label && (
+                    <g transform={`translate(${mid.x}, ${mid.y - 6})`}>
+                      <rect
+                        x={-Math.min(110, edge.label.length * 3.4 + 10)}
+                        y={-11}
+                        width={Math.min(220, edge.label.length * 6.8 + 20)}
+                        height={20}
+                        rx={6}
+                        fill={isDark ? "#0f172a" : "#ffffff"}
+                        fillOpacity={0.94}
+                        stroke={isSelected ? edgeStrokeSelected : isDark ? "#334155" : "#cbd5e1"}
+                        strokeWidth={1}
+                      />
+                      <text
+                        textAnchor="middle"
+                        dominantBaseline="middle"
+                        fontSize={10.5}
+                        fontWeight={500}
+                        fill={isDark ? "#cbd5e1" : "#334155"}
+                      >
+                        {edge.label.split("\n")[0]}
+                      </text>
+                    </g>
+                  )}
+                </g>
+              );
+            })}
+
+            {/* Layer 3: Architectural Nodes (Cards, Cylinders, Channels) */}
+            {parsed.nodes
+              .filter((n) => n.shape !== "boundary")
+              .map((node) => {
+                const c = getSvgNodePalette(node.role, node.shape, isDark);
+                const isSelected = Boolean(
+                  selectedId && node.mavisId && selectedId === node.mavisId,
+                );
+                const maxChars = Math.max(24, Math.floor((node.width - 28) / 6.4));
+                const rawLines = node.label.split("\n").filter(Boolean);
+                const lines = wrapSvgLines(rawLines, maxChars, 5);
+                const lineGap = 16;
+                const textTopOffset = node.shape === "cylinder" ? 16 : 4;
+                const blockH = (lines.length - 1) * lineGap;
+                const startY =
+                  node.height / 2 + textTopOffset / 2 - blockH / 2;
+
+                const cylRy = Math.min(14, node.height * 0.12);
+                const cylPath = `M 0 ${cylRy} L 0 ${node.height - cylRy} A ${node.width / 2} ${cylRy} 0 0 0 ${node.width} ${node.height - cylRy} L ${node.width} ${cylRy} Z`;
+
+                return (
+                  <g
+                    key={node.id}
+                    transform={`translate(${node.x}, ${node.y})`}
+                    filter={`url(#${shadowId})`}
+                    onClick={
+                      onSelect && node.mavisId ? () => onSelect(node.mavisId) : undefined
+                    }
+                    className={onSelect && node.mavisId ? "cursor-pointer" : undefined}
+                  >
+                    {isSelected && (
+                      <rect
+                        x={-4}
+                        y={-4}
+                        width={node.width + 8}
+                        height={node.height + 8}
+                        rx={14}
+                        fill="none"
+                        stroke={edgeStrokeSelected}
+                        strokeWidth={2}
+                        strokeOpacity={0.85}
+                      />
+                    )}
+
+                    {node.shape === "cylinder" ? (
+                      <>
+                        <path
+                          d={cylPath}
+                          fill={c.fill}
+                          stroke={isSelected ? edgeStrokeSelected : c.stroke}
+                          strokeWidth={isSelected ? 2.2 : 1.6}
+                        />
+                        <ellipse
+                          cx={node.width / 2}
+                          cy={cylRy}
+                          rx={node.width / 2}
+                          ry={cylRy}
+                          fill={c.headerFill}
+                          stroke={isSelected ? edgeStrokeSelected : c.stroke}
+                          strokeWidth={isSelected ? 2.2 : 1.6}
+                        />
+                      </>
+                    ) : node.shape === "channel" ? (
+                      <>
+                        <rect
+                          width={node.width}
+                          height={node.height}
+                          rx={10}
+                          fill={c.fill}
+                          stroke={isSelected ? edgeStrokeSelected : c.stroke}
+                          strokeWidth={isSelected ? 2.2 : 1.6}
+                        />
+                        <line
+                          x1={14}
+                          y1={1}
+                          x2={14}
+                          y2={node.height - 1}
+                          stroke={c.accent}
+                          strokeWidth={1.5}
+                          strokeOpacity={0.55}
+                        />
+                        <line
+                          x1={node.width - 14}
+                          y1={1}
+                          x2={node.width - 14}
+                          y2={node.height - 1}
+                          stroke={c.accent}
+                          strokeWidth={1.5}
+                          strokeOpacity={0.55}
+                        />
+                      </>
+                    ) : (
+                      <>
+                        <rect
+                          width={node.width}
+                          height={node.height}
+                          rx={10}
+                          fill={c.fill}
+                          stroke={isSelected ? edgeStrokeSelected : c.stroke}
+                          strokeWidth={isSelected ? 2.2 : 1.5}
+                          strokeDasharray={node.dashed ? "6,4" : undefined}
+                        />
+                        <rect
+                          x={12}
+                          y={1}
+                          width={Math.max(24, node.width - 24)}
+                          height={3}
+                          rx={1.5}
+                          fill={c.accent}
+                        />
+                      </>
+                    )}
+
+                    {lines.map((line, idx) => {
+                      const isTagLine = idx > 0 && line.startsWith("[") && line.endsWith("]");
+                      return (
+                        <text
+                          key={idx}
+                          x={node.width / 2}
+                          y={startY + idx * lineGap}
+                          textAnchor="middle"
+                          dominantBaseline="middle"
+                          fontSize={idx === 0 ? 13 : isTagLine ? 10.5 : 10.5}
+                          fontWeight={idx === 0 ? 700 : isTagLine ? 600 : 400}
+                          fill={idx === 0 ? c.title : isTagLine ? c.tag : c.sub}
+                        >
+                          {line}
+                        </text>
+                      );
+                    })}
+                  </g>
+                );
+              })}
+
+            {/* Layer 4: Standalone Edge Labels (clean floating pills) */}
+            {parsed.edgeLabels.map((lbl) => {
+              const lines = lbl.label.split("\n").slice(0, 3);
+              const isSelected = Boolean(selectedId && lbl.edgeId && selectedId === lbl.edgeId);
+              const pillH = Math.max(22, lines.length * 14 + 8);
+              const pillY = lbl.y + (lbl.height - pillH) / 2;
+              return (
+                <g
+                  key={lbl.id}
+                  onClick={
+                    onSelect && lbl.edgeId ? () => onSelect(lbl.edgeId) : undefined
+                  }
+                  className={onSelect && lbl.edgeId ? "cursor-pointer" : undefined}
+                >
+                  <rect
+                    x={lbl.x}
+                    y={pillY}
+                    width={lbl.width}
+                    height={pillH}
+                    rx={6}
+                    fill={isDark ? "#0f172a" : "#ffffff"}
+                    fillOpacity={0.94}
+                    stroke={isSelected ? edgeStrokeSelected : isDark ? "#334155" : "#cbd5e1"}
+                    strokeWidth={1}
+                  />
+                  {lines.map((line, idx) => (
+                    <text
+                      key={idx}
+                      x={lbl.x + lbl.width / 2}
+                      y={pillY + pillH / 2 - ((lines.length - 1) * 13) / 2 + idx * 13}
+                      textAnchor="middle"
+                      dominantBaseline="middle"
+                      fontSize={10.5}
+                      fontWeight={500}
+                      fill={isDark ? "#cbd5e1" : "#334155"}
+                    >
+                      {line}
+                    </text>
+                  ))}
+                </g>
+              );
+            })}
+          </svg>
+        </div>
+      </div>
+
+      {/* Crisp HTML Legend Bar (replaces truncated SVG legend box) */}
+      {(parsed.hasLegend || parsed.nodes.length > 0) && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-border/60 bg-muted/15 px-4 py-2 text-[11px] text-muted-foreground">
+          {parsed.hasBoundary && (
+            <span className="inline-flex items-center gap-1.5">
+              <span className="inline-block h-3 w-4 rounded-xs border border-dashed border-slate-400" />
+              Boundary
+            </span>
+          )}
+          <span className="inline-flex items-center gap-1.5">
+            <span className="inline-block h-3 w-4 rounded-xs border border-sky-500/70 bg-sky-500/15" />
+            Service / System
+          </span>
+          {parsed.hasDatabase && (
+            <span className="inline-flex items-center gap-1.5">
+              <span className="inline-block h-3 w-3.5 rounded-full border border-emerald-500/70 bg-emerald-500/15" />
+              Database
+            </span>
+          )}
+          {parsed.hasChannel && (
+            <span className="inline-flex items-center gap-1.5">
+              <span className="inline-block h-3 w-4 rounded-xs border-x-2 border-y border-violet-500/70 bg-violet-500/15" />
+              Message Channel
+            </span>
+          )}
+          {parsed.edges.length > 0 && (
+            <span className="inline-flex items-center gap-1.5">
+              <span className="inline-block w-4 border-t-[1.5px] border-slate-400" />
+              Source call
+            </span>
+          )}
+          {parsed.hasDashedEdge && (
+            <span className="inline-flex items-center gap-1.5">
+              <span className="inline-block w-4 border-t-[1.5px] border-dashed border-slate-400" />
+              Compose / Config
+            </span>
+          )}
+          {onSelect && (
+            <span className="ml-auto hidden text-[11px] text-muted-foreground/75 sm:inline">
+              Click a node or edge to inspect
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

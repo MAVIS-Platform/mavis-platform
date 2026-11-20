@@ -1496,3 +1496,23 @@ test("Lecturer Studio Live authoring uses unified single top bar, non-red health
   assert.match(obs, /isImpactedByOutage/);
   assert.doesNotMatch(obs, /isStopped \|\| isAffected/);
 });
+
+test("Step 2 Reference Architecture and C1-C3 native SVG preview use theme-adaptive blueprint styling without raw enum or empty-column slop", () => {
+  const sourceSection = read("src/features/assignments/lab-source-section.tsx");
+  const diagrams = read("src/features/architecture/architecture-diagrams.tsx");
+  const drawioEditor = read("src/features/architecture/drawio-editor.tsx");
+
+  assert.match(sourceSection, /Reference Architecture/);
+  assert.match(sourceSection, /formatStack/);
+  assert.match(sourceSection, /formatProtocol/);
+  assert.match(sourceSection, /hasConnectionFiles/);
+  assert.match(sourceSection, /Application Containers/);
+  assert.doesNotMatch(sourceSection, /Lab Studio Setup/);
+  assert.doesNotMatch(diagrams, /This view shows the system boundary/);
+  assert.match(diagrams, /<MxGraphNativeSvgPreview[\s\S]*selectedId=\{selectedId\}[\s\S]*onSelect=\{onSelect\}/);
+  assert.match(drawioEditor, /getSvgNodePalette/);
+  assert.match(drawioEditor, /shape === "cylinder"/);
+  assert.match(drawioEditor, /shape === "channel"/);
+  assert.match(drawioEditor, /exitX !== null && edge\.exitY !== null/);
+  assert.match(drawioEditor, /aria-label="Architecture diagram SVG preview"/);
+});
