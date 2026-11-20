@@ -165,6 +165,8 @@ public class RuntimeSession {
 
     @com.fasterxml.jackson.annotation.JsonIgnore
     public boolean hasVerifiedStudioEvidence() {
+        if ((studioControl != null && studioControl.path("simulatedSandbox").asBoolean(false))
+                || (traceQuality != null && traceQuality.toUpperCase(java.util.Locale.ROOT).startsWith("SIMULATED"))) return false;
         if (scenarioConfig == null || runnerReceiptJson == null || receiptDigest == null || receiptDigest.isBlank()
                 || !"COMPLETED".equalsIgnoreCase(executionStatus) || !"PASSED".equalsIgnoreCase(scenarioStatus)
                 || !"AVAILABLE".equalsIgnoreCase(evidenceStatus) || !"CONFIRMED".equalsIgnoreCase(cleanupStatus)

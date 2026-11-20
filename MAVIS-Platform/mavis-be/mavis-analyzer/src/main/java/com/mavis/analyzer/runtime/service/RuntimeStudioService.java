@@ -527,15 +527,14 @@ public class RuntimeStudioService {
         String digest = com.mavis.analyzer.runtime.utils.CanonicalReceiptDigestUtils.computeDigest(receipt);
         session.setRunnerReceiptJson(receipt);
         session.setReceiptDigest(digest);
-        control.put("receiptSignature", "hmac-sha256:" + com.mavis.common.utils.HashUtils.sha256Hex(
-                ("sandbox-receipt:" + digest).getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        control.remove("receiptSignature");
         session.setExecutionStatus("COMPLETED");
-        session.setScenarioStatus("PASSED");
-        session.setEvidenceStatus("AVAILABLE");
-        session.setCleanupStatus("CONFIRMED");
-        session.setTraceQuality("SIMULATED_VERIFIED");
+        session.setScenarioStatus("NOT_RUN");
+        session.setEvidenceStatus("UNAVAILABLE");
+        session.setCleanupStatus("NOT_APPLICABLE");
+        session.setTraceQuality("SIMULATED");
         session.setTraceStatus("COMPLETE");
-        session.setSandboxEnforcementConfirmed(true);
+        session.setSandboxEnforcementConfirmed(false);
         session.setCompletedAt(OffsetDateTime.now());
     }
 

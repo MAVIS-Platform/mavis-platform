@@ -158,7 +158,7 @@ class RuntimeStudioServiceTest {
             new RuntimeStudioService.ActionRequest(UUID.randomUUID(), "STOP", "orders", null)));
     }
 
-    @Test void simulatedSandboxBootstrapsExecutesActionsCapturesAndCompletesWithVerifiedEvidence() {
+    @Test void simulatedSandboxCompletesWithoutVerifiedRunnerEvidence() {
         session.setExecutionStatus("READY_FOR_DISPATCH");
         session.setSourceSnapshot(SourceSnapshot.builder().id(UUID.randomUUID()).build());
         var profile = mapper.createObjectNode();
@@ -182,9 +182,18 @@ class RuntimeStudioServiceTest {
 
         var finished = service.finish(id);
         assertEquals("COMPLETED", finished.path("executionStatus").asText());
-        assertEquals("CONFIRMED", finished.path("cleanupStatus").asText());
-        assertTrue(session.hasVerifiedStudioEvidence());
-        assertFalse(session.getStudioControl().path("receiptSignature").asText("").isBlank());
+        assertEquals("NOT_APPLICABLE", finished.path("cleanupStatus").asText());
+        assertFalse(session.hasVerifiedStudioEvidence());
+        assertFalse(session.getStudioControl().has("receiptSignature"));
+        assertEquals("NOT_RUN", session.getScenarioStatus());
+        assertEquals("UNAVAILABLE", session.getEvidenceStatus());
+        // Previously persisted simulation receipts must also fail the shared evidence guard.
+        session.setScenarioStatus("PASSED");
+        session.setEvidenceStatus("AVAILABLE");
+        session.setCleanupStatus("CONFIRMED");
+        session.setSandboxEnforcementConfirmed(true);
+        session.setTraceQuality("SIMULATED_VERIFIED");
+        assertFalse(session.hasVerifiedStudioEvidence());
     }
 
     @Test void failedSessionWithUnmappedTopologyBlockStillReturnsReadableState() throws Exception {
