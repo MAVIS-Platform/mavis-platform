@@ -645,7 +645,10 @@ public class SubmissionServiceImpl implements SubmissionService {
         var releasedReview = submissionReviewRepository.findBySubmissionId(submissionId).filter(r -> !"DRAFT".equals(r.getStatus()));
         if (releasedReview.isPresent()) {
             var review = releasedReview.get();
-            markdownReport += "\n## Lecturer review\n- Status: " + review.getStatus() + "\n- Lecturer score /100: " + review.getScore() + "\n\n" + review.getSummary() + "\n";
+            var tenScore = SubmissionReviewService.toTenScale(review.getScore());
+            markdownReport += "\n## Lecturer review\n- Status: " + review.getStatus()
+                    + "\n- Lecturer score (0-10): " + (tenScore != null ? tenScore + " / 10" : "N/A")
+                    + " (equivalent " + review.getScore() + "/100)\n\n" + review.getSummary() + "\n";
         }
 
         var assignment = submission.getAssignment();

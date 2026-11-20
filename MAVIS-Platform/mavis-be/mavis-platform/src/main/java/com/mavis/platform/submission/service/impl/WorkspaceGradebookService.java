@@ -46,6 +46,7 @@ public class WorkspaceGradebookService {
             String submissionStatus,
             String reviewStatus,
             Double reviewScore,
+            Double reviewScoreTenScale,
             String labOutcome,
             OffsetDateTime submittedAt,
             OffsetDateTime gradedAt) {}
@@ -57,6 +58,7 @@ public class WorkspaceGradebookService {
             int completedLabsCount,
             int totalLabsCount,
             Double averageScore,
+            Double averageScoreTenScale,
             List<GradebookCellDTO> cells) {}
 
     public record WorkspaceGradebookDTO(
@@ -185,6 +187,7 @@ public class WorkspaceGradebookService {
 
                 String reviewStatus = review != null && review.getStatus() != null ? review.getStatus() : "PENDING";
                 Double reviewScore = review != null && review.getScore() != null ? review.getScore().doubleValue() : null;
+                Double reviewScoreTenScale = toTenScale(reviewScore);
                 String labOutcome = resolveOutcome(review, reviewStatus, reviewScore);
 
                 if ("PASSED".equals(labOutcome)) {
@@ -203,12 +206,14 @@ public class WorkspaceGradebookService {
                         sub != null ? "SUBMITTED" : "NOT_SUBMITTED",
                         sub != null ? reviewStatus : "NOT_SUBMITTED",
                         reviewScore,
+                        reviewScoreTenScale,
                         sub != null ? labOutcome : "PENDING",
                         sub != null ? sub.getSubmittedAt() : null,
                         review != null ? review.getUpdatedAt() : null));
             }
 
             Double averageScore = scoredCount > 0 ? Math.round((scoreSum / scoredCount) * 100.0) / 100.0 : null;
+            Double averageScoreTenScale = toTenScale(averageScore);
             rows.add(new GradebookStudentRowDTO(
                     student.getId(),
                     student.getFullName(),
@@ -216,10 +221,18 @@ public class WorkspaceGradebookService {
                     completedLabsCount,
                     totalLabs,
                     averageScore,
+                    averageScoreTenScale,
                     cells));
         }
 
         return new WorkspaceGradebookDTO(workspace.getId(), workspace.getName(), columns, rows);
+    }
+
+    private static Double toTenScale(Double scoreOutOf100) {
+        if (scoreOutOf100 == null) {
+            return null;
+        }
+        return Math.round((scoreOutOf100 / 10.0) * 100.0) / 100.0;
     }
 
     private static String resolveOutcome(SubmissionReview review, String reviewStatus, Double reviewScore) {
