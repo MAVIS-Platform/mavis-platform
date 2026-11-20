@@ -241,6 +241,30 @@ class RuntimePlanningServiceTest {
     }
 
     @Test
+    void rejectsSavedComposeThatDoesNotMeetRunnerRequirementsBeforeCreatingSession() {
+        var configuration = savedConfig("orders-api");
+        ((ObjectNode) configuration.getProfile()).put("sandboxCompose", """
+                services:
+                  orders-api:
+                    image: mavis/orders-api:curated
+                """);
+        ReflectionTestUtils.setField(planningService, "composeValidator", new ComposePreflightValidator());
+        when(projects.findLockedById(projectId)).thenReturn(Optional.of(project));
+        when(configurations.findById(projectId)).thenReturn(Optional.of(configuration));
+        var scenarioId = savedScenario("orders-api");
+        when(runtime.runComposePreflight(snapshotId)).thenReturn(
+                PreflightCheckResponseDTO.builder().compatible(true).build());
+
+        assertThatThrownBy(() -> planningService.start(projectId,
+                new StartRequest(snapshotId, scenarioId, 1, 1, true, null)))
+                .isInstanceOfSatisfying(com.mavis.common.exception.BusinessException.class, failure -> {
+                    assertThat(failure.getStableCode()).isEqualTo("PREFLIGHT_FAILED");
+                    assertThat(failure.getErrorCode()).isEqualTo(com.mavis.common.exception.ErrorCode.UNPROCESSABLE_ENTITY);
+                });
+        verify(runtime, org.mockito.Mockito.never()).createRuntimeSession(any());
+    }
+
+    @Test
     void guidedStudioRejectsMissingFrozenTopologyEvenIfReferenceProfileHasTopology() {
         var referenceProject = Project.builder().id(UUID.randomUUID()).build();
         var reference = SourceSnapshot.builder().id(UUID.randomUUID())
@@ -399,7 +423,10 @@ class RuntimePlanningServiceTest {
                 .build());
 
         assertThatThrownBy(() -> planningService.start(projectId, new StartRequest(snapshotId, scenarioId, 1, 1, true, null)))
-                .hasMessageContaining("uses build:");
+                .isInstanceOfSatisfying(com.mavis.common.exception.BusinessException.class, failure -> {
+                    assertThat(failure.getStableCode()).isEqualTo("PREFLIGHT_FAILED");
+                    assertThat(failure.getErrorCode()).isEqualTo(com.mavis.common.exception.ErrorCode.UNPROCESSABLE_ENTITY);
+                });
         verify(runtime, org.mockito.Mockito.never()).createRuntimeSession(any());
     }
 

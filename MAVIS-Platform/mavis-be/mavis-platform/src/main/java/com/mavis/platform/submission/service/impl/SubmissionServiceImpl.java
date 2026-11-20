@@ -257,7 +257,7 @@ public class SubmissionServiceImpl implements SubmissionService {
             if (requiresRuntime && (runtimeSession == null || !runtimeSession.hasVerifiedStudioEvidence()
                     || (modelVersion.getRuntimeSession() == null && (runtimeSession.getModelVersion() == null
                         || !modelVersion.getId().equals(runtimeSession.getModelVersion().getId()))))) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "STEP_4_SIGNED_RUNTIME_RECEIPT");
+                throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "STEP_4_SIGNED_RUNTIME_RECEIPT", "STEP_4_SIGNED_RUNTIME_RECEIPT");
             }
         }
 
@@ -367,7 +367,7 @@ public class SubmissionServiceImpl implements SubmissionService {
         JsonNode studioEvidence = null;
         if (studioMode) {
             if (request.getRuntimeSessionId() == null) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "STUDIO_SESSION_REQUIRED");
+                throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "STUDIO_SESSION_REQUIRED", "STUDIO_SESSION_REQUIRED");
             }
             runtimeSession = runtimeSessionRepository.findById(request.getRuntimeSessionId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Studio session not found"));
@@ -400,14 +400,14 @@ public class SubmissionServiceImpl implements SubmissionService {
                         "Studio session source/model does not match this Lab");
             }
             if (!runtimeSession.hasVerifiedStudioEvidence()) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "STUDIO_EVIDENCE_REQUIRED");
+                throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "STUDIO_EVIDENCE_REQUIRED", "STUDIO_EVIDENCE_REQUIRED");
             }
             studioEvidence = freezeStudioEvidence(runtimeSession, false);
             if (studioEvidence == null) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "STUDIO_EVIDENCE_REQUIRED");
+                throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "STUDIO_EVIDENCE_REQUIRED", "STUDIO_EVIDENCE_REQUIRED");
             }
             if (studioEvidence.path("snapshots").isEmpty()) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "STUDIO_SNAPSHOT_REQUIRED");
+                throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "STUDIO_SNAPSHOT_REQUIRED", "STUDIO_SNAPSHOT_REQUIRED");
             }
         }
 
@@ -427,8 +427,12 @@ public class SubmissionServiceImpl implements SubmissionService {
             for (JsonNode captured : studioEvidence.path("snapshots")) {
                 String captureId = captured.path("id").asText("");
                 String explanation = captured.path("explanation").asText("");
-                if (captureId.isBlank() || !captureIds.add(captureId) || explanation.isBlank()) {
+                if (captureId.isBlank() || !captureIds.add(captureId)) {
                     throw new BusinessException(ErrorCode.BAD_REQUEST, "STUDIO_SNAPSHOT_EVIDENCE_INVALID");
+                }
+                if (explanation.isBlank()) {
+                    throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,
+                            "STUDIO_SNAPSHOT_EVIDENCE_INVALID", "STUDIO_SNAPSHOT_EVIDENCE_INVALID");
                 }
                 snapshots.add(StudentSnapshotItemDTO.builder()
                         .snapshotId("STUDIO_" + captureId)
@@ -769,7 +773,7 @@ public class SubmissionServiceImpl implements SubmissionService {
                 || (requireSnapshots && (!control.path("snapshots").isArray() || control.path("snapshots").isEmpty()))
                 || !runtime.hasVerifiedStudioEvidence()
                 || control.path("receiptSignature").asText("").isBlank()) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "STEP_4_SIGNED_RUNTIME_RECEIPT");
+            throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "STEP_4_SIGNED_RUNTIME_RECEIPT", "STEP_4_SIGNED_RUNTIME_RECEIPT");
         }
         var evidence = com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode()
                 .put("sessionId", runtime.getId().toString()).put("receiptDigest", runtime.getReceiptDigest());
@@ -790,7 +794,7 @@ public class SubmissionServiceImpl implements SubmissionService {
             for (JsonNode capture : studioEvidence.path("snapshots")) {
                 String id = capture.path("id").asText("");
                 if (id.isBlank() || !required.add(id) || capture.path("explanation").asText("").isBlank()) {
-                    throw new BusinessException(ErrorCode.BAD_REQUEST, "STEP_4_SIGNED_RUNTIME_RECEIPT");
+                    throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "STEP_4_SIGNED_RUNTIME_RECEIPT", "STEP_4_SIGNED_RUNTIME_RECEIPT");
                 }
                 capturedById.put(id, capture);
             }

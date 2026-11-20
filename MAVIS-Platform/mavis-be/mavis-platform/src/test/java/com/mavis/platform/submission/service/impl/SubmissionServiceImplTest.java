@@ -1161,14 +1161,23 @@ class SubmissionServiceImplTest {
                 .build();
 
         assertThatThrownBy(() -> submissionService.submitAssignment(request))
-                .isInstanceOf(BusinessException.class).hasMessageContaining("STUDIO_SNAPSHOT_REQUIRED");
+                .isInstanceOfSatisfying(BusinessException.class, failure -> {
+                    assertThat(failure.getErrorCode()).isEqualTo(com.mavis.common.exception.ErrorCode.UNPROCESSABLE_ENTITY);
+                    assertThat(failure.getMessage()).contains("STUDIO_SNAPSHOT_REQUIRED");
+                });
         var capture = captures.addObject().put("id", "capture-1").put("title", "Scale observation");
         assertThatThrownBy(() -> submissionService.submitAssignment(request))
-                .isInstanceOf(BusinessException.class).hasMessageContaining("STUDIO_SNAPSHOT_EVIDENCE_INVALID");
+                .isInstanceOfSatisfying(BusinessException.class, failure -> {
+                    assertThat(failure.getErrorCode()).isEqualTo(com.mavis.common.exception.ErrorCode.UNPROCESSABLE_ENTITY);
+                    assertThat(failure.getMessage()).contains("STUDIO_SNAPSHOT_EVIDENCE_INVALID");
+                });
         capture.put("explanation", "Orders scaled from one replica to two.");
         captures.add(capture.deepCopy());
         assertThatThrownBy(() -> submissionService.submitAssignment(request))
-                .isInstanceOf(BusinessException.class).hasMessageContaining("STUDIO_SNAPSHOT_EVIDENCE_INVALID");
+                .isInstanceOfSatisfying(BusinessException.class, failure -> {
+                    assertThat(failure.getErrorCode()).isEqualTo(com.mavis.common.exception.ErrorCode.BAD_REQUEST);
+                    assertThat(failure.getMessage()).contains("STUDIO_SNAPSHOT_EVIDENCE_INVALID");
+                });
         verify(submissionSnapshotRepository, never()).save(any());
         captures.remove(1);
 

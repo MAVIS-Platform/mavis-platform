@@ -12,6 +12,7 @@ import com.mavis.common.security.AccessPolicyService;
 import com.mavis.common.security.CourseLabPolicy;
 import com.mavis.platform.assignment.service.LabReferenceArchive;
 import com.mavis.platform.workspace.service.CourseAccessService;
+import com.mavis.platform.workspace.service.CoursePasskeyFailureRecorder;
 import com.mavis.platform.workspace.service.CourseProgressionService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
@@ -55,7 +56,7 @@ class CourseAccessPostgresTest {
             });
             var policy = new CourseLabPolicy(jdbc);
             var courses = new CourseAccessService(access, workspaces, assignments, policy, jdbc,
-                    mock(LabReferenceArchive.class), mock(com.mavis.common.repository.RuntimeConfigurationRepository.class));
+                    mock(LabReferenceArchive.class), mock(com.mavis.common.repository.RuntimeConfigurationRepository.class), failureRecorder(jdbc, tx));
             var progression = new CourseProgressionService(jdbc, workspaces);
             assertEquals(ErrorCode.BAD_REQUEST, assertThrows(BusinessException.class,
                     () -> progression.recordFinalizedResult(null, 0, true)).getErrorCode());
@@ -227,6 +228,43 @@ class CourseAccessPostgresTest {
 
     private static UUID id(JdbcTemplate jdbc, String sql, Object... args) {
         return jdbc.queryForObject(sql, UUID.class, args);
+    }
+
+    @Test
+    void rejectedEnrollmentCommitsOnlyTheFailureCounter() throws Exception {
+        withDatabase((jdbc, tx) -> {
+            UUID studentId = user(jdbc, "STUDENT", "rate-limit@example.invalid");
+            var access = mock(AccessPolicyService.class);
+            when(access.requireCurrentActiveUser()).thenReturn(User.builder()
+                    .id(studentId).role(Role.builder().code("STUDENT").build()).build());
+            var courses = transactional(new CourseAccessService(access, mock(WorkspaceRepository.class),
+                    mock(AssignmentRepository.class), new CourseLabPolicy(jdbc), jdbc,
+                    mock(LabReferenceArchive.class), mock(com.mavis.common.repository.RuntimeConfigurationRepository.class),
+                    failureRecorder(jdbc, tx)), tx, CourseAccessService.class);
+
+            for (int attempt = 1; attempt <= 5; attempt++) {
+                assertEquals(ErrorCode.BAD_REQUEST, assertThrows(BusinessException.class,
+                        () -> courses.redeem("", UUID.randomUUID())).getErrorCode());
+                assertEquals(attempt, jdbc.queryForObject(
+                        "SELECT attempts FROM auth_rate_limits WHERE scope = 'PASSKEY'", Integer.class));
+            }
+            assertEquals(ErrorCode.TOO_MANY_REQUESTS, assertThrows(BusinessException.class,
+                    () -> courses.redeem("", UUID.randomUUID())).getErrorCode());
+            assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM workspace_members WHERE user_id = ?", Integer.class, studentId));
+        });
+    }
+
+    private static CoursePasskeyFailureRecorder failureRecorder(JdbcTemplate jdbc, TransactionTemplate tx) {
+        return transactional(new CoursePasskeyFailureRecorder(jdbc), tx, CoursePasskeyFailureRecorder.class);
+    }
+
+    private static <T> T transactional(T target, TransactionTemplate tx, Class<T> type) {
+        var factory = new org.springframework.aop.framework.ProxyFactory(target);
+        factory.setProxyTargetClass(true);
+        factory.addAdvice(new org.springframework.transaction.interceptor.TransactionInterceptor(
+                tx.getTransactionManager(),
+                new org.springframework.transaction.annotation.AnnotationTransactionAttributeSource()));
+        return type.cast(factory.getProxy());
     }
 
     private void withDatabase(DatabaseTest body) throws Exception {

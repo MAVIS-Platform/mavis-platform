@@ -137,4 +137,20 @@ class SubmissionReviewServiceTest {
   verify(reviews, never()).saveAndFlush(any());
   verifyNoInteractions(courseProgression);
  }
+
+ @Test
+ void detachedCatalogLabStillRequiresGradesForEveryFrozenSnapshot() {
+  var json = com.fasterxml.jackson.databind.node.JsonNodeFactory.instance;
+  submission.setCourseQuizEvidence(json.objectNode().put("status", "PASSED"));
+  var snapshots = json.arrayNode();
+  snapshots.addObject().put("snapshotId", "THEORY");
+  submission.setStudentSnapshots(snapshots);
+  when(access.requireCurrentActiveUser()).thenReturn(teacher);
+  when(reviews.findBySubmissionId(id)).thenReturn(Optional.empty());
+
+  assertThatThrownBy(() -> service.save(id,
+          new SubmissionReviewService.Save(0, "GRADED", BigDecimal.TEN, "Legacy Lab review")))
+          .isInstanceOf(BusinessException.class).hasMessageContaining("SNAPSHOT_GRADES_INCOMPLETE");
+  verify(reviews, never()).saveAndFlush(any());
+ }
 }

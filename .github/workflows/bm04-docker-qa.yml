@@ -1,0 +1,54 @@
+name: BM04 real Docker QA
+
+on:
+  push:
+    branches: [chore/be-regression-verify]
+
+permissions:
+  contents: read
+
+jobs:
+  studio:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_DB: mavis_studio_qa
+          POSTGRES_USER: mavis_studio_qa
+          POSTGRES_PASSWORD: studio_qa_fixture_only
+        ports: ['15438:5432']
+        options: >-
+          --health-cmd "pg_isready -U mavis_studio_qa -d mavis_studio_qa"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      MAVIS_DB_URL: jdbc:postgresql://127.0.0.1:15438/mavis_studio_qa
+      MAVIS_DB_USERNAME: mavis_studio_qa
+      MAVIS_DB_PASSWORD: studio_qa_fixture_only
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: MAVIS.Worker/global.json
+      - name: Build the curated Studio Docker fixture
+        id: prepare
+        run: pwsh -NoProfile -File MAVIS.Worker/samples/runtime-poc/Initialize-Poc.ps1
+      - name: Run the Java to Runner Docker acceptance test
+        working-directory: MAVIS-Platform/mavis-be
+        run: |
+          export MAVIS_MANAGED_DOCKER_TEST_ROOT="$GITHUB_WORKSPACE/MAVIS.Worker/samples/runtime-poc"
+          bash mvnw -B -ntp -pl mavis-bootstrap -am \
+            '-Dtest=RuntimeStudioApiIntegrationTest#realManagedDotnetRunnerAndDockerFullStackStudioFlow' \
+            -Dsurefire.failIfNoSpecifiedTests=false test
+      - name: Run the managed Docker integration tests
+        if: ${{ !cancelled() && steps.prepare.outcome == 'success' }}
+        run: |
+          export MAVIS_MANAGED_DOCKER_TEST_ROOT="$GITHUB_WORKSPACE/MAVIS.Worker/samples/runtime-poc"
+          dotnet test MAVIS.Worker/tests/MAVIS.Worker.Tests/MAVIS.Worker.Tests.csproj \
+            --configuration Release --filter FullyQualifiedName~ManagedDockerRuntimeTests

@@ -140,6 +140,9 @@ class RuntimeStudioServiceTest {
     }
 
     @Test void finishRequiresConfirmedActionAndThenCloses() {
+        var incomplete = assertThrows(BusinessException.class, () -> service.finish(id));
+        assertEquals(com.mavis.common.exception.ErrorCode.UNPROCESSABLE_ENTITY, incomplete.getErrorCode());
+        assertEquals("INCOMPLETE_SCENARIO", incomplete.getStableCode());
         UUID actionId = UUID.randomUUID();
         service.submit(id, new RuntimeStudioService.ActionRequest(actionId, "START", "orders", null));
         assertThrows(BusinessException.class, () -> service.finish(id));

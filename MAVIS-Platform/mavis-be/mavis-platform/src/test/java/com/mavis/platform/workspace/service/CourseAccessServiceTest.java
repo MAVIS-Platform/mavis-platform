@@ -44,7 +44,7 @@ class CourseAccessServiceTest {
     private final RuntimeConfigurationRepository configurations = mock(RuntimeConfigurationRepository.class);
     private final CourseAccessService courses = new CourseAccessService(
             access, workspaces, assignments, mock(CourseLabPolicy.class), jdbc, referenceArchive,
-            configurations);
+            configurations, new com.mavis.platform.workspace.service.CoursePasskeyFailureRecorder(jdbc));
 
     @Test
     void publishesPinnedAssignmentOnceAndEnablesGuidedCourse() {

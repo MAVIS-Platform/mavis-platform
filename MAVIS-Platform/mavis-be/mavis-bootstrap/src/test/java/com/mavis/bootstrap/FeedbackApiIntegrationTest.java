@@ -162,6 +162,7 @@ class FeedbackApiIntegrationTest extends ApiIntegrationContext {
                 .build());
 
         SubmissionSnapshot submission = submissionSnapshotRepository.save(SubmissionSnapshot.builder()
+                .evidencePackageDigest("sha256:" + "a".repeat(64))
                 .assignment(assignment)
                 .project(project)
                 .submittedBy(student)

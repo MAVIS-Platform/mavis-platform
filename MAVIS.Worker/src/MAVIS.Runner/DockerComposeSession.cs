@@ -43,7 +43,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             string.IsNullOrWhiteSpace(definition.RunConfigurationVersionId) || string.IsNullOrWhiteSpace(definition.ScenarioVersionId))
             throw new ArgumentException("Invalid session provenance or operator state root.");
         var preflight = ComposePreflight.Check(definition.ComposeYaml);
-        if (!preflight.Compatible) throw new ArgumentException("Compose preflight rejected this execution profile.");
+        if (!preflight.Compatible) throw new RuntimeStageException("PREFLIGHT_FAILED");
         ValidateStudioTopology();
         _ = ComposeOverrideBuilder.Build(preflight, definition.Profile, Path.Combine(Path.GetFullPath(stateRoot), "validate", "collector.yaml"), secrets);
         if (!PinnedRunnerImage(definition.Profile.ScenarioRunnerImage)) throw new ArgumentException("A content-addressed scenario runner image is required.");
@@ -102,8 +102,21 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             if (inspected.ExitCode != 0 || !inspected.StandardOutput.Trim().StartsWith("sha256:", StringComparison.Ordinal))
                 throw new RuntimeStageException("IMAGE_PROVENANCE_UNAVAILABLE");
             ActualImageIds[service] = inspected.StandardOutput.Trim();
-            if (preflight.PinnedImages?.GetValueOrDefault(service) is { } requested &&
-                PinnedDigest(requested) != ActualImageIds[service])
+            var requested = service == "mavis-collector"
+                ? definition.Profile.CollectorImage
+                : preflight.PinnedImages?.GetValueOrDefault(service);
+            if (requested is null) throw new RuntimeStageException("IMAGE_SOURCE_CORRESPONDENCE_UNCONFIRMED");
+            // Registry pins identify manifests. Docker reports a config image ID on each container.
+            // Resolve the exact pinned reference locally before comparing the two image IDs.
+            var expectedImageId = requested;
+            if (!requested.StartsWith("sha256:", StringComparison.Ordinal))
+            {
+                var image = await docker.RunAsync(["image", "inspect", "--format", "{{.Id}}", requested], _directory, 10, ct);
+                if (image.ExitCode != 0 || !image.StandardOutput.Trim().StartsWith("sha256:", StringComparison.Ordinal))
+                    throw new RuntimeStageException("IMAGE_PROVENANCE_UNAVAILABLE");
+                expectedImageId = image.StandardOutput.Trim();
+            }
+            if (!StringComparer.Ordinal.Equals(expectedImageId, ActualImageIds[service]))
                 throw new RuntimeStageException("IMAGE_ID_MISMATCH");
             var config = await docker.RunAsync(["inspect", "--format", "{{json .HostConfig}}", id], _directory, 10, ct);
             if (config.ExitCode != 0) throw new RuntimeStageException("SANDBOX_ENFORCEMENT_UNCONFIRMED");
@@ -122,21 +135,12 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
         }
         var network = await docker.RunAsync(["network", "inspect", ResourceProject + "_default", "--format", "{{.Internal}}"], _directory, 10, ct);
         if (network.ExitCode != 0 || network.StandardOutput.Trim() != "true") throw new RuntimeStageException("INTERNAL_NETWORK_UNCONFIRMED");
-        var collectorDigest = definition.Profile.CollectorImage.Split('@').LastOrDefault();
-        ImageSourceCorrespondenceVerified = preflight.Services.All(service =>
-                preflight.PinnedImages?.GetValueOrDefault(service) is { } requested &&
-                ActualImageIds.GetValueOrDefault(service) == PinnedDigest(requested)) &&
-            collectorDigest?.StartsWith("sha256:", StringComparison.Ordinal) == true &&
-            ActualImageIds.GetValueOrDefault("mavis-collector") == collectorDigest;
-        if (!ImageSourceCorrespondenceVerified) throw new RuntimeStageException("IMAGE_SOURCE_CORRESPONDENCE_UNCONFIRMED");
+        ImageSourceCorrespondenceVerified = true;
         SandboxEnforcementConfirmed = true;
         foreach (var app in definition.Profile.Applications)
             _endpoints[app.Key] = new Uri($"http://{app.Key}:{app.Value.ContainerPort}");
         _endpoints["mavis-collector"] = new Uri("http://mavis-collector:13133");
 
-        static string PinnedDigest(string image) => image.StartsWith("sha256:", StringComparison.Ordinal)
-            ? image
-            : "sha256:" + image.Split("@sha256:").Last();
     }
 
     public async Task WaitUntilReadyAsync(CancellationToken ct)

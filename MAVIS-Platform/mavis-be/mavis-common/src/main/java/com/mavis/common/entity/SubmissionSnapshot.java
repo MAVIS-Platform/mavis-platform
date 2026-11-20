@@ -79,4 +79,11 @@ public class SubmissionSnapshot {
     @CreationTimestamp
     @Column(name = "submitted_at", nullable = false, updatable = false)
     private OffsetDateTime submittedAt;
+
+    public boolean isGuidedLab() {
+        if (assignment != null && assignment.getLabOrder() != null) return true;
+        if (courseQuizEvidence == null) return false;
+        String status = courseQuizEvidence.path("status").asText();
+        return "PASSED".equals(status) || "NOT_REQUIRED".equals(status);
+    }
 }

@@ -230,16 +230,16 @@ class EvaluationApiIntegrationTest extends ApiIntegrationContext {
         double score = evalNode.get("data").get("complianceScore").asDouble();
         System.out.println(">>> Compliance Score tính toán được: " + score);
 
-        // Kiểm tra kết quả 5 quy tắc:
+        // Năm quy tắc tạo sáu finding, gồm hai kết quả riêng của RULE-04.
         // RULE-01 vi phạm (-20)
         // RULE-02 vi phạm (-10)
         // RULE-03 needs review (-5)
-        // RULE-04 vi phạm (-10)
+        // RULE-04 vi phạm (-10) và một finding chỉ có metadata (-5)
         // RULE-05 needs review (-5)
-        // Score = 100 - 20 - 10 - 5 - 10 - 5 = 50.0
-        assertThat(score).isEqualTo(50.0);
+        // Score = 100 - 20 - 10 - 5 - 10 - 5 - 5 = 45.0
+        assertThat(score).isEqualTo(45.0);
         assertThat(evalNode.get("data").get("summaryMetrics").get("violationCount").asInt()).isEqualTo(3);
-        assertThat(evalNode.get("data").get("summaryMetrics").get("needsReviewCount").asInt()).isEqualTo(2);
+        assertThat(evalNode.get("data").get("summaryMetrics").get("needsReviewCount").asInt()).isEqualTo(3);
         assertThat(evalNode.get("data").get("summaryMetrics").get("passedCount").asInt()).isEqualTo(0);
         assertThat(evalNode.path("data").path("ruleSetVersion").asText()).isEqualTo("3e-3");
 
@@ -280,7 +280,11 @@ class EvaluationApiIntegrationTest extends ApiIntegrationContext {
         System.out.println(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(getFindingsNode));
 
         JsonNode findingsArray = getFindingsNode.get("data");
-        assertThat(findingsArray.size()).isEqualTo(5);
+        assertThat(findingsArray.size()).isEqualTo(6);
+        assertThat(java.util.stream.StreamSupport.stream(findingsArray.spliterator(), false)
+                .filter(finding -> "RULE-04".equals(finding.path("ruleId").asText()))
+                .map(finding -> finding.path("status").asText()).toList())
+                .containsExactlyInAnyOrder("VIOLATION", "NEEDS_REVIEW");
 
         JsonNode sharedFinding = null;
         for (JsonNode finding : findingsArray) {
