@@ -214,6 +214,9 @@ public sealed class RunnerComponentTests
             values));
         Assert.Equal("true", javaOverride.RootElement.GetProperty("services").GetProperty("node-api").GetProperty("environment").GetProperty("OTEL_JAVAAGENT_ENABLED").GetString());
         Assert.Equal("false", javaOverride.RootElement.GetProperty("services").GetProperty("node-api").GetProperty("environment").GetProperty("MANAGEMENT_HEALTH_MAIL_ENABLED").GetString());
+        var javaEnvironment = javaOverride.RootElement.GetProperty("services").GetProperty("node-api").GetProperty("environment");
+        Assert.False(javaEnvironment.TryGetProperty("MANAGEMENT_ENDPOINT_HEALTH_STATUS_HTTP_MAPPING_DOWN", out _));
+        Assert.False(javaEnvironment.TryGetProperty("MANAGEMENT_ENDPOINT_HEALTH_STATUS_HTTP_MAPPING_OUT_OF_SERVICE", out _));
         Assert.Equal("node_secret_1", nodeEnv.GetProperty("DB_PASSWORD").GetString());
         Assert.Equal("order_secret_2", overrideDoc.RootElement.GetProperty("services").GetProperty("order-svc").GetProperty("environment").GetProperty("DB_PASSWORD").GetString());
         Assert.False(overrideDoc.RootElement.GetProperty("volumes").TryGetProperty("mavis-instrumentation", out _));
