@@ -33,6 +33,7 @@ import com.mavis.platform.workspace.curriculum.CourseraCurriculumModels.LessonSp
 import com.mavis.platform.workspace.curriculum.CourseraCurriculumModels.RubricCriterion;
 import com.mavis.platform.workspace.curriculum.CsharpCourseraCatalog;
 import com.mavis.platform.workspace.curriculum.JavaCourseraCatalog;
+import com.mavis.platform.workspace.curriculum.V2CurriculumJsonLoader;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -373,7 +374,8 @@ public class CourseLabSeederService {
         List<Assignment> matchedByIndex = new ArrayList<>(catalogModules.size());
         for (CourseraModuleSpec modSpec : catalogModules) {
             Assignment match = existingLabs.stream()
-                    .filter(a -> modSpec.labTitle().equals(a.getTitle()))
+                    .filter(a -> modSpec.labTitle().equals(a.getTitle())
+                            || V2CurriculumJsonLoader.isSameLabTitle(modSpec.labTitle(), a.getTitle()))
                     .filter(a -> a.getId() == null || !matchedIds.contains(a.getId()))
                     .findFirst()
                     .orElse(null);
@@ -448,8 +450,11 @@ public class CourseLabSeederService {
                             .studioTopologyRevision(1);
                 }
                 match = assignments.saveAndFlush(labBuilder.build());
-            } else if (!Integer.valueOf(targetOrder).equals(match.getLabOrder())) {
+            } else if (!Integer.valueOf(targetOrder).equals(match.getLabOrder())
+                    || !modSpec.labTitle().equals(match.getTitle())
+                    || !modSpec.labDescription().equals(match.getDescription())) {
                 match.setLabOrder(targetOrder);
+                match.setTitle(modSpec.labTitle());
                 match.setDescription(modSpec.labDescription());
                 match = assignments.saveAndFlush(match);
             }

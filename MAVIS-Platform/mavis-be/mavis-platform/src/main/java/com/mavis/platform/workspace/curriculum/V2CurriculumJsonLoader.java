@@ -19,10 +19,29 @@ import java.util.stream.Collectors;
  * Shared loader mapping V2 chapters from classpath {@code curriculum/java-csharp-v1.json}
  * into Coursera catalog specs for both Java 21 and C# .NET 8 tracks.
  */
-final class V2CurriculumJsonLoader {
+public final class V2CurriculumJsonLoader {
+    private static final java.util.regex.Pattern LEADING_LAB_PREFIX =
+            java.util.regex.Pattern.compile("^(?:Lab\\s*0?\\d+(?:\\s*\\([^)]*\\))?\\s*[·:\\-]\\s*)+",
+                    java.util.regex.Pattern.CASE_INSENSITIVE);
     private static final Map<String, CourseCurriculum.Chapter> CHAPTERS_BY_ID = loadAll();
 
     private V2CurriculumJsonLoader() {}
+
+    public static String stripLabPrefix(String title) {
+        if (title == null) {
+            return "";
+        }
+        return LEADING_LAB_PREFIX.matcher(title.trim()).replaceFirst("").trim();
+    }
+
+    public static boolean isSameLabTitle(String left, String right) {
+        if (left == null || right == null) {
+            return false;
+        }
+        String a = stripLabPrefix(left);
+        String b = stripLabPrefix(right);
+        return !a.isEmpty() && a.equalsIgnoreCase(b);
+    }
 
     private static Map<String, CourseCurriculum.Chapter> loadAll() {
         ObjectMapper mapper = new ObjectMapper();

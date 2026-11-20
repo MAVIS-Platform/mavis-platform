@@ -62,7 +62,7 @@ public final class JavaCourseraCatalog {
                 1,
                 "Module 1 · Nền Tảng Kiến Trúc Microservices, DDD & Java 21 / Spring Boot 3",
                 "Làm chủ Scale Cube, C4 Model (C1–C3), phân rã Bounded Context với DDD và thiết kế Microservice chuẩn C3 với Java 21 Record + Spring Boot 3.",
-                "Lab 01 · Mộc Hương Shop C1–C3 Decomposition & DTO Boundaries",
+                "Mộc Hương Shop C1–C3 Decomposition & DTO Boundaries",
                 "Khám phá kiến trúc C1–C3 của hệ thống Mộc Hương Shop, phân rã Bounded Context (Catalog, Order, Inventory) và kiểm chứng ranh giới Record DTO.",
                 "java-v2-ch01",
                 List.of(
@@ -108,7 +108,7 @@ public final class JavaCourseraCatalog {
                 2,
                 "Module 2 · Service Discovery, API Gateway JWT & Giao Tiếp Đồng Bộ Reverse BFS",
                 "Triển khai Eureka Discovery, Externalized Config Zero Secret Leaks, Spring Cloud Gateway + JWT RBAC, OpenFeign và thuật toán Reverse BFS.",
-                "Lab 02 · API Gateway Routing, OpenFeign Call Sites & Cycle-Safe Reverse BFS",
+                "API Gateway Routing, OpenFeign Call Sites & Cycle-Safe Reverse BFS",
                 "Phân tích chuỗi gọi đồng bộ từ api-gateway -> order-service -> catalog-service và tính toán vùng ảnh hưởng Direct/Indirect Callers bằng Reverse BFS.",
                 "java-v2-ch04",
                 List.of(
@@ -154,7 +154,7 @@ public final class JavaCourseraCatalog {
                 3,
                 "Module 3 · Database-per-Service, Apache Kafka Outbox & Giao Dịch Phân Tán Saga",
                 "Loại bỏ Anti-Pattern Shared Database, triển khai CQRS/API Composition, Kafka Idempotency + Transactional Outbox và Saga Choreography/Orchestration.",
-                "Lab 03 · Shared DB Audit, Kafka Outbox & Saga Compensation Flows",
+                "Shared DB Audit, Kafka Outbox & Saga Compensation Flows",
                 "Kiểm tra ranh giới Database độc lập của Mộc Hương Shop và mô phỏng chuỗi sự kiện Order -> Catalog/Inventory -> Notification.",
                 "java-v2-ch07",
                 List.of(
@@ -200,7 +200,7 @@ public final class JavaCourseraCatalog {
                 4,
                 "Module 4 · Khả Năng Chịu Lỗi (Resilience4j) & Quan Sát Hệ Thống (OpenTelemetry)",
                 "Áp dụng Timeout, Retry có Exponential Backoff, Circuit Breaker & Bulkhead bằng Resilience4j cùng Actuator + OpenTelemetry Distributed Tracing.",
-                "Lab 04 · Resilience4j Chaos Stop Container & OpenTelemetry W3C Traceparent",
+                "Resilience4j Chaos Stop Container & OpenTelemetry W3C Traceparent",
                 "Thực hiện thí nghiệm Chaos: dừng payment-service trên MAVIS Studio, quan sát Circuit Breaker chuyển OPEN và đối chiếu Latency p95 Trước/Sau.",
                 "java-v2-ch10",
                 List.of(
@@ -243,7 +243,7 @@ public final class JavaCourseraCatalog {
                 5,
                 "Module 5 · Đóng Gói Docker Compose, Testing Pyramid & Capstone Mộc Hương Shop",
                 "Đóng gói Multi-Stage Dockerfile Java 21 Non-Root, hoàn thiện chiến lược Testcontainers & Contract Testing và đối soát 10 tiêu chí Production-Ready.",
-                "Lab 05 · Mộc Hương Shop Scale 1→8 Replicas & Production-Readiness Audit",
+                "Mộc Hương Shop Scale 1→8 Replicas & Production-Readiness Audit",
                 "Mở rộng replica order-service trên MAVIS Studio (1 -> 4+ instances), kiểm tra Load Balancing round-robin và hoàn tất Production-Readiness Checklist.",
                 "java-v2-ch12",
                 List.of(
