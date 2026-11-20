@@ -21,7 +21,7 @@ jobs:
             commit: a0476f8c278c556a128c820b763a29e0b767f800
             service-count: 4
     env:
-      MAVIS_CURATED_SOURCE_ROOT: ${{ runner.temp }}/mavis-curated-source
+      MAVIS_CURATED_SOURCE_ROOT: /tmp/mavis-curated-source
       MAVIS_CURATED_SERVICE_COUNT: ${{ matrix.service-count }}
       CURATED_REPOSITORY: ${{ matrix.repository }}
       CURATED_COMMIT: ${{ matrix.commit }}
