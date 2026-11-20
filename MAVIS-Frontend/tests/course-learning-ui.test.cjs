@@ -1472,13 +1472,13 @@ test("Round 6 reuses core ArchitecturePresentation in Lab Creation, fixes Step 2
   assert.doesNotMatch(curriculumMgr, /2D Studio/);
 });
 
-test("Lecturer Studio Live authoring provides guided 3-step setup, concrete presets, Right Panel tabs, and Step 6 handoff", () => {
+test("Lecturer Studio Live authoring uses unified single top bar, non-red healthy nodes, 409 auto-retry, and Step 6 handoff", () => {
   const live = read("src/features/runtime/live-studio-workbench.tsx");
   const standalone = read("src/features/runtime/standalone-studio-live.tsx");
   const access = read("src/features/workspaces/course-access.tsx");
   const obs = read("src/features/runtime/studio-observability.tsx");
 
-  assert.match(live, /aria-label="Lecturer Lab Setup Guide"/);
+  assert.match(live, /standaloneHeader\?\.left/);
   assert.match(live, /aria-label="Lecturer setup panel tabs"/);
   assert.match(live, /Test Live Docker/);
   assert.match(live, /Step 1 · Pick Lab Scenario/);
@@ -1486,9 +1486,13 @@ test("Lecturer Studio Live authoring provides guided 3-step setup, concrete pres
   assert.match(live, /isTerminalAuthorSession/);
   assert.match(live, /services\.includes\(studio\.service\)/);
   assert.match(live, /Expand telemetry dock/);
+  assert.doesNotMatch(live, /aria-label="Lecturer Lab Setup Guide"/);
   assert.match(standalone, /Done · Step 6/);
   assert.match(standalone, /tab=publish/);
   assert.match(standalone, /setQueryData\(\["api", "runtimeConfiguration"/);
+  assert.match(standalone, /cause\.status === 409/);
   assert.match(access, /queryKey: \["api", "runtimeConfiguration"\]/);
   assert.match(obs, /confirmed\?\.result\?\.replicasAfter !== undefined/);
+  assert.match(obs, /isImpactedByOutage/);
+  assert.doesNotMatch(obs, /isStopped \|\| isAffected/);
 });

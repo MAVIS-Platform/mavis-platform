@@ -2378,14 +2378,17 @@ export function StudioObservability({
               const isDropTarget = dropTargetNode === name ||
                 (linkPreview?.target === name && linkPreview.from !== name);
               const isStopped = live !== undefined && live.runningReplicas === 0;
+              const selectedIsStopped = selected ? resolveLiveReplicas(selected) === 0 : false;
+              const isImpactedByOutage = isAffected && selectedIsStopped && !isStopped;
               const scale = sculptureScale(live?.runningReplicas ?? 1);
               const nodeName = nodeNames?.[name] ?? name;
               const { text: displayName, width: labelWidth, y: labelY, height: labelHeight } = getNodeLabel(nodeName, view);
 
 
+              // Never paint healthy running callers red just because a downstream node is selected
               const baseTheme = getArchetypeTheme(
                 archetype,
-                isStopped || isAffected,
+                isStopped,
                 isSelected,
                 isDropTarget,
                 name,
@@ -2393,7 +2396,7 @@ export function StudioObservability({
 
               const status = nodeStatus?.[name];
               const isCritical = isStopped || status === "Overloaded";
-              const isWarning = status === "Bottleneck" || status === "Rate limited";
+              const isWarning = isImpactedByOutage || status === "Bottleneck" || status === "Rate limited";
               const healthColor = isCritical ? "#f43f5e" : isWarning ? "#fbbf24" : undefined;
               const healthTint = isCritical ? "#fda4af" : isWarning ? "#fde68a" : undefined;
               const healthFill = isCritical ? "#881337" : isWarning ? "#422a0a" : undefined;

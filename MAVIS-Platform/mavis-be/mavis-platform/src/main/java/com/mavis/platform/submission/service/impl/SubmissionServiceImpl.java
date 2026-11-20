@@ -56,15 +56,39 @@ public class SubmissionServiceImpl implements SubmissionService {
     @Transactional(readOnly = true)
     public List<SubmissionResponseDTO> getMySubmissions(UUID workspaceId) {
         User user = accessPolicyService.requireCurrentActiveUser();
-        boolean admin = user.getRole()!=null && "SYSTEM_ADMIN".equalsIgnoreCase(user.getRole().getCode());
-        List<SubmissionResponseDTO> all = mapToResponseListWithFeedbackCount(
-                submissionSnapshotRepository.findVisibleTo(user.getId(), admin));
-        if (workspaceId == null) {
-            return all;
+        boolean admin = user.getRole() != null && "SYSTEM_ADMIN".equalsIgnoreCase(user.getRole().getCode());
+        boolean revealDraft = admin || (user.getRole() != null && !"STUDENT".equalsIgnoreCase(user.getRole().getCode()));
+        List<SubmissionSnapshot> visible = submissionSnapshotRepository.findVisibleTo(user.getId(), admin);
+        if (visible.isEmpty()) {
+            return Collections.emptyList();
         }
-        return all.stream()
-                .filter(s -> workspaceId.equals(s.getWorkspaceId()))
+        Set<UUID> workspacesWithOrderedLabs = visible.stream()
+                .map(SubmissionSnapshot::getAssignment)
+                .filter(Objects::nonNull)
+                .filter(a -> a.getLabOrder() != null && a.getWorkspace() != null && a.getWorkspace().getId() != null)
+                .map(a -> a.getWorkspace().getId())
+                .collect(Collectors.toSet());
+        List<SubmissionSnapshot> activeVisible = visible.stream()
+                .filter(s -> workspaceId == null
+                        || (s.getAssignment() != null && s.getAssignment().getWorkspace() != null
+                                && workspaceId.equals(s.getAssignment().getWorkspace().getId())))
+                .filter(s -> !isObsoleteDetachedCourseLab(s.getAssignment(), workspacesWithOrderedLabs))
                 .toList();
+        return mapToResponseListWithFeedbackCount(activeVisible, revealDraft);
+    }
+
+    private static boolean isObsoleteDetachedCourseLab(Assignment assignment, Set<UUID> workspacesWithOrderedLabs) {
+        if (assignment == null || assignment.getWorkspace() == null || !assignment.getWorkspace().isCourseMode()) {
+            return false;
+        }
+        if (assignment.getLabOrder() != null) {
+            return false;
+        }
+        if (assignment.getAiPolicy() != null && assignment.getAiPolicy().path("archivedV1").asBoolean(false)) {
+            return true;
+        }
+        UUID wsId = assignment.getWorkspace().getId();
+        return wsId != null && workspacesWithOrderedLabs.contains(wsId);
     }
 
     @Override
@@ -504,6 +528,28 @@ public class SubmissionServiceImpl implements SubmissionService {
 
     @Override
     @Transactional(readOnly = true)
+    public List<SubmissionResponseDTO> getSubmissionsByWorkspace(UUID workspaceId, String reviewStatus, String labOutcome) {
+        accessPolicyService.requireWorkspaceLecturer(workspaceId);
+        Workspace workspace = workspaceRepository.findById(workspaceId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Workspace not found"));
+
+        List<Assignment> allAssignments = assignmentRepository.findByWorkspaceIdOrderByCreatedAtDesc(workspaceId);
+        boolean hasOrdered = workspace.isCourseMode() && allAssignments.stream().anyMatch(a -> a.getLabOrder() != null);
+        List<UUID> activeAssignmentIds = allAssignments.stream()
+                .filter(a -> !hasOrdered || a.getLabOrder() != null)
+                .map(Assignment::getId)
+                .toList();
+        if (activeAssignmentIds.isEmpty()) {
+            return List.of();
+        }
+        List<SubmissionSnapshot> submissions =
+                submissionSnapshotRepository.findByAssignmentIdInOrderBySubmittedAtDesc(activeAssignmentIds);
+        List<SubmissionResponseDTO> mapped = mapToResponseListWithFeedbackCount(submissions, true);
+        return filterAndSortLecturerSubmissions(mapped, reviewStatus, labOutcome);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<SubmissionResponseDTO> getSubmissionsByAssignment(UUID assignmentId) {
         return getSubmissionsByAssignment(assignmentId, null, null);
     }
@@ -518,14 +564,21 @@ public class SubmissionServiceImpl implements SubmissionService {
         accessPolicyService.requireWorkspaceLecturer(assignment.getWorkspace().getId());
         List<SubmissionSnapshot> submissions = submissionSnapshotRepository.findByAssignmentIdOrderBySubmittedAtDesc(assignmentId);
         List<SubmissionResponseDTO> mapped = mapToResponseListWithFeedbackCount(submissions, true);
-        if ((reviewStatus == null || reviewStatus.isBlank()) && (labOutcome == null || labOutcome.isBlank())) {
-            return mapped;
-        }
+        return filterAndSortLecturerSubmissions(mapped, reviewStatus, labOutcome);
+    }
+
+    private static List<SubmissionResponseDTO> filterAndSortLecturerSubmissions(
+            List<SubmissionResponseDTO> mapped, String reviewStatus, String labOutcome) {
+        Comparator<SubmissionResponseDTO> ordering = Comparator
+                .comparing((SubmissionResponseDTO s) -> "PENDING".equalsIgnoreCase(s.getReviewStatus()) ? 0 : 1)
+                .thenComparing(SubmissionResponseDTO::getSubmittedAt,
+                        Comparator.nullsLast(Comparator.reverseOrder()));
         return mapped.stream()
                 .filter(s -> reviewStatus == null || reviewStatus.isBlank()
                         || reviewStatus.trim().equalsIgnoreCase(s.getReviewStatus()))
                 .filter(s -> labOutcome == null || labOutcome.isBlank()
                         || labOutcome.trim().equalsIgnoreCase(s.getLabOutcome()))
+                .sorted(ordering)
                 .toList();
     }
 
@@ -596,7 +649,10 @@ public class SubmissionServiceImpl implements SubmissionService {
         var releasedReview = submissionReviewRepository.findBySubmissionId(submissionId).filter(r -> !"DRAFT".equals(r.getStatus()));
         if (releasedReview.isPresent()) {
             var review = releasedReview.get();
-            markdownReport += "\n## Lecturer review\n- Status: " + review.getStatus() + "\n- Lecturer score /100: " + review.getScore() + "\n\n" + review.getSummary() + "\n";
+            var tenScore = SubmissionReviewService.toTenScale(review.getScore());
+            markdownReport += "\n## Lecturer review\n- Status: " + review.getStatus()
+                    + "\n- Lecturer score (0-10): " + (tenScore != null ? tenScore + " / 10" : "N/A")
+                    + " (equivalent " + review.getScore() + "/100)\n\n" + review.getSummary() + "\n";
         }
 
         var assignment = submission.getAssignment();

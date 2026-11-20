@@ -1,7 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from "react";
 import {
   AlertCircle,
   ArrowRight,
@@ -158,6 +166,7 @@ export function LiveStudioWorkbench({
   starting,
   hideSwitchToSandbox,
   standalone,
+  standaloneHeader,
   previewTopology,
   previewModelId,
   previewServiceMappings,
@@ -173,6 +182,7 @@ export function LiveStudioWorkbench({
   starting?: boolean | undefined;
   hideSwitchToSandbox?: boolean | undefined;
   standalone?: boolean | undefined;
+  standaloneHeader?: { left?: ReactNode; right?: ReactNode } | undefined;
   previewTopology?: Studio["topology"] | undefined;
   previewModelId?: string | undefined;
   previewServiceMappings?: Record<string, string> | undefined;
@@ -285,8 +295,81 @@ export function LiveStudioWorkbench({
   const [tab, setTab] = useState<"stats" | "telemetry" | "logs" | "snapshots">("telemetry");
   const [showLeft, setShowLeft] = useState(true);
   const [showRight, setShowRight] = useState(true);
-  const [dockExpanded, setDockExpanded] = useState(false);
+  const [leftWidth, setLeftWidth] = useState(268);
+  const [rightWidth, setRightWidth] = useState(288);
+  const [bottomHeight, setBottomHeight] = useState(232);
+  const [bottomCollapsed, setBottomCollapsed] = useState(false);
+  const [resizingAxis, setResizingAxis] = useState<"left" | "right" | "bottom" | null>(null);
+  const resizeCleanupRef = useRef<(() => void) | null>(null);
   const [expanded, setExpanded] = useState(false);
+  const dockExpanded = !bottomCollapsed && bottomHeight >= 320;
+
+  useEffect(
+    () => () => {
+      resizeCleanupRef.current?.();
+    },
+    [],
+  );
+
+  function startResize(
+    axis: "left" | "right" | "bottom",
+    startEvent: ReactPointerEvent<HTMLDivElement>,
+  ) {
+    startEvent.preventDefault();
+    resizeCleanupRef.current?.();
+    const startX = startEvent.clientX;
+    const startY = startEvent.clientY;
+    const initialLeft = showLeft ? leftWidth : 0;
+    const initialRight = showRight ? rightWidth : 0;
+    const initialBottom = bottomCollapsed ? 36 : bottomHeight;
+
+    setResizingAxis(axis);
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = axis === "bottom" ? "row-resize" : "col-resize";
+
+    function onPointerMove(moveEvent: PointerEvent) {
+      if (axis === "left") {
+        const raw = initialLeft + (moveEvent.clientX - startX);
+        if (raw < 90) {
+          setShowLeft(false);
+        } else {
+          setShowLeft(true);
+          setLeftWidth(Math.max(180, Math.min(560, Math.round(raw))));
+        }
+      } else if (axis === "right") {
+        const raw = initialRight - (moveEvent.clientX - startX);
+        if (raw < 110) {
+          setShowRight(false);
+        } else {
+          setShowRight(true);
+          setRightWidth(Math.max(220, Math.min(560, Math.round(raw))));
+        }
+      } else {
+        const raw = initialBottom - (moveEvent.clientY - startY);
+        if (raw < 72) {
+          setBottomCollapsed(true);
+        } else {
+          setBottomCollapsed(false);
+          setBottomHeight(Math.max(100, Math.min(540, Math.round(raw))));
+        }
+      }
+    }
+
+    function cleanup() {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", cleanup);
+      window.removeEventListener("pointercancel", cleanup);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+      setResizingAxis(null);
+      resizeCleanupRef.current = null;
+    }
+
+    resizeCleanupRef.current = cleanup;
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", cleanup);
+    window.addEventListener("pointercancel", cleanup);
+  }
   const [setupPanel, setSetupPanel] = useState<StudioSetupPanel>(() =>
     authoring ? "presets" : "service",
   );
@@ -797,10 +880,17 @@ export function LiveStudioWorkbench({
           : "flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden bg-[#070b12] text-slate-100"
       }
     >
-      {/* Top Command Bar */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 bg-[#0b101b] px-3 py-2 pr-2">
+      {/* Single Unified Top Studio Bar */}
+      <div className="flex min-h-11 shrink-0 flex-wrap items-center gap-2 border-b border-slate-800 bg-[#0b101b] px-3 py-1.5">
+        {standaloneHeader?.left && (
+          <>
+            {standaloneHeader.left}
+            <span className="h-4 w-px shrink-0 bg-slate-800" aria-hidden="true" />
+          </>
+        )}
+
         <span
-          className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[10px] font-semibold ${statusTone}`}
+          className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[10px] font-semibold ${statusTone}`}
         >
           <span
             className={`size-1.5 rounded-full ${
@@ -817,13 +907,13 @@ export function LiveStudioWorkbench({
           {statusLabel}
         </span>
 
-        {(!authoring || sessions.length > 0) && (
+        {(!authoring || !isPreviewMode || isBooting) && (
           <label className="flex min-w-0 items-center gap-1.5 text-[11px] text-slate-400">
             <select
               aria-label="Select active or recent runtime session"
               value={activeSessionId}
               onChange={(event) => onSelectSession(event.target.value)}
-              className="h-7 w-40 shrink-0 overflow-hidden text-ellipsis whitespace-nowrap rounded border border-slate-700 bg-slate-950 px-2 text-[11px] text-slate-100"
+              className="h-7 w-36 shrink-0 overflow-hidden text-ellipsis whitespace-nowrap rounded border border-slate-700 bg-slate-950 px-2 text-[11px] text-slate-100"
             >
               {authoring && <option value="">Design Preview</option>}
               {sessions.length > 0 ? (
@@ -864,7 +954,7 @@ export function LiveStudioWorkbench({
                 <Play aria-hidden="true" className="mr-1 size-3" />
               )}
               {isBooting
-                ? `${authoring ? "Booting Test Docker" : "Booting Docker"} (${data.executionStatus === "NOT_STARTED" ? "STARTING" : data.executionStatus})…`
+                ? `${authoring ? "Booting Docker" : "Booting Docker"} (${data.executionStatus === "NOT_STARTED" ? "STARTING" : data.executionStatus})…`
                 : authoring
                   ? "Test Live Docker"
                   : projectName
@@ -914,7 +1004,13 @@ export function LiveStudioWorkbench({
           </div>
         )}
 
-        <div className="ml-auto flex flex-wrap items-center gap-1.5">
+        <div className="ml-auto flex shrink-0 items-center gap-1.5">
+          {authoring && authoring.saved && !missionDirty && (
+            <span className="hidden items-center gap-1 text-[10.5px] font-medium text-emerald-400 lg:inline-flex">
+              <Check aria-hidden="true" className="size-3" /> Saved
+            </span>
+          )}
+
           {authoring && data.executionStatus === "RUNNING" && (
             <Button
               type="button"
@@ -930,30 +1026,6 @@ export function LiveStudioWorkbench({
             </Button>
           )}
 
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            aria-pressed={showLeft}
-            aria-label="Toggle blocks sidebar"
-            onClick={() => setShowLeft((value) => !value)}
-            className="h-7 px-2 text-[11px] text-slate-300 hover:bg-slate-800 hover:text-white"
-          >
-            <PanelLeft aria-hidden="true" className="mr-1 size-3.5" />
-            Blocks
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            aria-pressed={showRight}
-            aria-label="Toggle inspector sidebar"
-            onClick={() => setShowRight((value) => !value)}
-            className="h-7 px-2 text-[11px] text-slate-300 hover:bg-slate-800 hover:text-white"
-          >
-            <PanelRight aria-hidden="true" className="mr-1 size-3.5" />
-            Inspector
-          </Button>
           {showLiveSessionControls && (
             <Button
               type="button"
@@ -1027,6 +1099,40 @@ export function LiveStudioWorkbench({
               </Button>
             </>
           )}
+
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            aria-pressed={showLeft}
+            aria-label="Toggle blocks sidebar"
+            title={showLeft ? "Hide Blocks sidebar" : "Show Blocks sidebar"}
+            onClick={() => setShowLeft((value) => !value)}
+            className={`h-7 px-1.5 text-[11px] hover:bg-slate-800 hover:text-white ${
+              showLeft ? "text-slate-200" : "text-slate-500"
+            }`}
+          >
+            <PanelLeft aria-hidden="true" className="size-3.5" />
+            {!standalone && <span className="ml-1">Blocks</span>}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            aria-pressed={showRight}
+            aria-label="Toggle inspector sidebar"
+            title={showRight ? "Hide Setup / Inspector sidebar" : "Show Setup / Inspector sidebar"}
+            onClick={() => setShowRight((value) => !value)}
+            className={`h-7 px-1.5 text-[11px] hover:bg-slate-800 hover:text-white ${
+              showRight ? "text-slate-200" : "text-slate-500"
+            }`}
+          >
+            <PanelRight aria-hidden="true" className="size-3.5" />
+            {!standalone && <span className="ml-1">Inspector</span>}
+          </Button>
+
+          {standaloneHeader?.right}
+
           {!standalone && (
             <Button
               type="button"
@@ -1046,113 +1152,6 @@ export function LiveStudioWorkbench({
           )}
         </div>
       </div>
-
-      {/* Guided 3-Step Lecturer Lab Setup Strip */}
-      {authoring && (
-        <div
-          aria-label="Lecturer Lab Setup Guide"
-          className="flex flex-wrap items-center gap-1.5 border-b border-slate-800 bg-[#080d17] px-3 py-1.5 text-[11px]"
-        >
-          <button
-            type="button"
-            onClick={() => {
-              setSetupPanel("presets");
-              setShowRight(true);
-            }}
-            className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 transition-colors ${
-              showRight && (setupPanel === "presets" || setupPanel === "service")
-                ? "border-amber-500/60 bg-amber-500/15 text-amber-100"
-                : "border-slate-800 bg-slate-950/70 text-slate-300 hover:border-slate-700 hover:text-white"
-            }`}
-          >
-            <span className="font-mono text-[10px] font-bold text-amber-300">1</span>
-            <span className="font-medium">Scenario &amp; Faults</span>
-            <span className="font-mono text-[10px] text-slate-400">
-              {authoring.initialStoppedServices.length > 0
-                ? `· ${authoring.initialStoppedServices.join(", ")} Down`
-                : `· ${blocks.length} Up`}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setSetupPanel("mission");
-              setShowRight(true);
-            }}
-            className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 transition-colors ${
-              showRight && setupPanel === "mission"
-                ? "border-sky-500/60 bg-sky-500/15 text-sky-100"
-                : "border-slate-800 bg-slate-950/70 text-slate-300 hover:border-slate-700 hover:text-white"
-            }`}
-          >
-            <span className="font-mono text-[10px] font-bold text-sky-300">2</span>
-            <span className="font-medium">Mission &amp; Pass Target</span>
-            <span
-              className={`font-mono text-[10px] ${
-                missionDirty
-                  ? "text-amber-300"
-                  : missionReady
-                    ? "text-emerald-300"
-                    : "text-slate-400"
-              }`}
-            >
-              {missionDirty
-                ? "· Unsaved"
-                : `· ${authoring.baselinePath || "/health"}${authoring.replicaService && Number(authoring.replicaCount) >= 2 ? ` · ${authoring.replicaService} ≥${authoring.replicaCount}×` : ""}`}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            disabled={isBooting}
-            onClick={() => {
-              if (data.executionStatus === "RUNNING") {
-                setTab("telemetry");
-              } else if (onStartSession) {
-                onStartSession();
-              }
-            }}
-            className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 transition-colors disabled:opacity-50 ${
-              data.executionStatus === "RUNNING"
-                ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-200"
-                : "border-slate-800 bg-slate-950/70 text-slate-300 hover:border-emerald-500/40 hover:text-emerald-200"
-            }`}
-          >
-            <span className="font-mono text-[10px] font-bold text-emerald-300">3</span>
-            <span className="font-medium">Test Docker</span>
-            <span className="font-mono text-[10px] text-slate-400">
-              {data.executionStatus === "RUNNING"
-                ? `· Live (${totalRunningReplicas} pods)`
-                : isBooting
-                  ? "· Booting…"
-                  : authoring.hasVerifiedSession
-                    ? "· Verified ✓"
-                    : "· Optional"}
-            </span>
-          </button>
-
-          <div className="ml-auto flex items-center gap-2 text-[10.5px]">
-            {authoring.saved && !missionDirty && (
-              <span className="inline-flex items-center gap-1 font-medium text-emerald-400">
-                <Check aria-hidden="true" className="size-3" /> Saved to Lab
-              </span>
-            )}
-            {missionDirty && (
-              <button
-                type="button"
-                onClick={() => {
-                  setSetupPanel("mission");
-                  setShowRight(true);
-                }}
-                className="font-medium text-amber-300 hover:underline"
-              >
-                Unsaved mission edits — review &amp; Save
-              </button>
-            )}
-          </div>
-        </div>
-      )}
 
       {isBooting && !mutationError && (
         <div
@@ -1179,10 +1178,17 @@ export function LiveStudioWorkbench({
         </div>
       )}
 
-      {/* Main 3-Column IDE Layout: Full-Height Left Blocks | Center (Canvas + Bounded Bottom Dock) | Full-Height Right Setup */}
+      {/* Main 3-Column IDE Layout: Full-Height Resizable Left Blocks | Center (Canvas + Resizable Bottom Dock) | Full-Height Resizable Right Setup */}
       <div className="flex min-h-0 flex-1 overflow-hidden">
         {showLeft && (
-          <aside className="h-full w-[268px] shrink-0 overflow-x-hidden overflow-y-auto border-r border-slate-800 bg-[#0b101b] p-2.5">
+          <aside
+            style={{
+              width: leftWidth,
+              scrollbarWidth: "thin",
+              scrollbarColor: "#334155 #0b101b",
+            }}
+            className="h-full shrink-0 overflow-x-hidden overflow-y-auto bg-[#0b101b] p-2.5"
+          >
             <LiveSandboxParity
               data={data}
               selected={selected}
@@ -1205,9 +1211,44 @@ export function LiveStudioWorkbench({
           </aside>
         )}
 
-        {/* Center Column: Interactive 3D/2D Canvas + Strictly Bounded Bottom Telemetry Dock */}
+        {/* LEFT RESIZE SPLITTER */}
+        <div
+          role="separator"
+          tabIndex={0}
+          aria-orientation="vertical"
+          aria-label="Resize blocks panel"
+          aria-valuenow={showLeft ? leftWidth : 0}
+          aria-valuemin={180}
+          aria-valuemax={560}
+          title="Drag left/right to resize Blocks panel (double-click to collapse/expand)"
+          onPointerDown={(event) => startResize("left", event)}
+          onDoubleClick={() => setShowLeft((value) => !value)}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowRight") {
+              event.preventDefault();
+              setShowLeft(true);
+              setLeftWidth((w) => Math.min(560, w + 16));
+            } else if (event.key === "ArrowLeft") {
+              event.preventDefault();
+              setLeftWidth((w) => Math.max(180, w - 16));
+            }
+          }}
+          className={`group relative flex w-1.5 shrink-0 cursor-col-resize items-center justify-center border-x border-slate-800 bg-slate-950 transition-colors hover:bg-sky-500/25 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sky-400 ${
+            resizingAxis === "left" ? "bg-sky-500/35" : ""
+          }`}
+        >
+          <div
+            className={`h-10 w-0.5 rounded-full transition-colors ${
+              resizingAxis === "left"
+                ? "bg-sky-400"
+                : "bg-slate-700 group-hover:bg-sky-400"
+            }`}
+          />
+        </div>
+
+        {/* Center Column: Interactive 3D/2D Canvas + Strictly Bounded Resizable Bottom Telemetry Dock */}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#070b12]">
-          <div ref={graphRef} className="relative min-h-[240px] min-w-0 flex-1 overflow-hidden p-2.5">
+          <div ref={graphRef} className="relative min-h-[160px] min-w-0 flex-1 overflow-hidden p-2.5">
             {isPreviewMode && effectivePreviewTopology && (
               <div className="pointer-events-none absolute bottom-3 left-3 z-10">
                 <div className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full border border-slate-700/80 bg-slate-950/90 px-2.5 py-1 text-[10.5px] text-slate-300 shadow-lg backdrop-blur-sm">
@@ -1265,10 +1306,46 @@ export function LiveStudioWorkbench({
             )}
           </div>
 
+          {/* BOTTOM RESIZE SPLITTER */}
+          <div
+            role="separator"
+            tabIndex={0}
+            aria-orientation="horizontal"
+            aria-label="Resize telemetry dock"
+            aria-valuenow={bottomCollapsed ? 36 : bottomHeight}
+            aria-valuemin={100}
+            aria-valuemax={540}
+            title="Drag up/down to resize Telemetry dock (double-click to collapse/expand)"
+            onPointerDown={(event) => startResize("bottom", event)}
+            onDoubleClick={() => setBottomCollapsed((value) => !value)}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowUp") {
+                event.preventDefault();
+                setBottomCollapsed(false);
+                setBottomHeight((h) => Math.min(540, h + 20));
+              } else if (event.key === "ArrowDown") {
+                event.preventDefault();
+                setBottomHeight((h) => Math.max(100, h - 20));
+              }
+            }}
+            className={`group relative flex h-1.5 shrink-0 cursor-row-resize items-center justify-center border-y border-slate-800 bg-slate-950 transition-colors hover:bg-sky-500/25 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sky-400 ${
+              resizingAxis === "bottom" ? "bg-sky-500/35" : ""
+            }`}
+          >
+            <div
+              className={`h-0.5 w-10 rounded-full transition-colors ${
+                resizingAxis === "bottom"
+                  ? "bg-sky-400"
+                  : "bg-slate-700 group-hover:bg-sky-400"
+              }`}
+            />
+          </div>
+
           {/* Bottom Telemetry, Logs & Snapshots Dock — aligned strictly inside the center column */}
           <div
-            className={`flex min-w-0 shrink-0 flex-col overflow-hidden border-t border-slate-800 bg-[#0b101b] transition-[height] duration-150 ${
-              dockExpanded ? "h-[396px]" : "h-[232px]"
+            style={{ height: bottomCollapsed ? 36 : bottomHeight }}
+            className={`flex min-w-0 shrink-0 flex-col overflow-hidden bg-[#0b101b] ${
+              resizingAxis === "bottom" ? "" : "transition-[height] duration-150"
             }`}
           >
             <div className="flex h-9 shrink-0 items-center gap-1 border-b border-slate-800 px-2.5">
@@ -1296,7 +1373,10 @@ export function LiveStudioWorkbench({
                   key={id}
                   type="button"
                   aria-label={ariaLabel}
-                  onClick={() => setTab(id)}
+                  onClick={() => {
+                    setTab(id);
+                    setBottomCollapsed(false);
+                  }}
                   className={`shrink-0 whitespace-nowrap rounded px-2 py-1 text-[11px] font-semibold ${
                     tab === id
                       ? "bg-slate-800 text-slate-100"
@@ -1324,7 +1404,14 @@ export function LiveStudioWorkbench({
                   type="button"
                   aria-label={dockExpanded ? "Collapse telemetry dock" : "Expand telemetry dock"}
                   title={dockExpanded ? "Collapse dock" : "Expand dock"}
-                  onClick={() => setDockExpanded((v) => !v)}
+                  onClick={() => {
+                    if (bottomCollapsed) {
+                      setBottomCollapsed(false);
+                      setBottomHeight(232);
+                    } else {
+                      setBottomHeight(dockExpanded ? 232 : 400);
+                    }
+                  }}
                   className="grid size-6 shrink-0 place-items-center rounded border border-slate-800 bg-slate-950/70 text-slate-400 transition-colors hover:border-slate-700 hover:text-slate-100"
                 >
                   {dockExpanded ? (
@@ -1335,7 +1422,11 @@ export function LiveStudioWorkbench({
                 </button>
               </div>
             </div>
-            <div className="min-h-0 min-w-0 flex-1 overflow-auto px-3 py-2.5">
+            {!bottomCollapsed && (
+            <div
+              style={{ scrollbarWidth: "thin", scrollbarColor: "#334155 #0b101b" }}
+              className="min-h-0 min-w-0 flex-1 overflow-auto px-3 py-2.5"
+            >
           {tab === "stats" && (
             <div className="space-y-2">
               <div className="mavis-tabular grid grid-cols-2 gap-1.5 text-[10.5px] sm:grid-cols-3 lg:grid-cols-6">
@@ -1853,12 +1944,55 @@ export function LiveStudioWorkbench({
             </div>
           )}
             </div>
+            )}
           </div>
+        </div>
+
+        {/* RIGHT RESIZE SPLITTER */}
+        <div
+          role="separator"
+          tabIndex={0}
+          aria-orientation="vertical"
+          aria-label="Resize inspector panel"
+          aria-valuenow={showRight ? rightWidth : 0}
+          aria-valuemin={220}
+          aria-valuemax={560}
+          title="Drag left/right to resize Inspector panel (double-click to collapse/expand)"
+          onPointerDown={(event) => startResize("right", event)}
+          onDoubleClick={() => setShowRight((value) => !value)}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowLeft") {
+              event.preventDefault();
+              setShowRight(true);
+              setRightWidth((w) => Math.min(560, w + 16));
+            } else if (event.key === "ArrowRight") {
+              event.preventDefault();
+              setRightWidth((w) => Math.max(220, w - 16));
+            }
+          }}
+          className={`group relative flex w-1.5 shrink-0 cursor-col-resize items-center justify-center border-x border-slate-800 bg-slate-950 transition-colors hover:bg-sky-500/25 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sky-400 ${
+            resizingAxis === "right" ? "bg-sky-500/35" : ""
+          }`}
+        >
+          <div
+            className={`h-10 w-0.5 rounded-full transition-colors ${
+              resizingAxis === "right"
+                ? "bg-sky-400"
+                : "bg-slate-700 group-hover:bg-sky-400"
+            }`}
+          />
         </div>
 
         {/* Full-Height Right Setup & Inspector Panel (Context-sensitive to Left Block / Function) */}
         {showRight && (
-          <aside className="h-full w-[288px] shrink-0 overflow-x-hidden overflow-y-auto border-l border-slate-800 bg-[#0a0f18] p-2.5">
+          <aside
+            style={{
+              width: rightWidth,
+              scrollbarWidth: "thin",
+              scrollbarColor: "#334155 #0a0f18",
+            }}
+            className="h-full shrink-0 overflow-x-hidden overflow-y-auto bg-[#0a0f18] p-2.5"
+          >
             {authoring && (
               <div
                 role="tablist"

@@ -1226,4 +1226,50 @@ class SubmissionServiceImplTest {
         assertThat(response.getCourseQuizEvidence().path("status").asText()).isEqualTo("PASSED");
         assertThat(response.getEvidencePackageDigest()).matches("sha256:[a-f0-9]{64}");
     }
+
+    @Test
+    @DisplayName("Class-wide submissions excludes detached V1 labs, puts PENDING first, and populates 0-10 score")
+    void getSubmissionsByWorkspaceAggregatesActiveLabsOnlyAndSortsPendingFirst() {
+        var courseWs = Workspace.builder().id(UUID.randomUUID()).name("JAVA-MS-2026").courseMode(true).status("ACTIVE").build();
+        var activeLab = Assignment.builder().id(UUID.randomUUID()).workspace(courseWs).title("Active Lab 1").labOrder(1).build();
+        var detachedV1 = Assignment.builder().id(UUID.randomUUID()).workspace(courseWs).title("Obsolete V1 Lab").labOrder(null)
+                .aiPolicy(objectMapper.createObjectNode().put("archivedV1", true)).build();
+
+        var gradedOld = SubmissionSnapshot.builder().id(UUID.randomUUID()).assignment(activeLab).submittedBy(student)
+                .submittedAt(OffsetDateTime.now().minusMinutes(1)).build();
+        var pendingOlder = SubmissionSnapshot.builder().id(UUID.randomUUID()).assignment(activeLab).submittedBy(student)
+                .submittedAt(OffsetDateTime.now().minusMinutes(10)).build();
+        var obsoleteSub = SubmissionSnapshot.builder().id(UUID.randomUUID()).assignment(detachedV1).submittedBy(student)
+                .submittedAt(OffsetDateTime.now()).build();
+
+        var rev = new SubmissionReview();
+        rev.setSubmission(gradedOld);
+        rev.setStatus("GRADED");
+        rev.setScore(java.math.BigDecimal.valueOf(85.0));
+        rev.setLabOutcome("PASSED");
+
+        when(workspaceRepository.findById(courseWs.getId())).thenReturn(Optional.of(courseWs));
+        when(assignmentRepository.findByWorkspaceIdOrderByCreatedAtDesc(courseWs.getId()))
+                .thenReturn(List.of(activeLab, detachedV1));
+        when(submissionSnapshotRepository.findByAssignmentIdInOrderBySubmittedAtDesc(List.of(activeLab.getId())))
+                .thenReturn(List.of(gradedOld, pendingOlder));
+        when(feedbackCommentRepository.countFeedbacksBySubmissionIds(anyList())).thenReturn(List.of());
+        when(submissionReviewRepository.findBySubmissionIdIn(anyList())).thenReturn(List.of(rev));
+
+        List<SubmissionResponseDTO> classSubs = submissionService.getSubmissionsByWorkspace(courseWs.getId(), null, null);
+        assertThat(classSubs).extracting(SubmissionResponseDTO::getId)
+                .containsExactly(pendingOlder.getId(), gradedOld.getId());
+        assertThat(classSubs.get(1).getReviewScore()).isEqualTo(85.0);
+        assertThat(classSubs.get(1).getReviewScoreTenScale()).isEqualTo(8.5);
+
+        User lecturerUser = User.builder().id(UUID.randomUUID()).role(Role.builder().code("LECTURER").build()).build();
+        when(accessPolicyService.requireCurrentActiveUser()).thenReturn(lecturerUser);
+        when(submissionSnapshotRepository.findVisibleTo(lecturerUser.getId(), false))
+                .thenReturn(List.of(obsoleteSub, gradedOld, pendingOlder));
+
+        List<SubmissionResponseDTO> dashboardSubs = submissionService.getMySubmissions(courseWs.getId());
+        assertThat(dashboardSubs).extracting(SubmissionResponseDTO::getId)
+                .containsExactlyInAnyOrder(gradedOld.getId(), pendingOlder.getId())
+                .doesNotContain(obsoleteSub.getId());
+    }
 }

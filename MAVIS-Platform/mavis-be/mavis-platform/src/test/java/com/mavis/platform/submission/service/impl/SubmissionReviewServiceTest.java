@@ -75,6 +75,7 @@ class SubmissionReviewServiceTest {
   var failedView = service.save(id, failingSave);
   assertThat(failedView.labOutcome()).isEqualTo("NEEDS_REVISION");
   assertThat(failedView.score()).isEqualByComparingTo("70.00");
+  assertThat(failedView.scoreTenScale()).isEqualByComparingTo("7.00");
   assertThat(failedView.snapshotGrades()).hasSize(2);
   verify(courseProgression).recordFinalizedResult(id, 1, false);
 
@@ -88,6 +89,7 @@ class SubmissionReviewServiceTest {
   var passedView = service.save(id, passingSave);
   assertThat(passedView.labOutcome()).isEqualTo("PASSED");
   assertThat(passedView.score()).isEqualByComparingTo("63.00");
+  assertThat(passedView.scoreTenScale()).isEqualByComparingTo("6.30");
   verify(courseProgression).recordFinalizedResult(id, 1, true);
  }
 

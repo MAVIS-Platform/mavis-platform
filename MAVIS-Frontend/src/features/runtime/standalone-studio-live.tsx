@@ -24,6 +24,7 @@ import { ErrorState, LoadingState } from "@/components/shared/request-state";
 import { RequireSession } from "@/features/auth/access";
 import { useApi, useApiMutation, useApiQuery, useSession } from "@/hooks/use-api";
 import type { Response } from "@/lib/api/contracts";
+import { ApiError } from "@/lib/errors/api-error";
 import { api } from "@/lib/mainflow-api";
 import { useLocale } from "@/lib/i18n/locale-context";
 import {
@@ -409,21 +410,36 @@ function StandaloneStudioContent() {
           runtimeConfig.data.snapshotId
             ? runtimeConfig.data
             : ((await runtimeConfig.refetch()).data ?? runtimeConfig.data);
-        const targetSnapshotId = cfg?.snapshotId ?? runtimeSnapshotId ?? undefined;
-        const targetModelId = cfg?.modelId ?? runtimeModelId ?? undefined;
-        if (cfg && targetSnapshotId && targetModelId) {
+        const saveTopologyOnce = async (latestCfg: typeof cfg) => {
+          const targetSnapshotId = latestCfg?.snapshotId ?? runtimeSnapshotId ?? undefined;
+          const targetModelId = latestCfg?.modelId ?? runtimeModelId ?? undefined;
+          if (!latestCfg || !targetSnapshotId || !targetModelId) return;
           const savedCfg = await saveConfig.mutateAsync({
             projectId,
-            profileId: cfg.profileId,
+            profileId: latestCfg.profileId,
             snapshotId: targetSnapshotId,
             modelId: targetModelId,
-            expectedRevision: cfg.revision,
+            expectedRevision: latestCfg.revision,
             profile: {
-              ...cfg.profile,
+              ...latestCfg.profile,
               studioTopology: input.nextTopology,
             },
           });
           cache.setQueryData(["api", "runtimeConfiguration", { projectId }], savedCfg);
+        };
+        try {
+          await saveTopologyOnce(cfg);
+        } catch (cause) {
+          // Auto-recover 409 revision conflict once by fetching latest runtimeConfiguration
+          const isConflict =
+            (cause instanceof ApiError && cause.status === 409) ||
+            (cause instanceof Error && /version has changed|conflict|409/i.test(cause.message));
+          if (isConflict) {
+            const fresh = (await runtimeConfig.refetch()).data;
+            await saveTopologyOnce(fresh);
+          } else {
+            throw cause;
+          }
         }
       }
 
@@ -780,163 +796,150 @@ function StandaloneStudioContent() {
     workspaces.isPending ||
     (isAuthorMode ? assignments.isPending : studentContext.isPending);
 
+  const isWorkbenchActive =
+    Boolean(workspaceId && assignmentId) &&
+    !isInitialLoading &&
+    !studentQuizLocked &&
+    !(isAuthorMode && !projectId) &&
+    !(isAuthorMode && !showAuthorCanvas);
+
+  const headerLeft = (
+    <div className="flex min-w-0 items-center gap-2">
+      <Link
+        href={returnHref}
+        aria-label={isAuthorMode ? t("Back to Lab Setup", "Về thiết lập Lab") : t("Back to Lab", "Về bài Lab")}
+        title={isAuthorMode ? t("Back to Lab Setup", "Về thiết lập Lab") : t("Back to Lab", "Về bài Lab")}
+        className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-slate-700 bg-slate-900 px-2 text-xs font-medium text-slate-200 transition-colors hover:bg-slate-800 hover:text-white"
+      >
+        <ArrowLeft className="size-3.5" aria-hidden="true" />
+        <span className="hidden sm:inline">{t("Back", "Quay lại")}</span>
+      </Link>
+
+      <div className="flex min-w-0 items-center gap-1.5">
+        <Activity className="size-3.5 shrink-0 text-emerald-400" aria-hidden="true" />
+        <span className="shrink-0 text-xs font-semibold tracking-tight text-white">
+          Studio Live
+        </span>
+        {labTitle && (
+          <>
+            <span className="text-slate-600" aria-hidden="true">
+              /
+            </span>
+            <span className="max-w-[160px] truncate text-xs text-slate-300" title={labTitle}>
+              {labTitle}
+            </span>
+          </>
+        )}
+      </div>
+
+      {isAuthorMode && setupLab?.topologyFrozen && (
+        <Badge variant="success" className="hidden md:inline-flex">
+          {t("Frozen", "Đã khóa")}
+        </Badge>
+      )}
+      {!isAuthorMode && liveStudioVerified && (
+        <span className="hidden items-center gap-1 rounded-full border border-emerald-500/35 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-300 md:inline-flex">
+          <CheckCircle2 className="size-3" aria-hidden="true" />
+          {t("Sealed", "Đã đóng gói")}
+        </span>
+      )}
+    </div>
+  );
+
+  const headerRight = (
+    <div className="flex shrink-0 items-center gap-1.5">
+      {isAuthorMode && projectId && (
+        <>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            aria-label={t("Advanced Config", "Cấu hình nâng cao")}
+            title={t("Advanced Config & Sync Docker", "Cấu hình nâng cao & Đồng bộ Docker")}
+            onClick={() => setConfigModalOpen(true)}
+            className="h-7 px-2 text-[11px] text-slate-300 hover:bg-slate-800 hover:text-white"
+          >
+            <SlidersHorizontal className="size-3.5" aria-hidden="true" />
+          </Button>
+          {published && assignmentId && (
+            <PublishCourseLab
+              workspaceId={workspaceId}
+              assignmentId={assignmentId}
+              position={setupLab?.position}
+              sessionId={verifiedSession?.id}
+            />
+          )}
+          <Button
+            asChild
+            size="sm"
+            className="h-7 bg-emerald-600 px-2.5 text-[11px] text-white hover:bg-emerald-500"
+          >
+            <Link href={publishHref}>
+              {t("Done · Step 6", "Xong · Bước 6")}
+              <ArrowRight className="ml-1 size-3" aria-hidden="true" />
+            </Link>
+          </Button>
+        </>
+      )}
+
+      {!isAuthorMode && !studentQuizLocked && (
+        <>
+          {studentExercise && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => setShowStudentMission((v) => !v)}
+              className={`h-7 px-2 text-[11px] ${
+                showStudentMission
+                  ? "border-sky-500/50 bg-sky-500/15 text-sky-200 hover:bg-sky-500/25"
+                  : "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800 hover:text-white"
+              }`}
+            >
+              <Target className="mr-1 size-3" aria-hidden="true" />
+              {t("Mission", "Đề bài")}
+            </Button>
+          )}
+          {needsSandboxBootstrap && activeSessionId && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={bootstrapStudio.isPending}
+              onClick={() => bootstrapStudio.mutate(activeSessionId)}
+              className="h-7 border-amber-500/40 bg-amber-500/10 px-2 text-[11px] text-amber-200 hover:bg-amber-500/20"
+            >
+              {bootstrapStudio.isPending
+                ? t("Activating Sandbox…", "Đang kích hoạt Sandbox…")
+                : t("Activate Simulated Sandbox Telemetry", "Kích hoạt Sandbox Telemetry")}
+            </Button>
+          )}
+          {liveStudioVerified && (
+            <Button
+              asChild
+              size="sm"
+              className="h-7 bg-emerald-600 px-2.5 text-[11px] text-white hover:bg-emerald-500"
+            >
+              <Link href={submitHref}>
+                {t("Submit Lab", "Nộp bài Lab")}
+                <ArrowRight className="ml-1 size-3" aria-hidden="true" />
+              </Link>
+            </Button>
+          )}
+        </>
+      )}
+    </div>
+  );
+
   return (
     <div className="flex h-svh w-screen flex-col overflow-hidden bg-[#070b12] text-slate-100">
-      {/* Standalone Studio Live App Bar (completely detached from website navigation) */}
-      <header className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-slate-800 bg-[#070b12] px-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <Link
-            href={returnHref}
-            className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-slate-700 bg-slate-900 px-2.5 text-xs font-medium text-slate-200 transition-colors hover:bg-slate-800 hover:text-white"
-          >
-            <ArrowLeft className="size-3.5" aria-hidden="true" />
-            <span>
-              {isAuthorMode
-                ? t("Back to Lab Setup", "Về thiết lập Lab")
-                : t("Back to Lab", "Về bài Lab")}
-            </span>
-          </Link>
-
-          <span className="h-4 w-px bg-slate-800" aria-hidden="true" />
-
-          <div className="flex min-w-0 items-center gap-2">
-            <Activity className="size-4 shrink-0 text-emerald-400" aria-hidden="true" />
-            <span className="shrink-0 text-xs font-semibold tracking-tight text-white">
-              Studio Live
-            </span>
-            {labTitle && (
-              <>
-                <span className="text-slate-600" aria-hidden="true">
-                  /
-                </span>
-                <span className="truncate text-xs text-slate-300" title={labTitle}>
-                  {labTitle}
-                </span>
-              </>
-            )}
-          </div>
-
-          <span
-            className={`hidden shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium sm:inline-flex ${
-              isAuthorMode
-                ? "border-sky-500/30 bg-sky-500/10 text-sky-300"
-                : "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
-            }`}
-          >
-            {isAuthorMode ? t("Author", "Giảng viên") : t("Student", "Sinh viên")}
-          </span>
-
-          {isAuthorMode && setupLab?.topologyFrozen && (
-            <Badge variant="success" className="hidden sm:inline-flex">
-              {t("Frozen", "Đã khóa")}
-            </Badge>
-          )}
-          {!isAuthorMode && liveStudioVerified && (
-            <span className="hidden items-center gap-1 rounded-full border border-emerald-500/35 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-300 sm:inline-flex">
-              <CheckCircle2 className="size-3" aria-hidden="true" />
-              {t("Receipt sealed", "Đã đóng gói biên nhận")}
-            </span>
-          )}
-        </div>
-
-        <div className="flex shrink-0 items-center gap-1.5">
-          {isAuthorMode && projectId && (
-            <>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={autoStudio.isPending}
-                onClick={runPrepareRuntime}
-                className="h-7 border-slate-700 bg-slate-900 px-2.5 text-[11px] text-slate-200 hover:bg-slate-800 hover:text-white"
-              >
-                <RefreshCw
-                  className={`mr-1.5 size-3 ${autoStudio.isPending ? "animate-spin" : ""}`}
-                  aria-hidden="true"
-                />
-                {autoStudio.isPending
-                  ? t("Syncing…", "Đang đồng bộ…")
-                  : t("Sync Docker", "Đồng bộ Docker")}
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => setConfigModalOpen(true)}
-                className="h-7 border-slate-700 bg-slate-900 px-2.5 text-[11px] text-slate-200 hover:bg-slate-800 hover:text-white"
-              >
-                <SlidersHorizontal className="mr-1.5 size-3" aria-hidden="true" />
-                {t("Advanced Config", "Cấu hình nâng cao")}
-              </Button>
-              {published && assignmentId && (
-                <PublishCourseLab
-                  workspaceId={workspaceId}
-                  assignmentId={assignmentId}
-                  position={setupLab?.position}
-                  sessionId={verifiedSession?.id}
-                />
-              )}
-              <Button
-                asChild
-                size="sm"
-                className="h-7 bg-emerald-600 px-2.5 text-[11px] text-white hover:bg-emerald-500"
-              >
-                <Link href={publishHref}>
-                  {t("Done · Step 6", "Xong · Sang Bước 6")}
-                  <ArrowRight className="ml-1 size-3" aria-hidden="true" />
-                </Link>
-              </Button>
-            </>
-          )}
-
-          {!isAuthorMode && !studentQuizLocked && (
-            <>
-              {studentExercise && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setShowStudentMission((v) => !v)}
-                  className={`h-7 px-2.5 text-[11px] ${
-                    showStudentMission
-                      ? "border-sky-500/50 bg-sky-500/15 text-sky-200 hover:bg-sky-500/25"
-                      : "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800 hover:text-white"
-                  }`}
-                >
-                  <Target className="mr-1.5 size-3" aria-hidden="true" />
-                  {t("Mission", "Đề bài")}
-                </Button>
-              )}
-              {needsSandboxBootstrap && activeSessionId && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={bootstrapStudio.isPending}
-                  onClick={() => bootstrapStudio.mutate(activeSessionId)}
-                  className="h-7 border-amber-500/40 bg-amber-500/10 px-2.5 text-[11px] text-amber-200 hover:bg-amber-500/20"
-                >
-                  {bootstrapStudio.isPending
-                    ? t("Activating Sandbox…", "Đang kích hoạt Sandbox…")
-                    : t("Activate Simulated Sandbox Telemetry", "Kích hoạt Sandbox Telemetry")}
-                </Button>
-              )}
-              {liveStudioVerified && (
-                <Button
-                  asChild
-                  size="sm"
-                  className="h-7 bg-emerald-600 px-2.5 text-[11px] text-white hover:bg-emerald-500"
-                >
-                  <Link href={submitHref}>
-                    {t("Submit Lab", "Nộp bài Lab")}
-                    <ArrowRight className="ml-1 size-3" aria-hidden="true" />
-                  </Link>
-                </Button>
-              )}
-            </>
-          )}
-        </div>
-      </header>
+      {/* Fallback App Bar only on loading/prepare/locked screens; when canvas is active, merged into 1 single top bar */}
+      {!isWorkbenchActive && (
+        <header className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-slate-800 bg-[#070b12] px-3">
+          {headerLeft}
+          {headerRight}
+        </header>
+      )}
 
       {/* Collapsible Student Mission Bar */}
       {!isAuthorMode && !studentQuizLocked && studentExercise && showStudentMission && (
@@ -1126,6 +1129,7 @@ function StandaloneStudioContent() {
         ) : (
           <LiveStudioWorkbench
             standalone
+            standaloneHeader={{ left: headerLeft, right: headerRight }}
             sessions={sessionList}
             sessionId={activeSessionId}
             projectId={projectId ?? undefined}
@@ -1197,14 +1201,32 @@ function StandaloneStudioContent() {
                   {t("Docker Blocks & Wires", "Khối dịch vụ & Kết nối")}
                 </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setConfigModalOpen(false)}
-                className="rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                aria-label={t("Close", "Đóng")}
-              >
-                <X className="size-4" aria-hidden="true" />
-              </button>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={autoStudio.isPending}
+                  onClick={runPrepareRuntime}
+                  className="h-7 px-2.5 text-xs"
+                >
+                  <RefreshCw
+                    className={`mr-1.5 size-3 ${autoStudio.isPending ? "animate-spin" : ""}`}
+                    aria-hidden="true"
+                  />
+                  {autoStudio.isPending
+                    ? t("Syncing…", "Đang đồng bộ…")
+                    : t("Sync Docker", "Đồng bộ Docker")}
+                </Button>
+                <button
+                  type="button"
+                  onClick={() => setConfigModalOpen(false)}
+                  className="rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  aria-label={t("Close", "Đóng")}
+                >
+                  <X className="size-4" aria-hidden="true" />
+                </button>
+              </div>
             </div>
 
             <div className="overflow-y-auto p-5">
