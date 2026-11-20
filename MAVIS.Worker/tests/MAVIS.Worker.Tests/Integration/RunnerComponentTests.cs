@@ -227,7 +227,9 @@ public sealed class RunnerComponentTests
                 ["order-svc"] = new("passthrough", 3001) } },
             Path.Combine(Path.GetTempPath(), "collector.yaml"), values));
         var muslEnvironment = muslOverride.RootElement.GetProperty("services").GetProperty("node-api").GetProperty("environment");
-        Assert.Equal("/mavis-otel/dotnet-musl/linux-musl-x64/OpenTelemetry.AutoInstrumentation.Native.so", muslEnvironment.GetProperty("CORECLR_PROFILER_PATH").GetString());
+        Assert.Equal("0", muslEnvironment.GetProperty("CORECLR_ENABLE_PROFILING").GetString());
+        Assert.False(muslEnvironment.TryGetProperty("CORECLR_PROFILER_PATH", out _));
+        Assert.False(muslEnvironment.TryGetProperty("CORECLR_PROFILER", out _));
         Assert.Equal("/mavis-otel/dotnet-musl", muslEnvironment.GetProperty("OTEL_DOTNET_AUTO_HOME").GetString());
         Assert.Equal("console", muslEnvironment.GetProperty("OTEL_DOTNET_AUTO_LOGGER").GetString());
         Assert.Equal("300s", muslOverride.RootElement.GetProperty("services").GetProperty("node-api").GetProperty("healthcheck").GetProperty("start_period").GetString());

@@ -74,9 +74,14 @@ public static class ComposeOverrideBuilder
                     bool musl = app.Runtime == "dotnet8-linux-x64-musl";
                     string agentHome = musl ? "/mavis-otel/dotnet-musl" : "/mavis-otel/dotnet";
                     string nativeDirectory = musl ? "linux-musl-x64" : "linux-x64";
-                    environment["CORECLR_ENABLE_PROFILING"] = "1";
-                    environment["CORECLR_PROFILER"] = "{918728DD-259F-4A6A-AC2B-B85E1B658318}";
-                    environment["CORECLR_PROFILER_PATH"] = $"{agentHome}/{nativeDirectory}/OpenTelemetry.AutoInstrumentation.Native.so";
+                    // .NET 8 supports startup-hook instrumentation without the optional native CLR profiler.
+                    // Keep musl on this supported mode; native profiling can crash before managed diagnostics exist.
+                    environment["CORECLR_ENABLE_PROFILING"] = musl ? "0" : "1";
+                    if (!musl)
+                    {
+                        environment["CORECLR_PROFILER"] = "{918728DD-259F-4A6A-AC2B-B85E1B658318}";
+                        environment["CORECLR_PROFILER_PATH"] = $"{agentHome}/{nativeDirectory}/OpenTelemetry.AutoInstrumentation.Native.so";
+                    }
                     environment["DOTNET_STARTUP_HOOKS"] = $"{agentHome}/net/OpenTelemetry.AutoInstrumentation.StartupHook.dll";
                     environment["DOTNET_ADDITIONAL_DEPS"] = $"{agentHome}/AdditionalDeps";
                     environment["DOTNET_SHARED_STORE"] = $"{agentHome}/store";
