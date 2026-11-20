@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { githubImportRequest } from "@/lib/mainflow-api";
 import { cookies } from "next/headers";
 import { allowedBackendPath } from "@/lib/api/backend-path";
+import { ApiError } from "@/lib/errors/api-error";
 
 export const runtime = "nodejs";
 const cookieName = "mavis_session";
@@ -157,7 +158,7 @@ async function handler(request: NextRequest, context: { params: Promise<{ path: 
           : {}),
       },
     });
-    if (rotatedRefresh && token) {
+    if (rotatedRefresh && token && upstream.status !== 401) {
       response.cookies.set(cookieName, token, {
         httpOnly: true,
         sameSite: "lax",
@@ -173,9 +174,21 @@ async function handler(request: NextRequest, context: { params: Promise<{ path: 
         maxAge: 604800,
       });
     }
-    if (upstream.status === 401) response.cookies.delete(cookieName);
+    if (upstream.status === 401) {
+      response.cookies.delete(cookieName);
+      response.cookies.delete(refreshCookieName);
+    }
     return response;
-  } catch {
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 401) {
+      const response = NextResponse.json(
+        { message: "Please sign in" },
+        { status: 401, headers: { "Cache-Control": "no-store" } },
+      );
+      response.cookies.delete(cookieName);
+      response.cookies.delete(refreshCookieName);
+      return response;
+    }
     return NextResponse.json(
       { message: "Java API unavailable or request timed out. Retry the same analysis request." },
       { status: 502 },

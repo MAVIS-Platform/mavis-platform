@@ -14,6 +14,50 @@ const {validateResponse}=require("../src/lib/api/validate-response.ts");
 const {NextRequest}=require("next/server");
 const route=require("../app/api/mavis/[operation]/route.ts");
 
+test("backend proxy returns 401 for revoked refresh sessions and clears both cookies", async t => {
+ environment(t);
+ const Module=require("node:module");
+ const originalLoad=Module._load;
+ const filename=require.resolve("../app/api/backend/[...path]/route.ts");
+ let backend;
+ try {
+  Module._load=function(id,...args){
+   if(id==="next/headers") return {cookies:async()=>({get:name=>({value:name==="mavis_session"?"old-jwt":"old-refresh"})})};
+   return originalLoad.call(this,id,...args);
+  };
+  delete require.cache[filename];
+  backend=require(filename);
+ } finally { Module._load=originalLoad; }
+ t.after(()=>delete require.cache[filename]);
+ let mode="revoked",calls=[];
+ t.mock.method(globalThis,"fetch",async(url,options={})=>{
+  calls.push({url,authorization:options.headers?.get?.("Authorization")});
+  if(url.endsWith("/auth/refresh")) {
+   if(mode==="revoked") return Response.json({message:"private rejected refresh details"},{status:401});
+   if(mode==="unavailable") return Response.json({message:"private outage details"},{status:503});
+   return Response.json({code:200,data:{token:"new-jwt",refreshToken:"new-refresh"}});
+  }
+  if(options.headers.get("Authorization")==="Bearer new-jwt"&&mode!=="retry-rejected") return Response.json({code:200,data:{id:project}});
+  return Response.json({message:"unauthorized"},{status:401});
+ });
+ const read=()=>backend.GET(new NextRequest("http://localhost:3000/api/backend/auth/me",{headers:{host:"localhost:3000"}}),{params:Promise.resolve({path:["auth","me"]})});
+ let response=await read();
+ assert.equal(response.status,401);
+ for(const name of ["mavis_session","mavis_refresh"]) assert.equal(response.cookies.get(name).value,"");
+ assert.equal(calls.length,2);
+ assert.ok(!JSON.stringify(await response.json()).includes("private"));
+ mode="unavailable";calls=[];response=await read();
+ assert.equal(response.status,502);
+ assert.equal(response.headers.get("set-cookie"),null);
+ mode="valid";calls=[];response=await read();
+ assert.equal(response.status,200);assert.equal(calls.length,3);
+ assert.equal(response.cookies.get("mavis_session").value,"new-jwt");
+ assert.equal(response.cookies.get("mavis_refresh").value,"new-refresh");
+ mode="retry-rejected";calls=[];response=await read();
+ assert.equal(response.status,401);assert.equal(calls.length,3);
+ for(const name of ["mavis_session","mavis_refresh"]) assert.equal(response.cookies.get(name).value,"");
+});
+
 test("profile response preserves actual email and strips private account fields", async t => {
  environment(t);
  t.mock.method(globalThis,"fetch",async()=>Response.json({code:200,data:{id:project,email:"learner@example.org",fullName:"Real Learner",role:"STUDENT",passwordHash:"private",token:"private-token"}}));
