@@ -149,6 +149,8 @@ public class CourseLabSeederService {
             String courseDescription,
             List<CourseraModuleSpec> modules,
             List<LessonSpec> allLessons,
+            List<String> runtimeServices,
+            boolean csharpTrack,
             String auditAction) {
         static CourseraTrackSpec javaV2() {
             return new CourseraTrackSpec(
@@ -156,6 +158,8 @@ public class CourseLabSeederService {
                     JavaCourseraCatalog.COURSE_DESCRIPTION,
                     JavaCourseraCatalog.modules(),
                     JavaCourseraCatalog.allLessons(),
+                    List.of("api-gateway", "order-service", "payment-service", "inventory-service"),
+                    false,
                     "COURSE_JAVA_COURSERA_SEEDED");
         }
 
@@ -165,7 +169,15 @@ public class CourseLabSeederService {
                     CsharpCourseraCatalog.COURSE_DESCRIPTION,
                     CsharpCourseraCatalog.modules(),
                     CsharpCourseraCatalog.allLessons(),
+                    CsharpCourseraCatalog.CURATED_SERVICES,
+                    true,
                     "COURSE_CSHARP_COURSERA_SEEDED");
+        }
+
+        CourseQuizService.Publish toQuizPublish(CourseraModuleSpec modSpec) {
+            return csharpTrack
+                    ? CsharpCourseraCatalog.toQuizPublishRequest(modSpec)
+                    : JavaCourseraCatalog.toQuizPublishRequest(modSpec);
         }
     }
 
@@ -432,15 +444,16 @@ public class CourseLabSeederService {
                         .referenceModel(refModel)
                         .labOrder(targetOrder);
                 if (runtime) {
-                    labBuilder.studioTopologySnapshot(buildDefaultStudioTopology())
+                    labBuilder.studioTopologySnapshot(buildStudioTopologyForServices(track.runtimeServices()))
                             .studioTopologyRevision(1);
                 }
                 match = assignments.saveAndFlush(labBuilder.build());
             } else if (!Integer.valueOf(targetOrder).equals(match.getLabOrder())) {
                 match.setLabOrder(targetOrder);
+                match.setDescription(modSpec.labDescription());
                 match = assignments.saveAndFlush(match);
             }
-            quizzes.publishCurriculum(workspaceId, match.getId(), JavaCourseraCatalog.toQuizPublishRequest(modSpec));
+            quizzes.publishCurriculum(workspaceId, match.getId(), track.toQuizPublish(modSpec));
             orderedLabs.add(match);
         }
 
@@ -908,16 +921,17 @@ public class CourseLabSeederService {
     }
 
     public ObjectNode buildDefaultStudioTopology() {
+        return buildStudioTopologyForServices(
+                List.of("api-gateway", "order-service", "payment-service", "inventory-service"));
+    }
+
+    private ObjectNode buildStudioTopologyForServices(List<String> serviceNames) {
         ObjectNode topology = json.createObjectNode().put("version", 1);
         ArrayNode blocks = topology.putArray("blocks");
-        for (String[] item : List.of(
-                new String[]{"api-gateway", "API Gateway"},
-                new String[]{"order-service", "Order Service"},
-                new String[]{"payment-service", "Payment Service"},
-                new String[]{"inventory-service", "Inventory Service"})) {
+        for (String svc : serviceNames) {
             blocks.addObject()
-                    .put("service", item[0])
-                    .put("label", item[1])
+                    .put("service", svc)
+                    .put("label", svc)
                     .put("canScale", true)
                     .put("initiallyStopped", false);
         }
