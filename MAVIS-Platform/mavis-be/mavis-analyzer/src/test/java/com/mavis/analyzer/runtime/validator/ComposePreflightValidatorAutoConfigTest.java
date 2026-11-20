@@ -449,6 +449,26 @@ class ComposePreflightValidatorAutoConfigTest {
     }
 
     @Test
+    void apacheKafkaSeparatesProcessLogsFromDurableBrokerDataWithoutReplacingExplicitPaths() {
+        String compose = "services:\n  kafka:\n    image: apache/kafka@sha256:" + "2".repeat(64) + "\n";
+        var prepared = validator.validate(compose, Map.of(), Map.of());
+        assertThat(prepared.getSandboxComposeYaml())
+                .contains("LOG_DIR: /tmp/mavis-kafka-logs")
+                .contains("KAFKA_LOG_DIRS: /var/lib/kafka/data");
+        assertThat(validator.validate(prepared.getSandboxComposeYaml()).getRunnerIssues()).isEmpty();
+
+        var configured = validator.validate(compose + "    environment:\n"
+                + "      LOG_DIR: /tmp/custom-kafka-logs\n"
+                + "      KAFKA_LOG_DIRS: /var/lib/kafka/data/records\n", Map.of(), Map.of());
+        assertThat(configured.getSandboxComposeYaml())
+                .contains("LOG_DIR: /tmp/custom-kafka-logs")
+                .contains("KAFKA_LOG_DIRS: /var/lib/kafka/data/records")
+                .doesNotContain("/tmp/mavis-kafka-logs");
+        var otherImage = validator.validate(compose.replace("apache/kafka@", "bitnami/kafka@"), Map.of(), Map.of());
+        assertThat(otherImage.getSandboxComposeYaml()).doesNotContain("LOG_DIR:");
+    }
+
+    @Test
     void envFileDotEnvAndCompositeTemplatesMergeInlineDefaultsRelocateSecretsAndExpandInfraSpecs() {
         String rawCompose = """
                 services:

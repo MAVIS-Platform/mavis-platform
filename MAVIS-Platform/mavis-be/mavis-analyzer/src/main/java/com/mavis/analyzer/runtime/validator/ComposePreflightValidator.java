@@ -513,6 +513,20 @@ public class ComposePreflightValidator {
 
                 // 5b. Stateful infra & Dockerfile VOLUME compatibility under read_only: true + cap_drop: ALL
                 String effectiveImg = String.valueOf(outSvc.getOrDefault("image", imgStr));
+                if (imgStr.startsWith("apache/kafka:") || imgStr.startsWith("apache/kafka@")
+                        || effectiveImg.startsWith("apache/kafka:") || effectiveImg.startsWith("apache/kafka@")) {
+                    Map<String, Object> kafkaEnv = new LinkedHashMap<>();
+                    if (outSvc.get("environment") instanceof Map<?, ?> configuredEnv) {
+                        configuredEnv.forEach((key, value) -> kafkaEnv.put(String.valueOf(key), value));
+                    }
+                    // Kafka's launch script otherwise writes under /opt/kafka/logs on the read-only root.
+                    if (kafkaEnv.putIfAbsent("LOG_DIR", "/tmp/mavis-kafka-logs") == null) {
+                        changes.add("Moved Apache Kafka process logs into the sandbox tmpfs on '" + svc + "'");
+                    }
+                    // Broker records belong to the managed data volume, not the small /tmp tmpfs.
+                    kafkaEnv.putIfAbsent("KAFKA_LOG_DIRS", "/var/lib/kafka/data");
+                    outSvc.put("environment", kafkaEnv);
+                }
                 StatefulInfraSpec infraSpec = statefulInfraSpec(svc, effectiveImg);
                 int volIdx = 0;
                 if (infraSpec != null) {
