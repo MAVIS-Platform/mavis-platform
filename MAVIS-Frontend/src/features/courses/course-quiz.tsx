@@ -25,6 +25,8 @@ type Quiz = {
   passPercent: number;
   passed: boolean;
   latestStatus: "PASSED" | "NEEDS_RETRY" | "NOT_ATTEMPTED" | null;
+  latestCorrectCount?: number | null;
+  latestSubmittedAt?: string | null;
   runtimeUnlocked: boolean;
   questions: Question[];
 };
@@ -233,7 +235,8 @@ function AttemptForm({
                 )}
               </p>
               <p role="status" className="text-sm font-medium opacity-90">
-                PASSED (v{quiz.version}) · {t("Quiz passed · Step 4 unlocked!", "Đã đạt Quiz · Bước 4 đã mở khóa!")}
+                PASSED (v{quiz.version}) ·{" "}
+                {t("Quiz passed · Step 4 unlocked!", "Đã đạt Quiz · Bước 4 đã mở khóa!")}
               </p>
             </div>
             <Button
@@ -265,8 +268,7 @@ function AttemptForm({
                       ) : (
                         <XCircle className="size-4 text-destructive" aria-hidden="true" />
                       )}
-                      {t("Question", "Câu")} {index + 1}:{" "}
-                      {quiz.questions[index]?.prompt ?? ""}
+                      {t("Question", "Câu")} {index + 1}: {quiz.questions[index]?.prompt ?? ""}
                     </p>
                     {result.explanation && (
                       <p className="mt-1 text-xs leading-5 text-muted-foreground">
@@ -436,10 +438,16 @@ function AttemptForm({
                     submit.reset();
                   }}
                 >
-                  🧪 {t("Pre-fill Quick Answers (Test DS-02b / Retry Gate)", "Điền nhanh lựa chọn mẫu (Kiểm thử Quiz Gate / DS-02b)")}
+                  🧪{" "}
+                  {t(
+                    "Pre-fill Quick Answers (Test DS-02b / Retry Gate)",
+                    "Điền nhanh lựa chọn mẫu (Kiểm thử Quiz Gate / DS-02b)",
+                  )}
                 </Button>
               </div>
-              <Button disabled={submit.isPending || !answered}>{t("Submit Quiz", "Nộp Quiz")}</Button>
+              <Button disabled={submit.isPending || !answered}>
+                {t("Submit Quiz", "Nộp Quiz")}
+              </Button>
             </div>
           )}
           {submit.isError && (

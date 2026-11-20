@@ -45,7 +45,8 @@ test("LabWorkspace unifies navigation into a single sticky horizontal stepper wi
     /lg:grid-cols-\[260px_minmax\(0,1fr\)\]/,
     "Duplicate 260px left LabToc sidebar should be removed so diagrams use full width",
   );
-  assert.match(screens, /max-w-\[68ch\]/);
+  assert.match(screens, /Lab objective/);
+  assert.match(screens, /Impact Analysis Workspace/);
 
   const html = renderToStaticMarkup(
     React.createElement(LabToc, {
@@ -55,14 +56,13 @@ test("LabWorkspace unifies navigation into a single sticky horizontal stepper wi
       moduleTitle: "Microservices Boundaries",
       items: [{ id: "t1", title: "C4 Overview", type: "THEORY" }],
       steps: [
-        { id: 1, label: "Static C1–C3 & 3E", state: "current", href: "/lab?step=1" },
-        { id: 2, label: "Reverse BFS Impact", state: "available", href: "/lab?step=2" },
-        { id: 3, label: "Quiz Gate", state: "available", href: "/lab?step=3" },
+        { id: 1, label: "Static Studio", state: "current", href: "/lab?step=1" },
+        { id: 2, label: "MAVIS Runtime Studio", state: "available", href: "/lab?step=2" },
         {
-          id: 4,
-          label: "Studio & Submit",
+          id: 3,
+          label: "Evidence & Submit",
           state: "locked",
-          reason: "Pass Quiz Gate first.",
+          reason: "Finish Runtime Studio first.",
         },
       ],
     }),
@@ -71,18 +71,18 @@ test("LabWorkspace unifies navigation into a single sticky horizontal stepper wi
   assert.match(html, /sticky top-14/);
   assert.match(html, /role="progressbar"/);
   assert.match(html, /aria-valuenow="50"/);
-  assert.match(html, /Static C1–C3 &amp; 3E/);
-  assert.match(html, /Pass Quiz Gate first\./);
+  assert.match(html, /Static Studio/);
+  assert.match(html, /Finish Runtime Studio first\./);
 });
 
-test("CourseQuiz aligns Step 4 unlock copy consistently with no Step 3 CTA contradiction", () => {
-  const quiz = read("src/features/courses/course-quiz.tsx");
-  assert.match(quiz, /Proceed to Step 4: Studio Live & Submit/);
-  assert.match(quiz, /Tiếp tục Bước 4: Studio Live & Nộp bài/);
+test("LabWorkspace uses the Module Quiz as the sole Runtime Studio prerequisite", () => {
+  const screens = read("src/features/courses/screens.tsx");
+  assert.match(screens, /Pass this module's Quiz to unlock MAVIS Runtime Studio/);
+  assert.match(screens, /Pass the Module Quiz to unlock MAVIS Runtime Studio/);
   assert.doesNotMatch(
-    quiz,
-    /Proceed to Step 3: Live Runtime|Tiếp tục Bước 3: Live Runtime/,
-    "Quiz Gate on Step 3 should unlock Step 4 without pointing back to Step 3",
+    screens,
+    /<CourseQuiz/,
+    "The Lab workspace must not embed a second Quiz Gate.",
   );
 });
 

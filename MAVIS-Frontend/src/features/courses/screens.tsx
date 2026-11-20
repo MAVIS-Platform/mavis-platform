@@ -1,19 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import {
-  ArrowRight,
-  BookOpen,
-  Check,
-  CircleAlert,
-  Clock3,
-  Code2,
-  Network,
-  Play,
-  ShieldCheck,
-} from "lucide-react";
+import { ArrowRight, BookOpen, Check, Clock3, Code2, Network, ShieldCheck } from "lucide-react";
 import { SearchInput } from "@/components/shared/forms";
 import { useApi, useApiMutation, useApiQuery, useSelection, useSession } from "@/hooks/use-api";
 import {
@@ -34,9 +24,6 @@ import {
   type StudentLabStudioSession,
 } from "@/features/workspaces/course-access";
 import { DetailPanel, StatusBadge } from "@/components/shared/data";
-import { InteractiveConceptStage } from "@/components/shared/interactive-concept-stage";
-import { MarkdownPreview } from "@/components/shared/markdown-preview";
-import { getScenarioForLessonOrLab } from "./designed-to-scale-scenarios";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
@@ -48,7 +35,7 @@ import { DiagramPreview } from "@/features/architecture/diagram-preview";
 import { LiveStudioWorkbench } from "@/features/runtime/live-studio-workbench";
 import type { ArchitecturalModel } from "@/types/domain";
 import { CourseBuilder } from "./course-builder";
-import { CourseQuiz, useCourseQuiz } from "./course-quiz";
+import { useCourseQuiz } from "./course-quiz";
 import { CourseSetupPanel } from "./course-setup";
 import { CurriculumLibrary } from "./curriculum";
 import { Step2StaticImpact } from "./step2-static-impact";
@@ -66,7 +53,7 @@ import { LecturerCurriculumManager } from "./lecturer-curriculum-manager";
 import { resolveLabTier } from "@/features/assignments/requirements";
 
 type LearningStep = {
-  id: 1 | 2 | 3 | 4;
+  id: 1 | 2 | 3;
   title: string;
   shortTitle: string;
   description: string;
@@ -81,100 +68,71 @@ type InlineC4View = "CONTEXT" | "CONTAINER" | "COMPONENT" | "GRAPH";
 const learningSteps: LearningStep[] = [
   {
     id: 1,
-    title: "Theory & Static Architecture (C1–C3 & 3E)",
-    shortTitle: "Static C1–C3 & 3E",
+    title: "Static Studio",
+    shortTitle: "Static Studio",
     description:
-      "Read the lesson, inspect interactive C1–C3 diagrams, Dependency Graph, and 3E 5-rule code evidence.",
-    titleVi: "Lý thuyết & Kiến trúc Tĩnh (C1–C3 & 3E)",
-    shortTitleVi: "Kiến trúc tĩnh",
+      "Inspect the curated snapshot, C1–C3 architecture, dependency graph, and source evidence before the runtime exercise.",
+    titleVi: "Static Studio",
+    shortTitleVi: "Static Studio",
     descriptionVi:
-      "Đọc lý thuyết, khám phá trực tiếp sơ đồ C1–C3, Đồ thị phụ thuộc và bằng chứng mã nguồn 3E.",
+      "Khảo sát snapshot chuẩn, kiến trúc C1–C3, đồ thị phụ thuộc và bằng chứng mã nguồn trước khi thực hành runtime.",
     icon: Network,
   },
   {
     id: 2,
-    title: "Reverse BFS Impact Explorer",
-    shortTitle: "Reverse BFS Impact",
+    title: "MAVIS Runtime Studio",
+    shortTitle: "Runtime Studio",
     description:
-      "Trace upstream blast radius, direct/indirect callers, and cycle safety right on the Lab's static graph.",
-    titleVi: "Lan truyền Ngược (Reverse BFS Impact)",
-    shortTitleVi: "Lan truyền ngược",
+      "Run the scenario in MAVIS Studio, operate the allowed services, and compare predicted and observed impact.",
+    titleVi: "MAVIS Runtime Studio",
+    shortTitleVi: "Runtime Studio",
     descriptionVi:
-      "Khám phá vùng ảnh hưởng ngược dòng, caller trực tiếp/gián tiếp và xử lý chu trình ngay trên đồ thị Lab.",
+      "Chạy kịch bản trong MAVIS Studio, thao tác các dịch vụ được phép và đối chiếu tác động dự đoán với quan sát thực tế.",
     icon: BookOpen,
   },
   {
     id: 3,
-    title: "Quiz Gate Unlock",
-    shortTitle: "Quiz Gate",
-    description: "Pass the versioned Lab comprehension quiz to unlock Step 4.",
-    titleVi: "Trắc nghiệm Mở khóa Quiz Gate",
-    shortTitleVi: "Quiz Gate",
-    descriptionVi: "Vượt qua bài kiểm tra trắc nghiệm theo phiên bản để mở khóa Bước 4.",
-    icon: ShieldCheck,
-  },
-  {
-    id: 4,
-    title: "Studio Live & Submit Dossier",
-    shortTitle: "Studio & Submit",
+    title: "Evidence & Submit",
+    shortTitle: "Evidence & Submit",
     description:
-      "Run an interactive Studio Live or simulated sandbox experiment (when required) and submit your sealed V2 dossier.",
-    titleVi: "Thực nghiệm Studio Live & Nộp bài",
-    shortTitleVi: "Studio & Nộp bài",
+      "Review the Studio evidence and receipt, then send the completed Lab to submission and grading.",
+    titleVi: "Evidence & Submit",
+    shortTitleVi: "Evidence & Submit",
     descriptionVi:
-      "Chạy thực nghiệm Studio Live (nếu Lab yêu cầu) và hoàn thiện giải trình để nộp bài trực tiếp.",
-    icon: Play,
+      "Kiểm tra evidence và receipt của Studio, sau đó chuyển Lab hoàn tất sang bước nộp và chấm.",
+    icon: ShieldCheck,
   },
 ];
 
 function resolveStepMeta(
-  step: 1 | 2 | 3 | 4,
+  step: 1 | 2 | 3,
   options: { hasReferenceArch: boolean; isTheoryOnlyLab: boolean; requiresRuntime: boolean },
 ): LearningStep {
   const base = learningSteps.find((s) => s.id === step) ?? learningSteps[0]!;
   if (step === 1 && !options.hasReferenceArch) {
     return {
       ...base,
-      title: "Lab Theory & Reading",
-      shortTitle: "Theory",
-      description: "Read the lesson material carefully before moving to the next step.",
-      titleVi: "Lý thuyết & Bài đọc Lab",
-      shortTitleVi: "Lý thuyết",
-      descriptionVi: "Đọc kỹ nội dung bài học trước khi chuyển sang bước tiếp theo.",
-    };
-  }
-  if (step === 2 && !options.hasReferenceArch) {
-    return {
-      ...base,
-      title: "Reverse BFS Impact (Not Required)",
-      shortTitle: "Impact (N/A)",
+      title: "Static Studio",
+      shortTitle: "Static Studio",
       description:
-        "Static graph impact analysis applies only to Labs with an analyzed reference repository.",
-      titleVi: "Lan truyền ngược (Không bắt buộc)",
-      shortTitleVi: "Tác động (K/Á)",
-      descriptionVi: "Phân tích lan truyền ngược chỉ áp dụng cho Lab có mã nguồn tham chiếu.",
+        "Review the Lab objective and required evidence before continuing to the next phase.",
+      titleVi: "Static Studio",
+      shortTitleVi: "Static Studio",
+      descriptionVi:
+        "Xem mục tiêu Lab và evidence cần có trước khi chuyển sang giai đoạn tiếp theo.",
     };
   }
-  if (step === 3 && options.isTheoryOnlyLab) {
+  if (step === 2 && !options.requiresRuntime) {
     return {
       ...base,
-      title: "Quiz Gate (Not Required)",
-      shortTitle: "Quiz (Skipped)",
-      description: "This is a Theory Only Lab — Step 4 Submission is already unlocked.",
-      titleVi: "Quiz Gate (Không bắt buộc)",
-      shortTitleVi: "Quiz (Bỏ qua)",
-      descriptionVi: "Đây là Lab Chỉ Lý Thuyết — Bước 4 Nộp bài đã mở sẵn.",
-    };
-  }
-  if (step === 4 && !options.requiresRuntime) {
-    return {
-      ...base,
-      title: "Submit Lab Explanation",
-      shortTitle: "Submit Lab",
-      description: "Summarize your understanding and submit your sealed V2 dossier.",
-      titleVi: "Nộp Giải Trình Lab",
-      shortTitleVi: "Nộp bài",
-      descriptionVi: "Tổng hợp lập luận kiến trúc và nộp hồ sơ bài làm V2.",
+      title: "MAVIS Runtime Studio (Not Required)",
+      shortTitle: "Runtime (N/A)",
+      description:
+        "This Lab does not require a runtime experiment. Continue to evidence and submission after Static Studio.",
+      titleVi: "MAVIS Runtime Studio (Không bắt buộc)",
+      shortTitleVi: "Runtime (K/Á)",
+      descriptionVi:
+        "Lab này không yêu cầu thực nghiệm runtime. Hoàn tất Static Studio rồi chuyển sang evidence và nộp bài.",
     };
   }
   return base;
@@ -263,19 +221,19 @@ function synthesizeFallbackMermaid(
             ].includes(e.elementType ?? ""),
         )
       : view === "CONTAINER"
-      ? model.elements.filter(
-          (e) =>
-            !e.parentId ||
-            [
-              "SERVICE_CONTAINER",
-              "DATABASE",
-              "MESSAGE_BROKER",
-              "API_GATEWAY",
-              "FRONTEND_APP",
-              "EXTERNAL_SYSTEM",
-            ].includes(e.elementType ?? ""),
-        )
-      : model.elements;
+        ? model.elements.filter(
+            (e) =>
+              !e.parentId ||
+              [
+                "SERVICE_CONTAINER",
+                "DATABASE",
+                "MESSAGE_BROKER",
+                "API_GATEWAY",
+                "FRONTEND_APP",
+                "EXTERNAL_SYSTEM",
+              ].includes(e.elementType ?? ""),
+          )
+        : model.elements;
   const visible = filtered.length > 0 ? filtered.slice(0, 18) : model.elements.slice(0, 18);
   const visibleIds = new Set(visible.map((e) => e.id));
   const lines = ["flowchart TB"];
@@ -298,10 +256,9 @@ function workspaceHref(workspaceId: string, extra = "") {
   return `?workspace=${encodeURIComponent(workspaceId)}${extra}`;
 }
 
-function stepForItemType(type: string): 1 | 2 | 3 | 4 {
-  if (type === "THEORY" || type === "IMPACT_LAB") return 2;
-  if (type === "QUIZ" || type === "ESSAY") return 3;
-  if (type === "RUNTIME_LAB") return 4;
+function stepForItemType(type: string): 1 | 2 | 3 {
+  if (type === "RUNTIME_LAB") return 2;
+  if (type === "ESSAY") return 3;
   return 1;
 }
 
@@ -354,9 +311,7 @@ export function Courses() {
       const score = s.reviewScore;
       return s.labOutcome === "PASSED" || (typeof score === "number" && score >= 50);
     }).length;
-    const scored = list
-      .map((s) => s.reviewScore)
-      .filter((v): v is number => typeof v === "number");
+    const scored = list.map((s) => s.reviewScore).filter((v): v is number => typeof v === "number");
     const avgScore = scored.length
       ? Math.round(scored.reduce((sum, v) => sum + v, 0) / scored.length)
       : null;
@@ -423,8 +378,7 @@ export function Courses() {
                 />
               </div>
               <p className="text-xs text-muted-foreground">
-                {filteredWorkspaces.length} / {workspaces.length}{" "}
-                {t("classes", "lớp học")}
+                {filteredWorkspaces.length} / {workspaces.length} {t("classes", "lớp học")}
               </p>
             </div>
 
@@ -520,7 +474,10 @@ export function CourseRoadmap() {
                   >
                     {studentPreview
                       ? t("← Back to Curriculum Manager", "← Quay lại Trình Quản lý Giáo trình")
-                      : t("👁️ Preview Student Syllabus View", "👁️ Xem Giao diện Lộ trình của Sinh viên")}
+                      : t(
+                          "👁️ Preview Student Syllabus View",
+                          "👁️ Xem Giao diện Lộ trình của Sinh viên",
+                        )}
                   </Button>
                   <Button
                     asChild
@@ -576,7 +533,7 @@ export function LabWorkspace() {
   const workspaceId = params.get("workspace") || selection.workspaceId;
   const assignmentId = params.get("assignment") || "";
   const stepValue = Number(params.get("step") || "1");
-  const activeStep = ([1, 2, 3, 4].includes(stepValue) ? stepValue : 1) as 1 | 2 | 3 | 4;
+  const activeStep = ([1, 2, 3].includes(stepValue) ? stepValue : 1) as 1 | 2 | 3;
   const viewParam = params.get("view");
   const initialView: InlineC4View =
     viewParam === "CONTEXT" ||
@@ -603,21 +560,10 @@ export function LabWorkspace() {
     module.items.some((item) => item.assignmentId === assignmentId),
   );
   const moduleItems = currentModule?.items ?? [];
-  const exactLabTheory = moduleItems.filter(
-    (item) =>
-      item.type === "THEORY" &&
-      item.assignmentId === assignmentId &&
-      typeof item.content?.["body"] === "string",
-  );
-  const theoryItems =
-    exactLabTheory.length > 0
-      ? exactLabTheory
-      : moduleItems.filter(
-          (item) =>
-            item.type === "THEORY" &&
-            (!item.assignmentId || item.assignmentId === assignmentId) &&
-            typeof item.content?.["body"] === "string",
-        );
+  const moduleQuizItem = moduleItems.find((item) => item.type === "QUIZ");
+  const moduleQuizHref = moduleQuizItem
+    ? `/roadmap?workspace=${encodeURIComponent(workspaceId)}&item=${encodeURIComponent(moduleQuizItem.id)}`
+    : `/roadmap?workspace=${encodeURIComponent(workspaceId)}`;
   const lab = assignments.data?.find((item) => item.id === assignmentId);
   const labTier = resolveLabTier(lab);
   const isTheoryOnlyLab = labTier === "THEORY_ONLY";
@@ -631,9 +577,9 @@ export function LabWorkspace() {
     assignmentId,
     Boolean(
       lab &&
-        !isTheoryOnlyLab &&
-        roadmap.data?.guided &&
-        (session.data?.user?.role === "student" || isLecturer),
+      !isTheoryOnlyLab &&
+      roadmap.data?.guided &&
+      (session.data?.user?.role === "student" || isLecturer),
     ),
   );
   const runtimeReady =
@@ -711,7 +657,7 @@ export function LabWorkspace() {
         requiresRuntime &&
         runtimeReady &&
         Boolean(projectId && model && !refArch),
-      poll: displayedStep >= 4,
+      poll: displayedStep >= 2,
     },
   );
   const labSessions =
@@ -745,27 +691,32 @@ export function LabWorkspace() {
 
   const hasReferenceArch = Boolean(activeModelId || referenceSnapshotId);
   const hasSubmitted = Boolean(studentContext.data?.latestSubmission);
-  const stepComplete: Record<1 | 2 | 3 | 4, boolean> = {
-    1: hasReferenceArch
-      ? Boolean(activeModelId)
-      : Boolean(theoryItems.length > 0 || lab?.instructions?.trim() || hasSubmitted || runtimeReady),
-    2: hasReferenceArch
-      ? Boolean(activeModelId) && runtimeReady
-      : Boolean(runtimeReady || hasSubmitted),
-    3: runtimeReady,
-    4: requiresRuntime ? Boolean(verifiedStudioSession && hasSubmitted) : hasSubmitted,
+  const stepComplete: Record<1 | 2 | 3, boolean> = {
+    1: hasReferenceArch ? Boolean(activeModelId) : Boolean(lab || hasSubmitted || runtimeReady),
+    2: requiresRuntime ? Boolean(verifiedStudioSession) : runtimeReady,
+    3: hasSubmitted,
   };
   const completedSteps = learningSteps.filter((step) => stepComplete[step.id]).length;
   const progress = Math.round((completedSteps / learningSteps.length) * 100);
-  const stepAvailable = (id: 1 | 2 | 3 | 4) => preview || id <= 3 || (id === 4 && runtimeReady);
-  const stepReason = (id: 1 | 2 | 3 | 4) =>
-    id === 4
-      ? t(
-          "Pass the Step 3 Quiz Gate (>= 80%) to unlock Step 4.",
-          "Đạt Quiz Gate ở Bước 3 (>= 80%) để mở khóa Bước 4.",
-        )
-      : undefined;
-  const labHref = (step: 1 | 2 | 3 | 4, extraView?: InlineC4View) =>
+  const stepAvailable = (id: 1 | 2 | 3) => {
+    if (preview || id === 1) return true;
+    if (id === 2) return runtimeReady;
+    return !requiresRuntime || Boolean(verifiedStudioSession);
+  };
+  const stepReason = (id: 1 | 2 | 3) => {
+    if (id === 2 && !runtimeReady)
+      return t(
+        "Pass this module's Quiz to unlock MAVIS Runtime Studio.",
+        "Hãy đạt Quiz của Module để mở khóa MAVIS Runtime Studio.",
+      );
+    if (id === 3 && requiresRuntime && !verifiedStudioSession)
+      return t(
+        "Finish MAVIS Runtime Studio and create a verified receipt before submitting.",
+        "Hoàn tất MAVIS Runtime Studio và tạo receipt đã xác minh trước khi nộp bài.",
+      );
+    return undefined;
+  };
+  const labHref = (step: 1 | 2 | 3, extraView?: InlineC4View) =>
     `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignmentId)}&step=${step}${extraView ? `&view=${extraView}` : ""}${preview ? "&preview=1" : ""}`;
   const tocSteps: LabTocStep[] = learningSteps.map((step) => {
     const meta = resolveStepMeta(step.id, { hasReferenceArch, isTheoryOnlyLab, requiresRuntime });
@@ -937,7 +888,10 @@ export function LabWorkspace() {
                   ))}
                 </div>
               </div>
-              <div aria-label={t("Lab actions", "Thao tác Lab")} className="flex flex-wrap items-center gap-2">
+              <div
+                aria-label={t("Lab actions", "Thao tác Lab")}
+                className="flex flex-wrap items-center gap-2"
+              >
                 {(roadmap.data?.labs.length ?? 0) > 1 && (
                   <label className="sr-only" htmlFor="lab-switcher">
                     {t("Switch Lab", "Chuyển bài Lab")}
@@ -1027,7 +981,7 @@ export function LabWorkspace() {
 
           <LabToc
             layout="stepper"
-            sticky={displayedStep !== 4}
+            sticky={displayedStep !== 3}
             steps={tocSteps}
             activeStep={displayedStep}
             moduleTitle={currentModule?.title}
@@ -1046,7 +1000,7 @@ export function LabWorkspace() {
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-primary/20 bg-primary/5 px-4 py-2.5 text-xs text-foreground">
                 <p>
                   <span className="font-semibold text-primary">
-                    {t(`Step ${activeMeta.id}/4`, `Bước ${activeMeta.id}/4`)} ·{" "}
+                    {t(`Phase ${activeMeta.id}/3`, `Giai đoạn ${activeMeta.id}/3`)} ·{" "}
                     {t(activeMeta.title, activeMeta.titleVi)}:
                   </span>{" "}
                   <span className="text-muted-foreground">
@@ -1070,12 +1024,7 @@ export function LabWorkspace() {
               studioVerified={Boolean(verifiedStudioSession)}
               studioSessionId={verifiedStudioSession?.id}
               studioSessions={studioSessionsList}
-              studioSessionsReady={!studentStudioSessions.isPending && !studentContext.isPending}
               labMode={lab.labMode ?? (requiresRuntime ? "THEORY_QUIZ_STUDIO" : "THEORY_QUIZ")}
-              showQuiz={roadmap.data?.guided === true}
-              canAttemptQuiz={
-                session.data?.user?.role === "student" && roadmap.data?.guided === true
-              }
               isStudent={!isLecturer}
               preview={preview}
               hasActiveAnalysisJob={Boolean(
@@ -1087,9 +1036,7 @@ export function LabWorkspace() {
               workspaceId={workspaceId}
               labId={lab.id}
               labTitle={lab.title}
-              labInstructions={lab.instructions}
-              moduleTitle={currentModule?.title}
-              theoryItems={theoryItems}
+              moduleQuizHref={moduleQuizHref}
               projectId={projectId}
               modelQuery={modelQuery}
               referenceModelQuery={referenceModelQuery}
@@ -1174,7 +1121,7 @@ function StaticEvaluationSummary({
 
   return (
     <DetailPanel
-      title={t("3E Static Evaluation Summary (5 Rules)", "Tổng hợp đánh giá tĩnh 3E (5 quy tắc)")}
+      title={t("Static Evaluation Summary (5 Rules)", "Tổng hợp đánh giá tĩnh (5 quy tắc)")}
     >
       <p className="text-xs leading-5 text-muted-foreground">
         {t(
@@ -1273,28 +1220,23 @@ function StepContent({
   workspaceId,
   labId,
   labTitle,
-  labInstructions,
+  moduleQuizHref,
   projectId,
   modelQuery,
   referenceModelQuery,
   snapshotId,
   modelId,
   modelRevision,
-  canAttemptQuiz,
-  showQuiz,
   isStudent,
   preview,
   runtimeReady,
   studioVerified,
   studioSessionId,
   studioSessions,
-  studioSessionsReady = true,
   labMode,
   requiresRuntime,
   hasReferenceArch,
   isTheoryOnlyLab,
-  moduleTitle,
-  theoryItems,
   referenceArchitecture,
   inlineReferenceModel,
   inlineC4View,
@@ -1302,21 +1244,17 @@ function StepContent({
   onOpenC1C3View,
   studentContext,
 }: {
-  step: 1 | 2 | 3 | 4;
+  step: 1 | 2 | 3;
   workspaceId: string;
   labId: string;
   labTitle?: string | undefined;
-  labInstructions?: string | undefined;
-  moduleTitle?: string | undefined;
-  theoryItems?: Array<{ id: string; title: string; content: Record<string, unknown> }> | undefined;
+  moduleQuizHref: string;
   projectId: string;
   modelQuery: string | null;
   referenceModelQuery?: string | null | undefined;
   snapshotId?: string | undefined;
   modelId?: string | undefined;
   modelRevision?: number | undefined;
-  canAttemptQuiz: boolean;
-  showQuiz: boolean;
   isStudent?: boolean | undefined;
   preview?: boolean | undefined;
   hasActiveAnalysisJob?: boolean | undefined;
@@ -1326,7 +1264,6 @@ function StepContent({
   studioVerified: boolean;
   studioSessionId?: string | undefined;
   studioSessions: StudentLabStudioSession[];
-  studioSessionsReady?: boolean | undefined;
   labMode: string;
   requiresRuntime: boolean;
   hasReferenceArch: boolean;
@@ -1352,57 +1289,25 @@ function StepContent({
     selectedStudioSessionId && studioSessions.some((s) => s.id === selectedStudioSessionId)
       ? selectedStudioSessionId
       : (studioSessionId ?? studioSessions[0]?.id ?? "");
-  const autoStarted = useRef(false);
-
-  useEffect(() => {
-    if (autoStarted.current) return;
-    if (
-      client.mode !== "backend" ||
-      step !== 4 ||
-      !isStudent ||
-      preview ||
-      !requiresRuntime ||
-      !runtimeReady ||
-      !studioSessionsReady ||
-      studioVerified ||
-      studioSessions.length > 0 ||
-      activeStudioSessionId
-    )
-      return;
-    autoStarted.current = true;
-    startStudio.mutate();
-  }, [
-    client.mode,
-    step,
-    isStudent,
-    preview,
-    requiresRuntime,
-    runtimeReady,
-    studioSessionsReady,
-    studioVerified,
-    studioSessions.length,
-    activeStudioSessionId,
-    startStudio,
-  ]);
-
   const studioStateQuery = useApiQuery(
     "studioState",
     { sessionId: activeStudioSessionId },
     {
       enabled:
         client.mode === "backend" &&
-        step === 4 &&
+        step === 2 &&
         requiresRuntime &&
         !preview &&
         Boolean(activeStudioSessionId),
-      poll: step === 4 && requiresRuntime && Boolean(activeStudioSessionId),
+      poll: step === 2 && requiresRuntime && Boolean(activeStudioSessionId),
     },
   );
 
   const liveStudioVerified =
     studioVerified ||
     Boolean(
-      studioStateQuery.data?.receiptDigest || studioStateQuery.data?.executionStatus === "COMPLETED",
+      studioStateQuery.data?.receiptDigest ||
+      studioStateQuery.data?.executionStatus === "COMPLETED",
     ) ||
     studioSessions.some((s) => s.id === activeStudioSessionId && s.studioVerified);
   const verifiedSessionForSubmit =
@@ -1427,12 +1332,12 @@ function StepContent({
   }, [activeModel, inlineC4View, referenceArchitecture?.diagrams]);
 
   const previewParam = preview ? "&preview=1" : "";
-  const submitHref = `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=4${previewParam}#lab-submit`;
+  const submitHref = `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=3${previewParam}#lab-submit`;
   const viewModelQuery = modelQuery ?? referenceModelQuery ?? null;
   const current = resolveStepMeta(step, { hasReferenceArch, isTheoryOnlyLab, requiresRuntime });
   const Icon = current.icon;
-  const next = step < 4 ? ((step + 1) as 2 | 3 | 4) : undefined;
-  const nextAvailable = Boolean(preview) || (next !== undefined && (next <= 3 || runtimeReady));
+  const next = step < 3 ? ((step + 1) as 2 | 3) : undefined;
+  const nextAvailable = Boolean(preview) || (next !== undefined && (next !== 2 || runtimeReady));
   const needsSandboxBootstrap = Boolean(
     !preview &&
     activeStudioSessionId &&
@@ -1452,7 +1357,7 @@ function StepContent({
           </div>
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-              Step {step} / 4
+              {t(`Phase ${step} / 3`, `Giai đoạn ${step} / 3`)}
             </p>
             <h2 className="mt-1 text-xl font-semibold">{t(current.title, current.titleVi)}</h2>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
@@ -1464,36 +1369,48 @@ function StepContent({
 
       {step === 1 && (
         <div className="space-y-5">
-          <InteractiveConceptStage
-            scenario={getScenarioForLessonOrLab(
-              undefined,
-              theoryItems?.[0]?.title ?? labTitle ?? moduleTitle,
-            )}
-          />
-          {theoryItems && theoryItems.length > 0
-            ? theoryItems.map((item) => (
-                <article
-                  key={item.id}
-                  className="rounded-2xl border bg-card p-6 shadow-sm"
-                >
-                  <h3 className="mb-3 border-b pb-2.5 text-lg font-semibold tracking-tight">
-                    {item.title}
-                  </h3>
-                  <div className="prose prose-sm max-w-[68ch] leading-7 dark:prose-invert">
-                    <MarkdownPreview markdown={String(item.content?.["body"] ?? "")} />
-                  </div>
-                </article>
-              ))
-            : labInstructions && (
-                <article className="rounded-2xl border bg-card p-6 shadow-sm">
-                  <h3 className="mb-3 border-b pb-2.5 text-lg font-semibold tracking-tight">
-                    {t("Lab Lesson & Instructions", "Bài học & Hướng dẫn Lab")}
-                  </h3>
-                  <div className="prose prose-sm max-w-[68ch] leading-7 dark:prose-invert">
-                    <MarkdownPreview markdown={labInstructions} />
-                  </div>
-                </article>
-              )}
+          <section className="grid gap-3 rounded-2xl border bg-card p-5 text-sm shadow-sm md:grid-cols-3">
+            <div className="space-y-1">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {t("Lab objective", "Mục tiêu Lab")}
+              </p>
+              <p className="font-medium">
+                {t(
+                  "Use the module knowledge against a curated system snapshot.",
+                  "Áp dụng kiến thức của Module trên snapshot hệ thống đã được chọn lọc.",
+                )}
+              </p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {t("Reference snapshot", "Snapshot tham chiếu")}
+              </p>
+              <p className="font-medium">
+                {hasReferenceArch
+                  ? t(
+                      "C1–C3 model and source evidence are ready.",
+                      "Mô hình C1–C3 và bằng chứng mã nguồn đã sẵn sàng.",
+                    )
+                  : t(
+                      "No repository snapshot is required for this Lab.",
+                      "Lab này không yêu cầu snapshot repository.",
+                    )}
+              </p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {t("Required input", "Điều kiện đầu vào")}
+              </p>
+              <p className="font-medium">
+                {isTheoryOnlyLab
+                  ? t("Complete the static evidence.", "Hoàn tất evidence tĩnh.")
+                  : t(
+                      "Pass the Module Quiz before Runtime Studio.",
+                      "Đạt Quiz của Module trước Runtime Studio.",
+                    )}
+              </p>
+            </div>
+          </section>
 
           {hasReferenceArch ? (
             <>
@@ -1603,8 +1520,8 @@ function StepContent({
               referenceArchitecture.evaluation.findings.length > 0 ? (
                 <DetailPanel
                   title={t(
-                    "3E Static Evaluation Summary & Code Evidence",
-                    "Tổng hợp Đánh giá Tĩnh 3E & Bằng chứng Mã nguồn",
+                    "Static Evaluation Summary & Source Evidence",
+                    "Tổng hợp đánh giá tĩnh & bằng chứng mã nguồn",
                   )}
                 >
                   <div className="space-y-4">
@@ -1617,7 +1534,9 @@ function StepContent({
                           <div className="min-w-0 flex-1 space-y-1">
                             <div className="flex flex-wrap items-center gap-2">
                               <span className="font-mono font-semibold">{finding.ruleId}</span>
-                              <span className="font-medium">{getRuleName(finding.ruleId, "en")}</span>
+                              <span className="font-medium">
+                                {getRuleName(finding.ruleId, "en")}
+                              </span>
                             </div>
                             {finding.message && (
                               <p className="leading-5 text-muted-foreground">{finding.message}</p>
@@ -1668,7 +1587,7 @@ function StepContent({
               <DetailPanel
                 title={t(
                   "Evidence-Grounded AI Architecture Tutor (BR-05 & DS-02b)",
-                  "Trợ lý AI Kiến trúc Có Bằng Chứng 3E (BR-05 & DS-02b)",
+                  "Trợ lý AI kiến trúc có bằng chứng (BR-05 & DS-02b)",
                 )}
               >
                 <p className="text-xs text-muted-foreground">
@@ -1682,33 +1601,46 @@ function StepContent({
                     type="button"
                     size="sm"
                     variant={tutorQuery === "grounded" ? "default" : "outline"}
-                    onClick={() => setTutorQuery((cur) => (cur === "grounded" ? "none" : "grounded"))}
+                    onClick={() =>
+                      setTutorQuery((cur) => (cur === "grounded" ? "none" : "grounded"))
+                    }
                   >
-                    🔍 {t("Explain Selected C1–C3 Coupling & Contracts", "Giải thích Phụ thuộc & Hợp đồng C1–C3")}
+                    🔍{" "}
+                    {t(
+                      "Explain Selected C1–C3 Coupling & Contracts",
+                      "Giải thích Phụ thuộc & Hợp đồng C1–C3",
+                    )}
                   </Button>
                   <Button
                     type="button"
                     size="sm"
                     variant={tutorQuery === "out_of_scope" ? "destructive" : "outline"}
-                    onClick={() => setTutorQuery((cur) => (cur === "out_of_scope" ? "none" : "out_of_scope"))}
+                    onClick={() =>
+                      setTutorQuery((cur) => (cur === "out_of_scope" ? "none" : "out_of_scope"))
+                    }
                   >
-                    🧪 {t("Test Out-of-Scope Prompt (Demo DS-02b)", "Thử câu hỏi ngoài phạm vi: Giá Bitcoin 2030? (DS-02b)")}
+                    🧪{" "}
+                    {t(
+                      "Test Out-of-Scope Prompt (Demo DS-02b)",
+                      "Thử câu hỏi ngoài phạm vi: Giá Bitcoin 2030? (DS-02b)",
+                    )}
                   </Button>
                 </div>
                 {tutorQuery === "grounded" && (
                   <div className="mt-3 space-y-1.5 rounded-xl border border-teal-200 bg-teal-50/60 p-3.5 text-xs dark:border-teal-800 dark:bg-teal-950/20">
                     <p className="font-semibold text-teal-950 dark:text-teal-200">
-                      ✅ {t("Evidence-Grounded Answer (Citing Static C1–C3 Model)", "Trả lời có đối chiếu Bằng chứng Tĩnh C1–C3")}
+                      ✅{" "}
+                      {t(
+                        "Evidence-Grounded Answer (Citing Static C1–C3 Model)",
+                        "Trả lời có đối chiếu Bằng chứng Tĩnh C1–C3",
+                      )}
                     </p>
                     <p className="leading-5 text-muted-foreground">
-                      [Node:{" "}
-                      <code>{activeModel?.elements[0]?.name ?? "order-service"}</code>] · [File:{" "}
-                      <code>order-service/src/main/java/com/curated/order/PaymentClient.java</code>] ·
-                      [Contract:{" "}
-                      <code>
-                        {activeModel?.edges[0]?.protocol ?? "SERVICE_HTTP_CALL"}
-                      </code>
-                      ] —{" "}
+                      [Node: <code>{activeModel?.elements[0]?.name ?? "order-service"}</code>] ·
+                      [File:{" "}
+                      <code>order-service/src/main/java/com/curated/order/PaymentClient.java</code>]
+                      · [Contract:{" "}
+                      <code>{activeModel?.edges[0]?.protocol ?? "SERVICE_HTTP_CALL"}</code>] —{" "}
                       {t(
                         "Cross-container calls follow explicit OpenFeign/HTTP contracts separated from private database ownership.",
                         "Lời gọi liên dịch vụ đi qua hợp đồng OpenFeign/HTTP rõ ràng, tách biệt hoàn toàn khỏi quyền sở hữu DB nội bộ.",
@@ -1743,93 +1675,36 @@ function StepContent({
               <p className="text-sm font-semibold text-teal-950 dark:text-teal-100">
                 {hasReferenceArch
                   ? t(
-                      "Finished reading the Theory & C1–C3 Diagrams?",
-                      "Bạn đã nắm vững Lý thuyết & Kiến trúc C1–C3?",
+                      "Finished reviewing the snapshot and C1–C3 architecture?",
+                      "Bạn đã hoàn tất xem snapshot và kiến trúc C1–C3?",
                     )
                   : t(
-                      "Finished reading the Theory lesson?",
-                      "Bạn đã đọc xong bài Lý thuyết?",
+                      "Finished reviewing the Static Studio brief?",
+                      "Bạn đã xem xong tóm tắt Static Studio?",
                     )}
               </p>
               <p className="text-xs text-teal-900/80 dark:text-teal-300/80">
                 {hasReferenceArch
                   ? t(
-                      "Proceed to trace upstream blast radius on the service graph in Step 2.",
-                      "Chuyển sang Bước 2 để thử nghiệm phân tích lan truyền lỗi trên đồ thị phụ thuộc.",
+                      "Use the static graph to form an impact hypothesis, then complete the Module Quiz before opening Runtime Studio.",
+                      "Dùng đồ thị tĩnh để lập giả thuyết tác động, sau đó hoàn thành Quiz của Module trước khi mở Runtime Studio.",
                     )
                   : isTheoryOnlyLab
                     ? t(
-                        "Theory Only Lab — proceed straight to Step 4 to submit your explanation.",
-                        "Lab Chỉ Lý Thuyết — chuyển thẳng sang Bước 4 để nộp phần giải trình.",
+                        "This Lab does not require Runtime Studio; continue to evidence and submission when your static work is complete.",
+                        "Lab này không yêu cầu Runtime Studio; hãy chuyển sang evidence và nộp bài khi hoàn tất phần tĩnh.",
                       )
                     : t(
-                        "Proceed to Step 3 to complete the comprehension Quiz Gate.",
-                        "Chuyển sang Bước 3 để làm bài Quiz kiểm tra kiến thức.",
+                        "The Module Quiz is the only prerequisite for Runtime Studio.",
+                        "Quiz của Module là điều kiện duy nhất để mở Runtime Studio.",
                       )}
               </p>
             </div>
             <Button asChild className="bg-teal-600 text-white hover:bg-teal-700">
-              <Link
-                href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=${hasReferenceArch ? 2 : isTheoryOnlyLab ? 4 : 3}${previewParam}`}
-              >
-                {hasReferenceArch
-                  ? t(
-                      "Next Step 2: Reverse BFS Impact Simulator →",
-                      "Sang Bước 2: Thử Nghiệm Lan Truyền Lỗi (BFS) →",
-                    )
-                  : isTheoryOnlyLab
-                    ? t("Next Step: Submit Lab Explanation →", "Sang Bước 4: Nộp Giải Trình Lab →")
-                    : t("Next Step 3: Take Quiz Gate →", "Sang Bước 3: Làm Bài Quiz →")}
-              </Link>
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {step === 2 && (
-        <div className="space-y-5">
-          {hasReferenceArch ? (
-            <Step2StaticImpact
-              projectId={projectId}
-              modelId={modelId}
-              modelQuery={modelQuery}
-              sourceLink={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=1${previewParam}`}
-              inlineModel={activeModel}
-              onOpenC1C3View={onOpenC1C3View}
-            />
-          ) : (
-            <DetailPanel
-              title={t("Reverse BFS Impact Explorer", "Khám phá tác động tĩnh theo Reverse BFS")}
-            >
-              <p className="text-sm text-muted-foreground">
-                {t(
-                  "This Theory-focused Lab has no reference repository attached, so static graph impact exploration is skipped.",
-                  "Lab lý thuyết này không gắn kho mã nguồn tham chiếu nên không cần phân tích đồ thị phụ thuộc tĩnh.",
-                )}
-              </p>
-            </DetailPanel>
-          )}
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-teal-200 bg-gradient-to-r from-teal-50/70 to-emerald-50/60 p-4">
-            <Button asChild variant="outline">
-              <Link
-                href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=1${previewParam}`}
-              >
-                {t(
-                  "← Back to Step 1 (Theory)",
-                  "← Quay lại Bước 1 (Lý thuyết)",
-                )}
-              </Link>
-            </Button>
-            <Button asChild className="bg-teal-600 text-white hover:bg-teal-700">
-              <Link
-                href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=${isTheoryOnlyLab ? 4 : 3}${previewParam}`}
-              >
+              <Link href={isTheoryOnlyLab ? submitHref : moduleQuizHref}>
                 {isTheoryOnlyLab
-                  ? t("Next Step: Submit Lab Explanation →", "Sang Bước 4: Nộp Giải Trình Lab →")
-                  : t(
-                      "Next Step 3: Take Quiz to Unlock Lab →",
-                      "Sang Bước 3: Làm Bài Quiz Mở Khóa Lab →",
-                    )}
+                  ? t("Continue to Evidence & Submit →", "Sang Evidence & Submit →")
+                  : t("Open Module Quiz →", "Mở Quiz của Module →")}
               </Link>
             </Button>
           </div>
@@ -1838,76 +1713,86 @@ function StepContent({
 
       {step === 3 && (
         <div className="space-y-4">
-          {isTheoryOnlyLab ? (
-            <DetailPanel
-              title={t(
-                "Quiz Gate Not Required · Theory Only Lab",
-                "Không yêu cầu Quiz Gate · Lab Chỉ Lý Thuyết",
-              )}
-            >
-              <div className="space-y-4 rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4">
-                <p className="text-sm leading-6 text-foreground">
-                  {t(
-                    "This Lab uses the Theory Only flow. Step 4 Submission is already unlocked without a Quiz check.",
-                    "Lab này thuộc cấu trúc Chỉ Lý Thuyết. Bước 4 Nộp bài đã mở sẵn, không cần làm Quiz.",
-                  )}
-                </p>
-                <Button asChild className="bg-teal-600 text-white hover:bg-teal-700">
-                  <Link href={submitHref}>
-                    {t("Go to Step 4: Submit Lab Explanation →", "Sang Bước 4: Nộp Giải Trình Lab →")}
-                  </Link>
-                </Button>
-              </div>
+          {requiresRuntime && !liveStudioVerified && !preview ? (
+            <DetailPanel title={t("Runtime evidence required", "Cần evidence Runtime Studio")}>
+              <p className="text-sm leading-6 text-muted-foreground">
+                {t(
+                  "Finish the MAVIS Runtime Studio exercise to seal a verified receipt before submission.",
+                  "Hãy hoàn tất bài thực hành MAVIS Runtime Studio để tạo receipt đã xác minh trước khi nộp bài.",
+                )}
+              </p>
+              <Button asChild size="sm" variant="outline" className="mt-4">
+                <Link
+                  href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=2${previewParam}`}
+                >
+                  {t("Return to Runtime Studio", "Quay lại Runtime Studio")}
+                </Link>
+              </Button>
             </DetailPanel>
-          ) : showQuiz ? (
-            <CourseQuiz
+          ) : !preview && labMode !== "LEGACY" ? (
+            <LabSubmissionV2
               workspaceId={workspaceId}
-              labId={labId}
-              canSubmit={canAttemptQuiz}
-              runtimeStepHref={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=4${previewParam}`}
-              submissionHref={!requiresRuntime ? submitHref : undefined}
+              assignmentId={labId}
+              labMode={labMode}
+              runtimeSessionId={verifiedSessionForSubmit}
+              initialSubmission={studentContext?.latestSubmission}
+              initialReview={studentContext?.latestReview}
+              hasReferenceArch={hasReferenceArch}
             />
           ) : (
-            <DetailPanel title={t("Quiz gate", "Điều kiện Quiz")}>
-              <div className="flex items-start gap-3 rounded-xl border bg-muted/30 p-4">
-                <CircleAlert className="mt-0.5 size-5 shrink-0 text-warning" />
-                <p className="text-sm leading-6 text-muted-foreground">
-                  {t(
-                    "Quiz attempts are available to enrolled students in published guided Labs.",
-                    "Sinh viên đã ghi danh có thể làm Quiz trong Lab tuần tự đã công bố.",
-                  )}
-                </p>
-              </div>
+            <DetailPanel title={t("Evidence & Submit", "Evidence & Submit")}>
+              <p className="text-sm text-muted-foreground">
+                {t(
+                  "Preview mode does not create submissions.",
+                  "Chế độ xem trước không tạo bài nộp.",
+                )}
+              </p>
             </DetailPanel>
           )}
         </div>
       )}
 
-      {step === 4 && (
+      {step === 2 && (
         <div className="space-y-5">
           {!runtimeReady && !preview ? (
             <DetailPanel
               title={t(
-                "Step 4 Locked · Quiz Gate Required",
-                "Bước 4 đang khóa · Cần vượt qua Quiz Gate",
+                "Runtime Studio Locked · Module Quiz Required",
+                "Runtime Studio đang khóa · Cần đạt Quiz của Module",
               )}
             >
               <p className="text-sm text-muted-foreground">
                 {t(
-                  "Pass the Step 3 Quiz Gate (>= 80%) to unlock Studio Live & Submission.",
-                  "Hãy hoàn thành Quiz Gate ở Bước 3 (>= 80%) để mở khóa Thực nghiệm Studio Live & Nộp bài.",
+                  "Pass the Module Quiz to unlock MAVIS Runtime Studio.",
+                  "Hãy đạt Quiz của Module để mở khóa MAVIS Runtime Studio.",
                 )}
               </p>
               <Button asChild size="sm" variant="outline">
-                <Link
-                  href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=3`}
-                >
-                  {t("Go to Step 3: Quiz Gate", "Sang Bước 3: Làm Quiz Gate")}
-                </Link>
+                <Link href={moduleQuizHref}>{t("Open Module Quiz", "Mở Quiz của Module")}</Link>
               </Button>
             </DetailPanel>
           ) : (
             <>
+              {hasReferenceArch && (
+                <DetailPanel
+                  title={t("Impact Analysis Workspace", "Không gian phân tích tác động")}
+                >
+                  <p className="mb-4 text-sm leading-6 text-muted-foreground">
+                    {t(
+                      "Use Reverse BFS on the curated dependency graph to form a static impact hypothesis, then compare it with the observed Runtime Studio evidence below.",
+                      "Dùng Reverse BFS trên đồ thị phụ thuộc đã chọn lọc để lập giả thuyết tác động tĩnh, sau đó đối chiếu với evidence quan sát được trong Runtime Studio bên dưới.",
+                    )}
+                  </p>
+                  <Step2StaticImpact
+                    projectId={projectId}
+                    modelId={modelId}
+                    modelQuery={modelQuery}
+                    sourceLink={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=1${previewParam}`}
+                    inlineModel={activeModel}
+                    onOpenC1C3View={onOpenC1C3View}
+                  />
+                </DetailPanel>
+              )}
               {requiresRuntime && (
                 <DetailPanel
                   title={t(
@@ -1927,7 +1812,7 @@ function StepContent({
                       <div className="grid gap-2 rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 text-xs text-emerald-950 dark:border-emerald-800/60 dark:bg-emerald-950/20 sm:grid-cols-3">
                         <div className="rounded-lg bg-background/80 px-3 py-2">
                           <span className="font-semibold">
-                            4.1 {t("Start Studio Session", "Khởi tạo Phiên Studio")}
+                            2.1 {t("Start Studio Session", "Khởi tạo Phiên Studio")}
                           </span>
                           <p className="mt-0.5 text-muted-foreground">
                             {t("Launch live topology canvas", "Mở topology dịch vụ tương tác")}
@@ -1935,18 +1820,24 @@ function StepContent({
                         </div>
                         <div className="rounded-lg bg-background/80 px-3 py-2">
                           <span className="font-semibold">
-                            4.2 {t("Operate & Finish Studio", "Thực hành & Finish Studio")}
+                            2.2 {t("Operate & Finish Studio", "Thực hành & Finish Studio")}
                           </span>
                           <p className="mt-0.5 text-muted-foreground">
-                            {t("Seal runtime observation receipt", "Ghi nhận thao tác và biên nhận")}
+                            {t(
+                              "Seal runtime observation receipt",
+                              "Ghi nhận thao tác và biên nhận",
+                            )}
                           </p>
                         </div>
                         <div className="rounded-lg bg-background/80 px-3 py-2">
                           <span className="font-semibold">
-                            4.3 {t("Explain & Submit", "Giải trình & Nộp bài")}
+                            2.3 {t("Capture runtime evidence", "Lưu evidence runtime")}
                           </span>
                           <p className="mt-0.5 text-muted-foreground">
-                            {t("Summarize findings below", "Nộp giải trình ở khung bên dưới")}
+                            {t(
+                              "Continue to Evidence & Submit after Finish Studio",
+                              "Sang Evidence & Submit sau khi Finish Studio",
+                            )}
                           </p>
                         </div>
                       </div>
@@ -2021,25 +1912,29 @@ function StepContent({
                       {bootstrapStudio.isError && <ErrorState error={bootstrapStudio.error} />}
                       {studentContext?.studioExercise && (
                         <section className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 text-sm">
-                          <h3 className="font-semibold">
-                            {t("Studio exercise", "Đề Studio")}
-                          </h3>
+                          <h3 className="font-semibold">{t("Studio exercise", "Đề Studio")}</h3>
                           {studentContext.studioExercise.instructions && (
                             <p className="mt-1 whitespace-pre-wrap text-muted-foreground">
                               {studentContext.studioExercise.instructions}
                             </p>
                           )}
                           <ul className="mt-2 grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
-                            {!!studentContext.studioExercise.initialState?.stoppedServices?.length && (
+                            {!!studentContext.studioExercise.initialState?.stoppedServices
+                              ?.length && (
                               <li>
                                 {t("Stopped services", "Service dừng sẵn")}:{" "}
-                                {studentContext.studioExercise.initialState.stoppedServices.join(", ")}
+                                {studentContext.studioExercise.initialState.stoppedServices.join(
+                                  ", ",
+                                )}
                               </li>
                             )}
-                            {!!studentContext.studioExercise.initialState?.stoppedControllers?.length && (
+                            {!!studentContext.studioExercise.initialState?.stoppedControllers
+                              ?.length && (
                               <li>
                                 {t("Stopped controllers", "Controller dừng sẵn")}:{" "}
-                                {studentContext.studioExercise.initialState.stoppedControllers.join(", ")}
+                                {studentContext.studioExercise.initialState.stoppedControllers.join(
+                                  ", ",
+                                )}
                               </li>
                             )}
                             {!!studentContext.studioExercise.allowedActions?.length && (
@@ -2048,7 +1943,8 @@ function StepContent({
                                 {studentContext.studioExercise.allowedActions.join(", ")}
                               </li>
                             )}
-                            {studentContext.studioExercise.successCriteria?.maxErrorRatePercent != null && (
+                            {studentContext.studioExercise.successCriteria?.maxErrorRatePercent !=
+                              null && (
                               <li>
                                 {t("Max error rate", "Tỉ lệ lỗi tối đa")}:{" "}
                                 {studentContext.studioExercise.successCriteria.maxErrorRatePercent}%
@@ -2063,11 +1959,16 @@ function StepContent({
                             {studentContext.studioExercise.successCriteria?.requiredTraceEdge && (
                               <li>
                                 {t("Required trace", "Trace bắt buộc")}:{" "}
-                                {studentContext.studioExercise.successCriteria.requiredTraceEdge.from} →{" "}
+                                {
+                                  studentContext.studioExercise.successCriteria.requiredTraceEdge
+                                    .from
+                                }{" "}
+                                →{" "}
                                 {studentContext.studioExercise.successCriteria.requiredTraceEdge.to}
                               </li>
                             )}
-                            {!!studentContext.studioExercise.successCriteria?.minReplicas?.length && (
+                            {!!studentContext.studioExercise.successCriteria?.minReplicas
+                              ?.length && (
                               <li>
                                 {t("Minimum replicas", "Replica tối thiểu")}:{" "}
                                 {studentContext.studioExercise.successCriteria.minReplicas
@@ -2100,18 +2001,6 @@ function StepContent({
                   )}
                 </DetailPanel>
               )}
-
-              {!preview && labMode !== "LEGACY" && (
-                <LabSubmissionV2
-                  workspaceId={workspaceId}
-                  assignmentId={labId}
-                  labMode={labMode}
-                  runtimeSessionId={verifiedSessionForSubmit}
-                  initialSubmission={studentContext?.latestSubmission}
-                  initialReview={studentContext?.latestReview}
-                  hasReferenceArch={hasReferenceArch}
-                />
-              )}
             </>
           )}
         </div>
@@ -2136,7 +2025,7 @@ function StepContent({
             "Tiến độ được lưu trực tiếp trong không gian Lab này.",
           )}
         </span>
-        {step === 4 ? (
+        {step === 3 ? (
           <Button asChild size="sm" variant="outline">
             <Link href={submitHref}>
               {t("Jump to Submission Box", "Đi tới Khung Nộp bài")} <ArrowRight />
@@ -2151,7 +2040,9 @@ function StepContent({
                 {t("Next step", "Bước tiếp theo")} <ArrowRight />
               </Link>
             ) : (
-              <span>{t("Pass Quiz Gate to continue", "Vượt qua Quiz Gate để tiếp tục")}</span>
+              <span>
+                {t("Pass the Module Quiz to continue", "Hãy đạt Quiz của Module để tiếp tục")}
+              </span>
             )}
           </Button>
         )}

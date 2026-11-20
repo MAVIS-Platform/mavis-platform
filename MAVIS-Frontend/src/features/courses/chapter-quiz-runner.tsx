@@ -2,11 +2,15 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Clock3, FileQuestion, RotateCcw, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useApi } from "@/hooks/use-api";
+import { api, ApiError } from "@/lib/mainflow-api";
 import { useLocale } from "@/lib/i18n/locale-context";
 import type { QuizQuestionData } from "./java-coursera-curriculum-data";
+import { useCourseQuiz } from "./course-quiz";
 
 const PASS_PERCENT = 70;
 type QuizAttemptStatus = "NOT_STARTED" | "IN_PROGRESS" | "SUBMITTED";
@@ -14,8 +18,15 @@ type StoredQuizAttempt = {
   attemptId: string;
   status: QuizAttemptStatus;
   answers: Record<string, number>;
+  correctCount?: number;
   submittedAt?: string | undefined;
   scorePercent?: number;
+};
+
+type BackendQuizResult = {
+  correctCount: number;
+  totalQuestions: number;
+  status: "PASSED" | "NEEDS_RETRY";
 };
 
 function makeAttemptId() {
@@ -52,6 +63,10 @@ export function ChapterQuizRunner({
   onNextLesson?: (() => void) | undefined;
 }) {
   const { t } = useLocale();
+  const client = useApi();
+  const cache = useQueryClient();
+  const backendQuizEnabled = client.mode === "backend" && Boolean(assignmentId) && !canManage;
+  const backendQuiz = useCourseQuiz(workspaceId, assignmentId ?? "", backendQuizEnabled);
   const storageKey = useMemo(
     () => attemptStorageKey(workspaceId, assignmentId, title),
     [assignmentId, title, workspaceId],
@@ -87,7 +102,107 @@ export function ChapterQuizRunner({
     }
   };
 
-  if (!questions.length) {
+  useEffect(() => {
+    if (!backendQuizEnabled || !backendQuiz.data || attempt?.status === "IN_PROGRESS") return;
+    const submitted =
+      backendQuiz.data.latestStatus === "PASSED" || backendQuiz.data.latestStatus === "NEEDS_RETRY";
+    if (!submitted) return;
+    const total = backendQuiz.data.questions.length;
+    const correct = backendQuiz.data.latestCorrectCount;
+    const recordedScore =
+      correct === null || correct === undefined || total === 0
+        ? attempt?.scorePercent
+        : Math.round((correct / total) * 100);
+    if (
+      attempt?.status === "SUBMITTED" &&
+      attempt.scorePercent === recordedScore &&
+      attempt.submittedAt === (backendQuiz.data.latestSubmittedAt ?? attempt.submittedAt)
+    ) {
+      return;
+    }
+    const recordedAttempt: StoredQuizAttempt = {
+      attemptId: attempt?.attemptId || `recorded-${backendQuiz.data.version}`,
+      status: "SUBMITTED",
+      answers: attempt?.answers ?? {},
+    };
+    const submittedAt = backendQuiz.data.latestSubmittedAt ?? attempt?.submittedAt;
+    if (submittedAt) recordedAttempt.submittedAt = submittedAt;
+    if (recordedScore !== undefined) recordedAttempt.scorePercent = recordedScore;
+    if (correct !== null && correct !== undefined) recordedAttempt.correctCount = correct;
+    updateAttempt(recordedAttempt);
+  }, [attempt, backendQuiz.data, backendQuizEnabled]);
+
+  const submitBackendAttempt = useMutation({
+    mutationFn: (nextAttempt: StoredQuizAttempt) =>
+      api<BackendQuizResult>(
+        `workspaces/${workspaceId}/course-labs/${assignmentId}/quiz/attempts`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            attemptId: nextAttempt.attemptId,
+            version: backendQuiz.data?.version,
+            selections: (backendQuiz.data?.questions ?? []).map((question, index) => {
+              const answer = nextAttempt.answers[question.id ?? `question-${index}`];
+              return typeof answer === "number" ? [answer] : [];
+            }),
+          }),
+        },
+      ),
+    onSuccess: (result, nextAttempt) => {
+      updateAttempt({
+        ...nextAttempt,
+        status: "SUBMITTED",
+        submittedAt: new Date().toISOString(),
+        correctCount: result.correctCount,
+        scorePercent: Math.round((result.correctCount / result.totalQuestions) * 100),
+      });
+      void cache.invalidateQueries({ queryKey: ["api", "course-quiz", workspaceId, assignmentId] });
+      void cache.invalidateQueries({
+        queryKey: ["api", "student-lab-context", workspaceId, assignmentId],
+      });
+    },
+  });
+
+  const displayedQuestions = useMemo<QuizQuestionData[]>(() => {
+    if (!backendQuizEnabled) return questions;
+    return (backendQuiz.data?.questions ?? []).map((question, index) => ({
+      id: question.id ?? `question-${index}`,
+      prompt: question.prompt,
+      options: question.options,
+      correctOption: -1,
+      explanation: "",
+    }));
+  }, [backendQuiz.data?.questions, backendQuizEnabled, questions]);
+
+  if (backendQuizEnabled && backendQuiz.isPending) {
+    return (
+      <p className="mx-auto mt-8 max-w-[850px] text-sm text-muted-foreground">
+        {t("Loading quiz…", "Đang tải Quiz…")}
+      </p>
+    );
+  }
+  if (backendQuizEnabled && backendQuiz.isError) {
+    return (
+      <div
+        role="alert"
+        className="mx-auto mt-6 max-w-[850px] space-y-3 rounded-xl border border-destructive/30 p-4 text-sm"
+      >
+        <p>
+          {backendQuiz.error instanceof ApiError && backendQuiz.error.status === 404
+            ? t(
+                "This module Quiz has not been published yet.",
+                "Quiz của Module này chưa được công bố.",
+              )
+            : t("The module Quiz could not be loaded.", "Không thể tải Quiz của Module.")}
+        </p>
+        <Button type="button" variant="outline" onClick={() => void backendQuiz.refetch()}>
+          {t("Retry", "Thử lại")}
+        </Button>
+      </div>
+    );
+  }
+
+  if (!displayedQuestions.length) {
     return (
       <div className="mx-auto mt-6 max-w-[850px] rounded-xl border border-dashed bg-muted/20 p-4 text-sm text-muted-foreground">
         {t(
@@ -119,7 +234,7 @@ export function ChapterQuizRunner({
     return (
       <QuizLanding
         title={title}
-        questionCount={questions.length}
+        questionCount={displayedQuestions.length}
         onStart={() =>
           updateAttempt({ attemptId: makeAttemptId(), status: "IN_PROGRESS", answers: {} })
         }
@@ -127,21 +242,23 @@ export function ChapterQuizRunner({
     );
   }
 
-  const correctCount = questions.filter(
+  const selectedCorrectCount = displayedQuestions.filter(
     (question) => currentAttempt.answers[question.id] === question.correctOption,
   ).length;
+  const correctCount = currentAttempt.correctCount ?? selectedCorrectCount;
   const scorePercent =
-    currentAttempt.scorePercent ?? Math.round((correctCount / questions.length) * 100);
+    currentAttempt.scorePercent ?? Math.round((correctCount / displayedQuestions.length) * 100);
   if (currentAttempt.status === "SUBMITTED") {
     return (
       <QuizResult
         title={title}
         scorePercent={scorePercent}
         correctCount={correctCount}
-        questionCount={questions.length}
+        questionCount={displayedQuestions.length}
         submittedAt={currentAttempt.submittedAt}
         showFeedback={showFeedback}
-        questions={questions}
+        canViewFeedback={!backendQuizEnabled}
+        questions={displayedQuestions}
         answers={currentAttempt.answers}
         nextLessonTitle={nextLessonTitle}
         onToggleFeedback={() => setShowFeedback((current) => !current)}
@@ -156,7 +273,7 @@ export function ChapterQuizRunner({
   return (
     <QuizTaking
       title={title}
-      questions={questions}
+      questions={displayedQuestions}
       answers={currentAttempt.answers}
       onAnswer={(questionId, optionIndex) =>
         updateAttempt({
@@ -164,14 +281,18 @@ export function ChapterQuizRunner({
           answers: { ...currentAttempt.answers, [questionId]: optionIndex },
         })
       }
-      onSubmit={() =>
-        updateAttempt({
+      submitting={submitBackendAttempt.isPending}
+      submitError={submitBackendAttempt.error}
+      onSubmit={() => {
+        const nextAttempt = {
           ...currentAttempt,
           status: "SUBMITTED",
           submittedAt: new Date().toISOString(),
           scorePercent,
-        })
-      }
+        } as StoredQuizAttempt;
+        if (backendQuizEnabled) submitBackendAttempt.mutate(nextAttempt);
+        else updateAttempt(nextAttempt);
+      }}
     />
   );
 }
@@ -241,12 +362,16 @@ function QuizTaking({
   answers,
   onAnswer,
   onSubmit,
+  submitting = false,
+  submitError,
 }: {
   title: string;
   questions: QuizQuestionData[];
   answers: Record<string, number>;
   onAnswer: (questionId: string, optionIndex: number) => void;
   onSubmit: () => void;
+  submitting?: boolean;
+  submitError?: Error | null;
 }) {
   const { t } = useLocale();
   const answeredCount = questions.filter(
@@ -296,6 +421,7 @@ function QuizTaking({
                         value={optionIndex}
                         checked={answers[question.id] === optionIndex}
                         onChange={() => onAnswer(question.id, optionIndex)}
+                        disabled={submitting}
                         className="mt-1 size-4 shrink-0 accent-primary"
                       />
                       <span>{option}</span>
@@ -319,10 +445,18 @@ function QuizTaking({
                 "Bạn có thể nộp ngay hoặc hoàn thành các câu còn lại.",
               )}
         </p>
-        <Button type="button" disabled={answeredCount === 0} onClick={onSubmit}>
-          {t("Submit Quiz", "Nộp Quiz")}
+        <Button type="button" disabled={answeredCount === 0 || submitting} onClick={onSubmit}>
+          {submitting ? t("Submitting…", "Đang nộp…") : t("Submit Quiz", "Nộp Quiz")}
         </Button>
       </div>
+      {submitError && (
+        <p role="alert" className="text-sm text-destructive">
+          {t(
+            "Your submission could not be saved. Please retry.",
+            "Không thể lưu bài nộp. Vui lòng thử lại.",
+          )}
+        </p>
+      )}
     </section>
   );
 }
@@ -334,6 +468,7 @@ function QuizResult({
   questionCount,
   submittedAt,
   showFeedback,
+  canViewFeedback,
   questions,
   answers,
   nextLessonTitle,
@@ -347,6 +482,7 @@ function QuizResult({
   questionCount: number;
   submittedAt?: string | undefined;
   showFeedback: boolean;
+  canViewFeedback: boolean;
   questions: QuizQuestionData[];
   answers: Record<string, number>;
   nextLessonTitle?: string | undefined;
@@ -408,15 +544,19 @@ function QuizResult({
               `Đúng ${correctCount}/${questionCount} câu`,
             )}
           </p>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="mt-4"
-            onClick={onToggleFeedback}
-          >
-            {showFeedback ? t("Hide feedback", "Ẩn phản hồi") : t("View feedback", "Xem phản hồi")}
-          </Button>
+          {canViewFeedback && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="mt-4"
+              onClick={onToggleFeedback}
+            >
+              {showFeedback
+                ? t("Hide feedback", "Ẩn phản hồi")
+                : t("View feedback", "Xem phản hồi")}
+            </Button>
+          )}
         </div>
         <aside className="rounded-xl border p-4 text-sm">
           <h3 className="font-semibold">{t("Submission", "Lần nộp bài")}</h3>
@@ -431,7 +571,7 @@ function QuizResult({
           )}
         </aside>
       </div>
-      {showFeedback && (
+      {canViewFeedback && showFeedback && (
         <ol className="space-y-6 border-t p-6 sm:p-8">
           {questions.map((question, index) => {
             const selectedOption = answers[question.id];

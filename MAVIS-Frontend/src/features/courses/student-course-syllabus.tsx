@@ -186,10 +186,6 @@ export function StudentCourseSyllabus({
   const activeLabRecord =
     (chapterAssignmentId ? labs.find((l) => l.assignmentId === chapterAssignmentId) : undefined) ??
     selectedLab;
-  const activeAssignmentRecord =
-    (chapterAssignmentId
-      ? (assignmentsQuery.data ?? []).find((a) => a.id === chapterAssignmentId)
-      : undefined) ?? selectedAssignment;
   const selectCurriculumItem = (item: OutlineItemData) => {
     setSelectedItemId(item.id);
     const owningModule = syllabusModules.find((module) =>
@@ -215,26 +211,37 @@ export function StudentCourseSyllabus({
     ),
   );
 
-  const stepDescriptions: Array<{ step: 1 | 2 | 3 | 4; label: string; hint: string }> = [
+  const stepDescriptions: Array<{
+    step?: 1 | 2 | 3;
+    label: string;
+    hint: string;
+    kind: "STATIC" | "QUIZ" | "RUNTIME" | "SUBMIT";
+  }> = [
     {
       step: 1,
-      label: t("Step 1 · Architecture & Theory", "Bước 1 · Lý Thuyết & Sơ Đồ C1–C3"),
-      hint: t("Read docs & 3E evidence", "Đọc lý thuyết & bằng chứng 3E"),
+      kind: "STATIC",
+      label: t("Static Studio", "Static Studio"),
+      hint: t("Snapshot, C1–C3 and source evidence", "Snapshot, C1–C3 và bằng chứng mã nguồn"),
+    },
+    {
+      kind: "QUIZ",
+      label: t("Module Quiz", "Quiz của Module"),
+      hint: t("Required before Runtime Studio", "Điều kiện mở Runtime Studio"),
     },
     {
       step: 2,
-      label: t("Step 2 · Impact Explorer", "Bước 2 · Lan Truyền Lỗi (BFS)"),
-      hint: t("Reverse BFS blast radius", "Truy vết ảnh hưởng Reverse BFS"),
+      kind: "RUNTIME",
+      label: t("MAVIS Runtime Studio", "MAVIS Runtime Studio"),
+      hint: t(
+        "Scenario, telemetry and observed impact",
+        "Kịch bản, telemetry và tác động quan sát được",
+      ),
     },
     {
       step: 3,
-      label: t("Step 3 · Quiz Gate", "Bước 3 · Quiz Mở Khóa (>= 80%)"),
-      hint: t("Pass comprehension check", "Đạt trắc nghiệm để mở khóa"),
-    },
-    {
-      step: 4,
-      label: t("Step 4 · Studio Live & Submit", "Bước 4 · Thực Hành Studio Live & Nộp"),
-      hint: t("Verify session & explain", "Xác minh phiên & nộp bài giải"),
+      kind: "SUBMIT",
+      label: t("Evidence & Submit", "Evidence & Submit"),
+      hint: t("Receipt, evidence and submission", "Receipt, evidence và nộp bài"),
     },
   ];
 
@@ -792,30 +799,15 @@ export function StudentCourseSyllabus({
 
                   {["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(activeItem.type) && (
                     <div className="space-y-6">
-                      <InteractiveConceptStage
-                        scenario={getScenarioForLessonOrLab(
-                          activeModule.position,
-                          activeItem.title,
-                        )}
-                      />
-                      {activeAssignmentRecord?.instructions && (
-                        <div className="rounded-xl border bg-muted/20 p-4 text-sm">
-                          <MarkdownPreview markdown={activeAssignmentRecord.instructions} />
-                        </div>
-                      )}
-
                       <div className="space-y-4 rounded-xl border border-emerald-200 bg-emerald-50/70 p-4 dark:border-emerald-800/60 dark:bg-emerald-950/20 sm:p-5">
                         <div>
                           <h3 className="text-sm font-semibold text-emerald-950 dark:text-emerald-200">
-                            {t(
-                              "4-Step Guided Learning Checklist",
-                              "Lộ Trình 4 Bước Cho Bài Lab Này",
-                            )}
+                            {t("Lab journey", "Lộ trình Lab")}
                           </h3>
                           <p className="text-xs text-emerald-900/80 dark:text-emerald-300/80">
                             {t(
-                              "Follow Steps 1 to 4 inside the interactive Lab workspace.",
-                              "Thực hiện tuần tự Bước 1 đến Bước 4 ngay trong Không Gian Làm Bài Lab.",
+                              "Static analysis and the module Quiz lead into MAVIS Runtime Studio, then evidence and submission.",
+                              "Static Studio và Quiz của Module dẫn đến MAVIS Runtime Studio, sau đó là evidence và nộp bài.",
                             )}
                           </p>
                         </div>
@@ -824,10 +816,12 @@ export function StudentCourseSyllabus({
                           <>
                             <div className="grid gap-3 sm:grid-cols-2">
                               {stepDescriptions.map((s) => {
-                                const stepHref = `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(activeLabRecord.assignmentId)}&step=${s.step}`;
+                                const stepHref = s.step
+                                  ? `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(activeLabRecord.assignmentId)}&step=${s.step}`
+                                  : null;
                                 return activeLabRecord.state === "LOCKED" ? (
                                   <div
-                                    key={s.step}
+                                    key={s.kind}
                                     className="rounded-xl border border-border/70 bg-background/70 p-3 opacity-70"
                                   >
                                     <p className="text-xs font-semibold text-muted-foreground">
@@ -835,9 +829,24 @@ export function StudentCourseSyllabus({
                                     </p>
                                     <p className="mt-0.5 text-xs text-muted-foreground">{s.hint}</p>
                                   </div>
-                                ) : (
+                                ) : s.kind === "QUIZ" ? (
+                                  <button
+                                    key={s.kind}
+                                    type="button"
+                                    onClick={() =>
+                                      chapterQuizItem && selectCurriculumItem(chapterQuizItem)
+                                    }
+                                    disabled={!chapterQuizItem}
+                                    className="group rounded-xl border border-emerald-200/80 bg-background p-3 text-left transition-all hover:border-emerald-500 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-800/50"
+                                  >
+                                    <p className="text-xs font-semibold text-emerald-800 group-hover:text-emerald-600 dark:text-emerald-300">
+                                      {s.label}
+                                    </p>
+                                    <p className="mt-0.5 text-xs text-muted-foreground">{s.hint}</p>
+                                  </button>
+                                ) : stepHref ? (
                                   <Link
-                                    key={s.step}
+                                    key={s.kind}
                                     href={stepHref}
                                     className="group rounded-xl border border-emerald-200/80 bg-background p-3 transition-all hover:border-emerald-500 hover:shadow-sm dark:border-emerald-800/50"
                                   >
@@ -846,7 +855,7 @@ export function StudentCourseSyllabus({
                                     </p>
                                     <p className="mt-0.5 text-xs text-muted-foreground">{s.hint}</p>
                                   </Link>
-                                );
+                                ) : null;
                               })}
                             </div>
 
@@ -887,9 +896,9 @@ export function StudentCourseSyllabus({
                                 </Button>
                                 <Button asChild variant="outline" size="lg">
                                   <Link
-                                    href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(activeLabRecord.assignmentId)}&step=4`}
+                                    href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(activeLabRecord.assignmentId)}&step=2`}
                                   >
-                                    {t("Jump to Studio Live", "Mở Thẳng Studio Thực Hành")}
+                                    {t("Open Runtime Studio", "Mở Runtime Studio")}
                                   </Link>
                                 </Button>
                               </div>
@@ -1029,8 +1038,8 @@ export function StudentCourseSyllabus({
                 query={submissionsQuery}
                 empty={!classSubmissions.length}
                 emptyMessage={t(
-                  "You have not submitted any Labs in this class yet. Open Step 4 in a Lab to submit.",
-                  "Bạn chưa nộp bài Lab nào trong lớp này. Hãy vào Bước 4 trong Lab để nộp bài.",
+                  "You have not submitted any Labs in this class yet. Open Evidence & Submit in a Lab to submit.",
+                  "Bạn chưa nộp bài Lab nào trong lớp này. Hãy vào Evidence & Submit trong Lab để nộp bài.",
                 )}
               >
                 <div className="divide-y">

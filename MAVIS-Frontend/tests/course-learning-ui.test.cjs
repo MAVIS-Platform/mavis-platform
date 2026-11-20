@@ -126,7 +126,7 @@ test("student submissions are scoped by selected class workspaceId and retain cl
   );
 });
 
-test("Lab UI keeps unavailable progress gates honest and runs 4-step V2 workflow inside /lab", () => {
+test("Lab UI keeps unavailable progress gates honest and runs the 3-phase Studio workflow inside /lab", () => {
   const course = read("src/features/courses/screens.tsx");
   const dashboard = read("src/features/courses/student-courses-dashboard.tsx");
   const access = read("src/features/workspaces/course-access.tsx");
@@ -142,7 +142,8 @@ test("Lab UI keeps unavailable progress gates honest and runs 4-step V2 workflow
     /state:\s*activeModelId\s*\?\s*"READY"\s*:\s*referenceSnapshotId\s*\?\s*"IN PROGRESS"\s*:\s*"MISSING"/,
   );
   assert.match(course, /job\.status === "completed" && job\.analysisState !== "PARTIAL"/);
-  assert.match(course, /<CourseQuiz\s+workspaceId=\{workspaceId\}\s+labId=\{labId\}/);
+  assert.match(course, /Pass this module's Quiz to unlock MAVIS Runtime Studio/);
+  assert.doesNotMatch(course, /<CourseQuiz/);
   assert.match(quiz, /queryKey: \["api", "course-quiz", workspaceId, labId\]/);
   assert.match(quiz, /api<Result>\(`\$\{path\}\/attempts`/);
   assert.match(course, /\/submissions\?workspace=.*&assignment=/s);
@@ -274,13 +275,14 @@ test("Coursera-style Lab table of contents shows progress, module items and lock
   assert.match(html, /Preview/);
 });
 
-test("LabWorkspace uses a class-module-Lab breadcrumb, published theory and a read-only preview", () => {
+test("LabWorkspace uses a class-module-Lab breadcrumb, a focused entry summary and a read-only preview", () => {
   const course = read("src/features/courses/screens.tsx");
 
   assert.match(course, /LabToc/);
   assert.match(course, /preview/i);
-  assert.match(course, /moduleItems/);
-  assert.match(course, /content\??\.(body|\["body"\])/);
+  assert.match(course, /Lab objective/);
+  assert.match(course, /Reference snapshot/);
+  assert.match(course, /Required input/);
   assert.match(course, /t\("Class", "Lớp"\)/);
   assert.match(course, /t\("Module", "Chương"\)/);
 });
@@ -345,7 +347,7 @@ test("new Course and Lab surfaces expose direct Vietnamese copy", () => {
     "Lộ trình học tập",
     "Thao tác Lab",
     "Bài nộp & Điểm",
-    "Thực nghiệm Studio Live & Nộp bài",
+    "MAVIS Runtime Studio",
   ])
     assert.ok(course.includes(text), text);
 });
@@ -510,14 +512,12 @@ test("Stage 4 Reverse BFS terminates safely on cyclic dependencies, reports unaf
   assert.equal(diamondImpact.indirectImpactCount, 1);
 });
 
-test("Stage 4 Step 2 UI integrates Reverse BFS Explorer, inline Step 1 Back-Links, and explicit Step 3 Quiz Gate", () => {
+test("Static Studio provides the Reverse BFS hypothesis before Runtime Studio validates it", () => {
   const course = read("src/features/courses/screens.tsx");
   const step2 = read("src/features/courses/step2-static-impact.tsx");
-  const quiz = read("src/features/courses/course-quiz.tsx");
 
   assert.ok(course.includes("<Step2StaticImpact"));
   assert.ok(course.includes("onOpenC1C3View="));
-  assert.ok(course.includes("runtimeStepHref="));
   assert.ok(step2.includes("computeArchitectureImpact"));
   assert.ok(step2.includes("Cycle Detected & Safely Terminated"));
   assert.ok(step2.includes("Unaffected & Isolated Elements"));
@@ -526,27 +526,21 @@ test("Stage 4 Step 2 UI integrates Reverse BFS Explorer, inline Step 1 Back-Link
   assert.ok(step2.includes("kind=COMPONENT"));
   assert.ok(step2.includes("/impact?"));
 
-  assert.ok(quiz.includes("PASSED (v${quiz.version})"));
-  assert.ok(quiz.includes("NEEDS_RETRY (v${quiz.version})"));
-  assert.ok(quiz.includes("quiz.runtimeUnlocked"));
-  assert.ok(quiz.includes("quiz.latestStatus"));
   assert.match(course, /quiz\.data\?\.runtimeUnlocked === true/);
-  assert.ok(quiz.includes("Proceed to Step 4: Studio Live & Submit"));
-  assert.ok(quiz.includes("Step 4 Live Studio & Submission is locked until you score at least"));
+  assert.ok(course.includes("compare predicted and observed impact"));
 });
 
-test("Studio in the guided Lab unlocks Step 4 after Quiz Gate and embeds simulated sandbox bootstrap", () => {
+test("Studio in the guided Lab unlocks Runtime Studio after the Module Quiz and embeds simulated sandbox bootstrap", () => {
   const course = read("src/features/courses/screens.tsx");
-  assert.match(course, /id === 4 && runtimeReady/);
+  assert.match(course, /if \(id === 2\) return runtimeReady/);
   assert.ok(course.includes("Start Studio Live Session"));
   assert.ok(course.includes("Activate Simulated Sandbox Telemetry"));
 });
 
-test("static Guided Labs unlock Step 4 LabSubmissionV2 immediately after passing Quiz Gate", () => {
+test("Evidence & Submit receives the verified Runtime Studio session", () => {
   const lab = read("src/features/courses/screens.tsx");
-  const quiz = read("src/features/courses/course-quiz.tsx");
-  assert.match(lab, /submissionHref=\{!requiresRuntime \? submitHref : undefined\}/);
-  assert.match(quiz, /href=\{submissionHref \?\? runtimeStepHref\}/);
+  assert.match(lab, /runtimeSessionId=\{verifiedSessionForSubmit\}/);
+  assert.match(lab, /Finish the MAVIS Runtime Studio exercise to seal a verified receipt/);
 });
 
 test("WF-04 per-snapshot submission explanations, > 5.0/10 grading rule, and SR-15 EN/VI runtime/studio translations", async () => {
@@ -755,7 +749,7 @@ test("lecturer preview bypasses the roadmap lock and authoring keeps unsaved dra
   const builder = read("src/features/courses/course-builder.tsx");
 
   assert.match(course, /!preview &&\s*roadmap\.data\.guided/);
-  assert.match(course, /type === "IMPACT_LAB"\) return 2/);
+  assert.match(course, /type === "RUNTIME_LAB"\) return 2/);
   assert.match(builder, /score === undefined \|\| score === "" \? 10 : Number\(score\)/);
   assert.doesNotMatch(builder, /course\.data\?\.draftRevision, course\.data\?\.title/);
 });
@@ -1417,16 +1411,25 @@ test("Learning Workspace keeps curriculum and previous/next navigation within th
   assert.match(syllabus, /const activeModuleItemIndex =\s*activeModule\?\.items\.findIndex/);
   assert.match(syllabus, /activeModule\.items\[activeModuleItemIndex \+ 1\]/);
   assert.match(syllabus, /activeModule\.items\[activeModuleItemIndex - 1\]/);
+  assert.match(syllabus, /label: t\("Static Studio", "Static Studio"\)/);
+  assert.match(syllabus, /label: t\("Module Quiz", "Quiz của Module"\)/);
+  assert.match(syllabus, /label: t\("MAVIS Runtime Studio", "MAVIS Runtime Studio"\)/);
+  assert.match(syllabus, /label: t\("Evidence & Submit", "Evidence & Submit"\)/);
+  assert.match(syllabus, /selectCurriculumItem\(chapterQuizItem\)/);
+  assert.doesNotMatch(syllabus, /4-Step Guided Learning Checklist/);
 });
 
-test("Round 4 guards isolate per-Lab theory, adapt Theory Only labs, prevent sign-out 401, and allow repo-less feedback", () => {
+test("Round 4 guards isolate each Lab entry, adapt Theory Only labs, prevent sign-out 401, and allow repo-less feedback", () => {
   const screens = read("src/features/courses/screens.tsx");
   const appShell = read("src/components/app-shell.tsx");
   const ops = read("src/lib/api/java-operations.ts");
 
-  assert.match(screens, /const exactLabTheory = moduleItems\.filter/);
   assert.match(screens, /const hasReferenceArch = Boolean\(activeModelId \|\| referenceSnapshotId\)/);
-  assert.match(screens, /isTheoryOnlyLab \? \(\s*<DetailPanel[\s\S]*Quiz Gate Not Required/);
+  assert.match(screens, /Lab objective/);
+  assert.match(screens, /title: "Static Studio"/);
+  assert.match(screens, /title: "MAVIS Runtime Studio"/);
+  assert.match(screens, /title: "Evidence & Submit"/);
+  assert.doesNotMatch(screens, /<CourseQuiz/);
   assert.match(appShell, /const canQueryAuth =\s*!signingOut/);
   assert.match(ops, /pinned\["modelVersionId"\] != null && pinned\["modelVersionId"\] !== id\(input, "modelId"\)/);
 });

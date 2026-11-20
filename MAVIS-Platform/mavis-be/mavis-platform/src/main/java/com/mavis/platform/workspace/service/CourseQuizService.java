@@ -46,7 +46,13 @@ public class CourseQuizService {
     public record PublicQuestion(String id, String prompt, String type, List<String> options, Integer points) {}
     public record Publish(String lesson, Integer passPercent, List<Question> questions) {}
     public record Quiz(int version, String lesson, int passPercent, List<PublicQuestion> questions,
-                       boolean passed, String latestStatus, boolean runtimeUnlocked) {}
+                       boolean passed, String latestStatus, boolean runtimeUnlocked,
+                       Integer latestCorrectCount, OffsetDateTime latestSubmittedAt) {
+        public Quiz(int version, String lesson, int passPercent, List<PublicQuestion> questions,
+                    boolean passed, String latestStatus, boolean runtimeUnlocked) {
+            this(version, lesson, passPercent, questions, passed, latestStatus, runtimeUnlocked, null, null);
+        }
+    }
     public record QuestionResult(String id, boolean correct, String explanation) {}
     public record Result(UUID attemptId, int version, int correctCount, int totalQuestions, String status,
                          List<QuestionResult> questionResults) {
@@ -181,13 +187,15 @@ public class CourseQuizService {
         var lab = lab(workspaceId, assignmentId, false);
         if (CourseLabPolicy.isStudent(user)) labs.requireOpen(lab, user);
         var quiz = current(lab);
+        AttemptSummary latestAttempt = null;
         String latestStatus = null;
         if (CourseLabPolicy.isStudent(user)) {
+            latestAttempt = latestAttempt(lab.getId(), user.getId(), quiz.version());
             latestStatus = labs.hasPassedQuizVersion(lab.getId(), user.getId(), quiz.version())
                     ? "PASSED"
-                    : latestStatus(lab.getId(), user.getId(), quiz.version());
+                    : latestAttempt == null ? "NOT_ATTEMPTED" : latestAttempt.status();
         }
-        return view(quiz, latestStatus);
+        return view(quiz, latestStatus, latestAttempt);
     }
 
     @Transactional(readOnly = true)
@@ -208,13 +216,15 @@ public class CourseQuizService {
             return null;
         }
         var quiz = quizOpt.get();
+        AttemptSummary latestAttempt = null;
         String latestStatus = null;
         if (CourseLabPolicy.isStudent(user)) {
+            latestAttempt = latestAttempt(lab.getId(), user.getId(), quiz.version());
             latestStatus = labs.hasPassedQuizVersion(lab.getId(), user.getId(), quiz.version())
                     ? "PASSED"
-                    : latestStatus(lab.getId(), user.getId(), quiz.version());
+                    : latestAttempt == null ? "NOT_ATTEMPTED" : latestAttempt.status();
         }
-        return view(quiz, latestStatus);
+        return view(quiz, latestStatus, latestAttempt);
     }
 
     public Result submit(UUID workspaceId, UUID assignmentId, Submit request) {
@@ -373,14 +383,17 @@ public class CourseQuizService {
                         "Quiz has not been published"));
     }
 
-    private String latestStatus(UUID assignmentId, UUID studentId, int version) {
+    private record AttemptSummary(String status, int correctCount, OffsetDateTime submittedAt) {}
+
+    private AttemptSummary latestAttempt(UUID assignmentId, UUID studentId, int version) {
         return jdbc.query("""
-                SELECT CASE WHEN passed THEN 'PASSED' ELSE 'NEEDS_RETRY' END
+                SELECT CASE WHEN passed THEN 'PASSED' ELSE 'NEEDS_RETRY' END, correct_count, submitted_at
                 FROM course_quiz_attempts
                 WHERE assignment_id = ? AND student_id = ? AND quiz_version = ?
                 ORDER BY submitted_at DESC, attempt_id DESC LIMIT 1
-                """, (rs, row) -> rs.getString(1), assignmentId, studentId, version)
-                .stream().findFirst().orElse("NOT_ATTEMPTED");
+                """, (rs, row) -> new AttemptSummary(rs.getString(1), rs.getInt(2),
+                        rs.getObject(3, OffsetDateTime.class)), assignmentId, studentId, version)
+                .stream().findFirst().orElse(null);
     }
 
     static int score(List<Question> questions, List<Integer> answers) {
@@ -464,12 +477,14 @@ public class CourseQuizService {
         return value != null && !value.isBlank() && value.length() <= max;
     }
 
-    private static Quiz view(Definition quiz, String latestStatus) {
+    private static Quiz view(Definition quiz, String latestStatus, AttemptSummary latestAttempt) {
         boolean passed = "PASSED".equals(latestStatus);
         return new Quiz(quiz.version(), quiz.lesson(), quiz.threshold(), quiz.questions().stream()
                 .map(question -> new PublicQuestion(question.id(), question.prompt(), question.type(),
                         question.options(), question.points())).toList(),
-                passed, latestStatus, passed);
+                passed, latestStatus, passed,
+                latestAttempt == null ? null : latestAttempt.correctCount(),
+                latestAttempt == null ? null : latestAttempt.submittedAt());
     }
 
     private Result result(Submit request, int correct, boolean passed, List<List<Integer>> selections,
