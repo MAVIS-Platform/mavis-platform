@@ -3711,8 +3711,8 @@
     "title": "Chương 10: THIẾT KẾ .NET MICROSERVICE CHỊU LỖI VỚI POLLY V8 & `Microsoft.Extensions.Http.Resilience`",
     "minutes": 45,
     "objective": "Hiểu cơ chế Cascading Failure khi dịch vụ hạ lưu treo chậm làm cạn kiệt ThreadPool của ASP.NET Core. Cấu hình chuẩn .NET 8 Resilience Pipeline trên `IHttpClientFactory` gồm đủ 4 lớp bảo vệ: Total Timeout, Retry + Exponential Backoff + Jitter, Circuit Breaker và Attempt Timeout. Thiết kế cơ chế Graceful Degradation / Fallback an toàn và trung thực cho người dùng.",
-    "lesson": "### 10.1. Chuẩn mới của .NET 8: `Microsoft.Extensions.Http.Resilience` (Polly v8)\n\nThay vì tự ghép nối rời rạc từng chính sách Polly v7 dễ sai thứ tự, Microsoft .NET 8 cung cấp gói chính chủ **`Microsoft.Extensions.Http.Resilience`** với **`AddStandardResilienceHandler()`** xếp sẵn thứ tự chuẩn công nghiệp từ ngoài vào trong:\n\n```\nYêu cầu từ Ordering.API\n   │\n   ▼\n[1. Rate Limiter / Bulkhead]        --> Giới hạn số gọi đồng thời sang dịch vụ đích\n   │\n   ▼\n[2. Total Request Timeout]          --> Tổng thời gian tối đa cho cả chuỗi (VD: 10s)\n   │\n   ▼\n[3. Retry + Exp Backoff + Jitter]   --> Thử lại lỗi thoáng qua (5xx, 408, mạng)\n   │\n   ▼\n[4. Circuit Breaker]                --> Ngắt mạch (OPEN) ngay nếu tỷ lệ lỗi vượt ngưỡng!\n   │\n   ▼\n[5. Attempt Timeout]                --> Giới hạn từng lần gọi lẻ (VD: 3s)\n   │\n   ▼\n[HTTP Network Call --> Catalog.API]\n```\n\n> **Tại sao thứ tự lồng nhau này lại quan trọng đến vậy?**\n> * **Retry bọc ngoài Circuit Breaker**: Nếu cầu dao đang `OPEN`, Retry sẽ không cố đâm đầu gọi qua mạng vô ích.\n> * **Attempt Timeout nằm trong cùng**: Mỗi lần thử chỉ được phép chờ tối đa $2\\text{–}3$ giây; nếu hạ lưu treo, cắt ngay để Circuit Breaker ghi nhận 1 lần lỗi!\n\n### 10.2. Cấu hình Resilience Pipeline trong `Program.cs` (.NET 8)\n\n```csharp\nbuilder.Services.AddHttpClient<ICatalogApiClient, CatalogApiClient>((sp, client) =>\n{\n    var urls = sp.GetRequiredService<IOptions<ServiceUrlOptions>>().Value;\n    client.BaseAddress = new Uri(urls.CatalogApi);\n})\n.AddStandardResilienceHandler(options =>\n{\n    // Giới hạn thời gian cho từng lần gọi lẻ\n    options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(3);\n\n    // Retry lỗi tạm thời với Exponential Backoff + Jitter\n    options.Retry.MaxRetryAttempts = 2;\n    options.Retry.Delay = TimeSpan.FromMilliseconds(300);\n    options.Retry.BackoffType = DelayBackoffType.Exponential;\n    options.Retry.UseJitter = true;\n\n    // Circuit Breaker: mở cầu dao nếu tỷ lệ lỗi >= 50% trong cửa sổ 30s\n    options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(30);\n    options.CircuitBreaker.MinimumThroughput = 5;\n    options.CircuitBreaker.FailureRatio = 0.5;\n    options.CircuitBreaker.BreakDuration = TimeSpan.FromSeconds(15);\n\n    // Tổng trần thời gian cho cả yêu cầu (bao gồm các lần retry)\n    options.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(8);\n});\n```\n\n### 10.3. Xử lý `BrokenCircuitException` & Fallback trung thực\n\nKhi cầu dao đang ở trạng thái `OPEN`, lời gọi qua `HttpClient` lập tức ném **`BrokenCircuitException`** trong vòng $< 1\\text{ms}$ (**Fail-Fast**):\n\n```csharp\ntry\n{\n    return await catalogClient.GetItemAsync(productId, ct);\n}\ncatch (BrokenCircuitException ex)\n{\n    logger.LogWarning(ex, \"Catalog circuit is OPEN. Failing fast for product {ProductId}\", productId);\n    // Graceful Degradation cho màn hình đọc (lấy cache dự phòng)\n    // Hoặc trả 503 Service Unavailable minh bạch cho màn hình đặt hàng!\n    throw new ServiceUnavailableException(\"Catalog service is temporarily unavailable.\", ex);\n}\n```\n\n### 10.4. Góc nhìn trên nền tảng MAVIS\n\n* **Thí nghiệm thực chiến trên MAVIS Studio (Step 4)**: Sinh viên bật hệ thống .NET trong Docker $\\to$ chụp Snapshot **Before** $\\to$ bấm **Stop** container `Catalog.API` $\\to$ gửi loạt request kiểm thử $\\to$ quan sát **Circuit Breaker chuyển `OPEN`**, độ trễ phản hồi ở `Ordering.API` giữ mức mili-giây (**Fail-Fast**) và thông báo lỗi suy giảm kiểm soát `503` sạch sẽ (Snapshot **After**).",
-    "exercise": "### 10.5. Bài tập thực hành Lab 10\n\n* Cấu hình `AddStandardResilienceHandler` cho `CatalogApiClient` trong `Ordering.API`.\n* Thực hiện bài thí nghiệm **Stop Container** trên **MAVIS Studio**, ghi lại số liệu Latency và Error Rate **Before vs. After**, giải thích rõ giai đoạn nào là `Retry`, giai đoạn nào cầu dao bật `OPEN` (`BrokenCircuitException`).",
+    "lesson": "### 10.1. Chuẩn mới của .NET 8: `Microsoft.Extensions.Http.Resilience` (Polly v8)\r\n\r\nThay vì tự ghép nối rời rạc từng chính sách Polly v7 dễ sai thứ tự, Microsoft .NET 8 cung cấp gói chính chủ **`Microsoft.Extensions.Http.Resilience`** với **`AddStandardResilienceHandler()`** xếp sẵn thứ tự chuẩn công nghiệp từ ngoài vào trong:\r\n\r\n```\r\nYêu cầu từ Ordering.API\r\n   │\r\n   ▼\r\n[1. Rate Limiter / Bulkhead]        --> Giới hạn số gọi đồng thời sang dịch vụ đích\r\n   │\r\n   ▼\r\n[2. Total Request Timeout]          --> Tổng thời gian tối đa cho cả chuỗi (VD: 10s)\r\n   │\r\n   ▼\r\n[3. Retry + Exp Backoff + Jitter]   --> Thử lại lỗi thoáng qua (5xx, 408, mạng)\r\n   │\r\n   ▼\r\n[4. Circuit Breaker]                --> Ngắt mạch (OPEN) ngay nếu tỷ lệ lỗi vượt ngưỡng!\r\n   │\r\n   ▼\r\n[5. Attempt Timeout]                --> Giới hạn từng lần gọi lẻ (VD: 3s)\r\n   │\r\n   ▼\r\n[HTTP Network Call --> Catalog.API]\r\n```\r\n\r\n> **Tại sao thứ tự lồng nhau này lại quan trọng đến vậy?**\r\n> * **Retry bọc ngoài Circuit Breaker**: Nếu cầu dao đang `OPEN`, Retry sẽ không cố đâm đầu gọi qua mạng vô ích.\r\n> * **Attempt Timeout nằm trong cùng**: Mỗi lần thử chỉ được phép chờ tối đa 2–3 giây; nếu hạ lưu treo, cắt ngay để Circuit Breaker ghi nhận 1 lần lỗi!\r\n\r\n### 10.2. Cấu hình Resilience Pipeline trong `Program.cs` (.NET 8)\r\n\r\n```csharp\r\nbuilder.Services.AddHttpClient<ICatalogApiClient, CatalogApiClient>((sp, client) =>\r\n{\r\n    var urls = sp.GetRequiredService<IOptions<ServiceUrlOptions>>().Value;\r\n    client.BaseAddress = new Uri(urls.CatalogApi);\r\n})\r\n.AddStandardResilienceHandler(options =>\r\n{\r\n    // Giới hạn thời gian cho từng lần gọi lẻ\r\n    options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(3);\r\n\r\n    // Retry lỗi tạm thời với Exponential Backoff + Jitter\r\n    options.Retry.MaxRetryAttempts = 2;\r\n    options.Retry.Delay = TimeSpan.FromMilliseconds(300);\r\n    options.Retry.BackoffType = DelayBackoffType.Exponential;\r\n    options.Retry.UseJitter = true;\r\n\r\n    // Circuit Breaker: mở cầu dao nếu tỷ lệ lỗi >= 50% trong cửa sổ 30s\r\n    options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(30);\r\n    options.CircuitBreaker.MinimumThroughput = 5;\r\n    options.CircuitBreaker.FailureRatio = 0.5;\r\n    options.CircuitBreaker.BreakDuration = TimeSpan.FromSeconds(15);\r\n\r\n    // Tổng trần thời gian cho cả yêu cầu (bao gồm các lần retry)\r\n    options.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(8);\r\n});\r\n```\r\n\r\n### 10.3. Xử lý `BrokenCircuitException` & Fallback trung thực\r\n\r\nKhi cầu dao đang ở trạng thái `OPEN`, lời gọi qua `HttpClient` lập tức ném **`BrokenCircuitException`** trong vòng < 1ms (**Fail-Fast**):\r\n\r\n```csharp\r\ntry\r\n{\r\n    return await catalogClient.GetItemAsync(productId, ct);\r\n}\r\ncatch (BrokenCircuitException ex)\r\n{\r\n    logger.LogWarning(ex, \"Catalog circuit is OPEN. Failing fast for product {ProductId}\", productId);\r\n    // Graceful Degradation cho màn hình đọc (lấy cache dự phòng)\r\n    // Hoặc trả 503 Service Unavailable minh bạch cho màn hình đặt hàng!\r\n    throw new ServiceUnavailableException(\"Catalog service is temporarily unavailable.\", ex);\r\n}\r\n```\r\n\r\n### 10.4. Góc nhìn trên nền tảng MAVIS\r\n\r\n* **Thí nghiệm thực chiến trên MAVIS Studio (Step 4)**: Sinh viên bật hệ thống .NET trong Docker → chụp Snapshot **Before** → bấm **Stop** container `Catalog.API` → gửi loạt request kiểm thử → quan sát **Circuit Breaker chuyển `OPEN`**, độ trễ phản hồi ở `Ordering.API` giữ mức mili-giây (**Fail-Fast**) và thông báo lỗi suy giảm kiểm soát `503` sạch sẽ (Snapshot **After**).",
+    "exercise": "### 10.5. Bài tập thực hành Lab 10\r\n\r\n* Cấu hình `AddStandardResilienceHandler` cho `CatalogApiClient` trong `Ordering.API`.\r\n* Thực hiện bài thí nghiệm **Stop Container** trên **MAVIS Studio**, ghi lại số liệu Latency và Error Rate **Before vs. After**, giải thích rõ giai đoạn nào là `Retry`, giai đoạn nào cầu dao bật `OPEN` (`BrokenCircuitException`).",
     "sources": [
       {
         "publisher": "Microsoft Learn",
@@ -3733,58 +3733,58 @@
     "questions": [
       {
         "id": "csharp-v2-ch10-q1",
-        "prompt": "Trong `AddStandardResilienceHandler()` của .NET 8, tại sao chính sách **Retry** nên dùng **Exponential Backoff kết hợp Jitter (độ lệch ngẫu nhiên)**?",
+        "prompt": "Trong AddStandardResilienceHandler() của .NET 8, tại sao chính sách Retry nên dùng Exponential Backoff kết hợp Jitter (độ lệch ngẫu nhiên)?",
         "type": "SINGLE_CHOICE",
         "options": [
-          "Để giãn đều thời gian gọi lại giữa hàng nghìn client, tránh hiện tượng **Retry Storm (Thundering Herd)** đánh sập dịch vụ hạ lưu đúng lúc nó đang cố hồi phục",
+          "Để giãn đều thời gian gọi lại giữa hàng nghìn client, tránh hiện tượng Retry Storm (Thundering Herd) đánh sập dịch vụ hạ lưu đúng lúc nó đang cố hồi phục",
           "Để làm chậm tốc độ chạy của ứng dụng khi bình thường",
           "Để bỏ qua hoàn toàn cơ chế Circuit Breaker",
           "Vì HTTP không cho phép gửi 2 request liên tiếp"
         ],
         "correctOption": 0,
-        "explanation": "Nếu 1.000 client cùng retry đúng mốc $1\\text{s}, 2\\text{s}, 4\\text{s}$, chúng tạo ra làn sóng DDoS nội bộ đánh sập dịch vụ đích; thêm *jitter* phân tán đều các mốc thử lại.",
+        "explanation": "Nếu 1.000 client cùng retry đúng mốc 1s, 2s, 4s, chúng tạo ra làn sóng DDoS nội bộ đánh sập dịch vụ đích; thêm jitter phân tán đều các mốc thử lại.",
         "points": 1
       },
       {
         "id": "csharp-v2-ch10-q2",
-        "prompt": "Khi **Circuit Breaker** đang ở trạng thái `OPEN` và `Ordering.API` gọi vào `CatalogApiClient`, điều gì xảy ra ngay lập tức?",
+        "prompt": "Khi Circuit Breaker đang ở trạng thái OPEN và Ordering.API gọi vào CatalogApiClient, điều gì xảy ra ngay lập tức?",
         "type": "SINGLE_CHOICE",
         "options": [
           "Ứng dụng chờ đủ 60 giây rồi mới báo lỗi",
-          "Pipeline chặn ngay lập tức (*Fail-Fast*) và ném **`BrokenCircuitException`** mà không gửi gói tin qua mạng tới `Catalog.API`",
-          "Tự động tăng số replica của `Catalog.API` lên 10",
+          "Pipeline chặn ngay lập tức (Fail-Fast) và ném BrokenCircuitException mà không gửi gói tin qua mạng tới Catalog.API",
+          "Tự động tăng số replica của Catalog.API lên 10",
           "Tự động xóa bản ghi trong Redis"
         ],
         "correctOption": 1,
-        "explanation": "Trạng thái `OPEN` bảo vệ ThreadPool của dịch vụ gọi và cho dịch vụ đích khoảng nghỉ để hồi phục.",
+        "explanation": "Trạng thái OPEN bảo vệ ThreadPool của dịch vụ gọi và cho dịch vụ đích khoảng nghỉ để hồi phục.",
         "points": 1
       },
       {
         "id": "csharp-v2-ch10-q3",
-        "prompt": "Sai lầm nào sau đây cần **TRÁNH TUYỆT ĐỐI** khi cấu hình chính sách **Retry** trên HTTP Client?",
+        "prompt": "Sai lầm nào sau đây cần TRÁNH TUYỆT ĐỐI khi cấu hình chính sách Retry trên HTTP Client?",
         "type": "SINGLE_CHOICE",
         "options": [
-          "Retry các lỗi mạng thoáng qua (`HttpRequestException`) hoặc `503 Service Unavailable` trên request `GET`",
-          "Retry mù quáng các lỗi `400 Bad Request` / `401 Unauthorized` hoặc retry yêu cầu `POST` trừ tiền/trừ kho **không có Idempotency-Key**",
-          "Giới hạn `MaxRetryAttempts` ở mức nhỏ ($2\\text{–}3$ lần)",
-          "Đặt `TotalRequestTimeout` bao ngoài chuỗi Retry"
+          "Retry các lỗi mạng thoáng qua (HttpRequestException) hoặc 503 Service Unavailable trên request GET",
+          "Retry mù quáng các lỗi 400 Bad Request / 401 Unauthorized hoặc retry yêu cầu POST trừ tiền/trừ kho không có Idempotency-Key",
+          "Giới hạn MaxRetryAttempts ở mức nhỏ (2–3 lần)",
+          "Đặt TotalRequestTimeout bao ngoài chuỗi Retry"
         ],
         "correctOption": 1,
-        "explanation": "Lỗi `400/401` retry bao nhiêu lần vẫn lỗi; còn retry `POST` không idempotent sẽ gây trừ tồn kho hoặc trừ tiền nhiều lần.",
+        "explanation": "Lỗi 400/401 retry bao nhiêu lần vẫn lỗi; còn retry POST không idempotent sẽ gây trừ tồn kho hoặc trừ tiền nhiều lần.",
         "points": 1
       },
       {
         "id": "csharp-v2-ch10-q4",
-        "prompt": "Trong kiến trúc resilience nhiều lớp của `.NET 8`, sự khác nhau giữa **`AttemptTimeout`** và **`TotalRequestTimeout`** là gì?",
+        "prompt": "Trong kiến trúc resilience nhiều lớp của .NET 8, sự khác nhau giữa AttemptTimeout và TotalRequestTimeout là gì?",
         "type": "SINGLE_CHOICE",
         "options": [
-          "`AttemptTimeout` giới hạn thời gian cho **mỗi lần gọi lẻ**; `TotalRequestTimeout` giới hạn **tổng thời gian toàn bộ yêu cầu** bao gồm cả các lần Retry và thời gian chờ Backoff",
+          "AttemptTimeout giới hạn thời gian cho mỗi lần gọi lẻ; TotalRequestTimeout giới hạn tổng thời gian toàn bộ yêu cầu bao gồm cả các lần Retry và thời gian chờ Backoff",
           "Hai tham số giống hệt nhau",
-          "`AttemptTimeout` chỉ áp dụng cho PostgreSQL",
-          "`TotalRequestTimeout` phải luôn nhỏ hơn `AttemptTimeout`"
+          "AttemptTimeout chỉ áp dụng cho PostgreSQL",
+          "TotalRequestTimeout phải luôn nhỏ hơn AttemptTimeout"
         ],
         "correctOption": 0,
-        "explanation": "`TotalRequestTimeout` nằm ngoài cùng bảo đảm tổng trải nghiệm người dùng không bao giờ vượt trần thời gian cho phép.",
+        "explanation": "TotalRequestTimeout nằm ngoài cùng bảo đảm tổng trải nghiệm người dùng không bao giờ vượt trần thời gian cho phép.",
         "points": 1
       }
     ]
@@ -3795,9 +3795,9 @@
     "phase": "V2 · Module 4",
     "title": "Chương 11: OBSERVABILITY TOÀN DIỆN (HEALTH CHECKS, STRUCTURED LOGGING & OPENTELEMETRY .NET)",
     "minutes": 45,
-    "objective": "Thiết lập ASP.NET Core Health Checks tách bạch rõ `/health/live` (Liveness) và `/health/ready` (Readiness) kiểm tra kết nối PostgreSQL / Redis / RabbitMQ. Tích hợp OpenTelemetry .NET SDK (Traces, Metrics, Logs) xuất chuẩn OTLP sang Collector của MAVIS chỉ trong vài chục dòng cấu hình. Đọc hiểu vết phân tán (`TraceId`, `SpanId`, `Activity`, header `traceparent`) xuyên suốt từ `ApiGateway` $\\to$ `Ordering.API` $\\to$ `Catalog.API` $\\to$ `PostgreSQL` / `RabbitMQ`.",
-    "lesson": "### 11.1. Health Checks chuẩn trong ASP.NET Core 8: `/health/live` vs. `/health/ready`\n\nKhác với việc chỉ tạo một endpoint giả luôn trả `\"OK\"`, ASP.NET Core cung cấp hệ thống **Health Checks** chuẩn hóa có khả năng gắn thẻ (`tags`) để tách riêng hai mục đích sống còn:\n* **`/health/live` (Liveness)**: Chỉ kiểm tra tiến trình ASP.NET Core có còn phản hồi không (không kiểm tra DB/RabbitMQ để tránh hiệu ứng \"chết chùm\" khi DB chập chờn khiến Docker restart đồng loạt mọi container!).\n* **`/health/ready` (Readiness)**: Kiểm tra tiến trình **và các phụ thuộc thiết yếu** (`PostgreSQL`, `Redis`, `RabbitMQ`) có sẵn sàng nhận traffic chưa.\n\n```csharp\n// Đăng ký Health Checks trong Program.cs\nbuilder.Services.AddHealthChecks()\n    .AddCheck(\"self\", () => HealthCheckResult.Healthy(), tags: [\"live\"])\n    .AddNpgSql(builder.Configuration.GetConnectionString(\"OrderingDb\")!, name: \"postgres\", tags: [\"ready\"])\n    .AddRabbitMQ(builder.Configuration.GetConnectionString(\"RabbitMq\")!, name: \"rabbitmq\", tags: [\"ready\"]);\n\n// Ánh xạ 2 endpoint chuẩn\napp.MapHealthChecks(\"/health/live\", new HealthCheckOptions\n{\n    Predicate = r => r.Tags.Contains(\"live\")\n});\napp.MapHealthChecks(\"/health/ready\", new HealthCheckOptions\n{\n    Predicate = r => r.Tags.Contains(\"ready\")\n});\n```\n\n### 11.2. OpenTelemetry .NET — Một đường ống thống nhất cho Traces, Metrics & Logs\n\nĐiểm cực sướng trong .NET 8 là lớp `System.Diagnostics.Activity` của chính .NET đã tuân thủ sẵn chuẩn **W3C Trace Context (`traceparent`)**! Khi cài gói `OpenTelemetry.Extensions.Hosting`, `OpenTelemetry.Instrumentation.AspNetCore`, `OpenTelemetry.Instrumentation.Http`, `OpenTelemetry.Exporter.OpenTelemetryProtocol`, toàn bộ HTTP đến/đi, EF Core và RabbitMQ đều tự động nối thành một cây Trace hoàn chỉnh:\n\n```csharp\n// Cấu hình OpenTelemetry .NET chuẩn xuất qua OTLP (dùng chung cho mọi service!)\nbuilder.Services.AddOpenTelemetry()\n    .ConfigureResource(resource => resource.AddService(\n        serviceName: builder.Environment.ApplicationName))\n    .WithTracing(tracing => tracing\n        .AddAspNetCoreInstrumentation(opt =>\n        {\n            // Bỏ qua các request healthcheck để đỡ làm rác biểu đồ trace\n            opt.Filter = ctx => !ctx.Request.Path.StartsWithSegments(\"/health\");\n        })\n        .AddHttpClientInstrumentation()\n        .AddEntityFrameworkCoreInstrumentation()\n        .AddOtlpExporter())      // Tự đọc OTEL_EXPORTER_OTLP_ENDPOINT từ biến môi trường!\n    .WithMetrics(metrics => metrics\n        .AddAspNetCoreInstrumentation()\n        .AddHttpClientInstrumentation()\n        .AddRuntimeInstrumentation()\n        .AddOtlpExporter());\n\n// Gắn TraceId & SpanId vào Structured Logging\nbuilder.Logging.AddOpenTelemetry(logging =>\n{\n    logging.IncludeFormattedMessage = true;\n    logging.IncludeScopes = true;\n    logging.AddOtlpExporter();\n});\n```\n\n#### Luồng Trace thực tế trên một yêu cầu Đặt hàng .NET:\n\n```\nTraceId: 7d2a9f10c3b84e21a904f8b7d123c456  (Tổng: 118 ms)\n├── [ApiGateway]   POST /api/v1/orders                     |================= 118 ms =================|\n    └── [Ordering.API] OrdersController.PlaceOrder          |============== 106 ms ==============|\n        ├── [PostgreSQL] INSERT INTO ordering.orders          |== 14 ms ==|\n        ├── [Catalog.API] POST /api/v1/catalog/items/3/reserve            |====== 62 ms ======|\n        │   └── [PostgreSQL] UPDATE catalog.catalog_items                   |=== 24 ms ===|\n        └── [RabbitMQ] Publish OrderCreatedIntegrationEvent                                 |= 9 ms =|\n```\n\n### 11.3. Góc nhìn trên nền tảng MAVIS\n\n* **Step 3 (Live Runtime Observation)**: `MAVIS.Runner` truyền biến môi trường `OTEL_EXPORTER_OTLP_ENDPOINT` vào từng container .NET trong Docker Compose. Nhờ cấu hình chuẩn ở trên, toàn bộ vết gọi (`Spans`), chỉ số **RED Metrics** (*Rate, Errors, Duration*) và thông tin lỗi sẽ chảy thẳng về đồ thị sống 2D/3D của MAVIS!\n* **So sánh Static (Roslyn) vs. Runtime (OTel)**: Sinh viên kiểm chứng trực tiếp sự khớp nối giữa cạnh tĩnh `Ordering.API -> Catalog.API` và vết gọi thực tế lúc chạy.",
-    "exercise": "### 11.4. Bài tập thực hành Lab 11\n\n* Gửi kịch bản đặt hàng trong **MAVIS Step 3** và mở bảng **OpenTelemetry Trace**.\n* Xác định `TraceId` chung, chỉ ra thành phần chiếm độ trễ lớn nhất và kiểm tra xem các lời gọi `/health/live` có được lọc sạch khỏi trace nghiệp vụ hay chưa.",
+    "objective": "Thiết lập ASP.NET Core Health Checks tách bạch rõ `/health/live` (Liveness) và `/health/ready` (Readiness) kiểm tra kết nối PostgreSQL / Redis / RabbitMQ. Tích hợp OpenTelemetry .NET SDK (Traces, Metrics, Logs) xuất chuẩn OTLP sang Collector của MAVIS chỉ trong vài chục dòng cấu hình. Đọc hiểu vết phân tán (`TraceId`, `SpanId`, `Activity`, header `traceparent`) xuyên suốt từ `ApiGateway` → `Ordering.API` → `Catalog.API` → `PostgreSQL` / `RabbitMQ`.",
+    "lesson": "### 11.1. Health Checks chuẩn trong ASP.NET Core 8: `/health/live` vs. `/health/ready`\r\n\r\nKhác với việc chỉ tạo một endpoint giả luôn trả `\"OK\"`, ASP.NET Core cung cấp hệ thống **Health Checks** chuẩn hóa có khả năng gắn thẻ (`tags`) để tách riêng hai mục đích sống còn:\r\n* **`/health/live` (Liveness)**: Chỉ kiểm tra tiến trình ASP.NET Core có còn phản hồi không (không kiểm tra DB/RabbitMQ để tránh hiệu ứng \"chết chùm\" khi DB chập chờn khiến Docker restart đồng loạt mọi container!).\r\n* **`/health/ready` (Readiness)**: Kiểm tra tiến trình **và các phụ thuộc thiết yếu** (`PostgreSQL`, `Redis`, `RabbitMQ`) có sẵn sàng nhận traffic chưa.\r\n\r\n```csharp\r\n// Đăng ký Health Checks trong Program.cs\r\nbuilder.Services.AddHealthChecks()\r\n    .AddCheck(\"self\", () => HealthCheckResult.Healthy(), tags: [\"live\"])\r\n    .AddNpgSql(builder.Configuration.GetConnectionString(\"OrderingDb\")!, name: \"postgres\", tags: [\"ready\"])\r\n    .AddRabbitMQ(builder.Configuration.GetConnectionString(\"RabbitMq\")!, name: \"rabbitmq\", tags: [\"ready\"]);\r\n\r\n// Ánh xạ 2 endpoint chuẩn\r\napp.MapHealthChecks(\"/health/live\", new HealthCheckOptions\r\n{\r\n    Predicate = r => r.Tags.Contains(\"live\")\r\n});\r\napp.MapHealthChecks(\"/health/ready\", new HealthCheckOptions\r\n{\r\n    Predicate = r => r.Tags.Contains(\"ready\")\r\n});\r\n```\r\n\r\n### 11.2. OpenTelemetry .NET — Một đường ống thống nhất cho Traces, Metrics & Logs\r\n\r\nĐiểm cực sướng trong .NET 8 là lớp `System.Diagnostics.Activity` của chính .NET đã tuân thủ sẵn chuẩn **W3C Trace Context (`traceparent`)**! Khi cài gói `OpenTelemetry.Extensions.Hosting`, `OpenTelemetry.Instrumentation.AspNetCore`, `OpenTelemetry.Instrumentation.Http`, `OpenTelemetry.Exporter.OpenTelemetryProtocol`, toàn bộ HTTP đến/đi, EF Core và RabbitMQ đều tự động nối thành một cây Trace hoàn chỉnh:\r\n\r\n```csharp\r\n// Cấu hình OpenTelemetry .NET chuẩn xuất qua OTLP (dùng chung cho mọi service!)\r\nbuilder.Services.AddOpenTelemetry()\r\n    .ConfigureResource(resource => resource.AddService(\r\n        serviceName: builder.Environment.ApplicationName))\r\n    .WithTracing(tracing => tracing\r\n        .AddAspNetCoreInstrumentation(opt =>\r\n        {\r\n            // Bỏ qua các request healthcheck để đỡ làm rác biểu đồ trace\r\n            opt.Filter = ctx => !ctx.Request.Path.StartsWithSegments(\"/health\");\r\n        })\r\n        .AddHttpClientInstrumentation()\r\n        .AddEntityFrameworkCoreInstrumentation()\r\n        .AddOtlpExporter())      // Tự đọc OTEL_EXPORTER_OTLP_ENDPOINT từ biến môi trường!\r\n    .WithMetrics(metrics => metrics\r\n        .AddAspNetCoreInstrumentation()\r\n        .AddHttpClientInstrumentation()\r\n        .AddRuntimeInstrumentation()\r\n        .AddOtlpExporter());\r\n\r\n// Gắn TraceId & SpanId vào Structured Logging\r\nbuilder.Logging.AddOpenTelemetry(logging =>\r\n{\r\n    logging.IncludeFormattedMessage = true;\r\n    logging.IncludeScopes = true;\r\n    logging.AddOtlpExporter();\r\n});\r\n```\r\n\r\n#### Luồng Trace thực tế trên một yêu cầu Đặt hàng .NET:\r\n\r\n```\r\nTraceId: 7d2a9f10c3b84e21a904f8b7d123c456  (Tổng: 118 ms)\r\n├── [ApiGateway]   POST /api/v1/orders                     |================= 118 ms =================|\r\n    └── [Ordering.API] OrdersController.PlaceOrder          |============== 106 ms ==============|\r\n        ├── [PostgreSQL] INSERT INTO ordering.orders          |== 14 ms ==|\r\n        ├── [Catalog.API] POST /api/v1/catalog/items/3/reserve            |====== 62 ms ======|\r\n        │   └── [PostgreSQL] UPDATE catalog.catalog_items                   |=== 24 ms ===|\r\n        └── [RabbitMQ] Publish OrderCreatedIntegrationEvent                                 |= 9 ms =|\r\n```\r\n\r\n### 11.3. Góc nhìn trên nền tảng MAVIS\r\n\r\n* **Step 3 (Live Runtime Observation)**: `MAVIS.Runner` truyền biến môi trường `OTEL_EXPORTER_OTLP_ENDPOINT` vào từng container .NET trong Docker Compose. Nhờ cấu hình chuẩn ở trên, toàn bộ vết gọi (`Spans`), chỉ số **RED Metrics** (*Rate, Errors, Duration*) và thông tin lỗi sẽ chảy thẳng về đồ thị sống 2D/3D của MAVIS!\r\n* **So sánh Static (Roslyn) vs. Runtime (OTel)**: Sinh viên kiểm chứng trực tiếp sự khớp nối giữa cạnh tĩnh `Ordering.API -> Catalog.API` và vết gọi thực tế lúc chạy.",
+    "exercise": "### 11.4. Bài tập thực hành Lab 11\r\n\r\n* Gửi kịch bản đặt hàng trong **MAVIS Step 3** và mở bảng **OpenTelemetry Trace**.\r\n* Xác định `TraceId` chung, chỉ ra thành phần chiếm độ trễ lớn nhất và kiểm tra xem các lời gọi `/health/live` có được lọc sạch khỏi trace nghiệp vụ hay chưa.",
     "sources": [
       {
         "publisher": "Microsoft Learn",
@@ -3823,10 +3823,10 @@
     "questions": [
       {
         "id": "csharp-v2-ch11-q1",
-        "prompt": "Tại sao endpoint **Liveness (`/health/live`)** KHÔNG nên kiểm tra kết nối tới cơ sở dữ liệu hay dịch vụ bên ngoài?",
+        "prompt": "Tại sao endpoint Liveness (/health/live) KHÔNG nên kiểm tra kết nối tới cơ sở dữ liệu hay dịch vụ bên ngoài?",
         "type": "SINGLE_CHOICE",
         "options": [
-          "Vì nếu cơ sở dữ liệu chỉ chập chờn $2$ giây mà Liveness trả `Unhealthy`, Docker/Kubernetes sẽ khởi động lại (restart) đồng loạt mọi container dịch vụ gây sập nặng thêm; việc kiểm tra DB nên đặt ở **Readiness (`/health/ready`)**",
+          "Vì nếu cơ sở dữ liệu chỉ chập chờn 2 giây mà Liveness trả Unhealthy, Docker/Kubernetes sẽ khởi động lại (restart) đồng loạt mọi container dịch vụ gây sập nặng thêm; việc kiểm tra DB nên đặt ở Readiness (/health/ready)",
           "Vì ASP.NET Core không cho phép kiểm tra PostgreSQL trong Health Checks",
           "Vì Liveness chỉ chạy trên Windows",
           "Vì Liveness không trả về mã HTTP"
@@ -3837,40 +3837,40 @@
       },
       {
         "id": "csharp-v2-ch11-q2",
-        "prompt": "Biến môi trường tiêu chuẩn nào của **OpenTelemetry** giúp dịch vụ .NET tự biết địa chỉ gửi dữ liệu Traces và Metrics về Collector của MAVIS mà không cần hard-code trong C#?",
+        "prompt": "Biến môi trường tiêu chuẩn nào của OpenTelemetry giúp dịch vụ .NET tự biết địa chỉ gửi dữ liệu Traces và Metrics về Collector của MAVIS mà không cần hard-code trong C#?",
         "type": "SINGLE_CHOICE",
         "options": [
-          "`DOTNET_ENVIRONMENT`",
-          "`OTEL_EXPORTER_OTLP_ENDPOINT`",
-          "`ASPNETCORE_URLS`",
-          "`POSTGRES_PASSWORD`"
+          "DOTNET_ENVIRONMENT",
+          "OTEL_EXPORTER_OTLP_ENDPOINT",
+          "ASPNETCORE_URLS",
+          "POSTGRES_PASSWORD"
         ],
         "correctOption": 1,
-        "explanation": "`AddOtlpExporter()` tự động đọc biến môi trường chuẩn W3C/CNCF `OTEL_EXPORTER_OTLP_ENDPOINT`.",
+        "explanation": "AddOtlpExporter() tự động đọc biến môi trường chuẩn W3C/CNCF OTEL_EXPORTER_OTLP_ENDPOINT.",
         "points": 1
       },
       {
         "id": "csharp-v2-ch11-q3",
-        "prompt": "Trong .NET 8, OpenTelemetry tự động gắn kết các Span giữa `ApiGateway`, `Ordering.API` và `Catalog.API` vào chung một cây vết phân tán nhờ cơ chế nào?",
+        "prompt": "Trong .NET 8, OpenTelemetry tự động gắn kết các Span giữa ApiGateway, Ordering.API và Catalog.API vào chung một cây vết phân tán nhờ cơ chế nào?",
         "type": "SINGLE_CHOICE",
         "options": [
-          "Truyền tiêu chuẩn W3C **`traceparent`** trong HTTP Header (quản lý nội tại bởi `System.Diagnostics.Activity`)",
-          "Lưu chung file log vào thư mục `C:\\Temp`",
+          "Truyền tiêu chuẩn W3C traceparent trong HTTP Header (quản lý nội tại bởi System.Diagnostics.Activity)",
+          "Lưu chung file log vào thư mục C:\\Temp",
           "So khớp tên phương thức C# giống nhau",
-          "Chia sẻ chung một biến `static` giữa các container"
+          "Chia sẻ chung một biến static giữa các container"
         ],
         "correctOption": 0,
-        "explanation": "`HttpClientInstrumentation` tự động chèn header `traceparent` lúc gửi đi và `AspNetCoreInstrumentation` tự động đọc lại ở dịch vụ nhận.",
+        "explanation": "HttpClientInstrumentation tự động chèn header traceparent lúc gửi đi và AspNetCoreInstrumentation tự động đọc lại ở dịch vụ nhận.",
         "points": 1
       },
       {
         "id": "csharp-v2-ch11-q4",
-        "prompt": "Tại sao nên cấu hình bộ lọc bỏ qua các đường dẫn `/health` trong `AddAspNetCoreInstrumentation`?",
+        "prompt": "Tại sao nên cấu hình bộ lọc bỏ qua các đường dẫn /health trong AddAspNetCoreInstrumentation?",
         "type": "SINGLE_CHOICE",
         "options": [
           "Để tránh các đợt kiểm tra sức khỏe định kỳ mỗi vài giây từ Docker làm ngập rác hệ thống thu thập Trace và làm lệch thống kê độ trễ nghiệp vụ",
-          "Vì `/health` luôn gây lỗi `500`",
-          "Vì OpenTelemetry không đọc được phương thức `GET`",
+          "Vì /health luôn gây lỗi 500",
+          "Vì OpenTelemetry không đọc được phương thức GET",
           "Để tăng gấp đôi dung lượng RAM sử dụng"
         ],
         "correctOption": 0,
