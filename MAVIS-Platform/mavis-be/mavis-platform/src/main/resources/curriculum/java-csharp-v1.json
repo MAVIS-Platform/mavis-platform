@@ -3143,5 +3143,85 @@
         "points": 1
       }
     ]
+  },
+  {
+    "id": "csharp-v2-ch03",
+    "track": "C#",
+    "phase": "V2 · Module 1",
+    "title": "Chương 03: ASP.NET CORE 8 WEB API CHUẨN C3, DEPENDENCY INJECTION LIFETIME & VALIDATION",
+    "minutes": 45,
+    "objective": "Phân biệt chính xác 3 vòng đời Dependency Injection (DI Lifetime) trong .NET: `Singleton`, `Scoped`, `Transient` và tránh lỗi chí mạng Captive Dependency. Xây dựng API chuẩn C3 bằng ASP.NET Core 8 (dùng `record` DTO, Validation, `CancellationToken`, `TypedResults` / `ActionResult<T>`). Xử lý lỗi tập trung theo chuẩn RFC 7807 `ProblemDetails` với `IExceptionHandler` của .NET 8.",
+    "lesson": "### 3.1. Kiến trúc phân tầng C3 trong ASP.NET Core 8\n\nBên trong một dự án `.csproj` Web API chuẩn, luồng xử lý đi một chiều rõ ràng để dễ kiểm thử và để Roslyn trích xuất sơ đồ C3 sắc nét:\n\n```\nHTTP Request (JSON)\n        |\n        v\n+----------------------------------------+\n|  Controller / Minimal API Endpoint     |  <-- Routing, Validation, truyền CancellationToken,\n|  (Presentation / Web Layer)            |      trả HTTP Status chuẩn (200, 201, 400, 404).\n+----------------------------------------+\n        | (DTO record)\n        v\n+----------------------------------------+\n|  Application Service / Handler         |  <-- Điều phối nghiệp vụ, gọi Typed HttpClient,\n|  (Business Logic Layer)                |      phát Integration Event, ánh xạ DTO.\n+----------------------------------------+\n        | (Domain Entity)\n        v\n+----------------------------------------+\n|  EF Core DbContext / Repository        |  <-- Truy vấn & lưu trữ CSDL độc lập của service.\n|  (Data Access / Infrastructure Layer)  |      KHÔNG trả trực tiếp Entity ra API!\n+----------------------------------------+\n```\n\n### 3.2. Dependency Injection Lifetime & Bẫy \"Captive Dependency\"\n\nTrong .NET, DI Container tích hợp sẵn là trái tim của ứng dụng. Nắm nhầm Lifetime là nguyên nhân gây bug khó tìm nhất trong các bài phỏng vấn và đồ án C#:\n\n| Lifetime | Vòng đời đối tượng | Dùng cho thành phần nào? |\n| --- | --- | --- |\n| **`Transient`** | Tạo mới **mỗi lần** được yêu cầu inject. | Dịch vụ nhẹ, không trạng thái (*stateless*), mapper, validator. |\n| **`Scoped`** | Tạo mới **1 lần cho mỗi HTTP Request** (dùng chung trong suốt request đó, tự `Dispose` khi xong). | **EF Core `DbContext`**, Repository, Application Service thao tác DB. |\n| **`Singleton`** | Tạo **đúng 1 instance duy nhất** trong suốt vòng đời tiến trình ứng dụng. | Cache cấu hình, `IConnectionMultiplexer` (Redis), RabbitMQ Connection, `IOptions`. |\n\n> **⚠️ BẪY CHÍ MẠNG — Captive Dependency**:\n> **TUYỆT ĐỐI KHÔNG tiêm một dịch vụ `Scoped` (như `DbContext`) vào trong một dịch vụ `Singleton`!**\n> Nếu làm vậy, `DbContext` (vốn **không thread-safe**) sẽ bị giữ sống mãi cùng Singleton và bị hàng trăm HTTP request dùng chung đồng thời $\\rightarrow$ lập tức văng lỗi `InvalidOperationException` hoặc hỏng dữ liệu! (May mắn là từ .NET Core, chế độ `ValidateScopes` bật sẵn ở môi trường Development sẽ báo lỗi ngay khi khởi động).\n\n### 3.3. Code mẫu chuẩn ASP.NET Core 8 (Controller, `record` DTO, `CancellationToken`, `IExceptionHandler`)\n\n#### (a) DTO bất biến với Data Annotations Validation\n\n```csharp\nusing System.ComponentModel.DataAnnotations;\n\npublic sealed record CreateCatalogItemRequest(\n    [Required, StringLength(50)] string Sku,\n    [Required, StringLength(150)] string Name,\n    [Range(0.01, 100_000_000)] decimal UnitPrice,\n    [Range(0, 100_000)] int AvailableStock,\n    [Required] string Unit // Ví dụ: \"kg\", \"box\"\n);\n\npublic sealed record CatalogItemResponse(\n    int Id,\n    string Sku,\n    string Name,\n    decimal UnitPrice,\n    int AvailableStock,\n    string Unit\n);\n```\n\n#### (b) Controller chuẩn C3 với Primary Constructor (C# 12) & `CancellationToken`\n\n```csharp\n[ApiController]\n[Route(\"api/v1/catalog/items\")]\npublic sealed class CatalogItemsController(ICatalogService catalogService) : ControllerBase\n{\n    [HttpGet(\"{id:int}\")]\n    [ProducesResponseType(typeof(CatalogItemResponse), StatusCodes.Status200OK)]\n    [ProducesResponseType(StatusCodes.Status404NotFound)]\n    public async Task<ActionResult<CatalogItemResponse>> GetById(int id, CancellationToken ct)\n    {\n        var item = await catalogService.GetByIdAsync(id, ct);\n        return item is null ? NotFound() : Ok(item);\n    }\n\n    [HttpPost]\n    [ProducesResponseType(typeof(CatalogItemResponse), StatusCodes.Status201Created)]\n    [ProducesResponseType(StatusCodes.Status400BadRequest)]\n    public async Task<ActionResult<CatalogItemResponse>> Create(\n        [FromBody] CreateCatalogItemRequest request,\n        CancellationToken ct)\n    {\n        var created = await catalogService.CreateAsync(request, ct);\n        return CreatedAtAction(nameof(GetById), new { id = created.Id }, created);\n    }\n}\n```\n\n#### (c) Xử lý lỗi toàn cục chuẩn .NET 8 với `IExceptionHandler` (`ProblemDetails`)\n\n```csharp\npublic sealed class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logger) : IExceptionHandler\n{\n    public async ValueTask<bool> TryHandleAsync(\n        HttpContext httpContext, Exception exception, CancellationToken ct)\n    {\n        logger.LogError(exception, \"Unhandled exception on {Path}\", httpContext.Request.Path);\n\n        var (statusCode, title) = exception switch\n        {\n            DomainException => (StatusCodes.Status409Conflict, \"Business Rule Violation\"),\n            KeyNotFoundException => (StatusCodes.Status404NotFound, \"Resource Not Found\"),\n            _ => (StatusCodes.Status500InternalServerError, \"Internal Server Error\")\n        };\n\n        httpContext.Response.StatusCode = statusCode;\n        await httpContext.Response.WriteAsJsonAsync(new ProblemDetails\n        {\n            Status = statusCode,\n            Title = title,\n            Detail = statusCode == 500 ? \"An unexpected error occurred.\" : exception.Message,\n            Instance = httpContext.Request.Path\n        }, ct);\n\n        return true;\n    }\n}\n```\n\n*(Đăng ký trong `Program.cs`: `builder.Services.AddExceptionHandler<GlobalExceptionHandler>(); builder.Services.AddProblemDetails();` và `app.UseExceptionHandler();`)*\n\n### 3.4. Góc nhìn trên nền tảng MAVIS\n\n* **`MAVIS.Worker` (Roslyn)**: Tự động đọc attribute `[ApiController]`, `[Route]`, `[HttpGet/Post/Put/Delete]` (hoặc Minimal API `MapGet/MapPost`), đọc constructor DI (`ICatalogService`, `CatalogDbContext`) để dựng đầy đủ đồ thị **C3 Component** và phát hiện cảnh báo nếu Controller tiêm thẳng `DbContext` vi phạm phân tầng.",
+    "exercise": "### 3.5. Bài tập thực hành Lab 03\n\n* Kiểm tra file `Program.cs` của một dịch vụ .NET 8: liệt kê tất cả các dịch vụ được đăng ký theo từng nhóm `AddSingleton`, `AddScoped`, `AddTransient` và giải thích lý do chọn vòng đời tương ứng.\n* Soi tầng C3 trên MAVIS để kiểm tra tính sạch của phân tầng `Controller -> Service -> DbContext`.",
+    "sources": [
+      {
+        "publisher": "Microsoft Learn",
+        "title": ".NET Microservices: Architecture for Containerized .NET Applications",
+        "url": "https://learn.microsoft.com/en-us/dotnet/architecture/microservices/"
+      },
+      {
+        "publisher": "Microsoft Learn (.NET 8 / YARP)",
+        "title": "ASP.NET Core 8 & YARP Reverse Proxy Documentation",
+        "url": "https://learn.microsoft.com/en-us/aspnet/core/"
+      }
+    ],
+    "questions": [
+      {
+        "id": "csharp-v2-ch03-q1",
+        "prompt": "Vòng đời Dependency Injection (Lifetime) mặc định và đúng chuẩn cho **EF Core `DbContext`** trong ASP.NET Core là gì?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "`Singleton`",
+          "`Scoped` (một instance riêng cho mỗi HTTP Request)",
+          "`Static` toàn cục",
+          "Không được đăng ký `DbContext` vào DI Container"
+        ],
+        "correctOption": 1,
+        "explanation": "`DbContext` giữ trạng thái theo dõi thực thể (Change Tracker) và không an toàn đa luồng (*not thread-safe*), nên bắt buộc phải là `Scoped` theo từng request.",
+        "points": 1
+      },
+      {
+        "id": "csharp-v2-ch03-q2",
+        "prompt": "Lỗi **Captive Dependency** trong ASP.NET Core DI xảy ra trong tình huống nào?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Khi một dịch vụ `Scoped` tiêm một dịch vụ `Singleton`",
+          "Khi một dịch vụ **`Singleton`** tiêm trực tiếp một dịch vụ **`Scoped`** (như `DbContext`), khiến dịch vụ `Scoped` bị giữ sống vĩnh viễn và dùng chung sai cách giữa các luồng",
+          "Khi dùng `record` làm DTO",
+          "Khi truyền `CancellationToken` vào phương thức `async`"
+        ],
+        "correctOption": 1,
+        "explanation": "Dịch vụ có vòng đời dài hơn (`Singleton`) không được \"bắt giữ\" trực tiếp dịch vụ có vòng đời ngắn hơn (`Scoped`).",
+        "points": 1
+      },
+      {
+        "id": "csharp-v2-ch03-q3",
+        "prompt": "Việc truyền **`CancellationToken`** từ Controller xuống Service và tới các truy vấn EF Core / `HttpClient` mang lại lợi ích thực tế gì?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Tự động mã hóa chuỗi JSON trả về",
+          "Khi client ngắt kết nối (đóng trình duyệt hoặc hết timeout), server lập tức hủy truy vấn DB/HTTP đang dở dang để giải phóng luồng và tài nguyên",
+          "Tăng gấp đôi kích thước bộ nhớ RAM cấp cho container",
+          "Bỏ qua bước kiểm tra Validation"
+        ],
+        "correctOption": 1,
+        "explanation": "Hủy sớm công việc không còn ai chờ giúp bảo vệ Database và ThreadPool dưới tải cao.",
+        "points": 1
+      },
+      {
+        "id": "csharp-v2-ch03-q4",
+        "prompt": "Trong .NET 8, cơ chế chuẩn hóa mới nào được khuyến nghị để xử lý ngoại lệ tập trung và trả về định dạng JSON **RFC 7807 `ProblemDetails`** mà không làm lộ stack trace?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Viết `try-catch` lặp lại trong từng hàm Controller rồi trả về `ex.ToString()`",
+          "Triển khai giao diện **`IExceptionHandler`** kết hợp `AddProblemDetails()` và `UseExceptionHandler()`",
+          "Tắt hoàn toàn việc ném ngoại lệ trong C#",
+          "Trả về HTTP `200 OK` cho mọi lỗi hệ thống"
+        ],
+        "correctOption": 1,
+        "explanation": "`IExceptionHandler` là chuẩn chính thức từ .NET 8 giúp tách gọn logic xử lý lỗi toàn cục và trả về `ProblemDetails` nhất quán.",
+        "points": 1
+      }
+    ]
   }
 ]
