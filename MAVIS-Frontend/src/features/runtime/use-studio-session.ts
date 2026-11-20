@@ -3,9 +3,19 @@
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useApi, useApiMutation, useApiQuery } from "@/hooks/use-api";
+import { contracts, type Response as ApiResponse } from "@/lib/api/contracts";
 import { captureStudioImage } from "./studio-observability";
 
 type StudioAction = "START" | "STOP" | "SCALE";
+type StudioState = ApiResponse<"studioState">;
+const TERMINAL_STUDIO_STATUSES = new Set([
+  "COMPLETED",
+  "FAILED",
+  "CANCELLED",
+  "TIMED_OUT",
+  "TIMEDOUT",
+  "TIMEOUT",
+]);
 
 type StudioReplicaSource = {
   actions: ReadonlyArray<{
@@ -52,7 +62,12 @@ export function resolveRunningReplicas(
 export function useStudioSession(sessionId: string) {
   const api = useApi();
   const queryClient = useQueryClient();
-  const state = useApiQuery("studioState", { sessionId }, { enabled: !!sessionId, poll: true });
+  const [sseConnected, setSseConnected] = useState(false);
+  const state = useApiQuery(
+    "studioState",
+    { sessionId },
+    { enabled: !!sessionId, poll: true, ...(sseConnected ? { refreshMs: 12000 } : {}) },
+  );
   const action = useApiMutation("studioAction");
   const finish = useApiMutation("studioFinish");
   const cancel = useApiMutation("stopRuntime");
@@ -83,6 +98,7 @@ export function useStudioSession(sessionId: string) {
     setActionError(null);
     setDownloadError(null);
     setChaosTarget("");
+    setSseConnected(false);
     pending.current = null;
     prevStatusRef.current = undefined;
     resetAction();
@@ -92,6 +108,78 @@ export function useStudioSession(sessionId: string) {
   }, [sessionId, resetAction, resetFinish, resetCancel, resetCapture]);
 
   const data = state.data;
+  const executionStatus = data?.executionStatus?.toUpperCase() ?? "";
+  const streamEnabled =
+    Boolean(sessionId) &&
+    /^[a-f0-9-]{36}$/i.test(sessionId) &&
+    !TERMINAL_STUDIO_STATUSES.has(executionStatus);
+
+  // Subscribe to live SSE frames from the backend ring buffer; automatically falls back to polling if disconnected.
+  useEffect(() => {
+    if (!streamEnabled || typeof EventSource === "undefined") {
+      setSseConnected(false);
+      return;
+    }
+    const source = new EventSource(
+      `/api/backend/analyzer/runtime/sessions/${sessionId}/studio/stream`,
+    );
+    const onOpen = () => setSseConnected(true);
+    const onError = () => setSseConnected(false);
+    const onTelemetry = (event: MessageEvent<string>) => {
+      try {
+        const payload = JSON.parse(event.data) as {
+          telemetry?: unknown;
+          telemetryReceivedAt?: string;
+          frame?: unknown;
+        };
+        const parsedTelemetry = contracts.studioState.output.shape.telemetry.safeParse(
+          payload.telemetry,
+        );
+        if (!parsedTelemetry.success || !parsedTelemetry.data) return;
+        const parsedFrame = payload.frame
+          ? contracts.studioState.output.shape.telemetryHistory.unwrap().element.safeParse(payload.frame)
+          : null;
+        queryClient.setQueryData<StudioState>(["api", "studioState", { sessionId }], (prev) => {
+          if (!prev) return prev;
+          const nextHistory =
+            parsedFrame?.success
+              ? [...(prev.telemetryHistory ?? []).slice(-59), parsedFrame.data]
+              : prev.telemetryHistory;
+          return {
+            ...prev,
+            telemetry: parsedTelemetry.data,
+            ...(payload.telemetryReceivedAt
+              ? { telemetryReceivedAt: payload.telemetryReceivedAt }
+              : {}),
+            ...(nextHistory ? { telemetryHistory: nextHistory } : {}),
+          };
+        });
+      } catch {
+        // Ignore malformed frame; fallback polling keeps state consistent.
+      }
+    };
+    const onState = (event: MessageEvent<string>) => {
+      try {
+        const parsed = contracts.studioState.output.safeParse(JSON.parse(event.data));
+        if (!parsed.success) return;
+        queryClient.setQueryData<StudioState>(["api", "studioState", { sessionId }], parsed.data);
+      } catch {
+        // Ignore malformed state event.
+      }
+    };
+    source.addEventListener("open", onOpen);
+    source.addEventListener("error", onError);
+    source.addEventListener("telemetry", onTelemetry as EventListener);
+    source.addEventListener("state", onState as EventListener);
+    return () => {
+      source.removeEventListener("open", onOpen);
+      source.removeEventListener("error", onError);
+      source.removeEventListener("telemetry", onTelemetry as EventListener);
+      source.removeEventListener("state", onState as EventListener);
+      source.close();
+      setSseConnected(false);
+    };
+  }, [sessionId, streamEnabled, queryClient]);
   const services = data?.services ?? [];
   const target = services.includes(service) ? service : (services[0] ?? "");
   const waiting =
@@ -221,6 +309,7 @@ export function useStudioSession(sessionId: string) {
 
   return {
     state,
+    sseConnected,
     data,
     services,
     target,

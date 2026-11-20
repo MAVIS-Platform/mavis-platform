@@ -32,6 +32,9 @@ public class RuntimeStudioService {
     @org.springframework.context.annotation.Lazy
     private com.mavis.analyzer.runtime.service.impl.RuntimeQueueCoordinator queueCoordinator;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private StudioTelemetryHub telemetryHub;
+
     public record ActionRequest(@NotNull UUID actionId, @NotNull @Pattern(regexp="START|STOP|SCALE") String action,
                                 @NotBlank @Size(max=128) String service, @Min(1) @Max(8) Integer replicas) {}
     public record AckRequest(@NotNull UUID actionId, @NotNull UUID sessionId, @NotBlank String resourceProject,
@@ -65,25 +68,41 @@ public class RuntimeStudioService {
     @Transactional
     public JsonNode telemetry(UUID id, TelemetryRequest request) {
         runner.requireRunnerService();
-        RuntimeSession session = locked(id);
+        RuntimeSession session = sessions.findById(id)
+                .orElseThrow(() -> error(ErrorCode.NOT_FOUND, "Runtime session not found."));
         if (!id.equals(request.sessionId()) || !request.resourceProject().equals(session.getResourceProject()))
             throw error(ErrorCode.CONFLICT, "Runner allocation mismatch.");
-        if(session.getCancelRequestedAt()!=null || session.getRunnerReceiptJson()!=null ||
+        if (session.getCancelRequestedAt() != null || session.getRunnerReceiptJson() != null ||
             !("RUNNING".equals(session.getExecutionStatus()) || "ALLOCATED".equals(session.getExecutionStatus())))
-            return mapper.createObjectNode().put("sessionId",id.toString()).put("resourceProject",request.resourceProject());
+            return mapper.createObjectNode().put("sessionId", id.toString()).put("resourceProject", request.resourceProject());
         if (!request.telemetry().isObject() || request.telemetry().toString().length() > 524288)
             throw error(ErrorCode.BAD_REQUEST, "Telemetry exceeds the session budget.");
-        ObjectNode control = control(session);
+        JsonNode redacted = com.mavis.analyzer.runtime.util.SecretRedactor.redactJson(request.telemetry());
+        String nowIso = OffsetDateTime.now().toString();
+        if (telemetryHub != null) {
+            boolean forcePersist = !"RUNNING".equals(session.getExecutionStatus());
+            boolean shouldPersistDb = telemetryHub.publish(id, redacted, nowIso, forcePersist);
+            if (!shouldPersistDb) {
+                return mapper.createObjectNode().put("sessionId", id.toString()).put("resourceProject", request.resourceProject());
+            }
+        }
+        RuntimeSession lockedSession = locked(id);
+        if (!request.resourceProject().equals(lockedSession.getResourceProject()))
+            throw error(ErrorCode.CONFLICT, "Runner allocation mismatch.");
+        if (lockedSession.getCancelRequestedAt() != null || lockedSession.getRunnerReceiptJson() != null ||
+            !("RUNNING".equals(lockedSession.getExecutionStatus()) || "ALLOCATED".equals(lockedSession.getExecutionStatus())))
+            return mapper.createObjectNode().put("sessionId", id.toString()).put("resourceProject", request.resourceProject());
+        ObjectNode control = control(lockedSession);
         String previousObservedAt = control.path("telemetry").path("observedAt").asText("");
-        control.set("telemetry", com.mavis.analyzer.runtime.util.SecretRedactor.redactJson(request.telemetry()));
-        control.put("telemetryReceivedAt", OffsetDateTime.now().toString());
-        // Keep the last few frame ids: with 3s frames the UI's frame is usually one behind when the user clicks Capture.
+        control.set("telemetry", redacted);
+        control.put("telemetryReceivedAt", nowIso);
+        // Keep the last few frame ids: with 1-3s frames the UI's frame may lag slightly behind when the user clicks Capture.
         if (!previousObservedAt.isBlank()) {
             var recent = control.withArray("recentObservedAt");
             recent.add(previousObservedAt);
-            while (recent.size() > 3) recent.remove(0);
+            while (recent.size() > 6) recent.remove(0);
         }
-        save(session, control);
+        save(lockedSession, control);
         return mapper.createObjectNode().put("sessionId", id.toString()).put("resourceProject", request.resourceProject());
     }
 
@@ -94,21 +113,31 @@ public class RuntimeStudioService {
         if (queueCoordinator != null) queueCoordinator.recordUiHeartbeat(id);
         ObjectNode control = control(session);
         expireStaleActions(control);
-        if (!control.hasNonNull("telemetry")) throw error(ErrorCode.UNPROCESSABLE_ENTITY, "Wait for observed telemetry before capturing evidence.");
-        if (request.observedAt() != null && !request.observedAt().equals(control.path("telemetry").path("observedAt").asText())) {
-            boolean recentFrame = false;
+        StudioTelemetryHub.SessionSnapshot liveSnapshot = telemetryHub != null ? telemetryHub.latest(id).orElse(null) : null;
+        JsonNode effectiveTelemetry = liveSnapshot != null ? liveSnapshot.latestTelemetry()
+                : (control.hasNonNull("telemetry") ? control.get("telemetry") : null);
+        if (effectiveTelemetry == null || effectiveTelemetry.isNull())
+            throw error(ErrorCode.UNPROCESSABLE_ENTITY, "Wait for observed telemetry before capturing evidence.");
+        if (request.observedAt() != null && !request.observedAt().equals(effectiveTelemetry.path("observedAt").asText())) {
+            boolean recentFrame = request.observedAt().equals(control.path("telemetry").path("observedAt").asText());
             for (JsonNode seen : control.withArray("recentObservedAt")) recentFrame |= request.observedAt().equals(seen.asText());
+            if (liveSnapshot != null) recentFrame |= liveSnapshot.recentObservedAt().contains(request.observedAt());
             if (!recentFrame) throw error(ErrorCode.CONFLICT, "Telemetry changed. Capture the refreshed view again.");
         }
         for(JsonNode action:control.withArray("actions"))
             if(java.util.Set.of("PENDING","RUNNING").contains(action.path("status").asText()))
                 throw error(ErrorCode.CONFLICT,"Wait for the action result before capturing evidence.");
         if (control.withArray("snapshots").size() >= 8) throw error(ErrorCode.CONFLICT, "Snapshot limit reached.");
+        // Persist the latest in-memory telemetry frame durably alongside the frozen snapshot.
+        if (liveSnapshot != null) {
+            control.set("telemetry", effectiveTelemetry.deepCopy());
+            if (liveSnapshot.receivedAt() != null) control.put("telemetryReceivedAt", liveSnapshot.receivedAt());
+        }
         ObjectNode evidence = mapper.createObjectNode().put("id", UUID.randomUUID().toString())
             .put("sessionId", id.toString()).put("sourceSnapshotId", session.getSourceSnapshot().getId().toString())
             .put("modelVersionId", session.getModelVersion() == null ? "" : session.getModelVersion().getId().toString())
             .put("capturedAt", OffsetDateTime.now().toString()).put("explanation", request.explanation().trim());
-        evidence.set("telemetry", control.path("telemetry").deepCopy());
+        evidence.set("telemetry", effectiveTelemetry.deepCopy());
         evidence.set("actions", control.withArray("actions").deepCopy());
         if(request.imageData()!=null) {
             try {
@@ -128,6 +157,7 @@ public class RuntimeStudioService {
         control.withArray("snapshots").add(evidence);
         control.put("lastUiActivityAt", OffsetDateTime.now().toString());
         save(session, control);
+        notifyStateAfterCommit(session);
         return evidence;
     }
 
@@ -137,6 +167,19 @@ public class RuntimeStudioService {
         access.requireProjectReadAccess(session.getProject());
         if (queueCoordinator != null) queueCoordinator.recordUiHeartbeat(id);
         return view(session);
+    }
+
+    /** Opens a real-time Server-Sent Events stream for live telemetry and action transitions. */
+    @Transactional(readOnly = true)
+    public org.springframework.web.servlet.mvc.method.annotation.SseEmitter subscribeStream(UUID id) {
+        RuntimeSession session = sessions.findById(id).orElseThrow(() -> error(ErrorCode.NOT_FOUND, "Runtime session not found."));
+        access.requireProjectReadAccess(session.getProject());
+        if (queueCoordinator != null) queueCoordinator.recordUiHeartbeat(id);
+        JsonNode initial = view(session);
+        if (telemetryHub == null) {
+            throw error(ErrorCode.INTERNAL_SERVER_ERROR, "Studio stream hub is unavailable.");
+        }
+        return telemetryHub.subscribe(id, initial);
     }
 
     @Transactional
@@ -218,12 +261,14 @@ public class RuntimeStudioService {
             control.withArray("actions").add(action);
             applySimulatedTelemetryUpdate(session, control, request.service(), after);
             save(session, control);
+            notifyStateAfterCommit(session);
             return view(session);
         }
         action.put("status", "PENDING");
         control.withArray("actions").add(action);
         control.put("lastUiActivityAt", OffsetDateTime.now().toString());
         save(session, control);
+        notifyStateAfterCommit(session);
         return view(session);
     }
 
@@ -253,6 +298,7 @@ public class RuntimeStudioService {
             initializeSimulatedTelemetry(session, control);
         }
         save(session, control);
+        notifyStateAfterCommit(session);
         return view(session);
     }
 
@@ -277,6 +323,7 @@ public class RuntimeStudioService {
                 completeSimulatedSession(session, control);
             }
             save(session, control);
+            notifyStateAfterCommit(session);
         }
         return view(session);
     }
@@ -373,6 +420,7 @@ public class RuntimeStudioService {
                 action.put("status", request.status()).put("completedAt", OffsetDateTime.now().toString());
                 action.set("result", request.result());
                 save(session, control);
+                notifyStateAfterCommit(session);
                 return mapper.createObjectNode().put("actionId", request.actionId().toString()).put("status", request.status());
             }
         }
@@ -415,10 +463,26 @@ public class RuntimeStudioService {
         for(JsonNode snapshot:result.withArray("snapshots"))
             ((ObjectNode)snapshot).remove(java.util.List.of("telemetry","actions","imageData"));
         String execution = session.getExecutionStatus() == null ? "UNKNOWN" : session.getExecutionStatus();
-        if (Set.of("COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT", "TIMEDOUT", "TIMEOUT").contains(execution))
+        boolean terminal = Set.of("COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT", "TIMEDOUT", "TIMEOUT").contains(execution);
+        if (terminal)
             for (JsonNode action : result.withArray("actions"))
                 if (Set.of("PENDING", "RUNNING").contains(action.path("status").asText()))
                     ((ObjectNode) action).put("status", "INTERRUPTED");
+        if (interactive && telemetryHub != null && !terminal) {
+            telemetryHub.latest(session.getId()).ifPresent(live -> {
+                if (live.latestTelemetry() != null) {
+                    result.set("telemetry", live.latestTelemetry());
+                    if (live.receivedAt() != null) result.put("telemetryReceivedAt", live.receivedAt());
+                }
+                if (!live.history().isEmpty()) {
+                    var historyNode = result.putArray("telemetryHistory");
+                    int from = Math.max(0, live.history().size() - 60);
+                    for (int i = from; i < live.history().size(); i++) {
+                        historyNode.add(live.history().get(i));
+                    }
+                }
+            });
+        }
         var services = result.putArray("services");
         JsonNode topology = null;
         try {
@@ -453,6 +517,23 @@ public class RuntimeStudioService {
     private void save(RuntimeSession session, ObjectNode control) {
         session.setStudioControl(control);
         sessions.save(session);
+    }
+
+    private void notifyStateAfterCommit(RuntimeSession session) {
+        if (telemetryHub == null || session == null || session.getId() == null) return;
+        UUID sessionId = session.getId();
+        JsonNode snapshot = view(session);
+        if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
+            org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                    new org.springframework.transaction.support.TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            telemetryHub.notifyState(sessionId, snapshot);
+                        }
+                    });
+        } else {
+            telemetryHub.notifyState(sessionId, snapshot);
+        }
     }
     /** Public, bounded profile facts for the Live inspector. Never expose environment values. */
     private static void appendPinnedLimits(ObjectNode result, RuntimeSession session) {

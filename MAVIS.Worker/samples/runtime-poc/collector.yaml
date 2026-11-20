@@ -30,12 +30,31 @@ processors:
     # Bounded export lines keep live tail reads (4 MiB) from ever landing inside a single giant batch.
     send_batch_size: 512
     send_batch_max_size: 1024
+connectors:
+  spanmetrics:
+    metrics_flush_interval: 2s
+    histogram:
+      explicit:
+        buckets: [5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s]
+    dimensions:
+      - name: http.request.method
+      - name: http.route
+      - name: http.response.status_code
+    dimensions_cache_size: 200
+  servicegraph:
+    metrics_flush_interval: 2s
+    latency_histogram_buckets: [5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s]
+    store:
+      ttl: 5s
+      max_items: 2000
 exporters:
   file:
     path: /traces/traces.json
     rotation:
       max_megabytes: 8
       max_backups: 1
+  prometheus:
+    endpoint: 0.0.0.0:8889
 extensions:
   health_check:
     endpoint: 0.0.0.0:13133
@@ -45,4 +64,8 @@ service:
     traces:
       receivers: [otlp]
       processors: [memory_limiter, transform/redact, batch]
-      exporters: [file]
+      exporters: [file, spanmetrics, servicegraph]
+    metrics:
+      receivers: [spanmetrics, servicegraph]
+      processors: [memory_limiter]
+      exporters: [prometheus]

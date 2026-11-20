@@ -1691,6 +1691,33 @@ export function LiveStudioWorkbench({
                       ? "Waiting for Runner"
                       : statusLabel}
                 </span>
+                {data.telemetry?.probe && (
+                  <span
+                    className="hidden shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-emerald-500/30 bg-emerald-950/50 px-2 py-0.5 font-mono text-emerald-200 lg:inline-flex"
+                    title="Continuous live probe RED metrics"
+                  >
+                    <span>{metric(data.telemetry.probe.rps)} RPS</span>
+                    {data.telemetry.probe.p95Ms != null && (
+                      <span>· p95 {metric(data.telemetry.probe.p95Ms)}ms</span>
+                    )}
+                    <span
+                      className={
+                        data.telemetry.probe.errorRatePercent > 0 ? "text-rose-300" : "text-emerald-300"
+                      }
+                    >
+                      · {metric(data.telemetry.probe.errorRatePercent)}% err
+                    </span>
+                  </span>
+                )}
+                {studio.sseConnected && (
+                  <span
+                    className="hidden shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-sky-500/30 bg-sky-950/40 px-1.5 py-0.5 font-mono text-[9px] text-sky-300 xl:inline-flex"
+                    title="Real-time SSE telemetry stream connected"
+                  >
+                    <span className="size-1.5 rounded-full bg-sky-400" />
+                    SSE
+                  </span>
+                )}
                 {data.telemetry?.observedAt && (
                   <span
                     className={`hidden shrink-0 items-center gap-1 whitespace-nowrap xl:inline-flex ${
@@ -1746,12 +1773,28 @@ export function LiveStudioWorkbench({
             const downServicesCount = blocks.filter(
               (b) => (runningFor(data, b.service) ?? 0) === 0,
             ).length;
+            const liveProbe = data.telemetry?.probe;
             const rawReq = lastConfirmed?.result?.metricsAfter["requestCount"];
             const rawP95 = lastConfirmed?.result?.metricsAfter["p95LatencyMs"];
             const rawErr = lastConfirmed?.result?.metricsAfter["errorRatePercent"];
-            const reqNum = typeof rawReq === "number" && Number.isFinite(rawReq) ? rawReq : null;
-            const p95Num = typeof rawP95 === "number" && Number.isFinite(rawP95) ? rawP95 : null;
-            const errNum = typeof rawErr === "number" && Number.isFinite(rawErr) ? rawErr : null;
+            const reqNum =
+              liveProbe && liveProbe.requests > 0
+                ? liveProbe.requests
+                : typeof rawReq === "number" && Number.isFinite(rawReq)
+                  ? rawReq
+                  : null;
+            const p95Num =
+              liveProbe && liveProbe.p95Ms != null && Number.isFinite(liveProbe.p95Ms)
+                ? liveProbe.p95Ms
+                : typeof rawP95 === "number" && Number.isFinite(rawP95)
+                  ? rawP95
+                  : null;
+            const errNum =
+              liveProbe && liveProbe.requests > 0 && Number.isFinite(liveProbe.errorRatePercent)
+                ? liveProbe.errorRatePercent
+                : typeof rawErr === "number" && Number.isFinite(rawErr)
+                  ? rawErr
+                  : null;
             const spanCount = data.telemetry?.spans.length ?? 0;
 
             let totalCpuPct = 0;

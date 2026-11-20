@@ -305,4 +305,29 @@ class RuntimeStudioServiceTest {
         verify(sessions, never()).findLockedById(any());
         verify(sessions, never()).save(any());
     }
+
+    @Test void telemetryHubAvoidsDbWriteBetweenSnapshotsWhileStateAndCaptureReadFreshRamFrame() {
+        var hub = new StudioTelemetryHub(mapper);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "telemetryHub", hub);
+        session.setSourceSnapshot(SourceSnapshot.builder().id(UUID.randomUUID()).build());
+
+        var frame1 = mapper.createObjectNode().put("observedAt", "frame-1");
+        service.telemetry(id, new RuntimeStudioService.TelemetryRequest(id, session.getResourceProject(), frame1));
+        verify(sessions, times(1)).findLockedById(id);
+        verify(sessions, times(1)).save(session);
+        clearInvocations(sessions);
+
+        var frame2 = mapper.createObjectNode().put("observedAt", "frame-2");
+        service.telemetry(id, new RuntimeStudioService.TelemetryRequest(id, session.getResourceProject(), frame2));
+        verify(sessions, never()).findLockedById(any());
+        verify(sessions, never()).save(any());
+
+        var state = service.state(id);
+        assertEquals("frame-2", state.path("telemetry").path("observedAt").asText());
+        assertEquals(2, state.path("telemetryHistory").size());
+
+        var captured = service.capture(id, new RuntimeStudioService.CaptureRequest("Observed frame-2", null, "frame-2"));
+        assertEquals("frame-2", captured.path("telemetry").path("observedAt").asText());
+        verify(sessions, times(1)).save(session);
+    }
 }

@@ -6,7 +6,7 @@ public static class RunnerProgram
 {
     public static async Task<int> Main(string[] args)
     {
-        if (args is not ["preflight", _] && args is not ["scenario", _, _] && args is not ["correlate", _, _, _, _] && args is not ["run", _, _, _] && args is not ["plan", _, _] && args is not ["stdin-scenario"] && args is not ["recover", _, _] &&
+        if (args is not ["preflight", _] && args is not ["scenario", _, _] && args is not ["correlate", _, _, _, _] && args is not ["run", _, _, _] && args is not ["plan", _, _] && args is not ["stdin-scenario"] && args is not ["live-probe"] && args is not ["recover", _, _] &&
             args is not ["managed", _, _, _, _] && args is not ["deliver", _, _, _] && args is not ["deliver-pending", _, _] && args is not ["ack-lifecycle", _, _] && args is not ["managed-recover", _, _, _] &&
             args is not ["worker", _, _, _] && args is not ["worker", _, _, _, _])
         {
@@ -99,6 +99,16 @@ public static class RunnerProgram
                 var outcome = await new HttpScenarioRunner(allowContainerDns: true).RunAsync(envelope.Scenario, envelope.Endpoints, envelope.Secrets, cancellation.Token);
                 Console.WriteLine(JsonSerializer.Serialize(outcome, jsonOptions));
                 return outcome.Status == "Passed" ? 0 : 1;
+            }
+            if (args[0] == "live-probe")
+            {
+                if (Environment.GetEnvironmentVariable("MAVIS_RUNNER_INTERNAL_NETWORK") != "1") throw new ArgumentException();
+                AppDomain.CurrentDomain.ProcessExit += (_, _) => cancellation.Cancel();
+                var text = await Console.In.ReadToEndAsync(cancellation.Token);
+                if (text.Length > 1_048_576) throw new ArgumentException();
+                var envelope = JsonSerializer.Deserialize<LiveProbeEnvelope>(text, jsonOptions) ?? throw new ArgumentException();
+                await new LiveProbeRunner().RunAsync(envelope, Console.Out, cancellation.Token);
+                return 0;
             }
             if (args[0] == "plan")
             {

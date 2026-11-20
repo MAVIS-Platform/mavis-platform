@@ -63,7 +63,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
             "dotnetInstrumentationVersion", "javaInstrumentationVersion", "environmentBindings",
             // Required by the Runner to apply initially stopped blocks/connections and to
             // validate interactive Studio actions against the prepared topology.
-            "studioTopology");
+            "studioTopology", "probeRps");
     private static final List<String> RUNNER_STEP_FIELDS = List.of("id", "service", "method", "path", "expectedStatus", "jsonBody",
             "headers", "secretHeaders", "extract", "environmentVariables", "bodyReference", "envHeaders", "allowClientError");
     private static final Pattern EXCERPT_MAPPING_PATTERN = Pattern.compile("@(GetMapping|PostMapping|PutMapping|DeleteMapping|PatchMapping|RequestMapping)\\s*(?:\\(\\s*\"([^\"]*)\"\\s*\\))?");
@@ -1465,7 +1465,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
             String configuredRunnerImg = object.path("scenarioRunnerImage").asText("").trim();
             if (configuredRunnerImg.startsWith("mcr.microsoft.com/dotnet/aspnet")) {
                 String builtId = RuntimeRunnerDispatcher.captureCommandStdout(
-                        List.of("docker", "image", "inspect", "--format", "{{.Id}}", "mavis-poc-runner:2"), 5);
+                        List.of("docker", "image", "inspect", "--format", "{{.Id}}", "mavis-poc-runner:3"), 5);
                 if (builtId != null && builtId.matches("^sha256:[0-9a-f]{64}$")) {
                     object.put("scenarioRunnerImage", builtId);
                 }

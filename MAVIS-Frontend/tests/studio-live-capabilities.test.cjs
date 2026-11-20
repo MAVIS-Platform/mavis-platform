@@ -229,3 +229,12 @@ test("terminal timestamp parser normalizes container UTC logs and comparator is 
     [3, 1, 0, 2],
   );
 });
+
+test("BFF path allowlist opens only GET /studio/stream and blocks runner callback endpoints", () => {
+  const { allowedBackendPath } = require("../src/lib/api/backend-path.ts");
+  const sid = "550e8400-e29b-41d4-a716-446655440000";
+  assert.equal(allowedBackendPath(`analyzer/runtime/sessions/${sid}/studio/stream`), true);
+  assert.equal(allowedBackendPath(`analyzer/runtime/sessions/${sid}/studio/ack`), false);
+  assert.equal(allowedBackendPath(`analyzer/runtime/sessions/${sid}/studio/telemetry`), false);
+  assert.equal(allowedBackendPath(`analyzer/runtime/sessions/${sid}/recovery-result`), false);
+});

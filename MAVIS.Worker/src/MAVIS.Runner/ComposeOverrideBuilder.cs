@@ -11,7 +11,7 @@ public sealed record RunnerExecutionProfile(string CollectorImage, string Instru
     IReadOnlyDictionary<string, RuntimeServiceProfile> Applications, int MemoryMiB = 256, double Cpus = 1,
     int TimeoutSeconds = 120, bool ApprovedForLocalPoc = false, string? ScenarioRunnerImage = null,
     string DotnetInstrumentationVersion = "1.17.0", string JavaInstrumentationVersion = "2.32.0", IReadOnlyDictionary<string, IReadOnlyList<RuntimeEnvironmentBinding>>? EnvironmentBindings = null,
-    StudioTopology? StudioTopology = null);
+    StudioTopology? StudioTopology = null, int ProbeRps = 5);
 
 /// <summary>Generates only an override; it does not claim compatibility or launch workloads.</summary>
 public static class ComposeOverrideBuilder

@@ -707,7 +707,31 @@ export const contracts = {
         operationName:span.operationName ?? (span.route ? `${span.httpMethod ? `${span.httpMethod} ` : ""}${span.route}` : null),
       }))),interactions:z.array(z.object({traceId:z.string(),fromService:z.string(),toService:z.string(),parentSpanId:z.string(),childSpanId:z.string()})),
       warnings:z.array(z.string()).optional(),
+      probe:z.object({
+        targetRps:z.number().optional(),rps:z.number(),requests:z.number(),errors:z.number(),errorRatePercent:z.number(),
+        p50Ms:z.number().nullable().optional(),p95Ms:z.number().nullable().optional(),p99Ms:z.number().nullable().optional(),
+        routes:z.array(z.object({
+          stepId:z.string(),service:z.string(),method:z.string(),path:z.string(),
+          rps:z.number(),requests:z.number(),errors:z.number(),errorRatePercent:z.number(),
+          p50Ms:z.number().nullable().optional(),p95Ms:z.number().nullable().optional(),p99Ms:z.number().nullable().optional(),
+        })).optional(),
+      }).nullable().optional(),
+      serviceGraph:z.array(z.object({
+        client:z.string(),server:z.string(),rps:z.number(),errorsPerSec:z.number(),
+        errorRatePercent:z.number(),p95Ms:z.number().nullable().optional(),
+      })).nullish(),
     }).optional(),
+    telemetryHistory:z.array(z.object({
+      observedAt:z.string(),
+      services:z.array(z.object({
+        service:z.string(),replicas:z.number(),runningReplicas:z.number(),
+        stats:z.array(z.object({containerId:z.string().nullable(),cpu:z.string().nullable(),memory:z.string().nullable(),network:z.string().nullable()})).optional(),
+      })).optional(),
+      spanCount:z.number().optional(),
+      errorSpanCount:z.number().optional(),
+      probe:z.record(z.string(), z.unknown()).nullable().optional(),
+      serviceGraph:z.array(z.record(z.string(), z.unknown())).optional(),
+    })).optional(),
     snapshots:z.array(z.object({id:z.string(),sessionId:z.string(),sourceSnapshotId:z.string(),modelVersionId:z.string(),
       capturedAt:z.string(),explanation:z.string(),digest:z.string()})).optional(),
     sessionId:id, interactive:z.boolean(), simulatedSandbox:z.boolean().optional(), services:z.array(z.string()), finishRequested:z.boolean().default(false), executionStatus:z.string(),

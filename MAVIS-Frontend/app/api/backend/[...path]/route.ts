@@ -96,6 +96,8 @@ async function handler(request: NextRequest, context: { params: Promise<{ path: 
       }
     }
     const base = process.env["MAVIS_JAVA_URL"] ?? "http://127.0.0.1:8081";
+    const isSseStream = request.method === "GET" && path.endsWith("/studio/stream");
+    if (isSseStream) headers.set("Accept", "text/event-stream");
     let rotatedRefresh: string | undefined;
     let upstream = await fetch(
       `${base.replace(/\/$/, "")}/api/v1/${path}${request.nextUrl.search}`,
@@ -105,7 +107,7 @@ async function handler(request: NextRequest, context: { params: Promise<{ path: 
         body: body ?? null,
         cache: "no-store",
         redirect: "error",
-        signal: AbortSignal.timeout(120000),
+        signal: isSseStream ? request.signal : AbortSignal.timeout(120000),
       },
     );
     if (upstream.status === 401 && !login && jar.get(refreshCookieName)?.value) {
@@ -123,8 +125,35 @@ async function handler(request: NextRequest, context: { params: Promise<{ path: 
         body: body ?? null,
         cache: "no-store",
         redirect: "error",
-        signal: AbortSignal.timeout(120000),
+        signal: isSseStream ? request.signal : AbortSignal.timeout(120000),
       });
+    }
+    if (isSseStream && upstream.ok && upstream.body) {
+      const streamResponse = new NextResponse(upstream.body, {
+        status: upstream.status,
+        headers: {
+          "Content-Type": "text/event-stream; charset=utf-8",
+          "Cache-Control": "no-cache, no-transform",
+          "X-Accel-Buffering": "no",
+        },
+      });
+      if (rotatedRefresh && token) {
+        streamResponse.cookies.set(cookieName, token, {
+          httpOnly: true,
+          sameSite: "lax",
+          secure: request.nextUrl.protocol === "https:",
+          path: "/",
+          maxAge: 900,
+        });
+        streamResponse.cookies.set(refreshCookieName, rotatedRefresh, {
+          httpOnly: true,
+          sameSite: "lax",
+          secure: request.nextUrl.protocol === "https:",
+          path: "/",
+          maxAge: 604800,
+        });
+      }
+      return streamResponse;
     }
     if (login && upstream.ok) {
       const result = await upstream.json();

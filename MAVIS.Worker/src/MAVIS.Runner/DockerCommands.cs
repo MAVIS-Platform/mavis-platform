@@ -10,6 +10,8 @@ public interface IDockerCommands
     Task<DockerCommandResult> RunAsync(IReadOnlyList<string> arguments, string workingDirectory, int timeoutSeconds, CancellationToken ct);
     Task<DockerCommandResult> RunWithInputAsync(IReadOnlyList<string> arguments, string workingDirectory, int timeoutSeconds, string input, CancellationToken ct)
         => throw new NotSupportedException("Docker stdin adapter is required.");
+    Task<IAsyncDisposable?> StartLineStreamAsync(IReadOnlyList<string> arguments, string workingDirectory, string? input, Action<string> onLine, CancellationToken ct)
+        => Task.FromResult<IAsyncDisposable?>(null);
 }
 
 /// <summary>ArgumentList avoids shell interpolation. Output is bounded and stderr is never returned as project diagnostics.</summary>
@@ -20,6 +22,60 @@ public sealed class DockerCommands : IDockerCommands
 
     public async Task<DockerCommandResult> RunWithInputAsync(IReadOnlyList<string> arguments, string workingDirectory, int timeoutSeconds, string input, CancellationToken ct)
         => await ExecuteAsync(arguments, workingDirectory, timeoutSeconds, input, ct);
+
+    public async Task<IAsyncDisposable?> StartLineStreamAsync(IReadOnlyList<string> arguments, string workingDirectory, string? input, Action<string> onLine, CancellationToken ct)
+    {
+        var start = new ProcessStartInfo("docker")
+        {
+            WorkingDirectory = workingDirectory,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            RedirectStandardInput = input is not null,
+            CreateNoWindow = true
+        };
+        foreach (var argument in arguments) start.ArgumentList.Add(argument);
+        var process = Process.Start(start);
+        if (process is null) return null;
+        if (input is not null)
+        {
+            await process.StandardInput.WriteAsync(input.AsMemory(), ct);
+            process.StandardInput.Close();
+        }
+        var streamCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var stdoutTask = Task.Run(async () =>
+        {
+            try
+            {
+                while (!streamCts.IsCancellationRequested)
+                {
+                    var line = await process.StandardOutput.ReadLineAsync(streamCts.Token);
+                    if (line is null) break;
+                    if (!string.IsNullOrWhiteSpace(line)) onLine(line);
+                }
+            }
+            catch (OperationCanceledException) { }
+            catch (IOException) { }
+        }, CancellationToken.None);
+        var stderrTask = Task.Run(async () =>
+        {
+            try { while (await process.StandardError.ReadLineAsync(streamCts.Token) is not null) { } }
+            catch { }
+        }, CancellationToken.None);
+        return new LineStreamHandle(process, streamCts, stdoutTask, stderrTask);
+    }
+
+    private sealed class LineStreamHandle(Process process, CancellationTokenSource cts, Task stdoutTask, Task stderrTask) : IAsyncDisposable
+    {
+        public async ValueTask DisposeAsync()
+        {
+            cts.Cancel();
+            try { if (!process.HasExited) process.Kill(entireProcessTree: true); } catch { }
+            try { await Task.WhenAll(stdoutTask, stderrTask).WaitAsync(TimeSpan.FromSeconds(3)); } catch { }
+            cts.Dispose();
+            process.Dispose();
+        }
+    }
 
     private static async Task<DockerCommandResult> ExecuteAsync(IReadOnlyList<string> arguments, string workingDirectory, int timeoutSeconds, string? input, CancellationToken ct)
     {

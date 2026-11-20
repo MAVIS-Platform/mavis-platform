@@ -5,7 +5,10 @@ import com.mavis.analyzer.runtime.service.RuntimeStudioService;
 import com.mavis.common.dto.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.util.UUID;
 
 @RestController
@@ -13,6 +16,13 @@ import java.util.UUID;
 @RequestMapping("/api/v1/analyzer/runtime/sessions/{sessionId}/studio")
 public class RuntimeStudioController {
     private final RuntimeStudioService studio;
+    @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public ResponseEntity<SseEmitter> stream(@PathVariable UUID sessionId) {
+        return ResponseEntity.ok()
+                .header("Cache-Control", "no-cache, no-transform")
+                .header("X-Accel-Buffering", "no")
+                .body(studio.subscribeStream(sessionId));
+    }
     @GetMapping("/receipt") public ApiResponse<JsonNode> receipt(@PathVariable UUID sessionId) {
         return ApiResponse.success("Studio receipt",studio.receipt(sessionId));
     }

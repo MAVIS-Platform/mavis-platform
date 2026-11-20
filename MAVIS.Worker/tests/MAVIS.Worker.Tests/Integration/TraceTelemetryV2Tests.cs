@@ -169,6 +169,57 @@ public sealed class TraceTelemetryV2Tests
         finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
     }
 
+    [Fact]
+    public void ServiceGraphScraperComputesPerWindowRpsErrorRateAndHistogramP95()
+    {
+        var scraper = new PrometheusServiceGraphScraper();
+        var scrape1 = """
+        # TYPE traces_service_graph_request_total counter
+        traces_service_graph_request_total{client="orders",server="payment"} 10
+        traces_service_graph_request_failed_total{client="orders",server="payment"} 1
+        traces_service_graph_request_server_seconds_bucket{client="orders",server="payment",le="0.01"} 5
+        traces_service_graph_request_server_seconds_bucket{client="orders",server="payment",le="0.05"} 9
+        traces_service_graph_request_server_seconds_bucket{client="orders",server="payment",le="0.1"} 10
+        traces_service_graph_request_server_seconds_bucket{client="orders",server="payment",le="+Inf"} 10
+        """;
+        var first = scraper.Update(scrape1, 2.0);
+        var edge1 = Assert.Single(first);
+        Assert.Equal("orders", edge1.Client);
+        Assert.Equal("payment", edge1.Server);
+        Assert.Equal(5.0, edge1.Rps);
+        Assert.Equal(0.5, edge1.ErrorsPerSec);
+        Assert.Equal(10.0, edge1.ErrorRatePercent);
+        Assert.NotNull(edge1.P95Ms);
+        Assert.InRange(edge1.P95Ms!.Value, 50.0, 100.0);
+
+        // Second scrape 1s later: +20 requests, +4 failed (20%), all within 50ms bucket.
+        var scrape2 = """
+        traces_service_graph_request_total{client="orders",server="payment"} 30
+        traces_service_graph_request_failed_total{client="orders",server="payment"} 5
+        traces_service_graph_request_server_seconds_bucket{client="orders",server="payment",le="0.01"} 15
+        traces_service_graph_request_server_seconds_bucket{client="orders",server="payment",le="0.05"} 29
+        traces_service_graph_request_server_seconds_bucket{client="orders",server="payment",le="0.1"} 30
+        traces_service_graph_request_server_seconds_bucket{client="orders",server="payment",le="+Inf"} 30
+        """;
+        var second = scraper.Update(scrape2, 1.0);
+        var edge2 = Assert.Single(second);
+        Assert.Equal(20.0, edge2.Rps);
+        Assert.Equal(4.0, edge2.ErrorsPerSec);
+        Assert.Equal(20.0, edge2.ErrorRatePercent);
+        Assert.NotNull(edge2.P95Ms);
+        Assert.InRange(edge2.P95Ms!.Value, 10.0, 50.0);
+    }
+
+    [Fact]
+    public void LiveProbePercentileUsesNearestRank()
+    {
+        var samples = Enumerable.Range(1, 20).Select(x => (double)x).ToArray();
+        Assert.Equal(10.0, LiveProbeRunner.Percentile(samples, 0.50));
+        Assert.Equal(19.0, LiveProbeRunner.Percentile(samples, 0.95));
+        Assert.Equal(20.0, LiveProbeRunner.Percentile(samples, 0.99));
+        Assert.Null(LiveProbeRunner.Percentile([], 0.95));
+    }
+
     private sealed class BackToBackStudioDocker : IDockerCommands
     {
         private readonly Dictionary<string, int> _running = new(StringComparer.Ordinal) { ["orders"] = 1, ["payment"] = 1 };

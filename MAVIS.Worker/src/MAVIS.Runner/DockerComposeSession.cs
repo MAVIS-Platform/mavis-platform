@@ -297,6 +297,8 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             // Publish the initial baseline frame before entering the command loop so the UI gets an immediate observedAt.
             await PublishStudioTelemetrySafeAsync(ct);
             using var telemetryStop = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            var probeName = ResourceProject + "-probe";
+            var probeHandle = await StartLiveProbeAsync(probeName, telemetryStop.Token);
             var telemetryLoop = RunTelemetryLoopAsync(telemetryStop.Token);
             try {
                 while (true) {
@@ -329,6 +331,16 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             } finally {
                 telemetryStop.Cancel();
                 try { await telemetryLoop; } catch (OperationCanceledException) { }
+                if (probeHandle is not null)
+                {
+                    try { await probeHandle.DisposeAsync(); } catch { }
+                    try
+                    {
+                        using var rmCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                        await docker.RunAsync(["rm", "--force", probeName], _directory!, 5, rmCts.Token);
+                    }
+                    catch { }
+                }
             }
         }
         return await ExecuteActionsAsync(definition.InfrastructureActions ?? [], ct);
@@ -498,9 +510,68 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             foreach (var step in outcome.Steps) _studioTraceSteps[step.TraceId] = step.StepId;
     }
 
-    private static readonly TimeSpan TelemetryInterval = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan TelemetryInterval = TimeSpan.FromSeconds(2);
     private readonly SemaphoreSlim _telemetryGate = new(1, 1);
+    private readonly object _probeLock = new();
+    private JsonNode? _latestProbeNode;
+    private JsonNode? _latestServiceGraphNode;
     private TraceCorrelationResult? _lastLiveTrace;
+
+    private async Task<IAsyncDisposable?> StartLiveProbeAsync(string containerName, CancellationToken ct)
+    {
+        if (_directory is null || !PinnedRunnerImage(definition.Profile.ScenarioRunnerImage)) return null;
+        var appEndpoints = _endpoints.Where(p => p.Key != "mavis-collector").ToDictionary(p => p.Key, p => p.Value);
+        if (appEndpoints.Count == 0) return null;
+        try
+        {
+            var options = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+            var envelope = new LiveProbeEnvelope(
+                definition.Scenario,
+                appEndpoints,
+                secrets ?? new Dictionary<string, string>(),
+                TargetRps: Math.Clamp(definition.Profile.ProbeRps, 1, 50));
+            var input = JsonSerializer.Serialize(envelope, options);
+            var args = new List<string>
+            {
+                "run", "--rm", "--interactive", "--name", containerName,
+                "--network", ResourceProject + "_default",
+                "--label", "com.docker.compose.project=" + ResourceProject,
+                "--label", "com.docker.compose.service=mavis-scenario",
+                "--label", "mavis.role=live-probe",
+                "--memory", "128m", "--cpus", "0.5", "--pids-limit", "64",
+                "--read-only", "--tmpfs", "/tmp:rw,noexec,nosuid,size=32m",
+                "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
+                "--env", "MAVIS_RUNNER_INTERNAL_NETWORK=1"
+            };
+            if (ComposeOverrideBuilder.IsKernelSandboxedRuntime(IsolationRuntime))
+            {
+                args.Add("--runtime");
+                args.Add(IsolationRuntime);
+            }
+            args.Add(definition.Profile.ScenarioRunnerImage!);
+            args.Add("live-probe");
+            return await docker.StartLineStreamAsync(args, _directory, input, OnLiveProbeLine, ct);
+        }
+        catch
+        {
+            return null; // Continuous live probe is strictly best-effort and must never fail a Studio session.
+        }
+    }
+
+    private void OnLiveProbeLine(string line)
+    {
+        try
+        {
+            var node = JsonNode.Parse(line);
+            if (node is not JsonObject obj) return;
+            lock (_probeLock)
+            {
+                if (obj["probe"] is JsonNode probe) _latestProbeNode = probe.DeepClone();
+                if (obj["serviceGraph"] is JsonArray graph && graph.Count > 0) _latestServiceGraphNode = graph.DeepClone();
+            }
+        }
+        catch (JsonException) { }
+    }
 
     private async Task<bool> PublishStudioTelemetrySafeAsync(CancellationToken ct)
     {
@@ -584,11 +655,20 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
         var recentInteractions = trace?.Interactions?
             .OrderBy(i => startBySpan.GetValueOrDefault((i.TraceId, i.ChildSpanId)))
             .TakeLast(200).ToArray() ?? [];
+        JsonNode? probeSnapshot;
+        JsonNode? serviceGraphSnapshot;
+        lock (_probeLock)
+        {
+            probeSnapshot = _latestProbeNode?.DeepClone();
+            serviceGraphSnapshot = _latestServiceGraphNode?.DeepClone();
+        }
         await studio!.PublishStudioTelemetryAsync(definition.SessionId,ResourceProject,new {
             observedAt=DateTimeOffset.UtcNow,services,
             spans=recentSpans,
             interactions=recentInteractions,
-            warnings=trace?.Warnings ?? [],workload=_scenario
+            warnings=trace?.Warnings ?? [],workload=_scenario,
+            probe=probeSnapshot,
+            serviceGraph=serviceGraphSnapshot ?? new JsonArray()
         },ct);
     }
 
