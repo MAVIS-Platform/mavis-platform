@@ -87,14 +87,14 @@ function formatProtocol(raw: string): { label: string; rank: number; pillClass: 
         label: "HTTP",
         rank: 0,
         pillClass:
-          "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300",
+          "border-blue-300 bg-blue-100 text-blue-800 dark:border-sky-500/40 dark:bg-sky-500/20 dark:text-sky-300",
       };
     case "GATEWAY_ROUTE":
       return {
         label: "Gateway",
         rank: 0,
         pillClass:
-          "border-cyan-500/30 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300",
+          "border-cyan-300 bg-cyan-100 text-cyan-800 dark:border-cyan-500/40 dark:bg-cyan-500/20 dark:text-cyan-300",
       };
     case "DATABASE_ACCESS":
     case "DATABASE_QUERY":
@@ -102,21 +102,21 @@ function formatProtocol(raw: string): { label: string; rank: number; pillClass: 
         label: "SQL",
         rank: 1,
         pillClass:
-          "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+          "border-emerald-300 bg-emerald-100 text-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-500/20 dark:text-emerald-300",
       };
     case "MESSAGE_PUBLISH":
       return {
         label: "Publish",
         rank: 1,
         pillClass:
-          "border-violet-500/30 bg-violet-500/10 text-violet-700 dark:text-violet-300",
+          "border-violet-300 bg-violet-100 text-violet-800 dark:border-violet-500/40 dark:bg-violet-500/20 dark:text-violet-300",
       };
     case "MESSAGE_SUBSCRIBE":
       return {
         label: "Subscribe",
         rank: 1,
         pillClass:
-          "border-violet-500/30 bg-violet-500/10 text-violet-700 dark:text-violet-300",
+          "border-violet-300 bg-violet-100 text-violet-800 dark:border-violet-500/40 dark:bg-violet-500/20 dark:text-violet-300",
       };
     case "CONFIGURED_ENDPOINT":
     case "CONFIGURATION_DEPENDENCY":
@@ -125,7 +125,7 @@ function formatProtocol(raw: string): { label: string; rank: number; pillClass: 
         label: "Config",
         rank: 2,
         pillClass:
-          "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+          "border-amber-300 bg-amber-100 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/20 dark:text-amber-300",
       };
     case "DECLARED_COMPOSE":
     case "DECLARED_LINK":
@@ -133,7 +133,7 @@ function formatProtocol(raw: string): { label: string; rank: number; pillClass: 
         label: "Compose",
         rank: 3,
         pillClass:
-          "border-border bg-muted/60 text-muted-foreground",
+          "border-slate-300 bg-slate-100 text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300",
       };
     default:
       return {
@@ -142,7 +142,8 @@ function formatProtocol(raw: string): { label: string; rank: number; pillClass: 
           .toLowerCase()
           .replace(/^\w/, (c) => c.toUpperCase()),
         rank: 4,
-        pillClass: "border-border bg-muted/60 text-muted-foreground",
+        pillClass:
+          "border-slate-300 bg-slate-100 text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300",
       };
   }
 }
@@ -152,53 +153,59 @@ function getNodeVisual(name: string, kind: string, technology: string) {
   if (kind === "Database") {
     return {
       Icon: Database,
-      iconClass: "bg-emerald-500/10 text-emerald-600 ring-emerald-500/20 dark:text-emerald-400",
-      accentClass: "border-l-emerald-500/70",
-      dotClass: "bg-emerald-400",
+      iconClass:
+        "bg-emerald-600 text-white shadow-2xs dark:bg-emerald-500/20 dark:text-emerald-300 dark:ring-1 dark:ring-emerald-500/35",
+      accentClass: "border-l-[3px] border-l-emerald-600 dark:border-l-emerald-400",
+      dotClass: "bg-emerald-600 dark:bg-emerald-400",
       roleLabel: "Database",
     };
   }
   if (kind === "Broker" || /kafka|topic|queue|broker|rabbit|nats|pubsub/i.test(combined)) {
     return {
       Icon: Radio,
-      iconClass: "bg-violet-500/10 text-violet-600 ring-violet-500/20 dark:text-violet-400",
-      accentClass: "border-l-violet-500/70",
-      dotClass: "bg-violet-400",
+      iconClass:
+        "bg-violet-600 text-white shadow-2xs dark:bg-violet-500/20 dark:text-violet-300 dark:ring-1 dark:ring-violet-500/35",
+      accentClass: "border-l-[3px] border-l-violet-600 dark:border-l-violet-400",
+      dotClass: "bg-violet-600 dark:bg-violet-400",
       roleLabel: "Messaging",
     };
   }
   if (kind === "External") {
     return {
       Icon: Globe,
-      iconClass: "bg-amber-500/10 text-amber-600 ring-amber-500/20 dark:text-amber-400",
-      accentClass: "border-l-amber-500/70",
-      dotClass: "bg-amber-400",
+      iconClass:
+        "bg-amber-600 text-white shadow-2xs dark:bg-amber-500/20 dark:text-amber-300 dark:ring-1 dark:ring-amber-500/35",
+      accentClass: "border-l-[3px] border-l-amber-600 dark:border-l-amber-400",
+      dotClass: "bg-amber-600 dark:bg-amber-400",
       roleLabel: "External",
     };
   }
   if (kind === "Service" && /gateway|proxy|ingress|nginx|edge/i.test(name)) {
     return {
       Icon: Network,
-      iconClass: "bg-cyan-500/10 text-cyan-600 ring-cyan-500/20 dark:text-cyan-400",
-      accentClass: "border-l-cyan-500/70",
-      dotClass: "bg-cyan-400",
+      iconClass:
+        "bg-cyan-600 text-white shadow-2xs dark:bg-cyan-500/20 dark:text-cyan-300 dark:ring-1 dark:ring-cyan-500/35",
+      accentClass: "border-l-[3px] border-l-cyan-600 dark:border-l-cyan-400",
+      dotClass: "bg-cyan-600 dark:bg-cyan-400",
       roleLabel: "Gateway",
     };
   }
   if (kind === "Service") {
     return {
       Icon: Server,
-      iconClass: "bg-sky-500/10 text-sky-600 ring-sky-500/20 dark:text-sky-400",
-      accentClass: "border-l-sky-500/70",
-      dotClass: "bg-sky-400",
+      iconClass:
+        "bg-blue-600 text-white shadow-2xs dark:bg-sky-500/20 dark:text-sky-300 dark:ring-1 dark:ring-sky-500/35",
+      accentClass: "border-l-[3px] border-l-blue-600 dark:border-l-sky-400",
+      dotClass: "bg-blue-600 dark:bg-sky-400",
       roleLabel: "Service",
     };
   }
   return {
     Icon: Box,
-    iconClass: "bg-teal-500/10 text-teal-600 ring-teal-500/20 dark:text-teal-400",
-    accentClass: "border-l-teal-500/70",
-    dotClass: "bg-teal-400",
+    iconClass:
+      "bg-teal-600 text-white shadow-2xs dark:bg-teal-500/20 dark:text-teal-300 dark:ring-1 dark:ring-teal-500/35",
+    accentClass: "border-l-[3px] border-l-teal-600 dark:border-l-teal-400",
+    dotClass: "bg-teal-600 dark:bg-teal-400",
     roleLabel: kind,
   };
 }
@@ -648,11 +655,11 @@ export function LabSourceSection({
       ) : (
         <>
           {/* Reference Architecture Overview Card */}
-          <section className="overflow-hidden rounded-2xl border border-border/80 bg-card shadow-xs">
+          <section className="overflow-hidden rounded-2xl border border-slate-200/90 bg-card shadow-sm dark:border-border/80">
             {/* Header Bar */}
-            <div className="flex flex-wrap items-start justify-between gap-4 border-b border-border/70 px-5 py-4">
+            <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 bg-gradient-to-r from-slate-50 via-white to-blue-50/40 px-5 py-4 dark:border-border/70 dark:from-slate-900/70 dark:via-card dark:to-slate-900/40">
               <div className="flex min-w-0 items-start gap-3">
-                <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl bg-teal-500/10 text-teal-600 ring-1 ring-teal-500/20 dark:text-teal-400">
+                <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl bg-teal-600 text-white shadow-xs dark:bg-teal-500/20 dark:text-teal-300 dark:ring-1 dark:ring-teal-500/35">
                   <GitBranch className="size-4" aria-hidden="true" />
                 </span>
                 <div className="min-w-0 space-y-1">
@@ -671,26 +678,26 @@ export function LabSourceSection({
                     ) : reference?.modelId ? (
                       <span
                         role={save.isSuccess ? "status" : undefined}
-                        className="inline-flex items-center gap-1 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400"
+                        className="inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2.5 py-0.5 text-[11px] font-semibold text-white shadow-2xs dark:border dark:border-emerald-500/40 dark:bg-emerald-500/20 dark:text-emerald-300"
                       >
-                        <span className="size-1.5 rounded-full bg-emerald-500" />
+                        <span className="size-1.5 rounded-full bg-emerald-200 dark:bg-emerald-400" />
                         {t("Pinned", "Đã ghim")}
                       </span>
                     ) : null}
                   </div>
                   {reference && (
                     <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                      <span className="break-all font-mono text-[11.5px] text-foreground/80">
+                      <span className="break-all font-mono text-[11.5px] font-medium text-foreground/90">
                         {reference.repositoryUrl || reference.sourceType}
                       </span>
-                      <span className="text-border">·</span>
-                      <span className="rounded-md bg-muted/60 px-1.5 py-0.5 font-mono text-[11px] text-foreground/85">
+                      <span className="text-slate-300 dark:text-border">·</span>
+                      <span className="rounded-md border border-slate-200 bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
                         {reference.branch ?? t("ZIP archive", "Tệp ZIP")}
                       </span>
                       {reference.commitSha && (
                         <>
-                          <span className="text-border">·</span>
-                          <span className="rounded-md bg-muted/60 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+                          <span className="text-slate-300 dark:text-border">·</span>
+                          <span className="rounded-md border border-slate-200 bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] font-medium text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                             {reference.commitSha.slice(0, 8)}
                           </span>
                         </>
@@ -755,22 +762,22 @@ export function LabSourceSection({
             </div>
 
             {/* Integrated 4-Cell Architecture Summary Strip */}
-            <div className="grid grid-cols-2 divide-y divide-border/60 border-b border-border/70 bg-muted/20 sm:grid-cols-4 sm:divide-x sm:divide-y-0">
+            <div className="grid grid-cols-2 divide-y divide-slate-200 border-b border-slate-200 bg-slate-50/90 dark:divide-border/70 dark:border-border/70 dark:bg-slate-900/40 sm:grid-cols-4 sm:divide-x sm:divide-y-0">
               <button
                 type="button"
                 onClick={() => setRepoDetailTab("services")}
-                className="flex flex-col gap-0.5 px-5 py-3 text-left transition hover:bg-muted/35"
+                className="flex flex-col gap-1 px-5 py-3.5 text-left transition hover:bg-blue-50/60 focus-visible:outline-none dark:hover:bg-slate-800/60"
               >
-                <span className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
-                  <Server className="size-3.5 text-sky-500" aria-hidden="true" />
+                <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">
+                  <Server className="size-3.5 text-blue-600 dark:text-sky-400" aria-hidden="true" />
                   {t("Services", "Services")}
                 </span>
                 <div className="flex items-baseline gap-2">
-                  <span className="text-base font-semibold tabular-nums text-foreground">
+                  <span className="text-lg font-bold tabular-nums text-slate-900 dark:text-foreground">
                     {repoDissection.serviceCount}
                   </span>
                   {repoDissection.primaryStacks.length > 0 && (
-                    <span className="truncate text-[11px] text-muted-foreground">
+                    <span className="truncate text-xs font-medium text-blue-700 dark:text-sky-300">
                       {repoDissection.primaryStacks.slice(0, 2).join(" · ")}
                     </span>
                   )}
@@ -780,17 +787,17 @@ export function LabSourceSection({
               <button
                 type="button"
                 onClick={() => setRepoDetailTab("services")}
-                className="flex flex-col gap-0.5 px-5 py-3 text-left transition hover:bg-muted/35"
+                className="flex flex-col gap-1 px-5 py-3.5 text-left transition hover:bg-emerald-50/60 focus-visible:outline-none dark:hover:bg-slate-800/60"
               >
-                <span className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
-                  <Database className="size-3.5 text-emerald-500" aria-hidden="true" />
+                <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">
+                  <Database className="size-3.5 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
                   {t("Data & Messaging", "Dữ liệu & Kênh tin")}
                 </span>
                 <div className="flex items-baseline gap-2">
-                  <span className="text-base font-semibold tabular-nums text-foreground">
+                  <span className="text-lg font-bold tabular-nums text-slate-900 dark:text-foreground">
                     {repoDissection.dataMessagingCount}
                   </span>
-                  <span className="truncate text-[11px] text-muted-foreground">
+                  <span className="truncate text-xs text-slate-600 dark:text-muted-foreground">
                     {t("stores & topics", "CSDL & topic")}
                   </span>
                 </div>
@@ -799,18 +806,18 @@ export function LabSourceSection({
               <button
                 type="button"
                 onClick={() => setRepoDetailTab("connections")}
-                className="flex flex-col gap-0.5 px-5 py-3 text-left transition hover:bg-muted/35"
+                className="flex flex-col gap-1 px-5 py-3.5 text-left transition hover:bg-violet-50/60 focus-visible:outline-none dark:hover:bg-slate-800/60"
               >
-                <span className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
-                  <ArrowLeftRight className="size-3.5 text-violet-500" aria-hidden="true" />
+                <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">
+                  <ArrowLeftRight className="size-3.5 text-violet-600 dark:text-violet-400" aria-hidden="true" />
                   {t("Connections", "Kết nối")}
                 </span>
                 <div className="flex items-baseline gap-2">
-                  <span className="text-base font-semibold tabular-nums text-foreground">
+                  <span className="text-lg font-bold tabular-nums text-slate-900 dark:text-foreground">
                     {repoDissection.connections.length}
                   </span>
                   {modelQuery.data && (
-                    <span className="truncate text-[11px] tabular-nums text-muted-foreground">
+                    <span className="truncate text-xs tabular-nums text-slate-600 dark:text-muted-foreground">
                       {modelQuery.data.edges.length} {t("edges", "liên kết")}
                     </span>
                   )}
@@ -820,28 +827,28 @@ export function LabSourceSection({
               <button
                 type="button"
                 onClick={() => setRepoDetailTab("deploy")}
-                className="flex flex-col gap-0.5 px-5 py-3 text-left transition hover:bg-muted/35"
+                className="flex flex-col gap-1 px-5 py-3.5 text-left transition hover:bg-teal-50/60 focus-visible:outline-none dark:hover:bg-slate-800/60"
               >
-                <span className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
-                  <Container className="size-3.5 text-teal-500" aria-hidden="true" />
+                <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">
+                  <Container className="size-3.5 text-teal-600 dark:text-teal-400" aria-hidden="true" />
                   {t("Docker Deploy", "Docker Deploy")}
                 </span>
                 <div className="flex items-center gap-2">
                   {readiness.isPending ? (
                     <span className="text-xs text-muted-foreground">…</span>
                   ) : studioConfiguredReady || studioComposeReady ? (
-                    <span className="inline-flex items-center gap-1 text-sm font-semibold text-emerald-600 dark:text-emerald-400">
-                      <CheckCircle2 className="size-3.5" aria-hidden="true" />
+                    <span className="inline-flex items-center gap-1 text-base font-bold text-emerald-700 dark:text-emerald-400">
+                      <CheckCircle2 className="size-4 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
                       {t("Pass", "Đạt")}
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1 text-sm font-semibold text-amber-600 dark:text-amber-400">
-                      <AlertTriangle className="size-3.5" aria-hidden="true" />
+                    <span className="inline-flex items-center gap-1 text-base font-bold text-amber-700 dark:text-amber-400">
+                      <AlertTriangle className="size-4 text-amber-600 dark:text-amber-400" aria-hidden="true" />
                       {t("Check", "Kiểm tra")}
                     </span>
                   )}
                   {composeServiceNames.length > 0 && (
-                    <span className="truncate text-[11px] tabular-nums text-muted-foreground">
+                    <span className="truncate text-xs tabular-nums text-slate-600 dark:text-muted-foreground">
                       {composeServiceNames.length} {t("containers", "container")}
                     </span>
                   )}
@@ -864,9 +871,9 @@ export function LabSourceSection({
             )}
 
             {/* Flush Underline Tabs */}
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/70 px-5">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-white px-5 dark:border-border/70 dark:bg-card">
               <div
-                className="flex items-center gap-5"
+                className="flex items-center gap-6"
                 role="tablist"
                 aria-label={t("Repository details", "Chi tiết kho mã nguồn")}
               >
@@ -897,18 +904,18 @@ export function LabSourceSection({
                       role="tab"
                       aria-selected={active}
                       onClick={() => setRepoDetailTab(item.id)}
-                      className={`relative flex items-center gap-1.5 border-b-2 py-2.5 text-xs font-medium transition-colors ${
+                      className={`relative -mb-px flex items-center gap-2 border-b-2 py-3 text-xs transition-colors focus-visible:outline-none ${
                         active
-                          ? "border-primary text-foreground"
-                          : "border-transparent text-muted-foreground hover:text-foreground"
+                          ? "border-primary font-semibold text-primary"
+                          : "border-transparent font-medium text-slate-600 hover:text-slate-900 dark:text-muted-foreground dark:hover:text-foreground"
                       }`}
                     >
                       <span>{item.label}</span>
                       <span
-                        className={`rounded-full px-1.5 py-0.2 text-[10.5px] tabular-nums ${
+                        className={`rounded-full px-2 py-0.5 text-[10.5px] font-semibold tabular-nums ${
                           active
-                            ? "bg-primary/15 text-primary"
-                            : "bg-muted/70 text-muted-foreground"
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-slate-100 text-slate-600 dark:bg-muted dark:text-muted-foreground"
                         }`}
                       >
                         {item.count}
@@ -918,7 +925,7 @@ export function LabSourceSection({
                 })}
               </div>
               {modelQuery.data && (
-                <span className="py-2 text-[11px] tabular-nums text-muted-foreground">
+                <span className="py-2 text-xs font-medium tabular-nums text-slate-500 dark:text-muted-foreground">
                   {modelQuery.data.elements.length} {t("elements", "thành phần")} ·{" "}
                   {modelQuery.data.edges.length} {t("edges", "liên kết")}
                 </span>
@@ -926,7 +933,7 @@ export function LabSourceSection({
             </div>
 
             {/* Tab Panel Content */}
-            <div className="p-5">
+            <div className="bg-slate-50/60 p-5 dark:bg-background/20">
               {repoDetailTab === "services" && (
                 modelQuery.isPending ? (
                   <p className="py-4 text-xs text-muted-foreground">
@@ -937,7 +944,7 @@ export function LabSourceSection({
                     {t("No top-level services or nodes detected in this snapshot.", "Chưa phát hiện service hay thành phần cấp cao trong bản snapshot này.")}
                   </p>
                 ) : (
-                  <div className="grid gap-3 lg:grid-cols-2">
+                  <div className="grid gap-3.5 lg:grid-cols-2">
                     {repoDissection.services.map((svc) => {
                       const visual = getNodeVisual(svc.name, svc.kind, svc.technology);
                       const stackLabel = formatStack(svc.technology);
@@ -945,25 +952,25 @@ export function LabSourceSection({
                       return (
                         <div
                           key={svc.id}
-                          className={`flex flex-col justify-between gap-3 rounded-xl border border-border/75 border-l-2 ${visual.accentClass} bg-background/50 p-3.5 transition hover:border-border`}
+                          className={`flex flex-col justify-start gap-3 rounded-xl border border-slate-200 ${visual.accentClass} bg-white p-4 shadow-xs transition hover:border-slate-300 hover:shadow-sm dark:border-border/80 dark:bg-card dark:hover:border-border`}
                         >
                           <div className="flex items-start justify-between gap-2.5">
                             <div className="flex min-w-0 items-center gap-2.5">
                               <span
-                                className={`flex size-8 shrink-0 items-center justify-center rounded-lg ring-1 ${visual.iconClass}`}
+                                className={`flex size-8 shrink-0 items-center justify-center rounded-lg ${visual.iconClass}`}
                               >
                                 <Icon className="size-4" aria-hidden="true" />
                               </span>
                               <div className="min-w-0">
-                                <p className="truncate font-mono text-xs font-semibold text-foreground">
+                                <p className="truncate font-mono text-xs font-bold text-slate-900 dark:text-foreground">
                                   {svc.name}
                                 </p>
-                                <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
-                                  <span>{visual.roleLabel}</span>
+                                <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-600 dark:text-muted-foreground">
+                                  <span className="font-medium">{visual.roleLabel}</span>
                                   {stackLabel && stackLabel.toLowerCase() !== visual.roleLabel.toLowerCase() && (
                                     <>
-                                      <span className="text-border">·</span>
-                                      <span className="font-medium text-foreground/80">
+                                      <span className="text-slate-300 dark:text-border">·</span>
+                                      <span className="font-semibold text-slate-800 dark:text-foreground/90">
                                         {stackLabel}
                                       </span>
                                     </>
@@ -972,14 +979,14 @@ export function LabSourceSection({
                               </div>
                             </div>
                             {svc.componentCount > 0 && (
-                              <span className="shrink-0 rounded-md border border-border/70 bg-muted/40 px-2 py-0.5 text-[11px] font-medium tabular-nums text-muted-foreground">
+                              <span className="shrink-0 rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                                 {svc.componentCount} {t("components", "thành phần")}
                               </span>
                             )}
                           </div>
 
                           {svc.outbound.length > 0 && (
-                            <div className="flex flex-wrap gap-1.5 border-t border-border/50 pt-2.5">
+                            <div className="flex flex-wrap gap-1.5 border-t border-slate-100 pt-2.5 dark:border-border/60">
                               {svc.outbound.slice(0, 5).map((dep) => {
                                 const primaryProto = formatProtocol(dep.protocols[0] ?? "CALL");
                                 const extraCount = dep.protocols.length - 1;
@@ -987,14 +994,14 @@ export function LabSourceSection({
                                   <span
                                     key={dep.target}
                                     title={`${dep.target}: ${dep.protocols.join(", ")}`}
-                                    className="inline-flex items-center gap-1.5 rounded-md border border-border/70 bg-card/80 px-2 py-1 text-[11px]"
+                                    className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] dark:border-border/80 dark:bg-muted/30"
                                   >
-                                    <ArrowRight className="size-3 shrink-0 text-muted-foreground/70" aria-hidden="true" />
-                                    <span className="font-mono font-medium text-foreground/90">
+                                    <ArrowRight className="size-3 shrink-0 text-slate-400 dark:text-muted-foreground" aria-hidden="true" />
+                                    <span className="font-mono font-semibold text-slate-800 dark:text-foreground/90">
                                       {dep.target}
                                     </span>
                                     <span
-                                      className={`rounded border px-1.5 py-0 text-[10px] font-medium ${primaryProto.pillClass}`}
+                                      className={`rounded border px-1.5 py-0 text-[10px] font-semibold ${primaryProto.pillClass}`}
                                     >
                                       {primaryProto.label}
                                       {extraCount > 0 ? ` +${extraCount}` : ""}
@@ -1006,7 +1013,7 @@ export function LabSourceSection({
                           )}
 
                           {svc.files.length > 0 && (
-                            <div className="flex flex-wrap items-center gap-1.5 border-t border-border/50 pt-2 text-[11px] text-muted-foreground">
+                            <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-100 pt-2 text-[11px] text-slate-600 dark:border-border/60 dark:text-muted-foreground">
                               <FileCode2 className="size-3 shrink-0" aria-hidden="true" />
                               {svc.files.map((file) => (
                                 <code key={file} className="truncate font-mono text-[10.5px]">
@@ -1028,33 +1035,33 @@ export function LabSourceSection({
                     {t("No inter-service connections detected.", "Chưa phát hiện kết nối giữa các service.")}
                   </p>
                 ) : (
-                  <div className="overflow-x-auto rounded-xl border border-border/75">
+                  <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-xs dark:border-border/80 dark:bg-card">
                     <table className="w-full text-left text-xs">
-                      <thead className="border-b border-border/70 bg-muted/35 text-[11px] uppercase tracking-wider text-muted-foreground">
+                      <thead className="border-b border-slate-200 bg-slate-100/90 text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:border-border/70 dark:bg-slate-900/60 dark:text-slate-300">
                         <tr>
-                          <th className="px-4 py-2.5 font-medium">{t("Flow", "Luồng kết nối")}</th>
-                          <th className="px-4 py-2.5 font-medium">{t("Channels", "Giao thức")}</th>
-                          <th className="px-4 py-2.5 text-right font-medium">{t("Refs", "Lượt")}</th>
+                          <th className="px-4 py-2.5 font-semibold">{t("Flow", "Luồng kết nối")}</th>
+                          <th className="px-4 py-2.5 font-semibold">{t("Channels", "Giao thức")}</th>
+                          <th className="px-4 py-2.5 text-right font-semibold">{t("Refs", "Lượt")}</th>
                           {repoDissection.hasConnectionFiles && (
-                            <th className="px-4 py-2.5 font-medium">{t("Source", "Tệp nguồn")}</th>
+                            <th className="px-4 py-2.5 font-semibold">{t("Source", "Tệp nguồn")}</th>
                           )}
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-border/60">
+                      <tbody className="divide-y divide-slate-200/80 dark:divide-border/60">
                         {repoDissection.connections.map((conn) => {
-                          const fromDot = serviceVisualByName.get(conn.from)?.dotClass ?? "bg-sky-400";
-                          const toDot = serviceVisualByName.get(conn.to)?.dotClass ?? "bg-emerald-400";
+                          const fromDot = serviceVisualByName.get(conn.from)?.dotClass ?? "bg-blue-600 dark:bg-sky-400";
+                          const toDot = serviceVisualByName.get(conn.to)?.dotClass ?? "bg-emerald-600 dark:bg-emerald-400";
                           return (
-                            <tr key={conn.key} className="align-middle transition hover:bg-muted/20">
+                            <tr key={conn.key} className="align-middle transition hover:bg-slate-50 dark:hover:bg-muted/25">
                               <td className="px-4 py-2.5">
                                 <div className="flex flex-wrap items-center gap-2 font-mono text-xs">
-                                  <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
-                                    <span className={`size-1.5 rounded-full ${fromDot}`} />
+                                  <span className="inline-flex items-center gap-1.5 font-semibold text-slate-900 dark:text-foreground">
+                                    <span className={`size-2 rounded-full ${fromDot}`} />
                                     {conn.from}
                                   </span>
-                                  <ArrowRight className="size-3.5 shrink-0 text-muted-foreground/60" aria-hidden="true" />
-                                  <span className="inline-flex items-center gap-1.5 text-foreground/90">
-                                    <span className={`size-1.5 rounded-full ${toDot}`} />
+                                  <ArrowRight className="size-3.5 shrink-0 text-slate-400 dark:text-muted-foreground" aria-hidden="true" />
+                                  <span className="inline-flex items-center gap-1.5 font-medium text-slate-800 dark:text-foreground/90">
+                                    <span className={`size-2 rounded-full ${toDot}`} />
                                     {conn.to}
                                   </span>
                                 </div>
@@ -1067,7 +1074,7 @@ export function LabSourceSection({
                                       <span
                                         key={p}
                                         title={p}
-                                        className={`rounded-md border px-2 py-0.5 text-[11px] font-medium ${fmt.pillClass}`}
+                                        className={`rounded-md border px-2 py-0.5 text-[11px] font-semibold ${fmt.pillClass}`}
                                       >
                                         {fmt.label}
                                       </span>
@@ -1075,13 +1082,13 @@ export function LabSourceSection({
                                   })}
                                 </div>
                               </td>
-                              <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
-                                <span className="rounded-md bg-muted/50 px-2 py-0.5 text-[11px] font-medium">
+                              <td className="px-4 py-2.5 text-right tabular-nums">
+                                <span className="rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
                                   {conn.count}
                                 </span>
                               </td>
                               {repoDissection.hasConnectionFiles && (
-                                <td className="px-4 py-2.5 font-mono text-[11px] text-muted-foreground">
+                                <td className="px-4 py-2.5 font-mono text-[11px] text-slate-600 dark:text-muted-foreground">
                                   {conn.file || "—"}
                                 </td>
                               )}
@@ -1108,25 +1115,37 @@ export function LabSourceSection({
                     </p>
                   ) : (
                     <>
-                      <div className="flex items-center justify-between gap-2 rounded-xl border border-border/75 bg-muted/20 px-4 py-2.5">
-                        <span className="flex items-center gap-2 font-medium text-foreground">
+                      <div
+                        className={`flex items-center justify-between gap-2 rounded-xl border px-4 py-3 ${
+                          studioConfiguredReady || studioComposeReady
+                            ? "border-emerald-300 bg-emerald-50 text-emerald-950 dark:border-emerald-500/35 dark:bg-emerald-500/12 dark:text-emerald-100"
+                            : "border-amber-300 bg-amber-50 text-amber-950 dark:border-amber-500/35 dark:bg-amber-500/12 dark:text-amber-100"
+                        }`}
+                      >
+                        <span className="flex items-center gap-2 font-semibold">
                           {studioConfiguredReady || studioComposeReady ? (
-                            <CheckCircle2 className="size-4 text-emerald-500" aria-hidden="true" />
+                            <CheckCircle2 className="size-4 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
                           ) : (
-                            <AlertTriangle className="size-4 text-amber-500" aria-hidden="true" />
+                            <AlertTriangle className="size-4 text-amber-600 dark:text-amber-400" aria-hidden="true" />
                           )}
                           {studioConfiguredReady || studioComposeReady
                             ? t("Docker check passed", "Kiểm tra Docker thành công")
                             : t("Docker check incomplete", "Kiểm tra Docker chưa đạt")}
                         </span>
-                        <Badge variant={studioConfiguredReady || studioComposeReady ? "success" : "secondary"}>
+                        <span
+                          className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
+                            studioConfiguredReady || studioComposeReady
+                              ? "bg-emerald-600 text-white dark:bg-emerald-500/25 dark:text-emerald-300"
+                              : "bg-amber-600 text-white dark:bg-amber-500/25 dark:text-amber-300"
+                          }`}
+                        >
                           {studioConfiguredReady || studioComposeReady ? t("Pass", "Đạt") : t("Check", "Cần kiểm tra")}
-                        </Badge>
+                        </span>
                       </div>
 
                       {!studioReady && studioMissing.length > 0 && (
-                        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3.5 text-amber-700 dark:text-amber-300">
-                          <p className="mb-1 flex items-center gap-1.5 font-medium">
+                        <div className="rounded-xl border border-amber-300 bg-amber-50 p-3.5 text-amber-900 dark:border-amber-500/35 dark:bg-amber-500/12 dark:text-amber-300">
+                          <p className="mb-1 flex items-center gap-1.5 font-semibold">
                             <AlertTriangle className="size-3.5" aria-hidden="true" />
                             {t("Preflight findings", "Chi tiết cần bổ sung")}
                           </p>
@@ -1140,7 +1159,7 @@ export function LabSourceSection({
 
                       {composeAppServices.length > 0 && (
                         <div className="space-y-2">
-                          <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-muted-foreground">
                             {t("Application Containers", "Container Ứng dụng")} ({composeAppServices.length})
                           </p>
                           <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
@@ -1151,19 +1170,19 @@ export function LabSourceSection({
                               return (
                                 <div
                                   key={svc}
-                                  className="flex flex-col gap-1.5 rounded-xl border border-border/75 bg-background/50 px-3.5 py-3"
+                                  className="flex flex-col gap-1.5 rounded-xl border border-slate-200 border-l-[3px] border-l-emerald-600 bg-white px-3.5 py-3 shadow-2xs dark:border-border/80 dark:border-l-emerald-400 dark:bg-card"
                                 >
                                   <div className="flex items-center justify-between gap-2">
-                                    <span className="flex min-w-0 items-center gap-2 font-mono font-medium text-foreground">
-                                      <span className="size-2 shrink-0 rounded-full bg-emerald-500" />
+                                    <span className="flex min-w-0 items-center gap-2 font-mono font-semibold text-slate-900 dark:text-foreground">
+                                      <span className="size-2 shrink-0 rounded-full bg-emerald-600 dark:bg-emerald-400" />
                                       <span className="truncate">{svc}</span>
                                     </span>
-                                    <span className="shrink-0 rounded-md border border-emerald-500/25 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-400">
+                                    <span className="shrink-0 rounded-md border border-emerald-300 bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800 dark:border-emerald-500/35 dark:bg-emerald-500/20 dark:text-emerald-300">
                                       {t("Matched", "Khớp")}
                                     </span>
                                   </div>
                                   {mappingEntry && (
-                                    <p className="truncate font-mono text-[10.5px] text-muted-foreground">
+                                    <p className="truncate font-mono text-[10.5px] text-slate-600 dark:text-muted-foreground">
                                       {mappingEntry}
                                     </p>
                                   )}
@@ -1176,7 +1195,7 @@ export function LabSourceSection({
 
                       {composeInfraServices.length > 0 && (
                         <div className="space-y-2">
-                          <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-muted-foreground">
                             {t("Infrastructure & Sandbox", "Hạ tầng & Sandbox")} ({composeInfraServices.length})
                           </p>
                           <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
@@ -1190,28 +1209,34 @@ export function LabSourceSection({
                               return (
                                 <div
                                   key={svc}
-                                  className="flex flex-col gap-1.5 rounded-xl border border-border/75 bg-muted/15 px-3.5 py-3"
+                                  className={`flex flex-col gap-1.5 rounded-xl border border-slate-200 border-l-[3px] ${
+                                    isDb
+                                      ? "border-l-emerald-600 dark:border-l-emerald-400"
+                                      : isBroker
+                                        ? "border-l-violet-600 dark:border-l-violet-400"
+                                        : "border-l-slate-400 dark:border-l-slate-500"
+                                  } bg-white px-3.5 py-3 shadow-2xs dark:border-border/80 dark:bg-card`}
                                 >
                                   <div className="flex items-center justify-between gap-2">
-                                    <span className="flex min-w-0 items-center gap-2 font-mono font-medium text-foreground/90">
+                                    <span className="flex min-w-0 items-center gap-2 font-mono font-semibold text-slate-800 dark:text-foreground">
                                       <InfraIcon
                                         className={`size-3.5 shrink-0 ${
                                           isDb
-                                            ? "text-emerald-500"
+                                            ? "text-emerald-600 dark:text-emerald-400"
                                             : isBroker
-                                              ? "text-violet-500"
-                                              : "text-muted-foreground"
+                                              ? "text-violet-600 dark:text-violet-400"
+                                              : "text-slate-500 dark:text-muted-foreground"
                                         }`}
                                         aria-hidden="true"
                                       />
                                       <span className="truncate">{svc}</span>
                                     </span>
-                                    <span className="shrink-0 rounded-md border border-border bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                                    <span className="shrink-0 rounded-md border border-indigo-200 bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                                       {t("Infra", "Hạ tầng")}
                                     </span>
                                   </div>
                                   {mappingEntry && (
-                                    <p className="truncate font-mono text-[10.5px] text-muted-foreground">
+                                    <p className="truncate font-mono text-[10.5px] text-slate-600 dark:text-muted-foreground">
                                       {mappingEntry}
                                     </p>
                                   )}
@@ -1223,16 +1248,16 @@ export function LabSourceSection({
                       )}
 
                       {repoDissection.configFiles.length > 0 && (
-                        <div className="space-y-2 rounded-xl border border-border/70 bg-muted/15 p-3.5">
-                          <p className="flex items-center gap-1.5 font-medium text-foreground">
-                            <FileCode2 className="size-3.5 text-muted-foreground" aria-hidden="true" />
+                        <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xs dark:border-border/70 dark:bg-card">
+                          <p className="flex items-center gap-1.5 font-semibold text-foreground">
+                            <FileCode2 className="size-3.5 text-slate-500 dark:text-muted-foreground" aria-hidden="true" />
                             {t("Build & Deployment Files Detected", "Tệp build & triển khai phát hiện được")}
                           </p>
                           <div className="flex flex-wrap gap-1.5">
                             {repoDissection.configFiles.slice(0, 12).map((file) => (
                               <code
                                 key={file}
-                                className="rounded-md border border-border/70 bg-background px-2 py-0.5 font-mono text-[11px] text-foreground/85"
+                                className="rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 font-mono text-[11px] font-medium text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
                               >
                                 {file}
                               </code>
@@ -1248,10 +1273,10 @@ export function LabSourceSection({
           </section>
 
           {/* Unified Architecture Blueprint Frame */}
-          <section className="overflow-hidden rounded-2xl border border-border/80 bg-card shadow-xs">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 px-5 py-3.5">
+          <section className="overflow-hidden rounded-2xl border border-slate-200/90 bg-card shadow-sm dark:border-border/80">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-gradient-to-r from-slate-50 via-white to-blue-50/40 px-5 py-3.5 dark:border-border/70 dark:from-slate-900/70 dark:via-card dark:to-slate-900/40">
               <div className="flex items-center gap-2.5">
-                <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-sky-500/10 text-sky-600 ring-1 ring-sky-500/20 dark:text-sky-400">
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-2xs dark:bg-sky-500/20 dark:text-sky-300 dark:ring-1 dark:ring-sky-500/35">
                   <Layers className="size-4" aria-hidden="true" />
                 </span>
                 <div>
@@ -1262,7 +1287,7 @@ export function LabSourceSection({
               </div>
 
               <div
-                className="inline-flex flex-wrap items-center gap-0.5 rounded-lg border border-border/75 bg-muted/40 p-0.5"
+                className="inline-flex flex-wrap items-center gap-0.5 rounded-lg border border-slate-200 bg-slate-100 p-0.5 dark:border-border/75 dark:bg-muted/40"
                 role="tablist"
                 aria-label={t("Architecture diagram level", "Cấp độ sơ đồ kiến trúc")}
               >
@@ -1285,10 +1310,10 @@ export function LabSourceSection({
                         setPreviewKind(tabItem.id);
                         setSelectedGraphId(null);
                       }}
-                      className={`rounded-md px-3 py-1.5 text-xs font-medium transition-all ${
+                      className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-all focus-visible:outline-none ${
                         active
                           ? "bg-primary text-primary-foreground shadow-xs"
-                          : "text-muted-foreground hover:bg-background/60 hover:text-foreground"
+                          : "text-slate-600 hover:bg-white/80 hover:text-slate-900 dark:text-muted-foreground dark:hover:bg-background/60 dark:hover:text-foreground"
                       }`}
                     >
                       {tabItem.label}

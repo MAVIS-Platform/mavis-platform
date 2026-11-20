@@ -80,13 +80,13 @@ export function getSvgNodePalette(
           sub: "#94a3b8",
         }
       : {
-          fill: "rgba(241, 245, 249, 0.65)",
-          stroke: "#94a3b8",
-          accent: "#0284c7",
-          headerFill: "rgba(226, 232, 240, 0.85)",
-          title: "#1e293b",
-          tag: "#475569",
-          sub: "#64748b",
+          fill: "rgba(255, 255, 255, 0.72)",
+          stroke: "#64748b",
+          accent: "#2563eb",
+          headerFill: "#e2e8f0",
+          title: "#0f172a",
+          tag: "#334155",
+          sub: "#475569",
         };
   }
   if (shape === "cylinder" || role === "DATABASE" || role === "DATASTORE_GROUP") {
@@ -103,11 +103,11 @@ export function getSvgNodePalette(
       : {
           fill: "#ecfdf5",
           stroke: "#059669",
-          accent: "#10b981",
-          headerFill: "#d1fae5",
+          accent: "#059669",
+          headerFill: "#a7f3d0",
           title: "#064e3b",
           tag: "#047857",
-          sub: "#475569",
+          sub: "#334155",
         };
   }
   if (
@@ -129,11 +129,11 @@ export function getSvgNodePalette(
       : {
           fill: "#f5f3ff",
           stroke: "#7c3aed",
-          accent: "#8b5cf6",
-          headerFill: "#ede9fe",
+          accent: "#7c3aed",
+          headerFill: "#ddd6fe",
           title: "#2e1065",
           tag: "#6d28d9",
-          sub: "#475569",
+          sub: "#334155",
         };
   }
   if (
@@ -153,11 +153,11 @@ export function getSvgNodePalette(
           sub: "#94a3b8",
         }
       : {
-          fill: "#f0fdfa",
+          fill: "#ffffff",
           stroke: "#0d9488",
-          accent: "#14b8a6",
+          accent: "#0d9488",
           headerFill: "#ccfbf1",
-          title: "#134e4a",
+          title: "#0f172a",
           tag: "#0f766e",
           sub: "#475569",
         };
@@ -174,11 +174,11 @@ export function getSvgNodePalette(
           sub: "#a8a29e",
         }
       : {
-          fill: "#fafaf9",
-          stroke: "#78716c",
+          fill: "#fffbeb",
+          stroke: "#d97706",
           accent: "#d97706",
-          headerFill: "#f5f5f4",
-          title: "#1c1917",
+          headerFill: "#fde68a",
+          title: "#451a03",
           tag: "#b45309",
           sub: "#57534e",
         };
@@ -195,7 +195,7 @@ export function getSvgNodePalette(
           sub: "#94a3b8",
         }
       : {
-          fill: "#eff6ff",
+          fill: "#ffffff",
           stroke: "#2563eb",
           accent: "#2563eb",
           headerFill: "#dbeafe",
@@ -215,12 +215,12 @@ export function getSvgNodePalette(
         sub: "#94a3b8",
       }
     : {
-        fill: "#f0f7ff",
-        stroke: "#3b82f6",
+        fill: "#ffffff",
+        stroke: "#2563eb",
         accent: "#2563eb",
         headerFill: "#dbeafe",
         title: "#0f172a",
-        tag: "#1e40af",
+        tag: "#1d4ed8",
         sub: "#475569",
       };
 }
@@ -699,40 +699,40 @@ export function ArchitectureSvgViewer({
   }
 
   const canvasHeight = Math.max(320, Math.min(640, Math.round(parsed.vbH + 56)));
-  const edgeStrokeDefault = isDark ? "#7c8fa8" : "#64748b";
+  const edgeStrokeDefault = isDark ? "#7c8fa8" : "#475569";
   const edgeStrokeSelected = isDark ? "#38bdf8" : "#2563eb";
-  const dotColor = isDark ? "rgba(148, 163, 184, 0.14)" : "rgba(100, 116, 139, 0.22)";
+  const dotColor = isDark ? "rgba(148, 163, 184, 0.14)" : "rgba(100, 116, 139, 0.28)";
 
   return (
     <div className="flex flex-col overflow-hidden bg-background/40">
       {/* Compact Blueprint Header & Zoom Controls */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 bg-muted/15 px-4 py-2 text-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50/90 px-4 py-2 text-xs dark:border-border/60 dark:bg-muted/15">
         <div className="flex flex-wrap items-center gap-2 text-muted-foreground">
           {parsed.title && (
-            <span className="font-medium text-foreground">{parsed.title}</span>
+            <span className="font-semibold text-slate-900 dark:text-foreground">{parsed.title}</span>
           )}
           {parsed.scopeMeta && (
-            <span className="rounded-md bg-muted/60 px-2 py-0.5 text-[11px] tabular-nums text-muted-foreground">
+            <span className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium tabular-nums text-slate-600 dark:border-border/60 dark:bg-muted/60 dark:text-muted-foreground">
               {parsed.scopeMeta}
             </span>
           )}
         </div>
-        <div className="flex items-center gap-1 rounded-lg border border-border/70 bg-background/80 p-0.5 text-[11px]">
+        <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-0.5 text-[11px] shadow-2xs dark:border-border/70 dark:bg-background/80">
           <button
             type="button"
             onClick={() => setZoom((z) => Math.max(0.6, Math.round((z - 0.15) * 100) / 100))}
-            className="rounded px-2 py-0.5 font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
+            className="rounded px-2 py-0.5 font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:text-muted-foreground dark:hover:bg-muted dark:hover:text-foreground"
             aria-label="Zoom out"
           >
             −
           </button>
-          <span className="min-w-[42px] text-center font-mono tabular-nums text-foreground/85">
+          <span className="min-w-[42px] text-center font-mono font-semibold tabular-nums text-slate-800 dark:text-foreground/85">
             {Math.round(zoom * 100)}%
           </span>
           <button
             type="button"
             onClick={() => setZoom((z) => Math.min(2, Math.round((z + 0.15) * 100) / 100))}
-            className="rounded px-2 py-0.5 font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
+            className="rounded px-2 py-0.5 font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:text-muted-foreground dark:hover:bg-muted dark:hover:text-foreground"
             aria-label="Zoom in"
           >
             +
@@ -741,7 +741,7 @@ export function ArchitectureSvgViewer({
             <button
               type="button"
               onClick={() => setZoom(1)}
-              className="ml-0.5 rounded border-l border-border/60 px-2 py-0.5 text-muted-foreground transition hover:bg-muted hover:text-foreground"
+              className="ml-0.5 rounded border-l border-slate-200 px-2 py-0.5 font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:border-border/60 dark:text-muted-foreground dark:hover:bg-muted dark:hover:text-foreground"
             >
               Reset
             </button>
@@ -754,7 +754,7 @@ export function ArchitectureSvgViewer({
         className="flex w-full overflow-auto p-3"
         style={{
           height: canvasHeight,
-          backgroundColor: isDark ? "#080d17" : "#f8fafc",
+          backgroundColor: isDark ? "#080d17" : "#f1f5f9",
           backgroundImage: `radial-gradient(${dotColor} 1px, transparent 1px)`,
           backgroundSize: "18px 18px",
         }}
@@ -1109,43 +1109,43 @@ export function ArchitectureSvgViewer({
 
       {/* Crisp HTML Legend Bar */}
       {(parsed.hasLegend || parsed.nodes.length > 0) && (
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-border/60 bg-muted/15 px-4 py-2 text-[11px] text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-slate-200 bg-slate-50/90 px-4 py-2 text-[11px] font-medium text-slate-600 dark:border-border/60 dark:bg-muted/15 dark:text-muted-foreground">
           {parsed.hasBoundary && (
             <span className="inline-flex items-center gap-1.5">
-              <span className="inline-block h-3 w-4 rounded-xs border border-dashed border-slate-400" />
+              <span className="inline-block h-3 w-4 rounded-xs border border-dashed border-slate-500 dark:border-slate-400" />
               Boundary
             </span>
           )}
           <span className="inline-flex items-center gap-1.5">
-            <span className="inline-block h-3 w-4 rounded-xs border border-sky-500/70 bg-sky-500/15" />
+            <span className="inline-block h-3 w-4 rounded-xs border border-blue-600 bg-blue-100 dark:border-sky-500/70 dark:bg-sky-500/20" />
             Service / System
           </span>
           {parsed.hasDatabase && (
             <span className="inline-flex items-center gap-1.5">
-              <span className="inline-block h-3 w-3.5 rounded-full border border-emerald-500/70 bg-emerald-500/15" />
+              <span className="inline-block h-3 w-3.5 rounded-full border border-emerald-600 bg-emerald-100 dark:border-emerald-500/70 dark:bg-emerald-500/20" />
               Database
             </span>
           )}
           {parsed.hasChannel && (
             <span className="inline-flex items-center gap-1.5">
-              <span className="inline-block h-3 w-4 rounded-xs border-x-2 border-y border-violet-500/70 bg-violet-500/15" />
+              <span className="inline-block h-3 w-4 rounded-xs border-x-2 border-y border-violet-600 bg-violet-100 dark:border-violet-500/70 dark:bg-violet-500/20" />
               Message Channel
             </span>
           )}
           {parsed.edges.length > 0 && (
             <span className="inline-flex items-center gap-1.5">
-              <span className="inline-block w-4 border-t-[1.5px] border-slate-400" />
+              <span className="inline-block w-4 border-t-[1.5px] border-slate-500 dark:border-slate-400" />
               Source call
             </span>
           )}
           {parsed.hasDashedEdge && (
             <span className="inline-flex items-center gap-1.5">
-              <span className="inline-block w-4 border-t-[1.5px] border-dashed border-slate-400" />
+              <span className="inline-block w-4 border-t-[1.5px] border-dashed border-slate-500 dark:border-slate-400" />
               Compose / Config
             </span>
           )}
           {onSelect && (
-            <span className="ml-auto hidden text-[11px] text-muted-foreground/75 sm:inline">
+            <span className="ml-auto hidden text-[11px] font-normal text-slate-500 dark:text-muted-foreground/75 sm:inline">
               Click a node or edge to inspect
             </span>
           )}
