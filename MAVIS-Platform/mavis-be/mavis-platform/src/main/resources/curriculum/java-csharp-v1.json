@@ -2318,5 +2318,85 @@
         "points": 1
       }
     ]
+  },
+  {
+    "id": "java-v2-ch05",
+    "track": "Java",
+    "phase": "V2 · Module 2",
+    "title": "Chương 05: API GATEWAY PATTERN & BẢO MẬT TẬP TRUNG (JWT / OAUTH 2.0 / RBAC)",
+    "minutes": 45,
+    "objective": "Hiểu lý do không nên để Frontend/Mobile gọi trực tiếp hàng chục Microservice nội bộ. Cấu hình định tuyến và bộ lọc (Filter) bằng Spring Cloud Gateway. Triển khai mô hình bảo mật Stateless JWT + Gateway Offloading và phân quyền theo vai trò (RBAC).",
+    "lesson": "### 5.1. Tại sao cần API Gateway (và BFF)?\n\nGiả sử trang chi tiết đơn hàng trên trình duyệt cần dữ liệu từ `identity-service`, `catalog-service`, `order-service`. Nếu trình duyệt gọi trực tiếp từng service:\n- **Chatty I/O**: Gửi quá nhiều HTTP request qua mạng di động chậm.\n- **Lộ cấu trúc nội bộ**: Đổi port hay gộp/tách 2 service nội bộ sẽ làm hỏng ngay ứng dụng Mobile đã phát hành cho khách hàng!\n- **Lặp lại logic bảo mật**: Service nào cũng phải tự xử lý CORS, Rate Limiting, SSL termination, kiểm tra token.\n\n**API Gateway (`[R19]` Ch.8)** đóng vai trò là **điểm vào duy nhất (Single Entry Point)** ở biên hệ thống:\n\n```text\n[Web Browser / Mobile App]\n            |  HTTPS + Authorization: Bearer <JWT>\n            v\n+-------------------------------------------------------------+\n|                   API GATEWAY (Port 8080)                   |\n|  - Routing (/api/v1/products/** -> lb://catalog-service)    |\n|  - JWT Signature Verification & Expiration Check            |\n|  - Rate Limiting, CORS, Request Logging / Correlation ID    |\n|  - Inject Trusted Headers: X-User-Id, X-User-Role           |\n+-------------------------------------------------------------+\n      |                       |                       |\n      v                       v                       v\n[identity-service]    [catalog-service]       [order-service]\n```\n\n> **Mở rộng — Pattern BFF (Backends for Frontends, `[R19]` §8.2)**: Khi Web Desktop, Mobile App và Đối tác bên thứ 3 cần định dạng dữ liệu quá khác nhau, ta có thể tách thành các Gateway riêng cho từng loại client (Web BFF, Mobile BFF) để tránh một Gateway khổng lồ trở thành nút thắt cổ chai của mọi đội nhóm.\n\n### 5.2. Định tuyến chuẩn với Spring Cloud Gateway\n\n```yaml\n# api-gateway/src/main/resources/application.yml\nspring:\n  application:\n    name: api-gateway\n  cloud:\n    gateway:\n      routes:\n        - id: identity-service\n          uri: lb://identity-service\n          predicates:\n            - Path=/api/v1/auth/**, /api/v1/users/**\n        - id: catalog-service\n          uri: lb://catalog-service\n          predicates:\n            - Path=/api/v1/products/**, /api/v1/categories/**\n        - id: order-service\n          uri: lb://order-service\n          predicates:\n            - Path=/api/v1/orders/**\n```\n*(Tiền tố `lb://` yêu cầu Gateway tìm địa chỉ qua Service Discovery + LoadBalancer).*\n\n### 5.3. Bảo mật Microservices: JWT Stateless & Gateway Offloading (`[R19]` §11.1 & `[S16]` Ch.6)\n\nTrong Monolith, ta có thể lưu **HTTP Session** trong RAM server. Nhưng trong Microservices có nhiều dịch vụ và nhiều replica, lưu session trong RAM sẽ phá vỡ tính độc lập. Thay vào đó, ta dùng **Access Token tự chứa (JWT — JSON Web Token)**:\n\n1. Client gửi thông tin đăng nhập tới `identity-service` (qua API Gateway) $\\rightarrow$ nhận về chuỗi JWT ký số (`Header.Payload.Signature`) chứa `sub` (userId), `role` (`CUSTOMER`, `STAFF`, `ADMIN`), `exp` (hạn dùng).\n2. Ở các request tiếp theo, Client đính kèm header `Authorization: Bearer <token>`.\n3. **API Gateway** xác thực chữ ký và hạn dùng JWT một lần ở biên:\n   - Nếu không hợp lệ $\\rightarrow$ chặn ngay `401 Unauthorized` trước khi chạm tới dịch vụ nội bộ.\n   - Nếu hợp lệ $\\rightarrow$ giải mã `userId`, `role` và **gắn vào header nội bộ** (`X-User-Id`, `X-User-Role`) rồi chuyển tiếp xuống service đích (đồng thời **xóa sạch** các header giả mạo cùng tên mà kẻ tấn công cố tình gửi từ ngoài vào!).\n4. **Phòng thủ nhiều lớp (Defense in Depth)**: Các service nội bộ không phơi cổng ra Internet công cộng (chỉ nằm trong mạng nội bộ Docker) và vẫn kiểm tra quyền nghiệp vụ RBAC ở tầng Method (`@PreAuthorize(\"hasRole('ADMIN')\")` hoặc kiểm tra chủ sở hữu dữ liệu `order.getCustomerId().equals(currentUserId)`).\n\n```java\n// Minh họa GlobalFilter tại Spring Cloud Gateway xác thực JWT và làm sạch header giả mạo\n@Component\npublic class JwtAuthenticationGatewayFilter implements GlobalFilter, Ordered {\n\n    private final JwtTokenVerifier jwtVerifier;\n\n    public JwtAuthenticationGatewayFilter(JwtTokenVerifier jwtVerifier) {\n        this.jwtVerifier = jwtVerifier;\n    }\n\n    @Override\n    public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {\n        String path = exchange.getRequest().getURI().getPath();\n        if (isPublicEndpoint(path)) {\n            return chain.filter(exchange);\n        }\n\n        String authHeader = exchange.getRequest().getHeaders().getFirst(HttpHeaders.AUTHORIZATION);\n        if (authHeader == null || !authHeader.startsWith(\"Bearer \")) {\n            exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);\n            return exchange.getResponse().setComplete();\n        }\n\n        JwtClaims claims = jwtVerifier.verify(authHeader.substring(7));\n        ServerHttpRequest mutatedRequest = exchange.getRequest().mutate()\n                .headers(h -> {\n                    h.remove(\"X-User-Id\");      // Chống spoofing từ client ngoài!\n                    h.remove(\"X-User-Role\");\n                })\n                .header(\"X-User-Id\", claims.userId())\n                .header(\"X-User-Role\", claims.role())\n                .build();\n\n        return chain.filter(exchange.mutate().request(mutatedRequest).build());\n    }\n\n    @Override\n    public int getOrder() { return -1; }\n}\n```\n\n### 5.4. Góc nhìn trên nền tảng MAVIS\n- **Sơ đồ C1 & C2**: `api-gateway` là nút mặt tiền duy nhất kết nối với tác nhân người dùng bên ngoài (`Customer`, `Admin`) và tỏa nhánh định tuyến đến các service nghiệp vụ phía sau.\n- **Mô phỏng trên MAVIS Studio**: Nếu sinh viên dùng Studio dừng `api-gateway`, toàn bộ yêu cầu từ ngoài vào hệ thống lập tức thất bại — chứng minh rõ vai trò **Single Point of Failure (SPOF)** nếu Gateway chỉ chạy 1 instance và lý do ngoài thực tế Gateway luôn cần chạy $\\ge 2$ replica.\n\n### 5.5. Cạm bẫy thường gặp (Anti-Patterns)\n1. **Nhét logic nghiệp vụ vào API Gateway**: Gateway chỉ nên xử lý *cross-cutting concerns* (routing, auth, rate limit, CORS). Nếu viết logic tính giá hay trừ tồn kho vào Gateway, nó sẽ biến thành một Monolith mới.\n2. **Tin mù quáng vào `X-User-Id` khi service nội bộ bị mở cổng công khai**: Nếu service nội bộ lỡ phơi port trực tiếp ra ngoài mà không chặn qua mạng nội bộ hoặc không có chữ ký nội bộ, kẻ tấn công có thể gọi thẳng service và tự gắn `X-User-Role: ADMIN`.",
+    "exercise": "### 5.6. Bài tập thực hành Lab 05\n- Kiểm tra cấu hình route của `api-gateway` trên sơ đồ C2 của MAVIS và đối chiếu với file `application.yml`.\n- Thử phân tích một luồng đăng nhập và một luồng gọi API cần quyền `ADMIN`: chỉ rõ nơi kiểm tra `401 Unauthorized` (xác thực) và nơi kiểm tra `403 Forbidden` (phân quyền).",
+    "sources": [
+      {
+        "publisher": "Manning / Microservices.io",
+        "title": "Chris Richardson — Microservices Patterns",
+        "url": "https://microservices.io/patterns/"
+      },
+      {
+        "publisher": "Spring Cloud",
+        "title": "Mastering Microservices with Java & Spring Cloud Reference",
+        "url": "https://docs.spring.io/spring-cloud/reference/"
+      }
+    ],
+    "questions": [
+      {
+        "id": "java-v2-ch05-q1",
+        "prompt": "Chức năng nào sau đây **KHÔNG** nên đặt bên trong API Gateway?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Định tuyến yêu cầu (Routing) và cân bằng tải tới các service nội bộ",
+          "Xác thực chữ ký JWT, kiểm soát CORS và giới hạn tần suất gọi (Rate Limiting)",
+          "Lưu trữ bảng dữ liệu đơn hàng và xử lý quy tắc nghiệp vụ trừ tồn kho",
+          "Gắn mã định danh theo dõi (`Correlation ID`) cho mỗi yêu cầu đi vào hệ thống"
+        ],
+        "correctOption": 2,
+        "explanation": "Logic nghiệp vụ và dữ liệu miền phải thuộc về từng Microservice chuyên trách; nhồi nghiệp vụ vào Gateway tạo ra nút thắt và Monolith mới.",
+        "points": 1
+      },
+      {
+        "id": "java-v2-ch05-q2",
+        "prompt": "Khi API Gateway truyền thông tin người dùng đã xác thực xuống dịch vụ nội bộ qua header `X-User-Id` và `X-User-Role`, bước bảo mật nào là bắt buộc tại Gateway?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Mã hóa toàn bộ nội dung body sang Base64",
+          "Xóa/ghi đè mọi header `X-User-Id` và `X-User-Role` do client bên ngoài tự gửi lên trước khi gán giá trị giải mã từ JWT hợp lệ",
+          "Cho phép client tự gửi `X-User-Role` nếu không có JWT",
+          "Lưu mật khẩu gốc của người dùng vào header `X-User-Password`"
+        ],
+        "correctOption": 1,
+        "explanation": "Ngăn chặn lỗ hổng giả mạo danh tính (Header Spoofing) từ phía client gửi lên.",
+        "points": 1
+      },
+      {
+        "id": "java-v2-ch05-q3",
+        "prompt": "Sự khác biệt chính xác giữa HTTP `401 Unauthorized` và HTTP `403 Forbidden` là gì?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "`401` dùng cho lỗi máy chủ, `403` dùng cho lỗi cơ sở dữ liệu",
+          "`401` nghĩa là chưa xác thực được danh tính (thiếu/sai/hết hạn token); `403` nghĩa là đã xác thực danh tính nhưng không có quyền thực hiện hành động đó",
+          "Hai mã hoàn toàn giống nhau, dùng mã nào cũng được",
+          "`401` chỉ dành cho API Gateway, `403` chỉ dành cho Database"
+        ],
+        "correctOption": 1,
+        "explanation": "`401` = Authentication failure (Bạn là ai?); `403` = Authorization failure (Tôi biết bạn là ai, nhưng bạn không có quyền!).",
+        "points": 1
+      },
+      {
+        "id": "java-v2-ch05-q4",
+        "prompt": "Mục đích của mẫu **BFF (Backends for Frontends)** là gì?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Loại bỏ hoàn toàn tầng Frontend khỏi dự án",
+          "Tạo các API Gateway chuyên biệt cho từng loại client (Web, Mobile, đối tác) để tối ưu dữ liệu trả về và giúp các đội phát triển độc lập",
+          "Thay thế cơ sở dữ liệu quan hệ bằng NoSQL",
+          "Cho phép trình duyệt kết nối thẳng tới PostgreSQL"
+        ],
+        "correctOption": 1,
+        "explanation": "Mỗi loại client có nhu cầu dữ liệu và băng thông khác nhau; BFF giúp tránh một Gateway chung trở nên cồng kềnh.",
+        "points": 1
+      }
+    ]
   }
 ]
