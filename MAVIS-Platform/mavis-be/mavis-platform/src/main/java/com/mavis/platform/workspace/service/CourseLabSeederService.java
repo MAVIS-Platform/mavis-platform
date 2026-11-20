@@ -390,6 +390,7 @@ public class CourseLabSeederService {
             // Clear colliding lab_order values first to satisfy uq_workspace_lab_order on PostgreSQL.
             for (Assignment stale : staleLabs) {
                 stale.setLabOrder(null);
+                stale.setAiPolicy(markArchivedV1(stale.getAiPolicy()));
                 assignments.saveAndFlush(stale);
                 if (stale.getId() != null) {
                     try {
@@ -895,6 +896,15 @@ public class CourseLabSeederService {
                     VALUES (?, ?, 'Curated Resilience Check', CAST(? AS jsonb), 1)
                     """, UUID.randomUUID(), refProjectId, steps.toString());
         }
+    }
+
+    private ObjectNode markArchivedV1(com.fasterxml.jackson.databind.JsonNode existingPolicy) {
+        ObjectNode node = (existingPolicy != null && existingPolicy.isObject())
+                ? ((ObjectNode) existingPolicy).deepCopy()
+                : json.createObjectNode();
+        node.put("archivedV1", true);
+        node.put("archivedReason", "REPLACED_BY_V2_CATALOG");
+        return node;
     }
 
     public ObjectNode buildDefaultStudioTopology() {
