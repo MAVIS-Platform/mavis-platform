@@ -7,9 +7,11 @@ import java.util.List;
 
 /**
  * Standardized 5-Module / 12-Chapter Coursera C# 12 / .NET 8 Microservices V2 Curriculum Catalog ({@code CSHARP-MS-2026}):
- * - Aligned with {@code docs/curriculum/Giao_Trinh_Csharp_Microservices.md} & Project Trai Cay
+ * - 5 Modules aligned with {@code docs/curriculum/Giao_Trinh_Csharp_Microservices.md} & Project Trai Cay
  * - 12 in-depth V2 Chapters ({@code csharp-v2-ch01}..{@code csharp-v2-ch12})
  * - 48 validated Quiz Gate questions (4 per chapter, pass threshold >= 70%)
+ * - 5 architectural Essay assignments with 100-point Rubrics
+ * - 5 Visual Architecture / Runtime Studio labs linked to {@code fruit-shop-dotnet-microservices}
  */
 public final class CsharpCourseraCatalog {
     public static final String COURSE_CODE = "CSHARP-MS-2026";
@@ -34,7 +36,10 @@ public final class CsharpCourseraCatalog {
     public static List<CourseraModuleSpec> modules() {
         return List.of(
                 module1DotNetFoundations(),
-                module2YarpDiscoveryRoslyn()
+                module2YarpDiscoveryRoslyn(),
+                module3EfCoreEventBusSaga(),
+                module4PollyResilienceOtel(),
+                module5DockerTestingFruitShop()
         );
     }
 
@@ -54,7 +59,7 @@ public final class CsharpCourseraCatalog {
                 1,
                 "Module 1 · Nền Tảng Kiến Trúc .NET 8 Microservices, DDD/CQRS & Phân Tầng C3",
                 "Đọc cấu trúc Solution .sln/.csproj theo C4 Model, phân biệt CRUD vs DDD + CQRS và kiểm soát DI Lifetime + ProblemDetails RFC 7807.",
-                "Lab 01 · Project Trái Cây Solution Structure, DDD & DI Captive Dependency Audit",
+                "Lab 01 (.NET) · Project Trái Cây Solution Structure, DDD & DI Captive Dependency Audit",
                 "Khám phá cấu trúc .sln của Project Trái Cây (fruit-shop-dotnet-microservices) ở Static View C1–C3 và kiểm tra ranh giới DI Lifetime.",
                 "csharp-v2-ch01",
                 List.of(
@@ -133,6 +138,136 @@ public final class CsharpCourseraCatalog {
                         "Studio Lab 02 (.NET) · Roslyn CALL_SITE & Reverse BFS Impact",
                         "Kiểm chứng đường gọi đồng bộ từ ApiGateway -> FruitOrdering.API -> FruitCatalog.API và tính Direct/Indirect Callers.",
                         false,
+                        List.of("C4_CONTAINER", "DEPENDENCY_GRAPH")
+                )
+        );
+    }
+
+    private static CourseraModuleSpec module3EfCoreEventBusSaga() {
+        List<String> chapterIds = List.of("csharp-v2-ch07", "csharp-v2-ch08", "csharp-v2-ch09");
+        return new CourseraModuleSpec(
+                3,
+                "Module 3 · Database-per-Service (EF Core 8 & Redis), Event Bus & Saga Pattern",
+                "Phân tách DbContext độc lập cho mỗi .NET service, triển khai Redis IDistributedCache, Event Bus RabbitMQ/Outbox và Saga bù trừ hoàn kho.",
+                "Lab 03 (.NET) · Polyglot Persistence (PostgreSQL/Redis), MassTransit Event Bus & Saga",
+                "Kiểm tra cô lập DbContext giữa FruitCatalog.API, FruitOrdering.API, Redis ở FruitBasket.API và luồng Saga Eventual Consistency.",
+                "csharp-v2-ch07",
+                List.of(
+                        V2CurriculumJsonLoader.toLessonSpec("csharp-v2-ch07",
+                                "Data Sovereignty với EF Core 8, khắc phục Shared Database Smell và tăng tốc đọc với Redis Cache + TTL."),
+                        V2CurriculumJsonLoader.toLessonSpec("csharp-v2-ch08",
+                                "Event Bus (RabbitMQ / MassTransit), Idempotent Consumer và IntegrationEventOutbox bảo toàn sự kiện khi broker lỗi."),
+                        V2CurriculumJsonLoader.toLessonSpec("csharp-v2-ch09",
+                                "Saga Choreography & Orchestration cho quy trình Đặt Trái Cây (Giữ kho -> Tạo đơn -> Xóa giỏ / Bù trừ hoàn kho).")
+                ),
+                V2CurriculumJsonLoader.toQuizQuestions(chapterIds),
+                new EssaySpec(
+                        "Tự luận Module 3 (.NET 8) · Data Sovereignty & Saga Compensation Project Trái Cây",
+                        "Thiết kế Polyglot Persistence, Integration Event Log (Outbox) và Consumer Idempotency trong EF Core 8.",
+                        """
+                        ### Bài tập Kiến trúc Dữ liệu .NET 8
+                        1. Trình bày mô hình Polyglot Persistence của Project Trái Cây (`FruitCatalog.API` dùng PostgreSQL `catalog_db`, `FruitOrdering.API` dùng `ordering_db`, `FruitBasket.API` dùng Redis) và lý do cấm `AddDbContext` dùng chung chuỗi kết nối.
+                        2. Thiết kế `IntegrationEventLog` Outbox cùng một `DbContext` Transaction để phát `OrderCreatedIntegrationEvent` và xóa giỏ hàng gián tiếp an toàn qua RabbitMQ.
+                        """,
+                        List.of(
+                                new RubricCriterion("1. EF Core 8 Data Sovereignty & Polyglot Store", 35,
+                                        "Giải thích chính xác cô lập DbContext, Redis IDistributedCache TTL và lỗi SHARED_DATABASE."),
+                                new RubricCriterion("2. Integration Event Outbox & Idempotency", 35,
+                                        "Bảo đảm ACID cục bộ khi lưu Outbox và chống xử lý trùng khi RabbitMQ giao lại thông điệp."),
+                                new RubricCriterion("3. Saga Compensation Flow", 30,
+                                        "Xây dựng đủ luồng forward và hoàn kho trái cây khi thanh toán/đơn hàng thất bại.")
+                        )
+                ),
+                new VisualLabSpec(
+                        "RUNTIME_LAB",
+                        "Studio Lab 03 (.NET) · RabbitMQ Event Bus & Polyglot Data Flows",
+                        "Theo dõi luồng sự kiện RabbitMQ giữa FruitOrdering.API, FruitCatalog.API và FruitBasket.API trong Runtime Studio.",
+                        true,
+                        List.of("C4_CONTAINER", "DEPENDENCY_GRAPH")
+                )
+        );
+    }
+
+    private static CourseraModuleSpec module4PollyResilienceOtel() {
+        List<String> chapterIds = List.of("csharp-v2-ch10", "csharp-v2-ch11");
+        return new CourseraModuleSpec(
+                4,
+                "Module 4 · Khả Năng Chịu Lỗi (Polly v8) & Observability (.NET Health Checks / OpenTelemetry)",
+                "Cấu hình Microsoft.Extensions.Http.Resilience (Polly v8), tách bạch /health/live vs /health/ready, Serilog và OpenTelemetry .NET Traces.",
+                "Lab 04 (.NET) · Polly v8 Circuit Breaker Chaos Test & OpenTelemetry Trace Diff",
+                "Thực hành dừng FruitCatalog.API trên MAVIS Studio để kích hoạt Polly v8 Circuit Breaker + Fallback và đối chiếu p95 Latency Trước/Sau.",
+                "csharp-v2-ch10",
+                List.of(
+                        V2CurriculumJsonLoader.toLessonSpec("csharp-v2-ch10",
+                                "Polly v8 & AddStandardResilienceHandler(): Total Request Timeout, Exponential Backoff + Jitter và Circuit Breaker Fail-Fast."),
+                        V2CurriculumJsonLoader.toLessonSpec("csharp-v2-ch11",
+                                "ASP.NET Core Health Checks (/health/live vs /health/ready), Structured Logging và OpenTelemetry W3C Traceparent trong .NET 8.")
+                ),
+                V2CurriculumJsonLoader.toQuizQuestions(chapterIds),
+                new EssaySpec(
+                        "Tự luận Module 4 (.NET 8) · Polly v8 Resilience Pipeline & Health Probe Isolation",
+                        "Phân tích vòng đời Polly v8, bẫy Dependency Health Check gây restart hàng loạt và đọc OTel Traces.",
+                        """
+                        ### Bài tập Chịu lỗi & Giám sát .NET 8
+                        1. Vì sao **Liveness Probe** (`/health/live`) KHÔNG được kiểm tra kết nối PostgreSQL/RabbitMQ, trong khi **Readiness Probe** (`/health/ready`) lại bắt buộc phải kiểm tra?
+                        2. Khi `FruitOrdering.API` bật `AddStandardResilienceHandler()`, giải thích thứ tự thực thi của Total Timeout, Rate Limiter, Retry (+Jitter) và Circuit Breaker khi dừng container `FruitCatalog.API`.
+                        """,
+                        List.of(
+                                new RubricCriterion("1. Polly v8 Resilience Strategy Pipeline", 40,
+                                        "Hiểu rõ tầng Total Timeout -> Retry+Jitter -> CircuitBreaker -> Attempt Timeout."),
+                                new RubricCriterion("2. Liveness vs Readiness Probe Discipline", 30,
+                                        "Tránh được bẫy Cascading Pod/Container Restart nhờ tách Health Check tags."),
+                                new RubricCriterion("3. OpenTelemetry .NET Before/After Analysis", 30,
+                                        "Nêu đủ quy tắc đối chiếu p95, Error Rate với cùng Workload và Sample Size.")
+                        )
+                ),
+                new VisualLabSpec(
+                        "RUNTIME_LAB",
+                        "Studio Lab 04 (.NET) · Polly v8 Stop/Fallback Chaos Experiment",
+                        "Dừng FruitCatalog.API trên MAVIS Studio để đo Circuit Breaker Fail-Fast `503` và kiểm tra W3C traceparent spans.",
+                        true,
+                        List.of("C4_CONTAINER", "DEPENDENCY_GRAPH")
+                )
+        );
+    }
+
+    private static CourseraModuleSpec module5DockerTestingFruitShop() {
+        List<String> chapterIds = List.of("csharp-v2-ch12");
+        return new CourseraModuleSpec(
+                5,
+                "Module 5 · Docker Multi-Stage (.NET 8), Testing & Capstone Project Trái Cây",
+                "Đóng gói Docker Multi-Stage cho ASP.NET Core 8 (Non-Root), kiểm thử WebApplicationFactory + Testcontainers và đối soát 10 tiêu chí Project Trái Cây.",
+                "Lab 05 (.NET) · Project Trái Cây Scale 1→8 Replicas & Production-Readiness Audit",
+                "Scale replica FruitCatalog.API & FruitOrdering.API trên MAVIS Studio (1 -> 4+ instances), kiểm tra Round-Robin và Production-Readiness Checklist.",
+                "csharp-v2-ch12",
+                List.of(
+                        V2CurriculumJsonLoader.toLessonSpec("csharp-v2-ch12",
+                                "Docker Multi-Stage Layer Cache (.csproj restore), ASPNETCORE_HTTP_PORTS 8080, WebApplicationFactory & 10 tiêu chí Project Trái Cây.")
+                ),
+                V2CurriculumJsonLoader.toQuizQuestions(chapterIds),
+                new EssaySpec(
+                        "Tự luận Capstone (.NET 8) · Thẩm Định 10 Tiêu Chí Project Trái Cây (`fruit-shop-dotnet-microservices`)",
+                        "Đánh giá hoàn chỉnh Solution .NET 8 từ Docker Multi-Stage đến Zero Secret Leaks & Horizontal Scale 1→8.",
+                        """
+                        ### Đồ án Tổng kết (`CSHARP-MS-2026` · Project Trái Cây)
+                        Kiểm toán Solution `fruit-shop-dotnet-microservices` theo **10 tiêu chí Checklist Phụ lục C**:
+                        1. Giải thích tối ưu Docker Layer Cache khi tách `COPY *.csproj` + `dotnet restore` trước `COPY . .`, và vì sao từ .NET 8 container mặc định chạy cổng `8080` với user `app` (non-root).
+                        2. Chứng minh Solution sẵn sàng **Scale `1 -> 8` bản sao** trên MAVIS Studio (không hard-code `container_name`, không lưu session local, có `IDistributedCache` + `healthcheck`).
+                        """,
+                        List.of(
+                                new RubricCriterion("1. Docker Multi-Stage & .NET 8 Non-Root Security", 35,
+                                        "Trình bày đúng tối ưu layer cache SDK -> aspnet:8.0 runtime gọn nhẹ và port 8080 non-root."),
+                                new RubricCriterion("2. Testing Pyramid (WebApplicationFactory & Testcontainers)", 35,
+                                        "Phân biệt Integration Test dùng WebApplicationFactory + Testcontainers PostgreSQL/RabbitMQ."),
+                                new RubricCriterion("3. Horizontal Scale 1→8 & Zero Secret Leaks", 30,
+                                        "Đạt đủ checklist stateless, bỏ container_name cứng và ValidateOnStart cho mọi bí mật.")
+                        )
+                ),
+                new VisualLabSpec(
+                        "RUNTIME_LAB",
+                        "Studio Lab 05 (.NET) · Project Trái Cây Replica Scaling 1→8 & Production Audit",
+                        "Scale replica trên MAVIS Studio cho fruit-shop-dotnet-microservices, đo Throughput/p95 Latency và hoàn tất kiểm toán.",
+                        true,
                         List.of("C4_CONTAINER", "DEPENDENCY_GRAPH")
                 )
         );
