@@ -32,10 +32,29 @@ public sealed class StudioInfrastructureActionTests : IDisposable
                 var sub = args.FirstOrDefault(a => a is "ps" or "stop" or "start" or "up" or "down");
                 if (sub == "ps")
                 {
-                    var svc = args[^1];
-                    RunningCounts.TryGetValue(svc, out var count);
-                    var displayCount = args.Contains("--all") ? Math.Max(count, 1) : count;
-                    var output = string.Join("\n", Enumerable.Range(1, displayCount).Select(i => $"{svc}-{i}"));
+                    var fmtIdx = args.ToList().IndexOf("--format");
+                    if (fmtIdx >= 0 && fmtIdx + 1 < args.Count)
+                    {
+                        var fmt = args[fmtIdx + 1];
+                        if (fmt.Contains("{{.Service}}", StringComparison.Ordinal))
+                        {
+                            var lines = RunningCounts.SelectMany(kv =>
+                                kv.Value > 0
+                                    ? Enumerable.Range(1, kv.Value).Select(i => $"{kv.Key}|{kv.Key}-{i}|running")
+                                    : [$"{kv.Key}|{kv.Key}-1|exited"]);
+                            return Task.FromResult(new DockerCommandResult(0, string.Join("\n", lines)));
+                        }
+                        var svc = args[^1];
+                        RunningCounts.TryGetValue(svc, out var count);
+                        var svcLines = count > 0
+                            ? Enumerable.Range(1, count).Select(i => $"{svc}-{i}|running")
+                            : [$"{svc}-1|exited"];
+                        return Task.FromResult(new DockerCommandResult(0, string.Join("\n", svcLines)));
+                    }
+                    var fallbackSvc = args[^1];
+                    RunningCounts.TryGetValue(fallbackSvc, out var fallbackCount);
+                    var displayCount = args.Contains("--all") ? Math.Max(fallbackCount, 1) : fallbackCount;
+                    var output = string.Join("\n", Enumerable.Range(1, displayCount).Select(i => $"{fallbackSvc}-{i}"));
                     return Task.FromResult(new DockerCommandResult(0, output));
                 }
                 if (sub == "stop" && args[^1] is string stopSvc && RunningCounts.ContainsKey(stopSvc))

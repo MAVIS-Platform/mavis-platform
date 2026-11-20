@@ -69,6 +69,9 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
         log.info("Tiếp nhận RunnerReceipt cho sessionId: {}, resourceProject: {}", sessionId,
                 receipt != null ? receipt.getResourceProject() : null);
 
+        // Phân quyền runner trước khi khóa hàng trong DB
+        runnerServiceAuthGuard.requireRunnerService();
+
         if (receipt == null) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Runner receipt payload cannot be null");
         }
@@ -76,9 +79,6 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
         // [CHẶNG 11]: Khóa bi quan RuntimeSession
         RuntimeSession session = runtimeSessionRepository.findLockedById(sessionId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy phiên thực nghiệm với ID: " + sessionId));
-
-        // Phân quyền kép
-        runnerServiceAuthGuard.requireRunnerService();
         if (session.getRecoveryResultJson() != null) {
             throw new BusinessException(ErrorCode.CONFLICT, "Allocation was already recovered; late execution receipt rejected");
         }
@@ -279,26 +279,35 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
         }
         if (!spans.isEmpty()) {
             Map<String, Long> minStartByTrace = new LinkedHashMap<>();
+            Map<String, Integer> stepOrdByTrace = new LinkedHashMap<>(traceOrderByTraceId);
+            Set<String> allTraces = new LinkedHashSet<>(traceOrderByTraceId.keySet());
             for (RunnerCorrelatedSpanDTO s : spans) {
                 if (s == null || s.getTraceId() == null || s.getTraceId().isBlank()) continue;
                 String tid = s.getTraceId().trim().toLowerCase(Locale.ROOT);
+                allTraces.add(tid);
                 if (s.getScenarioStepId() != null && !s.getScenarioStepId().isBlank()) {
                     Integer stepOrd = stepOrderByStepId.get(s.getScenarioStepId().trim().toLowerCase(Locale.ROOT));
-                    if (stepOrd != null) traceOrderByTraceId.putIfAbsent(tid, stepOrd);
+                    if (stepOrd != null) stepOrdByTrace.putIfAbsent(tid, stepOrd);
                 }
                 Long startNano = parseUnsignedNanos(s.getStartTimeUnixNano());
                 if (startNano != null) {
                     minStartByTrace.merge(tid, startNano, (a, b) -> Long.compareUnsigned(a, b) <= 0 ? a : b);
                 }
             }
-            if (minStartByTrace.size() > 1) {
-                List<Map.Entry<String, Long>> sortedTraces = new ArrayList<>(minStartByTrace.entrySet());
-                sortedTraces.sort((a, b) -> Long.compareUnsigned(a.getValue(), b.getValue()));
-                int nextOrd = traceOrderByTraceId.values().stream().mapToInt(Integer::intValue).max().orElse(0) + 1;
-                for (Map.Entry<String, Long> e : sortedTraces) {
-                    if (!traceOrderByTraceId.containsKey(e.getKey())) {
-                        traceOrderByTraceId.put(e.getKey(), nextOrd++);
-                    }
+            if (!allTraces.isEmpty()) {
+                // Chronological order (min start timestamp, nulls-last) separates Studio before/after replays that share one stepId.
+                List<String> sortedTraces = new ArrayList<>(allTraces);
+                sortedTraces.sort((a, b) -> {
+                    int byStart = compareNullsLast(minStartByTrace.get(a), minStartByTrace.get(b), Long::compareUnsigned);
+                    if (byStart != 0) return byStart;
+                    int byStep = compareNullsLast(stepOrdByTrace.get(a), stepOrdByTrace.get(b), Integer::compare);
+                    if (byStep != 0) return byStep;
+                    return a.compareTo(b);
+                });
+                traceOrderByTraceId.clear();
+                int ord = 1;
+                for (String tid : sortedTraces) {
+                    traceOrderByTraceId.put(tid, ord++);
                 }
             }
         }
@@ -1505,10 +1514,10 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
     @Override
     @Transactional(rollbackFor = Exception.class)
     public RuntimeSessionResponseDTO importReceiptFromStateRoot(UUID sessionId, String resourceProject) {
+        runnerServiceAuthGuard.requireRunnerService();
+
         RuntimeSession session = runtimeSessionRepository.findLockedById(sessionId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy phiên thực nghiệm với ID: " + sessionId));
-
-        runnerServiceAuthGuard.requireRunnerService();
 
         String resProj = resourceProject != null && !resourceProject.isBlank()
                 ? resourceProject

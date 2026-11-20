@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -293,6 +294,8 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
     {
         if (definition.InteractiveStudio) {
             if (studio is null) throw new RuntimeStageException("STUDIO_REQUIRES_MANAGED_RUNNER");
+            // Publish the initial baseline frame before entering the command loop so the UI gets an immediate observedAt.
+            await PublishStudioTelemetrySafeAsync(ct);
             using var telemetryStop = CancellationTokenSource.CreateLinkedTokenSource(ct);
             var telemetryLoop = RunTelemetryLoopAsync(telemetryStop.Token);
             try {
@@ -320,7 +323,8 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
                         result = _observedActions.Count > resultCount ? _observedActions.Last() : null;
                     }
                     await studio.AcknowledgeStudioActionAsync(definition.SessionId, ResourceProject, item.ActionId, status, result, ct);
-                    KickTelemetry();
+                    // Publish the post-action frame before polling the next command or finishRequested so no action's state is lost.
+                    await PublishStudioTelemetrySafeAsync(ct);
                 }
             } finally {
                 telemetryStop.Cancel();
@@ -432,11 +436,51 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
 
     private async Task<(int total, int running, string[] runningIds)> ReadServiceState(string service, CancellationToken ct)
     {
-        var all = await Require(["ps", "--all", "--quiet", service], ct);
-        var running = await Require(["ps", "--quiet", service], ct);
-        var runningIds = running.StandardOutput.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
-        return (Lines(all.StandardOutput), runningIds.Length, runningIds);
-        static int Lines(string value) => value.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).Length;
+        var ps = await Require(["ps", "--all", "--format", "{{.ID}}|{{.State}}", service], ct);
+        var total = 0;
+        var runningIds = new List<string>();
+        foreach (var rawLine in ps.StandardOutput.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            var parts = rawLine.Split('|');
+            var id = parts[0].Trim();
+            if (string.IsNullOrEmpty(id)) continue;
+            total++;
+            if (parts.Length > 1 && parts[1].Trim().Equals("running", StringComparison.OrdinalIgnoreCase))
+                runningIds.Add(id);
+        }
+        return (total, runningIds.Count, runningIds.ToArray());
+    }
+
+    private async Task<List<(string Service, int Total, int Running, string[] Ids)>> ReadAllServiceStatesAsync(CancellationToken ct)
+    {
+        var ps = await Command(["ps", "--all", "--format", "{{.Service}}|{{.ID}}|{{.State}}"], ct);
+        var totals = new Dictionary<string, int>(StringComparer.Ordinal);
+        var running = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        if (ps.ExitCode == 0 && !string.IsNullOrWhiteSpace(ps.StandardOutput))
+        {
+            foreach (var rawLine in ps.StandardOutput.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+            {
+                var parts = rawLine.Split('|');
+                if (parts.Length < 3) continue;
+                var svc = parts[0].Trim();
+                var id = parts[1].Trim();
+                var state = parts[2].Trim();
+                if (string.IsNullOrEmpty(svc) || string.IsNullOrEmpty(id)) continue;
+                totals[svc] = totals.GetValueOrDefault(svc) + 1;
+                if (state.Equals("running", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!running.TryGetValue(svc, out var list)) running[svc] = list = [];
+                    list.Add(id);
+                }
+            }
+        }
+        var states = new List<(string Service, int Total, int Running, string[] Ids)>();
+        foreach (var service in definition.Profile.Applications.Keys)
+        {
+            var ids = running.TryGetValue(service, out var list) ? list.ToArray() : [];
+            states.Add((service, totals.GetValueOrDefault(service), ids.Length, ids));
+        }
+        return states;
     }
 
     private IReadOnlyDictionary<string, string>? SnapshotTraceSteps()
@@ -455,25 +499,35 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
     }
 
     private static readonly TimeSpan TelemetryInterval = TimeSpan.FromSeconds(3);
-    private readonly SemaphoreSlim _telemetryKick = new(0, 1);
+    private readonly SemaphoreSlim _telemetryGate = new(1, 1);
+    private TraceCorrelationResult? _lastLiveTrace;
 
-    private void KickTelemetry()
+    private async Task<bool> PublishStudioTelemetrySafeAsync(CancellationToken ct)
     {
-        try { if (_telemetryKick.CurrentCount == 0) _telemetryKick.Release(); }
-        catch (SemaphoreFullException) { }
+        try
+        {
+            await _telemetryGate.WaitAsync(ct);
+            try { await PublishStudioTelemetryAsync(ct); return true; }
+            finally { _telemetryGate.Release(); }
+        }
+        catch (Exception)
+        {
+            return false; // A missed telemetry frame must never fail the Studio session.
+        }
     }
 
-    // Runs beside the command loop so a student's Stop/Scale never waits for a telemetry sweep.
+    // Runs beside the command loop while idle so Stop/Start/Scale polling is never blocked by a telemetry sweep.
     private async Task RunTelemetryLoopAsync(CancellationToken ct)
     {
         var failures = 0;
         while (!ct.IsCancellationRequested)
         {
-            try { await PublishStudioTelemetryAsync(ct); failures = 0; }
-            catch (Exception) { if (ct.IsCancellationRequested) return; failures++; } // A missed frame must never fail the session.
             var delay = failures == 0 ? TelemetryInterval : TimeSpan.FromSeconds(Math.Min(15, 3 * failures));
-            try { await _telemetryKick.WaitAsync(delay, ct); }
+            try { await Task.Delay(delay, ct); }
             catch (OperationCanceledException) { return; }
+            if (await PublishStudioTelemetrySafeAsync(ct)) failures = 0;
+            else if (ct.IsCancellationRequested) return;
+            else failures++;
         }
     }
 
@@ -490,12 +544,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
 
     private async Task PublishStudioTelemetryAsync(CancellationToken ct)
     {
-        var states = new List<(string Service, int Total, int Running, string[] Ids)>();
-        foreach (var service in definition.Profile.Applications.Keys)
-        {
-            var (total, running, ids) = await ReadServiceState(service, ct);
-            states.Add((service, total, running, ids));
-        }
+        var states = await ReadAllServiceStatesAsync(ct);
         // One `docker stats` call for every container: per-service calls cost ~1-2 s each.
         var statsById = new List<(string Id, object Stat)>();
         var allIds = states.SelectMany(s => s.Ids).ToArray();
@@ -549,9 +598,19 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
         var directory = Path.Combine(_directory, "raw-traces");
         Directory.CreateDirectory(directory);
         var copied = await Command(["cp", "mavis-collector:/traces/.", directory], ct);
-        if (copied.ExitCode != 0 || !Directory.Exists(directory)) return null;
+        if (copied.ExitCode != 0 || !Directory.Exists(directory))
+        {
+            if (live && _lastLiveTrace is not null)
+            {
+                var warnings = _lastLiveTrace.Warnings.Contains("TRACE_COPY_FAILED", StringComparer.Ordinal)
+                    ? _lastLiveTrace.Warnings
+                    : _lastLiveTrace.Warnings.Append("TRACE_COPY_FAILED").ToArray();
+                return _lastLiveTrace with { Warnings = warnings };
+            }
+            return null;
+        }
         var paths = Directory.EnumerateFiles(directory, "traces*.json").ToArray();
-        if (paths.Length == 0) return null;
+        if (paths.Length == 0) return live ? _lastLiveTrace : null;
         var selected = TraceFileBudget.Select(paths, live ? TraceFileBudget.LiveBudgetBytes : TraceFileBudget.FinalBudgetBytes, out var truncated);
         var resources = new JsonArray();
         var malformed = false;
@@ -579,7 +638,9 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
         var extra = new List<string>();
         if (truncated) extra.Add("TRACE_TRUNCATED_TO_PROFILE_BUDGET");
         if (malformed && !live) extra.Add("TRACE_BATCH_MALFORMED_SKIPPED");
-        return extra.Count > 0 ? result with { Warnings = result.Warnings.Concat(extra).ToArray() } : result;
+        var finalResult = extra.Count > 0 ? result with { Warnings = result.Warnings.Concat(extra).ToArray() } : result;
+        if (live) _lastLiveTrace = finalResult;
+        return finalResult;
 
         void Append(JsonNode? node)
         {
@@ -656,7 +717,15 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
         args.Add("stdin-scenario");
         var result = await docker.RunWithInputAsync(args, _directory!, Math.Min(300, scenario.TimeoutSeconds + 30), input, ct);
         if (string.IsNullOrWhiteSpace(result.StandardOutput)) throw new RuntimeStageException("SCENARIO_CONTAINER_FAILED");
-        return JsonSerializer.Deserialize<HttpScenarioOutcome>(result.StandardOutput, options) ?? throw new RuntimeStageException("SCENARIO_OUTPUT_INVALID");
+        try
+        {
+            return JsonSerializer.Deserialize<HttpScenarioOutcome>(result.StandardOutput, options)
+                ?? throw new RuntimeStageException("SCENARIO_OUTPUT_INVALID");
+        }
+        catch (JsonException)
+        {
+            throw new RuntimeStageException(result.ExitCode is 0 or 1 ? "SCENARIO_OUTPUT_INVALID" : "SCENARIO_CONTAINER_FAILED");
+        }
     }
 
     private Task<DockerCommandResult> Command(IReadOnlyList<string> arguments, CancellationToken ct) => docker.RunAsync(
@@ -770,11 +839,27 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
         }
     }
 
-    private string RedactSecrets(string text)
+    private string RedactSecrets(string text) =>
+        secrets is null || secrets.Count == 0 ? text : RedactSecretValues(text, secrets.Values);
+
+    public static string RedactSecretValues(string text, IEnumerable<string> values)
     {
-        if (string.IsNullOrEmpty(text) || secrets is null || secrets.Count == 0) return text;
-        foreach (var secret in secrets.Values.Where(v => !string.IsNullOrWhiteSpace(v)).OrderByDescending(v => v.Length))
-            text = text.Replace(secret, "[REDACTED]", StringComparison.Ordinal);
+        if (string.IsNullOrEmpty(text)) return text;
+        var variants = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var raw in values)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) continue;
+            variants.Add(raw);
+            if (raw.Length >= 4)
+            {
+                var urlEncoded = Uri.EscapeDataString(raw);
+                if (urlEncoded.Length >= 4) variants.Add(urlEncoded);
+                var base64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(raw));
+                if (base64.Length >= 4) variants.Add(base64);
+            }
+        }
+        foreach (var token in variants.OrderByDescending(v => v.Length))
+            text = text.Replace(token, "[REDACTED]", StringComparison.Ordinal);
         return text;
     }
 

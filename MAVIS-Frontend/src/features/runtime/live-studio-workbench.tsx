@@ -62,7 +62,7 @@ import {
   type StudioSetupPanel,
 } from "./live-sandbox-parity";
 import { LiveTerminalConsole } from "./live-terminal-console";
-import { useStudioSession } from "./use-studio-session";
+import { resolveRunningReplicas, useStudioSession } from "./use-studio-session";
 
 type LiveRuntimeReplay = {
   id: string;
@@ -246,10 +246,7 @@ function confirmedResult(data: Studio, service: string) {
 }
 
 function runningFor(data: Studio, service: string) {
-  return (
-    confirmedResult(data, service)?.replicasAfter ??
-    data.telemetry?.services.find((item) => item.service === service)?.runningReplicas
-  );
+  return resolveRunningReplicas(data, service);
 }
 
 function lastResultFor(data: Studio, service: string) {
@@ -426,6 +423,21 @@ export function LiveStudioWorkbench({
   const resizeCleanupRef = useRef<(() => void) | null>(null);
   const [expanded, setExpanded] = useState(false);
   const dockExpanded = !bottomCollapsed && bottomHeight >= 320;
+  const [freshnessNow, setFreshnessNow] = useState(() => Date.now());
+  const isLiveRunning = !isPreviewMode && data.executionStatus === "RUNNING";
+  useEffect(() => {
+    if (!isLiveRunning) return;
+    setFreshnessNow(Date.now());
+    const timer = window.setInterval(() => setFreshnessNow(Date.now()), 5_000);
+    return () => window.clearInterval(timer);
+  }, [isLiveRunning, data.telemetryReceivedAt, data.telemetry?.observedAt]);
+  const lastTelemetryMs = Date.parse(
+    data.telemetryReceivedAt ?? data.telemetry?.observedAt ?? "",
+  );
+  const telemetryStale =
+    isLiveRunning &&
+    Number.isFinite(lastTelemetryMs) &&
+    freshnessNow - lastTelemetryMs > 10_000;
 
   useEffect(
     () => () => {
@@ -1498,7 +1510,24 @@ export function LiveStudioWorkbench({
         {/* Center Column: Interactive 3D/2D Canvas + Strictly Bounded Resizable Bottom Telemetry Dock */}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#070b12]">
           <div ref={graphRef} className="relative min-h-[160px] min-w-0 flex-1 overflow-hidden p-2.5">
-            {state.isError ? (
+            {state.isError && state.data && (
+              <div
+                role="status"
+                className="absolute inset-x-4 top-4 z-20 flex items-center justify-between gap-2 rounded-md border border-amber-500/40 bg-amber-950/90 px-3 py-1.5 text-xs text-amber-100 shadow-lg backdrop-blur"
+              >
+                <span>Connection interrupted — keeping last live view while retrying…</span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-6 border-amber-400/50 bg-transparent px-2 text-[11px] text-amber-100 hover:bg-amber-900/60"
+                  onClick={() => void state.refetch()}
+                >
+                  Retry now
+                </Button>
+              </div>
+            )}
+            {state.isError && !state.data ? (
               <ErrorState error={state.error} onRetry={() => void state.refetch()} />
             ) : data.services.length > 0 || data.topology ? (
               <StudioObservability
@@ -1663,9 +1692,23 @@ export function LiveStudioWorkbench({
                       : statusLabel}
                 </span>
                 {data.telemetry?.observedAt && (
-                  <span className="hidden shrink-0 items-center gap-1 whitespace-nowrap xl:inline-flex">
+                  <span
+                    className={`hidden shrink-0 items-center gap-1 whitespace-nowrap xl:inline-flex ${
+                      telemetryStale ? "text-amber-300" : ""
+                    }`}
+                    title={
+                      telemetryStale
+                        ? "No telemetry update received in over 10 seconds"
+                        : "Last telemetry frame observed"
+                    }
+                  >
                     <RefreshCw aria-hidden="true" className="size-3" />
                     {new Date(data.telemetry.observedAt).toLocaleTimeString()}
+                    {telemetryStale && (
+                      <span className="rounded bg-amber-500/20 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-300">
+                        Stale
+                      </span>
+                    )}
                   </span>
                 )}
                 <button
@@ -2000,10 +2043,7 @@ export function LiveStudioWorkbench({
               const spanP95Ms =
                 spanDurationsMs.length > 0
                   ? spanDurationsMs[
-                      Math.min(
-                        spanDurationsMs.length - 1,
-                        Math.floor(spanDurationsMs.length * 0.95),
-                      )
+                      Math.max(0, Math.ceil(spanDurationsMs.length * 0.95) - 1)
                     ]
                   : undefined;
               const spanAvgMs =
@@ -2011,8 +2051,16 @@ export function LiveStudioWorkbench({
                   ? spanDurationsMs.reduce((sum, ms) => sum + ms, 0) / spanDurationsMs.length
                   : undefined;
               const rawP95 = result?.metricsAfter["p95LatencyMs"];
-              const p95Ms =
-                typeof rawP95 === "number" && Number.isFinite(rawP95) ? rawP95 : spanP95Ms;
+              const e2eP95Ms =
+                typeof rawP95 === "number" && Number.isFinite(rawP95) ? rawP95 : undefined;
+              // Prefer per-service OTel span p95; only fall back to action E2E workload p95 when no spans exist.
+              const p95Ms = spanP95Ms ?? e2eP95Ms;
+              const p95SampleNote =
+                spanP95Ms !== undefined
+                  ? `n=${spanDurationsMs.length}`
+                  : e2eP95Ms !== undefined
+                    ? "E2E"
+                    : undefined;
               const rawReq = result?.metricsAfter["requestCount"];
               const reqCount =
                 typeof rawReq === "number" && Number.isFinite(rawReq) ? rawReq : undefined;
@@ -2058,6 +2106,7 @@ export function LiveStudioWorkbench({
                 errorSpanCount,
                 spanAvgMs,
                 p95Ms,
+                p95SampleNote,
                 reqCount,
                 errRate,
                 statusLabel,
@@ -2170,7 +2219,18 @@ export function LiveStudioWorkbench({
                               {row.netIo}
                             </td>
                             <td className="px-2.5 py-1.5 font-mono tabular-nums text-slate-200">
-                              {row.p95Ms !== undefined ? `${metric(row.p95Ms)} ms` : "—"}
+                              {row.p95Ms !== undefined ? (
+                                <span>
+                                  {metric(row.p95Ms)} ms
+                                  {row.p95SampleNote && (
+                                    <span className="ml-1 text-[10px] text-slate-500">
+                                      ({row.p95SampleNote})
+                                    </span>
+                                  )}
+                                </span>
+                              ) : (
+                                "—"
+                              )}
                             </td>
                             <td className="px-2.5 py-1.5 font-mono tabular-nums text-slate-300">
                               {row.reqCount !== undefined || row.errRate !== undefined ? (

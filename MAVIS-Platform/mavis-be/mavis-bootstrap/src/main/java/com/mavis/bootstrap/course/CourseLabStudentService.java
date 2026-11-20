@@ -95,6 +95,12 @@ public class CourseLabStudentService {
     @org.springframework.beans.factory.annotation.Value("${mavis.runtime.max-queued-studio-sessions:30}")
     private int maxQueuedStudioSessions = 30;
 
+    // Prevents double-click Start from spawning duplicate Studio sessions for the same student and lab.
+    private final java.util.concurrent.locks.ReentrantLock[] startSessionLocks =
+            java.util.stream.IntStream.range(0, 64)
+                    .mapToObj(i -> new java.util.concurrent.locks.ReentrantLock())
+                    .toArray(java.util.concurrent.locks.ReentrantLock[]::new);
+
     public CourseLabStudentService(
             AccessPolicyService access,
             CourseLabPolicy courseLabs,
@@ -316,6 +322,25 @@ public class CourseLabStudentService {
             throw new BusinessException(ErrorCode.FORBIDDEN, "Studio runtime source belongs to another workspace");
         }
 
+        int stripe = Math.floorMod(java.util.Objects.hash(assignmentId, actor.getId()), startSessionLocks.length);
+        var startLock = startSessionLocks[stripe];
+        startLock.lock();
+        try {
+            return startLabStudioSessionLocked(workspaceId, assignmentId, actor, lab, runtimeModel, activeExercise, exercise, isStudentActor);
+        } finally {
+            startLock.unlock();
+        }
+    }
+
+    private RuntimeSessionResponseDTO startLabStudioSessionLocked(
+            UUID workspaceId,
+            UUID assignmentId,
+            User actor,
+            Assignment lab,
+            ModelVersion runtimeModel,
+            JsonNode activeExercise,
+            com.mavis.common.entity.LabStudioExercise exercise,
+            boolean isStudentActor) {
         for (RuntimeSessionResponseDTO existing : listStudioSessions(workspaceId, assignmentId)) {
             String exec = existing.getExecutionStatus() == null ? "" : existing.getExecutionStatus().toUpperCase(Locale.ROOT);
             if (ACTIVE_SESSION_STATUSES.contains(exec) && existing.getCancelRequestedAt() == null) {

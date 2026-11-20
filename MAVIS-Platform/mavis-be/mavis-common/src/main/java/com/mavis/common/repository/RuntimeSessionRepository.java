@@ -17,6 +17,11 @@ import java.util.UUID;
 public interface RuntimeSessionRepository extends JpaRepository<RuntimeSession, UUID> {
     List<RuntimeSession> findByProjectId(UUID projectId);
     long countByExecutionStatusIn(java.util.Collection<String> statuses);
+
+    /** Excludes simulated sandboxes (which own no Docker containers) so they never block real runner slots. */
+    @Query(value = "SELECT COUNT(*) FROM runtime_sessions WHERE execution_status IN (:statuses) "
+            + "AND COALESCE(studio_control->>'simulatedSandbox', 'false') <> 'true'", nativeQuery = true)
+    long countActiveNonSimulated(@Param("statuses") java.util.Collection<String> statuses);
     long countByExecutionStatusAndCreatedAtBefore(String executionStatus, java.time.OffsetDateTime createdAt);
     List<RuntimeSession> findByExecutionStatusOrderByCreatedAtAsc(String executionStatus);
     List<RuntimeSession> findByExecutionStatusAndCancelRequestedAtIsNullOrderByCreatedAtAsc(String executionStatus);

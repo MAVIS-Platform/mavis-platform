@@ -81,7 +81,7 @@ class RuntimeQueueCoordinatorTest {
         UUID firstId = UUID.randomUUID();
         RuntimeSession queued = RuntimeSession.builder().id(firstId).executionStatus("QUEUED").resourceProject("mavisrun-" + "b".repeat(32)).build();
         when(dispatcher.isAutoDispatchEnabled()).thenReturn(true);
-        when(repository.countByExecutionStatusIn(RuntimeQueueCoordinator.IN_FLIGHT_STATUSES)).thenReturn(1L, 2L);
+        when(repository.countActiveNonSimulated(RuntimeQueueCoordinator.IN_FLIGHT_STATUSES)).thenReturn(1L, 2L);
         when(repository.lockOldestQueued()).thenReturn(Optional.of(queued));
         when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 

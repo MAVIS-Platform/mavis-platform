@@ -141,7 +141,7 @@ public class RuntimeQueueCoordinator {
     }
 
     public long countActiveSessions() {
-        return runtimeSessionRepository.countByExecutionStatusIn(IN_FLIGHT_STATUSES);
+        return runtimeSessionRepository.countActiveNonSimulated(IN_FLIGHT_STATUSES);
     }
 
     public long countQueuedSessions() {

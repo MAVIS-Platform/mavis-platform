@@ -284,9 +284,11 @@ public class RuntimeStudioService {
     @Transactional
     public JsonNode poll(UUID id, String resourceProject) {
         runner.requireRunnerService();
-        RuntimeSession session = locked(id);
+        RuntimeSession session = sessions.findById(id)
+                .orElseThrow(() -> error(ErrorCode.NOT_FOUND, "Runtime session not found."));
         if (!resourceProject.equals(session.getResourceProject())) throw error(ErrorCode.CONFLICT, "Runner allocation mismatch.");
-        ObjectNode control = control(session);
+        if (session.getScenarioConfig() == null || !session.getScenarioConfig().path("interactiveStudio").asBoolean())
+            throw error(ErrorCode.CONFLICT, "This session does not support interactive Studio.");
         ObjectNode response = mapper.createObjectNode().put("sessionId", id.toString()).put("resourceProject", resourceProject);
         if (session.getCancelRequestedAt() != null) {
             return response.put("finishRequested", true).put("cancelRequested", true);
@@ -294,12 +296,47 @@ public class RuntimeStudioService {
         if (!"RUNNING".equals(session.getExecutionStatus())) {
             return response.put("finishRequested", true).put("cancelRequested", false);
         }
+        JsonNode existingControl = session.getStudioControl();
+        JsonNode existingActions = existingControl != null ? existingControl.path("actions") : null;
+        boolean hasPending = false;
+        if (existingActions != null && existingActions.isArray()) {
+            for (JsonNode node : existingActions) {
+                String status = node.path("status").asText();
+                if ("RUNNING".equals(status)) {
+                    response.put("finishRequested", false).put("cancelRequested", false).set("command", node.deepCopy());
+                    return response;
+                }
+                if ("PENDING".equals(status)) {
+                    hasPending = true;
+                    break;
+                }
+            }
+        }
+        if (!hasPending) {
+            boolean finishRequested = existingControl != null && existingControl.path("finishRequested").asBoolean();
+            return response.put("finishRequested", finishRequested).put("cancelRequested", false);
+        }
+        // Only lock the session row and rewrite studio_control when actually claiming a PENDING action.
+        RuntimeSession lockedSession = locked(id);
+        if (!resourceProject.equals(lockedSession.getResourceProject())) throw error(ErrorCode.CONFLICT, "Runner allocation mismatch.");
+        if (lockedSession.getCancelRequestedAt() != null) {
+            return response.put("finishRequested", true).put("cancelRequested", true);
+        }
+        if (!"RUNNING".equals(lockedSession.getExecutionStatus())) {
+            return response.put("finishRequested", true).put("cancelRequested", false);
+        }
+        ObjectNode control = control(lockedSession);
         for (JsonNode node : control.withArray("actions")) {
-            if ("PENDING".equals(node.path("status").asText()) || "RUNNING".equals(node.path("status").asText())) {
+            String status = node.path("status").asText();
+            if ("PENDING".equals(status)) {
                 ObjectNode action = (ObjectNode) node;
                 action.put("status", "RUNNING");
-                save(session, control);
+                save(lockedSession, control);
                 response.put("finishRequested", false).put("cancelRequested", false).set("command", action.deepCopy());
+                return response;
+            }
+            if ("RUNNING".equals(status)) {
+                response.put("finishRequested", false).put("cancelRequested", false).set("command", node.deepCopy());
                 return response;
             }
         }

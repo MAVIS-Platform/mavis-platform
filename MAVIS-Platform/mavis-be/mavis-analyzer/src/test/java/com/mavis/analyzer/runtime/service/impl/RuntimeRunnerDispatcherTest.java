@@ -298,4 +298,25 @@ class RuntimeRunnerDispatcherTest {
         verifyNoInteractions(service);
         verify(sessions, never()).save(any());
     }
+
+    @Test
+    void resolveProcessDeadlineSecondsHonorsConfiguredTimeoutWithMargin() {
+        var mapper = new ObjectMapper();
+        assertThat(RuntimeRunnerDispatcher.resolveProcessDeadlineSeconds(null)).isEqualTo(420L);
+
+        var shortCfg = mapper.createObjectNode();
+        shortCfg.putObject("profile").put("timeoutSeconds", 120);
+        assertThat(RuntimeRunnerDispatcher.resolveProcessDeadlineSeconds(
+                RuntimeSession.builder().scenarioConfig(shortCfg).build())).isEqualTo(420L);
+
+        var longCfg = mapper.createObjectNode();
+        longCfg.putObject("profile").put("timeoutSeconds", 600);
+        assertThat(RuntimeRunnerDispatcher.resolveProcessDeadlineSeconds(
+                RuntimeSession.builder().scenarioConfig(longCfg).build())).isEqualTo(780L);
+
+        var cappedCfg = mapper.createObjectNode();
+        cappedCfg.putObject("scenario").put("timeoutSeconds", 9999);
+        assertThat(RuntimeRunnerDispatcher.resolveProcessDeadlineSeconds(
+                RuntimeSession.builder().scenarioConfig(cappedCfg).build())).isEqualTo(3600L);
+    }
 }

@@ -117,4 +117,148 @@ public sealed class TraceTelemetryV2Tests
         }
         finally { File.Delete(path); }
     }
+
+    [Fact]
+    public void RedactSecretValuesRedactsRawUrlEncodedAndBase64Variants()
+    {
+        const string secret = "p@ss/word+123";
+        var urlEncoded = Uri.EscapeDataString(secret);
+        var base64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(secret));
+        var log = $"raw={secret} url={urlEncoded} b64={base64} keep=ok";
+
+        var redacted = DockerComposeSession.RedactSecretValues(log, [secret, "ok"]);
+
+        Assert.DoesNotContain(secret, redacted);
+        Assert.DoesNotContain(urlEncoded, redacted);
+        Assert.DoesNotContain(base64, redacted);
+        Assert.Contains("raw=[REDACTED] url=[REDACTED] b64=[REDACTED]", redacted);
+    }
+
+    [Fact]
+    public async Task InteractiveStudioPublishesBaselineAndPostActionTelemetryForBackToBackActions()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mavis-studio-telem-" + Guid.NewGuid().ToString("N"));
+        var project = "mavisrun-" + Guid.NewGuid().ToString("N");
+        var dir = Path.Combine(root, project);
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var digest = new string('a', 64);
+            var profile = new RunnerExecutionProfile("collector@sha256:" + digest, "mavis-agents-v1",
+                new Dictionary<string, RuntimeServiceProfile> { ["orders"] = new("java", 8080), ["payment"] = new("java", 8080) },
+                ApprovedForLocalPoc: true, ScenarioRunnerImage: "sha256:" + digest);
+            var definition = new RuntimeRunDefinition("s1", "m1", "snap1", "prof1",
+                $"services:\n  orders:\n    image: orders@sha256:{digest}\n  payment:\n    image: payment@sha256:{digest}\n",
+                profile, new("s1", [new("req", "orders", "GET", "/orders", 200)]),
+                new Dictionary<string, string> { ["orders"] = "id-1", ["payment"] = "id-2" },
+                "cfg", "scn", project, InteractiveStudio: true);
+            var docker = new BackToBackStudioDocker();
+            using var handler = new BackToBackStudioHandler(definition);
+            using var studio = new JavaRuntimeClient(new Uri("http://127.0.0.1:8080"), "fixture-key", handler);
+            var session = new DockerComposeSession(definition, root, "receivers: {}", docker, studio: studio);
+            typeof(DockerComposeSession).GetField("_directory", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+                .SetValue(session, dir);
+
+            var actions = await session.ExecuteInfrastructureActionsAsync(CancellationToken.None);
+
+            Assert.Equal(3, actions.Count);
+            Assert.Equal(3, handler.AckCount);
+            // Baseline + 3 post-action snapshots must never be dropped even when commands fire back-to-back.
+            Assert.True(handler.TelemetryCount >= 4, $"Expected >= 4 telemetry frames, got {handler.TelemetryCount}");
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
+    }
+
+    private sealed class BackToBackStudioDocker : IDockerCommands
+    {
+        private readonly Dictionary<string, int> _running = new(StringComparer.Ordinal) { ["orders"] = 1, ["payment"] = 1 };
+
+        public Task<DockerCommandResult> RunAsync(IReadOnlyList<string> args, string workingDirectory, int timeoutSeconds, CancellationToken ct)
+        {
+            if (args[0] == "compose")
+            {
+                var sub = args.FirstOrDefault(a => a is "ps" or "stop" or "start" or "up" or "logs" or "cp");
+                if (sub == "ps")
+                {
+                    var fmtIdx = args.ToList().IndexOf("--format");
+                    var fmt = fmtIdx >= 0 ? args[fmtIdx + 1] : "";
+                    if (fmt.Contains("{{.Service}}", StringComparison.Ordinal))
+                    {
+                        var all = _running.SelectMany(kv => kv.Value > 0
+                            ? Enumerable.Range(1, kv.Value).Select(i => $"{kv.Key}|{kv.Key}-{i}|running")
+                            : [$"{kv.Key}|{kv.Key}-1|exited"]);
+                        return Task.FromResult(new DockerCommandResult(0, string.Join("\n", all)));
+                    }
+                    var svc = args[^1];
+                    var cnt = _running.GetValueOrDefault(svc);
+                    var lines = cnt > 0
+                        ? Enumerable.Range(1, cnt).Select(i => $"{svc}-{i}|running")
+                        : [$"{svc}-1|exited"];
+                    return Task.FromResult(new DockerCommandResult(0, string.Join("\n", lines)));
+                }
+                if (sub == "stop") { _running[args[^1]] = 0; return Task.FromResult(new DockerCommandResult(0, "")); }
+                if (sub == "start") { _running[args[^1]] = 1; return Task.FromResult(new DockerCommandResult(0, "")); }
+                if (sub == "up")
+                {
+                    var idx = args.ToList().IndexOf("--scale");
+                    if (idx >= 0) { var p = args[idx + 1].Split('='); _running[p[0]] = int.Parse(p[1]); }
+                    return Task.FromResult(new DockerCommandResult(0, ""));
+                }
+            }
+            return Task.FromResult(new DockerCommandResult(0, ""));
+        }
+
+        public Task<DockerCommandResult> RunWithInputAsync(IReadOnlyList<string> args, string workingDirectory, int timeoutSeconds, string input, CancellationToken ct)
+        {
+            var outcome = new HttpScenarioOutcome("s1", "Passed",
+                [new HttpStepOutcome("req", "Passed", 200, new string('1', 32), new string('2', 16), 5)]);
+            var json = System.Text.Json.JsonSerializer.Serialize(outcome, new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase });
+            return Task.FromResult(new DockerCommandResult(0, json));
+        }
+    }
+
+    private sealed class BackToBackStudioHandler(RuntimeRunDefinition definition) : HttpMessageHandler
+    {
+        public int AckCount;
+        public int TelemetryCount;
+        private readonly string[] _ids = [Guid.NewGuid().ToString(), Guid.NewGuid().ToString(), Guid.NewGuid().ToString()];
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            var route = request.RequestUri!.Segments.Last();
+            object data;
+            if (route == "commands")
+            {
+                data = AckCount >= 3
+                    ? new { definition.SessionId, definition.ResourceProject, finishRequested = true, command = (object?)null }
+                    : new
+                    {
+                        definition.SessionId,
+                        definition.ResourceProject,
+                        finishRequested = false,
+                        command = new
+                        {
+                            actionId = _ids[AckCount],
+                            action = new[] { "STOP", "START", "SCALE" }[AckCount],
+                            service = AckCount == 2 ? "orders" : "payment",
+                            replicas = AckCount == 2 ? (int?)2 : null
+                        }
+                    };
+            }
+            else if (route == "telemetry")
+            {
+                Interlocked.Increment(ref TelemetryCount);
+                data = new { definition.SessionId, definition.ResourceProject };
+            }
+            else
+            {
+                data = new { actionId = _ids[AckCount++], status = "CONFIRMED" };
+            }
+            var body = System.Text.Json.JsonSerializer.Serialize(new { status = 200, data }, RuntimeLifecycleJournal.Json);
+            return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json")
+            });
+        }
+    }
 }

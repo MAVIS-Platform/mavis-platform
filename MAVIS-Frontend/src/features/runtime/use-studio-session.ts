@@ -7,6 +7,44 @@ import { captureStudioImage } from "./studio-observability";
 
 type StudioAction = "START" | "STOP" | "SCALE";
 
+type StudioReplicaSource = {
+  actions: ReadonlyArray<{
+    service: string;
+    status: string;
+    requestedAt?: string | null | undefined;
+    completedAt?: string | null | undefined;
+    result?: { replicasAfter: number } | null | undefined;
+  }>;
+  telemetry?: {
+    observedAt?: string | null | undefined;
+    services: ReadonlyArray<{ service: string; runningReplicas: number }>;
+  } | null | undefined;
+};
+
+/** Prefer live telemetry replicas once a frame arrives at/after the last confirmed action so post-action crashes show immediately. */
+export function resolveRunningReplicas(
+  data: StudioReplicaSource | null | undefined,
+  service: string,
+): number | undefined {
+  if (!data || !service) return undefined;
+  const lastConfirmed = [...data.actions]
+    .reverse()
+    .find((item) => item.service === service && item.status === "CONFIRMED");
+  const confirmedReplicas = lastConfirmed?.result?.replicasAfter;
+  const observedReplicas = data.telemetry?.services.find(
+    (item) => item.service === service,
+  )?.runningReplicas;
+  if (observedReplicas === undefined) return confirmedReplicas;
+  if (confirmedReplicas === undefined) return observedReplicas;
+  const telemetryMs = data.telemetry?.observedAt ? Date.parse(data.telemetry.observedAt) : NaN;
+  const actionIso = lastConfirmed?.completedAt ?? lastConfirmed?.requestedAt;
+  const actionMs = actionIso ? Date.parse(actionIso) : NaN;
+  if (Number.isFinite(telemetryMs) && Number.isFinite(actionMs) && telemetryMs >= actionMs) {
+    return observedReplicas;
+  }
+  return confirmedReplicas;
+}
+
 /**
  * Shared Live-session state and commands for the card and workbench layouts.
  * Keeping this in one hook prevents the two layouts from drifting apart.
@@ -33,6 +71,25 @@ export function useStudioSession(sessionId: string) {
     service: string;
     replicas?: number;
   } | null>(null);
+  const prevStatusRef = useRef<string | undefined>(undefined);
+
+  // Reset transient per-session UI state when switching or restarting sessions.
+  const resetAction = action.reset;
+  const resetFinish = finish.reset;
+  const resetCancel = cancel.reset;
+  const resetCapture = capture.reset;
+  useEffect(() => {
+    setExplanation("");
+    setActionError(null);
+    setDownloadError(null);
+    setChaosTarget("");
+    pending.current = null;
+    prevStatusRef.current = undefined;
+    resetAction();
+    resetFinish();
+    resetCancel();
+    resetCapture();
+  }, [sessionId, resetAction, resetFinish, resetCancel, resetCapture]);
 
   const data = state.data;
   const services = data?.services ?? [];
@@ -40,13 +97,7 @@ export function useStudioSession(sessionId: string) {
   const waiting =
     data?.actions.some((item) => item.status === "PENDING" || item.status === "RUNNING") ?? false;
   const hasConfirmedAction = data?.actions.some((item) => item.status === "CONFIRMED") ?? false;
-  const lastConfirmedReplicas = [...(data?.actions ?? [])]
-    .reverse()
-    .find((item) => item.service === target && item.status === "CONFIRMED")?.result?.replicasAfter;
-  const observedRunningReplicas = data?.telemetry?.services.find(
-    (item) => item.service === target,
-  )?.runningReplicas;
-  const runningReplicas = lastConfirmedReplicas ?? observedRunningReplicas;
+  const runningReplicas = resolveRunningReplicas(data, target);
   const selectedBlock = data?.topology?.blocks.find((block) => block.service === target);
   const canScaleTarget = data?.topology ? selectedBlock?.canScale === true : Boolean(target);
   const busy =
@@ -92,7 +143,6 @@ export function useStudioSession(sessionId: string) {
     }
   }
 
-  const prevStatusRef = useRef<string | undefined>(undefined);
   useEffect(() => {
     const status = data?.executionStatus;
     if (!status) return;

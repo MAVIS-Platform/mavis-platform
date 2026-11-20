@@ -12,6 +12,7 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "runtime_sessions")
+@org.hibernate.annotations.DynamicUpdate
 @Getter
 @Setter
 @NoArgsConstructor

@@ -1174,4 +1174,68 @@ class RunnerReceiptIngestServiceImplTest {
         assertThat(measuredDto.getBeforeAfterComparison().getFirst().getP95LatencyMsBefore()).isEqualTo(120.0);
         assertThat(measuredDto.getBeforeAfterComparison().getFirst().getP95LatencyMsAfter()).isEqualTo(48.5);
     }
+
+    @Test
+    @DisplayName("Round-2: Repeated Studio replays sharing one stepId order chronologically in sequence diagram")
+    void repeatedStudioReplaysWithSameStepIdOrderChronologically() {
+        var pinnedConfig = objectMapper.createObjectNode();
+        pinnedConfig.putObject("scenario").putArray("steps").addObject()
+                .put("id", "studio-smoke").put("service", "order-service").put("method", "GET").put("path", "/orders").put("expectedStatus", 200);
+        session.setScenarioConfig(pinnedConfig);
+
+        // Baseline trace has lexicographically LARGER traceId ("ffff...") than later replay ("0001..."),
+        // AND outcome.scenario only carries the LAST replay ("0001...").
+        String baselineTrace = "ffffffffffffffffffffffffffffffff";
+        String afterTrace = "00010001000100010001000100010001";
+        RunnerCorrelatedSpanDTO bRoot = RunnerCorrelatedSpanDTO.builder()
+                .traceId(baselineTrace).spanId("b001").runtimeService("order-service").modelServiceId(serviceAId.toString())
+                .scenarioStepId("studio-smoke").startTimeUnixNano("1793542700000000000").durationNanoseconds("10000000").httpStatusCode(200).build();
+        RunnerCorrelatedSpanDTO bChild = RunnerCorrelatedSpanDTO.builder()
+                .traceId(baselineTrace).spanId("b002").parentSpanId("b001").runtimeService("payment-service").modelServiceId(serviceBId.toString())
+                .scenarioStepId("studio-smoke").startTimeUnixNano("1793542700002000000").durationNanoseconds("5000000").httpStatusCode(200).route("/pay-before").build();
+
+        RunnerCorrelatedSpanDTO aRoot = RunnerCorrelatedSpanDTO.builder()
+                .traceId(afterTrace).spanId("a001").runtimeService("order-service").modelServiceId(serviceAId.toString())
+                .scenarioStepId("studio-smoke").startTimeUnixNano("1793542790000000000").durationNanoseconds("10000000").httpStatusCode(503).build();
+        RunnerCorrelatedSpanDTO aChild = RunnerCorrelatedSpanDTO.builder()
+                .traceId(afterTrace).spanId("a002").parentSpanId("a001").runtimeService("payment-service").modelServiceId(serviceBId.toString())
+                .scenarioStepId("studio-smoke").startTimeUnixNano("1793542790002000000").durationNanoseconds("5000000").httpStatusCode(503).route("/pay-after").build();
+
+        ObjectNode lastScenario = objectMapper.createObjectNode();
+        lastScenario.putArray("steps").addObject().put("stepId", "studio-smoke").put("traceId", afterTrace);
+
+        RunnerTraceCorrelationDTO trace = RunnerTraceCorrelationDTO.builder()
+                .sessionId(sessionId.toString())
+                .modelVersionId(modelVersionId.toString())
+                .spans(List.of(aRoot, aChild, bRoot, bChild))
+                .causalEdges(List.of(
+                        new RunnerCausalEdgeDTO(afterTrace, "a001", "a002"),
+                        new RunnerCausalEdgeDTO(baselineTrace, "b001", "b002")))
+                .build();
+        RunnerOutcomeDTO outcome = RunnerOutcomeDTO.builder()
+                .executionStatus("Completed").scenarioStatus("Passed").evidenceStatus("Available")
+                .cleanupStatus("Confirmed").traceQuality("Complete").mappingStatus("Mapped")
+                .scenario(lastScenario).trace(trace).build();
+
+        runnerReceiptIngestService.ingestRunnerReceiptAck(
+                sessionId,
+                createValidReceiptBuilder().imageSourceCorrespondence("Verified").outcome(outcome).build());
+
+        ArgumentCaptor<DiagramVersion> diagCaptor = ArgumentCaptor.forClass(DiagramVersion.class);
+        verify(diagramVersionRepository, atLeastOnce()).save(diagCaptor.capture());
+        var steps = diagCaptor.getAllValues().getLast().getLayoutJson().path("steps");
+        assertThat(steps).hasSize(2);
+        assertThat(steps.get(0).path("traceId").asText()).isEqualTo(baselineTrace);
+        assertThat(steps.get(1).path("traceId").asText()).isEqualTo(afterTrace);
+    }
+
+    @Test
+    @DisplayName("Round-2: Unauthenticated receipt ingest is rejected before acquiring DB row lock")
+    void unauthenticatedReceiptIngestFailsBeforeLockingRow() {
+        doThrow(new BusinessException(ErrorCode.FORBIDDEN, "Unauthorized runner"))
+                .when(runnerServiceAuthGuard).requireRunnerService();
+        assertThatThrownBy(() -> runnerReceiptIngestService.ingestRunnerReceiptAck(sessionId, createValidReceiptBuilder().build()))
+                .isInstanceOf(BusinessException.class);
+        verify(runtimeSessionRepository, never()).findLockedById(any());
+    }
 }

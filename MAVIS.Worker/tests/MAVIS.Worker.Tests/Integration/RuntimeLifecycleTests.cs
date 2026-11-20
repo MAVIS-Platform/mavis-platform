@@ -507,6 +507,8 @@ public sealed class RuntimeLifecycleTests
             if (args[0] == "compose" && args.Contains("up")) return Task.FromResult(new DockerCommandResult(0, "", ""));
             if (args[0] == "compose" && args.Contains("ps") && args.Contains("--quiet"))
                 return Task.FromResult(new DockerCommandResult(0, (args.Contains("mavis-collector") ? _collectorId : _appId) + "\n", ""));
+            if (args[0] == "compose" && args.Contains("ps") && args.Contains("--format"))
+                return Task.FromResult(new DockerCommandResult(0, $"api|{_appId}|running\n", ""));
             if (args[0] == "compose" && args.Contains("down")) return Task.FromResult(new DockerCommandResult(0, "", ""));
             if (args[0] == "inspect" && args.Contains("{{.Image}}")) return Task.FromResult(new DockerCommandResult(0, _image + "\n", ""));
             if (args[0] == "inspect" && args.Contains("{{json .HostConfig}}"))

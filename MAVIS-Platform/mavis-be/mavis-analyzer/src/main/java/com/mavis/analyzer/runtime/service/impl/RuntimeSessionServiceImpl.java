@@ -1117,14 +1117,14 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public RuntimeSessionLifecycleAckDTO acknowledgeLifecycle(UUID sessionId, RuntimeSessionLifecycleAckRequestDTO request) {
+        runnerServiceAuthGuard.requireRunnerService();
+
         if (request == null) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Payload lifecycle-ack không được để trống");
         }
 
         RuntimeSession session = runtimeSessionRepository.findLockedById(sessionId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy phiên thực nghiệm với ID: " + sessionId));
-
-        runnerServiceAuthGuard.requireRunnerService();
 
         String resourceProject = request.getResourceProject();
         if (resourceProject == null || !RESOURCE_PROJECT_PATTERN.matcher(resourceProject).matches()

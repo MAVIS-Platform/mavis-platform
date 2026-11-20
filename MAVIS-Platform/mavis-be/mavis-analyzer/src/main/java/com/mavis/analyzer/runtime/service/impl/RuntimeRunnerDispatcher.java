@@ -516,9 +516,9 @@ public class RuntimeRunnerDispatcher {
                         Path absBundle = b.toAbsolutePath().normalize();
                         if (Files.isDirectory(absBundle.resolve("java")) && Files.isDirectory(absBundle.resolve("dotnet")) && Files.isDirectory(absBundle.resolve("dotnet-musl"))) {
                             if (prepareInstrumentationVolume(profile, absBundle)) {
-                                session.setScenarioConfig(session.getScenarioConfig().deepCopy());
-                                session = runtimeSessionRepository.save(session);
-                                profile = (ObjectNode) session.getScenarioConfig().path("profile");
+                                String newVolume = profile.path("instrumentationVolume").asText("");
+                                session = updateProfileFieldLocked(session, "instrumentationVolume", newVolume);
+                                profile = session.getScenarioConfig().path("profile") instanceof ObjectNode p ? p : profile;
                             }
                             break;
                         }
@@ -570,15 +570,39 @@ public class RuntimeRunnerDispatcher {
                     }
                 }
                 if (runnerImgId != null && runnerImgId.matches("^sha256:[0-9a-f]{64}$")) {
-                    profile.put("scenarioRunnerImage", runnerImgId);
-                    session.setScenarioConfig(session.getScenarioConfig().deepCopy());
-                    session = runtimeSessionRepository.save(session);
+                    session = updateProfileFieldLocked(session, "scenarioRunnerImage", runnerImgId);
                 }
             }
         } catch (Exception ex) {
             log.warn("Không thể tự động chuẩn bị host runner artifacts cho session {}: {}", session.getId(), ex.getMessage());
         }
         return session;
+    }
+
+    /** Re-reads and locks the session before saving profile fields so a slow docker pull/build never overwrites CANCELLED/FAILED. */
+    private RuntimeSession updateProfileFieldLocked(RuntimeSession fallback, String field, String value) {
+        if (fallback == null || fallback.getId() == null || value == null || value.isBlank()) {
+            return fallback;
+        }
+        UUID sessionId = fallback.getId();
+        java.util.function.Supplier<RuntimeSession> writer = () -> {
+            RuntimeSession locked = runtimeSessionRepository.findLockedById(sessionId).orElse(null);
+            if (locked == null || isTerminalOrCommitted(locked) || locked.getCancelRequestedAt() != null) {
+                return locked != null ? locked : fallback;
+            }
+            if (locked.getScenarioConfig() instanceof ObjectNode cfg && cfg.path("profile") instanceof ObjectNode prof) {
+                ObjectNode copy = cfg.deepCopy();
+                ((ObjectNode) copy.path("profile")).put(field, value);
+                locked.setScenarioConfig(copy);
+                return runtimeSessionRepository.save(locked);
+            }
+            return locked;
+        };
+        if (runtimeTransactions != null) {
+            RuntimeSession saved = runtimeTransactions.execute(status -> writer.get());
+            return saved != null ? saved : fallback;
+        }
+        return writer.get();
     }
 
     static boolean hasCurrentBundleLabels(String labels) {
@@ -631,6 +655,11 @@ public class RuntimeRunnerDispatcher {
         Path projPath = resolveRunnerProjectPath();
         Path collectorPath = resolveCollectorConfigPath();
         session = ensureRunnerHostPrerequisites(session, projPath);
+        RuntimeSession preLaunch = runtimeSessionRepository.findById(session.getId()).orElse(session);
+        if (isTerminalOrCommitted(preLaunch) || preLaunch.getCancelRequestedAt() != null) {
+            log.info("Bỏ qua khởi chạy MAVIS.Runner cho session {} vì phiên đã hủy/kết thúc trong lúc chuẩn bị host artifacts.", session.getId());
+            return;
+        }
         String baseApiUrl = "http://127.0.0.1:" + serverPort;
 
         Optional<Path> freshDll = resolvePrebuiltRunnerDll(projPath, true);
@@ -694,10 +723,25 @@ public class RuntimeRunnerDispatcher {
         pb.redirectOutput(stateDir.resolve("runner-" + session.getId() + ".log").toFile());
 
         Process process = pb.start();
-        if (!process.waitFor(420, TimeUnit.SECONDS)) {
+        long deadlineSeconds = resolveProcessDeadlineSeconds(session);
+        if (!process.waitFor(deadlineSeconds, TimeUnit.SECONDS)) {
             process.destroyForcibly();
-            throw new IllegalStateException("Runner deadline exceeded; recovery is required to confirm cleanup.");
+            throw new IllegalStateException("Runner deadline exceeded (" + deadlineSeconds + "s); recovery is required to confirm cleanup.");
         }
         return process.exitValue();
+    }
+
+    /** Give the runner its configured session timeout plus startup, drain, teardown, and receipt delivery margin. */
+    static long resolveProcessDeadlineSeconds(RuntimeSession session) {
+        long timeout = 240L;
+        if (session != null && session.getScenarioConfig() != null) {
+            long profileTimeout = session.getScenarioConfig().path("profile").path("timeoutSeconds").asLong(0L);
+            long scenarioTimeout = session.getScenarioConfig().path("scenario").path("timeoutSeconds").asLong(0L);
+            long declared = Math.max(profileTimeout, scenarioTimeout);
+            if (declared > 0L) {
+                timeout = declared;
+            }
+        }
+        return Math.max(420L, Math.min(3600L, timeout + 180L));
     }
 }

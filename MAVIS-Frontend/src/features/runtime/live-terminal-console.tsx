@@ -51,14 +51,16 @@ function formatClock(date: Date): string {
   return `${hh}:${mm}:${ss}`;
 }
 
-function parseTimestampPrefix(line: string): {
+export function parseTimestampPrefix(line: string): {
   timestampMs: number | null;
   timestampLabel: string;
   body: string;
 } {
   const isoMatch = line.match(ISO_TS_RE);
   if (isoMatch) {
-    const rawTs = isoMatch[1]!.replace(",", ".").replace(" ", "T");
+    const normalized = isoMatch[1]!.replace(",", ".").replace(" ", "T");
+    // Linux container logs emit UTC timestamps without an explicit Z suffix; treat bare ISO as UTC.
+    const rawTs = /([zZ]|[+-]\d{2}:?\d{2})$/.test(normalized) ? normalized : `${normalized}Z`;
     const parsed = new Date(rawTs);
     const ms = parsed.getTime();
     if (Number.isFinite(ms)) {
@@ -80,6 +82,17 @@ function parseTimestampPrefix(line: string): {
     };
   }
   return { timestampMs: null, timestampLabel: "", body: line };
+}
+
+/** Strict weak ordering (null timestamps last) so interleaved container + runner logs never violate transitivity. */
+export function compareTerminalEntries(
+  a: Pick<TerminalLogEntry, "timestampMs" | "seq">,
+  b: Pick<TerminalLogEntry, "timestampMs" | "seq">,
+): number {
+  const aTs = a.timestampMs ?? Number.MAX_SAFE_INTEGER;
+  const bTs = b.timestampMs ?? Number.MAX_SAFE_INTEGER;
+  if (aTs !== bTs) return aTs - bTs;
+  return a.seq - b.seq;
 }
 
 function classifyLogLevel(
@@ -189,12 +202,7 @@ export function buildTerminalEntries(
     entries.filter((entry) => entry.timestampMs !== null).map((entry) => entry.sourceLabel),
   );
   if (timedServices.size >= 2) {
-    entries.sort((a, b) => {
-      if (a.timestampMs !== null && b.timestampMs !== null && a.timestampMs !== b.timestampMs) {
-        return a.timestampMs - b.timestampMs;
-      }
-      return a.seq - b.seq;
-    });
+    entries.sort(compareTerminalEntries);
   }
 
   const seenDiagnostics = new Set<string>();
@@ -356,12 +364,7 @@ export function LiveTerminalConsole({
   const entries = useMemo(() => {
     const base = buildTerminalEntries(data, diagnosticLines);
     if (runnerEvents.length === 0) return base;
-    return [...runnerEvents, ...base].sort((a, b) => {
-      if (a.timestampMs !== null && b.timestampMs !== null && a.timestampMs !== b.timestampMs) {
-        return a.timestampMs - b.timestampMs;
-      }
-      return a.seq - b.seq;
-    });
+    return [...runnerEvents, ...base].sort(compareTerminalEntries);
   }, [data, diagnosticLines, runnerEvents]);
   const spans = data.telemetry?.spans ?? [];
 

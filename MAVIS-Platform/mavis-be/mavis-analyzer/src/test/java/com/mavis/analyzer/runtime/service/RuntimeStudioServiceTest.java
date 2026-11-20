@@ -33,6 +33,7 @@ class RuntimeStudioServiceTest {
             .scenarioConfig(mapper.createObjectNode().put("interactiveStudio", true))
             .resourceProject("mavisrun-0123456789abcdef0123456789abcdef")
             .confirmedServiceMappings(Map.of("orders", UUID.randomUUID().toString())).build();
+        when(sessions.findById(id)).thenReturn(Optional.of(session));
         when(sessions.findLockedById(id)).thenReturn(Optional.of(session));
     }
 
@@ -281,5 +282,27 @@ class RuntimeStudioServiceTest {
 
         assertEquals("INTERRUPTED", actions.get(0).path("status").asText());
         assertEquals("RUNNING", actions.get(1).path("status").asText());
+    }
+
+    @Test void pollSkipsRowLockAndSaveWhenIdleOrAlreadyRunning() {
+        var idle = service.poll(id, session.getResourceProject());
+        assertFalse(idle.has("command"));
+        verify(sessions, never()).findLockedById(any());
+        verify(sessions, never()).save(any());
+
+        UUID actionId = UUID.randomUUID();
+        service.submit(id, new RuntimeStudioService.ActionRequest(actionId, "STOP", "orders", null));
+        clearInvocations(sessions);
+
+        var claimed = service.poll(id, session.getResourceProject());
+        assertEquals(actionId.toString(), claimed.path("command").path("actionId").asText());
+        verify(sessions, times(1)).findLockedById(id);
+        verify(sessions, times(1)).save(session);
+        clearInvocations(sessions);
+
+        var redelivered = service.poll(id, session.getResourceProject());
+        assertEquals(actionId.toString(), redelivered.path("command").path("actionId").asText());
+        verify(sessions, never()).findLockedById(any());
+        verify(sessions, never()).save(any());
     }
 }
