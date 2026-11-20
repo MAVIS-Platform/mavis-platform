@@ -235,6 +235,56 @@ public sealed class RuntimeLifecycleTests
         }
     }
 
+    private sealed class DiagnosticTransport : HttpMessageHandler
+    {
+        public JsonElement Payload;
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            using var document = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(ct));
+            Payload = document.RootElement.Clone();
+            return new(System.Net.HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new
+            {
+                code = 200, data = new { sessionId = "s", resourceProject = Payload.GetProperty("resourceProject").GetString() }
+            })) };
+        }
+    }
+
+    [Fact]
+    public async Task StartupDiagnosticsPrioritizeFailedBrokerAfterManyHealthyServicesAndRetainRedaction()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mavis-diagnostics-" + Guid.NewGuid().ToString("N"));
+        var digest = new string('b', 64);
+        var names = new[] { "order-service" }.Concat(Enumerable.Range(0, 10).Select(i => "healthy-" + i)).Append("kafka").ToArray();
+        var profile = new RunnerExecutionProfile("collector@sha256:" + digest, "mavis-agents-v1",
+            new Dictionary<string, RuntimeServiceProfile> { ["order-service"] = new("java", 8080) },
+            ApprovedForLocalPoc: true, ScenarioRunnerImage: "sha256:" + digest);
+        var definition = new RuntimeRunDefinition("s", "m", "snapshot", "profile",
+            "services:\n" + string.Concat(names.Select(name => $"  {name}:\n    image: demo/service@sha256:{digest}\n")),
+            profile, new("s", [new("health", "order-service", "GET", "/health", 200)]),
+            new Dictionary<string, string>(), "config", "scenario", InteractiveStudio: true);
+        var docker = new CrashInspectDocker
+        {
+            PsTable = string.Concat(names.Where(name => name != "kafka").Select(name => name + "|running|healthy|0\n")) + "kafka|exited||1\n",
+            CrashLogs = "Permission denied password=SECRET_DB_PASS"
+        };
+        var transport = new DiagnosticTransport();
+        using var studio = new JavaRuntimeClient(new Uri("https://java.invalid"), "fixture-only", transport);
+        try
+        {
+            await RuntimeSessionLifecycle.RunAsync(new DockerComposeSession(definition, root, "receivers: {}", docker,
+                new Dictionary<string, string> { ["PASSWORD"] = "SECRET_DB_PASS" }, studio: studio), 30);
+            var service = Assert.Single(transport.Payload.GetProperty("telemetry").GetProperty("services").EnumerateArray());
+            Assert.Equal("kafka", service.GetProperty("service").GetString());
+            Assert.Equal(1, service.GetProperty("replicas").GetInt32());
+            Assert.Equal(0, service.GetProperty("runningReplicas").GetInt32());
+            Assert.Contains("Permission denied", service.GetProperty("logs").GetString());
+            Assert.DoesNotContain("SECRET_DB_PASS", transport.Payload.ToString());
+            Assert.Single(docker.Commands.Where(command => command.Contains("logs")));
+            Assert.DoesNotContain(docker.Commands, command => command[0] == "compose" && command.Contains("ps") && command.Contains("--quiet"));
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
+    }
+
     [Fact]
     public async Task MissingLocalSha256ImageFailsFastBeforeComposeUpWithServiceCode()
     {

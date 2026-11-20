@@ -225,6 +225,8 @@ public sealed class RunnerComponentTests
         var muslEnvironment = muslOverride.RootElement.GetProperty("services").GetProperty("node-api").GetProperty("environment");
         Assert.Equal("/mavis-otel/dotnet-musl/linux-musl-x64/OpenTelemetry.AutoInstrumentation.Native.so", muslEnvironment.GetProperty("CORECLR_PROFILER_PATH").GetString());
         Assert.Equal("/mavis-otel/dotnet-musl", muslEnvironment.GetProperty("OTEL_DOTNET_AUTO_HOME").GetString());
+        Assert.Equal("console", muslEnvironment.GetProperty("OTEL_DOTNET_AUTO_LOGGER").GetString());
+        Assert.False(nodeEnv.TryGetProperty("OTEL_DOTNET_AUTO_LOGGER", out _));
         Assert.Equal("/mavis-otel/dotnet-musl/net/OpenTelemetry.AutoInstrumentation.StartupHook.dll", muslEnvironment.GetProperty("DOTNET_STARTUP_HOOKS").GetString());
         Assert.Equal("node_secret_1", nodeEnv.GetProperty("DB_PASSWORD").GetString());
         Assert.Equal("order_secret_2", overrideDoc.RootElement.GetProperty("services").GetProperty("order-svc").GetProperty("environment").GetProperty("DB_PASSWORD").GetString());

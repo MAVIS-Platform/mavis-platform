@@ -80,6 +80,7 @@ public static class ComposeOverrideBuilder
                     environment["DOTNET_SHARED_STORE"] = $"{agentHome}/store";
                     environment["OTEL_DOTNET_AUTO_HOME"] = agentHome;
                     environment["OTEL_DOTNET_AUTO_LOG_DIRECTORY"] = "/tmp/otel";
+                    environment["OTEL_DOTNET_AUTO_LOGGER"] = "console";
                     config["volumes"] = new[] { new { type = "volume", source = "mavis-instrumentation", target = "/mavis-otel", read_only = true } };
                 }
                 foreach (var pair in protectedEnvironment) environment[pair.Key]=pair.Value;

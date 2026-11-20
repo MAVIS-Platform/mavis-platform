@@ -571,6 +571,8 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
         try
         {
             var ps = await Command(["ps", "--all", "--format", "{{.Service}}|{{.State}}|{{.Health}}|{{.ExitCode}}"], diagCts.Token);
+            var states = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+            var failedServices = new HashSet<string>(StringComparer.Ordinal);
             if (ps.ExitCode == 0 && !string.IsNullOrWhiteSpace(ps.StandardOutput))
             {
                 foreach (var rawLine in ps.StandardOutput.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
@@ -582,10 +584,16 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
                     var health = parts[2].Trim().ToLowerInvariant();
                     var exitCodeText = parts[3].Trim();
                     if (string.IsNullOrEmpty(svc)) continue;
+                    if (!states.TryGetValue(svc, out var serviceStates)) states[svc] = serviceStates = [];
+                    serviceStates.Add(state);
                     if (health == "unhealthy")
+                    {
+                        failedServices.Add(svc);
                         RecordDiagnostic(DiagnosticCode("CONTAINER_UNHEALTHY", svc));
+                    }
                     else if (state is "exited" or "dead" || (int.TryParse(exitCodeText, out var exitVal) && exitVal != 0))
                     {
+                        failedServices.Add(svc);
                         var exitSuffix = int.TryParse(exitCodeText, out var ec) && ec >= 0 ? "CODE_" + ec : "FAILED";
                         RecordDiagnostic(DiagnosticCode("CONTAINER_EXITED", svc, exitSuffix));
                     }
@@ -593,20 +601,20 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             }
             if (!definition.InteractiveStudio || studio is null) return;
             var diagServices = new List<object>();
-            foreach (var service in services.Distinct(StringComparer.Ordinal).Take(12))
+            // Reuse the single status snapshot and collect failed-service logs first.
+            // Querying every healthy container can exhaust this deadline before the failing broker is reached.
+            var diagnosticTargets = failedServices.Count > 0 ? failedServices : services.Distinct(StringComparer.Ordinal);
+            foreach (var service in diagnosticTargets.Take(8))
             {
                 if (string.IsNullOrWhiteSpace(service)) continue;
-                var allPs = await Command(["ps", "--all", "--quiet", service], diagCts.Token);
-                var runPs = await Command(["ps", "--quiet", service], diagCts.Token);
-                var total = allPs.ExitCode == 0 ? allPs.StandardOutput.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).Length : 0;
-                var running = runPs.ExitCode == 0 ? runPs.StandardOutput.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).Length : 0;
+                var serviceStates = states.GetValueOrDefault(service) ?? [];
                 var logs = await Command(["logs", "--no-color", "--tail", "25", service], diagCts.Token);
                 var text = RedactSecrets(logs.StandardOutput);
                 diagServices.Add(new
                 {
                     service,
-                    replicas = total,
-                    runningReplicas = running,
+                    replicas = serviceStates.Count,
+                    runningReplicas = serviceStates.Count(state => state == "running"),
                     stats = Array.Empty<object>(),
                     logs = text[..Math.Min(text.Length, 4000)]
                 });
