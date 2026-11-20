@@ -3308,5 +3308,85 @@
         "points": 1
       }
     ]
+  },
+  {
+    "id": "csharp-v2-ch05",
+    "track": "C#",
+    "phase": "V2 · Module 2",
+    "title": "Chương 05: API GATEWAY VỚI YARP (REVERSE PROXY) & BẢO MẬT JWT BEARER / RBAC",
+    "minutes": 45,
+    "objective": "Thiết kế API Gateway / BFF bằng YARP (Yet Another Reverse Proxy) — thư viện chính chủ Microsoft trên .NET 8. Cấu hình Rate Limiting tích hợp sẵn của ASP.NET Core 8 ngay tại lớp Gateway để chống quá tải. Triển khai bảo mật Stateless JWT Bearer Authentication và phân quyền Policy-based / Role-based Authorization (RBAC).",
+    "lesson": "### 5.1. API Gateway & BFF trong kiến trúc .NET (`[MS24]` Ch.4)\n\nTương tự nguyên lý chuẩn của kiến trúc phân tán, client (Web/Mobile) **không gọi thẳng** tới từng `.csproj` nội bộ mà đi qua một **API Gateway** (hoặc các **BFF** tách riêng cho Web và Mobile):\n* Che giấu cấu trúc mạng và địa chỉ nội bộ của hàng loạt microservice.\n* Thực hiện các tác vụ cắt ngang tại biên: **Routing**, **SSL Termination**, **CORS**, **Rate Limiting** và **Xác thực JWT sơ bộ**.\n* Tránh **Single Point of Failure (SPOF)** bằng cách giữ Gateway hoàn toàn **stateless** (không lưu session trên RAM) để nhân bản nhiều bản sao dễ dàng.\n\n```\n[Web / Mobile Client]  (HTTPS + Authorization: Bearer <JWT>)\n            |\n            v\n+-------------------------------------------------------------+\n|            ApiGateway (.NET 8 + YARP Reverse Proxy)         |\n|  - Route /api/v1/catalog/**   --> http://catalog-api:8080   |\n|  - Route /api/v1/basket/**    --> http://basket-api:8080    |\n|  - Route /api/v1/orders/**    --> http://ordering-api:8080  |\n|  - Built-in Rate Limiter + JWT Authentication + CORS        |\n+-------------------------------------------------------------+\n       |                       |                       |\n       v                       v                       v\n  [Catalog.API]           [Basket.API]           [Ordering.API]\n```\n\n### 5.2. Cấu hình API Gateway cực gọn bằng YARP (.NET 8)\n\nChỉ cần cài gói NuGet `Yarp.ReverseProxy`, toàn bộ định tuyến được khai báo rõ ràng trong `appsettings.json`:\n\n```json\n{\n  \"ReverseProxy\": {\n    \"Routes\": {\n      \"catalog-route\": {\n        \"ClusterId\": \"catalog-cluster\",\n        \"Match\": { \"Path\": \"/api/v1/catalog/{**catch-all}\" }\n      },\n      \"basket-route\": {\n        \"ClusterId\": \"basket-cluster\",\n        \"AuthorizationPolicy\": \"AuthenticatedUser\",\n        \"Match\": { \"Path\": \"/api/v1/basket/{**catch-all}\" }\n      },\n      \"ordering-route\": {\n        \"ClusterId\": \"ordering-cluster\",\n        \"AuthorizationPolicy\": \"AuthenticatedUser\",\n        \"Match\": { \"Path\": \"/api/v1/orders/{**catch-all}\" }\n      }\n    },\n    \"Clusters\": {\n      \"catalog-cluster\": {\n        \"Destinations\": { \"d1\": { \"Address\": \"http://catalog-api:8080\" } }\n      },\n      \"basket-cluster\": {\n        \"Destinations\": { \"d1\": { \"Address\": \"http://basket-api:8080\" } }\n      },\n      \"ordering-cluster\": {\n        \"Destinations\": { \"d1\": { \"Address\": \"http://ordering-api:8080\" } }\n      }\n    }\n  }\n}\n```\n\n```csharp\n// ApiGateway/Program.cs\nvar builder = WebApplication.CreateBuilder(args);\n\nbuilder.Services.AddReverseProxy()\n    .LoadFromConfig(builder.Configuration.GetSection(\"ReverseProxy\"));\n\nbuilder.Services.AddRateLimiter(options =>\n{\n    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;\n    options.AddFixedWindowLimiter(\"fixed\", opt =>\n    {\n        opt.Window = TimeSpan.FromMinutes(1);\n        opt.PermitLimit = 100;\n    });\n});\n\nvar app = builder.Build();\napp.UseRateLimiter();\napp.UseAuthentication();\napp.UseAuthorization();\napp.MapReverseProxy().RequireRateLimiting(\"fixed\");\napp.Run();\n```\n\n### 5.3. Bảo mật JWT Bearer & Phân quyền RBAC (`[MS24]` Ch.11)\n\nTrong ASP.NET Core 8, cơ chế bảo mật **Stateless JWT** kết hợp **Defense in Depth** (xác thực ở Gateway và kiểm tra quyền chi tiết ở từng Microservice):\n\n```csharp\n// Cấu hình xác thực JWT Bearer chuẩn trong Program.cs\nbuilder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)\n    .AddJwtBearer(options =>\n    {\n        options.TokenValidationParameters = new TokenValidationParameters\n        {\n            ValidateIssuer = true,\n            ValidateAudience = true,\n            ValidateLifetime = true,\n            ValidateIssuerSigningKey = true,\n            ValidIssuer = builder.Configuration[\"Jwt:Issuer\"],\n            ValidAudience = builder.Configuration[\"Jwt:Audience\"],\n            IssuerSigningKey = new SymmetricSecurityKey(\n                Encoding.UTF8.GetBytes(builder.Configuration[\"Jwt:SigningKey\"]!)),\n            ClockSkew = TimeSpan.FromSeconds(30)\n        };\n    });\n\nbuilder.Services.AddAuthorizationBuilder()\n    .AddPolicy(\"AuthenticatedUser\", p => p.RequireAuthenticatedUser())\n    .AddPolicy(\"AdminOnly\", p => p.RequireRole(\"Admin\"));\n```\n\nVà tại tầng Endpoint/Controller của Microservice đích:\n* `[Authorize]` $\\rightarrow$ Yêu cầu có JWT hợp lệ (thiếu/sai trả **`401 Unauthorized`**).\n* `[Authorize(Policy = \"AdminOnly\")]` $\\rightarrow$ Đã đăng nhập nhưng sai vai trò trả **`403 Forbidden`**.\n* **Kiểm tra quyền sở hữu tài nguyên (Resource-based Authorization)**: Khi khách xem đơn hàng `GET /api/v1/orders/{id}`, `Ordering.API` bắt buộc đối chiếu `order.CustomerId == currentUserId` để chống lỗ hổng **IDOR** (xem trộm đơn của người khác).\n\n### 5.4. Góc nhìn trên nền tảng MAVIS\n\n* **Trích xuất định tuyến YARP**: Phân hệ đọc cấu hình của MAVIS đọc phần `ReverseProxy.Routes` và `ReverseProxy.Clusters` để vẽ các cạnh từ `ApiGateway` tới các dịch vụ đích trên sơ đồ **C2 Container**.\n* **Kiểm chứng trên MAVIS Studio**: Tắt `ApiGateway` sẽ chặn toàn bộ điểm vào từ client ngoài — bài thực hành kinh điển để phân tích tính sẵn sàng cao (*High Availability*).",
+    "exercise": "### 5.5. Bài tập thực hành Lab 05\n\n* Kiểm tra các Route & Cluster trong `ApiGateway/appsettings.json` trên MAVIS và đối chiếu với sơ đồ C2.\n* Giải thích tại sao `catalog-route` (xem danh mục sản phẩm công khai) không bắt buộc `AuthorizationPolicy`, trong khi `ordering-route` bắt buộc `AuthenticatedUser` và kiểm tra thêm quyền sở hữu đơn hàng ở `Ordering.API`.",
+    "sources": [
+      {
+        "publisher": "Microsoft Learn",
+        "title": ".NET Microservices: Architecture for Containerized .NET Applications",
+        "url": "https://learn.microsoft.com/en-us/dotnet/architecture/microservices/"
+      },
+      {
+        "publisher": "Microsoft Learn (.NET 8 / YARP)",
+        "title": "ASP.NET Core 8 & YARP Reverse Proxy Documentation",
+        "url": "https://learn.microsoft.com/en-us/aspnet/core/"
+      }
+    ],
+    "questions": [
+      {
+        "id": "csharp-v2-ch05-q1",
+        "prompt": "Trong hệ sinh thái .NET 8 hiện đại của Microsoft, thư viện chính chủ nào được khuyến nghị sử dụng để xây dựng API Gateway / Reverse Proxy hiệu năng cao?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Entity Framework Core",
+          "**YARP (Yet Another Reverse Proxy)**",
+          "WinForms",
+          "SignalR Hub"
+        ],
+        "correctOption": 1,
+        "explanation": "YARP do chính đội .NET phát triển, tích hợp sâu với middleware ASP.NET Core 8 (Auth, Rate Limiting, OpenTelemetry) và đã thay thế Ocelot trong mẫu `eShop` hiện đại.",
+        "points": 1
+      },
+      {
+        "id": "csharp-v2-ch05-q2",
+        "prompt": "Khi bật **Rate Limiter** tại API Gateway và một client gửi vượt quá số yêu cầu cho phép trong cửa sổ thời gian, mã trạng thái HTTP chuẩn mực nào cần trả về?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "`200 OK`",
+          "`404 Not Found`",
+          "`429 Too Many Requests`",
+          "`502 Bad Gateway`"
+        ],
+        "correctOption": 2,
+        "explanation": "`429 Too Many Requests` thông báo chính xác rằng client đang gọi quá giới hạn tần suất cho phép.",
+        "points": 1
+      },
+      {
+        "id": "csharp-v2-ch05-q3",
+        "prompt": "Hành động kiểm tra `order.CustomerId == currentUserId` bên trong `Ordering.API` giúp ngăn chặn lỗ hổng bảo mật nào?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "SQL Injection",
+          "**IDOR (Insecure Direct Object Reference / Broken Object Level Authorization)** — người dùng đã đăng nhập cố tình đoán ID để xem hoặc hủy đơn hàng của người khác",
+          "Cross-Site Scripting (XSS)",
+          "Deadlock cơ sở dữ liệu"
+        ],
+        "correctOption": 1,
+        "explanation": "JWT chỉ chứng minh bạn là ai; dịch vụ nghiệp vụ vẫn phải kiểm tra bạn có quyền sở hữu tài nguyên cụ thể đó hay không.",
+        "points": 1
+      },
+      {
+        "id": "csharp-v2-ch05-q4",
+        "prompt": "Tại sao API Gateway không nên chứa logic nghiệp vụ phức tạp (như tính tồn kho hay lưu hóa đơn)?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Vì YARP không cho phép viết thêm code C#",
+          "Vì nhồi nghiệp vụ vào Gateway tạo ra khớp nối chặt giữa mọi dịch vụ, biến Gateway thành nút thắt cổ chai và một \"Monolith mới\"",
+          "Vì API Gateway không thể chạy trong Docker",
+          "Vì trình duyệt không hỗ trợ HTTPS qua Gateway"
+        ],
+        "correctOption": 1,
+        "explanation": "Gateway chỉ nên xử lý *cross-cutting concerns* (routing, auth, rate limit, tracing) để giữ ranh giới Bounded Context sạch sẽ.",
+        "points": 1
+      }
+    ]
   }
 ]
