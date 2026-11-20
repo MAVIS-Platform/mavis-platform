@@ -11,6 +11,7 @@ import {
   RuntimeSessions,
 } from "@/features/runtime/screens";
 import { StudioWorkbench } from "@/features/runtime/studio-workbench";
+import { StandaloneStudioLive } from "@/features/runtime/standalone-studio-live";
 import {
   Workspaces,
   WorkspaceOverview,
@@ -141,6 +142,11 @@ const screens: Record<
     scope: "global",
     component: StudioWorkbench,
   },
+  "studio-live": {
+    title: "MAVIS Studio Live",
+    scope: "global",
+    component: StandaloneStudioLive,
+  },
 };
 export default async function FeaturePage({ params }: { params: Promise<{ screen: string }> }) {
   const { screen } = await params;
@@ -150,6 +156,7 @@ export default async function FeaturePage({ params }: { params: Promise<{ screen
   // Course roadmap and Lab routes deliberately remain inside the existing shell.
   if (screen === "courses") return <MavisCoursesPage />;
   if (screen === "studio") return <StudioWorkbench />;
+  if (screen === "studio-live") return <StandaloneStudioLive />;
   const Screen = config.component;
   if (screen === "diagrams")
     return (

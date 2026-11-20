@@ -59,6 +59,7 @@ export type LiveStudioAuthoringProps = LiveBlockAuthoringControls & {
     stoppedControllers: string[];
     minReplicas: Array<{ service: string; count: number }>;
   }) => void;
+  onSetReplicaTarget?: ((service: string, count: number) => void) | undefined;
 };
 
 const EMPTY_STUDIO: Studio = {
@@ -107,6 +108,7 @@ export function LiveStudioWorkbench({
   onStartSession,
   starting,
   hideSwitchToSandbox,
+  standalone,
   previewTopology,
   authoring,
 }: {
@@ -119,6 +121,7 @@ export function LiveStudioWorkbench({
   onStartSession?: (() => void) | undefined;
   starting?: boolean | undefined;
   hideSwitchToSandbox?: boolean | undefined;
+  standalone?: boolean | undefined;
   previewTopology?: Studio["topology"] | undefined;
   authoring?: LiveStudioAuthoringProps | undefined;
 }) {
@@ -318,6 +321,10 @@ export function LiveStudioWorkbench({
         if ((command.action === "STOP" && !isStopped) || (command.action === "START" && isStopped)) {
           authoring.onToggleInitialStopped(command.service, false);
         }
+        return;
+      }
+      if (command.action === "SCALE" && command.replicas && command.replicas >= 1 && command.replicas <= 8) {
+        authoring.onSetReplicaTarget?.(command.service, command.replicas);
       }
       return;
     }
@@ -326,6 +333,22 @@ export function LiveStudioWorkbench({
       if (command.replicas === undefined || command.replicas < 1 || command.replicas > 8) return;
     }
     void send(command.action, command.service, command.replicas);
+  }
+
+  async function dispatchCommand(
+    actionType: StudioQuickAction["action"],
+    serviceName: string,
+    replicas?: number,
+  ) {
+    if (isPreviewMode && authoring) {
+      quickAction({
+        action: actionType,
+        service: serviceName,
+        ...(replicas !== undefined ? { replicas } : {}),
+      });
+      return;
+    }
+    await send(actionType, serviceName, replicas);
   }
 
   function scaleTo(service: string, value: number) {
@@ -622,21 +645,23 @@ export function LiveStudioWorkbench({
           >
             Cancel
           </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            aria-label={expanded ? "Exit fullscreen Studio Live" : "Expand Studio Live fullscreen"}
-            title={expanded ? "Exit fullscreen (Esc)" : "Expand fullscreen"}
-            onClick={() => setExpanded((value) => !value)}
-            className="h-7 px-2 text-slate-300 hover:bg-slate-800 hover:text-white"
-          >
-            {expanded ? (
-              <Minimize2 aria-hidden="true" className="size-3.5" />
-            ) : (
-              <Maximize2 aria-hidden="true" className="size-3.5" />
-            )}
-          </Button>
+          {!standalone && (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              aria-label={expanded ? "Exit fullscreen Studio Live" : "Expand Studio Live fullscreen"}
+              title={expanded ? "Exit fullscreen (Esc)" : "Expand fullscreen"}
+              onClick={() => setExpanded((value) => !value)}
+              className="h-7 px-2 text-slate-300 hover:bg-slate-800 hover:text-white"
+            >
+              {expanded ? (
+                <Minimize2 aria-hidden="true" className="size-3.5" />
+              ) : (
+                <Maximize2 aria-hidden="true" className="size-3.5" />
+              )}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -763,13 +788,13 @@ export function LiveStudioWorkbench({
       {/* Main 3-Zone Visual Canvas */}
       <div className="flex min-h-0 flex-1">
         {showLeft && (
-          <aside className="w-[232px] shrink-0 overflow-x-hidden overflow-y-auto border-r border-slate-800 bg-[#0b101b] p-2">
+          <aside className="w-[252px] shrink-0 overflow-x-hidden overflow-y-auto border-r border-slate-800 bg-[#0b101b] p-2">
             <LiveSandboxParity
               data={data}
               selected={selected}
-              busy={busy}
+              busy={isPreviewMode ? false : busy}
               onSelect={studio.setService}
-              onCommand={send}
+              onCommand={dispatchCommand}
               sections={["library"]}
               compact
               label="Live block library"

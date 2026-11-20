@@ -6,13 +6,24 @@ import {
   Boxes,
   Camera,
   Cpu,
+  CreditCard,
+  Database,
+  Flame,
   Gauge,
   Layers,
+  Network,
+  Package,
   Play,
+  Plus,
+  RotateCcw,
   Search,
   Server,
   ShieldCheck,
+  ShoppingCart,
   Trash2,
+  Wrench,
+  X,
+  Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,14 +48,103 @@ export type LiveParitySection =
   | "config"
   | "snapshots";
 
+export type AuthorPresetId = "outage" | "scale" | "chaos-scale" | "healthy";
+
 export type LiveBlockAuthoringControls = {
   initialStoppedServices: readonly string[];
   initialStoppedControllers: readonly string[];
   scalableServices: readonly string[];
+  availableServices?: readonly string[] | undefined;
   onToggleInitialStopped: (service: string, isController: boolean) => void;
   onToggleScalable: (service: string) => void;
+  onAddBlock?: ((service: string) => void) | undefined;
+  onRemoveBlock?: ((service: string) => void) | undefined;
+  onApplyPreset?: ((preset: AuthorPresetId) => void) | undefined;
   busy?: boolean | undefined;
 };
+
+const LIVE_ACTION_TOOLS = [
+  {
+    id: "palette-stop",
+    badge: "FAULT",
+    label: "Stop Container",
+    sub: "Stop running pod",
+    action: "STOP" as const,
+    cardClass: "border-rose-500/35 bg-rose-500/10 hover:border-rose-400 hover:bg-rose-500/20",
+    badgeClass: "border border-rose-400/45 bg-rose-500/20 text-rose-300",
+  },
+  {
+    id: "palette-start",
+    badge: "RECOVER",
+    label: "Restart Service",
+    sub: "Restore stopped pod",
+    action: "START" as const,
+    cardClass:
+      "border-emerald-500/35 bg-emerald-500/10 hover:border-emerald-400 hover:bg-emerald-500/20",
+    badgeClass: "border border-emerald-400/45 bg-emerald-500/20 text-emerald-300",
+  },
+  {
+    id: "palette-scale-plus-1",
+    badge: "+1 POD",
+    label: "Scale +1 Replica",
+    sub: "Add 1 replica (1–8)",
+    action: "SCALE" as const,
+    delta: 1,
+    cardClass: "border-sky-500/35 bg-sky-500/10 hover:border-sky-400 hover:bg-sky-500/20",
+    badgeClass: "border border-sky-400/45 bg-sky-500/20 text-sky-300",
+  },
+  {
+    id: "palette-scale-4",
+    badge: "×4 PODS",
+    label: "Scale ×4 Cluster",
+    sub: "4-replica HA cluster",
+    action: "SCALE" as const,
+    replicas: 4,
+    cardClass:
+      "border-indigo-500/35 bg-indigo-500/10 hover:border-indigo-400 hover:bg-indigo-500/20",
+    badgeClass: "border border-indigo-400/45 bg-indigo-500/20 text-indigo-300",
+  },
+  {
+    id: "palette-scale-8",
+    badge: "×8 PODS",
+    label: "Scale ×8 Max Load",
+    sub: "Max 8 replicas (BR-07)",
+    action: "SCALE" as const,
+    replicas: 8,
+    cardClass:
+      "border-purple-500/35 bg-purple-500/10 hover:border-purple-400 hover:bg-purple-500/20",
+    badgeClass: "border border-purple-400/45 bg-purple-500/20 text-purple-300",
+  },
+] as const;
+
+function renderLiveBlockIcon(name: string) {
+  const n = name.toLowerCase();
+  if (n.includes("gateway") || n.includes("edge") || n.includes("proxy") || n.includes("ingress")) {
+    return <Network aria-hidden="true" className="size-3.5 shrink-0 text-sky-400" />;
+  }
+  if (n.includes("redis") || n.includes("cache")) {
+    return <Flame aria-hidden="true" className="size-3.5 shrink-0 text-amber-400" />;
+  }
+  if (n.includes("postgres") || n.includes("mysql") || n.includes("mongo") || n.includes("db")) {
+    return <Database aria-hidden="true" className="size-3.5 shrink-0 text-emerald-400" />;
+  }
+  if (n.includes("kafka") || n.includes("rabbit") || n.includes("broker") || n.includes("queue")) {
+    return <Activity aria-hidden="true" className="size-3.5 shrink-0 text-purple-400" />;
+  }
+  if (n.includes("worker") || n.includes("consumer") || n.includes("async")) {
+    return <Cpu aria-hidden="true" className="size-3.5 shrink-0 text-indigo-300" />;
+  }
+  if (n.includes("order")) {
+    return <ShoppingCart aria-hidden="true" className="size-3.5 shrink-0 text-sky-300" />;
+  }
+  if (n.includes("payment") || n.includes("billing")) {
+    return <CreditCard aria-hidden="true" className="size-3.5 shrink-0 text-teal-300" />;
+  }
+  if (n.includes("catalog") || n.includes("inventory") || n.includes("product")) {
+    return <Package aria-hidden="true" className="size-3.5 shrink-0 text-slate-300" />;
+  }
+  return <Server aria-hidden="true" className="size-3.5 shrink-0 text-slate-300" />;
+}
 
 type LiveSandboxParityProps = {
   data: Studio;
@@ -381,6 +481,7 @@ export function LiveSandboxParity({
                   <div className="flex items-center justify-between gap-1.5">
                     <div className="flex min-w-0 items-center gap-1.5">
                       <span className={`size-1.5 shrink-0 rounded-full ${statusDot}`} aria-hidden="true" />
+                      {compact && renderLiveBlockIcon(block.service)}
                       <button
                         type="button"
                         onClick={() => onSelect(block.service)}
@@ -390,15 +491,29 @@ export function LiveSandboxParity({
                         {block.label}
                       </button>
                     </div>
-                    <span className="shrink-0 rounded bg-slate-900 px-1.5 py-0.5 font-mono text-[9.5px] text-slate-300">
-                      {live === undefined
-                        ? startsStopped
-                          ? "Fault"
-                          : "Ready"
-                        : live === 0
-                          ? "Down"
-                          : `${live}×`}
-                    </span>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <span className="rounded bg-slate-900 px-1.5 py-0.5 font-mono text-[9.5px] text-slate-300">
+                        {live === undefined
+                          ? startsStopped
+                            ? "Fault"
+                            : "Ready"
+                          : live === 0
+                            ? "Down"
+                            : `${live}×`}
+                      </span>
+                      {compact && authoring?.onRemoveBlock && blocks.length > 1 && (
+                        <button
+                          type="button"
+                          disabled={authoring.busy}
+                          onClick={() => authoring.onRemoveBlock?.(block.service)}
+                          title={`Remove ${block.service} from Studio topology`}
+                          aria-label={`Remove ${block.service} from Studio topology`}
+                          className="rounded p-0.5 text-slate-500 hover:bg-slate-800 hover:text-rose-300 disabled:opacity-35"
+                        >
+                          <X aria-hidden="true" className="size-3" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-1">
                     {(!authoring || !compact || live !== undefined) && (
@@ -522,6 +637,195 @@ export function LiveSandboxParity({
                   );
                 })}
               </ul>
+            </div>
+          )}
+          {compact &&
+            authoring?.availableServices &&
+            authoring.onAddBlock &&
+            (() => {
+              const placed = new Set(blocks.map((b) => b.service));
+              const extraServices = authoring.availableServices.filter((svc) => !placed.has(svc));
+              if (extraServices.length === 0) return null;
+              return (
+                <div className="space-y-1.5 border-t border-slate-800/80 pt-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                    Compose Services (+ Add)
+                  </p>
+                  <div className="flex flex-wrap gap-1">
+                    {extraServices.map((svc) => (
+                      <button
+                        key={svc}
+                        type="button"
+                        disabled={authoring.busy}
+                        onClick={() => authoring.onAddBlock?.(svc)}
+                        className="inline-flex items-center gap-1 rounded-md border border-dashed border-slate-700 bg-slate-950/70 px-2 py-1 font-mono text-[10px] text-slate-300 transition-colors hover:border-sky-500/60 hover:bg-sky-500/10 hover:text-sky-200 disabled:opacity-40"
+                      >
+                        <Plus aria-hidden="true" className="size-3 text-sky-400" />
+                        {svc}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+          {compact && (
+            <div className="space-y-1.5 border-t border-slate-800/80 pt-2.5">
+              <div className="flex items-center justify-between gap-1">
+                <p className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                  <Wrench aria-hidden="true" className="size-3 text-sky-400" />
+                  Action Toolbox
+                </p>
+                <span className="text-[9.5px] text-slate-500">Drag onto node or click</span>
+              </div>
+              <div className="space-y-1">
+                {LIVE_ACTION_TOOLS.map((tool) => {
+                  const isLiveRunning = data.executionStatus === "RUNNING";
+                  const isPreviewAuthor = !isLiveRunning && Boolean(authoring);
+                  const scaleBlocked =
+                    tool.action === "SCALE" &&
+                    (!selected || (isLiveRunning && (!canScale || !running)));
+                  const startBlocked =
+                    tool.action === "START" && isLiveRunning && (!selected || (running ?? 0) > 0);
+                  const stopBlocked =
+                    tool.action === "STOP" && isLiveRunning && (!selected || !running);
+                  const disabled =
+                    busy ||
+                    (!isLiveRunning && !isPreviewAuthor) ||
+                    scaleBlocked ||
+                    startBlocked ||
+                    stopBlocked;
+                  const canDrag = !busy && (isLiveRunning || isPreviewAuthor);
+                  return (
+                    <button
+                      key={tool.id}
+                      type="button"
+                      draggable={canDrag}
+                      disabled={disabled && !canDrag}
+                      onDragStart={(event) => {
+                        event.dataTransfer.setData("application/x-mavis-studio-tool", tool.id);
+                        event.dataTransfer.effectAllowed = "copy";
+                      }}
+                      onClick={() => {
+                        if (disabled || !selected) return;
+                        if (tool.action === "SCALE") {
+                          const next =
+                            "delta" in tool
+                              ? Math.max(1, Math.min(8, (running && running > 0 ? running : 1) + tool.delta))
+                              : tool.replicas;
+                          void command("SCALE", selected, next);
+                          return;
+                        }
+                        void command(tool.action, selected);
+                      }}
+                      className={`flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left transition-colors ${
+                        canDrag ? "cursor-grab active:cursor-grabbing" : "cursor-not-allowed"
+                      } ${disabled ? "opacity-45" : ""} ${tool.cardClass}`}
+                    >
+                      <span
+                        className={`shrink-0 rounded px-1.5 py-0.5 font-mono text-[9px] font-bold ${tool.badgeClass}`}
+                      >
+                        {tool.badge}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[10.5px] font-semibold text-slate-100">
+                          {tool.label}
+                        </p>
+                        <p className="truncate text-[9.5px] text-slate-400">{tool.sub}</p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {compact && authoring?.onApplyPreset && (
+            <div className="space-y-1.5 border-t border-slate-800/80 pt-2.5">
+              <p className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                <Zap aria-hidden="true" className="size-3 text-amber-400" />
+                Lab Exercise Presets
+              </p>
+              <div className="grid grid-cols-2 gap-1">
+                {(
+                  [
+                    ["outage", "Outage Recovery", "1 service Starts Down"],
+                    ["scale", "Scale Out ×2", "Min 2 replicas target"],
+                    ["chaos-scale", "Fault + Scale", "Stop 1 + Scale ×2"],
+                    ["healthy", "Reset Healthy", "Clear all initial faults"],
+                  ] as const
+                ).map(([id, title, sub]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    disabled={authoring.busy}
+                    onClick={() => authoring.onApplyPreset?.(id)}
+                    className="rounded-md border border-slate-800 bg-slate-950/70 px-2 py-1.5 text-left transition-colors hover:border-sky-500/40 hover:bg-slate-900 disabled:opacity-40"
+                  >
+                    <p className="truncate text-[10px] font-semibold text-slate-200">{title}</p>
+                    <p className="truncate text-[9px] text-slate-500">{sub}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {compact && !authoring && data.executionStatus === "RUNNING" && (
+            <div className="space-y-1.5 border-t border-slate-800/80 pt-2.5">
+              <p className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                <Zap aria-hidden="true" className="size-3 text-emerald-400" />
+                Quick Live Drills
+              </p>
+              {(() => {
+                const stoppedBlock = blocks.find((b) => runningReplicas(data, b.service) === 0);
+                const scalableBlock =
+                  blocks.find((b) => b.service === selected && b.canScale && (runningReplicas(data, b.service) ?? 0) > 0) ??
+                  blocks.find((b) => b.canScale && (runningReplicas(data, b.service) ?? 0) > 0);
+                const stoppableBlock =
+                  blocks.find((b) => b.service === selected && (runningReplicas(data, b.service) ?? 0) > 0) ??
+                  blocks.find(
+                    (b) =>
+                      !/gateway|edge|postgres|db|kafka/.test(b.service.toLowerCase()) &&
+                      (runningReplicas(data, b.service) ?? 0) > 0,
+                  );
+                return (
+                  <div className="space-y-1">
+                    <button
+                      type="button"
+                      disabled={busy || !stoppableBlock}
+                      onClick={() => stoppableBlock && void command("STOP", stoppableBlock.service)}
+                      className="flex w-full items-center justify-between rounded-md border border-rose-500/30 bg-rose-500/10 px-2 py-1.5 text-[10.5px] font-medium text-rose-200 hover:bg-rose-500/20 disabled:opacity-35"
+                    >
+                      <span>Inject Service Fault</span>
+                      <span className="font-mono text-[9.5px] text-rose-300/80">
+                        {stoppableBlock?.service ?? "—"}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy || !scalableBlock}
+                      onClick={() => scalableBlock && void command("SCALE", scalableBlock.service, 2)}
+                      className="flex w-full items-center justify-between rounded-md border border-sky-500/30 bg-sky-500/10 px-2 py-1.5 text-[10.5px] font-medium text-sky-200 hover:bg-sky-500/20 disabled:opacity-35"
+                    >
+                      <span>Scale Out ×2 Pods</span>
+                      <span className="font-mono text-[9.5px] text-sky-300/80">
+                        {scalableBlock?.service ?? "—"}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy || !stoppedBlock}
+                      onClick={() => stoppedBlock && void command("START", stoppedBlock.service)}
+                      className="flex w-full items-center justify-between rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1.5 text-[10.5px] font-medium text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-35"
+                    >
+                      <span className="flex items-center gap-1">
+                        <RotateCcw aria-hidden="true" className="size-3" />
+                        Recover Stopped
+                      </span>
+                      <span className="font-mono text-[9.5px] text-emerald-300/80">
+                        {stoppedBlock?.service ?? "All up"}
+                      </span>
+                    </button>
+                  </div>
+                );
+              })()}
             </div>
           )}
           {!compact && (

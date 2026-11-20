@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowRight,
+  ArrowUpRight,
   BookOpen,
   Check,
   CircleAlert,
@@ -23,10 +24,8 @@ import {
   RequestState,
 } from "@/components/shared/request-state";
 import {
-  useBootstrapLabStudio,
   useCourseRoadmap,
   usePublishedCourse,
-  useStartLabStudioSession,
   useStudentLabContext,
   useStudentLabStudioSessions,
   type StudentLabContext,
@@ -45,7 +44,7 @@ import { getRuleName } from "@/features/architecture/three-e-content";
 import { ArchitectureGraph, ElementDetailsPanel } from "@/features/architecture/components";
 import { ArchitectureDiagrams } from "@/features/architecture/architecture-diagrams";
 import { DiagramPreview } from "@/features/architecture/diagram-preview";
-import { LiveStudioWorkbench } from "@/features/runtime/live-studio-workbench";
+import { buildStudioLiveHref } from "@/features/runtime/standalone-studio-live";
 import type { ArchitecturalModel } from "@/types/domain";
 import { CourseBuilder } from "./course-builder";
 import { CourseQuiz, useCourseQuiz } from "./course-quiz";
@@ -1342,48 +1341,8 @@ function StepContent({
   const client = useApi();
   const [selectedGraphId, setSelectedGraphId] = useState<string | null>(null);
   const [tutorQuery, setTutorQuery] = useState<"none" | "grounded" | "out_of_scope">("none");
-  const [selectedStudioSessionId, setSelectedStudioSessionId] = useState<string>(
-    () => studioSessionId ?? studioSessions[0]?.id ?? "",
-  );
-  const startStudio = useStartLabStudioSession(workspaceId, labId);
-  const bootstrapStudio = useBootstrapLabStudio(workspaceId, labId);
 
-  const activeStudioSessionId =
-    selectedStudioSessionId && studioSessions.some((s) => s.id === selectedStudioSessionId)
-      ? selectedStudioSessionId
-      : (studioSessionId ?? studioSessions[0]?.id ?? "");
-  const autoStarted = useRef(false);
-
-  useEffect(() => {
-    if (autoStarted.current) return;
-    if (
-      client.mode !== "backend" ||
-      step !== 4 ||
-      !isStudent ||
-      preview ||
-      !requiresRuntime ||
-      !runtimeReady ||
-      !studioSessionsReady ||
-      studioVerified ||
-      studioSessions.length > 0 ||
-      activeStudioSessionId
-    )
-      return;
-    autoStarted.current = true;
-    startStudio.mutate();
-  }, [
-    client.mode,
-    step,
-    isStudent,
-    preview,
-    requiresRuntime,
-    runtimeReady,
-    studioSessionsReady,
-    studioVerified,
-    studioSessions.length,
-    activeStudioSessionId,
-    startStudio,
-  ]);
+  const activeStudioSessionId = studioSessionId ?? studioSessions[0]?.id ?? "";
 
   const studioStateQuery = useApiQuery(
     "studioState",
@@ -1428,20 +1387,18 @@ function StepContent({
 
   const previewParam = preview ? "&preview=1" : "";
   const submitHref = `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=4${previewParam}#lab-submit`;
+  const standaloneStudioHref = buildStudioLiveHref({
+    workspaceId,
+    assignmentId: labId,
+    mode: "student",
+    returnTo: `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=4`,
+    sessionId: activeStudioSessionId || undefined,
+  });
   const viewModelQuery = modelQuery ?? referenceModelQuery ?? null;
   const current = resolveStepMeta(step, { hasReferenceArch, isTheoryOnlyLab, requiresRuntime });
   const Icon = current.icon;
   const next = step < 4 ? ((step + 1) as 2 | 3 | 4) : undefined;
   const nextAvailable = Boolean(preview) || (next !== undefined && (next <= 3 || runtimeReady));
-  const needsSandboxBootstrap = Boolean(
-    !preview &&
-    activeStudioSessionId &&
-    studioStateQuery.isSuccess &&
-    (studioStateQuery.data.executionStatus === "FAILED" ||
-      (studioStateQuery.data.services.length === 0 &&
-        !studioStateQuery.data.telemetry &&
-        !(studioStateQuery.data as Record<string, unknown>)["simulatedSandbox"])),
-  );
 
   return (
     <>
@@ -1909,116 +1866,58 @@ function StepContent({
           ) : (
             <>
               {requiresRuntime && (
-                <DetailPanel
-                  title={t(
-                    "MAVIS Studio Live Experiment (Inline Sandbox)",
-                    "Thực nghiệm MAVIS Studio Live (Trực tiếp trong Lab)",
-                  )}
-                >
+                <DetailPanel title={t("MAVIS Studio Live", "MAVIS Studio Live")}>
                   {preview ? (
                     <p className="text-sm text-muted-foreground">
                       {t(
-                        "Preview shows the inline Studio Live & Submission step. Starting student runtime sessions is disabled in preview mode.",
-                        "Chế độ xem trước hiển thị khu vực Studio Live & Nộp bài. Khởi chạy phiên runtime của sinh viên bị tắt khi xem trước.",
+                        "Preview shows the Studio Live launchpad & Submission step. Starting student runtime sessions is disabled in preview mode.",
+                        "Chế độ xem trước hiển thị khu vực mở Studio Live & Nộp bài. Khởi chạy phiên runtime của sinh viên bị tắt khi xem trước.",
                       )}
                     </p>
                   ) : (
                     <div className="space-y-4">
-                      <div className="grid gap-2 rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 text-xs text-emerald-950 dark:border-emerald-800/60 dark:bg-emerald-950/20 sm:grid-cols-3">
-                        <div className="rounded-lg bg-background/80 px-3 py-2">
-                          <span className="font-semibold">
-                            4.1 {t("Start Studio Session", "Khởi tạo Phiên Studio")}
-                          </span>
-                          <p className="mt-0.5 text-muted-foreground">
-                            {t("Launch live topology canvas", "Mở topology dịch vụ tương tác")}
-                          </p>
-                        </div>
-                        <div className="rounded-lg bg-background/80 px-3 py-2">
-                          <span className="font-semibold">
-                            4.2 {t("Operate & Finish Studio", "Thực hành & Finish Studio")}
-                          </span>
-                          <p className="mt-0.5 text-muted-foreground">
-                            {t("Seal runtime observation receipt", "Ghi nhận thao tác và biên nhận")}
-                          </p>
-                        </div>
-                        <div className="rounded-lg bg-background/80 px-3 py-2">
-                          <span className="font-semibold">
-                            4.3 {t("Explain & Submit", "Giải trình & Nộp bài")}
-                          </span>
-                          <p className="mt-0.5 text-muted-foreground">
-                            {t("Summarize findings below", "Nộp giải trình ở khung bên dưới")}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/20 p-3.5">
-                        <div className="space-y-1 text-xs">
+                      <div className="flex flex-col items-start justify-between gap-4 rounded-2xl border border-slate-800/80 bg-[#070b12] p-5 text-slate-100 sm:flex-row sm:items-center">
+                        <div className="space-y-1.5">
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className="font-semibold text-foreground">
-                              {t(
-                                "Interactive Microservices Runtime",
-                                "Thực nghiệm Microservices Tương tác",
-                              )}
+                            <span className="text-sm font-semibold text-white">
+                              {t("Interactive Studio Live Workspace", "Không gian Thực hành Studio Live")}
                             </span>
                             {liveStudioVerified ? (
                               <Badge variant="success">
-                                {t(
-                                  "Verified Studio Receipt Ready",
-                                  "Đã có Biên nhận Studio xác minh",
-                                )}
+                                {t("Verified Studio Receipt Ready", "Đã có Biên nhận Studio xác minh")}
                               </Badge>
                             ) : (
                               <Badge variant="warning">
-                                {t(
-                                  "Action & Finish Studio Required",
-                                  "Cần chạy thao tác & Finish Studio",
-                                )}
+                                {t("Action & Finish Studio Required", "Cần chạy thao tác & Finish Studio")}
                               </Badge>
                             )}
+                            {activeStudioSessionId && (
+                              <code className="rounded bg-slate-900 px-2 py-0.5 font-mono text-[11px] text-slate-300">
+                                {activeStudioSessionId.slice(0, 10)}
+                              </code>
+                            )}
                           </div>
-                          <p className="text-muted-foreground">
+                          <p className="text-xs text-slate-400">
                             {t(
-                              "Start a session with 1 click, scale/stop/start services or send live requests, then click Finish Studio to seal your receipt.",
-                              "Bấm 1 nút để khởi tạo phiên, thao tác START/STOP/SCALE dịch vụ, rồi nhấn Finish Studio để đóng gói biên nhận.",
+                              "Open the full-screen Studio Live to inspect live containers, run Start/Stop/Scale actions, and click Finish Studio to seal your receipt before submitting below.",
+                              "Mở màn hình Studio Live toàn màn hình để thao tác container thật, chạy Start/Stop/Scale và nhấn Finish Studio để đóng gói biên nhận trước khi nộp bài bên dưới.",
                             )}
                           </p>
                         </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Button
-                            type="button"
-                            size="sm"
-                            disabled={startStudio.isPending}
-                            onClick={() => {
-                              startStudio.mutate(undefined, {
-                                onSuccess: (created) => {
-                                  if (created?.id) setSelectedStudioSessionId(created.id);
-                                },
-                              });
-                            }}
-                          >
-                            {startStudio.isPending
-                              ? t("Starting Studio Live…", "Đang khởi tạo Studio Live…")
-                              : t("Start Studio Live Session", "Khởi tạo Phiên Studio Live")}
-                          </Button>
-                          {needsSandboxBootstrap && activeStudioSessionId && (
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              disabled={bootstrapStudio.isPending}
-                              onClick={() => bootstrapStudio.mutate(activeStudioSessionId)}
-                            >
-                              {bootstrapStudio.isPending
-                                ? t("Activating Sandbox…", "Đang kích hoạt Sandbox…")
-                                : t(
-                                    "Activate Simulated Sandbox Telemetry",
-                                    "Kích hoạt Sandbox Telemetry mô phỏng",
-                                  )}
-                            </Button>
-                          )}
-                        </div>
+                        <Button
+                          asChild
+                          size="lg"
+                          className="shrink-0 bg-emerald-600 px-5 text-white hover:bg-emerald-500"
+                        >
+                          <Link href={standaloneStudioHref}>
+                            {liveStudioVerified
+                              ? t("Re-open Studio Live", "Mở lại Studio Live")
+                              : t("Open Studio Live", "Mở Studio Live")}
+                            <ArrowUpRight className="ml-1.5 size-4" aria-hidden="true" />
+                          </Link>
+                        </Button>
                       </div>
-                      {startStudio.isError && <ErrorState error={startStudio.error} />}
-                      {bootstrapStudio.isError && <ErrorState error={bootstrapStudio.error} />}
+
                       {studentContext?.studioExercise && (
                         <section className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 text-sm">
                           <h3 className="font-semibold">
@@ -2078,24 +1977,6 @@ function StepContent({
                           </ul>
                         </section>
                       )}
-                      <div className="h-[780px] overflow-hidden rounded-xl border border-slate-800">
-                        <LiveStudioWorkbench
-                          sessions={studioSessions}
-                          sessionId={activeStudioSessionId}
-                          projectId={projectId}
-                          projectName={labTitle}
-                          onSelectSession={setSelectedStudioSessionId}
-                          onStartSession={() =>
-                            startStudio.mutate(undefined, {
-                              onSuccess: (created) => {
-                                if (created?.id) setSelectedStudioSessionId(created.id);
-                              },
-                            })
-                          }
-                          starting={startStudio.isPending}
-                          hideSwitchToSandbox
-                        />
-                      </div>
                     </div>
                   )}
                 </DetailPanel>

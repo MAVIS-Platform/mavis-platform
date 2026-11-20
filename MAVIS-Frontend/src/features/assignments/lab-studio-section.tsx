@@ -1,11 +1,15 @@
 "use client";
 
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
   AlertTriangle,
   ArrowRight,
+  ArrowUpRight,
+  CheckCircle2,
   Container,
   Lock,
   Play,
@@ -16,8 +20,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/shared/request-state";
-import { useApiMutation, useApiQuery } from "@/hooks/use-api";
-import type { Response } from "@/lib/api/contracts";
+import { useApiQuery } from "@/hooks/use-api";
 import { api } from "@/lib/mainflow-api";
 import { useLocale } from "@/lib/i18n/locale-context";
 import {
@@ -25,64 +28,18 @@ import {
   useAutoConfigureStudio,
   useCourseSetup,
   useRuntimeSetupReadiness,
-  useStartLabStudioSession,
   useStudentLabStudioSessions,
 } from "@/features/workspaces/course-access";
 import { PreparedTopologyEditor } from "@/features/runtime/prepared-topology-editor";
 import {
-  LiveStudioWorkbench,
-  type LiveStudioAuthoringProps,
-} from "@/features/runtime/live-studio-workbench";
+  buildStudioLiveHref,
+  parseStudioTopology,
+  type StudioExerciseView,
+} from "@/features/runtime/standalone-studio-live";
 import { StudioExerciseEditor } from "./studio-exercise-editor";
 import { type Assignment } from "./requirements";
 
 type ConfigTab = "exercise" | "topology";
-type StudioTopology = NonNullable<Response<"studioState">["topology"]>;
-
-type StudioExerciseView = {
-  runtimeProjectId: string | null;
-  runtimeModelId: string | null;
-  runtimeSnapshotId: string | null;
-  baselineRequests: Array<{ method: "GET" | "HEAD"; path: string; expectedStatus: number | null }>;
-  initialState: { stoppedServices: string[]; stoppedControllers: string[] };
-  allowedActions: string[];
-  successCriteria: {
-    maxErrorRatePercent: number | null;
-    maxP95Ms: number | null;
-    requiredTraceEdge: { from: string; to: string } | null;
-    minReplicas: Array<{ service: string; count: number }>;
-  };
-  instructions: string;
-  revision: number;
-};
-
-function parseTopology(raw: unknown): StudioTopology | undefined {
-  if (!raw || typeof raw !== "object") return undefined;
-  const record = raw as Record<string, unknown>;
-  const rawBlocks = Array.isArray(record["blocks"]) ? record["blocks"] : [];
-  const rawConnections = Array.isArray(record["connections"]) ? record["connections"] : [];
-  const blocks = rawBlocks
-    .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
-    .map((item) => ({
-      service: String(item["service"] ?? "").trim(),
-      label: String(item["label"] ?? item["service"] ?? "").trim(),
-      canScale: item["canScale"] === true,
-      initiallyStopped: item["initiallyStopped"] === true,
-    }))
-    .filter((block) => block.service.length > 0);
-  if (blocks.length === 0) return undefined;
-  const connections = rawConnections
-    .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
-    .map((item) => ({
-      from: String(item["from"] ?? "").trim(),
-      to: String(item["to"] ?? "").trim(),
-      controllerService: String(item["controllerService"] ?? "").trim(),
-      protocol: String(item["protocol"] ?? "HTTP").trim() || "HTTP",
-      initiallyStopped: item["initiallyStopped"] === true,
-    }))
-    .filter((link) => link.from && link.to && link.controllerService);
-  return { version: 1, blocks, connections };
-}
 
 export function LabStudioSection({
   workspaceId,
@@ -94,7 +51,7 @@ export function LabStudioSection({
   onNavigate: (tab: "source" | "publish") => void;
 }) {
   const { t } = useLocale();
-  const cache = useQueryClient();
+  const router = useRouter();
   const exercise = useQuery({
     queryKey: ["api", "studio-exercise", workspaceId, assignment.id],
     queryFn: ({ signal }) =>
@@ -108,8 +65,6 @@ export function LabStudioSection({
   const readiness = useRuntimeSetupReadiness(projectId);
   const setup = useCourseSetup(workspaceId);
   const autoStudio = useAutoConfigureStudio(workspaceId, assignment.id);
-  const startStudio = useStartLabStudioSession(workspaceId, assignment.id);
-  const saveConfig = useApiMutation("saveRuntimeConfiguration");
   const runtimeConfig = useApiQuery(
     "runtimeConfiguration",
     { projectId: projectId ?? "" },
@@ -126,17 +81,13 @@ export function LabStudioSection({
     Boolean(projectId),
   );
 
-  const [selectedSessionId, setSelectedSessionId] = useState("");
-  const [canvasOpened, setCanvasOpened] = useState(false);
   const [configModalOpen, setConfigModalOpen] = useState(false);
   const [configTab, setConfigTab] = useState<ConfigTab>("exercise");
-  const [visualSaved, setVisualSaved] = useState(false);
-  const [visualError, setVisualError] = useState("");
 
   const previewTopology = useMemo(
     () =>
-      parseTopology(runtimeConfig.data?.profile?.["studioTopology"]) ??
-      parseTopology(readiness.data?.topology),
+      parseStudioTopology(runtimeConfig.data?.profile?.["studioTopology"]) ??
+      parseStudioTopology(readiness.data?.topology),
     [runtimeConfig.data?.profile, readiness.data?.topology],
   );
 
@@ -164,232 +115,32 @@ export function LabStudioSection({
   const verifiedSession = sessionList.find(
     (session) => session.assignmentId === assignment.id && session.studioVerified,
   );
-  const activeSessionId =
-    selectedSessionId ||
-    sessionList.find((session) => session.assignmentId === assignment.id)?.id ||
-    sessionList[0]?.id ||
-    "";
-  const showStudioCanvas =
-    isRuntimeReady || Boolean(previewTopology) || canvasOpened || sessionList.length > 0;
+  const studioReadyToLaunch = isRuntimeReady || Boolean(previewTopology) || sessionList.length > 0;
 
-  const saveVisualExercise = useMutation({
-    mutationFn: async (input: {
-      stoppedServices?: string[];
-      stoppedControllers?: string[];
-      instructions?: string;
-      baselinePath?: string;
-      maxErrorRatePercent?: string;
-      minReplicas?: Array<{ service: string; count: number }>;
-      nextTopology?: StudioTopology;
-    }) => {
-      const ref = assignment.referenceSource;
-      const runtimeProjectId = ref?.projectId ?? exercise.data?.runtimeProjectId ?? projectId;
-      const runtimeModelId = ref?.modelId ?? exercise.data?.runtimeModelId;
-      const runtimeSnapshotId = ref?.snapshotId ?? exercise.data?.runtimeSnapshotId;
-
-      if (input.nextTopology && runtimeConfig.data && projectId) {
-        await saveConfig.mutateAsync({
-          projectId,
-          profileId: runtimeConfig.data.profileId,
-          snapshotId: runtimeConfig.data.snapshotId ?? undefined,
-          modelId: runtimeConfig.data.modelId ?? undefined,
-          expectedRevision: runtimeConfig.data.revision,
-          profile: {
-            ...runtimeConfig.data.profile,
-            studioTopology: input.nextTopology,
-          },
-        });
-      }
-
-      if (runtimeProjectId && runtimeModelId && runtimeSnapshotId) {
-        const cur = exercise.data;
-        const nextBaseline = input.baselinePath?.trim()
-          ? [{ method: "GET" as const, path: input.baselinePath.trim(), expectedStatus: 200 }]
-          : cur?.baselineRequests?.length
-            ? cur.baselineRequests
-            : [{ method: "GET" as const, path: "/health", expectedStatus: 200 }];
-        const nextMaxErr =
-          input.maxErrorRatePercent !== undefined
-            ? input.maxErrorRatePercent.trim()
-              ? Number(input.maxErrorRatePercent)
-              : null
-            : (cur?.successCriteria?.maxErrorRatePercent ?? 0);
-        await api<StudioExerciseView>(
-          `workspaces/${workspaceId}/course-labs/${assignment.id}/studio-exercise`,
-          {
-            method: "PUT",
-            body: JSON.stringify({
-              runtimeProjectId,
-              runtimeModelId,
-              runtimeSnapshotId,
-              baselineRequests: nextBaseline,
-              initialState: {
-                stoppedServices:
-                  input.stoppedServices ?? cur?.initialState?.stoppedServices ?? [],
-                stoppedControllers:
-                  input.stoppedControllers ?? cur?.initialState?.stoppedControllers ?? [],
-              },
-              allowedActions: cur?.allowedActions?.length
-                ? cur.allowedActions
-                : ["START", "STOP", "SCALE", "CONNECT", "DISCONNECT"],
-              successCriteria: {
-                maxErrorRatePercent: nextMaxErr,
-                maxP95Ms: cur?.successCriteria?.maxP95Ms ?? null,
-                requiredTraceEdge: cur?.successCriteria?.requiredTraceEdge ?? null,
-                minReplicas: input.minReplicas ?? cur?.successCriteria?.minReplicas ?? [],
-              },
-              instructions: (input.instructions ?? cur?.instructions ?? "").trim(),
-            }),
-          },
-        );
-      }
-    },
-    onMutate: () => {
-      setVisualError("");
-      setVisualSaved(false);
-    },
-    onSuccess: () => {
-      setVisualSaved(true);
-      void cache.invalidateQueries({
-        queryKey: ["api", "studio-exercise", workspaceId, assignment.id],
-      });
-      void exercise.refetch();
-      void runtimeConfig.refetch();
-      void readiness.refetch();
-      void setup.refetch();
-    },
-    onError: (cause) => {
-      setVisualError(cause instanceof Error ? cause.message : String(cause));
-    },
+  const returnTo = `/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignment.id)}&tab=studio`;
+  const studioLiveHref = buildStudioLiveHref({
+    workspaceId,
+    assignmentId: assignment.id,
+    mode: "author",
+    returnTo,
   });
 
-  const initialStoppedServices = useMemo(() => {
-    if (exercise.data?.initialState?.stoppedServices) {
-      return exercise.data.initialState.stoppedServices;
-    }
-    return (previewTopology?.blocks ?? [])
-      .filter((b) => b.initiallyStopped)
-      .map((b) => b.service);
-  }, [exercise.data?.initialState?.stoppedServices, previewTopology]);
-
-  const initialStoppedControllers = useMemo(() => {
-    if (exercise.data?.initialState?.stoppedControllers) {
-      return exercise.data.initialState.stoppedControllers;
-    }
-    return (previewTopology?.connections ?? [])
-      .filter((c) => c.initiallyStopped)
-      .map((c) => c.controllerService);
-  }, [exercise.data?.initialState?.stoppedControllers, previewTopology]);
-
-  const scalableServices = useMemo(
-    () => (previewTopology?.blocks ?? []).filter((b) => b.canScale).map((b) => b.service),
-    [previewTopology],
+  const stoppedSet = new Set(exercise.data?.initialState?.stoppedServices ?? []);
+  const minReplicaMap = new Map(
+    (exercise.data?.successCriteria?.minReplicas ?? []).map((item) => [item.service, item.count]),
   );
+  const displayServices = previewTopology?.blocks.length
+    ? previewTopology.blocks.map((block) => block.service)
+    : availableApplications;
 
-  const authoringProps: LiveStudioAuthoringProps | undefined = projectId
-    ? {
-        initialStoppedServices,
-        initialStoppedControllers,
-        scalableServices,
-        instructions: exercise.data?.instructions ?? "",
-        baselinePath: exercise.data?.baselineRequests?.[0]?.path ?? "/health",
-        maxErrorRatePercent:
-          exercise.data?.successCriteria?.maxErrorRatePercent == null
-            ? "0"
-            : String(exercise.data.successCriteria.maxErrorRatePercent),
-        replicaService: exercise.data?.successCriteria?.minReplicas?.[0]?.service ?? "",
-        replicaCount:
-          exercise.data?.successCriteria?.minReplicas?.[0]?.count == null
-            ? ""
-            : String(exercise.data.successCriteria.minReplicas[0].count),
-        busy: saveVisualExercise.isPending || saveConfig.isPending,
-        saving: saveVisualExercise.isPending || saveConfig.isPending,
-        saved: visualSaved,
-        error: visualError || undefined,
-        onToggleInitialStopped: (service, isController) => {
-          const nextStoppedServices = isController
-            ? initialStoppedServices
-            : initialStoppedServices.includes(service)
-              ? initialStoppedServices.filter((s) => s !== service)
-              : [...initialStoppedServices, service];
-          const nextStoppedControllers = isController
-            ? initialStoppedControllers.includes(service)
-              ? initialStoppedControllers.filter((c) => c !== service)
-              : [...initialStoppedControllers, service]
-            : initialStoppedControllers;
-          const nextTopology = previewTopology
-            ? {
-                ...previewTopology,
-                blocks: previewTopology.blocks.map((b) => ({
-                  ...b,
-                  initiallyStopped: nextStoppedServices.includes(b.service),
-                })),
-                connections: previewTopology.connections.map((c) => ({
-                  ...c,
-                  initiallyStopped: nextStoppedControllers.includes(c.controllerService),
-                })),
-              }
-            : undefined;
-          saveVisualExercise.mutate({
-            stoppedServices: nextStoppedServices,
-            stoppedControllers: nextStoppedControllers,
-            ...(nextTopology ? { nextTopology } : {}),
-          });
-        },
-        onToggleScalable: (service) => {
-          if (!previewTopology) return;
-          const nextTopology: StudioTopology = {
-            ...previewTopology,
-            blocks: previewTopology.blocks.map((b) =>
-              b.service === service ? { ...b, canScale: !b.canScale } : b,
-            ),
-          };
-          saveVisualExercise.mutate({ nextTopology });
-        },
-        onSaveMission: (patch) => {
-          const minReplicas =
-            patch.replicaService && Number(patch.replicaCount) >= 1
-              ? [{ service: patch.replicaService, count: Number(patch.replicaCount) }]
-              : [];
-          saveVisualExercise.mutate({
-            instructions: patch.instructions,
-            baselinePath: patch.baselinePath,
-            maxErrorRatePercent: patch.maxErrorRatePercent,
-            minReplicas,
-          });
-        },
-        onCaptureCanvasState: (captured) => {
-          const nextTopology = previewTopology
-            ? {
-                ...previewTopology,
-                blocks: previewTopology.blocks.map((b) => ({
-                  ...b,
-                  initiallyStopped: captured.stoppedServices.includes(b.service),
-                })),
-                connections: previewTopology.connections.map((c) => ({
-                  ...c,
-                  initiallyStopped: captured.stoppedControllers.includes(c.controllerService),
-                })),
-              }
-            : undefined;
-          saveVisualExercise.mutate({
-            stoppedServices: captured.stoppedServices,
-            stoppedControllers: captured.stoppedControllers,
-            minReplicas: captured.minReplicas,
-            ...(nextTopology ? { nextTopology } : {}),
-          });
-        },
-      }
-    : undefined;
-
-  const runPrepareRuntime = () => {
+  const runPrepareRuntime = (openAfter: boolean) => {
     autoStudio.mutate(undefined, {
       onSuccess: () => {
-        setCanvasOpened(true);
         void exercise.refetch();
         void runtimeConfig.refetch();
         void readiness.refetch();
         void setup.refetch();
+        if (openAfter) router.push(studioLiveHref);
       },
     });
   };
@@ -397,7 +148,6 @@ export function LabStudioSection({
   return (
     <div className="space-y-4">
       <section className="space-y-4 rounded-2xl border bg-card p-5 shadow-xs">
-        {/* Compact Header */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3.5">
           <div className="flex flex-wrap items-center gap-2.5">
             <Activity className="size-4 text-primary" aria-hidden="true" />
@@ -415,13 +165,13 @@ export function LabStudioSection({
 
           {projectId && (
             <div className="flex flex-wrap items-center gap-2">
-              {showStudioCanvas && (
+              {studioReadyToLaunch && (
                 <Button
                   type="button"
                   size="sm"
                   variant="outline"
                   disabled={autoStudio.isPending}
-                  onClick={runPrepareRuntime}
+                  onClick={() => runPrepareRuntime(false)}
                 >
                   <RefreshCw
                     className={`mr-1.5 size-3.5 ${autoStudio.isPending ? "animate-spin" : ""}`}
@@ -454,7 +204,6 @@ export function LabStudioSection({
         </div>
 
         {autoStudio.error && <ErrorState error={autoStudio.error} />}
-        {startStudio.error && <ErrorState error={startStudio.error} />}
 
         {!projectId ? (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
@@ -471,9 +220,9 @@ export function LabStudioSection({
               {t("Go to Step 2", "Về Bước 2")}
             </Button>
           </div>
-        ) : !showStudioCanvas ? (
+        ) : !studioReadyToLaunch ? (
           /* Minimal 1-Click Docker Runtime Preparation Stage */
-          <div className="flex min-h-[320px] flex-col items-center justify-center rounded-xl border border-dashed bg-muted/10 px-6 py-10 text-center">
+          <div className="flex min-h-[300px] flex-col items-center justify-center rounded-xl border border-dashed bg-muted/10 px-6 py-10 text-center">
             <span className="flex size-14 items-center justify-center rounded-2xl border bg-background text-primary shadow-xs">
               <Container className="size-7" aria-hidden="true" />
             </span>
@@ -509,7 +258,11 @@ export function LabStudioSection({
             )}
 
             <div className="mt-6">
-              <Button type="button" disabled={autoStudio.isPending} onClick={runPrepareRuntime}>
+              <Button
+                type="button"
+                disabled={autoStudio.isPending}
+                onClick={() => runPrepareRuntime(true)}
+              >
                 <Play className="mr-1.5 size-4" aria-hidden="true" />
                 {autoStudio.isPending
                   ? t("Preparing Docker runtime…", "Đang chuẩn bị Docker runtime…")
@@ -518,36 +271,74 @@ export function LabStudioSection({
             </div>
           </div>
         ) : (
-          /* Visual Studio Live Workbench — Core Interactive Workspace */
-          <div className="space-y-3">
-            {verifiedSession && (
-              <div className="flex items-center justify-between rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300">
-                <span>
-                  {t("Verified Studio session", "Phiên Studio đã xác minh")}:{" "}
-                  <code className="font-mono">{verifiedSession.id.slice(0, 12)}</code>
-                </span>
-                <span>{t("Linked to Lab", "Đã liên kết Lab")}</span>
+          /* Clean Launchpad to Dedicated Full-Screen Standalone Studio Live */
+          <div className="space-y-4">
+            <div className="flex flex-col items-center justify-between gap-5 rounded-2xl border border-slate-800/80 bg-[#070b12] px-6 py-8 text-slate-100 sm:flex-row">
+              <div className="min-w-0 space-y-3 text-center sm:text-left">
+                <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 font-mono text-[11px] font-medium text-emerald-300">
+                    <span className="size-1.5 rounded-full bg-emerald-400" aria-hidden="true" />
+                    {t("Docker stack ready", "Docker stack sẵn sàng")} · {displayServices.length}{" "}
+                    {displayServices.length === 1 ? "service" : "services"}
+                  </span>
+                  {verifiedSession && (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-teal-500/30 bg-teal-500/10 px-2.5 py-0.5 font-mono text-[11px] text-teal-300">
+                      <CheckCircle2 className="size-3" aria-hidden="true" />
+                      {t("Verified", "Đã xác minh")} {verifiedSession.id.slice(0, 8)}
+                    </span>
+                  )}
+                </div>
+
+                {displayServices.length > 0 && (
+                  <div className="flex flex-wrap items-center justify-center gap-1.5 sm:justify-start">
+                    {displayServices.map((svc) => {
+                      const startsDown = stoppedSet.has(svc);
+                      const minRep = minReplicaMap.get(svc);
+                      return (
+                        <span
+                          key={svc}
+                          className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 font-mono text-xs ${
+                            startsDown
+                              ? "border-amber-500/40 bg-amber-500/10 text-amber-200"
+                              : "border-slate-700 bg-slate-900 text-slate-200"
+                          }`}
+                        >
+                          <span
+                            className={`size-1.5 rounded-full ${startsDown ? "bg-amber-400" : "bg-emerald-400"}`}
+                            aria-hidden="true"
+                          />
+                          {svc}
+                          {startsDown && (
+                            <span className="text-[10px] text-amber-300">Down</span>
+                          )}
+                          {minRep && minRep > 1 && (
+                            <span className="rounded bg-sky-500/20 px-1 text-[10px] text-sky-300">
+                              ≥{minRep}×
+                            </span>
+                          )}
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {exercise.data?.instructions && (
+                  <p className="max-w-2xl truncate text-xs text-slate-400">
+                    {exercise.data.instructions}
+                  </p>
+                )}
               </div>
-            )}
-            <div className="h-[820px] overflow-hidden rounded-xl border border-slate-800">
-              <LiveStudioWorkbench
-                sessions={sessionList}
-                sessionId={activeSessionId}
-                projectId={projectId}
-                onSelectSession={setSelectedSessionId}
-                onStartSession={() =>
-                  startStudio.mutate(undefined, {
-                    onSuccess: (created) => {
-                      if (created?.id) setSelectedSessionId(created.id);
-                      void labSessions.refetch();
-                    },
-                  })
-                }
-                starting={startStudio.isPending}
-                hideSwitchToSandbox
-                previewTopology={previewTopology}
-                authoring={authoringProps}
-              />
+
+              <Button
+                asChild
+                size="lg"
+                className="shrink-0 bg-emerald-600 px-5 text-white hover:bg-emerald-500"
+              >
+                <Link href={studioLiveHref}>
+                  {t("Open Studio Live", "Mở Studio Live")}
+                  <ArrowUpRight className="ml-1.5 size-4" aria-hidden="true" />
+                </Link>
+              </Button>
             </div>
           </div>
         )}
@@ -565,7 +356,10 @@ export function LabStudioSection({
         <div
           role="dialog"
           aria-modal="true"
-          aria-label={t("Studio Exercise & Topology Configuration", "Cấu hình Bài tập & Topology Studio")}
+          aria-label={t(
+            "Studio Exercise & Topology Configuration",
+            "Cấu hình Bài tập & Topology Studio",
+          )}
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
           onClick={() => setConfigModalOpen(false)}
         >
@@ -574,7 +368,10 @@ export function LabStudioSection({
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-3.5">
-              <div className="inline-flex items-center gap-1 rounded-lg bg-muted/40 p-1" role="tablist">
+              <div
+                className="inline-flex items-center gap-1 rounded-lg bg-muted/40 p-1"
+                role="tablist"
+              >
                 <button
                   type="button"
                   role="tab"
@@ -650,7 +447,7 @@ export function LabStudioSection({
                     type="button"
                     size="sm"
                     disabled={autoStudio.isPending}
-                    onClick={runPrepareRuntime}
+                    onClick={() => runPrepareRuntime(false)}
                   >
                     {autoStudio.isPending
                       ? t("Preparing…", "Đang chuẩn bị…")

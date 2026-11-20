@@ -150,12 +150,16 @@ test("Lab UI keeps unavailable progress gates honest and runs 4-step V2 workflow
   assert.ok(course.includes("useStudentLabStudioSessions("));
 });
 
-test("guided Lab embeds LiveStudioWorkbench directly in Step 4 without external /sessions redirect", () => {
+test("guided Lab launches standalone full-screen /studio-live in Step 4 without external /sessions redirect", () => {
   const course = read("src/features/courses/screens.tsx");
+  const standalone = read("src/features/runtime/standalone-studio-live.tsx");
+  const screenPage = read("app/[screen]/page.tsx");
   const stepContentSource = course.slice(course.indexOf("function StepContent("));
-  assert.ok(course.includes("<LiveStudioWorkbench"));
-  assert.ok(course.includes("useStartLabStudioSession("));
-  assert.ok(course.includes("useBootstrapLabStudio("));
+  assert.ok(course.includes("buildStudioLiveHref("));
+  assert.ok(standalone.includes("<LiveStudioWorkbench"));
+  assert.ok(standalone.includes("useStartLabStudioSession("));
+  assert.ok(standalone.includes("useBootstrapLabStudio("));
+  assert.ok(screenPage.includes('if (screen === "studio-live") return <StandaloneStudioLive />;'));
   assert.ok(!stepContentSource.includes("href={`/sessions?"));
   assert.ok(!stepContentSource.includes("href={`/diagrams?"));
   assert.ok(!stepContentSource.includes("href={`/architecture?"));
@@ -535,11 +539,12 @@ test("Stage 4 Step 2 UI integrates Reverse BFS Explorer, inline Step 1 Back-Link
   assert.ok(quiz.includes("Step 4 Live Studio & Submission is locked until you score at least"));
 });
 
-test("Studio in the guided Lab unlocks Step 4 after Quiz Gate and embeds simulated sandbox bootstrap", () => {
+test("Studio in the guided Lab unlocks Step 4 after Quiz Gate and connects to standalone Studio Live with sandbox bootstrap", () => {
   const course = read("src/features/courses/screens.tsx");
+  const standalone = read("src/features/runtime/standalone-studio-live.tsx");
   assert.match(course, /id === 4 && runtimeReady/);
-  assert.ok(course.includes("Start Studio Live Session"));
-  assert.ok(course.includes("Activate Simulated Sandbox Telemetry"));
+  assert.ok(course.includes("Open Studio Live"));
+  assert.ok(standalone.includes("Activate Simulated Sandbox Telemetry"));
 });
 
 test("static Guided Labs unlock Step 4 LabSubmissionV2 immediately after passing Quiz Gate", () => {
@@ -1097,14 +1102,20 @@ test("Theory Library is available inside Lab Creation with editing and course pu
   assert.ok(screen.includes("MarkdownPreview"));
 });
 
-test("Studio Live authoring runs self-contained inline topology and playtest without external jumps", () => {
+test("Studio Live authoring prepares Docker runtime in Step 5 and opens standalone full-screen Studio Live with Action Toolbox", () => {
   const studio = read("src/features/assignments/lab-studio-section.tsx");
+  const standalone = read("src/features/runtime/standalone-studio-live.tsx");
+  const parity = read("src/features/runtime/live-sandbox-parity.tsx");
   const theory = read("src/features/assignments/lab-theory-section.tsx");
   const workbench = read("src/features/runtime/studio-workbench.tsx");
   const live = read("src/features/runtime/live-studio-workbench.tsx");
 
   assert.ok(studio.includes("useAutoConfigureStudio"));
-  assert.ok(studio.includes("LiveStudioWorkbench"));
+  assert.ok(studio.includes("buildStudioLiveHref"));
+  assert.ok(standalone.includes("LiveStudioWorkbench"));
+  assert.ok(parity.includes("Action Toolbox"));
+  assert.ok(parity.includes("application/x-mavis-studio-tool"));
+  assert.ok(parity.includes("Lab Exercise Presets"));
   assert.ok(!studio.includes("/sessions?"));
   assert.ok(!studio.includes("/studio?"));
   assert.ok(!theory.includes("/diagrams?"));
