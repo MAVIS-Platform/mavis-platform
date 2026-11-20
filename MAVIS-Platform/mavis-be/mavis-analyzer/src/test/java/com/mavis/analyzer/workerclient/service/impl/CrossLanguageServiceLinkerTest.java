@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mavis.analyzer.javaanalyzer.dto.CodeEvidenceDTO;
 import com.mavis.common.entity.*;
 import com.mavis.common.repository.*;
+import com.mavis.workerclient.WorkerContract;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.*;
@@ -52,5 +53,31 @@ class CrossLanguageServiceLinkerTest {
         var result=new CrossLanguageServiceLinker(elements,rels,evidence,new ObjectMapper()).link(model,root.toString(),null,List.of(client),Map.of());
         assertEquals(0,result.linked());assertEquals(0,result.unresolved());assertEquals(0,result.ambiguous());
         verify(rels).saveAll(List.of());verify(evidence).saveAll(List.of());
+    }
+    @Test void linksDotnetProjectOwnershipInsideGitHubWrapperDirectory()throws Exception{
+        Files.writeString(root.resolve(".mavis-extraction-seal"),"hash\ntree\n");
+        Path wrapper=Files.createDirectory(root.resolve("MAVIS-Platform-mavis-studio-live-demo-582811f"));
+        Files.writeString(wrapper.resolve("mavis.bindings.json"),"""
+            {"schemaVersion":"1.0","bindings":[
+              {"service":"orders","projects":["orders/Orders.csproj"],"sourceRoots":["orders"],"endpoints":["http://orders:8080"]}]}
+            """);
+        var mapper=new ObjectMapper();
+        var ordersSvc=service("orders");
+        var module=ModelElement.builder().id(UUID.randomUUID()).name("Orders").elementType("COMPONENT")
+                .properties(mapper.createObjectNode().put("workerLogicalId","proj-orders")).build();
+        var elements=mock(ModelElementRepository.class);var rels=mock(ModelRelationshipRepository.class);var evidence=mock(EvidenceRepository.class);
+        var model=ModelVersion.builder().id(UUID.randomUUID()).build();
+        when(elements.findByModelVersionId(model.getId())).thenReturn(List.of(ordersSvc,module));
+        var worker=new WorkerContract.Result("1.0","job-1",UUID.randomUUID().toString(),UUID.randomUUID().toString(),
+                "1.0",List.of(),new WorkerContract.Coverage(1,1,"roslyn",0,List.of()),List.of(),
+                "a".repeat(64),"attempt-1",
+                List.of(new WorkerContract.Project("proj-orders","MAVIS-Platform-mavis-studio-live-demo-582811f/orders/Orders.csproj","MAVIS-Platform-mavis-studio-live-demo-582811f/orders","Orders")),
+                new WorkerContract.Canonical("1.0",true,List.of(),List.of(),List.of()));
+
+        var report=new CrossLanguageServiceLinker(elements,rels,evidence,mapper).link(model,root.toString(),worker,List.of(),Map.of());
+
+        assertSame(ordersSvc,module.getParentElement());
+        assertNotNull(report.bindingHash());
+        verify(elements).saveAll(List.of(module));
     }
 }

@@ -272,6 +272,13 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
     "Không thể hoàn tất xác minh email. Vui lòng kiểm tra mã hoặc đăng nhập nếu đã xác minh.",
   "We couldn't send the email right now. Please try again later.":
     "Hiện chưa thể gửi email. Vui lòng thử lại sau.",
+  "Third-party sign-in is not configured for this workspace.":
+    "Đăng nhập bên thứ 3 chưa được cấu hình cho không gian làm việc này.",
+  "Third-party sign-in failed. Please try again.":
+    "Đăng nhập bên thứ 3 thất bại. Vui lòng thử lại.",
+  "Your third-party account must have a verified email address to sign in.":
+    "Tài khoản bên thứ 3 cần có địa chỉ email đã xác minh để đăng nhập.",
+  "Third-party sign-in was cancelled.": "Đăng nhập bên thứ 3 đã bị hủy.",
   "Unable to connect. Please check your internet connection and try again.":
     "Không thể kết nối. Vui lòng kiểm tra kết nối Internet và thử lại.",
   "Something went wrong. Please try again later.": "Đã xảy ra lỗi. Vui lòng thử lại sau.",
@@ -1731,6 +1738,30 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Zoom out": "Thu nhỏ",
   "Zoom overview in": "Phóng to tổng quan",
   "Zoom overview out": "Thu nhỏ tổng quan",
+  "A class with this code already exists. Choose a different class code.":
+    "Mã lớp học này đã tồn tại. Hãy chọn mã lớp khác.",
+  "This user is already a member of this class.":
+    "Người dùng này đã là thành viên của lớp học.",
+  "The class creator cannot be removed from the class.":
+    "Không thể xóa người tạo khỏi lớp học.",
+  "This class is archived and cannot be modified.":
+    "Lớp học này đã được lưu trữ nên không thể chỉnh sửa.",
+  "This passkey already exists. Choose a different passkey.":
+    "Passkey này đã tồn tại. Hãy chọn passkey khác.",
+  "Passkey format is invalid. Use letters, numbers, or hyphens.":
+    "Định dạng passkey không hợp lệ. Chỉ dùng chữ cái, số hoặc dấu gạch ngang.",
+  "Invalid or expired passkey. Check with your lecturer and try again.":
+    "Passkey không hợp lệ hoặc đã hết hạn. Hãy kiểm tra lại với giảng viên.",
+  "This class has reached its maximum student capacity.":
+    "Lớp học này đã đạt số lượng sinh viên tối đa.",
+  "You are already enrolled in this class.": "Bạn đã tham gia lớp học này rồi.",
+  "Cannot delete a Lab that already has student submissions.":
+    "Không thể xóa Lab đã có sinh viên nộp bài.",
+  "Published Labs are part of the course roadmap and cannot be deleted.":
+    "Lab đã xuất bản nằm trong lộ trình học nên không thể xóa.",
+  "A published Lab keeps its pinned reference source.":
+    "Lab đã xuất bản không thể thay đổi mã nguồn mẫu đã ghim.",
+  "An account with this email already exists.": "Email này đã tồn tại trong hệ thống.",
   "Zoom to fit": "Căn vừa khung hình",
   "active session": "Phiên đang hoạt động",
   "activity events": "sự kiện hoạt động",

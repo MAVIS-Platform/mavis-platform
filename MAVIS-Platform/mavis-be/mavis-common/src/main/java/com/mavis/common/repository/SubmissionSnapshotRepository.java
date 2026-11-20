@@ -18,6 +18,8 @@ public interface SubmissionSnapshotRepository extends JpaRepository<SubmissionSn
     List<SubmissionSnapshot> findByAssignmentId(UUID assignmentId);
     List<SubmissionSnapshot> findByProjectId(UUID projectId);
     List<SubmissionSnapshot> findBySubmittedById(UUID submittedById);
+    Optional<SubmissionSnapshot> findFirstByAssignmentIdAndSubmittedByIdOrderBySubmittedAtDescIdDesc(
+            UUID assignmentId, UUID submittedById);
 
     @EntityGraph(attributePaths = {
             "assignment", "project", "submittedBy", "sourceSnapshot",
@@ -25,7 +27,10 @@ public interface SubmissionSnapshotRepository extends JpaRepository<SubmissionSn
     })
     List<SubmissionSnapshot> findByAssignmentIdOrderBySubmittedAtDesc(UUID assignmentId);
 
-    @EntityGraph(attributePaths = {"assignment", "submittedBy"})
+    @EntityGraph(attributePaths = {
+            "assignment", "assignment.workspace", "project", "submittedBy",
+            "sourceSnapshot", "modelVersion", "diagramVersion", "evaluationRun", "runtimeSession"
+    })
     List<SubmissionSnapshot> findByAssignmentIdInOrderBySubmittedAtDesc(Collection<UUID> assignmentIds);
 
     @EntityGraph(attributePaths = {

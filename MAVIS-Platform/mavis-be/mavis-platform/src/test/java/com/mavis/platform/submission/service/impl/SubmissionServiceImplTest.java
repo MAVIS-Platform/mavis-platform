@@ -1104,8 +1104,8 @@ class SubmissionServiceImplTest {
     }
 
     @Test
-    @DisplayName("submitTheoryV2 accepts THEORY_QUIZ_STUDIO with verified HMAC receipt even when snapshots array is empty")
-    void studioV2SubmitsWithVerifiedReceiptAndEmptySnapshots() {
+    @DisplayName("Studio submission needs a verified receipt and explained captures")
+    void studioV2RequiresExplainedSnapshotsInAdditionToVerifiedReceipt() {
         var labWorkspace = Workspace.builder().id(UUID.randomUUID()).courseMode(true).status("ACTIVE").build();
         student.setRole(Role.builder().code("STUDENT").build());
         assignment.setLabMode("THEORY_QUIZ_STUDIO");
@@ -1127,7 +1127,7 @@ class SubmissionServiceImplTest {
         var control = objectMapper.createObjectNode().put("receiptSignature", "hmac-sha256:verified");
         control.putArray("actions").addObject()
                 .put("action", "SCALE").put("service", "orders").put("replicas", 2);
-        control.putArray("snapshots");
+        var captures = control.putArray("snapshots");
         runtimeSession.setStudioControl(control);
 
         var receipt = objectMapper.createObjectNode();
@@ -1160,11 +1160,34 @@ class SubmissionServiceImplTest {
                         "THEORY", "Theory explanation", "Service boundaries verified in Studio Live.")))
                 .build();
 
+        assertThatThrownBy(() -> submissionService.submitAssignment(request))
+                .isInstanceOfSatisfying(BusinessException.class, failure -> {
+                    assertThat(failure.getErrorCode()).isEqualTo(com.mavis.common.exception.ErrorCode.UNPROCESSABLE_ENTITY);
+                    assertThat(failure.getMessage()).contains("STUDIO_SNAPSHOT_REQUIRED");
+                });
+        var capture = captures.addObject().put("id", "capture-1").put("title", "Scale observation");
+        assertThatThrownBy(() -> submissionService.submitAssignment(request))
+                .isInstanceOfSatisfying(BusinessException.class, failure -> {
+                    assertThat(failure.getErrorCode()).isEqualTo(com.mavis.common.exception.ErrorCode.UNPROCESSABLE_ENTITY);
+                    assertThat(failure.getMessage()).contains("STUDIO_SNAPSHOT_EVIDENCE_INVALID");
+                });
+        capture.put("explanation", "Orders scaled from one replica to two.");
+        captures.add(capture.deepCopy());
+        assertThatThrownBy(() -> submissionService.submitAssignment(request))
+                .isInstanceOfSatisfying(BusinessException.class, failure -> {
+                    assertThat(failure.getErrorCode()).isEqualTo(com.mavis.common.exception.ErrorCode.BAD_REQUEST);
+                    assertThat(failure.getMessage()).contains("STUDIO_SNAPSHOT_EVIDENCE_INVALID");
+                });
+        verify(submissionSnapshotRepository, never()).save(any());
+        captures.remove(1);
+
         SubmissionResponseDTO response = submissionService.submitAssignment(request);
         assertThat(response.getRuntimeSessionId()).isEqualTo(runtimeSessionId);
         assertThat(response.getStudioEvidence().path("receiptSignature").asText()).isEqualTo("hmac-sha256:verified");
         assertThat(response.getStudioEvidence().path("snapshots").isArray()).isTrue();
-        assertThat(response.getStudioEvidence().path("snapshots").size()).isZero();
+        assertThat(response.getStudioEvidence().path("snapshots").size()).isEqualTo(1);
+        assertThat(response.getStudentSnapshots().path(1).path("snapshotId").asText())
+                .isEqualTo("STUDIO_capture-1");
     }
 
     @Test
@@ -1202,5 +1225,51 @@ class SubmissionServiceImplTest {
         assertThat(response.getSourceSnapshotId()).isNull();
         assertThat(response.getCourseQuizEvidence().path("status").asText()).isEqualTo("PASSED");
         assertThat(response.getEvidencePackageDigest()).matches("sha256:[a-f0-9]{64}");
+    }
+
+    @Test
+    @DisplayName("Class-wide submissions excludes detached V1 labs, puts PENDING first, and populates 0-10 score")
+    void getSubmissionsByWorkspaceAggregatesActiveLabsOnlyAndSortsPendingFirst() {
+        var courseWs = Workspace.builder().id(UUID.randomUUID()).name("JAVA-MS-2026").courseMode(true).status("ACTIVE").build();
+        var activeLab = Assignment.builder().id(UUID.randomUUID()).workspace(courseWs).title("Active Lab 1").labOrder(1).build();
+        var detachedV1 = Assignment.builder().id(UUID.randomUUID()).workspace(courseWs).title("Obsolete V1 Lab").labOrder(null)
+                .aiPolicy(objectMapper.createObjectNode().put("archivedV1", true)).build();
+
+        var gradedOld = SubmissionSnapshot.builder().id(UUID.randomUUID()).assignment(activeLab).submittedBy(student)
+                .submittedAt(OffsetDateTime.now().minusMinutes(1)).build();
+        var pendingOlder = SubmissionSnapshot.builder().id(UUID.randomUUID()).assignment(activeLab).submittedBy(student)
+                .submittedAt(OffsetDateTime.now().minusMinutes(10)).build();
+        var obsoleteSub = SubmissionSnapshot.builder().id(UUID.randomUUID()).assignment(detachedV1).submittedBy(student)
+                .submittedAt(OffsetDateTime.now()).build();
+
+        var rev = new SubmissionReview();
+        rev.setSubmission(gradedOld);
+        rev.setStatus("GRADED");
+        rev.setScore(java.math.BigDecimal.valueOf(85.0));
+        rev.setLabOutcome("PASSED");
+
+        when(workspaceRepository.findById(courseWs.getId())).thenReturn(Optional.of(courseWs));
+        when(assignmentRepository.findByWorkspaceIdOrderByCreatedAtDesc(courseWs.getId()))
+                .thenReturn(List.of(activeLab, detachedV1));
+        when(submissionSnapshotRepository.findByAssignmentIdInOrderBySubmittedAtDesc(List.of(activeLab.getId())))
+                .thenReturn(List.of(gradedOld, pendingOlder));
+        when(feedbackCommentRepository.countFeedbacksBySubmissionIds(anyList())).thenReturn(List.of());
+        when(submissionReviewRepository.findBySubmissionIdIn(anyList())).thenReturn(List.of(rev));
+
+        List<SubmissionResponseDTO> classSubs = submissionService.getSubmissionsByWorkspace(courseWs.getId(), null, null);
+        assertThat(classSubs).extracting(SubmissionResponseDTO::getId)
+                .containsExactly(pendingOlder.getId(), gradedOld.getId());
+        assertThat(classSubs.get(1).getReviewScore()).isEqualTo(85.0);
+        assertThat(classSubs.get(1).getReviewScoreTenScale()).isEqualTo(8.5);
+
+        User lecturerUser = User.builder().id(UUID.randomUUID()).role(Role.builder().code("LECTURER").build()).build();
+        when(accessPolicyService.requireCurrentActiveUser()).thenReturn(lecturerUser);
+        when(submissionSnapshotRepository.findVisibleTo(lecturerUser.getId(), false))
+                .thenReturn(List.of(obsoleteSub, gradedOld, pendingOlder));
+
+        List<SubmissionResponseDTO> dashboardSubs = submissionService.getMySubmissions(courseWs.getId());
+        assertThat(dashboardSubs).extracting(SubmissionResponseDTO::getId)
+                .containsExactlyInAnyOrder(gradedOld.getId(), pendingOlder.getId())
+                .doesNotContain(obsoleteSub.getId());
     }
 }

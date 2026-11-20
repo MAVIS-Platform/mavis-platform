@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { MarkdownPreview } from "@/components/shared/markdown-preview";
 import { api, ApiError } from "@/lib/mainflow-api";
 import { useLocale } from "@/lib/i18n/locale-context";
+import { formatQuizQuestionPrompt, sanitizeQuizPlainText } from "@/lib/format/course-display";
 
 type QuestionType = "SINGLE_CHOICE" | "MULTI_CHOICE" | "TRUE_FALSE";
 type Question = {
@@ -97,6 +98,9 @@ export function CourseQuiz({
             void cache.invalidateQueries({
               queryKey: ["api", "student-lab-context", workspaceId, labId],
             });
+            void cache.invalidateQueries({ queryKey: ["api", "course-roadmap", workspaceId] });
+            void cache.invalidateQueries({ queryKey: ["api", "workspace-gradebook", workspaceId] });
+            void cache.invalidateQueries({ queryKey: ["api", "workspaces"] });
           }}
         />
       )}
@@ -165,9 +169,17 @@ function AttemptForm({
   return (
     <div className="space-y-5">
       {quiz.lesson && (
-        <div className="rounded-xl border bg-muted/20 p-4">
-          <MarkdownPreview markdown={quiz.lesson} />
-        </div>
+        <details className="rounded-xl border bg-muted/20 p-3.5">
+          <summary className="cursor-pointer select-none text-xs font-semibold text-teal-800 dark:text-teal-300">
+            {t(
+              "Reference Theory & Lesson Summary (Click to expand)",
+              "Xem nhanh lý thuyết tham chiếu trước khi làm Quiz (Nhấn để mở)",
+            )}
+          </summary>
+          <div className="mt-3 border-t pt-3">
+            <MarkdownPreview markdown={quiz.lesson} />
+          </div>
+        </details>
       )}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-teal-200/80 bg-gradient-to-r from-teal-50/80 via-emerald-50/50 to-white px-4 py-3">
         <div className="flex flex-wrap items-center gap-3 text-sm text-slate-700">
@@ -213,11 +225,11 @@ function AttemptForm({
             {quiz.questions.map((question, index) => (
               <li key={question.id ?? index} className="space-y-1 rounded-lg border p-3">
                 <p className="text-sm font-medium">
-                  {index + 1}. {question.prompt}
+                  {index + 1}. {formatQuizQuestionPrompt(question.prompt)}
                 </p>
                 <ul className="space-y-1 text-sm text-muted-foreground">
                   {question.options.map((option, optionIndex) => (
-                    <li key={optionIndex}>{option}</li>
+                    <li key={optionIndex}>{sanitizeQuizPlainText(option)}</li>
                   ))}
                 </ul>
               </li>
@@ -268,11 +280,12 @@ function AttemptForm({
                       ) : (
                         <XCircle className="size-4 text-destructive" aria-hidden="true" />
                       )}
-                      {t("Question", "Câu")} {index + 1}: {quiz.questions[index]?.prompt ?? ""}
+                      {t("Question", "Câu")} {index + 1}:{" "}
+                      {formatQuizQuestionPrompt(quiz.questions[index]?.prompt)}
                     </p>
                     {result.explanation && (
                       <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                        💡 {result.explanation}
+                        💡 {sanitizeQuizPlainText(result.explanation)}
                       </p>
                     )}
                   </li>
@@ -329,9 +342,7 @@ function AttemptForm({
                   <span className="inline-flex items-center rounded-md bg-teal-50 px-2 py-0.5 text-xs font-semibold text-teal-800 border border-teal-200">
                     {t("Question", "Câu")} {index + 1}
                   </span>
-                  <span>
-                    {index + 1}. {question.prompt}
-                  </span>
+                  <span>{formatQuizQuestionPrompt(question.prompt)}</span>
                   {multi && (
                     <span className="text-xs font-normal text-muted-foreground">
                       ({t("Select all that apply", "Chọn tất cả đáp án đúng")})
@@ -358,7 +369,7 @@ function AttemptForm({
                           checked={isChecked}
                           onChange={() => toggle(index, optionIndex, multi)}
                         />
-                        <span className="leading-6">{option}</span>
+                        <span className="leading-6">{sanitizeQuizPlainText(option)}</span>
                       </label>
                     );
                   })}
@@ -395,11 +406,13 @@ function AttemptForm({
                         )}
                         {t("Question", "Câu")} {index + 1}:{" "}
                         {result.correct ? t("Correct", "Đúng") : t("Incorrect", "Sai")}
-                        {quiz.questions[index]?.prompt ? ` — ${quiz.questions[index].prompt}` : ""}
+                        {quiz.questions[index]?.prompt
+                          ? ` — ${formatQuizQuestionPrompt(quiz.questions[index].prompt)}`
+                          : ""}
                       </p>
                       {result.explanation && (
                         <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                          💡 {result.explanation}
+                          💡 {sanitizeQuizPlainText(result.explanation)}
                         </p>
                       )}
                     </li>
@@ -421,30 +434,35 @@ function AttemptForm({
             </div>
           ) : (
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="border-amber-300 text-xs text-amber-800 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-300"
-                  onClick={() => {
-                    const quickWrong: Record<number, number[]> = {};
-                    quiz.questions.forEach((q, idx) => {
-                      const lastOpt = Math.max(0, q.options.length - 1);
-                      quickWrong[idx] = [lastOpt];
-                    });
-                    setAnswers(quickWrong);
-                    setAttemptId(undefined);
-                    submit.reset();
-                  }}
-                >
-                  🧪{" "}
-                  {t(
-                    "Pre-fill Quick Answers (Test DS-02b / Retry Gate)",
-                    "Điền nhanh lựa chọn mẫu (Kiểm thử Quiz Gate / DS-02b)",
-                  )}
-                </Button>
-              </div>
+              <details className="text-xs">
+                <summary className="cursor-pointer select-none text-[11px] font-medium text-muted-foreground hover:text-foreground">
+                  ⚙ {t("QA / Demo Controls", "Kiểm thử / Demo nhanh")}
+                </summary>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="border-amber-300 text-xs text-amber-800 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-300"
+                    onClick={() => {
+                      const quickWrong: Record<number, number[]> = {};
+                      quiz.questions.forEach((q, idx) => {
+                        const lastOpt = Math.max(0, q.options.length - 1);
+                        quickWrong[idx] = [lastOpt];
+                      });
+                      setAnswers(quickWrong);
+                      setAttemptId(undefined);
+                      submit.reset();
+                    }}
+                  >
+                    🧪{" "}
+                    {t(
+                      "Pre-fill Quick Answers (Test DS-02b / Retry Gate)",
+                      "Điền nhanh lựa chọn mẫu (Kiểm thử Quiz Gate / DS-02b)",
+                    )}
+                  </Button>
+                </div>
+              </details>
               <Button disabled={submit.isPending || !answered}>
                 {t("Submit Quiz", "Nộp Quiz")}
               </Button>

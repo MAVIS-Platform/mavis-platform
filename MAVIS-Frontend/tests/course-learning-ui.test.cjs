@@ -151,12 +151,16 @@ test("Lab UI keeps unavailable progress gates honest and runs the 3-phase Studio
   assert.ok(course.includes("useStudentLabStudioSessions("));
 });
 
-test("guided Lab embeds LiveStudioWorkbench directly in Step 4 without external /sessions redirect", () => {
+test("guided Lab launches standalone full-screen /studio-live in Step 4 without external /sessions redirect", () => {
   const course = read("src/features/courses/screens.tsx");
+  const standalone = read("src/features/runtime/standalone-studio-live.tsx");
+  const screenPage = read("app/[screen]/page.tsx");
   const stepContentSource = course.slice(course.indexOf("function StepContent("));
-  assert.ok(course.includes("<LiveStudioWorkbench"));
-  assert.ok(course.includes("useStartLabStudioSession("));
-  assert.ok(course.includes("useBootstrapLabStudio("));
+  assert.ok(course.includes("buildStudioLiveHref("));
+  assert.ok(standalone.includes("<LiveStudioWorkbench"));
+  assert.ok(standalone.includes("useStartLabStudioSession("));
+  assert.ok(standalone.includes("useBootstrapLabStudio("));
+  assert.ok(screenPage.includes('if (screen === "studio-live") return <StandaloneStudioLive />;'));
   assert.ok(!stepContentSource.includes("href={`/sessions?"));
   assert.ok(!stepContentSource.includes("href={`/diagrams?"));
   assert.ok(!stepContentSource.includes("href={`/architecture?"));
@@ -530,11 +534,12 @@ test("Static Studio provides the Reverse BFS hypothesis before Runtime Studio va
   assert.ok(course.includes("compare predicted and observed impact"));
 });
 
-test("Studio in the guided Lab unlocks Runtime Studio after the Module Quiz and embeds simulated sandbox bootstrap", () => {
+test("Studio in the guided Lab unlocks Runtime Studio after the Module Quiz and connects to Studio Live", () => {
   const course = read("src/features/courses/screens.tsx");
+  const standalone = read("src/features/runtime/standalone-studio-live.tsx");
   assert.match(course, /if \(id === 2\) return runtimeReady/);
-  assert.ok(course.includes("Start Studio Live Session"));
-  assert.ok(course.includes("Activate Simulated Sandbox Telemetry"));
+  assert.ok(course.includes("Open Studio Live"));
+  assert.ok(standalone.includes("Activate Simulated Sandbox Telemetry"));
 });
 
 test("Evidence & Submit receives the verified Runtime Studio session", () => {
@@ -693,22 +698,20 @@ test("Stage 1 reference views, Step 4 submit bridge, and student BFF endpoints a
   assert.ok(composer.includes("Run Static Analysis Now"));
 });
 
-test("Curated course seeding remains available without a standalone library card", () => {
+test("Curated library UI stays removed while the seeding API remains available", () => {
   const access = read("src/features/workspaces/course-access.tsx");
   const course = read("src/features/courses/screens.tsx");
   const assignments = read("src/features/assignments/screens.tsx");
   const { allowedBackendPath } = require("../src/lib/api/backend-path.ts");
 
-  assert.ok(access.includes("export function SeedCuratedCourseLabs"));
-  assert.ok(access.includes("course-labs/seed-curated"));
-  assert.ok(access.includes("STANDARD_DEMO"));
-  assert.ok(access.includes("FULL_CURRICULUM"));
+  assert.doesNotMatch(
+    [access, course, assignments].join("\n"),
+    /SeedCuratedCourseLabs|MAVIS Curated Course & Lab Library/,
+  );
   assert.equal(
     allowedBackendPath("workspaces/11111111-1111-1111-1111-111111111111/course-labs/seed-curated"),
     true,
   );
-  assert.equal(course.includes("<SeedCuratedCourseLabs workspaceId={workspaceId}"), false);
-  assert.equal(assignments.includes("<SeedCuratedCourseLabs workspaceId={workspaceId}"), false);
 });
 
 test("Course builder exposes immutable publishing and BFF routes for structured roadmap content", () => {
@@ -870,8 +873,8 @@ test("Lab v2 info removes diagram submission and theory is lesson + repo + C1-C3
 
   assert.doesNotMatch(info, /Required architecture views/);
   assert.doesNotMatch(info, /DIAGRAM_REQUIREMENTS/);
-  assert.ok(info.includes("Theory + Quiz"));
-  assert.ok(info.includes("Theory + Quiz + Studio"));
+  assert.doesNotMatch(info, /Lab learning flow/);
+  assert.ok(read("src/features/assignments/lab-publish-section.tsx").includes("BR-06 Quiz Gate"));
   assert.ok(info.includes("Students do not submit diagrams"));
   assert.ok(theory.includes("MarkdownEditor"));
   assert.ok(theory.includes("MarkdownPreview"));
@@ -1091,14 +1094,20 @@ test("Theory Library is available inside Lab Creation with editing and course pu
   assert.ok(screen.includes("MarkdownPreview"));
 });
 
-test("Studio Live authoring runs self-contained inline topology and playtest without external jumps", () => {
+test("Studio Live authoring prepares Docker runtime in Step 5 and opens standalone full-screen Studio Live with Action Toolbox", () => {
   const studio = read("src/features/assignments/lab-studio-section.tsx");
+  const standalone = read("src/features/runtime/standalone-studio-live.tsx");
+  const parity = read("src/features/runtime/live-sandbox-parity.tsx");
   const theory = read("src/features/assignments/lab-theory-section.tsx");
   const workbench = read("src/features/runtime/studio-workbench.tsx");
   const live = read("src/features/runtime/live-studio-workbench.tsx");
 
   assert.ok(studio.includes("useAutoConfigureStudio"));
-  assert.ok(studio.includes("LiveStudioWorkbench"));
+  assert.ok(studio.includes("buildStudioLiveHref"));
+  assert.ok(standalone.includes("LiveStudioWorkbench"));
+  assert.ok(parity.includes("Action Toolbox"));
+  assert.ok(parity.includes("application/x-mavis-studio-tool"));
+  assert.ok(parity.includes("Lab Exercise Presets"));
   assert.ok(!studio.includes("/sessions?"));
   assert.ok(!studio.includes("/studio?"));
   assert.ok(!theory.includes("/diagrams?"));
@@ -1360,7 +1369,7 @@ test("Lecturer flow, 1-Click Login, MockAdapter JAVA-MS-2026, and clean routes h
   const teacherDashSrc = read("src/features/workspaces/teacher-dashboard.tsx");
   assert.ok(!workspacesSrc.includes("/workspace-members"));
   assert.ok(!teacherDashSrc.includes("/workspace-members"));
-  assert.ok(workspacesSrc.includes("#class-passkey"));
+  assert.ok(workspacesSrc.includes("ClassPasskeyDialog"));
   assert.ok(teacherDashSrc.includes("#class-passkey"));
 
   const managerSrc = read("src/features/courses/lecturer-curriculum-manager.tsx");
@@ -1424,14 +1433,20 @@ test("Round 4 guards isolate each Lab entry, adapt Theory Only labs, prevent sig
   const appShell = read("src/components/app-shell.tsx");
   const ops = read("src/lib/api/java-operations.ts");
 
-  assert.match(screens, /const hasReferenceArch = Boolean\(activeModelId \|\| referenceSnapshotId\)/);
+  assert.match(
+    screens,
+    /const hasReferenceArch = Boolean\(activeModelId \|\| referenceSnapshotId\)/,
+  );
   assert.match(screens, /Lab objective/);
   assert.match(screens, /title: "Static Studio"/);
   assert.match(screens, /title: "MAVIS Runtime Studio"/);
   assert.match(screens, /title: "Evidence & Submit"/);
   assert.doesNotMatch(screens, /<CourseQuiz/);
   assert.match(appShell, /const canQueryAuth =\s*!signingOut/);
-  assert.match(ops, /pinned\["modelVersionId"\] != null && pinned\["modelVersionId"\] !== id\(input, "modelId"\)/);
+  assert.match(
+    ops,
+    /pinned\["modelVersionId"\] != null && pinned\["modelVersionId"\] !== id\(input, "modelId"\)/,
+  );
 });
 
 test("Round 5 guards strip Theory theme metadata, check quizVersion > 0, hydrate latestSubmission, and preserve Studio freeze errors", () => {
@@ -1447,4 +1462,186 @@ test("Round 5 guards strip Theory theme metadata, check quizVersion > 0, hydrate
   assert.match(submissionV2, /const latest =\s*mine\[0\] \?\?\s*\(initialSubmission/);
   assert.match(submissionV2, /activeReview\?\.labOutcome !== "PASSED"/);
   assert.match(apiError, /STUDIO_VALIDATION_REQUIRED/);
+});
+
+test("Round 6 reuses core ArchitecturePresentation in Lab Creation, fixes Step 2 readiness, and exposes top-bar Snapshot", () => {
+  const sourceSection = read("src/features/assignments/lab-source-section.tsx");
+  const theorySection = read("src/features/assignments/lab-theory-section.tsx");
+  const components = read("src/features/architecture/components.tsx");
+  const studioWorkbench = read("src/features/runtime/live-studio-workbench.tsx");
+  const curriculumMgr = read("src/features/courses/lecturer-curriculum-manager.tsx");
+
+  assert.match(sourceSection, /<ArchitecturePresentation[\s\S]*guidedStatic[\s\S]*controlledKind=/);
+  assert.match(theorySection, /<ArchitecturePresentation[\s\S]*guidedStatic[\s\S]*controlledKind=/);
+  assert.match(sourceSection, /studioComposeReady/);
+  assert.match(components, /const \[origin, setOrigin\] = useState<[^>]+>\("all"\);/);
+  assert.match(studioWorkbench, /Snapshot[\s\S]*captureSnapshot/);
+  assert.doesNotMatch(curriculumMgr, /2D Studio/);
+});
+
+test("Lecturer Studio Live authoring uses unified single top bar, non-red healthy nodes, 409 auto-retry, and Step 6 handoff", () => {
+  const live = read("src/features/runtime/live-studio-workbench.tsx");
+  const standalone = read("src/features/runtime/standalone-studio-live.tsx");
+  const access = read("src/features/workspaces/course-access.tsx");
+  const obs = read("src/features/runtime/studio-observability.tsx");
+
+  assert.match(live, /standaloneHeader\?\.left/);
+  assert.match(live, /aria-label="Lecturer setup panel tabs"/);
+  assert.doesNotMatch(live, /Test Live Docker/);
+  assert.match(live, /isBooting \? "Booting…" : "Run"/);
+  assert.match(live, /Step 1 · Pick Lab Scenario/);
+  assert.match(live, /Student Will Receive/);
+  assert.match(live, /isTerminalAuthorSession/);
+  assert.match(live, /services\.includes\(studio\.service\)/);
+  assert.match(live, /Expand telemetry dock/);
+  assert.doesNotMatch(live, /aria-label="Lecturer Lab Setup Guide"/);
+  assert.match(standalone, /Done · Step 6/);
+  assert.match(standalone, /tab=publish/);
+  assert.match(standalone, /setQueryData\(\["api", "runtimeConfiguration"/);
+  assert.match(standalone, /cause\.status === 409/);
+  assert.match(access, /queryKey: \["api", "runtimeConfiguration"\]/);
+  assert.match(obs, /confirmed\?\.result\?\.replicasAfter !== undefined/);
+  assert.match(obs, /isImpactedByOutage/);
+  assert.doesNotMatch(obs, /isStopped \|\| isAffected/);
+  assert.match(
+    live,
+    /const canvasSelected = services\.includes\(studio\.service\) \? studio\.service : "";/,
+  );
+  assert.match(obs, /else if \(clickedBlankCanvas && selected\) onSelect\(""\);/);
+  assert.doesNotMatch(obs, /const accentColor = isStopped \? s : "#(38bdf8|2dd4bf|a78bfa)"/);
+  const parity = read("src/features/runtime/live-sandbox-parity.tsx");
+  assert.match(parity, /LIVE_LIFECYCLE_TOOLS/);
+  assert.match(parity, /LIVE_SCALE_TOOLS/);
+  assert.match(parity, /Drag onto block/);
+  assert.doesNotMatch(parity, /Scale ×8 Max Load/);
+  assert.doesNotMatch(live, /Preview · Select a block/);
+  assert.match(live, /Cluster Overview[\s\S]*Traffic &amp; reliability[\s\S]*Resource capacity/);
+  assert.doesNotMatch(live, /Decrease \$\{service\} replicas|Increase \$\{service\} replicas/);
+  assert.match(live, /Service Telemetry[\s\S]*Net I\/O[\s\S]*Req \/ Err%[\s\S]*detailed telemetry/);
+  assert.match(live, /<LiveTerminalConsole/);
+  const recording = read("src/features/runtime/studio-recording.ts");
+  const evidence = read("src/features/runtime/studio-evidence.tsx");
+  assert.match(obs, /preserveMotion = false/);
+  assert.match(recording, /serializeStudioGraph\(svg, true, true\)/);
+  assert.match(evidence, /aria-label="Step traffic flows"/);
+  assert.match(live, /Screenshot PNG[\s\S]*Record runtime replay[\s\S]*Capture evidence snapshot/);
+  assert.match(live, /aria-label="Runtime traffic flows"/);
+  const exerciseEditor = read("src/features/assignments/studio-exercise-editor.tsx");
+  const apiErrors = read("src/lib/errors/api-error.ts");
+  assert.match(standalone, /data-theme="dark"[\s\S]*bg-\[#0b101b\]/);
+  assert.doesNotMatch(
+    exerciseEditor,
+    /Recommended Studio Live Exercise Preset|Studio exercise \(teacher\)/,
+  );
+  assert.doesNotMatch(standalone, /composePoolServices[\s\S]{0,400}detectedServices/);
+  assert.match(standalone, /stripTransientRuntimeProfile/);
+  assert.match(apiErrors, /STUDIO_TOPOLOGY_INVALID/);
+  assert.match(parity, /isPreview[\s\S]*"Starts Down"[\s\S]*"Prepared"/);
+  assert.doesNotMatch(live, /Provisioning real Docker containers on Runner/);
+  assert.match(
+    live,
+    /<LiveTerminalConsole[\s\S]*isBooting=\{isBooting\}[\s\S]*systemError=\{terminalSystemError\}/,
+  );
+});
+
+test("Studio Live project terminal parser multiplexes compose logs, stack traces, runner actions and warnings", () => {
+  const { buildTerminalEntries } = require("../src/features/runtime/live-terminal-console.tsx");
+  const entries = buildTerminalEntries({
+    sessionId: "s-1",
+    interactive: true,
+    services: ["api-gateway", "order-service"],
+    finishRequested: false,
+    executionStatus: "RUNNING",
+    cleanupStatus: "PENDING",
+    actions: [
+      {
+        actionId: "00000000-0000-4000-8000-000000000001",
+        action: "SCALE",
+        service: "order-service",
+        replicas: 2,
+        status: "CONFIRMED",
+        requestedAt: "2026-11-20T09:15:15.000Z",
+        completedAt: "2026-11-20T09:15:16.000Z",
+        result: {
+          action: "SCALE",
+          service: "order-service",
+          replicasBefore: 1,
+          replicasAfter: 2,
+          confirmed: true,
+          metricsBefore: {},
+          metricsAfter: { requestCount: 12, p95LatencyMs: 38, errorRatePercent: 0 },
+        },
+      },
+    ],
+    telemetry: {
+      observedAt: "2026-11-20T09:15:17.000Z",
+      services: [
+        {
+          service: "api-gateway",
+          replicas: 1,
+          runningReplicas: 1,
+          stats: [],
+          logs: [
+            "api-gateway-1  | 2026-11-20T09:15:14.000Z ERROR Upstream timeout calling order-service",
+            "api-gateway-1  |   at com.mavis.Gateway.route(Gateway.java:42)",
+          ].join("\n"),
+        },
+        {
+          service: "order-service",
+          replicas: 2,
+          runningReplicas: 2,
+          stats: [],
+          logs: "order-service-1 | 2026-11-20T09:15:12.000Z INFO Started OrderApplication in 1.8s",
+        },
+      ],
+      spans: [],
+      interactions: [],
+      warnings: ["Collector dropped 1 span"],
+    },
+  });
+
+  assert.equal(entries.length, 5);
+  assert.equal(entries[0].sourceLabel, "order-service-1");
+  assert.equal(entries[0].level, "INFO");
+  assert.equal(entries[1].sourceLabel, "api-gateway-1");
+  assert.equal(entries[1].level, "ERROR");
+  assert.equal(entries[2].level, "ERROR");
+  assert.match(entries[2].message, /Gateway\.java:42/);
+  assert.equal(entries[3].sourceLabel, "mavis-runner");
+  assert.match(entries[3].message, /\[CONFIRMED\] SCALE order-service -> 2/);
+  assert.equal(entries[4].sourceLabel, "otel-collector");
+  assert.equal(entries[4].level, "WARN");
+});
+
+test("Step 2 Reference Architecture and C1-C3 native SVG preview eliminate Draw.io iframes and use theme-adaptive blueprint styling", () => {
+  const sourceSection = read("src/features/assignments/lab-source-section.tsx");
+  const diagrams = read("src/features/architecture/architecture-diagrams.tsx");
+  const svgViewer = read("src/features/architecture/architecture-svg-viewer.tsx");
+  const drawioEditor = read("src/features/architecture/drawio-editor.tsx");
+  const drawioSnapshot = read("src/features/architecture/drawio-snapshot.tsx");
+
+  assert.match(sourceSection, /Reference Architecture/);
+  assert.match(sourceSection, /formatStack/);
+  assert.match(sourceSection, /formatProtocol/);
+  assert.match(sourceSection, /hasConnectionFiles/);
+  assert.match(sourceSection, /Application Containers/);
+  assert.doesNotMatch(sourceSection, /Lab Studio Setup/);
+  assert.doesNotMatch(diagrams, /This view shows the system boundary/);
+  assert.match(
+    diagrams,
+    /<ArchitectureSvgViewer[\s\S]*selectedId=\{selectedId\}[\s\S]*onSelect=\{onSelect\}/,
+  );
+  assert.match(svgViewer, /getSvgNodePalette/);
+  assert.match(svgViewer, /shape === "cylinder"/);
+  assert.match(svgViewer, /shape === "channel"/);
+  assert.match(svgViewer, /exitX !== null && edge\.exitY !== null/);
+  assert.match(svgViewer, /aria-label="Architecture diagram SVG preview"/);
+  assert.match(svgViewer, /preserveAspectRatio="xMidYMid meet"/);
+  assert.match(svgViewer, /maxHeight: `\$\{Math\.round\(parsed\.vbH \* zoom\)\}px`/);
+  assert.doesNotMatch(svgViewer, /<iframe|diagrams\.net|127\.0\.0\.1:8090/);
+  assert.doesNotMatch(
+    drawioEditor,
+    /<iframe|diagrams\.net|Draw\.io Local|Draw\.io Cloud|127\.0\.0\.1:8090/,
+  );
+  assert.doesNotMatch(drawioSnapshot, /<iframe|diagrams\.net|127\.0\.0\.1:8090/);
 });

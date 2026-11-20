@@ -8,6 +8,7 @@ import com.mavis.common.repository.*;
 import com.mavis.common.security.AccessPolicyService;
 import com.mavis.analyzer.aiexplain.config.ApiKeyProvider;
 import com.mavis.analyzer.runtime.dto.RuntimeSessionResponseDTO;
+import com.mavis.analyzer.runtime.service.RuntimeSessionService;
 import com.mavis.analyzer.orchestrator.dto.JobResponseDTO;
 import com.mavis.platform.admin.service.AuditLogService;
 import jakarta.validation.Valid;
@@ -23,7 +24,8 @@ import java.nio.charset.StandardCharsets;
 public class AdminRuntimeController {
  private final AccessPolicyService policy;private final PlatformRuntimeSettings settings;private final AuditLogService audit;private final ApiKeyProvider keys;
  private final JobRepository jobs;private final RuntimeSessionRepository sessions;
- public AdminRuntimeController(AccessPolicyService policy,PlatformRuntimeSettings settings,AuditLogService audit,ApiKeyProvider keys,JobRepository jobs,RuntimeSessionRepository sessions){this.policy=policy;this.settings=settings;this.audit=audit;this.keys=keys;this.jobs=jobs;this.sessions=sessions;}
+ private final RuntimeSessionService runtime;
+ public AdminRuntimeController(AccessPolicyService policy,PlatformRuntimeSettings settings,AuditLogService audit,ApiKeyProvider keys,JobRepository jobs,RuntimeSessionRepository sessions,RuntimeSessionService runtime){this.policy=policy;this.settings=settings;this.audit=audit;this.keys=keys;this.jobs=jobs;this.sessions=sessions;this.runtime=runtime;}
  public record Toggle(@NotNull Boolean enabled,@Min(1) int expectedRevision){}
  public record ProfileUpdate(@NotNull Boolean enabled,@Min(1) int expectedRevision,@Min(64) @Max(2048) Integer memoryMiB,@DecimalMin("0.01") @DecimalMax("4") Double cpus,@Min(1) @Max(300) Integer timeoutSeconds){}
  private Map<String,Object> integration(PlatformRuntimeSettings.Integration i){return Map.of("id",i.id(),"name",i.name(),"enabled",i.enabled(),"revision",i.revision(),"status",i.id().equals("github")?"PUBLIC_ONLY":i.id().equals("gemini-ai")?(keys.hasValidKey()?"CONFIGURED":"NOT_CONFIGURED"):"UNVERIFIED","persistence","PROCESS_LOCAL_RESETS_ON_RESTART","connectionVerified",false);}
@@ -39,15 +41,11 @@ public class AdminRuntimeController {
   RuntimeSession session = sessions.findById(sessionId)
           .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Runtime session not found"));
   String previousStatus = session.getExecutionStatus();
-  session.setExecutionStatus("STOPPED");
-  session.setCleanupStatus("FORCE_STOPPED_BY_ADMIN");
-  if (session.getCompletedAt() == null) {
-   session.setCompletedAt(OffsetDateTime.now());
-  }
-  RuntimeSession saved = sessions.saveAndFlush(session);
+  RuntimeSessionResponseDTO stopped = runtime.stopSession(sessionId);
   audit.recordAuditLog("ADMIN_FORCE_STOP_RUNTIME_SESSION", "RUNTIME_SESSION", sessionId,
-          Map.of("previousStatus", previousStatus == null ? "UNKNOWN" : previousStatus, "newStatus", "STOPPED"));
-  return ApiResponse.success("Đã dừng khẩn cấp phiên Runtime", RuntimeSessionResponseDTO.fromEntity(saved));
+          Map.of("previousStatus", Objects.toString(previousStatus, "UNKNOWN"),
+                  "newStatus", Objects.toString(stopped.getExecutionStatus(), "UNKNOWN")));
+  return ApiResponse.success("Đã gửi yêu cầu dừng phiên Runtime", stopped);
  }
  @GetMapping("/jobs") @Transactional(readOnly=true) public ApiResponse<?> jobs(){policy.requireSystemAdmin();return ApiResponse.success(jobs.findAll(PageRequest.of(0,50,Sort.by(Sort.Direction.DESC,"startedAt"))).stream().map(j->{
   var project = j.getProject();

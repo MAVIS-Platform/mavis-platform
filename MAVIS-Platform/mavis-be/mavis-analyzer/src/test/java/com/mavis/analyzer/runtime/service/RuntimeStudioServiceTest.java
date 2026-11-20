@@ -140,6 +140,9 @@ class RuntimeStudioServiceTest {
     }
 
     @Test void finishRequiresConfirmedActionAndThenCloses() {
+        var incomplete = assertThrows(BusinessException.class, () -> service.finish(id));
+        assertEquals(com.mavis.common.exception.ErrorCode.UNPROCESSABLE_ENTITY, incomplete.getErrorCode());
+        assertEquals("INCOMPLETE_SCENARIO", incomplete.getStableCode());
         UUID actionId = UUID.randomUUID();
         service.submit(id, new RuntimeStudioService.ActionRequest(actionId, "START", "orders", null));
         assertThrows(BusinessException.class, () -> service.finish(id));
@@ -155,7 +158,28 @@ class RuntimeStudioServiceTest {
             new RuntimeStudioService.ActionRequest(UUID.randomUUID(), "STOP", "orders", null)));
     }
 
-    @Test void simulatedSandboxBootstrapsExecutesActionsCapturesAndCompletesWithVerifiedEvidence() {
+    @Test void bootstrapCannotReplaceAllocatedOrStartingRunnerSession() {
+        for (String status : java.util.List.of("ALLOCATED", "RUNNING", "CANCELLING")) {
+            session.setExecutionStatus(status);
+            var failure = assertThrows(BusinessException.class, () -> service.bootstrapSimulatedSandbox(id));
+            assertEquals(com.mavis.common.exception.ErrorCode.CONFLICT, failure.getErrorCode());
+            assertEquals(status, session.getExecutionStatus());
+            assertNull(session.getStudioControl());
+        }
+        verify(sessions, never()).save(any());
+    }
+
+    @Test void bootstrapPreservesObservedRunnerTelemetry() {
+        var telemetry = mapper.createObjectNode().put("observedAt", "2026-11-20T10:00:00Z");
+        var control = mapper.createObjectNode();
+        control.set("telemetry", telemetry);
+        session.setStudioControl(control);
+        assertEquals(telemetry, service.bootstrapSimulatedSandbox(id).path("telemetry"));
+        assertFalse(session.getStudioControl().has("simulatedSandbox"));
+        verify(sessions, never()).save(any());
+    }
+
+    @Test void simulatedSandboxCompletesWithoutVerifiedRunnerEvidence() {
         session.setExecutionStatus("READY_FOR_DISPATCH");
         session.setSourceSnapshot(SourceSnapshot.builder().id(UUID.randomUUID()).build());
         var profile = mapper.createObjectNode();
@@ -179,9 +203,18 @@ class RuntimeStudioServiceTest {
 
         var finished = service.finish(id);
         assertEquals("COMPLETED", finished.path("executionStatus").asText());
-        assertEquals("CONFIRMED", finished.path("cleanupStatus").asText());
-        assertTrue(session.hasVerifiedStudioEvidence());
-        assertFalse(session.getStudioControl().path("receiptSignature").asText("").isBlank());
+        assertEquals("NOT_APPLICABLE", finished.path("cleanupStatus").asText());
+        assertFalse(session.hasVerifiedStudioEvidence());
+        assertFalse(session.getStudioControl().has("receiptSignature"));
+        assertEquals("NOT_RUN", session.getScenarioStatus());
+        assertEquals("UNAVAILABLE", session.getEvidenceStatus());
+        // Previously persisted simulation receipts must also fail the shared evidence guard.
+        session.setScenarioStatus("PASSED");
+        session.setEvidenceStatus("AVAILABLE");
+        session.setCleanupStatus("CONFIRMED");
+        session.setSandboxEnforcementConfirmed(true);
+        session.setTraceQuality("SIMULATED_VERIFIED");
+        assertFalse(session.hasVerifiedStudioEvidence());
     }
 
     @Test void failedSessionWithUnmappedTopologyBlockStillReturnsReadableState() throws Exception {
@@ -199,5 +232,19 @@ class RuntimeStudioServiceTest {
         assertEquals("FAILED", state.path("executionStatus").asText());
         assertEquals("CONFIRMED", state.path("cleanupStatus").asText());
         assertFalse(state.has("topology"));
+    }
+
+    @Test void failedSessionWithReceiptOnlyControlStillReturnsValidState() {
+        session.setExecutionStatus("FAILED");
+        session.setCleanupStatus("CONFIRMED");
+        session.setStudioControl(mapper.createObjectNode().put("receiptSignature", "hmac-sha256:abc"));
+        when(sessions.findById(id)).thenReturn(Optional.of(session));
+
+        var state = service.state(id);
+
+        assertEquals("FAILED", state.path("executionStatus").asText());
+        assertTrue(state.get("finishRequested").isBoolean());
+        assertFalse(state.get("finishRequested").asBoolean());
+        assertTrue(state.get("actions").isArray());
     }
 }

@@ -829,6 +829,7 @@ test("lecturer workspace navigation exposes unified class command destinations w
     "lab-authoring": "/lab-authoring",
     "assignment-submissions": "/submissions",
     members: "/members",
+    settings: "/members?tab=settings",
   });
   assert.deepEqual(contextualNavigation("lecturer", "project"), lecturerWorkspaceNavigation);
   assert.ok(
@@ -5017,10 +5018,10 @@ test("My Workspaces is a compact LMS class list with tabs and a module outline",
   };
   const renderComp = (Comp, workspaceId, search = "") => {
     const RoutedComp =
-      Comp === WorkspaceOverview
+      Comp === WorkspaceOverview || Comp === WorkspaceMembers
         ? loadRoutedComponent("src/features/workspaces/screens.tsx", {
             "next/navigation": { useSearchParams: () => new URLSearchParams(search) },
-          }).WorkspaceOverview
+          })[Comp === WorkspaceOverview ? "WorkspaceOverview" : "WorkspaceMembers"]
         : Comp;
     return renderToStaticMarkup(
       React.createElement(
@@ -5166,8 +5167,9 @@ test("My Workspaces is a compact LMS class list with tabs and a module outline",
   assert.doesNotMatch(overviewHtml, /Lab Library/);
   assert.match(overviewHtml, /Grading &amp; Gradebook/);
   assert.match(overviewHtml, /Students &amp; Access/);
-  assert.match(overviewHtml, /Enrolled Students/);
+  assert.doesNotMatch(overviewHtml, /aria-label="Class KPIs"/);
   assert.match(overviewHtml, /Class Passkey/);
+  assert.match(overviewHtml, /aria-label="Regenerate Class Passkey"/);
   assert.match(overviewHtml, /Foundations/);
   assert.match(overviewHtml, /Service boundaries/);
   assert.match(overviewHtml, /Lab 1 Architecture/);
@@ -5200,15 +5202,18 @@ test("My Workspaces is a compact LMS class list with tabs and a module outline",
   client.setQueryData(["api", "session", {}], {
     user: { id: "u1", name: "Lecturer", email: "lec@example.com", role: "lecturer" },
   });
-  assert.match(membersHtml, /Add students in bulk/);
+  assert.doesNotMatch(membersHtml, /Add students in bulk/);
   assert.match(membersHtml, /Student A/);
+  assert.match(membersHtml, /Settings/);
+  const settingsHtml = renderComp(WorkspaceMembers, "ws-swd", "tab=settings");
+  assert.match(settingsHtml, /Enrollment Passkeys/);
   assert.match(
-    membersHtml,
+    settingsHtml,
     /Class settings/,
-    "Class rename/archive lives in a separate settings area",
+    "Class rename/archive lives in the dedicated Settings tab",
   );
-  assert.match(membersHtml, /Rename/);
-  assert.match(membersHtml, /Archive workspace/);
+  assert.match(settingsHtml, /Rename/);
+  assert.match(settingsHtml, /Archive workspace/);
   const { WorkspaceSelector } = require("../src/features/workspaces/components.tsx");
   assert.equal(
     renderComp(WorkspaceSelector, "ws-swd"),
@@ -5225,6 +5230,26 @@ test("My Workspaces is a compact LMS class list with tabs and a module outline",
     /Assignment title/,
     "Lab authoring form stays closed until button is clicked",
   );
+  client.setQueryData(["api", "workspaces", {}], []);
+  const emptyWorkspacesHtml = renderComp(Workspaces, "");
+  assert.doesNotMatch(emptyWorkspacesHtml, /No results yet/, "Empty classes view stays blank");
+  assert.match(emptyWorkspacesHtml, /mt-auto[^>]*border-t/, "Footer stays anchored at the bottom");
+  client.setQueryData(
+    ["api", "workspaces", {}],
+    Array.from({ length: 7 }, (_, i) => ({
+      id: `ws-${i + 1}`,
+      name: `Class ${i + 1}`,
+      code: `CLS-${i + 1}`,
+      status: "ACTIVE",
+      myRole: "LECTURER",
+      members: [],
+    })),
+  );
+  const pagedWorkspacesHtml = renderComp(Workspaces, "");
+  assert.match(pagedWorkspacesHtml, /Class 1/);
+  assert.match(pagedWorkspacesHtml, /Class 6/);
+  assert.doesNotMatch(pagedWorkspacesHtml, /Class 7/, "Page 1 renders at most 6 classes");
+  assert.match(pagedWorkspacesHtml, /Page 1 of 2/);
   client.clear();
 });
 
@@ -6634,4 +6659,31 @@ test("Teaching submissions use the class shell, Lab filter and LMS review table"
   assert.match(submissions, /Outcome/);
   assert.match(submissions, /Open review/);
   assert.match(submissions, /Back to class submissions|Quay lại bài nộp của lớp/);
+});
+
+test("backendErrorCode and publicErrorCode map duplicate and class/lab business errors", () => {
+  const { backendErrorCode, publicErrorCode, publicErrors } = require("../src/lib/errors/api-error.ts");
+  assert.equal(
+    backendErrorCode("workspaces", 400, "Mã lớp học đã tồn tại: SE180710"),
+    "WORKSPACE_CODE_EXISTS",
+  );
+  assert.equal(
+    backendErrorCode("workspaces/1/members", 400, "Người dùng đã là thành viên của lớp học này"),
+    "WORKSPACE_MEMBER_EXISTS",
+  );
+  assert.equal(
+    backendErrorCode("workspaces/1", 409, "This workspace is archived"),
+    "WORKSPACE_ARCHIVED",
+  );
+  assert.equal(
+    backendErrorCode("admin/users", 409, "Email đã tồn tại trong hệ thống: a@b.com"),
+    "ACCOUNT_EMAIL_EXISTS",
+  );
+  assert.equal(
+    backendErrorCode("assignments/1", 400, "Không thể xóa đề bài tập đã có sinh viên nộp bài (BR-14)"),
+    "ASSIGNMENT_HAS_SUBMISSIONS",
+  );
+  assert.equal(publicErrorCode("PASSKEY_ALREADY_EXISTS"), "PASSKEY_ALREADY_EXISTS");
+  assert.equal(backendErrorCode("workspaces", 400, "unexpected internal stack trace"), undefined);
+  assert.match(publicErrors.WORKSPACE_CODE_EXISTS, /already exists/i);
 });

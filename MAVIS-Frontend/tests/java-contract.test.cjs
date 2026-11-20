@@ -491,6 +491,7 @@ test("mutation invalidation excludes unrelated IDs and uses submission response 
  assert.equal(queryMatchesScope(["other","submissions",{}],scope),false);
  assert.deepEqual(mutationInvalidations.gradeSubmission, [
    "submissionReview",
+   "workspaceSubmissions",
    "assignmentSubmissions",
    "submissions",
    "submission",
@@ -782,6 +783,56 @@ test("auth errors use structured backend codes and safe fallbacks through the BF
  await assert.rejects(javaRequest("auth/resend-otp",undefined),e=>e.code==="AUTH_RESEND_LIMIT"&&e.retryAfter===120);
  const response=await route.POST(new NextRequest("http://127.0.0.1:3000/api/mavis/resendOtp",{method:"POST",headers:{host:"127.0.0.1:3000",origin:"http://127.0.0.1:3000","content-type":"application/json"},body:JSON.stringify({email:"fixture@example.org"})}),{params:Promise.resolve({operation:"resendOtp"})});
  assert.equal(response.status,429);assert.equal(response.headers.get("retry-after"),"120");assert.equal((await response.json()).code,"AUTH_RESEND_LIMIT");
+});
+
+test("submission reports missing Studio receipts with actionable guidance", async t => {
+  environment(t);
+  const { javaRequest } = require("../src/lib/api/java-client.ts");
+  const receiptError = "STEP_4_SIGNED_RUNTIME_RECEIPT";
+  for (const status of [422, 400]) {
+    t.mock.method(globalThis, "fetch", async () =>
+      Response.json({ code: status, errorCode: receiptError, message: receiptError }, { status }),
+    );
+    await assert.rejects(javaRequest("submissions", undefined, { method: "POST" }), {
+      status,
+      code: "SUBMISSION_STUDIO_RECEIPT_REQUIRED",
+      message: "Select a verified Studio receipt for the selected model version.",
+    });
+  }
+});
+
+test("submission preserves missing Snapshot explanation guidance", async t => {
+  environment(t);
+  const { javaRequest } = require("../src/lib/api/java-client.ts");
+  const errorCode = "SUBMISSION_SNAPSHOT_EXPLANATIONS_REQUIRED";
+  t.mock.method(globalThis, "fetch", async () =>
+    Response.json({ code: 422, errorCode }, { status: 422 }),
+  );
+  await assert.rejects(javaRequest("submissions", undefined, { method: "POST" }), {
+    status: 422,
+    code: errorCode,
+    message: "Add an explanation for each required Snapshot (up to 5,000 characters each).",
+  });
+});
+
+test("Studio precondition errors show approved guidance", async t => {
+  environment(t);
+  const { javaRequest } = require("../src/lib/api/java-client.ts");
+  const { publicErrors } = require("../src/lib/errors/api-error.ts");
+  const cases = [
+    [`analyzer/projects/${project}/runtime/sessions`, "PREFLIGHT_FAILED"],
+    [`analyzer/runtime/sessions/${snapshot}/studio/finish`, "INCOMPLETE_SCENARIO"],
+  ];
+  for (const [path, errorCode] of cases) {
+    t.mock.method(globalThis, "fetch", async () =>
+      Response.json({ code: 422, errorCode, message: "Private Runner diagnostics" }, { status: 422 }),
+    );
+    await assert.rejects(javaRequest(path, undefined, { method: "POST" }), {
+      status: 422,
+      code: errorCode,
+      message: publicErrors[errorCode],
+    });
+  }
 });
 
 test("public auth contract rejects incomplete and nonnumeric OTPs for both purposes",()=>{
@@ -1367,4 +1418,18 @@ test("SR-06: analysisState derived states (PARTIAL, COMPLETED_WITH_REVIEW, COMPL
  assert.equal(failed.modelId,null);
  assert.equal(analysisStatusBadgeProps(failed).variant,"destructive");
  assert.equal(failed.message,"WORKER_FAILED");
+});
+
+test("admin audit accepts structured JSON and preserves historical string details", async t => {
+ environment(t);
+ const entry = {id:project, createdAt:"2026-11-20T00:00:00Z", action:"WORKSPACE_UPDATED"};
+ const payload = [{...entry, details:{name:"QA workspace"}}, {...entry, id:node, details:"legacy"}, {...entry, id:job, details:null}];
+ t.mock.method(globalThis,"fetch",async (url,options)=>{
+  assert.ok(String(url).endsWith("/api/v1/admin/audit-logs"));
+  assert.equal(options.headers.get("Authorization"),"Bearer jwt");
+  return Response.json({code:200,data:payload});
+ });
+ const results = await executeJava("audit",{},"jwt",new AbortController().signal);
+ assert.deepEqual(results.map(result=>result.details),[JSON.stringify({name:"QA workspace"}),"legacy",null]);
+ assert.equal(validateResponse("audit",{},results).length,3);
 });

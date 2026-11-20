@@ -31,7 +31,9 @@ import com.mavis.common.utils.HashUtils;
 import com.mavis.platform.workspace.curriculum.CourseraCurriculumModels.CourseraModuleSpec;
 import com.mavis.platform.workspace.curriculum.CourseraCurriculumModels.LessonSpec;
 import com.mavis.platform.workspace.curriculum.CourseraCurriculumModels.RubricCriterion;
+import com.mavis.platform.workspace.curriculum.CsharpCourseraCatalog;
 import com.mavis.platform.workspace.curriculum.JavaCourseraCatalog;
+import com.mavis.platform.workspace.curriculum.V2CurriculumJsonLoader;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -65,6 +67,7 @@ public class CourseLabSeederService {
     public static final String PRESET_STANDARD_DEMO = "STANDARD_DEMO";
     public static final String PRESET_FULL_CURRICULUM = "FULL_CURRICULUM";
     public static final String PRESET_JAVA_COURSERA = "JAVA_COURSERA_FULL";
+    public static final String PRESET_CSHARP_COURSERA = "CSHARP_COURSERA_FULL";
     private static final ThreadLocal<java.util.Set<UUID>> SEEDING_IN_PROGRESS =
             ThreadLocal.withInitial(java.util.HashSet::new);
 
@@ -142,8 +145,69 @@ public class CourseLabSeederService {
         return seedCurated(workspaceId, PRESET_STANDARD_DEMO);
     }
 
+    private record CourseraTrackSpec(
+            String courseTitle,
+            String courseDescription,
+            List<CourseraModuleSpec> modules,
+            List<LessonSpec> allLessons,
+            List<String> runtimeServices,
+            boolean csharpTrack,
+            String auditAction) {
+        static CourseraTrackSpec javaV2() {
+            return new CourseraTrackSpec(
+                    JavaCourseraCatalog.COURSE_TITLE,
+                    JavaCourseraCatalog.COURSE_DESCRIPTION,
+                    JavaCourseraCatalog.modules(),
+                    JavaCourseraCatalog.allLessons(),
+                    List.of("api-gateway", "order-service", "payment-service", "inventory-service"),
+                    false,
+                    "COURSE_JAVA_COURSERA_SEEDED");
+        }
+
+        static CourseraTrackSpec csharpV2() {
+            return new CourseraTrackSpec(
+                    CsharpCourseraCatalog.COURSE_TITLE,
+                    CsharpCourseraCatalog.COURSE_DESCRIPTION,
+                    CsharpCourseraCatalog.modules(),
+                    CsharpCourseraCatalog.allLessons(),
+                    CsharpCourseraCatalog.CURATED_SERVICES,
+                    true,
+                    "COURSE_CSHARP_COURSERA_SEEDED");
+        }
+
+        CourseQuizService.Publish toQuizPublish(CourseraModuleSpec modSpec) {
+            return csharpTrack
+                    ? CsharpCourseraCatalog.toQuizPublishRequest(modSpec)
+                    : JavaCourseraCatalog.toQuizPublishRequest(modSpec);
+        }
+    }
+
+    public static boolean isCourseraLabsAligned(List<Assignment> existingLabs, List<CourseraModuleSpec> modules) {
+        if (existingLabs == null || modules == null || existingLabs.size() != modules.size()) {
+            return false;
+        }
+        for (int i = 0; i < modules.size(); i++) {
+            Assignment lab = existingLabs.get(i);
+            if (lab == null
+                    || !Integer.valueOf(i + 1).equals(lab.getLabOrder())
+                    || !modules.get(i).labTitle().equals(lab.getTitle())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void ensureJavaCourseraPopulated(UUID workspaceId) {
+        ensureCourseraTrackPopulated(workspaceId, CourseraTrackSpec.javaV2());
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void ensureCsharpCourseraPopulated(UUID workspaceId) {
+        ensureCourseraTrackPopulated(workspaceId, CourseraTrackSpec.csharpV2());
+    }
+
+    private void ensureCourseraTrackPopulated(UUID workspaceId, CourseraTrackSpec track) {
         if (workspaceId == null || isSeeding(workspaceId)) {
             return;
         }
@@ -161,7 +225,9 @@ public class CourseLabSeederService {
                 JOIN course_definitions c ON c.id = cm.course_id
                 WHERE c.workspace_id = ? AND c.status = 'PUBLISHED'
                 """, Integer.class, workspaceId);
-        if (existingLabs.size() >= 6 && publishedModules != null && publishedModules >= 6) {
+        int expectedModules = track.modules().size();
+        if (isCourseraLabsAligned(existingLabs, track.modules())
+                && publishedModules != null && publishedModules >= expectedModules) {
             return;
         }
         Authentication previous = SecurityContextHolder.getContext().getAuthentication();
@@ -170,9 +236,9 @@ public class CourseLabSeederService {
             var auth = new UsernamePasswordAuthenticationToken(
                     actor.getId().toString(), null, List.of(new SimpleGrantedAuthority("ROLE_LECTURER")));
             SecurityContextHolder.getContext().setAuthentication(auth);
-            seedJavaCourseraInternal(workspaceId, workspace, actor);
+            seedCourseraInternal(workspaceId, workspace, actor, track);
         } catch (Exception ex) {
-            log.warn("Auto-healing Java Coursera workspace {} deferred: {}", workspaceId, ex.getMessage());
+            log.warn("Auto-healing Coursera workspace {} deferred: {}", workspaceId, ex.getMessage());
         } finally {
             SEEDING_IN_PROGRESS.get().remove(workspaceId);
             if (previous != null) {
@@ -194,7 +260,10 @@ public class CourseLabSeederService {
 
         String normalizedPreset = preset == null ? "" : preset.trim();
         if (PRESET_JAVA_COURSERA.equalsIgnoreCase(normalizedPreset)) {
-            return seedJavaCourseraInternal(workspaceId, workspace, lecturer);
+            return seedCourseraInternal(workspaceId, workspace, lecturer, CourseraTrackSpec.javaV2());
+        }
+        if (PRESET_CSHARP_COURSERA.equalsIgnoreCase(normalizedPreset)) {
+            return seedCourseraInternal(workspaceId, workspace, lecturer, CourseraTrackSpec.csharpV2());
         }
 
         boolean fullCurriculum = PRESET_FULL_CURRICULUM.equalsIgnoreCase(normalizedPreset);
@@ -274,13 +343,14 @@ public class CourseLabSeederService {
         return courses.roadmap(workspaceId);
     }
 
-    private CourseAccessService.Roadmap seedJavaCourseraInternal(UUID workspaceId, Workspace workspace, User lecturer) {
+    private CourseAccessService.Roadmap seedCourseraInternal(
+            UUID workspaceId, Workspace workspace, User lecturer, CourseraTrackSpec track) {
         boolean addedFlag = !isSeeding(workspaceId);
         if (addedFlag) {
             SEEDING_IN_PROGRESS.get().add(workspaceId);
         }
         try {
-            return runSeedJavaCourseraInternal(workspaceId, workspace, lecturer);
+            return runSeedCourseraInternal(workspaceId, workspace, lecturer, track);
         } finally {
             if (addedFlag) {
                 SEEDING_IN_PROGRESS.get().remove(workspaceId);
@@ -288,7 +358,8 @@ public class CourseLabSeederService {
         }
     }
 
-    private CourseAccessService.Roadmap runSeedJavaCourseraInternal(UUID workspaceId, Workspace workspace, User lecturer) {
+    private CourseAccessService.Roadmap runSeedCourseraInternal(
+            UUID workspaceId, Workspace workspace, User lecturer, CourseraTrackSpec track) {
         ensureCourseMode(workspace);
         List<Assignment> existingLabs = assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId);
         ModelVersion refModel = existingLabs.stream()
@@ -298,19 +369,66 @@ public class CourseLabSeederService {
                 .orElseGet(() -> seedReferenceModel(workspaceId, workspace, lecturer));
         ensureReferenceRuntimeSetup(refModel, java.util.Map.of());
 
-        int nextOrder = existingLabs.stream()
-                .map(Assignment::getLabOrder)
-                .filter(java.util.Objects::nonNull)
-                .mapToInt(Integer::intValue)
-                .max()
-                .orElse(0);
-
-        List<Assignment> orderedLabs = new ArrayList<>();
-        for (CourseraModuleSpec modSpec : JavaCourseraCatalog.modules()) {
+        List<CourseraModuleSpec> catalogModules = track.modules();
+        Set<UUID> matchedIds = new LinkedHashSet<>();
+        List<Assignment> matchedByIndex = new ArrayList<>(catalogModules.size());
+        for (CourseraModuleSpec modSpec : catalogModules) {
             Assignment match = existingLabs.stream()
-                    .filter(a -> modSpec.labTitle().equals(a.getTitle()))
+                    .filter(a -> modSpec.labTitle().equals(a.getTitle())
+                            || V2CurriculumJsonLoader.isSameLabTitle(modSpec.labTitle(), a.getTitle()))
+                    .filter(a -> a.getId() == null || !matchedIds.contains(a.getId()))
                     .findFirst()
                     .orElse(null);
+            if (match != null && match.getId() != null) {
+                matchedIds.add(match.getId());
+            }
+            matchedByIndex.add(match);
+        }
+
+        List<Assignment> staleLabs = existingLabs.stream()
+                .filter(a -> a.getId() != null ? !matchedIds.contains(a.getId()) : !matchedByIndex.contains(a))
+                .toList();
+
+        boolean needsReorder = !staleLabs.isEmpty();
+        if (!needsReorder) {
+            for (int i = 0; i < catalogModules.size(); i++) {
+                Assignment m = matchedByIndex.get(i);
+                if (m != null && !Integer.valueOf(i + 1).equals(m.getLabOrder())) {
+                    needsReorder = true;
+                    break;
+                }
+            }
+        }
+
+        if (needsReorder) {
+            // Clear colliding lab_order values first to satisfy uq_workspace_lab_order on PostgreSQL.
+            for (Assignment stale : staleLabs) {
+                stale.setLabOrder(null);
+                stale.setAiPolicy(markArchivedV1(stale.getAiPolicy()));
+                assignments.saveAndFlush(stale);
+                if (stale.getId() != null) {
+                    try {
+                        jdbc.update("DELETE FROM lab_prerequisites WHERE assignment_id = ? OR prerequisite_assignment_id = ?",
+                                stale.getId(), stale.getId());
+                    } catch (Exception ex) {
+                        log.debug("Skipped pruning lab_prerequisites for detached lab {}: {}", stale.getId(), ex.getMessage());
+                    }
+                }
+            }
+            for (int i = 0; i < catalogModules.size(); i++) {
+                Assignment m = matchedByIndex.get(i);
+                if (m != null && m.getLabOrder() != null && !Integer.valueOf(i + 1).equals(m.getLabOrder())) {
+                    m.setLabOrder(null);
+                    assignments.saveAndFlush(m);
+                }
+            }
+        }
+
+        List<Assignment> orderedLabs = new ArrayList<>(catalogModules.size());
+        for (int i = 0; i < catalogModules.size(); i++) {
+            int targetOrder = i + 1;
+            CourseraModuleSpec modSpec = catalogModules.get(i);
+            Assignment match = matchedByIndex.get(i);
             if (match == null) {
                 boolean runtime = modSpec.visualLab() != null && modSpec.visualLab().requireRuntimeTrace();
                 List<String> diagramTypes = modSpec.visualLab() != null
@@ -326,46 +444,48 @@ public class CourseLabSeederService {
                         .ruleSetVersion("SWD_DEFAULT_V1")
                         .requireRuntimeTrace(runtime)
                         .referenceModel(refModel)
-                        .labOrder(++nextOrder);
+                        .labOrder(targetOrder);
                 if (runtime) {
-                    labBuilder.studioTopologySnapshot(buildDefaultStudioTopology())
+                    labBuilder.studioTopologySnapshot(buildStudioTopologyForServices(track.runtimeServices()))
                             .studioTopologyRevision(1);
                 }
                 match = assignments.saveAndFlush(labBuilder.build());
+            } else if (!Integer.valueOf(targetOrder).equals(match.getLabOrder())
+                    || !modSpec.labTitle().equals(match.getTitle())
+                    || !modSpec.labDescription().equals(match.getDescription())) {
+                match.setLabOrder(targetOrder);
+                match.setTitle(modSpec.labTitle());
+                match.setDescription(modSpec.labDescription());
+                match = assignments.saveAndFlush(match);
             }
-            quizzes.publishCurriculum(workspaceId, match.getId(), JavaCourseraCatalog.toQuizPublishRequest(modSpec));
+            quizzes.publishCurriculum(workspaceId, match.getId(), track.toQuizPublish(modSpec));
             orderedLabs.add(match);
         }
 
-        syncJavaCourseraOutline(workspaceId, orderedLabs);
-        syncTheoryAssetsLibrary(workspaceId, lecturer != null ? lecturer.getId() : null);
+        syncCourseraOutline(workspaceId, orderedLabs, track);
+        syncTheoryAssetsLibrary(workspaceId, lecturer != null ? lecturer.getId() : null, track.allLessons());
 
         jdbc.update("INSERT INTO audit_logs(actor_id, action, target_type, target_id) VALUES (?, ?, ?, ?)",
-                lecturer.getId(), "COURSE_JAVA_COURSERA_SEEDED", "WORKSPACE", workspaceId);
+                lecturer.getId(), track.auditAction(), "WORKSPACE", workspaceId);
 
         return courses.roadmap(workspaceId);
     }
 
-    private void syncJavaCourseraOutline(UUID workspaceId, List<Assignment> orderedLabs) {
+    private void syncCourseraOutline(UUID workspaceId, List<Assignment> orderedLabs, CourseraTrackSpec track) {
         if (courseAuthoring == null || orderedLabs.isEmpty()) {
             return;
         }
         try {
-            CourseAuthoringService.CourseView existing = null;
-            try {
-                existing = courseAuthoring.get(workspaceId);
-            } catch (BusinessException ex) {
-                if (ex.getErrorCode() != ErrorCode.NOT_FOUND) {
-                    throw ex;
-                }
-            }
+            List<CourseraModuleSpec> catalogModules = track.modules();
+            int expectedItemCount = track.allLessons().size() + catalogModules.size() * 3;
+            var existing = courseAuthoring.findExistingForAuthoring(workspaceId).orElse(null);
             boolean upToDate = false;
             if (existing != null
                     && "PUBLISHED".equals(existing.status())
                     && existing.publishedVersion() >= 1
-                    && JavaCourseraCatalog.COURSE_TITLE.equals(existing.title())
+                    && track.courseTitle().equals(existing.title())
                     && existing.modules() != null
-                    && existing.modules().size() == 6) {
+                    && existing.modules().size() == catalogModules.size()) {
                 int totalItems = existing.modules().stream()
                         .mapToInt(m -> m.items() != null ? m.items().size() : 0)
                         .sum();
@@ -379,28 +499,27 @@ public class CourseLabSeederService {
                         .flatMap(m -> m.items().stream())
                         .anyMatch(item -> item.content() != null
                                 && item.content().path("body").asText("").contains("ðŸ"));
-                upToDate = totalItems >= 36 && firstTheoryBody.length() >= 1500 && !hasMojibake;
+                upToDate = totalItems >= expectedItemCount && firstTheoryBody.length() >= 1500 && !hasMojibake;
             }
             if (upToDate) {
                 return;
             }
             if (existing != null && "ARCHIVED".equals(existing.status())) {
-                log.warn("Skipped syncing archived Java Coursera outline for workspace {}", workspaceId);
+                log.warn("Skipped syncing archived Coursera outline for workspace {}", workspaceId);
                 return;
             }
             if (existing != null && "PUBLISHED".equals(existing.status())) {
                 existing = courseAuthoring.startDraft(workspaceId);
             }
             existing = courseAuthoring.saveDraft(workspaceId, new CourseAuthoringService.CourseRequest(
-                    JavaCourseraCatalog.COURSE_TITLE,
-                    JavaCourseraCatalog.COURSE_DESCRIPTION));
+                    track.courseTitle(),
+                    track.courseDescription()));
             if (existing.modules() != null && !existing.modules().isEmpty()) {
                 for (CourseAuthoringService.ModuleView staleModule : List.copyOf(existing.modules())) {
                     courseAuthoring.deleteModule(workspaceId, staleModule.id());
                 }
             }
 
-            List<CourseraModuleSpec> catalogModules = JavaCourseraCatalog.modules();
             for (int i = 0; i < catalogModules.size() && i < orderedLabs.size(); i++) {
                 CourseraModuleSpec modSpec = catalogModules.get(i);
                 Assignment lab = orderedLabs.get(i);
@@ -422,7 +541,7 @@ public class CourseLabSeederService {
                 courseAuthoring.addItem(workspaceId, moduleId,
                         new CourseAuthoringService.ItemRequest(
                                 "QUIZ",
-                                "Quiz Chương " + modSpec.position() + " · Kiểm tra Trắc nghiệm (10 câu)",
+                                "Quiz Module " + modSpec.position() + " · Kiểm tra Trắc nghiệm (" + modSpec.quizQuestions().size() + " câu)",
                                 "Vượt qua Quiz Gate (>= 70%) để mở khóa bài thực hành tiếp theo.",
                                 lab.getId(), json.createObjectNode(), true));
 
@@ -460,18 +579,19 @@ public class CourseLabSeederService {
                 }
             }
             courseAuthoring.publish(workspaceId);
-            log.info("Published 6-module Java Coursera outline for workspace {}", workspaceId);
-        } catch (Exception ex) {
-            log.warn("Could not publish Java Coursera outline for workspace {}: {}", workspaceId, ex.getMessage(), ex);
+            log.info("Published {}-module Coursera V2 outline for workspace {}", catalogModules.size(), workspaceId);
+        } catch (RuntimeException ex) {
+            log.warn("Could not publish Coursera outline for workspace {}", workspaceId);
+            throw ex;
         }
     }
 
-    private void syncTheoryAssetsLibrary(UUID workspaceId, UUID creatorId) {
+    private void syncTheoryAssetsLibrary(UUID workspaceId, UUID creatorId, List<LessonSpec> lessons) {
         try {
             List<String> existingTitles = jdbc.queryForList(
                     "SELECT title FROM theory_assets WHERE workspace_id = ?", String.class, workspaceId);
             Set<String> seen = existingTitles != null ? new LinkedHashSet<>(existingTitles) : Set.of();
-            for (LessonSpec lesson : JavaCourseraCatalog.allLessons()) {
+            for (LessonSpec lesson : lessons) {
                 if (seen.contains(lesson.title())) {
                     jdbc.update("""
                             UPDATE theory_assets
@@ -495,14 +615,7 @@ public class CourseLabSeederService {
             return;
         }
         try {
-            CourseAuthoringService.CourseView existing = null;
-            try {
-                existing = courseAuthoring.get(workspaceId);
-            } catch (BusinessException ex) {
-                if (ex.getErrorCode() != ErrorCode.NOT_FOUND) {
-                    throw ex;
-                }
-            }
+            var existing = courseAuthoring.findExistingForAuthoring(workspaceId).orElse(null);
             if (existing != null && existing.modules() != null && !existing.modules().isEmpty()) {
                 return;
             }
@@ -564,8 +677,9 @@ public class CourseLabSeederService {
                 }
             }
             courseAuthoring.publish(workspaceId);
-        } catch (Exception ignored) {
-            // Do not fail seeding if optional authoring synchronization encounters incomplete mock state in tests.
+        } catch (RuntimeException ex) {
+            log.warn("Could not publish curated course outline for workspace {}", workspaceId);
+            throw ex;
         }
     }
 
@@ -802,17 +916,27 @@ public class CourseLabSeederService {
         }
     }
 
+    private ObjectNode markArchivedV1(com.fasterxml.jackson.databind.JsonNode existingPolicy) {
+        ObjectNode node = (existingPolicy != null && existingPolicy.isObject())
+                ? ((ObjectNode) existingPolicy).deepCopy()
+                : json.createObjectNode();
+        node.put("archivedV1", true);
+        node.put("archivedReason", "REPLACED_BY_V2_CATALOG");
+        return node;
+    }
+
     public ObjectNode buildDefaultStudioTopology() {
+        return buildStudioTopologyForServices(
+                List.of("api-gateway", "order-service", "payment-service", "inventory-service"));
+    }
+
+    private ObjectNode buildStudioTopologyForServices(List<String> serviceNames) {
         ObjectNode topology = json.createObjectNode().put("version", 1);
         ArrayNode blocks = topology.putArray("blocks");
-        for (String[] item : List.of(
-                new String[]{"api-gateway", "API Gateway"},
-                new String[]{"order-service", "Order Service"},
-                new String[]{"payment-service", "Payment Service"},
-                new String[]{"inventory-service", "Inventory Service"})) {
+        for (String svc : serviceNames) {
             blocks.addObject()
-                    .put("service", item[0])
-                    .put("label", item[1])
+                    .put("service", svc)
+                    .put("label", svc)
                     .put("canScale", true)
                     .put("initiallyStopped", false);
         }

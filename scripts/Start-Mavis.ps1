@@ -55,6 +55,8 @@ $environment=@{}
 foreach($entry in $values.GetEnumerator()) { if ($entry.Key -match '^(MAVIS_|MAIL_)' -or $entry.Key -in @('DOTNET_CLI_HOME','NUGET_PACKAGES')) { $environment[$entry.Key]=$entry.Value } }
 $environment.SPRING_PROFILES_ACTIVE='cloud'
 if ($values.MAVIS_GOOGLE_CLIENT_ID) { $environment.APP_GOOGLE_CLIENT_ID=$values.MAVIS_GOOGLE_CLIENT_ID }
+if ($values.MAVIS_GITHUB_CLIENT_ID) { $environment.APP_GITHUB_CLIENT_ID=$values.MAVIS_GITHUB_CLIENT_ID }
+if ($values.MAVIS_GITHUB_CLIENT_SECRET) { $environment.APP_GITHUB_CLIENT_SECRET=$values.MAVIS_GITHUB_CLIENT_SECRET }
 $environment.SERVER_PORT=[string]$javaPort
 # Shared databases remain opt-in; honor an explicit migration setting.
 if (-not $environment.ContainsKey('MAVIS_DB_MIGRATIONS_ENABLED')) { $environment.MAVIS_DB_MIGRATIONS_ENABLED='false' }

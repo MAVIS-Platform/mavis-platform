@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 export type EvidenceFrame = {
   elapsedMs: number;
@@ -134,6 +134,21 @@ export function StudioEvidenceReplay({ frames, onSound }: {
       </div>
       <p className="text-slate-200">Step {index + 1}/{frames.length} · {(frame.elapsedMs / 1000).toFixed(1)}s · {frame.label}</p>
       <p className="text-slate-400">{frame.totals.pods} pods · {frame.totals.handledRps} req/s handled · {frame.totals.droppedRps} req/s dropped</p>
+      {frame.connections.length > 0 && (
+        <ul aria-label="Step traffic flows" className="flex flex-wrap gap-1 pt-0.5 font-mono text-[10px]">
+          {frame.connections.slice(0, 8).map((conn, idx) => (
+            <li
+              key={`${conn.from}-${conn.to}-${idx}`}
+              className="rounded border border-slate-800 bg-slate-900/80 px-1.5 py-0.5 text-slate-300"
+            >
+              <span className="text-sky-300">{conn.from}</span>
+              <span className="mx-1 text-slate-500">→</span>
+              <span className="text-emerald-300">{conn.to}</span>
+              {conn.protocol && <span className="ml-1 text-slate-400">· {conn.protocol}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -152,17 +167,29 @@ export async function deleteStudioEvidence(id: string) {
   }
 }
 
-export function StudioVideo({ blob, durationMs }: { blob: Blob; durationMs: number }) {
+export function StudioVideo({
+  blob,
+  durationMs,
+  posterSvg,
+}: {
+  blob: Blob;
+  durationMs: number;
+  posterSvg?: string | undefined;
+}) {
   const [url, setUrl] = useState("");
+  const poster = useMemo(
+    () => (posterSvg ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(posterSvg)}` : undefined),
+    [posterSvg],
+  );
   useEffect(() => {
     const source = URL.createObjectURL(blob);
     setUrl(source);
     return () => URL.revokeObjectURL(source);
   }, [blob]);
   return <div className="my-2 space-y-2">
-    <video aria-label="Recorded Studio video" controls src={url} className="max-h-72 w-full rounded-md" />
+    <video aria-label="Recorded Studio video" controls poster={poster} src={url || undefined} className="max-h-72 w-full rounded-md bg-[#070b14]" />
     <p>{(durationMs / 1000).toFixed(1)} seconds recorded</p>
-    <a className="text-sky-200 hover:underline" href={url}
-      download={blob.type.includes("mp4") ? "mavis-recording.mp4" : "mavis-recording.webm"}>Download video</a>
+    {url && <a className="text-sky-200 hover:underline" href={url}
+      download={blob.type.includes("mp4") ? "mavis-recording.mp4" : "mavis-recording.webm"}>Download video</a>}
   </div>;
 }

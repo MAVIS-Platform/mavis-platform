@@ -126,7 +126,7 @@ export function CourseEssayItemPanel({
         <div className="space-y-2 border-t border-teal-200/70 pt-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <label className="text-xs font-semibold text-foreground" htmlFor={`essay-${itemId}`}>
-              {t("Your Essay Answer (Markdown)", "Bài làm Tự luận của bạn (hỗ trợ Markdown & code Java/YAML)")}
+              {t("Your Essay Answer (Markdown)", "Bài làm Tự luận của bạn (hỗ trợ Markdown & code Java/C#/YAML)")}
             </label>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <span>{wordCount} {t("words", "từ")}</span>
@@ -153,7 +153,7 @@ export function CourseEssayItemPanel({
               maxLength={50000}
               placeholder={t(
                 "Write your architectural analysis, code snippets, or Saga/Gateway configuration here…",
-                "Nhập bài phân tích kiến trúc, đoạn mã Java/YAML hoặc bảng trạng thái tại đây…",
+                "Nhập bài phân tích kiến trúc, đoạn mã Java/C#/YAML hoặc bảng trạng thái tại đây…",
               )}
               onChange={(event) => setAnswer(event.target.value)}
             />

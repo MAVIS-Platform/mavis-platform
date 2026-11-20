@@ -9,9 +9,9 @@ import static org.junit.jupiter.api.Assertions.*;
 class JavaCourseraCatalogTest {
 
     @Test
-    void providesSixModulesWith18Lessons60QuizQuestionsAnd6EssayRubrics() {
+    void providesFiveModulesWith12Lessons48QuizQuestionsAnd5EssayRubrics() {
         var modules = JavaCourseraCatalog.modules();
-        assertEquals(6, modules.size());
+        assertEquals(5, modules.size());
 
         int totalLessons = 0;
         int totalQuizQuestions = 0;
@@ -26,8 +26,8 @@ class JavaCourseraCatalogTest {
             assertFalse(module.title().isBlank());
             assertTrue(module.title().length() <= 255, "Module title must fit VARCHAR(255)");
             assertTrue(module.labTitle().length() <= 255, "Lab title must fit VARCHAR(255)");
-            assertEquals(3, module.lessons().size());
-            assertEquals(10, module.quizQuestions().size());
+            assertFalse(module.lessons().isEmpty());
+            assertEquals(module.lessons().size() * 4, module.quizQuestions().size());
             assertNotNull(module.essay());
             assertTrue(module.essay().title().length() <= 255, "Essay title must fit VARCHAR(255)");
             assertNotNull(module.visualLab(), "Module " + module.position() + " must define a visualLab");
@@ -39,7 +39,7 @@ class JavaCourseraCatalogTest {
                 assertTrue(lesson.title().length() <= 255, "Lesson title must fit VARCHAR(255)");
                 assertFalse(lesson.bodyMarkdown().isBlank());
                 assertTrue(lesson.bodyMarkdown().length() >= 1500,
-                        "Lesson " + lesson.curriculumCode() + " must carry full verbatim textbook markdown");
+                        "Lesson " + lesson.curriculumCode() + " must carry full V2 textbook markdown");
                 totalLessons++;
             }
 
@@ -60,13 +60,13 @@ class JavaCourseraCatalogTest {
 
             var publishReq = JavaCourseraCatalog.toQuizPublishRequest(module);
             assertEquals(70, publishReq.passPercent());
-            assertEquals(10, publishReq.questions().size());
+            assertEquals(module.quizQuestions().size(), publishReq.questions().size());
         }
 
-        assertEquals(18, totalLessons);
-        assertEquals(60, totalQuizQuestions);
-        assertEquals(6, totalEssays);
-        assertEquals(6, totalVisualLabs);
-        assertEquals(36, totalLessons + totalQuizQuestions / 10 + totalEssays + totalVisualLabs);
+        assertEquals(12, totalLessons);
+        assertEquals(48, totalQuizQuestions);
+        assertEquals(5, totalEssays);
+        assertEquals(5, totalVisualLabs);
+        assertEquals(27, totalLessons + modules.size() + totalEssays + totalVisualLabs);
     }
 }

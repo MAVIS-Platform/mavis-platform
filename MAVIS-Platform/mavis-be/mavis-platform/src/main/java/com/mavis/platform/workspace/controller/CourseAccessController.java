@@ -7,7 +7,6 @@ import com.mavis.common.exception.BusinessException;
 import com.mavis.common.exception.ErrorCode;
 import com.mavis.common.security.AccessPolicyService;
 import com.mavis.platform.workspace.service.CourseAccessService;
-import com.mavis.platform.workspace.service.CourseAuthoringService;
 import com.mavis.platform.workspace.service.CourseLabSeederService;
 import com.mavis.platform.workspace.service.CourseSetupService;
 import com.mavis.platform.workspace.service.JavaCourseMasterSeeder;
@@ -39,9 +38,6 @@ public class CourseAccessController {
     @Autowired(required = false)
     private JavaCourseMasterSeeder masterSeeder;
 
-    @Autowired(required = false)
-    private CourseAuthoringService courseAuthoring;
-
     public record BootstrapJavaCourseraResult(UUID workspaceId, String code, String name) {}
 
     public record IssueKey(@Min(1) @Max(168) int validHours, @Min(1) @Max(10000) Integer maxStudents) {}
@@ -60,15 +56,7 @@ public class CourseAccessController {
 
     @PostMapping("/workspaces/{workspaceId}/course-labs/{assignmentId}/publish")
     public ApiResponse<CourseAccessService.Lab> publish(@PathVariable UUID workspaceId, @PathVariable UUID assignmentId) {
-        CourseAccessService.Lab lab = courses.publish(workspaceId, assignmentId);
-        if (courseAuthoring != null) {
-            try {
-                courseAuthoring.publish(workspaceId);
-            } catch (BusinessException ignored) {
-                // Course draft may not exist yet, may already match the published snapshot, or may contain an unrelated draft module.
-            }
-        }
-        return ApiResponse.success(lab);
+        return ApiResponse.success(courses.publish(workspaceId, assignmentId));
     }
 
     @PostMapping("/workspaces/{workspaceId}/course-labs/{assignmentId}/freeze-topology")
@@ -95,6 +83,11 @@ public class CourseAccessController {
     @PostMapping("/workspaces/{workspaceId}/course-labs/seed-java-coursera")
     public ApiResponse<CourseAccessService.Roadmap> seedJavaCoursera(@PathVariable UUID workspaceId) {
         return ApiResponse.success(seeder.seedCurated(workspaceId, CourseLabSeederService.PRESET_JAVA_COURSERA));
+    }
+
+    @PostMapping("/workspaces/{workspaceId}/course-labs/seed-csharp-coursera")
+    public ApiResponse<CourseAccessService.Roadmap> seedCsharpCoursera(@PathVariable UUID workspaceId) {
+        return ApiResponse.success(seeder.seedCurated(workspaceId, CourseLabSeederService.PRESET_CSHARP_COURSERA));
     }
 
     @GetMapping("/workspaces/{workspaceId}/course-passkey")

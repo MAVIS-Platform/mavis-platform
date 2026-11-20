@@ -68,7 +68,7 @@ public class CourseQuizService {
     public record Draft(String lesson, int passPercent, List<Question> questions) {}
     public record Version(int version, String lesson, int passPercent, OffsetDateTime publishedAt) {}
     private record Definition(int version, String lesson, int threshold, List<Question> questions) {}
-    private record Attempt(int version, String answers, int correct, boolean passed) {}
+    private record Attempt(int version, String answers, int correct, boolean passed, String questions) {}
     private record Scored(int correct, List<QuestionResult> results) {}
 
     public Quiz publish(UUID workspaceId, UUID assignmentId, Publish request) {
@@ -102,13 +102,27 @@ public class CourseQuizService {
                             """, Integer.class, assignmentId, parts.lesson(),
                             parts.threshold(), questions, assignmentId);
             if (!published.isEmpty()) {
+                enableQuizOnAssignmentIfSkipped(lab);
                 return view(new Definition(published.getFirst(), parts.lesson(), parts.threshold(),
                         parts.questions()), null);
             }
         }
         int next = nextVersion(assignmentId);
         insertVersion(assignmentId, modelId, next, parts, questions);
+        enableQuizOnAssignmentIfSkipped(lab);
         return view(new Definition(next, parts.lesson(), parts.threshold(), parts.questions()), null);
+    }
+
+    private void enableQuizOnAssignmentIfSkipped(Assignment lab) {
+        if (lab == null || lab.getAiPolicy() == null || !lab.getAiPolicy().isObject()) return;
+        boolean wasSkipped = lab.getAiPolicy().path("skipQuiz").asBoolean(false)
+                || "THEORY_ONLY".equalsIgnoreCase(lab.getAiPolicy().path("labTier").asText());
+        if (!wasSkipped) return;
+        var policy = ((com.fasterxml.jackson.databind.node.ObjectNode) lab.getAiPolicy()).deepCopy();
+        policy.put("skipQuiz", false);
+        policy.put("labTier", Boolean.TRUE.equals(lab.getRequireRuntimeTrace()) ? "THEORY_QUIZ_STUDIO" : "THEORY_QUIZ");
+        lab.setAiPolicy(policy);
+        assignments.save(lab);
     }
 
     @Transactional(readOnly = true)
@@ -238,9 +252,11 @@ public class CourseQuizService {
         if (request.attemptId() == null || request.version() < 1) throw invalid();
         List<List<Integer>> selections = requestedSelections(request);
         var previous = jdbc.query("""
-                SELECT quiz_version, answers::text, correct_count, passed FROM course_quiz_attempts
-                WHERE assignment_id = ? AND student_id = ? AND attempt_id = ?
-                """, (rs, row) -> new Attempt(rs.getInt(1), rs.getString(2), rs.getInt(3), rs.getBoolean(4)),
+                SELECT a.quiz_version, a.answers::text, a.correct_count, a.passed, q.questions::text
+                FROM course_quiz_attempts a
+                JOIN course_quizzes q ON q.assignment_id = a.assignment_id AND q.version = a.quiz_version
+                WHERE a.assignment_id = ? AND a.student_id = ? AND a.attempt_id = ?
+                """, (rs, row) -> new Attempt(rs.getInt(1), rs.getString(2), rs.getInt(3), rs.getBoolean(4), rs.getString(5)),
                 assignmentId, student.getId(), request.attemptId()).stream().findFirst();
         if (previous.isPresent()) {
             var attempt = previous.get();
@@ -249,7 +265,9 @@ public class CourseQuizService {
                 throw new BusinessException(ErrorCode.CONFLICT, "QUIZ_ATTEMPT_CONFLICT",
                         "Attempt already submitted with different answers or version");
             }
-            return result(request, attempt.correct(), attempt.passed(), selections, current(lab).questions());
+            List<Question> questions = normalizeQuestions(decode(attempt.questions(), new TypeReference<List<Question>>() {}));
+            return new Result(request.attemptId(), attempt.version(), attempt.correct(), questions.size(),
+                    attempt.passed() ? "PASSED" : "NEEDS_RETRY", scoreInternal(questions, selections).results());
         }
         var quiz = current(lab);
         if (request.version() != quiz.version()) {
@@ -485,18 +503,6 @@ public class CourseQuizService {
                 passed, latestStatus, passed,
                 latestAttempt == null ? null : latestAttempt.correctCount(),
                 latestAttempt == null ? null : latestAttempt.submittedAt());
-    }
-
-    private Result result(Submit request, int correct, boolean passed, List<List<Integer>> selections,
-                          List<Question> questions) {
-        List<QuestionResult> results = List.of();
-        try {
-            results = scoreInternal(questions, selections).results();
-        } catch (BusinessException ignored) {
-            // An old attempt can still be replayed after the Quiz definition changed.
-        }
-        return new Result(request.attemptId(), request.version(), correct, questions.size(),
-                passed ? "PASSED" : "NEEDS_RETRY", results);
     }
 
     private String encode(Object value) {

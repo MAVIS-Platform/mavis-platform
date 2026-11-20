@@ -57,6 +57,7 @@ public class SubmissionResponseDTO {
     private OffsetDateTime submittedAt;
     private String reviewStatus;
     private Double reviewScore;
+    private Double reviewScoreTenScale;
     private String labOutcome;
     private String reviewSummary;
     private String gradedByName;
@@ -89,6 +90,9 @@ public class SubmissionResponseDTO {
         boolean visibleReview = review != null && (revealDraft || !"DRAFT".equalsIgnoreCase(review.getStatus()));
         String reviewStatus = visibleReview && review.getStatus() != null ? review.getStatus() : "PENDING";
         Double reviewScore = visibleReview && review.getScore() != null ? review.getScore().doubleValue() : null;
+        Double reviewScoreTenScale = reviewScore != null
+                ? Math.round((reviewScore / 10.0) * 100.0) / 100.0
+                : null;
         String labOutcome = "PENDING";
         if (visibleReview) {
             if (review.getLabOutcome() != null && !review.getLabOutcome().isBlank()) {
@@ -108,7 +112,7 @@ public class SubmissionResponseDTO {
                 .workspaceId(workspace != null ? workspace.getId() : null)
                 .workspaceName(workspace != null ? workspace.getName() : null)
                 .assignmentId(assignment != null ? assignment.getId() : null)
-                .guidedLab(assignment != null && assignment.getLabOrder() != null)
+                .guidedLab(s.isGuidedLab())
                 .assignmentTitle(assignment != null ? assignment.getTitle() : null)
                 .labOrder(assignment != null ? assignment.getLabOrder() : null)
                 .projectId(s.getProject() != null ? s.getProject().getId() : null)
@@ -136,6 +140,7 @@ public class SubmissionResponseDTO {
                 .submittedAt(s.getSubmittedAt())
                 .reviewStatus(reviewStatus)
                 .reviewScore(reviewScore)
+                .reviewScoreTenScale(reviewScoreTenScale)
                 .labOutcome(labOutcome)
                 .reviewSummary(reviewSummary)
                 .gradedByName(gradedByName)

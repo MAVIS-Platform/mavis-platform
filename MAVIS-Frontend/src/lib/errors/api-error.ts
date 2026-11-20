@@ -1,4 +1,6 @@
 export const publicErrors = {
+  PREFLIGHT_FAILED: "The Lab source failed Runner validation. Ask your lecturer to check the Studio configuration.",
+  INCOMPLETE_SCENARIO: "Complete a verified Start, Stop, or Scale action before finishing the Studio session.",
   DELETE_BUSY: "Stop active analysis/runtime work and resolve cleanup before deleting this item.",
   DELETE_PROTECTED:
     "Published reference data, submitted coursework and runtime-linked snapshots must be retained and cannot be deleted here.",
@@ -19,6 +21,11 @@ export const publicErrors = {
   AUTH_VERIFICATION_UNAVAILABLE:
     "Email verification could not be completed. Please check your code or sign in if already verified.",
   AUTH_EMAIL_DELIVERY: "We couldn't send the email right now. Please try again later.",
+  AUTH_OAUTH_UNCONFIGURED: "Third-party sign-in is not configured for this workspace.",
+  AUTH_OAUTH_FAILED: "Third-party sign-in failed. Please try again.",
+  AUTH_OAUTH_EMAIL_UNVERIFIED:
+    "Your third-party account must have a verified email address to sign in.",
+  AUTH_OAUTH_CANCELLED: "Third-party sign-in was cancelled.",
   AUTH_NETWORK: "Unable to connect. Please check your internet connection and try again.",
   AUTH_SERVER: "Something went wrong. Please try again later.",
   AUTH_RATE_LIMIT: "Too many requests. Please wait a moment before trying again.",
@@ -73,8 +80,28 @@ export const publicErrors = {
     "Complete a verified Stop, Start, or Scale action in Studio Playtest before freezing.",
   STUDIO_TOPOLOGY_MISSING:
     "Run Auto-Configure Studio first so this Lab has a prepared Studio topology.",
+  STUDIO_TOPOLOGY_INVALID:
+    "Only application services configured in the Docker runtime profile can be added as Studio blocks.",
+  RUNTIME_PROFILE_INVALID:
+    "Runtime profile is invalid or exceeds limits. Re-sync Docker configuration and try again.",
   LAB_PUBLISH_CONTENT_REQUIRED:
     "Add a Lab description, attach a Theory lesson, or pin a Reference Source before adding to class.",
+  WORKSPACE_CODE_EXISTS:
+    "A class with this code already exists. Choose a different class code.",
+  WORKSPACE_MEMBER_EXISTS: "This user is already a member of this class.",
+  WORKSPACE_CREATOR_PROTECTED: "The class creator cannot be removed from the class.",
+  WORKSPACE_ARCHIVED: "This class is archived and cannot be modified.",
+  PASSKEY_ALREADY_EXISTS: "This passkey already exists. Choose a different passkey.",
+  INVALID_PASSKEY_FORMAT: "Passkey format is invalid. Use letters, numbers, or hyphens.",
+  INVALID_OR_EXPIRED_PASSKEY:
+    "Invalid or expired passkey. Check with your lecturer and try again.",
+  COURSE_CAPACITY_REACHED: "This class has reached its maximum student capacity.",
+  ALREADY_ENROLLED: "You are already enrolled in this class.",
+  ASSIGNMENT_HAS_SUBMISSIONS: "Cannot delete a Lab that already has student submissions.",
+  ASSIGNMENT_PUBLISHED_PROTECTED:
+    "Published Labs are part of the course roadmap and cannot be deleted.",
+  ASSIGNMENT_PINNED_SOURCE: "A published Lab keeps its pinned reference source.",
+  ACCOUNT_EMAIL_EXISTS: "An account with this email already exists.",
 } as const;
 export type PublicErrorCode = keyof typeof publicErrors;
 // Match only reviewed business messages. Arbitrary upstream text can contain secrets.
@@ -109,11 +136,11 @@ export function backendErrorCode(
   }
   if (path === "submissions") {
     if (status === 409 && message === "LAB_SUBMISSION_ALREADY_PASSED") return "SUBMISSION_LAB_PASSED";
-    if (status === 400 && message === "SUBMISSION_SNAPSHOT_EXPLANATIONS_REQUIRED")
+    if ((status === 422 || status === 400) && message === "SUBMISSION_SNAPSHOT_EXPLANATIONS_REQUIRED")
       return "SUBMISSION_SNAPSHOT_EXPLANATIONS_REQUIRED";
     if (status === 400 && message === "SUBMISSION_SNAPSHOT_IDS_INVALID")
       return "SUBMISSION_SNAPSHOT_IDS_INVALID";
-    if (status === 400 && message === "STEP_4_SIGNED_RUNTIME_RECEIPT")
+    if ((status === 422 || status === 400) && message === "STEP_4_SIGNED_RUNTIME_RECEIPT")
       return "SUBMISSION_STUDIO_RECEIPT_REQUIRED";
     if (status === 403 && message === "Pass the current Lab Quiz before submitting")
       return "SUBMISSION_QUIZ_REQUIRED";
@@ -165,11 +192,31 @@ export function backendErrorCode(
     return "STUDIO_EVIDENCE_MISSING";
   if (message === "The reference runtime profile has no prepared Studio topology for this source/model")
     return "STUDIO_TOPOLOGY_MISSING";
+  if (message.startsWith("Invalid prepared Studio topology"))
+    return "STUDIO_TOPOLOGY_INVALID";
+  if (message === "Profile must be a bounded object without literal secrets")
+    return "RUNTIME_PROFILE_INVALID";
   if (
     message ===
     "Add a Lab description, attach a Theory lesson, or pin a published Reference Source before publishing the Lab"
   )
     return "LAB_PUBLISH_CONTENT_REQUIRED";
+  if (path === "workspaces" && status === 400 && message.startsWith("Mã lớp học đã tồn tại"))
+    return "WORKSPACE_CODE_EXISTS";
+  if (status === 400 && message === "Người dùng đã là thành viên của lớp học này")
+    return "WORKSPACE_MEMBER_EXISTS";
+  if (status === 400 && message === "Không thể xóa người tạo khỏi lớp học")
+    return "WORKSPACE_CREATOR_PROTECTED";
+  if (status === 409 && (message === "This workspace is archived" || message === "Workspace is archived"))
+    return "WORKSPACE_ARCHIVED";
+  if (status === 400 && message.startsWith("Không thể xóa đề bài tập đã có sinh viên nộp bài"))
+    return "ASSIGNMENT_HAS_SUBMISSIONS";
+  if (status === 409 && message === "Published Labs are part of the course roadmap")
+    return "ASSIGNMENT_PUBLISHED_PROTECTED";
+  if (status === 409 && message === "A published Lab keeps its pinned source")
+    return "ASSIGNMENT_PINNED_SOURCE";
+  if (status === 409 && message.startsWith("Email đã tồn tại trong hệ thống"))
+    return "ACCOUNT_EMAIL_EXISTS";
   return undefined;
 }
 export function publicErrorCode(value: unknown): PublicErrorCode | undefined {

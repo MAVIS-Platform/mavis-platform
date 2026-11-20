@@ -156,8 +156,9 @@ export function useApiMutation<K extends Operation>(operation: K) {
         client.setQueriesData<unknown[]>(
           {
             predicate: (q) =>
-              ["submissions", "assignmentSubmissions"].includes(String(q.queryKey[1])) &&
-              queryMatchesScope(q.queryKey, scope),
+              ["submissions", "assignmentSubmissions", "workspaceSubmissions"].includes(
+                String(q.queryKey[1]),
+              ) && queryMatchesScope(q.queryKey, scope),
           },
           (rows) =>
             rows?.map((row) =>
@@ -167,11 +168,24 @@ export function useApiMutation<K extends Operation>(operation: K) {
             ),
         );
       }
+      if (operation === "submit") {
+        void client.invalidateQueries({ queryKey: ["api", "workspaceSubmissions"] });
+        void client.invalidateQueries({ queryKey: ["api", "course-roadmap"] });
+        void client.invalidateQueries({ queryKey: ["api", "student-lab-context"] });
+        void client.invalidateQueries({ queryKey: ["api", "workspace-gradebook"] });
+      }
       if (operation === "gradeSubmission") {
         client.setQueryData(
           ["api", "submissionReview", { submissionId: scope["submissionId"] }],
           data,
         );
+        void client.invalidateQueries({ queryKey: ["api", "workspaceSubmissions"] });
+        void client.invalidateQueries({ queryKey: ["api", "assignmentSubmissions"] });
+        void client.invalidateQueries({ queryKey: ["api", "submissions"] });
+        void client.invalidateQueries({ queryKey: ["api", "submission"] });
+        void client.invalidateQueries({ queryKey: ["api", "workspace-gradebook"] });
+        void client.invalidateQueries({ queryKey: ["api", "course-roadmap"] });
+        void client.invalidateQueries({ queryKey: ["api", "course-setup"] });
       }
       if (
         [
@@ -242,7 +256,9 @@ export function useApiMutation<K extends Operation>(operation: K) {
           if (
             submissionUpdated &&
             operation !== "submit" &&
-            ["submissions", "assignmentSubmissions"].includes(queryOperation)
+            ["submissions", "assignmentSubmissions", "workspaceSubmissions"].includes(
+              queryOperation,
+            )
           )
             return false;
           return operation !== "gradeSubmission" || queryOperation !== "submissionReview";

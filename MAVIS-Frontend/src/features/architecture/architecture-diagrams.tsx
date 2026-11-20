@@ -5,7 +5,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useApi, useApiQuery } from "@/hooks/use-api";
 import type { ArchitecturalModel } from "@/types/domain";
 import { SelectField } from "@/components/shared/forms";
-import { DrawioEditor, MxGraphNativeSvgPreview } from "./drawio-editor";
+import { DrawioEditor } from "./drawio-editor";
+import { ArchitectureSvgViewer } from "./architecture-svg-viewer";
 import { ScenarioDiagram } from "./scenario-diagram";
 import { UmlDiagramWorkspace } from "./uml-diagram-workspace";
 import { SearchableThreeESelect } from "./three-e-searchable-select";
@@ -256,9 +257,19 @@ export function ArchitectureDiagrams({
   const showServiceSelect = ["COMPONENT", "LOGICAL"].includes(kind);
   const showServiceScopeSelect = ["UML_CLASS", "UML_PACKAGE"].includes(kind);
   return (
-    <section aria-label="Architecture diagrams" className="min-w-0 space-y-2.5">
+    <section
+      aria-label="Architecture diagrams"
+      className={guidedStatic ? "min-w-0" : "min-w-0 space-y-2.5"}
+    >
       {(!hideKindSelector || showServiceSelect || showServiceScopeSelect) && (
-        <div data-tour="diagram-type-bar" className="flex flex-wrap items-end gap-3 rounded-xl border bg-card p-3">
+        <div
+          data-tour="diagram-type-bar"
+          className={
+            guidedStatic
+              ? "flex flex-wrap items-end gap-3 border-b border-border/60 bg-muted/15 px-4 py-2.5"
+              : "flex flex-wrap items-end gap-3 rounded-xl border bg-card p-3"
+          }
+        >
           {!hideKindSelector && (
             <div className="w-full sm:w-64">
               <SelectField
@@ -300,15 +311,12 @@ export function ArchitectureDiagrams({
           )}
         </div>
       )}
-      {selection.notice && !isUmlWorkspaceKind && (
+      {!guidedStatic && selection.notice && !isUmlWorkspaceKind && (
         <p
           role="status"
           className="rounded-lg border bg-muted/30 p-3 text-xs leading-5 text-muted-foreground"
         >
-          {guidedStatic && kind === "CONTEXT"
-            ? t("This view shows the system boundary and external relationships established by this revision.",
-                "Sơ đồ hiển thị ranh giới hệ thống và các liên kết bên ngoài đã xác định trong phiên bản này.")
-            : selection.notice}
+          {selection.notice}
         </p>
       )}
       <div data-tour="diagram-canvas">
@@ -342,21 +350,25 @@ export function ArchitectureDiagrams({
           requestedSessionId={searchParams.get("session")}
         />
       ) : !document ? (
-        <p role="status" className="rounded-xl border bg-card p-5 text-sm text-muted-foreground">
+        <p role="status" className="p-6 text-sm text-muted-foreground">
           {selection.reason}
         </p>
       ) : error ? (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="p-4 text-sm text-destructive">
           {error}
         </p>
       ) : !xml ? (
-        <p role="status">Preparing diagram…</p>
+        <p role="status" className="p-6 text-sm text-muted-foreground">Preparing diagram…</p>
       ) : (
-        <div className="space-y-2.5">
-          {/* C4 Top 3E Element & Relationship Inspector Card */}
+        <div className={guidedStatic ? "" : "space-y-2.5"}>
+          {/* C4 Top 3E Element & Relationship Inspector Bar */}
           {c4DocNodes.length > 0 && (
             <div
-              className="rounded-xl border bg-card p-3"
+              className={
+                guidedStatic
+                  ? "border-b border-border/60 bg-muted/10 px-4 py-2.5"
+                  : "rounded-xl border bg-card p-3"
+              }
               data-testid={`c4-${kind.toLowerCase()}-top-inspector-card`}
             >
               <div className="grid gap-3 sm:grid-cols-2">
@@ -398,7 +410,13 @@ export function ArchitectureDiagrams({
             </div>
           )}
 
-          {guidedStatic ? <MxGraphNativeSvgPreview xml={xml} /> : <DrawioEditor
+          {guidedStatic ? (
+            <ArchitectureSvgViewer
+              xml={xml}
+              selectedId={selectedId}
+              onSelect={onSelect}
+            />
+          ) : <DrawioEditor
             key={`${model.id}:${key}`}
             modelId={model.id}
             diagramId={key}
@@ -411,6 +429,8 @@ export function ArchitectureDiagrams({
             xml={xml}
             generatedXml={generated || xml}
             preferProvidedXml={hasValidSavedXml}
+            selectedId={selectedId}
+            onSelect={onSelect}
             autoSaveWhenReady={Boolean(
               saved.data && !hasValidSavedXml && !saved.error && generated,
             )}

@@ -118,7 +118,9 @@ public class RuntimeRunnerDispatcher {
             String redactedReason = SecretRedactor.redactString(rawMessage);
 
             ObjectNode recovery = objectMapper.createObjectNode();
-            recovery.put("code", allocated ? "RUNNER_FAILED_RECOVERY_REQUIRED" : "RUNNER_UNAVAILABLE");
+            boolean preflightFailed = logTail.stream().anyMatch("MAVIS_RUNTIME_DIAGNOSTIC=PREFLIGHT_FAILED"::equals);
+            recovery.put("code", allocated ? "RUNNER_FAILED_RECOVERY_REQUIRED"
+                    : preflightFailed ? "PREFLIGHT_FAILED" : "RUNNER_UNAVAILABLE");
             recovery.put("reason", redactedReason);
             recovery.put("message", redactedReason);
             if (!logTail.isEmpty()) {

@@ -15,7 +15,7 @@ import {
   useRuntimeSetupReadiness,
   useStudentLabStudioSessions,
 } from "@/features/workspaces/course-access";
-import { resolveLabTier, type Assignment } from "./requirements";
+import { type Assignment } from "./requirements";
 import { ExportLabButton } from "./lab-transfer";
 
 type Tab = "info" | "theory" | "source" | "quiz" | "studio" | "publish";
@@ -67,10 +67,19 @@ export function LabPublishSection({
     modules.some((module) =>
       module.items.some((item) => item.type === "THEORY" && item.assignmentId === assignment.id),
     );
-  const labTier = resolveLabTier(assignment);
+  const hasSource = Boolean(assignment.referenceSource?.modelId);
+  const hasQuiz = Boolean(setupLab?.quizPublished && (setupLab?.quizVersion ?? 0) > 0);
+  const hasStudio = Boolean(setupLab?.topologyFrozen || setupLab?.studioReady || assignment.requireRuntimeTrace);
+  const hasContent = hasSource || theoryReady || hasQuiz || Boolean(assignment.instructions?.trim());
   const published = setupLab?.published === true || assignment.labOrder != null;
-  const canFreeze =
-    labTier === "THEORY_QUIZ_STUDIO" && Boolean(assignment.referenceSource?.modelId);
+  const canFreeze = Boolean(hasSource && (setupLab?.studioReady || setupLab?.topologyFrozen));
+  const detectedLabel = hasStudio
+    ? t("Full Studio Live", "Full Studio Live")
+    : hasQuiz
+      ? t("Theory + Quiz", "Lý thuyết + Quiz")
+      : hasSource
+        ? t("Theory + C1–C3", "Lý thuyết + C1–C3")
+        : t("Theory Only", "Chỉ Lý thuyết");
   const previewHref = `/lab?${new URLSearchParams({
     workspace: workspaceId,
     assignment: assignment.id,
@@ -99,10 +108,11 @@ export function LabPublishSection({
     {
       id: "source",
       label: t("Reference source", "Nguồn tham chiếu"),
-      done: Boolean(assignment.referenceSource?.modelId),
-      detail: assignment.referenceSource?.modelId
-        ? t(`Pinned model ${assignment.referenceSource.modelId.slice(0, 8)}`, `Model đã ghim ${assignment.referenceSource.modelId.slice(0, 8)}`)
-        : t("Optional for Theory-only Labs. Required for C1–C3 or Studio Live.", "Tùy chọn nếu Lab thuần lý thuyết. Bắt buộc nếu có C1–C3 hoặc Studio Live."),
+      required: hasStudio,
+      done: hasSource,
+      detail: hasSource
+        ? t(`Pinned model ${assignment.referenceSource!.modelId!.slice(0, 8)}`, `Model đã ghim ${assignment.referenceSource!.modelId!.slice(0, 8)}`)
+        : t("Optional — attach a repo to unlock C1–C3 diagrams or Studio Live.", "Tùy chọn — gắn repo nếu muốn dùng sơ đồ C1–C3 hoặc Studio Live."),
       tab: "source",
     },
     {
@@ -114,32 +124,29 @@ export function LabPublishSection({
         : t("Optional — add a lesson in Step 3.", "Tùy chọn — thêm bài học ở Bước 3."),
       tab: "theory",
     },
-    ...(labTier !== "THEORY_ONLY"
-      ? [
-          {
-            id: "quiz",
-            label: t("Quiz", "Quiz"),
-            done: Boolean(setupLab?.quizPublished),
-            detail: setupLab?.quizPublished
-              ? t(`Version ${setupLab.quizVersion}`, `Phiên bản ${setupLab.quizVersion}`)
-              : t("Optional — skip if no Quiz Gate.", "Tùy chọn — bỏ qua nếu không dùng Quiz."),
-            tab: "quiz" as Tab,
-          },
-        ]
-      : []),
-    ...(labTier === "THEORY_QUIZ_STUDIO"
-      ? [
-          {
-            id: "studio",
-            label: t("Studio Live topology", "Topology Studio Live"),
-            done: Boolean(setupLab?.topologyFrozen),
-            detail: setupLab?.topologyFrozen
-              ? t("Topology is frozen into the published Lab.", "Topology đã được đóng băng vào Lab.")
-              : t("Optional — skip if no Docker Studio Live.", "Tùy chọn — bỏ qua nếu không dùng Studio Live."),
-            tab: "studio" as Tab,
-          },
-        ]
-      : []),
+    {
+      id: "quiz",
+      label: t("Quiz", "Quiz"),
+      required: hasStudio,
+      done: hasQuiz,
+      detail: hasQuiz
+        ? t(`Version ${setupLab?.quizVersion}`, `Phiên bản ${setupLab?.quizVersion}`)
+        : hasStudio
+          ? t("Required for BR-06 Quiz Gate before students launch Docker Studio.", "Bắt buộc cho cổng Quiz (BR-06) trước khi sinh viên mở Docker Studio.")
+          : t("Optional — skip if no Quiz Gate.", "Tùy chọn — bỏ qua nếu không dùng Quiz."),
+      tab: "quiz",
+    },
+    {
+      id: "studio",
+      label: t("Studio Live topology", "Topology Studio Live"),
+      done: Boolean(setupLab?.topologyFrozen || setupLab?.studioReady),
+      detail: setupLab?.topologyFrozen
+        ? t("Topology is frozen into the published Lab.", "Topology đã được đóng băng vào Lab.")
+        : setupLab?.studioReady
+          ? t("Studio Live configured — ready to freeze after adding to class.", "Đã cấu hình Studio Live — có thể đóng băng sau khi đưa vào lớp.")
+          : t("Optional — skip if no Docker Studio Live.", "Tùy chọn — bỏ qua nếu không dùng Studio Live."),
+      tab: "studio",
+    },
     {
       id: "publish",
       label: t("In class", "Trong lớp"),
@@ -159,9 +166,12 @@ export function LabPublishSection({
             <Rocket className="size-4 text-primary" aria-hidden="true" />
             {t("Check and add to class", "Kiểm tra và thêm vào lớp")}
           </h2>
-          <Badge variant={published ? "success" : "secondary"}>
-            {published ? t("In class", "Trong lớp") : t("Not in class", "Chưa vào lớp")}
-          </Badge>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline">{detectedLabel}</Badge>
+            <Badge variant={published ? "success" : "secondary"}>
+              {published ? t("In class", "Trong lớp") : t("Not in class", "Chưa vào lớp")}
+            </Badge>
+          </div>
         </div>
 
         <ul className="divide-y rounded-lg border">
@@ -192,8 +202,25 @@ export function LabPublishSection({
           ))}
         </ul>
 
-        {labTier === "THEORY_QUIZ_STUDIO" &&
-          assignment.requireRuntimeTrace &&
+        {!hasContent && (
+          <p className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs leading-5 text-amber-800 dark:text-amber-200">
+            {t(
+              "Add at least one learning item (Description, Theory lesson, Reference source, or Quiz) before adding this Lab to the class.",
+              "Hãy thêm ít nhất 1 nội dung học (Mô tả, Bài lý thuyết, Nguồn tham chiếu hoặc Quiz) trước khi thêm Lab vào lớp.",
+            )}
+          </p>
+        )}
+
+        {hasStudio && !hasQuiz && (
+          <p className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs leading-5 text-amber-800 dark:text-amber-200">
+            {t(
+              "BR-06 Quiz Gate: Studio Live is configured, so publish a Quiz in Step 4 so students can unlock Docker Studio.",
+              "Cổng Quiz (BR-06): Lab có cấu hình Studio Live — hãy công bố Quiz ở Bước 4 để sinh viên vượt qua trước khi mở Docker Studio.",
+            )}
+          </p>
+        )}
+
+        {hasStudio &&
           readiness.data &&
           !readiness.data.runnerReady && (
             <p className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs leading-5 text-amber-800 dark:text-amber-200">

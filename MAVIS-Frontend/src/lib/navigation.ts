@@ -197,6 +197,7 @@ export const lecturerWorkspaceNavigation: readonly NavigationGroup[] = [
         href: "/submissions",
       },
       { id: "members", label: "Students & Access", icon: Users, href: "/members" },
+      { id: "settings", label: "Settings", icon: Settings2, href: "/members?tab=settings" },
     ],
   },
 ];

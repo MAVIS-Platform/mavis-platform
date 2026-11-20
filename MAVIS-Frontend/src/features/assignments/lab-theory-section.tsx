@@ -39,15 +39,14 @@ import {
 } from "@/components/shared/markdown-preview";
 import { useApiQuery } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
-import { ArchitectureDiagrams } from "@/features/architecture/architecture-diagrams";
-import { ArchitectureGraph, ElementDetailsPanel } from "@/features/architecture/components";
+import { ArchitecturePresentation } from "@/features/architecture/architecture-presentation";
 import { DiagramPreview } from "@/features/architecture/diagram-preview";
 import {
   useCourseAuthoring,
   useStudentLabContext,
 } from "@/features/workspaces/course-access";
 import { AssignmentSourceDetails } from "./source-picker";
-import { resolveLabTier, type Assignment } from "./requirements";
+import { type Assignment } from "./requirements";
 
 type TheoryItem = {
   id: string;
@@ -1148,7 +1147,6 @@ export function LabTheorySection({
               <span>{t("Lesson title", "Tên bài học")}</span>
               <Input
                 maxLength={255}
-                placeholder={t("e.g. Service Boundaries & OpenFeign Contracts", "VD: Ranh giới Service & Hợp đồng OpenFeign")}
                 value={newTitle}
                 onChange={(event) => setNewTitle(event.target.value)}
               />
@@ -1336,23 +1334,20 @@ export function LabTheorySection({
                       ))}
                     </div>
                   </div>
-                  {c4Tab !== "GRAPH" ? (
-                    modelQuery.data && modelQuery.data.elements.length > 0 ? (
-                      <div className="space-y-3">
-                        <ArchitectureDiagrams
-                          model={modelQuery.data}
-                          guidedStatic
-                          controlledKind={c4Tab}
-                          hideKindSelector
-                          systemName={assignment.title}
-                          selectedId={selectedGraphId}
-                          onSelect={setSelectedGraphId}
-                        />
-                        {selectedGraphId && (
-                          <ElementDetailsPanel model={modelQuery.data} selectedId={selectedGraphId} />
-                        )}
-                      </div>
-                    ) : activeDiagramMermaid ? (
+                  {modelQuery.data && (c4Tab === "GRAPH" || modelQuery.data.elements.length > 0) ? (
+                    <ArchitecturePresentation
+                      key={`${modelQuery.data.id}:${c4Tab}`}
+                      model={modelQuery.data}
+                      mode={c4Tab === "GRAPH" ? "graph" : "diagram"}
+                      guidedStatic
+                      controlledKind={c4Tab === "GRAPH" ? undefined : c4Tab}
+                      hideKindSelector
+                      systemName={assignment.title}
+                      selectedId={selectedGraphId}
+                      onSelect={setSelectedGraphId}
+                    />
+                  ) : c4Tab !== "GRAPH" ? (
+                    activeDiagramMermaid ? (
                       <DiagramPreview
                         title={`C4 ${c4Tab}`}
                         content={activeDiagramMermaid}
@@ -1369,17 +1364,6 @@ export function LabTheorySection({
                             )}
                       </p>
                     )
-                  ) : modelQuery.data ? (
-                    <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
-                      <div className="min-w-0 overflow-x-auto">
-                        <ArchitectureGraph
-                          model={modelQuery.data}
-                          selectedId={selectedGraphId}
-                          onSelect={setSelectedGraphId}
-                        />
-                      </div>
-                      <ElementDetailsPanel model={modelQuery.data} selectedId={selectedGraphId} />
-                    </div>
                   ) : (
                     <p className="text-xs text-muted-foreground">
                       {t("Loading architectural model…", "Đang tải mô hình kiến trúc…")}
@@ -1408,18 +1392,14 @@ export function LabTheorySection({
         </div>
       </details>
 
-      <div className="flex justify-end">
-        {resolveLabTier(assignment) === "THEORY_ONLY" ? (
-          <Button type="button" size="sm" onClick={() => onNavigate("publish")}>
-            {t("Next Step 6: Check & add to class", "Sang Bước 6: Kiểm tra & thêm vào lớp")}
-            <ArrowRight className="ml-1.5 size-4" aria-hidden="true" />
-          </Button>
-        ) : (
-          <Button type="button" size="sm" onClick={() => onNavigate("quiz")}>
-            {t("Next Step 4: Quiz", "Sang Bước 4: Câu hỏi Quiz")}
-            <ArrowRight className="ml-1.5 size-4" aria-hidden="true" />
-          </Button>
-        )}
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <Button type="button" size="sm" variant="outline" onClick={() => onNavigate("publish")}>
+          {t("Skip to Step 6: Check & add to class", "Sang thẳng Bước 6: Kiểm tra & thêm vào lớp")}
+        </Button>
+        <Button type="button" size="sm" onClick={() => onNavigate("quiz")}>
+          {t("Next Step 4: Quiz", "Sang Bước 4: Câu hỏi Quiz")}
+          <ArrowRight className="ml-1.5 size-4" aria-hidden="true" />
+        </Button>
       </div>
     </div>
   );

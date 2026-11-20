@@ -2081,17 +2081,51 @@ public class RuntimePlanningService {
   var steps=parseSteps(r.steps());s.setProjectId(projectId);s.setName(r.name().trim());s.setSteps(steps);s.setRevision(s.getRevision()+1);return view(scenarios.saveAndFlush(s));
  }
 
+ private BusinessException preflightFailed(String message) {
+  return new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,"PREFLIGHT_FAILED",message);
+ }
+
  @Transactional
  public RuntimeSessionResponseDTO start(UUID id,StartRequest r){var guidedProject=lock(id);if(!r.approved())throw new BusinessException(ErrorCode.BAD_REQUEST,"Explicit approval required");
   var c=configurations.findById(id).orElseThrow(()->new BusinessException(ErrorCode.BAD_REQUEST,"Save runtime configuration first"));var s=scenarios.findById(r.scenarioId()).orElseThrow(()->new BusinessException(ErrorCode.NOT_FOUND));
   if(!id.equals(s.getProjectId())||!r.snapshotId().equals(c.getSourceSnapshotId()))throw new BusinessException(ErrorCode.BAD_REQUEST,"Pinned planning scope mismatch");
   if(c.getRevision()!=r.configurationRevision()||s.getRevision()!=r.scenarioRevision())throw new BusinessException(ErrorCode.CONFLICT);
-  var pre=runtime.runComposePreflight(c.getSourceSnapshotId());if(!pre.isCompatible())throw new BusinessException(ErrorCode.BAD_REQUEST,"Compose preflight rejected");
-  boolean hasRemediatedCompose=(c.getProfile()!=null&&c.getProfile().hasNonNull("sandboxCompose")&&!c.getProfile().path("sandboxCompose").asText().isBlank())
-    ||(pre.getSandboxComposeYaml()!=null&&!pre.getSandboxComposeYaml().isBlank()&&(pre.getUnresolvableRunnerIssues()==null||pre.getUnresolvableRunnerIssues().isEmpty()));
-  List<String> blockingIssues=hasRemediatedCompose?List.of():(pre.getUnresolvableRunnerIssues()!=null&&!pre.getUnresolvableRunnerIssues().isEmpty()?pre.getUnresolvableRunnerIssues():pre.getRunnerIssues());
-  if(blockingIssues!=null&&!blockingIssues.isEmpty())throw new BusinessException(ErrorCode.BAD_REQUEST,"The sandbox runner cannot execute this Compose file: "+String.join("; ",blockingIssues.subList(0,Math.min(3,blockingIssues.size()))));
+  ArrayNode actionNodes=json.createArrayNode();
+  if(r.infrastructureActions()!=null) {
+   if(r.interactiveStudio()&&!r.infrastructureActions().isEmpty())
+    throw new BusinessException(ErrorCode.BAD_REQUEST,"Interactive Studio accepts actions after session startup.");
+   for(InfrastructureActionRequest action:r.infrastructureActions()){
+    String type=action==null||action.action()==null?"":action.action().trim().toUpperCase(Locale.ROOT);
+    String service=action==null||action.service()==null?"":action.service().trim();
+    if(!Set.of("STOP","START","SCALE").contains(type)||service.isBlank())
+     throw new BusinessException(ErrorCode.BAD_REQUEST,"Infrastructure action must target a pinned application service");
+    if("SCALE".equals(type)&&(action.replicas()==null||action.replicas()<1||action.replicas()>8))
+     throw new BusinessException(ErrorCode.BAD_REQUEST,"REPLICA_BOUNDS_EXCEEDED");
+    ObjectNode node=actionNodes.addObject().put("action",type).put("service",service);
+    if(action.replicas()!=null)node.put("replicas",action.replicas());
+   }
+  }
+  var pre=runtime.runComposePreflight(c.getSourceSnapshotId());
+  if(!pre.isCompatible())throw preflightFailed("The source Compose was rejected.");
   ObjectNode profileCopy=c.getProfile().deepCopy();
+  String effectiveCompose=profileCopy.path("sandboxCompose").asText("");
+  if(effectiveCompose.isBlank()) {
+   boolean unresolved=pre.getUnresolvableRunnerIssues()!=null&&!pre.getUnresolvableRunnerIssues().isEmpty();
+   if(unresolved)throw preflightFailed("The source Compose has unresolved Runner requirements.");
+   effectiveCompose=pre.getSandboxComposeYaml();
+   if((effectiveCompose==null||effectiveCompose.isBlank())&&pre.getRunnerIssues()!=null&&!pre.getRunnerIssues().isEmpty())
+    throw preflightFailed("The source Compose is incompatible with the Runner.");
+  }
+  if(effectiveCompose!=null&&!effectiveCompose.isBlank()) {
+   if(composeValidator!=null) {
+    var effective=composeValidator.validate(effectiveCompose,Map.of());
+    if(!effective.isCompatible()||(effective.getRunnerIssues()!=null&&!effective.getRunnerIssues().isEmpty()))
+     throw preflightFailed("The prepared Compose is incompatible with the Runner.");
+   }
+   profileCopy.put("sandboxCompose",effectiveCompose);
+  } else {
+   profileCopy.remove("sandboxCompose");
+  }
   var apps=profileCopy.path("applications");
   if(apps instanceof ObjectNode appsObj){
    List<String> rawAppKeys=new ArrayList<>();
@@ -2149,23 +2183,15 @@ public class RuntimePlanningService {
   if(profileCopy.has("approvedForLocalPoc")&&!profileHasPinnedRunnerImages(profileCopy)){
    throw new BusinessException(ErrorCode.BAD_REQUEST,"Sandbox runner images are not configured. An operator must set MAVIS_RUNNER_COLLECTOR_IMAGE and MAVIS_RUNNER_SCENARIO_RUNNER_IMAGE to digest-pinned images");
   }
-  if(!profileCopy.hasNonNull("sandboxCompose")&&pre.getSandboxComposeYaml()!=null&&!pre.getSandboxComposeYaml().isBlank()&&(pre.getUnresolvableRunnerIssues()==null||pre.getUnresolvableRunnerIssues().isEmpty())){
-   profileCopy.put("sandboxCompose",pre.getSandboxComposeYaml());
-  }
   if(!execEnv.bindings().isEmpty())profileCopy.set("environmentBindings",execEnv.bindings());
   config.set("profile",profileCopy);
   var scenario=config.putObject("scenario");scenario.set("steps",normalizedSteps);scenario.put("timeoutSeconds",settings.requireProfile(c.getProfileId()).timeoutSeconds());
    config.put("interactiveStudio",r.interactiveStudio());
-   if(r.interactiveStudio() && r.infrastructureActions()!=null && !r.infrastructureActions().isEmpty())
-    throw new BusinessException(ErrorCode.BAD_REQUEST,"Interactive Studio accepts actions after session startup.");
-   ArrayNode actionNodes=config.putArray("infrastructureActions");
-   for(InfrastructureActionRequest action:r.infrastructureActions()==null?List.<InfrastructureActionRequest>of():r.infrastructureActions()){
-    String type=action.action()==null?"":action.action().trim().toUpperCase(Locale.ROOT);
-    String service=action.service()==null?"":action.service().trim();
-    if(!Set.of("STOP","START","SCALE").contains(type)||!appKeys.contains(service))throw new BusinessException(ErrorCode.BAD_REQUEST,"Infrastructure action must target a pinned application service");
-    if("SCALE".equals(type)&&(action.replicas()==null||action.replicas()<1||action.replicas()>8))throw new BusinessException(ErrorCode.BAD_REQUEST,"REPLICA_BOUNDS_EXCEEDED");
-    ObjectNode node=actionNodes.addObject();node.put("action",type);node.put("service",service);if(action.replicas()!=null)node.put("replicas",action.replicas());
+   for(JsonNode action:actionNodes){
+    if(!appKeys.contains(action.path("service").asText()))
+     throw new BusinessException(ErrorCode.BAD_REQUEST,"Infrastructure action must target a pinned application service");
    }
+   config.set("infrastructureActions",actionNodes);
   var planning=config.putObject("planning");planning.put("scenarioId",s.getId().toString());planning.put("scenarioRevision",s.getRevision());planning.put("configurationRevision",c.getRevision());
   Map<String,String> confirmedMappings=resolveConfirmedServiceMappings(c.getModelVersionId(),c.getProfile(),pre,apps);
   if (!r.interactiveStudio()) {

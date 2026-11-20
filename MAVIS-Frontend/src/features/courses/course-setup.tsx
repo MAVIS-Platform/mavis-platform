@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useLocale } from "@/lib/i18n/locale-context";
+import { formatCourseLabTitle } from "@/lib/format/course-display";
 import {
   useCourseSetup,
   useRuntimeSetupReadiness,
@@ -244,7 +245,9 @@ export function CourseSetupPanel({ workspaceId }: { workspaceId: string }) {
                   >
                     {runtimeReadiness.preflightCompatible && runtimeReadiness.runnerReady
                       ? t("Ready for Students", "Sẵn sàng cho Sinh viên")
-                      : t("Setup Incomplete", "Cần hoàn tất cấu hình")}
+                      : runtimeReadiness.preflightCompatible && !runtimeReadiness.configured
+                        ? t("Compose Ready (Run Step 5)", "Compose sẵn sàng (Chạy Bước 5)")
+                        : t("Setup Incomplete", "Cần hoàn tất cấu hình")}
                   </Badge>
                 </div>
                 {runtimeReadiness.prerequisites.slice(0, 2).map((item) => (
@@ -285,8 +288,7 @@ export function CourseSetupPanel({ workspaceId }: { workspaceId: string }) {
                 {data.labs.map((lab: CourseSetupLab) => (
                   <li key={lab.assignmentId} className="flex items-center justify-between gap-2 text-xs">
                     <span className="min-w-0 truncate">
-                      {lab.position ? `Lab ${lab.position} · ` : ""}
-                      {lab.title}
+                      {formatCourseLabTitle(lab.title, lab.position, lab.assignmentId)}
                     </span>
                     <Badge variant={labVariant(lab.state)}>{lab.state}</Badge>
                   </li>

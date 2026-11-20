@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ClipboardList, GitBranch, Plus, Trash2 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { GitBranch, Plus, Trash2, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -280,67 +279,74 @@ export function StudioExerciseEditor({
     },
   });
 
+  const allServices = Array.from(new Set([...applications, ...form.stoppedServices]));
+  const hasAdvancedConstraints = Boolean(
+    form.stoppedControllers.trim() || form.traceFrom.trim() || form.traceTo.trim(),
+  );
+
   return (
-    <details open className="rounded-xl border bg-card p-4">
-      <summary className="flex cursor-pointer flex-wrap items-center gap-2 text-sm font-semibold">
-        <ClipboardList className="size-4 text-primary" aria-hidden="true" />
-        {t("Studio exercise (teacher)", "Đề Studio (giảng viên)")}
-        {exercise.data && <Badge variant="outline">rev {exercise.data.revision}</Badge>}
-      </summary>
-
-      <div className="mt-4 space-y-4">
-        <p className="text-xs leading-5 text-muted-foreground">
-          {t(
-            "The Studio repository must build and run with Docker. Students only start/stop/scale services and connect/disconnect prepared wires; no code editing and no synthetic latency.",
-            "Repo Studio phải build và chạy được bằng Docker. Sinh viên chỉ start/stop/scale service và connect/disconnect dây đã chuẩn bị; không sửa code, không latency giả.",
-          )}
-        </p>
-
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/20 p-3">
-          <div className="space-y-0.5">
-            <p className="text-xs font-semibold text-foreground">
-              {t(
-                "Recommended Studio Live Exercise Preset",
-                "Mẫu Đề Chuẩn Studio Live (theo Repo đã chọn)",
-              )}
-            </p>
-            <p className="text-[11px] text-muted-foreground">
-              {t(
-                "One-click fill matching the detected services in this repository (mavis-studio-live-demo, mavis-commerce-seed, or custom Docker Compose).",
-                "Điền nhanh cấu hình chuẩn khớp với danh sách service phát hiện được trong repo này (mavis-studio-live-demo, mavis-commerce-seed hoặc Docker Compose).",
-              )}
-            </p>
-          </div>
-          <Button type="button" size="sm" variant="outline" onClick={applyPreset}>
-            {t("⚡ Fill Curated Studio Preset", "⚡ Điền nhanh Đề chuẩn Studio Live")}
-          </Button>
-        </div>
-
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-background px-3 py-2.5 text-xs">
-          <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
-            <GitBranch className="size-3.5 text-teal-600" aria-hidden="true" />
-            {t(
-              "Unified Lab Repository (shared with Step 2 Reference Source):",
-              "Repo dùng chung từ Bước 2 (Nguồn tham chiếu C1–C3 & Studio Live):",
-            )}
-          </span>
-          <span className="font-mono text-muted-foreground">
+    <div className="space-y-5">
+      {/* Compact Repo + Preset Strip */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/70 pb-3">
+        <div className="flex min-w-0 items-center gap-2 text-xs">
+          <GitBranch className="size-3.5 shrink-0 text-emerald-500" aria-hidden="true" />
+          <span className="truncate font-mono font-medium text-foreground">
             {referenceSource?.projectName
-              ? `${referenceSource.projectName} · r${referenceSource.revision}`
+              ? referenceSource.projectName
               : form.runtimeModelId
                 ? `model ${form.runtimeModelId.slice(0, 8)}`
-                : t("Not pinned in Step 2 yet", "Chưa gắn ở Bước 2")}
+                : t("No repository linked", "Chưa gắn repo")}
           </span>
+          {exercise.data && (
+            <span className="rounded border border-border bg-muted/40 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+              rev {exercise.data.revision}
+            </span>
+          )}
         </div>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={applyPreset}
+          className="h-7 gap-1 px-2.5 text-xs"
+        >
+          <Zap className="size-3 text-amber-400" aria-hidden="true" />
+          {t("Auto-fill preset", "Điền nhanh mẫu")}
+        </Button>
+      </div>
 
-        <section className="space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+      {/* 1. Baseline Probe Endpoints */}
+      <section className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
             {t("Baseline workload", "Workload nền")}
           </p>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            disabled={form.baselineRequests.length >= 10}
+            onClick={() =>
+              setForm({
+                ...form,
+                baselineRequests: [
+                  ...form.baselineRequests,
+                  { method: "GET", path: "/", expectedStatus: 200 },
+                ],
+              })
+            }
+            className="h-6 px-2 text-[11px] text-muted-foreground hover:text-foreground"
+          >
+            <Plus className="mr-1 size-3" aria-hidden="true" />
+            {t("Add endpoint", "Thêm endpoint")}
+          </Button>
+        </div>
+        <div className="space-y-1.5">
           {form.baselineRequests.map((request, index) => (
-            <div key={index} className="flex flex-wrap items-center gap-2">
+            <div key={index} className="flex items-center gap-1.5">
               <select
-                className="h-9 rounded-md border bg-background px-2 text-sm"
+                aria-label={t("HTTP method", "Phương thức HTTP")}
+                className="h-8 rounded-md border border-border bg-background px-2 font-mono text-xs text-foreground"
                 value={request.method}
                 onChange={(event) => {
                   const next = [...form.baselineRequests];
@@ -352,7 +358,7 @@ export function StudioExerciseEditor({
                 <option value="HEAD">HEAD</option>
               </select>
               <Input
-                className="h-9 min-w-48 flex-1"
+                className="h-8 min-w-0 flex-1 font-mono text-xs"
                 value={request.path}
                 placeholder="/api/orders"
                 onChange={(event) => {
@@ -362,7 +368,7 @@ export function StudioExerciseEditor({
                 }}
               />
               <Input
-                className="h-9 w-24"
+                className="h-8 w-20 font-mono text-xs"
                 type="number"
                 value={request.expectedStatus ?? ""}
                 placeholder="200"
@@ -380,6 +386,7 @@ export function StudioExerciseEditor({
                 size="sm"
                 variant="ghost"
                 aria-label={t("Remove request", "Xoá request")}
+                className="size-8 shrink-0 p-0 text-muted-foreground hover:text-destructive"
                 onClick={() =>
                   setForm({
                     ...form,
@@ -391,192 +398,241 @@ export function StudioExerciseEditor({
               </Button>
             </div>
           ))}
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={form.baselineRequests.length >= 10}
-            onClick={() =>
-              setForm({
-                ...form,
-                baselineRequests: [
-                  ...form.baselineRequests,
-                  { method: "GET", path: "/", expectedStatus: null },
-                ],
-              })
-            }
-          >
-            <Plus className="mr-1 size-3.5" aria-hidden="true" />
-            {t("Add request", "Thêm request")}
-          </Button>
-        </section>
+        </div>
+      </section>
 
-        <section className="grid gap-4 md:grid-cols-2">
-          <div className="space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              {t("Stopped at start", "Dừng sẵn khi bắt đầu")}
+      {/* 2. Initial Stopped Services & Allowed Actions (Toggle Pills) */}
+      <section className="grid gap-4 border-t border-border/60 pt-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            {t("Stopped at start", "Dừng sẵn khi bắt đầu")}
+          </p>
+          {allServices.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              {t("Prepare the runtime profile first.", "Hãy chuẩn bị runtime profile trước.")}
             </p>
-            {applications.length === 0 && form.stoppedServices.length === 0 ? (
-              <p className="text-xs text-muted-foreground">
-                {t("Prepare the runtime profile first.", "Hãy chuẩn bị runtime profile trước.")}
-              </p>
-            ) : (
-              <ul className="space-y-1">
-                {Array.from(new Set([...applications, ...form.stoppedServices])).map((service) => (
-                  <li key={service}>
-                    <label className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        className="size-4"
-                        checked={form.stoppedServices.includes(service)}
-                        onChange={(event) =>
-                          setForm({
-                            ...form,
-                            stoppedServices: event.target.checked
-                              ? [...form.stoppedServices, service]
-                              : form.stoppedServices.filter((value) => value !== service),
-                          })
-                        }
-                      />
-                      {service}
-                    </label>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <label className="block space-y-1 text-xs font-medium">
-              <span>{t("Stopped controllers", "Controller dừng sẵn")}</span>
-              <Input
-                value={form.stoppedControllers}
-                placeholder="orders-payment-route"
-                onChange={(event) => setForm({ ...form, stoppedControllers: event.target.value })}
-              />
-            </label>
-          </div>
-
-          <div className="space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              {t("Allowed actions", "Hành động được phép")}
-            </p>
-            <div className="grid grid-cols-2 gap-1">
-              {ACTIONS.map((action) => (
-                <label key={action} className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    className="size-4"
-                    checked={form.allowedActions.includes(action)}
-                    onChange={(event) =>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {allServices.map((service) => {
+                const stopped = form.stoppedServices.includes(service);
+                return (
+                  <button
+                    key={service}
+                    type="button"
+                    aria-pressed={stopped}
+                    onClick={() =>
                       setForm({
                         ...form,
-                        allowedActions: event.target.checked
-                          ? [...form.allowedActions, action]
-                          : form.allowedActions.filter((value) => value !== action),
+                        stoppedServices: stopped
+                          ? form.stoppedServices.filter((value) => value !== service)
+                          : [...form.stoppedServices, service],
                       })
                     }
-                  />
-                  {action}
-                </label>
-              ))}
+                    className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 font-mono text-[11px] transition-colors ${
+                      stopped
+                        ? "border-amber-500/50 bg-amber-500/15 text-amber-600 dark:text-amber-200"
+                        : "border-border bg-muted/20 text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={`size-1.5 rounded-full ${stopped ? "bg-amber-400" : "bg-muted-foreground/40"}`}
+                    />
+                    {service}
+                  </button>
+                );
+              })}
             </div>
-          </div>
-        </section>
+          )}
+        </div>
 
-        <section className="grid gap-3 md:grid-cols-3">
-          <label className="space-y-1 text-xs font-medium">
+        <div className="space-y-2">
+          <div className="flex items-baseline justify-between gap-2">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              {t("Allowed actions", "Hành động được phép")}
+            </p>
+            <span className="text-[10px] text-muted-foreground/80">
+              {t("Docker only · no code editing", "Chỉ Docker · không sửa code")}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {ACTIONS.map((action) => {
+              const allowed = form.allowedActions.includes(action);
+              return (
+                <button
+                  key={action}
+                  type="button"
+                  aria-pressed={allowed}
+                  onClick={() =>
+                    setForm({
+                      ...form,
+                      allowedActions: allowed
+                        ? form.allowedActions.filter((value) => value !== action)
+                        : [...form.allowedActions, action],
+                    })
+                  }
+                  className={`rounded-md border px-2 py-1 font-mono text-[11px] font-medium transition-colors ${
+                    allowed
+                      ? "border-sky-500/50 bg-sky-500/15 text-sky-700 dark:text-sky-200"
+                      : "border-border bg-muted/20 text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {action}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* 3. Pass Criteria (Symmetrical 2x2 Grid) */}
+      <section className="space-y-2 border-t border-border/60 pt-4">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          {t("Pass criteria", "Tiêu chí đạt")}
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="space-y-1 text-xs text-muted-foreground">
             <span>{t("Max error rate (%)", "Tỉ lệ lỗi tối đa (%)")}</span>
             <Input
+              className="h-8 font-mono text-xs"
               type="number"
               min={0}
               max={100}
+              placeholder="0"
               value={form.maxErrorRatePercent}
               onChange={(event) => setForm({ ...form, maxErrorRatePercent: event.target.value })}
             />
           </label>
-          <label className="space-y-1 text-xs font-medium">
+          <label className="space-y-1 text-xs text-muted-foreground">
             <span>{t("Max p95 (ms)", "p95 tối đa (ms)")}</span>
             <Input
+              className="h-8 font-mono text-xs"
               type="number"
               min={0}
               max={60000}
+              placeholder="—"
               value={form.maxP95Ms}
               onChange={(event) => setForm({ ...form, maxP95Ms: event.target.value })}
             />
           </label>
-          <div className="grid grid-cols-2 gap-2">
-            <label className="space-y-1 text-xs font-medium">
-              <span>{t("Trace from", "Trace từ")}</span>
+          <label className="space-y-1 text-xs text-muted-foreground">
+            <span>{t("Scale target service", "Service cần scale")}</span>
+            {allServices.length > 0 ? (
+              <select
+                className="h-8 w-full rounded-md border border-border bg-background px-2 font-mono text-xs text-foreground"
+                value={form.replicaService}
+                onChange={(event) => setForm({ ...form, replicaService: event.target.value })}
+              >
+                <option value="">{t("None", "Không yêu cầu")}</option>
+                {Array.from(
+                  new Set([
+                    ...allServices,
+                    ...(form.replicaService ? [form.replicaService] : []),
+                  ]),
+                ).map((service) => (
+                  <option key={service} value={service}>
+                    {service}
+                  </option>
+                ))}
+              </select>
+            ) : (
               <Input
-                value={form.traceFrom}
-                placeholder="orders"
-                onChange={(event) => setForm({ ...form, traceFrom: event.target.value })}
+                className="h-8 font-mono text-xs"
+                value={form.replicaService}
+                placeholder="order-service"
+                onChange={(event) => setForm({ ...form, replicaService: event.target.value })}
               />
-            </label>
-            <label className="space-y-1 text-xs font-medium">
-              <span>{t("Trace to", "Trace đến")}</span>
-              <Input
-                value={form.traceTo}
-                placeholder="payment"
-                onChange={(event) => setForm({ ...form, traceTo: event.target.value })}
-              />
-            </label>
-          </div>
-        </section>
-
-        <section className="grid gap-3 md:grid-cols-2">
-          <label className="space-y-1 text-xs font-medium">
-            <span>{t("Replica service", "Service cần scale")}</span>
-            <Input
-              value={form.replicaService}
-              placeholder="orders"
-              onChange={(event) => setForm({ ...form, replicaService: event.target.value })}
-            />
+            )}
           </label>
-          <label className="space-y-1 text-xs font-medium">
-            <span>{t("Minimum replicas", "Số replica tối thiểu")}</span>
+          <label className="space-y-1 text-xs text-muted-foreground">
+            <span>{t("Minimum replicas (1–8)", "Số replica tối thiểu (1–8)")}</span>
             <Input
+              className="h-8 font-mono text-xs"
               type="number"
               min={1}
               max={8}
+              placeholder="2"
               value={form.replicaCount}
               onChange={(event) => setForm({ ...form, replicaCount: event.target.value })}
             />
           </label>
-        </section>
+        </div>
+      </section>
 
-        <label className="block space-y-1 text-xs font-medium">
-          <span>{t("Student instructions", "Hướng dẫn sinh viên")}</span>
-          <Textarea
-            rows={4}
-            value={form.instructions}
-            placeholder={t(
-              "Explain the initial fault and what the student must prove.",
-              "Mô tả lỗi ban đầu và điều sinh viên phải chứng minh.",
-            )}
-            onChange={(event) => setForm({ ...form, instructions: event.target.value })}
-          />
-        </label>
-
-        <div className="flex flex-wrap items-center gap-2 border-t pt-3">
-          <Button type="button" size="sm" disabled={save.isPending} onClick={() => save.mutate()}>
-            {save.isPending ? t("Saving…", "Đang lưu…") : t("Save exercise", "Lưu đề")}
-          </Button>
-          {exercise.data && (
-            <span className="text-xs text-muted-foreground">
-              {t("Revision", "Bản")} {exercise.data.revision}
-            </span>
+      {/* 4. Student Instructions */}
+      <label className="block space-y-1.5 border-t border-border/60 pt-4 text-xs">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          {t("Student instructions", "Hướng dẫn sinh viên")}
+        </span>
+        <Textarea
+          rows={3}
+          className="text-xs leading-relaxed"
+          value={form.instructions}
+          placeholder={t(
+            "Explain the initial fault and what the student must prove.",
+            "Mô tả lỗi ban đầu và điều sinh viên phải chứng minh.",
           )}
+          onChange={(event) => setForm({ ...form, instructions: event.target.value })}
+        />
+      </label>
+
+      {/* 5. Optional Advanced Trace & Controller Constraints */}
+      <details
+        open={hasAdvancedConstraints}
+        className="rounded-lg border border-border/70 bg-muted/15 px-3 py-2"
+      >
+        <summary className="cursor-pointer select-none text-xs font-medium text-muted-foreground hover:text-foreground">
+          {t("Advanced trace & route constraints", "Ràng buộc trace & controller nâng cao")}
+        </summary>
+        <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          <label className="space-y-1 text-xs text-muted-foreground">
+            <span>{t("Required trace from", "Trace từ")}</span>
+            <Input
+              className="h-8 font-mono text-xs"
+              value={form.traceFrom}
+              placeholder="order-service"
+              onChange={(event) => setForm({ ...form, traceFrom: event.target.value })}
+            />
+          </label>
+          <label className="space-y-1 text-xs text-muted-foreground">
+            <span>{t("Required trace to", "Trace đến")}</span>
+            <Input
+              className="h-8 font-mono text-xs"
+              value={form.traceTo}
+              placeholder="payment-service"
+              onChange={(event) => setForm({ ...form, traceTo: event.target.value })}
+            />
+          </label>
+          <label className="space-y-1 text-xs text-muted-foreground">
+            <span>{t("Stopped controllers", "Controller dừng sẵn")}</span>
+            <Input
+              className="h-8 font-mono text-xs"
+              value={form.stoppedControllers}
+              placeholder="orders-payment-route"
+              onChange={(event) => setForm({ ...form, stoppedControllers: event.target.value })}
+            />
+          </label>
+        </div>
+      </details>
+
+      {/* Footer Save Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/70 pt-3">
+        <div className="flex items-center gap-2 text-xs">
           {savedNotice && (
-            <span role="status" className="text-xs font-medium text-emerald-700 dark:text-emerald-300">
+            <span role="status" className="font-medium text-emerald-600 dark:text-emerald-300">
               {t("✓ Saved", "✓ Đã lưu đề Studio")}
             </span>
           )}
           {error && (
-            <span role="alert" className="text-xs text-destructive">
+            <span role="alert" className="text-destructive">
               {error}
             </span>
           )}
         </div>
+        <Button type="button" size="sm" disabled={save.isPending} onClick={() => save.mutate()}>
+          {save.isPending ? t("Saving…", "Đang lưu…") : t("Save exercise", "Lưu đề")}
+        </Button>
       </div>
-    </details>
+    </div>
   );
 }

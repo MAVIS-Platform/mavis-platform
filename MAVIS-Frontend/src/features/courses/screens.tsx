@@ -3,7 +3,16 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowRight, BookOpen, Check, Clock3, Code2, Network, ShieldCheck } from "lucide-react";
+import {
+  ArrowRight,
+  ArrowUpRight,
+  BookOpen,
+  Check,
+  Clock3,
+  Code2,
+  Network,
+  ShieldCheck,
+} from "lucide-react";
 import { SearchInput } from "@/components/shared/forms";
 import { useApi, useApiMutation, useApiQuery, useSelection, useSession } from "@/hooks/use-api";
 import {
@@ -13,10 +22,8 @@ import {
   RequestState,
 } from "@/components/shared/request-state";
 import {
-  useBootstrapLabStudio,
   useCourseRoadmap,
   usePublishedCourse,
-  useStartLabStudioSession,
   useStudentLabContext,
   useStudentLabStudioSessions,
   type StudentLabContext,
@@ -32,7 +39,7 @@ import { getRuleName } from "@/features/architecture/three-e-content";
 import { ArchitectureGraph, ElementDetailsPanel } from "@/features/architecture/components";
 import { ArchitectureDiagrams } from "@/features/architecture/architecture-diagrams";
 import { DiagramPreview } from "@/features/architecture/diagram-preview";
-import { LiveStudioWorkbench } from "@/features/runtime/live-studio-workbench";
+import { buildStudioLiveHref } from "@/features/runtime/standalone-studio-live";
 import type { ArchitecturalModel } from "@/types/domain";
 import { CourseBuilder } from "./course-builder";
 import { useCourseQuiz } from "./course-quiz";
@@ -586,6 +593,7 @@ export function LabWorkspace() {
     isTheoryOnlyLab ||
     (!quiz.isError && quiz.data?.runtimeUnlocked === true) ||
     studentContext.data?.quiz?.runtimeUnlocked === true;
+  const quizPassPercent = quiz.data?.passPercent ?? studentContext.data?.quiz?.passPercent ?? 70;
   const requiresRuntime =
     lab?.requireRuntimeTrace === true || lab?.labMode === "THEORY_QUIZ_STUDIO";
   const displayedStep = activeStep;
@@ -1017,6 +1025,7 @@ export function LabWorkspace() {
               hasReferenceArch={hasReferenceArch}
               isTheoryOnlyLab={isTheoryOnlyLab}
               runtimeReady={runtimeReady}
+              quizPassPercent={quizPassPercent}
               runtimeSessionHref={labSessions[0] ? runtimeLink(labSessions[0].id) : null}
               studioHref={
                 verifiedStudioSession ? runtimeLink(verifiedStudioSession.id) + "&studio=1" : null
@@ -1035,6 +1044,7 @@ export function LabWorkspace() {
               step={displayedStep}
               workspaceId={workspaceId}
               labId={lab.id}
+              labOrder={lab.labOrder}
               labTitle={lab.title}
               moduleQuizHref={moduleQuizHref}
               projectId={projectId}
@@ -1219,6 +1229,7 @@ function StepContent({
   step,
   workspaceId,
   labId,
+  labOrder,
   labTitle,
   moduleQuizHref,
   projectId,
@@ -1230,6 +1241,7 @@ function StepContent({
   isStudent,
   preview,
   runtimeReady,
+  quizPassPercent = 70,
   studioVerified,
   studioSessionId,
   studioSessions,
@@ -1247,6 +1259,7 @@ function StepContent({
   step: 1 | 2 | 3;
   workspaceId: string;
   labId: string;
+  labOrder?: number | null | undefined;
   labTitle?: string | undefined;
   moduleQuizHref: string;
   projectId: string;
@@ -1259,6 +1272,7 @@ function StepContent({
   preview?: boolean | undefined;
   hasActiveAnalysisJob?: boolean | undefined;
   runtimeReady: boolean;
+  quizPassPercent?: number | undefined;
   runtimeSessionHref: string | null;
   studioHref: string | null;
   studioVerified: boolean;
@@ -1279,16 +1293,8 @@ function StepContent({
   const client = useApi();
   const [selectedGraphId, setSelectedGraphId] = useState<string | null>(null);
   const [tutorQuery, setTutorQuery] = useState<"none" | "grounded" | "out_of_scope">("none");
-  const [selectedStudioSessionId, setSelectedStudioSessionId] = useState<string>(
-    () => studioSessionId ?? studioSessions[0]?.id ?? "",
-  );
-  const startStudio = useStartLabStudioSession(workspaceId, labId);
-  const bootstrapStudio = useBootstrapLabStudio(workspaceId, labId);
 
-  const activeStudioSessionId =
-    selectedStudioSessionId && studioSessions.some((s) => s.id === selectedStudioSessionId)
-      ? selectedStudioSessionId
-      : (studioSessionId ?? studioSessions[0]?.id ?? "");
+  const activeStudioSessionId = studioSessionId ?? studioSessions[0]?.id ?? "";
   const studioStateQuery = useApiQuery(
     "studioState",
     { sessionId: activeStudioSessionId },
@@ -1333,6 +1339,13 @@ function StepContent({
 
   const previewParam = preview ? "&preview=1" : "";
   const submitHref = `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=3${previewParam}#lab-submit`;
+  const standaloneStudioHref = buildStudioLiveHref({
+    workspaceId,
+    assignmentId: labId,
+    mode: "student",
+    returnTo: `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=2`,
+    sessionId: activeStudioSessionId || undefined,
+  });
   const viewModelQuery = modelQuery ?? referenceModelQuery ?? null;
   const current = resolveStepMeta(step, { hasReferenceArch, isTheoryOnlyLab, requiresRuntime });
   const Icon = current.icon;
@@ -1626,28 +1639,43 @@ function StepContent({
                     )}
                   </Button>
                 </div>
-                {tutorQuery === "grounded" && (
-                  <div className="mt-3 space-y-1.5 rounded-xl border border-teal-200 bg-teal-50/60 p-3.5 text-xs dark:border-teal-800 dark:bg-teal-950/20">
-                    <p className="font-semibold text-teal-950 dark:text-teal-200">
-                      ✅{" "}
-                      {t(
-                        "Evidence-Grounded Answer (Citing Static C1–C3 Model)",
-                        "Trả lời có đối chiếu Bằng chứng Tĩnh C1–C3",
-                      )}
-                    </p>
-                    <p className="leading-5 text-muted-foreground">
-                      [Node: <code>{activeModel?.elements[0]?.name ?? "order-service"}</code>] ·
-                      [File:{" "}
-                      <code>order-service/src/main/java/com/curated/order/PaymentClient.java</code>]
-                      · [Contract:{" "}
-                      <code>{activeModel?.edges[0]?.protocol ?? "SERVICE_HTTP_CALL"}</code>] —{" "}
-                      {t(
-                        "Cross-container calls follow explicit OpenFeign/HTTP contracts separated from private database ownership.",
-                        "Lời gọi liên dịch vụ đi qua hợp đồng OpenFeign/HTTP rõ ràng, tách biệt hoàn toàn khỏi quyền sở hữu DB nội bộ.",
-                      )}
-                    </p>
-                  </div>
-                )}
+                {tutorQuery === "grounded" &&
+                  (() => {
+                    const firstEl = activeModel?.elements[0];
+                    const firstEdge = activeModel?.edges[0];
+                    const isDotNet = activeModel?.elements.some(
+                      (el) =>
+                        (el.technology ?? "").toLowerCase().includes(".net") ||
+                        (el.evidence?.[0]?.location ?? "").toLowerCase().endsWith(".cs") ||
+                        el.name.toLowerCase().includes("fruit"),
+                    );
+                    const evidenceLocation =
+                      firstEl?.evidence?.[0]?.location ??
+                      firstEdge?.evidence?.[0]?.location ??
+                      (isDotNet
+                        ? "src/Services/PaymentService/Program.cs"
+                        : "order-service/src/main/java/com/curated/order/PaymentClient.java");
+                    return (
+                      <div className="mt-3 space-y-1.5 rounded-xl border border-teal-200 bg-teal-50/60 p-3.5 text-xs dark:border-teal-800 dark:bg-teal-950/20">
+                        <p className="font-semibold text-teal-950 dark:text-teal-200">
+                          ✅{" "}
+                          {t(
+                            "Evidence-Grounded Answer (Citing Static C1–C3 Model)",
+                            "Trả lời có đối chiếu Bằng chứng Tĩnh C1–C3",
+                          )}
+                        </p>
+                        <p className="leading-5 text-muted-foreground">
+                          [Node: <code>{firstEl?.name ?? "order-service"}</code>] · [File:{" "}
+                          <code>{evidenceLocation}</code>] · [Contract:{" "}
+                          <code>{firstEdge?.protocol ?? "SERVICE_HTTP_CALL"}</code>] —{" "}
+                          {t(
+                            "Cross-container calls follow explicit HTTP/RPC contracts separated from private database ownership.",
+                            "Lời gọi liên dịch vụ đi qua hợp đồng API/Event rõ ràng, tách biệt hoàn toàn khỏi quyền sở hữu DB nội bộ.",
+                          )}
+                        </p>
+                      </div>
+                    );
+                  })()}
                 {tutorQuery === "out_of_scope" && (
                   <div
                     role="alert"
@@ -1794,17 +1822,12 @@ function StepContent({
                 </DetailPanel>
               )}
               {requiresRuntime && (
-                <DetailPanel
-                  title={t(
-                    "MAVIS Studio Live Experiment (Inline Sandbox)",
-                    "Thực nghiệm MAVIS Studio Live (Trực tiếp trong Lab)",
-                  )}
-                >
+                <DetailPanel title={t("MAVIS Studio Live", "MAVIS Studio Live")}>
                   {preview ? (
                     <p className="text-sm text-muted-foreground">
                       {t(
-                        "Preview shows the inline Studio Live & Submission step. Starting student runtime sessions is disabled in preview mode.",
-                        "Chế độ xem trước hiển thị khu vực Studio Live & Nộp bài. Khởi chạy phiên runtime của sinh viên bị tắt khi xem trước.",
+                        "Preview shows the Studio Live launchpad & Submission step. Starting student runtime sessions is disabled in preview mode.",
+                        "Chế độ xem trước hiển thị khu vực mở Studio Live & Nộp bài. Khởi chạy phiên runtime của sinh viên bị tắt khi xem trước.",
                       )}
                     </p>
                   ) : (
@@ -1841,13 +1864,13 @@ function StepContent({
                           </p>
                         </div>
                       </div>
-                      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/20 p-3.5">
-                        <div className="space-y-1 text-xs">
+                      <div className="flex flex-col items-start justify-between gap-4 rounded-2xl border border-slate-800/80 bg-[#070b12] p-5 text-slate-100 sm:flex-row sm:items-center">
+                        <div className="space-y-1.5">
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className="font-semibold text-foreground">
+                            <span className="text-sm font-semibold text-white">
                               {t(
-                                "Interactive Microservices Runtime",
-                                "Thực nghiệm Microservices Tương tác",
+                                "Interactive Studio Live Workspace",
+                                "Không gian Thực hành Studio Live",
                               )}
                             </span>
                             {liveStudioVerified ? (
@@ -1865,51 +1888,33 @@ function StepContent({
                                 )}
                               </Badge>
                             )}
+                            {activeStudioSessionId && (
+                              <code className="rounded bg-slate-900 px-2 py-0.5 font-mono text-[11px] text-slate-300">
+                                {activeStudioSessionId.slice(0, 10)}
+                              </code>
+                            )}
                           </div>
-                          <p className="text-muted-foreground">
+                          <p className="text-xs text-slate-400">
                             {t(
-                              "Start a session with 1 click, scale/stop/start services or send live requests, then click Finish Studio to seal your receipt.",
-                              "Bấm 1 nút để khởi tạo phiên, thao tác START/STOP/SCALE dịch vụ, rồi nhấn Finish Studio để đóng gói biên nhận.",
+                              "Open the full-screen Studio Live to inspect live containers, run Start/Stop/Scale actions, and click Finish Studio to seal your receipt before submitting below.",
+                              "Mở màn hình Studio Live toàn màn hình để thao tác container thật, chạy Start/Stop/Scale và nhấn Finish Studio để đóng gói biên nhận trước khi nộp bài bên dưới.",
                             )}
                           </p>
                         </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Button
-                            type="button"
-                            size="sm"
-                            disabled={startStudio.isPending}
-                            onClick={() => {
-                              startStudio.mutate(undefined, {
-                                onSuccess: (created) => {
-                                  if (created?.id) setSelectedStudioSessionId(created.id);
-                                },
-                              });
-                            }}
-                          >
-                            {startStudio.isPending
-                              ? t("Starting Studio Live…", "Đang khởi tạo Studio Live…")
-                              : t("Start Studio Live Session", "Khởi tạo Phiên Studio Live")}
-                          </Button>
-                          {needsSandboxBootstrap && activeStudioSessionId && (
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              disabled={bootstrapStudio.isPending}
-                              onClick={() => bootstrapStudio.mutate(activeStudioSessionId)}
-                            >
-                              {bootstrapStudio.isPending
-                                ? t("Activating Sandbox…", "Đang kích hoạt Sandbox…")
-                                : t(
-                                    "Activate Simulated Sandbox Telemetry",
-                                    "Kích hoạt Sandbox Telemetry mô phỏng",
-                                  )}
-                            </Button>
-                          )}
-                        </div>
+                        <Button
+                          asChild
+                          size="lg"
+                          className="shrink-0 bg-emerald-600 px-5 text-white hover:bg-emerald-500"
+                        >
+                          <Link href={standaloneStudioHref}>
+                            {liveStudioVerified
+                              ? t("Re-open Studio Live", "Mở lại Studio Live")
+                              : t("Open Studio Live", "Mở Studio Live")}
+                            <ArrowUpRight className="ml-1.5 size-4" aria-hidden="true" />
+                          </Link>
+                        </Button>
                       </div>
-                      {startStudio.isError && <ErrorState error={startStudio.error} />}
-                      {bootstrapStudio.isError && <ErrorState error={bootstrapStudio.error} />}
+
                       {studentContext?.studioExercise && (
                         <section className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 text-sm">
                           <h3 className="font-semibold">{t("Studio exercise", "Đề Studio")}</h3>
@@ -1979,24 +1984,6 @@ function StepContent({
                           </ul>
                         </section>
                       )}
-                      <div className="h-[780px] overflow-hidden rounded-xl border border-slate-800">
-                        <LiveStudioWorkbench
-                          sessions={studioSessions}
-                          sessionId={activeStudioSessionId}
-                          projectId={projectId}
-                          projectName={labTitle}
-                          onSelectSession={setSelectedStudioSessionId}
-                          onStartSession={() =>
-                            startStudio.mutate(undefined, {
-                              onSuccess: (created) => {
-                                if (created?.id) setSelectedStudioSessionId(created.id);
-                              },
-                            })
-                          }
-                          starting={startStudio.isPending}
-                          hideSwitchToSandbox
-                        />
-                      </div>
                     </div>
                   )}
                 </DetailPanel>

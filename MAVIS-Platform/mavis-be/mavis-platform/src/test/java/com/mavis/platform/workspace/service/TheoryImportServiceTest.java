@@ -159,6 +159,75 @@ class TheoryImportServiceTest {
         }
     }
 
+    @Test
+    void importsMultiPagePdfDocxAndPptxWithRealisticStructure() throws Exception {
+        byte[] pdfBytes = createPdf(
+                "Chapter 1 Distributed Architecture Overview and Service Boundaries",
+                "Chapter 2 Circuit Breaker Latency Isolation and Timeout Budgets",
+                "Chapter 3 Saga Compensation and Idempotent Outbox Events"
+        );
+        MockMultipartFile pdfFile = new MockMultipartFile(
+                "file", "architecture-guide.pdf", "application/pdf", pdfBytes);
+        var pdfResult = service.importFile(workspaceId, pdfFile, null, null, false, "vi");
+        assertEquals("PDF", pdfResult.sourceType());
+        assertEquals(3, pdfResult.pageCount());
+        assertEquals(3, pdfResult.extractedPages());
+        assertTrue(pdfResult.body().contains("Chapter 1 Distributed Architecture Overview"));
+        assertTrue(pdfResult.body().contains("Chapter 3 Saga Compensation"));
+
+        String docxXml = """
+                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+                  <w:body>
+                    <w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Kiến trúc Microservices Thực chiến</w:t></w:r></w:p>
+                    <w:p><w:r><w:t>Giới thiệu ranh giới dịch vụ và giao tiếp bất đồng bộ.</w:t></w:r></w:p>
+                    <w:p><w:pPr><w:numPr><w:ilvl w:val="0"/></w:numPr></w:pPr><w:r><w:t>Database per Service</w:t></w:r></w:p>
+                    <w:tbl>
+                      <w:tr><w:tc><w:p><w:r><w:t>Thành phần</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Cổng</w:t></w:r></w:p></w:tc></w:tr>
+                      <w:tr><w:tc><w:p><w:r><w:t>api-gateway</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>8080</w:t></w:r></w:p></w:tc></w:tr>
+                    </w:tbl>
+                  </w:body>
+                </w:document>
+                """;
+        MockMultipartFile docxFile = new MockMultipartFile(
+                "file", "microservices-vi.docx",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                zipOf(Map.of("word/document.xml", docxXml)));
+        var docxResult = service.importFile(workspaceId, docxFile, null, null, false, "vi");
+        assertEquals("DOCX", docxResult.sourceType());
+        assertTrue(docxResult.body().contains("# Kiến trúc Microservices Thực chiến"));
+        assertTrue(docxResult.body().contains("- Database per Service"));
+        assertTrue(docxResult.body().contains("| Thành phần | Cổng |"));
+
+        String slide1 = """
+                <p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+                       xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+                  <p:cSld><p:spTree><p:sp><p:txBody>
+                    <a:p><a:r><a:t>Slide Một: Orchestration vs Choreography</a:t></a:r></a:p>
+                    <a:p><a:r><a:t>Chọn Saga phù hợp cho đơn hàng phân tán</a:t></a:r></a:p>
+                  </p:txBody></p:sp></p:spTree></p:cSld>
+                </p:sld>
+                """;
+        String slide2 = """
+                <p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+                       xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+                  <p:cSld><p:spTree><p:sp><p:txBody>
+                    <a:p><a:r><a:t>Slide Hai: Idempotency Key</a:t></a:r></a:p>
+                    <a:p><a:r><a:t>Tránh trừ tiền hai lần khi retry</a:t></a:r></a:p>
+                  </p:txBody></p:sp></p:spTree></p:cSld>
+                </p:sld>
+                """;
+        MockMultipartFile pptxFile = new MockMultipartFile(
+                "file", "saga-lecture.pptx",
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                zipOf(Map.of("ppt/slides/slide1.xml", slide1, "ppt/slides/slide2.xml", slide2)));
+        var pptxResult = service.importFile(workspaceId, pptxFile, null, null, false, "vi");
+        assertEquals("PPTX", pptxResult.sourceType());
+        assertEquals(2, pptxResult.pageCount());
+        assertTrue(pptxResult.body().contains("## Slide 1: Slide Một: Orchestration vs Choreography"));
+        assertTrue(pptxResult.body().contains("## Slide 2: Slide Hai: Idempotency Key"));
+    }
+
     private static byte[] createPdf(String... pageTexts) throws Exception {
         try (PDDocument doc = new PDDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             PDType1Font font = new PDType1Font(Standard14Fonts.FontName.HELVETICA);

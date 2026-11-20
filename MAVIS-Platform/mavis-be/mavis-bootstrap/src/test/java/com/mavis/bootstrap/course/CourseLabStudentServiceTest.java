@@ -80,6 +80,7 @@ class CourseLabStudentServiceTest {
     private CourseQuizService courseQuizService;
     private SubmissionService submissionService;
     private SubmissionReviewService submissionReviewService;
+    private com.mavis.common.repository.LabStudioExerciseRepository labStudioExercises;
     private final ObjectMapper json = new ObjectMapper();
     private CourseLabStudentService service;
 
@@ -115,12 +116,13 @@ class CourseLabStudentServiceTest {
         submissionService = mock(SubmissionService.class);
         submissionReviewService = mock(SubmissionReviewService.class);
 
+        labStudioExercises = mock(com.mavis.common.repository.LabStudioExerciseRepository.class);
         service = new CourseLabStudentService(
                 access, courseLabs, assignments, projects, snapshots, models, elements,
                 relationships, diagrams, evidences, evaluations, evaluationFindings,
                 runtimeConfigurations, runtimeSessions, runtimeSessionService, runtimeStudioService,
                 assignmentService, courseQuizService, submissionService, submissionReviewService,
-                mock(com.mavis.common.repository.LabStudioExerciseRepository.class), json);
+                labStudioExercises, json);
 
         workspaceId = UUID.randomUUID();
         labId = UUID.randomUUID();
@@ -195,6 +197,40 @@ class CourseLabStudentServiceTest {
     }
 
     @Test
+    void frozenExerciseDoesNotFallBackToEditedDraftRuntimeModel() {
+        when(courseLabs.hasPassedCurrentQuiz(lab, student.getId())).thenReturn(true);
+        var draft = new com.mavis.common.entity.LabStudioExercise();
+        draft.setRuntimeModelId(UUID.randomUUID());
+        when(labStudioExercises.findByAssignmentId(labId)).thenReturn(Optional.of(draft));
+        lab.setStudioExerciseSnapshot(json.createObjectNode().put("instructions", "Published exercise"));
+        var existing = RuntimeSession.builder().id(UUID.randomUUID()).assignment(lab)
+                .executionStatus("RUNNING").triggeredBy(student).build();
+        when(runtimeSessions.findByAssignmentIdAndTriggeredBy_IdOrderByCreatedAtDesc(labId, student.getId()))
+                .thenReturn(List.of(existing));
+
+        assertThat(service.startLabStudioSession(workspaceId, labId).getId()).isEqualTo(existing.getId());
+        verify(models, never()).findById(draft.getRuntimeModelId());
+        verify(runtimeSessionService, never()).createRuntimeSession(any());
+    }
+
+    @Test
+    void runtimeSourceFromAnotherClassIsRejectedBeforeProvisioning() {
+        when(courseLabs.hasPassedCurrentQuiz(lab, student.getId())).thenReturn(true);
+        var foreignProject = Project.builder().id(UUID.randomUUID())
+                .workspace(Workspace.builder().id(UUID.randomUUID()).build()).build();
+        var foreignModel = ModelVersion.builder().id(UUID.randomUUID()).project(foreignProject)
+                .sourceSnapshot(SourceSnapshot.builder().id(UUID.randomUUID()).project(foreignProject).build()).build();
+        lab.setStudioExerciseSnapshot(json.createObjectNode().put("runtimeModelId", foreignModel.getId().toString()));
+        when(models.findById(foreignModel.getId())).thenReturn(Optional.of(foreignModel));
+
+        assertThatThrownBy(() -> service.startLabStudioSession(workspaceId, labId))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        failure -> assertThat(failure.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN));
+        verify(projects, never()).saveAndFlush(any());
+        verify(runtimeSessionService, never()).createRuntimeSession(any());
+    }
+
+    @Test
     void startLabStudioSessionRequiresPassedQuizAndProvisionsIdempotently() {
         when(courseLabs.hasPassedCurrentQuiz(lab, student.getId())).thenReturn(false);
         assertThatThrownBy(() -> service.startLabStudioSession(workspaceId, labId))
@@ -235,7 +271,11 @@ class CourseLabStudentServiceTest {
             el.setId(payEl.getId());
             return el;
         });
-        when(runtimeConfigurations.findById(refProject.getId())).thenReturn(Optional.of(new RuntimeConfiguration()));
+        String compose = "services:\n  payment-service:\n    image: sha256:" + "d".repeat(64);
+        var referenceConfiguration = new RuntimeConfiguration();
+        referenceConfiguration.setSourceSnapshotId(refSnapshot.getId());
+        referenceConfiguration.setProfile(json.createObjectNode().put("sandboxCompose", compose));
+        when(runtimeConfigurations.findById(refProject.getId())).thenReturn(Optional.of(referenceConfiguration));
 
         UUID createdId = UUID.randomUUID();
         when(runtimeSessionService.createRuntimeSession(any())).thenReturn(RuntimeSessionResponseDTO.builder().id(createdId).build());
@@ -248,6 +288,8 @@ class CourseLabStudentServiceTest {
         verify(runtimeSessionService).createRuntimeSession(reqCaptor.capture());
         assertThat(reqCaptor.getValue().getAssignmentId()).isEqualTo(labId);
         assertThat(reqCaptor.getValue().getScenarioConfig().path("interactiveStudio").asBoolean()).isTrue();
+        assertThat(reqCaptor.getValue().getScenarioConfig().path("profile").path("sandboxCompose").asText())
+                .isEqualTo(compose);
         assertThat(reqCaptor.getValue().getConfirmedServiceMappings()).containsKey("payment-service");
     }
 
@@ -267,5 +309,125 @@ class CourseLabStudentServiceTest {
                 .thenReturn(json.createObjectNode().put("executionStatus", "RUNNING"));
         var res = service.bootstrapSimulatedStudio(workspaceId, labId, sessionId);
         assertThat(res.studio().path("executionStatus").asText()).isEqualTo("RUNNING");
+    }
+
+    @Test
+    void startLabStudioSessionReusesBaseModelAfterPriorRuntimeEnrichedSession() {
+        when(courseLabs.hasPassedCurrentQuiz(lab, student.getId())).thenReturn(true);
+        when(runtimeSessions.findByAssignmentIdAndTriggeredBy_IdOrderByCreatedAtDesc(labId, student.getId()))
+                .thenReturn(List.of());
+        when(runtimeSessions.findByProject_Workspace_IdAndTriggeredBy_IdOrderByCreatedAtDesc(workspaceId, student.getId()))
+                .thenReturn(List.of());
+
+        Project workingProject = Project.builder().id(UUID.randomUUID()).workspace(workspace).owner(student)
+                .assignment(lab).referenceSnapshotId(refSnapshot.getId()).projectType("STUDENT_WORKING").status("ACTIVE").build();
+        SourceSnapshot workingSnapshot = SourceSnapshot.builder().id(UUID.randomUUID()).project(workingProject)
+                .artifactHash(refSnapshot.getArtifactHash()).build();
+        when(projects.findByOwnerIdOrderByCreatedAtDesc(student.getId())).thenReturn(List.of(workingProject));
+        when(snapshots.findByProjectId(workingProject.getId())).thenReturn(List.of(workingSnapshot));
+        when(runtimeConfigurations.findById(refProject.getId())).thenReturn(Optional.of(new RuntimeConfiguration()));
+
+        ModelVersion rev1Base = ModelVersion.builder().id(UUID.randomUUID()).project(workingProject)
+                .sourceSnapshot(workingSnapshot).revision(1).origin("USER_CONFIRMED").isLatestValid(false).build();
+        ModelVersion rev2Enriched = ModelVersion.builder().id(UUID.randomUUID()).project(workingProject)
+                .sourceSnapshot(workingSnapshot).revision(2).origin("RUNTIME_ENRICHED").isLatestValid(true).build();
+        when(models.findByProjectIdOrderByRevisionDesc(workingProject.getId())).thenReturn(List.of(rev2Enriched, rev1Base));
+        ModelElement payEl = ModelElement.builder().id(UUID.randomUUID()).elementType("SERVICE_CONTAINER")
+                .name("payment-service").status("CONFIRMED").build();
+        when(elements.findByModelVersionId(rev1Base.getId())).thenReturn(List.of(payEl));
+
+        UUID secondSessionId = UUID.randomUUID();
+        when(runtimeSessionService.createRuntimeSession(any())).thenReturn(RuntimeSessionResponseDTO.builder().id(secondSessionId).build());
+        when(runtimeSessionService.approveAndStartSession(secondSessionId)).thenReturn(
+                RuntimeSessionResponseDTO.builder().id(secondSessionId).executionStatus("READY_FOR_DISPATCH").build());
+
+        var started = service.startLabStudioSession(workspaceId, labId);
+        assertThat(started.getId()).isEqualTo(secondSessionId);
+        verify(models, never()).saveAndFlush(any());
+        ArgumentCaptor<RuntimeSessionCreateRequest> reqCaptor = ArgumentCaptor.forClass(RuntimeSessionCreateRequest.class);
+        verify(runtimeSessionService).createRuntimeSession(reqCaptor.capture());
+        assertThat(reqCaptor.getValue().getModelVersionId()).isEqualTo(rev1Base.getId());
+
+        // When only a RUNTIME_ENRICHED revision exists (no base USER_CONFIRMED revision), bump from maxRevision instead of colliding on revision 1.
+        when(models.findByProjectIdOrderByRevisionDesc(workingProject.getId())).thenReturn(List.of(rev2Enriched));
+        when(models.findMaxRevisionByProjectId(workingProject.getId())).thenReturn(2);
+        when(models.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(workingProject.getId())).thenReturn(Optional.of(rev2Enriched));
+        when(models.saveAndFlush(any())).thenAnswer(inv -> {
+            ModelVersion m = inv.getArgument(0);
+            m.setId(UUID.randomUUID());
+            return m;
+        });
+        when(elements.findByModelVersionId(refModel.getId())).thenReturn(List.of(payEl));
+        when(elements.save(any())).thenAnswer(inv -> {
+            ModelElement el = inv.getArgument(0);
+            el.setId(payEl.getId());
+            return el;
+        });
+
+        service.startLabStudioSession(workspaceId, labId);
+        ArgumentCaptor<ModelVersion> savedModelCaptor = ArgumentCaptor.forClass(ModelVersion.class);
+        verify(models).saveAndFlush(savedModelCaptor.capture());
+        assertThat(savedModelCaptor.getValue().getRevision()).isEqualTo(3);
+        assertThat(savedModelCaptor.getValue().getIsLatestValid()).isFalse();
+    }
+
+    @Test
+    void startLabStudioSessionClonesRelationshipsAndTargetsGatewayForBaselineProbe() {
+        lab.setStudioTopologySnapshot(null);
+        when(courseLabs.hasPassedCurrentQuiz(lab, student.getId())).thenReturn(true);
+        when(runtimeSessions.findByAssignmentIdAndTriggeredBy_IdOrderByCreatedAtDesc(labId, student.getId()))
+                .thenReturn(List.of());
+        when(runtimeSessions.findByProject_Workspace_IdAndTriggeredBy_IdOrderByCreatedAtDesc(workspaceId, student.getId()))
+                .thenReturn(List.of());
+        when(projects.findByOwnerIdOrderByCreatedAtDesc(student.getId())).thenReturn(List.of());
+        when(projects.saveAndFlush(any())).thenAnswer(inv -> {
+            Project p = inv.getArgument(0);
+            p.setId(UUID.randomUUID());
+            return p;
+        });
+        when(snapshots.saveAndFlush(any())).thenAnswer(inv -> {
+            SourceSnapshot s = inv.getArgument(0);
+            s.setId(UUID.randomUUID());
+            return s;
+        });
+        when(models.saveAndFlush(any())).thenAnswer(inv -> {
+            ModelVersion m = inv.getArgument(0);
+            m.setId(UUID.randomUUID());
+            return m;
+        });
+
+        ModelElement catalogEl = ModelElement.builder().id(UUID.randomUUID()).elementType("SERVICE_CONTAINER").name("catalog-service").status("CONFIRMED").build();
+        ModelElement gatewayEl = ModelElement.builder().id(UUID.randomUUID()).elementType("SERVICE_CONTAINER").name("api-gateway").status("CONFIRMED").build();
+        ModelElement orderEl = ModelElement.builder().id(UUID.randomUUID()).elementType("SERVICE_CONTAINER").name("order-service").status("CONFIRMED").build();
+        ModelRelationship gwToOrder = ModelRelationship.builder()
+                .id(UUID.randomUUID())
+                .modelVersion(refModel)
+                .sourceElement(gatewayEl)
+                .targetElement(orderEl)
+                .relationType("CALLS")
+                .originLayer("STATIC")
+                .build();
+        when(elements.findByModelVersionId(any())).thenReturn(List.of(catalogEl, gatewayEl, orderEl));
+        when(elements.save(any())).thenAnswer(inv -> {
+            ModelElement el = inv.getArgument(0);
+            el.setId(UUID.randomUUID());
+            return el;
+        });
+        when(relationships.findByModelVersionId(refModel.getId())).thenReturn(List.of(gwToOrder));
+        when(runtimeConfigurations.findById(refProject.getId())).thenReturn(Optional.of(new RuntimeConfiguration()));
+
+        UUID createdId = UUID.randomUUID();
+        when(runtimeSessionService.createRuntimeSession(any())).thenReturn(RuntimeSessionResponseDTO.builder().id(createdId).build());
+        when(runtimeSessionService.approveAndStartSession(createdId)).thenReturn(
+                RuntimeSessionResponseDTO.builder().id(createdId).executionStatus("READY_FOR_DISPATCH").assignmentId(labId).build());
+
+        service.startLabStudioSession(workspaceId, labId);
+
+        verify(relationships).save(any(ModelRelationship.class));
+        ArgumentCaptor<RuntimeSessionCreateRequest> reqCaptor = ArgumentCaptor.forClass(RuntimeSessionCreateRequest.class);
+        verify(runtimeSessionService).createRuntimeSession(reqCaptor.capture());
+        var firstStep = reqCaptor.getValue().getScenarioConfig().path("scenario").path("steps").get(0);
+        assertThat(firstStep.path("service").asText()).isEqualTo("api-gateway");
+        assertThat(firstStep.path("path").asText()).isEqualTo("/api/gateway/orders");
     }
 }

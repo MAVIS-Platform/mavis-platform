@@ -1,4 +1,4 @@
-import { ApiError, fromStatus, backendErrorCode } from "@/lib/errors/api-error";
+import { ApiError, fromStatus, backendErrorCode, publicErrorCode } from "@/lib/errors/api-error";
 import { authBackendCode, isPublicAuthPath, retryAfterSeconds } from "@/lib/auth/auth-errors";
 export async function javaRequest(
   path: string,
@@ -44,13 +44,19 @@ export async function javaRequest(
         retryAfterSeconds(response.headers.get("retry-after")),
       );
     }
-    const code = backendErrorCode(
-      path,
-      response.status,
-      rawError && typeof rawError === "object" && "message" in rawError
-        ? rawError.message
-        : undefined,
-    );
+    const code =
+      publicErrorCode(
+        rawError && typeof rawError === "object" && "errorCode" in rawError
+          ? rawError.errorCode
+          : undefined,
+      ) ??
+      backendErrorCode(
+        path,
+        response.status,
+        rawError && typeof rawError === "object" && "message" in rawError
+          ? rawError.message
+          : undefined,
+      );
     if (code) throw new ApiError(fromStatus(response.status).kind, response.status, code);
     // Only expose this exact, known profile error; never forward arbitrary
     // upstream messages or validation bodies that could contain credentials.

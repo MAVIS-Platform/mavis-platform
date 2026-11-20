@@ -54,6 +54,7 @@ public class SubmissionReviewService {
             long revision,
             String status,
             BigDecimal score,
+            BigDecimal scoreTenScale,
             String summary,
             UUID lecturerId,
             String lecturerName,
@@ -61,9 +62,23 @@ public class SubmissionReviewService {
             List<SnapshotGrade> snapshotGrades,
             String labOutcome) {
         public View(UUID submissionId, long revision, String status, BigDecimal score, String summary,
+                    UUID lecturerId, String lecturerName, OffsetDateTime updatedAt,
+                    List<SnapshotGrade> snapshotGrades, String labOutcome) {
+            this(submissionId, revision, status, score, toTenScale(score), summary,
+                    lecturerId, lecturerName, updatedAt, snapshotGrades, labOutcome);
+        }
+
+        public View(UUID submissionId, long revision, String status, BigDecimal score, String summary,
                     UUID lecturerId, String lecturerName, OffsetDateTime updatedAt) {
             this(submissionId, revision, status, score, summary, lecturerId, lecturerName, updatedAt, List.of(), "PENDING");
         }
+    }
+
+    public static BigDecimal toTenScale(BigDecimal scoreOutOf100) {
+        if (scoreOutOf100 == null) {
+            return null;
+        }
+        return scoreOutOf100.divide(BigDecimal.TEN, 2, RoundingMode.HALF_UP);
     }
 
     @Transactional(readOnly=true)
@@ -83,7 +98,7 @@ public class SubmissionReviewService {
         if(!java.util.Set.of("DRAFT","RETURNED","GRADED").contains(request.status()) || request.expectedRevision()<0 || request.summary()==null || request.summary().length()>10000 ||
             (request.score()!=null && (request.score().signum()<0 || request.score().compareTo(new BigDecimal("100"))>0 || request.score().scale()>2)))throw new BusinessException(ErrorCode.BAD_REQUEST,"Invalid review");
 
-        boolean guidedLab = submission.getAssignment().getLabOrder() != null;
+        boolean guidedLab = submission.isGuidedLab();
         boolean publishing = "GRADED".equals(request.status());
         List<SnapshotGrade> normalizedGrades = request.snapshotGrades() == null ? List.of() : request.snapshotGrades();
         boolean hasSnapshotGrades = !normalizedGrades.isEmpty();
@@ -110,7 +125,7 @@ public class SubmissionReviewService {
         }
         if (guidedLab && !publishing) resolvedScore = null;
 
-        if("GRADED".equals(request.status())&&resolvedScore==null)throw new BusinessException(ErrorCode.BAD_REQUEST,"A published grade requires a score out of 100");
+        if("GRADED".equals(request.status())&&resolvedScore==null)throw new BusinessException(ErrorCode.BAD_REQUEST,"A published grade requires a rubric score (0-10 per snapshot)");
         if("GRADED".equals(request.status())&&request.summary().isBlank())throw new BusinessException(ErrorCode.BAD_REQUEST,"APPROVAL_SUMMARY_REQUIRED");
         if("RETURNED".equals(request.status())&&request.summary().isBlank())throw new BusinessException(ErrorCode.BAD_REQUEST,"REJECTION_REASON_REQUIRED");
         entityManager.lock(submission,LockModeType.PESSIMISTIC_WRITE);

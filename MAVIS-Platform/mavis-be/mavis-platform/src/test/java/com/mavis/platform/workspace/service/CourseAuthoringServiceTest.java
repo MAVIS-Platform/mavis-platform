@@ -198,6 +198,11 @@ class CourseAuthoringServiceTest {
         CourseItem second = CourseItem.builder().id(UUID.randomUUID()).module(module).itemType("THEORY")
                 .title("Second").position(2).content(JsonNodeFactory.instance.objectNode()).required(true).build();
         when(items.findByModuleIdOrderByPositionAsc(moduleId)).thenReturn(new java.util.ArrayList<>(List.of(first, second)));
+        when(items.saveAndFlush(any(CourseItem.class))).thenAnswer(invocation -> {
+            CourseItem saved = invocation.getArgument(0);
+            assertTrue(saved.getPosition() > 0, "Course item position must stay strictly positive");
+            return saved;
+        });
 
         service.moveItem(workspaceId, moduleId, first.getId(), "DOWN");
 
@@ -205,6 +210,25 @@ class CourseAuthoringServiceTest {
         assertEquals(1, second.getPosition());
         verify(items, times(2)).saveAndFlush(first);
         verify(items).saveAndFlush(second);
+    }
+
+    @Test
+    void moveModuleUsesStrictlyPositiveTemporaryPositions() {
+        CourseModule second = CourseModule.builder().id(UUID.randomUUID()).course(course).title("Second")
+                .position(2).build();
+        when(modules.findByCourseIdOrderByPositionAsc(course.getId()))
+                .thenReturn(new java.util.ArrayList<>(List.of(module, second)))
+                .thenReturn(new java.util.ArrayList<>(List.of(second, module)));
+        when(modules.saveAndFlush(any(CourseModule.class))).thenAnswer(invocation -> {
+            CourseModule saved = invocation.getArgument(0);
+            assertTrue(saved.getPosition() > 0, "Course module position must stay strictly positive");
+            return saved;
+        });
+
+        service.moveModule(workspaceId, moduleId, "DOWN");
+
+        assertEquals(2, module.getPosition());
+        assertEquals(1, second.getPosition());
     }
 
     @Test
@@ -262,6 +286,11 @@ class CourseAuthoringServiceTest {
                 .thenReturn(new java.util.ArrayList<>(List.of(module, second)))
                 .thenReturn(new java.util.ArrayList<>(List.of(second)));
         when(items.findByModuleIdOrderByPositionAsc(moduleId)).thenReturn(List.of(item));
+        when(modules.saveAndFlush(any(CourseModule.class))).thenAnswer(invocation -> {
+            CourseModule saved = invocation.getArgument(0);
+            assertTrue(saved.getPosition() > 0, "Course module position must stay strictly positive");
+            return saved;
+        });
 
         service.deleteModule(workspaceId, moduleId);
 

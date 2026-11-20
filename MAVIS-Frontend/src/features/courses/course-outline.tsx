@@ -12,11 +12,13 @@ import {
   HelpCircle,
   Lock,
   Play,
+  Plus,
   type LucideIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useLocale } from "@/lib/i18n/locale-context";
+import { formatCourseLabTitle } from "@/lib/format/course-display";
 import { ApiError } from "@/lib/errors/api-error";
 import { useApiQuery } from "@/hooks/use-api";
 import { useCourseAuthoring, useCourseRoadmap, usePublishedCourse } from "@/features/workspaces/course-access";
@@ -125,7 +127,7 @@ export function CourseOutline({
   const courseStatus = published
     ? `v${published.version}`
     : isCatalogFallback
-      ? t("Coursera Standard · 6 Chapters", "Giáo trình chuẩn · 6 Chương")
+      ? t("Coursera Standard V2", "Giáo trình chuẩn V2")
       : draft?.status ?? "";
   const labs = new Map((roadmap.data?.labs ?? []).map((lab) => [lab.assignmentId, lab]));
   const assignmentById = new Map((assignments.data ?? []).map((assignment) => [assignment.id, assignment]));
@@ -166,7 +168,7 @@ export function CourseOutline({
           {legacyLabs.map((lab) => (
             <li key={lab.assignmentId} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
               <div className="min-w-0">
-                <p className="font-medium">{lab.position}. {lab.title}</p>
+                <p className="font-medium">{formatCourseLabTitle(lab.title, lab.position, lab.assignmentId)}</p>
                 <p className="text-sm text-muted-foreground">
                   {lab.state === "PASSED" ? t("Lab passed", "Đã đạt Lab")
                     : lab.state === "UNLOCKED" ? t("Ready to continue", "Có thể tiếp tục học")
@@ -191,23 +193,24 @@ export function CourseOutline({
   if (modules.length === 0) {
     if (!canManage) return null;
     return (
-      <section className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-dashed bg-card px-5 py-4">
-        <p className="text-sm font-medium text-muted-foreground">
+      <Link
+        href={`/workspace-overview?workspace=${encodeURIComponent(workspaceId)}&view=course-authoring`}
+        aria-label={t("Setup Curriculum", "Thiết lập Curriculum")}
+        className="group flex min-h-[360px] flex-col items-center justify-center rounded-2xl border border-dashed border-border/80 bg-card/40 px-6 py-14 text-center transition hover:border-primary/60 hover:bg-card/70"
+      >
+        <span className="flex size-20 items-center justify-center rounded-2xl border-2 border-dashed border-muted-foreground/35 bg-muted/40 text-muted-foreground transition group-hover:scale-[1.04] group-hover:border-primary group-hover:bg-primary/10 group-hover:text-primary">
+          <Plus className="size-9 stroke-[1.75] transition-transform group-hover:rotate-90" aria-hidden="true" />
+        </span>
+        <h2 className="mt-5 text-base font-semibold tracking-tight text-foreground">
           {t("No curriculum chapters yet.", "Chưa có chương học tập nào.")}
+        </h2>
+        <p className="mt-1.5 max-w-md text-sm text-muted-foreground">
+          {t(
+            "Click to create your first module in Curriculum & Materials.",
+            "Bấm để tạo chương đầu tiên trong Đề cương & Học liệu.",
+          )}
         </p>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button asChild size="sm" variant="outline">
-            <Link href={`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}`}>
-              {t("Create Labs", "Tạo Lab")}
-            </Link>
-          </Button>
-          <Button asChild size="sm">
-            <Link href={`/workspace-overview?workspace=${encodeURIComponent(workspaceId)}&view=course-authoring`}>
-              {t("Setup Curriculum", "Thiết lập Curriculum")}
-            </Link>
-          </Button>
-        </div>
-      </section>
+      </Link>
     );
   }
 

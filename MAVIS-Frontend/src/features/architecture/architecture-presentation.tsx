@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ArchitecturalModel } from "@/types/domain";
 import { DependencyNetwork } from "./dependency-network";
 import { ArchitectureDiagrams } from "./architecture-diagrams";
+import type { DiagramKind } from "./diagram-catalog";
 import { networkConnections } from "./network-connections";
 import { ConnectionDetailsPanel } from "./connection-details-panel";
 import { InspectorSidebar } from "./inspector-sidebar";
@@ -23,6 +24,8 @@ type Props = {
   systemName?: string | undefined;
   mode?: "graph" | "diagram" | undefined;
   guidedStatic?: boolean;
+  controlledKind?: DiagramKind | undefined;
+  hideKindSelector?: boolean | undefined;
 };
 
 export function ArchitecturePresentation({
@@ -32,6 +35,8 @@ export function ArchitecturePresentation({
   systemName,
   mode = "graph",
   guidedStatic = false,
+  controlledKind,
+  hideKindSelector = false,
 }: Props) {
   const [highlight, setHighlight] = useState<{ modelId: string; ids: string[] } | null>(null);
   const [typeFilter, setTypeFilter] = useState<{ modelId: string; hidden: GraphCategory[] }>({
@@ -254,6 +259,8 @@ export function ArchitecturePresentation({
               selectedId={selectedId}
               systemName={systemName}
               guidedStatic={guidedStatic}
+              controlledKind={controlledKind}
+              hideKindSelector={hideKindSelector}
               onSelect={handleSelect}
               onSelectSequence={(id, seqCtx) => {
                 setHighlight(null);

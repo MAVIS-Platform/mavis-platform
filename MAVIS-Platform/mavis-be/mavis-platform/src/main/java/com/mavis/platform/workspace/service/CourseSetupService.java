@@ -161,7 +161,7 @@ public class CourseSetupService {
             ReferenceSetup labRef = labReferences.get(i);
             if (!labRef.runtimeConfigured()) allRuntimeConfigured = false;
             if (!labRef.runtimeMatchesSource()) allRuntimeMatchesSource = false;
-            if (!labRef.topologyConfigured()) allTopologiesConfigured = false;
+            if (!labRef.topologyConfigured() && !hasFrozenTopology(ordered.get(i))) allTopologiesConfigured = false;
         }
         boolean allPublished = !labs.isEmpty() && labs.stream().allMatch(LabSetup::published);
         boolean allQuizzes = !labs.isEmpty() && labs.stream().filter(LabSetup::published).allMatch(LabSetup::quizPublished);
@@ -252,9 +252,11 @@ public class CourseSetupService {
             ReferenceSetup fallback) {
         for (int i = 0; i < ordered.size(); i++) {
             ReferenceSetup ref = labReferences.get(i);
-            boolean requiresRuntime = Boolean.TRUE.equals(ordered.get(i).getRequireRuntimeTrace());
+            Assignment lab = ordered.get(i);
+            boolean requiresRuntime = Boolean.TRUE.equals(lab.getRequireRuntimeTrace());
             if (!ref.referenceReady()) return ref;
-            if (requiresRuntime && (!ref.runtimeConfigured() || !ref.runtimeMatchesSource() || !ref.topologyConfigured())) {
+            if (requiresRuntime && (!ref.runtimeConfigured() || !ref.runtimeMatchesSource()
+                    || (!ref.topologyConfigured() && !hasFrozenTopology(lab)))) {
                 return ref;
             }
         }
@@ -337,13 +339,10 @@ public class CourseSetupService {
         ReferenceSetup runtimeReference = runtimeModel == null ? reference : reference(runtimeModel);
         boolean referenceReady = reference.referenceReady() || runtimeReference.referenceReady();
         boolean requiresRuntime = Boolean.TRUE.equals(lab.getRequireRuntimeTrace());
+        boolean topologyFrozen = hasFrozenTopology(lab);
         boolean studioReady = runtimeReference.referenceReady() && runtimeReference.runtimeMatchesSource()
-                && runtimeReference.runtimeConfigured() && runtimeReference.topologyConfigured();
-        boolean topologyFrozen = published && lab.getStudioTopologySnapshot() != null
-                && lab.getStudioTopologySnapshot().isObject();
-        boolean skipQuiz = lab.getAiPolicy() != null
-                && (lab.getAiPolicy().path("skipQuiz").asBoolean(false)
-                    || "THEORY_ONLY".equalsIgnoreCase(lab.getAiPolicy().path("labTier").asText()));
+                && runtimeReference.runtimeConfigured() && (topologyFrozen || runtimeReference.topologyConfigured());
+        boolean skipQuiz = com.mavis.common.security.CourseLabPolicy.canSkipQuiz(lab);
         int quizVersion = quizVersion(lab);
         boolean quizReady = skipQuiz || quizVersion > 0;
         String state = !published ? "DRAFT"
@@ -354,6 +353,11 @@ public class CourseSetupService {
         return new LabSetup(lab.getId(), published ? lab.getLabOrder() : 0, lab.getTitle(),
                 published, referenceReady, requiresRuntime, studioReady, topologyFrozen,
                 quizReady, quizVersion, state);
+    }
+
+    private static boolean hasFrozenTopology(Assignment lab) {
+        return lab.getLabOrder() != null && lab.getStudioTopologySnapshot() != null
+                && lab.getStudioTopologySnapshot().isObject();
     }
 
     private int quizVersion(Assignment lab) {
@@ -566,7 +570,7 @@ public class CourseSetupService {
                 blocks.addObject()
                         .put("service", svcName)
                         .put("label", svcName)
-                        .put("canScale", true)
+                        .put("canScale", !isStatefulContainer(el, svcName))
                         .put("initiallyStopped", initialStoppedServices.contains(svcName));
             }
 
@@ -676,6 +680,10 @@ public class CourseSetupService {
         int nextTopoRev = (lab.getStudioTopologyRevision() != null ? lab.getStudioTopologyRevision() : 0) + 1;
         lab.setStudioTopologySnapshot(topology.deepCopy());
         lab.setStudioTopologyRevision(nextTopoRev);
+        if (exercise == null && labStudioExercises != null
+                && refModel != null && refModel.getProject() != null && refModel.getSourceSnapshot() != null) {
+            exercise = seedDefaultExercise(json, lab, refModel, blocks);
+        }
         if (exercise != null) {
             ObjectNode exerciseSnapshot = json.createObjectNode();
             exerciseSnapshot.put("runtimeProjectId",
@@ -698,6 +706,12 @@ public class CourseSetupService {
         if ("LEGACY".equalsIgnoreCase(currentMode) || "THEORY_QUIZ".equalsIgnoreCase(currentMode)) {
             lab.setLabMode("THEORY_QUIZ_STUDIO");
         }
+        ObjectNode policy = lab.getAiPolicy() instanceof ObjectNode existing
+                ? existing.deepCopy()
+                : json.createObjectNode();
+        policy.put("labTier", "THEORY_QUIZ_STUDIO");
+        policy.put("skipQuiz", false);
+        lab.setAiPolicy(policy);
         assignments.saveAndFlush(lab);
 
         return new AutoConfigureStudioResult(
@@ -707,5 +721,67 @@ public class CourseSetupService {
                 nextTopoRev,
                 true,
                 setup(workspaceId));
+    }
+
+    private static boolean isStatefulContainer(ModelElement el, String svcName) {
+        String type = el.getElementType() == null ? "" : el.getElementType().toUpperCase();
+        if ("DATABASE".equals(type) || "DATA_STORE".equals(type) || "MESSAGE_BROKER".equals(type)) {
+            return true;
+        }
+        String lower = svcName == null ? "" : svcName.toLowerCase();
+        return lower.contains("postgres")
+                || lower.contains("mysql")
+                || lower.contains("mariadb")
+                || lower.contains("mongo")
+                || lower.contains("redis")
+                || lower.contains("kafka")
+                || lower.contains("zookeeper")
+                || lower.contains("rabbit")
+                || lower.endsWith("-db")
+                || lower.equals("db");
+    }
+
+    private com.mavis.common.entity.LabStudioExercise seedDefaultExercise(
+            ObjectMapper json, Assignment lab, ModelVersion refModel, ArrayNode blocks) {
+        Set<String> svcNames = new LinkedHashSet<>();
+        for (JsonNode b : blocks) {
+            String s = b.path("service").asText("");
+            if (!s.isBlank()) svcNames.add(s);
+        }
+        String baselinePath = svcNames.contains("api-gateway")
+                ? "/api/gateway/orders"
+                : svcNames.contains("orders") ? "/orders" : "/health";
+        ArrayNode baseline = json.createArrayNode();
+        baseline.addObject()
+                .put("method", "GET")
+                .put("path", baselinePath)
+                .put("expectedStatus", 200);
+        ObjectNode initialState = json.createObjectNode();
+        initialState.putArray("stoppedServices");
+        initialState.putArray("stoppedControllers");
+        ArrayNode allowed = json.createArrayNode();
+        for (String act : List.of("START", "STOP", "SCALE", "CONNECT", "DISCONNECT")) {
+            allowed.add(act);
+        }
+        ObjectNode criteria = json.createObjectNode();
+        criteria.put("maxErrorRatePercent", 0);
+        criteria.putNull("maxP95Ms");
+        criteria.putNull("requiredTraceEdge");
+        criteria.putArray("minReplicas");
+
+        var draft = com.mavis.common.entity.LabStudioExercise.builder()
+                .assignment(lab)
+                .runtimeProjectId(refModel.getProject().getId())
+                .runtimeModelId(refModel.getId())
+                .runtimeSnapshotId(refModel.getSourceSnapshot().getId())
+                .baselineRequests(baseline)
+                .initialState(initialState)
+                .allowedActions(allowed)
+                .successCriteria(criteria)
+                .instructions("Start Studio Live, observe service health and traces, perform the required scaling or recovery actions, capture Before/After snapshots, and seal the receipt.")
+                .revision(1)
+                .build();
+        var saved = labStudioExercises.save(draft);
+        return saved != null ? saved : draft;
     }
 }

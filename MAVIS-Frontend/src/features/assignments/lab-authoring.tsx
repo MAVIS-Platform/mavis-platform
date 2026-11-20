@@ -28,7 +28,7 @@ import { CourseWorkspaceShell } from "@/features/courses/course-workspace-shell"
 import { useCourseAuthoring, useCourseSetup } from "@/features/workspaces/course-access";
 import { TheoryLibrary } from "@/features/workspaces/theory-library";
 import { Assignments } from "./screens";
-import { resolveLabTier, type Assignment } from "./requirements";
+import { type Assignment } from "./requirements";
 import { LabInfoForm } from "./lab-info-form";
 import { LabTheorySection } from "./lab-theory-section";
 import { LabSourceSection } from "./lab-source-section";
@@ -116,7 +116,6 @@ export function LabAuthoring() {
     );
   const canManage = workspace?.myRole === "LECTURER" || session.data?.user?.role === "admin";
   const isPublished = Boolean(setupLab?.published || assignment?.labOrder != null);
-  const labTier = resolveLabTier(assignment);
 
   useEffect(() => {
     if (!activeAssignmentId) {
@@ -138,7 +137,7 @@ export function LabAuthoring() {
   };
 
   const onSaved = (saved: Assignment) => {
-    const nextTab: Tab = resolveLabTier(saved) === "THEORY_ONLY" ? "theory" : "source";
+    const nextTab: Tab = "source";
     setCreatedAssignmentId(saved.id);
     setTab(nextTab);
     const query = new URLSearchParams(params?.toString() ?? "");
@@ -154,20 +153,17 @@ export function LabAuthoring() {
       id: "source",
       done: Boolean(assignment?.referenceSource?.modelId),
       enabled: Boolean(assignment),
-      skipped: Boolean(assignment) && labTier === "THEORY_ONLY" && !assignment?.referenceSource?.modelId,
     },
     { id: "theory", done: theoryReady, enabled: Boolean(assignment) },
     {
       id: "quiz",
       done: Boolean(setupLab?.quizPublished && (setupLab?.quizVersion ?? 0) > 0),
       enabled: Boolean(assignment),
-      skipped: Boolean(assignment) && labTier === "THEORY_ONLY",
     },
     {
       id: "studio",
-      done: Boolean(assignment && setupLab?.topologyFrozen),
+      done: Boolean(assignment && (setupLab?.topologyFrozen || setupLab?.studioReady)),
       enabled: Boolean(assignment),
-      skipped: Boolean(assignment) && labTier !== "THEORY_QUIZ_STUDIO",
     },
     { id: "publish", done: isPublished, enabled: Boolean(assignment) },
   ];
@@ -320,7 +316,7 @@ export function LabAuthoring() {
                       `/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(nextId)}&tab=info`,
                     );
                   }}
-                  className="h-8 max-w-[200px] rounded-md border bg-background px-2.5 text-xs font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                  className="h-8 w-48 overflow-hidden text-ellipsis whitespace-nowrap rounded-md border bg-background px-2.5 text-xs font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                 >
                   <option value="">
                     {t("Switch Lab…", "Chuyển nhanh bài Lab…")}

@@ -11,11 +11,16 @@ import { Textarea } from "@/components/ui/textarea";
 import { useApiMutation, useApiQuery, useSession, usePermission } from "@/hooks/use-api";
 import type { Submission } from "@/types/domain";
 import { useLocale } from "@/lib/i18n/locale-context";
+import { formatCourseLabTitle } from "@/lib/format/course-display";
 export function SubmissionVersionHeader({ submission }: { submission: Submission }) {
   const { t } = useLocale();
   const canReview = usePermission("submission:review");
   const quiz = submission.courseQuizEvidence;
-  const labLabel = `${submission.labOrder ? `Lab ${String(submission.labOrder).padStart(2, "0")} · ` : ""}${submission.assignmentTitle || submission.assignmentId}`;
+  const labLabel = formatCourseLabTitle(
+    submission.assignmentTitle,
+    submission.labOrder,
+    submission.assignmentId,
+  );
 
   if (!canReview) {
     return (
@@ -76,7 +81,11 @@ export function SubmissionVersionHeader({ submission }: { submission: Submission
       </p>
       <p className="text-sm">
         {submission.studentName || submission.studentId} ·{" "}
-        {submission.assignmentTitle || submission.assignmentId}
+        {formatCourseLabTitle(
+          submission.assignmentTitle,
+          submission.labOrder,
+          submission.assignmentId,
+        )}
       </p>
       <p className="break-all text-xs text-muted-foreground">
         Diagram {submission.diagramVersionId ?? "not loaded"} · Evaluation{" "}

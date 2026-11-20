@@ -29,6 +29,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -82,7 +83,7 @@ public class CourseAuthoringService {
         if (workspaceId == null || seeder == null || CourseLabSeederService.isSeeding(workspaceId)) {
             return;
         }
-        Boolean needsHeal = jdbc.query("""
+        String healTarget = jdbc.query("""
                 SELECT w.code, w.status,
                        (SELECT COUNT(*) FROM assignments a WHERE a.workspace_id = w.id AND a.lab_order IS NOT NULL) AS lab_count,
                        (SELECT COUNT(*) FROM course_modules cm JOIN course_definitions c ON c.id = cm.course_id
@@ -90,18 +91,24 @@ public class CourseAuthoringService {
                 FROM workspaces w WHERE w.id = ?
                 """, rs -> {
             if (!rs.next()) {
-                return Boolean.FALSE;
+                return null;
             }
             String code = rs.getString("code");
             String status = rs.getString("status");
             int labCount = rs.getInt("lab_count");
             int modCount = rs.getInt("mod_count");
-            return "JAVA-MS-2026".equalsIgnoreCase(code)
-                    && "ACTIVE".equals(status)
-                    && (labCount < 6 || modCount < 6);
+            if (!"ACTIVE".equals(status) || (labCount == 5 && modCount == 5)) {
+                return null;
+            }
+            if ("JAVA-MS-2026".equalsIgnoreCase(code) || "CSHARP-MS-2026".equalsIgnoreCase(code)) {
+                return code;
+            }
+            return null;
         }, workspaceId);
-        if (Boolean.TRUE.equals(needsHeal)) {
+        if ("JAVA-MS-2026".equalsIgnoreCase(healTarget)) {
             seeder.ensureJavaCourseraPopulated(workspaceId);
+        } else if ("CSHARP-MS-2026".equalsIgnoreCase(healTarget)) {
+            seeder.ensureCsharpCourseraPopulated(workspaceId);
         }
     }
 
@@ -249,6 +256,12 @@ public class CourseAuthoringService {
         return view(course);
     }
 
+    @Transactional(readOnly = true)
+    public Optional<CourseView> findExistingForAuthoring(UUID workspaceId) {
+        access.requireWorkspaceLecturer(workspaceId);
+        return courses.findByWorkspaceId(workspaceId).map(this::view);
+    }
+
     public CourseView saveDraft(UUID workspaceId, CourseRequest request) {
         access.requireWorkspaceLecturer(workspaceId);
         if (request == null || request.title() == null || request.title().isBlank()) {
@@ -352,8 +365,10 @@ public class CourseAuthoringService {
         CourseModule moving = reordered.remove(index);
         reordered.add(target, moving);
         validateModuleOrder(reordered);
-        for (CourseModule module : ordered) {
-            module.setPosition(-module.getPosition());
+        int tempBase = ordered.stream().mapToInt(CourseModule::getPosition).max().orElse(0) + 10_000;
+        for (int i = 0; i < ordered.size(); i++) {
+            CourseModule module = ordered.get(i);
+            module.setPosition(tempBase + i + 1);
             modules.saveAndFlush(module);
         }
         int position = 1;
@@ -389,8 +404,10 @@ public class CourseAuthoringService {
         modules.flush();
 
         List<CourseModule> remaining = new java.util.ArrayList<>(modules.findByCourseIdOrderByPositionAsc(course.getId()));
-        for (CourseModule mod : remaining) {
-            mod.setPosition(-mod.getPosition());
+        int tempBase = remaining.stream().mapToInt(CourseModule::getPosition).max().orElse(0) + 10_000;
+        for (int i = 0; i < remaining.size(); i++) {
+            CourseModule mod = remaining.get(i);
+            mod.setPosition(tempBase + i + 1);
             modules.saveAndFlush(mod);
         }
         int position = 1;
@@ -437,7 +454,8 @@ public class CourseAuthoringService {
         CourseItem neighbor = ordered.get(target);
         int movingPosition = moving.getPosition();
         int neighborPosition = neighbor.getPosition();
-        moving.setPosition(-movingPosition);
+        int tempPosition = ordered.stream().mapToInt(CourseItem::getPosition).max().orElse(0) + 10_000;
+        moving.setPosition(tempPosition);
         items.saveAndFlush(moving);
         neighbor.setPosition(movingPosition);
         items.saveAndFlush(neighbor);

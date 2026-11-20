@@ -218,6 +218,10 @@ public class RuntimeStudioService {
         if ("RUNNING".equals(exec) && control.hasNonNull("telemetry") && !control.path("simulatedSandbox").asBoolean(false)) {
             return view(session);
         }
+        if (!control.path("simulatedSandbox").asBoolean(false)
+                && Set.of("ALLOCATED", "RUNNING", "CANCELLING").contains(exec)) {
+            throw error(ErrorCode.CONFLICT, "The Runner owns this session. Wait for telemetry or cancel it before starting a simulation.");
+        }
         session.setScenarioStatus("APPROVED");
         session.setExecutionStatus("RUNNING");
         if (session.getStartedAt() == null) {
@@ -244,7 +248,8 @@ public class RuntimeStudioService {
                     throw error(ErrorCode.CONFLICT, "Wait for the current action before finishing.");
                 confirmed |= "CONFIRMED".equals(action.path("status").asText());
             }
-            if (!confirmed) throw error(ErrorCode.UNPROCESSABLE_ENTITY, "Perform a confirmed action before saving Studio evidence. Cancel the session to discard it.");
+            if (!confirmed) throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "INCOMPLETE_SCENARIO",
+                    "Perform a confirmed action before saving Studio evidence. Cancel the session to discard it.");
             control.put("finishRequested", true);
             if (control.path("simulatedSandbox").asBoolean(false)) {
                 completeSimulatedSession(session, control);
@@ -325,7 +330,8 @@ public class RuntimeStudioService {
     private JsonNode view(RuntimeSession session) {
         boolean interactive = session.getScenarioConfig() != null && session.getScenarioConfig().path("interactiveStudio").asBoolean();
         ObjectNode result = interactive ? control(session) : mapper.createObjectNode().put("finishRequested", false);
-        if (!result.has("actions")) result.putArray("actions");
+        if (!result.has("finishRequested") || !result.get("finishRequested").isBoolean()) result.put("finishRequested", false);
+        if (!result.has("actions") || !result.get("actions").isArray()) result.putArray("actions");
         for(JsonNode snapshot:result.withArray("snapshots"))
             ((ObjectNode)snapshot).remove(java.util.List.of("telemetry","actions","imageData"));
         String execution = session.getExecutionStatus() == null ? "UNKNOWN" : session.getExecutionStatus();
@@ -525,15 +531,14 @@ public class RuntimeStudioService {
         String digest = com.mavis.analyzer.runtime.utils.CanonicalReceiptDigestUtils.computeDigest(receipt);
         session.setRunnerReceiptJson(receipt);
         session.setReceiptDigest(digest);
-        control.put("receiptSignature", "hmac-sha256:" + com.mavis.common.utils.HashUtils.sha256Hex(
-                ("sandbox-receipt:" + digest).getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        control.remove("receiptSignature");
         session.setExecutionStatus("COMPLETED");
-        session.setScenarioStatus("PASSED");
-        session.setEvidenceStatus("AVAILABLE");
-        session.setCleanupStatus("CONFIRMED");
-        session.setTraceQuality("SIMULATED_VERIFIED");
+        session.setScenarioStatus("NOT_RUN");
+        session.setEvidenceStatus("UNAVAILABLE");
+        session.setCleanupStatus("NOT_APPLICABLE");
+        session.setTraceQuality("SIMULATED");
         session.setTraceStatus("COMPLETE");
-        session.setSandboxEnforcementConfirmed(true);
+        session.setSandboxEnforcementConfirmed(false);
         session.setCompletedAt(OffsetDateTime.now());
     }
 

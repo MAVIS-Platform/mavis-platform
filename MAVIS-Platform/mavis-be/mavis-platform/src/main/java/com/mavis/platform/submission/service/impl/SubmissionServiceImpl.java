@@ -56,15 +56,39 @@ public class SubmissionServiceImpl implements SubmissionService {
     @Transactional(readOnly = true)
     public List<SubmissionResponseDTO> getMySubmissions(UUID workspaceId) {
         User user = accessPolicyService.requireCurrentActiveUser();
-        boolean admin = user.getRole()!=null && "SYSTEM_ADMIN".equalsIgnoreCase(user.getRole().getCode());
-        List<SubmissionResponseDTO> all = mapToResponseListWithFeedbackCount(
-                submissionSnapshotRepository.findVisibleTo(user.getId(), admin));
-        if (workspaceId == null) {
-            return all;
+        boolean admin = user.getRole() != null && "SYSTEM_ADMIN".equalsIgnoreCase(user.getRole().getCode());
+        boolean revealDraft = admin || (user.getRole() != null && !"STUDENT".equalsIgnoreCase(user.getRole().getCode()));
+        List<SubmissionSnapshot> visible = submissionSnapshotRepository.findVisibleTo(user.getId(), admin);
+        if (visible.isEmpty()) {
+            return Collections.emptyList();
         }
-        return all.stream()
-                .filter(s -> workspaceId.equals(s.getWorkspaceId()))
+        Set<UUID> workspacesWithOrderedLabs = visible.stream()
+                .map(SubmissionSnapshot::getAssignment)
+                .filter(Objects::nonNull)
+                .filter(a -> a.getLabOrder() != null && a.getWorkspace() != null && a.getWorkspace().getId() != null)
+                .map(a -> a.getWorkspace().getId())
+                .collect(Collectors.toSet());
+        List<SubmissionSnapshot> activeVisible = visible.stream()
+                .filter(s -> workspaceId == null
+                        || (s.getAssignment() != null && s.getAssignment().getWorkspace() != null
+                                && workspaceId.equals(s.getAssignment().getWorkspace().getId())))
+                .filter(s -> !isObsoleteDetachedCourseLab(s.getAssignment(), workspacesWithOrderedLabs))
                 .toList();
+        return mapToResponseListWithFeedbackCount(activeVisible, revealDraft);
+    }
+
+    private static boolean isObsoleteDetachedCourseLab(Assignment assignment, Set<UUID> workspacesWithOrderedLabs) {
+        if (assignment == null || assignment.getWorkspace() == null || !assignment.getWorkspace().isCourseMode()) {
+            return false;
+        }
+        if (assignment.getLabOrder() != null) {
+            return false;
+        }
+        if (assignment.getAiPolicy() != null && assignment.getAiPolicy().path("archivedV1").asBoolean(false)) {
+            return true;
+        }
+        UUID wsId = assignment.getWorkspace().getId();
+        return wsId != null && workspacesWithOrderedLabs.contains(wsId);
     }
 
     @Override
@@ -233,7 +257,7 @@ public class SubmissionServiceImpl implements SubmissionService {
             if (requiresRuntime && (runtimeSession == null || !runtimeSession.hasVerifiedStudioEvidence()
                     || (modelVersion.getRuntimeSession() == null && (runtimeSession.getModelVersion() == null
                         || !modelVersion.getId().equals(runtimeSession.getModelVersion().getId()))))) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "STEP_4_SIGNED_RUNTIME_RECEIPT");
+                throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "STEP_4_SIGNED_RUNTIME_RECEIPT", "STEP_4_SIGNED_RUNTIME_RECEIPT");
             }
         }
 
@@ -302,9 +326,7 @@ public class SubmissionServiceImpl implements SubmissionService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Studio Lab phải được publish trước khi nộp");
         }
 
-        boolean skipQuiz = assignment.getAiPolicy() != null
-                && (assignment.getAiPolicy().path("skipQuiz").asBoolean(false)
-                    || "THEORY_ONLY".equalsIgnoreCase(assignment.getAiPolicy().path("labTier").asText()));
+        boolean skipQuiz = com.mavis.common.security.CourseLabPolicy.canSkipQuiz(assignment);
         JsonNode quizEvidence = null;
         if (!skipQuiz && assignment.getWorkspace() != null && assignment.getWorkspace().isCourseMode()
                 && com.mavis.common.security.CourseLabPolicy.isStudent(submitter)) {
@@ -345,7 +367,7 @@ public class SubmissionServiceImpl implements SubmissionService {
         JsonNode studioEvidence = null;
         if (studioMode) {
             if (request.getRuntimeSessionId() == null) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "STUDIO_SESSION_REQUIRED");
+                throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "STUDIO_SESSION_REQUIRED", "STUDIO_SESSION_REQUIRED");
             }
             runtimeSession = runtimeSessionRepository.findById(request.getRuntimeSessionId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Studio session not found"));
@@ -378,11 +400,14 @@ public class SubmissionServiceImpl implements SubmissionService {
                         "Studio session source/model does not match this Lab");
             }
             if (!runtimeSession.hasVerifiedStudioEvidence()) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "STUDIO_EVIDENCE_REQUIRED");
+                throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "STUDIO_EVIDENCE_REQUIRED", "STUDIO_EVIDENCE_REQUIRED");
             }
             studioEvidence = freezeStudioEvidence(runtimeSession, false);
             if (studioEvidence == null) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "STUDIO_EVIDENCE_REQUIRED");
+                throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "STUDIO_EVIDENCE_REQUIRED", "STUDIO_EVIDENCE_REQUIRED");
+            }
+            if (studioEvidence.path("snapshots").isEmpty()) {
+                throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "STUDIO_SNAPSHOT_REQUIRED", "STUDIO_SNAPSHOT_REQUIRED");
             }
         }
 
@@ -398,12 +423,22 @@ public class SubmissionServiceImpl implements SubmissionService {
         }
         if (studioEvidence != null) {
             int index = 1;
+            Set<String> captureIds = new HashSet<>();
             for (JsonNode captured : studioEvidence.path("snapshots")) {
+                String captureId = captured.path("id").asText("");
+                String explanation = captured.path("explanation").asText("");
+                if (captureId.isBlank() || !captureIds.add(captureId)) {
+                    throw new BusinessException(ErrorCode.BAD_REQUEST, "STUDIO_SNAPSHOT_EVIDENCE_INVALID");
+                }
+                if (explanation.isBlank()) {
+                    throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,
+                            "STUDIO_SNAPSHOT_EVIDENCE_INVALID", "STUDIO_SNAPSHOT_EVIDENCE_INVALID");
+                }
                 snapshots.add(StudentSnapshotItemDTO.builder()
-                        .snapshotId("STUDIO_" + captured.path("id").asText("snapshot" + index))
+                        .snapshotId("STUDIO_" + captureId)
                         .step("STEP_4_RUNTIME")
                         .title(captured.path("title").asText("Studio snapshot " + index))
-                        .writtenExplanation(captured.path("explanation").asText(""))
+                        .writtenExplanation(explanation)
                         .build());
                 index++;
             }
@@ -411,6 +446,23 @@ public class SubmissionServiceImpl implements SubmissionService {
         JsonNode studentSnapshots = mapper.valueToTree(snapshots);
         String digest = evidenceDigestV2(assignment, sourceSnapshot, quizEvidence, theoryEvidence,
                 studioEvidence, request.getSubmissionNotes());
+        if (assignment.getWorkspace() != null && assignment.getWorkspace().isCourseMode()
+                && com.mavis.common.security.CourseLabPolicy.isStudent(submitter)) {
+            var latest = submissionSnapshotRepository
+                    .findFirstByAssignmentIdAndSubmittedByIdOrderBySubmittedAtDescIdDesc(assignment.getId(), currentUserId);
+            if (latest.isPresent()) {
+                var previous = latest.get();
+                if (digest.equals(previous.getEvidencePackageDigest())) {
+                    return SubmissionResponseDTO.fromEntity(previous, 0L);
+                }
+                boolean needsRevision = submissionReviewRepository.findBySubmissionId(previous.getId())
+                        .filter(review -> "RETURNED".equals(review.getStatus())
+                                || "NEEDS_REVISION".equals(review.getLabOutcome())).isPresent();
+                if (!needsRevision) {
+                    throw new BusinessException(ErrorCode.CONFLICT, "LAB_SUBMISSION_AWAITING_REVIEW");
+                }
+            }
+        }
 
         SubmissionSnapshot submission = SubmissionSnapshot.builder()
                 .assignment(assignment)
@@ -437,17 +489,17 @@ public class SubmissionServiceImpl implements SubmissionService {
         var root = (com.fasterxml.jackson.databind.node.ObjectNode) json.createObjectNode();
         var array = root.putArray("answers");
         if (answers != null) {
-            int count = 0;
+            Set<String> sections = new HashSet<>();
             for (var answer : answers) {
                 if (answer == null) continue;
                 String text = answer.getAnswer() == null ? "" : answer.getAnswer().trim();
                 if (text.isEmpty()) continue;
-                if (++count > 5 || text.length() > 20000) {
+                if (sections.size() >= 5 || text.length() > 20000) {
                     throw new BusinessException(ErrorCode.BAD_REQUEST, "THEORY_ANSWER_INVALID");
                 }
                 String section = answer.getSectionId() == null || answer.getSectionId().isBlank()
                         ? "THEORY" : answer.getSectionId().trim().toUpperCase(java.util.Locale.ROOT);
-                if (!section.matches("[A-Z0-9_]{1,64}")) {
+                if (!section.matches("[A-Z0-9_]{1,64}") || !sections.add(section)) {
                     throw new BusinessException(ErrorCode.BAD_REQUEST, "THEORY_SECTION_INVALID");
                 }
                 array.addObject().put("sectionId", section)
@@ -467,10 +519,33 @@ public class SubmissionServiceImpl implements SubmissionService {
                 .append(source == null ? "" : Objects.toString(source.getArtifactHash(), "")).append('|')
                 .append(quiz == null ? "" : quiz.toString()).append('|')
                 .append(theory.toString()).append('|')
-                .append(studio == null ? "" : studio.path("receiptSignature").asText("")).append('|')
+                .append(studio == null ? "" : studio.path("receiptDigest").asText("") + "|" + studio.path("snapshots"))
+                .append('|')
                 .append(notes == null ? "" : notes.trim());
         return "sha256:" + com.mavis.common.utils.HashUtils.sha256Hex(
                 canonical.toString().getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<SubmissionResponseDTO> getSubmissionsByWorkspace(UUID workspaceId, String reviewStatus, String labOutcome) {
+        accessPolicyService.requireWorkspaceLecturer(workspaceId);
+        Workspace workspace = workspaceRepository.findById(workspaceId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Workspace not found"));
+
+        List<Assignment> allAssignments = assignmentRepository.findByWorkspaceIdOrderByCreatedAtDesc(workspaceId);
+        boolean hasOrdered = workspace.isCourseMode() && allAssignments.stream().anyMatch(a -> a.getLabOrder() != null);
+        List<UUID> activeAssignmentIds = allAssignments.stream()
+                .filter(a -> !hasOrdered || a.getLabOrder() != null)
+                .map(Assignment::getId)
+                .toList();
+        if (activeAssignmentIds.isEmpty()) {
+            return List.of();
+        }
+        List<SubmissionSnapshot> submissions =
+                submissionSnapshotRepository.findByAssignmentIdInOrderBySubmittedAtDesc(activeAssignmentIds);
+        List<SubmissionResponseDTO> mapped = mapToResponseListWithFeedbackCount(submissions, true);
+        return filterAndSortLecturerSubmissions(mapped, reviewStatus, labOutcome);
     }
 
     @Override
@@ -489,14 +564,21 @@ public class SubmissionServiceImpl implements SubmissionService {
         accessPolicyService.requireWorkspaceLecturer(assignment.getWorkspace().getId());
         List<SubmissionSnapshot> submissions = submissionSnapshotRepository.findByAssignmentIdOrderBySubmittedAtDesc(assignmentId);
         List<SubmissionResponseDTO> mapped = mapToResponseListWithFeedbackCount(submissions, true);
-        if ((reviewStatus == null || reviewStatus.isBlank()) && (labOutcome == null || labOutcome.isBlank())) {
-            return mapped;
-        }
+        return filterAndSortLecturerSubmissions(mapped, reviewStatus, labOutcome);
+    }
+
+    private static List<SubmissionResponseDTO> filterAndSortLecturerSubmissions(
+            List<SubmissionResponseDTO> mapped, String reviewStatus, String labOutcome) {
+        Comparator<SubmissionResponseDTO> ordering = Comparator
+                .comparing((SubmissionResponseDTO s) -> "PENDING".equalsIgnoreCase(s.getReviewStatus()) ? 0 : 1)
+                .thenComparing(SubmissionResponseDTO::getSubmittedAt,
+                        Comparator.nullsLast(Comparator.reverseOrder()));
         return mapped.stream()
                 .filter(s -> reviewStatus == null || reviewStatus.isBlank()
                         || reviewStatus.trim().equalsIgnoreCase(s.getReviewStatus()))
                 .filter(s -> labOutcome == null || labOutcome.isBlank()
                         || labOutcome.trim().equalsIgnoreCase(s.getLabOutcome()))
+                .sorted(ordering)
                 .toList();
     }
 
@@ -567,7 +649,10 @@ public class SubmissionServiceImpl implements SubmissionService {
         var releasedReview = submissionReviewRepository.findBySubmissionId(submissionId).filter(r -> !"DRAFT".equals(r.getStatus()));
         if (releasedReview.isPresent()) {
             var review = releasedReview.get();
-            markdownReport += "\n## Lecturer review\n- Status: " + review.getStatus() + "\n- Lecturer score /100: " + review.getScore() + "\n\n" + review.getSummary() + "\n";
+            var tenScore = SubmissionReviewService.toTenScale(review.getScore());
+            markdownReport += "\n## Lecturer review\n- Status: " + review.getStatus()
+                    + "\n- Lecturer score (0-10): " + (tenScore != null ? tenScore + " / 10" : "N/A")
+                    + " (equivalent " + review.getScore() + "/100)\n\n" + review.getSummary() + "\n";
         }
 
         var assignment = submission.getAssignment();
@@ -688,7 +773,7 @@ public class SubmissionServiceImpl implements SubmissionService {
                 || (requireSnapshots && (!control.path("snapshots").isArray() || control.path("snapshots").isEmpty()))
                 || !runtime.hasVerifiedStudioEvidence()
                 || control.path("receiptSignature").asText("").isBlank()) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "STEP_4_SIGNED_RUNTIME_RECEIPT");
+            throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "STEP_4_SIGNED_RUNTIME_RECEIPT", "STEP_4_SIGNED_RUNTIME_RECEIPT");
         }
         var evidence = com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode()
                 .put("sessionId", runtime.getId().toString()).put("receiptDigest", runtime.getReceiptDigest());
@@ -709,7 +794,7 @@ public class SubmissionServiceImpl implements SubmissionService {
             for (JsonNode capture : studioEvidence.path("snapshots")) {
                 String id = capture.path("id").asText("");
                 if (id.isBlank() || !required.add(id) || capture.path("explanation").asText("").isBlank()) {
-                    throw new BusinessException(ErrorCode.BAD_REQUEST, "STEP_4_SIGNED_RUNTIME_RECEIPT");
+                    throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "STEP_4_SIGNED_RUNTIME_RECEIPT", "STEP_4_SIGNED_RUNTIME_RECEIPT");
                 }
                 capturedById.put(id, capture);
             }
@@ -726,14 +811,19 @@ public class SubmissionServiceImpl implements SubmissionService {
                     throw new BusinessException(ErrorCode.BAD_REQUEST, "SUBMISSION_SNAPSHOT_IDS_INVALID");
                 }
                 String explanation = item.getWrittenExplanation();
-                if (explanation == null || explanation.isBlank() || explanation.length() > 5000) {
+                if (explanation == null || explanation.isBlank()) {
+                    throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "SUBMISSION_SNAPSHOT_EXPLANATIONS_REQUIRED",
+                            "SUBMISSION_SNAPSHOT_EXPLANATIONS_REQUIRED");
+                }
+                if (explanation.length() > 5000) {
                     throw new BusinessException(ErrorCode.BAD_REQUEST, "SUBMISSION_SNAPSHOT_EXPLANATIONS_REQUIRED");
                 }
                 explanations.put(id, explanation.strip());
             }
         }
         if (required.stream().anyMatch(id -> !capturedById.containsKey(id) && !explanations.containsKey(id))) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "SUBMISSION_SNAPSHOT_EXPLANATIONS_REQUIRED");
+            throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "SUBMISSION_SNAPSHOT_EXPLANATIONS_REQUIRED",
+                    "SUBMISSION_SNAPSHOT_EXPLANATIONS_REQUIRED");
         }
 
         List<StudentSnapshotItemDTO> snapshots = new ArrayList<>();

@@ -112,13 +112,22 @@ public class AssignmentServiceImpl implements AssignmentService {
             return Collections.emptyList();
         }
 
-        if (assignments.getFirst().getWorkspace().isCourseMode()) {
+        if (assignments.getFirst().getWorkspace() != null && assignments.getFirst().getWorkspace().isCourseMode()) {
             User actor = accessPolicyService.requireCurrentActiveUser();
+            boolean hasOrderedLabs = assignments.stream().anyMatch(a -> a.getLabOrder() != null);
+            List<Assignment> activeOrdered = hasOrderedLabs
+                    ? assignments.stream()
+                            .filter(a -> a.getLabOrder() != null)
+                            .sorted(Comparator.comparing(Assignment::getLabOrder)
+                                    .thenComparing(Assignment::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())))
+                            .toList()
+                    : assignments;
             if (CourseLabPolicy.isStudent(actor)) {
-                assignments = assignments.stream()
+                assignments = activeOrdered.stream()
                         .filter(assignment -> courseLabs.canOpen(assignment, actor))
-                        .sorted(Comparator.comparing(Assignment::getLabOrder))
                         .toList();
+            } else {
+                assignments = activeOrdered;
             }
         }
         if (assignments.isEmpty()) {

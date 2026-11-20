@@ -143,6 +143,34 @@ class RuntimeSessionServiceImplTest {
                 .referenceModel(ModelVersion.builder().sourceSnapshot(reference).build()).build());
     }
 
+    @Test
+    void guidedStudioRejectsUnresolvedSeedImageBeforeSavingSession(@TempDir Path directory) throws IOException {
+        var workspace = com.mavis.common.entity.Workspace.builder().id(UUID.randomUUID()).build();
+        project.setWorkspace(workspace);
+        var assignmentId = UUID.randomUUID();
+        var assignment = com.mavis.common.entity.Assignment.builder().id(assignmentId)
+                .workspace(workspace).referenceModel(validModel).build();
+        var assignments = mock(com.mavis.common.repository.AssignmentRepository.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(runtimeSessionService, "assignmentRepository", assignments);
+        when(assignments.findById(assignmentId)).thenReturn(Optional.of(assignment));
+        when(modelVersionRepository.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(projectId))
+                .thenReturn(Optional.of(validModel));
+        Path compose = directory.resolve("docker-compose.yml");
+        Files.writeString(compose, "services:\n  orders:\n    image: mavis/orders:curated\n");
+        snapshot.setStoragePath(compose.toString());
+
+        var config = objectMapper.createObjectNode().put("interactiveStudio", true);
+        var request = RuntimeSessionCreateRequest.builder().projectId(projectId).sourceSnapshotId(snapshotId)
+                .assignmentId(assignmentId).scenarioConfig(config).build();
+
+        assertThatThrownBy(() -> runtimeSessionService.createRuntimeSession(request))
+                .isInstanceOfSatisfying(BusinessException.class, failure -> {
+                    assertThat(failure.getErrorCode()).isEqualTo(com.mavis.common.exception.ErrorCode.UNPROCESSABLE_ENTITY);
+                    assertThat(failure.getStableCode()).isEqualTo("PREFLIGHT_FAILED");
+                });
+        verify(runtimeSessionRepository, never()).save(any());
+    }
+
     private UUID projectId;
     private UUID snapshotId;
     private Project project;
@@ -816,5 +844,90 @@ class RuntimeSessionServiceImplTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("INFRASTRUCTURE_ACTION_INVALID")
                 .matches(ex -> ((BusinessException) ex).getErrorCode() == ErrorCode.BAD_REQUEST);
+    }
+
+    @Test
+    void exportRunDefinitionKeepsCleanRunnerComposeWithoutInjectingSandboxInfra(@TempDir Path tempDir) throws IOException {
+        Path zipPath = tempDir.resolve("commerce-seed.zip");
+        String digest = "sha256:" + "d".repeat(64);
+        String cleanCompose = """
+                services:
+                  api-gateway:
+                    image: eclipse-temurin:21-jdk@%s
+                    expose:
+                      - "8080"
+                  order-service:
+                    image: eclipse-temurin:21-jdk@%s
+                    expose:
+                      - "8080"
+                  catalog-service:
+                    image: eclipse-temurin:21-jdk@%s
+                    expose:
+                      - "8080"
+                  payment-service:
+                    image: eclipse-temurin:21-jdk@%s
+                    expose:
+                      - "8080"
+                """.formatted(digest, digest, digest, digest);
+        try (java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(Files.newOutputStream(zipPath))) {
+            zos.putNextEntry(new java.util.zip.ZipEntry("mavis-commerce-seed-beaf3c0/docker-compose.yml"));
+            zos.write(cleanCompose.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            zos.closeEntry();
+
+            zos.putNextEntry(new java.util.zip.ZipEntry("mavis-commerce-seed-beaf3c0/order-service/src/main/resources/application.yml"));
+            zos.write("""
+                    spring:
+                      datasource:
+                        url: jdbc:postgresql://localhost:5432/orders
+                      kafka:
+                        bootstrap-servers: localhost:9092
+                    """.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            zos.closeEntry();
+        }
+
+        snapshot.setStoragePath(zipPath.toString());
+        when(sourceSnapshotRepository.findById(snapshotId)).thenReturn(Optional.of(snapshot));
+
+        ObjectNode scenarioConfig = objectMapper.createObjectNode();
+        ObjectNode profile = scenarioConfig.putObject("profile");
+        profile.put("collectorImage", "otel/collector@sha256:" + "1".repeat(64));
+        profile.put("scenarioRunnerImage", "mavis/runner@sha256:" + "2".repeat(64));
+        profile.put("instrumentationVolume", "mavis-agents-v1");
+        ObjectNode apps = profile.putObject("applications");
+        for (String svc : List.of("api-gateway", "order-service", "catalog-service", "payment-service")) {
+            apps.putObject(svc).put("runtime", "java").put("containerPort", 8080).put("readinessPath", "/health");
+        }
+        ArrayNode steps = scenarioConfig.putObject("scenario").putArray("steps");
+        steps.addObject().put("id", "step-1").put("service", "api-gateway").put("method", "GET")
+                .put("path", "/health").put("expectedStatus", 200);
+
+        UUID sessionId = UUID.randomUUID();
+        RuntimeSession session = RuntimeSession.builder()
+                .id(sessionId)
+                .project(project)
+                .sourceSnapshot(snapshot)
+                .modelVersion(validModel)
+                .resourceProject("mavisrun-0123456789abcdef0123456789abcdef")
+                .profileVersionId("sha256:" + "3".repeat(64))
+                .runConfigurationVersionId("sha256:" + "4".repeat(64))
+                .scenarioVersionId("sha256:" + "5".repeat(64))
+                .scenarioConfig(scenarioConfig)
+                .confirmedServiceMappings(Map.of(
+                        "api-gateway", UUID.randomUUID().toString(),
+                        "order-service", UUID.randomUUID().toString(),
+                        "catalog-service", UUID.randomUUID().toString(),
+                        "payment-service", UUID.randomUUID().toString()))
+                .build();
+        when(runtimeSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+
+        RunnerDefinitionExportDTO exported = runtimeSessionService.exportRunDefinition(sessionId);
+
+        assertThat(exported.getComposeYaml())
+                .contains("api-gateway:")
+                .contains("order-service:")
+                .contains("catalog-service:")
+                .contains("payment-service:")
+                .doesNotContain("sandbox-postgres")
+                .doesNotContain("sandbox-kafka");
     }
 }

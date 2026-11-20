@@ -12,7 +12,7 @@ export const publicAuthOperations = [
 export const isPublicAuthOperation = (operation: unknown) =>
   publicAuthOperations.includes(String(operation));
 export const isPublicAuthPath = (path: string) =>
-  /^auth\/(login|google|register|verify-email|resend-otp|forgot-password|reset-password)$/.test(
+  /^auth\/(login|google|github|register|verify-email|resend-otp|forgot-password|reset-password)$/.test(
     path,
   );
 
@@ -23,7 +23,7 @@ export function authBackendCode(path: string, status: number, raw: unknown): Pub
   if (
     code &&
     (code.startsWith("AUTH_") ||
-      (["auth/login", "auth/google"].includes(path) && code.startsWith("LOGIN_")))
+      (["auth/login", "auth/google", "auth/github"].includes(path) && code.startsWith("LOGIN_")))
   )
     return code;
   if (status === 429)

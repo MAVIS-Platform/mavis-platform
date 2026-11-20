@@ -8,6 +8,7 @@ import com.mavis.common.repository.UserRepository;
 import com.mavis.common.repository.WorkspaceRepository;
 import com.mavis.common.security.AuthorizationRequestCache;
 import com.mavis.common.utils.HashUtils;
+import com.mavis.platform.workspace.curriculum.CsharpCourseraCatalog;
 import com.mavis.platform.workspace.curriculum.JavaCourseraCatalog;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -48,6 +49,8 @@ public class JavaCourseMasterSeeder implements ApplicationRunner {
     public static final String ADMIN_PASSWORD = "Admin@123456";
     public static final String PASSKEY_MAIN = "JAVA2026";
     public static final String PASSKEY_BACKUP = "SE1819JAVA";
+    public static final String CSHARP_PASSKEY_MAIN = "CSHARP2026";
+    public static final String CSHARP_PASSKEY_BACKUP = "SE1819CSHARP";
 
     private final RoleRepository roles;
     private final UserRepository users;
@@ -77,19 +80,47 @@ public class JavaCourseMasterSeeder implements ApplicationRunner {
         }
 
         // Phase 2: Flagship workspace JAVA-MS-2026 & memberships
-        Workspace workspace = ensureJavaWorkspaceAndMembers(gvJava, caller);
-        if (workspace == null) {
+        Workspace javaWorkspace = ensureWorkspaceAndMembers(
+                JavaCourseraCatalog.COURSE_CODE,
+                JavaCourseraCatalog.COURSE_TITLE,
+                JavaCourseraCatalog.COURSE_DESCRIPTION,
+                gvJava,
+                caller);
+        if (javaWorkspace == null) {
             return null;
         }
 
         // Phase 3: Active Passkeys JAVA2026 & SE1819JAVA
-        ensureJavaPasskeys(workspace.getId());
+        ensureTrackPasskeys(javaWorkspace.getId(), PASSKEY_MAIN,
+                "Mã vào lớp Java Microservices Chính Thức",
+                PASSKEY_BACKUP,
+                "Mã dự phòng cho sinh viên thực hành Lab Java");
 
-        // Phase 4: Curated 6-Module Coursera course, outline, 18 theory assets & publish
+        // Phase 4: Curated 5-Module / 12-Chapter Java V2 Coursera outline & publish
         User ownerForSeed = caller != null ? caller : gvJava;
-        ensureCuratedCourseAndOutline(workspace.getId(), ownerForSeed);
+        ensureCuratedCourseAndOutline(javaWorkspace.getId(), ownerForSeed, CourseLabSeederService.PRESET_JAVA_COURSERA);
 
-        return workspaces.findById(workspace.getId()).orElse(workspace);
+        // Phase 5: Flagship C# .NET 8 Coursera workspace CSHARP-MS-2026 (V2)
+        provisionCsharpCourseraTrack(gvJava, caller, ownerForSeed);
+
+        return workspaces.findById(javaWorkspace.getId()).orElse(javaWorkspace);
+    }
+
+    private void provisionCsharpCourseraTrack(User gvJava, User caller, User ownerForSeed) {
+        Workspace csharpWorkspace = ensureWorkspaceAndMembers(
+                CsharpCourseraCatalog.COURSE_CODE,
+                CsharpCourseraCatalog.COURSE_TITLE,
+                CsharpCourseraCatalog.COURSE_DESCRIPTION,
+                gvJava,
+                caller);
+        if (csharpWorkspace == null) {
+            return;
+        }
+        ensureTrackPasskeys(csharpWorkspace.getId(), CSHARP_PASSKEY_MAIN,
+                "Mã vào lớp C# .NET 8 Microservices Chính Thức",
+                CSHARP_PASSKEY_BACKUP,
+                "Mã dự phòng cho sinh viên thực hành Lab .NET 8");
+        ensureCuratedCourseAndOutline(csharpWorkspace.getId(), ownerForSeed, CourseLabSeederService.PRESET_CSHARP_COURSERA);
     }
 
     private void ensureSchemaReady() {
@@ -176,23 +207,33 @@ public class JavaCourseMasterSeeder implements ApplicationRunner {
         }
     }
 
-    private Workspace ensureJavaWorkspaceAndMembers(User gvJava, User caller) {
+    private Workspace ensureWorkspaceAndMembers(
+            String courseCode, String courseTitle, String courseDescription, User gvJava, User caller) {
         try {
-            Workspace workspace = workspaces.findByCode(JavaCourseraCatalog.COURSE_CODE)
+            Workspace workspace = workspaces.findByCode(courseCode)
                     .orElseGet(() -> workspaces.saveAndFlush(Workspace.builder()
-                            .code(JavaCourseraCatalog.COURSE_CODE)
-                            .name(JavaCourseraCatalog.COURSE_TITLE)
-                            .description(JavaCourseraCatalog.COURSE_DESCRIPTION)
+                            .code(courseCode)
+                            .name(courseTitle)
+                            .description(courseDescription)
                             .createdBy(gvJava)
                             .status("ACTIVE")
                             .courseMode(true)
                             .maxStudents(200)
                             .build()));
 
+            boolean dirty = false;
             if (!workspace.isCourseMode() || !"ACTIVE".equalsIgnoreCase(workspace.getStatus())) {
                 workspace.setCourseMode(true);
                 workspace.setStatus("ACTIVE");
                 workspace.setMaxStudents(200);
+                dirty = true;
+            }
+            if (!courseTitle.equals(workspace.getName()) || !courseDescription.equals(workspace.getDescription())) {
+                workspace.setName(courseTitle);
+                workspace.setDescription(courseDescription);
+                dirty = true;
+            }
+            if (dirty) {
                 workspace = workspaces.saveAndFlush(workspace);
             }
 
@@ -209,39 +250,37 @@ public class JavaCourseMasterSeeder implements ApplicationRunner {
                     .ifPresent(u -> ensureMember(workspaceId, u.getId(), "STUDENT"));
 
             log.info("JavaCourseMasterSeeder Phase 2 complete: workspace {} ({}) ready",
-                    JavaCourseraCatalog.COURSE_CODE, workspaceId);
+                    courseCode, workspaceId);
             return workspace;
         } catch (Exception ex) {
             log.warn("JavaCourseMasterSeeder Phase 2 failed for workspace {}: {}",
-                    JavaCourseraCatalog.COURSE_CODE, ex.getMessage(), ex);
-            return workspaces.findByCode(JavaCourseraCatalog.COURSE_CODE).orElse(null);
+                    courseCode, ex.getMessage(), ex);
+            return workspaces.findByCode(courseCode).orElse(null);
         }
     }
 
-    private void ensureJavaPasskeys(UUID workspaceId) {
+    private void ensureTrackPasskeys(
+            UUID workspaceId, String primaryCode, String primaryLabel, String backupCode, String backupLabel) {
         try {
-            ensurePasskey(workspaceId, PASSKEY_MAIN,
-                    "Mã vào lớp Java Microservices Chính Thức", 365 * 24, 200);
-            ensurePasskey(workspaceId, PASSKEY_BACKUP,
-                    "Mã dự phòng cho sinh viên thực hành Lab", 180 * 24, 100);
-            log.info("JavaCourseMasterSeeder Phase 3 complete: passkeys {} & {} active",
-                    PASSKEY_MAIN, PASSKEY_BACKUP);
+            ensurePasskey(workspaceId, primaryCode, primaryLabel, 365 * 24, 200);
+            ensurePasskey(workspaceId, backupCode, backupLabel, 180 * 24, 100);
+            log.info("JavaCourseMasterSeeder passkeys {} & {} active for {}", primaryCode, backupCode, workspaceId);
         } catch (Exception ex) {
-            log.warn("JavaCourseMasterSeeder Phase 3 failed to ensure passkeys: {}", ex.getMessage(), ex);
+            log.warn("JavaCourseMasterSeeder failed to ensure passkeys for {}: {}", workspaceId, ex.getMessage(), ex);
         }
     }
 
-    private void ensureCuratedCourseAndOutline(UUID workspaceId, User actor) {
+    private void ensureCuratedCourseAndOutline(UUID workspaceId, User actor, String preset) {
         Authentication previous = SecurityContextHolder.getContext().getAuthentication();
         try {
             var auth = new UsernamePasswordAuthenticationToken(
                     actor.getId().toString(), null, List.of(new SimpleGrantedAuthority("ROLE_LECTURER")));
             SecurityContextHolder.getContext().setAuthentication(auth);
-            seeder.seedCurated(workspaceId, CourseLabSeederService.PRESET_JAVA_COURSERA);
-            log.info("JavaCourseMasterSeeder Phase 4 complete: Java Coursera 6-module outline & labs ready for {}", workspaceId);
+            seeder.seedCurated(workspaceId, preset);
+            log.info("JavaCourseMasterSeeder seeded {} outline & labs for {}", preset, workspaceId);
         } catch (Exception ex) {
-            log.warn("JavaCourseMasterSeeder Phase 4 failed to seed 6-module curriculum for {}: {}",
-                    workspaceId, ex.getMessage(), ex);
+            log.warn("JavaCourseMasterSeeder failed to seed {} curriculum for {}: {}",
+                    preset, workspaceId, ex.getMessage(), ex);
         } finally {
             if (previous != null) {
                 SecurityContextHolder.getContext().setAuthentication(previous);

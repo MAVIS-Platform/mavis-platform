@@ -811,6 +811,7 @@ class Wf02AcceptanceMatrixTest {
         when(prevRow.getString(2)).thenReturn("[0,1,0,1]");
         when(prevRow.getInt(3)).thenReturn(4);
         when(prevRow.getBoolean(4)).thenReturn(true);
+        when(prevRow.getString(5)).thenReturn(QUIZ_FIXTURE_QUESTIONS);
         when(ctx.jdbc.query(contains("FROM course_quiz_attempts"), any(RowMapper.class),
                 eq(labId), eq(student.getId()), eq(retryId)))
                 .thenAnswer(call -> List.of(call.<RowMapper<?>>getArgument(1).mapRow(prevRow, 0)));
@@ -921,18 +922,18 @@ class Wf02AcceptanceMatrixTest {
     }
 
     @Test
-    @DisplayName("TC-N01: Full 30-chapter curriculum load and Quiz scoring benchmark executes within <= 2000 ms")
+    @DisplayName("TC-N01: Full 54-chapter curriculum load and Quiz scoring benchmark executes within <= 2000 ms")
     void tcN01QuizScoringAndCurriculumBenchmarkWithin2Seconds() throws Exception {
         long t0 = System.nanoTime();
         var curriculum = new CourseCurriculum(json);
         var previews = curriculum.previews();
-        assertEquals(30, previews.size());
+        assertEquals(54, previews.size());
         for (var chapter : previews) {
             var q = curriculum.quizFor(chapter.id());
             assertEquals(4, q.questions().size());
         }
         var qctx = newQuizFixture(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), 1, 75);
-        for (int i = 0; i < 30; i++) {
+        for (int i = 0; i < previews.size(); i++) {
             var res = qctx.service.submit(
                     qctx.workspace.getId(), qctx.lab.getId(),
                     new CourseQuizService.Submit(UUID.randomUUID(), 1, List.of(0, 1, 0, 1)));
@@ -1013,6 +1014,14 @@ class Wf02AcceptanceMatrixTest {
         return svc;
     }
 
+    private static final String QUIZ_FIXTURE_QUESTIONS = """
+            [
+              {"prompt":"Q1","options":["A","B"],"correctOption":0},
+              {"prompt":"Q2","options":["A","B"],"correctOption":1},
+              {"prompt":"Q3","options":["A","B"],"correctOption":0},
+              {"prompt":"Q4","options":["A","B"],"correctOption":1}
+            ]""";
+
     private record QuizFixture(CourseQuizService service, Workspace workspace, Assignment lab, JdbcTemplate jdbc) {}
 
     private QuizFixture newQuizFixture(UUID wsId, UUID labId, UUID modelId, int version, int passPercent) throws Exception {
@@ -1031,13 +1040,7 @@ class Wf02AcceptanceMatrixTest {
         when(row.getInt(1)).thenReturn(version);
         when(row.getString(2)).thenReturn("Lesson");
         when(row.getInt(3)).thenReturn(passPercent);
-        when(row.getString(4)).thenReturn("""
-                [
-                  {"prompt":"Q1","options":["A","B"],"correctOption":0},
-                  {"prompt":"Q2","options":["A","B"],"correctOption":1},
-                  {"prompt":"Q3","options":["A","B"],"correctOption":0},
-                  {"prompt":"Q4","options":["A","B"],"correctOption":1}
-                ]""");
+        when(row.getString(4)).thenReturn(QUIZ_FIXTURE_QUESTIONS);
         when(jdbc.query(contains("FROM course_quizzes"), any(RowMapper.class), eq(labId), eq(modelId)))
                 .thenAnswer(call -> List.of(call.<RowMapper<?>>getArgument(1).mapRow(row, 0)));
 

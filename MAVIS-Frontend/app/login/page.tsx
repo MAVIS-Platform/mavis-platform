@@ -1,8 +1,9 @@
 "use client";
 import Link from "next/link";
 import { loginDestination } from "@/lib/auth/login-destination";
-import { GoogleSignIn } from "@/features/auth/google-sign-in";
+import { SocialSignIn } from "@/features/auth/social-sign-in";
 import { LoginBackground } from "@/features/auth/login-background";
+import { publicErrorCode, publicErrors } from "@/lib/errors/api-error";
 import { useId, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -160,24 +161,29 @@ export default function LoginPage() {
           </div>
         </section>
         <section
-          className="mx-auto w-full min-w-0 max-w-md rounded-2xl border bg-card p-5 shadow-sm sm:p-6"
+          className="mx-auto w-full min-w-0 max-w-md rounded-2xl border border-border/80 bg-card p-6 sm:p-8"
           aria-labelledby="login-title"
         >
-          <div className="mb-5">
-            <p className="mb-2 text-xs font-medium uppercase tracking-[0.16em] text-primary">
-              {t("Your workspace awaits", "Không gian làm việc của bạn")}
-            </p>
-            <h2 id="login-title" className="text-2xl font-semibold tracking-tight">
-              {t("Welcome back", "Chào mừng bạn quay lại")}{" "}
-              <span aria-hidden="true" className="text-green-600">✓</span>
+          <div className="mb-6">
+            <h2 id="login-title" className="text-balance text-2xl font-semibold tracking-tight">
+              {t("Sign in", "Đăng nhập")}
             </h2>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              {t(
-                "Sign in to continue exploring your architecture.",
-                "Đăng nhập để tiếp tục khám phá kiến trúc và bài Lab của bạn.",
-              )}
+            <p className="mt-1.5 text-sm text-muted-foreground">
+              {t("Continue to MAVIS.", "Tiếp tục vào MAVIS.")}
             </p>
           </div>
+          {(() => {
+            const oauthCode = publicErrorCode(params.get("oauthError"));
+            if (!oauthCode) return null;
+            return (
+              <div
+                role="alert"
+                className="mb-5 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-3 text-sm text-destructive"
+              >
+                {t(publicErrors[oauthCode])}
+              </div>
+            );
+          })()}
           {(params.get("signedOut") === "1" ||
             params.get("verified") === "1" ||
             params.get("reset") === "1") && (
@@ -310,7 +316,7 @@ export default function LoginPage() {
               </div>
               {real.isError && <ErrorState error={real.error} />}
               <Button
-                className="h-11 w-full text-sm font-medium"
+                className="h-11 w-full rounded-xl text-sm font-semibold transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.98]"
                 disabled={real.isPending}
                 type="submit"
               >
@@ -326,35 +332,25 @@ export default function LoginPage() {
                   </>
                 )}
               </Button>
-              <p className="text-center text-xs leading-5 text-muted-foreground">
-                {t(
-                  "Use the verified account provided for your workspace.",
-                  "Sử dụng tài khoản đã xác minh được cung cấp cho không gian làm việc của bạn.",
-                )}
-              </p>
             </form>
           )}
           {api.mode === "backend" && (
             <>
-              <GoogleSignIn onSignedIn={finish} />
-              <p className="mt-4 text-center text-sm text-muted-foreground">
-                {t("New to MAVIS?", "Chưa có tài khoản MAVIS?")}{" "}
-                <Link href="/auth/register" className="font-medium text-primary hover:underline">
-                  {t("Create an account", "Tạo tài khoản mới")}
+              <SocialSignIn onSignedIn={finish} nextPath={params.get("next")} />
+              <div className="mt-6 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                <span>
+                  {t("No account?", "Chưa có tài khoản?")}{" "}
+                  <Link href="/auth/register" className="font-medium text-primary hover:underline">
+                    {t("Sign up", "Đăng ký")}
+                  </Link>
+                </span>
+                <span aria-hidden="true">·</span>
+                <Link href="/auth/verify" className="font-medium text-primary hover:underline">
+                  {t("Verify email", "Xác minh email")}
                 </Link>
-              </p>
-              <p className="mt-2 text-center text-xs text-muted-foreground">
-                {t("Need to verify your email?", "Cần xác minh email?")}{" "}
-                <Link href="/auth/verify" className="text-primary hover:underline">
-                  {t("Enter verification code", "Nhập mã xác minh")}
-                </Link>
-              </p>
+              </div>
             </>
           )}
-          <div className="mt-5 flex items-center justify-center gap-2 border-t pt-3 text-xs text-muted-foreground">
-            <ShieldCheck size={14} />
-            <span>{t("Source. Architecture. Evidence.", "Mã nguồn. Kiến trúc. Bằng chứng.")}</span>
-          </div>
         </section>
       </main>
       <footer className="shrink-0 px-4 py-3 text-center text-xs text-muted-foreground">

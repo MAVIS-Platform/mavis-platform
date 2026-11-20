@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useLocale } from "@/lib/i18n/locale-context";
+import { formatTenScaleScore } from "@/lib/format/course-display";
 import type { Response } from "@/lib/api/contracts";
 import type { SnapshotGradeItem, StudentSnapshotItem } from "@/types/domain";
 
@@ -73,7 +74,9 @@ export function GradingPanel({
                 }
               />
               {query.data.score !== null && (
-                <span className="mavis-tabular text-xl font-semibold">{query.data.score} / 100</span>
+                <span className="mavis-tabular text-xl font-semibold">
+                  {formatTenScaleScore(query.data.score)}
+                </span>
               )}
               {resolveSubmissionOutcome(query.data) && (
                 <Badge
@@ -244,7 +247,9 @@ export function GradeForm({
   const [snapshotRows, setSnapshotRows] = useState<EditableSnapshotGrade[]>(() =>
     buildInitialSnapshotGrades(review, studentSnapshots),
   );
-  const [score, setScore] = useState(review.score === null ? "" : String(review.score));
+  const [score, setScore] = useState(() =>
+    review.score === null ? "" : String(Number((review.score / 10).toFixed(2))),
+  );
   const [summary, setSummary] = useState(review.summary);
 
   useEffect(() => {
@@ -252,7 +257,7 @@ export function GradeForm({
       setSyncedRevision(review.revision);
       if (!dirty) {
         setSnapshotRows(buildInitialSnapshotGrades(review, studentSnapshots));
-        setScore(review.score === null ? "" : String(review.score));
+        setScore(review.score === null ? "" : String(Number((review.score / 10).toFixed(2))));
         setSummary(review.summary);
       }
     }
@@ -263,22 +268,33 @@ export function GradeForm({
     (item) => item.score > SNAPSHOT_PASS_EXCLUSIVE,
   );
 
-  const computedScale100 =
+  const computedTenScale =
     usePerSnapshot && parsedSnapshots.complete
       ? Number(
           (
-            (parsedSnapshots.items.reduce((acc, g) => acc + g.score, 0) /
-              parsedSnapshots.items.length) *
-            10
+            parsedSnapshots.items.reduce((acc, g) => acc + g.score, 0) /
+            parsedSnapshots.items.length
           ).toFixed(2),
         )
       : null;
 
-  const value = usePerSnapshot ? computedScale100 : score.trim() === "" ? null : Number(score);
+  const computedScale100 =
+    computedTenScale !== null ? Number((computedTenScale * 10).toFixed(2)) : null;
+
+  const manualTenValue = score.trim() === "" ? null : Number(score);
+  const manualScale100 =
+    manualTenValue !== null && Number.isFinite(manualTenValue)
+      ? Number((manualTenValue * 10).toFixed(2))
+      : null;
+
+  const value = usePerSnapshot ? computedScale100 : manualScale100;
   const valid = usePerSnapshot
     ? parsedSnapshots.complete
-    : value === null ||
-      (Number.isFinite(value) && value >= 0 && value <= 100 && /^\d+(\.\d{1,2})?$/.test(score));
+    : manualTenValue === null ||
+      (Number.isFinite(manualTenValue) &&
+        manualTenValue >= 0 &&
+        manualTenValue <= 10 &&
+        /^\d+(\.\d{1,2})?$/.test(score));
 
   const outcome = usePerSnapshot
     ? parsedSnapshots.complete
@@ -449,21 +465,22 @@ export function GradeForm({
               </div>
             );
           })}
-          {computedScale100 !== null && (
+          {computedTenScale !== null && (
             <p className="text-xs text-muted-foreground">
-              {t("Computed overall equivalent")}: <strong>{computedScale100} / 100</strong>
+              {t("Computed rubric score (0–10)", "Tổng điểm Rubric (thang 0–10)")}:{" "}
+              <strong>{computedTenScale.toFixed(2)} / 10</strong>
             </p>
           )}
         </div>
       ) : guidedLab ? null : (
         <div className="space-y-2">
-          <FormField label={t("Lecturer score (out of 100)")}>
+          <FormField label={t("Lecturer score (0–10, > 5.0 pass)", "Điểm Giảng viên (0–10, > 5.0 đạt)")}>
             {(props) => (
               <Input
                 {...props}
                 type="number"
                 min={0}
-                max={100}
+                max={10}
                 step="0.01"
                 value={score}
                 onChange={(e) => {
@@ -475,7 +492,7 @@ export function GradeForm({
             )}
           </FormField>
           <div className="flex flex-wrap gap-1.5">
-            {["100", "90", "80", "70", "50"].map((preset) => (
+            {["10", "9", "8", "7", "5"].map((preset) => (
               <button
                 key={preset}
                 type="button"
@@ -485,7 +502,7 @@ export function GradeForm({
                   setScore(preset);
                 }}
               >
-                {preset}/100
+                {preset}/10
               </button>
             ))}
           </div>
@@ -558,9 +575,9 @@ export function GradeForm({
                     "CẦN SỬA LẠI — Lab kế tiếp vẫn khóa",
                   )}
             </span>
-            {computedScale100 !== null && (
+            {computedTenScale !== null && (
               <p className="mavis-tabular opacity-85">
-                {t("Overall equivalent", "Quy đổi tổng điểm")}: {computedScale100} / 100
+                {t("Overall rubric score", "Tổng điểm Rubric")}: {computedTenScale.toFixed(2)} / 10
               </p>
             )}
           </div>

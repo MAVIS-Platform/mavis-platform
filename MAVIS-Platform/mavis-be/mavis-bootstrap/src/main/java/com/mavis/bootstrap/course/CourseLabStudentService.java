@@ -288,7 +288,7 @@ public class CourseLabStudentService {
                 : (exercise != null ? exerciseToNode(exercise) : frozenExercise);
         UUID runtimeModelId = activeExercise != null && activeExercise.hasNonNull("runtimeModelId")
                 ? UUID.fromString(activeExercise.path("runtimeModelId").asText())
-                : exercise == null ? null : exercise.getRuntimeModelId();
+                : null;
         if (runtimeModelId == null
                 && (refModel == null || refModel.getSourceSnapshot() == null || refModel.getProject() == null)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Lab chưa được gắn kiến trúc tham chiếu hợp lệ");
@@ -302,6 +302,11 @@ public class CourseLabStudentService {
                 throw new BusinessException(ErrorCode.BAD_REQUEST,
                         "Studio runtime source has no project or snapshot");
             }
+        }
+
+        if (runtimeModel.getProject().getWorkspace() == null
+                || !workspaceId.equals(runtimeModel.getProject().getWorkspace().getId())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "Studio runtime source belongs to another workspace");
         }
 
         for (RuntimeSessionResponseDTO existing : listStudioSessions(workspaceId, assignmentId)) {
@@ -327,6 +332,13 @@ public class CourseLabStudentService {
         scenarioConfig.put("interactiveStudio", true);
         ObjectNode profileNode = scenarioConfig.putObject("profile");
         profileNode.set("applications", appsNode);
+        UUID runtimeSnapshotId = runtimeModel.getSourceSnapshot().getId();
+        runtimeConfigurations.findById(runtimeModel.getProject().getId())
+                .filter(configuration -> runtimeSnapshotId.equals(configuration.getSourceSnapshotId()))
+                .map(RuntimeConfiguration::getProfile)
+                .map(profile -> profile.path("sandboxCompose").asText(""))
+                .filter(prepared -> !prepared.isBlank())
+                .ifPresent(prepared -> profileNode.put("sandboxCompose", prepared));
         if (resolvedTopology != null && resolvedTopology.isObject()) {
             profileNode.set("studioTopology", resolvedTopology.deepCopy());
         }
@@ -350,11 +362,15 @@ public class CourseLabStudentService {
             }
         }
         if (stepsNode.isEmpty()) {
+            String defaultPath = primaryService.toLowerCase(Locale.ROOT).contains("gateway")
+                    && appsNode != null && appsNode.has("order-service")
+                    ? "/api/gateway/orders"
+                    : "/health";
             stepsNode.addObject()
                     .put("id", "studio-smoke")
                     .put("service", primaryService)
                     .put("method", "GET")
-                    .put("path", "/health")
+                    .put("path", defaultPath)
                     .put("expectedStatus", 200);
         }
         scenarioNode.put("timeoutSeconds", 300);
@@ -571,23 +587,32 @@ public class CourseLabStudentService {
         }
 
         final SourceSnapshot resolvedSnapshot = snapshot;
-        ModelVersion model = models.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(resolvedProject.getId())
+        ModelVersion model = models.findByProjectIdOrderByRevisionDesc(resolvedProject.getId()).stream()
                 .filter(m -> !"RUNTIME_ENRICHED".equalsIgnoreCase(m.getOrigin()))
                 .filter(m -> m.getSourceSnapshot() != null && resolvedSnapshot.getId().equals(m.getSourceSnapshot().getId()))
+                .findFirst()
                 .orElse(null);
         if (model == null) {
+            Integer maxRevision = models.findMaxRevisionByProjectId(resolvedProject.getId());
+            int nextRevision = (maxRevision == null ? 0 : maxRevision) + 1;
+            boolean hasValid = models.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(resolvedProject.getId()).isPresent();
             model = models.saveAndFlush(ModelVersion.builder()
                     .project(resolvedProject)
                     .sourceSnapshot(resolvedSnapshot)
-                    .revision(1)
+                    .revision(nextRevision)
                     .schemaVersion(refModel.getSchemaVersion() != null ? refModel.getSchemaVersion() : "1.0")
                     .origin("USER_CONFIRMED")
-                    .isLatestValid(true)
+                    .isLatestValid(!hasValid)
                     .createdBy(actor)
                     .build());
             cloneModelElements(refModel, model);
-        } else if (elements.findByModelVersionId(model.getId()).isEmpty()) {
-            cloneModelElements(refModel, model);
+        } else {
+            List<ModelElement> existingElements = elements.findByModelVersionId(model.getId());
+            if (existingElements.isEmpty()) {
+                cloneModelElements(refModel, model);
+            } else if (relationships.findByModelVersionId(model.getId()).isEmpty()) {
+                backfillModelRelationships(refModel, model, existingElements);
+            }
         }
 
         return new StudentWorkspaceBundle(resolvedProject, resolvedSnapshot, model);
@@ -629,6 +654,49 @@ public class CourseLabStudentService {
                 copied.put(src.getId(), saved);
             }
         }
+        cloneModelRelationships(sourceModel, targetModel, copied);
+    }
+
+    private void backfillModelRelationships(
+            ModelVersion sourceModel, ModelVersion targetModel, List<ModelElement> targetElements) {
+        List<ModelElement> sourceElements = elements.findByModelVersionId(sourceModel.getId());
+        if (sourceElements == null || sourceElements.isEmpty()) return;
+        Map<String, ModelElement> targetByKey = new HashMap<>();
+        for (ModelElement el : targetElements) {
+            if (el.getName() != null) {
+                targetByKey.putIfAbsent(
+                        (el.getElementType() + ":" + el.getName()).toLowerCase(Locale.ROOT), el);
+            }
+        }
+        Map<UUID, ModelElement> mapped = new HashMap<>();
+        for (ModelElement src : sourceElements) {
+            if (src.getId() == null || src.getName() == null) continue;
+            ModelElement match = targetByKey.get(
+                    (src.getElementType() + ":" + src.getName()).toLowerCase(Locale.ROOT));
+            if (match != null) mapped.put(src.getId(), match);
+        }
+        cloneModelRelationships(sourceModel, targetModel, mapped);
+    }
+
+    private void cloneModelRelationships(
+            ModelVersion sourceModel, ModelVersion targetModel, Map<UUID, ModelElement> copiedBySourceId) {
+        List<ModelRelationship> sourceRels = relationships.findByModelVersionId(sourceModel.getId());
+        if (sourceRels == null || sourceRels.isEmpty()) return;
+        for (ModelRelationship rel : sourceRels) {
+            if (rel.getSourceElement() == null || rel.getTargetElement() == null) continue;
+            ModelElement srcCopy = copiedBySourceId.get(rel.getSourceElement().getId());
+            ModelElement dstCopy = copiedBySourceId.get(rel.getTargetElement().getId());
+            if (srcCopy == null || dstCopy == null || Objects.equals(srcCopy.getId(), dstCopy.getId())) continue;
+            relationships.save(ModelRelationship.builder()
+                    .modelVersion(targetModel)
+                    .sourceElement(srcCopy)
+                    .targetElement(dstCopy)
+                    .relationType(rel.getRelationType() != null ? rel.getRelationType() : "CALLS")
+                    .originLayer(rel.getOriginLayer() != null ? rel.getOriginLayer() : "STATIC")
+                    .direction(rel.getDirection() != null ? rel.getDirection() : "DIRECTED")
+                    .properties(rel.getProperties())
+                    .build());
+        }
     }
 
     private ObjectNode exerciseToNode(com.mavis.common.entity.LabStudioExercise exercise) {
@@ -668,6 +736,12 @@ public class CourseLabStudentService {
         }
         for (String svc : activeBlocks) {
             if (outbound.contains(svc) && !inbound.contains(svc)) return svc;
+        }
+        for (String svc : activeBlocks) {
+            String lower = svc.toLowerCase(Locale.ROOT);
+            if (lower.contains("gateway") || lower.contains("edge") || lower.contains("ingress") || lower.equals("bff")) {
+                return svc;
+            }
         }
         for (String svc : activeBlocks) {
             if (outbound.contains(svc)) return svc;

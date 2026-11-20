@@ -35,7 +35,9 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -46,6 +48,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -393,7 +396,7 @@ class CourseLabSeederServiceTest {
         UUID courseId = UUID.randomUUID();
         CourseAuthoringService.CourseView staleDraft = new CourseAuthoringService.CourseView(
                 courseId, workspaceId, "Java Mc", "Test", "DRAFT", 2, 0, List.of());
-        when(courseAuthoring.get(workspaceId)).thenReturn(staleDraft);
+        when(courseAuthoring.findExistingForAuthoring(workspaceId)).thenReturn(Optional.of(staleDraft));
         AtomicInteger moduleCounter = new AtomicInteger(0);
         when(courseAuthoring.saveDraft(eq(workspaceId), any())).thenAnswer(inv -> {
             CourseAuthoringService.CourseRequest req = inv.getArgument(1);
@@ -434,12 +437,12 @@ class CourseLabSeederServiceTest {
         assertThat(savedEvidences).allSatisfy(ev -> assertThat(allowedEvidenceSources).contains(ev.getSourceType()));
         assertThat(savedProject.get().getReferenceSnapshotId()).isNotNull();
 
-        verify(assignments, times(6)).saveAndFlush(any(Assignment.class));
-        verify(quizzes, times(6)).publishCurriculum(eq(workspaceId), any(UUID.class), any());
+        verify(assignments, times(5)).saveAndFlush(any(Assignment.class));
+        verify(quizzes, times(5)).publishCurriculum(eq(workspaceId), any(UUID.class), any());
         verify(courseAuthoring).saveDraft(eq(workspaceId), eq(new CourseAuthoringService.CourseRequest(
                 JavaCourseraCatalog.COURSE_TITLE, JavaCourseraCatalog.COURSE_DESCRIPTION)));
-        verify(courseAuthoring, times(6)).addModule(eq(workspaceId), any());
-        verify(courseAuthoring, times(36)).addItem(eq(workspaceId), any(UUID.class), any());
+        verify(courseAuthoring, times(5)).addModule(eq(workspaceId), any());
+        verify(courseAuthoring, times(27)).addItem(eq(workspaceId), any(UUID.class), any());
         verify(courseAuthoring).publish(workspaceId);
     }
 
@@ -618,6 +621,199 @@ class CourseLabSeederServiceTest {
                 org.mockito.ArgumentMatchers.contains("JOIN course_definitions"),
                 eq(Integer.class),
                 eq(workspaceId));
-        verify(assignments, times(6)).saveAndFlush(any(Assignment.class));
+        verify(assignments, times(5)).saveAndFlush(any(Assignment.class));
+    }
+
+    @Test
+    void realignsLegacyV1LabsAndUnlocksV2Lab01AtLabOrder1() throws Exception {
+        UUID workspaceId = UUID.randomUUID();
+        User lecturer = User.builder().id(UUID.randomUUID()).email("gv.java@mavis.edu.vn").build();
+        Workspace workspace = Workspace.builder()
+                .id(workspaceId).code("JAVA-MS-2026").name("Java V2").status("ACTIVE").courseMode(true).build();
+        Project refProject = Project.builder().id(UUID.randomUUID()).workspace(workspace).build();
+        SourceSnapshot refSnapshot = SourceSnapshot.builder().id(UUID.randomUUID()).project(refProject).build();
+        ModelVersion refModel = ModelVersion.builder()
+                .id(UUID.randomUUID()).project(refProject).sourceSnapshot(refSnapshot).build();
+
+        List<Assignment> legacyV1Labs = new ArrayList<>();
+        for (int i = 1; i <= 6; i++) {
+            legacyV1Labs.add(Assignment.builder()
+                    .id(UUID.randomUUID())
+                    .workspace(workspace)
+                    .title("Legacy V1 Lab 0" + i)
+                    .labOrder(i)
+                    .referenceModel(refModel)
+                    .build());
+        }
+
+        List<Assignment> v2Labs = new ArrayList<>();
+        var v2Modules = JavaCourseraCatalog.modules();
+        for (int i = 0; i < v2Modules.size(); i++) {
+            v2Labs.add(Assignment.builder()
+                    .id(UUID.randomUUID())
+                    .workspace(workspace)
+                    .title(v2Modules.get(i).labTitle())
+                    .labOrder(7 + i)
+                    .referenceModel(refModel)
+                    .build());
+        }
+
+        List<Assignment> corrupted11Labs = new ArrayList<>(legacyV1Labs);
+        corrupted11Labs.addAll(v2Labs);
+        List<UUID> expectedV2Ids = v2Labs.stream().map(Assignment::getId).toList();
+
+        assertThat(CourseLabSeederService.isCourseraLabsAligned(corrupted11Labs, v2Modules)).isFalse();
+
+        AccessPolicyService access = mock(AccessPolicyService.class);
+        WorkspaceRepository workspaces = mock(WorkspaceRepository.class);
+        AssignmentRepository assignments = mock(AssignmentRepository.class);
+        CourseQuizService quizzes = mock(CourseQuizService.class);
+        CourseAccessService courses = mock(CourseAccessService.class);
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        ObjectMapper json = new ObjectMapper();
+        CourseCurriculum curriculum = new CourseCurriculum(json);
+
+        when(access.requireCurrentActiveUser()).thenReturn(lecturer);
+        when(workspaces.findLockedById(workspaceId)).thenReturn(Optional.of(workspace));
+        when(assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId))
+                .thenReturn(corrupted11Labs);
+        when(jdbc.queryForObject(contains("FROM runtime_configurations"), eq(Integer.class), any()))
+                .thenReturn(1);
+        when(jdbc.queryForObject(contains("FROM runtime_scenarios"), eq(Integer.class), any()))
+                .thenReturn(1);
+
+        // Guard against any save violating unique index uq_workspace_lab_order (workspace_id, lab_order).
+        Map<Integer, UUID> activeOrders = new HashMap<>();
+        for (Assignment a : corrupted11Labs) {
+            activeOrders.put(a.getLabOrder(), a.getId());
+        }
+        when(assignments.saveAndFlush(any(Assignment.class))).thenAnswer(inv -> {
+            Assignment saved = inv.getArgument(0);
+            activeOrders.entrySet().removeIf(entry -> saved.getId().equals(entry.getValue())
+                    && !entry.getKey().equals(saved.getLabOrder()));
+            if (saved.getLabOrder() != null) {
+                UUID holder = activeOrders.get(saved.getLabOrder());
+                if (holder != null && !holder.equals(saved.getId())) {
+                    throw new AssertionError("Duplicate lab_order violation for order " + saved.getLabOrder());
+                }
+                activeOrders.put(saved.getLabOrder(), saved.getId());
+            }
+            return saved;
+        });
+        when(courses.roadmap(workspaceId)).thenReturn(new CourseAccessService.Roadmap(true, "IN_PROGRESS", List.of()));
+
+        CourseLabSeederService seeder = new CourseLabSeederService(
+                access, workspaces, assignments,
+                mock(ProjectRepository.class), mock(SourceSnapshotRepository.class),
+                mock(ModelVersionRepository.class), mock(ModelElementRepository.class),
+                mock(ModelRelationshipRepository.class), mock(DiagramVersionRepository.class),
+                mock(EvaluationRunRepository.class), mock(EvidenceRepository.class),
+                curriculum, quizzes, courses, jdbc, json, tempDir.toString());
+
+        seeder.seedCurated(workspaceId, CourseLabSeederService.PRESET_JAVA_COURSERA);
+
+        assertThat(legacyV1Labs).allSatisfy(stale -> {
+            assertThat(stale.getLabOrder()).isNull();
+            assertThat(stale.getAiPolicy().path("archivedV1").asBoolean()).isTrue();
+        });
+        for (int i = 0; i < v2Modules.size(); i++) {
+            assertThat(v2Labs.get(i).getId()).isEqualTo(expectedV2Ids.get(i));
+            assertThat(v2Labs.get(i).getLabOrder()).isEqualTo(i + 1);
+            assertThat(v2Labs.get(i).getTitle()).doesNotStartWith("Lab 0");
+        }
+        assertThat(CourseLabSeederService.isCourseraLabsAligned(v2Labs, v2Modules)).isTrue();
+        verify(jdbc, times(6)).update(
+                contains("DELETE FROM lab_prerequisites"), any(UUID.class), any(UUID.class));
+        verify(quizzes, times(5)).publishCurriculum(eq(workspaceId), any(UUID.class), any());
+    }
+
+    @Test
+    void seedsCsharpCourseraCourseWith5ActiveOrderedLabsAndFruitShopTopology() throws Exception {
+        UUID workspaceId = UUID.randomUUID();
+        User lecturer = User.builder().id(UUID.randomUUID()).email("gv.java@mavis.edu.vn").build();
+        Workspace workspace = Workspace.builder()
+                .id(workspaceId).code("CSHARP-MS-2026").name("C# .NET 8").status("ACTIVE").courseMode(false).build();
+
+        AccessPolicyService access = mock(AccessPolicyService.class);
+        WorkspaceRepository workspaces = mock(WorkspaceRepository.class);
+        AssignmentRepository assignments = mock(AssignmentRepository.class);
+        ProjectRepository projects = mock(ProjectRepository.class);
+        SourceSnapshotRepository snapshots = mock(SourceSnapshotRepository.class);
+        ModelVersionRepository models = mock(ModelVersionRepository.class);
+        CourseQuizService quizzes = mock(CourseQuizService.class);
+        CourseAccessService courses = mock(CourseAccessService.class);
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        ObjectMapper json = new ObjectMapper();
+        CourseCurriculum curriculum = new CourseCurriculum(json);
+
+        when(access.requireCurrentActiveUser()).thenReturn(lecturer);
+        when(workspaces.findLockedById(workspaceId)).thenReturn(Optional.of(workspace));
+        when(workspaces.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId)).thenReturn(List.of());
+        when(projects.save(any())).thenAnswer(inv -> {
+            Project p = inv.getArgument(0);
+            if (p.getId() == null) p.setId(UUID.randomUUID());
+            return p;
+        });
+        when(projects.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(snapshots.save(any())).thenAnswer(inv -> {
+            SourceSnapshot s = inv.getArgument(0);
+            if (s.getId() == null) s.setId(UUID.randomUUID());
+            return s;
+        });
+        when(models.saveAndFlush(any())).thenAnswer(inv -> {
+            ModelVersion m = inv.getArgument(0);
+            if (m.getId() == null) m.setId(UUID.randomUUID());
+            return m;
+        });
+        List<Assignment> savedAssignments = new ArrayList<>();
+        when(assignments.saveAndFlush(any(Assignment.class))).thenAnswer(inv -> {
+            Assignment a = inv.getArgument(0);
+            if (a.getId() == null) a.setId(UUID.randomUUID());
+            savedAssignments.add(a);
+            return a;
+        });
+        when(courses.roadmap(workspaceId)).thenReturn(new CourseAccessService.Roadmap(true, "ENROLLED", List.of()));
+
+        ModelElementRepository elements = mock(ModelElementRepository.class);
+        ModelRelationshipRepository relationships = mock(ModelRelationshipRepository.class);
+        DiagramVersionRepository diagrams = mock(DiagramVersionRepository.class);
+        EvaluationRunRepository evaluations = mock(EvaluationRunRepository.class);
+        EvidenceRepository evidences = mock(EvidenceRepository.class);
+        when(elements.save(any())).thenAnswer(inv -> {
+            ModelElement e = inv.getArgument(0);
+            if (e.getId() == null) e.setId(UUID.randomUUID());
+            return e;
+        });
+        when(relationships.save(any())).thenAnswer(inv -> {
+            ModelRelationship r = inv.getArgument(0);
+            if (r.getId() == null) r.setId(UUID.randomUUID());
+            return r;
+        });
+        when(evidences.save(any())).thenAnswer(inv -> {
+            Evidence ev = inv.getArgument(0);
+            if (ev.getId() == null) ev.setId(UUID.randomUUID());
+            return ev;
+        });
+        when(diagrams.saveAll(anyList())).thenAnswer(inv -> inv.getArgument(0));
+        when(evaluations.save(any())).thenAnswer(inv -> {
+            EvaluationRun run = inv.getArgument(0);
+            if (run.getId() == null) run.setId(UUID.randomUUID());
+            return run;
+        });
+
+        CourseLabSeederService seeder = new CourseLabSeederService(
+                access, workspaces, assignments, projects, snapshots, models,
+                elements, relationships, diagrams, evaluations, evidences,
+                curriculum, quizzes, courses, jdbc, json, tempDir.toString());
+
+        seeder.seedCurated(workspaceId, CourseLabSeederService.PRESET_CSHARP_COURSERA);
+
+        assertThat(savedAssignments).hasSize(5);
+        assertThat(savedAssignments).extracting(Assignment::getLabOrder).containsExactly(1, 2, 3, 4, 5);
+        assertThat(savedAssignments).allSatisfy(a -> assertThat(a.getTitle()).doesNotStartWith("Lab 0"));
+        assertThat(savedAssignments.get(2).getStudioTopologySnapshot().path("blocks").toString())
+                .contains("FruitCatalog.API", "FruitOrdering.API");
+        verify(quizzes, times(5)).publishCurriculum(eq(workspaceId), any(UUID.class), any());
     }
 }

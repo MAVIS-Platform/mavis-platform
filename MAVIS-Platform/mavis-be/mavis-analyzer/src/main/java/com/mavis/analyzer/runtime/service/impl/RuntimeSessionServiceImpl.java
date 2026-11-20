@@ -820,6 +820,10 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
             profile.put("dotnetInstrumentationVersion", "1.17.0");
         }
 
+        if (assignment != null && bounded.path("interactiveStudio").asBoolean()) {
+            validateLabStudioCompose(snapshot, profile);
+        }
+
         ObjectNode apps = profile.has("applications") && profile.get("applications").isObject()
                 ? (ObjectNode) profile.get("applications")
                 : profile.putObject("applications");
@@ -1216,6 +1220,35 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         return RuntimeSessionResponseDTO.fromEntity(updated);
     }
 
+    private void validateLabStudioCompose(SourceSnapshot snapshot, ObjectNode profile) {
+        var source = runComposePreflight(snapshot.getId());
+        if (!source.isCompatible()) {
+            throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "PREFLIGHT_FAILED",
+                    "The Lab source Compose was rejected.");
+        }
+
+        String prepared = profile.path("sandboxCompose").asText("");
+        if (prepared.isBlank()) {
+            if (source.getUnresolvableRunnerIssues() != null && !source.getUnresolvableRunnerIssues().isEmpty()) {
+                throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "PREFLIGHT_FAILED",
+                        "The Lab source has unresolved Runner requirements.");
+            }
+            prepared = source.getSandboxComposeYaml();
+        }
+        var runnerCheck = prepared == null || prepared.isBlank()
+                ? source
+                : composePreflightValidator.validate(prepared, Map.of());
+        if (!runnerCheck.isCompatible() || (runnerCheck.getRunnerIssues() != null && !runnerCheck.getRunnerIssues().isEmpty())) {
+            throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "PREFLIGHT_FAILED",
+                    "The prepared Lab Compose is incompatible with the Runner.");
+        }
+        if (prepared != null && !prepared.isBlank()) {
+            profile.put("sandboxCompose", prepared);
+        } else {
+            profile.remove("sandboxCompose");
+        }
+    }
+
     @Override
     @Transactional(readOnly = true)
     public RunnerDefinitionExportDTO exportRunDefinition(UUID sessionId) {
@@ -1281,6 +1314,9 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
             composeYaml = profileNode.get("sandboxCompose").asText();
         } else if (snapshot != null && snapshot.getId() != null && sourceSnapshotRepository.findById(snapshot.getId()).isPresent()) {
             PreflightCheckResponseDTO check = runComposePreflight(snapshot.getId());
+            boolean needsRemediation = composeYaml.isBlank()
+                    || !overrides.isEmpty()
+                    || (check.getRunnerIssues() != null && !check.getRunnerIssues().isEmpty());
             String candidate = check.getSandboxComposeYaml();
             List<String> unresolved = check.getUnresolvableRunnerIssues();
             if (!overrides.isEmpty() && composePreflightValidator != null && candidate != null && !candidate.isBlank()) {
@@ -1290,7 +1326,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                     unresolved = rem.unresolvableIssues();
                 }
             }
-            if ((unresolved == null || unresolved.isEmpty()) && candidate != null && !candidate.isBlank()) {
+            if (needsRemediation && (unresolved == null || unresolved.isEmpty()) && candidate != null && !candidate.isBlank()) {
                 composeYaml = candidate;
             }
         } else if (!composeYaml.isBlank() && composePreflightValidator != null) {

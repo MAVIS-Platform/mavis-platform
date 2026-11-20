@@ -24,6 +24,15 @@ public class CourseLabPolicy {
         return currentQuizPass(lab, studentId).isPresent();
     }
 
+    public static boolean canSkipQuiz(Assignment lab) {
+        var policy = lab.getAiPolicy();
+        return !Boolean.TRUE.equals(lab.getRequireRuntimeTrace())
+                && !"THEORY_QUIZ_STUDIO".equalsIgnoreCase(lab.getLabMode())
+                && policy != null
+                && (policy.path("skipQuiz").asBoolean(false)
+                    || "THEORY_ONLY".equalsIgnoreCase(policy.path("labTier").asText()));
+    }
+
     public boolean hasPassedQuizVersion(UUID labId, UUID studentId, int version) {
         return Boolean.TRUE.equals(jdbc.queryForObject("""
                 SELECT EXISTS (SELECT FROM course_quiz_attempts
@@ -84,6 +93,7 @@ public class CourseLabPolicy {
                 SELECT r.assignment_id FROM course_lab_results r
                 JOIN assignments a ON a.id = r.assignment_id
                 WHERE a.workspace_id = ? AND r.student_id = ? AND r.passed
+                  AND a.lab_order IS NOT NULL
                 """, UUID.class, workspaceId, studentId));
     }
 
@@ -109,7 +119,7 @@ public class CourseLabPolicy {
 
     public void requireOpen(Assignment lab, User student) {
         if (!canOpen(lab, student)) {
-            throw new BusinessException(ErrorCode.FORBIDDEN, "PREREQUISITE_LAB_LOCKED", "Complete the preceding Lab to access this Lab");
+            throw new BusinessException(ErrorCode.FORBIDDEN, "PREREQUISITE_LOCKED", "Complete the preceding Lab to access this Lab");
         }
     }
 

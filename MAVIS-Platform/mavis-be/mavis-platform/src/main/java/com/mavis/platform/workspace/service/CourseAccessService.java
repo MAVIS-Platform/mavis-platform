@@ -17,6 +17,7 @@ import com.mavis.common.security.AuthorizationRequestCache;
 import com.mavis.common.security.CourseLabPolicy;
 import com.mavis.common.utils.HashUtils;
 import com.mavis.platform.assignment.service.LabReferenceArchive;
+import com.mavis.platform.workspace.curriculum.CsharpCourseraCatalog;
 import com.mavis.platform.workspace.curriculum.JavaCourseraCatalog;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -47,6 +48,7 @@ public class CourseAccessService {
     private final JdbcTemplate jdbc;
     private final LabReferenceArchive referenceArchive;
     private final RuntimeConfigurationRepository configurations;
+    private final CoursePasskeyFailureRecorder passkeyFailures;
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.mavis.common.repository.RuntimeSessionRepository runtimeSessions;
@@ -108,8 +110,7 @@ public class CourseAccessService {
                 .filter(value -> workspaceId.equals(value.getWorkspace().getId()))
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Lab not found"));
         if (assignment.getLabOrder() != null) {
-            if (assignment.getStudioTopologySnapshot() == null) {
-                copyTopologySnapshot(assignment);
+            if (assignment.getStudioTopologySnapshot() == null && copyTopologySnapshot(assignment)) {
                 assignments.save(assignment);
             }
             return new Lab(assignmentId, assignment.getLabOrder(), assignment.getTitle(), "UNLOCKED", null);
@@ -144,9 +145,45 @@ public class CourseAccessService {
         assignment.setLabOrder(next);
         copyTopologySnapshot(assignment);
         copyExerciseSnapshot(assignment);
+        syncDerivedLabComposition(assignment);
         workspace.setCourseMode(true);
         audit("COURSE_LAB_PUBLISHED", "ASSIGNMENT", assignmentId);
         return new Lab(assignmentId, next, assignment.getTitle(), "UNLOCKED", null);
+    }
+
+    private void syncDerivedLabComposition(Assignment assignment) {
+        if ("LEGACY".equalsIgnoreCase(assignment.getLabMode())) {
+            return;
+        }
+        boolean hasReference = assignment.getReferenceModel() != null;
+        boolean hasStudio = hasReference
+                && (assignment.getStudioTopologySnapshot() != null || Boolean.TRUE.equals(assignment.getRequireRuntimeTrace()));
+        boolean hasQuiz = hasPublishedQuiz(assignment.getId());
+        assignment.setRequireRuntimeTrace(hasStudio);
+        assignment.setLabMode(hasStudio ? "THEORY_QUIZ_STUDIO" : "THEORY_QUIZ");
+        ObjectNode policy = assignment.getAiPolicy() instanceof ObjectNode existing
+                ? existing.deepCopy()
+                : JsonNodeFactory.instance.objectNode();
+        if (hasStudio) {
+            policy.put("labTier", "THEORY_QUIZ_STUDIO");
+            policy.put("skipQuiz", false);
+        } else if (hasQuiz) {
+            policy.put("labTier", "THEORY_QUIZ");
+            policy.put("skipQuiz", false);
+        } else {
+            policy.put("labTier", "THEORY_ONLY");
+            policy.put("skipQuiz", true);
+        }
+        assignment.setAiPolicy(policy);
+    }
+
+    private boolean hasPublishedQuiz(UUID assignmentId) {
+        if (jdbc == null || assignmentId == null) return false;
+        Integer version = jdbc.queryForObject(
+                "SELECT coalesce(max(version), 0) FROM course_quizzes WHERE assignment_id = ?",
+                Integer.class,
+                assignmentId);
+        return version != null && version > 0;
     }
 
     /**
@@ -222,8 +259,7 @@ public class CourseAccessService {
                         "Studio session has no verified Stop/Start/Scale evidence");
             }
         }
-        copyTopologySnapshot(assignment);
-        if (assignment.getStudioTopologySnapshot() == null) {
+        if (!copyTopologySnapshot(assignment)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST,
                     "The reference runtime profile has no prepared Studio topology for this source/model");
         }
@@ -254,20 +290,20 @@ public class CourseAccessService {
         });
     }
 
-    private void copyTopologySnapshot(Assignment assignment) {
+    private boolean copyTopologySnapshot(Assignment assignment) {
         var model = resolveStudioRuntimeModel(assignment);
         var snapshot = model == null ? null : model.getSourceSnapshot();
-        if (model == null || snapshot == null || snapshot.getProject() == null) return;
+        if (model == null || snapshot == null || snapshot.getProject() == null) return false;
         RuntimeConfiguration configuration = configurations.findById(snapshot.getProject().getId()).orElse(null);
         if (configuration == null
                 || !snapshot.getId().equals(configuration.getSourceSnapshotId())
                 || !model.getId().equals(configuration.getModelVersionId())
-                || configuration.getProfile() == null) return;
+                || configuration.getProfile() == null) return false;
         JsonNode topology = configuration.getProfile().get("studioTopology");
-        if (topology != null && topology.isObject()) {
-            assignment.setStudioTopologySnapshot(topology.deepCopy());
-            assignment.setStudioTopologyRevision(configuration.getRevision());
-        }
+        if (topology == null || !topology.isObject()) return false;
+        assignment.setStudioTopologySnapshot(topology.deepCopy());
+        assignment.setStudioTopologyRevision(configuration.getRevision());
+        return true;
     }
 
     private com.mavis.common.entity.ModelVersion resolveStudioRuntimeModel(Assignment assignment) {
@@ -520,7 +556,7 @@ public class CourseAccessService {
         passkeyRateCheck(actor.getId());
         String normalizedCode = code == null ? "" : code.trim();
         if (!normalizedCode.matches("[A-Za-z0-9_-]{4,32}")) {
-            passkeyFailure(actor.getId());
+            passkeyFailures.record(digest(actor.getId().toString()));
             throw invalidKey();
         }
         String keyDigest = digest(normalizedCode);
@@ -542,7 +578,7 @@ public class CourseAccessService {
                 keyDigest = upperDigest;
             }
         }
-        UUID workspaceId = foundWorkspaces.stream().findFirst().orElseThrow(() -> { passkeyFailure(actor.getId()); return invalidKey(); });
+        UUID workspaceId = foundWorkspaces.stream().findFirst().orElseThrow(() -> { passkeyFailures.record(digest(actor.getId().toString())); return invalidKey(); });
         Workspace workspace = lock(workspaceId);
         prior = replay(actor.getId(), requestId, keyDigest);
         if (prior != null) {
@@ -554,7 +590,7 @@ public class CourseAccessService {
                 AND (max_uses IS NULL OR used_count < max_uses))
                 """, Boolean.class, workspaceId, keyDigest));
         if (!valid || !workspace.isCourseMode() || !"ACTIVE".equals(workspace.getStatus())) {
-            passkeyFailure(actor.getId());
+            passkeyFailures.record(digest(actor.getId().toString()));
             throw invalidKey();
         }
         Integer capacity = workspace.getMaxStudents();
@@ -589,13 +625,18 @@ public class CourseAccessService {
         boolean student = CourseLabPolicy.isStudent(actor);
         var passed = student ? labs.passedAssignments(workspaceId, actor.getId()) : Set.<UUID>of();
         var assignmentsInOrder = assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId);
-        if (assignmentsInOrder.size() < 6
-                && seeder != null
+        if (seeder != null
                 && !CourseLabSeederService.isSeeding(workspaceId)
-                && "ACTIVE".equals(workspace.getStatus())
-                && JavaCourseraCatalog.COURSE_CODE.equalsIgnoreCase(workspace.getCode())) {
-            seeder.ensureJavaCourseraPopulated(workspaceId);
-            assignmentsInOrder = assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId);
+                && "ACTIVE".equals(workspace.getStatus())) {
+            if (JavaCourseraCatalog.COURSE_CODE.equalsIgnoreCase(workspace.getCode())
+                    && !CourseLabSeederService.isCourseraLabsAligned(assignmentsInOrder, JavaCourseraCatalog.modules())) {
+                seeder.ensureJavaCourseraPopulated(workspaceId);
+                assignmentsInOrder = assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId);
+            } else if (CsharpCourseraCatalog.COURSE_CODE.equalsIgnoreCase(workspace.getCode())
+                    && !CourseLabSeederService.isCourseraLabsAligned(assignmentsInOrder, CsharpCourseraCatalog.modules())) {
+                seeder.ensureCsharpCourseraPopulated(workspaceId);
+                assignmentsInOrder = assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId);
+            }
         }
         Map<UUID, List<UUID>> explicitPrerequisites = new HashMap<>();
         jdbc.query("""
@@ -674,5 +715,4 @@ public class CourseAccessService {
         return new BusinessException(ErrorCode.BAD_REQUEST, "INVALID_OR_EXPIRED_PASSKEY", "Invalid or expired Passkey");
     }
     private void passkeyRateCheck(UUID actor){Boolean blocked=jdbc.queryForObject("SELECT coalesce((SELECT blocked_until>now() FROM auth_rate_limits WHERE scope='PASSKEY' AND subject_digest=?),false)",Boolean.class,digest(actor.toString()));if(Boolean.TRUE.equals(blocked))throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS,"PASSKEY_RATE_LIMITED","Too many invalid Passkeys. Try again later");}
-    private void passkeyFailure(UUID actor){jdbc.update("INSERT INTO auth_rate_limits(scope,subject_digest,attempts) VALUES ('PASSKEY',?,1) ON CONFLICT(scope,subject_digest) DO UPDATE SET attempts=auth_rate_limits.attempts+1,blocked_until=CASE WHEN auth_rate_limits.attempts+1>=5 THEN now()+interval '15 minutes' ELSE auth_rate_limits.blocked_until END",digest(actor.toString()));}
 }

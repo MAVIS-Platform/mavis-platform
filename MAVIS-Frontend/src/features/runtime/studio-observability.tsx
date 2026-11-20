@@ -182,27 +182,24 @@ function getArchetypeTheme(
                                 ? { badgeText: "STREAM", typeLabel: "EVENT BROKER" }
                                 : { badgeText: "COMPUTE", typeLabel: "APP SERVER" };
 
-  // Meta / Linear / Cloudcraft SE Standard Palette:
-  // Unified dark graphite CAD chassis (#0f172a body, #1e293b top cap, #64748b structural wireframe)
-  // with restrained semantic accent strictly on the inner functional emblem & icon.
-  const accent = isEdge
-    ? "#38bdf8"
-    : isData
-      ? "#34d399"
-      : isInfra
-        ? "#cbd5e1"
-        : "#94a3b8";
-
+  // Unified Studio Sandbox dark graphite CAD chassis when idle/unselected:
+  // ZERO glowing neon colors on unselected blocks — ONLY the clicked/selected block lights up in cyan.
   const base = {
-    stroke: "#64748b",
+    stroke: "#475569",
     cardFill: "#0f172a",
-    iconBg: "#1e293b",
-    accent,
+    iconBg: "#1b263b",
+    accent: "#94a3b8",
     ...badgeAndType,
   };
 
   if (isDropTarget || isSelected) {
-    return { ...base, stroke: "#38bdf8", iconBg: "#0f2942", accent: "#38bdf8" };
+    return {
+      ...base,
+      stroke: "#38bdf8",
+      cardFill: "#0c2238",
+      iconBg: "#123456",
+      accent: "#7dd3fc",
+    };
   }
   return base;
 }
@@ -223,9 +220,12 @@ const STUDIO_2D_SYMBOLS = [
   { kind: "telemetry", match: /otel|prometheus|grafana|jaeger|metric|monitor|telemetry/, body: "M4 43V27h9v16Zm15 0V19h9v24Zm15 0V9h9v34Z", detail: "m4 19 10-7 9 1 15-10m-6 0h6v6", color: "#67e8f9" },
   { kind: "queue", match: /rabbit|amqp|celery|bull|queue|\bmq\b/, body: "M4 11h40v26H4Z", detail: "m4 12 20 15 20-15M4 37l14-14m26 14L30 23", color: "#fdba74" },
   { kind: "stream", match: /kafka|broker|stream|event/, body: "M4 11a7 7 0 0 1 7-7h26a7 7 0 0 1 7 7v26a7 7 0 0 1-7 7H11a7 7 0 0 1-7-7Z", detail: "M9 14h13l5 5h12M9 24h30M9 34h13l5-5h12", color: "#cbd5e1" },
-  { kind: "order", match: /order/, body: "M16 14h27l-6 19H20Z", detail: "M6 8h8l6 25M22 40a3 3 0 1 0 0 6 3 3 0 1 0 0-6Zm13 0a3 3 0 1 0 0 6 3 3 0 1 0 0-6Z", color: "#93c5fd" },
-  { kind: "payment", match: /payment|ledger|billing/, body: "M4 12a5 5 0 0 1 5-5h30a5 5 0 0 1 5 5v24a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5Z", detail: "M4 17h40M11 30h12m-12 5h6", color: "#a5b4fc" },
-  { kind: "inventory", match: /inventory/, body: "m4 13 20-9 20 9v22l-20 9-20-9Z", detail: "m4 13 20 10 20-10M24 23v21M14 9l20 10v9", color: "#a5b4fc" },
+  { kind: "order", match: /order|cart|checkout/, body: "M16 14h27l-6 19H20Z", detail: "M6 8h8l6 25M22 40a3 3 0 1 0 0 6 3 3 0 1 0 0-6Zm13 0a3 3 0 1 0 0 6 3 3 0 1 0 0-6Z", color: "#93c5fd" },
+  { kind: "payment", match: /payment|ledger|billing|wallet/, body: "M4 12a5 5 0 0 1 5-5h30a5 5 0 0 1 5 5v24a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5Z", detail: "M4 17h40M11 30h12m-12 5h6", color: "#5eead4" },
+  { kind: "inventory", match: /inventory|catalog|product|warehouse|item/, body: "m4 13 20-9 20 9v22l-20 9-20-9Z", detail: "m4 13 20 10 20-10M24 23v21M14 9l20 10v9", color: "#c4b5fd" },
+  { kind: "user", match: /user|account|customer|profile|member/, body: "M24 7a9 9 0 1 0 0 18 9 9 0 1 0 0-18ZM8 41c2-9 9-13 16-13s14 4 16 13Z", detail: "M24 12a4 4 0 1 0 0 8", color: "#7dd3fc" },
+  { kind: "notification", match: /notif|mail|alert|sms|push/, body: "M24 6c-8 0-13 6-13 14v9l-4 5h34l-4-5v-9c0-8-5-14-13-14Z", detail: "M19 38a5 5 0 0 0 10 0", color: "#fcd34d" },
+  { kind: "shipping", match: /ship|deliver|logistic|dispatch/, body: "M4 13h25v20H4Zm25 7h9l6 6v7H29Z", detail: "M13 38a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm22 0a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z", color: "#6ee7b7" },
   { kind: "service", match: /(?:)/, body: "M5 8h38v13H5Zm0 19h38v13H5Z", detail: "M11 14h1m5 0h1m6 0h13M11 33h1m5 0h1m6 0h13", color: "#a5b4fc" },
 ];
 
@@ -402,12 +402,28 @@ function renderNodeFunctionGlyph(
       </g>
     );
   }
-  if (n.includes("inventory")) {
+  if (n.includes("inventory") || n.includes("catalog") || n.includes("product") || n.includes("warehouse")) {
     return (
       <g stroke={color} strokeWidth="1.3" fill="none">
         <polygon points={`${cx},${cy - 5.2} ${cx + 4.8},${cy - 2.6} ${cx + 4.8},${cy + 2.6} ${cx},${cy + 5.2} ${cx - 4.8},${cy + 2.6} ${cx - 4.8},${cy - 2.6}`} />
         <polyline points={`${cx - 4.8},${cy - 2.6} ${cx},${cy} ${cx + 4.8},${cy - 2.6}`} />
         <line x1={cx} y1={cy} x2={cx} y2={cy + 5.2} />
+      </g>
+    );
+  }
+  if (n.includes("user") || n.includes("account") || n.includes("customer") || n.includes("profile")) {
+    return (
+      <g stroke={color} strokeWidth="1.35" strokeLinecap="round" fill="none">
+        <circle cx={cx} cy={cy - 2.2} r="2.3" />
+        <path d={`M ${cx - 4.2},${cy + 4.2} C ${cx - 4.2},${cy + 1.5} ${cx + 4.2},${cy + 1.5} ${cx + 4.2},${cy + 4.2}`} />
+      </g>
+    );
+  }
+  if (n.includes("notif") || n.includes("mail") || n.includes("alert")) {
+    return (
+      <g stroke={color} strokeWidth="1.35" strokeLinecap="round" fill="none">
+        <path d={`M ${cx - 3.6},${cy + 2.5} L ${cx - 3.6},${cy - 0.5} A 3.6 3.6 0 0 1 ${cx + 3.6},${cy - 0.5} L ${cx + 3.6},${cy + 2.5} Z`} />
+        <circle cx={cx} cy={cy + 4} r="0.9" fill={color} />
       </g>
     );
   }
@@ -562,11 +578,11 @@ function render3DSeNodeSculpture(
         {/* Right Gateway Pillar */}
         {renderIsoBox(cx + 18, gy + 4, 11, 6, 24, s, fill, 1.3, top)}
         {/* Top Bridging Gateway Arch Header */}
-        {renderIsoBox(cx, headerY, 34, 14, headerHeight, a, fill, 1.6, top)}
+        {renderIsoBox(cx, headerY, 34, 14, headerHeight, s, fill, 1.5, top)}
         {/* API routing arrow centered on the roof */}
         <path
           d={`M ${cx - 12},${roofY} L ${cx + 12},${roofY} M ${cx + 7},${roofY - 3} L ${cx + 12},${roofY} L ${cx + 7},${roofY + 3}`}
-          stroke="#ffffff"
+          stroke={a}
           strokeWidth="1.8"
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -852,18 +868,147 @@ function render3DSeNodeSculpture(
     );
   }
 
-  // 14. MICROSERVICE CONTAINER (Order / Payment / Inventory / App Service): Clean Single 3D Container Unit + Domain Emblem
-  const cyBase = cy - 3;
-  const h = isStopped ? 15 : 16.5;
+  // 14. ORDER / CART / CHECKOUT: Clean Studio Sandbox Stepped Fulfillment Module
+  if (n.includes("order") || n.includes("cart") || n.includes("checkout")) {
+    const by = cy - 1;
+    const baseH = isStopped ? 9 : 10;
+    const upperH = isStopped ? 7 : 8;
+    const roofY = by - baseH - upperH - 1;
+    return (
+      <g>
+        {/* Solid Isometric Base Chassis */}
+        {renderIsoBox(cx, by, 33, 15.5, baseH, s, fill, 1.4, top)}
+        {/* Centered Upper Processing Deck */}
+        {renderIsoBox(cx, by - baseH - 1, 22, 10.5, upperH, s, fill, 1.4, top)}
+        {/* Subtle Status LED on Base Wall */}
+        <circle cx={cx - 19} cy={by - baseH * 0.42} r="1.5" fill={a} />
+        <circle cx={cx - 13} cy={by - baseH * 0.42 + 2.6} r="1.5" fill={isStopped ? "#f43f5e" : "#10b981"} />
+        {/* Crisp Cart Emblem Centered on Upper Deck */}
+        {renderNodeFunctionGlyph(name, archetype, cx, roofY, a)}
+      </g>
+    );
+  }
+
+  // 15. PAYMENT / BILLING / LEDGER / WALLET: Clean Studio Sandbox Isometric Vault Unit
+  if (n.includes("payment") || n.includes("billing") || n.includes("ledger") || n.includes("wallet")) {
+    const by = cy - 1;
+    const h = isStopped ? 14 : 16;
+    const roofY = by - h;
+    return (
+      <g>
+        {/* Grounded Isometric Security Vault Chassis */}
+        {renderIsoBox(cx, by, 32, 15, h, s, fill, 1.5, top)}
+        {/* Recessed Metallic Ledger Seam across Front Walls */}
+        <polyline
+          points={`${cx - 32},${by - h * 0.45} ${cx},${by + 15 - h * 0.45} ${cx + 32},${by - h * 0.45}`}
+          fill="none"
+          stroke={a}
+          strokeWidth="1.2"
+          opacity="0.65"
+        />
+        {/* Vault Status LED */}
+        <circle cx={cx - 19} cy={by - h * 0.72} r="1.5" fill={isStopped ? "#f43f5e" : "#10b981"} />
+        {/* Crisp Payment Card Emblem Centered on Vault Roof */}
+        {renderNodeFunctionGlyph(name, archetype, cx, roofY, a)}
+      </g>
+    );
+  }
+
+  // 16. CATALOG / PRODUCT / INVENTORY / WAREHOUSE: Clean Studio Sandbox 2-Bay Modular Storage Rack
+  if (
+    n.includes("catalog") ||
+    n.includes("product") ||
+    n.includes("inventory") ||
+    n.includes("warehouse") ||
+    n.includes("item")
+  ) {
+    const by = cy - 1;
+    const tierH = isStopped ? 7.5 : 8.5;
+    const roofY = by - tierH * 2 - 2.5;
+    return (
+      <g>
+        {/* Lower Storage Blade */}
+        {renderIsoBox(cx, by, 32, 15, tierH, s, fill, 1.4, top)}
+        {/* Upper Aligned Index Blade */}
+        {renderIsoBox(cx, by - tierH - 2.5, 32, 15, tierH, s, fill, 1.4, top)}
+        {/* Subtle Bay Status LEDs */}
+        <circle cx={cx - 19} cy={by - tierH * 0.45} r="1.4" fill={a} />
+        <circle cx={cx - 19} cy={by - tierH * 1.45 - 2.5} r="1.4" fill={isStopped ? "#f43f5e" : "#10b981"} />
+        {/* Crisp Inventory Cube Emblem Centered on Top Blade */}
+        {renderNodeFunctionGlyph(name, archetype, cx, roofY, a)}
+      </g>
+    );
+  }
+
+  // 17. USER / ACCOUNT / CUSTOMER / PROFILE: Clean Studio Sandbox Identity Pedestal
+  if (n.includes("user") || n.includes("account") || n.includes("customer") || n.includes("profile") || n.includes("member")) {
+    const by = cy - 2;
+    return (
+      <g>
+        <path
+          d={`M ${cx - 26},${by - 10} L ${cx - 26},${by} A 26 11 0 0 0 ${cx + 26},${by} L ${cx + 26},${by - 10} Z`}
+          fill={fill}
+          stroke={s}
+          strokeWidth="1.5"
+        />
+        <ellipse cx={cx} cy={by - 10} rx="26" ry="11" fill={top} stroke={s} strokeWidth="1.5" />
+        <circle cx={cx} cy={by - 25} r="6.5" fill={top} stroke={a} strokeWidth="1.6" />
+        <path
+          d={`M ${cx - 13},${by - 10} C ${cx - 13},${by - 18} ${cx + 13},${by - 18} ${cx + 13},${by - 10}`}
+          fill={fill}
+          stroke={a}
+          strokeWidth="1.6"
+          strokeLinecap="round"
+        />
+      </g>
+    );
+  }
+
+  // 18. NOTIFICATION / MAIL / ALERT / SMS: Clean Studio Sandbox Broadcast Tower
+  if (n.includes("notif") || n.includes("mail") || n.includes("alert") || n.includes("sms") || n.includes("push")) {
+    const by = cy - 1;
+    return (
+      <g>
+        {renderIsoBox(cx, by, 26, 12, 9, s, fill, 1.4, top)}
+        <line x1={cx} y1={by - 10} x2={cx} y2={by - 27} stroke={a} strokeWidth="2.2" strokeLinecap="round" />
+        <circle cx={cx} cy={by - 28} r="3.2" fill={top} stroke={a} strokeWidth="1.5" />
+        <path d={`M ${cx - 9},${by - 24} A 10 10 0 0 1 ${cx - 9},${by - 32}`} fill="none" stroke={a} strokeWidth="1.4" strokeLinecap="round" />
+        <path d={`M ${cx + 9},${by - 24} A 10 10 0 0 0 ${cx + 9},${by - 32}`} fill="none" stroke={a} strokeWidth="1.4" strokeLinecap="round" />
+      </g>
+    );
+  }
+
+  // 19. SHIPPING / DELIVERY / LOGISTICS: Clean Studio Sandbox Dispatch Hub
+  if (n.includes("ship") || n.includes("deliver") || n.includes("logistic") || n.includes("dispatch")) {
+    const by = cy - 1;
+    return (
+      <g>
+        {renderIsoBox(cx, by, 34, 15.5, 8, s, fill, 1.4, top)}
+        {renderIsoBox(cx - 10, by - 8, 11, 5.5, 9, s, fill, 1.4, top)}
+        <path
+          d={`M ${cx + 2},${by - 9} L ${cx + 11},${by - 6} L ${cx + 5},${by - 2} M ${cx + 10},${by - 12} L ${cx + 19},${by - 9} L ${cx + 13},${by - 5}`}
+          fill="none"
+          stroke={a}
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </g>
+    );
+  }
+
+  // 20. GENERIC MICROSERVICE: Clean Studio Sandbox Container Unit + Domain Emblem
+  const cyBase = cy - 1;
+  const h = isStopped ? 14 : 16;
   const roofY = cyBase - h;
   return (
     <g>
-      {renderIsoBox(cx, cyBase, 34, 17, h, s, fill, 1.5, top)}
+      {renderIsoBox(cx, cyBase, 33, 16, h, s, fill, 1.5, top)}
       {/* Container Status LEDs on Front-Left Wall */}
-      <circle cx={cx - 20} cy={cyBase - h * 0.45} r="1.7" fill={a} />
-      <circle cx={cx - 13} cy={cyBase - h * 0.45 + 3.2} r="1.7" fill="#10b981" />
+      <circle cx={cx - 19} cy={cyBase - h * 0.45} r="1.5" fill={a} />
+      <circle cx={cx - 12} cy={cyBase - h * 0.45 + 3} r="1.5" fill={isStopped ? "#f43f5e" : "#10b981"} />
       {/* Domain Emblem on Container Roof */}
-      {renderNodeFunctionGlyph(name, archetype, cx, roofY, "#ffffff")}
+      {renderNodeFunctionGlyph(name, archetype, cx, roofY, a)}
     </g>
   );
 }
@@ -971,7 +1116,7 @@ export function StudioObservability({
   const [view, setView] = useState<"2D" | "3D">(defaultView);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("LAYERED");
   const [snapToGrid, setSnapToGrid] = useState(true);
-  const [zoom, setZoom] = useState(1);
+  const [zoom, setZoom] = useState(() => (canvasOnly && defaultView === "3D" ? 1.28 : 1));
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [camera, setCamera] = useState({ yaw: 0.78, pitch: 0.52 });
   const [customOffsets, setCustomOffsets] = useState<Record<string, { x: number; y: number }>>({});
@@ -985,7 +1130,7 @@ export function StudioObservability({
   const [selectedWire, setSelectedWire] = useState<{ from: string; to: string } | null>(null);
   const [exportError, setExportError] = useState(false);
 
-  const cameraDrag = useRef<{ x: number; y: number; mode: "ROTATE" | "PAN" } | null>(null);
+  const cameraDrag = useRef<{ x: number; y: number; mode: "ROTATE" | "PAN"; moved: boolean } | null>(null);
   const nodeDrag = useRef<{
     service: string;
     startX: number;
@@ -1066,19 +1211,46 @@ export function StudioObservability({
   );
   const affected = new Set(impact?.upstreamImpacted.map((item) => item.elementId) ?? []);
 
-  const staticEdges = useMemo(
-    () =>
-      configuredEdges ?? reference.data?.edges.flatMap((edge) => {
-        const from = Object.entries(data.serviceMappings ?? {}).find(
-          ([, id]) => id === edge.from,
-        )?.[0];
-        const to = Object.entries(data.serviceMappings ?? {}).find(([, id]) => id === edge.to)?.[0];
-        return from && to
-          ? [{ from, to, id: edge.id, protocol: edge.protocol ?? "HTTP" }]
-          : [];
-      }) ?? [],
-    [reference.data, data.serviceMappings, configuredEdges],
-  );
+  const staticEdges = useMemo(() => {
+    if (configuredEdges) return configuredEdges;
+    const model = reference.data;
+    if (!model?.edges?.length) return [];
+    const serviceByElementId = new Map<string, string>();
+    for (const [svc, id] of Object.entries(data.serviceMappings ?? {})) {
+      if (id) serviceByElementId.set(id, svc);
+    }
+    const serviceByLowerName = new Map(
+      data.services.map((svc) => [svc.toLowerCase(), svc] as const),
+    );
+    const elementsById = new Map(model.elements.map((el) => [el.id, el] as const));
+    const resolveService = (elementId: string): string | undefined => {
+      const direct = serviceByElementId.get(elementId);
+      if (direct) return direct;
+      let cur = elementsById.get(elementId);
+      const visited = new Set<string>();
+      while (cur && !visited.has(cur.id)) {
+        visited.add(cur.id);
+        const mapped = serviceByElementId.get(cur.id);
+        if (mapped) return mapped;
+        const byName = serviceByLowerName.get(cur.name.toLowerCase());
+        if (byName) return byName;
+        cur = cur.parentId ? elementsById.get(cur.parentId) : undefined;
+      }
+      return undefined;
+    };
+    const seenPairs = new Set<string>();
+    const resolved: Array<{ from: string; to: string; id: string; protocol: string }> = [];
+    for (const edge of model.edges) {
+      const from = resolveService(edge.from);
+      const to = resolveService(edge.to);
+      if (!from || !to || from === to) continue;
+      const pairKey = `${from}->${to}`;
+      if (seenPairs.has(pairKey)) continue;
+      seenPairs.add(pairKey);
+      resolved.push({ from, to, id: edge.id, protocol: edge.protocol ?? "HTTP" });
+    }
+    return resolved;
+  }, [reference.data, data.serviceMappings, data.services, configuredEdges]);
 
   // Compute deterministic topological tier for LAYERED layout (invariant under STOP/START/SCALE so nodes never jump)
   const serviceDepth = useMemo(() => {
@@ -1287,12 +1459,13 @@ export function StudioObservability({
     onDisconnect?.(from, to);
   }
 
-  function renderConnectPort(name: string, x: number, y: number) {
+  function renderConnectPort(name: string, x: number, y: number, active = false) {
     if (!onConnect || busy) return null;
+    const stroke = active ? "#7dd3fc" : "#475569";
     return (
       <g
         data-studio-connect-port={name}
-        className="cursor-crosshair opacity-65 hover:opacity-100"
+        className={`cursor-crosshair transition-opacity hover:opacity-100 ${active ? "opacity-95" : "opacity-35"}`}
         onPointerDown={(event) => {
           if (event.button !== 0 || activePointer.current !== null || !svg.current) return;
           event.preventDefault();
@@ -1305,19 +1478,23 @@ export function StudioObservability({
       >
         <title>{t("Drag to connect to another service")}</title>
         <circle cx={x} cy={y} r="10" fill="transparent" />
-        <circle cx={x} cy={y} r="6" fill="#0b1220" stroke="#7dd3fc" strokeWidth="1.4" />
-        <path d={`M ${x - 2.5} ${y} h 5 M ${x} ${y - 2.5} v 5`} stroke="#7dd3fc" strokeWidth="1.3" />
+        <circle cx={x} cy={y} r="6" fill="#0b1220" stroke={stroke} strokeWidth="1.35" />
+        <path d={`M ${x - 2.5} ${y} h 5 M ${x} ${y - 2.5} v 5`} stroke={stroke} strokeWidth="1.25" />
       </g>
     );
   }
 
   function resolveLiveReplicas(serviceName: string): number {
-    const live = telemetry?.services.find((item) => item.service === serviceName);
-    if (live) return live.runningReplicas;
+    // Prefer latest confirmed Docker action over potentially lagging telemetry poll
     const confirmed = [...data.actions]
       .reverse()
       .find((item) => item.service === serviceName && item.status === "CONFIRMED");
-    return confirmed?.result?.replicasAfter ?? 1;
+    if (confirmed?.result?.replicasAfter !== undefined) {
+      return confirmed.result.replicasAfter;
+    }
+    const live = telemetry?.services.find((item) => item.service === serviceName);
+    if (live) return live.runningReplicas;
+    return 1;
   }
 
   function applyPaletteToolToService(tool: DragPaletteItem, targetService: string) {
@@ -1741,6 +1918,7 @@ export function StudioObservability({
               x: event.clientX,
               y: event.clientY,
               mode: view === "3D" && event.button === 2 ? "ROTATE" : "PAN",
+              moved: false,
             };
             event.currentTarget.setPointerCapture(event.pointerId);
           }}
@@ -1749,9 +1927,15 @@ export function StudioObservability({
             const from = linkSource.current;
             const to = from ? nodeAt(event.clientX, event.clientY) : null;
             const moved = nodeDrag.current?.moved;
+            const clickedBlankCanvas =
+              !from &&
+              !nodeDrag.current &&
+              cameraDrag.current?.mode === "PAN" &&
+              !cameraDrag.current.moved;
             endPointerInteraction();
             if (from && to && from !== to) onConnect?.(from, to);
             else if (moved) onSound?.("place");
+            else if (clickedBlankCanvas && selected) onSelect("");
           }}
           onPointerCancel={endPointerInteraction}
           onPointerMove={(event) => {
@@ -1801,6 +1985,7 @@ export function StudioObservability({
               x: event.clientX,
               y: event.clientY,
               mode: cameraDrag.current.mode,
+              moved: cameraDrag.current.moved || Math.abs(dx) > 2 || Math.abs(dy) > 2,
             };
             if (cameraDrag.current.mode === "ROTATE") {
               setCamera((value) => ({
@@ -1976,12 +2161,12 @@ export function StudioObservability({
                   y1={from.y}
                   x2={to.x}
                   y2={to.y}
-                  stroke={targetStopped ? "var(--destructive)" : activeWire?.from === edge.from && activeWire.to === edge.to ? "#7dd3fc" : "currentColor"}
+                  stroke={targetStopped ? "var(--destructive)" : activeWire?.from === edge.from && activeWire.to === edge.to ? "#7dd3fc" : "#64748b"}
                   strokeDasharray={targetStopped ? "6 4" : "5 5"}
-                  strokeWidth={targetStopped ? "2.2" : "1.5"}
-                  opacity={targetStopped ? "0.9" : ".28"}
+                  strokeWidth={targetStopped ? "2.2" : "1.8"}
+                  opacity={targetStopped ? "0.95" : "0.72"}
                 />
-                {renderWireArrow(from, to, getNodeLabel(nodeNames?.[edge.to] ?? edge.to, view), targetStopped ? "var(--destructive)" : "#64748b", false, view === "3D" ? sculptureScale(resolveLiveReplicas(edge.to)) : 1)}
+                {renderWireArrow(from, to, getNodeLabel(nodeNames?.[edge.to] ?? edge.to, view), targetStopped ? "var(--destructive)" : "#94a3b8", false, view === "3D" ? sculptureScale(resolveLiveReplicas(edge.to)) : 1)}
                 {targetStopped && (
                   <g>
                     <rect
@@ -2127,11 +2312,14 @@ export function StudioObservability({
                       <circle cx={qx2} cy={qy2} r="3" fill={edgeColor} opacity="0.65" />
                     </>
                   )}
-                  {!edgeSevered && (span || !onConnect) && (
-                    <circle r="3.3" fill="#38bdf8" opacity="0.8" pointerEvents="none">
-                      <animateMotion dur={`${speedSec}s`} repeatCount="indefinite" path={pathD} />
-                    </circle>
-                  )}
+                  <circle
+                    r={edgeSevered ? "3.6" : "3.8"}
+                    fill={edgeSevered ? "#f43f5e" : "#38bdf8"}
+                    opacity="0.9"
+                    pointerEvents="none"
+                  >
+                    <animateMotion dur={`${speedSec}s`} repeatCount="indefinite" path={pathD} />
+                  </circle>
                 </g>
               );
             })}
@@ -2153,14 +2341,17 @@ export function StudioObservability({
               const isDropTarget = dropTargetNode === name ||
                 (linkPreview?.target === name && linkPreview.from !== name);
               const isStopped = live !== undefined && live.runningReplicas === 0;
+              const selectedIsStopped = selected ? resolveLiveReplicas(selected) === 0 : false;
+              const isImpactedByOutage = isAffected && selectedIsStopped && !isStopped;
               const scale = sculptureScale(live?.runningReplicas ?? 1);
               const nodeName = nodeNames?.[name] ?? name;
               const { text: displayName, width: labelWidth, y: labelY, height: labelHeight } = getNodeLabel(nodeName, view);
 
 
+              // Never paint healthy running callers red just because a downstream node is selected
               const baseTheme = getArchetypeTheme(
                 archetype,
-                isStopped || isAffected,
+                isStopped,
                 isSelected,
                 isDropTarget,
                 name,
@@ -2168,7 +2359,7 @@ export function StudioObservability({
 
               const status = nodeStatus?.[name];
               const isCritical = isStopped || status === "Overloaded";
-              const isWarning = status === "Bottleneck" || status === "Rate limited";
+              const isWarning = isImpactedByOutage || status === "Bottleneck" || status === "Rate limited";
               const healthColor = isCritical ? "#f43f5e" : isWarning ? "#fbbf24" : undefined;
               const healthTint = isCritical ? "#fda4af" : isWarning ? "#fde68a" : undefined;
               const healthFill = isCritical ? "#881337" : isWarning ? "#422a0a" : undefined;
@@ -2240,9 +2431,19 @@ export function StudioObservability({
                     }}
                     className="cursor-grab outline-none focus:outline-none active:cursor-grabbing"
                   >
-                    {/* Pure 3D Software Engineering Sculpture (no base tray underneath) */}
+                    {/* Pure 3D Software Engineering Sculpture (glows ONLY when selected/clicked or crashed) */}
                     <title>{nodeName}</title>
-                    <g data-studio-sculpture transform={`translate(${point.x} ${point.y + 8}) scale(${scale}) translate(${-point.x} ${-point.y - 8})`}>
+                    <g
+                      data-studio-sculpture
+                      transform={`translate(${point.x} ${point.y + 8}) scale(${scale}) translate(${-point.x} ${-point.y - 8})`}
+                      style={
+                        isSelected || isDropTarget
+                          ? { filter: "drop-shadow(0 0 8px rgba(56, 189, 248, 0.5))" }
+                          : isStopped
+                            ? { filter: "drop-shadow(0 0 6px rgba(244, 63, 94, 0.45))" }
+                            : undefined
+                      }
+                    >
                       {render3DSeNodeSculpture(name, archetype, point.x, point.y, isStopped, theme)}
                     </g>
 
@@ -2256,9 +2457,14 @@ export function StudioObservability({
                       rx="12"
                       fill="#0b111e"
                       fillOpacity="0.96"
-                      stroke={healthColor ?? (isSelected ? "#38bdf8" : "#334155")}
-                      strokeOpacity={isSelected || isStopped ? "0.95" : "0.85"}
-                      strokeWidth={isSelected || isStopped ? 1.6 : 1.1}
+                      stroke={healthColor ?? (isSelected ? "#38bdf8" : "#263348")}
+                      strokeOpacity={isSelected || isStopped ? "1" : "0.85"}
+                      strokeWidth={isSelected || isStopped ? 1.8 : 1}
+                      style={
+                        isSelected && !healthColor
+                          ? { filter: "drop-shadow(0 0 6px rgba(56, 189, 248, 0.35))" }
+                          : undefined
+                      }
                     />
                     {/* Left Functional Component Icon Badge inside the Pill */}
                     <rect
@@ -2267,20 +2473,20 @@ export function StudioObservability({
                       width="16"
                       height="16"
                       rx="8"
-                      fill={healthFill ?? "#1e293b"}
+                      fill={healthFill ?? (isSelected ? "#0c4a6e" : "#162033")}
                     />
                     {renderNodeFunctionGlyph(
                       name,
                       archetype,
                       point.x - labelWidth / 2 + 12,
                       point.y + 22,
-                      isStopped ? "#fda4af" : theme.accent,
+                      isStopped ? "#fda4af" : isSelected ? "#38bdf8" : "#94a3b8",
                     )}
                     <text
                       x={point.x - 4}
                       y={point.y + 25.5}
                       textAnchor="middle"
-                      fill="#f1f5f9"
+                      fill={isSelected ? "#ffffff" : "#cbd5e1"}
                       fontSize="11"
                       fontWeight="600"
                     >
@@ -2293,19 +2499,19 @@ export function StudioObservability({
                       width="25"
                       height="16"
                       rx="8"
-                      fill={healthFill ?? (isSelected ? "#0c4a6e" : "#1e293b")}
+                      fill={healthFill ?? (isSelected ? "#0c4a6e" : "#162033")}
                     />
                     <text
                       x={point.x + labelWidth / 2 - 18.5}
                       y={point.y + 25}
                       textAnchor="middle"
-                      fill={healthTint ?? (isSelected ? "#7dd3fc" : "#cbd5e1")}
+                      fill={healthTint ?? (isSelected ? "#7dd3fc" : "#94a3b8")}
                       fontSize="9.5"
                       fontWeight="600"
                     >
                       {pillBadgeText}
                     </text>
-                    {renderConnectPort(name, point.x + 29 * scale, point.y + 8 - 18 * scale)}
+                    {renderConnectPort(name, point.x + 29 * scale, point.y + 8 - 18 * scale, isSelected || isDropTarget)}
                   </g>
                 );
               }
@@ -2389,7 +2595,7 @@ export function StudioObservability({
                       {isStopped ? "×0" : live ? `×${live.runningReplicas}` : "—"}
                     </text>
                   </g>
-                  {renderConnectPort(name, point.x + 34, point.y - 9)}
+                  {renderConnectPort(name, point.x + 34, point.y - 9, isSelected || isDropTarget)}
                 </g>
               );
             })}
@@ -2758,7 +2964,11 @@ export async function captureStudioImage(svg: SVGSVGElement, wholeDiagram = fals
   }
 }
 
-export function serializeStudioGraph(svg: SVGSVGElement, wholeDiagram = false): string {
+export function serializeStudioGraph(
+  svg: SVGSVGElement,
+  wholeDiagram = false,
+  preserveMotion = false,
+): string {
   const clone = svg.cloneNode(true) as SVGSVGElement;
   const styles = getComputedStyle(svg);
   clone.setAttribute(
@@ -2796,8 +3006,10 @@ export function serializeStudioGraph(svg: SVGSVGElement, wholeDiagram = false): 
           }
         }
       }
-      sceneClone.querySelectorAll("[data-studio-cut-wire], [data-studio-link-preview], [data-studio-connect-port], circle:has(animateMotion)")
-        .forEach((element) => element.remove());
+      const stripSelector = preserveMotion
+        ? "[data-studio-cut-wire], [data-studio-link-preview], [data-studio-connect-port]"
+        : "[data-studio-cut-wire], [data-studio-link-preview], [data-studio-connect-port], circle:has(animateMotion)";
+      sceneClone.querySelectorAll(stripSelector).forEach((element) => element.remove());
     }
   }
   clone.querySelectorAll("[fill],[stroke]").forEach((element) => {
