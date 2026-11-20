@@ -46,6 +46,7 @@ export function useApiQuery<K extends Operation>(
                 return [
                   "NOT_STARTED",
                   "PENDING",
+                  "QUEUED",
                   "READY_FOR_DISPATCH",
                   "APPROVED",
                   "ALLOCATED",
@@ -64,9 +65,10 @@ export function useApiQuery<K extends Operation>(
                 ].includes(String(value.status))
               );
             };
-            if (query.state.error) return false;
-            if (Array.isArray(data)) return data.some(active) ? 1500 : false;
-            return data === undefined || active(data) ? 1500 : false;
+            const anyActive = Array.isArray(data) ? data.some(active) : active(data);
+            // A transient error (redeploy, 502 burst) must not freeze a live session: keep polling with backoff.
+            if (query.state.error) return data !== undefined && anyActive ? 5000 : false;
+            return data === undefined || anyActive ? 1500 : false;
           }
         : false,
   });

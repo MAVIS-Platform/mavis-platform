@@ -422,14 +422,17 @@ export function LiveTerminalConsole({
     });
   }, [spans, serviceFilter, normalizedQuery]);
 
+  // Newest spans first: the Runner sends spans oldest→newest, and only the recent window matters live.
+  const visibleSpans = useMemo(() => filteredSpans.slice(-60).reverse(), [filteredSpans]);
+
   const maxSpanMs = useMemo(() => {
     let peak = 1;
-    for (const span of filteredSpans.slice(0, 60)) {
+    for (const span of visibleSpans) {
       const ns = span.durationNanoseconds ? Number(span.durationNanoseconds) : NaN;
       if (Number.isFinite(ns) && ns > 0) peak = Math.max(peak, ns / 1e6);
     }
     return peak;
-  }, [filteredSpans]);
+  }, [visibleSpans]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -844,18 +847,19 @@ export function LiveTerminalConsole({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/70">
-                {filteredSpans.slice(0, 60).map((span) => {
+                {visibleSpans.map((span) => {
                   const ns = span.durationNanoseconds ? Number(span.durationNanoseconds) : NaN;
                   const ms = Number.isFinite(ns) && ns >= 0 ? ns / 1e6 : null;
+                  const reportedStatus = span.spanStatus?.toUpperCase();
                   const derivedStatus =
-                    span.spanStatus && span.spanStatus !== "UNSET"
-                      ? span.spanStatus
+                    reportedStatus && reportedStatus !== "UNSET"
+                      ? reportedStatus
                       : typeof span.httpStatusCode === "number"
                         ? span.httpStatusCode >= 400
                           ? "ERROR"
                           : "OK"
                         : "OK";
-                  const isErr = derivedStatus.toUpperCase() === "ERROR";
+                  const isErr = derivedStatus === "ERROR";
                   const color = serviceColorFor(span.runtimeService, serviceList);
                   const httpTone =
                     typeof span.httpStatusCode !== "number"
@@ -867,7 +871,7 @@ export function LiveTerminalConsole({
                           : "text-emerald-300";
                   const barPct = ms !== null ? Math.min(100, Math.max(4, (ms / maxSpanMs) * 100)) : 0;
                   return (
-                    <tr key={span.spanId} className="hover:bg-slate-900/60">
+                    <tr key={`${span.traceId}:${span.spanId}`} className="hover:bg-slate-900/60">
                       <td className="px-2.5 py-1 text-slate-500">{span.traceId.slice(0, 8)}</td>
                       <td className={`px-2.5 py-1 font-semibold ${color.text}`}>
                         {span.runtimeService}

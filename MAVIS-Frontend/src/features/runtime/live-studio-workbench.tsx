@@ -343,7 +343,9 @@ export function LiveStudioWorkbench({
   const isTerminalAuthorSession =
     Boolean(authoring) &&
     Boolean(liveData) &&
-    (liveData!.executionStatus === "CANCELLED" || liveData!.executionStatus === "FAILED");
+    ["CANCELLED", "FAILED", "TIMED_OUT", "TIMEDOUT", "TIMEOUT"].includes(
+      liveData!.executionStatus.toUpperCase(),
+    );
   const isPreviewMode =
     !activeSessionId ||
     !liveData ||
@@ -949,10 +951,13 @@ export function LiveStudioWorkbench({
   const isBooting = Boolean(
     starting || BOOTING_STATUSES.has(data.executionStatus.toUpperCase()),
   );
+  const failedStatuses = ["FAILED", "TIMED_OUT", "TIMEDOUT", "TIMEOUT"];
   const lastSessionFailed =
-    data.executionStatus === "FAILED" ||
-    liveData?.executionStatus === "FAILED" ||
-    activeSessionMeta?.executionStatus?.toUpperCase() === "FAILED";
+    failedStatuses.includes(data.executionStatus.toUpperCase()) ||
+    failedStatuses.includes(liveData?.executionStatus?.toUpperCase() ?? "") ||
+    failedStatuses.includes(activeSessionMeta?.executionStatus?.toUpperCase() ?? "");
+  const isCancelling = data.executionStatus.toUpperCase() === "CANCELLING";
+  const isTimedOut = ["TIMED_OUT", "TIMEDOUT", "TIMEOUT"].includes(data.executionStatus.toUpperCase());
 
   const failedSessionDetail = useApiQuery(
     "runtimeReadSession",
@@ -1103,7 +1108,7 @@ export function LiveStudioWorkbench({
   const statusTone =
     data.executionStatus === "RUNNING"
       ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
-      : isQueued
+      : isQueued || isCancelling
         ? "border-amber-500/40 bg-amber-500/15 text-amber-200"
         : isBooting
           ? "border-sky-500/40 bg-sky-500/15 text-sky-300"
@@ -1120,17 +1125,21 @@ export function LiveStudioWorkbench({
         : "LIVE"
       : isQueued
         ? `QUEUED${data.queuePosition ? ` #${data.queuePosition}` : ""}`
-        : isBooting
-          ? "BOOTING"
-          : data.executionStatus === "COMPLETED"
-            ? "SEALED"
-            : lastSessionFailed
-              ? "FAILED"
-              : isPreviewMode && effectivePreviewTopology
-                ? authoring
-                  ? "LAB SETUP"
-                  : "PREVIEW"
-                : "IDLE";
+        : isCancelling
+          ? "CANCELLING"
+          : isBooting
+            ? "BOOTING"
+            : data.executionStatus === "COMPLETED"
+              ? "SEALED"
+              : lastSessionFailed
+                ? isTimedOut
+                  ? "TIMED OUT"
+                  : "FAILED"
+                : isPreviewMode && effectivePreviewTopology
+                  ? authoring
+                    ? "LAB SETUP"
+                    : "PREVIEW"
+                  : "IDLE";
 
   const showLiveSessionControls = !authoring || !isPreviewMode || isBooting;
 
@@ -1154,6 +1163,7 @@ export function LiveStudioWorkbench({
 
         {(data.executionStatus === "RUNNING" ||
           isBooting ||
+          isCancelling ||
           data.executionStatus === "COMPLETED" ||
           lastSessionFailed) && (
           <span
@@ -1163,7 +1173,7 @@ export function LiveStudioWorkbench({
               className={`size-1.5 rounded-full ${
                 data.executionStatus === "RUNNING"
                   ? "animate-pulse bg-emerald-400"
-                  : isQueued
+                  : isQueued || isCancelling
                     ? "animate-pulse bg-amber-400"
                     : isBooting
                       ? "animate-pulse bg-sky-400"
@@ -1215,7 +1225,7 @@ export function LiveStudioWorkbench({
                   ? "border border-emerald-500/45 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25 disabled:border-sky-500/40 disabled:bg-sky-900/70 disabled:text-sky-200"
                   : "bg-emerald-600 text-white hover:bg-emerald-500 disabled:bg-sky-900/70 disabled:text-sky-200"
               }`}
-              disabled={isBooting}
+              disabled={isBooting || isCancelling || cancel.isPending}
               onClick={onStartSession}
             >
               {isBooting ? (
@@ -1977,7 +1987,7 @@ export function LiveStudioWorkbench({
               );
               const errorSpanCount = serviceSpans.filter(
                 (span) =>
-                  span.spanStatus === "ERROR" ||
+                  span.spanStatus?.toUpperCase() === "ERROR" ||
                   (span.httpStatusCode ?? 0) >= 500 ||
                   span.circuitOpen === true,
               ).length;

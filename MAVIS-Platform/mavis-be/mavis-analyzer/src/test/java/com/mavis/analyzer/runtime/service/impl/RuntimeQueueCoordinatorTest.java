@@ -63,9 +63,7 @@ class RuntimeQueueCoordinatorTest {
                 .executionStatus("QUEUED")
                 .resourceProject("mavisrun-" + "a".repeat(32))
                 .build();
-        when(repository.findByExecutionStatusAndCancelRequestedAtIsNullOrderByCreatedAtAsc("QUEUED"))
-                .thenReturn(List.of(queued));
-        when(repository.findLockedById(oldestId)).thenReturn(Optional.of(queued));
+        when(repository.lockOldestQueued()).thenReturn(Optional.of(queued), Optional.empty());
         when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         var claimed = coordinator.claimNextQueuedForRemoteWorker("worker-eu-1", "runsc");
@@ -74,6 +72,8 @@ class RuntimeQueueCoordinatorTest {
         assertThat(claimed.sessionId()).isEqualTo(oldestId);
         assertThat(queued.getExecutionStatus()).isEqualTo("READY_FOR_DISPATCH");
         verify(repository).save(queued);
+        // A second claimer sees the row as locked/claimed (SKIP LOCKED) and gets nothing — no double claim.
+        assertThat(coordinator.claimNextQueuedForRemoteWorker("worker-eu-2", "runsc").claimed()).isFalse();
     }
 
     @Test
@@ -82,9 +82,7 @@ class RuntimeQueueCoordinatorTest {
         RuntimeSession queued = RuntimeSession.builder().id(firstId).executionStatus("QUEUED").resourceProject("mavisrun-" + "b".repeat(32)).build();
         when(dispatcher.isAutoDispatchEnabled()).thenReturn(true);
         when(repository.countByExecutionStatusIn(RuntimeQueueCoordinator.IN_FLIGHT_STATUSES)).thenReturn(1L, 2L);
-        when(repository.findByExecutionStatusAndCancelRequestedAtIsNullOrderByCreatedAtAsc("QUEUED"))
-                .thenReturn(List.of(queued));
-        when(repository.findLockedById(firstId)).thenReturn(Optional.of(queued));
+        when(repository.lockOldestQueued()).thenReturn(Optional.of(queued));
         when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         int promoted = coordinator.drainQueueIfCapacityAvailable();
@@ -97,6 +95,55 @@ class RuntimeQueueCoordinatorTest {
         ReflectionTestUtils.setField(coordinator, "runnerMode", "REMOTE_WORKER");
         assertThat(coordinator.hasLocalDispatchCapacity()).isFalse();
         assertThat(coordinator.drainQueueIfCapacityAvailable()).isZero();
+    }
+
+    @Test
+    void cancellingSessionsKeepHoldingCapacityUntilTeardown() {
+        assertThat(RuntimeQueueCoordinator.IN_FLIGHT_STATUSES).contains("CANCELLING");
+    }
+
+    @Test
+    void stuckReaperFailsLostRunnerSessionsAndResolvesSimulatedCancellationImmediately() {
+        Instant now = Instant.now();
+        UUID lostId = UUID.randomUUID();
+        UUID simulatedId = UUID.randomUUID();
+        UUID freshId = UUID.randomUUID();
+        RuntimeSession lost = RuntimeSession.builder().id(lostId).executionStatus("RUNNING")
+                .startedAt(OffsetDateTime.ofInstant(now.minusSeconds(900), ZoneOffset.UTC)).build();
+        RuntimeSession fresh = RuntimeSession.builder().id(freshId).executionStatus("RUNNING")
+                .startedAt(OffsetDateTime.ofInstant(now.minusSeconds(60), ZoneOffset.UTC)).build();
+        RuntimeSession simulated = RuntimeSession.builder().id(simulatedId).executionStatus("CANCELLING")
+                .cancelRequestedAt(OffsetDateTime.ofInstant(now.minusSeconds(2), ZoneOffset.UTC))
+                .studioControl(mapper.createObjectNode().put("simulatedSandbox", true)).build();
+        when(repository.findByExecutionStatusOrderByCreatedAtAsc(any())).thenReturn(List.of());
+        when(repository.findByExecutionStatusOrderByCreatedAtAsc("RUNNING")).thenReturn(List.of(lost, fresh));
+        when(repository.findByExecutionStatusOrderByCreatedAtAsc("CANCELLING")).thenReturn(List.of(simulated));
+        when(repository.findLockedById(lostId)).thenReturn(Optional.of(lost));
+        when(repository.findLockedById(simulatedId)).thenReturn(Optional.of(simulated));
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        int reaped = coordinator.reapStuckSessions(now);
+
+        assertThat(reaped).isEqualTo(2);
+        assertThat(lost.getExecutionStatus()).isEqualTo("FAILED");
+        assertThat(lost.getRecoveryResultJson().path("code").asText()).isEqualTo("RUNNER_LOST_RECOVERY_REQUIRED");
+        assertThat(simulated.getExecutionStatus()).isEqualTo("CANCELLED");
+        assertThat(simulated.getCleanupStatus()).isEqualTo("NOT_APPLICABLE");
+        assertThat(fresh.getExecutionStatus()).isEqualTo("RUNNING");
+    }
+
+    @Test
+    void stuckReaperNeverTouchesSessionsTheLocalRunnerIsStillExecuting() {
+        Instant now = Instant.now();
+        UUID busyId = UUID.randomUUID();
+        RuntimeSession busy = RuntimeSession.builder().id(busyId).executionStatus("ALLOCATED")
+                .allocatedAt(OffsetDateTime.ofInstant(now.minusSeconds(3600), ZoneOffset.UTC)).build();
+        when(repository.findByExecutionStatusOrderByCreatedAtAsc(any())).thenReturn(List.of());
+        when(repository.findByExecutionStatusOrderByCreatedAtAsc("ALLOCATED")).thenReturn(List.of(busy));
+        when(dispatcher.isExecuting(busyId)).thenReturn(true);
+
+        assertThat(coordinator.reapStuckSessions(now)).isZero();
+        assertThat(busy.getExecutionStatus()).isEqualTo("ALLOCATED");
     }
 
     @Test

@@ -1066,9 +1066,9 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
             }
         }
 
-        // [CHẶNG 11]: Đặt scenarioStatus = "APPROVED"; xếp hàng QUEUED khi slot Runner đầy hoặc chạy REMOTE_WORKER.
-        boolean shouldQueue = runtimeQueueCoordinator != null
-                && (runtimeQueueCoordinator.isRemoteWorkerMode() || !runtimeQueueCoordinator.hasLocalDispatchCapacity());
+        // [CHẶNG 11]: Đặt scenarioStatus = "APPROVED". Mọi phiên vào hàng đợi QUEUED và chỉ bộ drain (có khoá)
+        // mới được đẩy lên READY_FOR_DISPATCH, để giới hạn slot không bị vượt khi nhiều người bấm Run cùng lúc.
+        boolean shouldQueue = runtimeQueueCoordinator != null && runtimeQueueCoordinator.queueGatesDispatch();
         session.setScenarioStatus("APPROVED");
         session.setExecutionStatus(shouldQueue ? "QUEUED" : "READY_FOR_DISPATCH");
 
@@ -1086,20 +1086,24 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         RuntimeSession updated = runtimeSessionRepository.save(session);
         log.info("Phiên thực nghiệm ID: {} đã chuyển sang APPROVED / {} thành công", sessionId, updated.getExecutionStatus());
 
-        if (!shouldQueue && runtimeQueueCoordinator != null) {
-            runtimeQueueCoordinator.recordDispatched(sessionId);
+        Runnable afterCommitAction = null;
+        if (shouldQueue && !runtimeQueueCoordinator.isRemoteWorkerMode()) {
+            afterCommitAction = runtimeQueueCoordinator::drainQueueIfCapacityAvailable;
+        } else if (!shouldQueue && runtimeRunnerDispatcher != null && runtimeRunnerDispatcher.isAutoDispatchEnabled()) {
+            if (runtimeQueueCoordinator != null) runtimeQueueCoordinator.recordDispatched(sessionId);
+            afterCommitAction = () -> runtimeRunnerDispatcher.dispatchSessionAsync(sessionId);
         }
-
-        if (!shouldQueue && runtimeRunnerDispatcher != null && runtimeRunnerDispatcher.isAutoDispatchEnabled()) {
+        if (afterCommitAction != null) {
+            Runnable action = afterCommitAction;
             if (TransactionSynchronizationManager.isSynchronizationActive()) {
                 TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                     @Override
                     public void afterCommit() {
-                        runtimeRunnerDispatcher.dispatchSessionAsync(sessionId);
+                        action.run();
                     }
                 });
             } else {
-                runtimeRunnerDispatcher.dispatchSessionAsync(sessionId);
+                action.run();
             }
         }
 
@@ -1234,6 +1238,15 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         }
 
         // [CHẶNG 11] Nhánh 2: Stop-while-running (ALLOCATED, RUNNING, CANCELLING)
+        // Simulated sandboxes have no Runner to send a receipt; CANCELLING would hold a slot forever.
+        if (session.getStudioControl() != null && session.getStudioControl().path("simulatedSandbox").asBoolean(false)) {
+            session.setScenarioStatus("CANCELLED");
+            session.setExecutionStatus("CANCELLED");
+            session.setCleanupStatus("NOT_APPLICABLE");
+            session.setCancelRequestedAt(OffsetDateTime.now());
+            session.setCompletedAt(OffsetDateTime.now());
+            return RuntimeSessionResponseDTO.fromEntity(runtimeSessionRepository.save(session));
+        }
         boolean interactiveStudio = session.getScenarioConfig() != null
                 && session.getScenarioConfig().path("interactiveStudio").asBoolean(false);
         boolean remoteWorkerCapable = interactiveStudio

@@ -44,7 +44,8 @@ import java.util.regex.Pattern;
 @Slf4j
 public class RuntimeQueueCoordinator {
 
-    static final Set<String> IN_FLIGHT_STATUSES = Set.of("READY_FOR_DISPATCH", "ALLOCATED", "RUNNING");
+    // CANCELLING still owns containers until teardown finishes, so it keeps holding its slot.
+    static final Set<String> IN_FLIGHT_STATUSES = Set.of("READY_FOR_DISPATCH", "ALLOCATED", "RUNNING", "CANCELLING");
     private static final Set<String> TERMINAL_STATUSES = Set.of("COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT", "TIMEDOUT", "TIMEOUT");
     private static final Pattern MAVISRUN_PROJECT_PATTERN = Pattern.compile("^mavisrun-[0-9a-f]{32}$");
 
@@ -67,6 +68,9 @@ public class RuntimeQueueCoordinator {
 
     @Value("${mavis.runtime.dispatch-stale-seconds:180}")
     private long dispatchStaleSeconds = 180;
+
+    @Value("${mavis.runtime.stuck-session-seconds:600}")
+    private long stuckSessionSeconds = 600;
 
     @Value("${mavis.runtime.low-disk-threshold-mib:2048}")
     private long lowDiskThresholdMiB = 2048;
@@ -186,41 +190,74 @@ public class RuntimeQueueCoordinator {
         String safeWorker = (workerId == null || workerId.isBlank()) ? "remote-worker" : workerId.trim();
         String safeRuntime = (isolationRuntime == null || isolationRuntime.isBlank()) ? "runc" : isolationRuntime.trim();
         WorkerClaimResult result = runInTransaction(() -> {
-            List<RuntimeSession> queued = runtimeSessionRepository
-                    .findByExecutionStatusAndCancelRequestedAtIsNullOrderByCreatedAtAsc("QUEUED");
-            for (RuntimeSession candidate : queued) {
-                RuntimeSession locked = runtimeSessionRepository.findLockedById(candidate.getId()).orElse(null);
-                if (locked == null || !"QUEUED".equalsIgnoreCase(locked.getExecutionStatus())
-                        || locked.getCancelRequestedAt() != null) {
-                    continue;
-                }
-                locked.setExecutionStatus("READY_FOR_DISPATCH");
-                runtimeSessionRepository.save(locked);
-                dispatchTimestamps.put(locked.getId(), Instant.now());
-                log.info("Worker {} ({}) claimed queued runtime session {}", safeWorker, safeRuntime, locked.getId());
-                return WorkerClaimResult.claimed(locked.getId(), locked.getResourceProject());
+            // FOR UPDATE SKIP LOCKED: two claimers can never receive the same row, and no stale cached entity is reused.
+            RuntimeSession locked = runtimeSessionRepository.lockOldestQueued().orElse(null);
+            if (locked == null) {
+                return WorkerClaimResult.empty();
             }
-            return WorkerClaimResult.empty();
+            locked.setExecutionStatus("READY_FOR_DISPATCH");
+            runtimeSessionRepository.save(locked);
+            dispatchTimestamps.put(locked.getId(), Instant.now());
+            log.info("Worker {} ({}) claimed queued runtime session {}", safeWorker, safeRuntime, locked.getId());
+            return WorkerClaimResult.claimed(locked.getId(), locked.getResourceProject());
         });
         return result != null ? result : WorkerClaimResult.empty();
     }
+
+    private final Object drainLock = new Object();
 
     /** Promotes oldest QUEUED sessions to local managed CLI dispatch whenever local slots open up. */
     public int drainQueueIfCapacityAvailable() {
         if (isRemoteWorkerMode() || runtimeRunnerDispatcher == null || !runtimeRunnerDispatcher.isAutoDispatchEnabled()) {
             return 0;
         }
-        int dispatched = 0;
-        int limit = getMaxActiveStudioSessions();
-        while (dispatched < limit && countActiveSessions() < limit) {
-            WorkerClaimResult claimed = claimNextQueuedForRemoteWorker("local-dispatcher", "auto");
-            if (!claimed.claimed() || claimed.sessionId() == null) {
-                break;
+        // Count-then-claim must be atomic or concurrent drains (scheduler, dispatch finally, stop) overshoot the limit.
+        // shortcut: JVM-level lock assumes one backend instance; use pg_advisory_xact_lock before running several.
+        synchronized (drainLock) {
+            int dispatched = 0;
+            int limit = getMaxActiveStudioSessions();
+            while (dispatched < limit && countActiveSessions() < limit) {
+                WorkerClaimResult claimed = claimNextQueuedForRemoteWorker("local-dispatcher", "auto");
+                if (!claimed.claimed() || claimed.sessionId() == null) {
+                    break;
+                }
+                runtimeRunnerDispatcher.dispatchSessionAsync(claimed.sessionId());
+                dispatched++;
             }
-            runtimeRunnerDispatcher.dispatchSessionAsync(claimed.sessionId());
-            dispatched++;
+            return dispatched;
         }
-        return dispatched;
+    }
+
+    /** True when sessions must enter through the queue so only the drain decides who runs. */
+    public boolean queueGatesDispatch() {
+        return isRemoteWorkerMode() || (runtimeRunnerDispatcher != null && runtimeRunnerDispatcher.isAutoDispatchEnabled());
+    }
+
+    @org.springframework.context.event.EventListener(org.springframework.boot.context.event.ApplicationReadyEvent.class)
+    public void recoverDispatchesAfterRestart() {
+        if (isRemoteWorkerMode()) {
+            return;
+        }
+        // In-memory dispatch threads died with the previous process; give those sessions back to the queue.
+        try {
+            int requeued = 0;
+            for (RuntimeSession candidate : runtimeSessionRepository.findByExecutionStatusOrderByCreatedAtAsc("READY_FOR_DISPATCH")) {
+                Boolean moved = runInTransaction(() -> {
+                    RuntimeSession locked = runtimeSessionRepository.findLockedById(candidate.getId()).orElse(null);
+                    if (locked == null || !"READY_FOR_DISPATCH".equalsIgnoreCase(locked.getExecutionStatus())
+                            || locked.getAllocatedAt() != null || locked.getCancelRequestedAt() != null) {
+                        return false;
+                    }
+                    locked.setExecutionStatus("QUEUED");
+                    runtimeSessionRepository.save(locked);
+                    return true;
+                });
+                if (Boolean.TRUE.equals(moved)) requeued++;
+            }
+            if (requeued > 0) log.warn("Re-queued {} READY_FOR_DISPATCH session(s) orphaned by a backend restart", requeued);
+        } catch (Exception e) {
+            log.warn("Startup dispatch recovery failed: {}", e.getMessage());
+        }
     }
 
     @Scheduled(fixedDelayString = "${mavis.runtime.queue-poll-ms:3000}",
@@ -230,10 +267,70 @@ public class RuntimeQueueCoordinator {
         try {
             reapStaleDispatches(now);
             reapAbandonedStudioSessions(now);
+            reapStuckSessions(now);
             drainQueueIfCapacityAvailable();
         } catch (Exception e) {
             log.warn("Runtime queue sweep encountered an error: {}", e.getMessage());
         }
+    }
+
+    /**
+     * Sessions past every legitimate deadline (300s session + teardown + receipt delivery) with no receipt are failed,
+     * so a crashed runner, restarted backend or simulated session can never hold a slot forever.
+     */
+    int reapStuckSessions(Instant now) {
+        int reaped = 0;
+        long stuckAfter = Math.max(120, stuckSessionSeconds);
+        for (String status : List.of("ALLOCATED", "RUNNING", "CANCELLING")) {
+            for (RuntimeSession candidate : runtimeSessionRepository.findByExecutionStatusOrderByCreatedAtAsc(status)) {
+                UUID id = candidate.getId();
+                if (id == null || (runtimeRunnerDispatcher != null && runtimeRunnerDispatcher.isExecuting(id))) {
+                    continue;
+                }
+                boolean simulated = candidate.getStudioControl() != null
+                        && candidate.getStudioControl().path("simulatedSandbox").asBoolean(false);
+                OffsetDateTime since = "CANCELLING".equals(status) ? candidate.getCancelRequestedAt()
+                        : "RUNNING".equals(status) ? candidate.getStartedAt() : candidate.getAllocatedAt();
+                if (since == null) since = candidate.getCreatedAt();
+                if (since == null) continue;
+                // Simulated sandboxes have no runner to send a receipt; resolve their cancellation immediately.
+                long limit = simulated && "CANCELLING".equals(status) ? 0 : stuckAfter;
+                if (Duration.between(since.toInstant(), now).getSeconds() < limit) {
+                    continue;
+                }
+                if (simulated && "RUNNING".equals(status)) {
+                    continue; // Simulated RUNNING ends through the abandoned-tab reaper or Stop.
+                }
+                Boolean marked = runInTransaction(() -> {
+                    RuntimeSession locked = runtimeSessionRepository.findLockedById(id).orElse(null);
+                    if (locked == null || !status.equalsIgnoreCase(locked.getExecutionStatus())
+                            || locked.getRunnerReceiptJson() != null || locked.getCompletedAt() != null) {
+                        return false;
+                    }
+                    boolean cancelling = "CANCELLING".equals(status);
+                    locked.setExecutionStatus(cancelling ? "CANCELLED" : "FAILED");
+                    locked.setCleanupStatus(simulated ? "NOT_APPLICABLE" : "UNCONFIRMED");
+                    locked.setCompletedAt(OffsetDateTime.now());
+                    if (!simulated) {
+                        ObjectNode recovery = objectMapper.createObjectNode();
+                        recovery.put("code", "RUNNER_LOST_RECOVERY_REQUIRED");
+                        String reason = "No Runner receipt arrived for a " + status + " session after " + stuckAfter
+                                + "s; containers are swept by the host watchdog.";
+                        recovery.put("reason", reason);
+                        recovery.put("message", reason);
+                        locked.setRecoveryResultJson(recovery);
+                        writeCancelMarkerBestEffort(locked);
+                    }
+                    runtimeSessionRepository.save(locked);
+                    return true;
+                });
+                if (Boolean.TRUE.equals(marked)) {
+                    reaped++;
+                    log.warn("Reaped stuck {} runtime session {} (simulated={})", status, id, simulated);
+                }
+            }
+        }
+        return reaped;
     }
 
     int reapStaleDispatches(Instant now) {
@@ -246,6 +343,11 @@ public class RuntimeQueueCoordinator {
                 continue;
             }
             activeDispatchIds.add(id);
+            if (runtimeRunnerDispatcher != null && runtimeRunnerDispatcher.isExecuting(id)) {
+                // Still pulling/building images locally: not stale, keep the clock fresh.
+                dispatchTimestamps.put(id, now);
+                continue;
+            }
             Instant dispatchedAt = dispatchTimestamps.computeIfAbsent(id, k -> now);
             if (Duration.between(dispatchedAt, now).getSeconds() < Math.max(30, dispatchStaleSeconds)) {
                 continue;

@@ -270,4 +270,16 @@ class RuntimeStudioServiceTest {
         assertTrue(polled.path("cancelRequested").asBoolean());
         assertTrue(polled.path("finishRequested").asBoolean());
     }
+
+    @Test void runningActionAbandonedByDeadRunnerExpiresToInterruptedButFreshOneStays() {
+        var control = mapper.createObjectNode();
+        var actions = control.putArray("actions");
+        actions.addObject().put("status", "RUNNING").put("requestedAt", java.time.OffsetDateTime.now().minusMinutes(10).toString());
+        actions.addObject().put("status", "RUNNING").put("requestedAt", java.time.OffsetDateTime.now().minusSeconds(20).toString());
+
+        RuntimeStudioService.expireStaleActions(control);
+
+        assertEquals("INTERRUPTED", actions.get(0).path("status").asText());
+        assertEquals("RUNNING", actions.get(1).path("status").asText());
+    }
 }

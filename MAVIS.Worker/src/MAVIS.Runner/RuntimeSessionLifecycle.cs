@@ -50,6 +50,11 @@ public static class RuntimeSessionLifecycle
                 scenario = await backend.ExecuteScenarioAsync(deadline.Token);
             status = "Completed"; // Processing completion is separate from scenario pass/fail.
         }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested && !deadline.IsCancellationRequested)
+        {
+            // A single Docker/HTTP command hit its own timeout; the session deadline did not expire.
+            diagnostics.Add("COMMAND_TIMED_OUT_AT_" + backend.Stage);
+        }
         catch (OperationCanceledException)
         {
             status = ct.IsCancellationRequested ? "Cancelled" : "TimedOut";
@@ -72,14 +77,15 @@ public static class RuntimeSessionLifecycle
             if (backend.ObservedInfrastructureActions.Count > 0)
                 infrastructureActions = backend.ObservedInfrastructureActions.ToArray();
             // Fresh bounded cleanup tokens: an expired/cancelled run must still attempt evidence preservation and teardown.
-            using var drain = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+            // Budgets stay inside the 420s dispatcher wait: 300s session + 30s drain + 45s teardown.
+            using var drain = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             try
             {
                 trace = await backend.PreserveEvidenceAsync(drain.Token);
                 evidence = trace is null ? "Unavailable" : trace.Spans.Count == 0 ? "Empty" : "Available";
             }
             catch (Exception) { evidence = "Failed"; diagnostics.Add("EVIDENCE_PRESERVATION_FAILED"); }
-            using var teardown = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+            using var teardown = new CancellationTokenSource(TimeSpan.FromSeconds(45));
             try { cleanup = await backend.CleanupAsync(teardown.Token) ? "Confirmed" : "Incomplete"; }
             catch (Exception) { diagnostics.Add("CLEANUP_UNCONFIRMED_RECOVERY_REQUIRED"); }
         }

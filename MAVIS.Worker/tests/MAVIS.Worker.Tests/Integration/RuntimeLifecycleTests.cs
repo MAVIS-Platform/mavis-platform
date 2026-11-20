@@ -19,7 +19,8 @@ public sealed class RuntimeLifecycleTests
         public Task PrepareAndStartAsync(CancellationToken ct)
         {
             if (FailStart) throw new InvalidOperationException("SECRET_SENTINEL");
-            if (Cancel) throw new OperationCanceledException();
+            // Faithful to a real hang: block until the session deadline (or caller) cancels the token.
+            if (Cancel) return Task.Delay(Timeout.Infinite, ct);
             return Task.CompletedTask;
         }
         public Task WaitUntilReadyAsync(CancellationToken ct) => Task.CompletedTask;
@@ -104,7 +105,7 @@ public sealed class RuntimeLifecycleTests
     public async Task TimeoutReportsStageAndStillCleansUp()
     {
         var backend = new Backend { Cancel = true };
-        var result = await RuntimeSessionLifecycle.RunAsync(backend, 5);
+        var result = await RuntimeSessionLifecycle.RunAsync(backend, 1);
         Assert.Equal("TimedOut", result.ExecutionStatus);
         Assert.Contains("SESSION_TIMED_OUT_AT_READINESS", result.Diagnostics);
         Assert.Equal("Confirmed", result.CleanupStatus);
@@ -130,6 +131,13 @@ public sealed class RuntimeLifecycleTests
     {
         public bool FailHelperQuery;
         public List<IReadOnlyList<string>> Commands { get; } = [];
+
+        // A hung `compose up` ends only when the session deadline (or caller) cancels the token, like real Docker.
+        private static async Task<DockerCommandResult> HangUntilCancelled(CancellationToken ct)
+        {
+            await Task.Delay(Timeout.Infinite, ct);
+            throw new InvalidOperationException("unreachable");
+        }
         public Task<DockerCommandResult> RunAsync(IReadOnlyList<string> args, string directory, int timeout, CancellationToken ct)
         {
             if (args.Contains("up"))
@@ -221,6 +229,13 @@ public sealed class RuntimeLifecycleTests
         public bool CrashLogsOnStderr { get; init; }
         public List<IReadOnlyList<string>> Commands { get; } = [];
 
+        // A hung `compose up` ends only when the session deadline (or caller) cancels the token, like real Docker.
+        private static async Task<DockerCommandResult> HangUntilCancelled(CancellationToken ct)
+        {
+            await Task.Delay(Timeout.Infinite, ct);
+            throw new InvalidOperationException("unreachable");
+        }
+
         public Task<DockerCommandResult> RunAsync(IReadOnlyList<string> args, string directory, int timeout, CancellationToken ct)
         {
             Commands.Add(args);
@@ -231,7 +246,7 @@ public sealed class RuntimeLifecycleTests
                 return Task.FromResult(MissingLocalImage
                     ? new DockerCommandResult(1, "", "No such image")
                     : new DockerCommandResult(0, args[^1]));
-            if (args.Contains("up") && CancelUp) { BeforeUpCancellation?.Invoke(); throw new OperationCanceledException(); }
+            if (args.Contains("up") && CancelUp) { BeforeUpCancellation?.Invoke(); return HangUntilCancelled(ct); }
             if (args.Contains("up")) return Task.FromResult(new DockerCommandResult(1, "", UpStdErr));
             if (args.Contains("ps") && args.Contains("--format")) return Task.FromResult(new DockerCommandResult(0, PsTable));
             if (args.Contains("logs")) return Task.FromResult(CrashLogsOnStderr
@@ -314,7 +329,7 @@ public sealed class RuntimeLifecycleTests
         try
         {
             var outcome = await RuntimeSessionLifecycle.RunAsync(new DockerComposeSession(definition, root,
-                "receivers: {}", docker, new Dictionary<string, string> { ["PASSWORD"] = "SECRET_DB_PASS" }, studio: studio), 30, cancellation.Token);
+                "receivers: {}", docker, new Dictionary<string, string> { ["PASSWORD"] = "SECRET_DB_PASS" }, studio: studio), 2, cancellation.Token);
             Assert.Equal(cancelled ? "Cancelled" : "TimedOut", outcome.ExecutionStatus);
             if (!cancelled) Assert.Contains("SESSION_TIMED_OUT_AT_DOCKER_UP", outcome.Diagnostics);
             Assert.Equal("Confirmed", outcome.CleanupStatus);

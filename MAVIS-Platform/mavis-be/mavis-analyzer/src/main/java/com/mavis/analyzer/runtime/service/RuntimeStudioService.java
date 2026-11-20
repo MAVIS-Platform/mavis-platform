@@ -74,8 +74,15 @@ public class RuntimeStudioService {
         if (!request.telemetry().isObject() || request.telemetry().toString().length() > 524288)
             throw error(ErrorCode.BAD_REQUEST, "Telemetry exceeds the session budget.");
         ObjectNode control = control(session);
+        String previousObservedAt = control.path("telemetry").path("observedAt").asText("");
         control.set("telemetry", com.mavis.analyzer.runtime.util.SecretRedactor.redactJson(request.telemetry()));
         control.put("telemetryReceivedAt", OffsetDateTime.now().toString());
+        // Keep the last few frame ids: with 3s frames the UI's frame is usually one behind when the user clicks Capture.
+        if (!previousObservedAt.isBlank()) {
+            var recent = control.withArray("recentObservedAt");
+            recent.add(previousObservedAt);
+            while (recent.size() > 3) recent.remove(0);
+        }
         save(session, control);
         return mapper.createObjectNode().put("sessionId", id.toString()).put("resourceProject", request.resourceProject());
     }
@@ -86,9 +93,13 @@ public class RuntimeStudioService {
         access.requireProjectWriteAccess(session.getProject());
         if (queueCoordinator != null) queueCoordinator.recordUiHeartbeat(id);
         ObjectNode control = control(session);
+        expireStaleActions(control);
         if (!control.hasNonNull("telemetry")) throw error(ErrorCode.UNPROCESSABLE_ENTITY, "Wait for observed telemetry before capturing evidence.");
-        if(request.observedAt()!=null && !request.observedAt().equals(control.path("telemetry").path("observedAt").asText()))
-            throw error(ErrorCode.CONFLICT,"Telemetry changed. Capture the refreshed view again.");
+        if (request.observedAt() != null && !request.observedAt().equals(control.path("telemetry").path("observedAt").asText())) {
+            boolean recentFrame = false;
+            for (JsonNode seen : control.withArray("recentObservedAt")) recentFrame |= request.observedAt().equals(seen.asText());
+            if (!recentFrame) throw error(ErrorCode.CONFLICT, "Telemetry changed. Capture the refreshed view again.");
+        }
         for(JsonNode action:control.withArray("actions"))
             if(java.util.Set.of("PENDING","RUNNING").contains(action.path("status").asText()))
                 throw error(ErrorCode.CONFLICT,"Wait for the action result before capturing evidence.");
@@ -159,6 +170,7 @@ public class RuntimeStudioService {
         }
         if (control.path("finishRequested").asBoolean()) throw error(ErrorCode.CONFLICT, "Studio is finishing.");
         if (control.withArray("actions").size() >= 32) throw error(ErrorCode.CONFLICT, "Studio action limit reached.");
+        expireStaleActions(control);
         for (JsonNode action : control.withArray("actions"))
             if ("PENDING".equals(action.path("status").asText()) || "RUNNING".equals(action.path("status").asText()))
                 throw error(ErrorCode.CONFLICT, "Wait for the current action to complete.");
@@ -251,6 +263,7 @@ public class RuntimeStudioService {
         ObjectNode control = control(session);
         if (!control.path("finishRequested").asBoolean()) {
             requireRunning(session);
+            expireStaleActions(control);
             boolean confirmed = false;
             for (JsonNode action : control.withArray("actions")) {
                 if (Set.of("PENDING", "RUNNING").contains(action.path("status").asText()))
@@ -310,7 +323,8 @@ public class RuntimeStudioService {
                         throw error(ErrorCode.CONFLICT, "Action acknowledgement differs from committed result.");
                     return mapper.createObjectNode().put("actionId", request.actionId().toString()).put("status", request.status());
                 }
-                if (!"RUNNING".equals(action.path("status").asText())) throw error(ErrorCode.CONFLICT, "Action has not been dispatched.");
+                // A late ack for an action expired as INTERRUPTED still records the real outcome instead of failing the runner.
+                if (!Set.of("RUNNING", "INTERRUPTED").contains(action.path("status").asText())) throw error(ErrorCode.CONFLICT, "Action has not been dispatched.");
                 if (request.result() != null && request.result().toString().length() > 65536) throw error(ErrorCode.BAD_REQUEST, "Action result exceeds budget.");
                 if ("CONFIRMED".equals(request.status()) && (request.result() == null ||
                     !request.result().path("confirmed").asBoolean() ||
@@ -330,6 +344,23 @@ public class RuntimeStudioService {
 
     private RuntimeSession locked(UUID id) {
         return sessions.findLockedById(id).orElseThrow(() -> error(ErrorCode.NOT_FOUND, "Runtime session not found."));
+    }
+
+    /** Longest legitimate action: compose wait (60s) + readiness (60s) + workload replay (150s), plus margin. */
+    private static final java.time.Duration ACTION_STALE_AFTER = java.time.Duration.ofSeconds(300);
+
+    /** A runner that died mid-action never acks; without this the session's Submit/Capture/Finish stay blocked forever. */
+    static void expireStaleActions(ObjectNode control) {
+        OffsetDateTime cutoff = OffsetDateTime.now().minus(ACTION_STALE_AFTER);
+        for (JsonNode node : control.withArray("actions")) {
+            if (!"RUNNING".equals(node.path("status").asText())) continue;
+            try {
+                if (OffsetDateTime.parse(node.path("requestedAt").asText()).isBefore(cutoff))
+                    ((ObjectNode) node).put("status", "INTERRUPTED");
+            } catch (java.time.format.DateTimeParseException ignored) {
+                // Unparseable legacy timestamp: leave the action as is.
+            }
+        }
     }
     private ObjectNode control(RuntimeSession session) {
         if (session.getScenarioConfig() == null || !session.getScenarioConfig().path("interactiveStudio").asBoolean())

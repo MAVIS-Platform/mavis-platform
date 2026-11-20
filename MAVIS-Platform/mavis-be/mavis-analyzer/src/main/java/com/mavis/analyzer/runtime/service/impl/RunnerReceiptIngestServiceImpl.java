@@ -1403,33 +1403,45 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
         }
     }
 
+    /**
+     * Lexicographic order over a fixed key (trace order, start time, causal depth, index), each missing value sorted last.
+     * Every component is always compared, so the order is transitive even when bounded trace reads drop spans;
+     * the previous "compare only if both present" form could make TimSort throw on receipts with missing spans.
+     */
     private static int compareCausalSpanOrder(RunnerCorrelatedSpanDTO childA,
                                               int idxA,
                                               RunnerCorrelatedSpanDTO childB,
                                               int idxB,
                                               Map<String, RunnerCorrelatedSpanDTO> spanMap,
                                               Map<String, Integer> traceOrderByTraceId) {
-        if (traceOrderByTraceId != null && !traceOrderByTraceId.isEmpty() && childA != null && childB != null) {
-            Integer ordA = childA.getTraceId() != null ? traceOrderByTraceId.get(childA.getTraceId().trim().toLowerCase(Locale.ROOT)) : null;
-            Integer ordB = childB.getTraceId() != null ? traceOrderByTraceId.get(childB.getTraceId().trim().toLowerCase(Locale.ROOT)) : null;
-            if (ordA != null && ordB != null && !ordA.equals(ordB)) {
-                return Integer.compare(ordA, ordB);
-            }
+        int byTrace = compareNullsLast(traceOrderOf(childA, traceOrderByTraceId), traceOrderOf(childB, traceOrderByTraceId), Integer::compare);
+        if (byTrace != 0) {
+            return byTrace;
         }
-        Long startA = effectiveCausalStartNanos(childA, spanMap);
-        Long startB = effectiveCausalStartNanos(childB, spanMap);
-        if (startA != null && startB != null && !startA.equals(startB)) {
-            return Long.compareUnsigned(startA, startB);
+        int byStart = compareNullsLast(effectiveCausalStartNanos(childA, spanMap), effectiveCausalStartNanos(childB, spanMap), Long::compareUnsigned);
+        if (byStart != 0) {
+            return byStart;
         }
-        if (childA != null && childB != null
-                && childA.getTraceId() != null
-                && childA.getTraceId().equalsIgnoreCase(childB.getTraceId())) {
-            int depthCmp = Integer.compare(spanCausalDepth(childA, spanMap), spanCausalDepth(childB, spanMap));
-            if (depthCmp != 0) {
-                return depthCmp;
-            }
+        int byDepth = Integer.compare(childA != null ? spanCausalDepth(childA, spanMap) : Integer.MAX_VALUE,
+                childB != null ? spanCausalDepth(childB, spanMap) : Integer.MAX_VALUE);
+        if (byDepth != 0) {
+            return byDepth;
         }
         return Integer.compare(idxA, idxB);
+    }
+
+    private static Integer traceOrderOf(RunnerCorrelatedSpanDTO span, Map<String, Integer> traceOrderByTraceId) {
+        if (span == null || span.getTraceId() == null || traceOrderByTraceId == null || traceOrderByTraceId.isEmpty()) {
+            return null;
+        }
+        return traceOrderByTraceId.get(span.getTraceId().trim().toLowerCase(Locale.ROOT));
+    }
+
+    private static <T> int compareNullsLast(T a, T b, java.util.Comparator<T> comparator) {
+        if (a == null) {
+            return b == null ? 0 : 1;
+        }
+        return b == null ? -1 : comparator.compare(a, b);
     }
 
     private static Long effectiveCausalStartNanos(RunnerCorrelatedSpanDTO span,

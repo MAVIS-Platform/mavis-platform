@@ -23,6 +23,11 @@ public interface RuntimeSessionRepository extends JpaRepository<RuntimeSession, 
     List<RuntimeSession> findByExecutionStatusIn(java.util.Collection<String> statuses);
     List<RuntimeSession> findByResourceProjectIn(java.util.Collection<String> resourceProjects);
 
+    /** Atomic FIFO claim: concurrent claimers skip rows another transaction already locked (no double claim). */
+    @Query(value = "SELECT * FROM runtime_sessions WHERE execution_status = 'QUEUED' AND cancel_requested_at IS NULL "
+            + "ORDER BY created_at ASC LIMIT 1 FOR UPDATE SKIP LOCKED", nativeQuery = true)
+    Optional<RuntimeSession> lockOldestQueued();
+
     @EntityGraph(attributePaths = {"project", "sourceSnapshot", "triggeredBy"})
     List<RuntimeSession> findByProjectIdOrderByCreatedAtDesc(UUID projectId);
 

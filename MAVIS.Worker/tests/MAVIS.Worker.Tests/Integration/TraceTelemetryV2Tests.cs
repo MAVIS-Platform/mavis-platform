@@ -38,28 +38,59 @@ public sealed class TraceTelemetryV2Tests
     }
 
     [Fact]
-    public void BudgetKeepsNewestFilesAndFlagsTruncation()
+    public void BudgetOrdersByRotationNameNotMtimeAndStopsAtFirstGap()
     {
         var root = Directory.CreateTempSubdirectory("mavis-trace-budget-").FullName;
         try
         {
-            var older = Path.Combine(root, "traces-1.json");
-            var newer = Path.Combine(root, "traces.json");
+            var oldest = Path.Combine(root, "traces-2026-11-20T10-00-00.000.json");
+            var older = Path.Combine(root, "traces-2026-11-20T11-00-00.000.json");
+            var live = Path.Combine(root, "traces.json");
+            File.WriteAllText(oldest, new string('o', 100));
             File.WriteAllText(older, new string('x', 600));
-            File.WriteAllText(newer, new string('y', 600));
-            File.SetLastWriteTimeUtc(older, DateTime.UtcNow.AddMinutes(-5));
-            File.SetLastWriteTimeUtc(newer, DateTime.UtcNow);
+            File.WriteAllText(live, new string('y', 600));
+            // docker cp may give the live file the OLDEST mtime; selection must not depend on it.
+            File.SetLastWriteTimeUtc(live, DateTime.UtcNow.AddHours(-3));
+            File.SetLastWriteTimeUtc(older, DateTime.UtcNow);
+            File.SetLastWriteTimeUtc(oldest, DateTime.UtcNow);
 
-            var selected = TraceFileBudget.Select([older, newer], 1000, out var truncated);
+            var selected = TraceFileBudget.Select([oldest, older, live], 1000, out var truncated);
 
             Assert.True(truncated);
-            Assert.Equal([newer], selected);
+            // Newest (live) kept; "older" does not fit, so the small "oldest" must NOT be added after the gap.
+            Assert.Equal([live], selected);
 
-            var all = TraceFileBudget.Select([older, newer], 5000, out var notTruncated);
+            var all = TraceFileBudget.Select([oldest, older, live], 5000, out var notTruncated);
             Assert.False(notTruncated);
-            Assert.Equal([older, newer], all);
+            Assert.Equal([oldest, older, live], all);
         }
         finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public async Task SingleCommandTimeoutIsNotReportedAsSessionTimeout()
+    {
+        var outcome = await RuntimeSessionLifecycle.RunAsync(new CommandTimeoutBackend(), 30);
+        Assert.Equal("Failed", outcome.ExecutionStatus);
+        Assert.Contains("COMMAND_TIMED_OUT_AT_DOCKER_UP", outcome.Diagnostics);
+        Assert.DoesNotContain(outcome.Diagnostics, d => d.StartsWith("SESSION_TIMED_OUT", StringComparison.Ordinal));
+        Assert.Equal("Confirmed", outcome.CleanupStatus);
+    }
+
+    private sealed class CommandTimeoutBackend : IRuntimeSessionBackend
+    {
+        public string Stage => "DOCKER_UP";
+        public async Task PrepareAndStartAsync(CancellationToken ct)
+        {
+            // Mirrors DockerCommands: a per-command timeout token linked to (but not equal to) the session deadline.
+            using var perCommand = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            perCommand.CancelAfter(TimeSpan.FromMilliseconds(10));
+            await Task.Delay(Timeout.Infinite, perCommand.Token);
+        }
+        public Task WaitUntilReadyAsync(CancellationToken ct) => Task.CompletedTask;
+        public Task<HttpScenarioOutcome> ExecuteScenarioAsync(CancellationToken ct) => throw new InvalidOperationException();
+        public Task<TraceCorrelationResult?> PreserveEvidenceAsync(CancellationToken ct) => Task.FromResult<TraceCorrelationResult?>(null);
+        public Task<bool> CleanupAsync(CancellationToken ct) => Task.FromResult(true);
     }
 
     [Fact]

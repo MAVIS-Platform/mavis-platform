@@ -699,7 +699,13 @@ export const contracts = {
       })),spans:z.array(z.object({
         traceId:z.string(),spanId:z.string(),runtimeService:z.string(),operationName:z.string().nullable().optional(),circuitOpen:z.boolean().optional(),spanStatus:z.string().nullable().optional(),
         httpStatusCode:z.number().nullable().optional(),durationNanoseconds:z.string().nullable().optional(),
-      })),interactions:z.array(z.object({traceId:z.string(),fromService:z.string(),toService:z.string(),parentSpanId:z.string(),childSpanId:z.string()})),
+        parentSpanId:z.string().nullish(),startTimeUnixNano:z.string().nullish(),kind:z.union([z.string(),z.number()]).nullish(),
+        scenarioStepId:z.string().nullish(),httpMethod:z.string().nullish(),route:z.string().nullish(),
+      }).transform((span)=>({
+        ...span,
+        // Real Runner spans carry route/method labels instead of operationName; the simulation sets operationName.
+        operationName:span.operationName ?? (span.route ? `${span.httpMethod ? `${span.httpMethod} ` : ""}${span.route}` : null),
+      }))),interactions:z.array(z.object({traceId:z.string(),fromService:z.string(),toService:z.string(),parentSpanId:z.string(),childSpanId:z.string()})),
       warnings:z.array(z.string()).optional(),
     }).optional(),
     snapshots:z.array(z.object({id:z.string(),sessionId:z.string(),sourceSnapshotId:z.string(),modelVersionId:z.string(),

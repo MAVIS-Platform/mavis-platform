@@ -192,47 +192,65 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             .Append(new("collector", "mavis-collector", "GET", "/", 200)).ToArray();
         var probe = new HttpScenarioDefinition("readiness", steps, Math.Clamp(steps.Length * 3, 5, 30));
         HttpScenarioOutcome? lastResult = null;
-        for (var attempt = 0; attempt < 120; attempt++)
+        try
         {
-            ct.ThrowIfCancellationRequested();
-            HttpScenarioOutcome? result = null;
-            try
+            for (var attempt = 0; attempt < 120; attempt++)
             {
-                result = await RunInsideNetwork(probe, _endpoints, new Dictionary<string, string>(), ct);
-            }
-            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-            {
-                // A probe can time out while Docker is still warming up. The session deadline still applies.
-                if (!await ScenarioContainerCleanup.RemoveAsync(docker, _directory!, ResourceProject, ct))
-                    throw new RuntimeStageException("READINESS_PROBE_CLEANUP_UNCONFIRMED");
-            }
-
-            if (result is not null) lastResult = result;
-            if (result?.Status == "Passed")
-            {
-                if (definition.InteractiveStudio && definition.Profile.StudioTopology is { } topology)
+                ct.ThrowIfCancellationRequested();
+                HttpScenarioOutcome? result = null;
+                try
                 {
-                    var stopped = topology.Blocks.Where(block => block.InitiallyStopped).Select(block => block.Service)
-                        .Concat(topology.Connections.Where(link => link.InitiallyStopped).Select(link => link.ControllerService))
-                        .ToArray();
-                    if (stopped.Length > 0)
-                        await Require(new[] { "stop", "--timeout", "5" }.Concat(stopped).ToArray(), ct);
+                    result = await RunInsideNetwork(probe, _endpoints, new Dictionary<string, string>(), ct);
                 }
-                await CheckpointAsync("RUNNING", 2, ct);
-                return;
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                {
+                    // A probe can time out while Docker is still warming up. The session deadline still applies.
+                    if (!await ScenarioContainerCleanup.RemoveAsync(docker, _directory!, ResourceProject, ct))
+                        throw new RuntimeStageException("READINESS_PROBE_CLEANUP_UNCONFIRMED");
+                }
+
+                if (result is not null) lastResult = result;
+                if (result?.Status == "Passed")
+                {
+                    if (definition.InteractiveStudio && definition.Profile.StudioTopology is { } topology)
+                    {
+                        var stopped = topology.Blocks.Where(block => block.InitiallyStopped).Select(block => block.Service)
+                            .Concat(topology.Connections.Where(link => link.InitiallyStopped).Select(link => link.ControllerService))
+                            .ToArray();
+                        if (stopped.Length > 0)
+                            await Require(new[] { "stop", "--timeout", "5" }.Concat(stopped).ToArray(), ct);
+                    }
+                    await CheckpointAsync("RUNNING", 2, ct);
+                    return;
+                }
+                await Task.Delay(1000, ct);
             }
-            await Task.Delay(1000, ct);
         }
-        if (lastResult?.Steps is not null)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            foreach (var failed in lastResult.Steps.Where(step => step.Status != "Passed"))
-            {
-                var suffix = failed.StatusCode is int statusCode ? "HTTP_" + statusCode : "UNREACHABLE";
-                RecordDiagnostic(DiagnosticCode("READINESS_FAILED", failed.StepId, suffix));
-            }
+            // The session deadline usually ends readiness; still record which probe failed and why, then rethrow.
+            RecordReadinessFailures(lastResult);
+            using var diagnostics = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            await CaptureFailureDiagnosticsAsync(_composeServices.Count > 0 ? _composeServices : definition.Profile.Applications.Keys, diagnostics.Token);
+            throw;
         }
+        RecordReadinessFailures(lastResult);
         await CaptureFailureDiagnosticsAsync(_composeServices.Count > 0 ? _composeServices : definition.Profile.Applications.Keys, ct);
         throw new RuntimeStageException("READINESS_NOT_CONFIRMED");
+    }
+
+    private void RecordReadinessFailures(HttpScenarioOutcome? lastResult)
+    {
+        if (lastResult?.Steps is null)
+        {
+            RecordDiagnostic("READINESS_NO_PROBE_RESULT");
+            return;
+        }
+        foreach (var failed in lastResult.Steps.Where(step => step.Status != "Passed"))
+        {
+            var suffix = failed.StatusCode is int statusCode ? "HTTP_" + statusCode : "UNREACHABLE";
+            RecordDiagnostic(DiagnosticCode("READINESS_FAILED", failed.StepId, suffix));
+        }
     }
 
     public async Task<HttpScenarioOutcome> ExecuteScenarioAsync(CancellationToken ct)
@@ -297,7 +315,8 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
                         await ExecuteActionsAsync([new(item.Action, item.Service, item.Replicas)], ct);
                         result = _observedActions.Last();
                         status = result.Confirmed ? "CONFIRMED" : "FAILED";
-                    } catch (RuntimeStageException) {
+                    } catch (Exception) when (!ct.IsCancellationRequested) {
+                        // Any single action failure (command timeout, bad probe output) is acknowledged, not fatal to the session.
                         result = _observedActions.Count > resultCount ? _observedActions.Last() : null;
                     }
                     await studio.AcknowledgeStudioActionAsync(definition.SessionId, ResourceProject, item.ActionId, status, result, ct);
@@ -374,8 +393,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
                 if (samples.Length > 0)
                 {
                     metrics["p95LatencyMs"] = samples[(int)Math.Ceiling(samples.Length * 0.95) - 1];
-                    metrics["errorRatePercent"] = 100d * workload.Steps.Count(step =>
-                        step.StatusCode is null or >= 400) / samples.Length;
+                    metrics["errorRatePercent"] = 100d * workload.Steps.Count(step => step.Status != "Passed") / samples.Length;
                 }
             }
             return metrics;
@@ -452,8 +470,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
         while (!ct.IsCancellationRequested)
         {
             try { await PublishStudioTelemetryAsync(ct); failures = 0; }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested) { return; }
-            catch (Exception) when (!ct.IsCancellationRequested) { failures++; } // A missed frame must not fail the session.
+            catch (Exception) { if (ct.IsCancellationRequested) return; failures++; } // A missed frame must never fail the session.
             var delay = failures == 0 ? TelemetryInterval : TimeSpan.FromSeconds(Math.Min(15, 3 * failures));
             try { await _telemetryKick.WaitAsync(delay, ct); }
             catch (OperationCanceledException) { return; }
@@ -464,9 +481,10 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
     {
         if (!_resourcesMayExist || _directory is null) return null;
         await Task.Delay(1500, ct); // Bounded final drain; does not assert complete trace coverage.
-        await Require(new[] { "stop", "--timeout", "5" }.Concat(definition.Profile.Applications.Keys).ToArray(), ct);
+        // Best-effort stops: a slow or failed stop must not skip copying the evidence already on disk.
+        await Command(new[] { "stop", "--timeout", "5" }.Concat(definition.Profile.Applications.Keys).ToArray(), ct);
         await Task.Delay(1500, ct); // Collector stays alive while application shutdown hooks flush spans.
-        await Require(["stop", "--timeout", "5", "mavis-collector"], ct);
+        await Command(["stop", "--timeout", "5", "mavis-collector"], ct);
         return await ReadTraceEvidenceAsync(ct, live: false);
     }
 
@@ -511,10 +529,16 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             services.Add(new { service = state.Service, replicas = state.Total, runningReplicas = state.Running, stats, logs = text[..Math.Min(text.Length, 4000)] });
         }
         var trace=await ReadTraceEvidenceAsync(ct,live:true);
+        // Correlator output is causal (topological) order; the live view needs the most recent spans by start time.
+        var recentSpans = trace?.Spans.OrderBy(s => ulong.TryParse(s.StartTimeUnixNano, out var t) ? t : 0UL).TakeLast(200).ToArray() ?? [];
+        var startBySpan = recentSpans.ToDictionary(s => (s.TraceId, s.SpanId), s => ulong.TryParse(s.StartTimeUnixNano, out var t) ? t : 0UL);
+        var recentInteractions = trace?.Interactions?
+            .OrderBy(i => startBySpan.GetValueOrDefault((i.TraceId, i.ChildSpanId)))
+            .TakeLast(200).ToArray() ?? [];
         await studio!.PublishStudioTelemetryAsync(definition.SessionId,ResourceProject,new {
             observedAt=DateTimeOffset.UtcNow,services,
-            spans=trace?.Spans.TakeLast(200).ToArray() ?? [],
-            interactions=trace?.Interactions?.TakeLast(200).ToArray() ?? [],
+            spans=recentSpans,
+            interactions=recentInteractions,
             warnings=trace?.Warnings ?? [],workload=_scenario
         },ct);
     }
@@ -530,6 +554,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
         if (paths.Length == 0) return null;
         var selected = TraceFileBudget.Select(paths, live ? TraceFileBudget.LiveBudgetBytes : TraceFileBudget.FinalBudgetBytes, out var truncated);
         var resources = new JsonArray();
+        var malformed = false;
         foreach (var path in selected)
         {
             var (text, tailOnly) = live
@@ -539,18 +564,22 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             try { Append(JsonNode.Parse(text)); }
             catch (JsonException)
             {
-                var lines=text.Split('\n',StringSplitOptions.RemoveEmptyEntries);
-                for(var index=0;index<lines.Length;index++) {
+                // NDJSON: a line cut by a killed collector or copy loses only that batch, never the whole evidence.
+                foreach (var line in text.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+                {
                     ct.ThrowIfCancellationRequested();
-                    try {Append(JsonNode.Parse(lines[index]));}
-                    catch(JsonException) when(live && index==lines.Length-1) { }
+                    try { Append(JsonNode.Parse(line)); }
+                    catch (JsonException) { malformed = true; }
                 }
             }
         }
         var payload = new JsonObject { ["resourceSpans"] = resources }.ToJsonString();
         var stepMap = SnapshotTraceSteps();
         var result = TraceCorrelator.Correlate(definition.SessionId, definition.ModelVersionId, payload, definition.ConfirmedServiceMappings, stepMap);
-        return truncated ? result with { Warnings = result.Warnings.Append("TRACE_TRUNCATED_TO_PROFILE_BUDGET").ToArray() } : result;
+        var extra = new List<string>();
+        if (truncated) extra.Add("TRACE_TRUNCATED_TO_PROFILE_BUDGET");
+        if (malformed && !live) extra.Add("TRACE_BATCH_MALFORMED_SKIPPED");
+        return extra.Count > 0 ? result with { Warnings = result.Warnings.Concat(extra).ToArray() } : result;
 
         void Append(JsonNode? node)
         {

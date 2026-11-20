@@ -81,6 +81,9 @@ public class RuntimeRunnerDispatcher {
     @Lazy
     private RuntimeQueueCoordinator runtimeQueueCoordinator;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private org.springframework.transaction.support.TransactionTemplate runtimeTransactions;
+
     public boolean isAutoDispatchEnabled() {
         return autoDispatchEnabled;
     }
@@ -89,6 +92,14 @@ public class RuntimeRunnerDispatcher {
         return runnerServiceKey != null
                 && !runnerServiceKey.isBlank()
                 && !"mavis-local-runner-secret-key".equals(runnerServiceKey);
+    }
+
+    // Runner waits block up to 420s each; never run them on the shared ForkJoin common pool.
+    private static final java.util.concurrent.ExecutorService RUNNER_EXECUTOR =
+            java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
+
+    public boolean isExecuting(UUID sessionId) {
+        return sessionId != null && sessionLocks.containsKey(sessionId);
     }
 
     public CompletableFuture<Void> dispatchSessionAsync(UUID sessionId) {
@@ -107,11 +118,22 @@ public class RuntimeRunnerDispatcher {
                     }
                 }
             }
-        });
+        }, RUNNER_EXECUTOR);
     }
 
     void recordAsyncDispatchFailure(UUID sessionId, Exception e) {
-        runtimeSessionRepository.findById(sessionId).ifPresent(session -> {
+        // Re-read under a row lock: a receipt or Stop may have committed while the runner was executing,
+        // and saving a stale copy would overwrite the receipt/cancellation with FAILED.
+        if (runtimeTransactions != null) {
+            runtimeTransactions.executeWithoutResult(status ->
+                    runtimeSessionRepository.findLockedById(sessionId).ifPresent(session -> markDispatchFailure(session, sessionId, e)));
+        } else {
+            runtimeSessionRepository.findById(sessionId).ifPresent(session -> markDispatchFailure(session, sessionId, e));
+        }
+    }
+
+    private void markDispatchFailure(RuntimeSession session, UUID sessionId, Exception e) {
+        {
             if (isTerminalOrCommitted(session)) {
                 return;
             }
@@ -149,7 +171,7 @@ public class RuntimeRunnerDispatcher {
             }
             session.setRecoveryResultJson(recovery);
             runtimeSessionRepository.save(session);
-        });
+        }
     }
 
     private static boolean isTerminalOrCommitted(RuntimeSession session) {
@@ -646,7 +668,8 @@ public class RuntimeRunnerDispatcher {
             String detail = logTail.isEmpty() ? "" : (" - " + logTail.get(logTail.size() - 1));
             throw new RuntimeException("MAVIS.Runner CLI exited with code " + exitCode + detail);
         }
-        log.info("MAVIS.Runner CLI hoàn tất thành công cho session {}", session.getId());
+        // Exit 0 without a committed receipt would leave the session RUNNING/CANCELLING forever.
+        throw new RuntimeException("MAVIS.Runner CLI exited successfully but no runtime receipt was committed.");
     }
 
     private int runRunnerProcess(RuntimeSession session, List<String> command, Path stateDir) throws Exception {
