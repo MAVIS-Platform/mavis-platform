@@ -213,6 +213,8 @@ public sealed class RuntimeLifecycleTests
     private sealed class CrashInspectDocker : IDockerCommands
     {
         public bool MissingLocalImage { get; init; }
+        public bool CancelUp { get; init; }
+        public Action? BeforeUpCancellation { get; init; }
         public string UpStdErr { get; init; } = "container mavisrun-sandbox-postgres-1 exited (1)";
         public string PsTable { get; init; } = "sandbox-postgres|exited||1\norder-service|created||0\n";
         public string CrashLogs { get; init; } = "Error: password=SECRET_DB_PASS is required";
@@ -229,6 +231,7 @@ public sealed class RuntimeLifecycleTests
                 return Task.FromResult(MissingLocalImage
                     ? new DockerCommandResult(1, "", "No such image")
                     : new DockerCommandResult(0, args[^1]));
+            if (args.Contains("up") && CancelUp) { BeforeUpCancellation?.Invoke(); throw new OperationCanceledException(); }
             if (args.Contains("up")) return Task.FromResult(new DockerCommandResult(1, "", UpStdErr));
             if (args.Contains("ps") && args.Contains("--format")) return Task.FromResult(new DockerCommandResult(0, PsTable));
             if (args.Contains("logs")) return Task.FromResult(CrashLogsOnStderr
@@ -285,6 +288,43 @@ public sealed class RuntimeLifecycleTests
             Assert.DoesNotContain("SECRET_DB_PASS", transport.Payload.ToString());
             Assert.Single(docker.Commands.Where(command => command.Contains("logs")));
             Assert.DoesNotContain(docker.Commands, command => command[0] == "compose" && command.Contains("ps") && command.Contains("--quiet"));
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ComposeStartupTimeoutOrCancelStillPublishesRedactedLogsBeforeCleanup(bool cancelled)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mavis-timeout-logs-" + Guid.NewGuid().ToString("N"));
+        var digest = new string('b', 64);
+        var profile = new RunnerExecutionProfile("collector@sha256:" + digest, "mavis-agents-v1",
+            new Dictionary<string, RuntimeServiceProfile> { ["order-service"] = new("java", 8080) },
+            ApprovedForLocalPoc: true, ScenarioRunnerImage: "sha256:" + digest);
+        var definition = new RuntimeRunDefinition("s", "m", "snapshot", "profile",
+            $"services:\n  order-service:\n    image: demo/service@sha256:{digest}\n", profile,
+            new("s", [new("health", "order-service", "GET", "/health", 200)]),
+            new Dictionary<string, string>(), "config", "scenario", InteractiveStudio: true);
+        using var cancellation = new CancellationTokenSource();
+        var docker = new CrashInspectDocker { CancelUp = true, BeforeUpCancellation = () => { if (cancelled) cancellation.Cancel(); },
+            PsTable = "order-service|running|starting|0\n" };
+        var transport = new DiagnosticTransport();
+        using var studio = new JavaRuntimeClient(new Uri("https://java.invalid"), "fixture-only", transport);
+        try
+        {
+            var outcome = await RuntimeSessionLifecycle.RunAsync(new DockerComposeSession(definition, root,
+                "receivers: {}", docker, new Dictionary<string, string> { ["PASSWORD"] = "SECRET_DB_PASS" }, studio: studio), 30, cancellation.Token);
+            Assert.Equal(cancelled ? "Cancelled" : "TimedOut", outcome.ExecutionStatus);
+            if (!cancelled) Assert.Contains("SESSION_TIMED_OUT_AT_DOCKER_UP", outcome.Diagnostics);
+            Assert.Equal("Confirmed", outcome.CleanupStatus);
+            var service = Assert.Single(transport.Payload.GetProperty("telemetry").GetProperty("services").EnumerateArray());
+            Assert.Equal("order-service", service.GetProperty("service").GetString());
+            Assert.Contains("[REDACTED]", service.GetProperty("logs").GetString());
+            Assert.DoesNotContain("SECRET_DB_PASS", transport.Payload.ToString());
+            var logsAt = docker.Commands.FindIndex(command => command.Contains("logs"));
+            var downAt = docker.Commands.FindIndex(command => command.Contains("down"));
+            Assert.True(logsAt >= 0 && downAt > logsAt);
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
     }

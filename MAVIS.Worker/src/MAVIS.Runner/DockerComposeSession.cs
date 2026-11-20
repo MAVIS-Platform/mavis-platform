@@ -112,9 +112,11 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             await Require(["up", "--detach", "--wait", "--wait-timeout",
                 Math.Clamp(definition.Profile.TimeoutSeconds, 1, 300).ToString(System.Globalization.CultureInfo.InvariantCulture)], ct);
         }
-        catch (RuntimeStageException)
+        catch (Exception error) when (error is RuntimeStageException or OperationCanceledException)
         {
-            await CaptureFailureDiagnosticsAsync(preflight.Services, ct);
+            // Startup cancellation must not discard logs before the lifecycle tears down containers.
+            using var diagnostics = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            await CaptureFailureDiagnosticsAsync(preflight.Services, diagnostics.Token);
             throw;
         }
         Stage = "IMAGE_PROVENANCE";
@@ -565,7 +567,8 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
     private async Task CaptureFailureDiagnosticsAsync(IEnumerable<string> services, CancellationToken ct)
     {
         if (_directory is null || ct.IsCancellationRequested) return;
-        using var diagCts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var diagCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        diagCts.CancelAfter(TimeSpan.FromSeconds(15));
         try
         {
             var ps = await Command(["ps", "--all", "--format", "{{.Service}}|{{.State}}|{{.Health}}|{{.ExitCode}}"], diagCts.Token);
