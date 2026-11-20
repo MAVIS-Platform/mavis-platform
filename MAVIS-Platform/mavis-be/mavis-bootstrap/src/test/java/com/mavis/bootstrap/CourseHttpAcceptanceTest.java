@@ -436,7 +436,7 @@ class CourseHttpAcceptanceTest {
         var incomplete = new java.util.HashMap<>(submission);
         incomplete.remove("runtimeSessionId");
         assertEquals("STEP_4_SIGNED_RUNTIME_RECEIPT", json.readTree(
-                send("POST", "submissions", student, incomplete, 400).body()).path("message").asText());
+                send("POST", "submissions", student, incomplete, 422).body()).path("errorCode").asText());
         incomplete.put("runtimeSessionId", submission.get("runtimeSessionId"));
         incomplete.remove("studentSnapshots");
         send("POST", "submissions", student, incomplete, 400);

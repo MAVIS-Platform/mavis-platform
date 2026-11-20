@@ -24,8 +24,10 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.sql.DriverManager;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
@@ -251,6 +253,63 @@ class CourseAccessPostgresTest {
             assertEquals(ErrorCode.TOO_MANY_REQUESTS, assertThrows(BusinessException.class,
                     () -> courses.redeem("", UUID.randomUUID())).getErrorCode());
             assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM workspace_members WHERE user_id = ?", Integer.class, studentId));
+        });
+    }
+
+    @Test
+    void concurrentStudentsCompeteForOneRemainingSeat() throws Exception {
+        withDatabase((jdbc, tx) -> {
+            UUID teacherId = user(jdbc, "LECTURER", "seat-teacher@example.invalid");
+            UUID firstId = user(jdbc, "STUDENT", "seat-first@example.invalid");
+            UUID secondId = user(jdbc, "STUDENT", "seat-second@example.invalid");
+            UUID workspaceId = id(jdbc, """
+                    INSERT INTO workspaces(name, created_by, course_mode, max_students)
+                    VALUES ('Seat limit fixture', ?, true, 1) RETURNING id
+                    """, teacherId);
+            var actor = new ThreadLocal<User>();
+            var access = mock(AccessPolicyService.class);
+            when(access.requireCurrentActiveUser()).thenAnswer(call -> actor.get());
+            var workspaces = mock(WorkspaceRepository.class);
+            when(workspaces.findLockedById(workspaceId)).thenAnswer(call -> {
+                Integer capacity = jdbc.queryForObject(
+                        "SELECT max_students FROM workspaces WHERE id = ? FOR UPDATE", Integer.class, workspaceId);
+                return Optional.of(Workspace.builder().id(workspaceId).status("ACTIVE")
+                        .courseMode(true).maxStudents(capacity).build());
+            });
+            var courses = transactional(new CourseAccessService(access, workspaces,
+                    mock(AssignmentRepository.class), new CourseLabPolicy(jdbc), jdbc,
+                    mock(LabReferenceArchive.class), mock(com.mavis.common.repository.RuntimeConfigurationRepository.class),
+                    failureRecorder(jdbc, tx)), tx, CourseAccessService.class);
+            actor.set(User.builder().id(teacherId).role(Role.builder().code("LECTURER").build()).build());
+            String passkey = courses.issue(workspaceId, 1).code();
+            actor.remove();
+
+            var ready = new CyclicBarrier(2);
+            java.util.function.Function<UUID, Callable<String>> redeem = student -> () -> {
+                actor.set(User.builder().id(student).role(Role.builder().code("STUDENT").build()).build());
+                try {
+                    ready.await(5, TimeUnit.SECONDS);
+                    courses.redeem(passkey, UUID.randomUUID());
+                    return "ENROLLED";
+                } catch (BusinessException failure) {
+                    assertEquals(ErrorCode.CONFLICT, failure.getErrorCode());
+                    return failure.getStableCode();
+                } finally {
+                    actor.remove();
+                }
+            };
+            try (var pool = Executors.newFixedThreadPool(2)) {
+                var first = pool.submit(redeem.apply(firstId));
+                var second = pool.submit(redeem.apply(secondId));
+                assertEquals(Set.of("ENROLLED", "COURSE_CAPACITY_REACHED"),
+                        Set.of(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS)));
+            }
+            assertEquals(1, jdbc.queryForObject("""
+                    SELECT count(*) FROM workspace_members WHERE workspace_id = ? AND member_role = 'STUDENT'
+                    """, Integer.class, workspaceId));
+            assertEquals(1, jdbc.queryForObject("""
+                    SELECT used_count FROM course_passkeys WHERE workspace_id = ? AND is_active
+                    """, Integer.class, workspaceId));
         });
     }
 
