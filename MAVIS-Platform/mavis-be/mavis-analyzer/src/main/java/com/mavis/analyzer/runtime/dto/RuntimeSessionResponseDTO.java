@@ -350,10 +350,25 @@ public class RuntimeSessionResponseDTO {
             return "Runtime execution failed.";
         }
         String upper = code.toUpperCase(Locale.ROOT);
+        if (upper.startsWith("LOCAL_IMAGE_MISSING_") || upper.contains("IMAGE_NOT_FOUND")) {
+            return "Required Docker image is missing on the Runner host (" + code + "). Click Sync Docker to rebuild.";
+        }
+        if (upper.contains("OUT_OF_MEMORY")) {
+            return "A sandbox container ran out of memory during startup (" + code + ").";
+        }
+        if (upper.startsWith("CONTAINER_EXITED_") || upper.contains("CONTAINER_EXITED")) {
+            return "A sandbox container exited unexpectedly during startup (" + code + "). Inspect container logs below.";
+        }
+        if (upper.startsWith("CONTAINER_UNHEALTHY_") || upper.contains("CONTAINER_UNHEALTHY")) {
+            return "A sandbox container failed its Docker health check (" + code + "). Inspect container logs below.";
+        }
         if (upper.contains("WAITUNTILREADY") || upper.contains("READINESS")) {
             return "Container readiness probe did not become healthy before timeout (" + code + ").";
         }
-        if (upper.contains("PREPAREANDSTART") || upper.contains("COMPOSE")) {
+        if (upper.startsWith("INSTRUMENTATION_")) {
+            return "OpenTelemetry instrumentation bundle is unavailable or mismatched on the Runner host (" + code + ").";
+        }
+        if (upper.contains("PREPAREANDSTART") || upper.contains("COMPOSE") || upper.startsWith("DOCKER_UP_")) {
             return "Sandbox container startup failed (" + code + ").";
         }
         if (upper.contains("RUNNER_UNAVAILABLE")) {

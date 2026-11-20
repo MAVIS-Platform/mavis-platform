@@ -2122,6 +2122,7 @@ public class RuntimePlanningService {
     throw preflightFailed("The source Compose is incompatible with the Runner.");
   }
   if(effectiveCompose!=null&&!effectiveCompose.isBlank()) {
+   effectiveCompose=ensureLocalImagesPresent(id,c.getSourceSnapshotId(),effectiveCompose);
    if(composeValidator!=null) {
     var effective=composeValidator.validate(effectiveCompose,Map.of());
     if(!effective.isCompatible()||(effective.getRunnerIssues()!=null&&!effective.getRunnerIssues().isEmpty()))
@@ -2713,6 +2714,33 @@ public class RuntimePlanningService {
   if(sessionId!=null&&values!=null&&!values.isEmpty()){
    environments.store(sessionId,values);
   }
+ }
+
+ /** Verifies local sha256 images in sandboxCompose exist on Docker; auto-realigns with current snapshot builds or fails fast. */
+ public String ensureLocalImagesPresent(UUID projectId,UUID snapshotId,String composeYaml){
+  if(composeYaml==null||composeYaml.isBlank()||imageBuilder==null||!imageBuilder.isLocalBuildAvailable()){
+   return composeYaml;
+  }
+  List<String> missing=imageBuilder.findMissingLocalImageServices(composeYaml);
+  if(missing.isEmpty()){
+   return composeYaml;
+  }
+  String resolved=composeYaml;
+  if(projectId!=null&&snapshotId!=null&&composeValidator!=null){
+   Map<String,String> rebuilt=imageBuilder.discoverExistingBuiltImages(projectId,snapshotId,missing);
+   if(!rebuilt.isEmpty()){
+    var rem=composeValidator.remediateCompose(composeYaml,rebuilt);
+    if(rem.yaml()!=null&&!rem.yaml().isBlank()&&(rem.unresolvableIssues()==null||rem.unresolvableIssues().isEmpty())){
+     resolved=rem.yaml();
+     missing=imageBuilder.findMissingLocalImageServices(resolved);
+    }
+   }
+  }
+  if(!missing.isEmpty()){
+   throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,"SANDBOX_IMAGE_MISSING",
+     "Docker image for service(s) ["+String.join(", ",missing)+"] is missing on the Runner host. Open Studio Settings -> Sync Docker to rebuild before running.");
+  }
+  return resolved;
  }
 
  private record ExecutionEnvironment(Map<String,String> protectedEnvironment,ObjectNode bindings){}

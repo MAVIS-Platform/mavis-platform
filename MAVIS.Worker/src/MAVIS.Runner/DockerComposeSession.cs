@@ -33,7 +33,10 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
     private readonly Dictionary<string, Uri> _endpoints = new();
     private readonly Dictionary<string, string> _studioTraceSteps = new(StringComparer.Ordinal);
     private readonly List<RuntimeInfrastructureActionResult> _observedActions = [];
+    private readonly List<string> _failureDiagnostics = [];
+    private IReadOnlyList<string> _composeServices = [];
     public IReadOnlyList<RuntimeInfrastructureActionResult> ObservedInfrastructureActions => _observedActions.AsReadOnly();
+    public IReadOnlyList<string> FailureDiagnostics => _failureDiagnostics.AsReadOnly();
 
     public async Task PrepareAndStartAsync(CancellationToken ct)
     {
@@ -44,6 +47,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             throw new ArgumentException("Invalid session provenance or operator state root.");
         var preflight = ComposePreflight.Check(definition.ComposeYaml);
         if (!preflight.Compatible) throw new RuntimeStageException("PREFLIGHT_FAILED");
+        _composeServices = preflight.Services;
         ValidateStudioTopology();
         _ = ComposeOverrideBuilder.Build(preflight, definition.Profile, Path.Combine(Path.GetFullPath(stateRoot), "validate", "collector.yaml"), secrets);
         if (!PinnedRunnerImage(definition.Profile.ScenarioRunnerImage)) throw new ArgumentException("A content-addressed scenario runner image is required.");
@@ -90,9 +94,28 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
                 DeclaredInstrumentationVersions[isJava ? "java" : "dotnet"] = expected;
             }
         }
+        Stage = "IMAGE_AVAILABILITY";
+        if (preflight.PinnedImages is not null)
+        {
+            foreach (var pair in preflight.PinnedImages)
+            {
+                if (!pair.Value.StartsWith("sha256:", StringComparison.Ordinal)) continue;
+                var localImg = await docker.RunAsync(["image", "inspect", "--format", "{{.Id}}", pair.Value], _directory, 10, ct);
+                if (localImg.ExitCode != 0 || !localImg.StandardOutput.Trim().StartsWith("sha256:", StringComparison.Ordinal))
+                    throw new RuntimeStageException(DiagnosticCode("LOCAL_IMAGE_MISSING", pair.Key));
+            }
+        }
         _resourcesMayExist = true; // Even a failed `up` may allocate partial resources.
         Stage = "DOCKER_UP";
-        await Require(["up", "--detach", "--wait", "--wait-timeout", "90"], ct);
+        try
+        {
+            await Require(["up", "--detach", "--wait", "--wait-timeout", "120"], ct);
+        }
+        catch (RuntimeStageException)
+        {
+            await CaptureFailureDiagnosticsAsync(preflight.Services, ct);
+            throw;
+        }
         Stage = "IMAGE_PROVENANCE";
         foreach (var service in preflight.Services.Append("mavis-collector"))
         {
@@ -150,7 +173,8 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
         var steps = definition.Profile.Applications.Select(p => new HttpScenarioStep(p.Key, p.Key, "GET", p.Value.ReadinessPath, 200, AllowClientError: p.Value.AllowClientErrorReadiness))
             .Append(new("collector", "mavis-collector", "GET", "/", 200)).ToArray();
         var probe = new HttpScenarioDefinition("readiness", steps, Math.Clamp(steps.Length * 3, 5, 30));
-        for (var attempt = 0; attempt < 90; attempt++)
+        HttpScenarioOutcome? lastResult = null;
+        for (var attempt = 0; attempt < 120; attempt++)
         {
             ct.ThrowIfCancellationRequested();
             HttpScenarioOutcome? result = null;
@@ -165,6 +189,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
                     throw new RuntimeStageException("READINESS_PROBE_CLEANUP_UNCONFIRMED");
             }
 
+            if (result is not null) lastResult = result;
             if (result?.Status == "Passed")
             {
                 if (definition.InteractiveStudio && definition.Profile.StudioTopology is { } topology)
@@ -180,6 +205,15 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             }
             await Task.Delay(1000, ct);
         }
+        if (lastResult?.Steps is not null)
+        {
+            foreach (var failed in lastResult.Steps.Where(step => step.Status != "Passed"))
+            {
+                var suffix = failed.StatusCode is int statusCode ? "HTTP_" + statusCode : "UNREACHABLE";
+                RecordDiagnostic(DiagnosticCode("READINESS_FAILED", failed.StepId, suffix));
+            }
+        }
+        await CaptureFailureDiagnosticsAsync(_composeServices.Count > 0 ? _composeServices : definition.Profile.Applications.Keys, ct);
         throw new RuntimeStageException("READINESS_NOT_CONFIRMED");
     }
 
@@ -495,7 +529,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
 
     private Task<DockerCommandResult> Command(IReadOnlyList<string> arguments, CancellationToken ct) => docker.RunAsync(
         new[] { "compose", "--project-name", ResourceProject, "--file", Path.Combine(_directory!, "compose.yaml"), "--file", Path.Combine(_directory!, "override.json") }.Concat(arguments).ToArray(),
-        _directory!, arguments[0] == "up" ? 120 : (arguments[0] is "down" or "stop" ? 45 : 15), ct);
+        _directory!, arguments[0] == "up" ? 150 : (arguments[0] is "down" or "stop" ? 45 : 15), ct);
 
     private static bool PinnedRunnerImage(string? image)
     {
@@ -511,10 +545,110 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
         if (result.ExitCode != 0)
         {
             // Classify known infrastructure errors without exporting arbitrary stderr/source values.
-            var category = result.StandardError?.Contains("invalid reference format", StringComparison.OrdinalIgnoreCase) == true ? "INVALID_IMAGE_REFERENCE" :
-                result.StandardError?.Contains("must be a", StringComparison.OrdinalIgnoreCase) == true ? "INVALID_COMPOSE_SCHEMA" : "FAILED";
+            var stderr = result.StandardError ?? "";
+            var category =
+                stderr.Contains("invalid reference format", StringComparison.OrdinalIgnoreCase) ? "INVALID_IMAGE_REFERENCE" :
+                stderr.Contains("must be a", StringComparison.OrdinalIgnoreCase) ? "INVALID_COMPOSE_SCHEMA" :
+                stderr.Contains("pull access denied", StringComparison.OrdinalIgnoreCase) ||
+                stderr.Contains("No such image", StringComparison.OrdinalIgnoreCase) ||
+                stderr.Contains("manifest unknown", StringComparison.OrdinalIgnoreCase) ? "IMAGE_NOT_FOUND" :
+                stderr.Contains("OOMKilled", StringComparison.OrdinalIgnoreCase) ||
+                stderr.Contains("Cannot allocate memory", StringComparison.OrdinalIgnoreCase) ? "OUT_OF_MEMORY" :
+                stderr.Contains("is unhealthy", StringComparison.OrdinalIgnoreCase) ? "CONTAINER_UNHEALTHY" :
+                stderr.Contains("exited (", StringComparison.OrdinalIgnoreCase) ? "CONTAINER_EXITED" :
+                "FAILED";
             throw new RuntimeStageException("DOCKER_" + args[0].ToUpperInvariant() + "_" + category);
         }
         return result;
+    }
+
+    private async Task CaptureFailureDiagnosticsAsync(IEnumerable<string> services, CancellationToken ct)
+    {
+        if (_directory is null || ct.IsCancellationRequested) return;
+        using var diagCts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        try
+        {
+            var ps = await Command(["ps", "--all", "--format", "{{.Service}}|{{.State}}|{{.Health}}|{{.ExitCode}}"], diagCts.Token);
+            if (ps.ExitCode == 0 && !string.IsNullOrWhiteSpace(ps.StandardOutput))
+            {
+                foreach (var rawLine in ps.StandardOutput.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var parts = rawLine.Split('|');
+                    if (parts.Length < 4) continue;
+                    var svc = parts[0].Trim();
+                    var state = parts[1].Trim().ToLowerInvariant();
+                    var health = parts[2].Trim().ToLowerInvariant();
+                    var exitCodeText = parts[3].Trim();
+                    if (string.IsNullOrEmpty(svc)) continue;
+                    if (health == "unhealthy")
+                        RecordDiagnostic(DiagnosticCode("CONTAINER_UNHEALTHY", svc));
+                    else if (state is "exited" or "dead" || (int.TryParse(exitCodeText, out var exitVal) && exitVal != 0))
+                    {
+                        var exitSuffix = int.TryParse(exitCodeText, out var ec) && ec >= 0 ? "CODE_" + ec : "FAILED";
+                        RecordDiagnostic(DiagnosticCode("CONTAINER_EXITED", svc, exitSuffix));
+                    }
+                }
+            }
+            if (!definition.InteractiveStudio || studio is null) return;
+            var diagServices = new List<object>();
+            foreach (var service in services.Distinct(StringComparer.Ordinal).Take(12))
+            {
+                if (string.IsNullOrWhiteSpace(service)) continue;
+                var allPs = await Command(["ps", "--all", "--quiet", service], diagCts.Token);
+                var runPs = await Command(["ps", "--quiet", service], diagCts.Token);
+                var total = allPs.ExitCode == 0 ? allPs.StandardOutput.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).Length : 0;
+                var running = runPs.ExitCode == 0 ? runPs.StandardOutput.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).Length : 0;
+                var logs = await Command(["logs", "--no-color", "--tail", "25", service], diagCts.Token);
+                var text = RedactSecrets(logs.StandardOutput);
+                diagServices.Add(new
+                {
+                    service,
+                    replicas = total,
+                    runningReplicas = running,
+                    stats = Array.Empty<object>(),
+                    logs = text[..Math.Min(text.Length, 4000)]
+                });
+            }
+            if (diagServices.Count > 0)
+            {
+                await studio.PublishStudioTelemetryAsync(definition.SessionId, ResourceProject, new
+                {
+                    observedAt = DateTimeOffset.UtcNow,
+                    services = diagServices,
+                    spans = Array.Empty<object>(),
+                    interactions = Array.Empty<object>(),
+                    warnings = _failureDiagnostics.ToArray(),
+                    workload = _scenario
+                }, diagCts.Token);
+            }
+        }
+        catch
+        {
+            // Failure diagnostic collection must never mask the primary error or delay container cleanup.
+        }
+    }
+
+    private string RedactSecrets(string text)
+    {
+        if (string.IsNullOrEmpty(text) || secrets is null || secrets.Count == 0) return text;
+        foreach (var secret in secrets.Values.Where(v => !string.IsNullOrWhiteSpace(v)).OrderByDescending(v => v.Length))
+            text = text.Replace(secret, "[REDACTED]", StringComparison.Ordinal);
+        return text;
+    }
+
+    private void RecordDiagnostic(string code)
+    {
+        if (_failureDiagnostics.Count >= 12 || string.IsNullOrEmpty(code)) return;
+        if (!_failureDiagnostics.Contains(code, StringComparer.Ordinal)) _failureDiagnostics.Add(code);
+    }
+
+    private static string DiagnosticCode(string prefix, string service, string? suffix = null)
+    {
+        var token = new string(service.ToUpperInvariant().Select(c => char.IsAsciiLetterOrDigit(c) ? c : '_').ToArray()).Trim('_');
+        if (string.IsNullOrEmpty(token)) token = "SERVICE";
+        var tail = string.IsNullOrEmpty(suffix) ? "" : "_" + suffix;
+        var maxToken = Math.Max(1, 80 - prefix.Length - 1 - tail.Length);
+        if (token.Length > maxToken) token = token[..maxToken].TrimEnd('_');
+        return $"{prefix}_{token}{tail}";
     }
 }

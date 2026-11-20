@@ -1688,4 +1688,43 @@ class RuntimePlanningServiceTest {
         assertThat(prepared.protectedEnvironment()).containsValue("ephemeral-pg-pass");
         assertThat(prepared.protectedEnvironment()).doesNotContainValue("drop-me");
     }
+
+    @Test
+    @DisplayName("IMAGE INTEGRITY: Auto-realigns stale local sha256 image with rebuilt tag or fails fast with SANDBOX_IMAGE_MISSING")
+    void ensureLocalImagesPresentAutoRealignsOrFailsFast() {
+        ReflectionTestUtils.setField(planningService, "composeValidator", new ComposePreflightValidator());
+        String staleDigest = "sha256:" + "1".repeat(64);
+        String rebuiltDigest = "sha256:" + "2".repeat(64);
+        String staleCompose = """
+                services:
+                  order-service:
+                    image: %s
+                """.formatted(staleDigest);
+
+        var autoHealBuilder = mock(SandboxImageBuilderService.class);
+        ReflectionTestUtils.setField(planningService, "imageBuilder", autoHealBuilder);
+        when(autoHealBuilder.isLocalBuildAvailable()).thenReturn(true);
+        when(autoHealBuilder.findMissingLocalImageServices(staleCompose)).thenReturn(List.of("order-service"));
+        when(autoHealBuilder.discoverExistingBuiltImages(projectId, snapshotId, List.of("order-service")))
+                .thenReturn(Map.of("order-service", rebuiltDigest));
+        when(autoHealBuilder.findMissingLocalImageServices(org.mockito.ArgumentMatchers.argThat(y -> y != null && y.contains(rebuiltDigest))))
+                .thenReturn(List.of());
+
+        String healed = planningService.ensureLocalImagesPresent(projectId, snapshotId, staleCompose);
+        assertThat(healed).contains(rebuiltDigest);
+
+        var missingBuilder = mock(SandboxImageBuilderService.class);
+        ReflectionTestUtils.setField(planningService, "imageBuilder", missingBuilder);
+        when(missingBuilder.isLocalBuildAvailable()).thenReturn(true);
+        when(missingBuilder.findMissingLocalImageServices(staleCompose)).thenReturn(List.of("order-service"));
+        when(missingBuilder.discoverExistingBuiltImages(projectId, snapshotId, List.of("order-service")))
+                .thenReturn(Map.of());
+
+        assertThatThrownBy(() -> planningService.ensureLocalImagesPresent(projectId, snapshotId, staleCompose))
+                .isInstanceOfSatisfying(com.mavis.common.exception.BusinessException.class, ex -> {
+                    assertThat(ex.getStableCode()).isEqualTo("SANDBOX_IMAGE_MISSING");
+                    assertThat(ex.getErrorCode()).isEqualTo(com.mavis.common.exception.ErrorCode.UNPROCESSABLE_ENTITY);
+                    assertThat(ex.getMessage()).contains("order-service");
+                });
+    }
 }

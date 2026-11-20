@@ -84,6 +84,8 @@ export const publicErrors = {
     "Only application services configured in the Docker runtime profile can be added as Studio blocks.",
   RUNTIME_PROFILE_INVALID:
     "Runtime profile is invalid or exceeds limits. Re-sync Docker configuration and try again.",
+  SANDBOX_IMAGE_MISSING:
+    "One or more local Docker images are missing on the Runner host. Open Studio Settings -> Sync Docker to rebuild before running.",
   LAB_PUBLISH_CONTENT_REQUIRED:
     "Add a Lab description, attach a Theory lesson, or pin a Reference Source before adding to class.",
   WORKSPACE_CODE_EXISTS:
@@ -196,6 +198,8 @@ export function backendErrorCode(
     return "STUDIO_TOPOLOGY_INVALID";
   if (message === "Profile must be a bounded object without literal secrets")
     return "RUNTIME_PROFILE_INVALID";
+  if (message.startsWith("Docker image for service(s) "))
+    return "SANDBOX_IMAGE_MISSING";
   if (
     message ===
     "Add a Lab description, attach a Theory lesson, or pin a published Reference Source before publishing the Lab"

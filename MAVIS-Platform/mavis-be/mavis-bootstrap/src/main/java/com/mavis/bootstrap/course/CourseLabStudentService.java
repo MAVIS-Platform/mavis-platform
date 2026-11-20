@@ -347,6 +347,15 @@ public class CourseLabStudentService {
                 .orElse(null);
         JsonNode refProfile = refConfiguration != null ? refConfiguration.getProfile() : null;
         String preparedCompose = refProfile != null ? refProfile.path("sandboxCompose").asText("") : "";
+        if (!preparedCompose.isBlank() && runtimePlanningService != null) {
+            String verifiedCompose = runtimePlanningService.ensureLocalImagesPresent(
+                    runtimeModel.getProject().getId(),
+                    runtimeSnapshotId,
+                    preparedCompose);
+            if (verifiedCompose != null && !verifiedCompose.isBlank()) {
+                preparedCompose = verifiedCompose;
+            }
+        }
         if (!preparedCompose.isBlank()) {
             profileNode.put("sandboxCompose", preparedCompose);
         }

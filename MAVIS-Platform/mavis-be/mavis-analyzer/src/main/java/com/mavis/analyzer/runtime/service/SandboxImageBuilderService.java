@@ -77,7 +77,7 @@ public class SandboxImageBuilderService {
     }
 
     public Map<String, String> discoverExistingBuiltImages(UUID projectId, UUID snapshotId, java.util.Collection<String> services) {
-        if (projectId == null || services == null || services.isEmpty() || !isLocalBuildAvailable()) {
+        if (projectId == null || snapshotId == null || services == null || services.isEmpty() || !isLocalBuildAvailable()) {
             return Map.of();
         }
         Map<String, String> discovered = new LinkedHashMap<>();
@@ -89,6 +89,32 @@ public class SandboxImageBuilderService {
             }
         }
         return discovered;
+    }
+
+    /** Returns service names whose pinned local sha256 image ID is absent from the Runner Docker daemon. */
+    public List<String> findMissingLocalImageServices(String composeYaml) {
+        if (composeYaml == null || composeYaml.isBlank() || !isLocalBuildAvailable()) {
+            return List.of();
+        }
+        try {
+            Object loaded = new Yaml(new SafeConstructor(new LoaderOptions())).load(composeYaml);
+            if (!(loaded instanceof Map<?, ?> root) || !(root.get("services") instanceof Map<?, ?> services)) {
+                return List.of();
+            }
+            List<String> missing = new ArrayList<>();
+            for (Map.Entry<?, ?> entry : services.entrySet()) {
+                if (!(entry.getValue() instanceof Map<?, ?> cfg)) continue;
+                Object rawImage = cfg.get("image");
+                if (rawImage == null) continue;
+                String img = String.valueOf(rawImage).trim();
+                if (img.startsWith("sha256:") && inspectImageId(img) == null) {
+                    missing.add(String.valueOf(entry.getKey()));
+                }
+            }
+            return missing;
+        } catch (Exception ignored) {
+            return List.of();
+        }
     }
 
     public BuildImagesResult buildSnapshotImages(UUID projectId, UUID snapshotId, Path snapshotStoragePath, List<String> requestedServices) {

@@ -247,4 +247,20 @@ class RuntimeStudioServiceTest {
         assertFalse(state.get("finishRequested").asBoolean());
         assertTrue(state.get("actions").isArray());
     }
+
+    @Test void telemetryCapturesRedactedStartupCrashLogsDuringAllocatedState() {
+        session.setExecutionStatus("ALLOCATED");
+        var telemetry = mapper.createObjectNode().put("observedAt", "2026-11-20T13:00:00Z");
+        telemetry.putArray("services").addObject()
+            .put("service", "sandbox-postgres")
+            .put("replicas", 1)
+            .put("runningReplicas", 0)
+            .put("logs", "Error: POSTGRES_PASSWORD=my_secret_pw missing");
+
+        service.telemetry(id, new RuntimeStudioService.TelemetryRequest(id, session.getResourceProject(), telemetry));
+
+        String stored = session.getStudioControl().path("telemetry").toString();
+        assertTrue(stored.contains("sandbox-postgres"));
+        assertFalse(stored.contains("my_secret_pw"));
+    }
 }

@@ -248,4 +248,34 @@ class SandboxImageBuilderServiceTest {
             assertThat(df).contains("/mavis_build/order-service/target/*.jar");
         });
     }
+
+    @Test
+    void findMissingLocalImageServicesDetectsAbsentSha256ImagesAndIgnoresRegistryPins() {
+        String presentDigest = "sha256:" + "1".repeat(64);
+        String missingDigest = "sha256:" + "2".repeat(64);
+        String registryDigest = "postgres@sha256:" + "3".repeat(64);
+        SandboxImageBuilderService builder = new SandboxImageBuilderService() {
+            @Override
+            public boolean isLocalBuildAvailable() {
+                return true;
+            }
+
+            @Override
+            protected String inspectImageId(String tag) {
+                return presentDigest.equals(tag) ? presentDigest : null;
+            }
+        };
+
+        String compose = """
+                services:
+                  api-gateway:
+                    image: %s
+                  order-service:
+                    image: %s
+                  sandbox-postgres:
+                    image: %s
+                """.formatted(presentDigest, missingDigest, registryDigest);
+
+        assertThat(builder.findMissingLocalImageServices(compose)).containsExactly("order-service");
+    }
 }

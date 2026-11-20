@@ -65,7 +65,7 @@ public class RuntimeStudioService {
         if (!id.equals(request.sessionId()) || !request.resourceProject().equals(session.getResourceProject()))
             throw error(ErrorCode.CONFLICT, "Runner allocation mismatch.");
         if(session.getCancelRequestedAt()!=null || session.getRunnerReceiptJson()!=null ||
-            !"RUNNING".equals(session.getExecutionStatus()))
+            !("RUNNING".equals(session.getExecutionStatus()) || "ALLOCATED".equals(session.getExecutionStatus())))
             return mapper.createObjectNode().put("sessionId",id.toString()).put("resourceProject",request.resourceProject());
         if (!request.telemetry().isObject() || request.telemetry().toString().length() > 524288)
             throw error(ErrorCode.BAD_REQUEST, "Telemetry exceeds the session budget.");
