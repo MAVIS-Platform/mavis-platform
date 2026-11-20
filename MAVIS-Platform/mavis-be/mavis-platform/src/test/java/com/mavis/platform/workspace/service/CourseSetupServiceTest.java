@@ -338,7 +338,7 @@ class CourseSetupServiceTest {
         assertEquals("DRAFT", result.labs().get(0).state());
     }
 
-    @Test void autoConfigureStudioDisablesScaleOnStatefulContainersAndSeedsDefaultExercise() {
+    @Test void autoConfigureKeepsInfrastructureOutsideHttpApplicationsAndSeedsDefaultExercise() {
         var elements = mock(ModelElementRepository.class);
         var relationships = mock(ModelRelationshipRepository.class);
         var exercises = mock(com.mavis.common.repository.LabStudioExerciseRepository.class);
@@ -365,10 +365,17 @@ class CourseSetupServiceTest {
         setup.autoConfigureStudio(workspaceId, assignmentId);
 
         var blocks = lab.getStudioTopologySnapshot().path("blocks");
-        assertEquals(3, blocks.size());
+        assertEquals(1, blocks.size());
         assertTrue(blocks.get(0).path("canScale").asBoolean(), "api-gateway should be scalable");
-        assertFalse(blocks.get(1).path("canScale").asBoolean(), "sandbox-postgres must not be scalable");
-        assertFalse(blocks.get(2).path("canScale").asBoolean(), "sandbox-kafka must not be scalable");
+        verify(jdbc, atLeastOnce()).update(contains("INSERT INTO runtime_configurations"),
+                eq(projectId), eq(snapshotId), eq(modelId), argThat(profile -> {
+                    try {
+                        var apps = mapper.readTree(profile.toString()).path("applications");
+                        return apps.has("api-gateway") && !apps.has("sandbox-postgres") && !apps.has("sandbox-kafka");
+                    } catch (Exception invalid) {
+                        return false;
+                    }
+                }));
         assertNotNull(lab.getStudioExerciseSnapshot(), "default exercise should be auto-seeded");
         assertEquals("/api/gateway/orders",
                 lab.getStudioExerciseSnapshot().path("baselineRequests").get(0).path("path").asText());
