@@ -244,7 +244,8 @@ public class RuntimeStudioService {
                     throw error(ErrorCode.CONFLICT, "Wait for the current action before finishing.");
                 confirmed |= "CONFIRMED".equals(action.path("status").asText());
             }
-            if (!confirmed) throw error(ErrorCode.UNPROCESSABLE_ENTITY, "Perform a confirmed action before saving Studio evidence. Cancel the session to discard it.");
+            if (!confirmed) throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "INCOMPLETE_SCENARIO",
+                    "Perform a confirmed action before saving Studio evidence. Cancel the session to discard it.");
             control.put("finishRequested", true);
             if (control.path("simulatedSandbox").asBoolean(false)) {
                 completeSimulatedSession(session, control);

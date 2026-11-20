@@ -43,7 +43,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             string.IsNullOrWhiteSpace(definition.RunConfigurationVersionId) || string.IsNullOrWhiteSpace(definition.ScenarioVersionId))
             throw new ArgumentException("Invalid session provenance or operator state root.");
         var preflight = ComposePreflight.Check(definition.ComposeYaml);
-        if (!preflight.Compatible) throw new ArgumentException("Compose preflight rejected this execution profile.");
+        if (!preflight.Compatible) throw new RuntimeStageException("PREFLIGHT_FAILED");
         ValidateStudioTopology();
         _ = ComposeOverrideBuilder.Build(preflight, definition.Profile, Path.Combine(Path.GetFullPath(stateRoot), "validate", "collector.yaml"), secrets);
         if (!PinnedRunnerImage(definition.Profile.ScenarioRunnerImage)) throw new ArgumentException("A content-addressed scenario runner image is required.");

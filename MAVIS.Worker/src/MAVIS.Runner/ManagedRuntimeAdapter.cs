@@ -26,7 +26,14 @@ public sealed class ManagedRuntimeAdapter(JavaRuntimeClient java, IDockerCommand
         RuntimeSessionOutcome outcome;
         try { outcome = await RuntimeSessionLifecycle.RunAsync(backend, definition.Profile.TimeoutSeconds, cancellation.Token); }
         finally { stopWatcher.Cancel(); try { await watcher; } catch (OperationCanceledException) { } }
-        if (!backend.AllocationReserved) throw new InvalidOperationException("Managed allocation was not acquired.");
+        if (!backend.AllocationReserved)
+        {
+            var diagnostic = outcome.Diagnostics.FirstOrDefault();
+            if (diagnostic is not null && diagnostic.Length <= 80 &&
+                diagnostic.All(c => c is >= 'A' and <= 'Z' or >= '0' and <= '9' or '_'))
+                throw new RuntimeStageException(diagnostic);
+            throw new RuntimeStageException("ALLOCATION_NOT_ACQUIRED");
+        }
         var receipt = SerializeReceipt(definition, backend, outcome);
         RuntimeReceiptStore.Save(stateRoot, backend.ResourceProject, receipt);
         // Caller cancellation must not erase receipt; use a fresh bounded delivery window after teardown.

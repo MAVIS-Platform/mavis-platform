@@ -132,6 +132,7 @@ public static class RunnerProgram
             Console.WriteLine(JsonSerializer.Serialize(result, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = true }));
             return result.Compatible ? 0 : 1;
         }
+        catch (RuntimeStageException ex) { Console.Error.WriteLine("MAVIS_RUNTIME_DIAGNOSTIC=" + ex.Code); return 2; }
         catch (OperationCanceledException) { Console.Error.WriteLine("Runner operation cancelled or timed out."); return 3; }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or JsonException or InvalidOperationException or KeyNotFoundException)
         {
