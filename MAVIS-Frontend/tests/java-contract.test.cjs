@@ -815,6 +815,26 @@ test("submission preserves missing Snapshot explanation guidance", async t => {
   });
 });
 
+test("Studio precondition errors show approved guidance", async t => {
+  environment(t);
+  const { javaRequest } = require("../src/lib/api/java-client.ts");
+  const { publicErrors } = require("../src/lib/errors/api-error.ts");
+  const cases = [
+    [`analyzer/projects/${project}/runtime/sessions`, "PREFLIGHT_FAILED"],
+    [`analyzer/runtime/sessions/${snapshot}/studio/finish`, "INCOMPLETE_SCENARIO"],
+  ];
+  for (const [path, errorCode] of cases) {
+    t.mock.method(globalThis, "fetch", async () =>
+      Response.json({ code: 422, errorCode, message: "Private Runner diagnostics" }, { status: 422 }),
+    );
+    await assert.rejects(javaRequest(path, undefined, { method: "POST" }), {
+      status: 422,
+      code: errorCode,
+      message: publicErrors[errorCode],
+    });
+  }
+});
+
 test("public auth contract rejects incomplete and nonnumeric OTPs for both purposes",()=>{
  const {contracts}=require("../src/lib/api/contracts.ts");
  for(const otpCode of ["","12345","1234567","12x456","１２３４５６","123 56"])

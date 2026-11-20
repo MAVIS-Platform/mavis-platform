@@ -1,4 +1,6 @@
 export const publicErrors = {
+  PREFLIGHT_FAILED: "The Lab source failed Runner validation. Ask your lecturer to check the Studio configuration.",
+  INCOMPLETE_SCENARIO: "Complete a verified Start, Stop, or Scale action before finishing the Studio session.",
   DELETE_BUSY: "Stop active analysis/runtime work and resolve cleanup before deleting this item.",
   DELETE_PROTECTED:
     "Published reference data, submitted coursework and runtime-linked snapshots must be retained and cannot be deleted here.",
