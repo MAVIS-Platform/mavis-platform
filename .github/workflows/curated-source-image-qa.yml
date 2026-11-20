@@ -1,0 +1,47 @@
+name: Curated Java and CSharp image QA
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - repository: Moc-Huong-Shop
+            commit: 84f8e6c5c3aee575c2464f40d6742fb847f3a3e4
+            service-count: 6
+          - repository: fruit-shop-dotnet-microservices
+            commit: a0476f8c278c556a128c820b763a29e0b767f800
+            service-count: 4
+    env:
+      MAVIS_CURATED_SOURCE_ROOT: ${{ runner.temp }}/mavis-curated-source
+      MAVIS_CURATED_SERVICE_COUNT: ${{ matrix.service-count }}
+      CURATED_REPOSITORY: ${{ matrix.repository }}
+      CURATED_COMMIT: ${{ matrix.commit }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Fetch the pinned curated source outside the application checkout
+        run: |
+          git clone --no-checkout --depth 1 "https://github.com/MAVIS-Platform/$CURATED_REPOSITORY.git" "$MAVIS_CURATED_SOURCE_ROOT"
+          git -C "$MAVIS_CURATED_SOURCE_ROOT" fetch --depth 1 origin "$CURATED_COMMIT"
+          git -C "$MAVIS_CURATED_SOURCE_ROOT" checkout --detach "$CURATED_COMMIT"
+          test "$(git -C "$MAVIS_CURATED_SOURCE_ROOT" rev-parse HEAD)" = "$CURATED_COMMIT"
+          docker info --format '{{.OSType}}'
+      - name: Build actual repository images through the Mavis service
+        working-directory: MAVIS-Platform/mavis-be
+        run: |
+          bash mvnw -B -ntp -pl mavis-analyzer -am \
+            '-Dtest=CuratedRepositoryImageBuildIT' \
+            -Dsurefire.failIfNoSpecifiedTests=false test
