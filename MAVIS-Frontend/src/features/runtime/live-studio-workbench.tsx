@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
+  ArrowRight,
   Camera,
   Check,
   Maximize2,
@@ -80,6 +81,8 @@ export type LiveStudioAuthoringProps = LiveBlockAuthoringControls & {
   saving?: boolean | undefined;
   saved?: boolean | undefined;
   error?: string | undefined;
+  hasVerifiedSession?: boolean | undefined;
+  publishHref?: string | undefined;
   onSaveMission: (patch: {
     instructions: string;
     baselinePath: string;
@@ -176,7 +179,7 @@ export function LiveStudioWorkbench({
   const startHref = projectId
     ? `/sessions?${new URLSearchParams({ project: projectId, studio: "1" })}`
     : "/sessions?studio=1";
-  const activeSessionId = sessionId || sessions[0]?.id || "";
+  const activeSessionId = authoring ? sessionId : sessionId || sessions[0]?.id || "";
   const studio = useStudioSession(activeSessionId);
   const {
     state,
@@ -203,7 +206,15 @@ export function LiveStudioWorkbench({
     downloadSnapshot,
   } = studio;
 
-  const isPreviewMode = !liveData || (liveData.services.length === 0 && !liveData.topology);
+  const isTerminalAuthorSession =
+    Boolean(authoring) &&
+    Boolean(liveData) &&
+    (liveData!.executionStatus === "CANCELLED" || liveData!.executionStatus === "FAILED");
+  const isPreviewMode =
+    !activeSessionId ||
+    !liveData ||
+    isTerminalAuthorSession ||
+    (liveData.services.length === 0 && !liveData.topology);
   const effectivePreviewTopology = useMemo<Studio["topology"] | undefined>(() => {
     if (!previewTopology) return undefined;
     if (!authoring) return previewTopology;
@@ -271,7 +282,9 @@ export function LiveStudioWorkbench({
   const [showLeft, setShowLeft] = useState(true);
   const [showRight, setShowRight] = useState(true);
   const [expanded, setExpanded] = useState(false);
-  const [setupPanel, setSetupPanel] = useState<StudioSetupPanel>("service");
+  const [setupPanel, setSetupPanel] = useState<StudioSetupPanel>(() =>
+    authoring ? "presets" : "service",
+  );
   const [missionDraft, setMissionDraft] = useState(authoring?.instructions ?? "");
   const [baselineDraft, setBaselineDraft] = useState(authoring?.baselinePath ?? "/health");
   const [maxErrDraft, setMaxErrDraft] = useState(authoring?.maxErrorRatePercent ?? "0");
@@ -660,19 +673,85 @@ export function LiveStudioWorkbench({
     authoring.onCaptureCanvasState({ stoppedServices, stoppedControllers, minReplicas });
   }
 
-  const checklist = [
-    ["Step 1: Capture baseline snapshot", (data.snapshots?.length ?? 0) >= 1],
-    ["Step 2: Scale replicas or inject fault", hasConfirmedAction],
-    ["Step 3: Capture post-change snapshot & compare", (data.snapshots?.length ?? 0) >= 2],
-    [
-      "Step 4: Finish Studio & seal HMAC receipt",
-      data.executionStatus === "COMPLETED" || Boolean(data.receiptDigest),
-    ],
-  ] as const;
-
   const isBooting = Boolean(
     starting || BOOTING_STATUSES.has(data.executionStatus.toUpperCase()),
   );
+  const lastSessionFailed = data.executionStatus === "FAILED" || liveData?.executionStatus === "FAILED";
+
+  const presetTargets = useMemo(() => {
+    const isStateful = (name: string) =>
+      /postgres|mysql|mariadb|mongo|redis|kafka|rabbit|zookeeper|elastic|minio|db\b/.test(
+        name.toLowerCase(),
+      );
+    const stateless = blocks.filter(
+      (b) => !isStateful(b.service) && !/gateway|edge|proxy/i.test(b.service),
+    );
+    const primaryScale =
+      stateless[0]?.service ??
+      blocks.find((b) => !isStateful(b.service))?.service ??
+      blocks[0]?.service ??
+      "";
+    const faultTarget =
+      stateless[1]?.service ??
+      stateless[0]?.service ??
+      blocks[blocks.length - 1]?.service ??
+      "";
+    return { primaryScale, faultTarget };
+  }, [blocks]);
+
+  const activePreset = useMemo(() => {
+    if (!authoring) return null;
+    const stopped = authoring.initialStoppedServices;
+    const hasScale = Boolean(authoring.replicaService && Number(authoring.replicaCount) >= 2);
+    if (stopped.length === 0 && !hasScale) return "healthy";
+    if (stopped.length === 1 && !hasScale) return "outage";
+    if (stopped.length === 0 && hasScale) return "scale";
+    if (stopped.length >= 1 && hasScale) return "chaos-scale";
+    return "custom";
+  }, [authoring]);
+
+  const missionDirty = Boolean(
+    authoring &&
+      (missionDraft !== authoring.instructions ||
+        baselineDraft !== authoring.baselinePath ||
+        maxErrDraft !== authoring.maxErrorRatePercent ||
+        replicaSvcDraft !== authoring.replicaService ||
+        replicaCountDraft !== authoring.replicaCount),
+  );
+  const missionReady = Boolean(
+    authoring && authoring.instructions.trim().length > 0 && authoring.baselinePath.trim().length > 0 && !missionDirty,
+  );
+
+  const probeSuggestions = useMemo(() => {
+    const names = blocks.map((b) => b.service.toLowerCase());
+    const hasGateway = names.some((n) => n.includes("gateway") || n.includes("edge"));
+    const hasOrders = names.some((n) => n.includes("order"));
+    const items: string[] = [];
+    if (hasGateway && hasOrders) items.push("/api/gateway/orders");
+    else if (hasOrders) items.push("/api/orders");
+    items.push("/health");
+    return Array.from(new Set(items));
+  }, [blocks]);
+
+  const checklist = authoring
+    ? ([
+        ["1. Pick Scenario / Initial Faults", blocks.length > 0],
+        ["2. Save Student Mission & Pass Target", missionReady],
+        [
+          "3. Optional: Test-Run Live Docker",
+          data.executionStatus === "RUNNING" || Boolean(authoring.hasVerifiedSession),
+        ],
+        ["4. Return & Publish in Step 6", Boolean(authoring.publishHref)],
+      ] as const)
+    : ([
+        ["Step 1: Capture baseline snapshot", (data.snapshots?.length ?? 0) >= 1],
+        ["Step 2: Scale replicas or inject fault", hasConfirmedAction],
+        ["Step 3: Capture post-change snapshot & compare", (data.snapshots?.length ?? 0) >= 2],
+        [
+          "Step 4: Finish Studio & seal HMAC receipt",
+          data.executionStatus === "COMPLETED" || Boolean(data.receiptDigest),
+        ],
+      ] as const);
 
   const statusTone =
     data.executionStatus === "RUNNING"
@@ -697,8 +776,12 @@ export function LiveStudioWorkbench({
           : data.executionStatus === "FAILED"
             ? "FAILED"
             : isPreviewMode && effectivePreviewTopology
-              ? "PREVIEW"
+              ? authoring
+                ? "LAB SETUP"
+                : "PREVIEW"
               : "IDLE";
+
+  const showLiveSessionControls = !authoring || !isPreviewMode || isBooting;
 
   return (
     <div
@@ -729,31 +812,38 @@ export function LiveStudioWorkbench({
           {statusLabel}
         </span>
 
-        <label className="flex min-w-0 items-center gap-1.5 text-[11px] text-slate-400">
-          <select
-            aria-label="Select active or recent runtime session"
-            value={activeSessionId}
-            onChange={(event) => onSelectSession(event.target.value)}
-            className="h-7 w-40 shrink-0 overflow-hidden text-ellipsis whitespace-nowrap rounded border border-slate-700 bg-slate-950 px-2 text-[11px] text-slate-100"
-          >
-            {sessions.length > 0 ? (
-              sessions.map((session) => (
-                <option key={session.id} value={session.id}>
-                  {session.id.slice(0, 8)} · {session.executionStatus ?? "SESSION"}
-                </option>
-              ))
-            ) : (
-              <option value="">No live sessions</option>
-            )}
-          </select>
-        </label>
+        {(!authoring || sessions.length > 0) && (
+          <label className="flex min-w-0 items-center gap-1.5 text-[11px] text-slate-400">
+            <select
+              aria-label="Select active or recent runtime session"
+              value={activeSessionId}
+              onChange={(event) => onSelectSession(event.target.value)}
+              className="h-7 w-40 shrink-0 overflow-hidden text-ellipsis whitespace-nowrap rounded border border-slate-700 bg-slate-950 px-2 text-[11px] text-slate-100"
+            >
+              {authoring && <option value="">Design Preview</option>}
+              {sessions.length > 0 ? (
+                sessions.map((session) => (
+                  <option key={session.id} value={session.id}>
+                    {session.id.slice(0, 8)} · {session.executionStatus ?? "SESSION"}
+                  </option>
+                ))
+              ) : (
+                !authoring && <option value="">No live sessions</option>
+              )}
+            </select>
+          </label>
+        )}
 
         {data.executionStatus !== "RUNNING" &&
           (onStartSession ? (
             <Button
               type="button"
               size="sm"
-              className="h-7 bg-emerald-600 px-2.5 text-[11px] text-white hover:bg-emerald-500 disabled:bg-sky-900/70 disabled:text-sky-200"
+              className={`h-7 px-2.5 text-[11px] ${
+                authoring
+                  ? "border border-emerald-500/45 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25 disabled:border-sky-500/40 disabled:bg-sky-900/70 disabled:text-sky-200"
+                  : "bg-emerald-600 text-white hover:bg-emerald-500 disabled:bg-sky-900/70 disabled:text-sky-200"
+              }`}
               disabled={isBooting}
               onClick={onStartSession}
             >
@@ -763,10 +853,12 @@ export function LiveStudioWorkbench({
                 <Play aria-hidden="true" className="mr-1 size-3" />
               )}
               {isBooting
-                ? `Booting Docker (${data.executionStatus === "NOT_STARTED" ? "STARTING" : data.executionStatus})…`
-                : projectName
-                  ? `Start ${projectName}`
-                  : "Start Live Docker"}
+                ? `${authoring ? "Booting Test Docker" : "Booting Docker"} (${data.executionStatus === "NOT_STARTED" ? "STARTING" : data.executionStatus})…`
+                : authoring
+                  ? "Test Live Docker"
+                  : projectName
+                    ? `Start ${projectName}`
+                    : "Start Live Docker"}
             </Button>
           ) : (
             <Button asChild size="sm" className="h-7 px-2.5 text-[11px]">
@@ -812,44 +904,19 @@ export function LiveStudioWorkbench({
         )}
 
         <div className="ml-auto flex flex-wrap items-center gap-1.5">
-          {authoring && (
-            <>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  if (showRight && setupPanel === "mission") {
-                    setSetupPanel("service");
-                  } else {
-                    setSetupPanel("mission");
-                    setShowRight(true);
-                  }
-                }}
-                className={`h-7 px-2 text-[11px] ${
-                  showRight && setupPanel === "mission"
-                    ? "border-sky-500/60 bg-sky-500/15 text-sky-200 hover:bg-sky-500/25"
-                    : "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800 hover:text-white"
-                }`}
-              >
-                <Target aria-hidden="true" className="mr-1 size-3.5" />
-                Mission
-              </Button>
-              {data.executionStatus === "RUNNING" && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={authoring.saving}
-                  onClick={captureLiveCanvasAsExercise}
-                  title="Save currently stopped services and scaled replicas on the canvas as the Lab exercise"
-                  className="h-7 border-teal-500/40 bg-teal-500/10 px-2 text-[11px] text-teal-200 hover:bg-teal-500/20"
-                >
-                  <Save aria-hidden="true" className="mr-1 size-3" />
-                  {authoring.saving ? "Saving…" : "Save Canvas State"}
-                </Button>
-              )}
-            </>
+          {authoring && data.executionStatus === "RUNNING" && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={authoring.saving}
+              onClick={captureLiveCanvasAsExercise}
+              title="Save currently stopped services and scaled replicas on the canvas as the Lab exercise"
+              className="h-7 border-teal-500/40 bg-teal-500/10 px-2 text-[11px] text-teal-200 hover:bg-teal-500/20"
+            >
+              <Save aria-hidden="true" className="mr-1 size-3" />
+              {authoring.saving ? "Saving…" : "Save Canvas State"}
+            </Button>
           )}
 
           <Button
@@ -876,32 +943,35 @@ export function LiveStudioWorkbench({
             <PanelRight aria-hidden="true" className="mr-1 size-3.5" />
             Inspector
           </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="h-7 border-slate-600 bg-slate-900 px-2 text-[11px] text-slate-200 hover:bg-slate-800 hover:text-white disabled:opacity-40"
-            disabled={
-              data.executionStatus !== "RUNNING" ||
-              !data.telemetry ||
-              capturing ||
-              capture.isPending ||
-              (data.snapshots?.length ?? 0) >= 8
-            }
-            onClick={() => {
-              setTab("snapshots");
-              if (explanation.trim() && !waiting) {
-                void captureSnapshot(
-                  graphRef.current?.querySelector<SVGSVGElement>("svg[data-studio-graph]") ?? null,
-                );
-              } else {
-                requestAnimationFrame(() => snapshotNoteRef.current?.focus());
+          {showLiveSessionControls && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7 border-slate-600 bg-slate-900 px-2 text-[11px] text-slate-200 hover:bg-slate-800 hover:text-white disabled:opacity-40"
+              disabled={
+                data.executionStatus !== "RUNNING" ||
+                !data.telemetry ||
+                capturing ||
+                capture.isPending ||
+                (data.snapshots?.length ?? 0) >= 8
               }
-            }}
-          >
-            <Camera aria-hidden="true" className="mr-1 size-3.5" />
-            Snapshot
-          </Button>
+              onClick={() => {
+                setTab("snapshots");
+                if (explanation.trim() && !waiting) {
+                  void captureSnapshot(
+                    graphRef.current?.querySelector<SVGSVGElement>("svg[data-studio-graph]") ??
+                      null,
+                  );
+                } else {
+                  requestAnimationFrame(() => snapshotNoteRef.current?.focus());
+                }
+              }}
+            >
+              <Camera aria-hidden="true" className="mr-1 size-3.5" />
+              Snapshot
+            </Button>
+          )}
           {recordingSteps > 0 && (
             <Button
               type="button"
@@ -916,32 +986,36 @@ export function LiveStudioWorkbench({
               {String(recordingSeconds % 60).padStart(2, "0")} · {recordingSteps}
             </Button>
           )}
-          <Button
-            type="button"
-            size="sm"
-            className="h-7 bg-emerald-600 px-2.5 text-[11px] text-white hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500"
-            disabled={
-              finish.isPending ||
-              action.isPending ||
-              waiting ||
-              !hasConfirmedAction ||
-              data.finishRequested ||
-              data.executionStatus !== "RUNNING"
-            }
-            onClick={() => void finishStudio()}
-          >
-            Finish Studio
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="h-7 border-slate-600 bg-slate-900 px-2 text-[11px] text-slate-200 hover:bg-slate-800 hover:text-white disabled:opacity-40"
-            disabled={cancel.isPending || (data.executionStatus !== "RUNNING" && !isBooting)}
-            onClick={() => void cancelStudio()}
-          >
-            Cancel
-          </Button>
+          {showLiveSessionControls && (
+            <>
+              <Button
+                type="button"
+                size="sm"
+                className="h-7 bg-emerald-600 px-2.5 text-[11px] text-white hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500"
+                disabled={
+                  finish.isPending ||
+                  action.isPending ||
+                  waiting ||
+                  !hasConfirmedAction ||
+                  data.finishRequested ||
+                  data.executionStatus !== "RUNNING"
+                }
+                onClick={() => void finishStudio()}
+              >
+                Finish Studio
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7 border-slate-600 bg-slate-900 px-2 text-[11px] text-slate-200 hover:bg-slate-800 hover:text-white disabled:opacity-40"
+                disabled={cancel.isPending || (data.executionStatus !== "RUNNING" && !isBooting)}
+                onClick={() => void cancelStudio()}
+              >
+                Cancel
+              </Button>
+            </>
+          )}
           {!standalone && (
             <Button
               type="button"
@@ -962,6 +1036,113 @@ export function LiveStudioWorkbench({
         </div>
       </div>
 
+      {/* Guided 3-Step Lecturer Lab Setup Strip */}
+      {authoring && (
+        <div
+          aria-label="Lecturer Lab Setup Guide"
+          className="flex flex-wrap items-center gap-1.5 border-b border-slate-800 bg-[#080d17] px-3 py-1.5 text-[11px]"
+        >
+          <button
+            type="button"
+            onClick={() => {
+              setSetupPanel("presets");
+              setShowRight(true);
+            }}
+            className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 transition-colors ${
+              showRight && (setupPanel === "presets" || setupPanel === "service")
+                ? "border-amber-500/60 bg-amber-500/15 text-amber-100"
+                : "border-slate-800 bg-slate-950/70 text-slate-300 hover:border-slate-700 hover:text-white"
+            }`}
+          >
+            <span className="font-mono text-[10px] font-bold text-amber-300">1</span>
+            <span className="font-medium">Scenario &amp; Faults</span>
+            <span className="font-mono text-[10px] text-slate-400">
+              {authoring.initialStoppedServices.length > 0
+                ? `· ${authoring.initialStoppedServices.join(", ")} Down`
+                : `· ${blocks.length} Up`}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setSetupPanel("mission");
+              setShowRight(true);
+            }}
+            className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 transition-colors ${
+              showRight && setupPanel === "mission"
+                ? "border-sky-500/60 bg-sky-500/15 text-sky-100"
+                : "border-slate-800 bg-slate-950/70 text-slate-300 hover:border-slate-700 hover:text-white"
+            }`}
+          >
+            <span className="font-mono text-[10px] font-bold text-sky-300">2</span>
+            <span className="font-medium">Mission &amp; Pass Target</span>
+            <span
+              className={`font-mono text-[10px] ${
+                missionDirty
+                  ? "text-amber-300"
+                  : missionReady
+                    ? "text-emerald-300"
+                    : "text-slate-400"
+              }`}
+            >
+              {missionDirty
+                ? "· Unsaved"
+                : `· ${authoring.baselinePath || "/health"}${authoring.replicaService && Number(authoring.replicaCount) >= 2 ? ` · ${authoring.replicaService} ≥${authoring.replicaCount}×` : ""}`}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            disabled={isBooting}
+            onClick={() => {
+              if (data.executionStatus === "RUNNING") {
+                setTab("telemetry");
+              } else if (onStartSession) {
+                onStartSession();
+              }
+            }}
+            className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 transition-colors disabled:opacity-50 ${
+              data.executionStatus === "RUNNING"
+                ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-200"
+                : "border-slate-800 bg-slate-950/70 text-slate-300 hover:border-emerald-500/40 hover:text-emerald-200"
+            }`}
+          >
+            <span className="font-mono text-[10px] font-bold text-emerald-300">3</span>
+            <span className="font-medium">Test Docker</span>
+            <span className="font-mono text-[10px] text-slate-400">
+              {data.executionStatus === "RUNNING"
+                ? `· Live (${totalRunningReplicas} pods)`
+                : isBooting
+                  ? "· Booting…"
+                  : authoring.hasVerifiedSession
+                    ? "· Verified ✓"
+                    : "· Optional"}
+            </span>
+          </button>
+
+          <div className="ml-auto flex items-center gap-2 text-[10.5px]">
+            {authoring.saved && !missionDirty && (
+              <span className="inline-flex items-center gap-1 font-medium text-emerald-400">
+                <Check aria-hidden="true" className="size-3" /> Saved to Lab
+              </span>
+            )}
+            {missionDirty && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSetupPanel("mission");
+                  setShowRight(true);
+                }}
+                className="font-medium text-amber-300 hover:underline"
+              >
+                Unsaved mission edits — review &amp; Save
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {isBooting && !mutationError && (
         <div
           role="status"
@@ -974,7 +1155,7 @@ export function LiveStudioWorkbench({
         </div>
       )}
 
-      {(mutationError || data.executionStatus === "FAILED") && (
+      {(mutationError || lastSessionFailed) && (
         <div
           role="alert"
           className="flex flex-wrap items-center gap-2 border-b border-rose-500/30 bg-rose-950/40 px-3 py-1.5 text-[11px] text-rose-200"
@@ -1388,7 +1569,7 @@ export function LiveStudioWorkbench({
 
           {tab === "snapshots" && (
             <div className="space-y-2">
-              {data.actions.length === 0 && !isPreviewMode && (
+              {!authoring && data.actions.length === 0 && !isPreviewMode && (
                 <p
                   role="note"
                   className="rounded border border-amber-500/35 bg-amber-500/10 px-2.5 py-1.5 text-[11px] leading-relaxed text-amber-200"
@@ -1631,20 +1812,42 @@ export function LiveStudioWorkbench({
         {/* Full-Height Right Setup & Inspector Panel (Context-sensitive to Left Block / Function) */}
         {showRight && (
           <aside className="h-full w-[288px] shrink-0 overflow-x-hidden overflow-y-auto border-l border-slate-800 bg-[#0a0f18] p-2.5">
+            {authoring && (
+              <div
+                role="tablist"
+                aria-label="Lecturer setup panel tabs"
+                className="mb-3 grid grid-cols-3 gap-1 rounded-lg border border-slate-800 bg-slate-950/90 p-1"
+              >
+                {(
+                  [
+                    ["presets", "1. Scenario"],
+                    ["mission", missionDirty ? "2. Mission *" : "2. Mission"],
+                    ["service", "3. Block"],
+                  ] as const
+                ).map(([id, tabLabel]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    role="tab"
+                    aria-selected={setupPanel === id}
+                    onClick={() => setSetupPanel(id)}
+                    className={`rounded-md px-1.5 py-1 text-[10.5px] font-semibold transition-colors ${
+                      setupPanel === id
+                        ? "bg-slate-800 text-white shadow-xs"
+                        : "text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    {tabLabel}
+                  </button>
+                ))}
+              </div>
+            )}
+
             {setupPanel === "mission" && authoring ? (
               <section aria-label="Mission setup" className="space-y-3 text-xs">
-                <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-2">
-                  <div className="flex items-center gap-1.5 font-semibold text-slate-100">
-                    <Target aria-hidden="true" className="size-3.5 text-sky-400" />
-                    <span>Mission &amp; Pass Criteria</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setSetupPanel("service")}
-                    className="rounded border border-slate-700 bg-slate-900 px-2 py-0.5 text-[10px] text-slate-300 hover:bg-slate-800 hover:text-white"
-                  >
-                    Service Setup
-                  </button>
+                <div className="flex items-center gap-1.5 border-b border-slate-800 pb-2 font-semibold text-slate-100">
+                  <Target aria-hidden="true" className="size-3.5 text-sky-400" />
+                  <span>Mission &amp; Pass Criteria</span>
                 </div>
 
                 <label className="block space-y-1 text-[11px] text-slate-400">
@@ -1653,19 +1856,37 @@ export function LiveStudioWorkbench({
                     value={missionDraft}
                     onChange={(e) => setMissionDraft(e.target.value)}
                     placeholder="e.g. Start stopped services, scale order-service to 2 pods, capture Before/After snapshots."
-                    className="min-h-24 border-slate-700 bg-slate-950 text-xs text-slate-100"
+                    className="min-h-20 border-slate-700 bg-slate-950 text-xs text-slate-100"
                   />
                 </label>
 
-                <label className="block space-y-1 text-[11px] text-slate-400">
-                  <span>Baseline Probe GET Path</span>
-                  <Input
-                    value={baselineDraft}
-                    onChange={(e) => setBaselineDraft(e.target.value)}
-                    placeholder="/api/gateway/orders"
-                    className="h-8 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
-                  />
-                </label>
+                <div className="space-y-1.5">
+                  <label className="block space-y-1 text-[11px] text-slate-400">
+                    <span>Baseline Probe GET Path</span>
+                    <Input
+                      value={baselineDraft}
+                      onChange={(e) => setBaselineDraft(e.target.value)}
+                      placeholder="/api/gateway/orders"
+                      className="h-8 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
+                    />
+                  </label>
+                  <div className="flex flex-wrap gap-1">
+                    {probeSuggestions.map((path) => (
+                      <button
+                        key={path}
+                        type="button"
+                        onClick={() => setBaselineDraft(path)}
+                        className={`rounded border px-1.5 py-0.5 font-mono text-[10px] transition-colors ${
+                          baselineDraft === path
+                            ? "border-sky-500/50 bg-sky-500/15 text-sky-200"
+                            : "border-slate-800 bg-slate-950 text-slate-400 hover:border-slate-700 hover:text-slate-200"
+                        }`}
+                      >
+                        {path}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
                 <div className="grid grid-cols-2 gap-2">
                   <label className="block space-y-1 text-[11px] text-slate-400">
@@ -1710,13 +1931,45 @@ export function LiveStudioWorkbench({
                   </select>
                 </label>
 
+                {/* Live Student Preview */}
+                <div className="space-y-1 rounded-lg border border-slate-800 bg-slate-950/75 p-2 text-[10.5px]">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                    Student Will Receive
+                  </p>
+                  <p className="text-slate-300">
+                    Initial Faults:{" "}
+                    <code className="font-mono text-amber-300">
+                      {authoring.initialStoppedServices.length > 0
+                        ? authoring.initialStoppedServices.join(", ")
+                        : "None (all start Up)"}
+                    </code>
+                  </p>
+                  <p className="text-slate-300">
+                    Pass Target:{" "}
+                    <code className="font-mono text-emerald-300">
+                      ≤{maxErrDraft || "0"}% err
+                      {replicaSvcDraft && Number(replicaCountDraft) >= 2
+                        ? ` · ${replicaSvcDraft} ≥${replicaCountDraft}×`
+                        : ""}
+                    </code>
+                  </p>
+                  <p className="text-slate-300">
+                    Probe:{" "}
+                    <code className="font-mono text-sky-300">GET {baselineDraft || "/health"}</code>
+                  </p>
+                </div>
+
                 <div className="flex items-center justify-between gap-2 pt-1">
-                  {authoring.saved ? (
+                  {authoring.saved && !missionDirty ? (
                     <span className="inline-flex items-center gap-1 text-[11px] text-emerald-400">
                       <Check aria-hidden="true" className="size-3.5" /> Saved
                     </span>
                   ) : (
-                    <span className="text-[10.5px] text-slate-500">Applies immediately to Lab</span>
+                    <span
+                      className={`text-[10.5px] ${missionDirty ? "text-amber-300" : "text-slate-500"}`}
+                    >
+                      {missionDirty ? "Unsaved changes" : "Applies immediately to Lab"}
+                    </span>
                   )}
                   <Button
                     type="button"
@@ -1731,72 +1984,124 @@ export function LiveStudioWorkbench({
                         replicaCount: replicaCountDraft,
                       })
                     }
-                    className="h-8 bg-teal-600 px-3 text-xs text-white hover:bg-teal-500"
+                    className={`h-8 px-3 text-xs text-white ${
+                      missionDirty
+                        ? "bg-amber-600 hover:bg-amber-500"
+                        : "bg-teal-600 hover:bg-teal-500"
+                    }`}
                   >
                     <Save aria-hidden="true" className="mr-1.5 size-3.5" />
-                    {authoring.saving ? "Saving…" : "Save Mission"}
+                    {authoring.saving
+                      ? "Saving…"
+                      : missionDirty
+                        ? "Save Mission *"
+                        : "Save Mission"}
                   </Button>
                 </div>
               </section>
             ) : setupPanel === "presets" && authoring?.onApplyPreset ? (
               <section aria-label="Lab Exercise Presets setup" className="space-y-3 text-xs">
-                <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-2">
-                  <div className="flex items-center gap-1.5 font-semibold text-slate-100">
-                    <Zap aria-hidden="true" className="size-3.5 text-amber-400" />
-                    <span>Lab Exercise Presets</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setSetupPanel("service")}
-                    className="rounded border border-slate-700 bg-slate-900 px-2 py-0.5 text-[10px] text-slate-300 hover:bg-slate-800 hover:text-white"
-                  >
-                    Service Setup
-                  </button>
+                <div className="flex items-center gap-1.5 border-b border-slate-800 pb-2 font-semibold text-slate-100">
+                  <Zap aria-hidden="true" className="size-3.5 text-amber-400" />
+                  <span>Step 1 · Pick Lab Scenario</span>
                 </div>
+
+                <div className="space-y-1 rounded-lg border border-slate-800 bg-slate-950/70 p-2 text-[10.5px]">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                    Active Config ({blocks.length} services)
+                  </p>
+                  <p className="text-slate-300">
+                    Starts Down:{" "}
+                    <code className="font-mono text-amber-300">
+                      {authoring.initialStoppedServices.length > 0
+                        ? authoring.initialStoppedServices.join(", ")
+                        : "None"}
+                    </code>
+                  </p>
+                  <p className="text-slate-300">
+                    Scale Target:{" "}
+                    <code className="font-mono text-sky-300">
+                      {authoring.replicaService && Number(authoring.replicaCount) >= 2
+                        ? `${authoring.replicaService} ≥ ${authoring.replicaCount}×`
+                        : "Any (observe only)"}
+                    </code>
+                  </p>
+                </div>
+
                 <p className="text-[11px] leading-relaxed text-slate-400">
-                  Apply a 1-click real Docker scenario to this Lab&apos;s detected services.
+                  Pick a 1-click scenario for this repo, or click any 3D service block to customize.
                 </p>
+
                 <div className="space-y-2">
                   {(
                     [
                       [
                         "outage",
                         "Outage Recovery",
-                        "Marks 1 core service as Starts Down and requires 0% error rate after recovery.",
+                        presetTargets.faultTarget
+                          ? `Starts ${presetTargets.faultTarget} Down · students recover it to 0% error.`
+                          : "Marks 1 core service as Starts Down and requires 0% error rate after recovery.",
                         "border-amber-500/35 bg-amber-500/10 hover:border-amber-400",
                       ],
                       [
                         "scale",
                         "Horizontal Scale ×2",
-                        "Enables scaling on the primary stateless service and targets ≥ 2 replicas.",
+                        presetTargets.primaryScale
+                          ? `All Up · students scale ${presetTargets.primaryScale} to ≥ 2 replicas.`
+                          : "Enables scaling on the primary stateless service and targets ≥ 2 replicas.",
                         "border-sky-500/35 bg-sky-500/10 hover:border-sky-400",
                       ],
                       [
                         "chaos-scale",
                         "Fault + Scale Drill",
-                        "Combines 1 stopped dependency with scaling the primary service to 2 pods.",
+                        presetTargets.faultTarget && presetTargets.primaryScale
+                          ? `Stops ${presetTargets.faultTarget} + scales ${presetTargets.primaryScale} to ≥ 2×.`
+                          : "Combines 1 stopped dependency with scaling the primary service to 2 pods.",
                         "border-purple-500/35 bg-purple-500/10 hover:border-purple-400",
                       ],
                       [
                         "healthy",
-                        "Reset Healthy Baseline",
-                        "Clears all initial faults and restores every service to Starts Up.",
+                        "Healthy Baseline",
+                        `All ${blocks.length} services Start Up · students inspect traces & baseline metrics.`,
                         "border-slate-700 bg-slate-950/70 hover:border-slate-500",
                       ],
                     ] as const
-                  ).map(([id, title, desc, tone]) => (
-                    <button
-                      key={id}
-                      type="button"
-                      disabled={authoring.busy}
-                      onClick={() => authoring.onApplyPreset?.(id)}
-                      className={`w-full rounded-lg border p-2.5 text-left transition-colors disabled:opacity-40 ${tone}`}
-                    >
-                      <p className="text-[11.5px] font-semibold text-slate-100">{title}</p>
-                      <p className="mt-1 text-[10.5px] leading-relaxed text-slate-400">{desc}</p>
-                    </button>
-                  ))}
+                  ).map(([id, title, desc, tone]) => {
+                    const isActive = activePreset === id;
+                    return (
+                      <button
+                        key={id}
+                        type="button"
+                        disabled={authoring.busy}
+                        onClick={() => authoring.onApplyPreset?.(id)}
+                        className={`w-full rounded-lg border p-2.5 text-left transition-colors disabled:opacity-40 ${tone} ${
+                          isActive ? "ring-1 ring-emerald-400/70" : ""
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-[11.5px] font-semibold text-slate-100">{title}</p>
+                          {isActive && (
+                            <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 font-mono text-[9.5px] font-semibold text-emerald-300">
+                              Active
+                            </span>
+                          )}
+                        </div>
+                        <p className="mt-1 text-[10.5px] leading-relaxed text-slate-400">{desc}</p>
+                      </button>
+                    );
+                  })}
                 </div>
+
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setSetupPanel("mission")}
+                  className="h-8 w-full border-sky-500/40 bg-sky-500/10 text-[11px] text-sky-200 hover:bg-sky-500/20"
+                >
+                  Next: Step 2 Mission &amp; Pass Target
+                  <ArrowRight aria-hidden="true" className="ml-1.5 size-3.5" />
+                </Button>
               </section>
             ) : setupPanel === "drills" && !authoring && data.executionStatus === "RUNNING" ? (
               <section aria-label="Quick Live Drills setup" className="space-y-3 text-xs">

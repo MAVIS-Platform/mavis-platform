@@ -1471,3 +1471,17 @@ test("Round 6 reuses core ArchitecturePresentation in Lab Creation, fixes Step 2
   assert.match(studioWorkbench, /Snapshot[\s\S]*captureSnapshot/);
   assert.doesNotMatch(curriculumMgr, /2D Studio/);
 });
+
+test("Lecturer Studio Live authoring provides guided 3-step setup, concrete presets, Right Panel tabs, and Step 6 handoff", () => {
+  const live = read("src/features/runtime/live-studio-workbench.tsx");
+  const standalone = read("src/features/runtime/standalone-studio-live.tsx");
+
+  assert.match(live, /aria-label="Lecturer Lab Setup Guide"/);
+  assert.match(live, /aria-label="Lecturer setup panel tabs"/);
+  assert.match(live, /Test Live Docker/);
+  assert.match(live, /Step 1 · Pick Lab Scenario/);
+  assert.match(live, /Student Will Receive/);
+  assert.match(live, /isTerminalAuthorSession/);
+  assert.match(standalone, /Done · Step 6/);
+  assert.match(standalone, /tab=publish/);
+});

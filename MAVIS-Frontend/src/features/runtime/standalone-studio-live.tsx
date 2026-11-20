@@ -140,6 +140,10 @@ function StandaloneStudioContent() {
       ? `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignmentId)}&step=4`
       : "/courses";
   const returnHref = safeRelativeHref(params?.get("returnTo") ?? null, defaultReturnTo);
+  const publishHref =
+    workspaceId && assignmentId
+      ? `/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignmentId)}&tab=publish`
+      : returnHref;
   const submitHref =
     workspaceId && assignmentId
       ? `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignmentId)}&step=4#lab-submit`
@@ -288,11 +292,26 @@ function StandaloneStudioContent() {
     if (selectedSessionId && sessionList.some((item) => item.id === selectedSessionId)) {
       return selectedSessionId;
     }
-    const running = sessionList.find((item) => item.executionStatus === "RUNNING");
-    if (running) return running.id;
+    const activeStatuses = new Set([
+      "RUNNING",
+      "PENDING",
+      "STARTING",
+      "QUEUED",
+      "PROVISIONING",
+      "READY_FOR_DISPATCH",
+      "READY_FOR_EXECUTION",
+      "ALLOCATED",
+      "DISPATCHED",
+    ]);
+    const liveOrBooting = sessionList.find(
+      (item) => item.executionStatus && activeStatuses.has(item.executionStatus.toUpperCase()),
+    );
+    if (liveOrBooting) return liveOrBooting.id;
+    // In Author mode, fall back to clean Design Preview instead of locking onto a dead cancelled session
+    if (isAuthorMode) return "";
     const forAssignment = sessionList.find((item) => item.assignmentId === assignmentId);
     return forAssignment?.id ?? sessionList[0]?.id ?? "";
-  }, [selectedSessionId, sessionList, assignmentId]);
+  }, [selectedSessionId, sessionList, assignmentId, isAuthorMode]);
 
   const studentQuizLocked = Boolean(
     !isAuthorMode &&
@@ -508,6 +527,8 @@ function StandaloneStudioContent() {
           saving: saveVisualExercise.isPending || saveConfig.isPending,
           saved: visualSaved,
           error: visualError || undefined,
+          hasVerifiedSession: Boolean(verifiedSession),
+          publishHref,
           onToggleInitialStopped: (service, isController) => {
             const nextStoppedServices = isController
               ? initialStoppedServices
@@ -843,6 +864,16 @@ function StandaloneStudioContent() {
                   sessionId={verifiedSession?.id}
                 />
               )}
+              <Button
+                asChild
+                size="sm"
+                className="h-7 bg-emerald-600 px-2.5 text-[11px] text-white hover:bg-emerald-500"
+              >
+                <Link href={publishHref}>
+                  {t("Done · Step 6", "Xong · Sang Bước 6")}
+                  <ArrowRight className="ml-1 size-3" aria-hidden="true" />
+                </Link>
+              </Button>
             </>
           )}
 
