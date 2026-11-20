@@ -229,6 +229,24 @@ function TeachingSubmissions() {
     selected === "ALL"
       ? "ALL"
       : sortedAssignments.find((a) => a.id === selected)?.id ?? "ALL";
+  const allClassSubs = useApiQuery(
+    "workspaceSubmissions",
+    { workspaceId },
+    { enabled: Boolean(workspaceId) },
+  );
+  const counts = useMemo(() => {
+    const base = allClassSubs.data ?? [];
+    const scoped =
+      selectedAssignmentId === "ALL"
+        ? base
+        : base.filter((s) => s.assignmentId === selectedAssignmentId);
+    return {
+      total: scoped.length,
+      pending: scoped.filter((s) => !s.reviewStatus || s.reviewStatus === "PENDING").length,
+      graded: scoped.filter((s) => s.reviewStatus === "GRADED").length,
+      needsRevision: scoped.filter((s) => s.labOutcome === "NEEDS_REVISION").length,
+    };
+  }, [allClassSubs.data, selectedAssignmentId]);
 
   const body = workspaceId ? (
     <div className="space-y-4">
@@ -242,7 +260,7 @@ function TeachingSubmissions() {
             [
               {
                 id: "pending",
-                label: t("Pending", "Chờ chấm"),
+                label: `${t("Pending", "Chờ chấm")}${allClassSubs.isSuccess ? ` (${counts.pending})` : ""}`,
                 active: viewMode === "queue" && reviewStatusFilter === "PENDING",
                 onClick: () => {
                   setViewMode("queue");
@@ -252,7 +270,7 @@ function TeachingSubmissions() {
               },
               {
                 id: "graded",
-                label: t("Graded", "Đã chấm"),
+                label: `${t("Graded", "Đã chấm")}${allClassSubs.isSuccess ? ` (${counts.graded})` : ""}`,
                 active: viewMode === "queue" && reviewStatusFilter === "GRADED",
                 onClick: () => {
                   setViewMode("queue");
@@ -262,7 +280,7 @@ function TeachingSubmissions() {
               },
               {
                 id: "all",
-                label: t("All submissions", "Tất cả"),
+                label: `${t("All submissions", "Tất cả")}${allClassSubs.isSuccess ? ` (${counts.total})` : ""}`,
                 active: viewMode === "queue" && reviewStatusFilter === "ALL",
                 onClick: () => {
                   setViewMode("queue");
@@ -315,6 +333,7 @@ function TeachingSubmissions() {
             }`}
           >
             {t("Needs revision", "Cần sửa")}
+            {allClassSubs.isSuccess ? ` (${counts.needsRevision})` : ""}
           </button>
         )}
       </div>
