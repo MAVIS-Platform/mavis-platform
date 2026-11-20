@@ -306,19 +306,26 @@ export function Step2StaticImpact({
                   )}
                 </span>
               </div>
-              <Button
-                type="button"
-                size="sm"
-                variant={demoLeafActive ? "default" : "outline"}
-                className={
-                  demoLeafActive
-                    ? "h-7 bg-amber-600 px-2.5 text-xs text-white hover:bg-amber-700"
-                    : "h-7 border-amber-300 px-2.5 text-xs text-amber-800 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-300"
-                }
-                onClick={() => setDemoLeafActive((cur) => !cur)}
-              >
-                🧪 {t("Test Isolated 0-Upstream Node (DS-03b)", "Test Node Cô lập 0 Upstream (Demo DS-03b)")}
-              </Button>
+              <details className="text-right">
+                <summary className="cursor-pointer select-none text-[11px] font-medium text-muted-foreground hover:text-foreground">
+                  ⚙ {t("QA / Demo Edge Cases", "Kiểm thử / Demo")}
+                </summary>
+                <div className="mt-1.5">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={demoLeafActive ? "default" : "outline"}
+                    className={
+                      demoLeafActive
+                        ? "h-7 bg-amber-600 px-2.5 text-xs text-white hover:bg-amber-700"
+                        : "h-7 border-amber-300 px-2.5 text-xs text-amber-800 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-300"
+                    }
+                    onClick={() => setDemoLeafActive((cur) => !cur)}
+                  >
+                    🧪 {t("Test Isolated 0-Upstream Node (DS-03b)", "Test Node Cô lập 0 Upstream (Demo DS-03b)")}
+                  </Button>
+                </div>
+              </details>
             </div>
 
             {(demoLeafActive || impact.upstreamImpacted.length === 0) && (

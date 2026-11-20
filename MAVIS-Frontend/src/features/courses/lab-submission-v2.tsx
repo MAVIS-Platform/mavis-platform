@@ -399,40 +399,45 @@ export function LabSubmissionV2({
                   {rubricProfile.items[2]}
                 </label>
               </div>
-              <div className="flex flex-wrap gap-2 pt-1">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-7 border-emerald-300 bg-background px-2.5 text-xs text-emerald-800 hover:bg-emerald-50"
-                  onClick={() => {
-                    const sample = rubricProfile.sampleDossier;
-                    setMitigations({ circuitBreaker: true, databasePerService: true, idempotencyKey: true });
-                    setAnswer(sample);
-                    try {
-                      window.localStorage.setItem(draftKey, sample);
-                    } catch {}
-                  }}
-                >
-                  🚀 {t("Fill Passing Architectural Dossier (> 5.0)", "Điền Hồ Sơ Chuẩn Đạt Rubric (8.8/10)")}
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-7 border-rose-300 bg-background px-2.5 text-xs text-rose-800 hover:bg-rose-50"
-                  onClick={() => {
-                    const flawed = rubricProfile.flawedSample;
-                    setMitigations({ circuitBreaker: false, databasePerService: false, idempotencyKey: false });
-                    setAnswer(flawed);
-                    try {
-                      window.localStorage.setItem(draftKey, flawed);
-                    } catch {}
-                  }}
-                >
-                  🧪 {t("Fill Flawed Draft to Test DS-04b (≤ 5.0)", "Điền Thiết Kế Lỗi Test DS-04b (≤ 5.0)")}
-                </Button>
-              </div>
+              <details className="pt-1">
+                <summary className="cursor-pointer select-none text-[11px] font-medium text-muted-foreground hover:text-foreground">
+                  ⚙ {t("QA / Demo Dossier Presets", "Mẫu kiểm thử nhanh (Demo)")}
+                </summary>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-7 border-emerald-300 bg-background px-2.5 text-xs text-emerald-800 hover:bg-emerald-50"
+                    onClick={() => {
+                      const sample = rubricProfile.sampleDossier;
+                      setMitigations({ circuitBreaker: true, databasePerService: true, idempotencyKey: true });
+                      setAnswer(sample);
+                      try {
+                        window.localStorage.setItem(draftKey, sample);
+                      } catch {}
+                    }}
+                  >
+                    🚀 {t("Fill Passing Architectural Dossier (> 5.0)", "Điền Hồ Sơ Chuẩn Đạt Rubric (8.8/10)")}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-7 border-rose-300 bg-background px-2.5 text-xs text-rose-800 hover:bg-rose-50"
+                    onClick={() => {
+                      const flawed = rubricProfile.flawedSample;
+                      setMitigations({ circuitBreaker: false, databasePerService: false, idempotencyKey: false });
+                      setAnswer(flawed);
+                      try {
+                        window.localStorage.setItem(draftKey, flawed);
+                      } catch {}
+                    }}
+                  >
+                    🧪 {t("Fill Flawed Draft to Test DS-04b (≤ 5.0)", "Điền Thiết Kế Lỗi Test DS-04b (≤ 5.0)")}
+                  </Button>
+                </div>
+              </details>
             </div>
           )}
 
