@@ -138,7 +138,7 @@ function StandaloneStudioContent() {
       ? `/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignmentId)}&tab=studio`
       : "/workspaces"
     : workspaceId && assignmentId
-      ? `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignmentId)}&step=4`
+      ? `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignmentId)}&step=2`
       : "/courses";
   const returnHref = safeRelativeHref(params?.get("returnTo") ?? null, defaultReturnTo);
   const publishHref =
@@ -147,7 +147,7 @@ function StandaloneStudioContent() {
       : returnHref;
   const submitHref =
     workspaceId && assignmentId
-      ? `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignmentId)}&step=4#lab-submit`
+      ? `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignmentId)}&step=3#lab-submit`
       : returnHref;
 
   // Lecturer / Author data
@@ -167,34 +167,34 @@ function StandaloneStudioContent() {
     enabled: Boolean(workspaceId && assignmentId && isAuthorMode),
     retry: false,
   });
-const TRANSIENT_RUNTIME_PROFILE_KEYS = new Set([
-  "detectedServices",
-  "composeServices",
-  "servicePorts",
-  "serviceStacks",
-  "detectedEndpoints",
-  "databaseChecks",
-  "requiredEnvVars",
-  "runnerIssues",
-  "infrastructureServices",
-  "serviceHealthPaths",
-  "serviceHealthConfidence",
-  "serviceHealthReasons",
-  "sandboxComposeYaml",
-  "sandboxComposeChanges",
-  "unresolvableRunnerIssues",
-  "recommendedServiceMappings",
-  "modelServiceNames",
-  "localImageBuildAvailable",
-  "configuredSecretKeys",
-]);
+  const TRANSIENT_RUNTIME_PROFILE_KEYS = new Set([
+    "detectedServices",
+    "composeServices",
+    "servicePorts",
+    "serviceStacks",
+    "detectedEndpoints",
+    "databaseChecks",
+    "requiredEnvVars",
+    "runnerIssues",
+    "infrastructureServices",
+    "serviceHealthPaths",
+    "serviceHealthConfidence",
+    "serviceHealthReasons",
+    "sandboxComposeYaml",
+    "sandboxComposeChanges",
+    "unresolvableRunnerIssues",
+    "recommendedServiceMappings",
+    "modelServiceNames",
+    "localImageBuildAvailable",
+    "configuredSecretKeys",
+  ]);
 
-function stripTransientRuntimeProfile(profile: Record<string, unknown> | undefined) {
-  if (!profile) return {};
-  return Object.fromEntries(
-    Object.entries(profile).filter(([key]) => !TRANSIENT_RUNTIME_PROFILE_KEYS.has(key)),
-  );
-}
+  function stripTransientRuntimeProfile(profile: Record<string, unknown> | undefined) {
+    if (!profile) return {};
+    return Object.fromEntries(
+      Object.entries(profile).filter(([key]) => !TRANSIENT_RUNTIME_PROFILE_KEYS.has(key)),
+    );
+  }
 
   const setup = useCourseSetup(isAuthorMode ? workspaceId : "");
   const autoStudio = useAutoConfigureStudio(workspaceId, assignmentId);
@@ -218,8 +218,8 @@ function stripTransientRuntimeProfile(profile: Record<string, unknown> | undefin
   const projectId = isAuthorMode
     ? (assignment?.referenceSource?.projectId ?? exercise.data?.runtimeProjectId ?? null)
     : (studentContext.data?.assignment?.referenceSource?.projectId ??
-        studentContext.data?.referenceArchitecture?.projectId ??
-        null);
+      studentContext.data?.referenceArchitecture?.projectId ??
+      null);
 
   const readiness = useRuntimeSetupReadiness(isAuthorMode ? projectId : null);
   const runtimeConfig = useApiQuery(
@@ -287,8 +287,8 @@ function stripTransientRuntimeProfile(profile: Record<string, unknown> | undefin
   const setupLab = setup.data?.labs?.find((item) => item.assignmentId === assignmentId);
   const isRuntimeReady = Boolean(
     readiness.data?.configured &&
-      readiness.data?.preflightCompatible &&
-      readiness.data?.runnerReady,
+    readiness.data?.preflightCompatible &&
+    readiness.data?.runnerReady,
   );
   const published = setupLab?.published === true;
 
@@ -335,9 +335,9 @@ function stripTransientRuntimeProfile(profile: Record<string, unknown> | undefin
 
   const studentQuizLocked = Boolean(
     !isAuthorMode &&
-      studentContext.data?.quiz &&
-      !studentContext.data.quiz.runtimeUnlocked &&
-      studentContext.data.assignment?.labMode !== "THEORY_ONLY",
+    studentContext.data?.quiz &&
+    !studentContext.data.quiz.runtimeUnlocked &&
+    studentContext.data.assignment?.labMode !== "THEORY_ONLY",
   );
 
   const studioStateQuery = useApiQuery(
@@ -356,17 +356,18 @@ function stripTransientRuntimeProfile(profile: Record<string, unknown> | undefin
   const liveStudioVerified =
     Boolean(verifiedSession) ||
     Boolean(
-      studioStateQuery.data?.receiptDigest || studioStateQuery.data?.executionStatus === "COMPLETED",
+      studioStateQuery.data?.receiptDigest ||
+      studioStateQuery.data?.executionStatus === "COMPLETED",
     );
 
   const needsSandboxBootstrap = Boolean(
     !isAuthorMode &&
-      activeSessionId &&
-      studioStateQuery.isSuccess &&
-      (studioStateQuery.data.executionStatus === "FAILED" ||
-        (studioStateQuery.data.services.length === 0 &&
-          !studioStateQuery.data.telemetry &&
-          !(studioStateQuery.data as Record<string, unknown>)["simulatedSandbox"])),
+    activeSessionId &&
+    studioStateQuery.isSuccess &&
+    (studioStateQuery.data.executionStatus === "FAILED" ||
+      (studioStateQuery.data.services.length === 0 &&
+        !studioStateQuery.data.telemetry &&
+        !(studioStateQuery.data as Record<string, unknown>)["simulatedSandbox"])),
   );
 
   // Auto-start a student Studio session once when entering standalone /studio-live with no sessions yet.
@@ -485,8 +486,7 @@ function stripTransientRuntimeProfile(profile: Record<string, unknown> | undefin
               runtimeSnapshotId,
               baselineRequests: nextBaseline,
               initialState: {
-                stoppedServices:
-                  input.stoppedServices ?? cur?.initialState?.stoppedServices ?? [],
+                stoppedServices: input.stoppedServices ?? cur?.initialState?.stoppedServices ?? [],
                 stoppedControllers:
                   input.stoppedControllers ?? cur?.initialState?.stoppedControllers ?? [],
               },
@@ -528,9 +528,7 @@ function stripTransientRuntimeProfile(profile: Record<string, unknown> | undefin
     if (exercise.data?.initialState?.stoppedServices) {
       return exercise.data.initialState.stoppedServices;
     }
-    return (previewTopology?.blocks ?? [])
-      .filter((b) => b.initiallyStopped)
-      .map((b) => b.service);
+    return (previewTopology?.blocks ?? []).filter((b) => b.initiallyStopped).map((b) => b.service);
   }, [exercise.data?.initialState?.stoppedServices, previewTopology]);
 
   const initialStoppedControllers = useMemo(() => {
@@ -813,8 +811,7 @@ function stripTransientRuntimeProfile(profile: Record<string, unknown> | undefin
   const showAuthorCanvas =
     isRuntimeReady || Boolean(previewTopology) || canvasOpened || sessionList.length > 0;
   const isInitialLoading =
-    workspaces.isPending ||
-    (isAuthorMode ? assignments.isPending : studentContext.isPending);
+    workspaces.isPending || (isAuthorMode ? assignments.isPending : studentContext.isPending);
 
   const isWorkbenchActive =
     Boolean(workspaceId && assignmentId) &&
@@ -827,8 +824,12 @@ function stripTransientRuntimeProfile(profile: Record<string, unknown> | undefin
     <div className="flex min-w-0 items-center gap-2">
       <Link
         href={returnHref}
-        aria-label={isAuthorMode ? t("Back to Lab Setup", "Về thiết lập Lab") : t("Back to Lab", "Về bài Lab")}
-        title={isAuthorMode ? t("Back to Lab Setup", "Về thiết lập Lab") : t("Back to Lab", "Về bài Lab")}
+        aria-label={
+          isAuthorMode ? t("Back to Lab Setup", "Về thiết lập Lab") : t("Back to Lab", "Về bài Lab")
+        }
+        title={
+          isAuthorMode ? t("Back to Lab Setup", "Về thiết lập Lab") : t("Back to Lab", "Về bài Lab")
+        }
         className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-slate-700 bg-slate-900 px-2 text-xs font-medium text-slate-200 transition-colors hover:bg-slate-800 hover:text-white"
       >
         <ArrowLeft className="size-3.5" aria-hidden="true" />
@@ -1065,16 +1066,12 @@ function stripTransientRuntimeProfile(profile: Record<string, unknown> | undefin
             </h1>
             <p className="text-xs leading-5 text-slate-400">
               {t(
-                "Pass the Step 3 Quiz Gate (>= 70%) before starting your Studio Live runtime session.",
-                "Hoàn thành Quiz Gate ở Bước 3 (>= 70%) để mở khóa phiên thực nghiệm Studio Live.",
+                "Pass the Module Quiz before starting your MAVIS Runtime Studio session.",
+                "Hoàn thành Quiz của Module để mở khóa phiên MAVIS Runtime Studio.",
               )}
             </p>
             <Button asChild size="sm">
-              <Link
-                href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignmentId)}&step=3`}
-              >
-                {t("Go to Step 3: Quiz Gate", "Về Bước 3: Làm Quiz Gate")}
-              </Link>
+              <Link href={returnHref}>{t("Return to Lab", "Quay lại Lab")}</Link>
             </Button>
           </div>
         ) : isAuthorMode && !projectId ? (
@@ -1173,10 +1170,7 @@ function stripTransientRuntimeProfile(profile: Record<string, unknown> | undefin
           role="dialog"
           aria-modal="true"
           data-theme="dark"
-          aria-label={t(
-            "Studio Settings",
-            "Cài đặt Studio",
-          )}
+          aria-label={t("Studio Settings", "Cài đặt Studio")}
           className="dark fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-xs"
           onClick={() => setConfigModalOpen(false)}
           onKeyDown={(event) => {

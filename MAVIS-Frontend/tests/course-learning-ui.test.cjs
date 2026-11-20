@@ -151,7 +151,7 @@ test("Lab UI keeps unavailable progress gates honest and runs the 3-phase Studio
   assert.ok(course.includes("useStudentLabStudioSessions("));
 });
 
-test("guided Lab launches standalone full-screen /studio-live in Step 4 without external /sessions redirect", () => {
+test("guided Lab launches standalone full-screen Runtime Studio without external /sessions redirect", () => {
   const course = read("src/features/courses/screens.tsx");
   const standalone = read("src/features/runtime/standalone-studio-live.tsx");
   const screenPage = read("app/[screen]/page.tsx");
@@ -160,6 +160,10 @@ test("guided Lab launches standalone full-screen /studio-live in Step 4 without 
   assert.ok(standalone.includes("<LiveStudioWorkbench"));
   assert.ok(standalone.includes("useStartLabStudioSession("));
   assert.ok(standalone.includes("useBootstrapLabStudio("));
+  assert.ok(standalone.includes("step=2"));
+  assert.ok(standalone.includes("step=3#lab-submit"));
+  assert.ok(standalone.includes("Pass the Module Quiz"));
+  assert.ok(!standalone.includes("Step 3 Quiz Gate"));
   assert.ok(screenPage.includes('if (screen === "studio-live") return <StandaloneStudioLive />;'));
   assert.ok(!stepContentSource.includes("href={`/sessions?"));
   assert.ok(!stepContentSource.includes("href={`/diagrams?"));
