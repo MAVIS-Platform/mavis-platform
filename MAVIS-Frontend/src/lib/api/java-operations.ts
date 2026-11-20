@@ -876,7 +876,7 @@ export async function executeJava(
             actorId: z.string().nullish(),
             actorName: z.string().nullish(),
             actorEmail: z.string().nullish(),
-            details: z.string().nullish(),
+            details: z.json().nullish(),
             targetId: z.string().nullish(),
           }),
         )
@@ -888,7 +888,9 @@ export async function executeJava(
           actorId: a.actorId ?? "SYSTEM",
           actorName: a.actorName ?? null,
           actorEmail: a.actorEmail ?? null,
-          details: a.details ?? null,
+          details: typeof a.details === "string" || a.details == null
+            ? a.details ?? null
+            : JSON.stringify(a.details),
           resourceId: a.targetId ?? "SYSTEM",
         }));
     case "adminJobs":
