@@ -35,6 +35,8 @@ public class GlobalExceptionHandler {
             status = HttpStatus.NOT_FOUND;
         } else if (code == 409) {
             status = HttpStatus.CONFLICT;
+        } else if (code == 422) {
+            status = HttpStatus.UNPROCESSABLE_ENTITY;
         } else if (code == 429) {
             status = HttpStatus.TOO_MANY_REQUESTS;
         } else if (code >= 500) {
