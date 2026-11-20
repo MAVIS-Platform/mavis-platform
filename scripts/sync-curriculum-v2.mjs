@@ -83,6 +83,9 @@ const SOURCE_LIBRARY = {
 };
 
 function parseArgs(argv) {
+  if (argv.includes('--verify')) {
+    return { verifyOnly: true };
+  }
   let track = null;
   let chapter = null;
   for (let i = 0; i < argv.length; i++) {
@@ -98,7 +101,7 @@ function parseArgs(argv) {
   if (!Number.isInteger(chapter) || chapter < 1 || chapter > 12) {
     throw new Error(`Invalid or missing --chapter <1..12>. Received: ${chapter}`);
   }
-  return { track, chapter };
+  return { verifyOnly: false, track, chapter };
 }
 
 function resolveSources(track, rawSourcesLine, chapterTitle) {
@@ -380,9 +383,78 @@ function upsertCurriculumEntry(entry) {
   return { total: existing.length, replaced: idx >= 0 };
 }
 
+function stripCodeSegments(markdown) {
+  return String(markdown || '')
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`[^`\n]+`/g, ' ');
+}
+
+function verifyCurriculumJson() {
+  const all = JSON.parse(fs.readFileSync(TARGET_JSON_PATH, 'utf8'));
+  const v2Chapters = all.filter((c) => c && /^(java|csharp)-v2-ch\d{2}$/.test(c.id || ''));
+  const violations = [];
+
+  if (v2Chapters.length !== 24) {
+    violations.push(`Expected 24 V2 chapters, found ${v2Chapters.length}`);
+  }
+
+  const rawLatexPattern = /\$\$|\$(?!\{)(?!\s)[^$\n]+?(?<!\s)\$|\\(?:rightarrow|leftarrow|to|ge|le|times|approx|text|prod|dots)\b/;
+  const rawQuizMdPattern = /\*\*|`|\\[\[\]]|(?:^|[\s(])\*[^*\n]+?\*(?=[\s).,;:?!]|$)/;
+  const leadingNumberPattern = /^\s*(?:Câu\s*\d+(?:\.\d+)?[:.\s-]*|\d+[.)]\s+)/i;
+
+  for (const ch of v2Chapters) {
+    for (const [field, val] of [
+      ['title', ch.title],
+      ['objective', ch.objective],
+      ['lesson', stripCodeSegments(ch.lesson)],
+      ['exercise', stripCodeSegments(ch.exercise)],
+    ]) {
+      const m = String(val || '').match(rawLatexPattern);
+      if (m) {
+        violations.push(`${ch.id}.${field} contains raw LaTeX token: ${m[0]}`);
+      }
+    }
+
+    const questions = ch.questions || [];
+    if (questions.length !== 4) {
+      violations.push(`${ch.id} expected 4 questions, found ${questions.length}`);
+    }
+    for (const q of questions) {
+      if (leadingNumberPattern.test(q.prompt || '')) {
+        violations.push(`${q.id}.prompt has duplicated leading number: ${(q.prompt || '').slice(0, 50)}`);
+      }
+      for (const [qField, qVal] of [
+        ['prompt', q.prompt],
+        ['explanation', q.explanation],
+        ...(q.options || []).map((opt, idx) => [`options[${idx}]`, opt]),
+      ]) {
+        const mdHit = String(qVal || '').match(rawQuizMdPattern);
+        if (mdHit) {
+          violations.push(`${q.id}.${qField} contains raw Markdown token: ${mdHit[0]}`);
+        }
+        const latexHit = String(qVal || '').match(rawLatexPattern);
+        if (latexHit) {
+          violations.push(`${q.id}.${qField} contains raw LaTeX token: ${latexHit[0]}`);
+        }
+      }
+    }
+  }
+
+  if (violations.length > 0) {
+    console.error(`[sync-curriculum-v2 --verify] FAILED with ${violations.length} violation(s):`);
+    violations.slice(0, 25).forEach((v) => console.error(`  - ${v}`));
+    process.exit(1);
+  }
+  console.log(`[sync-curriculum-v2 --verify] PASSED: 24 V2 chapters & 96 quiz questions clean.`);
+}
+
 function main() {
-  const { track, chapter } = parseArgs(process.argv.slice(2));
-  const entry = parseChapter(track, chapter);
+  const args = parseArgs(process.argv.slice(2));
+  if (args.verifyOnly) {
+    verifyCurriculumJson();
+    return;
+  }
+  const entry = parseChapter(args.track, args.chapter);
   const res = upsertCurriculumEntry(entry);
   console.log(
     `[sync-curriculum-v2] ${res.replaced ? 'Updated' : 'Inserted'} ${entry.id} (${entry.track}, ${entry.questions.length} questions, ${entry.lesson.length} chars lesson) -> total chapters: ${res.total}`,
