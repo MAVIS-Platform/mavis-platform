@@ -275,6 +275,7 @@ export async function executeJava(
         studentSnapshots: z.array(studentSnapshotSchema).nullish(),
         reviewStatus: z.string().nullish(),
         reviewScore: z.number().nullish(),
+        reviewScoreTenScale: z.number().nullish(),
         labOutcome: z.string().nullish(),
         reviewSummary: z.string().nullish(),
         gradedByName: z.string().nullish(),

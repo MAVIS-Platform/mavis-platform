@@ -491,6 +491,7 @@ test("mutation invalidation excludes unrelated IDs and uses submission response 
  assert.equal(queryMatchesScope(["other","submissions",{}],scope),false);
  assert.deepEqual(mutationInvalidations.gradeSubmission, [
    "submissionReview",
+   "workspaceSubmissions",
    "assignmentSubmissions",
    "submissions",
    "submission",
