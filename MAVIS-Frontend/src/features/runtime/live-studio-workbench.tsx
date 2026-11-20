@@ -149,6 +149,19 @@ function lastResultFor(data: Studio, service: string) {
     .find((action) => action.service === service && action.status === "CONFIRMED")?.result;
 }
 
+function parseLiveMemMiB(part?: string | null): number {
+  if (!part) return 0;
+  const m = part.trim().match(/^([\d.]+)\s*(KiB|KB|K|MiB|MB|M|GiB|GB|G|B)?$/i);
+  if (!m) return 0;
+  const n = Number(m[1]);
+  if (!Number.isFinite(n)) return 0;
+  const unit = (m[2] ?? "MiB").toLowerCase();
+  if (unit === "gib" || unit === "gb" || unit === "g") return n * 1024;
+  if (unit === "kib" || unit === "kb" || unit === "k") return n / 1024;
+  if (unit === "b") return n / (1024 * 1024);
+  return n;
+}
+
 function metric(value: unknown) {
   return typeof value === "number" && Number.isFinite(value)
     ? Number(value.toFixed(2)).toString()
@@ -1248,19 +1261,6 @@ export function LiveStudioWorkbench({
         {/* Center Column: Interactive 3D/2D Canvas + Strictly Bounded Resizable Bottom Telemetry Dock */}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#070b12]">
           <div ref={graphRef} className="relative min-h-[160px] min-w-0 flex-1 overflow-hidden p-2.5">
-            {isPreviewMode && effectivePreviewTopology && (
-              <div className="pointer-events-none absolute bottom-3 left-3 z-10">
-                <div className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full border border-slate-700/80 bg-slate-950/90 px-2.5 py-1 text-[10.5px] text-slate-300 shadow-lg backdrop-blur-sm">
-                  <span className="size-1.5 shrink-0 rounded-full bg-sky-400" aria-hidden="true" />
-                  <span>
-                    {authoring
-                      ? "Preview · Select a block or drag tools onto nodes"
-                      : "Preview · Click Start Live Docker"}
-                  </span>
-                </div>
-              </div>
-            )}
-
             {state.isError ? (
               <ErrorState error={state.error} onRetry={() => void state.refetch()} />
             ) : data.services.length > 0 || data.topology ? (
@@ -1426,82 +1426,259 @@ export function LiveStudioWorkbench({
               style={{ scrollbarWidth: "thin", scrollbarColor: "#334155 #0b101b" }}
               className="min-h-0 min-w-0 flex-1 overflow-auto px-3 py-2.5"
             >
-          {tab === "stats" && (
-            <div className="space-y-2">
-              <div className="mavis-tabular grid grid-cols-2 gap-1.5 text-[10.5px] sm:grid-cols-3 lg:grid-cols-6">
-                {[
-                  ["Running replicas", String(totalRunningReplicas)],
-                  [
-                    "Last requests",
-                    lastConfirmed?.result
-                      ? metric(lastConfirmed.result.metricsAfter["requestCount"])
-                      : "—",
-                  ],
-                  [
-                    "Last p95",
-                    lastConfirmed?.result
-                      ? `${metric(lastConfirmed.result.metricsAfter["p95LatencyMs"])} ms`
-                      : "—",
-                  ],
-                  [
-                    "Error rate",
-                    lastConfirmed?.result
-                      ? `${metric(lastConfirmed.result.metricsAfter["errorRatePercent"])}%`
-                      : "—",
-                  ],
-                  ["Observed spans", String(data.telemetry?.spans.length ?? 0)],
-                  ["Confirmed actions", String(confirmedActions.length)],
-                ].map(([kpiLabel, kpiValue]) => (
-                  <div
-                    key={kpiLabel}
-                    className="rounded border border-slate-800 bg-slate-950/70 px-2 py-1"
-                  >
-                    <p className="truncate text-[10px] text-slate-400">{kpiLabel}</p>
-                    <p className="mt-0.5 font-mono font-semibold text-slate-100">{kpiValue}</p>
-                  </div>
-                ))}
-              </div>
-              <div className="grid grid-cols-1 gap-1.5 text-[11px] sm:grid-cols-2 lg:grid-cols-4">
-                {checklist.map(([label, done]) => (
-                  <div
-                    key={label}
-                    className={`flex items-center gap-1.5 rounded border px-2 py-1 ${done ? "border-emerald-500/30 bg-emerald-500/10" : "border-slate-800 bg-slate-950/60 text-slate-400"}`}
-                  >
-                    <span className="font-mono">{done ? "✓" : "○"}</span>
-                    <span>{label}</span>
-                  </div>
-                ))}
-              </div>
-              {data.actions.length === 0 ? (
-                <p className="text-[11px] text-slate-400">
-                  No actions yet. Start, stop or scale a prepared service.
-                </p>
-              ) : (
-                <ol className="space-y-1.5 text-[11px]">
-                  {data.actions.map((item) => (
-                    <li
-                      key={item.actionId}
-                      className="rounded border border-slate-800 bg-slate-950/60 px-2 py-1.5"
+          {tab === "stats" && (() => {
+            const downServicesCount = blocks.filter(
+              (b) => (runningFor(data, b.service) ?? 0) === 0,
+            ).length;
+            const rawReq = lastConfirmed?.result?.metricsAfter["requestCount"];
+            const rawP95 = lastConfirmed?.result?.metricsAfter["p95LatencyMs"];
+            const rawErr = lastConfirmed?.result?.metricsAfter["errorRatePercent"];
+            const reqNum = typeof rawReq === "number" && Number.isFinite(rawReq) ? rawReq : null;
+            const p95Num = typeof rawP95 === "number" && Number.isFinite(rawP95) ? rawP95 : null;
+            const errNum = typeof rawErr === "number" && Number.isFinite(rawErr) ? rawErr : null;
+            const spanCount = data.telemetry?.spans.length ?? 0;
+
+            let totalCpuPct = 0;
+            let cpuSamples = 0;
+            let peakCpu = -1;
+            let peakCpuService = "";
+            let totalRamUsedMiB = 0;
+            let totalRamLimitMiB = 0;
+            let totalVcpuAllocated = 0;
+
+            const cpusPerPod = data.limits?.cpus ?? 1;
+            const memPerPodMiB = data.limits?.memoryMiB ?? 1024;
+            for (const block of blocks) {
+              const rep = runningFor(data, block.service) ?? 0;
+              if (rep > 0) {
+                totalVcpuAllocated += cpusPerPod * rep;
+                totalRamLimitMiB += memPerPodMiB * rep;
+              }
+              const obs = data.telemetry?.services.find((s) => s.service === block.service);
+              let svcCpu = 0;
+              let hasSvcCpu = false;
+              for (const st of obs?.stats ?? []) {
+                const cm = st.cpu?.match(/[\d.]+/);
+                if (cm) {
+                  const v = Number(cm[0]);
+                  if (Number.isFinite(v)) {
+                    svcCpu += v;
+                    hasSvcCpu = true;
+                  }
+                }
+                if (st.memory) {
+                  const [usedPart, limPart] = st.memory.split("/");
+                  totalRamUsedMiB += parseLiveMemMiB(usedPart);
+                  if (data.limits?.memoryMiB === undefined && limPart) {
+                    const parsedLim = parseLiveMemMiB(limPart);
+                    if (parsedLim > 0 && rep === 0) totalRamLimitMiB += parsedLim;
+                  }
+                }
+              }
+              if (hasSvcCpu) {
+                totalCpuPct += svcCpu;
+                cpuSamples += 1;
+                if (svcCpu > peakCpu) {
+                  peakCpu = svcCpu;
+                  peakCpuService = block.label || block.service;
+                }
+              }
+            }
+            const avgCpuPct = cpuSamples > 0 ? totalCpuPct / cpuSamples : 0;
+            const maxPoolVcpu = Math.max(totalVcpuAllocated, blocks.length * 2, 4);
+            const ramPoolMiB = Math.max(totalRamLimitMiB, blocks.length * 1024, 1024);
+            const cpuBarPct = cpuSamples > 0
+              ? Math.min(100, Math.max(2, totalCpuPct / Math.max(1, totalVcpuAllocated)))
+              : Math.min(100, (totalVcpuAllocated / maxPoolVcpu) * 100);
+            const ramBarPct = Math.min(100, (totalRamUsedMiB / ramPoolMiB) * 100);
+
+            return (
+              <section
+                className="mavis-tabular mx-auto max-w-6xl space-y-4 px-1 py-1"
+                aria-labelledby="live-cluster-overview"
+              >
+                <header className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+                  <h2 id="live-cluster-overview" className="text-base font-semibold text-slate-100">
+                    Cluster Overview
+                  </h2>
+                  <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
+                    <dl className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                      {[
+                        ["Error rate", errNum !== null ? `${metric(errNum)}%` : "—"],
+                        ["Running pods", totalRunningReplicas.toLocaleString()],
+                        ["Services down", downServicesCount.toLocaleString()],
+                        ["Confirmed actions", confirmedActions.length.toLocaleString()],
+                      ].map(([kLabel, kValue]) => (
+                        <div key={kLabel} className="flex items-baseline gap-2">
+                          <dt className="text-slate-400">{kLabel}</dt>
+                          <dd className="font-semibold tabular-nums text-slate-200">{kValue}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                    <span
+                      className={`shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ${
+                        downServicesCount
+                          ? "bg-rose-500/15 text-rose-300"
+                          : isPreviewMode
+                            ? "bg-sky-500/15 text-sky-300"
+                            : "bg-emerald-500/15 text-emerald-300"
+                      }`}
                     >
-                      <span className="font-semibold text-slate-200">
-                        {item.action} {item.service}
-                        {item.replicas ? ` → ${item.replicas}` : ""}
-                      </span>
-                      <span className="text-slate-400"> · {item.status}</span>
-                      {item.result && (
-                        <span className="mavis-tabular ml-2 font-mono text-slate-400">
-                          replicas {item.result.replicasBefore} → {item.result.replicasAfter} ·
-                          requests {metric(item.result.metricsAfter["requestCount"])} · p95{" "}
-                          {metric(item.result.metricsAfter["p95LatencyMs"])} ms · errors{" "}
-                          {metric(item.result.metricsAfter["errorRatePercent"])}%
-                        </span>
-                      )}
-                    </li>
+                      {downServicesCount
+                        ? `${downServicesCount} down`
+                        : isPreviewMode
+                          ? "Setup preview"
+                          : blocks.length
+                            ? "Healthy"
+                            : "No services"}
+                    </span>
+                  </div>
+                </header>
+
+                <section aria-label="Traffic & reliability">
+                  <h3 className="mb-2 text-xs font-semibold text-slate-200">
+                    Traffic &amp; reliability
+                  </h3>
+                  <dl className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,140px),1fr))] gap-2">
+                    {[
+                      {
+                        label: "Measured requests",
+                        value: reqNum !== null ? reqNum.toLocaleString() : "—",
+                        unit: reqNum !== null ? "req" : "",
+                        detail: reqNum !== null ? "Latest probe workload" : "Start Live Docker to measure",
+                        warning: false,
+                      },
+                      {
+                        label: "Observed E2E p95",
+                        value: p95Num !== null ? metric(p95Num) : "—",
+                        unit: p95Num !== null ? "ms" : "",
+                        detail: "Measured from live probe",
+                        warning: p95Num !== null && p95Num > 500,
+                      },
+                      {
+                        label: "Error rate",
+                        value: errNum !== null ? metric(errNum) : "—",
+                        unit: errNum !== null ? "%" : "",
+                        detail: "HTTP 5xx & failed spans",
+                        warning: errNum !== null && errNum > 0,
+                      },
+                      {
+                        label: "Observed spans",
+                        value: spanCount.toLocaleString(),
+                        unit: "spans",
+                        detail: "Live OpenTelemetry traces",
+                        warning: false,
+                      },
+                    ].map(({ label, value, unit, detail, warning }) => (
+                      <div
+                        key={label}
+                        className="rounded-lg border border-slate-700/80 bg-slate-900 p-3"
+                      >
+                        <dt className="text-xs font-medium text-slate-300">{label}</dt>
+                        <dd
+                          className={`mt-1 font-mono text-lg font-semibold tabular-nums ${
+                            warning ? "text-rose-300" : "text-slate-100"
+                          }`}
+                        >
+                          {value}{" "}
+                          {unit && <span className="text-[11px] text-slate-400">{unit}</span>}
+                          <span className="mt-1 block font-sans text-[11px] font-normal text-slate-400">
+                            {detail}
+                          </span>
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                </section>
+
+                <section aria-label="Resource capacity">
+                  <h3 className="mb-2 text-xs font-semibold text-slate-200">Resource capacity</h3>
+                  <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,230px),1fr))] gap-2">
+                    {[
+                      {
+                        label: "CPU allocation",
+                        rightText: `${Number(totalVcpuAllocated.toFixed(1))} / ${maxPoolVcpu} vCPU`,
+                        pct: cpuBarPct,
+                        detail:
+                          cpuSamples > 0
+                            ? `${avgCpuPct.toFixed(1)}% average CPU load${peakCpuService ? ` · Highest: ${peakCpuService}` : ""}`
+                            : `${totalRunningReplicas} pod(s) allocated · live CPU measured when Docker runs`,
+                      },
+                      {
+                        label: "RAM usage",
+                        rightText: `${Math.round(totalRamUsedMiB).toLocaleString()} / ${Math.round(ramPoolMiB).toLocaleString()} MiB`,
+                        pct: ramBarPct,
+                        detail: `${Math.max(0, Math.round(ramPoolMiB - totalRamUsedMiB)).toLocaleString()} MiB available across ${totalRunningReplicas} pod(s)`,
+                      },
+                    ].map(({ label, rightText, pct, detail }) => (
+                      <div
+                        key={label}
+                        className="space-y-2 rounded-lg border border-slate-700/80 bg-slate-900 p-3"
+                      >
+                        <div className="flex flex-wrap items-baseline justify-between gap-1.5">
+                          <span className="text-xs font-semibold text-slate-200">{label}</span>
+                          <span className="font-mono text-xs tabular-nums text-slate-300">
+                            {rightText}
+                          </span>
+                        </div>
+                        <div
+                          className="h-1.5 overflow-hidden rounded-full bg-slate-800"
+                          aria-hidden="true"
+                        >
+                          <div
+                            className="h-full rounded-full bg-sky-400 transition-all"
+                            style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
+                          />
+                        </div>
+                        <p className="break-words text-[11px] text-slate-400">{detail}</p>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+
+                <div className="grid grid-cols-1 gap-1.5 text-[11px] sm:grid-cols-2 lg:grid-cols-4">
+                  {checklist.map(([label, done]) => (
+                    <div
+                      key={label}
+                      className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 ${
+                        done
+                          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+                          : "border-slate-800 bg-slate-900/70 text-slate-400"
+                      }`}
+                    >
+                      <span className="font-mono">{done ? "✓" : "○"}</span>
+                      <span>{label}</span>
+                    </div>
                   ))}
-                </ol>
-              )}
-            </div>
-          )}
+                </div>
+
+                {data.actions.length > 0 && (
+                  <ol className="space-y-1.5 text-[11px]">
+                    {data.actions.map((item) => (
+                      <li
+                        key={item.actionId}
+                        className="rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-1.5"
+                      >
+                        <span className="font-semibold text-slate-200">
+                          {item.action} {item.service}
+                          {item.replicas ? ` → ${item.replicas}` : ""}
+                        </span>
+                        <span className="text-slate-400"> · {item.status}</span>
+                        {item.result && (
+                          <span className="mavis-tabular ml-2 font-mono text-slate-400">
+                            replicas {item.result.replicasBefore} → {item.result.replicasAfter} ·
+                            requests {metric(item.result.metricsAfter["requestCount"])} · p95{" "}
+                            {metric(item.result.metricsAfter["p95LatencyMs"])} ms · errors{" "}
+                            {metric(item.result.metricsAfter["errorRatePercent"])}%
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </section>
+            );
+          })()}
 
           {tab === "telemetry" && (
             <table className="w-full text-left text-[11px]">
