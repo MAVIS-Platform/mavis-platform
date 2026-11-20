@@ -2478,5 +2478,90 @@
         "points": 1
       }
     ]
+  },
+  {
+    "id": "java-v2-ch07",
+    "track": "Java",
+    "phase": "V2 · Module 3",
+    "title": "Chương 07: DATABASE-PER-SERVICE, ANTI-PATTERN SHARED DB & CHIẾN LƯỢC TRUY VẤN",
+    "minutes": 45,
+    "objective": "Giải thích sâu lý do Shared Database là kẻ thù số 1 phá vỡ kiến trúc Microservices. Phân biệt 3 cấp độ cách ly dữ liệu: *Private tables*, *Schema-per-service*, *Database server-per-service*. Áp dụng 2 mẫu truy vấn xuyên dịch vụ (API Composition & CQRS) và chiến lược Cache-Aside với Redis.",
+    "lesson": "### 7.1. Tại sao \"Shared Database\" là Anti-Pattern chết người?\n\nKhi mới chuyển từ Monolith sang Microservices, rất nhiều sinh viên tách code thành 4 project Spring Boot nhưng lại trỏ cả 4 `application.yml` vào **cùng một database `shop_db`** để tiện viết câu lệnh `JOIN`.\n\nHệ quả nghiêm trọng (`[R19]` Ch.1 & `[S16]` Ch.8):\n1. **Khớp nối thời gian phát triển (Development-time Coupling)**: Đội `catalog-service` muốn đổi tên một cột trong bảng `products` phải đi xin phép đội `order-service` vì đội kia đang viết SQL đọc thẳng vào bảng đó!\n2. **Khớp nối thời gian chạy (Runtime Coupling)**: Một truy vấn báo cáo nặng từ `analytics-service` làm khóa bảng (table lock) hoặc ngốn 100% CPU cơ sở dữ liệu khiến `order-service` không thể nhận đơn hàng!\n3. **Mất khả năng chọn CSDL phù hợp (Polyglot Persistence)**: Mọi dịch vụ bị ép dùng chung một loại CSDL duy nhất dù mỗi nghiệp vụ có đặc thù khác nhau (PostgreSQL cho đơn hàng, Elasticsearch cho tìm kiếm, Redis cho giỏ hàng).\n\n```text\nSAI (Shared DB Anti-Pattern):             ĐÚNG (Database-per-Service):\n[order-svc]   [catalog-svc]               [order-svc]          [catalog-svc]\n     \\             /                           |                     |\n      v           v                            v                     v\n   +-----------------+                    [(order_db)]         [(catalog_db)]\n   |  (shared_db) ❌ |                    (Chỉ order-svc       (Chỉ catalog-svc\n   +-----------------+                     được đọc/ghi)        được đọc/ghi)\n```\n\n### 7.2. Truy vấn dữ liệu nằm rải rác nhiều dịch vụ (`[R19]` Ch.7)\n\nKhi đã tách riêng DB, ta không còn viết được câu SQL `SELECT ... FROM orders JOIN products JOIN users`. Có 2 mẫu thiết kế chuẩn để giải quyết:\n\n#### (a) API Composition Pattern\nMột dịch vụ đóng vai trò **API Composer** (có thể là API Gateway hoặc một dịch vụ tổng hợp) gọi song song các dịch vụ sở hữu dữ liệu qua API rồi ghép kết quả trong bộ nhớ (in-memory join).\n- **Ưu điểm**: Đơn giản, dữ liệu luôn mới nhất (real-time), dễ triển khai cho truy vấn đơn giản.\n- **Nhược điểm**: Tăng độ trễ mạng, giảm độ khả dụng (nhiều lời gọi đồng bộ), **không phù hợp** để join hàng chục nghìn bản ghi có lọc/phân trang phức tạp.\n\n#### (b) CQRS (Command Query Responsibility Segregation)\nTách biệt hoàn toàn mô hình **Ghi (Command)** và mô hình **Đọc (Query)**:\n- Khi `order-service` hoặc `catalog-service` thay đổi dữ liệu, chúng phát sự kiện miền (*Domain Event*) lên Kafka.\n- Một dịch vụ chuyên đọc (`order-history-service`) lắng nghe các sự kiện đó và cập nhật một **bảng chiếu đã phi chuẩn hóa (Materialized Read View)** tối ưu riêng cho truy vấn tìm kiếm/báo cáo cực nhanh.\n- **Đánh đổi**: Tốc độ đọc cực nhanh, mở rộng độc lập; nhưng tăng độ phức tạp hệ thống và dữ liệu đọc có độ trễ nhất quán cuối cùng (**Eventual Consistency**).\n\n### 7.3. Tối ưu đọc bằng Redis Cache (Mẫu Cache-Aside)\n\nVới dữ liệu đọc nhiều, ít thay đổi như danh mục sản phẩm (`catalog-service`), áp dụng mẫu **Cache-Aside**:\n1. Kiểm tra Redis theo key (ví dụ `product:detail:{id}`).\n2. **Cache Hit**: Trả ngay dữ liệu từ RAM (tính bằng mili-giây).\n3. **Cache Miss**: Đọc từ PostgreSQL $\\rightarrow$ ghi vào Redis kèm thời gian sống **TTL** (ví dụ 10 phút) $\\rightarrow$ trả về client.\n4. **Cache Invalidation**: Khi sản phẩm được cập nhật giá/tồn kho, **xóa key cache tương ứng (`@CacheEvict`)** để tránh trả dữ liệu cũ (stale data).\n\n```java\n@Service\npublic class ProductQueryService {\n\n    private final ProductRepository productRepository;\n\n    public ProductQueryService(ProductRepository productRepository) {\n        this.productRepository = productRepository;\n    }\n\n    @Cacheable(value = \"products\", key = \"#id\")\n    public ProductResponse getProductById(Long id) {\n        return productRepository.findById(id)\n                .map(ProductMapper::toResponse)\n                .orElseThrow(() -> new ResourceNotFoundException(\"Product not found: \" + id));\n    }\n\n    @CacheEvict(value = \"products\", key = \"#id\")\n    @Transactional\n    public ProductResponse updatePrice(Long id, BigDecimal newPrice) {\n        Product product = productRepository.findById(id)\n                .orElseThrow(() -> new ResourceNotFoundException(\"Product not found: \" + id));\n        product.changePrice(newPrice);\n        return ProductMapper.toResponse(productRepository.save(product));\n    }\n}\n```\n\n### 7.4. Góc nhìn trên nền tảng MAVIS\n- **3E Rule — Shared Database Detection**: MAVIS quét `application.yml` và `docker-compose.yml` của từng dịch vụ để trích xuất URL/Schema kết nối CSDL. Nếu $\\ge 2$ microservice cùng trỏ vào một database/schema giống hệt nhau, MAVIS lập tức bật cảnh báo đỏ **SHARED_DATABASE** trên sơ đồ C2.",
+    "exercise": "### 7.5. Bài tập thực hành Lab 07\n- Kiểm tra sơ đồ **C2 Container** của hệ thống mẫu trong MAVIS: xác nhận mỗi dịch vụ nghiệp vụ đều có mũi tên kết nối tới đúng 1 cơ sở dữ liệu/schema riêng biệt và không phát sinh cảnh báo `SHARED_DATABASE`.\n- Đề xuất phương án (API Composition hay CQRS) cho 2 màn hình: (1) Xem chi tiết 1 đơn hàng vừa đặt, và (2) Tìm kiếm toàn văn & thống kê doanh thu 100.000 đơn hàng theo danh mục sản phẩm.",
+    "sources": [
+      {
+        "publisher": "Manning / Microservices.io",
+        "title": "Chris Richardson — Microservices Patterns",
+        "url": "https://microservices.io/patterns/"
+      },
+      {
+        "publisher": "Spring Cloud",
+        "title": "Mastering Microservices with Java & Spring Cloud Reference",
+        "url": "https://docs.spring.io/spring-cloud/reference/"
+      },
+      {
+        "publisher": "O'Reilly / Production-Ready Microservices",
+        "title": "Susan J. Fowler — Production-Ready Microservices",
+        "url": "https://www.oreilly.com/library/view/production-ready-microservices/9781491965962/"
+      }
+    ],
+    "questions": [
+      {
+        "id": "java-v2-ch07-q1",
+        "prompt": "Rủi ro kiến trúc lớn nhất khi cho hai Microservice (`order-service` và `catalog-service`) đọc/ghi chung một bảng cơ sở dữ liệu là gì?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Không thể sử dụng kiểu dữ liệu `UUID` trong PostgreSQL",
+          "Tạo khớp nối chặt cả lúc phát triển lẫn lúc chạy (đổi cấu trúc bảng làm vỡ service kia, tranh chấp khóa/tài nguyên CSDL), phá vỡ tính độc lập của Microservices",
+          "Spring Data JPA không hỗ trợ kết nối 2 ứng dụng vào cùng 1 máy chủ DB",
+          "Không thể chạy API Gateway phía trước nữa"
+        ],
+        "correctOption": 1,
+        "explanation": "Shared Database là anti-pattern kinh điển làm biến Microservices trở thành Distributed Monolith.",
+        "points": 1
+      },
+      {
+        "id": "java-v2-ch07-q2",
+        "prompt": "Trong mẫu **API Composition**, thành phần API Composer thực hiện công việc gì?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Ghi log lỗi ra file văn bản",
+          "Gọi API của nhiều dịch vụ sở hữu dữ liệu khác nhau rồi ghép (join) kết quả trong bộ nhớ để trả về cho client",
+          "Sao chép tự động các bảng CSDL bằng trigger SQL",
+          "Tạo token JWT cho người dùng"
+        ],
+        "correctOption": 1,
+        "explanation": "API Composition gom dữ liệu từ nhiều dịch vụ ở tầng ứng dụng thay vì SQL JOIN ở tầng CSDL.",
+        "points": 1
+      },
+      {
+        "id": "java-v2-ch07-q3",
+        "prompt": "Khi nào nên ưu tiên dùng **CQRS** thay vì **API Composition**?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Khi cần truy vấn/lọc/phân trang phức tạp trên tập dữ liệu lớn nằm rải rác ở nhiều dịch vụ và chấp nhận nhất quán cuối cùng (Eventual Consistency)",
+          "Khi dự án chỉ có duy nhất 1 bảng dữ liệu nhỏ",
+          "Khi không muốn sử dụng Message Broker hay sự kiện miền",
+          "Khi yêu cầu dữ liệu phải nhất quán tuyệt đối tức thì ở mọi truy vấn đọc"
+        ],
+        "correctOption": 0,
+        "explanation": "API Composition sẽ quá tải bộ nhớ và mạng khi phải join/sort hàng chục nghìn bản ghi; CQRS duy trì view đọc tối ưu sẵn sàng phục vụ truy vấn phức tạp.",
+        "points": 1
+      },
+      {
+        "id": "java-v2-ch07-q4",
+        "prompt": "Trong mẫu **Cache-Aside** dùng Redis, bước nào quan trọng nhất khi dữ liệu gốc trong PostgreSQL vừa được cập nhật giá bán?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Khởi động lại toàn bộ máy chủ Redis",
+          "Xóa hoặc cập nhật ngay khóa cache tương ứng (`@CacheEvict`) để tránh trả dữ liệu cũ (stale data)",
+          "Tắt hoàn toàn thời gian sống TTL của Redis",
+          "Xóa bản ghi trong PostgreSQL và chỉ giữ trên Redis"
+        ],
+        "correctOption": 1,
+        "explanation": "Cache invalidation đảm bảo dữ liệu hiển thị không bị lệch kéo dài so với dữ liệu nguồn trong DB.",
+        "points": 1
+      }
+    ]
   }
 ]
