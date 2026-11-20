@@ -23,6 +23,7 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -33,6 +34,66 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 class RuntimeRunnerDispatcherTest {
+
+    private String currentBundleLabels() {
+        return "{\"mavis.bundle.rev\":\"3\",\"mavis.dotnet.version\":\"1.17.0\","
+                + "\"mavis.dotnet.musl.version\":\"1.17.0\",\"mavis.java.version\":\"2.32.0\"}";
+    }
+
+    @Test
+    void bundleLabelsMustIncludeExactMuslVersion() {
+        assertThat(RuntimeRunnerDispatcher.hasCurrentBundleLabels(currentBundleLabels())).isTrue();
+        assertThat(RuntimeRunnerDispatcher.hasCurrentBundleLabels(currentBundleLabels()
+                .replace("\"mavis.dotnet.musl.version\":\"1.17.0\",", ""))).isFalse();
+        assertThat(RuntimeRunnerDispatcher.hasCurrentBundleLabels(currentBundleLabels()
+                .replace("1.17.0", "11.17.0"))).isFalse();
+        assertThat(RuntimeRunnerDispatcher.hasCurrentBundleLabels("null")).isFalse();
+    }
+
+    @Test
+    void upgradingBundlePreservesOldSharedVolumeAndSwitchesOnlyAfterCopy() {
+        var profile = new ObjectMapper().createObjectNode().put("instrumentationVolume", "mavis-agents-v1");
+        var commands = new java.util.ArrayList<List<String>>();
+        try (var mocked = mockStatic(RuntimeRunnerDispatcher.class, CALLS_REAL_METHODS)) {
+            mocked.when(() -> RuntimeRunnerDispatcher.captureCommandStdout(anyList(), anyInt())).thenReturn(null);
+            mocked.when(() -> RuntimeRunnerDispatcher.probeCommandZeroExit(anyList(), anyInt())).thenAnswer(inv -> {
+                commands.add(List.copyOf(inv.getArgument(0)));
+                return true;
+            });
+            assertThat(RuntimeRunnerDispatcher.prepareInstrumentationVolume(profile, tempDir)).isTrue();
+            assertThat(profile.path("instrumentationVolume").asText()).isEqualTo("mavis-agents-java-2-32-0-dotnet-1-17-0-bundle-3");
+            assertThat(commands).anyMatch(cmd -> cmd.subList(0, 2).equals(List.of("docker", "cp")));
+            assertThat(commands).noneMatch(cmd -> cmd.contains("mavis-agents-v1") || cmd.subList(0, 3).equals(List.of("docker", "volume", "rm")));
+        }
+    }
+
+    @Test
+    void failedBundleCopyKeepsProfileAndRemovesOnlyNewVolume() {
+        var profile = new ObjectMapper().createObjectNode().put("instrumentationVolume", "mavis-agents-v1");
+        var commands = new java.util.ArrayList<List<String>>();
+        try (var mocked = mockStatic(RuntimeRunnerDispatcher.class, CALLS_REAL_METHODS)) {
+            mocked.when(() -> RuntimeRunnerDispatcher.captureCommandStdout(anyList(), anyInt())).thenReturn(null);
+            mocked.when(() -> RuntimeRunnerDispatcher.probeCommandZeroExit(anyList(), anyInt())).thenAnswer(inv -> {
+                List<String> cmd = List.copyOf(inv.getArgument(0));
+                commands.add(cmd);
+                return !cmd.get(1).equals("cp");
+            });
+            assertThat(RuntimeRunnerDispatcher.prepareInstrumentationVolume(profile, tempDir)).isFalse();
+            assertThat(profile.path("instrumentationVolume").asText()).isEqualTo("mavis-agents-v1");
+            assertThat(commands).contains(List.of("docker", "volume", "rm", "mavis-agents-java-2-32-0-dotnet-1-17-0-bundle-3"));
+            assertThat(commands).noneMatch(cmd -> cmd.contains("mavis-agents-v1"));
+        }
+    }
+
+    @Test
+    void completedVersionedBundleIsReusedWithoutMutatingDockerResources() {
+        var profile = new ObjectMapper().createObjectNode().put("instrumentationVolume", "mavis-agents-v1");
+        try (var mocked = mockStatic(RuntimeRunnerDispatcher.class, CALLS_REAL_METHODS)) {
+            mocked.when(() -> RuntimeRunnerDispatcher.captureCommandStdout(anyList(), anyInt())).thenReturn(currentBundleLabels());
+            assertThat(RuntimeRunnerDispatcher.prepareInstrumentationVolume(profile, tempDir)).isTrue();
+            mocked.verify(() -> RuntimeRunnerDispatcher.probeCommandZeroExit(anyList(), anyInt()), never());
+        }
+    }
 
     @TempDir
     Path tempDir;
