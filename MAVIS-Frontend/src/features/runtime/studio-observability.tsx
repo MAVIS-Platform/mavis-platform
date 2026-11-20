@@ -223,9 +223,12 @@ const STUDIO_2D_SYMBOLS = [
   { kind: "telemetry", match: /otel|prometheus|grafana|jaeger|metric|monitor|telemetry/, body: "M4 43V27h9v16Zm15 0V19h9v24Zm15 0V9h9v34Z", detail: "m4 19 10-7 9 1 15-10m-6 0h6v6", color: "#67e8f9" },
   { kind: "queue", match: /rabbit|amqp|celery|bull|queue|\bmq\b/, body: "M4 11h40v26H4Z", detail: "m4 12 20 15 20-15M4 37l14-14m26 14L30 23", color: "#fdba74" },
   { kind: "stream", match: /kafka|broker|stream|event/, body: "M4 11a7 7 0 0 1 7-7h26a7 7 0 0 1 7 7v26a7 7 0 0 1-7 7H11a7 7 0 0 1-7-7Z", detail: "M9 14h13l5 5h12M9 24h30M9 34h13l5-5h12", color: "#cbd5e1" },
-  { kind: "order", match: /order/, body: "M16 14h27l-6 19H20Z", detail: "M6 8h8l6 25M22 40a3 3 0 1 0 0 6 3 3 0 1 0 0-6Zm13 0a3 3 0 1 0 0 6 3 3 0 1 0 0-6Z", color: "#93c5fd" },
-  { kind: "payment", match: /payment|ledger|billing/, body: "M4 12a5 5 0 0 1 5-5h30a5 5 0 0 1 5 5v24a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5Z", detail: "M4 17h40M11 30h12m-12 5h6", color: "#a5b4fc" },
-  { kind: "inventory", match: /inventory/, body: "m4 13 20-9 20 9v22l-20 9-20-9Z", detail: "m4 13 20 10 20-10M24 23v21M14 9l20 10v9", color: "#a5b4fc" },
+  { kind: "order", match: /order|cart|checkout/, body: "M16 14h27l-6 19H20Z", detail: "M6 8h8l6 25M22 40a3 3 0 1 0 0 6 3 3 0 1 0 0-6Zm13 0a3 3 0 1 0 0 6 3 3 0 1 0 0-6Z", color: "#93c5fd" },
+  { kind: "payment", match: /payment|ledger|billing|wallet/, body: "M4 12a5 5 0 0 1 5-5h30a5 5 0 0 1 5 5v24a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5Z", detail: "M4 17h40M11 30h12m-12 5h6", color: "#5eead4" },
+  { kind: "inventory", match: /inventory|catalog|product|warehouse|item/, body: "m4 13 20-9 20 9v22l-20 9-20-9Z", detail: "m4 13 20 10 20-10M24 23v21M14 9l20 10v9", color: "#c4b5fd" },
+  { kind: "user", match: /user|account|customer|profile|member/, body: "M24 7a9 9 0 1 0 0 18 9 9 0 1 0 0-18ZM8 41c2-9 9-13 16-13s14 4 16 13Z", detail: "M24 12a4 4 0 1 0 0 8", color: "#7dd3fc" },
+  { kind: "notification", match: /notif|mail|alert|sms|push/, body: "M24 6c-8 0-13 6-13 14v9l-4 5h34l-4-5v-9c0-8-5-14-13-14Z", detail: "M19 38a5 5 0 0 0 10 0", color: "#fcd34d" },
+  { kind: "shipping", match: /ship|deliver|logistic|dispatch/, body: "M4 13h25v20H4Zm25 7h9l6 6v7H29Z", detail: "M13 38a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm22 0a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z", color: "#6ee7b7" },
   { kind: "service", match: /(?:)/, body: "M5 8h38v13H5Zm0 19h38v13H5Z", detail: "M11 14h1m5 0h1m6 0h13M11 33h1m5 0h1m6 0h13", color: "#a5b4fc" },
 ];
 
@@ -402,12 +405,28 @@ function renderNodeFunctionGlyph(
       </g>
     );
   }
-  if (n.includes("inventory")) {
+  if (n.includes("inventory") || n.includes("catalog") || n.includes("product") || n.includes("warehouse")) {
     return (
       <g stroke={color} strokeWidth="1.3" fill="none">
         <polygon points={`${cx},${cy - 5.2} ${cx + 4.8},${cy - 2.6} ${cx + 4.8},${cy + 2.6} ${cx},${cy + 5.2} ${cx - 4.8},${cy + 2.6} ${cx - 4.8},${cy - 2.6}`} />
         <polyline points={`${cx - 4.8},${cy - 2.6} ${cx},${cy} ${cx + 4.8},${cy - 2.6}`} />
         <line x1={cx} y1={cy} x2={cx} y2={cy + 5.2} />
+      </g>
+    );
+  }
+  if (n.includes("user") || n.includes("account") || n.includes("customer") || n.includes("profile")) {
+    return (
+      <g stroke={color} strokeWidth="1.35" strokeLinecap="round" fill="none">
+        <circle cx={cx} cy={cy - 2.2} r="2.3" />
+        <path d={`M ${cx - 4.2},${cy + 4.2} C ${cx - 4.2},${cy + 1.5} ${cx + 4.2},${cy + 1.5} ${cx + 4.2},${cy + 4.2}`} />
+      </g>
+    );
+  }
+  if (n.includes("notif") || n.includes("mail") || n.includes("alert")) {
+    return (
+      <g stroke={color} strokeWidth="1.35" strokeLinecap="round" fill="none">
+        <path d={`M ${cx - 3.6},${cy + 2.5} L ${cx - 3.6},${cy - 0.5} A 3.6 3.6 0 0 1 ${cx + 3.6},${cy - 0.5} L ${cx + 3.6},${cy + 2.5} Z`} />
+        <circle cx={cx} cy={cy + 4} r="0.9" fill={color} />
       </g>
     );
   }
@@ -852,17 +871,192 @@ function render3DSeNodeSculpture(
     );
   }
 
-  // 14. MICROSERVICE CONTAINER (Order / Payment / Inventory / App Service): Clean Single 3D Container Unit + Domain Emblem
-  const cyBase = cy - 3;
-  const h = isStopped ? 15 : 16.5;
-  const roofY = cyBase - h;
+  // 14. ORDER / CART / CHECKOUT: 3D Stepped Fulfillment Deck + Stacked Order Parcels
+  if (n.includes("order") || n.includes("cart") || n.includes("checkout")) {
+    const by = cy - 1;
+    const accentColor = isStopped ? s : "#38bdf8";
+    return (
+      <g>
+        {/* Wide Base Order Deck */}
+        {renderIsoBox(cx, by, 34, 16, 8, s, fill, 1.4, top)}
+        {/* Left Stacked Fulfillment Parcel */}
+        {renderIsoBox(cx - 10, by - 9, 15, 7.5, 13, accentColor, fill, 1.5, top)}
+        {/* Right Secondary Order Cube */}
+        {renderIsoBox(cx + 10, by - 7, 13, 6.5, 9, s, fill, 1.3, top)}
+        {/* Order Checkmark Emblem on Tall Parcel Roof */}
+        <path
+          d={`M ${cx - 14},${by - 22} L ${cx - 10.5},${by - 19} L ${cx - 5},${by - 24.5}`}
+          fill="none"
+          stroke="#ffffff"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        {/* Active Flow LEDs on Base Tray */}
+        <circle cx={cx - 18} cy={by - 3.5} r="1.6" fill={accentColor} />
+        <circle cx={cx - 11} cy={by - 0.5} r="1.6" fill={isStopped ? "#ef4444" : "#10b981"} />
+      </g>
+    );
+  }
+
+  // 15. PAYMENT / BILLING / LEDGER / WALLET: 3D Payment Vault Base + Upright Tilted Ledger Card Slab
+  if (n.includes("payment") || n.includes("billing") || n.includes("ledger") || n.includes("wallet")) {
+    const by = cy - 1;
+    const accentColor = isStopped ? s : "#2dd4bf";
+    return (
+      <g>
+        {/* Vault Pedestal */}
+        {renderIsoBox(cx, by, 28, 13, 8, s, fill, 1.4, top)}
+        {/* Upright Isometric Payment Card / Ledger Monolith */}
+        <polygon
+          points={`${cx - 21},${by - 10} ${cx + 15},${by - 25} ${cx + 21},${by - 22} ${cx + 21},${by - 4} ${cx - 15},${by + 11} ${cx - 21},${by + 8}`}
+          fill={fill}
+          stroke={accentColor}
+          strokeWidth="1.6"
+          strokeLinejoin="round"
+        />
+        {/* Card Front Face Sheen */}
+        <polygon
+          points={`${cx - 15},${by - 7} ${cx + 21},${by - 22} ${cx + 21},${by - 4} ${cx - 15},${by + 11}`}
+          fill={top}
+          stroke={accentColor}
+          strokeWidth="1.4"
+          strokeLinejoin="round"
+        />
+        {/* Magnetic Transaction Stripe across Upright Card */}
+        <line
+          x1={cx - 13}
+          y1={by - 2}
+          x2={cx + 19}
+          y2={by - 15.5}
+          stroke={accentColor}
+          strokeWidth="3.2"
+          strokeLinecap="round"
+          opacity="0.85"
+        />
+        {/* EMV Security Chip & Contactless Pulse */}
+        <polygon
+          points={`${cx - 9},${by + 2} ${cx - 2},${by - 1} ${cx - 2},${by + 4} ${cx - 9},${by + 7}`}
+          fill="#fbbf24"
+          opacity={isStopped ? "0.35" : "0.95"}
+        />
+        <path
+          d={`M ${cx + 8},${by - 3} A 5 5 0 0 1 ${cx + 13},${by - 6}`}
+          fill="none"
+          stroke="#ffffff"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+        />
+      </g>
+    );
+  }
+
+  // 16. CATALOG / PRODUCT / INVENTORY / WAREHOUSE: 3D Tiered 3-Shelf Showcase Rack
+  if (
+    n.includes("catalog") ||
+    n.includes("product") ||
+    n.includes("inventory") ||
+    n.includes("warehouse") ||
+    n.includes("item")
+  ) {
+    const by = cy - 1;
+    const accentColor = isStopped ? s : "#a78bfa";
+    return (
+      <g>
+        {/* Bottom Tier Shelf */}
+        {renderIsoBox(cx, by, 30, 14, 4.5, s, fill, 1.3, top)}
+        {/* Vertical Corner Stanchions */}
+        <g stroke={accentColor} strokeWidth="1.5" opacity="0.8">
+          <line x1={cx - 26} y1={by - 4} x2={cx - 26} y2={by - 24} />
+          <line x1={cx} y1={by + 9} x2={cx} y2={by - 11} />
+          <line x1={cx + 26} y1={by - 4} x2={cx + 26} y2={by - 24} />
+        </g>
+        {/* Middle Tier Shelf */}
+        {renderIsoBox(cx, by - 10, 29, 13.5, 4, s, fill, 1.3, top)}
+        {/* Top Showcase Tier Shelf */}
+        {renderIsoBox(cx, by - 20, 28, 13, 4.5, accentColor, fill, 1.5, top)}
+        {/* Mini Catalog Item Cubes displayed on Top Shelf */}
+        {renderIsoBox(cx - 8, by - 24, 6.5, 3.2, 5.5, accentColor, top, 1.2, accentColor)}
+        {renderIsoBox(cx + 8, by - 23, 6.5, 3.2, 4, "#ffffff", top, 1.1, top)}
+      </g>
+    );
+  }
+
+  // 17. USER / ACCOUNT / CUSTOMER / PROFILE: 3D Identity Pedestal & Floating Profile Ring
+  if (n.includes("user") || n.includes("account") || n.includes("customer") || n.includes("profile") || n.includes("member")) {
+    const by = cy - 2;
+    const accentColor = isStopped ? s : "#38bdf8";
+    return (
+      <g>
+        <path
+          d={`M ${cx - 26},${by - 10} L ${cx - 26},${by} A 26 11 0 0 0 ${cx + 26},${by} L ${cx + 26},${by - 10} Z`}
+          fill={fill}
+          stroke={s}
+          strokeWidth="1.5"
+        />
+        <ellipse cx={cx} cy={by - 10} rx="26" ry="11" fill={top} stroke={accentColor} strokeWidth="1.5" />
+        {/* Floating Sculpted Identity Silhouette */}
+        <circle cx={cx} cy={by - 25} r="6.5" fill={top} stroke={accentColor} strokeWidth="1.8" />
+        <path
+          d={`M ${cx - 13},${by - 10} C ${cx - 13},${by - 18} ${cx + 13},${by - 18} ${cx + 13},${by - 10}`}
+          fill={fill}
+          stroke="#ffffff"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+        />
+      </g>
+    );
+  }
+
+  // 18. NOTIFICATION / MAIL / ALERT / SMS: 3D Broadcast Beacon Tower
+  if (n.includes("notif") || n.includes("mail") || n.includes("alert") || n.includes("sms") || n.includes("push")) {
+    const by = cy - 1;
+    const accentColor = isStopped ? s : "#fbbf24";
+    return (
+      <g>
+        {renderIsoBox(cx, by, 26, 12, 9, s, fill, 1.4, top)}
+        <line x1={cx} y1={by - 10} x2={cx} y2={by - 28} stroke={accentColor} strokeWidth="2.4" strokeLinecap="round" />
+        <circle cx={cx} cy={by - 29} r="3.4" fill="#ffffff" stroke={accentColor} strokeWidth="1.6" />
+        <path d={`M ${cx - 9},${by - 25} A 10 10 0 0 1 ${cx - 9},${by - 33}`} fill="none" stroke={accentColor} strokeWidth="1.6" strokeLinecap="round" />
+        <path d={`M ${cx + 9},${by - 25} A 10 10 0 0 0 ${cx + 9},${by - 33}`} fill="none" stroke={accentColor} strokeWidth="1.6" strokeLinecap="round" />
+        <path d={`M ${cx - 15},${by - 22} A 16 16 0 0 1 ${cx - 15},${by - 36}`} fill="none" stroke={accentColor} strokeWidth="1.3" opacity="0.65" strokeLinecap="round" />
+        <path d={`M ${cx + 15},${by - 22} A 16 16 0 0 0 ${cx + 15},${by - 36}`} fill="none" stroke={accentColor} strokeWidth="1.3" opacity="0.65" strokeLinecap="round" />
+      </g>
+    );
+  }
+
+  // 19. SHIPPING / DELIVERY / LOGISTICS: 3D Dispatch Conveyor Hub
+  if (n.includes("ship") || n.includes("deliver") || n.includes("logistic") || n.includes("dispatch")) {
+    const by = cy - 1;
+    const accentColor = isStopped ? s : "#34d399";
+    return (
+      <g>
+        {renderIsoBox(cx, by, 35, 16, 7, s, fill, 1.4, top)}
+        {renderIsoBox(cx - 11, by - 7, 11, 5.5, 10, accentColor, fill, 1.4, top)}
+        <path
+          d={`M ${cx + 2},${by - 9} L ${cx + 11},${by - 6} L ${cx + 5},${by - 2} M ${cx + 10},${by - 12} L ${cx + 19},${by - 9} L ${cx + 13},${by - 5}`}
+          fill="none"
+          stroke="#ffffff"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </g>
+    );
+  }
+
+  // 20. GENERIC MICROSERVICE: 3D Dual-Blade Server Tower + Status LEDs
+  const cyBase = cy - 1;
+  const h = isStopped ? 11 : 12.5;
+  const roofY = cyBase - h - 10;
   return (
     <g>
-      {renderIsoBox(cx, cyBase, 34, 17, h, s, fill, 1.5, top)}
+      {renderIsoBox(cx, cyBase, 30, 14, h, s, fill, 1.4, top)}
+      {renderIsoBox(cx, cyBase - h - 1, 26, 12, 9.5, a, fill, 1.4, top)}
       {/* Container Status LEDs on Front-Left Wall */}
-      <circle cx={cx - 20} cy={cyBase - h * 0.45} r="1.7" fill={a} />
-      <circle cx={cx - 13} cy={cyBase - h * 0.45 + 3.2} r="1.7" fill="#10b981" />
-      {/* Domain Emblem on Container Roof */}
+      <circle cx={cx - 18} cy={cyBase - h * 0.45} r="1.6" fill={a} />
+      <circle cx={cx - 11} cy={cyBase - h * 0.45 + 3} r="1.6" fill={isStopped ? "#ef4444" : "#10b981"} />
+      {/* Domain Emblem on Tower Roof */}
       {renderNodeFunctionGlyph(name, archetype, cx, roofY, "#ffffff")}
     </g>
   );
