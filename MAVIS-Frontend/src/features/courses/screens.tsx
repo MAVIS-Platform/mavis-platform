@@ -639,6 +639,8 @@ export function LabWorkspace() {
     isTheoryOnlyLab ||
     (!quiz.isError && quiz.data?.runtimeUnlocked === true) ||
     studentContext.data?.quiz?.runtimeUnlocked === true;
+  const quizPassPercent =
+    quiz.data?.passPercent ?? studentContext.data?.quiz?.passPercent ?? 70;
   const requiresRuntime =
     lab?.requireRuntimeTrace === true || lab?.labMode === "THEORY_QUIZ_STUDIO";
   const displayedStep = activeStep;
@@ -760,8 +762,8 @@ export function LabWorkspace() {
   const stepReason = (id: 1 | 2 | 3 | 4) =>
     id === 4
       ? t(
-          "Pass the Step 3 Quiz Gate (>= 80%) to unlock Step 4.",
-          "Đạt Quiz Gate ở Bước 3 (>= 80%) để mở khóa Bước 4.",
+          `Pass the Step 3 Quiz Gate (>= ${quizPassPercent}%) to unlock Step 4.`,
+          `Đạt Quiz Gate ở Bước 3 (>= ${quizPassPercent}%) để mở khóa Bước 4.`,
         )
       : undefined;
   const labHref = (step: 1 | 2 | 3 | 4, extraView?: InlineC4View) =>
@@ -1851,8 +1853,8 @@ function StepContent({
             >
               <p className="text-sm text-muted-foreground">
                 {t(
-                  "Pass the Step 3 Quiz Gate (>= 80%) to unlock Studio Live & Submission.",
-                  "Hãy hoàn thành Quiz Gate ở Bước 3 (>= 80%) để mở khóa Thực nghiệm Studio Live & Nộp bài.",
+                  `Pass the Step 3 Quiz Gate (>= ${quizPassPercent}%) to unlock Studio Live & Submission.`,
+                  `Hãy hoàn thành Quiz Gate ở Bước 3 (>= ${quizPassPercent}%) để mở khóa Thực nghiệm Studio Live & Nộp bài.`,
                 )}
               </p>
               <Button asChild size="sm" variant="outline">

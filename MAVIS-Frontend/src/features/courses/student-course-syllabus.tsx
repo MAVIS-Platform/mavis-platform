@@ -228,7 +228,7 @@ export function StudentCourseSyllabus({
     },
     {
       step: 3,
-      label: t("Step 3 · Quiz Gate", "Bước 3 · Quiz Mở Khóa (>= 80%)"),
+      label: t("Step 3 · Quiz Gate (>= 70%)", "Bước 3 · Quiz Mở Khóa (>= 70%)"),
       hint: t("Pass comprehension check", "Đạt trắc nghiệm để mở khóa"),
     },
     {
