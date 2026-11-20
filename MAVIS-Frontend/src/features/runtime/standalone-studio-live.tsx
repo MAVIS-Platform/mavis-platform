@@ -1148,20 +1148,25 @@ function StandaloneStudioContent() {
         <div
           role="dialog"
           aria-modal="true"
+          data-theme="dark"
           aria-label={t(
-            "Studio Exercise & Topology Configuration",
-            "Cấu hình Bài tập & Topology Studio",
+            "Studio Settings",
+            "Cài đặt Studio",
           )}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-xs"
+          className="dark fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-xs"
           onClick={() => setConfigModalOpen(false)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") setConfigModalOpen(false);
+          }}
         >
           <div
-            className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border bg-card text-card-foreground shadow-xl"
+            style={{ colorScheme: "dark" }}
+            className="flex max-h-[86vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-slate-800 bg-[#0b101b] text-slate-100 shadow-2xl"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-3.5">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 bg-[#0d1322] px-5 py-3">
               <div
-                className="inline-flex items-center gap-1 rounded-lg bg-muted/40 p-1"
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-800 bg-[#070b12] p-0.5"
                 role="tablist"
               >
                 <button
@@ -1171,8 +1176,8 @@ function StandaloneStudioContent() {
                   onClick={() => setConfigTab("exercise")}
                   className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
                     configTab === "exercise"
-                      ? "bg-background text-foreground shadow-xs"
-                      : "text-muted-foreground hover:text-foreground"
+                      ? "bg-slate-800 text-white"
+                      : "text-slate-400 hover:text-slate-200"
                   }`}
                 >
                   {t("Exercise Rules", "Kịch bản bài tập")}
@@ -1184,11 +1189,11 @@ function StandaloneStudioContent() {
                   onClick={() => setConfigTab("topology")}
                   className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
                     configTab === "topology"
-                      ? "bg-background text-foreground shadow-xs"
-                      : "text-muted-foreground hover:text-foreground"
+                      ? "bg-slate-800 text-white"
+                      : "text-slate-400 hover:text-slate-200"
                   }`}
                 >
-                  {t("Docker Blocks & Wires", "Khối dịch vụ & Kết nối")}
+                  {t("Services & Wires", "Service & Kết nối")}
                 </button>
               </div>
               <div className="flex items-center gap-2">
@@ -1198,7 +1203,7 @@ function StandaloneStudioContent() {
                   variant="outline"
                   disabled={autoStudio.isPending}
                   onClick={runPrepareRuntime}
-                  className="h-7 px-2.5 text-xs"
+                  className="h-7 border-slate-700 bg-slate-900 px-2.5 text-xs text-slate-200 hover:bg-slate-800 hover:text-white"
                 >
                   <RefreshCw
                     className={`mr-1.5 size-3 ${autoStudio.isPending ? "animate-spin" : ""}`}
@@ -1211,7 +1216,7 @@ function StandaloneStudioContent() {
                 <button
                   type="button"
                   onClick={() => setConfigModalOpen(false)}
-                  className="rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  className="rounded-lg p-1 text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-100"
                   aria-label={t("Close", "Đóng")}
                 >
                   <X className="size-4" aria-hidden="true" />
@@ -1219,7 +1224,10 @@ function StandaloneStudioContent() {
               </div>
             </div>
 
-            <div className="overflow-y-auto p-5">
+            <div
+              style={{ scrollbarWidth: "thin", scrollbarColor: "#334155 #0b101b" }}
+              className="overflow-y-auto px-5 py-4"
+            >
               {configTab === "exercise" ? (
                 <StudioExerciseEditor
                   workspaceId={workspaceId}
@@ -1246,7 +1254,7 @@ function StandaloneStudioContent() {
                   }}
                 />
               ) : (
-                <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed p-8 text-center text-xs text-muted-foreground">
+                <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-slate-800 bg-slate-950/50 p-8 text-center text-xs text-slate-400">
                   <p>
                     {t(
                       "Docker runtime topology is not initialized yet.",

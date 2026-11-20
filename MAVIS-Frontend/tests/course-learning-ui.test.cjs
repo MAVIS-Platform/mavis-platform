@@ -1511,6 +1511,9 @@ test("Lecturer Studio Live authoring uses unified single top bar, non-red health
   assert.match(evidence, /aria-label="Step traffic flows"/);
   assert.match(live, /Screenshot PNG[\s\S]*Record runtime replay[\s\S]*Capture evidence snapshot/);
   assert.match(live, /aria-label="Runtime traffic flows"/);
+  const exerciseEditor = read("src/features/assignments/studio-exercise-editor.tsx");
+  assert.match(standalone, /data-theme="dark"[\s\S]*bg-\[#0b101b\]/);
+  assert.doesNotMatch(exerciseEditor, /Recommended Studio Live Exercise Preset|Studio exercise \(teacher\)/);
 });
 
 test("Studio Live project terminal parser multiplexes compose logs, stack traces, runner actions and warnings", () => {
