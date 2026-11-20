@@ -104,13 +104,13 @@ public class CourseQuizService {
             if (!published.isEmpty()) {
                 enableQuizOnAssignmentIfSkipped(lab);
                 return view(new Definition(published.getFirst(), parts.lesson(), parts.threshold(),
-                        parts.questions()), null);
+                        parts.questions()), null, null);
             }
         }
         int next = nextVersion(assignmentId);
         insertVersion(assignmentId, modelId, next, parts, questions);
         enableQuizOnAssignmentIfSkipped(lab);
-        return view(new Definition(next, parts.lesson(), parts.threshold(), parts.questions()), null);
+        return view(new Definition(next, parts.lesson(), parts.threshold(), parts.questions()), null, null);
     }
 
     private void enableQuizOnAssignmentIfSkipped(Assignment lab) {
@@ -170,7 +170,7 @@ public class CourseQuizService {
         UUID modelId = lab.getReferenceModel() == null ? null : lab.getReferenceModel().getId();
         insertVersion(assignmentId, modelId, next, draft, encode(draft.questions()));
         jdbc.update("DELETE FROM course_quiz_drafts WHERE assignment_id = ?", assignmentId);
-        return view(new Definition(next, draft.lesson(), draft.threshold(), draft.questions()), null);
+        return view(new Definition(next, draft.lesson(), draft.threshold(), draft.questions()), null, null);
     }
 
     @Transactional(readOnly = true)
