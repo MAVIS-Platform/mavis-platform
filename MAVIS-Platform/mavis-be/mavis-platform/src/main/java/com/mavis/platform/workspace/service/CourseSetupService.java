@@ -561,16 +561,19 @@ public class CourseSetupService {
             }
 
             Set<String> seenServices = new LinkedHashSet<>();
+            Set<String> blockServices = new LinkedHashSet<>();
             for (ModelElement el : containerElements) {
                 if (el.getName() == null || el.getName().isBlank()) continue;
                 String svcName = el.getName().trim();
                 if (!seenServices.add(svcName)) continue;
                 if (el.getId() != null) serviceMappings.put(svcName, el.getId());
-                if (controllerNames.contains(svcName)) continue;
+                // Databases and brokers use Compose healthchecks, not application HTTP probes.
+                if (controllerNames.contains(svcName) || isStatefulContainer(el, svcName)) continue;
+                blockServices.add(svcName);
                 blocks.addObject()
                         .put("service", svcName)
                         .put("label", svcName)
-                        .put("canScale", !isStatefulContainer(el, svcName))
+                        .put("canScale", true)
                         .put("initiallyStopped", initialStoppedServices.contains(svcName));
             }
 
@@ -583,7 +586,7 @@ public class CourseSetupService {
                         if (!outbound[0].equals(controller)) continue;
                         String from = inbound[0];
                         String to = outbound[1];
-                        if (from.equals(to) || controllerNames.contains(from) || controllerNames.contains(to)) continue;
+                        if (from.equals(to) || !blockServices.contains(from) || !blockServices.contains(to)) continue;
                         if (!usedControllers.add(controller) || !usedPairs.add(from + "->" + to)) continue;
                         connections.addObject()
                                 .put("from", from)
@@ -615,7 +618,8 @@ public class CourseSetupService {
         if (refModel != null && refModel.getProject() != null && refModel.getSourceSnapshot() != null) {
             UUID refProjectId = refModel.getProject().getId();
             RuntimeConfiguration cfg = configurations.findById(refProjectId).orElse(null);
-            ObjectNode profile = cfg != null && cfg.getProfile() != null && cfg.getProfile().isObject()
+            ObjectNode profile = cfg != null && refModel.getSourceSnapshot().getId().equals(cfg.getSourceSnapshotId())
+                    && cfg.getProfile() != null && cfg.getProfile().isObject()
                     ? ((ObjectNode) cfg.getProfile()).deepCopy()
                     : json.createObjectNode();
             JsonNode prevApps = profile.get("applications");
@@ -631,8 +635,11 @@ public class CourseSetupService {
             for (String svc : applicationNames) {
                 JsonNode existingApp = prevApps != null ? prevApps.get(svc) : null;
                 String existingReadiness = existingApp != null ? existingApp.path("readinessPath").asText("") : "";
+                String configuredRuntime = existingApp != null ? existingApp.path("runtime").asText("") : "";
+                String runtimeName = Set.of("java", "dotnet8-linux-x64-glibc", "dotnet8-linux-x64-musl", "passthrough").contains(configuredRuntime)
+                        ? configuredRuntime : runtimeByName.getOrDefault(svc, "java");
                 apps.putObject(svc)
-                        .put("runtime", runtimeByName.getOrDefault(svc, "java"))
+                        .put("runtime", runtimeName)
                         .put("containerPort", containerPortByName.getOrDefault(svc, 8080))
                         .put("readinessPath", existingReadiness.isBlank() ? "/health" : existingReadiness);
             }

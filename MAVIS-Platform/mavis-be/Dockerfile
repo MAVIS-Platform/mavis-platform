@@ -12,10 +12,13 @@ COPY MAVIS.Worker/src/MAVIS.Runner/ ./src/MAVIS.Runner/
 RUN dotnet publish src/MAVIS.Runner/MAVIS.Runner.csproj -c Release -p:UseAppHost=false -p:ContinuousIntegrationBuild=true -o /runner-publish
 
 FROM build AS otel-bundle
-RUN mkdir -p /otel-bundle/dotnet /otel-bundle/java \
+RUN mkdir -p /otel-bundle/dotnet /otel-bundle/dotnet-musl /otel-bundle/java \
     && curl -fsSL https://github.com/open-telemetry/opentelemetry-dotnet-instrumentation/releases/download/v1.17.0/opentelemetry-dotnet-instrumentation-linux-glibc-x64.zip -o /tmp/dotnet.zip \
     && echo "cc56878f0155e28b6554924fbd420fcb8bec7108cd9d41836dc530764ac923f8  /tmp/dotnet.zip" | sha256sum -c - \
     && (cd /otel-bundle/dotnet && jar xf /tmp/dotnet.zip) && rm /tmp/dotnet.zip \
+    && curl -fsSL https://github.com/open-telemetry/opentelemetry-dotnet-instrumentation/releases/download/v1.17.0/opentelemetry-dotnet-instrumentation-linux-musl-x64.zip -o /tmp/dotnet-musl.zip \
+    && echo "36eb55ce2f7a9da8ffd70ccbd97761a1917d7f57709f1a6ca9e7029dfa120516  /tmp/dotnet-musl.zip" | sha256sum -c - \
+    && (cd /otel-bundle/dotnet-musl && jar xf /tmp/dotnet-musl.zip) && rm /tmp/dotnet-musl.zip \
     && curl -fsSL https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/download/v2.32.0/opentelemetry-javaagent.jar -o /otel-bundle/java/opentelemetry-javaagent.jar \
     && echo "f787eb6c7f3d18e69a431e108a15278d25ee37f83d68b678f621e063f3988f82  /otel-bundle/java/opentelemetry-javaagent.jar" | sha256sum -c - \
     && chmod -R a+rX /otel-bundle

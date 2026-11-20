@@ -414,6 +414,7 @@ public class RuntimePlanningService {
  private static String mapStackToRuntime(String stack){
   if(stack==null||stack.isBlank()||"java".equalsIgnoreCase(stack))return "java";
   if("dotnet".equalsIgnoreCase(stack))return "dotnet8-linux-x64-glibc";
+  if("dotnet-musl".equalsIgnoreCase(stack))return "dotnet8-linux-x64-musl";
   return "passthrough";
  }
 
@@ -2121,6 +2122,7 @@ public class RuntimePlanningService {
     throw preflightFailed("The source Compose is incompatible with the Runner.");
   }
   if(effectiveCompose!=null&&!effectiveCompose.isBlank()) {
+   effectiveCompose=ensureLocalImagesPresent(id,c.getSourceSnapshotId(),effectiveCompose);
    if(composeValidator!=null) {
     var effective=composeValidator.validate(effectiveCompose,Map.of());
     if(!effective.isCompatible()||(effective.getRunnerIssues()!=null&&!effective.getRunnerIssues().isEmpty()))
@@ -2714,6 +2716,33 @@ public class RuntimePlanningService {
   }
  }
 
+ /** Verifies local sha256 images in sandboxCompose exist on Docker; auto-realigns with current snapshot builds or fails fast. */
+ public String ensureLocalImagesPresent(UUID projectId,UUID snapshotId,String composeYaml){
+  if(composeYaml==null||composeYaml.isBlank()||imageBuilder==null||!imageBuilder.isLocalBuildAvailable()){
+   return composeYaml;
+  }
+  List<String> missing=imageBuilder.findMissingLocalImageServices(composeYaml);
+  if(missing.isEmpty()){
+   return composeYaml;
+  }
+  String resolved=composeYaml;
+  if(projectId!=null&&snapshotId!=null&&composeValidator!=null){
+   Map<String,String> rebuilt=imageBuilder.discoverExistingBuiltImages(projectId,snapshotId,missing);
+   if(!rebuilt.isEmpty()){
+    var rem=composeValidator.remediateCompose(composeYaml,rebuilt);
+    if(rem.yaml()!=null&&!rem.yaml().isBlank()&&(rem.unresolvableIssues()==null||rem.unresolvableIssues().isEmpty())){
+     resolved=rem.yaml();
+     missing=imageBuilder.findMissingLocalImageServices(resolved);
+    }
+   }
+  }
+  if(!missing.isEmpty()){
+   throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,"SANDBOX_IMAGE_MISSING",
+     "Docker image for service(s) ["+String.join(", ",missing)+"] is missing on the Runner host. Open Studio Settings -> Sync Docker to rebuild before running.");
+  }
+  return resolved;
+ }
+
  private record ExecutionEnvironment(Map<String,String> protectedEnvironment,ObjectNode bindings){}
 
  private ExecutionEnvironment buildExecutionEnvironment(UUID projectId,JsonNode profile,PreflightCheckResponseDTO pre,JsonNode apps){
@@ -3106,7 +3135,7 @@ public class RuntimePlanningService {
   if(p.hasNonNull("collectorImage")&&(!p.path("collectorImage").isTextual()||!p.path("collectorImage").asText().matches("[A-Za-z0-9./:_-]+@sha256:[0-9a-f]{64}")))throw new BusinessException(ErrorCode.BAD_REQUEST,"collectorImage must be digest-pinned");
   if(p.hasNonNull("scenarioRunnerImage")&&(!p.path("scenarioRunnerImage").isTextual()||!p.path("scenarioRunnerImage").asText().matches("([A-Za-z0-9./:_-]+@)?sha256:[0-9a-f]{64}")))throw new BusinessException(ErrorCode.BAD_REQUEST,"scenarioRunnerImage must be digest-pinned");
   if(!p.path("instrumentationVolume").asText().matches("[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")||!p.path("approvedForLocalPoc").asBoolean(false)||!p.path("applications").isObject()||p.path("applications").isEmpty()||p.path("applications").size()>10)throw new BusinessException(ErrorCode.BAD_REQUEST,"An approved, digest-pinned operator profile is required");
-  for(var it=p.path("applications").fields();it.hasNext();){var app=it.next();int port=app.getValue().path("containerPort").asInt();if(!app.getKey().matches("[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}")||port<1||port>65535||!Set.of("java","dotnet8-linux-x64-glibc","passthrough").contains(app.getValue().path("runtime").asText())||!app.getValue().path("readinessPath").asText("/health").startsWith("/"))throw new BusinessException(ErrorCode.BAD_REQUEST,"Unsupported application profile");}
+  for(var it=p.path("applications").fields();it.hasNext();){var app=it.next();int port=app.getValue().path("containerPort").asInt();if(!app.getKey().matches("[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}")||port<1||port>65535||!Set.of("java","dotnet8-linux-x64-glibc","dotnet8-linux-x64-musl","passthrough").contains(app.getValue().path("runtime").asText())||!app.getValue().path("readinessPath").asText("/health").startsWith("/"))throw new BusinessException(ErrorCode.BAD_REQUEST,"Unsupported application profile");}
  }
  private ArrayNode parseSteps(List<String> rows){var result=json.createArrayNode();var ids=new HashSet<String>();for(String row:rows){JsonNode n;try{n=json.readTree(row);}catch(Exception e){throw new BusinessException(ErrorCode.BAD_REQUEST,"Each scenario step must be a JSON object");}
    String stepPath=n!=null&&n.path("path").isTextual()?n.get("path").asText():"";

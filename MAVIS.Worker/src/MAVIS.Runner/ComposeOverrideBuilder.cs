@@ -47,7 +47,7 @@ public static class ComposeOverrideBuilder
             if(protectedEnvironment.Count>0)config["environment"]=protectedEnvironment;
             if (profile.Applications.TryGetValue(service, out var app))
             {
-                if (app is null || app.Runtime is not ("dotnet8-linux-x64-glibc" or "java" or "passthrough") || app.ContainerPort is < 1 or > 65535 ||
+                if (app is null || app.Runtime is not ("dotnet8-linux-x64-glibc" or "dotnet8-linux-x64-musl" or "java" or "passthrough") || app.ContainerPort is < 1 or > 65535 ||
                     app.ReadinessPath is null || !app.ReadinessPath.StartsWith('/') || app.ReadinessPath.StartsWith("//", StringComparison.Ordinal) || app.ReadinessPath.Contains('\\'))
                     throw new ArgumentException("Unsupported application profile.");
                 var environment = new Dictionary<string, string>
@@ -62,23 +62,25 @@ public static class ComposeOverrideBuilder
                     environment["JAVA_TOOL_OPTIONS"] = "-javaagent:/mavis-otel/java/opentelemetry-javaagent.jar -XX:+UseContainerSupport -XX:MaxRAMPercentage=70.0";
                     // Ensure OTel Java agent stays active for JEP-330 single-file `java Server.java` launchers.
                     environment["OTEL_JAVAAGENT_ENABLED"] = "true";
-                    // Air-gapped read-only sandbox: prevent Actuator health contributors from failing /actuator/health with 503.
+                    // Exclude optional mail and host-disk checks in the read-only, isolated sandbox.
                     environment["MANAGEMENT_HEALTH_MAIL_ENABLED"] = "false";
                     environment["MANAGEMENT_HEALTH_DISKSPACE_ENABLED"] = "false";
-                    environment["MANAGEMENT_ENDPOINT_HEALTH_STATUS_HTTP_MAPPING_DOWN"] = "200";
-                    environment["MANAGEMENT_ENDPOINT_HEALTH_STATUS_HTTP_MAPPING_OUT_OF_SERVICE"] = "200";
                     config["volumes"] = new[] { new { type = "volume", source = "mavis-instrumentation", target = "/mavis-otel", read_only = true } };
                 }
-                else if (app.Runtime == "dotnet8-linux-x64-glibc")
+                else if (app.Runtime is "dotnet8-linux-x64-glibc" or "dotnet8-linux-x64-musl")
                 {
+                    bool musl = app.Runtime == "dotnet8-linux-x64-musl";
+                    string agentHome = musl ? "/mavis-otel/dotnet-musl" : "/mavis-otel/dotnet";
+                    string nativeDirectory = musl ? "linux-musl-x64" : "linux-x64";
                     environment["CORECLR_ENABLE_PROFILING"] = "1";
                     environment["CORECLR_PROFILER"] = "{918728DD-259F-4A6A-AC2B-B85E1B658318}";
-                    environment["CORECLR_PROFILER_PATH"] = "/mavis-otel/dotnet/linux-x64/OpenTelemetry.AutoInstrumentation.Native.so";
-                    environment["DOTNET_STARTUP_HOOKS"] = "/mavis-otel/dotnet/net/OpenTelemetry.AutoInstrumentation.StartupHook.dll";
-                    environment["DOTNET_ADDITIONAL_DEPS"] = "/mavis-otel/dotnet/AdditionalDeps";
-                    environment["DOTNET_SHARED_STORE"] = "/mavis-otel/dotnet/store";
-                    environment["OTEL_DOTNET_AUTO_HOME"] = "/mavis-otel/dotnet";
+                    environment["CORECLR_PROFILER_PATH"] = $"{agentHome}/{nativeDirectory}/OpenTelemetry.AutoInstrumentation.Native.so";
+                    environment["DOTNET_STARTUP_HOOKS"] = $"{agentHome}/net/OpenTelemetry.AutoInstrumentation.StartupHook.dll";
+                    environment["DOTNET_ADDITIONAL_DEPS"] = $"{agentHome}/AdditionalDeps";
+                    environment["DOTNET_SHARED_STORE"] = $"{agentHome}/store";
+                    environment["OTEL_DOTNET_AUTO_HOME"] = agentHome;
                     environment["OTEL_DOTNET_AUTO_LOG_DIRECTORY"] = "/tmp/otel";
+                    environment["OTEL_DOTNET_AUTO_LOGGER"] = "console";
                     config["volumes"] = new[] { new { type = "volume", source = "mavis-instrumentation", target = "/mavis-otel", read_only = true } };
                 }
                 foreach (var pair in protectedEnvironment) environment[pair.Key]=pair.Value;

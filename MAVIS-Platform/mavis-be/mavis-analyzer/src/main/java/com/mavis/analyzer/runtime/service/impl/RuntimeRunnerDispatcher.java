@@ -465,34 +465,18 @@ public class RuntimeRunnerDispatcher {
             String volumeName = profile.path("instrumentationVolume").asText("mavis-agents-v1").trim();
             if (volumeName.matches("[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")) {
                 String labels = captureCommandStdout(List.of("docker", "volume", "inspect", "--format", "{{json .Labels}}", volumeName), 10);
-                if (labels == null || !labels.contains("1.17.0") || !labels.contains("2.32.0") || !labels.contains("\"mavis.bundle.rev\":\"2\"")) {
+                if (!hasCurrentBundleLabels(labels)) {
                     for (Path b : List.of(
                             Path.of("/app/otel-bundle"),
                             Path.of("../MAVIS.Worker/samples/runtime-poc/artifacts/bundle"),
                             Path.of("../../MAVIS.Worker/samples/runtime-poc/artifacts/bundle"),
                             Path.of("MAVIS.Worker/samples/runtime-poc/artifacts/bundle"))) {
                         Path absBundle = b.toAbsolutePath().normalize();
-                        if (Files.isDirectory(absBundle.resolve("java")) && Files.isDirectory(absBundle.resolve("dotnet"))) {
-                            String helperImg = "mcr.microsoft.com/dotnet/aspnet@sha256:d5633778c754e89a386882eddf8dbee6942447a8a4b8267c19cf1e1158d0b0ac";
-                            probeCommandZeroExit(List.of("docker", "volume", "rm", "-f", volumeName), 10);
-                            probeCommandZeroExit(List.of("docker", "volume", "create",
-                                    "--label", "mavis.poc.managed=true",
-                                    "--label", "mavis.bundle.rev=2",
-                                    "--label", "mavis.dotnet.version=1.17.0",
-                                    "--label", "mavis.java.version=2.32.0",
-                                    volumeName), 15);
-                            probeCommandZeroExit(List.of("docker", "pull", helperImg), 120);
-                            String tmpContainer = "mavis-agent-seed-" + UUID.randomUUID().toString().substring(0, 8);
-                            boolean seeded = false;
-                            try {
-                                if (probeCommandZeroExit(List.of("docker", "create", "--name", tmpContainer, "-v", volumeName + ":/agents", helperImg), 20)) {
-                                    seeded = probeCommandZeroExit(List.of("docker", "cp", absBundle.toString() + "/.", tmpContainer + ":/agents/"), 30);
-                                }
-                            } finally {
-                                probeCommandZeroExit(List.of("docker", "rm", "-f", tmpContainer), 10);
-                            }
-                            if (!seeded) {
-                                probeCommandZeroExit(List.of("docker", "volume", "rm", "-f", volumeName), 10);
+                        if (Files.isDirectory(absBundle.resolve("java")) && Files.isDirectory(absBundle.resolve("dotnet")) && Files.isDirectory(absBundle.resolve("dotnet-musl"))) {
+                            if (prepareInstrumentationVolume(profile, absBundle)) {
+                                session.setScenarioConfig(session.getScenarioConfig().deepCopy());
+                                session = runtimeSessionRepository.save(session);
+                                profile = (ObjectNode) session.getScenarioConfig().path("profile");
                             }
                             break;
                         }
@@ -553,6 +537,49 @@ public class RuntimeRunnerDispatcher {
             log.warn("Không thể tự động chuẩn bị host runner artifacts cho session {}: {}", session.getId(), ex.getMessage());
         }
         return session;
+    }
+
+    static boolean hasCurrentBundleLabels(String labels) {
+        if (labels == null) return false;
+        try {
+            var node = new ObjectMapper().readTree(labels);
+            return "3".equals(node.path("mavis.bundle.rev").asText())
+                    && "1.17.0".equals(node.path("mavis.dotnet.version").asText())
+                    && "1.17.0".equals(node.path("mavis.dotnet.musl.version").asText())
+                    && "2.32.0".equals(node.path("mavis.java.version").asText());
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    // Never replace a shared agent volume: an older session may still be using it.
+    static synchronized boolean prepareInstrumentationVolume(ObjectNode profile, Path bundle) {
+        String volume = "mavis-agents-java-2-32-0-dotnet-1-17-0-bundle-3";
+        String labels = captureCommandStdout(List.of("docker", "volume", "inspect", "--format", "{{json .Labels}}", volume), 10);
+        if (hasCurrentBundleLabels(labels)) {
+            profile.put("instrumentationVolume", volume);
+            return true;
+        }
+        // If this name already exists with different contents, preserve it too.
+        if (labels != null) volume += "-" + UUID.randomUUID().toString().substring(0, 8);
+        String helper = "mcr.microsoft.com/dotnet/aspnet@sha256:d5633778c754e89a386882eddf8dbee6942447a8a4b8267c19cf1e1158d0b0ac";
+        if (!probeCommandZeroExit(List.of("docker", "pull", helper), 120)) return false;
+        if (!probeCommandZeroExit(List.of("docker", "volume", "create",
+                "--label", "mavis.poc.managed=true", "--label", "mavis.bundle.rev=3",
+                "--label", "mavis.dotnet.version=1.17.0", "--label", "mavis.dotnet.musl.version=1.17.0",
+                "--label", "mavis.java.version=2.32.0", volume), 15)) return false;
+        String container = "mavis-agent-seed-" + UUID.randomUUID().toString().substring(0, 8);
+        boolean seeded = false;
+        try {
+            if (probeCommandZeroExit(List.of("docker", "create", "--name", container, "-v", volume + ":/agents", helper), 20)) {
+                seeded = probeCommandZeroExit(List.of("docker", "cp", bundle.toString() + "/.", container + ":/agents/"), 30);
+            }
+        } finally {
+            probeCommandZeroExit(List.of("docker", "rm", "-f", container), 10);
+            if (!seeded) probeCommandZeroExit(List.of("docker", "volume", "rm", volume), 10);
+        }
+        if (seeded) profile.put("instrumentationVolume", volume);
+        return seeded;
     }
 
     private void executeManagedCli(RuntimeSession session) throws Exception {

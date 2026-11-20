@@ -15,7 +15,8 @@ public static class RunnerProgram
         try
         {
             var jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, PropertyNameCaseInsensitive = true, WriteIndented = true };
-            using var cancellation = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+            // Allow full 300s session budget plus bounded evidence drain, container teardown, and receipt delivery.
+            using var cancellation = new CancellationTokenSource(TimeSpan.FromMinutes(7));
             Console.CancelKeyPress += (_, e) => { e.Cancel = true; cancellation.Cancel(); };
             if (args[0] is "managed" or "deliver" or "deliver-pending" or "ack-lifecycle" or "managed-recover")
             {

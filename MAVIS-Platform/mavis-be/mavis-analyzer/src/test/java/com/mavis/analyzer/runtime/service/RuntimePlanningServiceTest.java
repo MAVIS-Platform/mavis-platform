@@ -615,6 +615,31 @@ class RuntimePlanningServiceTest {
     }
 
     @Test
+    void stepOneSelectsTheMuslAgentForAlpineDotnetServices() {
+        when(projects.findLockedById(projectId)).thenReturn(Optional.of(project));
+        when(projects.findById(projectId)).thenReturn(Optional.of(project));
+        when(sources.findById(snapshotId)).thenReturn(Optional.of(snapshot));
+        when(models.findById(modelId)).thenReturn(Optional.of(model));
+        String serviceId = UUID.randomUUID().toString();
+        when(runtime.runComposePreflight(snapshotId)).thenReturn(PreflightCheckResponseDTO.builder()
+                .compatible(true).detectedServices(List.of("orders")).composeServices(List.of("orders"))
+                .serviceStacks(Map.of("orders", "dotnet-musl")).servicePorts(Map.of("orders", 8080))
+                .recommendedServiceMappings(Map.of("orders", serviceId)).modelServiceNames(Map.of(serviceId, "orders")).build());
+        var holder = new java.util.concurrent.atomic.AtomicReference<RuntimeConfiguration>();
+        when(configurations.findById(projectId)).thenAnswer(inv -> Optional.ofNullable(holder.get()));
+        when(configurations.saveAndFlush(any())).thenAnswer(inv -> {
+            holder.set(inv.getArgument(0));
+            return holder.get();
+        });
+        ObjectNode profile = json.createObjectNode();
+        profile.putObject("serviceMappings").put("orders", "orders");
+        var saved = planningService.saveConfiguration(projectId, new RuntimePlanningService.ConfigurationRequest(
+                snapshotId, modelId, "SPRING_BOOT_DOTNET_COMPOSE_V1", profile, 0));
+        assertThat(saved.profile().path("applications").path("orders").path("runtime").asText())
+                .isEqualTo("dotnet8-linux-x64-musl");
+    }
+
+    @Test
     @DisplayName("STEP 1 100%: Step 1 draft saves immediately without operator images, maps polyglot/ASSUMED readiness, and enforces operator images at start()")
     void testSaveConfiguration_AllowsStep1DraftWithoutOperatorImagesWhileStartEnforcesThem() {
         when(projects.findLockedById(projectId)).thenReturn(Optional.of(project));
@@ -1662,5 +1687,44 @@ class RuntimePlanningServiceTest {
         assertThat(prepared.bindings().has("stale-service")).isFalse();
         assertThat(prepared.protectedEnvironment()).containsValue("ephemeral-pg-pass");
         assertThat(prepared.protectedEnvironment()).doesNotContainValue("drop-me");
+    }
+
+    @Test
+    @DisplayName("IMAGE INTEGRITY: Auto-realigns stale local sha256 image with rebuilt tag or fails fast with SANDBOX_IMAGE_MISSING")
+    void ensureLocalImagesPresentAutoRealignsOrFailsFast() {
+        ReflectionTestUtils.setField(planningService, "composeValidator", new ComposePreflightValidator());
+        String staleDigest = "sha256:" + "1".repeat(64);
+        String rebuiltDigest = "sha256:" + "2".repeat(64);
+        String staleCompose = """
+                services:
+                  order-service:
+                    image: %s
+                """.formatted(staleDigest);
+
+        var autoHealBuilder = mock(SandboxImageBuilderService.class);
+        ReflectionTestUtils.setField(planningService, "imageBuilder", autoHealBuilder);
+        when(autoHealBuilder.isLocalBuildAvailable()).thenReturn(true);
+        when(autoHealBuilder.findMissingLocalImageServices(staleCompose)).thenReturn(List.of("order-service"));
+        when(autoHealBuilder.discoverExistingBuiltImages(projectId, snapshotId, List.of("order-service")))
+                .thenReturn(Map.of("order-service", rebuiltDigest));
+        when(autoHealBuilder.findMissingLocalImageServices(org.mockito.ArgumentMatchers.argThat(y -> y != null && y.contains(rebuiltDigest))))
+                .thenReturn(List.of());
+
+        String healed = planningService.ensureLocalImagesPresent(projectId, snapshotId, staleCompose);
+        assertThat(healed).contains(rebuiltDigest);
+
+        var missingBuilder = mock(SandboxImageBuilderService.class);
+        ReflectionTestUtils.setField(planningService, "imageBuilder", missingBuilder);
+        when(missingBuilder.isLocalBuildAvailable()).thenReturn(true);
+        when(missingBuilder.findMissingLocalImageServices(staleCompose)).thenReturn(List.of("order-service"));
+        when(missingBuilder.discoverExistingBuiltImages(projectId, snapshotId, List.of("order-service")))
+                .thenReturn(Map.of());
+
+        assertThatThrownBy(() -> planningService.ensureLocalImagesPresent(projectId, snapshotId, staleCompose))
+                .isInstanceOfSatisfying(com.mavis.common.exception.BusinessException.class, ex -> {
+                    assertThat(ex.getStableCode()).isEqualTo("SANDBOX_IMAGE_MISSING");
+                    assertThat(ex.getErrorCode()).isEqualTo(com.mavis.common.exception.ErrorCode.UNPROCESSABLE_ENTITY);
+                    assertThat(ex.getMessage()).contains("order-service");
+                });
     }
 }

@@ -24,7 +24,11 @@ public sealed class ManagedDockerRuntimeTests
     public async Task PreparedStudioActivatesMissingBlockAndConfirmsRealDockerChanges()
         => await RunInteractiveStudio(true);
 
-    private static async Task RunInteractiveStudio(bool prepared)
+    [ManagedDockerFact]
+    public async Task MuslStudioCollectsRealTracesAndConfirmsDockerChanges()
+        => await RunInteractiveStudio(false, true);
+
+    private static async Task RunInteractiveStudio(bool prepared, bool musl = false)
     {
         var poc = Environment.GetEnvironmentVariable("MAVIS_MANAGED_DOCKER_TEST_ROOT")!;
         using var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(poc, "artifacts", "manifest.json")));
@@ -33,10 +37,10 @@ public sealed class ManagedDockerRuntimeTests
         var root = Path.Combine(poc, "artifacts", "studio-tests-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         var definition = new RuntimeRunDefinition("studio-" + Guid.NewGuid().ToString("N"), "model", "source", "profile",
-            $"services:\n  orders:\n    image: {images.GetProperty("orders").GetString()}\n    environment:\n      PAYMENT_URL: http://payment:8080\n  payment:\n    image: {images.GetProperty("payment").GetString()}\n",
+            $"services:\n  orders:\n    image: {images.GetProperty(musl ? "orders-musl" : "orders").GetString()}\n    environment:\n      PAYMENT_URL: http://payment:8080\n  payment:\n    image: {images.GetProperty("payment").GetString()}\n",
             new(manifest.RootElement.GetProperty("collectorImage").GetString()!,
                 manifest.RootElement.GetProperty("instrumentationVolume").GetString()!,
-                new Dictionary<string, RuntimeServiceProfile> { ["orders"] = new("dotnet8-linux-x64-glibc",8080), ["payment"] = new("java",8080) },
+                new Dictionary<string, RuntimeServiceProfile> { ["orders"] = new(musl ? "dotnet8-linux-x64-musl" : "dotnet8-linux-x64-glibc",8080), ["payment"] = new("java",8080) },
                 MemoryMiB:512, TimeoutSeconds:290, ApprovedForLocalPoc:true, ScenarioRunnerImage:images.GetProperty("runner").GetString()),
             new("placeholder", [new("request","orders","GET","/orders",200)]),
             new Dictionary<string,string> { ["orders"]="550e8400-e29b-41d4-a716-446655440001", ["payment"]="550e8400-e29b-41d4-a716-446655440002" },

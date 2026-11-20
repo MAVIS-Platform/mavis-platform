@@ -165,6 +165,29 @@ public sealed class RuntimeLifecycleTests
     }
 
     [Theory]
+    [InlineData(30)]
+    [InlineData(300)]
+    public async Task ComposeStartupUsesTheApprovedProfileDeadline(int seconds)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mavis-deadline-" + Guid.NewGuid().ToString("N"));
+        var digest = new string('b', 64);
+        var profile = new RunnerExecutionProfile("collector@sha256:" + digest, "mavis-agents-v1",
+            new Dictionary<string, RuntimeServiceProfile> { ["orders"] = new("java", 8080) },
+            TimeoutSeconds: seconds, ApprovedForLocalPoc: true, ScenarioRunnerImage: "sha256:" + digest);
+        var definition = new RuntimeRunDefinition("s", "m", "snapshot", "profile",
+            $"services:\n  orders:\n    image: demo/orders@sha256:{digest}", profile,
+            new("s", [new("health", "orders", "GET", "/health", 200)]), new Dictionary<string, string>(), "config", "scenario");
+        var docker = new FailingDocker();
+        try
+        {
+            await RuntimeSessionLifecycle.RunAsync(new DockerComposeSession(definition, root, "receivers: {}", docker), 30);
+            var startup = Assert.Single(docker.Commands.Where(command => command.Contains("up")));
+            Assert.Equal(seconds.ToString(), startup[startup.ToList().IndexOf("--wait-timeout") + 1]);
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task FailedComposeUpStillRunsDownAndConfirmsEveryResourceKind(bool helperFailure)
@@ -183,6 +206,136 @@ public sealed class RuntimeLifecycleTests
             Assert.Contains(docker.Commands, c => c.Contains("down") && c.Contains("--volumes"));
             Assert.Contains(docker.Commands, c => c[0] == "volume"); Assert.Contains(docker.Commands, c => c[0] == "network");
             Assert.Equal(helperFailure, Directory.GetDirectories(root).Any(p => Path.GetFileName(p).StartsWith("mavisrun-", StringComparison.Ordinal)));
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
+    }
+
+    private sealed class CrashInspectDocker : IDockerCommands
+    {
+        public bool MissingLocalImage { get; init; }
+        public string UpStdErr { get; init; } = "container mavisrun-sandbox-postgres-1 exited (1)";
+        public string PsTable { get; init; } = "sandbox-postgres|exited||1\norder-service|created||0\n";
+        public string CrashLogs { get; init; } = "Error: password=SECRET_DB_PASS is required";
+        public bool CrashLogsOnStderr { get; init; }
+        public List<IReadOnlyList<string>> Commands { get; } = [];
+
+        public Task<DockerCommandResult> RunAsync(IReadOnlyList<string> args, string directory, int timeout, CancellationToken ct)
+        {
+            Commands.Add(args);
+            if (args[0] == "info") return Task.FromResult(new DockerCommandResult(0, "linux"));
+            if (args.Count > 1 && args[0] == "volume" && args[1] == "inspect")
+                return Task.FromResult(new DockerCommandResult(0, "{\"mavis.java.version\":\"2.32.0\",\"mavis.dotnet.version\":\"1.17.0\"}"));
+            if (args.Count > 1 && args[0] == "image" && args[1] == "inspect")
+                return Task.FromResult(MissingLocalImage
+                    ? new DockerCommandResult(1, "", "No such image")
+                    : new DockerCommandResult(0, args[^1]));
+            if (args.Contains("up")) return Task.FromResult(new DockerCommandResult(1, "", UpStdErr));
+            if (args.Contains("ps") && args.Contains("--format")) return Task.FromResult(new DockerCommandResult(0, PsTable));
+            if (args.Contains("logs")) return Task.FromResult(CrashLogsOnStderr
+                ? new DockerCommandResult(0, "", CrashLogs) : new DockerCommandResult(0, CrashLogs));
+            return Task.FromResult(new DockerCommandResult(0, ""));
+        }
+    }
+
+    private sealed class DiagnosticTransport : HttpMessageHandler
+    {
+        public JsonElement Payload;
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            using var document = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(ct));
+            Payload = document.RootElement.Clone();
+            return new(System.Net.HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new
+            {
+                code = 200, data = new { sessionId = "s", resourceProject = Payload.GetProperty("resourceProject").GetString() }
+            })) };
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task StartupDiagnosticsPrioritizeFailedBrokerAfterManyHealthyServicesAndRetainRedaction(bool stderr)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mavis-diagnostics-" + Guid.NewGuid().ToString("N"));
+        var digest = new string('b', 64);
+        var names = new[] { "order-service" }.Concat(Enumerable.Range(0, 10).Select(i => "healthy-" + i)).Append("kafka").ToArray();
+        var profile = new RunnerExecutionProfile("collector@sha256:" + digest, "mavis-agents-v1",
+            new Dictionary<string, RuntimeServiceProfile> { ["order-service"] = new("java", 8080) },
+            ApprovedForLocalPoc: true, ScenarioRunnerImage: "sha256:" + digest);
+        var definition = new RuntimeRunDefinition("s", "m", "snapshot", "profile",
+            "services:\n" + string.Concat(names.Select(name => $"  {name}:\n    image: demo/service@sha256:{digest}\n")),
+            profile, new("s", [new("health", "order-service", "GET", "/health", 200)]),
+            new Dictionary<string, string>(), "config", "scenario", InteractiveStudio: true);
+        var docker = new CrashInspectDocker
+        {
+            PsTable = string.Concat(names.Where(name => name != "kafka").Select(name => name + "|running|healthy|0\n")) + "kafka|exited||1\n",
+            CrashLogs = "Permission denied password=SECRET_DB_PASS", CrashLogsOnStderr = stderr
+        };
+        var transport = new DiagnosticTransport();
+        using var studio = new JavaRuntimeClient(new Uri("https://java.invalid"), "fixture-only", transport);
+        try
+        {
+            await RuntimeSessionLifecycle.RunAsync(new DockerComposeSession(definition, root, "receivers: {}", docker,
+                new Dictionary<string, string> { ["PASSWORD"] = "SECRET_DB_PASS" }, studio: studio), 30);
+            var service = Assert.Single(transport.Payload.GetProperty("telemetry").GetProperty("services").EnumerateArray());
+            Assert.Equal("kafka", service.GetProperty("service").GetString());
+            Assert.Equal(1, service.GetProperty("replicas").GetInt32());
+            Assert.Equal(0, service.GetProperty("runningReplicas").GetInt32());
+            Assert.Contains("Permission denied", service.GetProperty("logs").GetString());
+            Assert.DoesNotContain("SECRET_DB_PASS", transport.Payload.ToString());
+            Assert.Single(docker.Commands.Where(command => command.Contains("logs")));
+            Assert.DoesNotContain(docker.Commands, command => command[0] == "compose" && command.Contains("ps") && command.Contains("--quiet"));
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public async Task MissingLocalSha256ImageFailsFastBeforeComposeUpWithServiceCode()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mavis-img-" + Guid.NewGuid().ToString("N"));
+        var digest = new string('a', 64);
+        var profile = new RunnerExecutionProfile("collector@sha256:" + digest, "mavis-agents-v1",
+            new Dictionary<string, RuntimeServiceProfile> { ["order-service"] = new("java", 8080) },
+            ApprovedForLocalPoc: true, ScenarioRunnerImage: "sha256:" + digest);
+        var definition = new RuntimeRunDefinition("s", "m", "snapshot", "profile",
+            $"services:\n  order-service:\n    image: sha256:{digest}",
+            profile, new("s", [new("health", "order-service", "GET", "/health", 200)]),
+            new Dictionary<string, string>(), "config", "scenario");
+        var docker = new CrashInspectDocker { MissingLocalImage = true };
+        try
+        {
+            var result = await RuntimeSessionLifecycle.RunAsync(new DockerComposeSession(definition, root, "receivers: {}", docker), 30);
+            Assert.Equal("Failed", result.ExecutionStatus);
+            Assert.Contains("LOCAL_IMAGE_MISSING_ORDER_SERVICE", result.Diagnostics);
+            Assert.DoesNotContain(docker.Commands, c => c.Contains("up"));
+            Assert.Equal("Confirmed", result.CleanupStatus);
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public async Task FailedComposeUpCapturesExitedContainerCodeAndRedactsTelemetryLogsWithoutLeakingSecrets()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mavis-crash-" + Guid.NewGuid().ToString("N"));
+        var digest = new string('b', 64);
+        var profile = new RunnerExecutionProfile("collector@sha256:" + digest, "mavis-agents-v1",
+            new Dictionary<string, RuntimeServiceProfile> { ["order-service"] = new("java", 8080) },
+            ApprovedForLocalPoc: true, ScenarioRunnerImage: "sha256:" + digest);
+        var definition = new RuntimeRunDefinition("s", "m", "snapshot", "profile",
+            $"services:\n  order-service:\n    image: sha256:{digest}\n  sandbox-postgres:\n    image: postgres@sha256:{digest}",
+            profile, new("s", [new("health", "order-service", "GET", "/health", 200)]),
+            new Dictionary<string, string>(), "config", "scenario", InteractiveStudio: true);
+        var docker = new CrashInspectDocker();
+        var secrets = new Dictionary<string, string> { ["POSTGRES_PASSWORD"] = "SECRET_DB_PASS" };
+        try
+        {
+            var result = await RuntimeSessionLifecycle.RunAsync(
+                new DockerComposeSession(definition, root, "receivers: {}", docker, secrets), 30);
+            Assert.Equal("Failed", result.ExecutionStatus);
+            Assert.Contains("DOCKER_UP_CONTAINER_EXITED", result.Diagnostics);
+            Assert.Contains("CONTAINER_EXITED_SANDBOX_POSTGRES_CODE_1", result.Diagnostics);
+            Assert.DoesNotContain("SECRET_DB_PASS", JsonSerializer.Serialize(result));
+            Assert.Equal("Confirmed", result.CleanupStatus);
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
     }

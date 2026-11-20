@@ -9,6 +9,7 @@ public interface IRuntimeSessionBackend
     Task WaitUntilReadyAsync(CancellationToken ct);
     Task<HttpScenarioOutcome> ExecuteScenarioAsync(CancellationToken ct);
     IReadOnlyList<RuntimeInfrastructureActionResult> ObservedInfrastructureActions => [];
+    IReadOnlyList<string> FailureDiagnostics => [];
     Task<IReadOnlyList<RuntimeInfrastructureActionResult>> ExecuteInfrastructureActionsAsync(CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<RuntimeInfrastructureActionResult>>([]);
     /// <summary>Interactive Studio sessions observe the scenario again after student actions.</summary>
@@ -58,6 +59,16 @@ public static class RuntimeSessionLifecycle
         catch (Exception ex) { diagnostics.Add("SESSION_EXECUTION_FAILED_AT_" + backend.Stage); diagnostics.Add(ex.GetType().Name); }
         finally
         {
+            if (status != "Completed")
+            {
+                foreach (var code in backend.FailureDiagnostics)
+                {
+                    if (code is { Length: > 0 and <= 80 } &&
+                        code.All(c => c is >= 'A' and <= 'Z' or >= '0' and <= '9' or '_') &&
+                        !diagnostics.Contains(code, StringComparer.Ordinal))
+                        diagnostics.Add(code);
+                }
+            }
             if (backend.ObservedInfrastructureActions.Count > 0)
                 infrastructureActions = backend.ObservedInfrastructureActions.ToArray();
             // Fresh bounded cleanup tokens: an expired/cancelled run must still attempt evidence preservation and teardown.
