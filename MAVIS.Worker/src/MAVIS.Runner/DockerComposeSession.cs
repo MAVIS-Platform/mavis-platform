@@ -109,7 +109,8 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
         Stage = "DOCKER_UP";
         try
         {
-            await Require(["up", "--detach", "--wait", "--wait-timeout", "120"], ct);
+            await Require(["up", "--detach", "--wait", "--wait-timeout",
+                Math.Clamp(definition.Profile.TimeoutSeconds, 1, 300).ToString(System.Globalization.CultureInfo.InvariantCulture)], ct);
         }
         catch (RuntimeStageException)
         {
@@ -529,7 +530,8 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
 
     private Task<DockerCommandResult> Command(IReadOnlyList<string> arguments, CancellationToken ct) => docker.RunAsync(
         new[] { "compose", "--project-name", ResourceProject, "--file", Path.Combine(_directory!, "compose.yaml"), "--file", Path.Combine(_directory!, "override.json") }.Concat(arguments).ToArray(),
-        _directory!, arguments[0] == "up" ? 150 : (arguments[0] is "down" or "stop" ? 45 : 15), ct);
+        _directory!, arguments[0] == "up" ? Math.Clamp(definition.Profile.TimeoutSeconds, 1, 300) + 30
+            : (arguments[0] is "down" or "stop" ? 45 : 15), ct);
 
     private static bool PinnedRunnerImage(string? image)
     {

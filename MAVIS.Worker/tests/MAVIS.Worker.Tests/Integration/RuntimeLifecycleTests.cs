@@ -165,6 +165,29 @@ public sealed class RuntimeLifecycleTests
     }
 
     [Theory]
+    [InlineData(30)]
+    [InlineData(300)]
+    public async Task ComposeStartupUsesTheApprovedProfileDeadline(int seconds)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mavis-deadline-" + Guid.NewGuid().ToString("N"));
+        var digest = new string('b', 64);
+        var profile = new RunnerExecutionProfile("collector@sha256:" + digest, "mavis-agents-v1",
+            new Dictionary<string, RuntimeServiceProfile> { ["orders"] = new("java", 8080) },
+            TimeoutSeconds: seconds, ApprovedForLocalPoc: true, ScenarioRunnerImage: "sha256:" + digest);
+        var definition = new RuntimeRunDefinition("s", "m", "snapshot", "profile",
+            $"services:\n  orders:\n    image: demo/orders@sha256:{digest}", profile,
+            new("s", [new("health", "orders", "GET", "/health", 200)]), new Dictionary<string, string>(), "config", "scenario");
+        var docker = new FailingDocker();
+        try
+        {
+            await RuntimeSessionLifecycle.RunAsync(new DockerComposeSession(definition, root, "receivers: {}", docker), 30);
+            var startup = Assert.Single(docker.Commands.Where(command => command.Contains("up")));
+            Assert.Equal(seconds.ToString(), startup[startup.ToList().IndexOf("--wait-timeout") + 1]);
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task FailedComposeUpStillRunsDownAndConfirmsEveryResourceKind(bool helperFailure)
