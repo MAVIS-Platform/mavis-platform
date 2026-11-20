@@ -2713,5 +2713,90 @@
         "points": 1
       }
     ]
+  },
+  {
+    "id": "java-v2-ch10",
+    "track": "Java",
+    "phase": "V2 · Module 4",
+    "title": "Chương 10: THIẾT KẾ MICROSERVICE CHỊU LỖI VỚI RESILIENCE4J",
+    "minutes": 45,
+    "objective": "Hiểu hiện tượng Cascading Failure (Sập dây chuyền) khi một dịch vụ hạ lưu bị chậm (không chỉ khi nó sập!). Kết hợp đúng bộ tứ bảo vệ trong Resilience4j: Timeout, Retry (kèm Backoff), Circuit Breaker và Bulkhead. Thiết kế Fallback Method an toàn, trung thực và phân biệt khi nào *được phép* dùng Fallback.",
+    "lesson": "### 10.1. Kẻ giết người thầm lặng: \"Dịch vụ bị chậm\" nguy hiểm hơn \"Dịch vụ bị sập\"!\n\nNhiều bạn nghĩ rằng khi `catalog-service` bị tắt (connection refused), đó mới là sự cố đáng sợ nhất. Thực tế trong hệ thống phân tán (`[R19]` §3.2.3 & `[F16]` Ch.3), **dịch vụ chạy cực chậm (hanging / high latency)** còn nguy hiểm hơn gấp nhiều lần:\n1. `order-service` có Thread Pool gồm 200 luồng Tomcat.\n2. `catalog-service` bị nghẽn CSDL, mỗi request treo 60 giây không trả lời.\n3. Nếu không có **Timeout**, cả 200 luồng của `order-service` nhanh chóng bị chiếm hết chờ `catalog-service` $\\rightarrow$ `order-service` **tê liệt hoàn toàn**, thậm chí các API không hề liên quan đến `catalog-service` cũng chết theo $\\rightarrow$ **Cascading Failure** lan ngược lên tới `api-gateway`!\n\n### 10.2. Bộ tứ mẫu chịu lỗi (Resilience Patterns)\n\n| Mẫu chịu lỗi | Giải quyết bài toán gì? | Lưu ý sống còn khi cấu hình |\n| :--- | :--- | :--- |\n| **Timeout** | Giới hạn thời gian chờ tối đa (ví dụ $2\\text{s}$–$3\\text{s}$), giải phóng luồng ngay khi hạ lưu treo. | Mọi lời gọi mạng (HTTP/DB/Redis) **bắt buộc** phải đặt cả `connectTimeout` và `readTimeout`. |\n| **Retry + Exponential Backoff** | Tự động gọi lại khi gặp lỗi mạng thoáng qua (transient failure). | **CHỈ Retry các thao tác Idempotent** (như `GET` hoặc `POST` có `Idempotency-Key`)! Luôn thêm *jitter* để tránh **Retry Storm** đánh sập dịch vụ đang hồi phục. |\n| **Circuit Breaker (Cầu dao điện)** | Ngắt mạch ngay lập tức (*Fail Fast*) khi tỷ lệ lỗi của dịch vụ đích vượt ngưỡng, giúp dịch vụ đích có thời gian thở và phục hồi. | Hoạt động theo máy trạng thái 3 bước: `CLOSED` $\\to$ `OPEN` $\\to$ `HALF_OPEN`. |\n| **Bulkhead (Vách ngăn tàu thủy)** | Cô lập tài nguyên (Thread Pool hoặc Semaphore) cho từng dịch vụ đích riêng biệt. | Nếu `payment-service` bị chậm, chỉ khoang gọi `payment` bị đầy, không làm cạn luồng của khoang gọi `catalog-service`. |\n\n#### Máy trạng thái của Circuit Breaker (Cầu dao điện)\n\n```text\n                    Tỷ lệ lỗi >= 50% (ví dụ 5/10 call lỗi)\n   +---------+ ──────────────────────────────────────────────> +---------+\n   | CLOSED  |                                                 |  OPEN   |\n   | (Bình   |                                                 | (Ngắt!  |\n   | thường) | <────────────────────────────────────────────── | Trả     |\n   +---------+        Thử thành công                           | Fallback|\n        ^                                                      | ngay!)  |\n        |                                                      +---------+\n        |                                                           |\n        |              +-----------+   Hết thời gian chờ (VD: 15s)  |\n        +──────────────| HALF_OPEN | <──────────────────────────────+\n      Nếu thử ổn định  | (Cho qua  |\n                       | vài call  | ──(Nếu vẫn lỗi)──> Quay lại OPEN!\n                       | thăm dò)  |\n                       +-----------+\n```\n\n### 10.3. Triển khai chuẩn với Resilience4j trong Spring Boot 3\n\n```yaml\n# order-service/src/main/resources/application.yml\nresilience4j:\n  circuitbreaker:\n    instances:\n      catalogService:\n        slidingWindowType: COUNT_BASED\n        slidingWindowSize: 10\n        minimumNumberOfCalls: 5\n        failureRateThreshold: 50          # Mở cầu dao nếu >= 50% request lỗi\n        waitDurationInOpenState: 15s      # Ngắt trong 15 giây rồi chuyển HALF_OPEN\n        permittedNumberOfCallsInHalfOpenState: 3\n  retry:\n    instances:\n      catalogService:\n        maxAttempts: 3\n        waitDuration: 300ms\n        enableExponentialBackoff: true\n        exponentialBackoffMultiplier: 2\n```\n\n```java\n@Service\npublic class CatalogIntegrationService {\n\n    private final CatalogFeignClient catalogClient;\n\n    public CatalogIntegrationService(CatalogFeignClient catalogClient) {\n        this.catalogClient = catalogClient;\n    }\n\n    @CircuitBreaker(name = \"catalogService\", fallbackMethod = \"getProductFallback\")\n    @Retry(name = \"catalogService\")\n    public ProductSummaryDto fetchProductSafely(Long productId) {\n        return catalogClient.getProductById(productId);\n    }\n\n    // Fallback chuẩn: cùng tham số + thêm Throwable ở cuối\n    private ProductSummaryDto getProductFallback(Long productId, Throwable ex) {\n        // Chiến lược Graceful Degradation: trả dữ liệu từ cache cục bộ hoặc báo trạng thái suy giảm có kiểm soát\n        throw new ServiceDegradedException(\n                \"Catalog service is temporarily unavailable for product \" + productId, ex);\n    }\n}\n```\n\n> **Cảnh báo thực tế về Fallback**: Không phải lúc nào cũng trả dữ liệu giả! Với thao tác đọc danh sách gợi ý sản phẩm, bạn có thể trả danh sách mặc định từ cache (*Graceful Degradation*). Nhưng với thao tác **thanh toán** hay **trừ tồn kho**, tuyệt đối không được \"giả vờ thành công\" — phải trả về lỗi `503 Service Unavailable` rõ ràng hoặc đẩy sang hàng đợi xử lý sau.\n\n### 10.4. Góc nhìn trên nền tảng MAVIS\n- **Thí nghiệm thực chiến trên MAVIS Studio (Step 4)**: Đây là chương gắn trực tiếp với màn demo ăn điểm nhất trước hội đồng! Khi sinh viên bấm **Stop** một container phụ thuộc (ví dụ `payment-service` hoặc `catalog-service`) trên MAVIS Studio:\n  - Quan sát đồ thị **Before vs. After**: Tỷ lệ lỗi tăng lên, nhưng nhờ Timeout + Circuit Breaker, thời gian phản hồi của `order-service` vẫn giữ ở mức mili-giây (**Fail Fast**) thay vì treo cứng, và **Fallback** kích hoạt sạch sẽ!",
+    "exercise": "### 10.5. Bài tập thực hành Lab 10\n- Khởi chạy phiên Docker Runtime trên **MAVIS Studio (Step 3–4)**.\n- Chụp Snapshot **Before** ở trạng thái hệ thống khỏe mạnh.\n- Bấm **Stop** dịch vụ hạ lưu, gửi lưu lượng kiểm thử, chụp Snapshot **After**, đo độ trễ và tỷ lệ lỗi, rồi viết giải trình nguyên nhân hành vi quan sát được dựa trên cơ chế Timeout / Circuit Breaker / Fallback.",
+    "sources": [
+      {
+        "publisher": "Manning / Microservices.io",
+        "title": "Chris Richardson — Microservices Patterns",
+        "url": "https://microservices.io/patterns/"
+      },
+      {
+        "publisher": "Spring Cloud",
+        "title": "Mastering Microservices with Java & Spring Cloud Reference",
+        "url": "https://docs.spring.io/spring-cloud/reference/"
+      },
+      {
+        "publisher": "O'Reilly / Production-Ready Microservices",
+        "title": "Susan J. Fowler — Production-Ready Microservices",
+        "url": "https://www.oreilly.com/library/view/production-ready-microservices/9781491965962/"
+      }
+    ],
+    "questions": [
+      {
+        "id": "java-v2-ch10-q1",
+        "prompt": "Tại sao một dịch vụ hạ lưu bị **treo chậm (high latency)** thường gây sập dây chuyền (*Cascading Failure*) nghiêm trọng hơn cả khi nó bị tắt hẳn?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Vì khi bị tắt hẳn, kết nối từ chối ngay (fail fast); còn khi treo chậm không đặt Timeout, các luồng (threads) của dịch vụ gọi bị chiếm giữ chờ đợi cho đến khi cạn sạch Thread Pool",
+          "Vì khi dịch vụ bị tắt, JVM tự động sửa lại mã nguồn",
+          "Vì lỗi chậm không bao giờ ghi vào file log",
+          "Vì Docker không cho phép tắt container"
+        ],
+        "correctOption": 0,
+        "explanation": "Cạn kiệt tài nguyên (luồng, kết nối mạng) do chờ đợi vô hạn là nguyên nhân gốc rễ của Cascading Failure.",
+        "points": 1
+      },
+      {
+        "id": "java-v2-ch10-q2",
+        "prompt": "Trong **Circuit Breaker**, khi trạng thái đang là `OPEN` (mở mạch / ngắt cầu dao), các yêu cầu mới gọi tới dịch vụ đích sẽ được xử lý ra sao?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Vẫn gửi bình thường tới dịch vụ đích và chờ 60 giây",
+          "Bị chặn ngay lập tức (*Fail Fast*) và chuyển sang phương thức Fallback (hoặc trả lỗi ngay) mà không gửi yêu cầu qua mạng tới dịch vụ đang hỏng",
+          "Tự động tăng gấp đôi số lần Retry",
+          "Khởi động lại cơ sở dữ liệu PostgreSQL"
+        ],
+        "correctOption": 1,
+        "explanation": "Trạng thái `OPEN` vừa bảo vệ dịch vụ gọi khỏi bị treo, vừa cho dịch vụ đích thời gian hồi phục.",
+        "points": 1
+      },
+      {
+        "id": "java-v2-ch10-q3",
+        "prompt": "Khi cấu hình mẫu **Retry**, nguyên tắc an toàn nào sau đây là bắt buộc?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Retry vô hạn lần với khoảng nghỉ 0ms cho mọi API",
+          "Chỉ Retry trên các thao tác **Idempotent** (hoặc có `Idempotency-Key`), giới hạn số lần thử và dùng *Exponential Backoff + Jitter*",
+          "Luôn Retry cả khi gặp lỗi `400 Bad Request` và `401 Unauthorized`",
+          "Tắt hoàn toàn Timeout trước khi bật Retry"
+        ],
+        "correctOption": 1,
+        "explanation": "Retry lỗi `4xx` là vô nghĩa, còn Retry không idempotent có thể gây trừ tiền 2–3 lần; Backoff + Jitter tránh tạo bão Retry Storm.",
+        "points": 1
+      },
+      {
+        "id": "java-v2-ch10-q4",
+        "prompt": "Mẫu **Bulkhead** (vách ngăn tàu thủy) trong Resilience4j có tác dụng gì?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Mã hóa đường truyền HTTPS giữa các dịch vụ",
+          "Phân tách giới hạn tài nguyên (Thread Pool / Semaphore) theo từng dịch vụ đích để sự cố ở một phụ thuộc không làm cạn kiệt tài nguyên của các chức năng khác",
+          "Tự động chia nhỏ cơ sở dữ liệu theo ngày",
+          "Thay thế hoàn toàn Eureka Server"
+        ],
+        "correctOption": 1,
+        "explanation": "Giống các khoang kín nước trên tàu thủy, một khoang ngập nước sẽ không đánh chìm cả con tàu.",
+        "points": 1
+      }
+    ]
   }
 ]
