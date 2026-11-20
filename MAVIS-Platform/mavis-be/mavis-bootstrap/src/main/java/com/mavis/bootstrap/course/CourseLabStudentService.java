@@ -327,8 +327,9 @@ public class CourseLabStudentService {
         scenarioConfig.put("interactiveStudio", true);
         ObjectNode profileNode = scenarioConfig.putObject("profile");
         profileNode.set("applications", appsNode);
+        UUID runtimeSnapshotId = runtimeModel.getSourceSnapshot().getId();
         runtimeConfigurations.findById(runtimeModel.getProject().getId())
-                .filter(configuration -> runtimeModel.getSourceSnapshot().getId().equals(configuration.getSourceSnapshotId()))
+                .filter(configuration -> runtimeSnapshotId.equals(configuration.getSourceSnapshotId()))
                 .map(RuntimeConfiguration::getProfile)
                 .map(profile -> profile.path("sandboxCompose").asText(""))
                 .filter(prepared -> !prepared.isBlank())
