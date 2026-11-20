@@ -2148,5 +2148,90 @@
         "points": 1
       }
     ]
+  },
+  {
+    "id": "java-v2-ch03",
+    "track": "Java",
+    "phase": "V2 · Module 1",
+    "title": "Chương 03: XÂY DỰNG MICROSERVICE CHUẨN C3 VỚI JAVA 21 & SPRING BOOT 3",
+    "minutes": 45,
+    "objective": "Thiết kế đúng cấu trúc phân tầng C3 Component bên trong một Spring Boot Microservice (`Controller → Service → Repository`). Sử dụng thành thạo Java 21 `record`, Bean Validation (`@Valid`), Constructor Injection và Global Exception Handling (`@RestControllerAdvice`). Thiết kế RESTful API nhất quán (HTTP status code chuẩn, phân trang, API versioning, hợp đồng `ApiResponse`).",
+    "lesson": "### 3.1. Microservice Chassis & Kiến trúc phân tầng C3 chuẩn\n\n`[R19]` §11.4 gọi Spring Boot + Spring Cloud là một **Microservice Chassis** (khung gầm Microservice): nó cung cấp sẵn các thành phần cắt ngang (*cross-cutting concerns*) như embedded server (Tomcat/Netty), dependency injection, logging, metrics, health check và externalized config để lập trình viên tập trung 100% vào nghiệp vụ.\n\nBên trong một Microservice Java chuẩn (tầng **C3 Component** trong C4 Model), luồng xử lý phải đi theo một chiều rõ ràng, tuyệt đối không nhảy cóc:\n\n```text\nHTTP Request (JSON)\n        |\n        v\n+-----------------------+\n|   @RestController     |  <-- Nhận HTTP, kiểm tra @Valid DTO, trả ResponseEntity.\n|  (Web / API Layer)    |      KHÔNG viết logic nghiệp vụ, KHÔNG gọi Repository trực tiếp!\n+-----------------------+\n        | (DTO / Command)\n        v\n+-----------------------+\n|       @Service        |  <-- Xử lý nghiệp vụ, @Transactional, gọi FeignClient / Kafka.\n|   (Business Layer)    |      Chuyển đổi Entity <-> Response Record DTO.\n+-----------------------+\n        | (Entity)\n        v\n+-----------------------+\n|      @Repository      |  <-- Giao tiếp CSDL (Spring Data JPA / JDBC).\n| (Persistence Layer)   |      KHÔNG trả trực tiếp JPA Entity ra ngoài API!\n+-----------------------+\n        |\n        v\n  [Service Database]\n```\n\n### 3.2. Chuẩn hóa Code Java 21 + Spring Boot 3\n\n#### (a) Dùng Java 21 `record` làm DTO bất biến kèm Bean Validation\nThay vì viết hàng trăm dòng getter/setter hoặc lộ trực tiếp `@Entity` ra API (dễ gây lỗi **Mass Assignment** hoặc vòng lặp JSON `LazyInitializationException`), Java 21 dùng `record`:\n\n```java\npackage com.example.catalog.dto;\n\nimport jakarta.validation.constraints.*;\nimport java.math.BigDecimal;\n\npublic record CreateProductRequest(\n        @NotBlank(message = \"SKU is required\")\n        @Size(max = 50)\n        String sku,\n\n        @NotBlank(message = \"Product name is required\")\n        @Size(max = 200)\n        String name,\n\n        @NotNull(message = \"Price is required\")\n        @DecimalMin(value = \"0.01\", message = \"Price must be greater than 0\")\n        BigDecimal unitPrice,\n\n        @Min(value = 0, message = \"Stock cannot be negative\")\n        int stockQuantity\n) {}\n\npublic record ProductResponse(\n        Long id,\n        String sku,\n        String name,\n        BigDecimal unitPrice,\n        int stockQuantity\n) {}\n```\n\n#### (b) Constructor Injection & Controller sạch (C3 chuẩn)\nLuôn dùng **Constructor Injection** (`private final`) thay vì `@Autowired` trên field (Field Injection) để dễ viết Unit Test và đảm bảo tính bất biến (immutability):\n\n```java\n@RestController\n@RequestMapping(\"/api/v1/products\")\npublic class ProductController {\n\n    private final ProductService productService;\n\n    public ProductController(ProductService productService) {\n        this.productService = productService;\n    }\n\n    @GetMapping(\"/{id}\")\n    public ResponseEntity<ProductResponse> getById(@PathVariable Long id) {\n        return ResponseEntity.ok(productService.findById(id));\n    }\n\n    @PostMapping\n    public ResponseEntity<ProductResponse> create(@Valid @RequestBody CreateProductRequest request) {\n        ProductResponse created = productService.create(request);\n        return ResponseEntity.status(HttpStatus.CREATED).body(created);\n    }\n}\n```\n\n#### (c) Xử lý lỗi tập trung theo chuẩn RFC 7807 (`ProblemDetail` của Spring Boot 3)\nKhông bao giờ trả stack trace thô ra client (lộ cấu trúc nội bộ). Spring Boot 3 hỗ trợ sẵn `ProblemDetail` qua `@RestControllerAdvice`:\n\n```java\n@RestControllerAdvice\npublic class GlobalExceptionHandler {\n\n    @ExceptionHandler(ResourceNotFoundException.class)\n    public ProblemDetail handleNotFound(ResourceNotFoundException ex) {\n        ProblemDetail detail = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());\n        detail.setTitle(\"Resource Not Found\");\n        detail.setProperty(\"errorCode\", \"RESOURCE_NOT_FOUND\");\n        return detail;\n    }\n\n    @ExceptionHandler(MethodArgumentNotValidException.class)\n    public ProblemDetail handleValidation(MethodArgumentNotValidException ex) {\n        ProblemDetail detail = ProblemDetail.forStatusAndDetail(\n                HttpStatus.BAD_REQUEST, \"Input validation failed\");\n        detail.setTitle(\"Validation Error\");\n        Map<String, String> fieldErrors = ex.getBindingResult().getFieldErrors().stream()\n                .collect(Collectors.toMap(\n                        FieldError::getField,\n                        err -> Objects.requireNonNullElse(err.getDefaultMessage(), \"Invalid value\"),\n                        (first, second) -> first));\n        detail.setProperty(\"errors\", fieldErrors);\n        return detail;\n    }\n}\n```\n\n### 3.3. Quy ước thiết kế REST API chuẩn (`[S16]` Ch.4 & `[R19]` Ch.3)\n- **URL theo danh từ số nhiều + API Versioning**: `/api/v1/orders`, `/api/v1/products/{id}` (tránh dùng động từ như `/getProductById`).\n- **HTTP Method & Status Code đúng ngữ nghĩa**:\n  - `GET` (an toàn, idempotent) $\\rightarrow$ `200 OK` hoặc `404 Not Found`\n  - `POST` (tạo mới) $\\rightarrow$ `201 Created` (kèm header `Location`)\n  - `PUT` / `PATCH` (cập nhật) $\\rightarrow$ `200 OK`\n  - `DELETE` (xóa) $\\rightarrow$ `204 No Content`\n  - Lỗi đầu vào $\\rightarrow$ `400 Bad Request`; Chưa đăng nhập $\\rightarrow$ `401 Unauthorized`; Không đủ quyền $\\rightarrow$ `403 Forbidden`; Xung đột nghiệp vụ (trùng SKU / hết tồn kho) $\\rightarrow$ `409 Conflict`.\n\n### 3.4. Góc nhìn trên nền tảng MAVIS\n- **Trích xuất C3 Component**: JavaParser trong `mavis-analyzer` nhận diện các stereotype annotation (`@RestController`, `@Service`, `@Repository`, `@Component`) và vẽ các cạnh phụ thuộc nội bộ giữa chúng.\n- **Phát hiện mùi kiến trúc (3E Rules)**: Nếu một `@RestController` tiêm trực tiếp `@Repository` bỏ qua tầng `@Service` (vi phạm phân tầng), hoặc nếu tên lớp/package không tuân theo chuẩn đặt tên, MAVIS sẽ gắn cảnh báo **Layering / Naming Smell** kèm đúng số dòng mã nguồn.",
+    "exercise": "### 3.5. Bài tập thực hành Lab 03\n- Soi tầng **C3 Component** của một service (như `catalog-service` hoặc `order-service`) trên MAVIS.\n- Kiểm tra xem có Controller nào gọi thẳng Repository không, DTO đã dùng `record` kèm `@Valid` chưa, và `@RestControllerAdvice` có che giấu stack trace khi phát sinh lỗi `400`/`404` không.",
+    "sources": [
+      {
+        "publisher": "Manning / Microservices.io",
+        "title": "Chris Richardson — Microservices Patterns",
+        "url": "https://microservices.io/patterns/"
+      },
+      {
+        "publisher": "Spring Cloud",
+        "title": "Mastering Microservices with Java & Spring Cloud Reference",
+        "url": "https://docs.spring.io/spring-cloud/reference/"
+      },
+      {
+        "publisher": "Spring & Oracle Java 21",
+        "title": "Spring Boot 3 & Java 21 Official Documentation",
+        "url": "https://docs.spring.io/spring-boot/reference/"
+      }
+    ],
+    "questions": [
+      {
+        "id": "java-v2-ch03-q1",
+        "prompt": "Tại sao trong Spring Boot 3 không nên trả trực tiếp JPA `@Entity` ra ngoài ở tầng `@RestController`?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Vì Spring Boot 3 không hỗ trợ serialize JPA Entity sang JSON",
+          "Vì dễ làm lộ dữ liệu nhạy cảm, dính lỗ hổng Mass Assignment, lỗi `LazyInitializationException` và khóa chặt hợp đồng API vào lược đồ bảng CSDL",
+          "Vì JPA Entity chạy chậm hơn `record` gấp 100 lần",
+          "Vì OpenFeign không đọc được JSON sinh ra từ Entity"
+        ],
+        "correctOption": 1,
+        "explanation": "Tách biệt DTO (`record`) và Entity giúp bảo mật, tránh lỗi Hibernate lazy-loading và cho phép đổi cấu trúc bảng DB mà không làm vỡ API của client.",
+        "points": 1
+      },
+      {
+        "id": "java-v2-ch03-q2",
+        "prompt": "Vì sao **Constructor Injection** được khuyến nghị mạnh hơn **Field Injection (`@Autowired` trực tiếp trên thuộc tính)** trong Spring?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Cho phép khai báo phụ thuộc là `final` (bất biến), phát hiện phụ thuộc vòng sớm lúc khởi chạy và dễ viết Unit Test không cần khởi động Spring Context",
+          "Vì Field Injection đã bị xóa khỏi Java 21",
+          "Vì Constructor Injection giúp bỏ qua hoàn toàn bước kiểm tra `@Valid`",
+          "Vì Field Injection không hoạt động trong Docker container"
+        ],
+        "correctOption": 0,
+        "explanation": "Constructor Injection làm rõ mọi dependency bắt buộc của class, hỗ trợ `final` và dễ truyền mock object khi test bằng JUnit/Mockito.",
+        "points": 1
+      },
+      {
+        "id": "java-v2-ch03-q3",
+        "prompt": "Khi client gửi yêu cầu `POST /api/v1/products` với `unitPrice = -5000` (vi phạm `@DecimalMin`), HTTP Status Code chuẩn mực nào cần trả về?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "`200 OK` kèm trường `success: false`",
+          "`400 Bad Request` kèm mô tả lỗi trường dữ liệu (ví dụ `ProblemDetail`)",
+          "`401 Unauthorized`",
+          "`500 Internal Server Error`"
+        ],
+        "correctOption": 1,
+        "explanation": "Lỗi dữ liệu đầu vào do phía client gửi lên phải trả về `400 Bad Request` (nhóm `4xx`), không được trả `200` hay để văng `500`.",
+        "points": 1
+      },
+      {
+        "id": "java-v2-ch03-q4",
+        "prompt": "Trong kiến trúc phân tầng C3 chuẩn của một Spring Boot Microservice, tầng nào chịu trách nhiệm quản lý ranh giới giao dịch `@Transactional` và điều phối logic nghiệp vụ?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "`@RestController`",
+          "`@Service`",
+          "`record` DTO",
+          "`GlobalExceptionHandler`"
+        ],
+        "correctOption": 1,
+        "explanation": "Tầng `@Service` chứa quy tắc nghiệp vụ và ranh giới giao dịch; `@RestController` chỉ lo giao thức HTTP còn `@Repository` chỉ lo truy vấn dữ liệu.",
+        "points": 1
+      }
+    ]
   }
 ]
