@@ -188,9 +188,12 @@ public class CourseLabSeederService {
         }
         for (int i = 0; i < modules.size(); i++) {
             Assignment lab = existingLabs.get(i);
+            boolean runtimeRequired = modules.get(i).visualLab() != null
+                    && modules.get(i).visualLab().requireRuntimeTrace();
             if (lab == null
                     || !Integer.valueOf(i + 1).equals(lab.getLabOrder())
-                    || !modules.get(i).labTitle().equals(lab.getTitle())) {
+                    || !modules.get(i).labTitle().equals(lab.getTitle())
+                    || !Boolean.valueOf(runtimeRequired).equals(lab.getRequireRuntimeTrace())) {
                 return false;
             }
         }
@@ -450,13 +453,24 @@ public class CourseLabSeederService {
                             .studioTopologyRevision(1);
                 }
                 match = assignments.saveAndFlush(labBuilder.build());
-            } else if (!Integer.valueOf(targetOrder).equals(match.getLabOrder())
-                    || !modSpec.labTitle().equals(match.getTitle())
-                    || !modSpec.labDescription().equals(match.getDescription())) {
-                match.setLabOrder(targetOrder);
-                match.setTitle(modSpec.labTitle());
-                match.setDescription(modSpec.labDescription());
-                match = assignments.saveAndFlush(match);
+            } else {
+                boolean runtime = modSpec.visualLab() != null && modSpec.visualLab().requireRuntimeTrace();
+                boolean changed = !Integer.valueOf(targetOrder).equals(match.getLabOrder())
+                        || !modSpec.labTitle().equals(match.getTitle())
+                        || !modSpec.labDescription().equals(match.getDescription())
+                        || !Boolean.valueOf(runtime).equals(match.getRequireRuntimeTrace());
+                if (changed) {
+                    match.setLabOrder(targetOrder);
+                    match.setTitle(modSpec.labTitle());
+                    match.setDescription(modSpec.labDescription());
+                    match.setRequireRuntimeTrace(runtime);
+                    match.setLabMode(runtime ? "THEORY_QUIZ_STUDIO" : "THEORY_QUIZ");
+                    if (runtime && match.getStudioTopologySnapshot() == null) {
+                        match.setStudioTopologySnapshot(buildStudioTopologyForServices(track.runtimeServices()));
+                        match.setStudioTopologyRevision(1);
+                    }
+                    match = assignments.saveAndFlush(match);
+                }
             }
             quizzes.publishCurriculum(workspaceId, match.getId(), track.toQuizPublish(modSpec));
             orderedLabs.add(match);

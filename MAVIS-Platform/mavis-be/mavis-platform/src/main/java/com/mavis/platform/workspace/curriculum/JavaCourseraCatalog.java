@@ -93,10 +93,10 @@ public final class JavaCourseraCatalog {
                         )
                 ),
                 new VisualLabSpec(
-                        "STATIC_LAB",
+                        "RUNTIME_LAB",
                         "Studio Lab 01 · Static View C1–C3 & DDD Boundary Check",
-                        "Kiểm tra sơ đồ C1 Context, C2 Container, C3 Component của Mộc Hương Shop trên MAVIS ở chế độ Static View.",
-                        false,
+                        "Kiểm tra sơ đồ C1 Context, C2 Container, C3 Component của Mộc Hương Shop ở Static Studio, sau đó thực hành Runtime Studio và ghi nhận evidence.",
+                        true,
                         List.of("C4_CONTAINER", "C4_COMPONENT")
                 )
         );

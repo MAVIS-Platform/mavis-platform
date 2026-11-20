@@ -33,6 +33,14 @@ import {
 import { DetailPanel, StatusBadge } from "@/components/shared/data";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 import { useLocale } from "@/lib/i18n/locale-context";
 import { getRuleName } from "@/features/architecture/three-e-content";
@@ -590,7 +598,9 @@ export function LabWorkspace() {
     (!quiz.isError && quiz.data?.runtimeUnlocked === true) ||
     studentContext.data?.quiz?.runtimeUnlocked === true;
   const requiresRuntime =
-    lab?.requireRuntimeTrace === true || lab?.labMode === "THEORY_QUIZ_STUDIO";
+    lab?.requireRuntimeTrace === true ||
+    lab?.labMode === "THEORY_QUIZ_STUDIO" ||
+    studentContext.data?.studioExercise != null;
   const displayedStep = activeStep;
   const refArch = studentContext.data?.referenceArchitecture ?? null;
   const studentStudioSessions = useStudentLabStudioSessions(
@@ -1310,6 +1320,12 @@ function StepContent({
   const client = useApi();
   const [selectedGraphId, setSelectedGraphId] = useState<string | null>(null);
   const [tutorQuery, setTutorQuery] = useState<"none" | "grounded" | "out_of_scope">("none");
+  const runtimeConfigurationMissing = step === 2 && !requiresRuntime;
+  const [runtimeConfigurationDialogOpen, setRuntimeConfigurationDialogOpen] = useState(false);
+
+  useEffect(() => {
+    setRuntimeConfigurationDialogOpen(runtimeConfigurationMissing);
+  }, [runtimeConfigurationMissing]);
 
   const activeStudioSessionId = studioSessionId ?? studioSessions[0]?.id ?? "";
   const studioStateQuery = useApiQuery(
@@ -1363,6 +1379,12 @@ function StepContent({
   }, [activeModel, inlineC4View, referenceArchitecture?.diagrams]);
 
   const submitHref = `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=3${previewParam}#lab-submit`;
+  const jumpToSubmissionBox = () => {
+    const submissionBox = document.getElementById("lab-submit");
+    if (!submissionBox) return;
+    submissionBox.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.history.replaceState(null, "", submitHref);
+  };
   const standaloneStudioHref = buildStudioLiveHref({
     workspaceId,
     assignmentId: labId,
@@ -1374,7 +1396,9 @@ function StepContent({
   const current = resolveStepMeta(step, { hasReferenceArch, isTheoryOnlyLab, requiresRuntime });
   const Icon = current.icon;
   const next = step < 3 ? ((step + 1) as 2 | 3) : undefined;
-  const nextAvailable = Boolean(preview) || (next !== undefined && (next !== 2 || runtimeReady));
+  const nextAvailable =
+    Boolean(preview) ||
+    (next !== undefined && (next !== 2 || runtimeReady || !requiresRuntime));
   const needsSandboxBootstrap = Boolean(
     !preview &&
     activeStudioSessionId &&
@@ -1387,6 +1411,35 @@ function StepContent({
 
   return (
     <>
+      <Dialog open={runtimeConfigurationDialogOpen} onOpenChange={setRuntimeConfigurationDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {t("Runtime Studio is not configured", "Runtime Studio chưa được cấu hình")}
+            </DialogTitle>
+            <DialogDescription>
+              {t(
+                "This Lab has no prepared Runtime Studio topology yet. A lecturer must configure the runtime source, topology, and Studio exercise before students can start a session.",
+                "Lab này chưa có topology Runtime Studio sẵn sàng. Giảng viên cần cấu hình nguồn runtime, topology và Studio exercise trước khi sinh viên có thể bắt đầu phiên thực hành.",
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            {!isStudent && (
+              <Button asChild>
+                <Link
+                  href={`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&tab=studio`}
+                >
+                  {t("Configure Runtime Studio", "Cấu hình Runtime Studio")}
+                </Link>
+              </Button>
+            )}
+            <Button type="button" variant="outline" onClick={() => setRuntimeConfigurationDialogOpen(false)}>
+              {t("Back to Lab", "Quay lại Lab")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <div className="rounded-2xl border bg-card p-6">
         <div className="flex items-start gap-4">
           <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
@@ -2114,10 +2167,8 @@ function StepContent({
           )}
         </span>
         {step === 3 ? (
-          <Button asChild size="sm" variant="outline">
-            <Link href={submitHref}>
-              {t("Jump to Submission Box", "Đi tới Khung Nộp bài")} <ArrowRight />
-            </Link>
+          <Button size="sm" variant="outline" onClick={jumpToSubmissionBox}>
+            {t("Jump to Submission Box", "Đi tới Khung Nộp bài")} <ArrowRight />
           </Button>
         ) : (
           <Button asChild={nextAvailable} disabled={!nextAvailable}>
