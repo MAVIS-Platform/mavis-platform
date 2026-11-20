@@ -3223,5 +3223,90 @@
         "points": 1
       }
     ]
+  },
+  {
+    "id": "csharp-v2-ch04",
+    "track": "C#",
+    "phase": "V2 · Module 2",
+    "title": "Chương 04: SERVICE DISCOVERY TRONG DOCKER / .NET & EXTERNALIZED CONFIGURATION",
+    "minutes": 45,
+    "objective": "Hiểu cơ chế Server-Side Service Discovery qua Docker Compose Embedded DNS (chuẩn gọn nhẹ của hệ sinh thái .NET Container, không cần dựng thêm Eureka Server nặng nề). Cấu hình dịch vụ bên ngoài theo đúng thứ tự ưu tiên của ASP.NET Core Configuration (`appsettings.json` $\\to$ Environment Variables). Áp dụng Options Pattern (`IOptions<T>` + `ValidateDataAnnotations` + `ValidateOnStart`) để phát hiện thiếu biến môi trường ngay lúc khởi động (Fail-Fast).",
+    "lesson": "### 4.1. Service Discovery trong .NET Container: Sức mạnh của Docker DNS\n\nKhác với hệ sinh thái Spring Cloud truyền thống hay dựng thêm một dịch vụ Eureka Server riêng, kiến trúc .NET Container hiện đại (`[MS24]` Ch.4) ưu tiên **Server-Side Discovery** có sẵn của nền tảng container (**Docker Compose DNS** khi chạy local/MAVIS Sandbox, và **Kubernetes Service DNS** khi chạy Production):\n\n```\n                    Mạng nội bộ Docker (mavis-net)\n+--------------------+                          +------------------------+\n|   Ordering.API     |  http://catalog-api:8080 |  Docker Embedded DNS   |\n|  (Typed HttpClient)| -----------------------> |  catalog-api ->        |\n+--------------------+                          |   172.20.0.4 (Replica1)|\n                                                |   172.20.0.5 (Replica2)|\n                                                +------------------------+\n                                                      |           |\n                                                      v           v\n                                                [catalog-api#1] [catalog-api#2]\n```\n\n* **Ưu điểm lớn**: Mã nguồn C# hoàn toàn **không phụ thuộc thư viện Discovery ngoài** (không cần SDK đăng ký heartbeat). Chỉ cần gọi tên service trong `docker-compose.yml` (ví dụ `http://catalog-api:8080`), Docker DNS tự động phân giải và cân bằng tải Round-Robin giữa các replica đang chạy!\n* *(Lưu ý nâng cao: Từ .NET 8/9, Microsoft bổ sung thêm `Microsoft.Extensions.ServiceDiscovery` dùng chung chuẩn cho cả Docker, Kubernetes và .NET Aspire).*\n\n### 4.2. Externalized Configuration & Options Pattern (`IOptions<T>`)\n\nTheo nguyên tắc 12-Factor App và `[MS24]`, **cùng một Docker Image `.NET` phải chạy được ở Dev, Staging và Production** chỉ bằng cách thay đổi biến môi trường.\n\nTrong ASP.NET Core, biến môi trường dùng **dấu gạch dưới kép (`__`)** để ghi đè cấu hình lồng nhau trong `appsettings.json`:\n* Trong `appsettings.json`: `\"ServiceUrls\": { \"CatalogApi\": \"http://localhost:5001\" }`\n* Trong `docker-compose.yml`: `ServiceUrls__CatalogApi=http://catalog-api:8080`\n\n#### Cấu hình mạnh kiểu (Strongly-Typed) kèm kiểm tra Fail-Fast lúc khởi động\n\nKhông bao giờ viết rải rác `Configuration[\"Jwt:Secret\"]` khắp mã nguồn! Hãy dùng **Options Pattern** kèm `ValidateOnStart()`:\n\n```csharp\npublic sealed class ServiceUrlOptions\n{\n    public const string SectionName = \"ServiceUrls\";\n\n    [Required, Url]\n    public string CatalogApi { get; init; } = string.Empty;\n\n    [Required, Url]\n    public string BasketApi { get; init; } = string.Empty;\n}\n\n// Trong Program.cs: Fail-Fast ngay lúc container khởi động nếu quên truyền biến môi trường!\nbuilder.Services\n    .AddOptions<ServiceUrlOptions>()\n    .Bind(builder.Configuration.GetSection(ServiceUrlOptions.SectionName))\n    .ValidateDataAnnotations()\n    .ValidateOnStart();\n```\n\n### 4.3. Góc nhìn trên nền tảng MAVIS\n\n* **Khớp địa chỉ tĩnh**: `MAVIS.Worker` kết hợp đọc `appsettings.json` + `docker-compose.yml` để phân giải cấu hình URL (`ServiceUrls__CatalogApi` $\\to$ nút `catalog-api`), giúp nối chính xác cạnh `SERVICE_HTTP_CALL` giữa các nút C2 mà không bị đứt đoạn.\n* **An toàn Secret (`D2`)**: Tuyệt đối không đặt mật khẩu DB thật hay `Jwt__Secret` production trong `appsettings.json`; dùng User Secrets (`dotnet user-secrets`) ở local và biến môi trường `.env` trong Docker.",
+    "exercise": "### 4.4. Bài tập thực hành Lab 04\n\n* Kiểm tra file `appsettings.json` và `docker-compose.yml` của các dịch vụ .NET: xác nhận cách ghi đè cấu hình bằng dấu gạch dưới kép (`ConnectionStrings__DefaultConnection`, `ServiceUrls__CatalogApi`).\n* Thử cấu hình `ValidateOnStart()` cho một lớp Options và quan sát ứng dụng báo lỗi rõ ràng ngay lúc start khi cố tình bỏ trống biến cấu hình bắt buộc.",
+    "sources": [
+      {
+        "publisher": "Microsoft Learn",
+        "title": ".NET Microservices: Architecture for Containerized .NET Applications",
+        "url": "https://learn.microsoft.com/en-us/dotnet/architecture/microservices/"
+      },
+      {
+        "publisher": "O'Reilly / Production-Ready Microservices",
+        "title": "Susan J. Fowler — Production-Ready Microservices",
+        "url": "https://www.oreilly.com/library/view/production-ready-microservices/9781491965962/"
+      },
+      {
+        "publisher": "Microsoft Learn (.NET 8 / YARP)",
+        "title": "ASP.NET Core 8 & YARP Reverse Proxy Documentation",
+        "url": "https://learn.microsoft.com/en-us/aspnet/core/"
+      }
+    ],
+    "questions": [
+      {
+        "id": "csharp-v2-ch04-q1",
+        "prompt": "Trong môi trường Docker Compose của hệ thống .NET Microservices, tại sao `Ordering.API` có thể gọi `http://catalog-api:8080` mà không cần hard-code địa chỉ IP?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Vì Docker Compose cung cấp sẵn **Embedded DNS (Server-Side Discovery)** tự động phân giải tên dịch vụ trong `docker-compose.yml` sang địa chỉ IP động của các container đang chạy",
+          "Vì mọi container Docker đều dùng chung địa chỉ `127.0.0.1`",
+          "Vì ASP.NET Core tự động dò quét tất cả các cổng trên Internet",
+          "Vì Entity Framework Core tự gán IP cố định"
+        ],
+        "correctOption": 0,
+        "explanation": "Docker DNS giải quyết Service Discovery ở tầng hạ tầng, giúp mã nguồn .NET gọn sạch và tự cân bằng tải khi scale replica.",
+        "points": 1
+      },
+      {
+        "id": "csharp-v2-ch04-q2",
+        "prompt": "Để ghi đè khóa cấu hình lồng nhau `\"ConnectionStrings\": { \"CatalogDb\": \"...\" }` trong `appsettings.json` bằng biến môi trường trên Linux Docker container, ta đặt tên biến môi trường như thế nào?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "`ConnectionStrings.CatalogDb`",
+          "`ConnectionStrings__CatalogDb` (dùng dấu gạch dưới kép `__`)",
+          "`ConnectionStrings/CatalogDb`",
+          "`ConnectionStrings->CatalogDb`"
+        ],
+        "correctOption": 1,
+        "explanation": "Hệ điều hành Linux/bash không hỗ trợ dấu hai chấm (`:`) ổn định trong tên biến môi trường, nên ASP.NET Core chuẩn hóa dùng hai dấu gạch dưới (`__`).",
+        "points": 1
+      },
+      {
+        "id": "csharp-v2-ch04-q3",
+        "prompt": "Lợi ích trực tiếp của việc gắn `.ValidateDataAnnotations().ValidateOnStart()` cho lớp `IOptions<T>` trong `Program.cs` là gì?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Tự động sinh mật khẩu ngẫu nhiên cho cơ sở dữ liệu",
+          "**Fail-Fast**: ứng dụng báo lỗi ngay lập tức lúc khởi động nếu thiếu hoặc sai định dạng biến môi trường, thay vì chạy ngầm rồi mới crash khi có khách gọi API",
+          "Giảm kích thước file `.dll`",
+          "Bỏ qua file `appsettings.json`"
+        ],
+        "correctOption": 1,
+        "explanation": "Phát hiện sai cấu hình ngay lúc khởi chạy container giúp tránh triển khai bản lỗi lên môi trường chạy thật.",
+        "points": 1
+      },
+      {
+        "id": "csharp-v2-ch04-q4",
+        "prompt": "Khi chạy ở máy cục bộ (Development), nơi nào an toàn nhất để lưu chuỗi kết nối hoặc `Jwt:Secret` mà **không bao giờ bị đẩy nhầm lên GitHub**?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Ghi thẳng vào `appsettings.json` và commit lên nhánh `main`",
+          "Dùng **Secret Manager (`dotnet user-secrets`)** hoặc file `.env` đã được khai báo trong `.gitignore`",
+          "Ghi vào file `README.md`",
+          "Hard-code thành `const string` trong `Program.cs`"
+        ],
+        "correctOption": 1,
+        "explanation": "`dotnet user-secrets` lưu cấu hình bí mật ở thư mục profile ngoài kho Git, tránh hoàn toàn rủi ro rò rỉ secret.",
+        "points": 1
+      }
+    ]
   }
 ]
