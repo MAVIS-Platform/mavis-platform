@@ -13,6 +13,7 @@ import { useApi } from "@/hooks/use-api";
 import { ApiError as ProxyError, api } from "@/lib/mainflow-api";
 import { ApiError, backendErrorCode, fromStatus, publicErrorCode } from "@/lib/errors/api-error";
 import { useLocale } from "@/lib/i18n/locale-context";
+import { formatCourseLabTitle } from "@/lib/format/course-display";
 import type { Response } from "@/lib/api/contracts";
 
 type Lab = {
@@ -618,6 +619,7 @@ export type StudentLabLatestReview = {
   revision: number;
   status: string;
   score: number | null;
+  scoreTenScale?: number | null;
   summary: string | null;
   lecturerName: string | null;
   updatedAt: string | null;
@@ -1075,7 +1077,7 @@ export function CourseRoadmap({
                 <div className="min-w-0 space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="text-sm font-semibold">
-                      Lab {lab.position} · {lab.title}
+                      {formatCourseLabTitle(lab.title, lab.position, lab.assignmentId)}
                     </p>
                     <span
                       className={`inline-flex rounded border px-1.5 py-0.5 text-[10px] font-semibold tracking-wide ${stateBadge.cls}`}

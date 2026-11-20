@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/shared/data";
 import { useLocale } from "@/lib/i18n/locale-context";
+import { formatTenScaleScore } from "@/lib/format/course-display";
 import { CourseEnrollment, useCourseRoadmap } from "@/features/workspaces/course-access";
 import { computeCourseProgressSummary } from "@/lib/coursera-ui-helpers";
 import type { Response } from "@/lib/api/contracts";
@@ -134,7 +135,7 @@ export function StudentKpiStrip({
         </p>
         <p className="mt-0.5 text-xs text-muted-foreground">
           {avgScore != null
-            ? `${t("Avg grade", "Điểm TB")}: ${avgScore}/100`
+            ? `${t("Avg grade", "Điểm TB")}: ${formatTenScaleScore(avgScore)}`
             : t("Passed checkpoints", "Bài Lab đã đạt yêu cầu")}
         </p>
       </div>

@@ -47,10 +47,29 @@ export function Step2StaticImpact({
     if (selectedTargetId && model.elements.some((el) => el.id === selectedTargetId)) {
       return selectedTargetId;
     }
+    const baseline = computeArchitectureImpact(model, model.elements[0]!.id, scope);
+    const candidates = baseline.candidateTargets;
+    let bestId = "";
+    let bestScore = -1;
+    for (const candidate of candidates) {
+      const probe = computeArchitectureImpact(model, candidate.id, scope);
+      const isDownstreamType =
+        candidate.elementType === "SERVICE_CONTAINER" || candidate.elementType === "DATABASE" ? 1 : 0;
+      const score =
+        probe.indirectImpactCount * 1000 +
+        probe.directImpactCount * 50 +
+        probe.upstreamImpacted.length * 10 +
+        isDownstreamType;
+      if (score > bestScore) {
+        bestScore = score;
+        bestId = candidate.id;
+      }
+    }
+    if (bestId && bestScore > 1) return bestId;
     const preferred =
       model.elements.find((el) => el.elementType === "SERVICE_CONTAINER") ?? model.elements[0]!;
     return preferred.id;
-  }, [model, selectedTargetId]);
+  }, [model, selectedTargetId, scope]);
 
   const impact = useMemo(() => {
     if (!model || !activeTargetId) return null;
@@ -65,6 +84,11 @@ export function Step2StaticImpact({
     () => impact?.upstreamImpacted.filter((entry) => entry.distance > 1) ?? [],
     [impact],
   );
+  const totalScopedNodes = impact
+    ? Math.max(1, 1 + impact.upstreamImpacted.length + impact.unaffectedElements.length)
+    : 1;
+  const blastRadiusCount = demoLeafActive ? 1 : (impact?.blastRadiusCount ?? 1);
+  const blastRadiusPercent = Math.min(100, Math.round((blastRadiusCount / totalScopedNodes) * 100));
 
   return (
     <div className="space-y-5">
@@ -267,7 +291,13 @@ export function Step2StaticImpact({
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-muted/20 px-3 py-2 text-xs">
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="outline" className="font-mono">
-                  Visited Set: {demoLeafActive ? 1 : 1 + impact.upstreamImpacted.length} {t("nodes visited cleanly", "node đã duyệt an toàn")}
+                  Visited Set: {blastRadiusCount} {t("nodes visited cleanly", "node đã duyệt an toàn")}
+                </Badge>
+                <Badge
+                  variant="outline"
+                  className="border-teal-300 bg-teal-50 font-mono text-teal-800 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-200"
+                >
+                  {t("Blast Radius", "Bán kính ảnh hưởng")}: {blastRadiusCount}/{totalScopedNodes} ({blastRadiusPercent}%)
                 </Badge>
                 <span className="text-muted-foreground">
                   {t(
@@ -276,19 +306,26 @@ export function Step2StaticImpact({
                   )}
                 </span>
               </div>
-              <Button
-                type="button"
-                size="sm"
-                variant={demoLeafActive ? "default" : "outline"}
-                className={
-                  demoLeafActive
-                    ? "h-7 bg-amber-600 px-2.5 text-xs text-white hover:bg-amber-700"
-                    : "h-7 border-amber-300 px-2.5 text-xs text-amber-800 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-300"
-                }
-                onClick={() => setDemoLeafActive((cur) => !cur)}
-              >
-                🧪 {t("Test Isolated 0-Upstream Node (DS-03b)", "Test Node Cô lập 0 Upstream (Demo DS-03b)")}
-              </Button>
+              <details className="text-right">
+                <summary className="cursor-pointer select-none text-[11px] font-medium text-muted-foreground hover:text-foreground">
+                  ⚙ {t("QA / Demo Edge Cases", "Kiểm thử / Demo")}
+                </summary>
+                <div className="mt-1.5">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={demoLeafActive ? "default" : "outline"}
+                    className={
+                      demoLeafActive
+                        ? "h-7 bg-amber-600 px-2.5 text-xs text-white hover:bg-amber-700"
+                        : "h-7 border-amber-300 px-2.5 text-xs text-amber-800 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-300"
+                    }
+                    onClick={() => setDemoLeafActive((cur) => !cur)}
+                  >
+                    🧪 {t("Test Isolated 0-Upstream Node (DS-03b)", "Test Node Cô lập 0 Upstream (Demo DS-03b)")}
+                  </Button>
+                </div>
+              </details>
             </div>
 
             {(demoLeafActive || impact.upstreamImpacted.length === 0) && (

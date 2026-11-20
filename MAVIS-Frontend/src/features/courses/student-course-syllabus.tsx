@@ -20,6 +20,7 @@ import { MarkdownPreview } from "@/components/shared/markdown-preview";
 import { RequestState } from "@/components/shared/request-state";
 import { useApi, useApiQuery } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
+import { formatCourseLabTitle, formatTenScaleScore } from "@/lib/format/course-display";
 import { computeCourseProgressSummary } from "@/lib/coursera-ui-helpers";
 import { useCourseRoadmap, usePublishedCourse } from "@/features/workspaces/course-access";
 import { ChapterQuizRunner } from "./chapter-quiz-runner";
@@ -228,7 +229,7 @@ export function StudentCourseSyllabus({
     },
     {
       step: 3,
-      label: t("Step 3 · Quiz Gate", "Bước 3 · Quiz Mở Khóa (>= 80%)"),
+      label: t("Step 3 · Quiz Gate (>= 70%)", "Bước 3 · Quiz Mở Khóa (>= 70%)"),
       hint: t("Pass comprehension check", "Đạt trắc nghiệm để mở khóa"),
     },
     {
@@ -423,13 +424,19 @@ export function StudentCourseSyllabus({
                     <strong className="font-semibold text-white">
                       {lecturerNames.length
                         ? lecturerNames.join(" · ")
-                        : "Thầy Hoàng (gv.java@mavis.edu.vn)"}
+                        : t("Assigned Lecturer", "Giảng viên phụ trách lớp")}
                     </strong>
                   </span>
                   {summary.nextActiveLab && (
                     <span className="inline-flex items-center gap-1 rounded-full border border-emerald-300/35 bg-emerald-400/20 px-2.5 py-0.5 text-emerald-50">
                       ▶ {t("Up next", "Bài tiếp theo")}:{" "}
-                      <strong className="font-semibold">{summary.nextActiveLab.title}</strong>
+                      <strong className="font-semibold">
+                        {formatCourseLabTitle(
+                          summary.nextActiveLab.title,
+                          summary.nextActiveLab.position,
+                          summary.nextActiveLab.assignmentId,
+                        )}
+                      </strong>
                     </span>
                   )}
                 </div>
@@ -1044,12 +1051,13 @@ export function StudentCourseSyllabus({
                           href={`/submissions/${encodeURIComponent(sub.id)}`}
                           className="font-medium text-foreground hover:text-primary hover:underline"
                         >
-                          {sub.labOrder ? `Lab ${String(sub.labOrder).padStart(2, "0")} · ` : ""}
-                          {sub.assignmentTitle || sub.assignmentId}
+                          {formatCourseLabTitle(sub.assignmentTitle, sub.labOrder, sub.assignmentId)}
                         </Link>
                         <p className="text-xs text-muted-foreground">
                           {new Date(sub.submittedAt).toLocaleString()}
-                          {sub.reviewScore != null ? ` · ${sub.reviewScore}/100` : ""}
+                          {sub.reviewScore != null
+                            ? ` · ${formatTenScaleScore(sub.reviewScore, sub.reviewScoreTenScale)}`
+                            : ""}
                         </p>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">

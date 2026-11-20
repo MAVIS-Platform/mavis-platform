@@ -168,6 +168,12 @@ export function useApiMutation<K extends Operation>(operation: K) {
             ),
         );
       }
+      if (operation === "submit") {
+        void client.invalidateQueries({ queryKey: ["api", "workspaceSubmissions"] });
+        void client.invalidateQueries({ queryKey: ["api", "course-roadmap"] });
+        void client.invalidateQueries({ queryKey: ["api", "student-lab-context"] });
+        void client.invalidateQueries({ queryKey: ["api", "workspace-gradebook"] });
+      }
       if (operation === "gradeSubmission") {
         client.setQueryData(
           ["api", "submissionReview", { submissionId: scope["submissionId"] }],

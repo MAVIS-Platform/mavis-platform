@@ -7,6 +7,7 @@ import { ArrowRight, CheckCircle2, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useApiMutation, useApiQuery, useSession } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
+import { formatTenScaleScore } from "@/lib/format/course-display";
 import { DetailPanel } from "@/components/shared/data";
 import { Badge } from "@/components/ui/badge";
 import type { StudentLabLatestReview } from "@/features/workspaces/course-access";
@@ -19,9 +20,94 @@ export function labSubmissionDraftKey(
   return `mavis:lab-v2-draft:${userId || "anon"}:${workspaceId}:${assignmentId}`;
 }
 
+type LabRubricProfile = {
+  items: [string, string, string];
+  sampleDossier: string;
+  flawedSample: string;
+  c2Target: string;
+  c3Target: string;
+};
+
+function resolveLabRubricProfile(
+  labOrder?: number | null,
+  labTitle?: string,
+): LabRubricProfile {
+  const lower = (labTitle ?? "").toLowerCase();
+  if (labOrder === 1 || lower.includes("ddd") || lower.includes("static view")) {
+    return {
+      items: [
+        "Bounded Context Isolation",
+        "Database-per-Service Boundary",
+        "Immutable DTO / Port Contract",
+      ],
+      sampleDossier:
+        "Hồ sơ kiến trúc Lab 01: Phân tách Bounded Context rõ ràng giữa Order và Inventory, áp dụng Database-per-Service (chống Shared Monolith DB), và dùng Immutable DTO/Record tại biên Controller -> Application Port -> Adapter.",
+      flawedSample: "Gộp chung 1 bảng Shared DB.",
+      c2Target: "order-service",
+      c3Target: "InventoryClientPort",
+    };
+  }
+  if (labOrder === 2 || lower.includes("gateway") || lower.includes("outbox") || lower.includes("saga")) {
+    return {
+      items: [
+        "API Gateway Route & Auth Boundary",
+        "Resilient Sync Fallback / Timeout",
+        "Transactional Outbox + X-Idempotency-Key",
+      ],
+      sampleDossier:
+        "Hồ sơ kiến trúc Lab 02: Định tuyến qua API Gateway, cấu hình timeout + Circuit Breaker fallback cho OpenFeign/HTTP Client, và dùng Transactional Outbox + X-Idempotency-Key đảm bảo nhất quán Saga.",
+      flawedSample: "Gọi sync không timeout, không idempotency.",
+      c2Target: "api-gateway",
+      c3Target: "OutboxEventPublisher",
+    };
+  }
+  if (labOrder === 3 || lower.includes("bfs") || lower.includes("blast radius") || lower.includes("cqrs")) {
+    return {
+      items: [
+        "Cycle-Safe Reverse BFS Trace",
+        "Visited-Set Loop Prevention",
+        "Async Event / Bulkhead Decoupling",
+      ],
+      sampleDossier:
+        "Hồ sơ kiến trúc Lab 03: Truy vết Reverse BFS với Visited Set để xác định đúng trực tiếp (Hop 1) và gián tiếp (Hop 2+), chặn lặp vô hạn khi có chu trình phụ thuộc và cô lập điểm nghẽn bằng Messaging/Bulkhead.",
+      flawedSample: "Duyệt không có Visited Set.",
+      c2Target: "payment-service",
+      c3Target: "DomainEventBroker",
+    };
+  }
+  if (labOrder === 5 || lower.includes("telemetry") || lower.includes("production") || lower.includes("fruit") || lower.includes("c#")) {
+    return {
+      items: [
+        "OpenTelemetry Traceparent Continuity",
+        "Health Probes (/health/ready & /live)",
+        "Bounded Context & Idempotent Settlement",
+      ],
+      sampleDossier:
+        "Hồ sơ kiến trúc Lab 05: Bảo toàn W3C traceparent xuyên suốt Gateway -> Service -> Message Broker, tách Liveness/Readiness probes tránh high-cardinality metrics, và khóa trùng thanh toán bằng Idempotency Key.",
+      flawedSample: "Thiếu readiness probe và trace ID.",
+      c2Target: "fruit-payment-service",
+      c3Target: "TraceContextPropagator",
+    };
+  }
+  return {
+    items: [
+      "Circuit Breaker + Fallback",
+      "Database-per-Service Isolation",
+      "Scale & p95 Latency Recovery",
+    ],
+    sampleDossier:
+      "Hồ sơ kiến trúc Studio Live: Kích hoạt Resilience4j Circuit Breaker (CLOSED/OPEN/HALF_OPEN) kèm Fallback, tách Database-per-Service ngăn lock contention, và mở rộng replica giữ p95 dưới ngưỡng SLA sau sự cố.",
+    flawedSample: "Shared DB và không giới hạn retry.",
+    c2Target: "order-service",
+    c3Target: "ResiliencePolicyPort",
+  };
+}
+
 export function LabSubmissionV2({
   workspaceId,
   assignmentId,
+  labOrder,
+  labTitle,
   labMode,
   runtimeSessionId,
   initialSubmission,
@@ -30,6 +116,8 @@ export function LabSubmissionV2({
 }: {
   workspaceId: string;
   assignmentId: string;
+  labOrder?: number | null | undefined;
+  labTitle?: string | undefined;
   labMode: string;
   runtimeSessionId?: string | undefined;
   initialSubmission?: { id: string; submittedAt?: string | null } | null | undefined;
@@ -37,6 +125,10 @@ export function LabSubmissionV2({
   hasReferenceArch?: boolean | undefined;
 }) {
   const { t } = useLocale();
+  const rubricProfile = useMemo(
+    () => resolveLabRubricProfile(labOrder, labTitle),
+    [labOrder, labTitle],
+  );
   const cache = useQueryClient();
   const session = useSession();
   const userId = session.data?.user?.id;
@@ -138,7 +230,10 @@ export function LabSubmissionV2({
                     </Badge>
                   {activeReview.score !== null && (
                     <span className="rounded-md bg-emerald-100 px-2 py-0.5 font-bold text-emerald-900">
-                      {activeReview.score}/100
+                      {formatTenScaleScore(
+                        activeReview.score,
+                        "scoreTenScale" in activeReview ? activeReview.scoreTenScale : undefined,
+                      )}
                     </span>
                   )}
                   </div>
@@ -285,7 +380,7 @@ export function LabSubmissionV2({
                       setMitigations((m) => ({ ...m, circuitBreaker: e.target.checked }))
                     }
                   />
-                  Circuit Breaker + Fallback
+                  {rubricProfile.items[0]}
                 </label>
                 <label className="inline-flex cursor-pointer items-center gap-1.5 font-medium">
                   <input
@@ -295,7 +390,7 @@ export function LabSubmissionV2({
                       setMitigations((m) => ({ ...m, databasePerService: e.target.checked }))
                     }
                   />
-                  Database-per-Service
+                  {rubricProfile.items[1]}
                 </label>
                 <label className="inline-flex cursor-pointer items-center gap-1.5 font-medium">
                   <input
@@ -305,44 +400,48 @@ export function LabSubmissionV2({
                       setMitigations((m) => ({ ...m, idempotencyKey: e.target.checked }))
                     }
                   />
-                  X-Idempotency-Key + Outbox
+                  {rubricProfile.items[2]}
                 </label>
               </div>
-              <div className="flex flex-wrap gap-2 pt-1">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-7 border-emerald-300 bg-background px-2.5 text-xs text-emerald-800 hover:bg-emerald-50"
-                  onClick={() => {
-                    const sample =
-                      "Hồ sơ kiến trúc C1–C3 đạt chuẩn: Tách Database-per-Service giữa Order Service và Inventory Service, bảo vệ lời gọi đồng bộ OpenFeign bằng Resilience4j Circuit Breaker (CLOSED/OPEN/HALF_OPEN), và đảm bảo nhất quán Saga bằng Transactional Outbox + X-Idempotency-Key. Kết quả đo Reverse BFS & Studio Live kiểm chứng 0% cascading failure.";
-                    setMitigations({ circuitBreaker: true, databasePerService: true, idempotencyKey: true });
-                    setAnswer(sample);
-                    try {
-                      window.localStorage.setItem(draftKey, sample);
-                    } catch {}
-                  }}
-                >
-                  🚀 {t("Fill Passing Architectural Dossier (> 5.0)", "Điền Hồ Sơ Chuẩn Đạt Rubric (8.8/10)")}
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-7 border-rose-300 bg-background px-2.5 text-xs text-rose-800 hover:bg-rose-50"
-                  onClick={() => {
-                    const flawed = "Shared DB trực tiếp.";
-                    setMitigations({ circuitBreaker: false, databasePerService: false, idempotencyKey: false });
-                    setAnswer(flawed);
-                    try {
-                      window.localStorage.setItem(draftKey, flawed);
-                    } catch {}
-                  }}
-                >
-                  🧪 {t("Fill Flawed Draft to Test DS-04b (≤ 5.0)", "Điền Thiết Kế Lỗi Test DS-04b (≤ 5.0)")}
-                </Button>
-              </div>
+              <details className="pt-1">
+                <summary className="cursor-pointer select-none text-[11px] font-medium text-muted-foreground hover:text-foreground">
+                  ⚙ {t("QA / Demo Dossier Presets", "Mẫu kiểm thử nhanh (Demo)")}
+                </summary>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-7 border-emerald-300 bg-background px-2.5 text-xs text-emerald-800 hover:bg-emerald-50"
+                    onClick={() => {
+                      const sample = rubricProfile.sampleDossier;
+                      setMitigations({ circuitBreaker: true, databasePerService: true, idempotencyKey: true });
+                      setAnswer(sample);
+                      try {
+                        window.localStorage.setItem(draftKey, sample);
+                      } catch {}
+                    }}
+                  >
+                    🚀 {t("Fill Passing Architectural Dossier (> 5.0)", "Điền Hồ Sơ Chuẩn Đạt Rubric (8.8/10)")}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-7 border-rose-300 bg-background px-2.5 text-xs text-rose-800 hover:bg-rose-50"
+                    onClick={() => {
+                      const flawed = rubricProfile.flawedSample;
+                      setMitigations({ circuitBreaker: false, databasePerService: false, idempotencyKey: false });
+                      setAnswer(flawed);
+                      try {
+                        window.localStorage.setItem(draftKey, flawed);
+                      } catch {}
+                    }}
+                  >
+                    🧪 {t("Fill Flawed Draft to Test DS-04b (≤ 5.0)", "Điền Thiết Kế Lỗi Test DS-04b (≤ 5.0)")}
+                  </Button>
+                </div>
+              </details>
             </div>
           )}
 
@@ -370,17 +469,17 @@ export function LabSubmissionV2({
                       {
                         snapshotId: `c2-container-${assignmentId}`,
                         step: "STEP_4",
-                        title: `C2 Containers (${mitigations.databasePerService ? "Database-per-Service" : "Shared DB Flaw"})`,
-                        targetViewOrService: "order-service",
-                        writtenExplanation: `CircuitBreaker=${mitigations.circuitBreaker}, DBPerService=${mitigations.databasePerService}`,
+                        title: `C2 Containers (${mitigations.databasePerService ? rubricProfile.items[1] : "Needs Isolation"})`,
+                        targetViewOrService: rubricProfile.c2Target,
+                        writtenExplanation: `${rubricProfile.items[0]}=${mitigations.circuitBreaker}, ${rubricProfile.items[1]}=${mitigations.databasePerService}`,
                         capturedAt: nowIso,
                       },
                       {
                         snapshotId: `c3-component-${assignmentId}`,
                         step: "STEP_4",
-                        title: `C3 Component Contracts (${mitigations.idempotencyKey ? "Idempotent Outbox" : "Unprotected"})`,
-                        targetViewOrService: "InventoryClientPort",
-                        writtenExplanation: `IdempotencyKey=${mitigations.idempotencyKey}`,
+                        title: `C3 Component Contracts (${mitigations.idempotencyKey ? rubricProfile.items[2] : "Needs Guard"})`,
+                        targetViewOrService: rubricProfile.c3Target,
+                        writtenExplanation: `${rubricProfile.items[2]}=${mitigations.idempotencyKey}`,
                         capturedAt: nowIso,
                       },
                     ]
@@ -413,9 +512,15 @@ export function LabSubmissionV2({
                       setRevising(false);
                       void cache.invalidateQueries({ queryKey: ["api", "submissions"] });
                       void cache.invalidateQueries({ queryKey: ["api", "submission"] });
+                      void cache.invalidateQueries({ queryKey: ["api", "workspaceSubmissions"] });
                       void cache.invalidateQueries({
                         queryKey: ["api", "student-lab-context", workspaceId, assignmentId],
                       });
+                      void cache.invalidateQueries({ queryKey: ["api", "course-roadmap", workspaceId] });
+                      void cache.invalidateQueries({
+                        queryKey: ["api", "workspace-gradebook", workspaceId],
+                      });
+                      void cache.invalidateQueries({ queryKey: ["api", "workspaces"] });
                     },
                   },
                 );

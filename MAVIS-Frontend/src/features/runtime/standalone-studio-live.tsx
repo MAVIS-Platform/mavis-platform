@@ -1055,8 +1055,8 @@ function StandaloneStudioContent() {
             </h1>
             <p className="text-xs leading-5 text-slate-400">
               {t(
-                "Pass the Step 3 Quiz Gate (>= 80%) before starting your Studio Live runtime session.",
-                "Hoàn thành Quiz Gate ở Bước 3 (>= 80%) để mở khóa phiên thực nghiệm Studio Live.",
+                "Pass the Step 3 Quiz Gate (>= 70%) before starting your Studio Live runtime session.",
+                "Hoàn thành Quiz Gate ở Bước 3 (>= 70%) để mở khóa phiên thực nghiệm Studio Live.",
               )}
             </p>
             <Button asChild size="sm">

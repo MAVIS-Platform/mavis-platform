@@ -6,6 +6,7 @@ import { CheckCircle2, Clock3, FileQuestion, RotateCcw, XCircle } from "lucide-r
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useLocale } from "@/lib/i18n/locale-context";
+import { formatQuizQuestionPrompt, sanitizeQuizPlainText } from "@/lib/format/course-display";
 import type { QuizQuestionData } from "./java-coursera-curriculum-data";
 
 const PASS_PERCENT = 70;
@@ -279,7 +280,9 @@ function QuizTaking({
               {questionIndex + 1}.
             </span>
             <fieldset>
-              <legend className="text-base font-medium leading-7">{question.prompt}</legend>
+              <legend className="text-base font-medium leading-7">
+                {formatQuizQuestionPrompt(question.prompt)}
+              </legend>
               <div className="mt-4 space-y-3">
                 {question.options.map((option, optionIndex) => {
                   const inputId = `${question.id}-option-${optionIndex}`;
@@ -298,7 +301,7 @@ function QuizTaking({
                         onChange={() => onAnswer(question.id, optionIndex)}
                         className="mt-1 size-4 shrink-0 accent-primary"
                       />
-                      <span>{option}</span>
+                      <span>{sanitizeQuizPlainText(option)}</span>
                     </label>
                   );
                 })}
@@ -439,16 +442,18 @@ function QuizResult({
             return (
               <li key={question.id} className="text-sm">
                 <p className="font-medium">
-                  {index + 1}. {question.prompt}
+                  {index + 1}. {formatQuizQuestionPrompt(question.prompt)}
                 </p>
                 <p
                   className={`mt-2 ${isCorrect ? "text-emerald-700 dark:text-emerald-300" : "text-rose-700 dark:text-rose-300"}`}
                 >
                   {isCorrect ? t("Correct", "Chính xác") : t("Review needed", "Cần xem lại")}:{" "}
-                  {question.options[question.correctOption]}
+                  {sanitizeQuizPlainText(question.options[question.correctOption])}
                 </p>
                 {question.explanation && (
-                  <p className="mt-1 leading-6 text-muted-foreground">{question.explanation}</p>
+                  <p className="mt-1 leading-6 text-muted-foreground">
+                    {sanitizeQuizPlainText(question.explanation)}
+                  </p>
                 )}
               </li>
             );
