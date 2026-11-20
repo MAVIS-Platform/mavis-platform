@@ -2563,5 +2563,80 @@
         "points": 1
       }
     ]
+  },
+  {
+    "id": "java-v2-ch08",
+    "track": "Java",
+    "phase": "V2 · Module 3",
+    "title": "Chương 08: GIAO TIẾP BẤT ĐỒNG BỘ (APACHE KAFKA), IDEMPOTENCY & TRANSACTIONAL OUTBOX",
+    "minutes": 45,
+    "objective": "Nắm rõ kiến trúc Publish/Subscribe với Apache Kafka (Topic, Partition, Consumer Group, Offset). Thiết kế Idempotent Consumer (xử lý chống trùng lặp thông điệp trong cơ chế *At-least-once delivery*). Hiểu bài toán Dual-Write Problem và giải pháp chuẩn Transactional Outbox Pattern.",
+    "lesson": "### 8.1. Tại sao cần Giao tiếp Bất đồng bộ (Async Messaging)?\n\nKhi khách hàng bấm **\"Đặt hàng\"**, hệ thống cần lưu đơn hàng rồi gửi email xác nhận, ghi điểm tích lũy, cập nhật báo cáo. Nếu `order-service` gọi HTTP đồng bộ sang `notification-service` và dịch vụ gửi email đang bảo trì $\\rightarrow$ khách hàng không thể đặt hàng được!\n\nVới **Message Broker (Apache Kafka)**, hai dịch vụ được **tách rời về mặt thời gian (Temporal Decoupling)**:\n\n```text\n+---------------+   publish(\"order.created\")   +-------------------------+   consume   +----------------------+\n| order-service | ───────────────────────────> |   Apache Kafka Broker   | ──────────> | notification-service |\n+---------------+                              |  Topic: order.created   |             +----------------------+\n  (Trả 201 ngay                                |  [Part 0] [Part 1] ...  |               (Xử lý độc lập; nếu\n   cho khách!)                                 +-------------------------+                sập thì đọc lại sau!)\n```\n\n#### Khái niệm cốt lõi của Kafka mà lập trình viên Java phải nắm:\n- **Topic & Partition**: Một Topic (như `order.created`) được chia thành nhiều Partition để xử lý song song. **Thứ tự thông điệp chỉ được đảm bảo bên trong CÙNG một Partition** $\\rightarrow$ luôn dùng `orderId` (hoặc `customerId`) làm **Partition Key** để mọi sự kiện của cùng một đơn hàng (`created` $\\to$ `paid` $\\to$ `cancelled`) đi đúng thứ tự!\n- **Consumer Group**: Các instance của cùng một dịch vụ (ví dụ 2 bản sao của `notification-service`) mang chung `group.id` sẽ chia nhau các partition để mỗi thông điệp chỉ được xử lý bởi **1 instance trong nhóm** (mô hình *Competing Consumers*). Dịch vụ khác (ví dụ `analytics-service`) mang `group.id` khác sẽ nhận bản sao độc lập (mô hình *Pub/Sub*).\n\n### 8.2. Xử lý trùng lặp thông điệp: Idempotent Consumer (`[R19]` §3.3.6)\n\nTrong hệ thống phân tán, cơ chế truyền thông điệp phổ biến và thực tế nhất là **At-Least-Once Delivery** (đảm bảo không mất tin, nhưng **có thể gửi trùng một tin $\\ge 2$ lần** nếu mạng chập chờn trước khi consumer xác nhận ACK/commit offset).\n\nDo đó, mọi Consumer **bắt buộc phải có tính Lũy đẳng (Idempotent)**: nhận cùng một sự kiện 1 lần hay 5 lần đều tạo ra **đúng 1 kết quả nghiệp vụ duy nhất**.\n\n```java\n// Lưu eventId vào bảng processed_events (có UNIQUE constraint) trong CÙNG @Transactional!\n@Service\npublic class OrderNotificationConsumer {\n\n    private final ProcessedEventRepository processedEventRepository;\n    private final NotificationRepository notificationRepository;\n\n    @KafkaListener(topics = \"order.created\", groupId = \"notification-group\")\n    @Transactional\n    public void onOrderCreated(OrderCreatedEvent event) {\n        // Bước 1: Kiểm tra đã xử lý eventId này chưa\n        if (processedEventRepository.existsById(event.eventId())) {\n            return; // Bỏ qua an toàn nếu Kafka gửi trùng!\n        }\n\n        // Bước 2: Ghi nhận đã xử lý + thực thi nghiệp vụ trong cùng 1 transaction cục bộ\n        processedEventRepository.save(new ProcessedEvent(event.eventId(), Instant.now()));\n        notificationRepository.save(Notification.forOrderCreated(event.orderId(), event.customerEmail()));\n    }\n}\n```\n\n### 8.3. Bài toán Dual-Write & Mẫu Transactional Outbox (`[R19]` §3.3.7)\n\nXét đoạn code sai kinh điển mà 90% người mới viết:\n```java\n// ⚠️ BẪY DUAL-WRITE!\norderRepository.save(order);                   // (1) Ghi vào PostgreSQL\nkafkaTemplate.send(\"order.created\", event);    // (2) Gửi lên Kafka\n```\nChuyện gì xảy ra nếu bước (1) commit thành công vào PostgreSQL, nhưng ngay sau đó dịch vụ mất điện hoặc Kafka mất kết nối trước bước (2)? $\\rightarrow$ **Đơn hàng nằm trong DB nhưng sự kiện biến mất vĩnh viễn!** Ngược lại, nếu gửi Kafka trước rồi DB rollback $\\rightarrow$ **Sự kiện ma (phantom event)** được phát đi cho một đơn hàng không tồn tại!\n\n**Giải pháp chuẩn mực: Transactional Outbox Pattern**:\n1. Trong **cùng một giao dịch `@Transactional` cục bộ** trên PostgreSQL, `order-service` vừa `INSERT` vào bảng `orders`, vừa `INSERT` sự kiện cần phát vào bảng `outbox_events` (trạng thái `PENDING`). Vì cả hai nằm trên cùng 1 DB nên đảm bảo nguyên tử **ACID** (hoặc cả hai cùng thành công, hoặc cả hai cùng rollback).\n2. Một tiến trình nền độc lập (**Message Relay** — theo kiểu *Polling Publisher* quét định kỳ hoặc *Transaction Log Tailing* dùng Debezium CDC) đọc bảng `outbox_events`, đẩy lên Kafka rồi đánh dấu `PUBLISHED`.\n\n```text\n[order-service]\n   |\n   |--- BEGIN LOCAL DB TRANSACTION ---\n   |  1. INSERT INTO orders (...)\n   |  2. INSERT INTO outbox_events (event_id, topic, payload, status='PENDING')\n   |--- COMMIT -----------------------\n             |\n             v\n   [Outbox Relay / Debezium] ──(đọc & đẩy tin)──> [Apache Kafka]\n```\n\n### 8.4. Góc nhìn trên nền tảng MAVIS\n- **Trích xuất cạnh bất đồng bộ**: MAVIS nhận diện `@KafkaListener` / `KafkaTemplate` trong mã nguồn và cấu hình Broker trong `docker-compose.yml` để phân biệt rõ giao tiếp bất đồng bộ (qua broker trung gian) với gọi HTTP đồng bộ trực tiếp.\n- **Thử nghiệm trên MAVIS Studio**: Khi sinh viên **Stop** `notification-service` trong lúc hệ thống chạy, `order-service` **vẫn đặt hàng thành công bình thường** (không sập dây chuyền!) và thông điệp nằm chờ an toàn trong Kafka; khi **Start** lại `notification-service`, các thông điệp tồn đọng sẽ tự động được xử lý tiếp.",
+    "exercise": "### 8.5. Bài tập thực hành Lab 08\n- Thiết kế hợp đồng sự kiện JSON cho 2 topic `order.created` và `order.cancelled` (bắt buộc có `eventId`, `occurredAt`, `correlationId`, `orderId`).\n- Giải thích tại sao cần truyền `orderId.toString()` làm **Message Key** khi gọi `kafkaTemplate.send(topic, key, payload)`.",
+    "sources": [
+      {
+        "publisher": "Manning / Microservices.io",
+        "title": "Chris Richardson — Microservices Patterns",
+        "url": "https://microservices.io/patterns/"
+      }
+    ],
+    "questions": [
+      {
+        "id": "java-v2-ch08-q1",
+        "prompt": "Trong Apache Kafka, để đảm bảo các sự kiện của **cùng một đơn hàng** (`order.created` rồi mới tới `order.cancelled`) luôn được xử lý đúng thứ tự, lập trình viên cần làm gì?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Gửi sự kiện mà không cần key, để Kafka chia ngẫu nhiên (round-robin)",
+          "Sử dụng `orderId` làm **Partition Key** để mọi sự kiện của cùng đơn hàng rơi vào cùng một Partition",
+          "Đặt số lượng Consumer bằng 0",
+          "Tắt tính năng lưu trữ trên đĩa của Kafka"
+        ],
+        "correctOption": 1,
+        "explanation": "Kafka chỉ đảm bảo thứ tự nghiêm ngặt (FIFO) trong phạm vi một Partition; cùng key sẽ băm vào cùng một Partition.",
+        "points": 1
+      },
+      {
+        "id": "java-v2-ch08-q2",
+        "prompt": "Tại sao mọi Kafka Consumer trong Microservices cần được thiết kế theo nguyên tắc **Idempotent Consumer**?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Vì Kafka có thể gửi lại cùng một thông điệp nhiều hơn 1 lần (*At-least-once delivery*) khi xảy ra lỗi mạng hoặc consumer restart trước khi commit offset",
+          "Vì Kafka tự động mã hóa ngược thông điệp mỗi khi đọc",
+          "Để giảm kích thước file JAR khi đóng gói",
+          "Vì Spring Boot không cho phép dùng `@Transactional` trong Consumer"
+        ],
+        "correctOption": 0,
+        "explanation": "Kiểm tra `eventId` trong bảng `processed_events` giúp tránh trừ tiền hai lần hoặc gửi trùng thông báo.",
+        "points": 1
+      },
+      {
+        "id": "java-v2-ch08-q3",
+        "prompt": "**Transactional Outbox Pattern** giải quyết triệt để vấn đề gì?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Lỗi giao diện Frontend không cập nhật",
+          "Vấn đề **Dual-Write** — đảm bảo việc cập nhật bảng nghiệp vụ trong CSDL và phát sự kiện ra Message Broker không bao giờ bị lệch nhau (mất sự kiện hoặc phát sự kiện ma)",
+          "Vấn đề mật khẩu database bị yếu",
+          "Tăng tốc độ gọi đồng bộ qua OpenFeign"
+        ],
+        "correctOption": 1,
+        "explanation": "Ghi cả entity nghiệp vụ và bản ghi outbox trong cùng một giao dịch ACID cục bộ, sau đó Relay mới đẩy sang Kafka.",
+        "points": 1
+      },
+      {
+        "id": "java-v2-ch08-q4",
+        "prompt": "Trong bài thí nghiệm trên MAVIS Studio, khi `order-service` giao tiếp với `notification-service` qua Kafka (bất đồng bộ), điều gì xảy ra với chức năng đặt hàng nếu ta **Stop** container `notification-service`?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "`order-service` lập tức sập theo với lỗi `500 Internal Server Error`",
+          "Chức năng đặt hàng tại `order-service` vẫn thành công bình thường; sự kiện được Kafka lưu giữ và `notification-service` sẽ xử lý bù khi khởi động lại",
+          "Cơ sở dữ liệu của `order-service` tự động bị xóa sạch",
+          "API Gateway tự động chuyển thành `notification-service`"
+        ],
+        "correctOption": 1,
+        "explanation": "Đây là giá trị lớn nhất của giao tiếp bất đồng bộ: cô lập lỗi và nâng cao độ khả dụng (*availability*).",
+        "points": 1
+      }
+    ]
   }
 ]
