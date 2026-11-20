@@ -3463,5 +3463,85 @@
         "points": 1
       }
     ]
+  },
+  {
+    "id": "csharp-v2-ch07",
+    "track": "C#",
+    "phase": "V2 · Module 3",
+    "title": "Chương 07: DATABASE-PER-SERVICE VỚI EF CORE 8, ANTI-PATTERN SHARED DB & REDIS CACHE",
+    "minutes": 45,
+    "objective": "Thiết kế Database-per-Service đúng chuẩn với mỗi Microservice sở hữu một lớp `DbContext` và một chuỗi kết nối (database/schema) độc lập. Nhận diện và loại bỏ lỗi Shared Database Anti-Pattern trên sơ đồ C2. Áp dụng Polyglot Persistence trong .NET: PostgreSQL (EF Core) cho dữ liệu giao dịch (`Catalog`, `Ordering`) kết hợp Redis (`StackExchange.Redis` / `IDistributedCache`) cho dữ liệu tốc độ cao (`Basket`, Cache-Aside).",
+    "lesson": "### 7.1. Quyền sở hữu dữ liệu (Data Sovereignty) trong `eShopOnContainers` (`[MS24]` Ch.4)\n\nNguyên tắc tối thượng của Microsoft: **Dữ liệu của một Microservice là tài sản riêng tư (*private*) của chính dịch vụ đó**. Dịch vụ khác muốn đọc hoặc thay đổi dữ liệu đó **bắt buộc phải đi qua API công khai (HTTP/gRPC) hoặc lắng nghe sự kiện bất đồng bộ (Event Bus)** — tuyệt đối không chọc thẳng SQL sang database của nhau!\n\n```\nSAI (Shared DB Anti-Pattern ❌):           ĐÚNG (Polyglot & Database-per-Service ✅):\n[Catalog.API]   [Ordering.API]             [Catalog.API]     [Basket.API]     [Ordering.API]\n      \\               /                          |                |                 |\n       v             v                           v                v                 v\n    +-------------------+                 [(catalog_db)]     [(Redis)]       [(ordering_db)]\n    |   shared_shop_db  |                   PostgreSQL      In-Memory          PostgreSQL\n    +-------------------+                 CatalogDbContext  IDistributedCache OrderingDbContext\n```\n\n### 7.2. Cô lập EF Core 8 `DbContext` & Migration độc lập\n\nMỗi Microservice dùng EF Core phải có lớp `DbContext` riêng (ví dụ `CatalogDbContext` trong `Catalog.API`, `OrderingDbContext` trong `Ordering.API`) với bảng lịch sử migration riêng (có thể tách schema riêng như `catalog`, `ordering` nếu tạm chạy chung máy chủ PostgreSQL trong môi trường học tập):\n\n```csharp\npublic sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options) : DbContext(options)\n{\n    public DbSet<CatalogItem> CatalogItems => Set<CatalogItem>();\n\n    protected override void OnModelCreating(ModelBuilder modelBuilder)\n    {\n        modelBuilder.HasDefaultSchema(\"catalog\"); // Tách schema rõ ràng nếu dùng chung PostgreSQL instance\n        modelBuilder.Entity<CatalogItem>(entity =>\n        {\n            entity.HasKey(e => e.Id);\n            entity.HasIndex(e => e.Sku).IsUnique();\n            entity.Property(e => e.UnitPrice).HasPrecision(18, 2);\n            entity.Property(e => e.RowVersion).IsRowVersion(); // Optimistic Concurrency!\n        });\n    }\n}\n```\n\n### 7.3. Redis cho Giỏ hàng (`Basket.API`) & Cache-Aside (`IDistributedCache`)\n\nTrong mẫu `eShopOnContainers`, Microsoft dùng **Redis** cho `Basket.API` vì giỏ hàng là dữ liệu dạng khóa-giá trị (Key = `basket:{customerId}`), đọc/ghi cực nhanh, cần thời gian sống tự hủy (**TTL**) và không đòi hỏi các truy vấn JOIN phức tạp:\n\n```csharp\npublic sealed class RedisBasketRepository(IDistributedCache cache) : IBasketRepository\n{\n    private static readonly DistributedCacheEntryOptions DefaultTtl = new()\n    {\n        AbsoluteExpirationRelativeToNow = TimeSpan.FromDays(7)\n    };\n\n    public async Task<CustomerBasket?> GetBasketAsync(string customerId, CancellationToken ct)\n    {\n        var json = await cache.GetStringAsync($\"basket:{customerId}\", ct);\n        return json is null ? null : JsonSerializer.Deserialize<CustomerBasket>(json);\n    }\n\n    public async Task<CustomerBasket> UpdateBasketAsync(CustomerBasket basket, CancellationToken ct)\n    {\n        var json = JsonSerializer.Serialize(basket);\n        await cache.SetStringAsync($\"basket:{basket.CustomerId}\", json, DefaultTtl, ct);\n        return basket;\n    }\n\n    public Task DeleteBasketAsync(string customerId, CancellationToken ct)\n        => cache.RemoveAsync($\"basket:{customerId}\", ct);\n}\n```\n\n### 7.4. Góc nhìn trên nền tảng MAVIS\n\n* **3E Rule — `SHARED_DATABASE`**: Bộ phân tích tĩnh của MAVIS kiểm tra các `ConnectionStrings` trong `appsettings.json` và biến môi trường trong `docker-compose.yml`. Nếu hai dự án `.csproj` (ví dụ `Catalog.API` và `Ordering.API`) cùng trỏ về một `Database` và cùng `Schema`, MAVIS sẽ bật cảnh báo đỏ **SHARED_DATABASE** trên sơ đồ C2.",
+    "exercise": "### 7.5. Bài tập thực hành Lab 07\n\n* Quan sát sơ đồ **C2 Container** trên MAVIS: xác nhận mỗi dịch vụ .NET có đường kết nối riêng tới kho lưu trữ của mình (`Catalog.API -> catalog_db`, `Basket.API -> redis`, `Ordering.API -> ordering_db`).\n* Giải thích lý do **Polyglot Persistence** chọn Redis cho `Basket.API` nhưng chọn PostgreSQL cho `Ordering.API`.",
+    "sources": [
+      {
+        "publisher": "Microsoft Learn",
+        "title": ".NET Microservices: Architecture for Containerized .NET Applications",
+        "url": "https://learn.microsoft.com/en-us/dotnet/architecture/microservices/"
+      },
+      {
+        "publisher": "O'Reilly / Production-Ready Microservices",
+        "title": "Susan J. Fowler — Production-Ready Microservices",
+        "url": "https://www.oreilly.com/library/view/production-ready-microservices/9781491965962/"
+      }
+    ],
+    "questions": [
+      {
+        "id": "csharp-v2-ch07-q1",
+        "prompt": "Thuật ngữ **Polyglot Persistence** trong kiến trúc .NET Microservices có nghĩa là gì?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Viết một Microservice bằng nhiều ngôn ngữ lập trình cùng lúc",
+          "Mỗi Microservice được tự do lựa chọn loại cơ sở dữ liệu phù hợp nhất với đặc thù dữ liệu của nó (ví dụ PostgreSQL cho đơn hàng, Redis cho giỏ hàng)",
+          "Lưu toàn bộ hệ thống vào một file CSV",
+          "Dùng chung một cơ sở dữ liệu cho tất cả các dịch vụ"
+        ],
+        "correctOption": 1,
+        "explanation": "Nhờ Database-per-Service, mỗi service chọn công nghệ lưu trữ tối ưu nhất mà không ảnh hưởng service khác.",
+        "points": 1
+      },
+      {
+        "id": "csharp-v2-ch07-q2",
+        "prompt": "Trong EF Core 8, việc cấu hình `RowVersion` / Concurrency Token cho cột `AvailableStock` trong `CatalogItem` nhằm giải quyết bài toán gì?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Giảm dung lượng file JSON",
+          "**Optimistic Concurrency Control** — ngăn chặn lỗi ghi đè mất dữ liệu (*Lost Update*) khi hai đơn hàng đồng thời trừ tồn kho của cùng một sản phẩm",
+          "Tự động sao lưu cơ sở dữ liệu lên đám mây",
+          "Tắt hoàn toàn khóa chính của bảng"
+        ],
+        "correctOption": 1,
+        "explanation": "Khi hai giao dịch đọc cùng số tồn kho và cùng ghi đè, EF Core sẽ phát hiện phiên bản đã thay đổi và ném `DbUpdateConcurrencyException` để xử lý an toàn.",
+        "points": 1
+      },
+      {
+        "id": "csharp-v2-ch07-q3",
+        "prompt": "Điều gì sẽ xảy ra trên MAVIS nếu cả `Catalog.API` và `Ordering.API` cùng cấu hình chuỗi kết nối tới chung một database `shop_db` và cùng schema `public`?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "MAVIS tăng điểm kiến trúc lên tối đa",
+          "Quy tắc 3E của MAVIS phát hiện và cảnh báo mùi kiến trúc **`SHARED_DATABASE`** trên sơ đồ C2",
+          "Roslyn không thể biên dịch mã C#",
+          "Redis tự động thay thế PostgreSQL"
+        ],
+        "correctOption": 1,
+        "explanation": "Shared Database phá vỡ sự cô lập và khả năng triển khai độc lập của Microservices.",
+        "points": 1
+      },
+      {
+        "id": "csharp-v2-ch07-q4",
+        "prompt": "Khi lưu giỏ hàng (`Basket`) hoặc cache sản phẩm trong Redis, tại sao việc thiết lập **TTL (`AbsoluteExpirationRelativeToNow` / `SlidingExpiration`)** là thực hành bắt buộc?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Để tránh rò rỉ bộ nhớ RAM vô hạn trên Redis do dữ liệu rác/giỏ hàng bỏ quên tích tụ theo thời gian, đồng thời giới hạn thời gian tồn tại dữ liệu cũ",
+          "Vì Redis không lưu được chuỗi JSON nếu không có TTL",
+          "Để tự động sao chép dữ liệu sang PostgreSQL",
+          "Để tăng tốc độ biên dịch C#"
+        ],
+        "correctOption": 0,
+        "explanation": "Redis lưu dữ liệu trên RAM (tài nguyên đắt và hữu hạn), nên mọi khóa tạm/cache đều cần chính sách hết hạn TTL rõ ràng.",
+        "points": 1
+      }
+    ]
   }
 ]
