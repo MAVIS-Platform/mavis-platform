@@ -176,7 +176,7 @@ export function ArchitectureWorkbook({ modelId }: { modelId: string }) {
             View diagram
           </Button>
           <Button variant={editing ? "default" : "outline"} onClick={() => setEditing(true)}>
-            Edit in draw.io
+            Interactive SVG
           </Button>
           {saved.data && saved.data.revision > 0 && (
             <SelectField

@@ -5,7 +5,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useApi, useApiQuery } from "@/hooks/use-api";
 import type { ArchitecturalModel } from "@/types/domain";
 import { SelectField } from "@/components/shared/forms";
-import { DrawioEditor, MxGraphNativeSvgPreview } from "./drawio-editor";
+import { DrawioEditor } from "./drawio-editor";
+import { ArchitectureSvgViewer } from "./architecture-svg-viewer";
 import { ScenarioDiagram } from "./scenario-diagram";
 import { UmlDiagramWorkspace } from "./uml-diagram-workspace";
 import { SearchableThreeESelect } from "./three-e-searchable-select";
@@ -410,7 +411,7 @@ export function ArchitectureDiagrams({
           )}
 
           {guidedStatic ? (
-            <MxGraphNativeSvgPreview
+            <ArchitectureSvgViewer
               xml={xml}
               selectedId={selectedId}
               onSelect={onSelect}
@@ -428,6 +429,8 @@ export function ArchitectureDiagrams({
             xml={xml}
             generatedXml={generated || xml}
             preferProvidedXml={hasValidSavedXml}
+            selectedId={selectedId}
+            onSelect={onSelect}
             autoSaveWhenReady={Boolean(
               saved.data && !hasValidSavedXml && !saved.error && generated,
             )}

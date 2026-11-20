@@ -1497,10 +1497,12 @@ test("Lecturer Studio Live authoring uses unified single top bar, non-red health
   assert.doesNotMatch(obs, /isStopped \|\| isAffected/);
 });
 
-test("Step 2 Reference Architecture and C1-C3 native SVG preview use theme-adaptive blueprint styling without raw enum or empty-column slop", () => {
+test("Step 2 Reference Architecture and C1-C3 native SVG preview eliminate Draw.io iframes and use theme-adaptive blueprint styling", () => {
   const sourceSection = read("src/features/assignments/lab-source-section.tsx");
   const diagrams = read("src/features/architecture/architecture-diagrams.tsx");
+  const svgViewer = read("src/features/architecture/architecture-svg-viewer.tsx");
   const drawioEditor = read("src/features/architecture/drawio-editor.tsx");
+  const drawioSnapshot = read("src/features/architecture/drawio-snapshot.tsx");
 
   assert.match(sourceSection, /Reference Architecture/);
   assert.match(sourceSection, /formatStack/);
@@ -1509,10 +1511,13 @@ test("Step 2 Reference Architecture and C1-C3 native SVG preview use theme-adapt
   assert.match(sourceSection, /Application Containers/);
   assert.doesNotMatch(sourceSection, /Lab Studio Setup/);
   assert.doesNotMatch(diagrams, /This view shows the system boundary/);
-  assert.match(diagrams, /<MxGraphNativeSvgPreview[\s\S]*selectedId=\{selectedId\}[\s\S]*onSelect=\{onSelect\}/);
-  assert.match(drawioEditor, /getSvgNodePalette/);
-  assert.match(drawioEditor, /shape === "cylinder"/);
-  assert.match(drawioEditor, /shape === "channel"/);
-  assert.match(drawioEditor, /exitX !== null && edge\.exitY !== null/);
-  assert.match(drawioEditor, /aria-label="Architecture diagram SVG preview"/);
+  assert.match(diagrams, /<ArchitectureSvgViewer[\s\S]*selectedId=\{selectedId\}[\s\S]*onSelect=\{onSelect\}/);
+  assert.match(svgViewer, /getSvgNodePalette/);
+  assert.match(svgViewer, /shape === "cylinder"/);
+  assert.match(svgViewer, /shape === "channel"/);
+  assert.match(svgViewer, /exitX !== null && edge\.exitY !== null/);
+  assert.match(svgViewer, /aria-label="Architecture diagram SVG preview"/);
+  assert.doesNotMatch(svgViewer, /<iframe|diagrams\.net|127\.0\.0\.1:8090/);
+  assert.doesNotMatch(drawioEditor, /<iframe|diagrams\.net|Draw\.io Local|Draw\.io Cloud|127\.0\.0\.1:8090/);
+  assert.doesNotMatch(drawioSnapshot, /<iframe|diagrams\.net|127\.0\.0\.1:8090/);
 });
