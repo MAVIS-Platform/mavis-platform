@@ -166,7 +166,7 @@ public class RuntimePlanningService {
   if(!source.getProject().getId().equals(id))throw new BusinessException(ErrorCode.BAD_REQUEST,"Snapshot scope mismatch");
   var res=imageBuilder.buildSnapshotImages(id,snapshotId,java.nio.file.Paths.get(source.getStoragePath()),r!=null?r.services():null);
   if(!res.builtImages().isEmpty()){
-   if(c==null){
+   if(c==null||!snapshotId.equals(c.getSourceSnapshotId())){
     var model=models.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(id).orElse(null);
     if(model!=null&&"RUNTIME_ENRICHED".equalsIgnoreCase(model.getOrigin())&&model.getBaseModelVersion()!=null)model=model.getBaseModelVersion();
     if(model==null||model.getSourceSnapshot()==null||!snapshotId.equals(model.getSourceSnapshot().getId())){
@@ -174,12 +174,16 @@ public class RuntimePlanningService {
      if(all!=null)model=all.stream().map(m->"RUNTIME_ENRICHED".equalsIgnoreCase(m.getOrigin())&&m.getBaseModelVersion()!=null?m.getBaseModelVersion():m).filter(m->m.getSourceSnapshot()!=null&&snapshotId.equals(m.getSourceSnapshot().getId())).findFirst().orElse(null);
     }
     if(model!=null&&model.getSourceSnapshot()!=null&&snapshotId.equals(model.getSourceSnapshot().getId())){
-     c=new RuntimeConfiguration();
+     if(c==null)c=new RuntimeConfiguration();
      c.setProjectId(id);
      c.setSourceSnapshotId(snapshotId);
      c.setModelVersionId(model.getId());
      c.setProfileId("SPRING_BOOT_DOTNET_COMPOSE_V1");
      c.setProfile(json.createObjectNode());
+    }else if(c!=null){
+     var errors=new ArrayList<>(res.errors());
+     errors.add("Analyze the selected source snapshot before updating the runtime configuration.");
+     return new BuildImagesView(id,snapshotId,res.builtImages(),errors);
     }
    }
    if(c!=null&&c.getProfile()!=null&&c.getProfile().isObject()){
