@@ -17,6 +17,7 @@ import java.util.zip.ZipOutputStream;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class SandboxImageBuilderServiceTest {
+    private final UUID snapshotId = UUID.randomUUID();
 
     @Test
     void diskExhaustionReturnsBuildErrorWithoutRetryingHostCleanup(@TempDir Path root) throws Exception {
@@ -31,7 +32,7 @@ class SandboxImageBuilderServiceTest {
                 return "no space left on device";
             }
         };
-        var result = builder.buildSnapshotImages(UUID.randomUUID(), root, List.of("orders"));
+        var result = builder.buildSnapshotImages(UUID.randomUUID(), snapshotId, root, List.of("orders"));
         assertThat(result.builtImages()).isEmpty();
         assertThat(result.errors()).containsExactly("Service 'orders': no space left on device");
         assertThat(attempts.get()).isEqualTo(1);
@@ -74,7 +75,7 @@ class SandboxImageBuilderServiceTest {
             }
         };
 
-        SandboxImageBuilderService.BuildImagesResult res = builder.buildSnapshotImages(UUID.randomUUID(), tempDir, List.of("order-service"));
+        SandboxImageBuilderService.BuildImagesResult res = builder.buildSnapshotImages(UUID.randomUUID(), snapshotId, tempDir, List.of("order-service"));
         assertThat(res.errors()).isEmpty();
         assertThat(res.builtImages()).containsEntry("order-service", fakeDigest);
         assertThat(capturedTargets).containsExactly("production-runtime");
@@ -111,7 +112,7 @@ class SandboxImageBuilderServiceTest {
             }
         };
 
-        SandboxImageBuilderService.BuildImagesResult res = builder.buildSnapshotImages(UUID.randomUUID(), zipPath, List.of());
+        SandboxImageBuilderService.BuildImagesResult res = builder.buildSnapshotImages(UUID.randomUUID(), snapshotId, zipPath, List.of());
         assertThat(res.errors()).isEmpty();
         assertThat(res.builtImages())
                 .containsEntry("order-service", digestA)
@@ -146,13 +147,11 @@ class SandboxImageBuilderServiceTest {
             }
         };
 
-        SandboxImageBuilderService.BuildImagesResult built = builder.buildSnapshotImages(
-                UUID.randomUUID(), tempDir, List.of("order-service"));
+        SandboxImageBuilderService.BuildImagesResult built = builder.buildSnapshotImages(UUID.randomUUID(), snapshotId, tempDir, List.of("order-service"));
         assertThat(built.errors()).isEmpty();
         assertThat(built.builtImages()).containsEntry("order-service", fakeDigest);
 
-        SandboxImageBuilderService.BuildImagesResult missing = builder.buildSnapshotImages(
-                UUID.randomUUID(), tempDir, List.of("closed-vendor-api"));
+        SandboxImageBuilderService.BuildImagesResult missing = builder.buildSnapshotImages(UUID.randomUUID(), snapshotId, tempDir, List.of("closed-vendor-api"));
         assertThat(missing.builtImages()).isEmpty();
         assertThat(missing.errors()).anyMatch(e -> e.contains("closed-vendor-api") && e.contains("no build section or matching Dockerfile"));
     }
@@ -194,12 +193,11 @@ class SandboxImageBuilderServiceTest {
 
             @Override
             protected String inspectImageId(String tag) {
-                return tag.equals(SandboxImageBuilderService.sandboxTag(projectId, "catalog-service")) ? fakeDigest : null;
+                return tag.equals(SandboxImageBuilderService.sandboxTag(projectId, snapshotId, "catalog-service")) ? fakeDigest : null;
             }
         };
 
-        SandboxImageBuilderService.BuildImagesResult built = builder.buildSnapshotImages(
-                projectId, tempDir, List.of("catalog-service"));
+        SandboxImageBuilderService.BuildImagesResult built = builder.buildSnapshotImages(projectId, snapshotId, tempDir, List.of("catalog-service"));
         assertThat(built.errors()).isEmpty();
         assertThat(built.builtImages()).containsEntry("catalog-service", fakeDigest);
         assertThat(builtDockerfiles).singleElement().satisfies(df -> {
@@ -207,8 +205,10 @@ class SandboxImageBuilderServiceTest {
             assertThat(df).contains("COPY --from=mavis_auto_builder /mavis_build/target/*.jar app.jar");
         });
 
-        Map<String, String> discovered = builder.discoverExistingBuiltImages(projectId, List.of("catalog-service", "missing-svc"));
+        Map<String, String> discovered = builder.discoverExistingBuiltImages(projectId, snapshotId, List.of("catalog-service", "missing-svc"));
         assertThat(discovered).containsOnlyKeys("catalog-service").containsEntry("catalog-service", fakeDigest);
+        assertThat(builder.discoverExistingBuiltImages(projectId, UUID.randomUUID(), List.of("catalog-service"))).isEmpty();
+        assertThat(builder.discoverExistingBuiltImages(UUID.randomUUID(), snapshotId, List.of("catalog-service"))).isEmpty();
     }
 
     @Test
@@ -240,7 +240,7 @@ class SandboxImageBuilderServiceTest {
             }
         };
 
-        SandboxImageBuilderService.BuildImagesResult built = builder.buildSnapshotImages(projectId, tempDir, List.of("order-service"));
+        SandboxImageBuilderService.BuildImagesResult built = builder.buildSnapshotImages(projectId, snapshotId, tempDir, List.of("order-service"));
         assertThat(built.errors()).isEmpty();
         assertThat(built.builtImages()).containsEntry("order-service", fakeDigest);
         assertThat(builtDockerfiles).singleElement().satisfies(df -> {

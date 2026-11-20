@@ -101,7 +101,10 @@ function safeMetric(value: unknown): string {
     : "—";
 }
 
-export function buildTerminalEntries(data: Studio): TerminalLogEntry[] {
+export function buildTerminalEntries(
+  data: Studio,
+  diagnosticLines: readonly string[] = [],
+): TerminalLogEntry[] {
   const entries: TerminalLogEntry[] = [];
   let seq = 0;
 
@@ -194,6 +197,23 @@ export function buildTerminalEntries(data: Studio): TerminalLogEntry[] {
     });
   }
 
+  const seenDiagnostics = new Set<string>();
+  for (const rawDiag of diagnosticLines) {
+    const trimmed = rawDiag.trim();
+    if (!trimmed || seenDiagnostics.has(trimmed)) continue;
+    seenDiagnostics.add(trimmed);
+    entries.push({
+      id: `diag-${seq}`,
+      seq: seq++,
+      service: "mavis-runner",
+      sourceLabel: "mavis-runner",
+      timestampMs: null,
+      timestampLabel: "",
+      level: "ERROR",
+      message: trimmed,
+    });
+  }
+
   return entries;
 }
 
@@ -217,6 +237,7 @@ type LiveTerminalConsoleProps = {
   waiting: boolean;
   statusLabel: string;
   systemError?: string | null | undefined;
+  diagnosticLines?: readonly string[] | undefined;
 };
 
 export function LiveTerminalConsole({
@@ -227,6 +248,7 @@ export function LiveTerminalConsole({
   waiting,
   statusLabel,
   systemError = null,
+  diagnosticLines = [],
 }: LiveTerminalConsoleProps) {
   const [view, setView] = useState<"console" | "traces">("console");
   const [serviceFilter, setServiceFilter] = useState<string>("ALL");
@@ -325,7 +347,7 @@ export function LiveTerminalConsole({
   }, [systemError]);
 
   const entries = useMemo(() => {
-    const base = buildTerminalEntries(data);
+    const base = buildTerminalEntries(data, diagnosticLines);
     if (runnerEvents.length === 0) return base;
     return [...runnerEvents, ...base].sort((a, b) => {
       if (a.timestampMs !== null && b.timestampMs !== null && a.timestampMs !== b.timestampMs) {
@@ -333,7 +355,7 @@ export function LiveTerminalConsole({
       }
       return a.seq - b.seq;
     });
-  }, [data, runnerEvents]);
+  }, [data, diagnosticLines, runnerEvents]);
   const spans = data.telemetry?.spans ?? [];
 
   const serviceList = useMemo(() => {
@@ -641,7 +663,9 @@ export function LiveTerminalConsole({
                 className={`size-1.5 rounded-full ${
                   isBooting || waiting
                     ? "animate-pulse bg-amber-400"
-                    : data.executionStatus === "FAILED" || Boolean(systemError)
+                    : data.executionStatus === "FAILED" ||
+                        Boolean(systemError) ||
+                        diagnosticLines.length > 0
                       ? "bg-rose-400"
                       : isPreviewMode
                         ? "bg-slate-500"
@@ -654,7 +678,9 @@ export function LiveTerminalConsole({
                 className={
                   isBooting || waiting
                     ? "text-amber-300"
-                    : data.executionStatus === "FAILED" || Boolean(systemError)
+                    : data.executionStatus === "FAILED" ||
+                        Boolean(systemError) ||
+                        diagnosticLines.length > 0
                       ? "text-rose-300"
                       : isPreviewMode
                         ? "text-slate-400"
@@ -667,7 +693,9 @@ export function LiveTerminalConsole({
                   ? `BOOTING · ${data.executionStatus === "NOT_STARTED" ? "STARTING" : data.executionStatus}`
                   : waiting
                     ? "APPLYING"
-                    : data.executionStatus === "FAILED"
+                    : data.executionStatus === "FAILED" ||
+                        Boolean(systemError) ||
+                        diagnosticLines.length > 0
                       ? "FAILED"
                       : isPreviewMode
                         ? "STANDBY · PREVIEW"

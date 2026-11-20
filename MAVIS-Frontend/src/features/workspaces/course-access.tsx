@@ -611,6 +611,8 @@ export type StudentLabStudioSession = {
   traceStatus: string | null;
   capturedSpanCount: number | null;
   studioVerified: boolean;
+  failureReason?: string | null;
+  diagnostics?: string[] | null;
   createdAt: string | null;
 };
 

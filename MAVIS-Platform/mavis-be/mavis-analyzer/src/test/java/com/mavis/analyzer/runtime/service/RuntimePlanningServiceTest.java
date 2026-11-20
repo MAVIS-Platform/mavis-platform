@@ -45,6 +45,8 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -88,6 +90,56 @@ class RuntimePlanningServiceTest {
         project = Project.builder().id(projectId).name("Test Project").build();
         snapshot = SourceSnapshot.builder().id(snapshotId).project(project).build();
         model = ModelVersion.builder().id(modelId).project(project).sourceSnapshot(snapshot).revision(1).isLatestValid(true).build();
+    }
+
+    @Test
+    void rebuildingForNewSnapshotPinsItsModelAndDropsPreviousProfile() {
+        var old = configuredImageBuild();
+        when(models.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(projectId)).thenReturn(Optional.of(model));
+        planningService.buildSandboxImages(projectId, new RuntimePlanningService.BuildImagesRequest(snapshotId, List.of("orders")));
+        assertThat(old.getSourceSnapshotId()).isEqualTo(snapshotId);
+        assertThat(old.getModelVersionId()).isEqualTo(modelId);
+        assertThat(old.getRevision()).isEqualTo(8);
+        assertThat(old.getProfile().path("serviceImageOverrides").has("old-service")).isFalse();
+        assertThat(old.getProfile().path("serviceImageOverrides").path("orders").asText()).isEqualTo("sha256:" + "a".repeat(64));
+        assertThat(old.getProfile().has("sealedInputs")).isFalse();
+        verify(configurations).saveAndFlush(old);
+    }
+
+    @Test
+    void buildingUnanalyzedSourcePreservesPreviousConfiguration() {
+        var old = configuredImageBuild();
+        UUID previousSnapshot = old.getSourceSnapshotId();
+        UUID previousModel = old.getModelVersionId();
+        var profile = old.getProfile().deepCopy();
+        var result = planningService.buildSandboxImages(projectId,
+                new RuntimePlanningService.BuildImagesRequest(snapshotId, List.of("orders")));
+        assertThat(result.errors()).contains("Analyze the selected source snapshot before updating the runtime configuration.");
+        assertThat(old.getSourceSnapshotId()).isEqualTo(previousSnapshot);
+        assertThat(old.getModelVersionId()).isEqualTo(previousModel);
+        assertThat(old.getRevision()).isEqualTo(7);
+        assertThat(old.getProfile()).isEqualTo(profile);
+        verify(configurations, never()).saveAndFlush(any());
+    }
+
+    private RuntimeConfiguration configuredImageBuild() {
+        when(projects.findLockedById(projectId)).thenReturn(Optional.of(project));
+        when(sources.findById(snapshotId)).thenReturn(Optional.of(snapshot));
+        snapshot.setStoragePath("/qa/pinned-source.zip");
+        var builder = mock(SandboxImageBuilderService.class);
+        ReflectionTestUtils.setField(planningService, "imageBuilder", builder);
+        when(builder.buildSnapshotImages(projectId, snapshotId, java.nio.file.Path.of(snapshot.getStoragePath()), List.of("orders")))
+                .thenReturn(new SandboxImageBuilderService.BuildImagesResult(Map.of("orders", "sha256:" + "a".repeat(64)), List.of()));
+        var config = new RuntimeConfiguration();
+        config.setProjectId(projectId);
+        config.setSourceSnapshotId(UUID.randomUUID());
+        config.setModelVersionId(UUID.randomUUID());
+        config.setRevision(7);
+        ObjectNode profile = json.createObjectNode().put("sealedInputs", "old-source-envelope");
+        profile.putObject("serviceImageOverrides").put("old-service", "sha256:" + "b".repeat(64));
+        config.setProfile(profile);
+        when(configurations.findById(projectId)).thenReturn(Optional.of(config));
+        return config;
     }
 
     @Test
@@ -1572,5 +1624,43 @@ class RuntimePlanningServiceTest {
                 new GenerateScenarioRequest(snapshotId, modelId, "Focus on read-only smoke verification: test GET and readiness endpoints across all services", null));
         assertThat(smokeFlow.steps()).allSatisfy(st -> assertThat(st.method()).isEqualTo("GET"));
         assertThat(smokeFlow.suggestedName()).isEqualTo("Read-Only Smoke & Health Verification Scenario");
+    }
+
+    @Test
+    @DisplayName("STUDIO ENV: Binds relocated sandbox-postgres secrets and drops bindings for services outside sandboxCompose")
+    void prepareStudioExecutionEnvironmentBindsRelocatedSecretsAndFiltersUnknownServices() {
+        ReflectionTestUtils.setField(planningService, "composeValidator", new ComposePreflightValidator());
+        ObjectNode apps = json.createObjectNode();
+        apps.putObject("order-service").put("runtime", "java").put("containerPort", 8081);
+        var steps = json.createArrayNode();
+        steps.addObject().put("id", "smoke").put("service", "order-service").put("method", "GET").put("path", "/health").put("expectedStatus", 200);
+
+        String pinnedCompose = """
+                services:
+                  order-service:
+                    image: sha256:%s
+                  sandbox-postgres:
+                    image: postgres@sha256:%s
+                """.formatted("a".repeat(64), "b".repeat(64));
+
+        when(runtime.runComposePreflight(snapshotId)).thenReturn(PreflightCheckResponseDTO.builder()
+                .compatible(true)
+                .composeServices(List.of("order-service", "sandbox-postgres", "stale-service"))
+                .detectedServices(List.of("order-service", "sandbox-postgres", "stale-service"))
+                .relocatedComposeSecrets(Map.of(
+                        "sandbox-postgres", Map.of("POSTGRES_PASSWORD", "ephemeral-pg-pass"),
+                        "order-service", Map.of("SPRING_DATASOURCE_PASSWORD", "ephemeral-pg-pass"),
+                        "stale-service", Map.of("UNUSED_SECRET", "drop-me")))
+                .build());
+        when(runtime.getProjectExecutionEnvironment(projectId)).thenReturn(Map.of());
+
+        var prepared = planningService.prepareStudioExecutionEnvironment(
+                projectId, snapshotId, json.createObjectNode(), apps, steps, pinnedCompose);
+
+        assertThat(prepared.bindings().has("sandbox-postgres")).isTrue();
+        assertThat(prepared.bindings().has("order-service")).isTrue();
+        assertThat(prepared.bindings().has("stale-service")).isFalse();
+        assertThat(prepared.protectedEnvironment()).containsValue("ephemeral-pg-pass");
+        assertThat(prepared.protectedEnvironment()).doesNotContainValue("drop-me");
     }
 }

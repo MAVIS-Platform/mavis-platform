@@ -1649,3 +1649,38 @@ test("Step 2 Reference Architecture and C1-C3 native SVG preview eliminate Draw.
   );
   assert.doesNotMatch(drawioSnapshot, /<iframe|diagrams\.net|127\.0\.0\.1:8090/);
 });
+
+test("Studio Live terminal surfaces backend failureReason and Runner diagnostics on FAILED sessions without resetting to STANDBY", () => {
+  const { buildTerminalEntries } = require("../src/features/runtime/live-terminal-console.tsx");
+  const workbench = read("src/features/runtime/live-studio-workbench.tsx");
+  const terminal = read("src/features/runtime/live-terminal-console.tsx");
+
+  const entries = buildTerminalEntries(
+    {
+      sessionId: "sess-fail-1",
+      interactive: true,
+      services: ["api-gateway", "order-service"],
+      finishRequested: false,
+      executionStatus: "FAILED",
+      cleanupStatus: "CONFIRMED",
+      actions: [],
+    },
+    [
+      "Sandbox container startup failed (DOCKER_UP_FAILED).",
+      "MAVIS_RUNTIME_DIAGNOSTIC=DOCKER_UP_FAILED",
+      "MAVIS_RUNTIME_DIAGNOSTIC=DOCKER_UP_FAILED",
+    ],
+  );
+
+  assert.equal(entries.length, 2);
+  assert.equal(entries[0].sourceLabel, "mavis-runner");
+  assert.equal(entries[0].level, "ERROR");
+  assert.match(entries[0].message, /DOCKER_UP_FAILED/);
+  assert.equal(entries[1].message, "MAVIS_RUNTIME_DIAGNOSTIC=DOCKER_UP_FAILED");
+
+  assert.match(workbench, /useApiQuery\(\s*"runtimeReadSession"/);
+  assert.match(workbench, /const terminalData: Studio = useMemo/);
+  assert.match(workbench, /isPreviewMode=\{isPreviewMode && !lastSessionFailed\}/);
+  assert.match(workbench, /diagnosticLines=\{failedDiagnostics\}/);
+  assert.match(terminal, /diagnosticLines\.length > 0/);
+});

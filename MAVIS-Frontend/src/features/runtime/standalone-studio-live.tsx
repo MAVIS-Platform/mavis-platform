@@ -309,7 +309,11 @@ function StandaloneStudioContent() {
     (item) => item.assignmentId === assignmentId && item.studioVerified,
   );
   const activeSessionId = useMemo(() => {
-    if (selectedSessionId && sessionList.some((item) => item.id === selectedSessionId)) {
+    if (
+      selectedSessionId &&
+      (startStudio.data?.id === selectedSessionId ||
+        sessionList.some((item) => item.id === selectedSessionId))
+    ) {
       return selectedSessionId;
     }
     const activeStatuses = new Set([
@@ -331,7 +335,7 @@ function StandaloneStudioContent() {
     if (isAuthorMode) return "";
     const forAssignment = sessionList.find((item) => item.assignmentId === assignmentId);
     return forAssignment?.id ?? sessionList[0]?.id ?? "";
-  }, [selectedSessionId, sessionList, assignmentId, isAuthorMode]);
+  }, [selectedSessionId, startStudio.data?.id, sessionList, assignmentId, isAuthorMode]);
 
   const studentQuizLocked = Boolean(
     !isAuthorMode &&

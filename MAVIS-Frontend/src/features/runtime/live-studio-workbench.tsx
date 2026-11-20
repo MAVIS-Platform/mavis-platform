@@ -37,6 +37,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ErrorState } from "@/components/shared/request-state";
+import { useApiQuery } from "@/hooks/use-api";
 import type { Response } from "@/lib/api/contracts";
 import {
   StudioObservability,
@@ -185,6 +186,8 @@ type SessionOption = {
   id: string;
   scenarioName?: string | null;
   executionStatus?: string | null;
+  failureReason?: string | null | undefined;
+  diagnostics?: readonly string[] | null | undefined;
 };
 
 export type LiveStudioAuthoringProps = LiveBlockAuthoringControls & {
@@ -942,15 +945,65 @@ export function LiveStudioWorkbench({
     authoring.onCaptureCanvasState({ stoppedServices, stoppedControllers, minReplicas });
   }
 
+  const activeSessionMeta = sessions.find((item) => item.id === activeSessionId);
   const isBooting = Boolean(
     starting || BOOTING_STATUSES.has(data.executionStatus.toUpperCase()),
   );
-  const lastSessionFailed = data.executionStatus === "FAILED" || liveData?.executionStatus === "FAILED";
+  const lastSessionFailed =
+    data.executionStatus === "FAILED" ||
+    liveData?.executionStatus === "FAILED" ||
+    activeSessionMeta?.executionStatus?.toUpperCase() === "FAILED";
+
+  const failedSessionDetail = useApiQuery(
+    "runtimeReadSession",
+    { sessionId: activeSessionId },
+    { enabled: Boolean(activeSessionId && lastSessionFailed) },
+  );
+
+  const failedDiagnostics = useMemo(() => {
+    if (!lastSessionFailed) return [] as string[];
+    const lines: string[] = [];
+    const pushUnique = (value: string | null | undefined) => {
+      const trimmed = value?.trim();
+      if (trimmed && !lines.includes(trimmed)) lines.push(trimmed);
+    };
+    pushUnique(failedSessionDetail.data?.failureReason ?? activeSessionMeta?.failureReason);
+    for (const item of failedSessionDetail.data?.diagnostics ?? activeSessionMeta?.diagnostics ?? []) {
+      pushUnique(item);
+    }
+    for (const step of failedSessionDetail.data?.stepResults ?? []) {
+      if (step.status === "FAILED" || step.status === "TIMED_OUT") {
+        const detail = step.failureReason ?? step.status;
+        pushUnique(`Step ${step.id} (${step.method ?? "GET"} ${step.path ?? step.service ?? ""}): ${detail}`);
+      }
+    }
+    return lines;
+  }, [
+    lastSessionFailed,
+    failedSessionDetail.data?.failureReason,
+    failedSessionDetail.data?.diagnostics,
+    failedSessionDetail.data?.stepResults,
+    activeSessionMeta?.failureReason,
+    activeSessionMeta?.diagnostics,
+  ]);
+
+  // Preserve failed/cancelled session logs and sessionId in the terminal even while Author canvas returns to editable Preview.
+  const terminalData: Studio = useMemo(() => {
+    if (isTerminalAuthorSession && liveData) {
+      return {
+        ...liveData,
+        services: liveData.services.length > 0 ? liveData.services : data.services,
+      };
+    }
+    return data;
+  }, [isTerminalAuthorSession, liveData, data]);
+
   const terminalSystemError =
     mutationError ??
-    (lastSessionFailed
-      ? "Studio Live session failed on Runner. Cancel or click Run to start a fresh session."
+    (lastSessionFailed && failedDiagnostics.length === 0
+      ? "Studio Live session failed on Runner. Check diagnostics or click Run to retry."
       : null);
+  const terminalAlertSignal = terminalSystemError ?? failedDiagnostics[0] ?? null;
 
   // Auto-open the Logs & Traces terminal on boot start or new error so all status/errors stay inside the terminal
   const wasBootingRef = useRef(false);
@@ -963,12 +1016,12 @@ export function LiveStudioWorkbench({
     wasBootingRef.current = isBooting;
   }, [isBooting]);
   useEffect(() => {
-    if (terminalSystemError && terminalSystemError !== lastOpenedErrorRef.current) {
+    if (terminalAlertSignal && terminalAlertSignal !== lastOpenedErrorRef.current) {
       setTab("logs");
       setBottomCollapsed(false);
     }
-    lastOpenedErrorRef.current = terminalSystemError;
-  }, [terminalSystemError]);
+    lastOpenedErrorRef.current = terminalAlertSignal;
+  }, [terminalAlertSignal]);
 
   const presetTargets = useMemo(() => {
     const isStateful = (name: string) =>
@@ -1052,7 +1105,7 @@ export function LiveStudioWorkbench({
         ? "border-sky-500/40 bg-sky-500/15 text-sky-300"
         : data.executionStatus === "COMPLETED"
           ? "border-teal-500/40 bg-teal-500/15 text-teal-200"
-          : data.executionStatus === "FAILED"
+          : lastSessionFailed
             ? "border-rose-500/40 bg-rose-500/15 text-rose-200"
             : "border-slate-700 bg-slate-900 text-slate-300";
 
@@ -1065,7 +1118,7 @@ export function LiveStudioWorkbench({
         ? "BOOTING"
         : data.executionStatus === "COMPLETED"
           ? "SEALED"
-          : data.executionStatus === "FAILED"
+          : lastSessionFailed
             ? "FAILED"
             : isPreviewMode && effectivePreviewTopology
               ? authoring
@@ -1096,7 +1149,7 @@ export function LiveStudioWorkbench({
         {(data.executionStatus === "RUNNING" ||
           isBooting ||
           data.executionStatus === "COMPLETED" ||
-          data.executionStatus === "FAILED") && (
+          lastSessionFailed) && (
           <span
             className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[10px] font-semibold ${statusTone}`}
           >
@@ -1106,7 +1159,7 @@ export function LiveStudioWorkbench({
                   ? "animate-pulse bg-emerald-400"
                   : isBooting
                     ? "animate-pulse bg-sky-400"
-                    : data.executionStatus === "FAILED"
+                    : lastSessionFailed
                       ? "bg-rose-400"
                       : "bg-slate-400"
               }`}
@@ -2273,13 +2326,14 @@ export function LiveStudioWorkbench({
 
           <div className={tab === "logs" ? "flex h-full min-h-0 flex-1 flex-col" : "hidden"}>
             <LiveTerminalConsole
-              data={data}
+              data={terminalData}
               projectName={projectName}
-              isPreviewMode={isPreviewMode}
+              isPreviewMode={isPreviewMode && !lastSessionFailed}
               isBooting={isBooting}
               waiting={waiting}
               statusLabel={statusLabel}
               systemError={terminalSystemError}
+              diagnosticLines={failedDiagnostics}
             />
           </div>
 

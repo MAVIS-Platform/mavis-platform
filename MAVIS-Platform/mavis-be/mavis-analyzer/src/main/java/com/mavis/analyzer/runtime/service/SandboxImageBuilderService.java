@@ -68,21 +68,22 @@ public class SandboxImageBuilderService {
         return ok;
     }
 
-    public static String sandboxTag(UUID projectId, String serviceName) {
-        String projPrefix = projectId.toString().replace("-", "").substring(0, 8).toLowerCase(Locale.ROOT);
+    public static String sandboxTag(UUID projectId, UUID snapshotId, String serviceName) {
+        String projPrefix = projectId.toString().replace("-", "");
+        String snapshotPrefix = snapshotId.toString().replace("-", "");
         String safeSvc = serviceName.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_-]", "-");
         if (safeSvc.length() > 40) safeSvc = safeSvc.substring(0, 40);
-        return "mavis-sandbox-" + projPrefix + "-" + safeSvc + ":latest";
+        return "mavis-sandbox-" + projPrefix + "-" + snapshotPrefix + "-" + safeSvc + ":latest";
     }
 
-    public Map<String, String> discoverExistingBuiltImages(UUID projectId, java.util.Collection<String> services) {
+    public Map<String, String> discoverExistingBuiltImages(UUID projectId, UUID snapshotId, java.util.Collection<String> services) {
         if (projectId == null || services == null || services.isEmpty() || !isLocalBuildAvailable()) {
             return Map.of();
         }
         Map<String, String> discovered = new LinkedHashMap<>();
         for (String svc : services) {
             if (svc == null || svc.isBlank() || ComposePreflightValidator.isInfrastructureService(svc, "")) continue;
-            String imageId = inspectImageId(sandboxTag(projectId, svc));
+            String imageId = inspectImageId(sandboxTag(projectId, snapshotId, svc));
             if (imageId != null) {
                 discovered.put(svc, imageId);
             }
@@ -90,7 +91,7 @@ public class SandboxImageBuilderService {
         return discovered;
     }
 
-    public BuildImagesResult buildSnapshotImages(UUID projectId, Path snapshotStoragePath, List<String> requestedServices) {
+    public BuildImagesResult buildSnapshotImages(UUID projectId, UUID snapshotId, Path snapshotStoragePath, List<String> requestedServices) {
         if (!allowLocalImageBuild) {
             throw new BusinessException(ErrorCode.FORBIDDEN,
                     "Local sandbox image building is disabled by operator policy (mavis.runner.allow-local-image-build=false)");
@@ -208,7 +209,7 @@ public class SandboxImageBuilderService {
                 }
 
                 Path effectiveContextDir = prepareAutoBuildDockerfile(dockerfile, contextDir, workspace);
-                String tag = sandboxTag(projectId, svc);
+                String tag = sandboxTag(projectId, snapshotId, svc);
                 preparedTargets.add(new PreparedTarget(svc, tag, dockerfile, effectiveContextDir, spec));
             }
 

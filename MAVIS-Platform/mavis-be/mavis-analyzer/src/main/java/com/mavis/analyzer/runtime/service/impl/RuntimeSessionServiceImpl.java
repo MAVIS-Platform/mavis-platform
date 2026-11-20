@@ -145,7 +145,8 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         try {
             if (runtimeConfigurationRepository != null && snapshot.getProject() != null && snapshot.getProject().getId() != null) {
                 var savedCfg = runtimeConfigurationRepository.findById(snapshot.getProject().getId()).orElse(null);
-                if (savedCfg != null && savedCfg.getProfile() != null && savedCfg.getProfile().path("serviceImageOverrides").isObject()) {
+                if (savedCfg != null && snapshotId.equals(savedCfg.getSourceSnapshotId())
+                        && savedCfg.getProfile() != null && savedCfg.getProfile().path("serviceImageOverrides").isObject()) {
                     savedCfg.getProfile().path("serviceImageOverrides").fields().forEachRemaining(e -> {
                         String val = e.getValue().asText("").trim();
                         if (!val.isEmpty()) savedOverrides.put(e.getKey(), val);
@@ -237,14 +238,14 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                 Set<String> candidates = new LinkedHashSet<>();
                 if (result.getComposeServices() != null) candidates.addAll(result.getComposeServices());
                 if (result.getDetectedServices() != null) candidates.addAll(result.getDetectedServices());
-                sandboxImageBuilderService.discoverExistingBuiltImages(snapshot.getProject().getId(), candidates)
+                sandboxImageBuilderService.discoverExistingBuiltImages(snapshot.getProject().getId(), snapshotId, candidates)
                         .forEach(savedOverrides::putIfAbsent);
             }
             composePreflightValidator.finalizeSandboxTopology(path, result, rawYamlContent, savedOverrides, envFiles);
             if (result.isLocalImageBuildAvailable() && rawYamlContent == null && snapshot.getProject() != null && snapshot.getProject().getId() != null
                     && result.getComposeServices() != null && !result.getComposeServices().isEmpty()) {
                 Map<String, String> synthDiscovered = sandboxImageBuilderService.discoverExistingBuiltImages(
-                        snapshot.getProject().getId(), result.getComposeServices());
+                        snapshot.getProject().getId(), snapshotId, result.getComposeServices());
                 boolean added = false;
                 for (Map.Entry<String, String> e : synthDiscovered.entrySet()) {
                     if (savedOverrides.putIfAbsent(e.getKey(), e.getValue()) == null) added = true;
