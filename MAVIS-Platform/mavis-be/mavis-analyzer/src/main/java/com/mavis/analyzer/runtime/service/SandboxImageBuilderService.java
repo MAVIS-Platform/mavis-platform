@@ -101,15 +101,8 @@ public class SandboxImageBuilderService {
 
         Path workspace = null;
         try {
-            try {
-                workspace = Files.createTempDirectory("mavis-imgbuild-");
-                extractOrCopySnapshot(snapshotStoragePath, workspace);
-            } catch (IOException firstIo) {
-                deleteQuietly(workspace);
-                pruneDockerDisk(true);
-                workspace = Files.createTempDirectory("mavis-imgbuild-");
-                extractOrCopySnapshot(snapshotStoragePath, workspace);
-            }
+            workspace = Files.createTempDirectory("mavis-imgbuild-");
+            extractOrCopySnapshot(snapshotStoragePath, workspace);
 
             Set<String> filter = requestedServices != null && !requestedServices.isEmpty()
                     ? Set.copyOf(requestedServices)
@@ -228,10 +221,6 @@ public class SandboxImageBuilderService {
                     for (PreparedTarget pt : preparedTargets) {
                         futures.add(pool.submit(() -> {
                             String buildErr = runDockerBuild(projectId, pt.tag(), pt.dockerfile(), pt.contextDir(), pt.spec().target(), pt.spec().args());
-                            if (buildErr != null && buildErr.toLowerCase(Locale.ROOT).contains("no space left on device")) {
-                                pruneDockerDisk(true);
-                                buildErr = runDockerBuild(projectId, pt.tag(), pt.dockerfile(), pt.contextDir(), pt.spec().target(), pt.spec().args());
-                            }
                             if (buildErr != null) {
                                 return new SingleBuildOutcome(pt.svc(), null, "Service '" + pt.svc() + "': " + buildErr);
                             }
@@ -252,9 +241,6 @@ public class SandboxImageBuilderService {
                     }
                 } finally {
                     pool.shutdownNow();
-                }
-                if (!builtImages.isEmpty()) {
-                    pruneDockerDisk(false);
                 }
             }
 
@@ -638,30 +624,6 @@ public class SandboxImageBuilderService {
         } catch (Exception e) {
             return false;
         }
-    }
-
-    protected void pruneDockerDisk(boolean aggressive) {
-        try {
-            runQuietCommand(List.of("docker", "image", "prune", "-f"), 15);
-            if (aggressive) {
-                runQuietCommand(List.of("docker", "container", "prune", "-f"), 15);
-                runQuietCommand(List.of("docker", "builder", "prune", "-af", "--filter", "type!=exec.cachemount"), 30);
-            } else {
-                runQuietCommand(List.of("docker", "builder", "prune", "-f", "--keep-storage", "2500mb", "--filter", "type!=exec.cachemount"), 20);
-            }
-        } catch (Exception ignored) {}
-    }
-
-    private static void runQuietCommand(List<String> cmd, int timeoutSeconds) {
-        try {
-            Process p = new ProcessBuilder(cmd).redirectErrorStream(true).start();
-            try (InputStream in = p.getInputStream()) {
-                in.transferTo(java.io.OutputStream.nullOutputStream());
-            } catch (IOException ignored) {}
-            if (!p.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
-                p.destroyForcibly();
-            }
-        } catch (Exception ignored) {}
     }
 
     private static void deleteQuietly(Path root) {

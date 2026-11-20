@@ -19,6 +19,26 @@ import static org.assertj.core.api.Assertions.assertThat;
 class SandboxImageBuilderServiceTest {
 
     @Test
+    void diskExhaustionReturnsBuildErrorWithoutRetryingHostCleanup(@TempDir Path root) throws Exception {
+        Files.writeString(root.resolve("docker-compose.yml"), "services:\n  orders:\n    build: .\n");
+        Files.writeString(root.resolve("Dockerfile"), "FROM scratch\n");
+        var attempts = new java.util.concurrent.atomic.AtomicInteger();
+        SandboxImageBuilderService builder = new SandboxImageBuilderService() {
+            @Override
+            protected String runDockerBuild(UUID projectId, String tag, Path dockerfile, Path context,
+                                            String target, Map<String, String> args) {
+                attempts.incrementAndGet();
+                return "no space left on device";
+            }
+        };
+        var result = builder.buildSnapshotImages(UUID.randomUUID(), root, List.of("orders"));
+        assertThat(result.builtImages()).isEmpty();
+        assertThat(result.errors()).containsExactly("Service 'orders': no space left on device");
+        assertThat(attempts.get()).isEqualTo(1);
+        assertThat(Files.exists(root.resolve("Dockerfile"))).isTrue();
+    }
+
+    @Test
     void buildsMultiStageTargetAndBuildArgsFromComposeAndDotEnv(@TempDir Path tempDir) throws Exception {
         Files.writeString(tempDir.resolve(".env"), "JAVA_VER=21\n");
         Files.writeString(tempDir.resolve("docker-compose.yml"), """
