@@ -86,6 +86,8 @@ export const publicErrors = {
     "Runtime profile is invalid or exceeds limits. Re-sync Docker configuration and try again.",
   SANDBOX_IMAGE_MISSING:
     "One or more local Docker images are missing on the Runner host. Open Studio Settings -> Sync Docker to rebuild before running.",
+  STUDIO_QUEUE_FULL:
+    "The Studio Live queue is currently full. Please retry in a few moments as active sessions finish.",
   LAB_PUBLISH_CONTENT_REQUIRED:
     "Add a Lab description, attach a Theory lesson, or pin a Reference Source before adding to class.",
   WORKSPACE_CODE_EXISTS:
@@ -200,6 +202,8 @@ export function backendErrorCode(
     return "RUNTIME_PROFILE_INVALID";
   if (message.startsWith("Docker image for service(s) "))
     return "SANDBOX_IMAGE_MISSING";
+  if (message.startsWith("The Studio Live queue is full"))
+    return "STUDIO_QUEUE_FULL";
   if (
     message ===
     "Add a Lab description, attach a Theory lesson, or pin a published Reference Source before publishing the Lab"

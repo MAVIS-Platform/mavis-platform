@@ -28,6 +28,10 @@ public class RuntimeStudioService {
     private final RunnerServiceAuthGuard runner;
     private final ObjectMapper mapper;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    @org.springframework.context.annotation.Lazy
+    private com.mavis.analyzer.runtime.service.impl.RuntimeQueueCoordinator queueCoordinator;
+
     public record ActionRequest(@NotNull UUID actionId, @NotNull @Pattern(regexp="START|STOP|SCALE") String action,
                                 @NotBlank @Size(max=128) String service, @Min(1) @Max(8) Integer replicas) {}
     public record AckRequest(@NotNull UUID actionId, @NotNull UUID sessionId, @NotBlank String resourceProject,
@@ -80,6 +84,7 @@ public class RuntimeStudioService {
     public JsonNode capture(UUID id, CaptureRequest request) {
         RuntimeSession session = locked(id);
         access.requireProjectWriteAccess(session.getProject());
+        if (queueCoordinator != null) queueCoordinator.recordUiHeartbeat(id);
         ObjectNode control = control(session);
         if (!control.hasNonNull("telemetry")) throw error(ErrorCode.UNPROCESSABLE_ENTITY, "Wait for observed telemetry before capturing evidence.");
         if(request.observedAt()!=null && !request.observedAt().equals(control.path("telemetry").path("observedAt").asText()))
@@ -118,6 +123,7 @@ public class RuntimeStudioService {
     public JsonNode state(UUID id) {
         RuntimeSession session = sessions.findById(id).orElseThrow(() -> error(ErrorCode.NOT_FOUND, "Runtime session not found."));
         access.requireProjectReadAccess(session.getProject());
+        if (queueCoordinator != null) queueCoordinator.recordUiHeartbeat(id);
         return view(session);
     }
 
@@ -125,6 +131,7 @@ public class RuntimeStudioService {
     public JsonNode submit(UUID id, ActionRequest request) {
         RuntimeSession session = locked(id);
         access.requireProjectWriteAccess(session.getProject());
+        if (queueCoordinator != null) queueCoordinator.recordUiHeartbeat(id);
         labs.requireRuntimeReadiness(session.getProject());
         ObjectNode control = control(session);
         for (JsonNode action : control.withArray("actions")) {
@@ -266,19 +273,22 @@ public class RuntimeStudioService {
         if (!resourceProject.equals(session.getResourceProject())) throw error(ErrorCode.CONFLICT, "Runner allocation mismatch.");
         ObjectNode control = control(session);
         ObjectNode response = mapper.createObjectNode().put("sessionId", id.toString()).put("resourceProject", resourceProject);
-        if (session.getCancelRequestedAt() != null || !"RUNNING".equals(session.getExecutionStatus())) {
-            return response.put("finishRequested", true);
+        if (session.getCancelRequestedAt() != null) {
+            return response.put("finishRequested", true).put("cancelRequested", true);
+        }
+        if (!"RUNNING".equals(session.getExecutionStatus())) {
+            return response.put("finishRequested", true).put("cancelRequested", false);
         }
         for (JsonNode node : control.withArray("actions")) {
             if ("PENDING".equals(node.path("status").asText()) || "RUNNING".equals(node.path("status").asText())) {
                 ObjectNode action = (ObjectNode) node;
                 action.put("status", "RUNNING");
                 save(session, control);
-                response.put("finishRequested", false).set("command", action.deepCopy());
+                response.put("finishRequested", false).put("cancelRequested", false).set("command", action.deepCopy());
                 return response;
             }
         }
-        return response.put("finishRequested", control.path("finishRequested").asBoolean());
+        return response.put("finishRequested", control.path("finishRequested").asBoolean()).put("cancelRequested", false);
     }
 
     @Transactional
@@ -353,6 +363,12 @@ public class RuntimeStudioService {
         appendPinnedLimits(result, session);
         if (session.getConfirmedServiceMappings() != null)
             session.getConfirmedServiceMappings().keySet().stream().filter(name -> !"mavis-collector".equals(name)).sorted().forEach(services::add);
+        if (queueCoordinator != null && "QUEUED".equalsIgnoreCase(execution)) {
+            Integer pos = queueCoordinator.queuePosition(session);
+            if (pos != null) result.put("queuePosition", pos);
+            result.put("activeSlots", queueCoordinator.countActiveSessions());
+            result.put("maxSlots", queueCoordinator.getMaxActiveStudioSessions());
+        }
         return result.put("sessionId", session.getId().toString()).put("interactive", interactive)
             .put("projectId", session.getProject().getId() == null ? "" : session.getProject().getId().toString())
             .put("modelVersionId", session.getModelVersion() == null ? "" : session.getModelVersion().getId().toString())

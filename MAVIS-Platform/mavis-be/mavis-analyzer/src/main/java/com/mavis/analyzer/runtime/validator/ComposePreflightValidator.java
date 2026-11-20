@@ -978,10 +978,134 @@ public class ComposePreflightValidator {
         dto.setServiceHealthPaths(health);
         dto.setServiceHealthConfidence(confidence);
         dto.setServiceHealthReasons(reasons);
+        applyRuntimeContractIfPresent(storagePath, dto);
         pruneSpeculativeConnectionString(envMap, dbChecks);
         dto.setRequiredEnvVars(new ArrayList<>(envMap.values()));
         dto.setDatabaseChecks(dbChecks);
         dto.setDetectedEndpoints(endpoints);
+    }
+
+    /**
+     * Deterministic repository contract (mavis-runtime.yaml / .mavis-runtime.yaml).
+     * Overrides port, runtime stack, readinessPath, and infra role when declared by the repo author.
+     */
+    private void applyRuntimeContractIfPresent(Path storagePath, PreflightCheckResponseDTO dto) {
+        String rawContract = readRootRuntimeContract(storagePath);
+        if (rawContract == null || rawContract.isBlank()) {
+            return;
+        }
+        try {
+            LoaderOptions loaderOptions = new LoaderOptions();
+            loaderOptions.setAllowDuplicateKeys(false);
+            loaderOptions.setMaxAliasesForCollections(20);
+            loaderOptions.setCodePointLimit(65_536);
+            Object parsed = new Yaml(new SafeConstructor(loaderOptions)).load(rawContract);
+            if (!(parsed instanceof Map<?, ?> root) || !(root.get("services") instanceof Map<?, ?> declaredServices)) {
+                return;
+            }
+            Map<String, Integer> ports = dto.getServicePorts() != null ? new LinkedHashMap<>(dto.getServicePorts()) : new LinkedHashMap<>();
+            Map<String, String> stacks = dto.getServiceStacks() != null ? new LinkedHashMap<>(dto.getServiceStacks()) : new LinkedHashMap<>();
+            Map<String, String> health = dto.getServiceHealthPaths() != null ? new LinkedHashMap<>(dto.getServiceHealthPaths()) : new LinkedHashMap<>();
+            Map<String, String> confidence = dto.getServiceHealthConfidence() != null ? new LinkedHashMap<>(dto.getServiceHealthConfidence()) : new LinkedHashMap<>();
+            Map<String, String> reasons = dto.getServiceHealthReasons() != null ? new LinkedHashMap<>(dto.getServiceHealthReasons()) : new LinkedHashMap<>();
+            List<String> infra = dto.getInfrastructureServices() != null ? new ArrayList<>(dto.getInfrastructureServices()) : new ArrayList<>();
+            Set<String> allowedRuntimes = Set.of("java", "dotnet8-linux-x64-glibc", "dotnet8-linux-x64-musl", "passthrough");
+
+            for (Map.Entry<?, ?> entry : declaredServices.entrySet()) {
+                if (entry.getKey() == null || !(entry.getValue() instanceof Map<?, ?> spec)) {
+                    continue;
+                }
+                String svc = String.valueOf(entry.getKey()).trim();
+                if (svc.isEmpty() || !RUNNER_NAME_PATTERN.matcher(svc).matches()) {
+                    continue;
+                }
+                String role = spec.get("role") != null ? String.valueOf(spec.get("role")).trim().toLowerCase(Locale.ROOT) : "";
+                boolean isInfra = "infra".equals(role) || "infrastructure".equals(role) || Boolean.TRUE.equals(spec.get("infrastructure"));
+                if (isInfra) {
+                    if (!infra.contains(svc)) {
+                        infra.add(svc);
+                    }
+                    health.remove(svc);
+                    confidence.remove(svc);
+                    reasons.remove(svc);
+                    continue;
+                }
+                if (spec.get("port") instanceof Number num) {
+                    int port = num.intValue();
+                    if (port >= 1 && port <= 65535) {
+                        ports.put(svc, port);
+                    }
+                }
+                if (spec.get("runtime") != null) {
+                    String rt = String.valueOf(spec.get("runtime")).trim();
+                    if (allowedRuntimes.contains(rt)) {
+                        stacks.put(svc, rt);
+                    }
+                }
+                Object rawPath = spec.get("readinessPath") != null ? spec.get("readinessPath") : spec.get("healthPath");
+                if (rawPath != null) {
+                    String path = String.valueOf(rawPath).trim();
+                    if (path.startsWith("/") && !path.startsWith("//") && !path.contains("\\") && path.length() <= 256) {
+                        health.put(svc, path);
+                        confidence.put(svc, "CONTRACT");
+                        reasons.put(svc, "Declared in mavis-runtime.yaml");
+                    }
+                }
+            }
+            dto.setServicePorts(ports);
+            dto.setServiceStacks(stacks);
+            dto.setServiceHealthPaths(health);
+            dto.setServiceHealthConfidence(confidence);
+            dto.setServiceHealthReasons(reasons);
+            dto.setInfrastructureServices(infra);
+        } catch (Exception e) {
+            log.warn("Ignoring malformed mavis-runtime.yaml contract in {}: {}", storagePath, e.getMessage());
+        }
+    }
+
+    private static String readRootRuntimeContract(Path storagePath) {
+        try {
+            if (Files.isRegularFile(storagePath) && storagePath.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".zip")) {
+                try (ZipFile zipFile = new ZipFile(storagePath.toFile())) {
+                    Enumeration<? extends ZipEntry> entries = zipFile.entries();
+                    ZipEntry best = null;
+                    int bestDepth = Integer.MAX_VALUE;
+                    while (entries.hasMoreElements()) {
+                        ZipEntry entry = entries.nextElement();
+                        if (entry.isDirectory() || entry.getSize() > 65_536) {
+                            continue;
+                        }
+                        String name = entry.getName().replace('\\', '/');
+                        String[] parts = name.split("/");
+                        String base = parts[parts.length - 1].toLowerCase(Locale.ROOT);
+                        if ((base.equals("mavis-runtime.yaml") || base.equals("mavis-runtime.yml")
+                                || base.equals(".mavis-runtime.yaml") || base.equals(".mavis-runtime.yml"))
+                                && parts.length <= 2 && parts.length < bestDepth) {
+                            best = entry;
+                            bestDepth = parts.length;
+                        }
+                    }
+                    if (best != null) {
+                        try (InputStream is = zipFile.getInputStream(best)) {
+                            return new String(is.readNBytes(65_536), StandardCharsets.UTF_8);
+                        }
+                    }
+                }
+            } else {
+                Path dir = Files.isDirectory(storagePath) ? storagePath : storagePath.getParent();
+                if (dir != null && Files.isDirectory(dir)) {
+                    for (String candidate : List.of("mavis-runtime.yaml", "mavis-runtime.yml", ".mavis-runtime.yaml", ".mavis-runtime.yml")) {
+                        Path file = dir.resolve(candidate);
+                        if (Files.isRegularFile(file) && Files.size(file) <= 65_536) {
+                            return Files.readString(file, StandardCharsets.UTF_8);
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.debug("Failed to read optional mavis-runtime.yaml from {}: {}", storagePath, e.getMessage());
+        }
+        return null;
     }
 
     private static boolean isIgnoredArchiveEntry(String path) {

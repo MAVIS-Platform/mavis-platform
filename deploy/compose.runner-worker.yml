@@ -1,0 +1,36 @@
+# Dedicated External Sandbox Runner Worker VPS stack (Stage 2 Horizontal Scaling + Stage 3 gVisor).
+# Run on 1..N external Worker VPSs (after installing Docker and optional gVisor via `sudo bash deploy/install-gvisor.sh`):
+#
+#   MAVIS_JAVA_URL=https://maviss.site \
+#   MAVIS_RUNNER_SERVICE_KEY=<same-key-as-control-plane> \
+#   MAVIS_WORKER_CONCURRENCY=4 \
+#   docker compose -f deploy/compose.runner-worker.yml up -d --build
+#
+# Note: On the main VPS, set `MAVIS_RUNNER_MODE=REMOTE_WORKER` (or keep `AUTO` for hybrid local + remote workers).
+name: mavis-runner-worker
+
+services:
+  sandbox-runner:
+    image: ${IMAGE_PREFIX:-mavis}-runner-worker:${IMAGE_TAG:-local}
+    build:
+      context: ..
+      dockerfile: MAVIS.Worker/Dockerfile.runner
+    restart: unless-stopped
+    environment:
+      MAVIS_RUNNER_ALLOW_LOCAL_POC: "1"
+      MAVIS_RUNNER_SERVICE_KEY: ${MAVIS_RUNNER_SERVICE_KEY:?Set MAVIS_RUNNER_SERVICE_KEY matching the main backend}
+      MAVIS_RUNNER_OCI_RUNTIME: ${MAVIS_RUNNER_OCI_RUNTIME:-auto}
+      MAVIS_RUNNER_GVISOR_WRITABLE_ROOTFS: ${MAVIS_RUNNER_GVISOR_WRITABLE_ROOTFS:-1}
+      MAVIS_WORKER_CONCURRENCY: ${MAVIS_WORKER_CONCURRENCY:-4}
+      MAVIS_WORKER_ID: ${MAVIS_WORKER_ID:-worker-vps-1}
+    command:
+      - "${MAVIS_JAVA_URL:?Set MAVIS_JAVA_URL (e.g. https://maviss.site)}"
+      - "/app/samples/runtime-poc/collector.yaml"
+      - "/tmp/mavis-runner-state"
+      - "${MAVIS_WORKER_CONCURRENCY:-4}"
+    group_add:
+      - "${DOCKER_GID:-999}"
+      - "0"
+    volumes:
+      - /tmp/mavis-runner-state:/tmp/mavis-runner-state
+      - /var/run/docker.sock:/var/run/docker.sock

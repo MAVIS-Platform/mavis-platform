@@ -16,8 +16,26 @@ public sealed record RunnerExecutionProfile(string CollectorImage, string Instru
 /// <summary>Generates only an override; it does not claim compatibility or launch workloads.</summary>
 public static class ComposeOverrideBuilder
 {
-    public static string Build(ComposePreflightResult preflight, RunnerExecutionProfile profile, string collectorConfigPath, IReadOnlyDictionary<string,string>? protectedValues = null)
+    private static readonly HashSet<string> KernelSandboxedRuntimes = new(StringComparer.Ordinal) { "runsc", "kata", "kata-runtime" };
+
+    public static bool IsKernelSandboxedRuntime(string? ociRuntime) =>
+        !string.IsNullOrWhiteSpace(ociRuntime) && KernelSandboxedRuntimes.Contains(ociRuntime.Trim());
+
+    public static string NormalizeOciRuntime(string? ociRuntime)
     {
+        if (string.IsNullOrWhiteSpace(ociRuntime)) return "runc";
+        var normalized = ociRuntime.Trim();
+        if (normalized is "runc" or "auto" || KernelSandboxedRuntimes.Contains(normalized)) return normalized;
+        throw new ArgumentException("Unsupported OCI runtime.");
+    }
+
+    public static string Build(ComposePreflightResult preflight, RunnerExecutionProfile profile, string collectorConfigPath,
+        IReadOnlyDictionary<string,string>? protectedValues = null, string? ociRuntime = null, bool writableRootfsUnderKernelSandbox = false)
+    {
+        var normalizedRuntime = string.IsNullOrWhiteSpace(ociRuntime) ? "runc" : ociRuntime.Trim();
+        if (normalizedRuntime != "runc" && !IsKernelSandboxedRuntime(normalizedRuntime))
+            throw new ArgumentException("Unsupported OCI runtime.");
+        bool useKernelSandbox = IsKernelSandboxedRuntime(normalizedRuntime);
         if (!preflight.Compatible || !profile.ApprovedForLocalPoc || profile.MemoryMiB is < 64 or > 2048 ||
             !double.IsFinite(profile.Cpus) || profile.Cpus is <= 0 or > 4 || profile.TimeoutSeconds is < 1 or > 300 ||
             profile.Applications is null || profile.Applications.Count == 0 || profile.Applications.Count > 10 ||
@@ -32,9 +50,12 @@ public static class ComposeOverrideBuilder
             {
                 ["cap_drop"] = new[] { "ALL" }, ["security_opt"] = new[] { "no-new-privileges:true" },
                 ["pids_limit"] = 256, ["mem_limit"] = profile.MemoryMiB + "m", ["cpus"] = profile.Cpus,
-                ["read_only"] = true, ["tmpfs"] = new[] { "/tmp:rw,noexec,nosuid,size=64m" }, ["restart"] = "no",
+                // Under gVisor/Kata user-space kernel isolation, workloads may safely write to ephemeral container rootfs.
+                ["read_only"] = !(useKernelSandbox && writableRootfsUnderKernelSandbox),
+                ["tmpfs"] = new[] { "/tmp:rw,noexec,nosuid,size=64m" }, ["restart"] = "no",
                 ["networks"] = new[] { "default" }
             };
+            if (useKernelSandbox) config["runtime"] = normalizedRuntime;
             // Only extend an explicitly declared probe; a partial healthcheck without a test is invalid.
             if (preflight.HealthcheckServices?.Contains(service) == true)
                 config["healthcheck"] = new { start_period = Math.Clamp(profile.TimeoutSeconds, 1, 300) + "s" };

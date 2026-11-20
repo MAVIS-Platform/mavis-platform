@@ -7,14 +7,33 @@ public static class RunnerProgram
     public static async Task<int> Main(string[] args)
     {
         if (args is not ["preflight", _] && args is not ["scenario", _, _] && args is not ["correlate", _, _, _, _] && args is not ["run", _, _, _] && args is not ["plan", _, _] && args is not ["stdin-scenario"] && args is not ["recover", _, _] &&
-            args is not ["managed", _, _, _, _] && args is not ["deliver", _, _, _] && args is not ["deliver-pending", _, _] && args is not ["ack-lifecycle", _, _] && args is not ["managed-recover", _, _, _])
+            args is not ["managed", _, _, _, _] && args is not ["deliver", _, _, _] && args is not ["deliver-pending", _, _] && args is not ["ack-lifecycle", _, _] && args is not ["managed-recover", _, _, _] &&
+            args is not ["worker", _, _, _] && args is not ["worker", _, _, _, _])
         {
-            Console.Error.WriteLine("Usage: MAVIS.Runner preflight <compose.yml> | plan <session.json> <collector.yaml> | scenario <scenario.json> <endpoints.json> | correlate <sessionId> <modelVersionId> <otlp.json> <mappings.json> | run <session.json> <collector.yaml> <state-root> | recover <state-root> <resource-project> | managed <java-url> <session-id> <collector.yaml> <state-root> | deliver <java-url> <state-root> <resource-project> | deliver-pending <java-url> <state-root> | ack-lifecycle <java-url> <event.json>");
+            Console.Error.WriteLine("Usage: MAVIS.Runner preflight <compose.yml> | plan <session.json> <collector.yaml> | scenario <scenario.json> <endpoints.json> | correlate <sessionId> <modelVersionId> <otlp.json> <mappings.json> | run <session.json> <collector.yaml> <state-root> | recover <state-root> <resource-project> | managed <java-url> <session-id> <collector.yaml> <state-root> | deliver <java-url> <state-root> <resource-project> | deliver-pending <java-url> <state-root> | ack-lifecycle <java-url> <event.json> | worker <java-url> <collector.yaml> <state-root> [concurrency]");
             return 2;
         }
         try
         {
             var jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, PropertyNameCaseInsensitive = true, WriteIndented = true };
+            if (args[0] == "worker")
+            {
+                if (Environment.GetEnvironmentVariable("MAVIS_RUNNER_ALLOW_LOCAL_POC") != "1") throw new ArgumentException();
+                using var shutdown = new CancellationTokenSource();
+                Console.CancelKeyPress += (_, e) => { e.Cancel = true; shutdown.Cancel(); };
+                AppDomain.CurrentDomain.ProcessExit += (_, _) => shutdown.Cancel();
+                using var java = new JavaRuntimeClient(new Uri(args[1]), Environment.GetEnvironmentVariable("MAVIS_RUNNER_SERVICE_KEY") ?? "");
+                var concurrencyRaw = args.Length >= 5 ? args[4] : Environment.GetEnvironmentVariable("MAVIS_WORKER_CONCURRENCY");
+                var concurrency = int.TryParse(concurrencyRaw, out var parsed) ? parsed : 2;
+                var workerId = Environment.GetEnvironmentVariable("MAVIS_WORKER_ID");
+                if (string.IsNullOrWhiteSpace(workerId)) workerId = Environment.MachineName + "-" + Environment.ProcessId;
+                var ociRuntime = Environment.GetEnvironmentVariable("MAVIS_RUNNER_OCI_RUNTIME") ?? "auto";
+                var envWritable = Environment.GetEnvironmentVariable("MAVIS_RUNNER_GVISOR_WRITABLE_ROOTFS");
+                var writable = !(string.Equals(envWritable, "0", StringComparison.OrdinalIgnoreCase) ||
+                                 string.Equals(envWritable, "false", StringComparison.OrdinalIgnoreCase));
+                await WorkerPoolLoop.RunAsync(java, new DockerCommands(), args[2], args[3], concurrency, workerId, ociRuntime, writable, shutdown.Token);
+                return 0;
+            }
             // Allow full 300s session budget plus bounded evidence drain, container teardown, and receipt delivery.
             using var cancellation = new CancellationTokenSource(TimeSpan.FromMinutes(7));
             Console.CancelKeyPress += (_, e) => { e.Cancel = true; cancellation.Cancel(); };

@@ -9,7 +9,20 @@ namespace MAVIS.Runner;
 public sealed class JavaRuntimeClient : IRuntimeLifecycleObserver, IDisposable
 {
     public sealed record StudioCommand(string ActionId, string Action, string Service, int? Replicas);
-    public sealed record StudioPoll(bool FinishRequested, StudioCommand? Command);
+    public sealed record StudioPoll(bool FinishRequested, StudioCommand? Command, bool CancelRequested = false);
+    public sealed record WorkerClaim(bool Claimed, string? SessionId, string? ResourceProject);
+
+    public async Task<WorkerClaim?> ClaimWorkerJobAsync(string workerId, string isolationRuntime, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(workerId) || workerId.Length > 128)
+            throw new ArgumentException("Invalid worker identifier.");
+        var json = await SendAsync(HttpMethod.Post, "api/v1/analyzer/runtime/workers/claim",
+            JsonSerializer.Serialize(new { workerId, isolationRuntime }, RuntimeLifecycleJournal.Json), ct);
+        using var doc = JsonDocument.Parse(json);
+        var data = Data(doc.RootElement);
+        var claim = data.Deserialize<WorkerClaim>(RuntimeLifecycleJournal.Json);
+        return claim is { Claimed: true, SessionId.Length: > 0 } ? claim : null;
+    }
     public async Task PublishStudioTelemetryAsync(string sessionId, string project, object telemetry, CancellationToken ct)
     {
         var json = await SendAsync(HttpMethod.Post, Route(sessionId, "studio/telemetry"),

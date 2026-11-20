@@ -379,4 +379,161 @@ public sealed class RuntimeLifecycleTests
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
     }
+
+    [Fact]
+    public void OverrideBuilderAppliesKernelSandboxRuntimeAndRejectsUnknownRuntime()
+    {
+        var digest = new string('d', 64);
+        var preflight = ComposePreflight.Check($"services:\n  api:\n    image: app@sha256:{digest}\n");
+        var profile = new RunnerExecutionProfile("collector@sha256:" + digest, "mavis-agents-v1",
+            new Dictionary<string, RuntimeServiceProfile> { ["api"] = new("java", 8080) }, ApprovedForLocalPoc: true);
+
+        using var doc = JsonDocument.Parse(ComposeOverrideBuilder.Build(
+            preflight, profile, Path.GetFullPath("collector.yaml"), ociRuntime: "runsc", writableRootfsUnderKernelSandbox: true));
+        var api = doc.RootElement.GetProperty("services").GetProperty("api");
+        Assert.Equal("runsc", api.GetProperty("runtime").GetString());
+        Assert.False(api.GetProperty("read_only").GetBoolean());
+        var collector = doc.RootElement.GetProperty("services").GetProperty("mavis-collector");
+        Assert.True(collector.GetProperty("read_only").GetBoolean());
+        Assert.False(collector.TryGetProperty("runtime", out _));
+
+        Assert.Throws<ArgumentException>(() => ComposeOverrideBuilder.Build(
+            preflight, profile, Path.GetFullPath("collector.yaml"), ociRuntime: "untrusted-oci"));
+    }
+
+    [Fact]
+    public async Task ExplicitRunscFailsWithOciRuntimeUnavailableWhenDaemonLacksGvisor()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mavis-gvisor-missing-" + Guid.NewGuid().ToString("N"));
+        var digest = new string('e', 64);
+        var profile = new RunnerExecutionProfile("collector@sha256:" + digest, "mavis-agents-v1",
+            new Dictionary<string, RuntimeServiceProfile> { ["api"] = new("passthrough", 8080) },
+            ApprovedForLocalPoc: true, ScenarioRunnerImage: "sha256:" + digest);
+        var definition = new RuntimeRunDefinition("s", "m", "snapshot", "profile",
+            $"services:\n  api:\n    image: sha256:{digest}", profile,
+            new("s", [new("health", "api", "GET", "/health", 200)]),
+            new Dictionary<string, string>(), "config", "scenario");
+        var docker = new RuntimesMockDocker("{\"runc\":{\"path\":\"runc\"}}", hostConfigRuntime: "runc");
+        try
+        {
+            var session = new DockerComposeSession(definition, root, "receivers: {}", docker, ociRuntime: "runsc");
+            var result = await RuntimeSessionLifecycle.RunAsync(session, 30);
+            Assert.Equal("Failed", result.ExecutionStatus);
+            Assert.Contains("OCI_RUNTIME_UNAVAILABLE", result.Diagnostics);
+            Assert.Equal("Confirmed", result.CleanupStatus);
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public async Task AutoRuntimeSelectsGvisorAndVerifiesHostConfigRuntimeEnforcement()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mavis-gvisor-ok-" + Guid.NewGuid().ToString("N"));
+        var digest = new string('f', 64);
+        var profile = new RunnerExecutionProfile("collector@sha256:" + digest, "mavis-agents-v1",
+            new Dictionary<string, RuntimeServiceProfile> { ["api"] = new("passthrough", 8080) },
+            ApprovedForLocalPoc: true, ScenarioRunnerImage: "sha256:" + digest);
+        var definition = new RuntimeRunDefinition("s", "m", "snapshot", "profile",
+            $"services:\n  api:\n    image: sha256:{digest}", profile,
+            new("s", [new("health", "api", "GET", "/health", 200)]),
+            new Dictionary<string, string>(), "config", "scenario");
+        var docker = new RuntimesMockDocker("{\"runc\":{\"path\":\"runc\"},\"runsc\":{\"path\":\"/usr/bin/runsc\"}}", hostConfigRuntime: "runc");
+        try
+        {
+            var session = new DockerComposeSession(definition, root, "receivers: {}", docker, ociRuntime: "auto", writableRootfsUnderKernelSandbox: true);
+            var result = await RuntimeSessionLifecycle.RunAsync(session, 30);
+            Assert.Equal("runsc", session.IsolationRuntime);
+            // Docker returned HostConfig.Runtime="runc" even though override requested "runsc" -> must reject!
+            Assert.Equal("Failed", result.ExecutionStatus);
+            Assert.Contains("SANDBOX_ENFORCEMENT_UNCONFIRMED", result.Diagnostics);
+            Assert.Equal("Confirmed", result.CleanupStatus);
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public async Task RemoteStudioCancelRequestedCancelsSessionCleanly()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mavis-remote-cancel-" + Guid.NewGuid().ToString("N"));
+        var digest = new string('a', 64);
+        var profile = new RunnerExecutionProfile("collector@sha256:" + digest, "mavis-agents-v1",
+            new Dictionary<string, RuntimeServiceProfile> { ["api"] = new("passthrough", 8080) },
+            ApprovedForLocalPoc: true, ScenarioRunnerImage: "sha256:" + digest);
+        var project = "mavisrun-" + new string('c', 32);
+        var definition = new RuntimeRunDefinition("session-rc", "m", "snapshot", "profile",
+            $"services:\n  api:\n    image: sha256:{digest}", profile,
+            new("session-rc", [new("health", "api", "GET", "/health", 200)]),
+            new Dictionary<string, string>(), "config", "scenario", ResourceProject: project, InteractiveStudio: true);
+        var docker = new RuntimesMockDocker("{\"runc\":{\"path\":\"runc\"}}", hostConfigRuntime: "runc", imageId: "sha256:" + digest);
+        using var handler = new CancelPollHandler("session-rc", project);
+        using var java = new JavaRuntimeClient(new Uri("http://127.0.0.1:8080"), "svc-key", handler);
+        using var cts = new CancellationTokenSource();
+        try
+        {
+            var session = new DockerComposeSession(definition, root, "receivers: {}", docker,
+                lifecycle: java, studio: java, onRemoteCancel: cts.Cancel);
+            var result = await RuntimeSessionLifecycle.RunAsync(session, 30, cts.Token);
+            Assert.Equal("Cancelled", result.ExecutionStatus);
+            Assert.Equal("Confirmed", result.CleanupStatus);
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
+    }
+
+    private sealed class RuntimesMockDocker(string runtimesJson, string hostConfigRuntime, string? imageId = null) : IDockerCommands
+    {
+        private readonly string _appId = new('1', 64);
+        private readonly string _collectorId = new('2', 64);
+        private readonly string _image = imageId ?? "sha256:" + new string('f', 64);
+        public Task<DockerCommandResult> RunAsync(IReadOnlyList<string> args, string workingDirectory, int timeoutSeconds, CancellationToken ct)
+        {
+            if (args[0] == "info" && args.Contains("{{.OSType}}")) return Task.FromResult(new DockerCommandResult(0, "linux\n", ""));
+            if (args[0] == "info" && args.Contains("{{json .Runtimes}}")) return Task.FromResult(new DockerCommandResult(0, runtimesJson, ""));
+            if (args[0] == "image" && args[1] == "inspect") return Task.FromResult(new DockerCommandResult(0, _image + "\n", ""));
+            if (args[0] == "compose" && args.Contains("up")) return Task.FromResult(new DockerCommandResult(0, "", ""));
+            if (args[0] == "compose" && args.Contains("ps") && args.Contains("--quiet"))
+                return Task.FromResult(new DockerCommandResult(0, (args.Contains("mavis-collector") ? _collectorId : _appId) + "\n", ""));
+            if (args[0] == "compose" && args.Contains("down")) return Task.FromResult(new DockerCommandResult(0, "", ""));
+            if (args[0] == "inspect" && args.Contains("{{.Image}}")) return Task.FromResult(new DockerCommandResult(0, _image + "\n", ""));
+            if (args[0] == "inspect" && args.Contains("{{json .HostConfig}}"))
+            {
+                var isCollector = args.Contains(_collectorId);
+                var mem = 256 * 1024L * 1024L;
+                var pids = isCollector ? 64 : 256;
+                var ro = !isCollector && hostConfigRuntime == "runsc" ? "false" : "true";
+                return Task.FromResult(new DockerCommandResult(0,
+                    $"{{\"Privileged\":false,\"ReadonlyRootfs\":{ro},\"Runtime\":\"{hostConfigRuntime}\",\"Memory\":{mem},\"NanoCpus\":1000000000,\"PidsLimit\":{pids},\"CapDrop\":[\"ALL\"],\"SecurityOpt\":[\"no-new-privileges:true\"]}}", ""));
+            }
+            if (args[0] == "network" && args[1] == "inspect") return Task.FromResult(new DockerCommandResult(0, "true\n", ""));
+            return Task.FromResult(new DockerCommandResult(0, "", ""));
+        }
+
+        public Task<DockerCommandResult> RunWithInputAsync(IReadOnlyList<string> args, string workingDirectory, int timeoutSeconds, string input, CancellationToken ct)
+        {
+            var outcome = JsonSerializer.Serialize(new HttpScenarioOutcome("s", "Passed",
+                [new HttpStepOutcome("health", "Passed", 200, new string('1', 32), new string('2', 16), 1)]),
+                new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+            return Task.FromResult(new DockerCommandResult(0, outcome, ""));
+        }
+    }
+
+    private sealed class CancelPollHandler(string sessionId, string project) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            string payload;
+            if (path.EndsWith("/lifecycle-ack", StringComparison.Ordinal))
+            {
+                var body = request.Content!.ReadAsStringAsync(cancellationToken).Result;
+                using var doc = JsonDocument.Parse(body);
+                var stage = doc.RootElement.GetProperty("stage").GetString();
+                payload = JsonSerializer.Serialize(new { status = 200, data = new { sessionId, resourceProject = project, stage } });
+            }
+            else if (path.EndsWith("/studio/commands", StringComparison.Ordinal))
+                payload = JsonSerializer.Serialize(new { status = 200, data = new { sessionId, resourceProject = project, finishRequested = false, cancelRequested = true, command = (object?)null } });
+            else
+                payload = JsonSerializer.Serialize(new { status = 200, data = new { sessionId, resourceProject = project } });
+            return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json") });
+        }
+    }
 }

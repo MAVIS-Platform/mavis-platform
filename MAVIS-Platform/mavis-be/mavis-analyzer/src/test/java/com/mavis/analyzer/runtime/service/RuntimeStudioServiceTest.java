@@ -263,4 +263,11 @@ class RuntimeStudioServiceTest {
         assertTrue(stored.contains("sandbox-postgres"));
         assertFalse(stored.contains("my_secret_pw"));
     }
+
+    @Test void pollSignalsRemoteCancelRequestedWhenCancelTimestampIsSet() {
+        session.setCancelRequestedAt(java.time.OffsetDateTime.now());
+        var polled = service.poll(id, session.getResourceProject());
+        assertTrue(polled.path("cancelRequested").asBoolean());
+        assertTrue(polled.path("finishRequested").asBoolean());
+    }
 }

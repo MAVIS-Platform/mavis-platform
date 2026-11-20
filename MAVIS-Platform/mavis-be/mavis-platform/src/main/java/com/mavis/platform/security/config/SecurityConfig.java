@@ -58,7 +58,8 @@ public class SecurityConfig {
                         "/api/v1/analyzer/runtime/sessions/*/ingest-receipt-ack",
                         "/api/v1/analyzer/runtime/sessions/*/sync-outbox",
                         "/api/v1/analyzer/runtime/sessions/*/run-definition",
-                        "/api/v1/analyzer/runtime/sessions/*/protected-environment"
+                        "/api/v1/analyzer/runtime/sessions/*/protected-environment",
+                        "/api/v1/analyzer/runtime/workers/claim"
                 ).permitAll();
 
                 if (devBypassEnabled) {

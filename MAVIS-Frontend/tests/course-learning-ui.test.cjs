@@ -1688,3 +1688,19 @@ test("Studio Live terminal surfaces backend failureReason and Runner diagnostics
   assert.match(workbench, /diagnosticLines=\{failedDiagnostics\}/);
   assert.match(terminal, /diagnosticLines\.length > 0/);
 });
+
+
+test("Studio Live workbench and terminal display live FIFO queue position for QUEUED sessions", () => {
+  const workbench = read("src/features/runtime/live-studio-workbench.tsx");
+  const terminal = read("src/features/runtime/live-terminal-console.tsx");
+  const contracts = read("src/lib/api/contracts.ts");
+  const errors = read("src/lib/errors/api-error.ts");
+
+  assert.match(contracts, /queuePosition:/);
+  assert.match(contracts, /activeSlots:/);
+  assert.match(contracts, /maxSlots:/);
+  assert.match(workbench, /const isQueued = data\.executionStatus\.toUpperCase\(\) === "QUEUED"/);
+  assert.match(workbench, /QUEUED\$\{data\.queuePosition \? ` #\$\{data\.queuePosition\}` : ""\}/);
+  assert.match(terminal, /Queued \(\$\{posLabel\}\)\$\{slotInfo\}/);
+  assert.match(errors, /STUDIO_QUEUE_FULL:/);
+});

@@ -63,7 +63,7 @@ import java.util.UUID;
 @Service
 @Transactional
 public class CourseLabStudentService {
-    private static final Set<String> ACTIVE_SESSION_STATUSES = Set.of("ALLOCATED", "RUNNING", "READY_FOR_DISPATCH");
+    private static final Set<String> ACTIVE_SESSION_STATUSES = Set.of("QUEUED", "ALLOCATED", "RUNNING", "READY_FOR_DISPATCH");
 
     private final AccessPolicyService access;
     private final CourseLabPolicy courseLabs;
@@ -90,7 +90,10 @@ public class CourseLabStudentService {
     private final ObjectMapper json;
 
     @org.springframework.beans.factory.annotation.Value("${mavis.runtime.max-active-studio-sessions:2}")
-    private int maxActiveStudioSessions;
+    private int maxActiveStudioSessions = 2;
+
+    @org.springframework.beans.factory.annotation.Value("${mavis.runtime.max-queued-studio-sessions:30}")
+    private int maxQueuedStudioSessions = 30;
 
     public CourseLabStudentService(
             AccessPolicyService access,
@@ -319,11 +322,11 @@ public class CourseLabStudentService {
                 return existing;
             }
         }
-        long activeSessions = runtimeSessions.countByExecutionStatusIn(ACTIVE_SESSION_STATUSES);
-        if (activeSessions >= Math.max(1, maxActiveStudioSessions)) {
-            throw new BusinessException(ErrorCode.CONFLICT, "STUDIO_CAPACITY_FULL",
-                    "The shared Runner is running " + activeSessions
-                            + " Live sessions. Finish or cancel one before starting another.");
+        long queuedSessions = runtimeSessions.countByExecutionStatusIn(Set.of("QUEUED"));
+        if (queuedSessions >= Math.max(1, maxQueuedStudioSessions)) {
+            throw new BusinessException(ErrorCode.CONFLICT, "STUDIO_QUEUE_FULL",
+                    "The Studio Live queue is full (" + queuedSessions
+                            + " sessions waiting). Please retry in a few moments.");
         }
 
         StudentWorkspaceBundle working = ensureStudentWorkingProject(lab, actor, runtimeModel);

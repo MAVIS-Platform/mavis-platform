@@ -93,6 +93,7 @@ public class RuntimeSessionResponseDTO {
     private String failureReason;
     private List<String> diagnostics;
     private Integer capturedSpanCount;
+    private Integer queuePosition;
     private boolean studioVerified;
     private JsonNode infrastructureActions;
     private List<BeforeAfterComparisonDTO> beforeAfterComparison;
@@ -367,6 +368,12 @@ public class RuntimeSessionResponseDTO {
         }
         if (upper.startsWith("INSTRUMENTATION_")) {
             return "OpenTelemetry instrumentation bundle is unavailable or mismatched on the Runner host (" + code + ").";
+        }
+        if (upper.contains("OCI_RUNTIME_UNAVAILABLE")) {
+            return "Configured kernel sandbox runtime (gVisor/runsc) is not installed on the Runner host (" + code + ").";
+        }
+        if (upper.contains("RUNNER_DISPATCH_TIMEOUT")) {
+            return "No Runner worker picked up the session before the dispatch timeout (" + code + ").";
         }
         if (upper.contains("PREPAREANDSTART") || upper.contains("COMPOSE") || upper.startsWith("DOCKER_UP_")) {
             return "Sandbox container startup failed (" + code + ").";

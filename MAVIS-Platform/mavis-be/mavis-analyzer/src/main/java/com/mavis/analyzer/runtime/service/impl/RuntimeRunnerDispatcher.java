@@ -71,6 +71,16 @@ public class RuntimeRunnerDispatcher {
     @Value("${server.port:8080}")
     private int serverPort;
 
+    @Value("${mavis.runner.oci-runtime:auto}")
+    private String ociRuntime;
+
+    @Value("${mavis.runner.gvisor-writable-rootfs:true}")
+    private boolean gvisorWritableRootfs;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    @Lazy
+    private RuntimeQueueCoordinator runtimeQueueCoordinator;
+
     public boolean isAutoDispatchEnabled() {
         return autoDispatchEnabled;
     }
@@ -88,6 +98,14 @@ public class RuntimeRunnerDispatcher {
             } catch (Exception e) {
                 log.error("Runtime dispatch failed for {}", sessionId, e);
                 recordAsyncDispatchFailure(sessionId, e);
+            } finally {
+                if (runtimeQueueCoordinator != null) {
+                    try {
+                        runtimeQueueCoordinator.drainQueueIfCapacityAvailable();
+                    } catch (Exception drainError) {
+                        log.warn("Failed to drain queued runtime sessions after {}: {}", sessionId, drainError.getMessage());
+                    }
+                }
             }
         });
     }
@@ -119,7 +137,9 @@ public class RuntimeRunnerDispatcher {
 
             ObjectNode recovery = objectMapper.createObjectNode();
             boolean preflightFailed = logTail.stream().anyMatch("MAVIS_RUNTIME_DIAGNOSTIC=PREFLIGHT_FAILED"::equals);
-            recovery.put("code", allocated ? "RUNNER_FAILED_RECOVERY_REQUIRED"
+            boolean ociUnavailable = logTail.stream().anyMatch("MAVIS_RUNTIME_DIAGNOSTIC=OCI_RUNTIME_UNAVAILABLE"::equals);
+            recovery.put("code", ociUnavailable ? "OCI_RUNTIME_UNAVAILABLE"
+                    : allocated ? "RUNNER_FAILED_RECOVERY_REQUIRED"
                     : preflightFailed ? "PREFLIGHT_FAILED" : "RUNNER_UNAVAILABLE");
             recovery.put("reason", redactedReason);
             recovery.put("message", redactedReason);
@@ -633,6 +653,10 @@ public class RuntimeRunnerDispatcher {
         ProcessBuilder pb = new ProcessBuilder(command);
         pb.environment().put("MAVIS_RUNNER_ALLOW_LOCAL_POC", "1");
         pb.environment().put("MAVIS_RUNNER_SERVICE_KEY", runnerServiceKey);
+        if (ociRuntime != null && !ociRuntime.isBlank()) {
+            pb.environment().put("MAVIS_RUNNER_OCI_RUNTIME", ociRuntime.trim());
+        }
+        pb.environment().put("MAVIS_RUNNER_GVISOR_WRITABLE_ROOTFS", gvisorWritableRootfs ? "1" : "0");
         if (session.getProject() != null && session.getProject().getId() != null) {
             Map<String, String> projectEnv = runtimeSessionService.getProjectExecutionEnvironment(session.getProject().getId());
             if (projectEnv != null && !projectEnv.isEmpty()) {

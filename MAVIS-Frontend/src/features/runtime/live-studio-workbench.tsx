@@ -1098,33 +1098,39 @@ export function LiveStudioWorkbench({
         ],
       ] as const);
 
+  const isQueued = data.executionStatus.toUpperCase() === "QUEUED";
+
   const statusTone =
     data.executionStatus === "RUNNING"
       ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
-      : isBooting
-        ? "border-sky-500/40 bg-sky-500/15 text-sky-300"
-        : data.executionStatus === "COMPLETED"
-          ? "border-teal-500/40 bg-teal-500/15 text-teal-200"
-          : lastSessionFailed
-            ? "border-rose-500/40 bg-rose-500/15 text-rose-200"
-            : "border-slate-700 bg-slate-900 text-slate-300";
+      : isQueued
+        ? "border-amber-500/40 bg-amber-500/15 text-amber-200"
+        : isBooting
+          ? "border-sky-500/40 bg-sky-500/15 text-sky-300"
+          : data.executionStatus === "COMPLETED"
+            ? "border-teal-500/40 bg-teal-500/15 text-teal-200"
+            : lastSessionFailed
+              ? "border-rose-500/40 bg-rose-500/15 text-rose-200"
+              : "border-slate-700 bg-slate-900 text-slate-300";
 
   const statusLabel =
     data.executionStatus === "RUNNING"
       ? waiting
         ? "APPLYING"
         : "LIVE"
-      : isBooting
-        ? "BOOTING"
-        : data.executionStatus === "COMPLETED"
-          ? "SEALED"
-          : lastSessionFailed
-            ? "FAILED"
-            : isPreviewMode && effectivePreviewTopology
-              ? authoring
-                ? "LAB SETUP"
-                : "PREVIEW"
-              : "IDLE";
+      : isQueued
+        ? `QUEUED${data.queuePosition ? ` #${data.queuePosition}` : ""}`
+        : isBooting
+          ? "BOOTING"
+          : data.executionStatus === "COMPLETED"
+            ? "SEALED"
+            : lastSessionFailed
+              ? "FAILED"
+              : isPreviewMode && effectivePreviewTopology
+                ? authoring
+                  ? "LAB SETUP"
+                  : "PREVIEW"
+                : "IDLE";
 
   const showLiveSessionControls = !authoring || !isPreviewMode || isBooting;
 
@@ -1157,11 +1163,13 @@ export function LiveStudioWorkbench({
               className={`size-1.5 rounded-full ${
                 data.executionStatus === "RUNNING"
                   ? "animate-pulse bg-emerald-400"
-                  : isBooting
-                    ? "animate-pulse bg-sky-400"
-                    : lastSessionFailed
-                      ? "bg-rose-400"
-                      : "bg-slate-400"
+                  : isQueued
+                    ? "animate-pulse bg-amber-400"
+                    : isBooting
+                      ? "animate-pulse bg-sky-400"
+                      : lastSessionFailed
+                        ? "bg-rose-400"
+                        : "bg-slate-400"
               }`}
               aria-hidden="true"
             />
@@ -1215,7 +1223,7 @@ export function LiveStudioWorkbench({
               ) : (
                 <Play aria-hidden="true" className="mr-1 size-3" />
               )}
-              {isBooting ? "Booting…" : "Run"}
+              {isQueued ? `Queued${data.queuePosition ? ` #${data.queuePosition}` : "…"}` : isBooting ? "Booting…" : "Run"}
             </Button>
           ) : (
             <Button asChild size="sm" className="h-7 px-2.5 text-[11px]">

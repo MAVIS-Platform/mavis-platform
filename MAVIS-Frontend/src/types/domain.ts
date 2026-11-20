@@ -185,6 +185,7 @@ export const runtimeSessionSchema = z.object({
   configurationRevision: z.number().int().nonnegative().nullable(),
   scenarioRevision: z.number().int().nonnegative().nullable(),
   executionStatus: z.string().optional(),
+  queuePosition: z.number().int().positive().nullable().optional(),
   scenarioStatus: z.string().optional(),
   evidenceStatus: z.string().optional(),
   cleanupStatus: z.string().optional(),

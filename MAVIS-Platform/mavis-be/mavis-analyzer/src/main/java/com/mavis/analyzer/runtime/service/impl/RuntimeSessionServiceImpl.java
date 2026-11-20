@@ -120,6 +120,10 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
     @Lazy
     private RuntimeRunnerDispatcher runtimeRunnerDispatcher;
 
+    @Autowired(required = false)
+    @Lazy
+    private RuntimeQueueCoordinator runtimeQueueCoordinator;
+
     @Override
     @Transactional(readOnly = true)
     public PreflightCheckResponseDTO runComposePreflight(UUID snapshotId) {
@@ -1062,9 +1066,11 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
             }
         }
 
-        // [CHẶNG 11]: Đặt scenarioStatus = "APPROVED", executionStatus = "READY_FOR_DISPATCH" (không đặt RUNNING ở đây)
+        // [CHẶNG 11]: Đặt scenarioStatus = "APPROVED"; xếp hàng QUEUED khi slot Runner đầy hoặc chạy REMOTE_WORKER.
+        boolean shouldQueue = runtimeQueueCoordinator != null
+                && (runtimeQueueCoordinator.isRemoteWorkerMode() || !runtimeQueueCoordinator.hasLocalDispatchCapacity());
         session.setScenarioStatus("APPROVED");
-        session.setExecutionStatus("READY_FOR_DISPATCH");
+        session.setExecutionStatus(shouldQueue ? "QUEUED" : "READY_FOR_DISPATCH");
 
         UUID projId = session.getProject() != null ? session.getProject().getId() : null;
         RuntimeProjectConfigDTO cfg = projId != null ? projectConfigs.get(projId) : null;
@@ -1078,9 +1084,13 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         String overrideYaml = composeOverrideGenerator.generateOverrideYaml(serviceNames, envVars, secretRefs);
 
         RuntimeSession updated = runtimeSessionRepository.save(session);
-        log.info("Phiên thực nghiệm ID: {} đã chuyển sang APPROVED / READY_FOR_DISPATCH thành công", sessionId);
+        log.info("Phiên thực nghiệm ID: {} đã chuyển sang APPROVED / {} thành công", sessionId, updated.getExecutionStatus());
 
-        if (runtimeRunnerDispatcher != null && runtimeRunnerDispatcher.isAutoDispatchEnabled()) {
+        if (!shouldQueue && runtimeQueueCoordinator != null) {
+            runtimeQueueCoordinator.recordDispatched(sessionId);
+        }
+
+        if (!shouldQueue && runtimeRunnerDispatcher != null && runtimeRunnerDispatcher.isAutoDispatchEnabled()) {
             if (TransactionSynchronizationManager.isSynchronizationActive()) {
                 TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                     @Override
@@ -1093,7 +1103,11 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
             }
         }
 
-        return RuntimeSessionResponseDTO.fromEntity(updated, overrideYaml);
+        RuntimeSessionResponseDTO response = RuntimeSessionResponseDTO.fromEntity(updated, overrideYaml);
+        if (shouldQueue && runtimeQueueCoordinator != null) {
+            response.setQueuePosition(runtimeQueueCoordinator.queuePosition(updated));
+        }
+        return response;
     }
 
     @Override
@@ -1191,9 +1205,10 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
             return RuntimeSessionResponseDTO.fromEntity(session);
         }
 
-        // [CHẶNG 11] Nhánh 1: Stop-before-start (NOT_STARTED, PENDING, APPROVED, READY_FOR_DISPATCH)
+        // [CHẶNG 11] Nhánh 1: Stop-before-start (NOT_STARTED, PENDING, APPROVED, QUEUED, READY_FOR_DISPATCH)
         if ("NOT_STARTED".equals(executionStatus) || "PENDING".equals(executionStatus)
-                || "APPROVED".equals(executionStatus) || "READY_FOR_DISPATCH".equals(executionStatus)) {
+                || "APPROVED".equals(executionStatus) || "QUEUED".equals(executionStatus)
+                || "READY_FOR_DISPATCH".equals(executionStatus)) {
             session.setScenarioStatus("CANCELLED");
             session.setExecutionStatus("CANCELLED");
             session.setCleanupStatus("NOT_APPLICABLE");
@@ -1201,28 +1216,49 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
             session.setCompletedAt(OffsetDateTime.now());
 
             RuntimeSession updated = runtimeSessionRepository.save(session);
+            if (runtimeQueueCoordinator != null) {
+                runtimeQueueCoordinator.clearSessionTracking(sessionId);
+                if (TransactionSynchronizationManager.isSynchronizationActive()) {
+                    TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            runtimeQueueCoordinator.drainQueueIfCapacityAvailable();
+                        }
+                    });
+                } else {
+                    runtimeQueueCoordinator.drainQueueIfCapacityAvailable();
+                }
+            }
             log.info("Phiên thực nghiệm {} dừng trước khi chạy (Stop-before-start). Đặt CANCELLED.", sessionId);
             return RuntimeSessionResponseDTO.fromEntity(updated);
         }
 
         // [CHẶNG 11] Nhánh 2: Stop-while-running (ALLOCATED, RUNNING, CANCELLING)
+        boolean interactiveStudio = session.getScenarioConfig() != null
+                && session.getScenarioConfig().path("interactiveStudio").asBoolean(false);
+        boolean remoteWorkerCapable = interactiveStudio
+                || (runtimeQueueCoordinator != null && runtimeQueueCoordinator.isRemoteWorkerMode());
         if (runnerStateRoot == null || runnerStateRoot.isBlank()) {
-            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR, "Không thể ghi cancel.request tới state-root của Runner: runnerStateRoot chưa cấu hình");
-        }
-
-        if (session.getResourceProject() == null || session.getResourceProject().isBlank()) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "Phiên chạy không có resourceProject để ghi cancel.request");
-        }
-
-        try {
-            Path sessionDir = Path.of(runnerStateRoot, session.getResourceProject()).toAbsolutePath().normalize();
-            Files.createDirectories(sessionDir);
-            Path cancelMarker = sessionDir.resolve("cancel.request");
-            Files.writeString(cancelMarker, OffsetDateTime.now().toString(), StandardCharsets.UTF_8);
-            log.info("Đã tạo file cancel.request tại: {}", cancelMarker);
-        } catch (Exception e) {
-            log.error("Lỗi khi ghi cancel.request cho session: {}", sessionId, e);
-            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR, "Không thể ghi cancel.request tới state-root của Runner: " + e.getMessage());
+            if (!remoteWorkerCapable) {
+                throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR, "Không thể ghi cancel.request tới state-root của Runner: runnerStateRoot chưa cấu hình");
+            }
+        } else {
+            if (session.getResourceProject() == null || session.getResourceProject().isBlank()) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "Phiên chạy không có resourceProject để ghi cancel.request");
+            }
+            try {
+                Path sessionDir = Path.of(runnerStateRoot, session.getResourceProject()).toAbsolutePath().normalize();
+                Files.createDirectories(sessionDir);
+                Path cancelMarker = sessionDir.resolve("cancel.request");
+                Files.writeString(cancelMarker, OffsetDateTime.now().toString(), StandardCharsets.UTF_8);
+                log.info("Đã tạo file cancel.request tại: {}", cancelMarker);
+            } catch (Exception e) {
+                if (!remoteWorkerCapable) {
+                    log.error("Lỗi khi ghi cancel.request cho session: {}", sessionId, e);
+                    throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR, "Không thể ghi cancel.request tới state-root của Runner: " + e.getMessage());
+                }
+                log.warn("Không thể ghi local cancel.request cho phiên Studio/remote {}, sẽ dừng qua /studio/commands: {}", sessionId, e.getMessage());
+            }
         }
 
         session.setCancelRequestedAt(OffsetDateTime.now());
@@ -1516,7 +1552,11 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                     .map(com.mavis.common.entity.ModelVersion::getId)
                     .orElse(null);
         }
-        return RuntimeSessionResponseDTO.fromEntity(session, null, enrichedId);
+        RuntimeSessionResponseDTO dto = RuntimeSessionResponseDTO.fromEntity(session, null, enrichedId);
+        if (dto != null && runtimeQueueCoordinator != null && "QUEUED".equalsIgnoreCase(session.getExecutionStatus())) {
+            dto.setQueuePosition(runtimeQueueCoordinator.queuePosition(session));
+        }
+        return dto;
     }
 
     private Optional<Path> findComposeFileInDirectory(Path dir) {

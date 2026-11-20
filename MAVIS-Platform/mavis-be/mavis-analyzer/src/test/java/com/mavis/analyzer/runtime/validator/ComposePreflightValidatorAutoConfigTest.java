@@ -946,4 +946,38 @@ class ComposePreflightValidatorAutoConfigTest {
         );
         assertThat(gwPaths).noneMatch(p -> p.startsWith("/api/auth/api/") || p.startsWith("/api/orders/api/") || p.startsWith("/v3/api-docs"));
     }
+
+    @Test
+    void mavisRuntimeYamlContractDeterministicallyOverridesPortStackReadinessAndInfraRole(@TempDir Path tempDir) throws Exception {
+        String compose = """
+                services:
+                  order-service:
+                    image: demo/order@sha256:%s
+                    expose: ["8080"]
+                  custom-cache:
+                    image: demo/cache@sha256:%s
+                """.formatted("1".repeat(64), "2".repeat(64));
+        Files.writeString(tempDir.resolve("docker-compose.yml"), compose);
+        Files.writeString(tempDir.resolve("mavis-runtime.yaml"), """
+                version: 1
+                services:
+                  order-service:
+                    port: 9091
+                    runtime: java
+                    readinessPath: /internal/readyz
+                  custom-cache:
+                    role: infra
+                """);
+
+        PreflightCheckResponseDTO dto = validator.validate(compose);
+        validator.inspectSnapshotSource(tempDir, dto);
+
+        assertThat(dto.getServicePorts()).containsEntry("order-service", 9091);
+        assertThat(dto.getServiceStacks()).containsEntry("order-service", "java");
+        assertThat(dto.getServiceHealthPaths()).containsEntry("order-service", "/internal/readyz");
+        assertThat(dto.getServiceHealthConfidence()).containsEntry("order-service", "CONTRACT");
+        assertThat(dto.getServiceHealthReasons().get("order-service")).contains("mavis-runtime.yaml");
+        assertThat(dto.getInfrastructureServices()).contains("custom-cache");
+        assertThat(dto.getServiceHealthPaths()).doesNotContainKey("custom-cache");
+    }
 }

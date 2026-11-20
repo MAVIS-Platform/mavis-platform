@@ -444,4 +444,25 @@ class CourseLabStudentServiceTest {
         assertThat(firstStep.path("service").asText()).isEqualTo("api-gateway");
         assertThat(firstStep.path("path").asText()).isEqualTo("/api/gateway/orders");
     }
+
+    @Test
+    void startLabStudioSessionReusesOwnQueuedSessionAndRejectsOnlyWhenQueueIsFull() {
+        when(courseLabs.hasPassedCurrentQuiz(lab, student.getId())).thenReturn(true);
+        RuntimeSession queued = RuntimeSession.builder().id(UUID.randomUUID()).assignment(lab)
+                .executionStatus("QUEUED").triggeredBy(student).build();
+        when(runtimeSessions.findByAssignmentIdAndTriggeredBy_IdOrderByCreatedAtDesc(labId, student.getId()))
+                .thenReturn(List.of(queued));
+        when(runtimeSessions.findByProject_Workspace_IdAndTriggeredBy_IdOrderByCreatedAtDesc(workspaceId, student.getId()))
+                .thenReturn(List.of());
+
+        assertThat(service.startLabStudioSession(workspaceId, labId).getId()).isEqualTo(queued.getId());
+        verify(runtimeSessionService, never()).createRuntimeSession(any());
+
+        when(runtimeSessions.findByAssignmentIdAndTriggeredBy_IdOrderByCreatedAtDesc(labId, student.getId())).thenReturn(List.of());
+        when(runtimeSessions.countByExecutionStatusIn(java.util.Set.of("QUEUED"))).thenReturn(30L);
+
+        assertThatThrownBy(() -> service.startLabStudioSession(workspaceId, labId))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        ex -> assertThat(ex.getStableCode()).isEqualTo("STUDIO_QUEUE_FULL"));
+    }
 }

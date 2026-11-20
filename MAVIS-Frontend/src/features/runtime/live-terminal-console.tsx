@@ -275,7 +275,7 @@ export function LiveTerminalConsole({
       isBooting && data.executionStatus === "NOT_STARTED"
         ? "STARTING"
         : data.executionStatus;
-    const stateKey = `${isBooting ? "BOOT" : "IDLE"}:${rawStatus}`;
+    const stateKey = `${isBooting ? "BOOT" : "IDLE"}:${rawStatus}:${data.queuePosition ?? ""}`;
     if (stateKey === lastTrackedStateRef.current) return;
     lastTrackedStateRef.current = stateKey;
 
@@ -283,9 +283,16 @@ export function LiveTerminalConsole({
 
     let message = "";
     let level: TerminalLogLevel = "INFO";
-    if (isBooting) {
+    if (rawStatus === "QUEUED") {
+      const posLabel = data.queuePosition ? `#${data.queuePosition} in line` : "waiting in FIFO queue";
+      const slotInfo =
+        data.activeSlots != null && data.maxSlots != null
+          ? ` (${data.activeSlots}/${data.maxSlots} Runner slots active)`
+          : "";
+      message = `Queued (${posLabel})${slotInfo} — containers will boot automatically as soon as a Runner slot frees up…`;
+    } else if (isBooting) {
       message =
-        rawStatus === "STARTING" || rawStatus === "PENDING" || rawStatus === "QUEUED"
+        rawStatus === "STARTING" || rawStatus === "PENDING"
           ? `Provisioning Docker Compose containers on Runner (${rawStatus}) — waiting for health checks (~15–45s)…`
           : `Runner stage -> ${rawStatus} (attaching stdout/stderr & OpenTelemetry collector)…`;
     } else if (rawStatus === "RUNNING") {
@@ -318,7 +325,7 @@ export function LiveTerminalConsole({
         message,
       },
     ]);
-  }, [data.executionStatus, isBooting, isPreviewMode]);
+  }, [data.executionStatus, data.queuePosition, data.activeSlots, data.maxSlots, isBooting, isPreviewMode]);
 
   // Stream runtime / setup errors straight into the terminal instead of top page banners
   useEffect(() => {
@@ -689,8 +696,10 @@ export function LiveTerminalConsole({
                           : "text-slate-300"
                 }
               >
-                {isBooting
-                  ? `BOOTING · ${data.executionStatus === "NOT_STARTED" ? "STARTING" : data.executionStatus}`
+                {data.executionStatus === "QUEUED"
+                  ? `QUEUED${data.queuePosition ? ` · #${data.queuePosition}` : ""}`
+                  : isBooting
+                    ? `BOOTING · ${data.executionStatus === "NOT_STARTED" ? "STARTING" : data.executionStatus}`
                   : waiting
                     ? "APPLYING"
                     : data.executionStatus === "FAILED" ||

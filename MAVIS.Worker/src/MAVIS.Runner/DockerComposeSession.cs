@@ -17,12 +17,14 @@ public sealed record RuntimeInfrastructureActionResult(string Action, string Ser
 /// <summary>Operator-invoked local PoC adapter. Not an internet-facing arbitrary repository execution service.</summary>
 public sealed class DockerComposeSession(RuntimeRunDefinition definition, string stateRoot, string collectorConfiguration,
     IDockerCommands docker, IReadOnlyDictionary<string, string>? secrets = null,
-    IRuntimeLifecycleObserver? lifecycle = null, JavaRuntimeClient? studio = null) : IRuntimeSessionBackend
+    IRuntimeLifecycleObserver? lifecycle = null, JavaRuntimeClient? studio = null,
+    string? ociRuntime = null, bool writableRootfsUnderKernelSandbox = true, Action? onRemoteCancel = null) : IRuntimeSessionBackend
 {
     public string ResourceProject { get; } = RuntimeAllocation.ProjectName(definition.ResourceProject);
     public bool InteractiveStudio => definition.InteractiveStudio;
     public bool AllocationReserved { get; private set; }
     public string Stage { get; private set; } = "VALIDATE";
+    public string IsolationRuntime { get; private set; } = "runc";
     public Dictionary<string, string> ActualImageIds { get; } = new(StringComparer.Ordinal);
     public bool ImageSourceCorrespondenceVerified { get; private set; }
     public bool SandboxEnforcementConfirmed { get; private set; }
@@ -49,7 +51,9 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
         if (!preflight.Compatible) throw new RuntimeStageException("PREFLIGHT_FAILED");
         _composeServices = preflight.Services;
         ValidateStudioTopology();
-        _ = ComposeOverrideBuilder.Build(preflight, definition.Profile, Path.Combine(Path.GetFullPath(stateRoot), "validate", "collector.yaml"), secrets);
+        var requestedRuntime = ComposeOverrideBuilder.NormalizeOciRuntime(ociRuntime);
+        _ = ComposeOverrideBuilder.Build(preflight, definition.Profile, Path.Combine(Path.GetFullPath(stateRoot), "validate", "collector.yaml"), secrets,
+            requestedRuntime == "auto" ? null : requestedRuntime, writableRootfsUnderKernelSandbox);
         if (!PinnedRunnerImage(definition.Profile.ScenarioRunnerImage)) throw new ArgumentException("A content-addressed scenario runner image is required.");
         new HttpScenarioRunner(allowContainerDns: true).ValidateDefinition(definition.Scenario,
             definition.Profile.Applications.ToDictionary(p => p.Key, p => new Uri($"http://{p.Key}:{p.Value.ContainerPort}")),
@@ -76,6 +80,12 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
         Stage = "DOCKER_INFO";
         var info = await docker.RunAsync(["info", "--format", "{{.OSType}}"], _directory, 10, ct);
         if (info.ExitCode != 0 || info.StandardOutput.Trim() != "linux") throw new InvalidOperationException("Linux Docker engine is unavailable.");
+        IsolationRuntime = await ResolveIsolationRuntimeAsync(docker, _directory, requestedRuntime, ct);
+        if (ComposeOverrideBuilder.IsKernelSandboxedRuntime(IsolationRuntime))
+        {
+            overrides = ComposeOverrideBuilder.Build(preflight, definition.Profile, collectorPath, secrets, IsolationRuntime, writableRootfsUnderKernelSandbox);
+            await File.WriteAllTextAsync(Path.Combine(_directory, "override.json"), overrides, ct);
+        }
         Stage = "INSTRUMENTATION_PROFILE";
         var instrumentedRuntimes = definition.Profile.Applications.Values.Select(a => a.Runtime).Where(r => r != "passthrough").Distinct().ToArray();
         if (instrumentedRuntimes.Length > 0)
@@ -152,7 +162,12 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             var memory = service == "mavis-collector" ? 256 : definition.Profile.MemoryMiB;
             var cpus = service == "mavis-collector" ? 1 : definition.Profile.Cpus;
             var pids = service == "mavis-collector" ? 64 : 256;
-            if (settings.GetProperty("Privileged").GetBoolean() || !settings.GetProperty("ReadonlyRootfs").GetBoolean() ||
+            var workloadUsesKernelSandbox = service != "mavis-collector" && ComposeOverrideBuilder.IsKernelSandboxedRuntime(IsolationRuntime);
+            var expectReadonlyRootfs = service == "mavis-collector" || !(workloadUsesKernelSandbox && writableRootfsUnderKernelSandbox);
+            if (settings.GetProperty("Privileged").GetBoolean() ||
+                (expectReadonlyRootfs && !settings.GetProperty("ReadonlyRootfs").GetBoolean()) ||
+                (workloadUsesKernelSandbox && (!settings.TryGetProperty("Runtime", out var actualRuntime) ||
+                    !StringComparer.Ordinal.Equals(actualRuntime.GetString(), IsolationRuntime))) ||
                 settings.GetProperty("Memory").GetInt64() != memory * 1024L * 1024L ||
                 settings.GetProperty("NanoCpus").GetInt64() != (long)(cpus * 1_000_000_000) ||
                 settings.GetProperty("PidsLimit").GetInt64() != pids ||
@@ -268,6 +283,12 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
                     nextSample=DateTimeOffset.UtcNow.AddSeconds(8);
                 }
                 var command = await studio.NextStudioCommandAsync(definition.SessionId, ResourceProject, ct);
+                if (command.CancelRequested)
+                {
+                    onRemoteCancel?.Invoke();
+                    ct.ThrowIfCancellationRequested();
+                    throw new OperationCanceledException(ct);
+                }
                 if (command.FinishRequested) return _observedActions.ToArray();
                 if (command.Command is null) { await Task.Delay(500, ct); continue; }
                 var item = command.Command;
@@ -518,12 +539,22 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             throw new RuntimeStageException("PINNED_SCENARIO_RUNNER_IMAGE_REQUIRED");
         var options = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, PropertyNameCaseInsensitive = true };
         var input = JsonSerializer.Serialize(new ScenarioEnvelope(scenario, endpoints, protectedValues), options);
-        var result = await docker.RunWithInputAsync(["run", "--rm", "--interactive", "--network", ResourceProject + "_default",
+        var args = new List<string>
+        {
+            "run", "--rm", "--interactive", "--network", ResourceProject + "_default",
             "--label", "com.docker.compose.project=" + ResourceProject, "--label", "com.docker.compose.service=mavis-scenario",
             "--memory", "256m", "--cpus", "1", "--pids-limit", "64", "--read-only", "--tmpfs", "/tmp:rw,noexec,nosuid,size=32m",
-            "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true", "--env", "MAVIS_RUNNER_INTERNAL_NETWORK=1",
-            // Container startup is outside the HTTP deadline; the session token still bounds the whole run.
-            image, "stdin-scenario"], _directory!, Math.Min(300, scenario.TimeoutSeconds + 30), input, ct);
+            "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true", "--env", "MAVIS_RUNNER_INTERNAL_NETWORK=1"
+        };
+        if (ComposeOverrideBuilder.IsKernelSandboxedRuntime(IsolationRuntime))
+        {
+            args.Add("--runtime");
+            args.Add(IsolationRuntime);
+        }
+        // Container startup is outside the HTTP deadline; the session token still bounds the whole run.
+        args.Add(image);
+        args.Add("stdin-scenario");
+        var result = await docker.RunWithInputAsync(args, _directory!, Math.Min(300, scenario.TimeoutSeconds + 30), input, ct);
         if (string.IsNullOrWhiteSpace(result.StandardOutput)) throw new RuntimeStageException("SCENARIO_CONTAINER_FAILED");
         return JsonSerializer.Deserialize<HttpScenarioOutcome>(result.StandardOutput, options) ?? throw new RuntimeStageException("SCENARIO_OUTPUT_INVALID");
     }
@@ -661,5 +692,26 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
         var maxToken = Math.Max(1, 80 - prefix.Length - 1 - tail.Length);
         if (token.Length > maxToken) token = token[..maxToken].TrimEnd('_');
         return $"{prefix}_{token}{tail}";
+    }
+
+    internal static async Task<string> ResolveIsolationRuntimeAsync(IDockerCommands docker, string workingDirectory,
+        string requestedRuntime, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(requestedRuntime) || requestedRuntime == "runc") return "runc";
+        var probe = await docker.RunAsync(["info", "--format", "{{json .Runtimes}}"], workingDirectory, 10, ct);
+        var available = new HashSet<string>(StringComparer.Ordinal);
+        if (probe.ExitCode == 0 && !string.IsNullOrWhiteSpace(probe.StandardOutput))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(probe.StandardOutput);
+                if (doc.RootElement.ValueKind == JsonValueKind.Object)
+                    foreach (var prop in doc.RootElement.EnumerateObject()) available.Add(prop.Name);
+            }
+            catch (JsonException) { }
+        }
+        if (requestedRuntime == "auto") return available.Contains("runsc") ? "runsc" : "runc";
+        if (!available.Contains(requestedRuntime)) throw new RuntimeStageException("OCI_RUNTIME_UNAVAILABLE");
+        return requestedRuntime;
     }
 }

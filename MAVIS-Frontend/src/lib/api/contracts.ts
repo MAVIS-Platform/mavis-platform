@@ -705,6 +705,9 @@ export const contracts = {
     snapshots:z.array(z.object({id:z.string(),sessionId:z.string(),sourceSnapshotId:z.string(),modelVersionId:z.string(),
       capturedAt:z.string(),explanation:z.string(),digest:z.string()})).optional(),
     sessionId:id, interactive:z.boolean(), services:z.array(z.string()), finishRequested:z.boolean().default(false), executionStatus:z.string(),
+    queuePosition:z.number().int().positive().nullable().optional(),
+    activeSlots:z.number().int().nonnegative().nullable().optional(),
+    maxSlots:z.number().int().positive().nullable().optional(),
     cleanupStatus:z.string(), actions:z.array(z.object({
       actionId:z.string().uuid(), action:z.enum(["START","STOP","SCALE"]), service:z.string(),
       replicas:z.number().nullable().optional(), status:z.enum(["PENDING","RUNNING","CONFIRMED","FAILED","INTERRUPTED"]),
