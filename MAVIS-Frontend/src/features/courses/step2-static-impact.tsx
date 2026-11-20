@@ -65,6 +65,11 @@ export function Step2StaticImpact({
     () => impact?.upstreamImpacted.filter((entry) => entry.distance > 1) ?? [],
     [impact],
   );
+  const totalScopedNodes = impact
+    ? Math.max(1, 1 + impact.upstreamImpacted.length + impact.unaffectedElements.length)
+    : 1;
+  const blastRadiusCount = demoLeafActive ? 1 : (impact?.blastRadiusCount ?? 1);
+  const blastRadiusPercent = Math.min(100, Math.round((blastRadiusCount / totalScopedNodes) * 100));
 
   return (
     <div className="space-y-5">
@@ -267,7 +272,13 @@ export function Step2StaticImpact({
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-muted/20 px-3 py-2 text-xs">
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="outline" className="font-mono">
-                  Visited Set: {demoLeafActive ? 1 : 1 + impact.upstreamImpacted.length} {t("nodes visited cleanly", "node đã duyệt an toàn")}
+                  Visited Set: {blastRadiusCount} {t("nodes visited cleanly", "node đã duyệt an toàn")}
+                </Badge>
+                <Badge
+                  variant="outline"
+                  className="border-teal-300 bg-teal-50 font-mono text-teal-800 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-200"
+                >
+                  {t("Blast Radius", "Bán kính ảnh hưởng")}: {blastRadiusCount}/{totalScopedNodes} ({blastRadiusPercent}%)
                 </Badge>
                 <span className="text-muted-foreground">
                   {t(

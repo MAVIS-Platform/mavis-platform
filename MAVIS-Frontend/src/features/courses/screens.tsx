@@ -746,13 +746,32 @@ export function LabWorkspace() {
 
   const hasReferenceArch = Boolean(activeModelId || referenceSnapshotId);
   const hasSubmitted = Boolean(studentContext.data?.latestSubmission);
+  const [step2Explored, setStep2Explored] = useState(false);
+  useEffect(() => {
+    if (!assignmentId || typeof window === "undefined") return;
+    const key = `mavis:lab-step2:${assignmentId}`;
+    if (displayedStep >= 2) {
+      try {
+        window.sessionStorage.setItem(key, "1");
+      } catch {
+        // Ignore denied storage in sandboxed browsers
+      }
+      setStep2Explored(true);
+      return;
+    }
+    try {
+      setStep2Explored(window.sessionStorage.getItem(key) === "1");
+    } catch {
+      setStep2Explored(false);
+    }
+  }, [assignmentId, displayedStep]);
   const stepComplete: Record<1 | 2 | 3 | 4, boolean> = {
     1: hasReferenceArch
       ? Boolean(activeModelId)
       : Boolean(theoryItems.length > 0 || lab?.instructions?.trim() || hasSubmitted || runtimeReady),
     2: hasReferenceArch
-      ? Boolean(activeModelId) && runtimeReady
-      : Boolean(runtimeReady || hasSubmitted),
+      ? Boolean(activeModelId) && (displayedStep >= 2 || step2Explored || runtimeReady || hasSubmitted)
+      : Boolean(displayedStep >= 2 || step2Explored || runtimeReady || hasSubmitted),
     3: runtimeReady,
     4: requiresRuntime ? Boolean(verifiedStudioSession && hasSubmitted) : hasSubmitted,
   };
