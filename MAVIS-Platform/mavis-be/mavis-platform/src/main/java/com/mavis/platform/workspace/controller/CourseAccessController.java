@@ -85,6 +85,11 @@ public class CourseAccessController {
         return ApiResponse.success(seeder.seedCurated(workspaceId, CourseLabSeederService.PRESET_JAVA_COURSERA));
     }
 
+    @PostMapping("/workspaces/{workspaceId}/course-labs/seed-csharp-coursera")
+    public ApiResponse<CourseAccessService.Roadmap> seedCsharpCoursera(@PathVariable UUID workspaceId) {
+        return ApiResponse.success(seeder.seedCurated(workspaceId, CourseLabSeederService.PRESET_CSHARP_COURSERA));
+    }
+
     @GetMapping("/workspaces/{workspaceId}/course-passkey")
     public ApiResponse<CourseAccessService.KeyStatus> keyStatus(@PathVariable UUID workspaceId) {
         return ApiResponse.success(courses.keyStatus(workspaceId));

@@ -434,12 +434,12 @@ class CourseLabSeederServiceTest {
         assertThat(savedEvidences).allSatisfy(ev -> assertThat(allowedEvidenceSources).contains(ev.getSourceType()));
         assertThat(savedProject.get().getReferenceSnapshotId()).isNotNull();
 
-        verify(assignments, times(6)).saveAndFlush(any(Assignment.class));
-        verify(quizzes, times(6)).publishCurriculum(eq(workspaceId), any(UUID.class), any());
+        verify(assignments, times(5)).saveAndFlush(any(Assignment.class));
+        verify(quizzes, times(5)).publishCurriculum(eq(workspaceId), any(UUID.class), any());
         verify(courseAuthoring).saveDraft(eq(workspaceId), eq(new CourseAuthoringService.CourseRequest(
                 JavaCourseraCatalog.COURSE_TITLE, JavaCourseraCatalog.COURSE_DESCRIPTION)));
-        verify(courseAuthoring, times(6)).addModule(eq(workspaceId), any());
-        verify(courseAuthoring, times(36)).addItem(eq(workspaceId), any(UUID.class), any());
+        verify(courseAuthoring, times(5)).addModule(eq(workspaceId), any());
+        verify(courseAuthoring, times(27)).addItem(eq(workspaceId), any(UUID.class), any());
         verify(courseAuthoring).publish(workspaceId);
     }
 
@@ -618,6 +618,6 @@ class CourseLabSeederServiceTest {
                 org.mockito.ArgumentMatchers.contains("JOIN course_definitions"),
                 eq(Integer.class),
                 eq(workspaceId));
-        verify(assignments, times(6)).saveAndFlush(any(Assignment.class));
+        verify(assignments, times(5)).saveAndFlush(any(Assignment.class));
     }
 }

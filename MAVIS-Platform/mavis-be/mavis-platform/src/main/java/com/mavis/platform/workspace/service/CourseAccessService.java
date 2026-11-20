@@ -17,6 +17,7 @@ import com.mavis.common.security.AuthorizationRequestCache;
 import com.mavis.common.security.CourseLabPolicy;
 import com.mavis.common.utils.HashUtils;
 import com.mavis.platform.assignment.service.LabReferenceArchive;
+import com.mavis.platform.workspace.curriculum.CsharpCourseraCatalog;
 import com.mavis.platform.workspace.curriculum.JavaCourseraCatalog;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -623,13 +624,17 @@ public class CourseAccessService {
         boolean student = CourseLabPolicy.isStudent(actor);
         var passed = student ? labs.passedAssignments(workspaceId, actor.getId()) : Set.<UUID>of();
         var assignmentsInOrder = assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId);
-        if (assignmentsInOrder.size() < 6
+        if (assignmentsInOrder.size() < 5
                 && seeder != null
                 && !CourseLabSeederService.isSeeding(workspaceId)
-                && "ACTIVE".equals(workspace.getStatus())
-                && JavaCourseraCatalog.COURSE_CODE.equalsIgnoreCase(workspace.getCode())) {
-            seeder.ensureJavaCourseraPopulated(workspaceId);
-            assignmentsInOrder = assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId);
+                && "ACTIVE".equals(workspace.getStatus())) {
+            if (JavaCourseraCatalog.COURSE_CODE.equalsIgnoreCase(workspace.getCode())) {
+                seeder.ensureJavaCourseraPopulated(workspaceId);
+                assignmentsInOrder = assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId);
+            } else if (CsharpCourseraCatalog.COURSE_CODE.equalsIgnoreCase(workspace.getCode())) {
+                seeder.ensureCsharpCourseraPopulated(workspaceId);
+                assignmentsInOrder = assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId);
+            }
         }
         Map<UUID, List<UUID>> explicitPrerequisites = new HashMap<>();
         jdbc.query("""
