@@ -2233,5 +2233,90 @@
         "points": 1
       }
     ]
+  },
+  {
+    "id": "java-v2-ch04",
+    "track": "Java",
+    "phase": "V2 · Module 2",
+    "title": "Chương 04: SERVICE DISCOVERY (EUREKA) & CẤU HÌNH HÓA BÊN NGOÀI (EXTERNALIZED CONFIG)",
+    "minutes": 45,
+    "objective": "Hiểu vì sao không thể hard-code địa chỉ IP/Port trong môi trường container động. Phân biệt Client-side Discovery (Eureka + Spring Cloud LoadBalancer) và Server-side Discovery (Docker DNS / Kubernetes Service). Áp dụng mẫu Externalized Configuration (12-Factor App) để tách sạch thông tin mật (credentials, URL) ra khỏi mã nguồn và image Docker.",
+    "lesson": "### 4.1. Bài toán địa chỉ động & Service Registry\n\nTrong môi trường truyền thống, một ứng dụng có địa chỉ IP cố định. Nhưng trong Microservices chạy trên Docker/Cloud, các container liên tục được bật/tắt, cấp phát IP động, hoặc nhân bản lên $4$–$8$ instance khi tải cao. Nếu `order-service` hard-code `http://192.168.1.15:8082`, hệ thống sẽ lập tức chết ngay khi container `catalog-service` khởi động lại!\n\nGiải pháp là **Service Registry** (ví dụ **Netflix Eureka Server**) — đóng vai trò như một *\"danh bạ điện thoại sống\"*:\n\n```text\n                   +---------------------------+\n                   |    Service Registry       |\n                   |     (Eureka Server)       |\n                   +---------------------------+\n                     ^   ^                   |\n     (1) Self-Reg +  |   | (1) Heartbeat     | (2) Lấy danh sách instance sống\n         Heartbeat   |   |     mỗi 30s       |     (Cache tại client)\n                     |   |                   v\n        +------------+   +-------+   +------------------+\n        | catalog-service (#1)   |   |  order-service   |\n        | catalog-service (#2)   |   |  (LoadBalancer)  |\n        +------------------------+   +------------------+\n                                             |\n                  (3) Gọi trực tiếp theo tên |  http://catalog-service/api/v1/products\n                      logic (Round-Robin)    v\n```\n\n### 4.2. So sánh hai mô hình Service Discovery (`[R19]` §3.2.4)\n\n| Mô hình | Cách hoạt động | Ví dụ thực tế | Ưu / Nhược điểm |\n| :--- | :--- | :--- | :--- |\n| **Client-Side Discovery** | Dịch vụ tự đăng ký (Self-Registration) vào Registry. Client truy vấn Registry và tự cân bằng tải. | **Spring Cloud Eureka + Spring Cloud LoadBalancer** | Ít bước trung gian (network hop); nhưng client phải cài thư viện discovery theo đúng ngôn ngữ (Java/C# khác nhau). |\n| **Server-Side Discovery** | Nền tảng tự đăng ký (3rd-Party Registration). Client chỉ gọi tới tên miền/router cố định, router tự điều phối. | **Docker Compose DNS**, **Kubernetes Service**, AWS ALB | Code ứng dụng cực sạch, đa ngôn ngữ (polyglot) không cần SDK discovery; phụ thuộc hạ tầng triển khai. |\n\n### 4.3. Cấu hình Eureka Server & Client trong Spring Boot 3\n\n```yaml\n# service-discovery/src/main/resources/application.yml\nserver:\n  port: 8761\nspring:\n  application:\n    name: service-discovery\neureka:\n  client:\n    register-with-eureka: false\n    fetch-registry: false\n```\n\n```yaml\n# catalog-service/src/main/resources/application.yml\nserver:\n  port: ${SERVER_PORT:8082}\nspring:\n  application:\n    name: catalog-service\neureka:\n  client:\n    service-url:\n      defaultZone: ${EUREKA_URI:http://localhost:8761/eureka/}\n  instance:\n    prefer-ip-address: true\n```\n\n### 4.4. Externalized Configuration & Bảo mật Secret (`[R19]` §11.2)\n\nTheo nguyên tắc **Factor III của 12-Factor App** và `[R19]` §11.2: **Một bản build (JAR / Docker Image) duy nhất phải chạy được ở mọi môi trường (`dev`, `staging`, `prod`) chỉ bằng cách thay đổi cấu hình bên ngoài**, không bao giờ build lại code hay commit mật khẩu vào Git!\n\n- **Push-based**: Truyền biến môi trường (`SPRING_DATASOURCE_URL`, `JWT_SECRET`, `KAFKA_BOOTSTRAP_SERVERS`) từ `docker-compose.yml` hoặc Kubernetes ConfigMap/Secret vào container lúc khởi chạy.\n- **Pull-based**: Dịch vụ tự kéo cấu hình từ máy chủ tập trung (Spring Cloud Config Server, HashiCorp Vault) lúc khởi động.\n\n```yaml\n# ĐÚNG CHUẨN: Đọc từ biến môi trường, tuyệt đối KHÔNG hard-code secret!\nspring:\n  datasource:\n    url: ${DB_URL:jdbc:postgresql://localhost:5432/catalog_db}\n    username: ${DB_USERNAME:postgres}\n    password: ${DB_PASSWORD}   # Không đặt mật khẩu production làm default!\n```\n\n### 4.5. Góc nhìn trên nền tảng MAVIS\n- **Quét cấu hình tĩnh**: Phân hệ `detector/config` của MAVIS đọc `application.yml` và `docker-compose.yml` để ánh xạ tên logic `spring.application.name` thành các nút Container (C2) và khớp địa chỉ đích của các lời gọi dịch vụ.\n- **Chống lộ Secret (`D2` — Zero-Leak AI)**: Nếu kho mã nguồn vô tình chứa khóa bí mật (`sk-*`, `Bearer ...`, `password`), `SecretRedactor` của MAVIS tự động thay thế thành `[REDACTED]` trước khi gửi ngữ cảnh cho AI Tutor.\n- **Mở rộng instance trong MAVIS Studio**: Nhờ Discovery/LoadBalancer, khi em scale `catalog-service` hoặc `order-service` từ $1 \\to 4$ container, lưu lượng tự động phân tán mà không cần sửa cấu hình dịch vụ gọi!",
+    "exercise": "### 4.6. Bài tập thực hành Lab 04\n- Mở file `application.yml` của tất cả các dịch vụ trong kho mẫu. Xác nhận giá trị `spring.application.name`, cổng mặc định và toàn bộ biến môi trường `${...}`.\n- Kiểm tra sự tương ứng giữa tên dịch vụ trong `docker-compose.yml` và tên đăng ký trên Eureka (`service-discovery`).",
+    "sources": [
+      {
+        "publisher": "Manning / Microservices.io",
+        "title": "Chris Richardson — Microservices Patterns",
+        "url": "https://microservices.io/patterns/"
+      },
+      {
+        "publisher": "Spring Cloud",
+        "title": "Mastering Microservices with Java & Spring Cloud Reference",
+        "url": "https://docs.spring.io/spring-cloud/reference/"
+      },
+      {
+        "publisher": "O'Reilly / Production-Ready Microservices",
+        "title": "Susan J. Fowler — Production-Ready Microservices",
+        "url": "https://www.oreilly.com/library/view/production-ready-microservices/9781491965962/"
+      }
+    ],
+    "questions": [
+      {
+        "id": "java-v2-ch04-q1",
+        "prompt": "Lợi ích trực tiếp nhất của **Service Discovery** trong kiến trúc Microservices là gì?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Giúp cơ sở dữ liệu chạy truy vấn SQL nhanh gấp đôi",
+          "Cho phép các dịch vụ tìm thấy địa chỉ mạng động của nhau theo tên logic mà không cần hard-code IP/Port khi container tự động khởi động lại hoặc scale",
+          "Thay thế hoàn toàn cơ chế xác thực người dùng JWT",
+          "Tự động sửa lỗi biên dịch trong mã nguồn Java"
+        ],
+        "correctOption": 1,
+        "explanation": "Trong môi trường container/cloud, IP và số lượng instance luôn thay đổi động; Service Discovery giải quyết ánh xạ tên dịch vụ $\\rightarrow$ tập địa chỉ đang sống.",
+        "points": 1
+      },
+      {
+        "id": "java-v2-ch04-q2",
+        "prompt": "Cơ chế nào giúp Eureka Server biết một instance của `order-service` đã bị sập (crash) để loại khỏi danh sách định tuyến?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Eureka đọc trực tiếp file log trên ổ cứng của container",
+          "Service gửi tín hiệu định kỳ (**Heartbeat** / lease renewal); nếu quá thời hạn không nhận được, Eureka hủy đăng ký (evict) instance đó",
+          "Người dùng cuối bấm nút báo lỗi trên trình duyệt",
+          "Database PostgreSQL gửi trigger báo cho Eureka"
+        ],
+        "correctOption": 1,
+        "explanation": "Theo mẫu Self-Registration, mỗi instance gửi heartbeat định kỳ để gia hạn lease với Registry.",
+        "points": 1
+      },
+      {
+        "id": "java-v2-ch04-q3",
+        "prompt": "Điểm khác biệt chính giữa **Client-Side Discovery** (Eureka + Spring Cloud LoadBalancer) và **Server-Side Discovery** (Kubernetes Service / Docker DNS) là gì?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Client-Side Discovery không hỗ trợ HTTP",
+          "Trong Client-Side Discovery, bản thân dịch vụ gọi truy vấn Registry và tự chọn instance để gửi request; trong Server-Side Discovery, thành phần định tuyến hạ tầng thực hiện bước này",
+          "Server-Side Discovery chỉ chạy được với ngôn ngữ Java",
+          "Client-Side Discovery không thể cân bằng tải Round-Robin"
+        ],
+        "correctOption": 1,
+        "explanation": "Server-side tách biệt hoàn toàn logic khám phá dịch vụ ra khỏi mã nguồn ứng dụng, rất thuận lợi cho hệ thống đa ngôn ngữ (Java + C#).",
+        "points": 1
+      },
+      {
+        "id": "java-v2-ch04-q4",
+        "prompt": "Khi áp dụng **Externalized Configuration**, thực hành nào sau đây là **SAI** và gây rủi ro bảo mật nghiêm trọng?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Truyền `DB_PASSWORD` và `JWT_SECRET` qua biến môi trường của Docker/Vault lúc runtime",
+          "Dùng chung một Docker Image cho cả staging và production, chỉ đổi biến môi trường",
+          "Ghi trực tiếp khóa API thật và mật khẩu database production vào `application.yml` rồi commit lên GitHub",
+          "Tách cấu hình mặc định phát triển cục bộ bằng Spring Profile (`application-dev.yml`)"
+        ],
+        "correctOption": 2,
+        "explanation": "Hard-code secret vào Git là nguyên nhân hàng đầu gây rò rỉ dữ liệu; mọi secret phải được cung cấp từ bên ngoài lúc triển khai.",
+        "points": 1
+      }
+    ]
   }
 ]
