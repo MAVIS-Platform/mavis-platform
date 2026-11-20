@@ -3543,5 +3543,80 @@
         "points": 1
       }
     ]
+  },
+  {
+    "id": "csharp-v2-ch08",
+    "track": "C#",
+    "phase": "V2 · Module 3",
+    "title": "Chương 08: GIAO TIẾP BẤT ĐỒNG BỘ (EVENT BUS / RABBITMQ), IDEMPOTENCY & INTEGRATION EVENT OUTBOX",
+    "minutes": 45,
+    "objective": "Thiết kế Integration Events (khác với *Domain Events* nội bộ) và truyền thông bất đồng bộ qua Event Bus (RabbitMQ / MassTransit) trong .NET 8. Xây dựng Idempotent Event Handler chống xử lý trùng lặp trong cơ chế *At-Least-Once Delivery*. Giải quyết lỗi Dual-Write bằng Integration Event Log (Transactional Outbox Pattern) theo đúng mô hình `eShopOnContainers`.",
+    "lesson": "### 8.1. Domain Event vs. Integration Event trong .NET (`[MS24]` Ch.7)\n\nRất nhiều sinh viên nhầm lẫn hai khái niệm này:\n* **Domain Event**: Xảy ra và được xử lý **bên trong ranh giới 1 Microservice** (in-process, cùng transaction cục bộ) để tách lỏng các thành phần nội bộ (ví dụ: khi `Order` chuyển sang `Confirmed` thì ghi log nội bộ).\n* **Integration Event**: Được phát ra **bên ngoài qua Message Broker (RabbitMQ / Kafka)** để thông báo cho **các Microservice khác** cập nhật dữ liệu nhất quán cuối cùng (ví dụ: `OrderCreatedIntegrationEvent` phát từ `Ordering.API` để `Basket.API` tự động xóa giỏ hàng và `Catalog.API` cập nhật thống kê).\n\n```\n+---------------+  Publish(OrderCreatedIntegrationEvent)  +--------------------+  Consume  +---------------+\n| Ordering.API  | --------------------------------------> | RabbitMQ Event Bus | --------> |  Basket.API   |\n+---------------+                                         |  (Topic Exchange)  |           | (Clear Cart)  |\n  (Trả 201 ngay                                           +--------------------+           +---------------+\n   cho khách!)                                                      |\n                                                                    +----------> [Notification / Analytics]\n```\n\n### 8.2. Hợp đồng Integration Event & Idempotent Consumer bằng .NET 8 (MassTransit / RabbitMQ)\n\nMọi Integration Event bắt buộc phải mang **`EventId` (`Guid`)** và **`OccurredAtUtc`** để consumer nhận diện và khử trùng lặp:\n\n```csharp\n// BuildingBlocks/EventBus.Contracts/OrderEvents.cs\npublic sealed record OrderCreatedIntegrationEvent(\n    Guid EventId,\n    DateTime OccurredAtUtc,\n    Guid OrderId,\n    string CustomerId,\n    decimal TotalAmount\n);\n```\n\n```csharp\n// Basket.API/Consumers/OrderCreatedConsumer.cs (Idempotent Consumer)\npublic sealed class OrderCreatedConsumer(\n    IBasketRepository basketRepository,\n    IProcessedEventStore processedEventStore,\n    ILogger<OrderCreatedConsumer> logger) : IConsumer<OrderCreatedIntegrationEvent>\n{\n    public async Task Consume(ConsumeContext<OrderCreatedIntegrationEvent> context)\n    {\n        var evt = context.Message;\n\n        // 1. Chống xử lý trùng lặp (At-Least-Once Delivery)\n        if (await processedEventStore.HasProcessedAsync(evt.EventId, context.CancellationToken))\n        {\n            logger.LogInformation(\"Duplicate event {EventId} skipped.\", evt.EventId);\n            return;\n        }\n\n        // 2. Xóa giỏ hàng của khách (Bản thân thao tác Delete cũng mang tính idempotent!)\n        await basketRepository.DeleteBasketAsync(evt.CustomerId, context.CancellationToken);\n        await processedEventStore.MarkProcessedAsync(evt.EventId, context.CancellationToken);\n    }\n}\n```\n\n### 8.3. Giải quyết Dual-Write bằng Integration Event Log (Outbox Pattern) (`[MS24]` Ch.6)\n\nTrong `eShopOnContainers`, Microsoft chỉ rõ rằng việc gọi `await _dbContext.SaveChangesAsync()` rồi ngay sau đó gọi `await _eventBus.PublishAsync(evt)` là **không nguyên tử (Dual-Write)** — nếu container bị ngắt điện giữa hai dòng lệnh, đơn hàng đã lưu nhưng `Basket.API` không bao giờ nhận được sự kiện xóa giỏ hàng!\n\n**Giải pháp chuẩn của Microsoft — `IntegrationEventLog` (Transactional Outbox)**:\n1. Mở một giao dịch EF Core duy nhất trên `OrderingDbContext`.\n2. Lưu `Order` vào bảng `orders` **VÀ** lưu bản ghi `IntegrationEventLogEntry` (`State = NotPublished`) vào bảng `integration_event_logs` **trong cùng một `Commit()`**.\n3. Một `BackgroundService` (hoặc **MassTransit EF Core Outbox** tích hợp sẵn) quét các bản ghi `NotPublished`, đẩy lên RabbitMQ, rồi cập nhật `State = Published`.\n\n### 8.4. Góc nhìn trên nền tảng MAVIS\n\n* **Phân biệt Sync vs. Async**: MAVIS tách rõ lời gọi đồng bộ (`Typed HttpClient`) với kết nối qua Message Broker (`RabbitMQ`).\n* **Thí nghiệm trên MAVIS Studio**: Khi sinh viên **Stop** `Basket.API` hoặc `Notification.API` lúc hệ thống chạy, `Ordering.API` vẫn tiếp tục tạo đơn thành công bình thường; tin nhắn được RabbitMQ giữ an toàn trong Queue và tự động giao bù ngay khi container chạy lại!",
+    "exercise": "### 8.5. Bài tập thực hành Lab 08\n\n* Định nghĩa 2 bản ghi `record` Integration Event (`OrderCreatedIntegrationEvent`, `OrderCancelledIntegrationEvent`) có đủ `EventId`, `OccurredAtUtc`, `CorrelationId`.\n* Trình bày cơ chế ngăn chặn lỗi xử lý trùng sự kiện và lỗi Dual-Write khi `Ordering.API` phát sự kiện lên RabbitMQ.",
+    "sources": [
+      {
+        "publisher": "Microsoft Learn",
+        "title": ".NET Microservices: Architecture for Containerized .NET Applications",
+        "url": "https://learn.microsoft.com/en-us/dotnet/architecture/microservices/"
+      }
+    ],
+    "questions": [
+      {
+        "id": "csharp-v2-ch08-q1",
+        "prompt": "Điểm khác biệt cốt lõi giữa **Domain Event** và **Integration Event** trong kiến trúc .NET Microservices của Microsoft là gì?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Domain Event dùng nội bộ trong cùng một Microservice (cùng tiến trình/giao dịch); Integration Event được phát qua Message Broker (RabbitMQ/Kafka) để đồng bộ giữa các Microservice khác nhau",
+          "Integration Event không được phép có thuộc tính `Guid`",
+          "Domain Event bắt buộc phải gửi qua giao thức HTTP POST",
+          "Hai khái niệm hoàn toàn giống hệt nhau"
+        ],
+        "correctOption": 0,
+        "explanation": "Phân tách rõ ranh giới giúp tránh để rò rỉ chi tiết nội bộ của một Domain Model ra toàn hệ thống phân tán.",
+        "points": 1
+      },
+      {
+        "id": "csharp-v2-ch08-q2",
+        "prompt": "Tại sao trong `eShopOnContainers`, Microsoft bổ sung bảng **`IntegrationEventLog` (Transactional Outbox)** cùng cơ sở dữ liệu với `OrderingDbContext`?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Để tránh lỗi **Dual-Write** — đảm bảo dữ liệu đơn hàng và sự kiện cần phát được ghi nguyên tử trong cùng một giao dịch CSDL cục bộ trước khi đẩy ra RabbitMQ",
+          "Để thay thế hoàn toàn RabbitMQ",
+          "Để tăng kích thước file log văn bản",
+          "Vì EF Core không hỗ trợ lưu bảng `orders` nếu thiếu bảng này"
+        ],
+        "correctOption": 0,
+        "explanation": "Outbox đảm bảo không bao giờ mất sự kiện hoặc phát sự kiện \"ma\" khi hệ thống sập giữa chừng.",
+        "points": 1
+      },
+      {
+        "id": "csharp-v2-ch08-q3",
+        "prompt": "Vì sao mọi Event Consumer lắng nghe RabbitMQ phải kiểm tra `EventId` hoặc đảm bảo tính **Idempotent**?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Vì RabbitMQ có thể gửi lại cùng một thông điệp hơn một lần (*At-Least-Once Delivery*) nếu kết nối bị ngắt trước khi Consumer gửi xác nhận `ACK`",
+          "Vì RabbitMQ tự động nhân đôi mọi sự kiện lên gấp 10 lần",
+          "Vì C# không hỗ trợ chạy `async/await` trong Consumer",
+          "Vì `Guid` trong .NET luôn bị trùng lặp"
+        ],
+        "correctOption": 0,
+        "explanation": "Cơ chế Idempotent Consumer đảm bảo xử lý lặp lại vẫn giữ nguyên trạng thái nghiệp vụ đúng đắn.",
+        "points": 1
+      },
+      {
+        "id": "csharp-v2-ch08-q4",
+        "prompt": "Trong kiến trúc bất đồng bộ dùng RabbitMQ, nếu `Notification.API` tạm thời bị **Stop** để nâng cấp phiên bản, hành vi nào sau đây là chuẩn xác?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "`Ordering.API` bị treo hoàn toàn cho đến khi `Notification.API` khởi động lại",
+          "`Ordering.API` vẫn tiếp nhận đơn hàng bình thường; thông điệp nằm chờ an toàn trong Queue của RabbitMQ và sẽ được `Notification.API` tiêu thụ khi bật lại",
+          "Toàn bộ đơn hàng trong `ordering_db` bị rollback",
+          "`ApiGateway` tự động tắt theo"
+        ],
+        "correctOption": 1,
+        "explanation": "Giao tiếp bất đồng bộ qua Message Broker tạo ra **Temporal Decoupling**, giúp hệ thống chịu lỗi và bảo trì độc lập từng dịch vụ.",
+        "points": 1
+      }
+    ]
   }
 ]
