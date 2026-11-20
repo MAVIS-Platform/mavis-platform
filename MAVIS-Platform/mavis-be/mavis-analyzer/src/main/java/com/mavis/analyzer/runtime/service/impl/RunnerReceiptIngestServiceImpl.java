@@ -181,7 +181,8 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                     .build();
         }
 
-        session.setExecutionStatus(outcome.getExecutionStatus() != null ? outcome.getExecutionStatus().toUpperCase() : "FAILED");
+        String execution = outcome.getExecutionStatus() != null ? outcome.getExecutionStatus().toUpperCase(Locale.ROOT) : "FAILED";
+        session.setExecutionStatus(Set.of("TIMEDOUT", "TIMEOUT").contains(execution) ? "TIMED_OUT" : execution);
         session.setEvidenceStatus(outcome.getEvidenceStatus() != null ? outcome.getEvidenceStatus().toUpperCase() : "UNAVAILABLE");
         session.setCleanupStatus(outcome.getCleanupStatus() != null ? outcome.getCleanupStatus().toUpperCase() : "INCOMPLETE");
         session.setTraceQuality(outcome.getTraceQuality() != null ? outcome.getTraceQuality() : "Unavailable");
@@ -198,7 +199,7 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
         } else if ("Failed".equalsIgnoreCase(rawScenario)) {
             session.setScenarioStatus("FAILED");
         } else if ("NotRun".equalsIgnoreCase(rawScenario)) {
-            if ("TimedOut".equalsIgnoreCase(outcome.getExecutionStatus())) {
+            if ("TIMED_OUT".equals(session.getExecutionStatus())) {
                 session.setScenarioStatus("TIMEOUT");
             } else if ("Cancelled".equalsIgnoreCase(outcome.getExecutionStatus())) {
                 session.setScenarioStatus("CANCELLED");

@@ -334,7 +334,7 @@ public class RuntimeSessionResponseDTO {
             return true;
         }
         String exec = entity.getExecutionStatus() != null ? entity.getExecutionStatus().toUpperCase(Locale.ROOT) : "";
-        return Set.of("COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT", "TIMEOUT").contains(exec);
+        return Set.of("COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT", "TIMEDOUT", "TIMEOUT").contains(exec);
     }
 
     private static String normalizeStepStatus(String raw) {

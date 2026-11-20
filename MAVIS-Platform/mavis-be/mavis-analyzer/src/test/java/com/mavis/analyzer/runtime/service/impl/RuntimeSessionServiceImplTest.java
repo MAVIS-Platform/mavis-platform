@@ -446,15 +446,16 @@ class RuntimeSessionServiceImplTest {
                 .hasMessageContaining("runnerStateRoot chưa cấu hình");
     }
 
-    @Test
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"COMPLETED", "TIMED_OUT", "TIMEDOUT", "TIMEOUT"})
     @DisplayName("CHẶNG 11: stopSession Nhánh 3 (Stop-after-completion) trả về idempotent mà không ghi file")
-    void testStopSession_Branch3_StopAfterCompletion() {
+    void testStopSession_Branch3_StopAfterCompletion(String execution) {
         UUID sessionId = UUID.randomUUID();
         RuntimeSession session = RuntimeSession.builder()
                 .id(sessionId)
                 .project(project)
                 .scenarioStatus("PASSED")
-                .executionStatus("COMPLETED")
+                .executionStatus(execution)
                 .cleanupStatus("CONFIRMED")
                 .build();
 
@@ -462,10 +463,35 @@ class RuntimeSessionServiceImplTest {
 
         RuntimeSessionResponseDTO result = runtimeSessionService.stopSession(sessionId);
 
-        assertThat(result.getExecutionStatus()).isEqualTo("COMPLETED");
+        assertThat(result.getExecutionStatus()).isEqualTo(execution);
         verify(runtimeSessionRepository, never()).save(any());
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {true, false})
+    void stopRepairsReopenedTimeoutOnlyFromAnIngestedConfirmedReceipt(boolean confirmed, @TempDir Path stateRoot) {
+        UUID id = UUID.randomUUID();
+        var receipt = objectMapper.createObjectNode();
+        receipt.putObject("outcome").put("executionStatus", "TimedOut")
+                .put("cleanupStatus", confirmed ? "Confirmed" : "Incomplete");
+        RuntimeSession session = RuntimeSession.builder().id(id).project(project)
+                .executionStatus("CANCELLING").scenarioStatus("TIMEOUT").cleanupStatus("STOP_REQUESTED")
+                .resourceProject("mavisrun-0123456789abcdef0123456789abcdef")
+                .runnerReceiptJson(receipt).receiptDigest("persisted-verified-digest").build();
+        when(runtimeSessionRepository.findLockedById(id)).thenReturn(Optional.of(session));
+        when(runtimeSessionRepository.save(session)).thenReturn(session);
+        org.springframework.test.util.ReflectionTestUtils.setField(runtimeSessionService, "runnerStateRoot", stateRoot.toString());
+
+        var result = runtimeSessionService.stopSession(id);
+
+        assertThat(result.getExecutionStatus()).isEqualTo(confirmed ? "TIMED_OUT" : "CANCELLING");
+        assertThat(result.getCleanupStatus()).isEqualTo(confirmed ? "CONFIRMED" : "STOP_REQUESTED");
+        assertThat(session.getReceiptDigest()).isEqualTo("persisted-verified-digest");
+        assertThat(session.getRunnerReceiptJson()).isEqualTo(receipt);
+        assertThat(Files.exists(stateRoot.resolve(session.getResourceProject()).resolve("cancel.request")))
+                .isEqualTo(!confirmed);
+        if (confirmed) assertThat(result.getCompletedAt()).isNotNull();
+    }
     @Test
     @DisplayName("CHẶNG 11: exportRunDefinition kiểm tra bắt buộc cấu trúc Profile, Scenario và Mappings")
     void testExportRunDefinition_StrictValidation_Success(@TempDir Path tempDir) throws IOException {

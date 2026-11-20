@@ -560,6 +560,20 @@ class RunnerReceiptIngestServiceImplTest {
         assertThat(ack.getEnrichedModelVersionId()).isNotNull();
         verify(modelVersionRepository, never()).invalidatePreviousVersions(any(), any());
     }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"TimedOut", "TIMEDOUT", "TIMED_OUT", "TIMEOUT"})
+    void timeoutReceiptsStoreCanonicalStateWithoutRewritingTheReceipt(String execution) {
+        var outcome = RunnerOutcomeDTO.builder().executionStatus(execution).scenarioStatus("NotRun")
+                .evidenceStatus("Empty").cleanupStatus("Confirmed").build();
+        var receipt = createValidReceiptBuilder().outcome(outcome).build();
+
+        runnerReceiptIngestService.ingestRunnerReceiptAck(sessionId, receipt);
+
+        assertThat(session.getExecutionStatus()).isEqualTo("TIMED_OUT");
+        assertThat(session.getScenarioStatus()).isEqualTo("TIMEOUT");
+        assertThat(session.getCleanupStatus()).isEqualTo("CONFIRMED");
+        assertThat(session.getRunnerReceiptJson().path("outcome").path("executionStatus").asText()).isEqualTo(execution);
+    }
  @Test void lateReceiptCannotReplaceANewerStaticOrConfirmedRevision(){
   when(modelVersionRepository.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(projectId)).thenReturn(Optional.of(ModelVersion.builder().id(UUID.randomUUID()).project(project).revision(2).isLatestValid(true).build()));
   var span=RunnerCorrelatedSpanDTO.builder().traceId("4bf92f3577b34da6a3ce929d0e0e4736").spanId("00f067aa0ba902b7").runtimeService("order-service").modelServiceId(serviceAId.toString()).durationNanoseconds("1000000").httpStatusCode(200).build();

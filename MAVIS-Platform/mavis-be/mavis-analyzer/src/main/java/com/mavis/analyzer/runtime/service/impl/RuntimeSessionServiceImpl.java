@@ -1026,7 +1026,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
 
         String currentExec = session.getExecutionStatus() != null ? session.getExecutionStatus().toUpperCase(Locale.ROOT) : "";
         if (session.getReceiptDigest() != null || session.getRunnerReceiptJson() != null || session.getCompletedAt() != null
-                || Set.of("ALLOCATED", "RUNNING", "CANCELLING", "COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT", "TIMEOUT").contains(currentExec)) {
+                || Set.of("ALLOCATED", "RUNNING", "CANCELLING", "COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT", "TIMEDOUT", "TIMEOUT").contains(currentExec)) {
             log.info("Phiên thực nghiệm {} đã ở trạng thái {}, trả về idempotent khi approve", sessionId, currentExec);
             return RuntimeSessionResponseDTO.fromEntity(session);
         }
@@ -1167,11 +1167,25 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
 
         accessPolicyService.requireProjectWriteAccess(session.getProject());
 
-        String executionStatus = session.getExecutionStatus() != null ? session.getExecutionStatus().toUpperCase() : "NOT_STARTED";
+        String executionStatus = session.getExecutionStatus() != null ? session.getExecutionStatus().toUpperCase(Locale.ROOT) : "NOT_STARTED";
+
+        // Older Stop calls could reopen a TimedOut receipt; its confirmed result remains authoritative.
+        if ("CANCELLING".equals(executionStatus) && session.getReceiptDigest() != null && session.getRunnerReceiptJson() != null) {
+            JsonNode outcome = session.getRunnerReceiptJson().path("outcome");
+            String recorded = outcome.path("executionStatus").asText("").toUpperCase(Locale.ROOT);
+            if (Set.of("TIMEDOUT", "TIMEOUT").contains(recorded)) recorded = "TIMED_OUT";
+            if (Set.of("COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT").contains(recorded)
+                    && "Confirmed".equalsIgnoreCase(outcome.path("cleanupStatus").asText())) {
+                session.setExecutionStatus(recorded);
+                session.setCleanupStatus("CONFIRMED");
+                if (session.getCompletedAt() == null) session.setCompletedAt(OffsetDateTime.now());
+                return RuntimeSessionResponseDTO.fromEntity(runtimeSessionRepository.save(session));
+            }
+        }
 
         // [CHẶNG 11] Nhánh 3: Stop-after-completion (đã kết thúc COMPLETED, FAILED, TIMED_OUT, TIMEOUT hoặc CANCELLED có receipt)
         if ("COMPLETED".equals(executionStatus) || "FAILED".equals(executionStatus)
-                || "TIMED_OUT".equals(executionStatus) || "TIMEOUT".equals(executionStatus)
+                || "TIMED_OUT".equals(executionStatus) || "TIMEDOUT".equals(executionStatus) || "TIMEOUT".equals(executionStatus)
                 || ("CANCELLED".equals(executionStatus) && session.getRunnerReceiptJson() != null)) {
             log.info("Phiên thực nghiệm {} đã kết thúc ở trạng thái {}. Trả về idempotent.", sessionId, executionStatus);
             return RuntimeSessionResponseDTO.fromEntity(session);

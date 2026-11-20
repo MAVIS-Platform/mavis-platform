@@ -211,7 +211,7 @@ public class RuntimeStudioService {
         RuntimeSession session = locked(id);
         access.requireProjectWriteAccess(session.getProject());
         String exec = session.getExecutionStatus() == null ? "NOT_STARTED" : session.getExecutionStatus().toUpperCase(Locale.ROOT);
-        if (Set.of("COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT", "TIMEOUT").contains(exec)) {
+        if (Set.of("COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT", "TIMEDOUT", "TIMEOUT").contains(exec)) {
             throw error(ErrorCode.CONFLICT, "Studio session has already finished.");
         }
         ObjectNode control = control(session);
@@ -335,7 +335,7 @@ public class RuntimeStudioService {
         for(JsonNode snapshot:result.withArray("snapshots"))
             ((ObjectNode)snapshot).remove(java.util.List.of("telemetry","actions","imageData"));
         String execution = session.getExecutionStatus() == null ? "UNKNOWN" : session.getExecutionStatus();
-        if (Set.of("COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT", "TIMEOUT").contains(execution))
+        if (Set.of("COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT", "TIMEDOUT", "TIMEOUT").contains(execution))
             for (JsonNode action : result.withArray("actions"))
                 if (Set.of("PENDING", "RUNNING").contains(action.path("status").asText()))
                     ((ObjectNode) action).put("status", "INTERRUPTED");
