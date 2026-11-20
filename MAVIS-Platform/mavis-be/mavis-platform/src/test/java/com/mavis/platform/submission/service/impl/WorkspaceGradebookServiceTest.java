@@ -76,7 +76,40 @@ class WorkspaceGradebookServiceTest {
         assertThat(row.completedLabsCount()).isEqualTo(1);
         assertThat(row.totalLabsCount()).isEqualTo(2);
         assertThat(row.averageScore()).isEqualTo(88.0);
+        assertThat(row.averageScoreTenScale()).isEqualTo(8.8);
         assertThat(row.cells().get(0).labOutcome()).isEqualTo("PASSED");
+        assertThat(row.cells().get(0).reviewScoreTenScale()).isEqualTo(8.8);
         assertThat(row.cells().get(1).reviewStatus()).isEqualTo("NOT_SUBMITTED");
+    }
+
+    @Test
+    void excludesDetachedV1LabsInCourseModeAndKeepsActiveOrderDenominator() {
+        AccessPolicyService access = mock(AccessPolicyService.class);
+        WorkspaceRepository workspaces = mock(WorkspaceRepository.class);
+        WorkspaceMemberRepository members = mock(WorkspaceMemberRepository.class);
+        AssignmentRepository assignments = mock(AssignmentRepository.class);
+        SubmissionSnapshotRepository submissions = mock(SubmissionSnapshotRepository.class);
+        SubmissionReviewRepository reviews = mock(SubmissionReviewRepository.class);
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+
+        WorkspaceGradebookService service = new WorkspaceGradebookService(
+                access, workspaces, members, assignments, submissions, reviews, jdbc);
+
+        UUID workspaceId = UUID.randomUUID();
+        Workspace ws = Workspace.builder().id(workspaceId).name("JAVA-MS-2026").courseMode(true).build();
+        Assignment detachedV1 = Assignment.builder().id(UUID.randomUUID()).workspace(ws).title("Obsolete V1").labOrder(null).build();
+        Assignment lab1 = Assignment.builder().id(UUID.randomUUID()).workspace(ws).title("Lab 1 V2").labOrder(1).build();
+        Assignment lab2 = Assignment.builder().id(UUID.randomUUID()).workspace(ws).title("Lab 2 V2").labOrder(2).build();
+        User s1 = User.builder().id(UUID.randomUUID()).fullName("Student A").email("a@fpt.edu.vn").build();
+        WorkspaceMember m1 = WorkspaceMember.builder().workspace(ws).user(s1).memberRole("STUDENT").build();
+
+        when(workspaces.findById(workspaceId)).thenReturn(Optional.of(ws));
+        when(assignments.findByWorkspaceIdOrderByCreatedAtDesc(workspaceId)).thenReturn(List.of(lab2, detachedV1, lab1));
+        when(members.findByWorkspaceIdOrderByJoinedAtAsc(workspaceId)).thenReturn(List.of(m1));
+        when(submissions.findByAssignmentIdInOrderBySubmittedAtDesc(anyList())).thenReturn(List.of());
+
+        var result = service.gradebook(workspaceId);
+        assertThat(result.labs()).extracting("title").containsExactly("Lab 1 V2", "Lab 2 V2");
+        assertThat(result.students().get(0).totalLabsCount()).isEqualTo(2);
     }
 }
