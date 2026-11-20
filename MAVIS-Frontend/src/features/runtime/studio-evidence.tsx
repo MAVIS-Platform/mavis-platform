@@ -160,9 +160,9 @@ export function StudioVideo({ blob, durationMs }: { blob: Blob; durationMs: numb
     return () => URL.revokeObjectURL(source);
   }, [blob]);
   return <div className="my-2 space-y-2">
-    <video aria-label="Recorded Studio video" controls src={url} className="max-h-72 w-full rounded-md" />
+    <video aria-label="Recorded Studio video" controls src={url || undefined} className="max-h-72 w-full rounded-md" />
     <p>{(durationMs / 1000).toFixed(1)} seconds recorded</p>
-    <a className="text-sky-200 hover:underline" href={url}
-      download={blob.type.includes("mp4") ? "mavis-recording.mp4" : "mavis-recording.webm"}>Download video</a>
+    {url && <a className="text-sky-200 hover:underline" href={url}
+      download={blob.type.includes("mp4") ? "mavis-recording.mp4" : "mavis-recording.webm"}>Download video</a>}
   </div>;
 }

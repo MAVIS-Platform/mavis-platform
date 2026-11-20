@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   Camera,
@@ -11,12 +11,16 @@ import {
   PanelLeft,
   PanelRight,
   Play,
+  Plus,
   RefreshCw,
   RotateCcw,
   Save,
   Server,
   Sparkles,
+  Square,
   Target,
+  Trash2,
+  Video,
   Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -24,7 +28,21 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ErrorState } from "@/components/shared/request-state";
 import type { Response } from "@/lib/api/contracts";
-import { StudioObservability, type StudioQuickAction } from "./studio-observability";
+import {
+  StudioObservability,
+  serializeStudioGraph,
+  type StudioQuickAction,
+} from "./studio-observability";
+import { startStudioRecording } from "./studio-recording";
+import {
+  StudioEvidenceReplay,
+  StudioVideo,
+  deleteStudioEvidence,
+  downloadStudioEvidence,
+  loadStudioEvidence,
+  storeStudioEvidence,
+  type EvidenceFrame,
+} from "./studio-evidence";
 import {
   LiveSandboxParity,
   summarizeServiceStats,
@@ -32,6 +50,19 @@ import {
   type StudioSetupPanel,
 } from "./live-sandbox-parity";
 import { useStudioSession } from "./use-studio-session";
+
+type LiveRuntimeReplay = {
+  id: string;
+  sessionId: string;
+  kind: "LIVE_REPLAY";
+  capturedAt: string;
+  explanation: string;
+  digest: string;
+  frame: EvidenceFrame;
+  replay: EvidenceFrame[];
+  video?: Blob;
+  durationMs?: number;
+};
 
 type Studio = Response<"studioState">;
 type SessionOption = {
@@ -247,6 +278,56 @@ export function LiveStudioWorkbench({
   const [replicaSvcDraft, setReplicaSvcDraft] = useState(authoring?.replicaService ?? "");
   const [replicaCountDraft, setReplicaCountDraft] = useState(authoring?.replicaCount ?? "");
 
+  // Runtime replay recording (step-by-step timeline + optional canvas video proof)
+  const [liveReplays, setLiveReplays] = useState<LiveRuntimeReplay[]>([]);
+  const [recordingSteps, setRecordingSteps] = useState(0);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [savingReplay, setSavingReplay] = useState(false);
+  const [replayError, setReplayError] = useState("");
+  const replayCaptureRef = useRef<{
+    started: number;
+    frames: EvidenceFrame[];
+    lastActionCount: number;
+  } | null>(null);
+  const videoRecorderRef = useRef<ReturnType<typeof startStudioRecording> | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void loadStudioEvidence<LiveRuntimeReplay>()
+      .then((items) => {
+        if (!active) return;
+        setLiveReplays(
+          items.filter(
+            (item) =>
+              item &&
+              item.kind === "LIVE_REPLAY" &&
+              (!activeSessionId || item.sessionId === activeSessionId),
+          ),
+        );
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [activeSessionId]);
+
+  useEffect(() => {
+    if (!recordingSteps) return;
+    const started = replayCaptureRef.current?.started ?? performance.now();
+    const timer = window.setInterval(
+      () => setRecordingSeconds(Math.floor((performance.now() - started) / 1000)),
+      1000,
+    );
+    return () => window.clearInterval(timer);
+  }, [recordingSteps > 0]);
+
+  useEffect(
+    () => () => {
+      void videoRecorderRef.current?.stop();
+    },
+    [],
+  );
+
   useEffect(() => {
     if (!authoring) return;
     setMissionDraft(authoring.instructions);
@@ -381,6 +462,166 @@ export function LiveStudioWorkbench({
   function scaleTo(service: string, value: number) {
     if (!Number.isInteger(value) || value < 1 || value > 8 || !canScaleFor(service)) return;
     void send("SCALE", service, value);
+  }
+
+  const captureLiveReplayFrame = useCallback(
+    (label: string, elapsedMs = 0): EvidenceFrame | null => {
+      const svg = graphRef.current?.querySelector<SVGSVGElement>("svg[data-studio-graph]");
+      if (!svg) return null;
+      const reqCount = Number(lastConfirmed?.result?.metricsAfter?.["requestCount"] ?? 0);
+      const errRate = Number(lastConfirmed?.result?.metricsAfter?.["errorRatePercent"] ?? 0);
+      const p95 = Number(lastConfirmed?.result?.metricsAfter?.["p95LatencyMs"] ?? NaN);
+      const dropped = Number.isFinite(reqCount) && Number.isFinite(errRate)
+        ? Math.round((reqCount * errRate) / 100)
+        : 0;
+      const handled = Math.max(0, Math.round(reqCount) - dropped);
+      const nodes = blocks.map((block) => {
+        const rep = runningFor(data, block.service) ?? 0;
+        const obs = data.telemetry?.services.find((s) => s.service === block.service);
+        const stats = summarizeServiceStats(obs?.stats);
+        return {
+          id: block.service,
+          name: block.label || block.service,
+          type: "SERVICE_CONTAINER",
+          replicas: rep,
+          demandRps: handled + dropped,
+          capacityRps: rep,
+          droppedRps: rep === 0 ? Math.max(1, dropped) : 0,
+          p95Ms: Number.isFinite(p95) ? Number(p95.toFixed(1)) : null,
+          configuration: {
+            status: rep === 0 ? "STOPPED" : "RUNNING",
+            cpu: stats.cpu,
+            memory: stats.memory,
+            canScale: block.canScale,
+          },
+        };
+      });
+      const connections = (data.telemetry?.interactions ?? []).map((edge) => ({
+        from: edge.fromService,
+        to: edge.toService,
+        protocol: "OTEL_TRACE",
+      }));
+      return {
+        elapsedMs,
+        label,
+        svg: serializeStudioGraph(svg),
+        totals: {
+          pods: totalRunningReplicas,
+          demandRps: handled + dropped,
+          handledRps: handled,
+          droppedRps: dropped,
+        },
+        nodes,
+        connections,
+      };
+    },
+    [blocks, data, lastConfirmed, totalRunningReplicas],
+  );
+
+  // Auto-record a checkpoint frame whenever a confirmed Docker action completes while recording
+  useEffect(() => {
+    const rec = replayCaptureRef.current;
+    if (!rec) return;
+    if (confirmedActions.length <= rec.lastActionCount) return;
+    rec.lastActionCount = confirmedActions.length;
+    if (rec.frames.length >= 39) return;
+    const latest = confirmedActions[confirmedActions.length - 1];
+    const label = latest
+      ? `${latest.action} ${latest.service}${latest.replicas ? ` → ${latest.replicas}×` : ""}`
+      : "Confirmed live action";
+    const frame = captureLiveReplayFrame(label, performance.now() - rec.started);
+    if (frame) {
+      rec.frames.push(frame);
+      setRecordingSteps(rec.frames.length);
+    }
+  }, [confirmedActions, captureLiveReplayFrame]);
+
+  function startLiveReplayRecording() {
+    setReplayError("");
+    const frame = captureLiveReplayFrame("Initial live state", 0);
+    if (!frame) {
+      setReplayError("Render the live topology canvas before starting a replay recording.");
+      return;
+    }
+    const svg = graphRef.current?.querySelector<SVGSVGElement>("svg[data-studio-graph]");
+    if (svg) {
+      try {
+        videoRecorderRef.current = startStudioRecording(svg);
+      } catch {
+        // Fallback cleanly to frame-by-frame interactive replay when MediaRecorder is unavailable
+        videoRecorderRef.current = null;
+      }
+    }
+    setRecordingSeconds(0);
+    replayCaptureRef.current = {
+      started: performance.now(),
+      frames: [frame],
+      lastActionCount: confirmedActions.length,
+    };
+    setRecordingSteps(1);
+  }
+
+  function addLiveReplayCheckpoint() {
+    const rec = replayCaptureRef.current;
+    if (!rec || rec.frames.length >= 39) return;
+    const frame = captureLiveReplayFrame(
+      `Checkpoint #${rec.frames.length + 1}`,
+      performance.now() - rec.started,
+    );
+    if (frame) {
+      rec.frames.push(frame);
+      setRecordingSteps(rec.frames.length);
+    }
+  }
+
+  async function stopAndSaveLiveReplay() {
+    const rec = replayCaptureRef.current;
+    if (!rec) return;
+    setSavingReplay(true);
+    setReplayError("");
+    try {
+      const elapsed = performance.now() - rec.started;
+      const finalFrame =
+        captureLiveReplayFrame("Final live state", elapsed) ?? rec.frames[rec.frames.length - 1]!;
+      const frames = [...rec.frames, finalFrame];
+      const video = await videoRecorderRef.current?.stop().catch(() => undefined);
+      videoRecorderRef.current = null;
+      const digestBytes = await crypto.subtle.digest(
+        "SHA-256",
+        new TextEncoder().encode(JSON.stringify({ sessionId: activeSessionId, frames })),
+      );
+      const digest =
+        "sha256:" +
+        Array.from(new Uint8Array(digestBytes), (b) => b.toString(16).padStart(2, "0")).join("");
+      const saved: LiveRuntimeReplay = {
+        id: crypto.randomUUID(),
+        sessionId: activeSessionId,
+        kind: "LIVE_REPLAY",
+        capturedAt: new Date().toISOString(),
+        explanation:
+          explanation.trim() ||
+          `Live runtime replay · ${frames.length} steps · ${totalRunningReplicas} pods`,
+        digest,
+        frame: finalFrame,
+        replay: frames,
+        ...(video ? { video: video.blob, durationMs: video.durationMs } : { durationMs: elapsed }),
+      };
+      await storeStudioEvidence(saved).catch(() => undefined);
+      setLiveReplays((prev) => [saved, ...prev]);
+      replayCaptureRef.current = null;
+      setRecordingSteps(0);
+      setRecordingSeconds(0);
+      setTab("snapshots");
+    } catch (cause) {
+      setReplayError(cause instanceof Error ? cause.message : "Could not save runtime replay.");
+    } finally {
+      setSavingReplay(false);
+    }
+  }
+
+  async function removeLiveReplay(id: string) {
+    await deleteStudioEvidence(id).catch(() => undefined);
+    setLiveReplays((prev) => prev.filter((item) => item.id !== id));
   }
 
   function buildAutoObservationNote() {
@@ -661,6 +902,20 @@ export function LiveStudioWorkbench({
             <Camera aria-hidden="true" className="mr-1 size-3.5" />
             Snapshot
           </Button>
+          {recordingSteps > 0 && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={savingReplay}
+              onClick={() => void stopAndSaveLiveReplay()}
+              className="h-7 border-rose-500/50 bg-rose-500/15 px-2 font-mono text-[10.5px] text-rose-200 hover:bg-rose-500/25"
+            >
+              <span className="mr-1.5 size-1.5 animate-pulse rounded-full bg-rose-400" aria-hidden="true" />
+              REC {String(Math.floor(recordingSeconds / 60)).padStart(2, "0")}:
+              {String(recordingSeconds % 60).padStart(2, "0")} · {recordingSteps}
+            </Button>
+          )}
           <Button
             type="button"
             size="sm"
@@ -826,7 +1081,10 @@ export function LiveStudioWorkbench({
                   ["stats", "Stats"],
                   ["telemetry", `Service Telemetry & Impact (${data.services.length})`],
                   ["logs", `Logs & Traces (${data.telemetry?.spans.length ?? 0})`],
-                  ["snapshots", `Snapshots (${data.snapshots?.length ?? 0})`],
+                  [
+                    "snapshots",
+                    `Snapshots & Replay (${(data.snapshots?.length ?? 0) + liveReplays.length})`,
+                  ],
                 ] as const
               ).map(([id, label]) => (
                 <button
@@ -1183,6 +1441,47 @@ export function LiveStudioWorkbench({
                 >
                   <Camera aria-hidden="true" className="mr-1 size-3" /> Capture evidence snapshot
                 </Button>
+
+                {recordingSteps === 0 ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={isPreviewMode || data.executionStatus !== "RUNNING" || savingReplay}
+                    onClick={startLiveReplayRecording}
+                    className="h-8 border-sky-500/45 bg-sky-500/10 px-2.5 text-[11px] text-sky-200 hover:bg-sky-500/20 disabled:opacity-40"
+                  >
+                    <Video aria-hidden="true" className="mr-1.5 size-3.5" />
+                    Record runtime replay
+                  </Button>
+                ) : (
+                  <>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={savingReplay}
+                      onClick={addLiveReplayCheckpoint}
+                      className="h-8 border-slate-600 bg-slate-900 px-2.5 text-[11px] text-slate-200 hover:bg-slate-800"
+                    >
+                      <Plus aria-hidden="true" className="mr-1 size-3" />
+                      Add checkpoint ({recordingSteps})
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={savingReplay}
+                      onClick={() => void stopAndSaveLiveReplay()}
+                      className="h-8 bg-rose-600 px-2.5 text-[11px] text-white hover:bg-rose-500"
+                    >
+                      <Square aria-hidden="true" className="mr-1.5 size-3 fill-current" />
+                      {savingReplay
+                        ? "Saving replay…"
+                        : `Stop & save replay (${recordingSeconds}s)`}
+                    </Button>
+                  </>
+                )}
+
                 {!isPreviewMode && data.telemetry && (
                   <Button
                     type="button"
@@ -1196,8 +1495,10 @@ export function LiveStudioWorkbench({
                   </Button>
                 )}
               </div>
-              {downloadError && (
-                <p className="text-[11px] text-rose-300">{downloadError.message}</p>
+              {(downloadError || replayError) && (
+                <p className="text-[11px] text-rose-300">
+                  {downloadError?.message ?? replayError}
+                </p>
               )}
               {firstConfirmed?.result && lastConfirmed?.result && (
                 <div className="mavis-tabular rounded border border-slate-800 bg-slate-950/70 p-2 text-[10.5px]">
@@ -1236,6 +1537,64 @@ export function LiveStudioWorkbench({
                   </div>
                 </div>
               )}
+              {liveReplays.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-sky-300">
+                    Recorded Runtime Replays ({liveReplays.length})
+                  </p>
+                  <div className="grid gap-2 lg:grid-cols-2">
+                    {liveReplays.map((replayItem) => (
+                      <div
+                        key={replayItem.id}
+                        className="space-y-2 rounded-lg border border-sky-500/30 bg-slate-950/75 p-2.5 text-[10.5px]"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="font-medium text-slate-200">{replayItem.explanation}</p>
+                            <p className="text-[10px] text-slate-400">
+                              {new Date(replayItem.capturedAt).toLocaleString()} ·{" "}
+                              {replayItem.replay.length} frames
+                              {replayItem.durationMs
+                                ? ` · ${(replayItem.durationMs / 1000).toFixed(1)}s`
+                                : ""}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => void removeLiveReplay(replayItem.id)}
+                            aria-label="Delete runtime replay"
+                            className="rounded p-1 text-slate-500 hover:bg-slate-800 hover:text-rose-300"
+                          >
+                            <Trash2 aria-hidden="true" className="size-3.5" />
+                          </button>
+                        </div>
+                        {replayItem.video && replayItem.video.size > 0 && (
+                          <StudioVideo
+                            blob={replayItem.video}
+                            durationMs={replayItem.durationMs ?? 0}
+                          />
+                        )}
+                        <StudioEvidenceReplay frames={replayItem.replay} />
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 pt-1.5">
+                          <span className="truncate font-mono text-[9.5px] text-slate-500">
+                            {replayItem.digest.slice(0, 26)}…
+                          </span>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-6 border-sky-500/40 bg-sky-500/10 px-2 text-[10px] text-sky-200 hover:bg-sky-500/20"
+                            onClick={() => downloadStudioEvidence(replayItem)}
+                          >
+                            Download Replay HTML
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="grid gap-1.5 md:grid-cols-2">
                 {data.snapshots?.map((snapshot) => (
                   <div
@@ -1257,9 +1616,9 @@ export function LiveStudioWorkbench({
                     </Button>
                   </div>
                 ))}
-                {!data.snapshots?.length && (
+                {!data.snapshots?.length && liveReplays.length === 0 && (
                   <p className="text-[11px] text-slate-500">
-                    No snapshots captured in this session.
+                    No snapshots or runtime replays captured in this session yet.
                   </p>
                 )}
               </div>

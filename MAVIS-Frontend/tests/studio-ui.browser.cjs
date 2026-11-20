@@ -304,6 +304,11 @@ async function main() {
     await page.getByText("Step 1: Capture baseline snapshot",{exact:true}).waitFor();
     await page.getByRole("button",{name:/Snapshots/}).click();
     await page.getByText("Capture evidence snapshot",{exact:true}).waitFor();
+    await page.getByRole("button",{name:"Record runtime replay",exact:true}).click();
+    await page.getByRole("button",{name:/Add checkpoint/}).click();
+    await page.getByRole("button",{name:/Stop & save replay/}).click();
+    await page.getByRole("button",{name:"Play replay",exact:true}).waitFor();
+    await page.getByRole("button",{name:"Download Replay HTML",exact:true}).waitFor();
     await page.screenshot({path:path.join(output,"live-workbench.png"),fullPage:true,animations:"disabled"});
     assert.equal(errors.length, 0, errors.join("\n"));
     console.log("PASS Studio UI and partial grading draft on mobile");
