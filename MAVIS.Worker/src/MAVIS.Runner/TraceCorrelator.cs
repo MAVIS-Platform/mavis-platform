@@ -4,7 +4,8 @@ namespace MAVIS.Runner;
 
 public sealed record CorrelatedSpan(string TraceId, string SpanId, string? ParentSpanId, string RuntimeService,
     string? ModelServiceId, string Kind, string? ScenarioStepId, string? StartTimeUnixNano = null,
-    string? DurationNanoseconds = null, string? SpanStatus = null, int? HttpStatusCode = null);
+    string? DurationNanoseconds = null, string? SpanStatus = null, int? HttpStatusCode = null,
+    string? HttpMethod = null, string? Route = null);
 public sealed record CausalSpanEdge(string TraceId, string ParentSpanId, string ChildSpanId);
 public sealed record ObservedServiceInteraction(string TraceId, string FromService, string ToService,
     string? FromModelServiceId, string? ToModelServiceId, string ParentSpanId, string ChildSpanId);
@@ -52,12 +53,31 @@ public static class TraceCorrelator
                     if (entry.TryGetProperty("status", out var spanStatus)) status = Text(spanStatus, "code") switch
                         { "2" or "STATUS_CODE_ERROR" => "Error", "1" or "STATUS_CODE_OK" => "Ok", "0" or "STATUS_CODE_UNSET" => "Unset", _ => null };
                     int? httpStatus = null;
+                    string? httpMethod = null, route = null, dbSystem = null, dbOperation = null, messagingSystem = null, destination = null;
                     if (entry.TryGetProperty("attributes", out var spanAttributes))
                         foreach (var attribute in spanAttributes.EnumerateArray())
-                            if (Text(attribute, "key") is "http.response.status_code" or "http.status_code" && attribute.TryGetProperty("value", out var value) &&
-                                int.TryParse(Text(value, "intValue"), out var code) && code is >= 100 and <= 599) httpStatus = code;
+                        {
+                            var attributeKey = Text(attribute, "key");
+                            if (!attribute.TryGetProperty("value", out var value)) continue;
+                            var stringValue = Text(value, "stringValue");
+                            switch (attributeKey)
+                            {
+                                case "http.response.status_code" or "http.status_code":
+                                    if (int.TryParse(Text(value, "intValue"), out var code) && code is >= 100 and <= 599) httpStatus = code;
+                                    break;
+                                case "http.request.method" or "http.method": httpMethod = Label(stringValue, 16); break;
+                                case "http.route": route = Label(stringValue, 128); break;
+                                case "db.system": dbSystem = Label(stringValue, 32); break;
+                                case "db.operation" or "db.operation.name": dbOperation = Label(stringValue, 64); break;
+                                case "messaging.system": messagingSystem = Label(stringValue, 32); break;
+                                case "messaging.destination.name": destination = Label(stringValue, 96); break;
+                            }
+                        }
+                    // Labels come only from allowlisted low-cardinality attributes; free-form span names are never trusted.
+                    route ??= dbOperation is not null ? Label($"{dbSystem ?? "db"} {dbOperation}", 128)
+                        : destination is not null ? Label($"{messagingSystem ?? "messaging"} {destination}", 128) : null;
                     var span = new CorrelatedSpan(trace, id, parent.Length == 0 ? null : parent, service, mapped,
-                        Text(entry, "kind"), traceSteps?.GetValueOrDefault(trace), startTime, duration, status, httpStatus);
+                        Text(entry, "kind"), traceSteps?.GetValueOrDefault(trace), startTime, duration, status, httpStatus, httpMethod, route);
                     if (!spans.TryAdd((trace, id), span)) warnings.Add("DUPLICATE_SPAN_ID");
                 }
             }
@@ -99,4 +119,11 @@ public static class TraceCorrelator
 
     private static string Text(JsonElement e, string key) => e.TryGetProperty(key, out var value) ? value.ToString() : "";
     private static bool Hex(string value, int length) => value.Length == length && value.All(Uri.IsHexDigit) && value.Any(c => c != '0');
+    // Bounded, control-free labels only; values come from untrusted workload spans.
+    private static string? Label(string value, int max)
+    {
+        var trimmed = value.Trim();
+        if (trimmed.Length == 0 || trimmed.Any(char.IsControl)) return null;
+        return trimmed.Length > max ? trimmed[..max] : trimmed;
+    }
 }

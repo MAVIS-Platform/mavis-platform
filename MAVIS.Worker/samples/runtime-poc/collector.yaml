@@ -17,7 +17,8 @@ processors:
           - keep_keys(attributes, ["service.name"])
       - context: span
         statements:
-          - keep_keys(attributes, ["http.request.method", "http.response.status_code"])
+          # Low-cardinality labels only: routes, DB/messaging/RPC operation names. Never URLs, query strings or SQL text.
+          - keep_keys(attributes, ["http.request.method", "http.method", "http.response.status_code", "http.status_code", "http.route", "db.system", "db.operation", "db.operation.name", "messaging.system", "messaging.destination.name", "rpc.system", "rpc.service", "rpc.method", "server.address"])
           - set(name, "redacted")
           - set(status.message, "")
       - context: spanevent
