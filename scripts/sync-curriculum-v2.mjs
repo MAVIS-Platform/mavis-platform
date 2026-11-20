@@ -83,6 +83,9 @@ const SOURCE_LIBRARY = {
 };
 
 function parseArgs(argv) {
+  if (argv.includes('--verify')) {
+    return { verifyOnly: true };
+  }
   let track = null;
   let chapter = null;
   for (let i = 0; i < argv.length; i++) {
@@ -98,7 +101,7 @@ function parseArgs(argv) {
   if (!Number.isInteger(chapter) || chapter < 1 || chapter > 12) {
     throw new Error(`Invalid or missing --chapter <1..12>. Received: ${chapter}`);
   }
-  return { track, chapter };
+  return { verifyOnly: false, track, chapter };
 }
 
 function resolveSources(track, rawSourcesLine, chapterTitle) {
@@ -124,13 +127,65 @@ function resolveSources(track, rawSourcesLine, chapterTitle) {
   return sources;
 }
 
+function convertLatexExprToUnicode(expr) {
+  let out = expr.trim();
+  const supMap = { 0: '⁰', 1: '¹', 2: '²', 3: '³', 4: '⁴', 5: '⁵', 6: '⁶', 7: '⁷', 8: '⁸', 9: '⁹' };
+  const subMap = { i: 'ᵢ', n: 'ₙ' };
+
+  out = out
+    .replace(/\\text\{([^}]*)\}/g, '$1')
+    .replace(/\\prod_\{([^}]*)\}\^\{([^}]*)\}/g, '∏($1..$2)')
+    .replace(/\\prod/g, '∏')
+    .replace(/\\rightarrow|\\to\b/g, '→')
+    .replace(/\\leftarrow\b/g, '←')
+    .replace(/\\ge\b/g, '≥')
+    .replace(/\\le\b/g, '≤')
+    .replace(/\\times\b/g, '×')
+    .replace(/\\approx\b/g, '≈')
+    .replace(/\\dots\b/g, '…')
+    .replace(/\\%/g, '%')
+    .replace(/\^\{([0-9]+)\}/g, (_, d) => [...d].map((c) => supMap[c] || c).join(''))
+    .replace(/\^([0-9])/g, (_, d) => supMap[d] || `^${d}`)
+    .replace(/_\{([a-zA-Z0-9_-]+)\}/g, '_$1')
+    .replace(/_([in])\b/g, (_, s) => subMap[s] || `_${s}`)
+    .replace(/[ \t]+/g, ' ');
+  return out.trim();
+}
+
+function sanitizeLatexMarkdown(markdown) {
+  if (!markdown) return markdown;
+  const preserved = [];
+  const mask = (segment) => {
+    const token = `\u0000CODE${preserved.length}\u0000`;
+    preserved.push(segment);
+    return token;
+  };
+
+  let text = markdown.replace(/```[\s\S]*?```/g, mask).replace(/`[^`\n]+`/g, mask);
+
+  text = text.replace(/\$\$([\s\S]*?)\$\$/g, (_, inner) => convertLatexExprToUnicode(inner));
+  text = text.replace(/\$(?!\{)(?!\s)([^$\n]+?)(?<!\s)\$/g, (_, inner) => convertLatexExprToUnicode(inner));
+
+  text = text
+    .replace(/\\rightarrow|\\to\b/g, '→')
+    .replace(/\\leftarrow\b/g, '←')
+    .replace(/\\ge\b/g, '≥')
+    .replace(/\\le\b/g, '≤')
+    .replace(/\\times\b/g, '×')
+    .replace(/\\approx\b/g, '≈')
+    .replace(/\\\[/g, '[')
+    .replace(/\\\]/g, ']');
+
+  return text.replace(/\u0000CODE(\d+)\u0000/g, (_, idx) => preserved[Number(idx)]);
+}
+
 function cleanObjective(rawObjectiveBlock) {
   const lines = rawObjectiveBlock
     .split(/\r?\n/)
     .map((l) => l.trim())
     .filter(Boolean)
     .map((l) => l.replace(/^\d+\.\s*/, '').replace(/^[-*]\s*/, '').replace(/\*\*/g, ''));
-  return lines.join(' ');
+  return sanitizeLatexMarkdown(lines.join(' '));
 }
 
 function estimateMinutes(chapterNumber, lessonBody) {
@@ -138,6 +193,36 @@ function estimateMinutes(chapterNumber, lessonBody) {
   if (lessonBody.length >= 9000) return 55;
   if (lessonBody.length >= 6500) return 50;
   return 45;
+}
+
+function sanitizeQuizPlainText(rawText, { stripLeadingNumber = false } = {}) {
+  if (!rawText) return '';
+  let text = String(rawText).trim();
+
+  // Convert any math notation inside quiz text to Unicode before stripping code ticks.
+  text = text
+    .replace(/\$\$([\s\S]*?)\$\$/g, (_, inner) => convertLatexExprToUnicode(inner))
+    .replace(/\$(?!\{)(?!\s)([^$\n]+?)(?<!\s)\$/g, (_, inner) => convertLatexExprToUnicode(inner))
+    .replace(/\\rightarrow|\\to\b/g, '→')
+    .replace(/\\leftarrow\b/g, '←')
+    .replace(/\\ge\b/g, '≥')
+    .replace(/\\le\b/g, '≤')
+    .replace(/\\times\b/g, '×')
+    .replace(/\\approx\b/g, '≈');
+
+  // Unescape markdown brackets and strip inline markdown bold/italic/code wrappers.
+  text = text
+    .replace(/\\([\[\]*_`])/g, '$1')
+    .replace(/\*\*([^*\n]+?)\*\*/g, '$1')
+    .replace(/`([^`\n]+?)`/g, '$1')
+    .replace(/(^|[\s(])\*([^*\n]+?)\*(?=[\s).,;:?!]|$)/g, '$1$2')
+    .replace(/\*\*|`/g, '');
+
+  if (stripLeadingNumber) {
+    text = text.replace(/^\s*(?:Câu\s*\d+(?:\.\d+)?[:.\s-]*|\d+[.)]\s+)/i, '');
+  }
+
+  return text.replace(/\r?\n/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 function parseQuestions(quizSection, qIdPrefix) {
@@ -161,7 +246,7 @@ function parseQuestions(quizSection, qIdPrefix) {
     if (!promptMatch) {
       throw new Error(`Missing question prompt for ${qIdPrefix}-q${idx + 1}`);
     }
-    const prompt = promptMatch[1].trim();
+    const prompt = sanitizeQuizPlainText(promptMatch[1], { stripLeadingNumber: true });
 
     const optMatches = [...block.matchAll(/^\s*[-*]\s*([A-D])\.\s+(.+)$/gm)];
     if (optMatches.length !== 4) {
@@ -171,7 +256,7 @@ function parseQuestions(quizSection, qIdPrefix) {
       if (m[1] !== letters[optIdx]) {
         throw new Error(`Out-of-order option ${m[1]} at ${qIdPrefix}-q${idx + 1}`);
       }
-      return m[2].trim();
+      return sanitizeQuizPlainText(m[2]);
     });
 
     const ansMatch = block.match(/\*\*Đáp án đúng:\s*([A-D])\.?\*\*\s*(?:\*Giải thích\*:\s*([\s\S]*))?/i);
@@ -182,7 +267,7 @@ function parseQuestions(quizSection, qIdPrefix) {
     if (correctOption < 0 || correctOption >= options.length) {
       throw new Error(`Invalid correctOption index for ${qIdPrefix}-q${idx + 1}`);
     }
-    const explanation = (ansMatch[2] || '').replace(/\r?\n/g, ' ').replace(/\s+/g, ' ').trim();
+    const explanation = sanitizeQuizPlainText(ansMatch[2] || '');
     if (!explanation) {
       throw new Error(`Blank explanation for ${qIdPrefix}-q${idx + 1}`);
     }
@@ -250,8 +335,8 @@ function parseChapter(track, chapterNumber) {
   }
 
   const lessonStart = section.search(/^###\s+\d+\.\d+/m);
-  const lessonBody = section.slice(lessonStart, labMatch.index).trim();
-  const exerciseBody = section.slice(labMatch.index, quizMatch.index).trim();
+  const lessonBody = sanitizeLatexMarkdown(section.slice(lessonStart, labMatch.index).trim());
+  const exerciseBody = sanitizeLatexMarkdown(section.slice(labMatch.index, quizMatch.index).trim());
   const quizSection = section.slice(quizMatch.index).trim();
 
   if (lessonBody.length < 400) {
@@ -263,7 +348,7 @@ function parseChapter(track, chapterNumber) {
 
   const chPadded = String(chapterNumber).padStart(2, '0');
   const chapterId = `${cfg.idPrefix}${chPadded}`;
-  const cleanTitle = `Chương ${chPadded}: ${headingMatch[2].trim()}`;
+  const cleanTitle = sanitizeLatexMarkdown(`Chương ${chPadded}: ${headingMatch[2].trim()}`);
   const objective = cleanObjective(objMatch[1]);
   const sources = resolveSources(track, srcMatch[1], cleanTitle);
   const questions = parseQuestions(quizSection, chapterId);
@@ -298,9 +383,78 @@ function upsertCurriculumEntry(entry) {
   return { total: existing.length, replaced: idx >= 0 };
 }
 
+function stripCodeSegments(markdown) {
+  return String(markdown || '')
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`[^`\n]+`/g, ' ');
+}
+
+function verifyCurriculumJson() {
+  const all = JSON.parse(fs.readFileSync(TARGET_JSON_PATH, 'utf8'));
+  const v2Chapters = all.filter((c) => c && /^(java|csharp)-v2-ch\d{2}$/.test(c.id || ''));
+  const violations = [];
+
+  if (v2Chapters.length !== 24) {
+    violations.push(`Expected 24 V2 chapters, found ${v2Chapters.length}`);
+  }
+
+  const rawLatexPattern = /\$\$|\$(?!\{)(?!\s)[^$\n]+?(?<!\s)\$|\\(?:rightarrow|leftarrow|to|ge|le|times|approx|text|prod|dots)\b/;
+  const rawQuizMdPattern = /\*\*|`|\\[\[\]]|(?:^|[\s(])\*[^*\n]+?\*(?=[\s).,;:?!]|$)/;
+  const leadingNumberPattern = /^\s*(?:Câu\s*\d+(?:\.\d+)?[:.\s-]*|\d+[.)]\s+)/i;
+
+  for (const ch of v2Chapters) {
+    for (const [field, val] of [
+      ['title', ch.title],
+      ['objective', ch.objective],
+      ['lesson', stripCodeSegments(ch.lesson)],
+      ['exercise', stripCodeSegments(ch.exercise)],
+    ]) {
+      const m = String(val || '').match(rawLatexPattern);
+      if (m) {
+        violations.push(`${ch.id}.${field} contains raw LaTeX token: ${m[0]}`);
+      }
+    }
+
+    const questions = ch.questions || [];
+    if (questions.length !== 4) {
+      violations.push(`${ch.id} expected 4 questions, found ${questions.length}`);
+    }
+    for (const q of questions) {
+      if (leadingNumberPattern.test(q.prompt || '')) {
+        violations.push(`${q.id}.prompt has duplicated leading number: ${(q.prompt || '').slice(0, 50)}`);
+      }
+      for (const [qField, qVal] of [
+        ['prompt', q.prompt],
+        ['explanation', q.explanation],
+        ...(q.options || []).map((opt, idx) => [`options[${idx}]`, opt]),
+      ]) {
+        const mdHit = String(qVal || '').match(rawQuizMdPattern);
+        if (mdHit) {
+          violations.push(`${q.id}.${qField} contains raw Markdown token: ${mdHit[0]}`);
+        }
+        const latexHit = String(qVal || '').match(rawLatexPattern);
+        if (latexHit) {
+          violations.push(`${q.id}.${qField} contains raw LaTeX token: ${latexHit[0]}`);
+        }
+      }
+    }
+  }
+
+  if (violations.length > 0) {
+    console.error(`[sync-curriculum-v2 --verify] FAILED with ${violations.length} violation(s):`);
+    violations.slice(0, 25).forEach((v) => console.error(`  - ${v}`));
+    process.exit(1);
+  }
+  console.log(`[sync-curriculum-v2 --verify] PASSED: 24 V2 chapters & 96 quiz questions clean.`);
+}
+
 function main() {
-  const { track, chapter } = parseArgs(process.argv.slice(2));
-  const entry = parseChapter(track, chapter);
+  const args = parseArgs(process.argv.slice(2));
+  if (args.verifyOnly) {
+    verifyCurriculumJson();
+    return;
+  }
+  const entry = parseChapter(args.track, args.chapter);
   const res = upsertCurriculumEntry(entry);
   console.log(
     `[sync-curriculum-v2] ${res.replaced ? 'Updated' : 'Inserted'} ${entry.id} (${entry.track}, ${entry.questions.length} questions, ${entry.lesson.length} chars lesson) -> total chapters: ${res.total}`,
