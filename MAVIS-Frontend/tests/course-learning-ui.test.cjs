@@ -550,6 +550,11 @@ test("Evidence & Submit receives the verified Runtime Studio session", () => {
   const lab = read("src/features/courses/screens.tsx");
   assert.match(lab, /runtimeSessionId=\{verifiedSessionForSubmit\}/);
   assert.match(lab, /Finish the MAVIS Runtime Studio exercise to seal a verified receipt/);
+  assert.ok(lab.includes("Runtime Evidence Review"));
+  assert.ok(lab.includes("Signed runtime receipt"));
+  assert.ok(lab.includes("Observed telemetry & sequence"));
+  assert.ok(lab.includes("Before / After action evidence"));
+  assert.match(lab, /\(step === 2 \|\| step === 3\)/);
 });
 
 test("WF-04 per-snapshot submission explanations, > 5.0/10 grading rule, and SR-15 EN/VI runtime/studio translations", async () => {

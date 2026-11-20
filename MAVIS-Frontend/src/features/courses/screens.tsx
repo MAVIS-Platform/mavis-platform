@@ -1225,6 +1225,35 @@ function StaticEvaluationSummary({
   );
 }
 
+function RuntimeEvidenceStatus({
+  complete,
+  label,
+  detail,
+}: {
+  complete: boolean;
+  label: string;
+  detail: string;
+}) {
+  return (
+    <div className="rounded-xl border bg-muted/20 p-3">
+      <div className="flex items-center gap-2 font-medium">
+        <span
+          className={
+            complete
+              ? "flex size-5 items-center justify-center rounded-full bg-emerald-500 text-white"
+              : "flex size-5 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
+          }
+          aria-hidden="true"
+        >
+          {complete ? <Check className="size-3" /> : "!"}
+        </span>
+        {label}
+      </div>
+      <p className="mt-1 text-xs leading-5 text-muted-foreground">{detail}</p>
+    </div>
+  );
+}
+
 function StepContent({
   step,
   workspaceId,
@@ -1301,7 +1330,7 @@ function StepContent({
     {
       enabled:
         client.mode === "backend" &&
-        step === 2 &&
+        (step === 2 || step === 3) &&
         requiresRuntime &&
         !preview &&
         Boolean(activeStudioSessionId),
@@ -1318,6 +1347,14 @@ function StepContent({
     studioSessions.some((s) => s.id === activeStudioSessionId && s.studioVerified);
   const verifiedSessionForSubmit =
     studioSessionId ?? (liveStudioVerified ? activeStudioSessionId : undefined);
+  const previewParam = preview ? "&preview=1" : "";
+  const runtimeEvidence = studioStateQuery.data;
+  const confirmedRuntimeActions =
+    runtimeEvidence?.actions.filter((action) => action.status === "CONFIRMED") ?? [];
+  const hasBeforeAfterEvidence = confirmedRuntimeActions.some(
+    (action) => Boolean(action.result?.metricsBefore) && Boolean(action.result?.metricsAfter),
+  );
+  const runtimeEvidenceHref = `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=2${previewParam}`;
 
   const fallbackModelQuery = useApiQuery(
     "model",
@@ -1337,7 +1374,6 @@ function StepContent({
     return synthesizeFallbackMermaid(activeModel, inlineC4View);
   }, [activeModel, inlineC4View, referenceArchitecture?.diagrams]);
 
-  const previewParam = preview ? "&preview=1" : "";
   const submitHref = `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=3${previewParam}#lab-submit`;
   const standaloneStudioHref = buildStudioLiveHref({
     workspaceId,
@@ -1750,23 +1786,100 @@ function StepContent({
                 )}
               </p>
               <Button asChild size="sm" variant="outline" className="mt-4">
-                <Link
-                  href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=2${previewParam}`}
-                >
+                <Link href={runtimeEvidenceHref}>
                   {t("Return to Runtime Studio", "Quay lại Runtime Studio")}
                 </Link>
               </Button>
             </DetailPanel>
           ) : !preview && labMode !== "LEGACY" ? (
-            <LabSubmissionV2
-              workspaceId={workspaceId}
-              assignmentId={labId}
-              labMode={labMode}
-              runtimeSessionId={verifiedSessionForSubmit}
-              initialSubmission={studentContext?.latestSubmission}
-              initialReview={studentContext?.latestReview}
-              hasReferenceArch={hasReferenceArch}
-            />
+            <>
+              {requiresRuntime && (
+                <DetailPanel title={t("Runtime Evidence Review", "Kiểm tra Evidence Runtime")}>
+                  <p className="text-sm leading-6 text-muted-foreground">
+                    {t(
+                      "Review the sealed Runtime Studio evidence before sending this Lab to WF-04. The final submission keeps this receipt linked to your explanation.",
+                      "Kiểm tra evidence Runtime Studio đã được niêm phong trước khi chuyển Lab sang WF-04. Bài nộp cuối sẽ liên kết receipt này với phần giải trình của bạn.",
+                    )}
+                  </p>
+                  {studioStateQuery.isPending ? (
+                    <p className="mt-4 text-sm text-muted-foreground">
+                      {t(
+                        "Loading verified runtime evidence…",
+                        "Đang tải evidence runtime đã xác minh…",
+                      )}
+                    </p>
+                  ) : (
+                    <div className="mt-4 grid gap-3 text-sm md:grid-cols-2">
+                      <RuntimeEvidenceStatus
+                        complete={Boolean(runtimeEvidence?.receiptDigest)}
+                        label={t("Signed runtime receipt", "Receipt Runtime đã ký")}
+                        detail={
+                          runtimeEvidence?.receiptDigest
+                            ? t(
+                                "Receipt sealed and ready for WF-04.",
+                                "Receipt đã được niêm phong và sẵn sàng cho WF-04.",
+                              )
+                            : t(
+                                "Finish the Runtime Studio session to seal its receipt.",
+                                "Hoàn tất Runtime Studio để niêm phong receipt.",
+                              )
+                        }
+                      />
+                      <RuntimeEvidenceStatus
+                        complete={(runtimeEvidence?.snapshots?.length ?? 0) > 0}
+                        label={t("Snapshot evidence", "Snapshot evidence")}
+                        detail={t(
+                          `${runtimeEvidence?.snapshots?.length ?? 0} captured runtime snapshot(s).`,
+                          `Đã chụp ${runtimeEvidence?.snapshots?.length ?? 0} snapshot runtime.`,
+                        )}
+                      />
+                      <RuntimeEvidenceStatus
+                        complete={Boolean(runtimeEvidence?.telemetry?.observedAt)}
+                        label={t("Observed telemetry & sequence", "Telemetry và sequence quan sát")}
+                        detail={t(
+                          `${runtimeEvidence?.telemetry?.spans.length ?? 0} spans · ${runtimeEvidence?.telemetry?.interactions.length ?? 0} interactions recorded.`,
+                          `Đã ghi ${runtimeEvidence?.telemetry?.spans.length ?? 0} span · ${runtimeEvidence?.telemetry?.interactions.length ?? 0} tương tác.`,
+                        )}
+                      />
+                      <RuntimeEvidenceStatus
+                        complete={hasBeforeAfterEvidence}
+                        label={t(
+                          "Before / After action evidence",
+                          "Evidence hành động Before / After",
+                        )}
+                        detail={t(
+                          `${confirmedRuntimeActions.length} confirmed Stop / Start / Scale action(s).`,
+                          `${confirmedRuntimeActions.length} hành động Stop / Start / Scale đã xác nhận.`,
+                        )}
+                      />
+                    </div>
+                  )}
+                  <div className="mt-4 flex flex-wrap items-center gap-3">
+                    <Button asChild size="sm" variant="outline">
+                      <Link href={runtimeEvidenceHref}>
+                        {t("Review or capture another snapshot", "Xem lại hoặc chụp thêm snapshot")}
+                      </Link>
+                    </Button>
+                    {runtimeEvidence?.receiptDigest && (
+                      <code className="max-w-full truncate rounded bg-muted px-2 py-1 text-xs text-muted-foreground">
+                        {t("Receipt", "Receipt")}: {runtimeEvidence.receiptDigest}
+                      </code>
+                    )}
+                  </div>
+                </DetailPanel>
+              )}
+              <LabSubmissionV2
+                workspaceId={workspaceId}
+                assignmentId={labId}
+                labOrder={labOrder}
+                labTitle={labTitle}
+                labMode={labMode}
+                runtimeSessionId={verifiedSessionForSubmit}
+                initialSubmission={studentContext?.latestSubmission}
+                initialReview={studentContext?.latestReview}
+                hasReferenceArch={hasReferenceArch}
+              />
+            </>
           ) : (
             <DetailPanel title={t("Evidence & Submit", "Evidence & Submit")}>
               <p className="text-sm text-muted-foreground">

@@ -356,7 +356,7 @@ export function LabSubmissionV2({
             <div className="space-y-3 rounded-xl border border-teal-200/80 bg-teal-50/40 p-3.5 text-xs dark:border-teal-900 dark:bg-teal-950/20">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="font-semibold text-teal-950 dark:text-teal-200">
-                  📊 {t("WF-04 Rubric 0–10 Estimate & C1–C3 Snapshot Bundler", "Dự báo Điểm Rubric 0–10 (WF-04) & Đóng gói Snapshot C1–C3")}
+                  📊 {t("WF-04 readiness estimate & evidence bundle", "Dự báo mức sẵn sàng WF-04 & gói evidence")}
                 </span>
                 <Badge variant={passesRubricPreview ? "success" : "destructive"}>
                   {estimatedRubricScore.toFixed(1)} / 10.0 ·{" "}
@@ -367,8 +367,8 @@ export function LabSubmissionV2({
               </div>
               <p className="text-muted-foreground">
                 {t(
-                  "30% Quiz Gate + 40% C1–C3 Snapshot Architecture + 30% Reverse BFS Mitigation Checklist",
-                  "Cấu trúc điểm: 30% Quiz Gate + 40% Kiến trúc C1–C3 Snapshot + 30% Giải pháp Reverse BFS Mitigation",
+                  "30% Module Quiz + 40% C1–C3 snapshot architecture + 30% runtime evidence and mitigation explanation",
+                  "Cấu trúc điểm: 30% Quiz của Module + 40% kiến trúc snapshot C1–C3 + 30% evidence runtime và giải trình phương án xử lý",
                 )}
               </p>
               <div className="flex flex-wrap gap-3">
