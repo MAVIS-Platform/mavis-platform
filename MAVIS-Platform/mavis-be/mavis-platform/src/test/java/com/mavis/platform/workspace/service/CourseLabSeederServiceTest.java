@@ -712,14 +712,82 @@ class CourseLabSeederServiceTest {
 
         seeder.seedCurated(workspaceId, CourseLabSeederService.PRESET_JAVA_COURSERA);
 
-        assertThat(legacyV1Labs).allSatisfy(stale -> assertThat(stale.getLabOrder()).isNull());
+        assertThat(legacyV1Labs).allSatisfy(stale -> {
+            assertThat(stale.getLabOrder()).isNull();
+            assertThat(stale.getAiPolicy().path("archivedV1").asBoolean()).isTrue();
+        });
         for (int i = 0; i < v2Modules.size(); i++) {
             assertThat(v2Labs.get(i).getId()).isEqualTo(expectedV2Ids.get(i));
             assertThat(v2Labs.get(i).getLabOrder()).isEqualTo(i + 1);
+            assertThat(v2Labs.get(i).getTitle()).doesNotStartWith("Lab 0");
         }
         assertThat(CourseLabSeederService.isCourseraLabsAligned(v2Labs, v2Modules)).isTrue();
         verify(jdbc, times(6)).update(
                 contains("DELETE FROM lab_prerequisites"), any(UUID.class), any(UUID.class));
+        verify(quizzes, times(5)).publishCurriculum(eq(workspaceId), any(UUID.class), any());
+    }
+
+    @Test
+    void seedsCsharpCourseraCourseWith5ActiveOrderedLabsAndFruitShopTopology() throws Exception {
+        UUID workspaceId = UUID.randomUUID();
+        User lecturer = User.builder().id(UUID.randomUUID()).email("gv.java@mavis.edu.vn").build();
+        Workspace workspace = Workspace.builder()
+                .id(workspaceId).code("CSHARP-MS-2026").name("C# .NET 8").status("ACTIVE").courseMode(false).build();
+
+        AccessPolicyService access = mock(AccessPolicyService.class);
+        WorkspaceRepository workspaces = mock(WorkspaceRepository.class);
+        AssignmentRepository assignments = mock(AssignmentRepository.class);
+        ProjectRepository projects = mock(ProjectRepository.class);
+        SourceSnapshotRepository snapshots = mock(SourceSnapshotRepository.class);
+        ModelVersionRepository models = mock(ModelVersionRepository.class);
+        CourseQuizService quizzes = mock(CourseQuizService.class);
+        CourseAccessService courses = mock(CourseAccessService.class);
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        ObjectMapper json = new ObjectMapper();
+        CourseCurriculum curriculum = new CourseCurriculum(json);
+
+        when(access.requireCurrentActiveUser()).thenReturn(lecturer);
+        when(workspaces.findLockedById(workspaceId)).thenReturn(Optional.of(workspace));
+        when(workspaces.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId)).thenReturn(List.of());
+        when(projects.save(any())).thenAnswer(inv -> {
+            Project p = inv.getArgument(0);
+            if (p.getId() == null) p.setId(UUID.randomUUID());
+            return p;
+        });
+        when(projects.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(snapshots.save(any())).thenAnswer(inv -> {
+            SourceSnapshot s = inv.getArgument(0);
+            if (s.getId() == null) s.setId(UUID.randomUUID());
+            return s;
+        });
+        when(models.saveAndFlush(any())).thenAnswer(inv -> {
+            ModelVersion m = inv.getArgument(0);
+            if (m.getId() == null) m.setId(UUID.randomUUID());
+            return m;
+        });
+        List<Assignment> savedAssignments = new ArrayList<>();
+        when(assignments.saveAndFlush(any(Assignment.class))).thenAnswer(inv -> {
+            Assignment a = inv.getArgument(0);
+            if (a.getId() == null) a.setId(UUID.randomUUID());
+            savedAssignments.add(a);
+            return a;
+        });
+        when(courses.roadmap(workspaceId)).thenReturn(new CourseAccessService.Roadmap(true, "ENROLLED", List.of()));
+
+        CourseLabSeederService seeder = new CourseLabSeederService(
+                access, workspaces, assignments, projects, snapshots, models,
+                mock(ModelElementRepository.class), mock(ModelRelationshipRepository.class),
+                mock(DiagramVersionRepository.class), mock(EvaluationRunRepository.class),
+                mock(EvidenceRepository.class), curriculum, quizzes, courses, jdbc, json, tempDir.toString());
+
+        seeder.seedCurated(workspaceId, CourseLabSeederService.PRESET_CSHARP_COURSERA);
+
+        assertThat(savedAssignments).hasSize(5);
+        assertThat(savedAssignments).extracting(Assignment::getLabOrder).containsExactly(1, 2, 3, 4, 5);
+        assertThat(savedAssignments).allSatisfy(a -> assertThat(a.getTitle()).doesNotStartWith("Lab 0"));
+        assertThat(savedAssignments.get(2).getStudioTopologySnapshot().path("blocks").toString())
+                .contains("FruitCatalog.API", "FruitOrdering.API");
         verify(quizzes, times(5)).publishCurriculum(eq(workspaceId), any(UUID.class), any());
     }
 }

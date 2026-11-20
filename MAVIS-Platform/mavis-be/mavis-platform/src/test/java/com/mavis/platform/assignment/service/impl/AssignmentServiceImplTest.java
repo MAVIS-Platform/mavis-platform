@@ -427,6 +427,27 @@ class AssignmentServiceImplTest {
     }
 
     @Test
+    @DisplayName("Lecturer course listing excludes detached V1 labs and sorts active V2 labs ascending 1..5")
+    void courseModeLecturerListingExcludesDetachedV1LabsAndSortsAscending() {
+        Workspace courseWs = Workspace.builder().id(workspaceId).name("JAVA-MS-2026").courseMode(true).build();
+        Assignment v1Detached = Assignment.builder().id(UUID.randomUUID()).workspace(courseWs).title("Obsolete V1").labOrder(null).build();
+        Assignment v2Lab5 = Assignment.builder().id(UUID.randomUUID()).workspace(courseWs).title("Production Audit").labOrder(5).build();
+        Assignment v2Lab1 = Assignment.builder().id(UUID.randomUUID()).workspace(courseWs).title("Moc Huong C1-C3").labOrder(1).build();
+
+        when(workspaceRepository.existsById(workspaceId)).thenReturn(true);
+        when(assignmentRepository.findByWorkspaceIdOrderByCreatedAtDesc(workspaceId))
+                .thenReturn(List.of(v2Lab5, v2Lab1, v1Detached));
+        when(accessPolicyService.requireCurrentActiveUser()).thenReturn(currentUser);
+        when(submissionSnapshotRepository.countSubmissionsByAssignmentIds(anyCollection())).thenReturn(List.of());
+
+        List<AssignmentResponseDTO> result = assignmentService.getAssignmentsByWorkspace(workspaceId);
+
+        assertThat(result).extracting(AssignmentResponseDTO::getLabOrder).containsExactly(1, 5);
+        assertThat(result).extracting(AssignmentResponseDTO::getTitle)
+                .containsExactly("Moc Huong C1-C3", "Production Audit");
+    }
+
+    @Test
     @DisplayName("SR-08: Rejects malformed JSON string in aiPolicy with BAD_REQUEST")
     void rejectsMalformedJsonAiPolicy() {
         when(workspaceRepository.findWithCreatorById(workspaceId)).thenReturn(Optional.of(workspace));
