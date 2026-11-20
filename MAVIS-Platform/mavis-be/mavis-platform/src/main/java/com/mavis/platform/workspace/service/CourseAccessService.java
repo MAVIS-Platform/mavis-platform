@@ -48,6 +48,7 @@ public class CourseAccessService {
     private final JdbcTemplate jdbc;
     private final LabReferenceArchive referenceArchive;
     private final RuntimeConfigurationRepository configurations;
+    private final CoursePasskeyFailureRecorder passkeyFailures;
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.mavis.common.repository.RuntimeSessionRepository runtimeSessions;
@@ -555,7 +556,7 @@ public class CourseAccessService {
         passkeyRateCheck(actor.getId());
         String normalizedCode = code == null ? "" : code.trim();
         if (!normalizedCode.matches("[A-Za-z0-9_-]{4,32}")) {
-            passkeyFailure(actor.getId());
+            passkeyFailures.record(digest(actor.getId().toString()));
             throw invalidKey();
         }
         String keyDigest = digest(normalizedCode);
@@ -577,7 +578,7 @@ public class CourseAccessService {
                 keyDigest = upperDigest;
             }
         }
-        UUID workspaceId = foundWorkspaces.stream().findFirst().orElseThrow(() -> { passkeyFailure(actor.getId()); return invalidKey(); });
+        UUID workspaceId = foundWorkspaces.stream().findFirst().orElseThrow(() -> { passkeyFailures.record(digest(actor.getId().toString())); return invalidKey(); });
         Workspace workspace = lock(workspaceId);
         prior = replay(actor.getId(), requestId, keyDigest);
         if (prior != null) {
@@ -589,7 +590,7 @@ public class CourseAccessService {
                 AND (max_uses IS NULL OR used_count < max_uses))
                 """, Boolean.class, workspaceId, keyDigest));
         if (!valid || !workspace.isCourseMode() || !"ACTIVE".equals(workspace.getStatus())) {
-            passkeyFailure(actor.getId());
+            passkeyFailures.record(digest(actor.getId().toString()));
             throw invalidKey();
         }
         Integer capacity = workspace.getMaxStudents();
@@ -714,5 +715,4 @@ public class CourseAccessService {
         return new BusinessException(ErrorCode.BAD_REQUEST, "INVALID_OR_EXPIRED_PASSKEY", "Invalid or expired Passkey");
     }
     private void passkeyRateCheck(UUID actor){Boolean blocked=jdbc.queryForObject("SELECT coalesce((SELECT blocked_until>now() FROM auth_rate_limits WHERE scope='PASSKEY' AND subject_digest=?),false)",Boolean.class,digest(actor.toString()));if(Boolean.TRUE.equals(blocked))throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS,"PASSKEY_RATE_LIMITED","Too many invalid Passkeys. Try again later");}
-    private void passkeyFailure(UUID actor){jdbc.update("INSERT INTO auth_rate_limits(scope,subject_digest,attempts) VALUES ('PASSKEY',?,1) ON CONFLICT(scope,subject_digest) DO UPDATE SET attempts=auth_rate_limits.attempts+1,blocked_until=CASE WHEN auth_rate_limits.attempts+1>=5 THEN now()+interval '15 minutes' ELSE auth_rate_limits.blocked_until END",digest(actor.toString()));}
 }

@@ -172,7 +172,7 @@ class Wf01AcceptanceMatrixTest {
                 refreshSessions, mock(AuthAbuseGuard.class));
         courseLabPolicy = new CourseLabPolicy(jdbc);
         accessPolicy = new AccessPolicyServiceImpl(users, workspaces, members, courseLabPolicy);
-        courseAccess = new CourseAccessService(accessPolicy, workspaces, assignments, courseLabPolicy, jdbc, referenceArchive, mock(com.mavis.common.repository.RuntimeConfigurationRepository.class));
+        courseAccess = new CourseAccessService(accessPolicy, workspaces, assignments, courseLabPolicy, jdbc, referenceArchive, mock(com.mavis.common.repository.RuntimeConfigurationRepository.class), new com.mavis.platform.workspace.service.CoursePasskeyFailureRecorder(jdbc));
         adminPortal = new AdminPortalServiceImpl(
                 users, roles, workspaces, mock(ProjectRepository.class),
                 mock(SourceSnapshotRepository.class), mock(JobRepository.class),

@@ -200,7 +200,7 @@ class Wf04AcceptanceMatrixTest {
         when(courseLabs.currentQuizPass(lab01, student.getId())).thenReturn(Optional.of(
                 new CourseLabPolicy.QuizPass(UUID.randomUUID(), 1, 4, 4, 70, OffsetDateTime.now())));
 
-        courseAccess = new CourseAccessService(accessPolicyService, workspaceRepository, assignmentRepository, courseLabs, jdbc, mock(LabReferenceArchive.class), mock(com.mavis.common.repository.RuntimeConfigurationRepository.class));
+        courseAccess = new CourseAccessService(accessPolicyService, workspaceRepository, assignmentRepository, courseLabs, jdbc, mock(LabReferenceArchive.class), mock(com.mavis.common.repository.RuntimeConfigurationRepository.class), new com.mavis.platform.workspace.service.CoursePasskeyFailureRecorder(jdbc));
         notificationController = new NotificationController(accessPolicyService, jdbc);
         authenticate(student);
     }
