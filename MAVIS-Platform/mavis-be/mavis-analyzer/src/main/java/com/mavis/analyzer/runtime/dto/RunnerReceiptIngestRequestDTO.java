@@ -21,6 +21,7 @@ public class RunnerReceiptIngestRequestDTO {
     private String runConfigurationVersionId;
     private String scenarioVersionId;
     private String resourceProject;
+    private String isolationRuntime;
     private Map<String, String> actualImageIds;
     private Map<String, String> declaredInstrumentationVersions;
     private Boolean sandboxEnforcementConfirmed;

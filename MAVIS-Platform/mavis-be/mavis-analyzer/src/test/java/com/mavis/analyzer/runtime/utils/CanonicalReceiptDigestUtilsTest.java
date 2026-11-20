@@ -20,12 +20,13 @@ class CanonicalReceiptDigestUtilsTest {
     }
     @Test void receiptDtoPreservesNestedRunnerActionsForSignatureVerification() throws Exception {
         var raw=new ObjectMapper().readTree("""
-            {"sessionId":"session","outcome":{"executionStatus":"Completed","infrastructureActions":[
+            {"sessionId":"session","isolationRuntime":"runsc","outcome":{"executionStatus":"Completed","infrastructureActions":[
               {"action":"STOP","service":"payment","replicasBefore":1,"replicasAfter":0,
                "metricsBefore":{"replicas":1,"traceIds":["before"]},"metricsAfter":{"replicas":0,"traceIds":["after"]},
                "performedAt":"2026-11-14T00:00:00Z","confirmed":true}]}}
             """);
         var decoded=OBJECT_MAPPER.treeToValue(raw,com.mavis.analyzer.runtime.dto.RunnerReceiptIngestRequestDTO.class);
+        assertThat(decoded.getIsolationRuntime()).isEqualTo("runsc");
         assertThat(CanonicalReceiptDigestUtils.computeDigest(OBJECT_MAPPER.valueToTree(decoded)))
             .isEqualTo(CanonicalReceiptDigestUtils.computeDigest(raw));
     }
