@@ -43,6 +43,7 @@ import java.util.zip.ZipFile;
 public class SandboxImageBuilderService {
 
     private static final Pattern IMAGE_ID_PATTERN = Pattern.compile("^sha256:[0-9a-fA-F]{64}$");
+    private static final Pattern REGISTRY_PIN_PATTERN = Pattern.compile("^[A-Za-z0-9._/:\\-]+@sha256:[0-9a-fA-F]{64}$");
     private static final int MAX_ARCHIVE_FILES = 2_500;
     private static final long MAX_ARCHIVE_BYTES = 150L * 1024L * 1024L;
     private static final Set<String> COMPOSE_FILE_NAMES = Set.of(
@@ -50,6 +51,13 @@ public class SandboxImageBuilderService {
 
     @Value("${mavis.runner.allow-local-image-build:true}")
     private boolean allowLocalImageBuild = true;
+
+    @Value("${mavis.runner.sandbox-registry:}")
+    private String sandboxRegistry = "";
+
+    public boolean isSharedRegistryConfigured() {
+        return sandboxRegistry != null && !sandboxRegistry.isBlank();
+    }
 
     private volatile long lastDockerCheckMillis = 0L;
     private volatile boolean cachedDockerAvailable = false;
@@ -83,7 +91,15 @@ public class SandboxImageBuilderService {
         Map<String, String> discovered = new LinkedHashMap<>();
         for (String svc : services) {
             if (svc == null || svc.isBlank() || ComposePreflightValidator.isInfrastructureService(svc, "")) continue;
-            String imageId = inspectImageId(sandboxTag(projectId, snapshotId, svc));
+            String localTag = sandboxTag(projectId, snapshotId, svc);
+            if (isSharedRegistryConfigured()) {
+                String publishedPin = inspectPublishedRepoDigest(sharedRegistryTag(localTag));
+                if (publishedPin != null) {
+                    discovered.put(svc, publishedPin);
+                    continue;
+                }
+            }
+            String imageId = inspectImageId(localTag);
             if (imageId != null) {
                 discovered.put(svc, imageId);
             }
@@ -252,10 +268,18 @@ public class SandboxImageBuilderService {
                                 return new SingleBuildOutcome(pt.svc(), null, "Service '" + pt.svc() + "': " + buildErr);
                             }
                             String imageId = inspectImageId(pt.tag());
-                            if (imageId != null) {
-                                return new SingleBuildOutcome(pt.svc(), imageId, null);
+                            if (imageId == null) {
+                                return new SingleBuildOutcome(pt.svc(), null, "Service '" + pt.svc() + "': image built but content digest could not be inspected");
                             }
-                            return new SingleBuildOutcome(pt.svc(), null, "Service '" + pt.svc() + "': image built but content digest could not be inspected");
+                            if (isSharedRegistryConfigured()) {
+                                String publishedRef = publishToSharedRegistry(pt.tag());
+                                if (publishedRef == null) {
+                                    return new SingleBuildOutcome(pt.svc(), null,
+                                            "Service '" + pt.svc() + "': image built locally but push to shared registry failed");
+                                }
+                                return new SingleBuildOutcome(pt.svc(), publishedRef, null);
+                            }
+                            return new SingleBuildOutcome(pt.svc(), imageId, null);
                         }));
                     }
                     for (var f : futures) {
@@ -616,6 +640,67 @@ public class SandboxImageBuilderService {
             return "docker build exited with code " + process.exitValue() + (msg.isEmpty() ? "" : ": " + msg);
         } catch (Exception e) {
             return "Docker CLI unavailable: " + e.getMessage();
+        }
+    }
+
+    protected String sharedRegistryTag(String localTag) {
+        String prefix = sandboxRegistry == null ? "" : sandboxRegistry.trim().replaceAll("/+$", "");
+        String name = localTag.contains(":") ? localTag.substring(0, localTag.indexOf(':')) : localTag;
+        String tag = localTag.contains(":") ? localTag.substring(localTag.indexOf(':') + 1) : "latest";
+        return prefix + "/" + name + ":" + tag;
+    }
+
+    protected String publishToSharedRegistry(String localTag) {
+        String remoteTag = sharedRegistryTag(localTag);
+        try {
+            Process tagProc = new ProcessBuilder("docker", "tag", localTag, remoteTag)
+                    .redirectErrorStream(true).start();
+            if (!tagProc.waitFor(15, TimeUnit.SECONDS)) {
+                tagProc.destroyForcibly();
+                return null;
+            }
+            if (tagProc.exitValue() != 0) {
+                return null;
+            }
+            Process pushProc = new ProcessBuilder("docker", "push", remoteTag)
+                    .redirectErrorStream(true).start();
+            if (!pushProc.waitFor(180, TimeUnit.SECONDS)) {
+                pushProc.destroyForcibly();
+                return null;
+            }
+            if (pushProc.exitValue() != 0) {
+                String out = SecretRedactor.redactString(new String(pushProc.getInputStream().readNBytes(512), StandardCharsets.UTF_8));
+                log.warn("docker push {} failed (exit={}): {}", remoteTag, pushProc.exitValue(), out.trim());
+                return null;
+            }
+            return inspectPublishedRepoDigest(remoteTag);
+        } catch (Exception e) {
+            log.warn("Failed to publish {} to shared registry: {}", remoteTag, e.getMessage());
+            return null;
+        }
+    }
+
+    protected String inspectPublishedRepoDigest(String remoteTag) {
+        String repoPrefix = remoteTag.contains(":") ? remoteTag.substring(0, remoteTag.lastIndexOf(':')) : remoteTag;
+        try {
+            Process process = new ProcessBuilder("docker", "image", "inspect", "--format", "{{range .RepoDigests}}{{.}}\n{{end}}", remoteTag)
+                    .redirectErrorStream(true)
+                    .start();
+            if (!process.waitFor(5, TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                return null;
+            }
+            if (process.exitValue() != 0) return null;
+            String raw = new String(process.getInputStream().readNBytes(2048), StandardCharsets.UTF_8);
+            for (String line : raw.split("\\R")) {
+                String candidate = line.trim();
+                if (candidate.startsWith(repoPrefix + "@sha256:") && REGISTRY_PIN_PATTERN.matcher(candidate).matches()) {
+                    return candidate;
+                }
+            }
+            return null;
+        } catch (Exception e) {
+            return null;
         }
     }
 

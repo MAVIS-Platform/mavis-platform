@@ -278,4 +278,37 @@ class SandboxImageBuilderServiceTest {
 
         assertThat(builder.findMissingLocalImageServices(compose)).containsExactly("order-service");
     }
+
+    @Test
+    void buildSnapshotImagesPublishesImmutableRegistryDigestWhenSharedRegistryConfigured(@TempDir Path tempDir) throws Exception {
+        UUID projectId = UUID.randomUUID();
+        UUID snapshotId = UUID.randomUUID();
+        Path svcDir = Files.createDirectories(tempDir.resolve("order-service"));
+        Files.writeString(svcDir.resolve("Dockerfile"), "FROM eclipse-temurin:21-jre\n");
+
+        String localId = "sha256:" + "4".repeat(64);
+        String remoteDigest = "ghcr.io/mavis-platform/mavis-sandbox/order-service@sha256:" + "5".repeat(64);
+
+        SandboxImageBuilderService builder = new SandboxImageBuilderService() {
+            @Override
+            protected String runDockerBuild(UUID projId, String tag, Path dockerfile, Path contextDir, String target, Map<String, String> buildArgs) {
+                return null;
+            }
+
+            @Override
+            protected String inspectImageId(String tag) {
+                return localId;
+            }
+
+            @Override
+            protected String publishToSharedRegistry(String localTag) {
+                return remoteDigest;
+            }
+        };
+        org.springframework.test.util.ReflectionTestUtils.setField(builder, "sandboxRegistry", "ghcr.io/mavis-platform/mavis-sandbox");
+
+        var result = builder.buildSnapshotImages(projectId, snapshotId, tempDir, List.of("order-service"));
+        assertThat(result.errors()).isEmpty();
+        assertThat(result.builtImages()).containsEntry("order-service", remoteDigest);
+    }
 }

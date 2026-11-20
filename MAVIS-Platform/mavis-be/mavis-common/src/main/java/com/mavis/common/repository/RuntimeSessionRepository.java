@@ -21,6 +21,7 @@ public interface RuntimeSessionRepository extends JpaRepository<RuntimeSession, 
     List<RuntimeSession> findByExecutionStatusOrderByCreatedAtAsc(String executionStatus);
     List<RuntimeSession> findByExecutionStatusAndCancelRequestedAtIsNullOrderByCreatedAtAsc(String executionStatus);
     List<RuntimeSession> findByExecutionStatusIn(java.util.Collection<String> statuses);
+    List<RuntimeSession> findByResourceProjectIn(java.util.Collection<String> resourceProjects);
 
     @EntityGraph(attributePaths = {"project", "sourceSnapshot", "triggeredBy"})
     List<RuntimeSession> findByProjectIdOrderByCreatedAtDesc(UUID projectId);

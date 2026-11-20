@@ -25,6 +25,8 @@ public class AdminRuntimeController {
  private final AccessPolicyService policy;private final PlatformRuntimeSettings settings;private final AuditLogService audit;private final ApiKeyProvider keys;
  private final JobRepository jobs;private final RuntimeSessionRepository sessions;
  private final RuntimeSessionService runtime;
+ @org.springframework.beans.factory.annotation.Autowired(required = false)
+ private com.mavis.analyzer.runtime.service.impl.RuntimeQueueCoordinator queueCoordinator;
  public AdminRuntimeController(AccessPolicyService policy,PlatformRuntimeSettings settings,AuditLogService audit,ApiKeyProvider keys,JobRepository jobs,RuntimeSessionRepository sessions,RuntimeSessionService runtime){this.policy=policy;this.settings=settings;this.audit=audit;this.keys=keys;this.jobs=jobs;this.sessions=sessions;this.runtime=runtime;}
  public record Toggle(@NotNull Boolean enabled,@Min(1) int expectedRevision){}
  public record ProfileUpdate(@NotNull Boolean enabled,@Min(1) int expectedRevision,@Min(64) @Max(2048) Integer memoryMiB,@DecimalMin("0.01") @DecimalMax("4") Double cpus,@Min(1) @Max(300) Integer timeoutSeconds){}
@@ -46,6 +48,25 @@ public class AdminRuntimeController {
           Map.of("previousStatus", Objects.toString(previousStatus, "UNKNOWN"),
                   "newStatus", Objects.toString(stopped.getExecutionStatus(), "UNKNOWN")));
   return ApiResponse.success("Đã gửi yêu cầu dừng phiên Runtime", stopped);
+ }
+ @GetMapping("/runtime-health")
+ public ApiResponse<?> runtimeHealth() {
+  policy.requireSystemAdmin();
+  if (queueCoordinator == null) {
+   throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR, "RuntimeQueueCoordinator unavailable");
+  }
+  return ApiResponse.success("Runtime infrastructure health snapshot", queueCoordinator.getRuntimeHealth());
+ }
+ @PostMapping("/runtime-health/sweep-orphans")
+ public ApiResponse<?> sweepOrphans() {
+  policy.requireSystemAdmin();
+  if (queueCoordinator == null) {
+   throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR, "RuntimeQueueCoordinator unavailable");
+  }
+  int removed = queueCoordinator.sweepOrphanDockerResources(java.time.Instant.now());
+  boolean diskPruned = queueCoordinator.checkAndProtectDiskSpace();
+  return ApiResponse.success("Orphan runtime sweep completed",
+          Map.of("orphansRemoved", removed, "diskPruned", diskPruned, "health", queueCoordinator.getRuntimeHealth()));
  }
  @GetMapping("/jobs") @Transactional(readOnly=true) public ApiResponse<?> jobs(){policy.requireSystemAdmin();return ApiResponse.success(jobs.findAll(PageRequest.of(0,50,Sort.by(Sort.Direction.DESC,"startedAt"))).stream().map(j->{
   var project = j.getProject();

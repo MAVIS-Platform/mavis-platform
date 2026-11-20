@@ -54,4 +54,15 @@ class AdminRuntimeControllerTest {
         assertThrows(BusinessException.class, () -> controller.forceStopSession(UUID.randomUUID()));
         verifyNoInteractions(sessions, runtime, audit);
     }
+
+    @Test void runtimeHealthRequiresSystemAdminAndDelegatesToQueueCoordinator() {
+        var coordinator = mock(com.mavis.analyzer.runtime.service.impl.RuntimeQueueCoordinator.class);
+        var snapshot = new com.mavis.analyzer.runtime.service.impl.RuntimeQueueCoordinator.RuntimeHealthSnapshot(
+                "READY", "AUTO", "auto", "runsc", true, true, true, 1, 0, 2, 30, 12000, 40000, false, 0, 0, 0, java.util.List.of());
+        when(coordinator.getRuntimeHealth()).thenReturn(snapshot);
+        org.springframework.test.util.ReflectionTestUtils.setField(controller, "queueCoordinator", coordinator);
+
+        assertSame(snapshot, controller.runtimeHealth().getData());
+        verify(policy).requireSystemAdmin();
+    }
 }

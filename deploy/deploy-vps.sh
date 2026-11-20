@@ -230,6 +230,7 @@ fi
 cp "$incoming/compose.production.yml" deploy/compose.production.yml
 if [ -f "$incoming/compose.runner-worker.yml" ]; then cp "$incoming/compose.runner-worker.yml" deploy/compose.runner-worker.yml; fi
 if [ -f "$incoming/install-gvisor.sh" ]; then cp "$incoming/install-gvisor.sh" deploy/install-gvisor.sh && chmod 0755 deploy/install-gvisor.sh; fi
+if [ -f "$incoming/check-studio-readiness.sh" ]; then cp "$incoming/check-studio-readiness.sh" deploy/check-studio-readiness.sh && chmod 0755 deploy/check-studio-readiness.sh; fi
 printf 'IMAGE_PREFIX=%s\nIMAGE_TAG=%s\n' "$prefix" "$tag" > .release.env
 python3 - "$prefix" "$tag" <<'PY'
 from pathlib import Path

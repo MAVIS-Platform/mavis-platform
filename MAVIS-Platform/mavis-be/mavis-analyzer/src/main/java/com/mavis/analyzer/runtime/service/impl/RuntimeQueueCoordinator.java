@@ -1,5 +1,6 @@
 package com.mavis.analyzer.runtime.service.impl;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.mavis.common.entity.RuntimeSession;
@@ -13,23 +14,30 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
+import java.util.regex.Pattern;
 
 /**
- * Coordinates FIFO runtime session queueing, remote worker claims, and abandoned/stale session reaping.
- * Works identically on a single VPS (AUTO / MANAGED_CLI) and with external horizontal Worker VPSs (REMOTE_WORKER).
+ * Coordinates FIFO runtime session queueing, remote worker claims, abandoned/stale session reaping,
+ * orphan Docker sandbox cleanup, low-disk protection, and live operator runtime health reporting.
  */
 @Service
 @RequiredArgsConstructor
@@ -37,6 +45,8 @@ import java.util.function.Supplier;
 public class RuntimeQueueCoordinator {
 
     static final Set<String> IN_FLIGHT_STATUSES = Set.of("READY_FOR_DISPATCH", "ALLOCATED", "RUNNING");
+    private static final Set<String> TERMINAL_STATUSES = Set.of("COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT", "TIMEDOUT", "TIMEOUT");
+    private static final Pattern MAVISRUN_PROJECT_PATTERN = Pattern.compile("^mavisrun-[0-9a-f]{32}$");
 
     private final RuntimeSessionRepository runtimeSessionRepository;
     @Lazy
@@ -58,14 +68,51 @@ public class RuntimeQueueCoordinator {
     @Value("${mavis.runtime.dispatch-stale-seconds:180}")
     private long dispatchStaleSeconds = 180;
 
+    @Value("${mavis.runtime.low-disk-threshold-mib:2048}")
+    private long lowDiskThresholdMiB = 2048;
+
     @Value("${mavis.runner.mode:AUTO}")
     private String runnerMode = "AUTO";
+
+    @Value("${mavis.runner.oci-runtime:auto}")
+    private String configuredOciRuntime = "auto";
+
+    @Value("${mavis.runner.sandbox-registry:}")
+    private String sandboxRegistry = "";
 
     @Value("${mavis.runner.state-root:}")
     private String runnerStateRoot = "";
 
     private final ConcurrentHashMap<UUID, Instant> uiHeartbeats = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, Instant> dispatchTimestamps = new ConcurrentHashMap<>();
+    private final AtomicLong orphansReapedTotal = new AtomicLong();
+    private final AtomicLong abandonedReapedTotal = new AtomicLong();
+    private final AtomicLong staleDispatchesReapedTotal = new AtomicLong();
+    private volatile long lastRuntimeProbeMillis = 0L;
+    private volatile boolean cachedDockerReachable = false;
+    private volatile boolean cachedGvisorAvailable = false;
+
+    public record CommandOutput(int exitCode, String stdout) {}
+
+    public record RuntimeHealthSnapshot(
+            String surveyReadiness,
+            String runnerMode,
+            String configuredOciRuntime,
+            String effectiveOciRuntime,
+            boolean dockerReachable,
+            boolean gvisorAvailable,
+            boolean sandboxRegistryConfigured,
+            long activeSessions,
+            long queuedSessions,
+            int maxActiveSessions,
+            int maxQueuedSessions,
+            long diskFreeMiB,
+            long diskTotalMiB,
+            boolean diskLowWarning,
+            long orphansReapedTotal,
+            long abandonedReapedTotal,
+            long staleDispatchesReapedTotal,
+            List<String> warnings) {}
 
     public record WorkerClaimResult(boolean claimed, UUID sessionId, String resourceProject) {
         public static WorkerClaimResult empty() {
@@ -224,6 +271,7 @@ public class RuntimeQueueCoordinator {
             if (Boolean.TRUE.equals(marked)) {
                 dispatchTimestamps.remove(id);
                 reaped++;
+                staleDispatchesReapedTotal.incrementAndGet();
                 log.warn("Reaped stale READY_FOR_DISPATCH session {} after {}s", id, dispatchStaleSeconds);
             }
         }
@@ -256,7 +304,7 @@ public class RuntimeQueueCoordinator {
             if (Duration.between(started, now).getSeconds() < minWarmupSeconds) {
                 continue;
             }
-            Instant lastSeen = uiHeartbeats.getOrDefault(id, started);
+            Instant lastSeen = latestActivityTimestamp(id, candidate, started);
             if (Duration.between(lastSeen, now).getSeconds() < idleThresholdSeconds) {
                 continue;
             }
@@ -276,12 +324,255 @@ public class RuntimeQueueCoordinator {
             if (Boolean.TRUE.equals(cancelled)) {
                 uiHeartbeats.remove(id);
                 reaped++;
+                abandonedReapedTotal.incrementAndGet();
                 log.info("Auto-reaped abandoned Studio session {} after {}s idle (waiters={})",
                         id, Duration.between(lastSeen, now).getSeconds(), hasWaiters);
             }
         }
         uiHeartbeats.keySet().retainAll(activeRunningIds);
         return reaped;
+    }
+
+    private Instant latestActivityTimestamp(UUID id, RuntimeSession session, Instant fallbackStarted) {
+        Instant best = uiHeartbeats.getOrDefault(id, fallbackStarted);
+        if (session.getStudioControl() != null && session.getStudioControl().hasNonNull("lastUiActivityAt")) {
+            try {
+                Instant persisted = OffsetDateTime.parse(session.getStudioControl().path("lastUiActivityAt").asText()).toInstant();
+                if (persisted.isAfter(best)) {
+                    best = persisted;
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        return best;
+    }
+
+    /** Periodic host hygiene: sweeps orphaned terminal mavisrun-* Docker resources and protects disk space. */
+    @Scheduled(fixedDelayString = "${mavis.runtime.watchdog-poll-ms:300000}",
+            initialDelayString = "${mavis.runtime.watchdog-initial-delay-ms:60000}")
+    public void runHostWatchdog() {
+        if (isRemoteWorkerMode()) {
+            return;
+        }
+        try {
+            sweepOrphanDockerResources(Instant.now());
+            checkAndProtectDiskSpace();
+        } catch (Exception e) {
+            log.warn("Runtime host watchdog error: {}", e.getMessage());
+        }
+    }
+
+    public int sweepOrphanDockerResources(Instant now) {
+        CommandOutput psOut = runHostCommand(List.of("docker", "ps", "-a", "--format", "{{.Label \"com.docker.compose.project\"}}"), 10);
+        CommandOutput netOut = runHostCommand(List.of("docker", "network", "ls", "--format", "{{.Name}}"), 10);
+        if (psOut.exitCode() != 0 && netOut.exitCode() != 0) {
+            return 0;
+        }
+        Set<String> projects = new HashSet<>();
+        if (psOut.exitCode() == 0 && psOut.stdout() != null) {
+            for (String line : psOut.stdout().split("\\R")) {
+                String p = line.trim();
+                if (MAVISRUN_PROJECT_PATTERN.matcher(p).matches()) {
+                    projects.add(p);
+                }
+            }
+        }
+        if (netOut.exitCode() == 0 && netOut.stdout() != null) {
+            for (String line : netOut.stdout().split("\\R")) {
+                String name = line.trim();
+                if (name.endsWith("_default")) {
+                    String candidate = name.substring(0, name.length() - "_default".length());
+                    if (MAVISRUN_PROJECT_PATTERN.matcher(candidate).matches()) {
+                        projects.add(candidate);
+                    }
+                }
+            }
+        }
+        if (projects.isEmpty()) {
+            return 0;
+        }
+        Map<String, RuntimeSession> byProject = new HashMap<>();
+        for (RuntimeSession s : runtimeSessionRepository.findByResourceProjectIn(projects)) {
+            if (s.getResourceProject() != null) {
+                byProject.put(s.getResourceProject(), s);
+            }
+        }
+        int reapedProjects = 0;
+        for (String project : projects) {
+            RuntimeSession session = byProject.get(project);
+            if (session == null) {
+                continue;
+            }
+            String exec = session.getExecutionStatus() == null ? "" : session.getExecutionStatus().toUpperCase(Locale.ROOT);
+            if (!TERMINAL_STATUSES.contains(exec)) {
+                continue;
+            }
+            if (session.getCompletedAt() != null && Duration.between(session.getCompletedAt().toInstant(), now).getSeconds() < 120) {
+                continue;
+            }
+            reapSingleOrphanProject(project);
+            reapedProjects++;
+            orphansReapedTotal.incrementAndGet();
+            log.warn("Host watchdog removed orphaned Docker resources for terminal session {} ({})", session.getId(), project);
+        }
+        return reapedProjects;
+    }
+
+    private void reapSingleOrphanProject(String project) {
+        CommandOutput ids = runHostCommand(List.of("docker", "ps", "-aq", "--filter", "label=com.docker.compose.project=" + project), 10);
+        if (ids.exitCode() == 0 && ids.stdout() != null && !ids.stdout().isBlank()) {
+            List<String> rmCmd = new ArrayList<>();
+            rmCmd.add("docker");
+            rmCmd.add("rm");
+            rmCmd.add("-f");
+            for (String id : ids.stdout().split("\\R")) {
+                if (!id.isBlank()) rmCmd.add(id.trim());
+            }
+            if (rmCmd.size() > 3) {
+                runHostCommand(rmCmd, 20);
+            }
+        }
+        runHostCommand(List.of("docker", "network", "rm", project + "_default"), 10);
+        CommandOutput vols = runHostCommand(List.of("docker", "volume", "ls", "-q", "--filter", "label=com.docker.compose.project=" + project), 10);
+        if (vols.exitCode() == 0 && vols.stdout() != null && !vols.stdout().isBlank()) {
+            List<String> volCmd = new ArrayList<>();
+            volCmd.add("docker");
+            volCmd.add("volume");
+            volCmd.add("rm");
+            volCmd.add("-f");
+            for (String v : vols.stdout().split("\\R")) {
+                if (!v.isBlank()) volCmd.add(v.trim());
+            }
+            if (volCmd.size() > 4) {
+                runHostCommand(volCmd, 15);
+            }
+        }
+    }
+
+    public boolean checkAndProtectDiskSpace() {
+        long freeMiB = usableDiskMiB();
+        if (freeMiB < 0 || freeMiB >= Math.max(256L, lowDiskThresholdMiB)) {
+            return false;
+        }
+        log.warn("Host free disk space ({} MiB) dropped below {} MiB threshold; pruning stale build cache and dangling images",
+                freeMiB, lowDiskThresholdMiB);
+        runHostCommand(List.of("docker", "builder", "prune", "-f", "--filter", "until=24h"), 30);
+        // Prune ONLY dangling (<none>) layers; tagged mavis-sandbox-* Lab images are never removed.
+        runHostCommand(List.of("docker", "image", "prune", "-f"), 30);
+        return true;
+    }
+
+    public RuntimeHealthSnapshot getRuntimeHealth() {
+        refreshDockerAndRuntimeProbe();
+        long active = countActiveSessions();
+        long queued = countQueuedSessions();
+        long freeMiB = usableDiskMiB();
+        long totalMiB = totalDiskMiB();
+        boolean diskLow = freeMiB >= 0 && freeMiB < Math.max(256L, lowDiskThresholdMiB);
+        String configured = configuredOciRuntime == null || configuredOciRuntime.isBlank() ? "auto" : configuredOciRuntime.trim();
+        String effective = "runc";
+        if ("auto".equalsIgnoreCase(configured)) {
+            effective = cachedGvisorAvailable ? "runsc" : "runc";
+        } else {
+            effective = configured;
+        }
+
+        List<String> warnings = new ArrayList<>();
+        String readiness = "READY";
+        if (!isRemoteWorkerMode() && !cachedDockerReachable) {
+            readiness = "BLOCKED";
+            warnings.add("Local Docker daemon is unreachable on the backend host.");
+        }
+        if ("runsc".equalsIgnoreCase(configured) && !cachedGvisorAvailable && !isRemoteWorkerMode()) {
+            readiness = "BLOCKED";
+            warnings.add("Explicit gVisor runtime (runsc) is configured but not installed on host. Run: sudo bash /opt/mavis/deploy/install-gvisor.sh");
+        } else if ("auto".equalsIgnoreCase(configured) && !cachedGvisorAvailable && !isRemoteWorkerMode()) {
+            if ("READY".equals(readiness)) readiness = "DEGRADED";
+            warnings.add("gVisor (runsc) not installed on host — running in hardened runc mode. Run sudo bash /opt/mavis/deploy/install-gvisor.sh to enable Stage 3 kernel isolation.");
+        }
+        if (diskLow) {
+            if ("READY".equals(readiness)) readiness = "DEGRADED";
+            warnings.add("Host free disk space is low (" + freeMiB + " MiB free; threshold " + lowDiskThresholdMiB + " MiB).");
+        }
+        if (isRemoteWorkerMode() && (sandboxRegistry == null || sandboxRegistry.isBlank())) {
+            if ("READY".equals(readiness)) readiness = "DEGRADED";
+            warnings.add("REMOTE_WORKER mode without MAVIS_RUNNER_SANDBOX_REGISTRY: Dockerfile-built Labs need a shared registry so remote Worker VPSs can pull images.");
+        }
+
+        return new RuntimeHealthSnapshot(
+                readiness,
+                runnerMode,
+                configured,
+                effective,
+                cachedDockerReachable,
+                cachedGvisorAvailable,
+                sandboxRegistry != null && !sandboxRegistry.isBlank(),
+                active,
+                queued,
+                getMaxActiveStudioSessions(),
+                getMaxQueuedStudioSessions(),
+                freeMiB,
+                totalMiB,
+                diskLow,
+                orphansReapedTotal.get(),
+                abandonedReapedTotal.get(),
+                staleDispatchesReapedTotal.get(),
+                warnings);
+    }
+
+    private void refreshDockerAndRuntimeProbe() {
+        long now = System.currentTimeMillis();
+        if (now - lastRuntimeProbeMillis < 60_000L) {
+            return;
+        }
+        CommandOutput out = runHostCommand(List.of("docker", "info", "--format", "{{json .Runtimes}}"), 5);
+        boolean reachable = out.exitCode() == 0;
+        boolean hasRunsc = false;
+        if (reachable && out.stdout() != null && !out.stdout().isBlank()) {
+            try {
+                JsonNode node = objectMapper.readTree(out.stdout());
+                hasRunsc = node.isObject() && node.has("runsc");
+            } catch (Exception ignored) {
+            }
+        }
+        cachedDockerReachable = reachable;
+        cachedGvisorAvailable = hasRunsc;
+        lastRuntimeProbeMillis = now;
+    }
+
+    protected long usableDiskMiB() {
+        File target = resolveDiskProbeTarget();
+        long bytes = target.getUsableSpace();
+        return bytes > 0 ? bytes / (1024L * 1024L) : -1L;
+    }
+
+    protected long totalDiskMiB() {
+        File target = resolveDiskProbeTarget();
+        long bytes = target.getTotalSpace();
+        return bytes > 0 ? bytes / (1024L * 1024L) : -1L;
+    }
+
+    private File resolveDiskProbeTarget() {
+        if (runnerStateRoot != null && !runnerStateRoot.isBlank()) {
+            File stateDir = new File(runnerStateRoot);
+            if (stateDir.exists()) return stateDir;
+        }
+        return new File(".");
+    }
+
+    protected CommandOutput runHostCommand(List<String> command, long timeoutSeconds) {
+        try {
+            Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
+            boolean finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
+            if (!finished) {
+                process.destroyForcibly();
+                return new CommandOutput(-1, "");
+            }
+            String stdout = new String(process.getInputStream().readNBytes(65_536), StandardCharsets.UTF_8);
+            return new CommandOutput(process.exitValue(), stdout);
+        } catch (Exception e) {
+            return new CommandOutput(-1, "");
+        }
     }
 
     private void writeCancelMarkerBestEffort(RuntimeSession session) {

@@ -328,10 +328,11 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
 
             Stage = "INFRASTRUCTURE_" + action;
             var before = await ReadServiceMetrics(service, ct);
+            var actionWaitTimeout = ComposeOverrideBuilder.IsKernelSandboxedRuntime(IsolationRuntime) ? "60" : "30";
             if (action == "STOP") await Require(["stop", "--timeout", "5", service], ct);
             else if (action == "START") await Require(["start", service], ct);
             else await Require(["up", "--detach", "--no-deps", "--no-recreate", "--no-build", "--pull", "never",
-                "--wait", "--wait-timeout", "30", "--scale", service + "=" + item.Replicas, service], ct);
+                "--wait", "--wait-timeout", actionWaitTimeout, "--scale", service + "=" + item.Replicas, service], ct);
             var after = await ReadServiceMetrics(service, ct);
             var expected = action switch
             {
@@ -385,7 +386,8 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
         var probe = new HttpScenarioDefinition("studio-readiness",
             [new("ready", service, "GET", app.ReadinessPath, 200, AllowClientError: app.AllowClientErrorReadiness)], 3);
         using var readinessDeadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        readinessDeadline.CancelAfter(TimeSpan.FromSeconds(30));
+        var readinessSeconds = ComposeOverrideBuilder.IsKernelSandboxedRuntime(IsolationRuntime) ? 60 : 30;
+        readinessDeadline.CancelAfter(TimeSpan.FromSeconds(readinessSeconds));
         while (!readinessDeadline.IsCancellationRequested)
         {
             ct.ThrowIfCancellationRequested();

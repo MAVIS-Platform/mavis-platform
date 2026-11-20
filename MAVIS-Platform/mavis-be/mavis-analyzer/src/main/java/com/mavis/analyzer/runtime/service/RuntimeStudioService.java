@@ -115,6 +115,7 @@ public class RuntimeStudioService {
             evidence.put("digest", com.mavis.analyzer.runtime.utils.CanonicalReceiptDigestUtils.computeDigest(evidence));
         } catch (Exception failure) { throw error(ErrorCode.INTERNAL_SERVER_ERROR, "Could not freeze snapshot."); }
         control.withArray("snapshots").add(evidence);
+        control.put("lastUiActivityAt", OffsetDateTime.now().toString());
         save(session, control);
         return evidence;
     }
@@ -209,6 +210,7 @@ public class RuntimeStudioService {
         }
         action.put("status", "PENDING");
         control.withArray("actions").add(action);
+        control.put("lastUiActivityAt", OffsetDateTime.now().toString());
         save(session, control);
         return view(session);
     }

@@ -170,4 +170,112 @@ class RuntimeQueueCoordinatorTest {
         assertThat(stale.getRecoveryResultJson().path("code").asText()).isEqualTo("RUNNER_DISPATCH_TIMEOUT");
         assertThat(fresh.getExecutionStatus()).isEqualTo("READY_FOR_DISPATCH");
     }
+
+    @Test
+    void persistedLastUiActivitySparesSessionAfterBackendRestart() {
+        UUID resumedId = UUID.randomUUID();
+        Instant now = Instant.now();
+        var control = mapper.createObjectNode().put("lastUiActivityAt",
+                OffsetDateTime.ofInstant(now.minusSeconds(20), ZoneOffset.UTC).toString());
+        RuntimeSession resumed = RuntimeSession.builder()
+                .id(resumedId)
+                .executionStatus("RUNNING")
+                .startedAt(OffsetDateTime.ofInstant(now.minusSeconds(300), ZoneOffset.UTC))
+                .scenarioConfig(mapper.createObjectNode().put("interactiveStudio", true))
+                .studioControl(control)
+                .resourceProject("mavisrun-" + "e".repeat(32))
+                .build();
+        when(repository.countByExecutionStatusIn(List.of("QUEUED"))).thenReturn(2L);
+        when(repository.findByExecutionStatusAndCancelRequestedAtIsNullOrderByCreatedAtAsc("RUNNING"))
+                .thenReturn(List.of(resumed));
+
+        assertThat(coordinator.reapAbandonedStudioSessions(now)).isZero();
+        assertThat(resumed.getExecutionStatus()).isEqualTo("RUNNING");
+    }
+
+    @Test
+    void sweepOrphanDockerResourcesOnlyRemovesOldTerminalMavisrunProjects() {
+        String orphanProj = "mavisrun-" + "1".repeat(32);
+        String activeProj = "mavisrun-" + "2".repeat(32);
+        Instant now = Instant.now();
+
+        RuntimeSession terminalOld = RuntimeSession.builder()
+                .id(UUID.randomUUID())
+                .resourceProject(orphanProj)
+                .executionStatus("FAILED")
+                .completedAt(OffsetDateTime.ofInstant(now.minusSeconds(300), ZoneOffset.UTC))
+                .build();
+        RuntimeSession stillRunning = RuntimeSession.builder()
+                .id(UUID.randomUUID())
+                .resourceProject(activeProj)
+                .executionStatus("RUNNING")
+                .build();
+
+        java.util.List<List<String>> executed = new java.util.ArrayList<>();
+        RuntimeQueueCoordinator stub = new RuntimeQueueCoordinator(repository, dispatcher, mapper) {
+            @Override
+            protected CommandOutput runHostCommand(List<String> command, long timeoutSeconds) {
+                executed.add(command);
+                if (command.contains("ps") && command.contains("{{.Label \"com.docker.compose.project\"}}")) {
+                    return new CommandOutput(0, orphanProj + "\n" + activeProj + "\nmavis\n");
+                }
+                if (command.contains("network") && command.contains("ls")) {
+                    return new CommandOutput(0, orphanProj + "_default\n" + activeProj + "_default\n");
+                }
+                if (command.contains("-aq")) {
+                    return new CommandOutput(0, "abc123\n");
+                }
+                if (command.contains("volume") && command.contains("ls")) {
+                    return new CommandOutput(0, "vol1\n");
+                }
+                return new CommandOutput(0, "");
+            }
+        };
+        when(repository.findByResourceProjectIn(any())).thenReturn(List.of(terminalOld, stillRunning));
+
+        int removed = stub.sweepOrphanDockerResources(now);
+
+        assertThat(removed).isEqualTo(1);
+        assertThat(executed).anyMatch(cmd -> cmd.contains("rm") && cmd.contains("abc123"));
+        assertThat(executed).anyMatch(cmd -> cmd.contains("network") && cmd.contains(orphanProj + "_default"));
+        assertThat(executed).noneMatch(cmd -> cmd.contains(activeProj + "_default"));
+    }
+
+    @Test
+    void runtimeHealthReportsReadinessAndDiskProtectionThresholds() {
+        java.util.List<List<String>> pruneCalls = new java.util.ArrayList<>();
+        RuntimeQueueCoordinator stub = new RuntimeQueueCoordinator(repository, dispatcher, mapper) {
+            @Override
+            protected CommandOutput runHostCommand(List<String> command, long timeoutSeconds) {
+                pruneCalls.add(command);
+                if (command.contains("info")) {
+                    return new CommandOutput(0, "{\"runc\":{},\"runsc\":{}}");
+                }
+                return new CommandOutput(0, "");
+            }
+
+            @Override
+            protected long usableDiskMiB() {
+                return 1024L;
+            }
+
+            @Override
+            protected long totalDiskMiB() {
+                return 40960L;
+            }
+        };
+        ReflectionTestUtils.setField(stub, "lowDiskThresholdMiB", 2048L);
+        ReflectionTestUtils.setField(stub, "configuredOciRuntime", "auto");
+        ReflectionTestUtils.setField(stub, "runnerMode", "AUTO");
+
+        assertThat(stub.checkAndProtectDiskSpace()).isTrue();
+        assertThat(pruneCalls).anyMatch(c -> c.contains("builder") && c.contains("prune"));
+        assertThat(pruneCalls).anyMatch(c -> c.contains("image") && c.contains("prune"));
+
+        var health = stub.getRuntimeHealth();
+        assertThat(health.gvisorAvailable()).isTrue();
+        assertThat(health.effectiveOciRuntime()).isEqualTo("runsc");
+        assertThat(health.diskLowWarning()).isTrue();
+        assertThat(health.surveyReadiness()).isEqualTo("DEGRADED");
+    }
 }
