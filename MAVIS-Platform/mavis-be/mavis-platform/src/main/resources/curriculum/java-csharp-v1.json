@@ -2068,5 +2068,85 @@
         "points": 1
       }
     ]
+  },
+  {
+    "id": "java-v2-ch02",
+    "track": "Java",
+    "phase": "V2 · Module 1",
+    "title": "Chương 02: PHÂN RÃ HỆ THỐNG VỚI DOMAIN-DRIVEN DESIGN (DDD) & BOUNDED CONTEXT",
+    "minutes": 45,
+    "objective": "Áp dụng được 2 mẫu phân rã chuẩn: Decompose by Business Capability và Decompose by Subdomain (DDD). Hiểu rõ Ubiquitous Language, Bounded Context, Entity, Value Object, Aggregate và Aggregate Root. Tránh được bẫy *\"God Class\"* và hiểu cách phá vỡ sự phụ thuộc khóa ngoại giữa các Aggregate khác dịch vụ.",
+    "lesson": "### 2.1. Câu hỏi khó nhất của Microservices: \"Cắt hệ thống ở đâu cho đúng?\"\n\nRất nhiều sinh viên khi làm đồ án Microservices mắc sai lầm **cắt theo bảng cơ sở dữ liệu** hoặc **cắt theo tầng kỹ thuật** (ví dụ: 1 service chỉ làm CRUD bảng `User`, 1 service làm `Role`). Kết quả là mỗi thao tác nghiệp vụ phải gọi lòng vòng 4–5 service.\n\n`[R19]` Ch.2 đề xuất quy trình 3 bước bài bản và 2 mẫu phân rã chuẩn:\n\n1. **Decompose by Business Capability (Phân rã theo năng lực nghiệp vụ)**:\n   - Xác định tổ chức làm *cái gì* để tạo ra giá trị (chứ không phải *làm bằng công nghệ gì*).\n   - Ví dụ một hệ thống bán lẻ trực tuyến có các năng lực ổn định theo thời gian: *Quản lý danh mục & sản phẩm (Catalog)*, *Quản lý đơn hàng (Order)*, *Quản lý tồn kho (Inventory)*, *Quản lý tài khoản & xác thực (Identity)*, *Thông báo khách hàng (Notification)*.\n2. **Decompose by Subdomain — DDD (Phân rã theo miền con)**:\n   - Chia miền nghiệp vụ (Domain) thành các **Subdomain** phân loại theo mức độ chiến lược:\n     - **Core Subdomain** (Cốt lõi — tạo lợi thế cạnh tranh, cần tập trung kỹ sư giỏi nhất, ví dụ: *Quy trình đặt hàng & định giá*).\n     - **Supporting Subdomain** (Hỗ trợ nghiệp vụ chính, ví dụ: *Quản lý danh mục sản phẩm*).\n     - **Generic Subdomain** (Phổ thông, có thể dùng thư viện/giải pháp sẵn có, ví dụ: *Xác thực JWT, Gửi thông báo*).\n\n### 2.2. Bounded Context & Ubiquitous Language — Tại sao \"Product\" ở hai nơi lại khác nhau?\n\nTrong một hệ thống Monolith, mọi người cố nhồi nhét mọi thuộc tính vào một class `Product` khổng lồ (*God Class*) chứa từ mô tả SEO, hình ảnh, giá bán, số lượng tồn kho, vị trí kệ kho, cho đến thông tin vận chuyển.\n\n**DDD (`[S16]` Ch.3 & `[R19]` Ch.2)** giải quyết triệt để bằng **Bounded Context (Ngữ cảnh giới hạn)**:\n- Mỗi Microservice lý tưởng nên ánh xạ **1-1 với một Bounded Context**.\n- Trong mỗi Bounded Context, cùng một khái niệm chỉ mang đúng các thuộc tính cần thiết cho ngữ cảnh đó:\n\n```text\n+-----------------------------------+      +------------------------------------+\n|     CATALOG BOUNDED CONTEXT       |      |       ORDER BOUNDED CONTEXT        |\n|  (catalog-service)                |      |  (order-service)                   |\n|                                   |      |                                    |\n|  Product:                         |      |  OrderItem (Value Object/Entity):  |\n|   - id, sku, name, description    |      |   - productId (chỉ lưu ID!)        |\n|   - unitPrice, category, images   |      |   - productNameSnapshot            |\n|   - stockQuantity                 |      |   - unitPriceSnapshot, quantity    |\n+-----------------------------------+      +------------------------------------+\n```\n\n> **Quy tắc vàng**: Khi khách mua hàng xong, `Order` lưu bản chụp (`snapshot`) tên sản phẩm và giá tại thời điểm mua cùng `productId`. Sau này Catalog có đổi giá sản phẩm, hóa đơn cũ của Order **không bị sai lệch lịch sử**!\n\n### 2.3. Các khối xây dựng chiến thuật của DDD (`[R19]` Ch.5 & `[S16]` Ch.3)\n\n| Khái niệm | Bản chất cốt lõi | Ví dụ trong Java |\n| :--- | :--- | :--- |\n| **Entity** | Có định danh duy nhất (`id`) bất biến theo thời gian, trạng thái bên trong có thể thay đổi. | `Order`, `Product`, `User` |\n| **Value Object** | Không có `id` riêng, **bất biến (immutable)**, so sánh bằng giá trị các thuộc tính. | `Money(BigDecimal amount, String currency)`, `ShippingAddress` |\n| **Aggregate** | Một cụm các Entity & Value Object gắn kết chặt chẽ, luôn đảm bảo tính bất biến nghiệp vụ (invariant) trong cùng một giao dịch cục bộ. | Cụm `Order` + danh sách `OrderItem` |\n| **Aggregate Root** | Thực thể đại diện duy nhất của Aggregate. Mọi tham chiếu từ bên ngoài chỉ được gọi thông qua Root. | `Order` (không cho phép sửa trực tiếp `OrderItem` bỏ qua `Order`) |\n\n#### Ví dụ mã nguồn Java 21 thiết kế Aggregate & Value Object sạch\n\n```java\n// Value Object bất biến bằng Java 21 record\npublic record Money(BigDecimal amount, String currency) {\n    public Money {\n        if (amount == null || amount.compareTo(BigDecimal.ZERO) < 0) {\n            throw new IllegalArgumentException(\"Amount must be non-negative\");\n        }\n        if (currency == null || currency.isBlank()) {\n            throw new IllegalArgumentException(\"Currency is required\");\n        }\n    }\n\n    public Money multiply(int quantity) {\n        return new Money(amount.multiply(BigDecimal.valueOf(quantity)), currency);\n    }\n}\n\n// Aggregate Root: Order chỉ tham chiếu sang Product bằng productId (KHÔNG giữ Object Product!)\npublic class Order {\n    private UUID id;\n    private UUID customerId;            // Tham chiếu bằng ID, không @ManyToOne sang bảng User!\n    private OrderStatus status;\n    private final List<OrderItem> items = new ArrayList<>();\n\n    public void addItem(UUID productId, String productNameSnapshot, Money unitPrice, int qty) {\n        if (this.status != OrderStatus.PENDING) {\n            throw new IllegalStateException(\"Cannot modify a non-pending order\");\n        }\n        if (qty <= 0) {\n            throw new IllegalArgumentException(\"Quantity must be positive\");\n        }\n        this.items.add(new OrderItem(productId, productNameSnapshot, unitPrice, qty));\n    }\n}\n```\n\n#### Quy tắc vàng của Aggregate (`[R19]` §5.2.3):\n1. **Tham chiếu giữa các Aggregate khác nhau bằng Primary Key (`UUID`/`Long`)**, không dùng tham chiếu đối tượng trực tiếp (`@ManyToOne` xuyên service).\n2. **Một giao dịch cục bộ (`@Transactional`) chỉ nên tạo hoặc cập nhật đúng MỘT Aggregate**. Cập nhật nhiều Aggregate xuyên dịch vụ sẽ dùng Saga (Chương 9).\n3. **Giữ Aggregate đủ nhỏ** để giảm xung đột khóa (lock contention) khi nhiều người dùng cùng truy cập.\n\n### 2.4. Góc nhìn trên nền tảng MAVIS\n- Khi thiết kế sai ranh giới Bounded Context (hai service dùng chung entity/bảng hoặc gọi qua lại lẫn nhau để lấy dữ liệu của nhau), bộ kiểm tra **3E Rules** của MAVIS sẽ lập tức đánh dấu cảnh báo **Tight Coupling**, **Shared Database** hoặc **Cyclic Dependency** ngay trên đồ thị C2/C3.\n- Quy tắc **Single Responsibility & Common Closure Principle (CCP)**: Các lớp thường xuyên thay đổi vì cùng một lý do nghiệp vụ phải nằm chung một service.",
+    "exercise": "### 2.5. Bài tập thực hành Lab 02\n- Chọn một miền nghiệp vụ Thương mại điện tử chuẩn (gồm Khách hàng, Sản phẩm, Đơn hàng, Thông báo).\n- Phân chia thành các **Bounded Context** riêng biệt, xác định đâu là **Core / Supporting / Generic Subdomain**.\n- Với mỗi Bounded Context, liệt kê các **Aggregate Root**, **Value Object**, và chỉ rõ các khóa tham chiếu bằng ID giữa các ngữ cảnh (chứng minh không có `@ManyToOne` xuyên dịch vụ).",
+    "sources": [
+      {
+        "publisher": "Manning / Microservices.io",
+        "title": "Chris Richardson — Microservices Patterns",
+        "url": "https://microservices.io/patterns/"
+      },
+      {
+        "publisher": "Spring Cloud",
+        "title": "Mastering Microservices with Java & Spring Cloud Reference",
+        "url": "https://docs.spring.io/spring-cloud/reference/"
+      }
+    ],
+    "questions": [
+      {
+        "id": "java-v2-ch02-q1",
+        "prompt": "Theo quy tắc thiết kế DDD Aggregate trong *Microservices Patterns*, một Aggregate (`Order`) nên tham chiếu tới một Aggregate ở dịch vụ khác (`Customer` hoặc `Product`) bằng cách nào?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Dùng trực tiếp `@ManyToOne` của JPA trỏ sang bảng của dịch vụ kia",
+          "Lưu định danh (Primary Key / ID) cùng dữ liệu chụp nhanh cần thiết thay vì giữ tham chiếu đối tượng trực tiếp",
+          "Sao chép toàn bộ mã nguồn class Entity của dịch vụ kia vào chung một package",
+          "Dùng một bảng trung gian trong cơ sở dữ liệu dùng chung"
+        ],
+        "correctOption": 1,
+        "explanation": "Tham chiếu bằng ID giữ khớp nối lỏng lẻo giữa các Bounded Context và cho phép mỗi service quản lý CSDL riêng độc lập.",
+        "points": 1
+      },
+      {
+        "id": "java-v2-ch02-q2",
+        "prompt": "Điểm khác biệt cốt lõi giữa **Entity** và **Value Object** trong DDD là gì?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Entity luôn lưu ở Redis còn Value Object lưu ở PostgreSQL",
+          "Entity có định danh duy nhất theo vòng đời; Value Object không có định danh riêng, bất biến và được so sánh theo giá trị thuộc tính",
+          "Value Object có thể kế thừa nhiều lớp còn Entity thì không",
+          "Entity chỉ nằm ở tầng Controller còn Value Object nằm ở tầng Repository"
+        ],
+        "correctOption": 1,
+        "explanation": "Ví dụ hai tờ tiền `Money(100_000, \"VND\")` có giá trị như nhau thì hoàn toàn tương đương nhau (Value Object), còn hai đơn hàng có cùng tổng tiền nhưng khác `orderId` vẫn là hai thực thể khác nhau (Entity).",
+        "points": 1
+      },
+      {
+        "id": "java-v2-ch02-q3",
+        "prompt": "Trong chiến lược phân rã theo DDD, tại sao khái niệm `Product` ở `catalog-service` và `OrderItem` ở `order-service` không nên gộp chung thành một mô hình dữ liệu duy nhất?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Vì Java không hỗ trợ chia sẻ class giữa hai module Maven",
+          "Vì mỗi Bounded Context có góc nhìn, vòng đời và thuộc tính nghiệp vụ khác nhau; tách biệt giúp tránh God Class và bảo vệ lịch sử đơn hàng khi giá sản phẩm thay đổi",
+          "Vì `order-service` không được phép biết tên sản phẩm",
+          "Vì Spring Boot bắt buộc mỗi service đặt tên class khác nhau"
+        ],
+        "correctOption": 1,
+        "explanation": "Bounded Context ngăn mô hình bị phình to và giữ tính toàn vẹn ngữ nghĩa riêng cho từng miền nghiệp vụ.",
+        "points": 1
+      },
+      {
+        "id": "java-v2-ch02-q4",
+        "prompt": "Nguyên tắc **Common Closure Principle (CCP)** hướng dẫn điều gì khi gom nhóm chức năng vào một Microservice?",
+        "type": "SINGLE_CHOICE",
+        "options": [
+          "Gom các class có cùng kiểu dữ liệu nguyên thủy vào chung một service",
+          "Gom các thành phần thường xuyên thay đổi cùng nhau vì cùng một lý do nghiệp vụ vào chung một service",
+          "Tách mỗi endpoint REST thành một service riêng biệt",
+          "Đóng toàn bộ cổng kết nối mạng của service vào cuối ngày"
+        ],
+        "correctOption": 1,
+        "explanation": "Gom theo CCP giúp mỗi thay đổi nghiệp vụ chỉ cần sửa và triển khai đúng một service duy nhất, giảm thiểu thay đổi dây chuyền.",
+        "points": 1
+      }
+    ]
   }
 ]
