@@ -898,7 +898,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                 }
                 String lowerStack = detectedStack != null ? detectedStack.toLowerCase(Locale.ROOT) : "java";
                 String runnerRuntime = (lowerStack.contains("dotnet") || lowerStack.contains("csharp") || lowerStack.contains("aspnet") || lowerStack.contains("net8"))
-                        ? "dotnet8-linux-x64-glibc"
+                        ? (lowerStack.contains("musl") ? "dotnet8-linux-x64-musl" : "dotnet8-linux-x64-glibc")
                         : ((lowerStack.contains("java") || lowerStack.contains("spring") || lowerStack.contains("kotlin"))
                                 ? "java"
                                 : "passthrough");

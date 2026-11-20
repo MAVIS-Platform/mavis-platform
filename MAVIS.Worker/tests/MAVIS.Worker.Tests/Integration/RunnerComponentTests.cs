@@ -217,6 +217,15 @@ public sealed class RunnerComponentTests
         var javaEnvironment = javaOverride.RootElement.GetProperty("services").GetProperty("node-api").GetProperty("environment");
         Assert.False(javaEnvironment.TryGetProperty("MANAGEMENT_ENDPOINT_HEALTH_STATUS_HTTP_MAPPING_DOWN", out _));
         Assert.False(javaEnvironment.TryGetProperty("MANAGEMENT_ENDPOINT_HEALTH_STATUS_HTTP_MAPPING_OUT_OF_SERVICE", out _));
+        using var muslOverride = JsonDocument.Parse(ComposeOverrideBuilder.Build(preflight,
+            profile with { Applications = new Dictionary<string, RuntimeServiceProfile> {
+                ["node-api"] = new("dotnet8-linux-x64-musl", 8080),
+                ["order-svc"] = new("passthrough", 3001) } },
+            Path.Combine(Path.GetTempPath(), "collector.yaml"), values));
+        var muslEnvironment = muslOverride.RootElement.GetProperty("services").GetProperty("node-api").GetProperty("environment");
+        Assert.Equal("/mavis-otel/dotnet-musl/linux-musl-x64/OpenTelemetry.AutoInstrumentation.Native.so", muslEnvironment.GetProperty("CORECLR_PROFILER_PATH").GetString());
+        Assert.Equal("/mavis-otel/dotnet-musl", muslEnvironment.GetProperty("OTEL_DOTNET_AUTO_HOME").GetString());
+        Assert.Equal("/mavis-otel/dotnet-musl/net/OpenTelemetry.AutoInstrumentation.StartupHook.dll", muslEnvironment.GetProperty("DOTNET_STARTUP_HOOKS").GetString());
         Assert.Equal("node_secret_1", nodeEnv.GetProperty("DB_PASSWORD").GetString());
         Assert.Equal("order_secret_2", overrideDoc.RootElement.GetProperty("services").GetProperty("order-svc").GetProperty("environment").GetProperty("DB_PASSWORD").GetString());
         Assert.False(overrideDoc.RootElement.GetProperty("volumes").TryGetProperty("mavis-instrumentation", out _));

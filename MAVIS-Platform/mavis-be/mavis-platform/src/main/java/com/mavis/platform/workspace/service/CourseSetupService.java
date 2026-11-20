@@ -615,7 +615,8 @@ public class CourseSetupService {
         if (refModel != null && refModel.getProject() != null && refModel.getSourceSnapshot() != null) {
             UUID refProjectId = refModel.getProject().getId();
             RuntimeConfiguration cfg = configurations.findById(refProjectId).orElse(null);
-            ObjectNode profile = cfg != null && cfg.getProfile() != null && cfg.getProfile().isObject()
+            ObjectNode profile = cfg != null && refModel.getSourceSnapshot().getId().equals(cfg.getSourceSnapshotId())
+                    && cfg.getProfile() != null && cfg.getProfile().isObject()
                     ? ((ObjectNode) cfg.getProfile()).deepCopy()
                     : json.createObjectNode();
             JsonNode prevApps = profile.get("applications");
@@ -631,8 +632,11 @@ public class CourseSetupService {
             for (String svc : applicationNames) {
                 JsonNode existingApp = prevApps != null ? prevApps.get(svc) : null;
                 String existingReadiness = existingApp != null ? existingApp.path("readinessPath").asText("") : "";
+                String configuredRuntime = existingApp != null ? existingApp.path("runtime").asText("") : "";
+                String runtimeName = Set.of("java", "dotnet8-linux-x64-glibc", "dotnet8-linux-x64-musl", "passthrough").contains(configuredRuntime)
+                        ? configuredRuntime : runtimeByName.getOrDefault(svc, "java");
                 apps.putObject(svc)
-                        .put("runtime", runtimeByName.getOrDefault(svc, "java"))
+                        .put("runtime", runtimeName)
                         .put("containerPort", containerPortByName.getOrDefault(svc, 8080))
                         .put("readinessPath", existingReadiness.isBlank() ? "/health" : existingReadiness);
             }

@@ -238,6 +238,23 @@ class CourseSetupServiceTest {
         verify(assignments).saveAndFlush(lab);
     }
 
+    @Test void autoConfigurePreservesPreparedMuslRuntime() {
+        var elements = mock(ModelElementRepository.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(setup, "elements", elements);
+        ModelElement orders = ModelElement.builder().id(UUID.randomUUID()).modelVersion(model)
+                .elementType("SERVICE_CONTAINER").name("orders").languageStack("CSHARP_DOTNET").build();
+        when(elements.findByModelVersionId(modelId)).thenReturn(List.of(orders));
+        when(assignments.findLockedById(assignmentId)).thenReturn(Optional.of(lab));
+        when(assignments.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+        var config = configuration(false);
+        ((ObjectNode) config.getProfile().path("applications").path("orders"))
+                .put("runtime", "dotnet8-linux-x64-musl").put("readinessPath", "/health/ready");
+        when(configurations.findById(projectId)).thenReturn(Optional.of(config));
+        setup.autoConfigureStudio(workspaceId, assignmentId);
+        assertEquals("dotnet8-linux-x64-musl", config.getProfile().path("applications").path("orders").path("runtime").asText());
+        assertEquals("/health/ready", config.getProfile().path("applications").path("orders").path("readinessPath").asText());
+    }
+
     @Test void autoConfigureCollapsesRoutingServiceIntoAConnectionController() throws Exception {
         var elements = mock(ModelElementRepository.class);
         var relationships = mock(ModelRelationshipRepository.class);

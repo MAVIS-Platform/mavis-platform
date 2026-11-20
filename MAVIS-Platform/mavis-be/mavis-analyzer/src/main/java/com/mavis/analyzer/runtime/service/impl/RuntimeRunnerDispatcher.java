@@ -465,20 +465,21 @@ public class RuntimeRunnerDispatcher {
             String volumeName = profile.path("instrumentationVolume").asText("mavis-agents-v1").trim();
             if (volumeName.matches("[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")) {
                 String labels = captureCommandStdout(List.of("docker", "volume", "inspect", "--format", "{{json .Labels}}", volumeName), 10);
-                if (labels == null || !labels.contains("1.17.0") || !labels.contains("2.32.0") || !labels.contains("\"mavis.bundle.rev\":\"2\"")) {
+                if (labels == null || !labels.contains("1.17.0") || !labels.contains("2.32.0") || !labels.contains("\"mavis.bundle.rev\":\"3\"")) {
                     for (Path b : List.of(
                             Path.of("/app/otel-bundle"),
                             Path.of("../MAVIS.Worker/samples/runtime-poc/artifacts/bundle"),
                             Path.of("../../MAVIS.Worker/samples/runtime-poc/artifacts/bundle"),
                             Path.of("MAVIS.Worker/samples/runtime-poc/artifacts/bundle"))) {
                         Path absBundle = b.toAbsolutePath().normalize();
-                        if (Files.isDirectory(absBundle.resolve("java")) && Files.isDirectory(absBundle.resolve("dotnet"))) {
+                        if (Files.isDirectory(absBundle.resolve("java")) && Files.isDirectory(absBundle.resolve("dotnet")) && Files.isDirectory(absBundle.resolve("dotnet-musl"))) {
                             String helperImg = "mcr.microsoft.com/dotnet/aspnet@sha256:d5633778c754e89a386882eddf8dbee6942447a8a4b8267c19cf1e1158d0b0ac";
                             probeCommandZeroExit(List.of("docker", "volume", "rm", "-f", volumeName), 10);
                             probeCommandZeroExit(List.of("docker", "volume", "create",
                                     "--label", "mavis.poc.managed=true",
-                                    "--label", "mavis.bundle.rev=2",
+                                    "--label", "mavis.bundle.rev=3",
                                     "--label", "mavis.dotnet.version=1.17.0",
+                                    "--label", "mavis.dotnet.musl.version=1.17.0",
                                     "--label", "mavis.java.version=2.32.0",
                                     volumeName), 15);
                             probeCommandZeroExit(List.of("docker", "pull", helperImg), 120);

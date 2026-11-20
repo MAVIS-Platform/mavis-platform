@@ -615,6 +615,31 @@ class RuntimePlanningServiceTest {
     }
 
     @Test
+    void stepOneSelectsTheMuslAgentForAlpineDotnetServices() {
+        when(projects.findLockedById(projectId)).thenReturn(Optional.of(project));
+        when(projects.findById(projectId)).thenReturn(Optional.of(project));
+        when(sources.findById(snapshotId)).thenReturn(Optional.of(snapshot));
+        when(models.findById(modelId)).thenReturn(Optional.of(model));
+        String serviceId = UUID.randomUUID().toString();
+        when(runtime.runComposePreflight(snapshotId)).thenReturn(PreflightCheckResponseDTO.builder()
+                .compatible(true).detectedServices(List.of("orders")).composeServices(List.of("orders"))
+                .serviceStacks(Map.of("orders", "dotnet-musl")).servicePorts(Map.of("orders", 8080))
+                .recommendedServiceMappings(Map.of("orders", serviceId)).modelServiceNames(Map.of(serviceId, "orders")).build());
+        var holder = new java.util.concurrent.atomic.AtomicReference<RuntimeConfiguration>();
+        when(configurations.findById(projectId)).thenAnswer(inv -> Optional.ofNullable(holder.get()));
+        when(configurations.saveAndFlush(any())).thenAnswer(inv -> {
+            holder.set(inv.getArgument(0));
+            return holder.get();
+        });
+        ObjectNode profile = json.createObjectNode();
+        profile.putObject("serviceMappings").put("orders", "orders");
+        var saved = planningService.saveConfiguration(projectId, new RuntimePlanningService.ConfigurationRequest(
+                snapshotId, modelId, "SPRING_BOOT_DOTNET_COMPOSE_V1", profile, 0));
+        assertThat(saved.profile().path("applications").path("orders").path("runtime").asText())
+                .isEqualTo("dotnet8-linux-x64-musl");
+    }
+
+    @Test
     @DisplayName("STEP 1 100%: Step 1 draft saves immediately without operator images, maps polyglot/ASSUMED readiness, and enforces operator images at start()")
     void testSaveConfiguration_AllowsStep1DraftWithoutOperatorImagesWhileStartEnforcesThem() {
         when(projects.findLockedById(projectId)).thenReturn(Optional.of(project));

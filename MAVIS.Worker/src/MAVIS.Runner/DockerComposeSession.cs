@@ -82,7 +82,8 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             foreach (var runtime in instrumentedRuntimes)
             {
                 var isJava = runtime == "java";
-                var label = isJava ? "mavis.java.version" : "mavis.dotnet.version";
+                var label = runtime == "dotnet8-linux-x64-musl" ? "mavis.dotnet.musl.version"
+                    : isJava ? "mavis.java.version" : "mavis.dotnet.version";
                 var expected = isJava ? definition.Profile.JavaInstrumentationVersion : definition.Profile.DotnetInstrumentationVersion;
                 if (string.IsNullOrWhiteSpace(expected) || !labels.RootElement.TryGetProperty(label, out var actual) || actual.GetString() != expected)
                     throw new RuntimeStageException("INSTRUMENTATION_VERSION_MISMATCH");
