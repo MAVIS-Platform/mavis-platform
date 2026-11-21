@@ -107,15 +107,26 @@ export function SocialSignIn({
           }
         },
       });
-      // Render Google's official circular icon button invisibly over our themed circle so the native
-      // Google account picker works reliably without rendering Google's mismatched white iframe box.
+      // Render Google's official circular icon button cleanly and only reveal it once its iframe loads,
+      // avoiding opaque dark-mode iframe rectangles when accounts.google.com is slow or unreachable.
       google.accounts.id.renderButton(googleOverlay.current, {
         type: "icon",
         shape: "circle",
         size: "large",
         theme: "outline",
       });
-      setGoogleReady(true);
+      const iframe = googleOverlay.current.querySelector("iframe");
+      if (iframe) {
+        iframe.addEventListener(
+          "load",
+          () => {
+            if (live) setGoogleReady(true);
+          },
+          { once: true },
+        );
+      } else {
+        setGoogleReady(true);
+      }
     };
 
     void fetch("/api/auth-config")
@@ -179,21 +190,20 @@ export function SocialSignIn({
           {googleEnabled ? (
             <div
               className={`${circleButtonClass} isolate overflow-hidden [clip-path:circle(50%)] focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-card ${
-                busy ? "pointer-events-none opacity-40" : "cursor-pointer"
-              }`}
+                googleReady ? "border-white/80 bg-white" : ""
+              } ${busy ? "pointer-events-none opacity-40" : "cursor-pointer"}`}
               title={t("Continue with Google", "Tiếp tục với Google")}
             >
-              <GoogleMark />
+              {!googleReady && <GoogleMark />}
               <div
                 ref={googleOverlay}
                 aria-label={t("Continue with Google", "Tiếp tục với Google")}
-                style={{
-                  opacity: googleReady ? 0.01 : 0,
-                  colorScheme: "light",
-                }}
-                className={`absolute inset-0 flex items-center justify-center overflow-hidden rounded-full ${
-                  googleReady ? "" : "pointer-events-none"
-                }`}
+                style={{ colorScheme: "light" }}
+                className={
+                  googleReady
+                    ? "flex size-full items-center justify-center overflow-hidden rounded-full"
+                    : "pointer-events-none sr-only"
+                }
               />
             </div>
           ) : (

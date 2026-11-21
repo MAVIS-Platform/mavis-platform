@@ -57,5 +57,24 @@ public interface SubmissionSnapshotRepository extends JpaRepository<SubmissionSn
 
     @Query("SELECT s.assignment.id, COUNT(s.id) FROM SubmissionSnapshot s WHERE s.assignment.id IN :assignmentIds GROUP BY s.assignment.id")
     List<Object[]> countSubmissionsByAssignmentIds(@Param("assignmentIds") Collection<UUID> assignmentIds);
+
+    interface GradebookSubmissionProjection {
+        UUID getId();
+        UUID getSubmittedById();
+        UUID getAssignmentId();
+        java.time.OffsetDateTime getSubmittedAt();
+    }
+
+    // Scalar-only projection avoids loading multi-MB studio_evidence / runtime_sessions JSONB on gradebook & members pages.
+    @Query("""
+            SELECT s.id AS id,
+                   s.submittedBy.id AS submittedById,
+                   s.assignment.id AS assignmentId,
+                   s.submittedAt AS submittedAt
+            FROM SubmissionSnapshot s
+            WHERE s.assignment.id IN :assignmentIds
+            ORDER BY s.submittedAt DESC
+            """)
+    List<GradebookSubmissionProjection> findGradebookRowsByAssignmentIds(@Param("assignmentIds") Collection<UUID> assignmentIds);
 }
 

@@ -127,27 +127,30 @@ public class WorkspaceGradebookService {
                 })
                 .toList();
 
-        Map<String, SubmissionSnapshot> latestSubmissionByStudentLab = new LinkedHashMap<>();
-        List<SubmissionSnapshot> allSubs = assignmentIds.isEmpty()
+        Map<String, SubmissionSnapshotRepository.GradebookSubmissionProjection> latestSubmissionByStudentLab = new LinkedHashMap<>();
+        List<SubmissionSnapshotRepository.GradebookSubmissionProjection> allSubs = assignmentIds.isEmpty()
                 ? List.of()
-                : submissionSnapshotRepository.findByAssignmentIdInOrderBySubmittedAtDesc(assignmentIds);
-        for (SubmissionSnapshot sub : allSubs) {
-            if (sub.getSubmittedBy() != null && sub.getAssignment() != null) {
-                String key = cellKey(sub.getSubmittedBy().getId(), sub.getAssignment().getId());
-                latestSubmissionByStudentLab.putIfAbsent(key, sub);
+                : submissionSnapshotRepository.findGradebookRowsByAssignmentIds(assignmentIds);
+        if (allSubs != null) {
+            for (var sub : allSubs) {
+                if (sub.getSubmittedById() != null && sub.getAssignmentId() != null) {
+                    String key = cellKey(sub.getSubmittedById(), sub.getAssignmentId());
+                    latestSubmissionByStudentLab.putIfAbsent(key, sub);
+                }
             }
         }
 
         List<UUID> submissionIds = latestSubmissionByStudentLab.values().stream()
-                .map(SubmissionSnapshot::getId)
+                .map(SubmissionSnapshotRepository.GradebookSubmissionProjection::getId)
                 .toList();
-        Map<UUID, SubmissionReview> reviewBySubmissionId = new HashMap<>();
+        Map<UUID, SubmissionReviewRepository.GradebookReviewProjection> reviewBySubmissionId = new HashMap<>();
         if (!submissionIds.isEmpty()) {
-            List<SubmissionReview> reviews = submissionReviewRepository.findBySubmissionIdIn(submissionIds);
+            List<SubmissionReviewRepository.GradebookReviewProjection> reviews =
+                    submissionReviewRepository.findGradebookReviewsBySubmissionIds(submissionIds);
             if (reviews != null) {
-                for (SubmissionReview r : reviews) {
-                    if (r.getSubmission() != null && r.getSubmission().getId() != null) {
-                        reviewBySubmissionId.put(r.getSubmission().getId(), r);
+                for (var r : reviews) {
+                    if (r.getSubmissionId() != null) {
+                        reviewBySubmissionId.put(r.getSubmissionId(), r);
                     }
                 }
             }
@@ -169,8 +172,8 @@ public class WorkspaceGradebookService {
 
             for (Assignment lab : orderedLabs) {
                 String key = cellKey(student.getId(), lab.getId());
-                SubmissionSnapshot sub = latestSubmissionByStudentLab.get(key);
-                SubmissionReview review = sub == null ? null : reviewBySubmissionId.get(sub.getId());
+                var sub = latestSubmissionByStudentLab.get(key);
+                var review = sub == null ? null : reviewBySubmissionId.get(sub.getId());
                 AttemptSummary attempt = attemptByStudentLab.get(key);
                 QuizSummary quiz = quizMetaByLab.get(lab.getId());
 
@@ -235,7 +238,10 @@ public class WorkspaceGradebookService {
         return Math.round((scoreOutOf100 / 10.0) * 100.0) / 100.0;
     }
 
-    private static String resolveOutcome(SubmissionReview review, String reviewStatus, Double reviewScore) {
+    private static String resolveOutcome(
+            SubmissionReviewRepository.GradebookReviewProjection review,
+            String reviewStatus,
+            Double reviewScore) {
         if (review == null || "DRAFT".equalsIgnoreCase(reviewStatus) || "PENDING".equalsIgnoreCase(reviewStatus)) {
             return "PENDING";
         }

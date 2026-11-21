@@ -51,20 +51,30 @@ class WorkspaceGradebookServiceTest {
         WorkspaceMember m1 = WorkspaceMember.builder().workspace(ws).user(s1).memberRole("STUDENT").build();
         WorkspaceMember mLec = WorkspaceMember.builder().workspace(ws).user(lec).memberRole("LECTURER").build();
 
-        SubmissionSnapshot sub1 = SubmissionSnapshot.builder()
-                .id(UUID.randomUUID()).assignment(lab1).submittedBy(s1).submittedAt(OffsetDateTime.now()).build();
-        SubmissionReview rev1 = new SubmissionReview();
-        rev1.setSubmission(sub1);
-        rev1.setStatus("GRADED");
-        rev1.setScore(BigDecimal.valueOf(88.0));
-        rev1.setLabOutcome("PASSED");
-        rev1.setUpdatedAt(OffsetDateTime.now());
+        UUID sub1Id = UUID.randomUUID();
+        OffsetDateTime submittedAt = OffsetDateTime.now();
+        OffsetDateTime gradedAt = OffsetDateTime.now();
+        SubmissionSnapshotRepository.GradebookSubmissionProjection sub1 =
+                new SubmissionSnapshotRepository.GradebookSubmissionProjection() {
+                    @Override public UUID getId() { return sub1Id; }
+                    @Override public UUID getSubmittedById() { return s1.getId(); }
+                    @Override public UUID getAssignmentId() { return lab1.getId(); }
+                    @Override public OffsetDateTime getSubmittedAt() { return submittedAt; }
+                };
+        SubmissionReviewRepository.GradebookReviewProjection rev1 =
+                new SubmissionReviewRepository.GradebookReviewProjection() {
+                    @Override public UUID getSubmissionId() { return sub1Id; }
+                    @Override public String getStatus() { return "GRADED"; }
+                    @Override public BigDecimal getScore() { return BigDecimal.valueOf(88.0); }
+                    @Override public String getLabOutcome() { return "PASSED"; }
+                    @Override public OffsetDateTime getUpdatedAt() { return gradedAt; }
+                };
 
         when(workspaces.findById(workspaceId)).thenReturn(Optional.of(ws));
         when(assignments.findByWorkspaceIdOrderByCreatedAtDesc(workspaceId)).thenReturn(List.of(lab2, lab1));
         when(members.findByWorkspaceIdOrderByJoinedAtAsc(workspaceId)).thenReturn(List.of(m1, mLec));
-        when(submissions.findByAssignmentIdInOrderBySubmittedAtDesc(anyList())).thenReturn(List.of(sub1));
-        when(reviews.findBySubmissionIdIn(anyList())).thenReturn(List.of(rev1));
+        when(submissions.findGradebookRowsByAssignmentIds(anyList())).thenReturn(List.of(sub1));
+        when(reviews.findGradebookReviewsBySubmissionIds(anyList())).thenReturn(List.of(rev1));
 
         var result = service.gradebook(workspaceId);
 
@@ -106,7 +116,7 @@ class WorkspaceGradebookServiceTest {
         when(workspaces.findById(workspaceId)).thenReturn(Optional.of(ws));
         when(assignments.findByWorkspaceIdOrderByCreatedAtDesc(workspaceId)).thenReturn(List.of(lab2, detachedV1, lab1));
         when(members.findByWorkspaceIdOrderByJoinedAtAsc(workspaceId)).thenReturn(List.of(m1));
-        when(submissions.findByAssignmentIdInOrderBySubmittedAtDesc(anyList())).thenReturn(List.of());
+        when(submissions.findGradebookRowsByAssignmentIds(anyList())).thenReturn(List.of());
 
         var result = service.gradebook(workspaceId);
         assertThat(result.labs()).extracting("title").containsExactly("Lab 1 V2", "Lab 2 V2");
