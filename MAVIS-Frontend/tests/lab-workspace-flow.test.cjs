@@ -60,7 +60,7 @@ test("LabWorkspace unifies navigation into a single sticky horizontal stepper wi
         { id: 2, label: "MAVIS Runtime Studio", state: "available", href: "/lab?step=2" },
         {
           id: 3,
-          label: "Evidence & Submit",
+          label: "Evidence Review",
           state: "locked",
           reason: "Finish Runtime Studio first.",
         },

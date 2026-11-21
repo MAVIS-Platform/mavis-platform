@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowRight,
@@ -88,6 +88,17 @@ type LearningStep = {
 
 type InlineC4View = "CONTEXT" | "CONTAINER" | "COMPONENT" | "GRAPH";
 
+type LabPhaseIssueKind =
+  | "static-guidance"
+  | "static-data"
+  | "runtime-guidance"
+  | "runtime-configuration"
+  | "runtime-failed"
+  | "evidence-missing"
+  | "submission-explanation"
+  | "submission-runtime"
+  | "submission-failed";
+
 const learningSteps: LearningStep[] = [
   {
     id: 1,
@@ -115,14 +126,14 @@ const learningSteps: LearningStep[] = [
   },
   {
     id: 3,
-    title: "Evidence & Submit",
-    shortTitle: "Evidence & Submit",
+    title: "Evidence Review",
+    shortTitle: "Evidence Review",
     description:
-      "Review the Studio evidence and receipt, then send the completed Lab to submission and grading.",
-    titleVi: "Evidence & Submit",
-    shortTitleVi: "Evidence & Submit",
+      "Review the Studio evidence and receipt before submitting the completed Lab for grading.",
+    titleVi: "Kiểm tra Evidence",
+    shortTitleVi: "Kiểm tra Evidence",
     descriptionVi:
-      "Kiểm tra evidence và receipt của Studio, sau đó chuyển Lab hoàn tất sang bước nộp và chấm.",
+      "Kiểm tra evidence và receipt của Studio trước khi nộp Lab hoàn tất để chấm.",
     icon: ShieldCheck,
   },
 ];
@@ -1336,6 +1347,10 @@ function StepContent({
   const moduleQuiz = studentContext?.quiz ?? null;
   const moduleQuizStatus = moduleQuiz?.latestStatus ?? "NOT_ATTEMPTED";
   const [runtimeConfigurationDialogOpen, setRuntimeConfigurationDialogOpen] = useState(false);
+  const [phaseIssue, setPhaseIssue] = useState<LabPhaseIssueKind | null>(null);
+  const [phaseIssueDialogOpen, setPhaseIssueDialogOpen] = useState(false);
+  const [reportCopied, setReportCopied] = useState(false);
+  const shownAutomaticIssueKeys = useRef(new Set<string>());
 
   useEffect(() => {
     setRuntimeConfigurationDialogOpen(runtimeUnavailable);
@@ -1417,7 +1432,9 @@ function StepContent({
   const current = resolveStepMeta(step, { hasReferenceArch, isTheoryOnlyLab, requiresRuntime });
   const Icon = current.icon;
   const next = step < 3 ? ((step + 1) as 2 | 3) : undefined;
-  const nextAvailable = next !== undefined;
+  const nextStep = step === 1 && !requiresRuntime ? 3 : next;
+  const nextAvailable =
+    nextStep !== undefined && !(step === 2 && requiresRuntime && !liveStudioVerified && !preview);
   const needsSandboxBootstrap = Boolean(
     !preview &&
     activeStudioSessionId &&
@@ -1556,6 +1573,89 @@ function StepContent({
     }
   };
 
+  const openPhaseIssue = (issue: LabPhaseIssueKind) => {
+    setReportCopied(false);
+    setPhaseIssue(issue);
+    setPhaseIssueDialogOpen(true);
+  };
+  const phaseIssueContent = (() => {
+    switch (phaseIssue) {
+      case "static-data":
+        return {
+          title: t("Static Studio data could not load", "Không tải được dữ liệu Static Studio"),
+          description: t("The curated architecture data is unavailable, so C1–C3 evidence cannot be reviewed safely.", "Dữ liệu kiến trúc đã chọn lọc hiện không tải được nên chưa thể kiểm tra evidence C1–C3 an toàn."),
+          recovery: t("Refresh the Lab first. If this persists, copy the report for your lecturer to check the reference snapshot.", "Hãy tải lại Lab trước. Nếu lỗi vẫn còn, sao chép báo cáo để giảng viên kiểm tra snapshot tham chiếu."),
+          actionLabel: t("Review Static Studio", "Xem lại Static Studio"),
+          action: () => document.getElementById("lab-static-workspace")?.scrollIntoView({ behavior: "smooth", block: "start" }),
+        };
+      case "runtime-configuration":
+        return {
+          title: t("Runtime Studio configuration is missing", "Runtime Studio chưa được cấu hình"),
+          description: t("This Lab has no ready Runtime Studio topology, so the practical exercise cannot start.", "Lab này chưa có topology Runtime Studio sẵn sàng nên chưa thể bắt đầu phần thực hành."),
+          recovery: t("This needs lecturer configuration. Copy the report and send it to your lecturer, then return after the Studio exercise is prepared.", "Trường hợp này cần giảng viên cấu hình. Hãy sao chép báo cáo gửi giảng viên rồi quay lại sau khi Studio exercise sẵn sàng."),
+          actionLabel: t("Back to Lab", "Quay lại Lab"),
+          action: () => undefined,
+        };
+      case "runtime-guidance":
+      case "runtime-failed":
+        return {
+          title: phaseIssue === "runtime-failed" ? t("Runtime Studio session needs attention", "Phiên Runtime Studio cần được kiểm tra") : t("Need help with Runtime Studio?", "Cần hỗ trợ với Runtime Studio?"),
+          description: phaseIssue === "runtime-failed" ? t("The current Runtime Studio session did not start or finish correctly, so its evidence is not valid yet.", "Phiên Runtime Studio hiện tại chưa khởi chạy hoặc hoàn tất đúng nên evidence chưa hợp lệ.") : t("Runtime Studio is where you run the assigned scenario and capture observed evidence using only allowed actions.", "Runtime Studio là nơi bạn chạy kịch bản được giao và lưu evidence quan sát với các thao tác được phép."),
+          recovery: t("Open Studio Live, inspect the session, use only Stop, Start, or Scale, capture a snapshot, then choose Finish Studio. If it fails again, copy the report for your lecturer.", "Mở Studio Live, kiểm tra phiên, chỉ dùng Stop, Start hoặc Scale, lưu snapshot rồi chọn Finish Studio. Nếu vẫn lỗi, sao chép báo cáo gửi giảng viên."),
+          actionLabel: t("Open Runtime Studio", "Mở Runtime Studio"),
+          action: () => window.location.assign(standaloneStudioHref),
+        };
+      case "evidence-missing":
+      case "submission-runtime":
+        return {
+          title: t("Runtime evidence is incomplete", "Evidence Runtime chưa đầy đủ"),
+          description: t("This Lab needs a verified Runtime Studio receipt before it can be submitted to WF-04.", "Lab này cần receipt Runtime Studio đã xác minh trước khi có thể nộp sang WF-04."),
+          recovery: t("Return to Runtime Studio, complete the scenario, capture the required evidence, and select Finish Studio to seal the receipt.", "Hãy quay lại Runtime Studio, hoàn tất kịch bản, lưu evidence bắt buộc và chọn Finish Studio để niêm phong receipt."),
+          actionLabel: t("Return to Runtime Studio", "Quay lại Runtime Studio"),
+          action: () => window.location.assign(runtimeEvidenceHref),
+        };
+      case "submission-failed":
+        return {
+          title: t("Lab submission could not be saved", "Không thể lưu bài nộp Lab"),
+          description: t("Your draft remains in this browser so you can retry safely.", "Bản nháp vẫn được giữ trong trình duyệt này để bạn có thể thử lại an toàn."),
+          recovery: t("Check the explanation and required Runtime receipt, then try again. If it still fails, copy the report for your lecturer.", "Hãy kiểm tra phần giải trình và receipt Runtime bắt buộc, rồi thử lại. Nếu vẫn lỗi, sao chép báo cáo gửi giảng viên."),
+          actionLabel: t("Retry submission", "Thử nộp lại"),
+          action: jumpToSubmissionBox,
+        };
+      case "submission-explanation":
+        return {
+          title: t("Your Lab explanation is required", "Cần có phần giải trình Lab"),
+          description: t("The Lab cannot be submitted without your written explanation of the evidence and what you learned.", "Không thể nộp Lab nếu chưa có phần giải trình về evidence và kiến thức bạn rút ra."),
+          recovery: t("Write your explanation in the submission box, connect it to the evidence, then submit again.", "Hãy viết phần giải trình trong khung nộp bài, liên hệ với evidence rồi nộp lại."),
+          actionLabel: t("Go to submission", "Đi tới phần nộp bài"),
+          action: jumpToSubmissionBox,
+        };
+      default:
+        return {
+          title: t("Need help with Static Studio?", "Cần hỗ trợ với Static Studio?"),
+          description: t("Static Studio is for reviewing C1–C3 architecture, source evidence, and your Reverse BFS impact hypothesis.", "Static Studio dùng để xem kiến trúc C1–C3, evidence mã nguồn và giả thuyết tác động Reverse BFS."),
+          recovery: t("Inspect the selected node or connection, read its evidence, then compare Reverse BFS with the dependency graph before moving on.", "Hãy kiểm tra node hoặc kết nối đã chọn, đọc evidence, rồi đối chiếu Reverse BFS với đồ thị phụ thuộc trước khi chuyển bước."),
+          actionLabel: t("Open impact hypothesis", "Mở giả thuyết tác động"),
+          action: () => document.getElementById("lab-static-impact")?.scrollIntoView({ behavior: "smooth", block: "start" }),
+        };
+    }
+  })();
+  const copyPhaseIssueReport = async () => {
+    const report = [`MAVIS Lab issue report`, `Lab: ${labTitle ?? labId}`, `Phase: ${step}/3 — ${current.title}`, `Issue: ${phaseIssueContent.title}`, `Workspace: ${workspaceId}`, `Assignment: ${labId}`, `Model: ${modelId ?? "not available"}${modelRevision !== undefined ? ` (r${modelRevision})` : ""}`, `Runtime session: ${activeStudioSessionId || "not started"}`].join("\n");
+    try {
+      await navigator.clipboard.writeText(report);
+      setReportCopied(true);
+    } catch {
+      setReportCopied(false);
+    }
+  };
+  useEffect(() => {
+    const automaticIssue = step === 1 && fallbackModelQuery.isError ? "static-data" : step === 2 && needsSandboxBootstrap ? "runtime-failed" : step === 3 && requiresRuntime && !liveStudioVerified && !preview ? "evidence-missing" : null;
+    if (!automaticIssue || shownAutomaticIssueKeys.current.has(`${step}:${automaticIssue}`)) return;
+    shownAutomaticIssueKeys.current.add(`${step}:${automaticIssue}`);
+    openPhaseIssue(automaticIssue);
+  }, [fallbackModelQuery.isError, liveStudioVerified, needsSandboxBootstrap, preview, requiresRuntime, step]);
+
   return (
     <>
       <Dialog open={runtimeConfigurationDialogOpen} onOpenChange={setRuntimeConfigurationDialogOpen}>
@@ -1596,6 +1696,14 @@ function StepContent({
             )}
           </DialogHeader>
           <DialogFooter>
+            {runtimeConfigurationMissing && isStudent && (
+              <Button type="button" variant="outline" onClick={() => {
+                setRuntimeConfigurationDialogOpen(false);
+                openPhaseIssue("runtime-configuration");
+              }}>
+                {t("Report configuration issue", "Báo lỗi cấu hình")}
+              </Button>
+            )}
             {runtimeConfigurationMissing && !isStudent && (
               <Button asChild>
                 <Link
@@ -1618,6 +1726,32 @@ function StepContent({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <Dialog open={phaseIssueDialogOpen} onOpenChange={setPhaseIssueDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{phaseIssueContent.title}</DialogTitle>
+            <DialogDescription>{phaseIssueContent.description}</DialogDescription>
+          </DialogHeader>
+          <div className="rounded-lg border bg-muted/40 p-3 text-sm">
+            <p className="font-medium text-foreground">{t("What you can do", "Bạn có thể làm gì")}</p>
+            <p className="mt-1 leading-6 text-muted-foreground">{phaseIssueContent.recovery}</p>
+          </div>
+          <p className="text-xs leading-5 text-muted-foreground">
+            {t("If the recovery steps do not resolve it, copy this report and send it to your lecturer with a screenshot.", "Nếu các bước tự xử lý không khắc phục được, hãy sao chép báo cáo này và gửi cho giảng viên kèm ảnh màn hình.")}
+          </p>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => void copyPhaseIssueReport()}>
+              {reportCopied ? t("Report copied", "Đã sao chép báo cáo") : t("Copy report for lecturer", "Sao chép báo cáo cho giảng viên")}
+            </Button>
+            <Button type="button" onClick={() => {
+              setPhaseIssueDialogOpen(false);
+              phaseIssueContent.action();
+            }}>
+              {phaseIssueContent.actionLabel}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <section className="rounded-xl border bg-card px-4 py-4 sm:px-5">
         <div className="flex items-start gap-3">
           <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
@@ -1631,6 +1765,9 @@ function StepContent({
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
               {t(current.description, current.descriptionVi)}
             </p>
+            <Button type="button" size="sm" variant="ghost" className="mt-2 h-auto px-0 text-xs text-muted-foreground hover:bg-transparent hover:text-primary" onClick={() => openPhaseIssue(step === 1 ? "static-guidance" : step === 2 ? "runtime-guidance" : "submission-explanation")}>
+              {t("Need help or want to report an issue?", "Cần hỗ trợ hoặc muốn báo lỗi?")}
+            </Button>
           </div>
         </div>
         <dl className="mt-4 grid gap-3 border-t pt-3 text-xs sm:grid-cols-3">
@@ -1677,7 +1814,7 @@ function StepContent({
         <div className="space-y-5">
           {hasReferenceArch ? (
             <>
-              <section className="space-y-4 rounded-xl border bg-card p-4 sm:p-5" aria-label={t("Architecture workspace", "Không gian kiến trúc")}>
+              <section id="lab-static-workspace" className="space-y-4 rounded-xl border bg-card p-4 sm:p-5" aria-label={t("Architecture workspace", "Không gian kiến trúc")}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <h3 className="text-base font-semibold text-foreground">
@@ -1806,7 +1943,7 @@ function StepContent({
                 )}
               </section>
 
-              <details className="group rounded-xl border bg-card">
+              <details id="lab-static-impact" className="group rounded-xl border bg-card">
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-semibold marker:content-none">
                   <span>{t("Static impact hypothesis (Reverse BFS)", "Giả thuyết tác động tĩnh (Reverse BFS)")}</span>
                   <span className="text-xs font-normal text-muted-foreground group-open:hidden">
@@ -2025,7 +2162,7 @@ function StepContent({
       )}
 
       {step === 3 && (
-        <div className="space-y-4">
+        <div className="space-y-4" aria-label={t("Evidence review and submission", "Kiểm tra evidence và nộp bài")}>
           {requiresRuntime && !liveStudioVerified && !preview ? (
             <DetailPanel title={t("Runtime evidence required", "Cần evidence Runtime Studio")}>
               <p className="text-sm leading-6 text-muted-foreground">
@@ -2127,10 +2264,11 @@ function StepContent({
                 initialSubmission={studentContext?.latestSubmission}
                 initialReview={studentContext?.latestReview}
                 hasReferenceArch={hasReferenceArch}
+                onRequestHelp={(reason) => openPhaseIssue(reason)}
               />
             </>
           ) : (
-            <DetailPanel title={t("Evidence & Submit", "Evidence & Submit")}>
+            <DetailPanel title={t("Evidence Review", "Kiểm tra Evidence")}>
               <p className="text-sm text-muted-foreground">
                 {t(
                   "Preview mode does not create submissions.",
@@ -2194,8 +2332,8 @@ function StepContent({
                           </span>
                           <p className="mt-0.5 text-muted-foreground">
                             {t(
-                              "Continue to Evidence & Submit after Finish Studio",
-                              "Sang Evidence & Submit sau khi Finish Studio",
+                              "Continue to Evidence Review after Finish Studio",
+                              "Sang Kiểm tra Evidence sau khi Finish Studio",
                             )}
                           </p>
                         </div>
@@ -2356,13 +2494,15 @@ function StepContent({
           <Button asChild={nextAvailable} disabled={!nextAvailable}>
             {nextAvailable ? (
               <Link
-                href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=${next}${previewParam}`}
+                href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=${nextStep}${previewParam}`}
               >
-                {step === 1
+                {step === 1 && requiresRuntime
                   ? t("Continue to Runtime Studio", "Tiếp tục đến Runtime Studio")
-                  : t("Continue to Evidence & Submit", "Tiếp tục đến Evidence & Submit")} <ArrowRight />
+                  : t("Continue to Evidence Review", "Tiếp tục đến Kiểm tra Evidence")} <ArrowRight />
               </Link>
-            ) : null}
+            ) : (
+              <span>{t("Finish Studio to continue", "Hoàn tất Studio để tiếp tục")}</span>
+            )}
           </Button>
         )}
       </div>

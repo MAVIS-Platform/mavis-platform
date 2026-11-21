@@ -113,6 +113,7 @@ export function LabSubmissionV2({
   initialSubmission,
   initialReview,
   hasReferenceArch = true,
+  onRequestHelp,
 }: {
   workspaceId: string;
   assignmentId: string;
@@ -123,6 +124,9 @@ export function LabSubmissionV2({
   initialSubmission?: { id: string; submittedAt?: string | null } | null | undefined;
   initialReview?: StudentLabLatestReview | null | undefined;
   hasReferenceArch?: boolean | undefined;
+  onRequestHelp?:
+    | ((reason: "submission-explanation" | "submission-runtime" | "submission-failed") => void)
+    | undefined;
 }) {
   const { t } = useLocale();
   const rubricProfile = useMemo(
@@ -452,8 +456,14 @@ export function LabSubmissionV2({
             <Button
               type="button"
               className="bg-teal-600 text-white hover:bg-teal-700"
-              disabled={!canSubmit || submit.isPending}
+              disabled={submit.isPending}
               onClick={() => {
+                if (!canSubmit) {
+                  onRequestHelp?.(
+                    studio && !runtimeSessionId ? "submission-runtime" : "submission-explanation",
+                  );
+                  return;
+                }
                 const nowIso = new Date().toISOString();
                 const trimmed = answer.trim();
                 const snapshots = showArchRubric
@@ -522,6 +532,7 @@ export function LabSubmissionV2({
                       });
                       void cache.invalidateQueries({ queryKey: ["api", "workspaces"] });
                     },
+                    onError: () => onRequestHelp?.("submission-failed"),
                   },
                 );
               }}

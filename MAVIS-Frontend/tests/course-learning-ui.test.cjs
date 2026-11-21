@@ -816,6 +816,18 @@ test("guided submission attaches verified Studio session when required and rende
   assert.match(composer, /stage3Ready && selectedRuntime\?\.studioVerified === true/);
 });
 
+test("Lab phases surface actionable issue dialogs and preserve a student report path", () => {
+  const lab = read("src/features/courses/screens.tsx");
+  const subV2 = read("src/features/courses/lab-submission-v2.tsx");
+  assert.match(lab, /Copy report for lecturer/);
+  assert.match(lab, /Static Studio data could not load/);
+  assert.match(lab, /Runtime Studio session needs attention/);
+  assert.match(lab, /Runtime evidence is incomplete/);
+  assert.match(lab, /onRequestHelp=\{\(reason\) => openPhaseIssue\(reason\)\}/);
+  assert.match(subV2, /onRequestHelp\?\.\("submission-failed"\)/);
+  assert.match(subV2, /studio && !runtimeSessionId \? "submission-runtime" : "submission-explanation"/);
+});
+
 test("lecturer grading uses frozen Snapshot rows and preserves matching draft grades", () => {
   const { buildInitialSnapshotGrades } = require("../src/features/submissions/grading.tsx");
   const review = {
@@ -1454,7 +1466,7 @@ test("Round 4 guards isolate each Lab entry, adapt Theory Only labs, prevent sig
   assert.match(screens, /Lab objective/);
   assert.match(screens, /title: "Static Studio"/);
   assert.match(screens, /title: "MAVIS Runtime Studio"/);
-  assert.match(screens, /title: "Evidence & Submit"/);
+  assert.match(screens, /title: "Evidence Review"/);
   assert.doesNotMatch(screens, /<CourseQuiz/);
   assert.match(appShell, /const canQueryAuth =\s*!signingOut/);
   assert.match(
