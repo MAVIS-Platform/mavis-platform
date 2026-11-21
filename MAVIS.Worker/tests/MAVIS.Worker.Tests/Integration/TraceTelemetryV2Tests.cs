@@ -280,6 +280,77 @@ public sealed class TraceTelemetryV2Tests
     }
 
     [Fact]
+    public async Task LiveProbeEmitsFramesAndAppliesDynamicTargetRpsEvenWithSynchronizedBlockingStdin()
+    {
+        // Regression test: SyncTextReader (Console.In) blocks synchronously on ReadLineAsync; LiveProbeRunner must still emit frames and react to SET_LOAD.
+        using var pipe = new BlockingQueueTextReader();
+        var syncReader = TextReader.Synchronized(pipe);
+        var frames = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        using var output = new CallbackTextWriter(line => frames.Enqueue(line));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+
+        var envelope = new LiveProbeEnvelope(
+            new HttpScenarioDefinition("s1", []),
+            new Dictionary<string, Uri>(),
+            new Dictionary<string, string>(),
+            TargetRps: 5,
+            CollectorMetricsUrl: null);
+
+        var runTask = new LiveProbeRunner().RunAsync(envelope, output, cts.Token, syncReader);
+
+        // Wait for first frame with initial targetRps=5 while stdin remains open with no second line yet.
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(4);
+        string? firstLine = null;
+        while (DateTimeOffset.UtcNow < deadline && !frames.TryDequeue(out firstLine))
+            await Task.Delay(50);
+        Assert.NotNull(firstLine);
+        using (var doc = System.Text.Json.JsonDocument.Parse(firstLine!))
+            Assert.Equal(5, doc.RootElement.GetProperty("probe").GetProperty("targetRps").GetInt32());
+
+        // Send dynamic SET_LOAD command over the open synchronized stdin.
+        pipe.Enqueue("{\"targetRps\":25}");
+
+        var updatedSeen = false;
+        deadline = DateTimeOffset.UtcNow.AddSeconds(4);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            if (frames.TryDequeue(out var nextLine))
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(nextLine);
+                if (doc.RootElement.GetProperty("probe").GetProperty("targetRps").GetInt32() == 25)
+                {
+                    updatedSeen = true;
+                    break;
+                }
+            }
+            await Task.Delay(50);
+        }
+        Assert.True(updatedSeen, "Expected LiveProbeRunner to update targetRps to 25 from open control stdin.");
+
+        cts.Cancel();
+        await runTask.WaitAsync(TimeSpan.FromSeconds(3));
+    }
+
+    private sealed class BlockingQueueTextReader : TextReader
+    {
+        private readonly System.Collections.Concurrent.BlockingCollection<string?> _lines = new();
+        public void Enqueue(string? line) => _lines.Add(line);
+        public override string? ReadLine() => _lines.TryTake(out var line, Timeout.Infinite) ? line : null;
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) { _lines.CompleteAdding(); _lines.Dispose(); }
+            base.Dispose(disposing);
+        }
+    }
+
+    private sealed class CallbackTextWriter(Action<string> onLine) : TextWriter
+    {
+        public override Encoding Encoding => Encoding.UTF8;
+        public override void WriteLine(string? value) { if (value is not null) onLine(value); }
+        public override Task WriteLineAsync(string? value) { if (value is not null) onLine(value); return Task.CompletedTask; }
+    }
+
+    [Fact]
     public async Task SetLoadStreamsTargetRpsToInteractiveLiveProbeWithoutRestartingContainers()
     {
         var root = Path.Combine(Path.GetTempPath(), "mavis-setload-" + Guid.NewGuid().ToString("N"));

@@ -104,10 +104,12 @@ public static class RunnerProgram
             {
                 if (Environment.GetEnvironmentVariable("MAVIS_RUNNER_INTERNAL_NETWORK") != "1") throw new ArgumentException();
                 AppDomain.CurrentDomain.ProcessExit += (_, _) => cancellation.Cancel();
-                var text = await Console.In.ReadLineAsync(cancellation.Token);
+                // Use raw async StreamReader (not SyncTextReader Console.In) so control reads never block synchronously.
+                using var stdin = new StreamReader(Console.OpenStandardInput(), System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: false);
+                var text = await stdin.ReadLineAsync(cancellation.Token);
                 if (string.IsNullOrWhiteSpace(text) || text.Length > 1_048_576) throw new ArgumentException();
                 var envelope = JsonSerializer.Deserialize<LiveProbeEnvelope>(text, jsonOptions) ?? throw new ArgumentException();
-                await new LiveProbeRunner().RunAsync(envelope, Console.Out, cancellation.Token, Console.In);
+                await new LiveProbeRunner().RunAsync(envelope, Console.Out, cancellation.Token, stdin);
                 return 0;
             }
             if (args[0] == "plan")

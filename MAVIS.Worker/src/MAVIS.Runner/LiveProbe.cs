@@ -75,8 +75,9 @@ public sealed class LiveProbeRunner
         var scraper = new PrometheusServiceGraphScraper();
         using var inFlight = new SemaphoreSlim(32);
 
+        // Run on a dedicated worker thread so even a synchronized TextReader (like Console.In) can never block load/emit startup.
         var controlTask = controlInput is not null
-            ? ReadControlLoopAsync(controlInput, next => Volatile.Write(ref currentTargetRps, next), ct)
+            ? Task.Run(() => ReadControlLoopAsync(controlInput, next => Volatile.Write(ref currentTargetRps, next), ct), CancellationToken.None)
             : Task.CompletedTask;
 
         var loadTask = safeSteps.Length > 0
@@ -108,7 +109,7 @@ public sealed class LiveProbeRunner
         finally
         {
             try { await loadTask; } catch (OperationCanceledException) { }
-            try { await controlTask; } catch (OperationCanceledException) { }
+            try { await controlTask.WaitAsync(TimeSpan.FromMilliseconds(250)); } catch { }
         }
     }
 
