@@ -1370,6 +1370,8 @@ export function LiveStudioWorkbench({
                 disabled={
                   finish.isPending ||
                   action.isPending ||
+                  capturing ||
+                  capture.isPending ||
                   waiting ||
                   !hasConfirmedAction ||
                   data.finishRequested ||

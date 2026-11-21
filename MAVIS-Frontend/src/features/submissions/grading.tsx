@@ -414,7 +414,7 @@ export function GradeForm({
                     {writtenExplanation}
                   </p>
                 )}
-                <div className="grid gap-2 sm:grid-cols-[160px_minmax(0,1fr)]">
+                <div className="grid gap-2 sm:grid-cols-[120px_minmax(0,1fr)]">
                   <Input
                     type="number"
                     min={0}
@@ -434,7 +434,7 @@ export function GradeForm({
                   />
                   <Input
                     aria-label={`${t("Snapshot comment (optional)")} — ${row.title}`}
-                    placeholder={t("Snapshot comment (optional)")}
+                    placeholder={t("Optional comment", "Nhận xét (tùy chọn)")}
                     maxLength={2000}
                     value={row.comment}
                     onChange={(e) => {

@@ -43,7 +43,17 @@ export function LabPublishSection({
       ),
     retry: false,
   });
-  const studioProjectId = exercise.data?.runtimeProjectId ?? assignment.referenceSource?.projectId ?? null;
+  const hasSource = Boolean(assignment.referenceSource?.modelId);
+  const hasQuiz = Boolean(setupLab?.quizPublished && (setupLab?.quizVersion ?? 0) > 0);
+  const hasStudio = Boolean(
+    assignment.requireRuntimeTrace ||
+      assignment.labMode === "THEORY_QUIZ_STUDIO" ||
+      setupLab?.topologyFrozen,
+  );
+  const studioProjectId =
+    hasSource && hasStudio
+      ? (exercise.data?.runtimeProjectId ?? assignment.referenceSource?.projectId ?? null)
+      : null;
   const readiness = useRuntimeSetupReadiness(studioProjectId);
   const labSessions = useStudentLabStudioSessions(
     workspaceId,
@@ -69,12 +79,10 @@ export function LabPublishSection({
     modules.some((module) =>
       module.items.some((item) => item.type === "THEORY" && item.assignmentId === assignment.id),
     );
-  const hasSource = Boolean(assignment.referenceSource?.modelId);
-  const hasQuiz = Boolean(setupLab?.quizPublished && (setupLab?.quizVersion ?? 0) > 0);
-  const hasStudio = Boolean(setupLab?.topologyFrozen || setupLab?.studioReady || assignment.requireRuntimeTrace);
   const hasContent = hasSource || theoryReady || hasQuiz || Boolean(assignment.instructions?.trim());
   const published = setupLab?.published === true || assignment.labOrder != null;
-  const canFreeze = Boolean(hasSource && (setupLab?.studioReady || setupLab?.topologyFrozen));
+  const topologyFrozen = Boolean(setupLab?.topologyFrozen);
+  const canFreeze = Boolean(hasStudio && hasSource && !topologyFrozen && (setupLab?.studioReady || Boolean(verifiedSession)));
   const detectedLabel = hasStudio
     ? t("Full Studio Live", "Full Studio Live")
     : hasQuiz
@@ -204,7 +212,7 @@ export function LabPublishSection({
           ))}
         </ul>
 
-        {readiness.data?.readinessGrade && (
+        {hasStudio && studioProjectId && readiness.data?.readinessGrade && (
           <div className="space-y-2.5 rounded-lg border bg-muted/30 p-3.5 text-xs">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
@@ -315,6 +323,15 @@ export function LabPublishSection({
             position={setupLab?.position}
             sessionId={verifiedSession?.id}
             canFreeze={canFreeze}
+            topologyFrozen={topologyFrozen}
+            freezeDisabledReason={
+              canFreeze && !verifiedSession
+                ? t(
+                    "Run a verified Studio Playtest session in Step 5 before freezing.",
+                    "Chạy thử một phiên Studio Playtest xác minh ở Bước 5 trước khi đóng băng.",
+                  )
+                : undefined
+            }
             publishBlockedReason={
               hasStudio && readiness.data?.readinessGrade === "BLOCKED"
                 ? t(

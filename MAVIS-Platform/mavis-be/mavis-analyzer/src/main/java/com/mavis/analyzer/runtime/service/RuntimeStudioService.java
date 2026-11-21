@@ -710,7 +710,9 @@ public class RuntimeStudioService {
         if (before < 0 || before > 8 || after < 0 || after > 8) return false;
         return switch (action) {
             case "STOP", "PAUSE" -> before > 0 && after == 0;
-            case "START", "RESUME" -> before == 0 && after > 0;
+            case "START" -> before == 0 && after > 0;
+            case "RESUME" -> (before == 0 && after > 0)
+                    || (result.path("metricsBefore").path("pausedReplicas").asInt(0) > 0 && after > before);
             case "SCALE" -> before > 0 && after > 0 && before != after;
             case "THROTTLE_CPU" -> {
                 int pct = result.path("metricsAfter").path("cpuPercent").asInt(0);

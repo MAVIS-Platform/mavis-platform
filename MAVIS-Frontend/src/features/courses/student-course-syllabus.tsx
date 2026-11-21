@@ -135,6 +135,10 @@ export function StudentCourseSyllabus({
             assignmentId: item.assignmentId ?? null,
             required: item.required,
             content: item.content,
+            ...(typeof item.content?.["estimatedMinutes"] === "number" &&
+            item.content["estimatedMinutes"] > 0
+              ? { estimatedMinutes: item.content["estimatedMinutes"] }
+              : {}),
             ...(typeof item.content?.["curriculumCode"] === "string"
               ? { curriculumCode: String(item.content["curriculumCode"]) }
               : {}),
@@ -263,13 +267,27 @@ export function StudentCourseSyllabus({
         ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(item.type) &&
         labs.find((l) => l.assignmentId === item.assignmentId)?.state === "LOCKED",
     );
-  const isItemLocked = (item: OutlineItemData) =>
-    isItemLockedLab(item) ||
-    Boolean(
-      item.assignmentId &&
-        item.type === "QUIZ" &&
-        labs.find((l) => l.assignmentId === item.assignmentId)?.state === "LOCKED",
-    );
+  const isItemLocked = (item: OutlineItemData) => {
+    if (isItemLockedLab(item)) return true;
+    if (item.assignmentId && labs.find((l) => l.assignmentId === item.assignmentId)?.state === "LOCKED") {
+      return true;
+    }
+    const owner = syllabusModules.find((mod) => mod.items.some((candidate) => candidate.id === item.id));
+    if (owner) {
+      const ownerLabItem = owner.items.find(
+        (candidate) =>
+          candidate.assignmentId &&
+          ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(candidate.type),
+      );
+      if (
+        ownerLabItem?.assignmentId &&
+        labs.find((l) => l.assignmentId === ownerLabItem.assignmentId)?.state === "LOCKED"
+      ) {
+        return true;
+      }
+    }
+    return false;
+  };
   const selectCurriculumItem = (item: OutlineItemData) => {
     if (isItemLocked(item)) {
       return;
@@ -656,7 +674,7 @@ export function StudentCourseSyllabus({
                         ? labs.find((l) => l.assignmentId === item.assignmentId)
                         : undefined;
                     const isPassed = linkedLab?.state === "PASSED";
-                    const isLocked = linkedLab?.state === "LOCKED";
+                    const isLocked = isItemLocked(item);
                     return (
                       <button
                         key={item.id}
@@ -1061,7 +1079,7 @@ export function StudentCourseSyllabus({
                                 "IMPACT_LAB",
                                 "RUNTIME_LAB",
                               ].includes(item.type);
-                              const isLocked = isLabItem && linkedLab?.state === "LOCKED";
+                              const isLocked = isItemLocked(item);
                               const isPassed = isLabItem && linkedLab?.state === "PASSED";
                               return (
                                 <li key={item.id}>

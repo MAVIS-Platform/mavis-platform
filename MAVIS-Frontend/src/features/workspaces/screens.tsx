@@ -478,6 +478,7 @@ export function WorkspaceMembers() {
     const matchesSearch =
       !search.trim() ||
       m.name.toLowerCase().includes(search.trim().toLowerCase()) ||
+      (m.email ?? "").toLowerCase().includes(search.trim().toLowerCase()) ||
       m.role.toLowerCase().includes(search.trim().toLowerCase());
     const matchesRole = roleFilter === "ALL" || m.role.toUpperCase() === roleFilter;
     return matchesSearch && matchesRole;
@@ -552,6 +553,15 @@ export function WorkspaceMembers() {
                 caption={t("Class roster & progress", "Danh sách sinh viên & tiến độ học")}
                 columns={[
                   { key: "name", label: t("Name", "Họ tên"), render: (m) => m.name },
+                  {
+                    key: "email",
+                    label: t("Email", "Email"),
+                    render: (m) => (
+                      <span className="font-mono text-xs text-muted-foreground">
+                        {m.email || "—"}
+                      </span>
+                    ),
+                  },
                   {
                     key: "role",
                     label: t("Role", "Vai trò"),

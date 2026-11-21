@@ -12,6 +12,14 @@ import { useApiMutation } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
 import type { Assignment } from "./requirements";
 
+function toDateTimeLocalValue(iso: string | null | undefined): string {
+  if (!iso || iso === "No deadline") return "";
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}T${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`;
+}
+
 export function LabInfoForm({
   workspaceId,
   assignment,
@@ -26,6 +34,16 @@ export function LabInfoForm({
   const save = useApiMutation(assignment ? "updateAssignment" : "createAssignment");
   const [title, setTitle] = useState(assignment?.title ?? "");
   const [instructions, setInstructions] = useState(assignment?.instructions ?? "");
+  const [labMode, setLabMode] = useState<"THEORY_ONLY" | "THEORY_QUIZ" | "THEORY_QUIZ_STUDIO">(
+    assignment?.labMode === "THEORY_ONLY" ||
+      assignment?.labMode === "THEORY_QUIZ" ||
+      assignment?.labMode === "THEORY_QUIZ_STUDIO"
+      ? assignment.labMode
+      : assignment?.requireRuntimeTrace
+        ? "THEORY_QUIZ_STUDIO"
+        : "THEORY_QUIZ",
+  );
+  const [dueLocal, setDueLocal] = useState(() => toDateTimeLocalValue(assignment?.dueAt));
   const [guideTab, setGuideTab] = useState<"write" | "preview">("write");
   const [stayMessage, setStayMessage] = useState("");
 
@@ -36,15 +54,22 @@ export function LabInfoForm({
       assignment?.aiPolicy && typeof assignment.aiPolicy === "object"
         ? (assignment.aiPolicy as Record<string, unknown>)
         : {};
+    const parsedDue = dueLocal ? new Date(dueLocal) : null;
+    const dueAtIso =
+      parsedDue && !Number.isNaN(parsedDue.getTime()) ? parsedDue.toISOString() : null;
     const payload: Record<string, unknown> = {
       workspaceId,
       ...(assignment ? { assignmentId: assignment.id } : {}),
       title: title.trim(),
       description: instructions,
-      dueAt: null,
-      requireRuntimeTrace: assignment?.requireRuntimeTrace ?? false,
-      labMode: assignment?.labMode ?? "THEORY_QUIZ",
-      aiPolicy: existingPolicy,
+      dueAt: dueAtIso,
+      requireRuntimeTrace: labMode === "THEORY_QUIZ_STUDIO",
+      labMode,
+      aiPolicy: {
+        ...existingPolicy,
+        labTier: labMode,
+        skipQuiz: labMode === "THEORY_ONLY",
+      },
       requiredDiagramTypes: [],
       clearReferenceSource: false,
     };
@@ -94,6 +119,45 @@ export function LabInfoForm({
             onChange={(event) => setTitle(event.target.value)}
           />
         </label>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="block space-y-1.5 text-sm font-medium">
+            <span>{t("Lab mode", "Chế độ Lab")}</span>
+            <select
+              aria-label={t("Lab mode", "Chế độ Lab")}
+              className="h-10 w-full rounded-md border bg-background px-3 text-sm font-normal"
+              value={labMode}
+              onChange={(event) => {
+                setLabMode(
+                  event.target.value as "THEORY_ONLY" | "THEORY_QUIZ" | "THEORY_QUIZ_STUDIO",
+                );
+                if (stayMessage) setStayMessage("");
+              }}
+            >
+              <option value="THEORY_ONLY">
+                {t("Theory Only (no Quiz, no Studio)", "Chỉ Lý thuyết (không Quiz, không Studio)")}
+              </option>
+              <option value="THEORY_QUIZ">
+                {t("Theory + Quiz (Static / C1–C3)", "Lý thuyết + Quiz (Tĩnh / C1–C3)")}
+              </option>
+              <option value="THEORY_QUIZ_STUDIO">
+                {t("Theory + Quiz + Studio Live (Docker)", "Lý thuyết + Quiz + Studio Live (Docker)")}
+              </option>
+            </select>
+          </label>
+          <label className="block space-y-1.5 text-sm font-medium">
+            <span>{t("Due date (optional)", "Hạn nộp (tùy chọn)")}</span>
+            <Input
+              type="datetime-local"
+              aria-label={t("Due date", "Hạn nộp")}
+              value={dueLocal}
+              onChange={(event) => {
+                setDueLocal(event.target.value);
+                if (stayMessage) setStayMessage("");
+              }}
+            />
+          </label>
+        </div>
 
         {/* Instructions, learning goals and completion criteria */}
         <div className="space-y-2">

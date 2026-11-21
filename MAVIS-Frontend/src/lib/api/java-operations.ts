@@ -190,6 +190,7 @@ export async function executeJava(
     const memberSchema = z.object({
       userId: z.string().uuid(),
       fullName: z.string(),
+      email: z.string().nullish(),
       memberRole: z.string(),
     });
     const { members: embedded, ...w } = z
@@ -214,6 +215,7 @@ export async function executeJava(
       members: members.map((m) => ({
         id: m.userId,
         name: m.fullName,
+        ...(m.email ? { email: m.email } : {}),
         role: m.memberRole.toLowerCase(),
       })),
     };

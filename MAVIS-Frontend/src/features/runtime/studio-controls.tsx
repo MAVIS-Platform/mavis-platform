@@ -132,6 +132,8 @@ export function StudioControls({ sessionId }: { sessionId: string }) {
           disabled={
             finish.isPending ||
             action.isPending ||
+            capturing ||
+            capture.isPending ||
             waiting ||
             !hasConfirmedAction ||
             data.finishRequested ||

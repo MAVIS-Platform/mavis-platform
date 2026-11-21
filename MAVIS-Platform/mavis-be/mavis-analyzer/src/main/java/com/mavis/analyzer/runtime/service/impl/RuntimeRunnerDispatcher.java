@@ -692,6 +692,21 @@ public class RuntimeRunnerDispatcher {
             log.info("MAVIS.Runner CLI hoàn tất (exitCode={}) với receipt đã commit cho session {}", exitCode, session.getId());
             return;
         }
+        if (exitCode != 0 && shouldRetryPreAllocationFailure(refreshed, stateDir)) {
+            log.warn("MAVIS.Runner CLI exited with code {} before allocation for session {}; retrying once.", exitCode, session.getId());
+            Thread.sleep(1500L);
+            exitCode = runRunnerProcess(session, command, stateDir);
+            refreshed = runtimeSessionRepository.findById(session.getId()).orElse(session);
+            if (refreshed.getReceiptDigest() == null && refreshed.getRunnerReceiptJson() == null) {
+                if (tryAutoImportOutboxReceipt(refreshed)) {
+                    refreshed = runtimeSessionRepository.findById(session.getId()).orElse(refreshed);
+                }
+            }
+            if (isTerminalOrCommitted(refreshed)) {
+                log.info("MAVIS.Runner CLI retry succeeded (exitCode={}) for session {}", exitCode, session.getId());
+                return;
+            }
+        }
         if (exitCode != 0) {
             List<String> logTail = readRedactedRunnerLogTail(session.getId());
             String detail = logTail.isEmpty() ? "" : (" - " + logTail.get(logTail.size() - 1));
@@ -699,6 +714,26 @@ public class RuntimeRunnerDispatcher {
         }
         // Exit 0 without a committed receipt would leave the session RUNNING/CANCELLING forever.
         throw new RuntimeException("MAVIS.Runner CLI exited successfully but no runtime receipt was committed.");
+    }
+
+    /** Safe bounded retry only when the runner exited before reserving any Docker allocation or failing preflight. */
+    boolean shouldRetryPreAllocationFailure(RuntimeSession session, Path stateDir) {
+        if (session == null || isTerminalOrCommitted(session) || session.getCancelRequestedAt() != null) {
+            return false;
+        }
+        String exec = session.getExecutionStatus() == null ? "" : session.getExecutionStatus().toUpperCase(Locale.ROOT);
+        if (Set.of("ALLOCATED", "RUNNING", "CANCELLING").contains(exec)) {
+            return false;
+        }
+        String rp = session.getResourceProject();
+        if (rp != null && !rp.isBlank() && stateDir != null
+                && Files.exists(stateDir.resolve(".allocation-" + rp + ".json"))) {
+            return false;
+        }
+        List<String> logTail = readRedactedRunnerLogTail(session.getId());
+        return logTail.stream().noneMatch(line ->
+                "MAVIS_RUNTIME_DIAGNOSTIC=PREFLIGHT_FAILED".equals(line)
+                || "MAVIS_RUNTIME_DIAGNOSTIC=OCI_RUNTIME_UNAVAILABLE".equals(line));
     }
 
     private int runRunnerProcess(RuntimeSession session, List<String> command, Path stateDir) throws Exception {

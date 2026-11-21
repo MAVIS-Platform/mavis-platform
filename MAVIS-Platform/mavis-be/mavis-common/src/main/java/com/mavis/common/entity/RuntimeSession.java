@@ -187,7 +187,9 @@ public class RuntimeSession {
                     || !action.path("metricsBefore").isObject() || !action.path("metricsAfter").isObject()) continue;
             boolean changed = switch (type) {
                 case "STOP", "PAUSE" -> before > 0 && after == 0;
-                case "START", "RESUME" -> before == 0 && after > 0;
+                case "START" -> before == 0 && after > 0;
+                case "RESUME" -> (before == 0 && after > 0)
+                        || (action.path("metricsBefore").path("pausedReplicas").asInt(0) > 0 && after > before);
                 case "SCALE" -> before > 0 && after > 0 && before != after;
                 case "THROTTLE_CPU" -> {
                     int pct = action.path("metricsAfter").path("cpuPercent").asInt(0);

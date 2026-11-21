@@ -223,7 +223,7 @@ export function StudioExerciseEditor({
         ? "payment"
         : nonControllers[nonControllers.length - 1] ?? middle;
     const baselinePath = primary === "api-gateway"
-      ? "/api/gateway/orders"
+      ? (applications.includes("payment-service") ? "/api/gateway/orders/1" : "/api/gateway/orders")
       : primary === "orders"
         ? "/orders"
         : "/health";

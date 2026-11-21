@@ -169,6 +169,7 @@ public static class RunnerProgram
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or JsonException or InvalidOperationException or KeyNotFoundException)
         {
             if (Environment.GetEnvironmentVariable("MAVIS_RUNNER_DEBUG") == "1") Console.Error.WriteLine(ex);
+            Console.Error.WriteLine("MAVIS_RUNTIME_DIAGNOSTIC=RUNNER_" + ex.GetType().Name.ToUpperInvariant());
             Console.Error.WriteLine("Input could not be processed; check the supported profile and input references.");
             return 2;
         }

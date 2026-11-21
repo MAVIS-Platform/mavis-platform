@@ -36,20 +36,24 @@ function projectionDsl(payload: Record<string, unknown>): string | null {
 }
 function SubmissionEvidenceHeader({ submission }: { submission: Submission }) {
   const { locale, t } = useLocale();
+  const quizEv = submission.courseQuizEvidence;
+  const quizCorrect = quizEv?.correctCount ?? 0;
+  const quizTotal = quizEv?.questionCount ?? 0;
+  const quizScorePercent = quizTotal > 0 ? Math.round((quizCorrect / quizTotal) * 100) : 0;
   return (
     <>
       {submission.evidencePackageDigest && (
-        <p className="break-all font-mono text-xs text-muted-foreground">
+        <div className="rounded-lg border bg-muted/20 px-3 py-2 font-mono text-xs leading-relaxed text-muted-foreground break-all">
           {t("Evidence package SHA-256", "Mã băm gói minh chứng SHA-256")}: {submission.evidencePackageDigest}
-        </p>
+        </div>
       )}
-      {submission.courseQuizEvidence && (
+      {quizEv && (
         <div className="rounded-lg border bg-muted/20 p-3 text-xs">
           <p className="font-medium">{t("Course Quiz Gate Proof", "Minh chứng Quiz Gate của Lab")}</p>
           <p className="text-muted-foreground">
-            {submission.courseQuizEvidence.status === "NOT_REQUIRED"
+            {quizEv.status === "NOT_REQUIRED"
               ? t("NOT_REQUIRED · Theory Only", "KHÔNG BẮT BUỘC · Chỉ lý thuyết")
-              : `${submission.courseQuizEvidence.status} · ${submission.courseQuizEvidence.correctCount ?? 0}/${submission.courseQuizEvidence.questionCount ?? 0} (${submission.courseQuizEvidence.passPercent ?? 0}%) · Quiz v${submission.courseQuizEvidence.quizVersion ?? 1}`}
+              : `${quizEv.status} · ${quizCorrect}/${quizTotal} (${quizScorePercent}%${quizEv.passPercent != null ? ` · pass ≥ ${quizEv.passPercent}%` : ""}) · Quiz v${quizEv.quizVersion ?? 1}`}
           </p>
         </div>
       )}

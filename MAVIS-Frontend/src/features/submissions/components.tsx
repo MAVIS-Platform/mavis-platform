@@ -37,7 +37,7 @@ export function SubmissionVersionHeader({ submission }: { submission: Submission
               variant="outline"
             />
           )}
-          {submission.runtime?.studioVerified && (
+          {(submission.runtime?.studioVerified || Boolean(submission.studioEvidence)) && (
             <StatusBadge
               status={t("Studio Live Verified", "Đã xác minh Studio Live")}
               variant="success"
@@ -87,6 +87,12 @@ export function SubmissionVersionHeader({ submission }: { submission: Submission
             status={formatLabModeLabel(submission.labMode, t)}
             preserveCase
             variant="outline"
+          />
+        )}
+        {(submission.runtime?.studioVerified || Boolean(submission.studioEvidence)) && (
+          <StatusBadge
+            status={t("Studio Live Verified", "Đã xác minh Studio Live")}
+            variant="success"
           />
         )}
       </div>
@@ -151,6 +157,13 @@ export function SubmissionVersionHeader({ submission }: { submission: Submission
               : t("Runtime evidence", "Minh chứng Runtime")}{" "}
             · {submission.runtime.id.slice(0, 8)}
           </Link>
+        ) : submission.studioEvidence ? (
+          <span className="font-medium text-emerald-700 dark:text-emerald-400">
+            {t("Verified Studio evidence attached", "Đã đính kèm minh chứng Studio xác minh")}
+            {typeof submission.studioEvidence["receiptDigest"] === "string"
+              ? ` · ${String(submission.studioEvidence["receiptDigest"]).slice(0, 19)}…`
+              : ""}
+          </span>
         ) : (
           t("No runtime evidence attached", "Chưa đính kèm minh chứng Runtime")
         )}

@@ -356,7 +356,9 @@ function ShellChrome({
         : pathname === "/submissions" && role === "lecturer"
           ? "assignment-submissions"
           : pathname === "/members"
-            ? "members"
+            ? params.get("tab") === "settings"
+              ? "settings"
+              : "members"
             : route.activeId;
   const activeWorkspaceNavId =
     selectedWorkspaceId && workspaces.some((w) => w.id === selectedWorkspaceId)

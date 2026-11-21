@@ -12,24 +12,35 @@ export async function javaRequest(
     headers.set("Content-Type", "application/json");
   const base =
     process.env["MAVIS_JAVA_URL"] ?? process.env["MAVIS_BACKEND_URL"] ?? "http://127.0.0.1:8081";
-  let response: globalThis.Response;
-  try {
-    response = await fetch(`${base.replace(/\/$/, "")}/api/v1/${path}`, {
-      ...init,
-      headers,
-      cache: "no-store",
-      redirect: "error",
-      signal: init.signal
-        ? AbortSignal.any([
-            init.signal,
-            AbortSignal.timeout(path.endsWith("/runtime-plan/build-images") ? 600000 : 120000),
-          ])
-        : AbortSignal.timeout(path.endsWith("/runtime-plan/build-images") ? 600000 : 120000),
-    });
-  } catch (error) {
-    if (error instanceof DOMException && ["AbortError", "TimeoutError"].includes(error.name))
-      throw new ApiError("timeout", 504);
-    throw new ApiError("network", 502, isPublicAuthPath(path) ? "AUTH_NETWORK" : undefined);
+  const isIdempotentGet = !init.method || init.method.toUpperCase() === "GET";
+  const maxAttempts = isIdempotentGet ? 2 : 1;
+  const timeoutMs = path.endsWith("/runtime-plan/build-images") ? 600000 : 120000;
+  let response!: globalThis.Response;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      response = await fetch(`${base.replace(/\/$/, "")}/api/v1/${path}`, {
+        ...init,
+        headers,
+        cache: "no-store",
+        redirect: "error",
+        signal: init.signal
+          ? AbortSignal.any([init.signal, AbortSignal.timeout(timeoutMs)])
+          : AbortSignal.timeout(timeoutMs),
+      });
+    } catch (error) {
+      if (error instanceof DOMException && ["AbortError", "TimeoutError"].includes(error.name))
+        throw new ApiError("timeout", 504);
+      if (attempt + 1 < maxAttempts) {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        continue;
+      }
+      throw new ApiError("network", 502, isPublicAuthPath(path) ? "AUTH_NETWORK" : undefined);
+    }
+    if ((response.status === 502 || response.status === 503) && attempt + 1 < maxAttempts) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      continue;
+    }
+    break;
   }
   if (!response.ok) {
     const rawError: unknown = await response

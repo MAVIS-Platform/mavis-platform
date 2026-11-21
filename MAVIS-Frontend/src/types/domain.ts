@@ -264,7 +264,14 @@ export const workspaceSchema = z.object({
   code: z.string().optional(),
   myRole: z.string().nullable().optional(),
   status: z.string().optional(),
-  members: z.array(z.object({ id: z.string(), name: z.string(), role: z.string() })),
+  members: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      email: z.string().optional(),
+      role: z.string(),
+    }),
+  ),
 });
 export const assignmentReferenceSchema = z.object({
   projectId: z.string(),

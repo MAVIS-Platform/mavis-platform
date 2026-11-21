@@ -18,7 +18,7 @@ printf '#!/bin/sh\nexit 0\n' > /tmp/stubs/curl
 cp /tmp/stubs/curl /tmp/stubs/sleep
 chmod +x /tmp/stubs/*
 export PATH=/tmp/stubs:$PATH
-echo 'INITIAL_ENV=preserved' > /opt/mavis/.env.production
+printf 'INITIAL_ENV=preserved\nMAVIS_RUNTIME_MAX_ACTIVE_STUDIO_SESSIONS=1\n' > /opt/mavis/.env.production
 echo 'name: mavis' > /opt/mavis/deploy/compose.production.yml
 tag1=$(printf 'a%.0s' {1..40})
 tag2=$(printf 'b%.0s' {1..40})
@@ -31,6 +31,9 @@ printf 'test-token\n' | bash /source/deploy-vps.sh "$tag1" ghcr.io/mavis-platfor
 grep -q "IMAGE_TAG=$tag1" /opt/mavis/.release.env
 grep -q 'INITIAL_ENV=preserved' /opt/mavis/.env.production
 grep -q '^MAVIS_RUNTIME_ENVIRONMENT_KEY=.\+' /opt/mavis/.env.production
+if [ -r /proc/meminfo ] && [ "$(awk '/^MemTotal:/{print $2}' /proc/meminfo)" -ge 3500000 ]; then
+  grep -q '^MAVIS_RUNTIME_MAX_ACTIVE_STUDIO_SESSIONS=2$' /opt/mavis/.env.production
+fi
 test "$(stat -c %a /opt/mavis/.env.production)" = 600
 echo "$tag2" > /tmp/fail-tag
 if printf 'test-token\n' | bash /source/deploy-vps.sh "$tag2" ghcr.io/mavis-platform/mavis-platform test-user; then

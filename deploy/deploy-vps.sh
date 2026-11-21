@@ -36,6 +36,19 @@ if not keys.get('MAVIS_RUNTIME_ENVIRONMENT_KEY'):
 if Path('/var/run/docker.sock').exists():
     lines = [l for l in lines if not l.startswith('DOCKER_GID=')]
     lines.append('DOCKER_GID=' + str(Path('/var/run/docker.sock').stat().st_gid))
+mem_kb = 0
+meminfo = Path('/proc/meminfo')
+if meminfo.exists():
+    for mline in meminfo.read_text().splitlines():
+        if mline.startswith('MemTotal:'):
+            parts = mline.split()
+            if len(parts) >= 2 and parts[1].isdigit():
+                mem_kb = int(parts[1])
+            break
+# Allow 2 concurrent Studio stacks on hosts with >=3.5 GiB RAM (measured ~680 MiB/stack).
+if mem_kb >= 3_500_000 and keys.get('MAVIS_RUNTIME_MAX_ACTIVE_STUDIO_SESSIONS', '') in ('', '1'):
+    lines = [l for l in lines if not l.startswith('MAVIS_RUNTIME_MAX_ACTIVE_STUDIO_SESSIONS=')]
+    lines.append('MAVIS_RUNTIME_MAX_ACTIVE_STUDIO_SESSIONS=2')
 p.write_text('\n'.join(lines) + '\n')
 p.chmod(0o600)
 PY

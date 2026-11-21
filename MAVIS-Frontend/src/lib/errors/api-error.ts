@@ -43,6 +43,9 @@ export const publicErrors = {
   SUBMISSION_SNAPSHOT_EXPLANATIONS_REQUIRED: "Add an explanation for each required Snapshot (up to 5,000 characters each).",
   SUBMISSION_SNAPSHOT_IDS_INVALID: "The Snapshot selection has changed. Reload the Lab and review its required evidence.",
   SUBMISSION_STUDIO_RECEIPT_REQUIRED: "Select a verified Studio receipt for the selected model version.",
+  STUDIO_SESSION_REQUIRED: "Finish a verified Studio Live session before submitting this Lab.",
+  STUDIO_EVIDENCE_REQUIRED: "Your Studio Live session must have a verified receipt and at least one confirmed action before submitting.",
+  STUDIO_SNAPSHOT_REQUIRED: "Capture at least one Studio Snapshot with your observation note before submitting.",
   SUBMISSION_QUIZ_REQUIRED: "Pass the current Lab Quiz before submitting.",
   SUBMISSION_LAB_PASSED: "This Lab is already complete. View your passing submission in My Submissions.",
   REVIEW_SNAPSHOT_GRADES_INCOMPLETE: "Enter a grade for every frozen Snapshot before publishing.",
@@ -146,6 +149,12 @@ export function backendErrorCode(
       return "SUBMISSION_SNAPSHOT_IDS_INVALID";
     if ((status === 422 || status === 400) && message === "STEP_4_SIGNED_RUNTIME_RECEIPT")
       return "SUBMISSION_STUDIO_RECEIPT_REQUIRED";
+    if ((status === 422 || status === 400) && message === "STUDIO_SESSION_REQUIRED")
+      return "STUDIO_SESSION_REQUIRED";
+    if ((status === 422 || status === 400) && message === "STUDIO_EVIDENCE_REQUIRED")
+      return "STUDIO_EVIDENCE_REQUIRED";
+    if ((status === 422 || status === 400) && message === "STUDIO_SNAPSHOT_REQUIRED")
+      return "STUDIO_SNAPSHOT_REQUIRED";
     if (status === 403 && message === "Pass the current Lab Quiz before submitting")
       return "SUBMISSION_QUIZ_REQUIRED";
     if (status === 400 && message === "Đã quá hạn nộp bài cho đề bài này")

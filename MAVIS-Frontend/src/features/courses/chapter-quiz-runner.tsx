@@ -6,7 +6,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Clock3, FileQuestion, RotateCcw, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useApi } from "@/hooks/use-api";
+import { useApi, useSession } from "@/hooks/use-api";
 import { api, ApiError } from "@/lib/mainflow-api";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { formatQuizQuestionPrompt, sanitizeQuizPlainText } from "@/lib/format/course-display";
@@ -54,13 +54,14 @@ function makeAttemptId() {
 }
 
 /** The curriculum fixture has no quiz-attempt API. This explicit device-local store
- * preserves attempts without presenting locally stored results as backend data. */
-function attemptStorageKey(
+ * preserves attempts scoped per user so shared lab machines never leak another student's pass state. */
+export function attemptStorageKey(
+  userId: string | null | undefined,
   workspaceId: string,
   assignmentId: string | null | undefined,
   title: string,
 ) {
-  return `mavis:curriculum-quiz-attempt:${workspaceId}:${assignmentId ?? "curriculum"}:${title}`;
+  return `mavis:curriculum-quiz-attempt:${userId || "anon"}:${workspaceId}:${assignmentId ?? "curriculum"}:${title}`;
 }
 
 export function ChapterQuizRunner({
@@ -82,6 +83,8 @@ export function ChapterQuizRunner({
 }) {
   const { t } = useLocale();
   const client = useApi();
+  const session = useSession();
+  const userId = session.data?.user?.id;
   const cache = useQueryClient();
   const hasAssignmentBackend = client.mode === "backend" && Boolean(assignmentId);
   const backendQuizEnabled = hasAssignmentBackend && !canManage;
@@ -90,8 +93,8 @@ export function ChapterQuizRunner({
     ? (backendQuiz.data?.passPercent ?? PASS_PERCENT)
     : PASS_PERCENT;
   const storageKey = useMemo(
-    () => attemptStorageKey(workspaceId, assignmentId, title),
-    [assignmentId, title, workspaceId],
+    () => attemptStorageKey(userId, workspaceId, assignmentId, title),
+    [assignmentId, title, userId, workspaceId],
   );
   const [attempt, setAttempt] = useState<StoredQuizAttempt | null>(null);
   const [isHydrated, setIsHydrated] = useState(false);
@@ -128,7 +131,17 @@ export function ChapterQuizRunner({
     if (!backendQuizEnabled || !backendQuiz.data || attempt?.status === "IN_PROGRESS") return;
     const submitted =
       backendQuiz.data.latestStatus === "PASSED" || backendQuiz.data.latestStatus === "NEEDS_RETRY";
-    if (!submitted) return;
+    if (!submitted) {
+      if (attempt?.status === "SUBMITTED") {
+        setAttempt(null);
+        try {
+          window.localStorage.removeItem(storageKey);
+        } catch {
+          // Ignore storage access errors.
+        }
+      }
+      return;
+    }
     const total = backendQuiz.data.questions.length;
     const correct = backendQuiz.data.latestCorrectCount;
     const recordedScore =
@@ -156,7 +169,7 @@ export function ChapterQuizRunner({
     if (recordedScore !== undefined) recordedAttempt.scorePercent = recordedScore;
     if (correct !== null && correct !== undefined) recordedAttempt.correctCount = correct;
     updateAttempt(recordedAttempt);
-  }, [attempt, backendQuiz.data, backendQuizEnabled]);
+  }, [attempt, backendQuiz.data, backendQuizEnabled, storageKey]);
 
   const submitBackendAttempt = useMutation({
     mutationFn: (nextAttempt: StoredQuizAttempt) =>

@@ -69,6 +69,7 @@ type ItemDraft = {
   prompt: string;
   rubric: string;
   assignmentId: string;
+  estimatedMinutes: string;
   required: boolean;
 };
 
@@ -80,6 +81,7 @@ const emptyDraft = (): ItemDraft => ({
   prompt: "",
   rubric: "",
   assignmentId: "",
+  estimatedMinutes: "",
   required: true,
 });
 
@@ -108,9 +110,12 @@ function rubricText(rubric: unknown) {
 }
 
 function contentFromDraft(draft: ItemDraft): Record<string, unknown> {
-  if (draft.type === "THEORY") return { body: draft.body.trim() };
-  if (draft.type === "ESSAY") return { prompt: draft.prompt.trim(), rubric: parseRubric(draft.rubric) };
-  return {};
+  const mins = Number.parseInt(draft.estimatedMinutes, 10);
+  const meta =
+    Number.isFinite(mins) && mins > 0 && mins <= 600 ? { estimatedMinutes: mins } : {};
+  if (draft.type === "THEORY") return { ...meta, body: draft.body.trim() };
+  if (draft.type === "ESSAY") return { ...meta, prompt: draft.prompt.trim(), rubric: parseRubric(draft.rubric) };
+  return meta;
 }
 
 function draftFromItem(item: Item): ItemDraft {
@@ -123,6 +128,10 @@ function draftFromItem(item: Item): ItemDraft {
     prompt: typeof content["prompt"] === "string" ? content["prompt"] : "",
     rubric: rubricText(content["rubric"]),
     assignmentId: item.assignmentId ?? "",
+    estimatedMinutes:
+      typeof content["estimatedMinutes"] === "number" && content["estimatedMinutes"] > 0
+        ? String(content["estimatedMinutes"])
+        : "",
     required: item.required,
   };
 }
@@ -216,11 +225,19 @@ function ItemFields({
           <select
             className="w-full rounded-md border bg-background px-3 py-2 text-sm"
             value={draft.type}
-            onChange={(event) => onChange({ type: event.target.value as ItemType })}
+            onChange={(event) => {
+              const nextType = event.target.value as ItemType;
+              onChange({
+                type: nextType,
+                ...(nextType === "THEORY" ? { assignmentId: "" } : {}),
+              });
+            }}
           >
-            {(["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"] as const).map((type) => (
+            {(["THEORY", "STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"] as const).map((type) => (
               <option key={type} value={type}>
-                {t(TYPE_META[type].en, TYPE_META[type].vi)}
+                {type === "THEORY"
+                  ? t("Standalone Theory Lesson", "Bài Lý thuyết độc lập")
+                  : t(TYPE_META[type].en, TYPE_META[type].vi)}
               </option>
             ))}
           </select>
@@ -236,13 +253,27 @@ function ItemFields({
           />
         </label>
       </div>
-      <label className="space-y-1 text-xs font-medium">
-        <span>{t("Short description", "Mô tả ngắn")}</span>
-        <Input
-          value={draft.description}
-          onChange={(event) => onChange({ description: event.target.value })}
-        />
-      </label>
+      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_160px]">
+        <label className="space-y-1 text-xs font-medium">
+          <span>{t("Short description", "Mô tả ngắn")}</span>
+          <Input
+            value={draft.description}
+            onChange={(event) => onChange({ description: event.target.value })}
+          />
+        </label>
+        <label className="space-y-1 text-xs font-medium">
+          <span>{t("Duration (min)", "Thời lượng (phút)")}</span>
+          <Input
+            type="number"
+            min={5}
+            max={600}
+            step={5}
+            placeholder="45"
+            value={draft.estimatedMinutes}
+            onChange={(event) => onChange({ estimatedMinutes: event.target.value })}
+          />
+        </label>
+      </div>
       {isLegacyRawTheory && (
         <div className="space-y-1.5">
           <label className="space-y-1 text-xs font-medium">

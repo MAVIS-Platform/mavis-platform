@@ -171,6 +171,9 @@
   --ring: oklch(0.829445 0.084357 267.488612);
   --disabled-background: oklch(0.308516 0.039308 262.041855);
   --disabled-foreground: oklch(0.665432 0.037022 257.865031);
+  --hero-background: oklch(0.24 0.038 260);
+  --section-background: oklch(0.27 0.032 258);
+  --body-text: var(--muted-foreground);
   --success: oklch(0.820274 0.097086 160.306815);
   --success-subtle: oklch(0.3118 0.04505 164.978658);
   --warning: oklch(0.883237 0.102324 76.767164);

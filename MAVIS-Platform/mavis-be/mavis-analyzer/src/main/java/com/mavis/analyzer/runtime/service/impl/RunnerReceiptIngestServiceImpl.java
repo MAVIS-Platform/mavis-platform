@@ -1605,7 +1605,9 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
         }
         return switch (type) {
             case "STOP", "PAUSE" -> before > 0 && after == 0;
-            case "START", "RESUME" -> before == 0 && after > 0;
+            case "START" -> before == 0 && after > 0;
+            case "RESUME" -> (before == 0 && after > 0)
+                    || (action.getMetricsBefore().path("pausedReplicas").asInt(0) > 0 && after > before);
             case "SCALE" -> before > 0 && after > 0 && !before.equals(after);
             case "THROTTLE_CPU" -> {
                 int pct = action.getMetricsAfter() != null ? action.getMetricsAfter().path("cpuPercent").asInt(0) : 0;

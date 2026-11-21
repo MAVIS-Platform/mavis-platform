@@ -312,9 +312,18 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             _probeStream = probeHandle as ILineStreamHandle;
             var telemetryLoop = RunTelemetryLoopAsync(telemetryStop.Token);
             try {
+                var consecutivePollErrors = 0;
                 while (true) {
                     ct.ThrowIfCancellationRequested();
-                    var command = await studio.NextStudioCommandAsync(definition.SessionId, ResourceProject, ct);
+                    Stage = "STUDIO_LOOP";
+                    JavaRuntimeClient.StudioPoll command;
+                    try {
+                        command = await studio.NextStudioCommandAsync(definition.SessionId, ResourceProject, ct);
+                        consecutivePollErrors = 0;
+                    } catch (Exception) when (!ct.IsCancellationRequested && ++consecutivePollErrors <= 3) {
+                        await Task.Delay(1000, ct);
+                        continue;
+                    }
                     if (command.CancelRequested)
                     {
                         onRemoteCancel?.Invoke();
@@ -334,8 +343,10 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
                     } catch (Exception) when (!ct.IsCancellationRequested) {
                         // Any single action failure (command timeout, bad probe output) is acknowledged, not fatal to the session.
                         result = _observedActions.Count > resultCount ? _observedActions.Last() : null;
+                    } finally {
+                        Stage = "STUDIO_LOOP";
                     }
-                    await studio.AcknowledgeStudioActionAsync(definition.SessionId, ResourceProject, item.ActionId, status, result, ct);
+                    await AcknowledgeActionSafeAsync(item.ActionId, status, result, ct);
                     // Publish the post-action frame before polling the next command or finishRequested so no action's state is lost.
                     await PublishStudioTelemetrySafeAsync(ct);
                 }
@@ -356,6 +367,32 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             }
         }
         return await ExecuteActionsAsync(definition.InfrastructureActions ?? [], ct);
+    }
+
+    private async Task AcknowledgeActionSafeAsync(string actionId, string status, RuntimeInfrastructureActionResult? result, CancellationToken ct)
+    {
+        if (studio is null) return;
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            try
+            {
+                await studio.AcknowledgeStudioActionAsync(definition.SessionId, ResourceProject, actionId, status, result, ct);
+                return;
+            }
+            catch (Exception) when (!ct.IsCancellationRequested && attempt == 0)
+            {
+                await Task.Delay(500, ct);
+            }
+            catch (Exception) when (!ct.IsCancellationRequested)
+            {
+                if (status == "CONFIRMED")
+                {
+                    try { await studio.AcknowledgeStudioActionAsync(definition.SessionId, ResourceProject, actionId, "FAILED", null, ct); }
+                    catch (Exception) when (!ct.IsCancellationRequested) { }
+                }
+                return;
+            }
+        }
     }
 
     private async Task<IReadOnlyList<RuntimeInfrastructureActionResult>> ExecuteActionsAsync(
@@ -437,6 +474,14 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             else await Require(["up", "--detach", "--no-deps", "--no-recreate", "--no-build", "--pull", "never",
                 "--wait", "--wait-timeout", actionWaitTimeout, "--scale", service + "=" + item.Replicas, service], ct);
             var after = await ReadServiceState(service, ct);
+            if (action == "RESUME" && (after.paused > 0 || after.running == 0))
+            {
+                for (var settle = 0; settle < 4 && (after.paused > 0 || after.running == 0); settle++)
+                {
+                    await Task.Delay(250, ct);
+                    after = await ReadServiceState(service, ct);
+                }
+            }
             var expected = action switch
             {
                 "STOP" => before.running > 0 && after.running == 0,

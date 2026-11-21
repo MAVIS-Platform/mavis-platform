@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Copy, KeyRound, Pause, Pencil, Play, Plus, Trash2, X } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DetailPanel } from "@/components/shared/data";
@@ -1520,6 +1521,8 @@ export function PublishCourseLab({
   position,
   sessionId,
   canFreeze = true,
+  topologyFrozen = false,
+  freezeDisabledReason,
   publishBlockedReason,
 }: {
   workspaceId: string;
@@ -1527,6 +1530,8 @@ export function PublishCourseLab({
   position?: number | undefined;
   sessionId?: string | undefined;
   canFreeze?: boolean | undefined;
+  topologyFrozen?: boolean | undefined;
+  freezeDisabledReason?: string | undefined;
   publishBlockedReason?: string | undefined;
 }) {
   const t = useCourseText();
@@ -1562,23 +1567,27 @@ export function PublishCourseLab({
         <span className="text-sm font-medium">
           {t(`In class · Lab ${labPosition}`, `Trong lớp · Lab ${labPosition}`)}
         </span>
-        {canFreeze && (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={freeze.isPending}
-            onClick={() => freeze.mutate()}
-          >
-            {freeze.isPending
-              ? t("Freezing…", "Đang đóng băng…")
-              : t("Freeze Studio topology", "Đóng băng topology Studio")}
-          </Button>
-        )}
-        {freeze.isSuccess && (
-          <span role="status" className="text-xs text-success">
+        {topologyFrozen || freeze.isSuccess ? (
+          <Badge variant="success">
             {t("Topology frozen", "Đã đóng băng topology")}
-          </span>
+          </Badge>
+        ) : (
+          canFreeze && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={freeze.isPending || Boolean(freezeDisabledReason)}
+              title={freezeDisabledReason}
+              onClick={() => {
+                if (!freezeDisabledReason) freeze.mutate();
+              }}
+            >
+              {freeze.isPending
+                ? t("Freezing…", "Đang đóng băng…")
+                : t("Freeze Studio topology", "Đóng băng topology Studio")}
+            </Button>
+          )
         )}
         {freeze.error && (
           <span role="alert" className="text-xs text-destructive">

@@ -319,4 +319,44 @@ class RuntimeRunnerDispatcherTest {
         assertThat(RuntimeRunnerDispatcher.resolveProcessDeadlineSeconds(
                 RuntimeSession.builder().scenarioConfig(cappedCfg).build())).isEqualTo(3600L);
     }
+
+    @Test
+    void shouldRetryPreAllocationFailureOnlyBeforeAllocationWithoutPreflightFailure(@org.junit.jupiter.api.io.TempDir java.nio.file.Path tempDir) throws Exception {
+        var sessions = mock(RuntimeSessionRepository.class);
+        var receipt = mock(RunnerReceiptIngestService.class);
+        var service = mock(RuntimeSessionService.class);
+        var dispatcher = newDispatcher(sessions, receipt, service);
+        org.springframework.test.util.ReflectionTestUtils.setField(dispatcher, "runnerStateRoot", tempDir.toString());
+
+        UUID retryableId = UUID.randomUUID();
+        RuntimeSession ready = RuntimeSession.builder()
+                .id(retryableId)
+                .executionStatus("READY_FOR_DISPATCH")
+                .resourceProject("mavisrun-" + "a".repeat(32))
+                .build();
+        assertThat(dispatcher.shouldRetryPreAllocationFailure(ready, tempDir)).isTrue();
+
+        // Must NOT retry once ALLOCATED or RUNNING
+        RuntimeSession allocated = RuntimeSession.builder()
+                .id(retryableId)
+                .executionStatus("ALLOCATED")
+                .resourceProject(ready.getResourceProject())
+                .build();
+        assertThat(dispatcher.shouldRetryPreAllocationFailure(allocated, tempDir)).isFalse();
+
+        // Must NOT retry if reservation file already exists on disk
+        java.nio.file.Files.writeString(tempDir.resolve(".allocation-" + ready.getResourceProject() + ".json"), "{}");
+        assertThat(dispatcher.shouldRetryPreAllocationFailure(ready, tempDir)).isFalse();
+
+        // Must NOT retry if PREFLIGHT_FAILED diagnostic was emitted
+        UUID preflightId = UUID.randomUUID();
+        RuntimeSession preflightSession = RuntimeSession.builder()
+                .id(preflightId)
+                .executionStatus("READY_FOR_DISPATCH")
+                .resourceProject("mavisrun-" + "b".repeat(32))
+                .build();
+        java.nio.file.Files.writeString(tempDir.resolve("runner-" + preflightId + ".log"),
+                "MAVIS_RUNTIME_DIAGNOSTIC=PREFLIGHT_FAILED\n");
+        assertThat(dispatcher.shouldRetryPreAllocationFailure(preflightSession, tempDir)).isFalse();
+    }
 }

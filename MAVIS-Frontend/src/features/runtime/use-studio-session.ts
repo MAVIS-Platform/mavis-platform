@@ -87,6 +87,7 @@ export function useStudioSession(sessionId: string) {
 
   const [explanation, setExplanation] = useState("");
   const [capturing, setCapturing] = useState(false);
+  const capturePromiseRef = useRef<Promise<void> | null>(null);
   const [actionError, setActionError] = useState<Error | null>(null);
   const [downloadError, setDownloadError] = useState<Error | null>(null);
   const [chaosTarget, setChaosTarget] = useState("");
@@ -326,6 +327,9 @@ export function useStudioSession(sessionId: string) {
   }, [data?.executionStatus, data?.receiptDigest, queryClient]);
 
   async function finishStudio() {
+    if (capturePromiseRef.current) {
+      await capturePromiseRef.current.catch(() => {});
+    }
     try {
       await finish.mutateAsync({ sessionId });
     } finally {
@@ -350,21 +354,26 @@ export function useStudioSession(sessionId: string) {
     if (!data || !explanation.trim()) return;
     setCapturing(true);
     setDownloadError(null);
-    try {
-      const imageData = graph ? await captureStudioImage(graph).catch(() => undefined) : undefined;
-      await capture.mutateAsync({
-        sessionId,
-        explanation: explanation.trim(),
-        ...(imageData ? { imageData } : {}),
-        observedAt: data.telemetry?.observedAt,
-      });
-      setExplanation("");
-      await state.refetch();
-    } catch (error) {
-      setDownloadError(error instanceof Error ? error : new Error("Could not capture evidence"));
-    } finally {
-      setCapturing(false);
-    }
+    const task = (async () => {
+      try {
+        const imageData = graph ? await captureStudioImage(graph).catch(() => undefined) : undefined;
+        await capture.mutateAsync({
+          sessionId,
+          explanation: explanation.trim(),
+          ...(imageData ? { imageData } : {}),
+          observedAt: data.telemetry?.observedAt,
+        });
+        setExplanation("");
+        await state.refetch();
+      } catch (error) {
+        setDownloadError(error instanceof Error ? error : new Error("Could not capture evidence"));
+      } finally {
+        capturePromiseRef.current = null;
+        setCapturing(false);
+      }
+    })();
+    capturePromiseRef.current = task;
+    await task;
   }
 
   async function downloadReceipt() {

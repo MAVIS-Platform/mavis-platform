@@ -1927,3 +1927,49 @@ test("Bug #17: locked Module Quizzes are gated in syllabus/outline and ChapterQu
   assert.match(runner, /backendQuiz\.error\.status === 403/);
   assert.match(runner, /This module Quiz is locked until you pass the previous Lab\./);
 });
+
+test("Full-Course E2E hardening: user-scoped Quiz storage, WF-04 422 codes, Snapshot/Finish serialization, accurate Submission detail & Dark Mode tokens", () => {
+  const { attemptStorageKey } = require("../src/features/courses/chapter-quiz-runner.tsx");
+  assert.notEqual(
+    attemptStorageKey("user-1", "ws-1", "lab-1", "Quiz 1"),
+    attemptStorageKey("user-2", "ws-1", "lab-1", "Quiz 1"),
+  );
+
+  const { publicErrors, backendErrorCode } = require("../src/lib/errors/api-error.ts");
+  assert.ok(publicErrors.STUDIO_SNAPSHOT_REQUIRED);
+  assert.ok(publicErrors.STUDIO_EVIDENCE_REQUIRED);
+  assert.equal(backendErrorCode("submissions", 422, "STUDIO_SNAPSHOT_REQUIRED"), "STUDIO_SNAPSHOT_REQUIRED");
+  assert.equal(backendErrorCode("submissions", 422, "STUDIO_EVIDENCE_REQUIRED"), "STUDIO_EVIDENCE_REQUIRED");
+
+  const useStudio = read("src/features/runtime/use-studio-session.ts");
+  const workbench = read("src/features/runtime/live-studio-workbench.tsx");
+  assert.match(useStudio, /capturePromiseRef/);
+  assert.match(workbench, /capturing \|\|\s*capture\.isPending/);
+
+  const subComponents = read("src/features/submissions/components.tsx");
+  const frozen = read("src/features/submissions/frozen-artifacts.tsx");
+  assert.match(subComponents, /submission\.studioEvidence/);
+  assert.match(frozen, /quizScorePercent = quizTotal > 0 \? Math\.round\(\(quizCorrect \/ quizTotal\) \* 100\) : 0/);
+
+  const css = read("src/styles.css");
+  const darkBlock = css.slice(css.indexOf('.dark, [data-theme="dark"]'));
+  assert.match(darkBlock, /--hero-background:/);
+  assert.match(darkBlock, /--section-background:/);
+
+  const shell = read("src/components/app-shell.tsx");
+  assert.match(shell, /params\.get\("tab"\) === "settings"\s*\?\s*"settings"\s*:\s*"members"/);
+
+  const publish = read("src/features/assignments/lab-publish-section.tsx");
+  assert.match(publish, /topologyFrozen=\{topologyFrozen\}/);
+  assert.match(publish, /hasSource && hasStudio/);
+
+  const info = read("src/features/assignments/lab-info-form.tsx");
+  assert.match(info, /THEORY_QUIZ_STUDIO/);
+  assert.match(info, /type="datetime-local"/);
+
+  const builder = read("src/features/courses/course-builder.tsx");
+  assert.match(builder, /estimatedMinutes/);
+
+  const wsScreens = read("src/features/workspaces/screens.tsx");
+  assert.match(wsScreens, /key:\s*"email"/);
+});
