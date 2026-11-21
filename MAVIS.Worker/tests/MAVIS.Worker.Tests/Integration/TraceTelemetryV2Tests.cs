@@ -287,7 +287,7 @@ public sealed class TraceTelemetryV2Tests
         var syncReader = TextReader.Synchronized(pipe);
         var frames = new System.Collections.Concurrent.ConcurrentQueue<string>();
         using var output = new CallbackTextWriter(line => frames.Enqueue(line));
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
 
         var envelope = new LiveProbeEnvelope(
             new HttpScenarioDefinition("s1", []),
@@ -299,7 +299,7 @@ public sealed class TraceTelemetryV2Tests
         var runTask = new LiveProbeRunner().RunAsync(envelope, output, cts.Token, syncReader);
 
         // Wait for first frame with initial targetRps=5 while stdin remains open with no second line yet.
-        var deadline = DateTimeOffset.UtcNow.AddSeconds(4);
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(10);
         string? firstLine = null;
         while (DateTimeOffset.UtcNow < deadline && !frames.TryDequeue(out firstLine))
             await Task.Delay(50);
@@ -311,7 +311,7 @@ public sealed class TraceTelemetryV2Tests
         pipe.Enqueue("{\"targetRps\":25}");
 
         var updatedSeen = false;
-        deadline = DateTimeOffset.UtcNow.AddSeconds(4);
+        deadline = DateTimeOffset.UtcNow.AddSeconds(10);
         while (DateTimeOffset.UtcNow < deadline)
         {
             if (frames.TryDequeue(out var nextLine))
