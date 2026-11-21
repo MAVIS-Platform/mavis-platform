@@ -1,3 +1,13 @@
+export function decodePlainTextEntities(value?: string | null): string {
+  if (!value) return "";
+  return value
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#(?:39|x27);/gi, "'")
+    .replace(/&amp;/g, "&");
+}
+
 const REDUNDANT_LAB_PREFIX = /^(?:Lab\s*0?\d+(?:\s*\([^)]*\))?\s*[·:\-]\s*)+/i;
 
 export function stripLeadingLabPrefix(title: string | null | undefined): string {

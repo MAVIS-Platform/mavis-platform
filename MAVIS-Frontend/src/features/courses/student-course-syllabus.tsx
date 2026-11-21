@@ -344,36 +344,47 @@ export function StudentCourseSyllabus({
               <p className="mb-2 text-sm font-semibold">
                 {t("Course Material", "Nội dung khóa học")}
               </p>
-              <div className="space-y-1">
-                {syllabusModules.map((mod) => {
-                  const isActive = mod.id === courseContentModule?.id;
-                  return (
-                    <button
-                      key={mod.id}
-                      type="button"
-                      disabled={mod.items.length === 0}
-                      onClick={() => {
-                        setSelectedModuleId(mod.id);
-                        setSelectedItemId("");
-                        setPracticePanel("none");
-                        setActiveTab("player");
-                      }}
-                      className={`w-full rounded-lg px-3 py-2 text-left text-sm transition-colors ${
-                        isActive
-                          ? "bg-primary/10 font-semibold text-primary"
-                          : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                      } disabled:cursor-not-allowed disabled:opacity-50`}
-                    >
-                      <span className="block">
-                        {t(`Module ${mod.position}`, `Module ${mod.position}`)}
-                      </span>
-                      <span className="mt-0.5 block line-clamp-1 text-xs font-normal text-muted-foreground">
-                        {mod.title}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
+              {syllabusModules.length > 0 ? (
+                <div className="space-y-1">
+                  {syllabusModules.map((mod) => {
+                    const isActive = mod.id === courseContentModule?.id;
+                    return (
+                      <button
+                        key={mod.id}
+                        type="button"
+                        disabled={mod.items.length === 0}
+                        onClick={() => {
+                          setSelectedModuleId(mod.id);
+                          setSelectedItemId("");
+                          setPracticePanel("none");
+                          setActiveTab("player");
+                        }}
+                        className={`w-full rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                          isActive
+                            ? "bg-primary/10 font-semibold text-primary"
+                            : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                        } disabled:cursor-not-allowed disabled:opacity-50`}
+                      >
+                        <span className="block">
+                          {t(`Module ${mod.position}`, `Module ${mod.position}`)}
+                        </span>
+                        <span className="mt-0.5 block line-clamp-1 text-xs font-normal text-muted-foreground">
+                          {mod.title}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="rounded-lg border border-dashed bg-muted/20 px-3 py-2.5 text-xs text-muted-foreground">
+                  {publishedCourse.isPending
+                    ? t("Loading curriculum…", "Đang tải nội dung khóa học…")
+                    : t(
+                        "No modules have been published for this class yet.",
+                        "Giảng viên chưa công bố chương học tập nào cho lớp này.",
+                      )}
+                </p>
+              )}
             </nav>
 
             <nav className="border-t pt-4" aria-label={t("Other navigation", "Điều hướng khác")}>
@@ -521,6 +532,23 @@ export function StudentCourseSyllabus({
             syllabusModules.length === 0 && (
               <section className="rounded-2xl border bg-card p-6 text-sm text-muted-foreground shadow-sm">
                 {t("Loading course curriculum…", "Đang tải nội dung khóa học…")}
+              </section>
+            )}
+          {activeTab === "player" &&
+            !isLearningWorkspace &&
+            !publishedCourse.isPending &&
+            syllabusModules.length === 0 &&
+            !courseContentModule && (
+              <section className="rounded-2xl border border-dashed bg-card p-6 text-sm text-muted-foreground shadow-sm">
+                <p className="font-medium text-foreground">
+                  {t("No published modules yet", "Chưa có chương học tập nào được công bố")}
+                </p>
+                <p className="mt-1">
+                  {t(
+                    "Your lecturer has not published course modules yet. Check Grades or Class Overview for updates.",
+                    "Giảng viên chưa công bố lộ trình học tập cho lớp này. Bạn có thể kiểm tra Điểm số hoặc Tổng quan lớp học.",
+                  )}
+                </p>
               </section>
             )}
           {activeTab === "player" && !isLearningWorkspace && courseContentModule && (

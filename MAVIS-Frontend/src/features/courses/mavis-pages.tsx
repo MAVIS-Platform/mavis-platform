@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils";
 import type { Response } from "@/lib/api/contracts";
 import { PasskeyEnrollmentModal } from "@/features/courses/student-courses-dashboard";
 import { useLocale } from "@/lib/i18n/locale-context";
+import { decodePlainTextEntities } from "@/lib/format/course-display";
 
 type Workspace = Response<"workspaces">[number];
 type Translate = (english: string, vietnamese: string) => string;
@@ -126,7 +127,7 @@ function CourseCard({ workspace, compact = false }: { workspace: Workspace; comp
         <h2 className="text-lg font-semibold tracking-tight">{workspace.name}</h2>
         {!compact && workspace.description && (
           <p className="mt-2 line-clamp-2 text-sm leading-6 text-muted-foreground">
-            {workspace.description}
+            {decodePlainTextEntities(workspace.description)}
           </p>
         )}
         <p className="mt-3 text-xs text-muted-foreground">
@@ -585,7 +586,7 @@ export function AllCoursesPage({ initialQuery = "" }: { initialQuery?: string })
                       </div>
                       <h3 className="mt-4 text-lg font-semibold">{course.title}</h3>
                       <p className="mt-2 line-clamp-3 flex-1 text-sm leading-6 text-muted-foreground">
-                        {course.description ||
+                        {decodePlainTextEntities(course.description) ||
                           t(
                             "Learning path provided by lecturer-created Labs.",
                             "Lộ trình học tập được xây dựng từ các Lab do giảng viên tạo.",

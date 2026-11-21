@@ -24,7 +24,11 @@ import { CourseOutline } from "@/features/courses/course-outline";
 import { CourseBuilder } from "@/features/courses/course-builder";
 import { CourseSetupPanel } from "@/features/courses/course-setup";
 import { useLocale } from "@/lib/i18n/locale-context";
-import { formatTenScaleScore, toTenScaleScore } from "@/lib/format/course-display";
+import {
+  decodePlainTextEntities,
+  formatTenScaleScore,
+  toTenScaleScore,
+} from "@/lib/format/course-display";
 
 const WORKSPACES_PER_PAGE = 6;
 
@@ -278,7 +282,7 @@ export function Workspaces() {
                   </Link>
                   {workspace.description && (
                     <p className="line-clamp-1 text-xs text-muted-foreground">
-                      {workspace.description}
+                      {decodePlainTextEntities(workspace.description)}
                     </p>
                   )}
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs tabular-nums text-muted-foreground">

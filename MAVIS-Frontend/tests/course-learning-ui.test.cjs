@@ -1793,3 +1793,17 @@ test("Bug #02: CourseBuilder resolves linked Lab assignment tiers in module summ
   assert.match(builder, /visibleItems\.length === 1 \? t\("Lab", "bài Lab"\) : t\("Labs", "bài Lab"\)/);
   assert.match(outline, /module\.items\.length === 1 \? t\("Lab", "bài Lab"\) : t\("Labs", "bài Lab"\)/);
 });
+
+test("Bug #03: decodePlainTextEntities decodes escaped entities and StudentCourseSyllabus shows empty roadmap notice", () => {
+  const { decodePlainTextEntities } = require("../src/lib/format/course-display.ts");
+  assert.equal(decodePlainTextEntities("IOptions&lt;T&gt; &amp; ValidateOnStart"), "IOptions<T> & ValidateOnStart");
+  assert.equal(decodePlainTextEntities("&amp;lt;script&amp;gt;"), "&lt;script&gt;");
+
+  const pages = read("src/features/courses/mavis-pages.tsx");
+  const ws = read("src/features/workspaces/screens.tsx");
+  const syllabus = read("src/features/courses/student-course-syllabus.tsx");
+  assert.match(pages, /decodePlainTextEntities/);
+  assert.match(ws, /decodePlainTextEntities/);
+  assert.match(syllabus, /No modules have been published for this class yet\./);
+  assert.match(syllabus, /No published modules yet/);
+});
