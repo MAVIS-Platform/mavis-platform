@@ -22,9 +22,18 @@ Bài THEORY có thể mở phần đọc ngay trong activity và dùng Markdown 
 
 Từ activity mở `/lab?workspace=...&assignment=...&step=...`. Breadcrumb giữ ngữ cảnh **Lớp → Module → Lab**. Mục lục Lab kiểu Coursera nằm cạnh vùng nội dung trên màn hình lớn và có thể mở/thu gọn trên mobile.
 
-Bốn bước chỉ xuất hiện khi Lab yêu cầu runtime; Lab tĩnh kết thúc ở phần Theory/Quiz theo contract. Trạng thái của mục lục tách biệt giữa tiến độ học, Quiz Gate, runtime observation và Studio evidence. Bước Runtime chỉ mở khi Quiz hiện hành trả `runtimeUnlocked=true`; UI lấy `version` và `passPercent` từ API, không hardcode ngưỡng. Studio chỉ mở khi có runtime evidence quan sát được trên đúng project/model.
+### Ánh xạ 4 chặng logic (`BM01/BM04`) ↔ 3 bước giao diện hợp nhất
 
-Guided Lab luôn dùng source snapshot, assignment, model và topology đã được backend ghim. Sinh viên không được nhập source ngoài. Các trạng thái build, starting, running, failed, thiếu dữ liệu và receipt phải được đọc từ runtime API; UI không tạo telemetry hoặc Before/After giả.
+| Chặng logic cam kết | Vị trí UI hiện hành | Nội dung chính |
+|---|---|---|
+| **Stage 1 · Static Architecture & 3E** | `/lab?step=1` (`Static Studio`) | Sơ đồ tĩnh `C1–C3`, Dependency Graph, Reverse BFS, AI Tutor 3E, nút **`Download Reference .zip`** (`/api/backend/assignments/{id}/reference-source`) |
+| **Stage 2 · Theory & Quiz Gate** | `/roadmap` (Theory/Quiz) & `/lab?step=1` (`THEORY_ONLY`) | Bài đọc Markdown (`MarkdownPreview`) cho cả activity `THEORY` lẫn Lab `THEORY_ONLY`, và Quiz Gate tự chấm mở khóa `runtimeUnlocked=true` |
+| **Stage 3 · Live Docker Runtime Studio** | `/lab?step=2` (`MAVIS Runtime Studio`) | Mở Studio Live full-screen thao tác Docker thật (`STOP/START/SCALE/PAUSE/RESUME/THROTTLE_CPU/SET_LOAD`), chụp Snapshot & `Finish Studio` |
+| **Stage 4 · Evidence Review & Submission** | `/lab?step=3` (`Evidence Review` & `#lab-submit`) | Kiểm tra receipt SHA-256, nộp giải trình WF-04 và theo dõi điểm chấm từng Snapshot `> 5.0/10` |
+
+Bước Runtime chỉ mở khi Lab yêu cầu runtime và Quiz hiện hành trả `runtimeUnlocked=true`; UI lấy `version` và `passPercent` từ API, không hardcode ngưỡng. Lab `THEORY_ONLY` hiển thị trực tiếp nội dung đọc Markdown ở Bước 1 và bỏ qua bước Runtime.
+
+Guided Lab luôn dùng source snapshot, assignment, model và topology đã được backend ghim. Sinh viên có thể tải tệp nén nguồn tham chiếu qua nút **Download Reference .zip**, nhưng không được nhập source ngoài (`403`). Các trạng thái build, queued, starting, running, failed, thiếu dữ liệu và receipt đều đọc trực tiếp từ runtime API; UI không tạo telemetry hoặc Before/After giả.
 
 ## 4. Nộp bài và kết quả
 

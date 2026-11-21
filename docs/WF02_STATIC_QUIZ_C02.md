@@ -91,3 +91,9 @@ Số liệu kiểm thử cập nhật sau hợp nhất hoàn thiện UX & ma tr�
   - `npm run test:connected`: **3/3 PASS**, 0 fail, 0 skip.
   - `MAVIS_TEST_BROWSER_CHANNEL=chrome npm run test:three-e-ui`: **PASS** (`PASS: full 3E browser suite plus diagram dock regression; synthetic API only.`).
   - `npm run build`: **PASS** (Next.js 15.5.25 compiled successfully in `6.9s`).
+
+## Cập nhật đồng bộ Defense 1.1 (`https://maviss.site` · 22/11/2026)
+
+- **Nút tải nguồn tham chiếu cho Sinh viên (`F-02` / `DS-01a`):** Màn hình Lab Bước 1 (`src/features/courses/screens.tsx`) hiển thị trực tiếp nút **`Download Reference .zip`** trỏ vào `/api/backend/assignments/{id}/reference-source` (đã đối chiếu quyền thành viên, mở khóa tuần tự và SHA-256 trên backend).
+- **Quiz Authoring (`V36`) & Ngân hàng câu hỏi:** Hỗ trợ soạn câu hỏi `SINGLE_CHOICE` / `MULTI_CHOICE` / `TRUE_FALSE`, nhập/xuất JSON-CSV, Question Bank tái sử dụng và phiên bản hóa ngưỡng đạt (mặc định 80% cho phiên bản mới).
+- **Nội dung đọc Markdown cho Lab `THEORY_ONLY`:** Bước 1 Lab `THEORY_ONLY` (không đính kèm repo) hiển thị trực tiếp `Lesson & Reading Material` bằng `MarkdownPreview` thay vì chỉ hiện khung thông báo trống.

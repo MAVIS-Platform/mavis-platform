@@ -73,3 +73,9 @@ Phần triển khai bổ sung được mô tả trong [MAVIS_STUDIO_RUNTIME.md](
 Migration mới là V32 và V33, tiếp nối V29–V31 trên main. Các migration Studio cũ chưa phát hành của nhánh local đã được đánh số lại trước khi tích hợp. Gói deploy đã bổ sung hai migration mới và probe schema tương ứng.
 
 Kiểm thử bổ sung gồm browser fixture cho UI/ảnh/selection/so sánh snapshot, Java PostgreSQL integration cho API và phân quyền, và managed Runner với Docker thật cho telemetry, Stop/Start/Scale, receipt và cleanup. Browser test dùng API fixture; test Docker dùng Java transport fixture và Docker Engine thật. Nghiệm thu staging cần được ghi theo SHA phát hành.
+
+## Cập nhật đồng bộ Studio Live v2 & Vận hành Production (`https://maviss.site` · 22/11/2026)
+
+- **Studio Live v2 Actions & 1-Click Exercise Templates:** Mở rộng bên cạnh `STOP/START/SCALE (1..8)` với `PAUSE/RESUME`, `THROTTLE_CPU`, `SET_LOAD (RPS)`, `SET_ENV`, `SWAP_VERSION` và **1-Click Exercise Templates** tính **Precision / Recall / F1** (đã kiểm chứng giữ nguyên `F1 = 100%` sau `PAUSE -> RESUME -> Finish Studio`).
+- **2-Slot Concurrent Execution, FIFO Auto-Promotion & Startup Orphan Recovery (`dde683ae`):** Hỗ trợ chạy song song 2 Docker stack thật trên production, tự động xếp hàng FIFO cho sinh viên thứ 3 và tự động thăng hạng khi slot trống; `RuntimeSessionServiceImpl.recoverDispatchesAfterRestart()` thu hồi phiên/container `mavisrun-*` mồ côi ngay khi backend khởi động lại (`cancelling-stuck-seconds = 60`, `spring.jpa.open-in-view = false`).
+- **UX & Song ngữ (`N6` / `SR-15`):** Nút `Finish Studio` có tooltip/nhãn giải thích điều kiện chụp Snapshot khi đang khóa; giao diện điều khiển & bảng Telemetry hỗ trợ đầy đủ `EN/VI` và cuộn ngang an toàn tại `1366×768`.

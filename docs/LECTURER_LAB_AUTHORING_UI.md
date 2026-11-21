@@ -48,11 +48,11 @@ Backend chỉ cho sửa cấu trúc khi Course ở `DRAFT`. Course `PUBLISHED` h
 
 | Bước | Nội dung |
 |---|---|
-| **1. Lab information** | Tên, hạn nộp, hướng dẫn/mục tiêu/tiêu chí. Chọn **Theory + Quiz** hoặc **Theory + Quiz + Studio**. Không còn chọn diagram/model. Lưu được **draft không cần nguồn tham chiếu**. |
+| **1. Lab information** | Tên, hạn nộp, hướng dẫn/mục tiêu/tiêu chí. Chọn **Theory Only**, **Theory + Quiz** hoặc **Theory + Quiz + Studio** (`V38`). Không còn chọn diagram/model. Lưu được **draft không cần nguồn tham chiếu**. |
 | **2. Theory** | Lesson Markdown + preview, repo mẫu (commit/snapshot/revision + ZIP), C1–C3 read-only và dependency graph; chọn module, thêm/sửa bài học. Nếu Course đã publish, bấm **Start new Course draft** trước khi sửa. |
 | **3. Reference source** | Import GitHub commit SHA hoặc ZIP, chạy phân tích, chọn model version rồi **Save source to Lab**. |
 | **4. Quiz** | Quiz Builder đầy đủ: soạn tay, import/export JSON/CSV, question bank, preview, version. Mặc định đạt **80%**. |
-| **5. Studio Live** | Xem runtime readiness, cấu hình runtime, **Start Live session** hoặc **Open MAVIS Studio**; công bố Lab rồi **Freeze Studio topology**. |
+| **5. Studio Live** | Xem runtime readiness, **Configure Exercise & Templates** / **1-Click Exercise Templates** (đặt nổi bật ngay trên Bước 5), **Start Live session** hoặc **Open MAVIS Studio**; công bố Lab rồi **Freeze Studio topology**. |
 | **6. Check & publish** | Checklist Lab thật (source, theory, Quiz, Studio, publish), nút publish/freeze, preview và Course Setup Panel đầy đủ. |
 
 4. Lab chưa publish không hiển thị với sinh viên.

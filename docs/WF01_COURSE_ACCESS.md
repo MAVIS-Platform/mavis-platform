@@ -99,3 +99,9 @@ Cloud profile mặc định tắt Flyway lúc khởi động. Pipeline kiểm tr
 Chạy phép đo roadmap với Node 22 trở lên. Đặt MAVIS_WF01_TEST_API thành URL gốc backend staging kết thúc ở /api/v1/, MAVIS_WF01_TEST_WORKSPACE thành ID lớp đã công bố và MAVIS_WF01_TEST_TOKEN thành token tài khoản thử đã ghi danh. Giá trị mặc định chạy 300 giây với 4 worker, mỗi worker gửi tối đa một request mỗi giây. Kết quả ghi số request, lỗi và p95 theo mili giây. Tiêu chí API là p95 tối đa 3000 ms với 0 lỗi. Dùng môi trường staging 4 vCPU và 8 GB để lấy số liệu nghiệm thu.
 
 Diễn tập cục bộ trên backend của nhánh tiến độ tại commit 5821466 dùng JDK 21, PostgreSQL 18 cô lập và 4 worker trong 300 giây. Kết quả ghi nhận 1.196 request thành công, 0 lỗi, p95 36 ms. Số liệu này áp dụng cho dữ liệu thử và môi trường localhost. Biên bản TC-N01 trên staging vẫn cần môi trường và tải theo BM04.
+
+## Cập nhật đồng bộ Defense 1.1 (`https://maviss.site` · 22/11/2026)
+
+- **Course Builder đa chương (`V35`):** Hỗ trợ tạo/sắp xếp chương, bài học `THEORY` độc lập, gắn thời lượng dự kiến (`estimatedMinutes`), phiên bản hóa snapshot (`v1..v6`) và xuất bản bất biến (`PUBLISHED`).
+- **Passkey nâng cao & Bố cục lớp học:** Hỗ trợ giới hạn số lượt dùng, thời hạn, bật/tắt (`Pause/Resume`) và phản hồi **`Copied!`** khi sao chép mã; bảng Passkey hiển thị gọn không tràn khung tại `1366×768` và `1440×900`.
+- **Quản trị Admin (`Register Actor 1`):** Bổ sung endpoint `POST /api/v1/admin/integrations/{id}/test` + nút **`Test connection`** và banner hiển thị trực tiếp hạn mức slot/hàng chờ Runner ngay tại `/administration/profiles`.
