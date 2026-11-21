@@ -1281,7 +1281,9 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
             }
         }
 
-        session.setCancelRequestedAt(OffsetDateTime.now());
+        if (session.getCancelRequestedAt() == null) {
+            session.setCancelRequestedAt(OffsetDateTime.now());
+        }
         session.setExecutionStatus("CANCELLING");
         session.setCleanupStatus("STOP_REQUESTED");
         session.setCompletedAt(null); // Giữ null chờ Receipt xác nhận cleanup

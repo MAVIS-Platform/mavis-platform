@@ -147,6 +147,63 @@ class RuntimeQueueCoordinatorTest {
     }
 
     @Test
+    void stuckReaperFreesDeadCancellingSessionAfterCancellingThreshold() {
+        Instant now = Instant.now();
+        UUID deadId = UUID.randomUUID();
+        UUID freshCancelId = UUID.randomUUID();
+        RuntimeSession dead = RuntimeSession.builder().id(deadId).executionStatus("CANCELLING")
+                .cancelRequestedAt(OffsetDateTime.ofInstant(now.minusSeconds(75), ZoneOffset.UTC)).build();
+        RuntimeSession freshCancel = RuntimeSession.builder().id(freshCancelId).executionStatus("CANCELLING")
+                .cancelRequestedAt(OffsetDateTime.ofInstant(now.minusSeconds(20), ZoneOffset.UTC)).build();
+        when(repository.findByExecutionStatusOrderByCreatedAtAsc(any())).thenReturn(List.of());
+        when(repository.findByExecutionStatusOrderByCreatedAtAsc("CANCELLING")).thenReturn(List.of(dead, freshCancel));
+        when(repository.findLockedById(deadId)).thenReturn(Optional.of(dead));
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        assertThat(coordinator.reapStuckSessions(now)).isEqualTo(1);
+        assertThat(dead.getExecutionStatus()).isEqualTo("CANCELLED");
+        assertThat(dead.getCompletedAt()).isNotNull();
+        assertThat(freshCancel.getExecutionStatus()).isEqualTo("CANCELLING");
+    }
+
+    @Test
+    void recoverDispatchesAfterRestartReclaimsOrphanedInFlightSessionsAndSweepsDocker() {
+        UUID runningId = UUID.randomUUID();
+        UUID cancellingId = UUID.randomUUID();
+        String runProj = "mavisrun-" + "a".repeat(32);
+        String cancelProj = "mavisrun-" + "b".repeat(32);
+        RuntimeSession orphanRunning = RuntimeSession.builder().id(runningId).executionStatus("RUNNING")
+                .resourceProject(runProj).build();
+        RuntimeSession orphanCancelling = RuntimeSession.builder().id(cancellingId).executionStatus("CANCELLING")
+                .resourceProject(cancelProj).build();
+
+        java.util.List<List<String>> cmds = new java.util.ArrayList<>();
+        RuntimeQueueCoordinator stub = new RuntimeQueueCoordinator(repository, dispatcher, mapper) {
+            @Override
+            protected CommandOutput runHostCommand(List<String> command, long timeoutSeconds) {
+                cmds.add(command);
+                return new CommandOutput(0, "");
+            }
+        };
+        ReflectionTestUtils.setField(stub, "runnerMode", "AUTO");
+        when(dispatcher.isAutoDispatchEnabled()).thenReturn(true);
+        when(repository.findByExecutionStatusOrderByCreatedAtAsc(any())).thenReturn(List.of());
+        when(repository.findByExecutionStatusOrderByCreatedAtAsc("RUNNING")).thenReturn(List.of(orphanRunning));
+        when(repository.findByExecutionStatusOrderByCreatedAtAsc("CANCELLING")).thenReturn(List.of(orphanCancelling));
+        when(repository.findLockedById(runningId)).thenReturn(Optional.of(orphanRunning));
+        when(repository.findLockedById(cancellingId)).thenReturn(Optional.of(orphanCancelling));
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        stub.recoverDispatchesAfterRestart();
+
+        assertThat(orphanRunning.getExecutionStatus()).isEqualTo("FAILED");
+        assertThat(orphanRunning.getRecoveryResultJson().path("code").asText()).isEqualTo("BACKEND_RESTART_RECOVERY");
+        assertThat(orphanCancelling.getExecutionStatus()).isEqualTo("CANCELLED");
+        assertThat(cmds).anyMatch(c -> c.contains("network") && c.contains(runProj + "_default"));
+        assertThat(cmds).anyMatch(c -> c.contains("network") && c.contains(cancelProj + "_default"));
+    }
+
+    @Test
     void reapAbandonedStudioSessionsCancelsIdleTabWhenWaitersPresentAndSparesActiveTabs() {
         UUID idleId = UUID.randomUUID();
         UUID activeId = UUID.randomUUID();

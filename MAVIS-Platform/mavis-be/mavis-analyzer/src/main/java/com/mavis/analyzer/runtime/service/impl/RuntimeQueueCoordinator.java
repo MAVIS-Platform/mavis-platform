@@ -72,6 +72,9 @@ public class RuntimeQueueCoordinator {
     @Value("${mavis.runtime.stuck-session-seconds:600}")
     private long stuckSessionSeconds = 600;
 
+    @Value("${mavis.runtime.cancelling-stuck-seconds:60}")
+    private long cancellingStuckSeconds = 60;
+
     @Value("${mavis.runtime.low-disk-threshold-mib:2048}")
     private long lowDiskThresholdMiB = 2048;
 
@@ -265,7 +268,7 @@ public class RuntimeQueueCoordinator {
         if (isRemoteWorkerMode()) {
             return;
         }
-        // In-memory dispatch threads died with the previous process; give those sessions back to the queue.
+        // In-memory dispatch threads and local child Runner processes died with the previous backend JVM.
         try {
             int requeued = 0;
             for (RuntimeSession candidate : runtimeSessionRepository.findByExecutionStatusOrderByCreatedAtAsc("READY_FOR_DISPATCH")) {
@@ -282,6 +285,67 @@ public class RuntimeQueueCoordinator {
                 if (Boolean.TRUE.equals(moved)) requeued++;
             }
             if (requeued > 0) log.warn("Re-queued {} READY_FOR_DISPATCH session(s) orphaned by a backend restart", requeued);
+
+            int recoveredOrphans = 0;
+            if (runtimeRunnerDispatcher != null && runtimeRunnerDispatcher.isAutoDispatchEnabled()) {
+                List<String> orphanProjects = new ArrayList<>();
+                for (String status : List.of("ALLOCATED", "RUNNING", "CANCELLING")) {
+                    for (RuntimeSession candidate : runtimeSessionRepository.findByExecutionStatusOrderByCreatedAtAsc(status)) {
+                        UUID id = candidate.getId();
+                        if (id == null || runtimeRunnerDispatcher.isExecuting(id)) {
+                            continue;
+                        }
+                        boolean simulated = candidate.getStudioControl() != null
+                                && candidate.getStudioControl().path("simulatedSandbox").asBoolean(false);
+                        if (simulated && !"CANCELLING".equals(status)) {
+                            continue;
+                        }
+                        String orphanProject = runInTransaction(() -> {
+                            RuntimeSession locked = runtimeSessionRepository.findLockedById(id).orElse(null);
+                            if (locked == null || !status.equalsIgnoreCase(locked.getExecutionStatus())
+                                    || locked.getRunnerReceiptJson() != null || locked.getCompletedAt() != null) {
+                                return null;
+                            }
+                            if (!simulated && runtimeRunnerDispatcher.tryAutoImportOutboxReceipt(locked)) {
+                                return "";
+                            }
+                            boolean cancelling = "CANCELLING".equals(status);
+                            locked.setExecutionStatus(cancelling ? "CANCELLED" : "FAILED");
+                            locked.setCleanupStatus(simulated ? "NOT_APPLICABLE" : "UNCONFIRMED");
+                            locked.setCompletedAt(OffsetDateTime.now());
+                            if (!simulated) {
+                                ObjectNode recovery = objectMapper.createObjectNode();
+                                recovery.put("code", "BACKEND_RESTART_RECOVERY");
+                                String reason = "Backend restarted while session was " + status
+                                        + "; orphaned local runner slot and containers were reclaimed.";
+                                recovery.put("reason", reason);
+                                recovery.put("message", reason);
+                                locked.setRecoveryResultJson(recovery);
+                            }
+                            runtimeSessionRepository.save(locked);
+                            clearSessionTracking(id);
+                            String rp = locked.getResourceProject();
+                            return (!simulated && rp != null && MAVISRUN_PROJECT_PATTERN.matcher(rp).matches()) ? rp : "";
+                        });
+                        if (orphanProject != null) {
+                            recoveredOrphans++;
+                            if (!orphanProject.isEmpty()) {
+                                orphanProjects.add(orphanProject);
+                            }
+                        }
+                    }
+                }
+                for (String project : orphanProjects) {
+                    reapSingleOrphanProject(project);
+                }
+                if (recoveredOrphans > 0) {
+                    log.warn("Reclaimed {} orphaned in-flight session(s) ({} Docker stack(s)) after backend restart",
+                            recoveredOrphans, orphanProjects.size());
+                }
+            }
+            if (requeued > 0 || recoveredOrphans > 0) {
+                drainQueueIfCapacityAvailable();
+            }
         } catch (Exception e) {
             log.warn("Startup dispatch recovery failed: {}", e.getMessage());
         }
@@ -309,6 +373,9 @@ public class RuntimeQueueCoordinator {
     int reapStuckSessions(Instant now) {
         int reaped = 0;
         long stuckAfter = Math.max(120, stuckSessionSeconds);
+        long cancellingAfter = Math.max(15, cancellingStuckSeconds);
+        boolean localManaged = !isRemoteWorkerMode() && runtimeRunnerDispatcher != null && runtimeRunnerDispatcher.isAutoDispatchEnabled();
+        List<String> orphanProjects = new ArrayList<>();
         for (String status : List.of("ALLOCATED", "RUNNING", "CANCELLING")) {
             for (RuntimeSession candidate : runtimeSessionRepository.findByExecutionStatusOrderByCreatedAtAsc(status)) {
                 UUID id = candidate.getId();
@@ -321,19 +388,19 @@ public class RuntimeQueueCoordinator {
                         : "RUNNING".equals(status) ? candidate.getStartedAt() : candidate.getAllocatedAt();
                 if (since == null) since = candidate.getCreatedAt();
                 if (since == null) continue;
-                // Simulated sandboxes have no runner to send a receipt; resolve their cancellation immediately.
-                long limit = simulated && "CANCELLING".equals(status) ? 0 : stuckAfter;
+                // Simulated sandboxes have no runner; dead CANCELLING sessions use the shorter teardown threshold.
+                long limit = "CANCELLING".equals(status) ? (simulated ? 0 : cancellingAfter) : stuckAfter;
                 if (Duration.between(since.toInstant(), now).getSeconds() < limit) {
                     continue;
                 }
                 if (simulated && "RUNNING".equals(status)) {
                     continue; // Simulated RUNNING ends through the abandoned-tab reaper or Stop.
                 }
-                Boolean marked = runInTransaction(() -> {
+                String reapedProject = runInTransaction(() -> {
                     RuntimeSession locked = runtimeSessionRepository.findLockedById(id).orElse(null);
                     if (locked == null || !status.equalsIgnoreCase(locked.getExecutionStatus())
                             || locked.getRunnerReceiptJson() != null || locked.getCompletedAt() != null) {
-                        return false;
+                        return null;
                     }
                     boolean cancelling = "CANCELLING".equals(status);
                     locked.setExecutionStatus(cancelling ? "CANCELLED" : "FAILED");
@@ -342,7 +409,7 @@ public class RuntimeQueueCoordinator {
                     if (!simulated) {
                         ObjectNode recovery = objectMapper.createObjectNode();
                         recovery.put("code", "RUNNER_LOST_RECOVERY_REQUIRED");
-                        String reason = "No Runner receipt arrived for a " + status + " session after " + stuckAfter
+                        String reason = "No Runner receipt arrived for a " + status + " session after " + limit
                                 + "s; containers are swept by the host watchdog.";
                         recovery.put("reason", reason);
                         recovery.put("message", reason);
@@ -350,13 +417,21 @@ public class RuntimeQueueCoordinator {
                         writeCancelMarkerBestEffort(locked);
                     }
                     runtimeSessionRepository.save(locked);
-                    return true;
+                    clearSessionTracking(id);
+                    String rp = locked.getResourceProject();
+                    return (!simulated && localManaged && rp != null && MAVISRUN_PROJECT_PATTERN.matcher(rp).matches()) ? rp : "";
                 });
-                if (Boolean.TRUE.equals(marked)) {
+                if (reapedProject != null) {
                     reaped++;
+                    if (!reapedProject.isEmpty()) {
+                        orphanProjects.add(reapedProject);
+                    }
                     log.warn("Reaped stuck {} runtime session {} (simulated={})", status, id, simulated);
                 }
             }
+        }
+        for (String project : orphanProjects) {
+            reapSingleOrphanProject(project);
         }
         return reaped;
     }
