@@ -8,12 +8,54 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { ErrorState, RequestState } from "@/components/shared/request-state";
+import { useLocale } from "@/lib/i18n/locale-context";
 import type { Response } from "@/lib/api/contracts";
 
 type Announcement = Response<"adminAnnouncements">[number];
 type Priority = Announcement["priority"];
 type Audience = Announcement["audienceType"];
 type Status = Announcement["status"];
+
+function priorityText(value: Priority, t: (en: string, vi?: string) => string) {
+  switch (value) {
+    case "LOW":
+      return t("Low", "Thấp");
+    case "HIGH":
+      return t("High", "Cao");
+    case "URGENT":
+      return t("Urgent", "Khẩn cấp");
+    default:
+      return t("Normal", "Bình thường");
+  }
+}
+
+function audienceText(value: Audience, t: (en: string, vi?: string) => string) {
+  switch (value) {
+    case "STUDENT":
+      return t("Students", "Sinh viên");
+    case "LECTURER":
+      return t("Lecturers", "Giảng viên");
+    default:
+      return t("Everyone", "Mọi người");
+  }
+}
+
+function announcementStatusText(value: Status, t: (en: string, vi?: string) => string) {
+  switch (value) {
+    case "DRAFT":
+      return t("Draft", "Bản nháp");
+    case "SCHEDULED":
+      return t("Scheduled", "Đã lên lịch");
+    case "PUBLISHED":
+      return t("Published", "Đã công bố");
+    case "EXPIRED":
+      return t("Expired", "Hết hạn");
+    case "ARCHIVED":
+      return t("Archived", "Đã lưu trữ");
+    default:
+      return value;
+  }
+}
 
 const emptyForm = {
   title: "",
@@ -36,6 +78,7 @@ function iso(value: string) {
 }
 
 export function AdminAnnouncements() {
+  const { t } = useLocale();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<Status | undefined>();
   const [editingId, setEditingId] = useState<string>();
@@ -98,17 +141,21 @@ export function AdminAnnouncements() {
           </div>
           <div>
             <h2 className="text-lg font-semibold">
-              {editingId ? "Edit announcement" : "Create announcement"}
+              {editingId
+                ? t("Edit announcement", "Chỉnh sửa thông báo")
+                : t("Create announcement", "Tạo thông báo mới")}
             </h2>
             <p className="text-sm text-muted-foreground">
-              Announcements are administrator-authored site content. They are separate from personal
-              notifications.
+              {t(
+                "Announcements are administrator-authored site content. They are separate from personal notifications.",
+                "Thông báo hệ thống do quản trị viên phát hành toàn trang, tách biệt với thông báo cá nhân.",
+              )}
             </p>
           </div>
         </div>
         <form className="mt-5 grid gap-4" onSubmit={submit}>
           <label className="grid gap-1.5 text-sm font-medium">
-            Title
+            {t("Title", "Tiêu đề")}
             <Input
               required
               maxLength={160}
@@ -119,7 +166,7 @@ export function AdminAnnouncements() {
             />
           </label>
           <label className="grid gap-1.5 text-sm font-medium">
-            Content
+            {t("Content", "Nội dung")}
             <Textarea
               required
               rows={5}
@@ -132,7 +179,7 @@ export function AdminAnnouncements() {
           </label>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <label className="grid gap-1.5 text-sm font-medium">
-              Priority
+              {t("Priority", "Mức ưu tiên")}
               <select
                 className="h-10 rounded-md border bg-background px-3 text-sm"
                 value={form.priority}
@@ -141,12 +188,14 @@ export function AdminAnnouncements() {
                 }
               >
                 {(["LOW", "NORMAL", "HIGH", "URGENT"] as const).map((value) => (
-                  <option key={value}>{value}</option>
+                  <option key={value} value={value}>
+                    {priorityText(value, t)}
+                  </option>
                 ))}
               </select>
             </label>
             <label className="grid gap-1.5 text-sm font-medium">
-              Audience
+              {t("Audience", "Đối tượng")}
               <select
                 className="h-10 rounded-md border bg-background px-3 text-sm"
                 value={form.audienceType}
@@ -157,13 +206,13 @@ export function AdminAnnouncements() {
                   }))
                 }
               >
-                <option value="ALL">Everyone</option>
-                <option value="STUDENT">Students</option>
-                <option value="LECTURER">Lecturers</option>
+                <option value="ALL">{t("Everyone", "Mọi người")}</option>
+                <option value="STUDENT">{t("Students", "Sinh viên")}</option>
+                <option value="LECTURER">{t("Lecturers", "Giảng viên")}</option>
               </select>
             </label>
             <label className="grid gap-1.5 text-sm font-medium">
-              Publish at
+              {t("Publish at", "Thời điểm công bố")}
               <Input
                 type="datetime-local"
                 value={form.publishAt}
@@ -173,7 +222,7 @@ export function AdminAnnouncements() {
               />
             </label>
             <label className="grid gap-1.5 text-sm font-medium">
-              Expires at
+              {t("Expires at", "Thời điểm hết hạn")}
               <Input
                 type="datetime-local"
                 value={form.expireAt}
@@ -191,15 +240,19 @@ export function AdminAnnouncements() {
                 setForm((current) => ({ ...current, pinned: event.target.checked }))
               }
             />
-            Pin this announcement
+            {t("Pin this announcement", "Ghim thông báo này")}
           </label>
           <div className="flex flex-wrap gap-2">
             <Button disabled={saving || !form.title.trim() || !form.content.trim()}>
-              {saving ? "Saving…" : editingId ? "Save draft" : "Create draft"}
+              {saving
+                ? t("Saving…", "Đang lưu…")
+                : editingId
+                  ? t("Save draft", "Lưu bản nháp")
+                  : t("Create draft", "Tạo bản nháp")}
             </Button>
             {editingId && (
               <Button type="button" variant="outline" onClick={reset}>
-                Cancel
+                {t("Cancel", "Hủy")}
               </Button>
             )}
           </div>
@@ -215,16 +268,19 @@ export function AdminAnnouncements() {
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h2 id="announcement-list-title" className="text-xl font-semibold">
-              Announcements
+              {t("Announcements", "Thông báo hệ thống")}
             </h2>
             <p className="text-sm text-muted-foreground">
-              Draft, schedule, publish or remove MAVIS site announcements.
+              {t(
+                "Draft, schedule, publish or remove MAVIS site announcements.",
+                "Soạn nháp, lên lịch, công bố hoặc gỡ thông báo toàn trang MAVIS.",
+              )}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Input
               className="w-64"
-              placeholder="Search announcements"
+              placeholder={t("Search announcements", "Tìm kiếm thông báo")}
               value={search}
               onChange={(event) => setSearch(event.target.value)}
             />
@@ -235,10 +291,12 @@ export function AdminAnnouncements() {
                 setStatus((event.target.value || undefined) as Status | undefined)
               }
             >
-              <option value="">All statuses</option>
+              <option value="">{t("All statuses", "Tất cả trạng thái")}</option>
               {(["DRAFT", "SCHEDULED", "PUBLISHED", "EXPIRED", "ARCHIVED"] as const).map(
                 (value) => (
-                  <option key={value}>{value}</option>
+                  <option key={value} value={value}>
+                    {announcementStatusText(value, t)}
+                  </option>
                 ),
               )}
             </select>
@@ -252,23 +310,26 @@ export function AdminAnnouncements() {
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
-                        {item.pinned && <Pin className="size-4 text-primary" aria-label="Pinned" />}
+                        {item.pinned && (
+                          <Pin className="size-4 text-primary" aria-label={t("Pinned", "Đã ghim")} />
+                        )}
                         <h3 className="font-semibold">{item.title}</h3>
-                        <Badge>{item.status}</Badge>
-                        <Badge variant="outline">{item.priority}</Badge>
-                        <Badge variant="secondary">{item.audienceType}</Badge>
+                        <Badge>{announcementStatusText(item.status, t)}</Badge>
+                        <Badge variant="outline">{priorityText(item.priority, t)}</Badge>
+                        <Badge variant="secondary">{audienceText(item.audienceType, t)}</Badge>
                       </div>
                       <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
                         {item.content}
                       </p>
                       <p className="mt-3 text-xs text-muted-foreground">
-                        Updated {new Date(item.updatedAt).toLocaleString()} by {item.createdByName}
+                        {t("Updated", "Cập nhật lúc")} {new Date(item.updatedAt).toLocaleString()}{" "}
+                        {t("by", "bởi")} {item.createdByName}
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-1">
                       <Button size="sm" variant="outline" onClick={() => edit(item)}>
                         <Pencil className="size-4" />
-                        Edit
+                        {t("Edit", "Sửa")}
                       </Button>
                       {item.status === "PUBLISHED" || item.status === "SCHEDULED" ? (
                         <Button
@@ -278,7 +339,7 @@ export function AdminAnnouncements() {
                           onClick={() => unpublish.mutate({ announcementId: item.id })}
                         >
                           <Undo2 className="size-4" />
-                          Unpublish
+                          {t("Unpublish", "Gỡ công bố")}
                         </Button>
                       ) : (
                         <Button
@@ -287,7 +348,7 @@ export function AdminAnnouncements() {
                           onClick={() => publish.mutate({ announcementId: item.id })}
                         >
                           <Send className="size-4" />
-                          Publish
+                          {t("Publish", "Công bố")}
                         </Button>
                       )}
                       <Button
@@ -295,12 +356,16 @@ export function AdminAnnouncements() {
                         variant="destructive"
                         disabled={remove.isPending}
                         onClick={() => {
-                          if (window.confirm(`Delete “${item.title}”?`))
+                          if (
+                            window.confirm(
+                              t(`Delete “${item.title}”?`, `Xóa thông báo “${item.title}”?`),
+                            )
+                          )
                             remove.mutate({ announcementId: item.id });
                         }}
                       >
                         <Trash2 className="size-4" />
-                        Delete
+                        {t("Delete", "Xóa")}
                       </Button>
                     </div>
                   </div>
@@ -309,7 +374,10 @@ export function AdminAnnouncements() {
             </div>
           ) : (
             <p className="rounded-xl border bg-card p-5 text-sm text-muted-foreground">
-              No announcements match the current filters.
+              {t(
+                "No announcements match the current filters.",
+                "Không có thông báo nào khớp bộ lọc hiện tại.",
+              )}
             </p>
           )}
         </RequestState>

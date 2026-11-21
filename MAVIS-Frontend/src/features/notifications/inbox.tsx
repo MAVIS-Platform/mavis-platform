@@ -22,6 +22,7 @@ import { useApiMutation, useApiQuery, useSession } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { SelectField, Pagination } from "@/components/shared/forms";
+import { useLocale } from "@/lib/i18n/locale-context";
 import type { Request, Response } from "@/lib/api/contracts";
 
 const categories = [
@@ -34,6 +35,16 @@ const categories = [
   { value: "ACCOUNT", label: "Account access" },
   { value: "SYSTEM", label: "System alerts" },
 ];
+const categoryViLabels: Record<string, string> = {
+  "All activity": "Tất cả hoạt động",
+  Workspaces: "Lớp học",
+  Assignments: "Bài tập & Lab",
+  "Submissions & feedback": "Bài nộp & nhận xét",
+  "Analysis & models": "Phân tích & mô hình",
+  "Runtime sessions": "Phiên Runtime",
+  "Account access": "Quyền truy cập tài khoản",
+  "System alerts": "Cảnh báo hệ thống",
+};
 const icons: Record<string, typeof Bell> = {
   WORKSPACE: Users,
   ASSIGNMENT: BookOpen,
@@ -43,15 +54,15 @@ const icons: Record<string, typeof Bell> = {
   ACCOUNT: Shield,
   SYSTEM: Activity,
 };
-function timeLabel(value: string) {
+function timeLabel(value: string, t: (en: string, vi?: string) => string) {
   const date = new Date(value),
     minutes = Math.max(0, Math.floor((Date.now() - date.getTime()) / 60000));
   return minutes < 1
-    ? "Just now"
+    ? t("Just now", "Vừa xong")
     : minutes < 60
-      ? `${minutes}m ago`
+      ? `${minutes} ${t("m ago", "phút trước")}`
       : minutes < 1440
-        ? `${Math.floor(minutes / 60)}h ago`
+        ? `${Math.floor(minutes / 60)} ${t("h ago", "giờ trước")}`
         : date.toLocaleDateString();
 }
 function NotificationList({
@@ -63,9 +74,10 @@ function NotificationList({
   compact?: boolean;
   onNavigate?: () => void;
 }) {
+  const { t } = useLocale();
   const read = useApiMutation("readNotification");
   return (
-    <ul className="divide-y" aria-label="Notifications">
+    <ul className="divide-y" aria-label={t("Notifications", "Thông báo")}>
       {items.map((item) => {
         const Icon = icons[item.category] ?? Bell;
         return (
@@ -93,7 +105,7 @@ function NotificationList({
                 {!item.readAt && (
                   <span
                     className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary"
-                    aria-label="Unread"
+                    aria-label={t("Unread", "Chưa đọc")}
                   />
                 )}
               </div>
@@ -105,7 +117,7 @@ function NotificationList({
                 title={new Date(item.createdAt).toLocaleString()}
                 className="mt-1 block text-xs text-muted-foreground"
               >
-                {timeLabel(item.createdAt)}
+                {timeLabel(item.createdAt, t)}
               </time>
             </Link>
             {!item.readAt ? (
@@ -114,8 +126,8 @@ function NotificationList({
                 size="icon"
                 className="size-8 shrink-0"
                 disabled={read.isPending}
-                aria-label={`Mark ${item.title} as read`}
-                title="Mark as read"
+                aria-label={`${t("Mark as read", "Đánh dấu đã đọc")}: ${item.title}`}
+                title={t("Mark as read", "Đánh dấu đã đọc")}
                 onClick={() => read.mutate({ notificationId: item.id })}
               >
                 <Check className="size-4" />
@@ -123,8 +135,8 @@ function NotificationList({
             ) : (
               <span
                 className="flex size-8 shrink-0 items-center justify-center text-muted-foreground"
-                title="Read"
-                aria-label="Read"
+                title={t("Read", "Đã đọc")}
+                aria-label={t("Read", "Đã đọc")}
               >
                 <CheckCheck className="size-4" aria-hidden="true" />
               </span>
@@ -136,26 +148,38 @@ function NotificationList({
   );
 }
 function InboxEmpty({ unreadOnly }: { unreadOnly: boolean }) {
+  const { t } = useLocale();
   return (
     <div className="space-y-2 px-5 py-9 text-center">
       <Inbox className="mx-auto size-7 text-muted-foreground" />
       <p className="text-sm font-medium">
-        {unreadOnly ? "You’re all caught up" : "No notifications yet"}
+        {unreadOnly
+          ? t("You’re all caught up", "Bạn đã đọc hết thông báo")
+          : t("No notifications yet", "Chưa có thông báo nào")}
       </p>
       <p className="text-xs leading-5 text-muted-foreground">
         {unreadOnly
-          ? "There are no unread updates in this view."
-          : "Updates about your work and account will appear here."}
+          ? t("There are no unread updates in this view.", "Không có cập nhật chưa đọc nào trong chế độ xem này.")
+          : t(
+              "Updates about your work and account will appear here.",
+              "Các cập nhật về bài học và tài khoản của bạn sẽ hiển thị tại đây.",
+            )}
       </p>
     </div>
   );
 }
 function InboxFailure({ refresh }: { refresh: () => void }) {
+  const { t } = useLocale();
   return (
     <div role="alert" className="space-y-3 p-5 text-sm">
-      <p>Notifications could not be loaded. Your other work is unaffected.</p>
+      <p>
+        {t(
+          "Notifications could not be loaded. Your other work is unaffected.",
+          "Chưa thể tải thông báo. Các thao tác khác vẫn hoạt động bình thường.",
+        )}
+      </p>
       <Button variant="outline" size="sm" onClick={refresh}>
-        Try again
+        {t("Try again", "Thử lại")}
       </Button>
     </div>
   );
@@ -165,6 +189,7 @@ export function NotificationBell() {
   return api ? <ConnectedNotificationBell /> : null;
 }
 function ConnectedNotificationBell() {
+  const { t } = useLocale();
   const session = useSession();
   const [open, setOpen] = useState(false),
     [unreadOnly, setUnreadOnly] = useState(false);
@@ -188,7 +213,11 @@ function ConnectedNotificationBell() {
           variant="ghost"
           size="icon"
           className="relative"
-          aria-label={count ? `Notifications, ${count} unread` : "Notifications"}
+          aria-label={
+            count
+              ? t(`Notifications, ${count} unread`, `Thông báo, ${count} chưa đọc`)
+              : t("Notifications", "Thông báo")
+          }
         >
           <Bell />
           {count !== undefined && count > 0 && (
@@ -205,9 +234,11 @@ function ConnectedNotificationBell() {
       >
         <div className="flex items-center justify-between gap-2 border-b p-4">
           <h2 className="text-sm font-semibold">
-            Notifications{" "}
+            {t("Notifications", "Thông báo")}{" "}
             {count !== undefined && (
-              <span className="ml-1 text-xs font-normal text-muted-foreground">{count} unread</span>
+              <span className="ml-1 text-xs font-normal text-muted-foreground">
+                {count} {t("unread", "chưa đọc")}
+              </span>
             )}
           </h2>
           <Button
@@ -215,14 +246,14 @@ function ConnectedNotificationBell() {
             size="sm"
             disabled={!count || all.isPending || !q.data}
             onClick={() => q.data && all.mutate({ before: q.data.asOf })}
-            title="Mark all as read"
+            title={t("Mark all as read", "Đánh dấu tất cả đã đọc")}
           >
             {all.isPending ? (
               <Loader2 className="size-4 animate-spin" aria-hidden="true" />
             ) : (
               <CheckCheck className="size-4" />
             )}
-            <span className="sr-only">Mark all as read</span>
+            <span className="sr-only">{t("Mark all as read", "Đánh dấu tất cả đã đọc")}</span>
           </Button>
         </div>
         <div className="flex items-center gap-1 border-b px-3 py-2">
@@ -234,14 +265,14 @@ function ConnectedNotificationBell() {
               aria-pressed={v === unreadOnly}
               onClick={() => setUnreadOnly(v)}
             >
-              {v ? "Unread" : "All"}
+              {v ? t("Unread", "Chưa đọc") : t("All", "Tất cả")}
             </Button>
           ))}
         </div>
         <div className="max-h-[min(25rem,60vh)] overflow-y-auto" aria-busy={q.isFetching}>
           {q.isPending ? (
             <p role="status" className="p-5 text-sm text-muted-foreground">
-              Loading notifications…
+              {t("Loading notifications…", "Đang tải thông báo…")}
             </p>
           ) : q.isError ? (
             <InboxFailure refresh={() => void q.refetch()} />
@@ -249,7 +280,7 @@ function ConnectedNotificationBell() {
             <NotificationList items={q.data.items} compact onNavigate={() => setOpen(false)} />
           ) : q.isFetching && unreadOnly && (q.data?.unreadCount ?? 0) > 0 ? (
             <p role="status" className="p-5 text-sm text-muted-foreground">
-              Refreshing unread notifications…
+              {t("Refreshing unread notifications…", "Đang làm mới thông báo chưa đọc…")}
             </p>
           ) : (
             <InboxEmpty unreadOnly={unreadOnly} />
@@ -258,7 +289,7 @@ function ConnectedNotificationBell() {
         <div className="border-t p-2">
           <Button asChild variant="ghost" className="w-full" onClick={() => setOpen(false)}>
             <Link href="/notifications">
-              View all notifications <ArrowUpRight className="size-4" />
+              {t("View all notifications", "Xem tất cả thông báo")} <ArrowUpRight className="size-4" />
             </Link>
           </Button>
         </div>
@@ -267,6 +298,7 @@ function ConnectedNotificationBell() {
   );
 }
 export function NotificationCenter() {
+  const { t } = useLocale();
   const [page, setPage] = useState(0),
     [unreadOnly, setUnreadOnly] = useState(false),
     [category, setCategory] = useState("");
@@ -292,11 +324,11 @@ export function NotificationCenter() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
           {q.isError
-            ? "Inbox unavailable"
+            ? t("Inbox unavailable", "Hộp thư tạm thời không khả dụng")
             : q.data
-              ? `${q.data.unreadCount} unread updates`
-              : "Your activity inbox"}{" "}
-          · refreshes automatically
+              ? `${q.data.unreadCount} ${t("unread updates", "thông báo chưa đọc")}`
+              : t("Your activity inbox", "Hộp thư hoạt động của bạn")}{" "}
+          · {t("refreshes automatically", "tự động làm mới")}
         </p>
         <div className="flex gap-2">
           <Button
@@ -306,7 +338,7 @@ export function NotificationCenter() {
             onClick={() => void q.refetch()}
           >
             <RefreshCw className={q.isFetching ? "size-4 animate-spin" : "size-4"} />
-            Refresh
+            {t("Refresh", "Làm mới")}
           </Button>
           <Button
             variant="outline"
@@ -319,7 +351,7 @@ export function NotificationCenter() {
             ) : (
               <CheckCheck className="size-4" />
             )}
-            Mark all as read
+            {t("Mark all as read", "Đánh dấu tất cả đã đọc")}
           </Button>
         </div>
       </div>
@@ -336,26 +368,29 @@ export function NotificationCenter() {
                 setPage(0);
               }}
             >
-              {v ? "Unread" : "All notifications"}
+              {v ? t("Unread", "Chưa đọc") : t("All notifications", "Tất cả thông báo")}
             </Button>
           ))}
         </div>
         <div className="min-w-52 flex-1 sm:max-w-xs">
           <SelectField
-            label="Activity type"
+            label={t("Activity type", "Loại hoạt động")}
             value={category}
             onChange={(v) => {
               setCategory(v);
               setPage(0);
             }}
-            options={categories}
+            options={categories.map((item) => ({
+              value: item.value,
+              label: t(item.label, categoryViLabels[item.label] ?? item.label),
+            }))}
           />
         </div>
       </div>
       <section className="overflow-hidden rounded-xl border bg-card" aria-busy={q.isFetching}>
         {q.isPending ? (
           <p role="status" className="p-5 text-sm">
-            Loading notifications…
+            {t("Loading notifications…", "Đang tải thông báo…")}
           </p>
         ) : q.isError ? (
           <InboxFailure refresh={() => void q.refetch()} />
@@ -363,7 +398,7 @@ export function NotificationCenter() {
           <NotificationList items={q.data.items} />
         ) : q.isFetching && unreadOnly && (q.data?.unreadCount ?? 0) > 0 ? (
           <p role="status" className="p-5 text-sm text-muted-foreground">
-            Refreshing unread notifications…
+            {t("Refreshing unread notifications…", "Đang làm mới thông báo chưa đọc…")}
           </p>
         ) : (
           <InboxEmpty unreadOnly={unreadOnly} />
@@ -371,7 +406,9 @@ export function NotificationCenter() {
       </section>
       {q.data && (
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-xs text-muted-foreground">{q.data.total} matching notifications</p>
+          <p className="text-xs text-muted-foreground">
+            {q.data.total} {t("matching notifications", "thông báo phù hợp")}
+          </p>
           <Pagination
             page={page + 1}
             pageCount={Math.max(1, Math.ceil(q.data.total / 20))}

@@ -699,16 +699,16 @@ function SubmissionList({ rows }: { rows: import("@/types/domain").Submission[] 
         }}
       />
       <DataTable
-        caption="Submitted result versions"
+        caption={t("Submitted result versions", "Danh sách hồ sơ bài nộp")}
         rows={filtered.slice((current - 1) * 10, current * 10)}
         rowKey={(s) => s.id}
         columns={[
           {
             key: "id",
-            label: "Submission",
+            label: t("Submission", "Bài nộp"),
             render: (s) => (
               <Link
-                className="inline-flex items-center gap-1.5 font-mono text-xs font-semibold text-primary hover:underline"
+                className="inline-flex items-center gap-1 whitespace-nowrap font-mono text-xs font-semibold text-primary hover:underline"
                 href={`/submissions/${encodeURIComponent(s.id)}`}
                 title={s.id}
               >
@@ -719,11 +719,29 @@ function SubmissionList({ rows }: { rows: import("@/types/domain").Submission[] 
           },
           {
             key: "assignment",
-            label: "Assignment",
-            render: (s) => formatCourseLabTitle(s.assignmentTitle, s.labOrder, s.assignmentId),
+            label: t("Lab", "Bài Lab"),
+            render: (s) => (
+              <span className="line-clamp-2 max-w-44 text-xs font-medium">
+                {formatCourseLabTitle(s.assignmentTitle, s.labOrder, s.assignmentId)}
+              </span>
+            ),
           },
-          { key: "student", label: "Student", render: (s) => s.studentName || s.studentId },
-          { key: "model", label: "Frozen model", render: (s) => `Revision ${s.model.revision}` },
+          {
+            key: "student",
+            label: t("Student", "Sinh viên"),
+            render: (s) => (
+              <span className="block max-w-36 truncate text-xs">
+                {s.studentName || s.studentId}
+              </span>
+            ),
+          },
+          {
+            key: "model",
+            label: t("Model", "Mô hình"),
+            render: (s) => (
+              <span className="whitespace-nowrap font-mono text-xs">Rev {s.model.revision}</span>
+            ),
+          },
           {
             key: "review",
             label: t("Outcome", "Kết quả"),
@@ -733,16 +751,21 @@ function SubmissionList({ rows }: { rows: import("@/types/domain").Submission[] 
             key: "reviewer",
             label: t("Graded by", "Giảng viên chấm"),
             render: (s) => (
-              <span className="text-xs text-muted-foreground">{s.gradedByName || "—"}</span>
+              <span className="block max-w-28 truncate text-xs text-muted-foreground">
+                {s.gradedByName || "—"}
+              </span>
             ),
           },
           {
             key: "date",
             label: t("Submitted", "Đã nộp"),
-            render: (s) =>
-              s.submittedAt
-                ? new Date(s.submittedAt).toLocaleString()
-                : t("Not submitted", "Chưa nộp"),
+            render: (s) => (
+              <span className="whitespace-nowrap text-xs">
+                {s.submittedAt
+                  ? new Date(s.submittedAt).toLocaleString()
+                  : t("Not submitted", "Chưa nộp")}
+              </span>
+            ),
           },
           {
             key: "action",
@@ -755,7 +778,11 @@ function SubmissionList({ rows }: { rows: import("@/types/domain").Submission[] 
                   asChild
                   size="sm"
                   variant={isPending ? "default" : "outline"}
-                  className={isPending ? "bg-indigo-600 text-white hover:bg-indigo-700" : ""}
+                  className={
+                    isPending
+                      ? "whitespace-nowrap bg-indigo-600 text-white hover:bg-indigo-700"
+                      : "whitespace-nowrap"
+                  }
                 >
                   <Link href={`/submissions/${encodeURIComponent(s.id)}`}>
                     {isPending

@@ -13,9 +13,20 @@ export function formatStatusLabel(value: string) {
 }
 
 export function translatedStatusLabel(value: string, translate: (value: string) => string) {
-  for (const candidate of [value, formatStatusLabel(value), value.toLowerCase()]) {
+  const spaced = value.replace(/_/g, " ");
+  const normalizedUpper = spaced.replace(/\s+/g, "").toUpperCase();
+  const timedOutAlias = normalizedUpper === "TIMEDOUT" ? ["Timed out"] : [];
+  for (const candidate of [
+    ...timedOutAlias,
+    value,
+    spaced,
+    formatStatusLabel(value),
+    formatStatusLabel(spaced),
+    value.toLowerCase(),
+    spaced.toLowerCase(),
+  ]) {
     const translated = translate(candidate);
     if (translated !== candidate) return formatStatusLabel(translated);
   }
-  return formatStatusLabel(value);
+  return timedOutAlias.length ? "Timed out" : formatStatusLabel(spaced);
 }

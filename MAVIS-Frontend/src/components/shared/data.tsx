@@ -25,7 +25,7 @@ export function StatusBadge({
   preserveCase?: boolean;
 }) {
   return (
-    <Badge variant={variant}>
+    <Badge variant={variant} className="whitespace-nowrap">
       <StatusLabel status={status} preserveCase={preserveCase} />
     </Badge>
   );
@@ -99,7 +99,7 @@ export function DataTable<T>({
         <thead>
           <tr className="border-b text-xs text-muted-foreground">
             {columns.map((c) => (
-              <th scope="col" key={c.key} className="px-5 py-3 font-medium">
+              <th scope="col" key={c.key} className="whitespace-nowrap px-3.5 py-2.5 font-medium">
                 {t(c.label)}
               </th>
             ))}
@@ -112,14 +112,14 @@ export function DataTable<T>({
               <Fragment key={rowKey(row)}>
                 <tr className="border-b last:border-0 hover:bg-accent/40">
                   {columns.map((c) => (
-                    <td key={c.key} className="px-5 py-3.5">
+                    <td key={c.key} className="px-3.5 py-3">
                       {c.render(row)}
                     </td>
                   ))}
                 </tr>
                 {expanded && (
                   <tr className="border-b last:border-0">
-                    <td colSpan={columns.length} className="px-5 py-4">
+                    <td colSpan={columns.length} className="px-3.5 py-3.5">
                       {expanded}
                     </td>
                   </tr>

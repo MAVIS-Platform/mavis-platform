@@ -19,7 +19,7 @@ const serviceIcons = { Gateway: Workflow, Orders: ShoppingBag, Payments: Wallet,
 const serviceNames: ServiceName[] = ["Gateway", "Orders", "Inventory", "Payments"];
 const phases = [
   { id: "source", icon: CodeXml, en: "Source", vi: "Mã nguồn" },
-  { id: "trace", icon: Activity, en: "Trace", vi: "Trace" },
+  { id: "trace", icon: Activity, en: "Trace", vi: "Luồng chạy (Trace)" },
   { id: "impact", icon: GitFork, en: "Impact", vi: "Tác động" },
 ] as const;
 

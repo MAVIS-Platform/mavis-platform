@@ -241,10 +241,10 @@ export function Accounts() {
                 key: "name",
                 label: t("Account", "Tài khoản"),
                 render: (a) => (
-                  <div className="flex min-w-52 items-center gap-3">
+                  <div className="flex min-w-44 max-w-60 items-center gap-2.5">
                     <span
                       aria-hidden="true"
-                      className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary"
+                      className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary"
                     >
                       {a.name
                         .trim()
@@ -254,9 +254,9 @@ export function Accounts() {
                         .join("")
                         .toUpperCase()}
                     </span>
-                    <div className="space-y-0.5">
-                      <p className="font-semibold text-foreground">{a.name}</p>
-                      {a.email && <p className="text-xs text-muted-foreground">{a.email}</p>}
+                    <div className="min-w-0 space-y-0.5">
+                      <p className="truncate font-semibold text-foreground">{a.name}</p>
+                      {a.email && <p className="truncate text-xs text-muted-foreground">{a.email}</p>}
                     </div>
                   </div>
                 ),
@@ -269,8 +269,8 @@ export function Accounts() {
                     <StatusBadge status={t("Administrator", "Quản trị viên")} />
                   ) : (
                     <select
-                      aria-label={`Role for ${a.name}`}
-                      className="h-8 w-40 rounded-md border bg-card px-2.5 text-xs disabled:opacity-50"
+                      aria-label={t(`Role for ${a.name}`, `Vai trò của ${a.name}`)}
+                      className="h-8 w-36 rounded-md border bg-card px-2 text-xs disabled:opacity-50"
                       value={a.role}
                       disabled={busyId !== null}
                       onChange={(event) => {
@@ -315,7 +315,7 @@ export function Accounts() {
                   return (
                     <time
                       dateTime={a.createdAt ?? undefined}
-                      className="block min-w-24 space-y-0.5 text-xs tabular-nums"
+                      className="block whitespace-nowrap space-y-0.5 text-xs tabular-nums"
                     >
                       <span className="block font-medium">{date.toLocaleDateString("vi-VN")}</span>
                       <span className="block text-muted-foreground">
@@ -335,6 +335,7 @@ export function Accounts() {
                       {isPending ? (
                         <Button
                           size="sm"
+                          className="whitespace-nowrap"
                           disabled={busyId !== null}
                           onClick={() => void runLock(a.id, false)}
                         >
@@ -346,6 +347,7 @@ export function Accounts() {
                         <Button
                           size="sm"
                           variant="outline"
+                          className="whitespace-nowrap"
                           disabled={busyId !== null}
                           onClick={() => void runLock(a.id, !a.locked)}
                         >
@@ -371,6 +373,7 @@ export function Accounts() {
   );
 }
 export function Integrations() {
+  const { t } = useLocale();
   const query = useApiQuery("integrations", {});
   const mutation = useApiMutation("configureIntegration");
   const [selected, setSelected] = useState<Response<"integrations">[number] | null>(null);
@@ -382,26 +385,30 @@ export function Integrations() {
         refresh={() => void query.refetch()}
       >
         <Button asChild size="sm" variant="outline">
-          <Link href="/administration/usage">View AI usage</Link>
+          <Link href="/administration/usage">{t("View AI usage", "Xem mức sử dụng AI")}</Link>
         </Button>
       </AdminToolbar>
       <Notice>
-        Enabled does not mean connected. Connection verification is shown separately; changes to
-        these switches currently reset when the server restarts.
+        {t(
+          "Enabled does not mean connected. Connection verification is shown separately; changes to these switches currently reset when the server restarts.",
+          "Đang bật không đồng nghĩa đã kết nối thành công. Trạng thái xác minh kết nối hiển thị riêng bên dưới; các thay đổi sẽ đặt lại khi khởi động lại máy chủ.",
+        )}
       </Notice>
       <RequestState query={query} empty={!query.data?.length}>
         <div className="grid gap-4 lg:grid-cols-2">
           {query.data?.map((item) => (
             <DetailPanel key={item.id} title={item.name}>
-              <StatusBadge status={item.enabled ? "Enabled" : "Disabled"} />
+              <StatusBadge status={item.enabled ? t("Enabled", "Đang bật") : t("Disabled", "Đang tắt")} />
               <p className="text-xs text-muted-foreground">
-                Revision {item.revision} ·{" "}
+                {t("Revision", "Phiên bản")} {item.revision} ·{" "}
                 {item.status === "CONFIGURED"
-                  ? "Credentials configured"
+                  ? t("Credentials configured.", "Đã cấu hình khóa xác thực.")
                   : item.status === "PUBLIC_ONLY"
-                    ? "Public repositories only"
-                    : "Configuration unavailable"}
-                .{item.connectionVerified ? " Connection verified." : " Connection not verified."}
+                    ? t("Public repositories only.", "Chỉ truy cập repository công khai.")
+                    : t("Configuration unavailable.", "Chưa có cấu hình.")}{" "}
+                {item.connectionVerified
+                  ? t("Connection verified.", "Đã xác minh kết nối.")
+                  : t("Connection not verified.", "Chưa xác minh kết nối.")}
               </p>
               <Button
                 variant="outline"
@@ -410,7 +417,9 @@ export function Integrations() {
                   setSelected(item);
                 }}
               >
-                {item.enabled ? "Disable" : "Enable"} integration
+                {item.enabled
+                  ? t("Disable integration", "Tắt tích hợp")
+                  : t("Enable integration", "Bật tích hợp")}
               </Button>
             </DetailPanel>
           ))}
@@ -420,8 +429,11 @@ export function Integrations() {
           onOpenChange={(open) => {
             if (!open) setSelected(null);
           }}
-          title="Change integration configuration?"
-          description={`${selected?.name} will be ${selected?.enabled ? "disabled" : "enabled"}. Based on revision ${selected?.revision}.`}
+          title={t("Change integration configuration?", "Thay đổi cấu hình tích hợp?")}
+          description={t(
+            `${selected?.name} will be ${selected?.enabled ? "disabled" : "enabled"}. Based on revision ${selected?.revision}.`,
+            `${selected?.name} sẽ được ${selected?.enabled ? "tắt" : "bật"}. Dựa trên phiên bản ${selected?.revision}.`,
+          )}
           pending={mutation.isPending}
           error={mutation.isError ? <ErrorState error={mutation.error} /> : undefined}
           onConfirm={() => {
@@ -592,7 +604,7 @@ function ProfileForm({ item }: { item: Response<"profiles">[number] }) {
         </Button>
         {save.isSuccess && (
           <p role="status" className="text-sm text-emerald-500">
-            Profile saved.
+            {t("Profile saved.", "Đã lưu hồ sơ.")}
           </p>
         )}
         {save.error && <ErrorState error={save.error} />}
@@ -601,6 +613,7 @@ function ProfileForm({ item }: { item: Response<"profiles">[number] }) {
   );
 }
 export function PlatformUsage() {
+  const { t } = useLocale();
   const [logSearch, setLogSearch] = useState("");
   const [logPage, setLogPage] = useState(1);
   const q = useApiQuery("adminAiUsage", {}, { refreshMs: 60000 });
@@ -631,78 +644,86 @@ export function PlatformUsage() {
         refresh={() => void q.refetch()}
       >
         <span className="text-sm text-muted-foreground">
-          Recorded MAVIS requests · all time since tracking began
+          {t(
+            "Recorded MAVIS requests · all time since tracking began",
+            "Các yêu cầu AI đã ghi nhận qua MAVIS · toàn thời gian",
+          )}
         </span>
       </AdminToolbar>
       <RequestState query={q}>
         <div className="space-y-5">
           <div className="grid gap-4 sm:grid-cols-3">
             <SummaryCard
-              label="Input tokens"
+              label={t("Input tokens", "Token đầu vào")}
               value={
                 measured.length
                   ? measured.reduce((n, r) => n + r.usage!.inputTokens, 0).toLocaleString()
-                  : "Not recorded"
+                  : t("Not recorded", "Chưa ghi nhận")
               }
             />
             <SummaryCard
-              label="Output tokens"
+              label={t("Output tokens", "Token đầu ra")}
               value={
                 measured.length
                   ? measured.reduce((n, r) => n + r.usage!.outputTokens, 0).toLocaleString()
-                  : "Not recorded"
+                  : t("Not recorded", "Chưa ghi nhận")
               }
             />
             <SummaryCard
-              label="Recorded requests"
+              label={t("Recorded requests", "Số lượt gọi đã ghi nhận")}
               value={
                 measured.length
                   ? measured.reduce((n, r) => n + r.usage!.requestCount, 0).toLocaleString()
-                  : "Not recorded"
+                  : t("Not recorded", "Chưa ghi nhận")
               }
             />
           </div>
           <Notice>
-            Only requests with provider-reported token counts saved by MAVIS are included. Earlier
-            usage and requests made outside MAVIS are not included. Missing data is not zero.
+            {t(
+              "Only requests with provider-reported token counts saved by MAVIS are included. Earlier usage and requests made outside MAVIS are not included. Missing data is not zero.",
+              "Chỉ tính các yêu cầu do MAVIS lưu lại có số liệu token từ nhà cung cấp. Các lượt gọi ngoài hệ thống không được tính.",
+            )}
           </Notice>
-          <DetailPanel title="Usage by model">
+          <DetailPanel title={t("Usage by model", "Mức sử dụng theo mô hình AI")}>
             <DataTable
-              emptyDescription="Try clearing the filters or refresh to check for new records."
-              caption="Recorded model usage"
+              emptyDescription={t(
+                "Try clearing the filters or refresh to check for new records.",
+                "Hãy xóa bộ lọc hoặc làm mới để kiểm tra bản ghi mới.",
+              )}
+              caption={t("Recorded model usage", "Thống kê sử dụng mô hình")}
               rows={rows}
               rowKey={(r) => r.provider + ":" + (r.model ?? "unknown")}
               columns={[
                 {
                   key: "model",
-                  label: "Provider / model",
+                  label: t("Provider / model", "Nhà cung cấp / mô hình"),
                   render: (r) => (
                     <div>
                       <p className="font-medium">{r.provider === "openai" ? "OpenAI" : "Gemini"}</p>
                       <p className="text-xs text-muted-foreground">
-                        {r.model ?? "No recorded model"}
+                        {r.model ?? t("No recorded model", "Chưa ghi nhận mô hình")}
                       </p>
                     </div>
                   ),
                 },
                 {
                   key: "in",
-                  label: "Input tokens",
-                  render: (r) => r.usage?.inputTokens.toLocaleString() ?? "Not recorded",
+                  label: t("Input tokens", "Token đầu vào"),
+                  render: (r) => r.usage?.inputTokens.toLocaleString() ?? t("Not recorded", "Chưa ghi nhận"),
                 },
                 {
                   key: "out",
-                  label: "Output tokens",
-                  render: (r) => r.usage?.outputTokens.toLocaleString() ?? "Not recorded",
+                  label: t("Output tokens", "Token đầu ra"),
+                  render: (r) => r.usage?.outputTokens.toLocaleString() ?? t("Not recorded", "Chưa ghi nhận"),
                 },
                 {
                   key: "req",
-                  label: "Requests",
-                  render: (r) => r.usage?.requestCount.toLocaleString() ?? "Not recorded",
+                  label: t("Requests", "Số lượt gọi"),
+                  render: (r) => r.usage?.requestCount.toLocaleString() ?? t("Not recorded", "Chưa ghi nhận"),
                 },
                 {
                   key: "coverage",
-                  label: "Observed sources",
+                  label: t("Observed sources", "Nguồn ghi nhận"),
                   render: (r) => (
                     <span className="text-xs">
                       {[
@@ -710,20 +731,22 @@ export function PlatformUsage() {
                         r.coverage?.next === "OBSERVED" ? "Next.js" : null,
                       ]
                         .filter(Boolean)
-                        .join(" · ") || "Not observed"}
+                        .join(" · ") || t("Not observed", "Chưa ghi nhận")}
                     </span>
                   ),
                 },
               ]}
             />
           </DetailPanel>
-          <DetailPanel title="Usage logs">
+          <DetailPanel title={t("Usage logs", "Nhật ký sử dụng AI")}>
             <p className="text-sm text-muted-foreground">
-              Latest 200 recorded requests, newest first. Times use your local timezone. Earlier
-              records may not have a user attached.
+              {t(
+                "Latest 200 recorded requests, newest first. Times use your local timezone. Earlier records may not have a user attached.",
+                "200 lượt gọi AI gần nhất, mới nhất trước. Thời gian theo múi giờ hiện tại.",
+              )}
             </p>
             <SearchInput
-              label="Search user, email, provider or model"
+              label={t("Search user, email, provider or model", "Tìm người dùng, email, nhà cung cấp hoặc model")}
               value={logSearch}
               onChange={(value) => {
                 setLogSearch(value);
@@ -733,26 +756,26 @@ export function PlatformUsage() {
             {q.data?.eventsAvailable ? (
               <>
                 <DataTable
-                  caption="AI usage request logs"
-                  emptyDescription="No recorded requests match this search."
+                  caption={t("AI usage request logs", "Nhật ký yêu cầu sử dụng AI")}
+                  emptyDescription={t("No recorded requests match this search.", "Không có yêu cầu nào khớp tìm kiếm này.")}
                   rows={events.slice((activeLogPage - 1) * 10, activeLogPage * 10)}
                   rowKey={(event) => event.requestId}
                   columns={[
                     {
                       key: "user",
-                      label: "User",
+                      label: t("User", "Người dùng"),
                       render: (event) => (
                         <div className="min-w-44 space-y-1">
-                          <p className="font-medium">{event.userName ?? "User not recorded"}</p>
+                          <p className="font-medium">{event.userName ?? t("User not recorded", "Chưa ghi nhận người dùng")}</p>
                           <p className="text-xs text-muted-foreground">
-                            {event.userEmail ?? event.userId ?? "Historical or background request"}
+                            {event.userEmail ?? event.userId ?? t("Historical or background request", "Yêu cầu cũ hoặc tác vụ nền")}
                           </p>
                         </div>
                       ),
                     },
                     {
                       key: "time",
-                      label: "Time",
+                      label: t("Time", "Thời gian"),
                       render: (event) => (
                         <time
                           dateTime={event.recordedAt}
@@ -764,7 +787,7 @@ export function PlatformUsage() {
                     },
                     {
                       key: "model",
-                      label: "Provider / model",
+                      label: t("Provider / model", "Nhà cung cấp / model"),
                       render: (event) => (
                         <div>
                           <p className="font-medium">
@@ -776,22 +799,22 @@ export function PlatformUsage() {
                     },
                     {
                       key: "input",
-                      label: "Input tokens",
+                      label: t("Input tokens", "Token đầu vào"),
                       render: (event) => event.inputTokens.toLocaleString(),
                     },
                     {
                       key: "output",
-                      label: "Output tokens",
+                      label: t("Output tokens", "Token đầu ra"),
                       render: (event) => event.outputTokens.toLocaleString(),
                     },
                     {
                       key: "source",
-                      label: "Source",
+                      label: t("Source", "Nguồn"),
                       render: (event) => (event.source === "next" ? "Next.js" : "Java"),
                     },
                     {
                       key: "request",
-                      label: "Request ID",
+                      label: t("Request ID", "Mã yêu cầu"),
                       render: (event) => (
                         <code className="text-xs" title={event.requestId}>
                           {event.requestId.slice(0, 8)}
@@ -804,20 +827,26 @@ export function PlatformUsage() {
               </>
             ) : (
               <Notice>
-                Usage logs are unavailable. Check the usage storage and apply migration V23.
+                {t(
+                  "Usage logs are unavailable. Check the usage storage and apply migration V23.",
+                  "Nhật ký sử dụng hiện không khả dụng. Hãy kiểm tra bộ nhớ lưu trữ và áp dụng migration V23.",
+                )}
               </Notice>
             )}
           </DetailPanel>
           <DetailPanel
-            title="Provider account data"
+            title={t("Provider account data", "Dữ liệu tài khoản nhà cung cấp")}
             actions={
               <Button asChild size="sm" variant="ghost">
-                <Link href="/administration/integrations">Manage integrations</Link>
+                <Link href="/administration/integrations">{t("Manage integrations", "Quản lý tích hợp")}</Link>
               </Button>
             }
           >
             <p className="text-sm text-muted-foreground">
-              Optional project-wide usage and limits are separate from MAVIS token tracking.
+              {t(
+                "Optional project-wide usage and limits are separate from MAVIS token tracking.",
+                "Mức sử dụng và giới hạn toàn dự án tùy chọn được tách biệt với theo dõi token của MAVIS.",
+              )}
             </p>
             <div className="space-y-3">
               {providers.map((r) => (
@@ -825,32 +854,34 @@ export function PlatformUsage() {
                   <summary className="cursor-pointer text-sm font-medium">
                     {r.provider === "openai" ? "OpenAI" : "Gemini"} ·{" "}
                     {r.providerUsage || r.cost || r.limits || r.geminiQuota
-                      ? "Project data connected"
-                      : "Project data not connected"}
+                      ? t("Project data connected", "Đã kết nối dữ liệu dự án")
+                      : t("Project data not connected", "Chưa kết nối dữ liệu dự án")}
                   </summary>
                   <div className="mt-4 space-y-4 text-sm">
                     {r.providerDataUpdatedAt && (
                       <p className="text-xs text-muted-foreground">
-                        Checked {new Date(r.providerDataUpdatedAt).toLocaleString()}
+                        {t("Checked", "Đã kiểm tra")} {new Date(r.providerDataUpdatedAt).toLocaleString()}
                       </p>
                     )}
                     {!r.providerUsage && !r.cost && !r.limits && !r.geminiQuota && (
                       <p className="text-muted-foreground">
-                        Account-level access has not been connected. Recorded token usage above
-                        remains available independently.
+                        {t(
+                          "Account-level access has not been connected. Recorded token usage above remains available independently.",
+                          "Quyền truy cập cấp tài khoản chưa được kết nối. Dữ liệu token đã ghi ở trên vẫn khả dụng độc lập.",
+                        )}
                       </p>
                     )}
                     {r.providerUsage && (
                       <p>
-                        Current UTC month: {r.providerUsage.inputTokens.toLocaleString()} input
-                        tokens · {r.providerUsage.outputTokens.toLocaleString()} output tokens ·{" "}
-                        {r.providerUsage.requestCount.toLocaleString()} requests across this
-                        provider project.
+                        {t("Current UTC month:", "Tháng UTC hiện tại:")}{" "}
+                        {r.providerUsage.inputTokens.toLocaleString()} {t("input tokens", "token đầu vào")} ·{" "}
+                        {r.providerUsage.outputTokens.toLocaleString()} {t("output tokens", "token đầu ra")} ·{" "}
+                        {r.providerUsage.requestCount.toLocaleString()} {t("requests across this provider project.", "lượt gọi trên dự án nhà cung cấp này.")}
                       </p>
                     )}
                     {r.cost && (
                       <p>
-                        Project spend:{" "}
+                        {t("Project spend:", "Chi phí dự án:")}{" "}
                         {r.cost.amount.toLocaleString(undefined, { maximumFractionDigits: 6 })}{" "}
                         {r.cost.currency.toUpperCase()} ·{" "}
                         {new Date(r.cost.startTime).toLocaleDateString()} –{" "}
@@ -859,21 +890,21 @@ export function PlatformUsage() {
                     )}
                     {r.limits && (
                       <DataTable
-                        emptyDescription="Try clearing the filters or refresh to check for new records."
-                        caption="Project model rate limits"
+                        emptyDescription={t("Try clearing the filters or refresh to check for new records.", "Thử xóa bộ lọc hoặc làm mới để kiểm tra bản ghi mới.")}
+                        caption={t("Project model rate limits", "Giới hạn tần suất model của dự án")}
                         rows={r.limits.models}
                         rowKey={(x) => x.model}
                         columns={[
-                          { key: "m", label: "Model", render: (x) => x.model },
+                          { key: "m", label: t("Model", "Model"), render: (x) => x.model },
                           {
                             key: "r",
-                            label: "Requests / minute",
-                            render: (x) => x.requestsPerMinute ?? "Unknown",
+                            label: t("Requests / minute", "Yêu cầu / phút"),
+                            render: (x) => x.requestsPerMinute ?? t("Unknown", "Không rõ"),
                           },
                           {
                             key: "t",
-                            label: "Tokens / minute",
-                            render: (x) => x.tokensPerMinute ?? "Unknown",
+                            label: t("Tokens / minute", "Token / phút"),
+                            render: (x) => x.tokensPerMinute ?? t("Unknown", "Không rõ"),
                           },
                         ]}
                       />
@@ -881,27 +912,29 @@ export function PlatformUsage() {
                     {r.geminiQuota && (
                       <>
                         <p className="text-muted-foreground">
-                          Cloud Monitoring samples may be delayed. Usage samples are interval
-                          deltas, not a remaining balance.{" "}
-                          {r.geminiQuota.partial ? "Some measurements are unavailable." : ""}
+                          {t(
+                            "Cloud Monitoring samples may be delayed. Usage samples are interval deltas, not a remaining balance.",
+                            "Mẫu Cloud Monitoring có thể bị trễ. Mẫu sử dụng là mức chênh lệch theo khoảng, không phải số dư còn lại.",
+                          )}{" "}
+                          {r.geminiQuota.partial ? t("Some measurements are unavailable.", "Một số phép đo hiện không khả dụng.") : ""}
                         </p>
                         <DataTable
-                          emptyDescription="Try clearing the filters or refresh to check for new records."
-                          caption="Google quota measurements"
+                          emptyDescription={t("Try clearing the filters or refresh to check for new records.", "Thử xóa bộ lọc hoặc làm mới để kiểm tra bản ghi mới.")}
+                          caption={t("Google quota measurements", "Các phép đo hạn mức Google")}
                           rows={r.geminiQuota.samples}
                           rowKey={(x) => x.model + x.metric + x.limitName + x.measuredAt}
                           columns={[
-                            { key: "m", label: "Model", render: (x) => x.model },
+                            { key: "m", label: t("Model", "Model"), render: (x) => x.model },
                             {
                               key: "n",
-                              label: "Limit",
+                              label: t("Limit", "Giới hạn"),
                               render: (x) => <span className="break-all">{x.limitName}</span>,
                             },
-                            { key: "k", label: "Measurement", render: (x) => x.kind },
-                            { key: "v", label: "Value", render: (x) => x.value.toLocaleString() },
+                            { key: "k", label: t("Measurement", "Phép đo"), render: (x) => x.kind },
+                            { key: "v", label: t("Value", "Giá trị"), render: (x) => x.value.toLocaleString() },
                             {
                               key: "d",
-                              label: "Observed",
+                              label: t("Observed", "Thời điểm đo"),
                               render: (x) => new Date(x.measuredAt).toLocaleString(),
                             },
                           ]}
@@ -909,7 +942,7 @@ export function PlatformUsage() {
                       </>
                     )}
                     <p className="text-xs text-muted-foreground">
-                      No verified remaining credit balance is available.
+                      {t("No verified remaining credit balance is available.", "Không có số dư credit còn lại nào được xác minh.")}
                     </p>
                   </div>
                 </details>
@@ -922,32 +955,33 @@ export function PlatformUsage() {
   );
 }
 function AdminJobDetails({ job, returnTo }: { job: Response<"adminJobs">[number]; returnTo: string }) {
+  const { t } = useLocale();
   const project = useApiQuery("project", { projectId: job.projectId });
   const model = useApiQuery("model", { projectId: job.projectId, modelId: job.modelId ?? "" },
     { enabled: !!job.modelId });
   const summary = model.data ? summarizeJobModel(model.data) : null;
   return (
-    <DetailPanel title="Selected job">
+    <DetailPanel title={t("Selected job", "Tác vụ đã chọn")}>
       <dl className="grid gap-3 text-sm sm:grid-cols-2">
-        <div><dt className="text-muted-foreground">Project</dt><dd>{project.data?.name ?? job.projectId}</dd></div>
-        <div><dt className="text-muted-foreground">Job ID</dt><dd className="break-all font-mono text-xs">{job.id}</dd></div>
-        <div><dt className="text-muted-foreground">Source snapshot</dt><dd className="break-all font-mono text-xs">{job.snapshotId}</dd></div>
-        <div><dt className="text-muted-foreground">Architecture revision</dt><dd>{model.data?.revision ?? "—"}</dd></div>
+        <div><dt className="text-muted-foreground">{t("Project", "Dự án")}</dt><dd>{project.data?.name ?? job.projectId}</dd></div>
+        <div><dt className="text-muted-foreground">{t("Job ID", "Mã tác vụ")}</dt><dd className="break-all font-mono text-xs">{job.id}</dd></div>
+        <div><dt className="text-muted-foreground">{t("Source snapshot", "Snapshot mã nguồn")}</dt><dd className="break-all font-mono text-xs">{job.snapshotId}</dd></div>
+        <div><dt className="text-muted-foreground">{t("Architecture revision", "Phiên bản kiến trúc")}</dt><dd>{model.data?.revision ?? "—"}</dd></div>
       </dl>
       {project.isError && <ErrorState error={project.error} onRetry={() => void project.refetch()} />}
       <AnalysisStatusIndicator job={job} />
       {job.modelId ? <RequestState query={model}>
-        {summary && <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5" aria-label="Analysis result summary">
-          <SummaryCard label="Services" value={summary.services} />
-          <SummaryCard label="Elements" value={summary.elements} />
-          <SummaryCard label="Relationships" value={summary.relationships} />
-          <SummaryCard label="Evidence records" value={summary.evidence} />
-          <SummaryCard label="Uncertain relationships" value={summary.uncertain} />
+        {summary && <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5" aria-label={t("Analysis result summary", "Tóm tắt kết quả phân tích")}>
+          <SummaryCard label={t("Services", "Dịch vụ")} value={summary.services} />
+          <SummaryCard label={t("Elements", "Phần tử")} value={summary.elements} />
+          <SummaryCard label={t("Relationships", "Quan hệ")} value={summary.relationships} />
+          <SummaryCard label={t("Evidence records", "Bằng chứng")} value={summary.evidence} />
+          <SummaryCard label={t("Uncertain relationships", "Quan hệ chưa chắc chắn")} value={summary.uncertain} />
         </div>}
-      </RequestState> : <p className="text-sm text-muted-foreground">No architecture model is available for this job.</p>}
+      </RequestState> : <p className="text-sm text-muted-foreground">{t("No architecture model is available for this job.", "Chưa có mô hình kiến trúc cho tác vụ này.")}</p>}
       {job.modelId && <Button asChild variant="outline" size="sm">
         <Link href={`/architecture?${new URLSearchParams({ project: job.projectId, model: job.modelId, returnTo })}`}>
-          Open architecture
+          {t("Open architecture", "Mở sơ đồ kiến trúc")}
         </Link>
       </Button>}
     </DetailPanel>
@@ -955,6 +989,7 @@ function AdminJobDetails({ job, returnTo }: { job: Response<"adminJobs">[number]
 }
 
 export function AdminAnalysisJobs() {
+  const { t } = useLocale();
   const q = useApiQuery("adminJobs", {}, { refreshMs: 30000 });
   const params = useSearchParams();
   const router = useRouter();
@@ -992,29 +1027,29 @@ export function AdminAnalysisJobs() {
         refresh={() => void q.refetch()}
       >
         <span className="text-sm text-muted-foreground">
-          Latest 50 analysis jobs · refresh every 30 seconds
+          {t("Latest 50 analysis jobs · refresh every 30 seconds", "50 tác vụ phân tích gần nhất · làm mới mỗi 30 giây")}
         </span>
       </AdminToolbar>
       <div className="grid gap-4 sm:grid-cols-3">
         <SummaryCard
-          label="In progress"
+          label={t("In progress", "Đang xử lý")}
           value={
             q.data?.filter((j) => ["queued", "processing", "cancelling"].includes(j.status))
               .length ?? "—"
           }
         />
         <SummaryCard
-          label="Failed / timed out"
+          label={t("Failed / timed out", "Thất bại / Quá thời gian chờ")}
           value={q.data?.filter((j) => ["failed", "timed-out"].includes(j.status)).length ?? "—"}
         />
         <SummaryCard
-          label="Completed"
+          label={t("Completed", "Hoàn tất")}
           value={q.data?.filter((j) => j.status === "completed").length ?? "—"}
         />
       </div>
       <div className="grid gap-3 rounded-xl border bg-card p-4 sm:grid-cols-[2fr_1fr]">
         <SearchInput
-          label="Search job, project or message"
+          label={t("Search job, project or message", "Tìm tác vụ, dự án hoặc thông báo")}
           value={search}
           onChange={(v) => {
             setSearch(v);
@@ -1022,30 +1057,30 @@ export function AdminAnalysisJobs() {
           }}
         />
         <SelectField
-          label="Job status"
+          label={t("Job status", "Trạng thái tác vụ")}
           value={status}
           onChange={(v) => {
             setStatus(v);
             setPage(1);
           }}
           options={[
-            { value: "all", label: "All statuses" },
-            { value: "queued", label: "Queued" },
-            { value: "processing", label: "Processing" },
-            { value: "completed", label: "Completed" },
-            { value: "failed", label: "Failed" },
-            { value: "partial", label: "Partial" },
-            { value: "cancelling", label: "Cancelling" },
-            { value: "cancelled", label: "Cancelled" },
-            { value: "timed-out", label: "Timed out" },
+            { value: "all", label: t("All statuses", "Tất cả trạng thái") },
+            { value: "queued", label: t("Queued", "Đang chờ") },
+            { value: "processing", label: t("Processing", "Đang chạy") },
+            { value: "completed", label: t("Completed", "Hoàn tất") },
+            { value: "failed", label: t("Failed", "Thất bại") },
+            { value: "partial", label: t("Partial", "Hoàn tất một phần") },
+            { value: "cancelling", label: t("Cancelling", "Đang hủy") },
+            { value: "cancelled", label: t("Cancelled", "Đã hủy") },
+            { value: "timed-out", label: t("Timed out", "Quá thời gian chờ") },
           ]}
         />
       </div>
       <RequestState query={q}>
         <div className="space-y-5">
           <DataTable
-            emptyDescription="Try clearing the filters or refresh to check for new records."
-            caption="Recent analysis jobs"
+            emptyDescription={t("Try clearing the filters or refresh to check for new records.", "Hãy xóa bộ lọc hoặc làm mới để kiểm tra bản ghi mới.")}
+            caption={t("Recent analysis jobs", "Tác vụ phân tích gần đây")}
             renderExpandedRow={(job) =>
               job.id === selected ? (
                 <AdminJobDetails job={job} returnTo={detailsHref(job.id)} />
@@ -1056,11 +1091,11 @@ export function AdminAnalysisJobs() {
             columns={[
               {
                 key: "id",
-                label: "Project / Job",
+                label: t("Project / Job", "Dự án / Tác vụ"),
                 render: (j) => (
                   <div className="max-w-72">
                     <p className="font-medium text-foreground">
-                      {j.projectName ?? `Project ${j.projectId.slice(0, 8)}`}
+                      {j.projectName ?? `${t("Project", "Dự án")} ${j.projectId.slice(0, 8)}`}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {j.workspaceName ? `${j.workspaceName} · ` : ""}
@@ -1071,7 +1106,7 @@ export function AdminAnalysisJobs() {
               },
               {
                 key: "state",
-                label: "Status",
+                label: t("Status", "Trạng thái"),
                 render: (j) => {
                   const badge = analysisStatusBadgeProps(j);
                   return <StatusBadge status={badge.status} variant={badge.variant} />;
@@ -1079,12 +1114,12 @@ export function AdminAnalysisJobs() {
               },
               {
                 key: "progress",
-                label: "Progress",
-                render: (j) => (j.progress === null ? "Not reported" : `${j.progress}%`),
+                label: t("Progress", "Tiến độ"),
+                render: (j) => (j.progress === null ? t("Not reported", "Chưa báo cáo") : `${j.progress}%`),
               },
               {
                 key: "action",
-                label: "Inspect",
+                label: t("Inspect", "Kiểm tra"),
                 render: (j) => (
                   <Button
                     size="sm"
@@ -1092,7 +1127,7 @@ export function AdminAnalysisJobs() {
                     aria-expanded={selected === j.id}
                     onClick={() => router.replace(detailsHref(selected === j.id ? "" : j.id), { scroll: false })}
                   >
-                    {selected === j.id ? "Hide details" : "View details"}
+                    {selected === j.id ? t("Hide details", "Ẩn chi tiết") : t("View details", "Xem chi tiết")}
                   </Button>
                 ),
               },
@@ -1105,6 +1140,7 @@ export function AdminAnalysisJobs() {
   );
 }
 export function AuditRecords() {
+  const { t } = useLocale();
   const q = useApiQuery("audit", {});
   const [tab, setTab] = useState<"audit" | "jobs">("audit");
   const [search, setSearch] = useState(""),
@@ -1126,14 +1162,14 @@ export function AuditRecords() {
         refreshing={q.isFetching}
         onRefresh={() => void q.refetch()}
       />
-      <div className="flex flex-wrap gap-2" role="tablist" aria-label="Audit and Jobs Views">
+      <div className="flex flex-wrap gap-2" role="tablist" aria-label={t("Audit and Jobs Views", "Nhật ký và tác vụ nền")}>
         <Button
           type="button"
           size="sm"
           variant={tab === "audit" ? "default" : "outline"}
           onClick={() => setTab("audit")}
         >
-          Audit Trail
+          {t("Audit Trail", "Nhật ký kiểm toán")}
         </Button>
         <Button
           type="button"
@@ -1141,7 +1177,7 @@ export function AuditRecords() {
           variant={tab === "jobs" ? "default" : "outline"}
           onClick={() => setTab("jobs")}
         >
-          Background Analysis Jobs
+          {t("Background Analysis Jobs", "Tác vụ phân tích nền")}
         </Button>
       </div>
       {tab === "jobs" ? (
@@ -1154,12 +1190,12 @@ export function AuditRecords() {
             refresh={() => void q.refetch()}
           >
             <span className="text-sm text-muted-foreground">
-              Read-only · latest 100 audit records
+              {t("Read-only · latest 100 audit records", "Chỉ đọc · 100 bản ghi nhật ký gần nhất")}
             </span>
           </AdminToolbar>
           <div className="grid gap-3 rounded-xl border bg-card p-4 sm:grid-cols-[2fr_1fr]">
             <SearchInput
-              label="Search action, actor or resource"
+              label={t("Search action, actor or resource", "Tìm hành động, người thực hiện hoặc đối tượng")}
               value={search}
               onChange={(v) => {
                 setSearch(v);
@@ -1167,14 +1203,14 @@ export function AuditRecords() {
               }}
             />
             <SelectField
-              label="Action"
+              label={t("Action", "Hành động")}
               value={action}
               onChange={(v) => {
                 setAction(v);
                 setPage(1);
               }}
               options={[
-                { value: "all", label: "All actions" },
+                { value: "all", label: t("All actions", "Tất cả hành động") },
                 ...Array.from(new Set((q.data ?? []).map((a) => a.action)))
                   .sort()
                   .map((value) => ({ value, label: value.replaceAll("_", " ").toLowerCase() })),
@@ -1184,14 +1220,14 @@ export function AuditRecords() {
           <RequestState query={q}>
             <div className="space-y-5">
               <DataTable
-                emptyDescription="Try clearing the filters or refresh to check for new records."
-                caption="Administrative audit trail"
+                emptyDescription={t("Try clearing the filters or refresh to check for new records.", "Hãy xóa bộ lọc hoặc làm mới để kiểm tra bản ghi mới.")}
+                caption={t("Administrative audit trail", "Nhật ký thao tác quản trị")}
                 rows={rows.slice((activePage - 1) * 10, activePage * 10)}
                 rowKey={(a) => a.id}
                 columns={[
                   {
                     key: "at",
-                    label: "Time",
+                    label: t("Time", "Thời gian"),
                     render: (a) => (
                       <span className="whitespace-nowrap text-xs" title={a.at}>
                         {new Date(a.at).toLocaleString()}
@@ -1200,7 +1236,7 @@ export function AuditRecords() {
                   },
                   {
                     key: "action",
-                    label: "Action",
+                    label: t("Action", "Hành động"),
                     render: (a) => (
                       <Badge
                         variant={
@@ -1215,11 +1251,11 @@ export function AuditRecords() {
                   },
                   {
                     key: "actor",
-                    label: "Actor",
+                    label: t("Actor", "Người thực hiện"),
                     render: (a) => (
                       <div className="max-w-60">
                         <p className="text-xs font-medium text-foreground">
-                          {a.actorName || a.actorId || "System"}
+                          {a.actorName || a.actorId || t("System", "Hệ thống")}
                         </p>
                         {a.actorEmail && (
                           <p className="text-[11px] text-muted-foreground">{a.actorEmail}</p>
@@ -1229,7 +1265,7 @@ export function AuditRecords() {
                   },
                   {
                     key: "resource",
-                    label: "Target / Details",
+                    label: t("Target / Details", "Đối tượng / Chi tiết"),
                     render: (a) => (
                       <div className="max-w-64">
                         <p className="truncate font-mono text-xs">{a.resourceId || "—"}</p>

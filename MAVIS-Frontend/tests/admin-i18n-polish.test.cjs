@@ -64,3 +64,47 @@ test("Wave 2: Passkey CRUD table action buttons stay single-line with whitespace
   assert.match(courseAccess, /flex flex-nowrap items-center justify-end gap-1/);
   assert.match(courseAccess, /className="h-7 whitespace-nowrap px-2 text-xs"/);
 });
+
+test("Wave 3: status labels normalize TIMED_OUT/TIMEDOUT without underscores while keeping formatStatusLabel intact", () => {
+  const ts = require("typescript");
+  const mod = { exports: {} };
+  const compiled = ts.transpileModule(read("src/lib/status-label.ts"), {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2022,
+      esModuleInterop: true,
+    },
+  }).outputText;
+  new Function("module", "exports", compiled)(mod, mod.exports);
+
+  const { formatStatusLabel, translatedStatusLabel } = mod.exports;
+  assert.equal(formatStatusLabel("READY_FOR_DISPATCH"), "Ready_for_dispatch");
+  assert.equal(translatedStatusLabel("TIMED_OUT", (s) => s), "Timed out");
+  assert.equal(translatedStatusLabel("TIMEDOUT", (s) => s), "Timed out");
+  assert.equal(translatedStatusLabel("READY_FOR_DISPATCH", (s) => s), "Ready for dispatch");
+  assert.equal(
+    translatedStatusLabel("TIMED_OUT", (s) => (s === "Timed out" ? "Quá thời gian chờ" : s)),
+    "Quá thời gian chờ",
+  );
+});
+
+test("Wave 3: StatusBadge prevents multi-line wrapping and Pagination localizes Next button", () => {
+  const data = read("src/components/shared/data.tsx");
+  const forms = read("src/components/shared/forms.tsx");
+  assert.match(data, /<Badge[^>]*className="whitespace-nowrap"/);
+  assert.match(forms, /t\("Next",\s*"Trang sau"\)/);
+});
+
+test("Wave 3: Announcements, inbox, AppShell avatar contrast, and nested main fixes are in place", () => {
+  const announcements = read("src/features/administration/announcements.tsx");
+  const inbox = read("src/features/notifications/inbox.tsx");
+  const appShell = read("src/components/app-shell.tsx");
+  const labAuthoring = read("src/features/assignments/lab-authoring.tsx");
+
+  assert.match(announcements, /useLocale\(/);
+  assert.match(inbox, /useLocale\(/);
+  assert.match(appShell, /bg-primary text-primary-foreground/);
+  assert.match(appShell, /"Grading & Gradebook"/);
+  assert.match(appShell, /"My Grades & Submissions"/);
+  assert.doesNotMatch(labAuthoring, /<main\b/);
+});

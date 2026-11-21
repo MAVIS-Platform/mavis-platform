@@ -102,7 +102,10 @@ export default function LoginPage() {
             <MavisLogo className="h-11 w-11 shrink-0" />
             <div className="min-w-0 max-w-sm">
               <span className="block text-xs font-semibold leading-5 text-foreground sm:text-sm">
-                AI-Assisted Microservices Architecture Visualization and Change Impact Analysis
+                {t(
+                  "AI-Assisted Microservices Architecture Visualization and Change Impact Analysis",
+                  "Nền tảng Trực quan hóa Kiến trúc Microservices & Phân tích Tác động Thay đổi ứng dụng AI",
+                )}
               </span>
             </div>
           </Link>

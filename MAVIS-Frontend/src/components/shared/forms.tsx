@@ -292,18 +292,19 @@ export function Pagination({
   onPageChange: (page: number) => void;
 }) {
   const { t } = useLocale();
+  const safeCount = Math.max(1, pageCount);
   return (
-    <nav aria-label="Pagination" className="flex items-center justify-end gap-3 text-xs">
+    <nav aria-label={t("Pagination", "Phân trang")} className="flex items-center justify-end gap-3 text-xs">
       <Button
         size="sm"
         variant="outline"
         disabled={page <= 1}
         onClick={() => onPageChange(page - 1)}
       >
-        {t("Previous")}
+        {t("Previous", "Trang trước")}
       </Button>
-      <span aria-live="polite">
-        {t(`Page ${page} of ${Math.max(1, pageCount)}`)}
+      <span aria-live="polite" className="mavis-tabular">
+        {t(`Page ${page} of ${safeCount}`, `Trang ${page} / ${safeCount}`)}
       </span>
       <Button
         size="sm"
@@ -311,7 +312,7 @@ export function Pagination({
         disabled={page >= pageCount}
         onClick={() => onPageChange(page + 1)}
       >
-        {t("Next")}
+        {t("Next", "Trang sau")}
       </Button>
     </nav>
   );

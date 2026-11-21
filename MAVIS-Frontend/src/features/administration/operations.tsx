@@ -252,8 +252,9 @@ export function AdminCommandHeader({
             {counts.data?.users ?? "—"}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            {counts.data?.activeLecturers ?? 0} {t("lecturers", "giảng viên")} ·{" "}
-            {counts.data?.activeStudents ?? 0} {t("students", "sinh viên")}
+            {counts.data
+              ? `${counts.data.activeLecturers ?? 0} ${t("lecturers", "giảng viên")} · ${counts.data.activeStudents ?? 0} ${t("students", "sinh viên")}`
+              : "—"}
           </p>
         </div>
         <div className="mavis-card-hover rounded-2xl border border-t-4 border-t-rose-500 bg-card p-4 shadow-sm">
@@ -264,8 +265,9 @@ export function AdminCommandHeader({
             {counts.data ? pendingOrLocked : "—"}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            {counts.data?.pendingVerificationUsers ?? 0} {t("pending", "chờ kích hoạt")} ·{" "}
-            {counts.data?.lockedUsers ?? 0} {t("locked", "bị khóa")}
+            {counts.data
+              ? `${counts.data.pendingVerificationUsers ?? 0} ${t("pending", "chờ kích hoạt")} · ${counts.data.lockedUsers ?? 0} ${t("locked", "bị khóa")}`
+              : "—"}
           </p>
         </div>
         <div className="mavis-card-hover rounded-2xl border border-t-4 border-t-sky-500 bg-card p-4 shadow-sm">
@@ -276,7 +278,9 @@ export function AdminCommandHeader({
             {counts.data?.totalGuidedLabs ?? "—"}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            {counts.data?.projects ?? 0} {t("registered repositories", "dự án trên nền tảng")}
+            {counts.data
+              ? `${counts.data.projects ?? 0} ${t("registered repositories", "dự án trên nền tảng")}`
+              : "—"}
           </p>
         </div>
         <div className="mavis-card-hover rounded-2xl border border-t-4 border-t-emerald-500 bg-card p-4 shadow-sm">
@@ -287,7 +291,9 @@ export function AdminCommandHeader({
             {counts.data?.runningSessions ?? "—"}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            {counts.data?.analysisJobs ?? 0} {t("analysis jobs tracked", "tác vụ phân tích")}
+            {counts.data
+              ? `${counts.data.analysisJobs ?? 0} ${t("analysis jobs tracked", "tác vụ phân tích")}`
+              : "—"}
           </p>
         </div>
       </section>
@@ -462,7 +468,14 @@ export function SystemHealth() {
           <div className="flex flex-wrap items-center gap-2">
             {rt && (
               <StatusBadge
-                status={`${rt.surveyReadiness} · ${rt.effectiveOciRuntime}`}
+                preserveCase
+                status={`${
+                  rt.surveyReadiness === "READY"
+                    ? t("Ready", "Sẵn sàng")
+                    : rt.surveyReadiness === "DEGRADED"
+                      ? t("Degraded", "Suy giảm")
+                      : t("Unavailable", "Không khả dụng")
+                } · ${rt.effectiveOciRuntime}`}
                 variant={
                   rt.surveyReadiness === "READY"
                     ? "success"
@@ -530,14 +543,14 @@ export function SystemHealth() {
                   value={rt.diskFreeMiB >= 0 ? `${(rt.diskFreeMiB / 1024).toFixed(1)} GB` : "—"}
                   description={
                     rt.diskTotalMiB > 0
-                      ? `${(rt.diskTotalMiB / 1024).toFixed(1)} GB ${t("total", "tổng")}${rt.diskLowWarning ? " · LOW DISK" : ""}`
+                      ? `${(rt.diskTotalMiB / 1024).toFixed(1)} GB ${t("total", "tổng")}${rt.diskLowWarning ? ` · ${t("LOW DISK", "Ổ ĐĨA THẤP")}` : ""}`
                       : t("Host volume", "Ổ đĩa máy chủ")
                   }
                 />
                 <SummaryCard
                   label={t("Watchdog Reaped", "Watchdog đã thu hồi")}
                   value={rt.orphansReapedTotal + rt.abandonedReapedTotal + rt.staleDispatchesReapedTotal}
-                  description={`${rt.orphansReapedTotal} orphans · ${rt.abandonedReapedTotal} idle · ${rt.staleDispatchesReapedTotal} stale`}
+                  description={`${rt.orphansReapedTotal} ${t("orphans", "mồ côi")} · ${rt.abandonedReapedTotal} ${t("idle", "nhàn rỗi")} · ${rt.staleDispatchesReapedTotal} ${t("stale", "quá hạn")}`}
                 />
               </div>
               {rt.warnings.length > 0 && (

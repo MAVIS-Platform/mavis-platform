@@ -82,7 +82,9 @@ export function GradingPanel({
                 <Badge
                   variant={resolveSubmissionOutcome(query.data) === "PASS" ? "success" : "warning"}
                 >
-                  {resolveSubmissionOutcome(query.data)}
+                  {resolveSubmissionOutcome(query.data) === "PASS"
+                    ? t("PASS", "ĐẠT")
+                    : t("NEEDS REVISION", "CẦN SỬA LẠI")}
                 </Badge>
               )}
             </div>
@@ -511,25 +513,37 @@ export function GradeForm({
       <div className="space-y-1.5">
         <div className="flex flex-wrap gap-1.5">
           {[
-            "Good C4 boundaries and accurate 3E evidence.",
-            "Needs clearer service separation and container links.",
-            "Studio Live scale/stop proof incomplete — please re-verify.",
-          ].map((template) => (
-            <button
-              key={template}
-              type="button"
-              className="rounded border bg-muted/30 px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
-              onClick={() => {
-                setDirty(true);
-                setSummary((prev) => (prev.trim() ? `${prev.trim()}\n${template}` : template));
-              }}
-            >
-              + {template}
-            </button>
-          ))}
+            {
+              en: "Good C4 boundaries and accurate 3E evidence.",
+              vi: "Phân tách ranh giới C4 tốt và bằng chứng 3E chính xác.",
+            },
+            {
+              en: "Needs clearer service separation and container links.",
+              vi: "Cần làm rõ tách biệt giữa các service và liên kết container.",
+            },
+            {
+              en: "Studio Live scale/stop proof incomplete — please re-verify.",
+              vi: "Minh chứng scale/stop trên Studio Live chưa đầy đủ — vui lòng kiểm tra lại.",
+            },
+          ].map((item) => {
+            const text = t(item.en, item.vi);
+            return (
+              <button
+                key={item.en}
+                type="button"
+                className="rounded border bg-muted/30 px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
+                onClick={() => {
+                  setDirty(true);
+                  setSummary((prev) => (prev.trim() ? `${prev.trim()}\n${text}` : text));
+                }}
+              >
+                + {text}
+              </button>
+            );
+          })}
         </div>
       </div>
-      <FormField label={t("Overall review / changes requested")}>
+      <FormField label={t("Overall review / changes requested", "Nhận xét tổng thể / yêu cầu chỉnh sửa")}>
         {(props) => (
           <Textarea
             {...props}
@@ -546,7 +560,10 @@ export function GradeForm({
         <p role="alert" className="text-sm text-destructive">
           {usePerSnapshot
             ? t("Enter a score between 0.0 and 10.0 for every snapshot (e.g. 5.01 to pass).")
-            : t("Enter a score between 0 and 100 with at most two decimal places.")}
+            : t(
+                "Enter a score between 0 and 10 with at most two decimal places.",
+                "Nhập điểm từ 0 đến 10 với tối đa hai chữ số thập phân.",
+              )}
         </p>
       )}
       {usePerSnapshot && !parsedSnapshots.complete && !parsedSnapshots.invalid && (
@@ -581,7 +598,9 @@ export function GradeForm({
               </p>
             )}
           </div>
-          <Badge variant={outcome === "PASS" ? "success" : "warning"}>{outcome}</Badge>
+          <Badge variant={outcome === "PASS" ? "success" : "warning"}>
+            {outcome === "PASS" ? t("PASS", "ĐẠT") : t("NEEDS REVISION", "CẦN SỬA LẠI")}
+          </Badge>
         </div>
       )}
       {usePerSnapshot && parsedSnapshots.complete && !allSnapshotsPassed && (

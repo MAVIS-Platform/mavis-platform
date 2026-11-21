@@ -237,7 +237,7 @@
   --space-10: 2.5rem;
   --space-12: 3rem;
   --space-16: 4rem;
-  --sidebar-width: 16rem;
+  --sidebar-width: 15rem;
   --sidebar-collapsed: 4.5rem;
   --header-height: 4rem;
   --drawer-width: min(20rem, calc(100vw - 2rem));
@@ -362,7 +362,7 @@
 
 @container mavis-content (min-width: 1200px) { .mavis-workspace-grid { grid-template-columns: var(--filter-width) minmax(560px, 1fr) var(--detail-width); } }
 @media (min-width: 768px) { :root { --page-gutter: var(--space-6); --button-height: 2.5rem; } }
-@media (min-width: 1280px) { :root { --page-gutter: var(--space-8); } }
+@media (min-width: 1280px) { :root { --page-gutter: var(--space-6); } }
 @media (max-width: 767px) { :root { --text-page: 1.75rem; --line-page: 2.25rem; } }
 @keyframes mavis-indeterminate { 0% { transform: translateX(-110%); } 50% { transform: translateX(55%); } 100% { transform: translateX(220%); } }
 .mavis-indeterminate-bar { width: 45%; animation: mavis-indeterminate 1.35s cubic-bezier(0.4, 0, 0.2, 1) infinite; }

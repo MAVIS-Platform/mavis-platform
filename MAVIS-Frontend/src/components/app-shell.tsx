@@ -366,7 +366,12 @@ function ShellChrome({
   const activeItem = [...globalGroups, ...groups]
     .flatMap((group) => group.items)
     .find((item) => item.id === activeId);
-  const title = pageTitle ?? activeItem?.label ?? route.title;
+  const title =
+    pathname === "/submissions"
+      ? role === "lecturer"
+        ? "Grading & Gradebook"
+        : "My Grades & Submissions"
+      : (pageTitle ?? activeItem?.label ?? route.title);
   const showSidebar = live || role !== "student";
 
   useEffect(() => {
@@ -478,7 +483,7 @@ function ShellChrome({
                   <p className="mt-1 break-words text-xs font-medium">{context}</p>
                   {scope === "review" && (
                     <Badge variant="outline" className="mt-2">
-                      Submitted · read-only
+                      {t("Submitted · read-only", "Đã nộp · chỉ đọc")}
                     </Badge>
                   )}
                 </div>
@@ -509,7 +514,7 @@ function ShellChrome({
           href="#main-content"
           className="fixed left-4 top-3 z-(--z-skip-link) -translate-y-24 rounded-md bg-primary px-4 py-2 text-primary-foreground focus:translate-y-0"
         >
-          Skip to content
+          {t("Skip to content", "Chuyển đến nội dung")}
         </a>
         {showSidebar && <Sidebar collapsed={collapsed}>{navigation(collapsed)}</Sidebar>}
         <div className="flex min-w-0 flex-1 flex-col">
@@ -521,7 +526,11 @@ function ShellChrome({
                   size="icon"
                   className="hidden shrink-0 md:inline-flex"
                   onClick={toggleSidebar}
-                  aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+                  aria-label={
+                    collapsed
+                      ? t("Expand sidebar", "Mở rộng thanh bên")
+                      : t("Collapse sidebar", "Thu gọn thanh bên")
+                  }
                   aria-expanded={!collapsed}
                 >
                   {collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
@@ -532,7 +541,7 @@ function ShellChrome({
                       variant="ghost"
                       size="icon"
                       className="shrink-0 md:hidden"
-                      aria-label="Open navigation"
+                      aria-label={t("Open navigation", "Mở điều hướng")}
                     >
                       <Menu />
                     </Button>
@@ -644,17 +653,16 @@ function ShellChrome({
                       <Button
                         variant="ghost"
                         className="h-10 gap-2 rounded-xl px-2"
-                        aria-label="Profile menu"
+                        aria-label={t("Profile menu", "Menu hồ sơ")}
                       >
-                        <span className="relative flex size-8 items-center justify-center rounded-full border bg-secondary">
-                          <span className="text-xs font-semibold text-primary">
-                            {displayName
-                              .split(" ")
-                              .filter(Boolean)
-                              .map((part) => part[0])
-                              .slice(0, 2)
-                              .join("")
-                              .toUpperCase()}
+                        <span className="relative flex size-8 items-center justify-center rounded-full border border-primary/20 bg-primary text-primary-foreground">
+                          <span className="text-xs font-semibold">
+                            {(() => {
+                              const parts = displayName.trim().split(/\s+/).filter(Boolean);
+                              return parts.length > 1
+                                ? `${parts[0]?.[0] ?? ""}${parts.at(-1)?.[0] ?? ""}`.toUpperCase()
+                                : (parts[0]?.slice(0, 2).toUpperCase() ?? "MV");
+                            })()}
                           </span>
                           <span
                             aria-hidden="true"
@@ -666,7 +674,7 @@ function ShellChrome({
                             {displayName}
                           </span>
                           <span className="block text-[10px] text-muted-foreground">
-                            {roleLabels[role]}
+                            {t(roleLabels[role] ?? role)}
                           </span>
                         </span>
                         <ChevronDown className="hidden size-3 lg:block" />
@@ -676,14 +684,14 @@ function ShellChrome({
                       <DropdownMenuLabel className="px-2 py-3">
                         <span className="block text-sm">{displayName}</span>
                         <span className="mt-1 block text-xs font-normal text-muted-foreground">
-                          {roleLabels[role]}
+                          {t(roleLabels[role] ?? role)}
                         </span>
                       </DropdownMenuLabel>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem asChild>
                         <Link href="/profile">
                           <UserRound />
-                          My Profile
+                          {t("My Profile", "Hồ sơ của tôi")}
                         </Link>
                       </DropdownMenuItem>
                       {apiMode === "mock" && (
@@ -699,7 +707,7 @@ function ShellChrome({
                         }}
                       >
                         <LogOut />
-                        {signOutPending ? "Signing out…" : "Sign out"}
+                        {signOutPending ? t("Signing out…", "Đang đăng xuất…") : t("Sign out", "Đăng xuất")}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -1039,8 +1047,8 @@ function NavigationEntry({
     <Tooltip>
       <TooltipTrigger asChild>{control}</TooltipTrigger>
       <TooltipContent side="right">
-        {item.label}
-        {!preview && !item.href ? " · planned" : ""}
+        {t(item.label)}
+        {!preview && !item.href ? ` · ${t("planned", "đã lên kế hoạch")}` : ""}
       </TooltipContent>
     </Tooltip>
   ) : (

@@ -132,12 +132,15 @@ function ProfileStatistics({ role }: { role: User["role"] }) {
 }
 
 export function ProfileDetails({ user }: { user: User }) {
-  const { t } = useLocale();
+  const { t, locale, setLocale } = useLocale();
+  const activeLocale: "en" | "vi" = locale === "vi" ? "vi" : "en";
   const api = useApi();
   const update = useApiMutation("updateProfile");
   const [fullName, setFullName] = useState(user.name);
   const [avatarUrl, setAvatarUrl] = useState(user.avatarUrl ?? "");
-  const [preferredLocale, setPreferredLocale] = useState<"en" | "vi">(user.preferredLocale ?? "en");
+  const [preferredLocale, setPreferredLocale] = useState<"en" | "vi">(
+    user.preferredLocale ?? activeLocale,
+  );
   const [nameError, setNameError] = useState("");
   const [notice, setNotice] = useState("");
   const [passwordSaving, setPasswordSaving] = useState(false);
@@ -166,6 +169,7 @@ export function ProfileDetails({ user }: { user: User }) {
         preferredLocale,
       });
       setFullName(result.user?.name ?? fullName.trim());
+      setLocale?.(preferredLocale);
       setNotice("Profile updated successfully.");
     } catch {
       /* Shared mutation error displayed below. */
@@ -350,7 +354,7 @@ export function ProfileDetails({ user }: { user: User }) {
                 fullName.trim().length > 255 ||
                 (fullName.trim() === user.name &&
                   avatarUrl === (user.avatarUrl ?? "") &&
-                  preferredLocale === (user.preferredLocale ?? "en"))
+                  preferredLocale === (user.preferredLocale ?? activeLocale))
               }
               className="h-11 w-full sm:w-auto"
             >

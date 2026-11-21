@@ -212,7 +212,7 @@ export function LabAuthoring() {
   };
 
   const content = (
-    <main className="min-w-0">
+    <div className="min-w-0">
       {tab === "info" && (
         <LabInfoForm
           key={assignment?.id ?? "new-lab"}
@@ -268,7 +268,7 @@ export function LabAuthoring() {
           {t("Save the Lab information first.", "Hãy lưu thông tin Lab trước.")}
         </p>
       )}
-    </main>
+    </div>
   );
 
   const hubContent = (
