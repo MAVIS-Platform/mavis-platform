@@ -1321,11 +1321,13 @@ function StepContent({
   const [selectedGraphId, setSelectedGraphId] = useState<string | null>(null);
   const [tutorQuery, setTutorQuery] = useState<"none" | "grounded" | "out_of_scope">("none");
   const runtimeConfigurationMissing = step === 2 && !requiresRuntime;
+  const runtimePrerequisiteMissing = step === 2 && requiresRuntime && !runtimeReady && !preview;
+  const runtimeUnavailable = runtimeConfigurationMissing || runtimePrerequisiteMissing;
   const [runtimeConfigurationDialogOpen, setRuntimeConfigurationDialogOpen] = useState(false);
 
   useEffect(() => {
-    setRuntimeConfigurationDialogOpen(runtimeConfigurationMissing);
-  }, [runtimeConfigurationMissing]);
+    setRuntimeConfigurationDialogOpen(runtimeUnavailable);
+  }, [runtimeUnavailable]);
 
   const activeStudioSessionId = studioSessionId ?? studioSessions[0]?.id ?? "";
   const studioStateQuery = useApiQuery(
@@ -1403,9 +1405,7 @@ function StepContent({
   const current = resolveStepMeta(step, { hasReferenceArch, isTheoryOnlyLab, requiresRuntime });
   const Icon = current.icon;
   const next = step < 3 ? ((step + 1) as 2 | 3) : undefined;
-  const nextAvailable =
-    Boolean(preview) ||
-    (next !== undefined && (next !== 2 || runtimeReady || !requiresRuntime));
+  const nextAvailable = next !== undefined;
   const needsSandboxBootstrap = Boolean(
     !preview &&
     activeStudioSessionId &&
@@ -1422,17 +1422,24 @@ function StepContent({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {t("Runtime Studio is not configured", "Runtime Studio chưa được cấu hình")}
+              {runtimeConfigurationMissing
+                ? t("Runtime Studio is not configured", "Runtime Studio chưa được cấu hình")
+                : t("Runtime Studio is locked", "Runtime Studio chưa được mở khóa")}
             </DialogTitle>
             <DialogDescription>
-              {t(
-                "This Lab has no prepared Runtime Studio topology yet. A lecturer must configure the runtime source, topology, and Studio exercise before students can start a session.",
-                "Lab này chưa có topology Runtime Studio sẵn sàng. Giảng viên cần cấu hình nguồn runtime, topology và Studio exercise trước khi sinh viên có thể bắt đầu phiên thực hành.",
-              )}
+              {runtimeConfigurationMissing
+                ? t(
+                    "This Lab has no prepared Runtime Studio topology yet. A lecturer must configure the runtime source, topology, and Studio exercise before students can start a session.",
+                    "Lab này chưa có topology Runtime Studio sẵn sàng. Giảng viên cần cấu hình nguồn runtime, topology và Studio exercise trước khi sinh viên có thể bắt đầu phiên thực hành.",
+                  )
+                : t(
+                    "Complete the required module work, then return here to begin the Runtime Studio exercise.",
+                    "Hoàn tất các nội dung bắt buộc của Module, sau đó quay lại đây để bắt đầu thực hành Runtime Studio.",
+                  )}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            {!isStudent && (
+            {runtimeConfigurationMissing && !isStudent && (
               <Button asChild>
                 <Link
                   href={`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&tab=studio`}
@@ -2183,13 +2190,11 @@ function StepContent({
               <Link
                 href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=${next}${previewParam}`}
               >
-                {t("Next step", "Bước tiếp theo")} <ArrowRight />
+                {step === 1
+                  ? t("Continue to Runtime Studio", "Tiếp tục đến Runtime Studio")
+                  : t("Continue to Evidence & Submit", "Tiếp tục đến Evidence & Submit")} <ArrowRight />
               </Link>
-            ) : (
-              <span>
-                {t("Runtime Studio is not available yet", "Runtime Studio hiện chưa sẵn sàng")}
-              </span>
-            )}
+            ) : null}
           </Button>
         )}
       </div>
