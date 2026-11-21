@@ -100,8 +100,8 @@ export function Step2StaticImpact({
             <GitBranch className="size-4 text-teal-600" />
             <span>
               {t(
-                "Reverse BFS Impact Simulator — How to complete Step 2",
-                "Mô phỏng lan truyền lỗi Reverse BFS — Hướng dẫn thực hiện Bước 2",
+                "Reverse BFS Impact Simulator — Static impact check",
+                "Mô phỏng lan truyền lỗi Reverse BFS — Kiểm tra tác động tĩnh",
               )}
             </span>
           </div>
@@ -130,11 +130,11 @@ export function Step2StaticImpact({
           </li>
           <li className="rounded-xl border border-teal-100 bg-white/90 px-3 py-2">
             <span className="font-semibold text-teal-800">
-              {t("3. Verify 3E & move on:", "3. Đối chiếu 3E & sang Quiz:")}
+              {t("3. Verify 3E & apply:", "3. Đối chiếu 3E & thực hành:")}
             </span>{" "}
             {t(
-              "Proceed to Step 3 Quiz to unlock the interactive Studio Live Lab.",
-              "Chuyển sang Bước 3 làm Quiz kiểm tra kiến thức để mở khóa Studio Live.",
+              "Use these static findings alongside the Course Roadmap Module Quiz before entering Runtime Studio and submitting evidence.",
+              "Kết hợp kết quả tĩnh với Quiz của Module trên lộ trình trước khi vào Runtime Studio và nộp minh chứng.",
             )}
           </li>
         </ol>
