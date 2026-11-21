@@ -326,10 +326,14 @@ export function LabSourceSection({
   const readiness = useRuntimeSetupReadiness(referenceProject ?? null);
   const staticReady = (modelQuery.data?.elements.length ?? 0) > 0;
   const studioConfiguredReady = Boolean(
-    readiness.data?.preflightCompatible && readiness.data?.runnerReady,
+    readiness.data?.preflightCompatible &&
+      readiness.data?.runnerReady &&
+      (readiness.data?.runnerIssues?.length ?? 0) === 0,
   );
   const studioComposeReady = Boolean(
-    readiness.data?.preflightCompatible && !readiness.data?.configured,
+    readiness.data?.preflightCompatible &&
+      !readiness.data?.configured &&
+      (readiness.data?.runnerIssues?.length ?? 0) === 0,
   );
   const studioReady = studioConfiguredReady || studioComposeReady;
   const detectedServices = readiness.data?.detectedServices ?? [];

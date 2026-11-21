@@ -131,4 +131,42 @@ class RuntimeSetupControllerTest {
         assertTrue(readiness.suggestedContractYaml().contains("orders:\n    runtime: java\n    port: 8080\n    readinessPath: \"/actuator/health\""));
         assertTrue(readiness.suggestedContractYaml().contains("postgres:\n    role: infra"));
     }
+
+    @Test
+    void effectiveRunnerIssuesBlocksFalseGreenReadinessAndClearsOnceSandboxComposeIsValid() {
+        UUID projectId = UUID.randomUUID();
+        var mapper = new ObjectMapper();
+        var planning = mock(RuntimePlanningService.class);
+        var probe = mock(RunnerHealthProbe.class);
+        when(probe.probe()).thenReturn(new RunnerHealthProbe.Health(true, List.of()));
+
+        var unresolvedProfile = mapper.createObjectNode();
+        unresolvedProfile.putObject("applications").putObject("fruit-catalog-api").put("runtime", "dotnet8-linux-x64-musl");
+        unresolvedProfile.putObject("serviceMappings").put("fruit-catalog-api", UUID.randomUUID().toString());
+        unresolvedProfile.putArray("runnerIssues").add("Service 'fruit-catalog-api' uses build:");
+        unresolvedProfile.putArray("effectiveRunnerIssues").add("Service 'fruit-catalog-api' uses build:");
+        when(planning.configuration(projectId)).thenReturn(new RuntimePlanningService.ConfigurationView(
+                projectId, UUID.randomUUID(), UUID.randomUUID(), "SPRING_BOOT_DOTNET_COMPOSE_V1",
+                unresolvedProfile, 1, true, true, false, List.of(), List.of(), true));
+
+        var blocked = new RuntimeSetupController(planning, probe).readiness(projectId).getData();
+        assertFalse(blocked.runnerReady());
+        assertEquals("NEEDS_FIX", blocked.readinessGrade());
+        assertEquals(List.of("Service 'fruit-catalog-api' uses build:"), blocked.runnerIssues());
+
+        var resolvedProfile = mapper.createObjectNode();
+        resolvedProfile.putObject("applications").putObject("fruit-catalog-api").put("runtime", "dotnet8-linux-x64-musl");
+        resolvedProfile.putObject("serviceMappings").put("fruit-catalog-api", UUID.randomUUID().toString());
+        // Raw source compose issues stay in runnerIssues, but effectiveRunnerIssues is empty once sandboxCompose is pinned.
+        resolvedProfile.putArray("runnerIssues").add("Service 'fruit-catalog-api' uses build:");
+        resolvedProfile.putArray("effectiveRunnerIssues");
+        when(planning.configuration(projectId)).thenReturn(new RuntimePlanningService.ConfigurationView(
+                projectId, UUID.randomUUID(), UUID.randomUUID(), "SPRING_BOOT_DOTNET_COMPOSE_V1",
+                resolvedProfile, 2, true, true, true, List.of(), List.of(), true));
+
+        var ready = new RuntimeSetupController(planning, probe).readiness(projectId).getData();
+        assertTrue(ready.runnerReady());
+        assertEquals("READY", ready.readinessGrade());
+        assertTrue(ready.runnerIssues().isEmpty());
+    }
 }

@@ -55,12 +55,15 @@ public class RuntimeSetupController {
         JsonNode profile = view.profile();
         JsonNode topology = profile != null && profile.path("studioTopology").isObject()
                 ? profile.path("studioTopology") : null;
-        List<String> runnerIssues = new ArrayList<>(textArray(profile == null ? null : profile.get("runnerIssues")));
+        JsonNode issueNode = profile != null && profile.has("effectiveRunnerIssues")
+                ? profile.get("effectiveRunnerIssues")
+                : (profile == null ? null : profile.get("runnerIssues"));
+        List<String> runnerIssues = new ArrayList<>(textArray(issueNode));
         runnerIssues.addAll(health.issues());
         List<String> applications = fieldNames(profile == null ? null : profile.get("applications"));
         List<String> mappings = fieldNames(profile == null ? null : profile.get("serviceMappings"));
         List<String> detected = textArray(profile == null ? null : profile.get("detectedServices"));
-        boolean effectiveRunnerReady = view.ready() && health.ready();
+        boolean effectiveRunnerReady = view.ready() && health.ready() && runnerIssues.isEmpty();
 
         Integer traceCoveragePercent = null;
         String verifiedSessionId = null;

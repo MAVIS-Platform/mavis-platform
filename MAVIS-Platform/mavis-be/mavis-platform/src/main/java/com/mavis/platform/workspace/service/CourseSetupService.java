@@ -638,10 +638,15 @@ public class CourseSetupService {
                 String configuredRuntime = existingApp != null ? existingApp.path("runtime").asText("") : "";
                 String runtimeName = Set.of("java", "dotnet8-linux-x64-glibc", "dotnet8-linux-x64-musl", "passthrough").contains(configuredRuntime)
                         ? configuredRuntime : runtimeByName.getOrDefault(svc, "java");
+                int existingPort = existingApp != null ? existingApp.path("containerPort").asInt(0) : 0;
+                int port = (existingPort >= 1 && existingPort <= 65535)
+                        ? existingPort : containerPortByName.getOrDefault(svc, 8080);
+                boolean allowClientErrorReadiness = existingApp == null || existingApp.path("allowClientErrorReadiness").asBoolean(true);
                 apps.putObject(svc)
                         .put("runtime", runtimeName)
-                        .put("containerPort", containerPortByName.getOrDefault(svc, 8080))
-                        .put("readinessPath", existingReadiness.isBlank() ? "/health" : existingReadiness);
+                        .put("containerPort", port)
+                        .put("readinessPath", existingReadiness.isBlank() ? "/health" : existingReadiness)
+                        .put("allowClientErrorReadiness", allowClientErrorReadiness);
             }
             ObjectNode mappingsNode = profile.putObject("serviceMappings");
             serviceMappings.forEach((k, v) -> mappingsNode.put(k, v.toString()));

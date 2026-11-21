@@ -1727,4 +1727,102 @@ class RuntimePlanningServiceTest {
                     assertThat(ex.getMessage()).contains("order-service");
                 });
     }
+
+    @Test
+    @DisplayName("DOTNET COMPOSE READINESS: Blocks false-green before build-images and remediates fruit-shop-dotnet-microservices cleanly")
+    void configurationBlocksFalseGreenAndFruitShopComposeRemediatesCleanly() {
+        String digest = "sha256:" + "a".repeat(64);
+        String fruitShopCompose = """
+                services:
+                  catalog-db:
+                    image: postgres:16-alpine
+                    environment:
+                      POSTGRES_USER: ${CATALOG_DB_USER:-postgres}
+                      POSTGRES_PASSWORD: ${CATALOG_DB_PASSWORD:-postgres_dev_change_me}
+                      POSTGRES_DB: ${CATALOG_DB_NAME:-catalog_db}
+                    expose: ["5432"]
+                    volumes:
+                      - catalog_db_data:/var/lib/postgresql/data
+                    healthcheck:
+                      test: ["CMD-SHELL", "pg_isready -U ${CATALOG_DB_USER:-postgres} -d ${CATALOG_DB_NAME:-catalog_db}"]
+                    networks: [fruitshop-net]
+                  redis:
+                    image: redis:7-alpine
+                    expose: ["6379"]
+                    networks: [fruitshop-net]
+                  rabbitmq:
+                    image: rabbitmq:3.13-management-alpine
+                    environment:
+                      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+                      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+                    ports: ["15672:15672"]
+                    expose: ["5672"]
+                    networks: [fruitshop-net]
+                  fruit-catalog-api:
+                    build:
+                      context: .
+                      dockerfile: src/Services/FruitCatalog/FruitCatalog.API/Dockerfile
+                    expose: ["8080"]
+                    environment:
+                      ASPNETCORE_ENVIRONMENT: Production
+                      ConnectionStrings__CatalogDb: "Host=catalog-db;Port=5432;Database=${CATALOG_DB_NAME:-catalog_db};Username=${CATALOG_DB_USER:-postgres};Password=${CATALOG_DB_PASSWORD:-postgres_dev_change_me}"
+                      Jwt__SigningKey: ${JWT_SIGNING_KEY:-FreshFruit-SuperSecret-Dev-SigningKey-Min32Chars-2026!}
+                    networks: [fruitshop-net]
+                  api-gateway:
+                    build:
+                      context: .
+                      dockerfile: src/Gateways/ApiGateway/Dockerfile
+                    ports: ["8080:8080"]
+                    environment:
+                      DemoAuth__Password: ${DEMO_AUTH_PASSWORD:-FreshFruit@123}
+                    networks: [fruitshop-net]
+                volumes:
+                  catalog_db_data:
+                networks:
+                  fruitshop-net:
+                    driver: bridge
+                """;
+        var resolver = new com.mavis.analyzer.runtime.validator.ImageDigestResolver(
+                "postgres:16-alpine=postgres@" + digest
+                        + ",redis:7-alpine=redis@" + digest
+                        + ",rabbitmq:3.13-management-alpine=rabbitmq@" + digest);
+        var validator = new ComposePreflightValidator(resolver);
+        ReflectionTestUtils.setField(planningService, "composeValidator", validator);
+
+        // 1. Before building local images: unresolvableRunnerIssues must block ready=true
+        PreflightCheckResponseDTO preBefore = validator.validate(fruitShopCompose, Map.of());
+        assertThat(preBefore.getUnresolvableRunnerIssues()).isNotEmpty();
+
+        RuntimeConfiguration cfg = new RuntimeConfiguration();
+        cfg.setProjectId(projectId);
+        cfg.setSourceSnapshotId(snapshotId);
+        cfg.setModelVersionId(modelId);
+        cfg.setProfileId("SPRING_BOOT_DOTNET_COMPOSE_V1");
+        cfg.setProfile(json.createObjectNode());
+        cfg.setRevision(1);
+        when(projects.findById(projectId)).thenReturn(Optional.of(project));
+        when(configurations.findById(projectId)).thenReturn(Optional.of(cfg));
+        when(runtime.runComposePreflight(snapshotId)).thenReturn(preBefore);
+        ReflectionTestUtils.setField(planningService, "runnerCollectorImage", "otel/collector@" + digest);
+        ReflectionTestUtils.setField(planningService, "runnerScenarioImage", "mavis/scenario@" + digest);
+
+        var viewBefore = planningService.configuration(projectId);
+        assertThat(viewBefore.ready()).isFalse();
+        assertThat(viewBefore.profile().path("effectiveRunnerIssues").size()).isGreaterThan(0);
+
+        // 2. After building & pinning app images: remediateCompose produces a clean, redacted sandboxCompose
+        var rem = validator.remediateCompose(preBefore.getSandboxComposeYaml(), Map.of(
+                "fruit-catalog-api", digest,
+                "api-gateway", digest));
+        assertThat(rem.unresolvableIssues()).isEmpty();
+        assertThat(rem.yaml()).isEqualTo(com.mavis.analyzer.runtime.util.SecretRedactor.redactString(rem.yaml()));
+        var postCheck = validator.validate(rem.yaml(), Map.of());
+        assertThat(postCheck.isCompatible()).isTrue();
+        assertThat(postCheck.getRunnerIssues()).isEmpty();
+
+        ((ObjectNode) cfg.getProfile()).put("sandboxCompose", rem.yaml());
+        var viewAfter = planningService.configuration(projectId);
+        assertThat(viewAfter.ready()).isTrue();
+        assertThat(viewAfter.profile().path("effectiveRunnerIssues").size()).isZero();
+    }
 }

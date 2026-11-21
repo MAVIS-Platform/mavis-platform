@@ -149,10 +149,37 @@ public class RuntimePlanningService {
     pre.getServiceImageOverrides().forEach((k,v)->{if(!overrides.hasNonNull(k)||overrides.get(k).asText("").isBlank())overrides.put(k,v);});
    }
   }
+  List<String> effectiveIssues=effectiveRunnerIssues(profileNode,pre);
+  profileNode.set("effectiveRunnerIssues",json.valueToTree(effectiveIssues));
+  boolean composeRunnerReady=effectiveIssues.isEmpty();
   boolean imagesReady=runnerImagesConfigured()||profileHasPinnedRunnerImages(profileNode);
   if(!imagesReady)warnings.add("Sandbox runner images are not configured (MAVIS_RUNNER_COLLECTOR_IMAGE, MAVIS_RUNNER_SCENARIO_RUNNER_IMAGE); runs cannot start until an operator sets them");
   if(!environments.isConfigured())warnings.add("MAVIS_RUNTIME_ENVIRONMENT_KEY is not configured; changed environment values, generated sandbox secrets and request bodies cannot be delivered to the runner");
-  return new ConfigurationView(id,snapshot,c==null?null:c.getModelVersionId(),c==null?"SPRING_BOOT_DOTNET_COMPOSE_V1":c.getProfileId(),profileNode,c==null?0:c.getRevision(),c!=null,supported,c!=null&&supported&&enabled&&imagesReady,warnings,warnings,true);
+  return new ConfigurationView(id,snapshot,c==null?null:c.getModelVersionId(),c==null?"SPRING_BOOT_DOTNET_COMPOSE_V1":c.getProfileId(),profileNode,c==null?0:c.getRevision(),c!=null,supported,c!=null&&supported&&enabled&&imagesReady&&composeRunnerReady,warnings,warnings,true);
+ }
+
+ // Mirrors RuntimeSessionServiceImpl.validateLabStudioCompose so readiness never reports green before sandboxCompose is valid.
+ private List<String> effectiveRunnerIssues(ObjectNode profileNode,PreflightCheckResponseDTO pre){
+  String savedCompose=profileNode!=null?profileNode.path("sandboxCompose").asText(""):"";
+  if(!savedCompose.isBlank()&&composeValidator!=null){
+   var checked=composeValidator.validate(savedCompose,Map.of());
+   List<String> issues=new ArrayList<>();
+   if(!checked.isCompatible()&&checked.getSecurityWarnings()!=null)issues.addAll(checked.getSecurityWarnings());
+   if(checked.getRunnerIssues()!=null)issues.addAll(checked.getRunnerIssues());
+   return issues;
+  }
+  if(pre==null)return List.of();
+  if(pre.getUnresolvableRunnerIssues()!=null&&!pre.getUnresolvableRunnerIssues().isEmpty()){
+   return new ArrayList<>(pre.getUnresolvableRunnerIssues());
+  }
+  if(pre.getSandboxComposeYaml()!=null&&!pre.getSandboxComposeYaml().isBlank()&&composeValidator!=null){
+   var checked=composeValidator.validate(pre.getSandboxComposeYaml(),Map.of());
+   List<String> issues=new ArrayList<>();
+   if(!checked.isCompatible()&&checked.getSecurityWarnings()!=null)issues.addAll(checked.getSecurityWarnings());
+   if(checked.getRunnerIssues()!=null)issues.addAll(checked.getRunnerIssues());
+   return issues;
+  }
+  return pre.getRunnerIssues()!=null?new ArrayList<>(pre.getRunnerIssues()):List.of();
  }
 
  @Transactional
@@ -165,7 +192,8 @@ public class RuntimePlanningService {
   var source=sources.findById(snapshotId).orElseThrow(()->new BusinessException(ErrorCode.NOT_FOUND));
   if(!source.getProject().getId().equals(id))throw new BusinessException(ErrorCode.BAD_REQUEST,"Snapshot scope mismatch");
   var res=imageBuilder.buildSnapshotImages(id,snapshotId,java.nio.file.Paths.get(source.getStoragePath()),r!=null?r.services():null);
-  if(!res.builtImages().isEmpty()){
+  boolean needsSandboxCompose=c==null||c.getProfile()==null||c.getProfile().path("sandboxCompose").asText("").isBlank();
+  if(!res.builtImages().isEmpty()||(res.errors().isEmpty()&&needsSandboxCompose)){
    if(c==null||!snapshotId.equals(c.getSourceSnapshotId())){
     var model=models.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(id).orElse(null);
     if(model!=null&&"RUNTIME_ENRICHED".equalsIgnoreCase(model.getOrigin())&&model.getBaseModelVersion()!=null)model=model.getBaseModelVersion();
@@ -236,7 +264,7 @@ public class RuntimePlanningService {
   boolean isStep1Form=rawProfile.has("serviceMappings")||rawProfile.has("environmentVariables")||rawProfile.has("secretReferences")||rawProfile.has("secretValues")||rawProfile.has("serviceRoles")||rawProfile.has("serviceImageOverrides");
   if(!isStep1Form)return rawProfile;
   ObjectNode p=(ObjectNode)rawProfile.deepCopy();
-  for(String transientField:List.of("detectedServices","composeServices","servicePorts","serviceStacks","detectedEndpoints","databaseChecks","requiredEnvVars","runnerIssues","infrastructureServices","serviceHealthPaths","serviceHealthConfidence","serviceHealthReasons","sandboxComposeYaml","sandboxComposeChanges","unresolvableRunnerIssues","recommendedServiceMappings","modelServiceNames","localImageBuildAvailable","configuredSecretKeys")){
+  for(String transientField:List.of("detectedServices","composeServices","servicePorts","serviceStacks","detectedEndpoints","databaseChecks","requiredEnvVars","runnerIssues","effectiveRunnerIssues","infrastructureServices","serviceHealthPaths","serviceHealthConfidence","serviceHealthReasons","sandboxComposeYaml","sandboxComposeChanges","unresolvableRunnerIssues","recommendedServiceMappings","modelServiceNames","localImageBuildAvailable","configuredSecretKeys")){
    p.remove(transientField);
   }
   Map<String,String> secretsToStore=new LinkedHashMap<>();

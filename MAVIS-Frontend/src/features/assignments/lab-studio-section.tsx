@@ -20,7 +20,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/shared/request-state";
-import { useApiQuery } from "@/hooks/use-api";
+import { useApiMutation, useApiQuery } from "@/hooks/use-api";
 import { api } from "@/lib/mainflow-api";
 import { useLocale } from "@/lib/i18n/locale-context";
 import {
@@ -62,8 +62,11 @@ export function LabStudioSection({
     retry: false,
   });
   const projectId = assignment.referenceSource?.projectId ?? exercise.data?.runtimeProjectId ?? null;
+  const snapshotId =
+    assignment.referenceSource?.snapshotId ?? exercise.data?.runtimeSnapshotId ?? undefined;
   const readiness = useRuntimeSetupReadiness(projectId);
   const setup = useCourseSetup(workspaceId);
+  const buildImages = useApiMutation("buildRuntimeSandboxImages");
   const autoStudio = useAutoConfigureStudio(workspaceId, assignment.id);
   const runtimeConfig = useApiQuery(
     "runtimeConfiguration",
@@ -83,6 +86,8 @@ export function LabStudioSection({
 
   const [configModalOpen, setConfigModalOpen] = useState(false);
   const [configTab, setConfigTab] = useState<ConfigTab>("exercise");
+  const [prepareStage, setPrepareStage] = useState<"idle" | "building" | "configuring">("idle");
+  const [prepareError, setPrepareError] = useState<string | null>(null);
 
   const previewTopology = useMemo(
     () =>
@@ -103,7 +108,8 @@ export function LabStudioSection({
   const isRuntimeReady = Boolean(
     readiness.data?.configured &&
       readiness.data?.preflightCompatible &&
-      readiness.data?.runnerReady,
+      readiness.data?.runnerReady &&
+      (readiness.data?.runnerIssues?.length ?? 0) === 0,
   );
   const published = setupLab?.published === true;
   const sessionList = [
@@ -115,7 +121,8 @@ export function LabStudioSection({
   const verifiedSession = sessionList.find(
     (session) => session.assignmentId === assignment.id && session.studioVerified,
   );
-  const studioReadyToLaunch = isRuntimeReady || Boolean(previewTopology) || sessionList.length > 0;
+  const studioReadyToLaunch = isRuntimeReady;
+  const isPreparing = prepareStage !== "idle" || buildImages.isPending || autoStudio.isPending;
 
   const returnTo = `/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignment.id)}&tab=studio`;
   const studioLiveHref = buildStudioLiveHref({
@@ -133,20 +140,63 @@ export function LabStudioSection({
     ? previewTopology.blocks.map((block) => block.service)
     : availableApplications;
 
-  const runPrepareRuntime = (openAfter: boolean) => {
-    autoStudio.mutate(undefined, {
-      onSuccess: () => {
-        const synced = Promise.all([
-          exercise.refetch(),
-          runtimeConfig.refetch(),
-          readiness.refetch(),
-          setup.refetch(),
-        ]);
-        if (openAfter) {
-          void synced.finally(() => router.push(studioLiveHref));
+  const runPrepareRuntime = async (openAfter: boolean) => {
+    if (!projectId || isPreparing) return;
+    setPrepareError(null);
+    try {
+      // Build & pin local Docker images + generate Runner-safe sandboxCompose whenever preflight has unresolved issues or Sync Docker is triggered.
+      if (!isRuntimeReady || readinessBlockers.length > 0 || !openAfter) {
+        setPrepareStage("building");
+        const built = await buildImages.mutateAsync({
+          projectId,
+          ...(snapshotId ? { snapshotId } : {}),
+        });
+        if (
+          built.errors?.length &&
+          Object.keys(built.builtImages ?? {}).length === 0
+        ) {
+          setPrepareError(built.errors.join("; "));
+          return;
         }
-      },
-    });
+      }
+      setPrepareStage("configuring");
+      await autoStudio.mutateAsync();
+      const [, , freshReadiness] = await Promise.all([
+        exercise.refetch(),
+        runtimeConfig.refetch(),
+        readiness.refetch(),
+        setup.refetch(),
+      ]);
+      const readyNow = Boolean(
+        freshReadiness.data?.configured &&
+          freshReadiness.data?.preflightCompatible &&
+          freshReadiness.data?.runnerReady &&
+          (freshReadiness.data?.runnerIssues?.length ?? 0) === 0,
+      );
+      if (openAfter) {
+        if (readyNow) {
+          router.push(studioLiveHref);
+        } else {
+          const remaining = freshReadiness.data?.runnerIssues ?? [];
+          setPrepareError(
+            remaining.length > 0
+              ? remaining[0]!
+              : t(
+                  "Docker runtime still has unresolved Runner requirements. Review the Docker preflight check above and retry Sync Docker.",
+                  "Docker runtime vẫn còn yêu cầu Runner chưa được giải quyết. Kiểm tra mục Kiểm tra Docker phía trên rồi bấm Đồng bộ Docker lại.",
+                ),
+          );
+        }
+      }
+    } catch (err) {
+      setPrepareError(
+        err instanceof Error
+          ? err.message
+          : t("Failed to prepare Docker runtime.", "Không thể chuẩn bị Docker runtime."),
+      );
+    } finally {
+      setPrepareStage("idle");
+    }
   };
 
   return (
@@ -174,16 +224,18 @@ export function LabStudioSection({
                   type="button"
                   size="sm"
                   variant="outline"
-                  disabled={autoStudio.isPending}
-                  onClick={() => runPrepareRuntime(false)}
+                  disabled={isPreparing}
+                  onClick={() => void runPrepareRuntime(false)}
                 >
                   <RefreshCw
-                    className={`mr-1.5 size-3.5 ${autoStudio.isPending ? "animate-spin" : ""}`}
+                    className={`mr-1.5 size-3.5 ${isPreparing ? "animate-spin" : ""}`}
                     aria-hidden="true"
                   />
-                  {autoStudio.isPending
-                    ? t("Syncing…", "Đang đồng bộ…")
-                    : t("Sync Docker", "Đồng bộ Docker")}
+                  {prepareStage === "building"
+                    ? t("Building Docker…", "Đang build Docker…")
+                    : isPreparing
+                      ? t("Syncing…", "Đang đồng bộ…")
+                      : t("Sync Docker", "Đồng bộ Docker")}
                 </Button>
               )}
               <Button
@@ -210,7 +262,18 @@ export function LabStudioSection({
           )}
         </div>
 
-        {autoStudio.error && <ErrorState error={autoStudio.error} />}
+        {prepareError && (
+          <div
+            role="alert"
+            className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-xs text-destructive"
+          >
+            {prepareError}
+          </div>
+        )}
+        {!prepareError && buildImages.error && <ErrorState error={buildImages.error} />}
+        {!prepareError && !buildImages.error && autoStudio.error && (
+          <ErrorState error={autoStudio.error} />
+        )}
 
         {!projectId ? (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
@@ -267,13 +330,18 @@ export function LabStudioSection({
             <div className="mt-6 flex flex-wrap items-center justify-center gap-2.5">
               <Button
                 type="button"
-                disabled={autoStudio.isPending}
-                onClick={() => runPrepareRuntime(true)}
+                disabled={isPreparing}
+                onClick={() => void runPrepareRuntime(true)}
               >
                 <Play className="mr-1.5 size-4" aria-hidden="true" />
-                {autoStudio.isPending
-                  ? t("Preparing Docker runtime…", "Đang chuẩn bị Docker runtime…")
-                  : t("Prepare Runtime & Open Studio", "Chuẩn bị Runtime & Mở Studio")}
+                {prepareStage === "building"
+                  ? t(
+                      "Building & pinning Docker images…",
+                      "Đang build & ghim Docker image…",
+                    )
+                  : isPreparing
+                    ? t("Preparing Docker runtime…", "Đang chuẩn bị Docker runtime…")
+                    : t("Prepare Runtime & Open Studio", "Chuẩn bị Runtime & Mở Studio")}
               </Button>
               <Button
                 type="button"
@@ -494,10 +562,10 @@ export function LabStudioSection({
                   <Button
                     type="button"
                     size="sm"
-                    disabled={autoStudio.isPending}
-                    onClick={() => runPrepareRuntime(false)}
+                    disabled={isPreparing}
+                    onClick={() => void runPrepareRuntime(false)}
                   >
-                    {autoStudio.isPending
+                    {isPreparing
                       ? t("Preparing…", "Đang chuẩn bị…")
                       : t("Prepare Runtime", "Chuẩn bị Runtime")}
                   </Button>
