@@ -35,6 +35,9 @@ public class RuntimeStudioService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private StudioTelemetryHub telemetryHub;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private jakarta.persistence.EntityManager entityManager;
+
     public record ActionRequest(@NotNull UUID actionId,
                                 @NotNull @Pattern(regexp="START|STOP|SCALE|PAUSE|RESUME|THROTTLE_CPU|SET_LOAD|SET_ENV|SWAP_VERSION") String action,
                                 @NotBlank @Size(max=128) String service,
@@ -106,6 +109,8 @@ public class RuntimeStudioService {
                 return mapper.createObjectNode().put("sessionId", id.toString()).put("resourceProject", request.resourceProject());
             }
         }
+        // Detach the unlocked L1 entity before acquiring the row lock so concurrent snapshots/actions are never overwritten.
+        if (entityManager != null) entityManager.detach(session);
         RuntimeSession lockedSession = locked(id);
         if (!request.resourceProject().equals(lockedSession.getResourceProject()))
             throw error(ErrorCode.CONFLICT, "Runner allocation mismatch.");
@@ -449,6 +454,16 @@ public class RuntimeStudioService {
             }
             if (!confirmed) throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "INCOMPLETE_SCENARIO",
                     "Perform a confirmed action before saving Studio evidence. Cancel the session to discard it.");
+            JsonNode exerciseCriteria = extractExerciseCriteria(session);
+            if (exerciseCriteria != null || control.hasNonNull("prediction")) {
+                StudioTelemetryHub.SessionSnapshot liveSnapshot = telemetryHub != null ? telemetryHub.latest(id).orElse(null) : null;
+                JsonNode effectiveTelemetry = liveSnapshot != null && liveSnapshot.latestTelemetry() != null
+                        ? liveSnapshot.latestTelemetry()
+                        : (control.hasNonNull("telemetry") ? control.get("telemetry") : null);
+                java.util.List<JsonNode> history = liveSnapshot != null ? liveSnapshot.history() : java.util.List.of();
+                control.set("finalExerciseEvaluation",
+                        StudioExerciseEvaluator.evaluate(mapper, exerciseCriteria, control, effectiveTelemetry, history));
+            }
             control.put("finishRequested", true);
             if (control.path("simulatedSandbox").asBoolean(false)) {
                 completeSimulatedSession(session, control);
@@ -495,6 +510,8 @@ public class RuntimeStudioService {
             return response.put("finishRequested", finishRequested).put("cancelRequested", false);
         }
         // Only lock the session row and rewrite studio_control when actually claiming a PENDING action.
+        // Detach the unlocked L1 entity before acquiring the row lock so concurrent snapshots/actions are never overwritten.
+        if (entityManager != null) entityManager.detach(session);
         RuntimeSession lockedSession = locked(id);
         if (!resourceProject.equals(lockedSession.getResourceProject())) throw error(ErrorCode.CONFLICT, "Runner allocation mismatch.");
         if (lockedSession.getCancelRequestedAt() != null) {
@@ -623,9 +640,13 @@ public class RuntimeStudioService {
             result.set("exerciseCriteria", exerciseCriteria.deepCopy());
         }
         if (interactive && (exerciseCriteria != null || result.hasNonNull("prediction"))) {
-            JsonNode effectiveTelemetry = result.hasNonNull("telemetry") ? result.get("telemetry") : null;
-            result.set("exerciseEvaluation",
-                    StudioExerciseEvaluator.evaluate(mapper, exerciseCriteria, result, effectiveTelemetry, historyList));
+            if (terminal && result.hasNonNull("finalExerciseEvaluation") && result.get("finalExerciseEvaluation").isObject()) {
+                result.set("exerciseEvaluation", result.get("finalExerciseEvaluation").deepCopy());
+            } else {
+                JsonNode effectiveTelemetry = result.hasNonNull("telemetry") ? result.get("telemetry") : null;
+                result.set("exerciseEvaluation",
+                        StudioExerciseEvaluator.evaluate(mapper, exerciseCriteria, result, effectiveTelemetry, historyList));
+            }
         }
         var services = result.putArray("services");
         JsonNode topology = null;

@@ -466,4 +466,44 @@ class CourseAccessServiceTest {
         assertNull(assignment.getLabOrder());
     }
 
+    @Test
+    void publishKeepsExplicitTheoryQuizLabNonStudioWhenReusingStudioConfiguredRepo() {
+        var labStudioExercises = mock(com.mavis.common.repository.LabStudioExerciseRepository.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(courses, "labStudioExercises", labStudioExercises);
+        when(access.requireCurrentActiveUser()).thenReturn(User.builder().id(UUID.randomUUID()).build());
+        when(workspaces.findLockedById(workspaceId)).thenReturn(Optional.of(workspace));
+        when(assignments.findLockedById(assignmentId)).thenReturn(Optional.of(assignment));
+        when(assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId)).thenReturn(List.of());
+        when(labStudioExercises.findByAssignmentId(assignmentId)).thenReturn(Optional.empty());
+        when(jdbc.queryForObject(contains("FROM course_quizzes"), eq(Integer.class), eq(assignmentId))).thenReturn(1);
+
+        var project = Project.builder().id(UUID.randomUUID()).workspace(workspace).status("ACTIVE")
+                .projectType("TEACHER_REFERENCE").isReferenceTemplate(true).build();
+        var source = SourceSnapshot.builder().id(UUID.randomUUID()).project(project).isPublished(true)
+                .sourceType("GITHUB_COMMIT").commitSha("1".repeat(40))
+                .artifactHash("a".repeat(64)).storagePath("reference.zip").build();
+        var model = ModelVersion.builder().id(UUID.randomUUID()).sourceSnapshot(source).build();
+        var mapper = new ObjectMapper();
+        assignment.setReferenceModel(model);
+        assignment.setLabMode("THEORY_QUIZ");
+        assignment.setRequireRuntimeTrace(false);
+        assignment.setAiPolicy(mapper.createObjectNode().put("labTier", "THEORY_QUIZ").put("skipQuiz", false));
+
+        var profile = mapper.createObjectNode();
+        profile.putObject("studioTopology").put("version", 1).putArray("blocks").addObject().put("service", "orders");
+        var cfg = new RuntimeConfiguration();
+        cfg.setProjectId(project.getId());
+        cfg.setSourceSnapshotId(source.getId());
+        cfg.setModelVersionId(model.getId());
+        cfg.setProfile(profile);
+        cfg.setRevision(3);
+        when(configurations.findById(project.getId())).thenReturn(Optional.of(cfg));
+
+        courses.publish(workspaceId, assignmentId);
+
+        assertNull(assignment.getStudioTopologySnapshot());
+        assertEquals("THEORY_QUIZ", assignment.getLabMode());
+        assertEquals(Boolean.FALSE, assignment.getRequireRuntimeTrace());
+    }
+
 }

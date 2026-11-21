@@ -482,6 +482,14 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
                     after = await ReadServiceState(service, ct);
                 }
             }
+            else if (action == "PAUSE" && (after.paused == 0 || after.running > 0))
+            {
+                for (var settle = 0; settle < 4 && (after.paused == 0 || after.running > 0); settle++)
+                {
+                    await Task.Delay(250, ct);
+                    after = await ReadServiceState(service, ct);
+                }
+            }
             var expected = action switch
             {
                 "STOP" => before.running > 0 && after.running == 0,

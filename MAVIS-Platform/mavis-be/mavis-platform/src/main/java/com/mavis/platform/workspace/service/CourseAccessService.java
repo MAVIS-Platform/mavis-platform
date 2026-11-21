@@ -143,8 +143,14 @@ public class CourseAccessService {
             }
             referenceArchive.resolve(snapshot, true);
         }
-        copyTopologySnapshot(assignment);
-        copyExerciseSnapshot(assignment);
+        String explicitTier = assignment.getAiPolicy() == null ? "" : assignment.getAiPolicy().path("labTier").asText("");
+        boolean explicitNonStudio = ("THEORY_ONLY".equalsIgnoreCase(explicitTier) || "THEORY_QUIZ".equalsIgnoreCase(explicitTier))
+                && !Boolean.TRUE.equals(assignment.getRequireRuntimeTrace())
+                && (labStudioExercises == null || labStudioExercises.findByAssignmentId(assignmentId).isEmpty());
+        if (!explicitNonStudio) {
+            copyTopologySnapshot(assignment);
+            copyExerciseSnapshot(assignment);
+        }
         if (assignment.getStudioExerciseSnapshot() != null && assignment.getStudioTopologySnapshot() == null) {
             throw new BusinessException(ErrorCode.CONFLICT, "STUDIO_READINESS_BLOCKED",
                     "Studio Live exercise is configured, but Docker runtime topology is not ready yet. Run Sync Docker in Step 5 before publishing.");

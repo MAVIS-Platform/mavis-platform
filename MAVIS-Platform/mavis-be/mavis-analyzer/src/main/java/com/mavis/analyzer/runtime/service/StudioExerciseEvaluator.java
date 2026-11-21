@@ -60,7 +60,7 @@ public final class StudioExerciseEvaluator {
         boolean hasChange = primaryChange != null;
 
         List<JsonNode> frames = historyFrames != null ? historyFrames : List.of();
-        WindowSplit split = splitBeforeAfter(frames, primaryChange, latestTelemetry);
+        WindowSplit split = splitBeforeAfter(frames, primaryChange, confirmedActions, latestTelemetry);
 
         Map<String, ServiceImpact> observedMap = detectObservedAffectedServices(
                 confirmedActions, primaryChange, split.before(), split.after(), latestTelemetry);
@@ -195,7 +195,11 @@ public final class StudioExerciseEvaluator {
         return confirmedActions.get(0);
     }
 
-    private static WindowSplit splitBeforeAfter(List<JsonNode> history, JsonNode changeAction, JsonNode latestTelemetry) {
+    private static WindowSplit splitBeforeAfter(
+            List<JsonNode> history,
+            JsonNode changeAction,
+            List<JsonNode> confirmedActions,
+            JsonNode latestTelemetry) {
         List<JsonNode> all = new ArrayList<>(history);
         if (all.isEmpty() && latestTelemetry != null && latestTelemetry.isObject()) {
             return new WindowSplit(List.of(), List.of(latestTelemetry));
@@ -214,6 +218,21 @@ public final class StudioExerciseEvaluator {
         List<JsonNode> after = new ArrayList<>();
         Instant beforeFloor = changeStart.minusSeconds(30);
         Instant afterCeiling = changeEnd.plusSeconds(30);
+        // Stop the post-fault window before a subsequent RESUME/START recovery on the same service dilutes the observed impact.
+        String primaryAction = changeAction.path("action").asText("").trim().toUpperCase(Locale.ROOT);
+        String primaryService = changeAction.path("service").asText("").trim();
+        if (("PAUSE".equals(primaryAction) || "STOP".equals(primaryAction)) && confirmedActions != null) {
+            for (JsonNode candidate : confirmedActions) {
+                if (candidate == changeAction) continue;
+                String act = candidate.path("action").asText("").trim().toUpperCase(Locale.ROOT);
+                String svc = candidate.path("service").asText("").trim();
+                if (!primaryService.equals(svc) || !("RESUME".equals(act) || "START".equals(act))) continue;
+                Instant recoveryStart = parseInstant(candidate.path("requestedAt").asText(""));
+                if (recoveryStart != null && recoveryStart.isAfter(changeEnd) && recoveryStart.isBefore(afterCeiling)) {
+                    afterCeiling = recoveryStart;
+                }
+            }
+        }
         for (JsonNode frame : all) {
             Instant ts = parseInstant(frame.path("observedAt").asText(""));
             if (ts == null) continue;

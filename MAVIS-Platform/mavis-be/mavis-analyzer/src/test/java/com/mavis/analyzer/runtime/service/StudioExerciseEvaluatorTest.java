@@ -115,6 +115,38 @@ class StudioExerciseEvaluatorTest {
         assertTrue(eval.path("rules").get(0).path("reason").asText().contains("Lock your Change Impact prediction"));
     }
 
+    @Test
+    void resumeRecoveryDoesNotDilutePauseChangeImpactF1() {
+        ObjectNode criteria = mapper.createObjectNode()
+                .put("exerciseType", "CHANGE_IMPACT")
+                .put("predictionRequired", true)
+                .put("minImpactF1", 0.70);
+        criteria.putObject("targetChangeAction").put("action", "PAUSE").put("service", "payment");
+
+        ObjectNode control = mapper.createObjectNode();
+        control.putObject("prediction").putArray("predictedServices").add("orders").add("payment");
+        ArrayNode actions = control.putArray("actions");
+        ObjectNode pause = actions.addObject()
+                .put("action", "PAUSE").put("service", "payment").put("status", "CONFIRMED")
+                .put("requestedAt", "2026-11-21T10:00:10Z").put("completedAt", "2026-11-21T10:00:12Z");
+        pause.putObject("result").put("replicasBefore", 1).put("replicasAfter", 0);
+        ObjectNode resume = actions.addObject()
+                .put("action", "RESUME").put("service", "payment").put("status", "CONFIRMED")
+                .put("requestedAt", "2026-11-21T10:00:20Z").put("completedAt", "2026-11-21T10:00:21Z");
+        resume.putObject("result").put("replicasBefore", 0).put("replicasAfter", 1);
+
+        ObjectNode beforeFrame = frame("2026-11-21T10:00:05Z", 1, 1, 0.0, 20.0, 0.0, 12.0);
+        ObjectNode faultFrame = frame("2026-11-21T10:00:15Z", 1, 0, 100.0, 3000.0, 100.0, 3000.0);
+        ObjectNode recovered1 = frame("2026-11-21T10:00:23Z", 1, 1, 0.0, 18.0, 0.0, 10.0);
+        ObjectNode recovered2 = frame("2026-11-21T10:00:26Z", 1, 1, 0.0, 18.0, 0.0, 10.0);
+
+        ObjectNode eval = StudioExerciseEvaluator.evaluate(
+                mapper, criteria, control, recovered2, List.of(beforeFrame, faultFrame, recovered1, recovered2));
+
+        assertEquals(1.0, eval.path("impact").path("f1Score").asDouble(), 0.001);
+        assertTrue(eval.path("passed").asBoolean());
+    }
+
     private ObjectNode frame(String observedAt, int ordersRep, int paymentRep,
                              double probeErr, double probeP95, double edgeErr, double edgeP95) {
         ObjectNode f = mapper.createObjectNode().put("observedAt", observedAt);

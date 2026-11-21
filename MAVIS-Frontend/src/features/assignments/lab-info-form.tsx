@@ -10,7 +10,7 @@ import { ErrorState } from "@/components/shared/request-state";
 import { MarkdownPreview } from "@/components/shared/markdown-preview";
 import { useApiMutation } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
-import type { Assignment } from "./requirements";
+import { resolveLabTier, type Assignment } from "./requirements";
 
 function toDateTimeLocalValue(iso: string | null | undefined): string {
   if (!iso || iso === "No deadline") return "";
@@ -35,13 +35,7 @@ export function LabInfoForm({
   const [title, setTitle] = useState(assignment?.title ?? "");
   const [instructions, setInstructions] = useState(assignment?.instructions ?? "");
   const [labMode, setLabMode] = useState<"THEORY_ONLY" | "THEORY_QUIZ" | "THEORY_QUIZ_STUDIO">(
-    assignment?.labMode === "THEORY_ONLY" ||
-      assignment?.labMode === "THEORY_QUIZ" ||
-      assignment?.labMode === "THEORY_QUIZ_STUDIO"
-      ? assignment.labMode
-      : assignment?.requireRuntimeTrace
-        ? "THEORY_QUIZ_STUDIO"
-        : "THEORY_QUIZ",
+    assignment ? resolveLabTier(assignment) : "THEORY_QUIZ",
   );
   const [dueLocal, setDueLocal] = useState(() => toDateTimeLocalValue(assignment?.dueAt));
   const [guideTab, setGuideTab] = useState<"write" | "preview">("write");
@@ -57,6 +51,8 @@ export function LabInfoForm({
     const parsedDue = dueLocal ? new Date(dueLocal) : null;
     const dueAtIso =
       parsedDue && !Number.isNaN(parsedDue.getTime()) ? parsedDue.toISOString() : null;
+    // DB lab_mode CHECK constraint allows LEGACY|THEORY_QUIZ|THEORY_QUIZ_STUDIO; THEORY_ONLY lives in aiPolicy.labTier.
+    const persistedLabMode = labMode === "THEORY_ONLY" ? "THEORY_QUIZ" : labMode;
     const payload: Record<string, unknown> = {
       workspaceId,
       ...(assignment ? { assignmentId: assignment.id } : {}),
@@ -64,7 +60,7 @@ export function LabInfoForm({
       description: instructions,
       dueAt: dueAtIso,
       requireRuntimeTrace: labMode === "THEORY_QUIZ_STUDIO",
-      labMode,
+      labMode: persistedLabMode,
       aiPolicy: {
         ...existingPolicy,
         labTier: labMode,
@@ -233,7 +229,9 @@ export function LabInfoForm({
         <Button type="submit" disabled={save.isPending || !title.trim()}>
           {save.isPending
             ? t("Saving Lab draft…", "Đang lưu bản nháp Lab…")
-            : t("Next Step 2: Reference Source", "Sang Bước 2: Nguồn tham chiếu")}
+            : labMode === "THEORY_ONLY"
+              ? t("Next Step 3: Lab Theory", "Sang Bước 3: Lý thuyết Lab")
+              : t("Next Step 2: Reference Source", "Sang Bước 2: Nguồn tham chiếu")}
           <ArrowRight className="ml-1.5 size-4" aria-hidden="true" />
         </Button>
       </div>

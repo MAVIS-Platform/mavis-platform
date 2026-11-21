@@ -28,7 +28,7 @@ import { CourseWorkspaceShell } from "@/features/courses/course-workspace-shell"
 import { useCourseAuthoring, useCourseSetup } from "@/features/workspaces/course-access";
 import { TheoryLibrary } from "@/features/workspaces/theory-library";
 import { Assignments } from "./screens";
-import { type Assignment } from "./requirements";
+import { resolveLabTier, type Assignment } from "./requirements";
 import { LabInfoForm } from "./lab-info-form";
 import { LabTheorySection } from "./lab-theory-section";
 import { LabSourceSection } from "./lab-source-section";
@@ -144,7 +144,7 @@ export function LabAuthoring() {
   };
 
   const onSaved = (saved: Assignment) => {
-    const nextTab: Tab = "source";
+    const nextTab: Tab = resolveLabTier(saved) === "THEORY_ONLY" ? "theory" : "source";
     setCreatedAssignmentId(saved.id);
     setTab(nextTab);
     const query = new URLSearchParams(params?.toString() ?? "");
