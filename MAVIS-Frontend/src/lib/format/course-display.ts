@@ -1,3 +1,21 @@
+export function formatLabModeLabel(
+  labMode: string | null | undefined,
+  t: (en: string, vi?: string) => string,
+): string {
+  switch ((labMode ?? "").trim().toUpperCase()) {
+    case "THEORY_QUIZ_STUDIO":
+      return t("Theory + Quiz + Studio", "Lý thuyết + Quiz + Studio");
+    case "THEORY_QUIZ":
+      return t("Theory + Quiz", "Lý thuyết + Quiz");
+    case "THEORY_ONLY":
+      return t("Theory Only", "Chỉ lý thuyết");
+    case "LEGACY":
+      return t("Standard Lab", "Lab tiêu chuẩn");
+    default:
+      return (labMode ?? "").replace(/_/g, " ");
+  }
+}
+
 export function decodePlainTextEntities(value?: string | null): string {
   if (!value) return "";
   return value

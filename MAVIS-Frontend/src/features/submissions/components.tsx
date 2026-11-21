@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useApiMutation, useApiQuery, useSession, usePermission } from "@/hooks/use-api";
 import type { Submission } from "@/types/domain";
 import { useLocale } from "@/lib/i18n/locale-context";
-import { formatCourseLabTitle } from "@/lib/format/course-display";
+import { formatCourseLabTitle, formatLabModeLabel } from "@/lib/format/course-display";
 export function SubmissionVersionHeader({ submission }: { submission: Submission }) {
   const { t } = useLocale();
   const canReview = usePermission("submission:review");
@@ -30,7 +30,13 @@ export function SubmissionVersionHeader({ submission }: { submission: Submission
             status={t("Frozen submitted dossier · read-only", "Hồ sơ đã khóa · chỉ đọc")}
             variant="source"
           />
-          {submission.labMode && <StatusBadge status={submission.labMode} variant="outline" />}
+          {submission.labMode && (
+            <StatusBadge
+              status={formatLabModeLabel(submission.labMode, t)}
+              preserveCase
+              variant="outline"
+            />
+          )}
           {submission.runtime?.studioVerified && (
             <StatusBadge
               status={t("Studio Live Verified", "Đã xác minh Studio Live")}
@@ -76,7 +82,13 @@ export function SubmissionVersionHeader({ submission }: { submission: Submission
           status={t("Frozen submitted results · read-only", "Kết quả nộp đã khóa · chỉ đọc")}
           variant="source"
         />
-        {submission.labMode && <StatusBadge status={submission.labMode} variant="outline" />}
+        {submission.labMode && (
+          <StatusBadge
+            status={formatLabModeLabel(submission.labMode, t)}
+            preserveCase
+            variant="outline"
+          />
+        )}
       </div>
       <p className="break-all text-xs text-muted-foreground">
         {t("Submission", "Bài nộp")} {submission.id} · {t("submitted", "đã nộp")}{" "}
@@ -102,7 +114,9 @@ export function SubmissionVersionHeader({ submission }: { submission: Submission
         </p>
       ) : (
         <p className="break-all text-xs text-muted-foreground">
-          {submission.labMode ? `${t("Lab mode", "Chế độ Lab")}: ${submission.labMode} · ` : ""}
+          {submission.labMode
+            ? `${t("Lab mode", "Chế độ Lab")}: ${formatLabModeLabel(submission.labMode, t)} · `
+            : ""}
           {t("Compliance", "Tuân thủ 3E")}:{" "}
           {submission.complianceScore ?? t("not evaluated", "chưa đánh giá")}
         </p>

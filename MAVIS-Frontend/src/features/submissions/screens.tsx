@@ -9,7 +9,12 @@ import { useSearchParams } from "next/navigation";
 import { SelectField, SearchInput, Pagination } from "@/components/shared/forms";
 import { WorkspaceSelector } from "@/features/workspaces/components";
 import { useCourseEssays, useWorkspaceGradebook } from "@/features/workspaces/course-access";
-import { formatCourseLabTitle, formatTenScaleScore, toTenScaleScore } from "@/lib/format/course-display";
+import {
+  formatCourseLabTitle,
+  formatLabModeLabel,
+  formatTenScaleScore,
+  toTenScaleScore,
+} from "@/lib/format/course-display";
 import { LecturerEssayRow } from "@/features/courses/course-essay-panel";
 import { EmptyState, RequestState } from "@/components/shared/request-state";
 import { DataTable, StatusLabel } from "@/components/shared/data";
@@ -145,7 +150,9 @@ function MySubmissions() {
                     {formatCourseLabTitle(s.assignmentTitle, s.labOrder, s.assignmentId)}
                   </Link>
                   {s.labMode && (
-                    <div className="text-[11px] font-mono text-muted-foreground">{s.labMode}</div>
+                    <div className="text-[11px] text-muted-foreground">
+                      {formatLabModeLabel(s.labMode, t)}
+                    </div>
                   )}
                 </div>
               ),
@@ -864,15 +871,20 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
     { refreshMs: canReview ? 60000 : 15000 },
   );
   const backWorkspaceId = query.data?.workspaceId || selection.workspaceId;
+  const backParams = new URLSearchParams();
+  if (backWorkspaceId) backParams.set("workspace", backWorkspaceId);
+  if (canReview && query.data?.assignmentId) {
+    backParams.set("assignment", query.data.assignmentId);
+  }
+  const backQuery = backParams.toString();
+  const backHref = backQuery ? `/submissions?${backQuery}` : "/submissions";
   return (
     <RequestState query={query}>
       {query.data && (
         <div className="min-w-0 space-y-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <Button asChild size="sm" variant="outline">
-              <Link
-                href={`/submissions${backWorkspaceId || (canReview && query.data.assignmentId) ? `?${backWorkspaceId ? `workspace=${encodeURIComponent(backWorkspaceId)}&` : ""}${canReview && query.data.assignmentId ? `assignment=${encodeURIComponent(query.data.assignmentId)}` : ""}` : ""}`}
-              >
+              <Link href={backHref}>
                 ← {t("Back to class submissions", "Quay lại bài nộp của lớp")}
               </Link>
             </Button>

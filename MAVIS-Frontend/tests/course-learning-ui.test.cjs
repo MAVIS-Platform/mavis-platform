@@ -1815,3 +1815,17 @@ test("Bug #05: Reverse BFS simulator uses accurate 3-phase flow copy instead of 
   assert.match(step2Impact, /Reverse BFS Impact Simulator — Static impact check/);
   assert.match(step2Impact, /Course Roadmap Module Quiz/);
 });
+
+test("Bug #07: formatLabModeLabel humanizes labMode enums and SubmissionReview back link avoids trailing ampersand", () => {
+  const { formatLabModeLabel } = require("../src/lib/format/course-display.ts");
+  assert.equal(formatLabModeLabel("THEORY_QUIZ_STUDIO", (en) => en), "Theory + Quiz + Studio");
+  assert.equal(formatLabModeLabel("THEORY_QUIZ_STUDIO", (_en, vi) => vi), "Lý thuyết + Quiz + Studio");
+  assert.equal(formatLabModeLabel("THEORY_QUIZ", (en) => en), "Theory + Quiz");
+  assert.equal(formatLabModeLabel("THEORY_ONLY", (en) => en), "Theory Only");
+
+  const screens = read("src/features/submissions/screens.tsx");
+  const components = read("src/features/submissions/components.tsx");
+  assert.match(screens, /new URLSearchParams\(\)/);
+  assert.match(screens, /formatLabModeLabel\(s\.labMode, t\)/);
+  assert.match(components, /formatLabModeLabel\(submission\.labMode, t\)/);
+});
