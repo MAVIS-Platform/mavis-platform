@@ -1894,3 +1894,23 @@ test("Bug #14: StudentCourseSyllabus fixes Module badge label, disables locked L
   assert.match(syllabus, /isItemLockedLab/);
   assert.match(syllabus, /Continue to Quiz/);
 });
+
+test("Bug #15: THEORY_ONLY labMode is preserved in contracts, submissionSchema and submission mapper", () => {
+  const contracts = read("src/lib/api/contracts.ts");
+  const domain = read("src/types/domain.ts");
+  const ops = read("src/lib/api/java-operations.ts");
+
+  assert.match(
+    contracts,
+    /createAssignment[\s\S]*?z\.enum\(\["LEGACY", "THEORY_ONLY", "THEORY_QUIZ", "THEORY_QUIZ_STUDIO"\]\)/,
+  );
+  assert.match(
+    contracts,
+    /updateAssignment[\s\S]*?z\.enum\(\["LEGACY", "THEORY_ONLY", "THEORY_QUIZ", "THEORY_QUIZ_STUDIO"\]\)/,
+  );
+  assert.match(
+    domain,
+    /labMode:\s*z\.enum\(\["LEGACY", "THEORY_ONLY", "THEORY_QUIZ", "THEORY_QUIZ_STUDIO"\]\)/,
+  );
+  assert.match(ops, /sub\.labMode === "THEORY_ONLY"/);
+});

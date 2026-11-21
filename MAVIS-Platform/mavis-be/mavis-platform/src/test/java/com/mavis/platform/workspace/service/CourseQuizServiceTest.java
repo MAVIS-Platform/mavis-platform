@@ -317,4 +317,60 @@ class CourseQuizServiceTest {
                         List.of("A", "B"), null, List.of(0, 0), "", 1), 0));
     }
 
+    @Test
+    void publishDraftEnablesQuizWhenAssignmentPreviouslySkippedQuiz() throws Exception {
+        var workspaceId = UUID.randomUUID();
+        var labId = UUID.randomUUID();
+        var json = new ObjectMapper();
+        var policyNode = json.createObjectNode().put("skipQuiz", true).put("labTier", "THEORY_ONLY");
+        var workspace = Workspace.builder().id(workspaceId).status("ACTIVE").build();
+        var lab = Assignment.builder().id(labId).workspace(workspace).labOrder(1)
+                .requireRuntimeTrace(false).aiPolicy(policyNode).build();
+
+        var assignments = mock(AssignmentRepository.class);
+        var access = mock(AccessPolicyService.class);
+        var policy = mock(CourseLabPolicy.class);
+        var jdbc = mock(JdbcTemplate.class);
+        var service = new CourseQuizService(assignments, access, policy, jdbc, json);
+        when(assignments.findLockedById(labId)).thenReturn(Optional.of(lab));
+
+        var draftRow = mock(java.sql.ResultSet.class);
+        when(draftRow.getString(1)).thenReturn("Published Lesson");
+        when(draftRow.getInt(2)).thenReturn(70);
+        when(draftRow.getString(3)).thenReturn("[{\"prompt\":\"Q?\",\"options\":[\"A\",\"B\"],\"correctOption\":0}]");
+        when(jdbc.query(contains("FROM course_quiz_drafts"), any(RowMapper.class), eq(labId)))
+                .thenAnswer(call -> List.of(call.<RowMapper<?>>getArgument(1).mapRow(draftRow, 0)));
+        when(jdbc.queryForObject(contains("coalesce(max(version), 0) + 1"), eq(Integer.class), eq(labId)))
+                .thenReturn(1);
+
+        var published = service.publishDraft(workspaceId, labId);
+
+        assertEquals(1, published.version());
+        verify(assignments).save(argThat(saved ->
+                saved.getAiPolicy() != null
+                        && !saved.getAiPolicy().path("skipQuiz").asBoolean(true)
+                        && "THEORY_QUIZ".equals(saved.getAiPolicy().path("labTier").asText())));
+    }
+
+    @Test
+    void publishDraftThrowsNotFoundWhenNoDraftExists() {
+        var workspaceId = UUID.randomUUID();
+        var labId = UUID.randomUUID();
+        var workspace = Workspace.builder().id(workspaceId).status("ACTIVE").build();
+        var lab = Assignment.builder().id(labId).workspace(workspace).labOrder(1).build();
+
+        var assignments = mock(AssignmentRepository.class);
+        var access = mock(AccessPolicyService.class);
+        var policy = mock(CourseLabPolicy.class);
+        var jdbc = mock(JdbcTemplate.class);
+        var service = new CourseQuizService(assignments, access, policy, jdbc, new ObjectMapper());
+        when(assignments.findLockedById(labId)).thenReturn(Optional.of(lab));
+        when(jdbc.query(contains("FROM course_quiz_drafts"), any(RowMapper.class), eq(labId)))
+                .thenReturn(List.of());
+
+        var ex = assertThrows(BusinessException.class, () -> service.publishDraft(workspaceId, labId));
+        assertEquals(ErrorCode.NOT_FOUND, ex.getErrorCode());
+        assertEquals("QUIZ_DRAFT_NOT_FOUND", ex.getStableCode());
+    }
+
 }

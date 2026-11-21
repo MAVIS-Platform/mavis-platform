@@ -353,7 +353,9 @@ export async function executeJava(
       assignmentTitle: sub.assignmentTitle ?? "",
       labOrder: sub.labOrder ?? null,
       labMode:
-        sub.labMode === "THEORY_QUIZ" || sub.labMode === "THEORY_QUIZ_STUDIO"
+        sub.labMode === "THEORY_ONLY" ||
+        sub.labMode === "THEORY_QUIZ" ||
+        sub.labMode === "THEORY_QUIZ_STUDIO"
           ? sub.labMode
           : "LEGACY",
       guidedLab: sub.guidedLab ?? false,

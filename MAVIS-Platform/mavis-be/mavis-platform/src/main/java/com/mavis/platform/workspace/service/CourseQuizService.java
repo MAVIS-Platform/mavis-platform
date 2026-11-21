@@ -170,6 +170,7 @@ public class CourseQuizService {
         UUID modelId = lab.getReferenceModel() == null ? null : lab.getReferenceModel().getId();
         insertVersion(assignmentId, modelId, next, draft, encode(draft.questions()));
         jdbc.update("DELETE FROM course_quiz_drafts WHERE assignment_id = ?", assignmentId);
+        enableQuizOnAssignmentIfSkipped(lab);
         return view(new Definition(next, draft.lesson(), draft.threshold(), draft.questions()), null, null);
     }
 
