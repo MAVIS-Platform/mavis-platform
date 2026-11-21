@@ -421,8 +421,8 @@ export function LiveStudioWorkbench({
   }, [sessionId]);
   const [showLeft, setShowLeft] = useState(true);
   const [showRight, setShowRight] = useState(true);
-  const [leftWidth, setLeftWidth] = useState(268);
-  const [rightWidth, setRightWidth] = useState(288);
+  const [leftWidth, setLeftWidth] = useState(244);
+  const [rightWidth, setRightWidth] = useState(276);
   const [bottomHeight, setBottomHeight] = useState(232);
   const [bottomCollapsed, setBottomCollapsed] = useState(false);
   const [resizingAxis, setResizingAxis] = useState<"left" | "right" | "bottom" | null>(null);

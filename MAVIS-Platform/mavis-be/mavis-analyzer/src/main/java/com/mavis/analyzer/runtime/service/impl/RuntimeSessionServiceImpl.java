@@ -124,6 +124,10 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
     @Lazy
     private RuntimeQueueCoordinator runtimeQueueCoordinator;
 
+    @Autowired(required = false)
+    @Lazy
+    private com.mavis.analyzer.runtime.service.RuntimeStudioService runtimeStudioService;
+
     @Override
     @Transactional(readOnly = true)
     public PreflightCheckResponseDTO runComposePreflight(UUID snapshotId) {
@@ -1162,6 +1166,9 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         }
 
         RuntimeSession saved = runtimeSessionRepository.save(session);
+        if (!duplicate && runtimeStudioService != null) {
+            runtimeStudioService.publishSessionState(saved);
+        }
         log.info("Đã cập nhật lifecycle-ack cho session {}: stage={}, executionStatus={}, scenarioStatus={}",
                 sessionId, stage, saved.getExecutionStatus(), saved.getScenarioStatus());
 

@@ -21,6 +21,7 @@ export function Step2StaticImpact({
   modelQuery,
   sourceLink,
   inlineModel,
+  waitForContext,
   onOpenC1C3View,
 }: {
   projectId: string;
@@ -28,6 +29,7 @@ export function Step2StaticImpact({
   modelQuery: string | null;
   sourceLink: string;
   inlineModel?: ArchitecturalModel | undefined;
+  waitForContext?: boolean | undefined;
   onOpenC1C3View?: ((view: "CONTEXT" | "CONTAINER" | "COMPONENT" | "GRAPH") => void) | undefined;
 }) {
   const { t } = useLocale();
@@ -38,7 +40,7 @@ export function Step2StaticImpact({
   const modelQueryResult = useApiQuery(
     "model",
     { modelId: modelId ?? "", ...(projectId ? { projectId } : {}) },
-    { enabled: !inlineModel && Boolean(modelId) },
+    { enabled: !inlineModel && !waitForContext && Boolean(modelId) },
   );
   const model = inlineModel ?? modelQueryResult.data;
 

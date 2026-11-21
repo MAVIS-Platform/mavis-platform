@@ -65,10 +65,18 @@ public class StudioTelemetryHub {
      * should persist a durable DB snapshot (first frame, forced, or >= 10s since the last DB snapshot).
      */
     public boolean publish(UUID sessionId, JsonNode redactedTelemetry, String receivedAt, boolean forcePersist) {
-        return publish(sessionId, redactedTelemetry, receivedAt, forcePersist, System.currentTimeMillis());
+        return publish(sessionId, redactedTelemetry, receivedAt, forcePersist, null, System.currentTimeMillis());
+    }
+
+    public boolean publish(UUID sessionId, JsonNode redactedTelemetry, String receivedAt, boolean forcePersist, String executionStatus) {
+        return publish(sessionId, redactedTelemetry, receivedAt, forcePersist, executionStatus, System.currentTimeMillis());
     }
 
     boolean publish(UUID sessionId, JsonNode redactedTelemetry, String receivedAt, boolean forcePersist, long nowMs) {
+        return publish(sessionId, redactedTelemetry, receivedAt, forcePersist, null, nowMs);
+    }
+
+    boolean publish(UUID sessionId, JsonNode redactedTelemetry, String receivedAt, boolean forcePersist, String executionStatus, long nowMs) {
         SessionStream stream = streams.computeIfAbsent(sessionId, ignored -> new SessionStream());
         ObjectNode compactFrame = buildCompactFrame(redactedTelemetry);
         boolean shouldPersist;
@@ -101,6 +109,9 @@ public class StudioTelemetryHub {
             payload.set("telemetry", redactedTelemetry);
             payload.put("telemetryReceivedAt", receivedAt);
             payload.set("frame", compactFrame);
+            if (executionStatus != null && !executionStatus.isBlank()) {
+                payload.put("executionStatus", executionStatus);
+            }
             broadcast(stream, "telemetry", payload);
         }
         return shouldPersist;

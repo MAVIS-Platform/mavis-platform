@@ -72,10 +72,12 @@ export function useStudioSession(sessionId: string) {
   const api = useApi();
   const queryClient = useQueryClient();
   const [sseConnected, setSseConnected] = useState(false);
+  const [cachedStatus, setCachedStatus] = useState("");
+  const slowPoll = sseConnected && cachedStatus === "RUNNING";
   const state = useApiQuery(
     "studioState",
     { sessionId },
-    { enabled: !!sessionId, poll: true, ...(sseConnected ? { refreshMs: 12000 } : {}) },
+    { enabled: !!sessionId, poll: true, ...(slowPoll ? { refreshMs: 8000 } : {}) },
   );
   const action = useApiMutation("studioAction");
   const prediction = useApiMutation("studioPrediction");
@@ -126,6 +128,9 @@ export function useStudioSession(sessionId: string) {
 
   const data = state.data;
   const executionStatus = data?.executionStatus?.toUpperCase() ?? "";
+  useEffect(() => {
+    setCachedStatus(data?.finishRequested ? "FINISHING" : executionStatus);
+  }, [executionStatus, data?.finishRequested]);
   const streamEnabled =
     Boolean(sessionId) &&
     /^[a-f0-9-]{36}$/i.test(sessionId) &&
@@ -148,29 +153,49 @@ export function useStudioSession(sessionId: string) {
           telemetry?: unknown;
           telemetryReceivedAt?: string;
           frame?: unknown;
+          executionStatus?: string;
         };
         const parsedTelemetry = contracts.studioState.output.shape.telemetry.safeParse(
           payload.telemetry,
         );
         if (!parsedTelemetry.success || !parsedTelemetry.data) return;
+        const nextTelemetry = parsedTelemetry.data;
         const parsedFrame = payload.frame
           ? contracts.studioState.output.shape.telemetryHistory.unwrap().element.safeParse(payload.frame)
           : null;
+        let shouldSyncState = false;
         queryClient.setQueryData<StudioState>(["api", "studioState", { sessionId }], (prev) => {
           if (!prev) return prev;
           const nextHistory =
             parsedFrame?.success
               ? [...(prev.telemetryHistory ?? []).slice(-59), parsedFrame.data]
               : prev.telemetryHistory;
+          const nextStatus =
+            typeof payload.executionStatus === "string" && payload.executionStatus.trim()
+              ? payload.executionStatus.trim()
+              : prev.executionStatus;
+          if (
+            nextStatus !== prev.executionStatus ||
+            ((prev.executionStatus === "ALLOCATED" ||
+              prev.executionStatus === "QUEUED" ||
+              prev.executionStatus === "READY_FOR_DISPATCH") &&
+              nextTelemetry.services.some((svc) => svc.runningReplicas > 0))
+          ) {
+            shouldSyncState = true;
+          }
           return {
             ...prev,
-            telemetry: parsedTelemetry.data,
+            executionStatus: nextStatus,
+            telemetry: nextTelemetry,
             ...(payload.telemetryReceivedAt
               ? { telemetryReceivedAt: payload.telemetryReceivedAt }
               : {}),
             ...(nextHistory ? { telemetryHistory: nextHistory } : {}),
           };
         });
+        if (shouldSyncState) {
+          void queryClient.invalidateQueries({ queryKey: ["api", "studioState", { sessionId }] });
+        }
       } catch {
         // Ignore malformed frame; fallback polling keeps state consistent.
       }

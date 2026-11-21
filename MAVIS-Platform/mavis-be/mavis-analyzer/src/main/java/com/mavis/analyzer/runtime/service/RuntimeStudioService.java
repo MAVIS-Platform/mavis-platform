@@ -101,7 +101,7 @@ public class RuntimeStudioService {
         String nowIso = OffsetDateTime.now().toString();
         if (telemetryHub != null) {
             boolean forcePersist = !"RUNNING".equals(session.getExecutionStatus());
-            boolean shouldPersistDb = telemetryHub.publish(id, redacted, nowIso, forcePersist);
+            boolean shouldPersistDb = telemetryHub.publish(id, redacted, nowIso, forcePersist, session.getExecutionStatus());
             if (!shouldPersistDb) {
                 return mapper.createObjectNode().put("sessionId", id.toString()).put("resourceProject", request.resourceProject());
             }
@@ -123,6 +123,10 @@ public class RuntimeStudioService {
             while (recent.size() > 6) recent.remove(0);
         }
         save(lockedSession, control);
+        if ("RUNNING".equals(lockedSession.getExecutionStatus())
+                && (extractExerciseCriteria(lockedSession) != null || control.hasNonNull("prediction"))) {
+            notifyStateAfterCommit(lockedSession);
+        }
         return mapper.createObjectNode().put("sessionId", id.toString()).put("resourceProject", request.resourceProject());
     }
 
@@ -657,6 +661,10 @@ public class RuntimeStudioService {
     private void save(RuntimeSession session, ObjectNode control) {
         session.setStudioControl(control);
         sessions.save(session);
+    }
+
+    public void publishSessionState(RuntimeSession session) {
+        notifyStateAfterCommit(session);
     }
 
     private void notifyStateAfterCommit(RuntimeSession session) {

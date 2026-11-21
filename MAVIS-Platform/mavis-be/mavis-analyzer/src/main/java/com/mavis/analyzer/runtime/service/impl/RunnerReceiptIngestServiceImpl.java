@@ -51,6 +51,10 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
     @Value("${mavis.runner.allow-unverified-poc-promotion:false}")
     private boolean allowUnverifiedPocPromotion;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    @org.springframework.context.annotation.Lazy
+    private com.mavis.analyzer.runtime.service.RuntimeStudioService runtimeStudioService;
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public ModelVersionResponseDTO ingestRunnerReceipt(UUID sessionId, RunnerReceiptIngestRequestDTO receipt) {
@@ -398,6 +402,9 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
             session.setEnrichedModelVersionId(null);
             session.setPublicationGateStatus("SKIPPED_NO_EVIDENCE");
             runtimeSessionRepository.save(session);
+            if (runtimeStudioService != null) {
+                runtimeStudioService.publishSessionState(session);
+            }
 
             ReceiptIngestAckDTO ack = ReceiptIngestAckDTO.builder()
                     .sessionId(sessionId)
@@ -448,6 +455,9 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
 
         session.setEnrichedModelVersionId(enrichedVersion.getId());
         runtimeSessionRepository.save(session);
+        if (runtimeStudioService != null) {
+            runtimeStudioService.publishSessionState(session);
+        }
 
         // (4.1) Sao chép elements từ baseVersion sang enrichedVersion (bảo toàn properties và parentElement)
         Map<UUID, ModelElement> oldToNewElementMap = new HashMap<>();

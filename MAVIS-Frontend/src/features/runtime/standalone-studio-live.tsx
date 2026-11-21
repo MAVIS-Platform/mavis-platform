@@ -339,6 +339,7 @@ function StandaloneStudioContent() {
 
   const studentQuizLocked = Boolean(
     !isAuthorMode &&
+    !canManage &&
     studentContext.data?.quiz &&
     !studentContext.data.quiz.runtimeUnlocked &&
     studentContext.data.assignment?.labMode !== "THEORY_ONLY",
@@ -887,6 +888,25 @@ function StandaloneStudioContent() {
           <Button
             asChild
             size="sm"
+            variant="outline"
+            className="h-7 border-indigo-500/40 bg-indigo-500/10 px-2 text-[11px] text-indigo-200 hover:bg-indigo-500/20"
+          >
+            <Link
+              href={buildStudioLiveHref({
+                workspaceId,
+                assignmentId,
+                mode: "student",
+                sessionId: activeSessionId || undefined,
+                returnTo: returnHref,
+              })}
+            >
+              <Play className="mr-1 size-3" aria-hidden="true" />
+              {t("Test as Student", "Thử vai Sinh viên")}
+            </Link>
+          </Button>
+          <Button
+            asChild
+            size="sm"
             className="h-7 bg-emerald-600 px-2.5 text-[11px] text-white hover:bg-emerald-500"
           >
             <Link href={publishHref}>
@@ -899,6 +919,27 @@ function StandaloneStudioContent() {
 
       {!isAuthorMode && !studentQuizLocked && (
         <>
+          {canManage && (
+            <Button
+              asChild
+              size="sm"
+              variant="outline"
+              className="h-7 border-slate-700 bg-slate-900 px-2 text-[11px] text-slate-200 hover:bg-slate-800 hover:text-white"
+            >
+              <Link
+                href={buildStudioLiveHref({
+                  workspaceId,
+                  assignmentId,
+                  mode: "author",
+                  sessionId: activeSessionId || undefined,
+                  returnTo: returnHref,
+                })}
+              >
+                <SlidersHorizontal className="mr-1 size-3" aria-hidden="true" />
+                {t("Author Mode", "Chế độ Giảng viên")}
+              </Link>
+            </Button>
+          )}
           {studentExercise && (
             <Button
               type="button"

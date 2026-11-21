@@ -247,6 +247,14 @@ public class CourseLabStudentService {
                 ? null
                 : submissionReviewService.get(latestSubmission.getId());
 
+        JsonNode studioExerciseView = lab.getStudioExerciseSnapshot();
+        if (!CourseLabPolicy.isStudent(actor)) {
+            var liveEx = labStudioExercises.findByAssignmentId(lab.getId()).orElse(null);
+            if (liveEx != null) {
+                studioExerciseView = exerciseToNode(liveEx);
+            }
+        }
+
         return new StudentLabContextView(
                 assignmentView,
                 referenceArchitecture,
@@ -254,7 +262,7 @@ public class CourseLabStudentService {
                 studioSessions,
                 latestSubmission,
                 latestReview,
-                lab.getStudioExerciseSnapshot());
+                studioExerciseView);
     }
 
     @Transactional(readOnly = true)

@@ -596,6 +596,7 @@ export function LabWorkspace() {
   );
   const runtimeReady =
     isTheoryOnlyLab ||
+    isLecturer ||
     (!quiz.isError && quiz.data?.runtimeUnlocked === true) ||
     studentContext.data?.quiz?.runtimeUnlocked === true;
   const requiresRuntime =
@@ -1056,6 +1057,7 @@ export function LabWorkspace() {
                   : `/roadmap?workspace=${encodeURIComponent(workspaceId)}`
               }
               projectId={projectId}
+              referenceProjectId={referenceProjectId}
               modelQuery={modelQuery}
               referenceModelQuery={referenceModelQuery}
               snapshotId={referenceSnapshotId}
@@ -1070,6 +1072,7 @@ export function LabWorkspace() {
                 router.push(labHref(1, view));
               }}
               studentContext={studentContext.data}
+              studentContextLoading={studentContext.isPending}
             />
           </div>
         </div>
@@ -1270,6 +1273,7 @@ function StepContent({
   labTitle,
   moduleQuizHref,
   projectId,
+  referenceProjectId,
   modelQuery,
   referenceModelQuery,
   snapshotId,
@@ -1291,6 +1295,7 @@ function StepContent({
   onSelectInlineC4View,
   onOpenC1C3View,
   studentContext,
+  studentContextLoading,
 }: {
   step: 1 | 2 | 3;
   workspaceId: string;
@@ -1299,6 +1304,7 @@ function StepContent({
   labTitle?: string | undefined;
   moduleQuizHref: string;
   projectId: string;
+  referenceProjectId?: string | undefined;
   modelQuery: string | null;
   referenceModelQuery?: string | null | undefined;
   snapshotId?: string | undefined;
@@ -1323,6 +1329,7 @@ function StepContent({
   onSelectInlineC4View: (view: InlineC4View) => void;
   onOpenC1C3View: (view: InlineC4View) => void;
   studentContext?: StudentLabContext | undefined;
+  studentContextLoading?: boolean | undefined;
 }) {
   const { t } = useLocale();
   const client = useApi();
@@ -1375,7 +1382,7 @@ function StepContent({
   const resolvedModelProjectId =
     referenceArchitecture?.projectId ??
     studentContext?.assignment?.referenceSource?.projectId ??
-    projectId;
+    (referenceProjectId || projectId);
   const fallbackModelQuery = useApiQuery(
     "model",
     {
@@ -2019,6 +2026,7 @@ function StepContent({
                     modelQuery={modelQuery}
                     sourceLink={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=1${previewParam}`}
                     inlineModel={activeModel}
+                    waitForContext={studentContextLoading}
                     onOpenC1C3View={onOpenC1C3View}
                   />
                 </DetailPanel>

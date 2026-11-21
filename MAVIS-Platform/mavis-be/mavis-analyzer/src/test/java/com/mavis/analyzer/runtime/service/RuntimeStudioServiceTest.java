@@ -443,4 +443,19 @@ class RuntimeStudioServiceTest {
 
         assertEquals(2, session.getStudioControl().path("actions").size());
     }
+
+    @Test
+    void publishSessionStateAndTelemetryWithExecutionStatusNotifyHubCleanly() {
+        var hub = mock(StudioTelemetryHub.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "telemetryHub", hub);
+        when(hub.publish(eq(id), any(), anyString(), eq(false), eq("RUNNING"))).thenReturn(false);
+
+        service.publishSessionState(session);
+        verify(hub).notifyState(eq(id), argThat(node -> "RUNNING".equals(node.path("executionStatus").asText())));
+
+        var frame = mapper.createObjectNode().put("observedAt", "2026-11-21T08:00:00Z");
+        frame.putArray("services");
+        service.telemetry(id, new RuntimeStudioService.TelemetryRequest(id, session.getResourceProject(), frame));
+        verify(hub).publish(eq(id), any(), anyString(), eq(false), eq("RUNNING"));
+    }
 }
