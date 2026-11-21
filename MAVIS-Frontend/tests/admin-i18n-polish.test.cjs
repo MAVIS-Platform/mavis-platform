@@ -108,3 +108,14 @@ test("Wave 3: Announcements, inbox, AppShell avatar contrast, and nested main fi
   assert.match(appShell, /"My Grades & Submissions"/);
   assert.doesNotMatch(labAuthoring, /<main\b/);
 });
+
+test("Bug #04: CourseWorkspaceShell header status/key prefix and default Passkey label are localized", () => {
+  const shell = read("src/features/courses/course-workspace-shell.tsx");
+  const access = read("src/features/workspaces/course-access.tsx");
+
+  assert.match(shell, /t\("Key", "Mã"\)/);
+  assert.match(shell, /t\("Active", "Đang hoạt động"\)/);
+  assert.match(shell, /t\("Archived", "Đã lưu trữ"\)/);
+  assert.match(access, /item\.label === "Mã ghi danh lớp học" \|\| item\.label === "Class Passkey"/);
+  assert.match(access, /t\("Class Passkey", "Mã ghi danh lớp học"\)/);
+});

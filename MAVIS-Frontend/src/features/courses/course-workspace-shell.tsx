@@ -368,7 +368,7 @@ function ClassHeaderPasskey({ workspaceId }: { workspaceId: string }) {
           {copied
             ? t("Copied!", "Đã chép!")
             : currentKey?.code
-              ? `${t("Key", "Key")}: ${currentKey.code}`
+              ? `${t("Key", "Mã")}: ${currentKey.code}`
               : busy
                 ? t("Generating…", "Đang tạo…")
                 : t("Class Passkey", "Mã lớp (Passkey)")}
@@ -428,7 +428,9 @@ export function CourseWorkspaceShell({
                     : "border-emerald-300/30 bg-emerald-500/25 text-emerald-100"
                 }
               >
-                {workspace.status ?? "ACTIVE"}
+                {workspace.status === "ARCHIVED"
+                  ? t("Archived", "Đã lưu trữ")
+                  : t("Active", "Đang hoạt động")}
               </Badge>
               {!isStudent && <ClassHeaderPasskey workspaceId={workspace.id} />}
             </div>

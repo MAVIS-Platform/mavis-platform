@@ -1337,6 +1337,8 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
                           value={editLabel}
                           onChange={(e) => setEditLabel(e.target.value)}
                         />
+                      ) : item.label === "Mã ghi danh lớp học" || item.label === "Class Passkey" ? (
+                        t("Class Passkey", "Mã ghi danh lớp học")
                       ) : (
                         item.label || <span className="text-muted-foreground">—</span>
                       )}
