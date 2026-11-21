@@ -1772,3 +1772,14 @@ test("Wave 2: Course access removes JAVA2026 leak, FrozenArtifacts handles V2 nu
   assert.match(screens, /threeEChat/);
   assert.doesNotMatch(screens, /PaymentClient\.java/);
 });
+
+test("Bug #01: useCourseAuthoring and CourseOutline gate course/published fetches on publishedVersion > 0", () => {
+  const courseAccess = read("src/features/workspaces/course-access.tsx");
+  const outline = read("src/features/courses/course-outline.tsx");
+
+  assert.match(courseAccess, /export function usePublishedCourse\(workspaceId: string, enabled = true\)/);
+  assert.match(courseAccess, /publishedVersion \?\? 0\) > 0/);
+  assert.match(outline, /function LecturerCourseOutline/);
+  assert.match(outline, /published=\{authoring\.published\.data\}/);
+  assert.match(outline, /usePublishedCourse\(workspaceId\)/);
+});

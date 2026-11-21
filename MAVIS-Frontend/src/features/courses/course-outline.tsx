@@ -96,14 +96,80 @@ export function CourseOutline({
   canManage: boolean;
   active: boolean;
 }) {
+  return canManage ? (
+    <LecturerCourseOutline workspaceId={workspaceId} active={active} />
+  ) : (
+    <StudentCourseOutline workspaceId={workspaceId} active={active} />
+  );
+}
+
+function LecturerCourseOutline({
+  workspaceId,
+  active,
+}: {
+  workspaceId: string;
+  active: boolean;
+}) {
+  const authoring = useCourseAuthoring(workspaceId, true);
+  return (
+    <CourseOutlineBody
+      workspaceId={workspaceId}
+      canManage
+      active={active}
+      published={authoring.published.data}
+      draft={authoring.data}
+      isLoadError={authoring.isError && !isMissingCourseError(authoring.error)}
+      isLoadingInitial={authoring.isPending}
+      onRetry={() => void authoring.refetch()}
+    />
+  );
+}
+
+function StudentCourseOutline({
+  workspaceId,
+  active,
+}: {
+  workspaceId: string;
+  active: boolean;
+}) {
+  const publishedQuery = usePublishedCourse(workspaceId);
+  return (
+    <CourseOutlineBody
+      workspaceId={workspaceId}
+      canManage={false}
+      active={active}
+      published={publishedQuery.data}
+      draft={undefined}
+      isLoadError={publishedQuery.isError && !isMissingCourseError(publishedQuery.error)}
+      isLoadingInitial={publishedQuery.isPending}
+      onRetry={() => void publishedQuery.refetch()}
+    />
+  );
+}
+
+function CourseOutlineBody({
+  workspaceId,
+  canManage,
+  active,
+  published,
+  draft,
+  isLoadError,
+  isLoadingInitial,
+  onRetry,
+}: {
+  workspaceId: string;
+  canManage: boolean;
+  active: boolean;
+  published: ReturnType<typeof usePublishedCourse>["data"];
+  draft: ReturnType<typeof useCourseAuthoring>["data"];
+  isLoadError: boolean;
+  isLoadingInitial: boolean;
+  onRetry: () => void;
+}) {
   const { t } = useLocale();
   const workspaces = useApiQuery("workspaces", {});
   const workspace = workspaces.data?.find((w) => w.id === workspaceId);
   const isJavaCourseraWorkspace = workspace?.code?.toUpperCase() === "JAVA-MS-2026";
-  const authoring = useCourseAuthoring(workspaceId, canManage);
-  const publishedQuery = usePublishedCourse(workspaceId);
-  const published = publishedQuery.data;
-  const draft = authoring.data;
   const assignments = useApiQuery("assignments", { workspaceId }, { enabled: Boolean(workspaceId) });
   const roadmap = useCourseRoadmap(workspaceId);
 
@@ -132,10 +198,7 @@ export function CourseOutline({
   const labs = new Map((roadmap.data?.labs ?? []).map((lab) => [lab.assignmentId, lab]));
   const assignmentById = new Map((assignments.data ?? []).map((assignment) => [assignment.id, assignment]));
 
-  const loadError =
-    (canManage && authoring.isError && !isMissingCourseError(authoring.error)) ||
-    (!canManage && publishedQuery.isError && !isMissingCourseError(publishedQuery.error));
-  if (loadError) {
+  if (isLoadError) {
     return (
       <section className="rounded-xl border bg-card p-4" role="alert">
         <p className="text-sm font-medium">{t("Could not load class content.", "Không tải được nội dung lớp.")}</p>
@@ -143,7 +206,7 @@ export function CourseOutline({
           className="mt-2"
           size="sm"
           variant="outline"
-          onClick={() => void (canManage ? authoring.refetch() : publishedQuery.refetch())}
+          onClick={onRetry}
         >
           {t("Retry", "Thử lại")}
         </Button>
@@ -151,7 +214,7 @@ export function CourseOutline({
     );
   }
 
-  if (published === undefined && draft === undefined && (canManage ? authoring.isPending : publishedQuery.isPending)) {
+  if (published === undefined && draft === undefined && isLoadingInitial) {
     return <p className="text-sm text-muted-foreground">{t("Loading class content…", "Đang tải nội dung lớp…")}</p>;
   }
 

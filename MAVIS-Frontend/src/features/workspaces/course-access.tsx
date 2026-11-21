@@ -288,13 +288,13 @@ export type PublishedCourse = {
   };
 };
 
-export function usePublishedCourse(workspaceId: string) {
+export function usePublishedCourse(workspaceId: string, enabled = true) {
   const client = useApi();
   return useQuery({
     queryKey: ["api", "course-published", workspaceId],
     queryFn: ({ signal }) =>
       courseApi<PublishedCourse>(`workspaces/${workspaceId}/course/published`, { signal }),
-    enabled: client.mode === "backend" && Boolean(workspaceId),
+    enabled: client.mode === "backend" && Boolean(workspaceId) && enabled,
   });
 }
 
@@ -371,7 +371,11 @@ export function useCourseAuthoring(workspaceId: string, enabled = true) {
     queryKey: ["api", "course-published", workspaceId],
     queryFn: ({ signal }) =>
       courseApi<PublishedCourse>(`workspaces/${workspaceId}/course/published`, { signal }),
-    enabled: client.mode === "backend" && Boolean(workspaceId) && enabled,
+    enabled:
+      client.mode === "backend" &&
+      Boolean(workspaceId) &&
+      enabled &&
+      (query.data?.publishedVersion ?? 0) > 0,
   });
   const keepCourse = (data: AuthoringCourse) => {
     cache.setQueryData(["api", "course-authoring", workspaceId], data);
