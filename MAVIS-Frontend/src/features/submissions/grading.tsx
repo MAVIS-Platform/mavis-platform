@@ -249,10 +249,21 @@ export function GradeForm({
   const [snapshotRows, setSnapshotRows] = useState<EditableSnapshotGrade[]>(() =>
     buildInitialSnapshotGrades(review, studentSnapshots),
   );
+  const [bulkScore, setBulkScore] = useState("");
   const [score, setScore] = useState(() =>
     review.score === null ? "" : String(Number((review.score / 10).toFixed(2))),
   );
   const [summary, setSummary] = useState(review.summary);
+
+  const applyScoreToAllSnapshots = (valueStr: string) => {
+    const trimmed = valueStr.trim();
+    if (!trimmed) return;
+    const num = Number(trimmed);
+    if (!/^\d+(\.\d{1,2})?$/.test(trimmed) || !Number.isFinite(num) || num < 0 || num > 10) return;
+    setDirty(true);
+    setBulkScore(trimmed);
+    setSnapshotRows((prev) => prev.map((item) => ({ ...item, score: trimmed })));
+  };
 
   useEffect(() => {
     if (review.revision !== syncedRevision) {
@@ -383,6 +394,49 @@ export function GradeForm({
       )}
       {usePerSnapshot ? (
         <div className="space-y-2.5 rounded-lg border bg-muted/20 p-3">
+          {snapshotRows.length > 1 && (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-indigo-500/25 bg-indigo-500/5 px-2.5 py-2 text-xs">
+              <span className="font-medium text-foreground">
+                {t(
+                  `Quick score (apply to all ${snapshotRows.length} snapshots):`,
+                  `Chấm nhanh (áp cho cả ${snapshotRows.length} snapshot):`,
+                )}
+              </span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {["9.5", "8.5", "7.0", "5.0"].map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    className="rounded border bg-background px-2 py-0.5 text-[11px] font-semibold text-foreground hover:border-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40"
+                    onClick={() => applyScoreToAllSnapshots(preset)}
+                  >
+                    {preset}/10
+                  </button>
+                ))}
+                <Input
+                  type="number"
+                  min={0}
+                  max={10}
+                  step="0.01"
+                  aria-label={t("Overall score for all snapshots", "Điểm chung cho mọi snapshot")}
+                  placeholder="0–10"
+                  value={bulkScore}
+                  onChange={(e) => setBulkScore(e.target.value)}
+                  className="h-7 w-20 text-xs"
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7 px-2 text-[11px]"
+                  disabled={!/^\d+(\.\d{1,2})?$/.test(bulkScore.trim()) || Number(bulkScore) > 10}
+                  onClick={() => applyScoreToAllSnapshots(bulkScore)}
+                >
+                  {t("Apply all", "Áp dụng tất cả")}
+                </Button>
+              </div>
+            </div>
+          )}
           {snapshotRows.map((row, idx) => {
             const num = row.score.trim() === "" ? null : Number(row.score);
             const isValidCell =

@@ -1361,26 +1361,42 @@ export function LiveStudioWorkbench({
               {String(recordingSeconds % 60).padStart(2, "0")} · {recordingSteps}
             </Button>
           )}
-          {showLiveSessionControls && (
+          {showLiveSessionControls && (() => {
+            const finishDisabledReason =
+              data.executionStatus !== "RUNNING"
+                ? "Wait until the Docker session reaches RUNNING"
+                : data.finishRequested || finish.isPending
+                  ? "Finishing Studio session and sealing receipt…"
+                  : action.isPending || waiting
+                    ? "Wait for the current runtime action to complete"
+                    : capturing || capture.isPending
+                      ? "Wait for the snapshot capture to finish"
+                      : !hasConfirmedAction
+                        ? "Run at least one confirmed action (Pause, Resume, Stop, Start, or Scale) and capture a snapshot before finishing"
+                        : "Finish Studio and seal your verifiable RuntimeReceipt";
+            const finishDisabled =
+              finish.isPending ||
+              action.isPending ||
+              capturing ||
+              capture.isPending ||
+              waiting ||
+              !hasConfirmedAction ||
+              data.finishRequested ||
+              data.executionStatus !== "RUNNING";
+            return (
             <>
-              <Button
-                type="button"
-                size="sm"
-                className="h-7 bg-emerald-600 px-2.5 text-[11px] text-white hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500"
-                disabled={
-                  finish.isPending ||
-                  action.isPending ||
-                  capturing ||
-                  capture.isPending ||
-                  waiting ||
-                  !hasConfirmedAction ||
-                  data.finishRequested ||
-                  data.executionStatus !== "RUNNING"
-                }
-                onClick={() => void finishStudio()}
-              >
-                Finish Studio
-              </Button>
+              <span className="inline-flex" title={finishDisabledReason}>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-7 bg-emerald-600 px-2.5 text-[11px] text-white hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-400"
+                  disabled={finishDisabled}
+                  aria-label={finishDisabled ? `Finish Studio (${finishDisabledReason})` : "Finish Studio"}
+                  onClick={() => void finishStudio()}
+                >
+                  Finish Studio
+                </Button>
+              </span>
               <Button
                 type="button"
                 size="sm"
@@ -1392,7 +1408,8 @@ export function LiveStudioWorkbench({
                 Cancel
               </Button>
             </>
-          )}
+            );
+          })()}
 
           <Button
             type="button"

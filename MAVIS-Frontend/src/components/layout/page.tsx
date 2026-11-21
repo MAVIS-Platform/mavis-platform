@@ -67,39 +67,52 @@ export function Breadcrumbs({
 }) {
   const { t } = useLocale();
   return (
-    <nav aria-label="Breadcrumb" className="min-w-0 flex-1">
-      <ol className="flex items-center gap-2 text-xs text-muted-foreground">
-        {items.map((item, i) => (
-          <li
-            key={`${item.label}-${i}`}
-            className={cn(
-              "min-w-0 items-center gap-2",
-              item.visibility === "sm"
-                ? "hidden sm:flex"
-                : item.visibility === "lg"
-                  ? "hidden lg:flex"
-                  : "flex",
-            )}
-          >
-            {item.href ? (
-              <Link href={item.href}>{t(item.label)}</Link>
-            ) : (
-              <span
-                aria-current={i === items.length - 1 ? "page" : undefined}
-                className={cn(
-                  "truncate",
-                  i === items.length - 1 && "font-medium text-foreground",
-                  item.visibility === "lg" && "max-w-40",
-                )}
-              >
-                {t(item.label)}
-              </span>
-            )}
-            {i < items.length - 1 && (
-              <ChevronRight className="size-3 shrink-0" aria-hidden="true" />
-            )}
-          </li>
-        ))}
+    <nav aria-label="Breadcrumb" className="min-w-0 flex-1 overflow-hidden">
+      <ol className="flex min-w-0 flex-nowrap items-center gap-1.5 overflow-hidden whitespace-nowrap text-xs text-muted-foreground sm:gap-2">
+        {items.map((item, i) => {
+          const text = t(item.label);
+          return (
+            <li
+              key={`${item.label}-${i}`}
+              className={cn(
+                "min-w-0 items-center gap-1.5 sm:gap-2",
+                item.visibility === "sm"
+                  ? "hidden shrink-0 sm:flex"
+                  : item.visibility === "lg"
+                    ? "hidden shrink min-w-0 lg:flex"
+                    : "flex min-w-0 shrink",
+              )}
+            >
+              {item.href ? (
+                <Link
+                  href={item.href}
+                  title={text}
+                  className={cn(
+                    "block truncate whitespace-nowrap transition-colors hover:text-foreground",
+                    item.visibility === "lg" ? "max-w-40 xl:max-w-56" : "shrink-0",
+                  )}
+                >
+                  {text}
+                </Link>
+              ) : (
+                <span
+                  aria-current={i === items.length - 1 ? "page" : undefined}
+                  title={text}
+                  className={cn(
+                    "block truncate whitespace-nowrap",
+                    i === items.length - 1 && "font-medium text-foreground",
+                    item.visibility === "lg" && "max-w-40 xl:max-w-56",
+                  )}
+                >
+                  {text}
+                </span>
+              )}
+              {i < items.length - 1 && (
+                <ChevronRight className="size-3 shrink-0" aria-hidden="true" />
+              )}
+            </li>
+          );
+        })}
       </ol>
     </nav>
   );

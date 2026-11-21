@@ -454,22 +454,34 @@ export function WorkspaceOverview() {
 export function WorkspaceMembers() {
   const { t } = useLocale();
   const params = useSearchParams();
-  const { workspaceId } = useSelection();
+  const selection = useSelection();
+  const workspaceId = params?.get("workspace") || selection.workspaceId;
   const session = useSession();
   const query = useApiQuery("workspaces", {});
   const remove = useApiMutation("removeWorkspaceMember");
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("ALL");
   const workspace = query.data?.find((w) => w.id === workspaceId);
-  const canManage = workspace?.myRole === "LECTURER" || session.data?.user?.role === "admin";
+  const canManage =
+    workspace?.myRole?.toUpperCase() === "LECTURER" || session.data?.user?.role === "admin";
   const activeTab = canManage && params?.get("tab") === "settings" ? "settings" : "members";
   const gradebook = useWorkspaceGradebook(
     workspaceId ?? "",
-    Boolean(workspaceId && canManage && activeTab === "members"),
+    Boolean(workspaceId && canManage),
   );
   const studentStatsById = new Map(
-    (gradebook.data?.students ?? []).map((entry) => [entry.studentId, entry]),
+    (gradebook.data?.students ?? []).map((entry) => [entry.studentId.toLowerCase(), entry]),
   );
+  const studentStatsByEmail = new Map(
+    (gradebook.data?.students ?? [])
+      .filter((entry) => entry.email)
+      .map((entry) => [entry.email.toLowerCase(), entry]),
+  );
+  const lookupStats = (m: { id: string; email?: string | undefined }) =>
+    studentStatsById.get(m.id.toLowerCase()) ??
+    (m.email ? studentStatsByEmail.get(m.email.toLowerCase()) : undefined);
+  const gradebookLoading = canManage && gradebook.isPending && !gradebook.data;
+  const gradebookFailed = canManage && gradebook.isError && !gradebook.data;
   const totalLabs = gradebook.data?.labs.length ?? 0;
   const studentCount = (workspace?.members ?? []).filter(
     (m) => m.role.toUpperCase() === "STUDENT",
@@ -578,7 +590,10 @@ export function WorkspaceMembers() {
                       if (m.role.toUpperCase() !== "STUDENT") {
                         return <span className="text-xs text-muted-foreground">—</span>;
                       }
-                      const stats = studentStatsById.get(m.id);
+                      if (gradebookLoading) {
+                        return <span className="text-xs text-muted-foreground">{t("Loading…", "Đang tải…")}</span>;
+                      }
+                      const stats = lookupStats(m);
                       const passed = stats?.passedLabs ?? 0;
                       const completed = totalLabs > 0 && passed >= totalLabs;
                       const inProgress = passed > 0 || stats?.averageScore != null;
@@ -607,7 +622,21 @@ export function WorkspaceMembers() {
                       if (m.role.toUpperCase() !== "STUDENT") {
                         return <span className="text-xs text-muted-foreground">—</span>;
                       }
-                      const stats = studentStatsById.get(m.id);
+                      if (gradebookLoading) {
+                        return <span className="text-xs text-muted-foreground">{t("Loading…", "Đang tải…")}</span>;
+                      }
+                      if (gradebookFailed) {
+                        return (
+                          <button
+                            type="button"
+                            className="text-xs text-primary hover:underline"
+                            onClick={() => void gradebook.refetch()}
+                          >
+                            {t("Retry", "Tải lại")}
+                          </button>
+                        );
+                      }
+                      const stats = lookupStats(m);
                       const passed = stats?.passedLabs ?? 0;
                       const pct = totalLabs > 0 ? Math.round((passed / totalLabs) * 100) : 0;
                       return (
@@ -642,7 +671,10 @@ export function WorkspaceMembers() {
                       if (m.role.toUpperCase() !== "STUDENT") {
                         return <span className="text-xs text-muted-foreground">—</span>;
                       }
-                      const stats = studentStatsById.get(m.id);
+                      if (gradebookLoading) {
+                        return <span className="text-xs text-muted-foreground">{t("Loading…", "Đang tải…")}</span>;
+                      }
+                      const stats = lookupStats(m);
                       const tenScale = toTenScaleScore(
                         stats?.averageScore,
                         stats?.averageScoreTenScale,

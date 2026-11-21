@@ -1147,13 +1147,30 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
   const mutating = createKey.isPending || updateKey.isPending || deleteKey.isPending;
 
   const handleCopy = (id: string, value: string) => {
-    void navigator.clipboard?.writeText(value).then(
-      () => {
-        setCopiedId(id);
-        window.setTimeout(() => setCopiedId((prev) => (prev === id ? null : prev)), 1800);
-      },
-      () => setCopiedId(null),
-    );
+    const confirmCopied = () => {
+      setCopiedId(id);
+      window.setTimeout(() => setCopiedId((prev) => (prev === id ? null : prev)), 2200);
+    };
+    const fallbackCopy = () => {
+      try {
+        const input = document.createElement("textarea");
+        input.value = value;
+        input.style.position = "fixed";
+        input.style.opacity = "0";
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand("copy");
+        document.body.removeChild(input);
+        confirmCopied();
+      } catch {
+        setCopiedId(null);
+      }
+    };
+    if (navigator.clipboard?.writeText) {
+      void navigator.clipboard.writeText(value).then(confirmCopied, fallbackCopy);
+    } else {
+      fallbackCopy();
+    }
   };
 
   const beginEdit = (item: PasskeyItem) => {
@@ -1318,12 +1335,13 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
               {list.map((item) => {
                 const expired = new Date(item.expiresAt).getTime() <= Date.now();
                 const isEditing = editingId === item.id;
+                const isCopied = copiedId === item.id;
                 return (
                   <tr key={item.id} className="align-middle hover:bg-muted/20">
-                    <td className="px-2.5 py-2 font-mono">
+                    <td className="px-2 py-2 font-mono">
                       {isEditing ? (
                         <Input
-                          className="h-7 w-32 font-mono text-xs"
+                          className="h-7 w-28 font-mono text-xs"
                           value={editCode}
                           maxLength={32}
                           onChange={(e) => setEditCode(e.target.value.replace(/\s+/g, "").slice(0, 32))}
@@ -1333,10 +1351,15 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
                           type="button"
                           onClick={() => handleCopy(item.id, item.code!)}
                           title={t("Click to copy passkey", "Bấm để sao chép")}
-                          className="inline-flex whitespace-nowrap items-center gap-1.5 rounded-md border border-teal-500/30 bg-teal-500/10 px-2 py-1 font-mono text-xs font-semibold text-teal-700 transition hover:bg-teal-500/20 dark:text-teal-300"
+                          aria-live="polite"
+                          className={`inline-flex whitespace-nowrap items-center gap-1.5 rounded-md border px-2 py-1 font-mono text-xs font-semibold transition ${
+                            isCopied
+                              ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                              : "border-teal-500/30 bg-teal-500/10 text-teal-700 hover:bg-teal-500/20 dark:text-teal-300"
+                          }`}
                         >
-                          <span>{item.code}</span>
-                          {copiedId === item.id ? (
+                          <span>{isCopied ? t("Copied!", "Đã chép!") : item.code}</span>
+                          {isCopied ? (
                             <Check className="size-3 text-emerald-500" aria-hidden="true" />
                           ) : (
                             <Copy className="size-3 opacity-70" aria-hidden="true" />
@@ -1346,10 +1369,10 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
                         <span className="text-muted-foreground">••••</span>
                       )}
                     </td>
-                    <td className="px-2.5 py-2 text-foreground/90">
+                    <td className="px-2 py-2 text-foreground/90">
                       {isEditing ? (
                         <Input
-                          className="h-7 w-40 text-xs"
+                          className="h-7 w-32 text-xs"
                           value={editLabel}
                           onChange={(e) => setEditLabel(e.target.value)}
                         />
@@ -1370,11 +1393,11 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
                         </span>
                       )}
                     </td>
-                    <td className="whitespace-nowrap px-2.5 py-2 tabular-nums text-muted-foreground">
+                    <td className="whitespace-nowrap px-2 py-2 tabular-nums text-muted-foreground">
                       {isEditing ? (
                         <Input
                           type="number"
-                          className="h-7 w-20 text-xs"
+                          className="h-7 w-16 text-xs"
                           min={1}
                           placeholder="∞"
                           value={editMaxUses}
@@ -1384,11 +1407,11 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
                         `${item.usedCount} / ${item.maxUses ?? "∞"}`
                       )}
                     </td>
-                    <td className="whitespace-nowrap px-2.5 py-2 text-muted-foreground">
+                    <td className="whitespace-nowrap px-2 py-2 text-muted-foreground">
                       {isEditing ? (
                         <Input
                           type="number"
-                          className="h-7 w-20 text-xs"
+                          className="h-7 w-16 text-xs"
                           min={1}
                           value={editHours || ""}
                           onChange={(e) => setEditHours(Number(e.target.value))}
@@ -1397,7 +1420,7 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
                         new Date(item.expiresAt).toLocaleDateString()
                       )}
                     </td>
-                    <td className="whitespace-nowrap px-2.5 py-2">
+                    <td className="whitespace-nowrap px-2 py-2">
                       {item.active ? (
                         <span className="inline-flex whitespace-nowrap items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 font-medium text-emerald-700 dark:text-emerald-400">
                           <span className="size-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
@@ -1415,7 +1438,7 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
                         </span>
                       )}
                     </td>
-                    <td className="px-2.5 py-2 text-right">
+                    <td className="px-2 py-2 text-right">
                       <div className="flex flex-nowrap items-center justify-end gap-1">
                         {isEditing ? (
                           <>
@@ -1456,7 +1479,7 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
                               type="button"
                               size="sm"
                               variant="ghost"
-                              className="h-7 whitespace-nowrap px-2 text-xs"
+                              className="h-7 whitespace-nowrap px-1.5 text-xs"
                               disabled={mutating}
                               onClick={() => beginEdit(item)}
                             >
@@ -1467,7 +1490,7 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
                               type="button"
                               size="sm"
                               variant="ghost"
-                              className="h-7 whitespace-nowrap px-2 text-xs"
+                              className="h-7 whitespace-nowrap px-1.5 text-xs"
                               disabled={mutating}
                               onClick={() =>
                                 updateKey.mutate({ passkeyId: item.id, active: !item.active })
@@ -1489,16 +1512,18 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
                               type="button"
                               size="sm"
                               variant="ghost"
-                              className="h-7 whitespace-nowrap px-2 text-xs text-destructive hover:text-destructive"
+                              className="h-7 px-1.5 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
                               disabled={mutating}
+                              aria-label={t("Delete passkey", "Xóa mã lớp")}
+                              title={t("Delete", "Xóa")}
                               onClick={() => {
                                 if (window.confirm(t("Delete this Passkey permanently?", "Xóa vĩnh viễn mã lớp này?"))) {
                                   deleteKey.mutate(item.id);
                                 }
                               }}
                             >
-                              <Trash2 className="mr-1 size-3" aria-hidden="true" />
-                              {t("Delete", "Xóa")}
+                              <Trash2 className="size-3.5" aria-hidden="true" />
+                              <span className="sr-only">{t("Delete", "Xóa")}</span>
                             </Button>
                           </>
                         )}

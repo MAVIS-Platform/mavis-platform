@@ -176,25 +176,37 @@ export function SocialSignIn({
 
       <div className="flex items-start justify-center gap-6">
         <div className="flex flex-col items-center gap-2">
-          <div
-            className={`${circleButtonClass} overflow-hidden focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-card ${
-              !googleEnabled || busy ? "pointer-events-none opacity-40" : "cursor-pointer"
-            }`}
-            title={
-              googleEnabled
-                ? t("Continue with Google", "Tiếp tục với Google")
-                : t("Google sign-in is not configured", "Đăng nhập Google chưa được cấu hình")
-            }
-          >
-            <GoogleMark />
+          {googleEnabled ? (
             <div
-              ref={googleOverlay}
-              aria-label={t("Continue with Google", "Tiếp tục với Google")}
-              className={`absolute inset-0 flex items-center justify-center overflow-hidden rounded-full transition-opacity duration-300 ${
-                googleReady ? "scale-125 opacity-[0.001]" : "pointer-events-none opacity-0"
+              className={`${circleButtonClass} isolate overflow-hidden [clip-path:circle(50%)] focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-card ${
+                busy ? "pointer-events-none opacity-40" : "cursor-pointer"
               }`}
-            />
-          </div>
+              title={t("Continue with Google", "Tiếp tục với Google")}
+            >
+              <GoogleMark />
+              <div
+                ref={googleOverlay}
+                aria-label={t("Continue with Google", "Tiếp tục với Google")}
+                style={{
+                  opacity: googleReady ? 0.01 : 0,
+                  colorScheme: "light",
+                }}
+                className={`absolute inset-0 flex items-center justify-center overflow-hidden rounded-full ${
+                  googleReady ? "" : "pointer-events-none"
+                }`}
+              />
+            </div>
+          ) : (
+            <button
+              type="button"
+              className={circleButtonClass}
+              aria-label={t("Continue with Google", "Tiếp tục với Google")}
+              disabled
+              title={t("Google sign-in is not configured", "Đăng nhập Google chưa được cấu hình")}
+            >
+              <GoogleMark />
+            </button>
+          )}
           <span className="text-xs font-medium text-muted-foreground">Google</span>
         </div>
 

@@ -871,6 +871,13 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
     { refreshMs: canReview ? 60000 : 15000 },
   );
   const backWorkspaceId = query.data?.workspaceId || selection.workspaceId;
+  const pendingQueue = useApiQuery(
+    "workspaceSubmissions",
+    { workspaceId: backWorkspaceId, reviewStatus: "PENDING" },
+    { enabled: canReview && Boolean(backWorkspaceId) },
+  );
+  const otherPending = (pendingQueue.data ?? []).filter((item) => item.id !== submissionId);
+  const nextPending = otherPending[0] ?? null;
   const backParams = new URLSearchParams();
   if (backWorkspaceId) backParams.set("workspace", backWorkspaceId);
   if (canReview && query.data?.assignmentId) {
@@ -888,6 +895,25 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
                 ← {t("Back to class submissions", "Quay lại bài nộp của lớp")}
               </Link>
             </Button>
+            {canReview && nextPending && (
+              <Button
+                asChild
+                size="sm"
+                className="bg-indigo-600 text-white hover:bg-indigo-700"
+              >
+                <Link href={`/submissions/${encodeURIComponent(nextPending.id)}`}>
+                  {t(
+                    `Next pending (${otherPending.length}) →`,
+                    `Bài chờ chấm tiếp theo (${otherPending.length}) →`,
+                  )}
+                </Link>
+              </Button>
+            )}
+            {canReview && pendingQueue.isSuccess && !nextPending && (
+              <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-300">
+                {t("No other pending submissions", "Không còn bài chờ chấm khác")}
+              </span>
+            )}
           </div>
           <div
             className={

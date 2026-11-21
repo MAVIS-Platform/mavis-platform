@@ -179,7 +179,7 @@ function LecturerAssignments({ embedded = false }: { embedded?: boolean } = {}) 
               return (
                 <li
                   key={lab.id}
-                  className="flex flex-col gap-3 px-4 py-3.5 transition-colors hover:bg-muted/30 sm:flex-row sm:items-center sm:justify-between"
+                  className="flex flex-col gap-3 px-4 py-3.5 transition-colors hover:bg-muted/30 xl:flex-row xl:items-center xl:justify-between"
                 >
                   <div className="min-w-0 flex-1 space-y-1">
                     <div className="flex flex-wrap items-center gap-2">

@@ -165,3 +165,33 @@ test("Bug #16: AppShell cancels active React Query requests before sign-out", ()
     /async function logout\(\)\s*\{[\s\S]*?await queryClient\.cancelQueries\(\);\s*await signOut\.mutateAsync\(\{\}\);/,
   );
 });
+
+test("Lecturer UX Pack 1: single-line breadcrumbs & class tabs, Google mark isolation, Passkey copy feedback, Step 5 Templates CTA, Finish tooltip, Curriculum scroll, Members loading, SpeedGrader Next & quick score", () => {
+  const page = read("src/components/layout/page.tsx");
+  const shell = read("src/features/courses/course-workspace-shell.tsx");
+  const social = read("src/features/auth/social-sign-in.tsx");
+  const access = read("src/features/workspaces/course-access.tsx");
+  const assignments = read("src/features/assignments/screens.tsx");
+  const studioSection = read("src/features/assignments/lab-studio-section.tsx");
+  const workbench = read("src/features/runtime/live-studio-workbench.tsx");
+  const builder = read("src/features/courses/course-builder.tsx");
+  const workspaces = read("src/features/workspaces/screens.tsx");
+  const subScreens = read("src/features/submissions/screens.tsx");
+  const grading = read("src/features/submissions/grading.tsx");
+  const subComponents = read("src/features/submissions/components.tsx");
+
+  assert.match(page, /overflow-hidden whitespace-nowrap/);
+  assert.match(shell, /flex w-max min-w-full flex-nowrap items-center gap-1/);
+  assert.match(social, /\[clip-path:circle\(50%\)\]/);
+  assert.match(social, /colorScheme: "light"/);
+  assert.match(access, /isCopied \? t\("Copied!", "Đã chép!"\) : item\.code/);
+  assert.match(assignments, /xl:flex-row xl:items-center xl:justify-between/);
+  assert.match(studioSection, /Configure Exercise & Templates/);
+  assert.match(studioSection, /1-Click Exercise Templates/);
+  assert.match(workbench, /finishDisabledReason/);
+  assert.match(builder, /scrollIntoView\(\{ behavior: "smooth", block: "nearest" \}\)/);
+  assert.match(workspaces, /gradebookLoading/);
+  assert.match(subScreens, /Next pending/);
+  assert.match(grading, /applyScoreToAllSnapshots/);
+  assert.match(subComponents, /Technical verification IDs & digests/);
+});

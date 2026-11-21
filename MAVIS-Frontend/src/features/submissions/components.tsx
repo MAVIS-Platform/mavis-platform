@@ -16,11 +16,32 @@ export function SubmissionVersionHeader({ submission }: { submission: Submission
   const { t } = useLocale();
   const canReview = usePermission("submission:review");
   const quiz = submission.courseQuizEvidence;
+  const isTheoryOnly =
+    submission.labMode === "THEORY_ONLY" || quiz?.status === "NOT_REQUIRED";
+  const requiresRuntime =
+    !isTheoryOnly &&
+    submission.labMode !== "THEORY_QUIZ";
   const labLabel = formatCourseLabTitle(
     submission.assignmentTitle,
     submission.labOrder,
     submission.assignmentId,
   );
+  const formattedSubmittedAt = (() => {
+    const d = new Date(submission.submittedAt);
+    return Number.isNaN(d.getTime()) ? submission.submittedAt : d.toLocaleString();
+  })();
+  const studioEval =
+    submission.studioEvidence &&
+    typeof submission.studioEvidence["exerciseEvaluation"] === "object" &&
+    submission.studioEvidence["exerciseEvaluation"] !== null
+      ? (submission.studioEvidence["exerciseEvaluation"] as Record<string, unknown>)
+      : null;
+  const studioF1 =
+    studioEval && typeof studioEval["f1"] === "number"
+      ? Math.round(studioEval["f1"] * 100)
+      : studioEval && typeof studioEval["f1Score"] === "number"
+        ? Math.round(studioEval["f1Score"] * 100)
+        : null;
 
   if (!canReview) {
     return (
@@ -30,13 +51,19 @@ export function SubmissionVersionHeader({ submission }: { submission: Submission
             status={t("Frozen submitted dossier · read-only", "Hồ sơ đã khóa · chỉ đọc")}
             variant="source"
           />
-          {submission.labMode && (
+          {isTheoryOnly ? (
+            <StatusBadge
+              status={t("Theory Only", "Chỉ lý thuyết")}
+              preserveCase
+              variant="outline"
+            />
+          ) : submission.labMode ? (
             <StatusBadge
               status={formatLabModeLabel(submission.labMode, t)}
               preserveCase
               variant="outline"
             />
-          )}
+          ) : null}
           {(submission.runtime?.studioVerified || Boolean(submission.studioEvidence)) && (
             <StatusBadge
               status={t("Studio Live Verified", "Đã xác minh Studio Live")}
@@ -50,7 +77,7 @@ export function SubmissionVersionHeader({ submission }: { submission: Submission
         </p>
         <p className="text-xs text-muted-foreground">
           {submission.studentName || submission.studentId} · {t("Submitted", "Đã nộp")}{" "}
-          {submission.submittedAt}
+          {formattedSubmittedAt}
           {submission.complianceScore !== null && submission.complianceScore !== undefined
             ? ` · ${t("Compliance", "Tuân thủ 3E")}: ${submission.complianceScore}`
             : ""}
@@ -65,7 +92,7 @@ export function SubmissionVersionHeader({ submission }: { submission: Submission
             {t("Version", "Phiên bản")} {quiz.quizVersion ?? 1}
           </p>
         )}
-        {quiz && quiz.status === "NOT_REQUIRED" && (
+        {isTheoryOnly && (
           <p className="text-sm">
             {t("Theory-only Lab (no Quiz required)", "Lab chỉ lý thuyết (không yêu cầu Quiz)")}
           </p>
@@ -82,71 +109,65 @@ export function SubmissionVersionHeader({ submission }: { submission: Submission
           status={t("Frozen submitted results · read-only", "Kết quả nộp đã khóa · chỉ đọc")}
           variant="source"
         />
-        {submission.labMode && (
+        {isTheoryOnly ? (
+          <StatusBadge
+            status={t("Theory Only", "Chỉ lý thuyết")}
+            preserveCase
+            variant="outline"
+          />
+        ) : submission.labMode ? (
           <StatusBadge
             status={formatLabModeLabel(submission.labMode, t)}
             preserveCase
             variant="outline"
           />
-        )}
+        ) : null}
         {(submission.runtime?.studioVerified || Boolean(submission.studioEvidence)) && (
           <StatusBadge
             status={t("Studio Live Verified", "Đã xác minh Studio Live")}
             variant="success"
           />
         )}
-      </div>
-      <p className="break-all text-xs text-muted-foreground">
-        {t("Submission", "Bài nộp")} {submission.id} · {t("submitted", "đã nộp")}{" "}
-        {submission.submittedAt}
-      </p>
-      <p className="break-all text-sm">
-        {t("Model", "Mô hình")} {submission.model.id} · {t("revision", "bản")} {submission.model.revision} ·{" "}
-        {t("source", "nguồn")} {submission.snapshot.id}
-      </p>
-      <p className="text-sm">
-        {submission.studentName || submission.studentId} ·{" "}
-        {formatCourseLabTitle(
-          submission.assignmentTitle,
-          submission.labOrder,
-          submission.assignmentId,
+        {studioF1 !== null && (
+          <StatusBadge
+            status={`Impact F1: ${studioF1}%`}
+            preserveCase
+            variant={studioF1 >= 70 ? "success" : "warning"}
+          />
         )}
-      </p>
-      {submission.diagramVersionId || submission.evaluationRunId ? (
-        <p className="break-all text-xs text-muted-foreground">
-          {t("Diagram", "Sơ đồ")}: {submission.diagramVersionId ?? t("none attached", "không có")} ·{" "}
-          {t("Evaluation", "Đánh giá tĩnh")}: {submission.evaluationRunId ?? t("none attached", "không có")} ·{" "}
-          {t("Compliance", "Tuân thủ 3E")}: {submission.complianceScore ?? t("not evaluated", "chưa đánh giá")}
+      </div>
+
+      <div className="space-y-1">
+        <p className="text-base font-semibold text-foreground">{labLabel}</p>
+        <p className="text-xs text-muted-foreground">
+          {submission.studentName || submission.studentId} · {t("Submitted", "Đã nộp")}{" "}
+          {formattedSubmittedAt}
         </p>
-      ) : (
-        <p className="break-all text-xs text-muted-foreground">
-          {submission.labMode
-            ? `${t("Lab mode", "Chế độ Lab")}: ${formatLabModeLabel(submission.labMode, t)} · `
-            : ""}
-          {t("Compliance", "Tuân thủ 3E")}:{" "}
-          {submission.complianceScore ?? t("not evaluated", "chưa đánh giá")}
-        </p>
-      )}
-      {submission.submissionNotes && (
-        <p className="whitespace-pre-wrap text-sm">{submission.submissionNotes}</p>
-      )}
-      {quiz && quiz.status === "PASSED" && quiz.correctCount != null && quiz.questionCount != null && (
-        <p className="text-sm">
-          {t("Lab Quiz passed", "Đã đạt Quiz của Lab")} · {quiz.correctCount}/{quiz.questionCount}
-          {" · "}
-          {t("Version", "Phiên bản")} {quiz.quizVersion ?? 1}
-        </p>
-      )}
-      {quiz && quiz.status === "NOT_REQUIRED" && (
-        <p className="text-sm">
-          {t("Theory-only Lab (no Quiz required)", "Lab chỉ lý thuyết (không yêu cầu Quiz)")}
-        </p>
-      )}
-      <SubmissionExport submissionId={submission.id} />
-      <p className="text-xs text-muted-foreground">
+      </div>
+
+      <div className="flex flex-wrap gap-2 text-xs">
+        {quiz && quiz.status === "PASSED" && quiz.correctCount != null && quiz.questionCount != null && (
+          <span className="inline-flex items-center rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 font-medium text-emerald-800 dark:text-emerald-300">
+            {t("Lab Quiz passed", "Đã đạt Quiz của Lab")} · {quiz.correctCount}/{quiz.questionCount}
+            {quiz.questionCount > 0
+              ? ` (${Math.round((quiz.correctCount / quiz.questionCount) * 100)}%)`
+              : ""}
+            {" · "}v{quiz.quizVersion ?? 1}
+          </span>
+        )}
+        {isTheoryOnly && (
+          <span className="inline-flex items-center rounded-lg border bg-muted/40 px-2.5 py-1 font-medium text-muted-foreground">
+            {t("Theory-only Lab (no Quiz required)", "Lab chỉ lý thuyết (không yêu cầu Quiz)")}
+          </span>
+        )}
+        {submission.complianceScore !== null && submission.complianceScore !== undefined && (
+          <span className="inline-flex items-center rounded-lg border bg-muted/40 px-2.5 py-1 font-medium text-foreground">
+            {t("Compliance", "Tuân thủ 3E")}: {submission.complianceScore}
+          </span>
+        )}
         {submission.runtime ? (
           <Link
-            className="underline"
+            className="inline-flex items-center rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 font-medium text-emerald-800 underline-offset-2 hover:underline dark:text-emerald-300"
             href={`/sessions?${new URLSearchParams({
               project: submission.runtime.projectId,
               session: submission.runtime.id,
@@ -158,16 +179,51 @@ export function SubmissionVersionHeader({ submission }: { submission: Submission
             · {submission.runtime.id.slice(0, 8)}
           </Link>
         ) : submission.studioEvidence ? (
-          <span className="font-medium text-emerald-700 dark:text-emerald-400">
+          <span className="inline-flex items-center rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 font-medium text-emerald-800 dark:text-emerald-300">
             {t("Verified Studio evidence attached", "Đã đính kèm minh chứng Studio xác minh")}
-            {typeof submission.studioEvidence["receiptDigest"] === "string"
-              ? ` · ${String(submission.studioEvidence["receiptDigest"]).slice(0, 19)}…`
-              : ""}
           </span>
-        ) : (
-          t("No runtime evidence attached", "Chưa đính kèm minh chứng Runtime")
-        )}
-      </p>
+        ) : requiresRuntime ? (
+          <span className="inline-flex items-center rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 font-medium text-amber-800 dark:text-amber-300">
+            {t("No runtime evidence attached", "Chưa đính kèm minh chứng Runtime")}
+          </span>
+        ) : null}
+      </div>
+
+      {submission.submissionNotes && (
+        <p className="whitespace-pre-wrap rounded-lg border bg-muted/20 p-3 text-sm">
+          {submission.submissionNotes}
+        </p>
+      )}
+
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <SubmissionExport submissionId={submission.id} />
+      </div>
+
+      <details className="rounded-lg border bg-muted/15 px-3 py-2 text-xs text-muted-foreground">
+        <summary className="cursor-pointer font-medium text-foreground/80">
+          {t("Technical verification IDs & digests", "Mã định danh & SHA-256 kiểm chứng kỹ thuật")}
+        </summary>
+        <div className="mt-2 space-y-1 break-all font-mono text-[11px]">
+          <p>
+            {t("Submission", "Bài nộp")}: {submission.id}
+          </p>
+          <p>
+            {t("Model", "Mô hình")}: {submission.model.id} · rev {submission.model.revision} ·{" "}
+            {t("source", "nguồn")} {submission.snapshot.id}
+          </p>
+          {(submission.diagramVersionId || submission.evaluationRunId) && (
+            <p>
+              {t("Diagram", "Sơ đồ")}: {submission.diagramVersionId ?? "—"} ·{" "}
+              {t("Evaluation", "Đánh giá tĩnh")}: {submission.evaluationRunId ?? "—"}
+            </p>
+          )}
+          {typeof submission.studioEvidence?.["receiptDigest"] === "string" && (
+            <p>
+              Receipt: {String(submission.studioEvidence["receiptDigest"])}
+            </p>
+          )}
+        </div>
+      </details>
     </DetailPanel>
   );
 }

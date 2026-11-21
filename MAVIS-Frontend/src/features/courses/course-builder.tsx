@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   BookOpen,
   ChevronDown,
@@ -315,11 +315,19 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
   const [editModulePrerequisite, setEditModulePrerequisite] = useState("");
   const [editingItem, setEditingItem] = useState<{ moduleId: string; itemId: string; draft: ItemDraft } | null>(null);
   const [selectedItem, setSelectedItem] = useState<{ moduleId: string; itemId: string } | null>(null);
+  const inspectorRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     setTitle(course.data?.title ?? "");
     setDescription(course.data?.description ?? "");
   }, [course.data?.id, course.data?.title, course.data?.description]);
+
+  useEffect(() => {
+    if (!editingItem || !inspectorRef.current) return;
+    inspectorRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    const firstInput = inspectorRef.current.querySelector<HTMLInputElement>("input[type='text'], input:not([type])");
+    firstInput?.focus({ preventScroll: true });
+  }, [editingItem?.itemId]);
 
   if (course.isPending) {
     return <p className="text-sm text-muted-foreground">{t("Loading course builder…", "Đang tải trình tạo khóa học…")}</p>;
@@ -880,7 +888,9 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
                             <Button size="sm" disabled={busy || !draftValid(draft)}>
                               {course.addItem.isPending
                                 ? t("Saving…", "Đang lưu…")
-                                : t("Add Lab to module", "Gắn bài Lab vào Chương")}
+                                : draft.type === "THEORY"
+                                  ? t("Add lesson to module", "Thêm bài học vào Chương")
+                                  : t("Add Lab to module", "Gắn bài Lab vào Chương")}
                             </Button>
                           </form>
                         </details>
@@ -922,11 +932,12 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
           </div>
 
           <aside
+            ref={inspectorRef}
             aria-label={t("Curriculum Inspector", "Trình xem & sửa học liệu")}
             className="min-w-0 space-y-4 rounded-xl border bg-muted/15 p-4 lg:sticky lg:top-6"
           >
             {isDraft && editingItem ? (
-              <form onSubmit={saveItem} className="space-y-3">
+              <form onSubmit={saveItem} className="space-y-3 rounded-lg ring-2 ring-primary/25 p-2 -m-2">
                 <div className="flex items-center justify-between border-b pb-2">
                   <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     {t("Editing Learning Item", "Đang chỉnh sửa nội dung")}

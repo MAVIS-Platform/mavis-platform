@@ -446,9 +446,9 @@ export function CourseWorkspaceShell({
         {showTabs && (
           <nav
             aria-label={t("Class sections", "Các mục của lớp")}
-            className="mt-5 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-black/20 p-1.5 backdrop-blur-sm"
+            className="mt-4 overflow-x-auto rounded-xl bg-black/20 p-1 backdrop-blur-sm"
           >
-            <div className="flex flex-wrap gap-1">
+            <div className="flex w-max min-w-full flex-nowrap items-center gap-1">
               {(isStudent ? STUDENT_TABS : STAFF_TABS).map((tab) => {
                 const Icon = tab.icon;
                 const isCurrent = isStudent
@@ -460,7 +460,7 @@ export function CourseWorkspaceShell({
                     href={tab.href(workspace.id)}
                     aria-current={isCurrent ? "page" : undefined}
                     className={cn(
-                      "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors",
+                      "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2 py-1 text-xs font-medium transition-colors",
                       isCurrent
                         ? "bg-white text-emerald-950 shadow-sm"
                         : "text-white/85 hover:bg-white/15 hover:text-white",

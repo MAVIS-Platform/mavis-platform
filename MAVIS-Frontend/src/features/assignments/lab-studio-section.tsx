@@ -190,10 +190,13 @@ export function LabStudioSection({
                 type="button"
                 size="sm"
                 variant="outline"
-                onClick={() => setConfigModalOpen(true)}
+                onClick={() => {
+                  setConfigTab("exercise");
+                  setConfigModalOpen(true);
+                }}
               >
                 <SlidersHorizontal className="mr-1.5 size-3.5" aria-hidden="true" />
-                {t("Advanced Config", "Cấu hình nâng cao")}
+                {t("Configure Exercise & Templates", "Cấu hình bài tập & Mẫu sẵn")}
               </Button>
               {published && (
                 <PublishCourseLab
@@ -261,7 +264,7 @@ export function LabStudioSection({
               </div>
             )}
 
-            <div className="mt-6">
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-2.5">
               <Button
                 type="button"
                 disabled={autoStudio.isPending}
@@ -272,7 +275,26 @@ export function LabStudioSection({
                   ? t("Preparing Docker runtime…", "Đang chuẩn bị Docker runtime…")
                   : t("Prepare Runtime & Open Studio", "Chuẩn bị Runtime & Mở Studio")}
               </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setConfigTab("exercise");
+                  setConfigModalOpen(true);
+                }}
+              >
+                <SlidersHorizontal className="mr-1.5 size-4" aria-hidden="true" />
+                {t("1-Click Exercise Templates", "Chọn mẫu bài tập sẵn")}
+              </Button>
             </div>
+            <p className="mt-3 max-w-md text-xs text-muted-foreground">
+              {exercise.data?.instructions
+                ? exercise.data.instructions
+                : t(
+                    "Pick a 1-Click Exercise Template (Change Impact, Scale-Out, or CPU Throttle) or customize auto-grading rules before running a live test.",
+                    "Chọn nhanh mẫu bài tập (Change Impact, Scale-Out, hoặc CPU Throttle) hoặc tùy chỉnh tiêu chí chấm trước khi chạy thử.",
+                  )}
+            </p>
           </div>
         ) : (
           /* Clean Launchpad to Dedicated Full-Screen Standalone Studio Live */
@@ -326,23 +348,45 @@ export function LabStudioSection({
                   </div>
                 )}
 
-                {exercise.data?.instructions && (
-                  <p className="max-w-2xl truncate text-xs text-slate-400">
+                {exercise.data?.instructions ? (
+                  <p className="max-w-2xl truncate text-xs text-slate-300">
                     {exercise.data.instructions}
+                  </p>
+                ) : (
+                  <p className="max-w-2xl text-xs text-amber-300/90">
+                    {t(
+                      "No exercise instructions configured yet — pick a 1-Click Template (Change Impact, Scale-Out, CPU Throttle) so students have clear goals.",
+                      "Chưa thiết lập đề bài thực hành — hãy chọn mẫu bài tập sẵn để sinh viên biết rõ nhiệm vụ cần làm.",
+                    )}
                   </p>
                 )}
               </div>
 
-              <Button
-                asChild
-                size="lg"
-                className="shrink-0 bg-emerald-600 px-5 text-white hover:bg-emerald-500"
-              >
-                <Link href={studioLiveHref}>
-                  {t("Open Studio Live", "Mở Studio Live")}
-                  <ArrowUpRight className="ml-1.5 size-4" aria-hidden="true" />
-                </Link>
-              </Button>
+              <div className="flex shrink-0 flex-wrap items-center justify-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white"
+                  onClick={() => {
+                    setConfigTab("exercise");
+                    setConfigModalOpen(true);
+                  }}
+                >
+                  <SlidersHorizontal className="mr-1.5 size-3.5" aria-hidden="true" />
+                  {t("Exercise Setup", "Đề bài & Mẫu sẵn")}
+                </Button>
+                <Button
+                  asChild
+                  size="lg"
+                  className="shrink-0 bg-emerald-600 px-5 text-white hover:bg-emerald-500"
+                >
+                  <Link href={studioLiveHref}>
+                    {t("Open Studio Live", "Mở Studio Live")}
+                    <ArrowUpRight className="ml-1.5 size-4" aria-hidden="true" />
+                  </Link>
+                </Button>
+              </div>
             </div>
           </div>
         )}
