@@ -280,7 +280,11 @@ class Wf01AcceptanceMatrixTest {
             if (sql.contains("FROM workspace_members m") && sql.contains("preceding.lab_order")) {
                 UUID wid = (UUID) args[2];
                 UUID uid = (UUID) args[3];
-                Integer labOrder = (Integer) args[5];
+                Integer labOrder = java.util.Arrays.stream(args)
+                        .filter(Integer.class::isInstance)
+                        .map(Integer.class::cast)
+                        .findFirst()
+                        .orElseThrow();
                 if (!memberTable.containsKey(wid + ":" + uid)) return false;
                 if (labOrder > 1 && lab01.getLabOrder() != null && lab01.getLabOrder() < labOrder) {
                     return passedLabs.contains(lab01.getId() + ":" + uid);
