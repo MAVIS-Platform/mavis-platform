@@ -2468,17 +2468,15 @@ function StepContent({
       )}
 
       <div className="sticky bottom-3 z-20 flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card/95 p-3 shadow-sm backdrop-blur sm:p-4">
-        <Button asChild variant="outline" disabled={step === 1}>
-          {step === 1 ? (
-            <span>{t("Previous step", "Bước trước")}</span>
-          ) : (
+        {step > 1 && (
+          <Button asChild variant="outline">
             <Link
               href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=${step - 1}${previewParam}`}
             >
               {t("Previous step", "Bước trước")}
             </Link>
-          )}
-        </Button>
+          </Button>
+        )}
         <span className="flex items-center gap-2 text-xs text-muted-foreground">
           <Clock3 className="size-3.5" />{" "}
           {t(

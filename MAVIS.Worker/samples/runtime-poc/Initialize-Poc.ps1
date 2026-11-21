@@ -26,7 +26,7 @@ foreach ($sample in @('orders','catalog','route-controller')) {
     Invoke-Checked docker @('build','--quiet','--build-arg',"RUNTIME_IMAGE=$runtime",'-t',"mavis-poc-${sample}:1",$directory)
 }
 foreach ($sample in @('payment','gateway')) {
-    Invoke-Checked docker @('build','--quiet','-t',"mavis-poc-${sample}:1",(Join-Path $PSScriptRoot $sample))
+    Invoke-Checked docker @('build','--progress=plain','-t',"mavis-poc-${sample}:1",(Join-Path $PSScriptRoot $sample))
 }
 Invoke-Checked docker @('build','--quiet','--build-arg',"RUNTIME_IMAGE=$muslRuntime",'-t','mavis-poc-orders-musl:1',(Join-Path $PSScriptRoot 'orders'))
 Invoke-Checked dotnet @('publish',(Join-Path $workerRoot 'src/MAVIS.Runner/MAVIS.Runner.csproj'),'-c','Release','-p:UseAppHost=false','-o',(Join-Path $artifactRoot 'runner-publish'),'--verbosity','minimal')
