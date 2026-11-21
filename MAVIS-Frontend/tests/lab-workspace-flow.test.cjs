@@ -96,3 +96,10 @@ test("LabWorkspace uses zero-overlap ELK/MxGraph ArchitectureDiagrams for C1-C3 
   assert.match(renderer, /flowchart:\s*\{[\s\S]*nodeSpacing:\s*64[\s\S]*rankSpacing:\s*84/);
   assert.match(renderer, /UpdateLayoutConfig\(\$c4ShapeInRow="3", \$c4BoundaryInRow="1"\)/);
 });
+
+test("Bug #06: Step footer clarifies locked Runtime Studio, lab switcher truncates cleanly, and scroll sections clear sticky stepper", () => {
+  const screens = read("src/features/courses/screens.tsx");
+  assert.match(screens, /t\("Check Runtime Studio Requirement", "Xem yêu cầu Runtime Studio"\)/);
+  assert.match(screens, /id="lab-ai-tutor" className="scroll-mt-36"/);
+  assert.match(screens, /id="lab-switcher"[\s\S]*truncate[\s\S]*leading-tight/);
+});

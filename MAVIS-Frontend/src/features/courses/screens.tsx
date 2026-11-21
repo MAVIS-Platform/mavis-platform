@@ -945,7 +945,7 @@ export function LabWorkspace() {
                         );
                       }
                     }}
-                    className="h-8 max-w-56 rounded-lg border border-white/25 bg-white/12 px-2.5 text-xs text-white outline-none hover:bg-white/20"
+                    className="h-8 max-w-56 truncate rounded-lg border border-white/25 bg-white/12 px-2.5 text-xs leading-tight text-white outline-none hover:bg-white/20"
                   >
                     {(roadmap.data?.labs ?? []).map((item) => {
                       const icon =
@@ -1814,7 +1814,7 @@ function StepContent({
         <div className="space-y-5">
           {hasReferenceArch ? (
             <>
-              <section id="lab-static-workspace" className="space-y-4 rounded-xl border bg-card p-4 sm:p-5" aria-label={t("Architecture workspace", "Không gian kiến trúc")}>
+              <section id="lab-static-workspace" className="scroll-mt-36 space-y-4 rounded-xl border bg-card p-4 sm:p-5" aria-label={t("Architecture workspace", "Không gian kiến trúc")}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <h3 className="text-base font-semibold text-foreground">
@@ -2024,7 +2024,7 @@ function StepContent({
                 />
               )}
 
-              <div id="lab-ai-tutor">
+              <div id="lab-ai-tutor" className="scroll-mt-36">
                 <DetailPanel
                   title={t(
                     "Evidence-Grounded AI Architecture Tutor (BR-05 & DS-02b)",
@@ -2495,8 +2495,11 @@ function StepContent({
                 href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=${nextStep}${previewParam}`}
               >
                 {step === 1 && requiresRuntime
-                  ? t("Continue to Runtime Studio", "Tiếp tục đến Runtime Studio")
-                  : t("Continue to Evidence Review", "Tiếp tục đến Kiểm tra Evidence")} <ArrowRight />
+                  ? !runtimeReady && !preview
+                    ? t("Check Runtime Studio Requirement", "Xem yêu cầu Runtime Studio")
+                    : t("Continue to Runtime Studio", "Tiếp tục đến Runtime Studio")
+                  : t("Continue to Evidence Review", "Tiếp tục đến Kiểm tra Evidence")}{" "}
+                <ArrowRight />
               </Link>
             ) : (
               <span>{t("Finish Studio to continue", "Hoàn tất Studio để tiếp tục")}</span>
