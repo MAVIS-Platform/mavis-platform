@@ -546,13 +546,26 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
               {modules.map((module) => {
                 const draft = draftFor(module.id);
                 const visibleItems = module.items.filter((item) => item.type !== "ESSAY");
-                const theoryOnlyCount = visibleItems.filter(
-                  (i) => i.type === "THEORY" || i.type === "STATIC_LAB",
+                const resolveBuilderItemType = (item: (typeof visibleItems)[number]) => {
+                  const linked = item.assignmentId
+                    ? assignmentRows.find((a) => a.id === item.assignmentId)
+                    : undefined;
+                  if (linked && ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(item.type)) {
+                    return itemTypeForAssignment(linked);
+                  }
+                  return item.type;
+                };
+                const theoryOnlyCount = visibleItems.filter((i) => {
+                  const rt = resolveBuilderItemType(i);
+                  return rt === "THEORY" || rt === "STATIC_LAB";
+                }).length;
+                const quizLabCount = visibleItems.filter((i) => {
+                  const rt = resolveBuilderItemType(i);
+                  return rt === "QUIZ" || rt === "IMPACT_LAB";
+                }).length;
+                const studioLabCount = visibleItems.filter(
+                  (i) => resolveBuilderItemType(i) === "RUNTIME_LAB",
                 ).length;
-                const quizLabCount = visibleItems.filter(
-                  (i) => i.type === "QUIZ" || i.type === "IMPACT_LAB",
-                ).length;
-                const studioLabCount = visibleItems.filter((i) => i.type === "RUNTIME_LAB").length;
                 const breakdown = [
                   theoryOnlyCount > 0
                     ? `${theoryOnlyCount} ${t("Theory Only", "Chỉ Lý thuyết")}`
@@ -576,7 +589,8 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
                         <div className="min-w-0 flex-1">
                           <p className="font-medium">{module.title}</p>
                           <p className="text-xs text-muted-foreground">
-                            {visibleItems.length} {t("Labs", "bài Lab")}
+                            {visibleItems.length}{" "}
+                            {visibleItems.length === 1 ? t("Lab", "bài Lab") : t("Labs", "bài Lab")}
                             {breakdown ? ` · ${breakdown}` : ""}
                             {module.prerequisiteModuleId
                               ? ` · ${t("Prerequisite", "Tiên quyết")}: ${

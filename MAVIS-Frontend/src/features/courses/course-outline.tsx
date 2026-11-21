@@ -357,7 +357,8 @@ function CourseOutlineBody({
                 <span className="min-w-0 flex-1">
                   <span className="block font-semibold text-foreground">{module.title}</span>
                   <span className="block text-xs text-muted-foreground">
-                    {module.items.length} {t("Labs", "bài Lab")}
+                    {module.items.length}{" "}
+                    {module.items.length === 1 ? t("Lab", "bài Lab") : t("Labs", "bài Lab")}
                     {breakdown ? ` · ${breakdown}` : ""}
                     {module.prerequisiteModuleId
                       ? ` · ${t("Prerequisite", "Tiên quyết")}: ${
