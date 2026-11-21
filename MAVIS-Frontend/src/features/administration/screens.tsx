@@ -317,7 +317,7 @@ export function Accounts() {
                       dateTime={a.createdAt ?? undefined}
                       className="block whitespace-nowrap space-y-0.5 text-xs tabular-nums"
                     >
-                      <span className="block font-medium">{date.toLocaleDateString("vi-VN")}</span>
+                      <span className="block font-medium">{date.toLocaleDateString("vi-VN")}</span>{" "}
                       <span className="block text-muted-foreground">
                         {date.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}
                       </span>

@@ -131,7 +131,10 @@ function CourseCard({ workspace, compact = false }: { workspace: Workspace; comp
           </p>
         )}
         <p className="mt-3 text-xs text-muted-foreground">
-          {workspace.members?.length ?? 0} {t("members", "thành viên")}
+          {workspace.members?.length ?? 0}{" "}
+          {(workspace.members?.length ?? 0) === 1
+            ? t("member", "thành viên")
+            : t("members", "thành viên")}
         </p>
       </div>
       <Button asChild className="mt-5 w-full">
@@ -593,7 +596,9 @@ export function AllCoursesPage({ initialQuery = "" }: { initialQuery?: string })
                           )}
                       </p>
                       <p className="mt-3 text-xs text-muted-foreground">
-                        {course.labCount} Labs · {course.lecturerName}
+                        {course.labCount}{" "}
+                        {course.labCount === 1 ? t("Lab", "Lab") : t("Labs", "Labs")} ·{" "}
+                        {course.lecturerName}
                       </p>
                       {course.enrolled ? (
                         <Button asChild className="mt-5 w-full">

@@ -95,9 +95,9 @@ export function Workspaces() {
                   <span className="h-1 w-6 rounded-full bg-teal-300" />
                   {t("Your teaching space", "Không gian giảng dạy")}
                 </p>
-                <h2 className="text-2xl font-bold tracking-tight text-white md:text-3xl">
+                <h1 className="text-2xl font-bold tracking-tight text-white md:text-3xl">
                   {t("A great class starts here.", "Khởi đầu cho một lớp học tuyệt vời.")}
-                </h2>
+                </h1>
                 <p className="mt-2 max-w-xl text-sm leading-6 text-sky-100/90">
                   {t(
                     "Open a class to organize modules, Labs, students and grading.",
@@ -288,7 +288,7 @@ export function Workspaces() {
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs tabular-nums text-muted-foreground">
                     <span className="inline-flex items-center gap-1">
                       <Users className="size-3.5" aria-hidden="true" />
-                      {students} {t("students", "sinh viên")}
+                      {students} {students === 1 ? t("student", "sinh viên") : t("students", "sinh viên")}
                     </span>
                     {submissions.isSuccess && (
                       <span
@@ -604,7 +604,7 @@ export function WorkspaceMembers() {
                         <div className="min-w-36 space-y-1">
                           <div className="flex justify-between text-[11px] font-medium">
                             <span className="text-emerald-700 dark:text-emerald-400">
-                              {passed}/{totalLabs} Labs
+                              {passed}/{totalLabs} {totalLabs === 1 ? t("Lab", "Lab") : t("Labs", "Labs")}
                             </span>
                             <span className="text-muted-foreground">{pct}%</span>
                           </div>

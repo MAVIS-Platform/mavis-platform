@@ -119,3 +119,15 @@ test("Bug #04: CourseWorkspaceShell header status/key prefix and default Passkey
   assert.match(access, /item\.label === "Mã ghi danh lớp học" \|\| item\.label === "Class Passkey"/);
   assert.match(access, /t\("Class Passkey", "Mã ghi danh lớp học"\)/);
 });
+
+test("Bug #08: workspaces exposes an h1 landmark, singular/plural counts avoid '1 students'/'1 Labs', and Admin createdAt separates date/time", () => {
+  const ws = read("src/features/workspaces/screens.tsx");
+  const pages = read("src/features/courses/mavis-pages.tsx");
+  const admin = read("src/features/administration/screens.tsx");
+
+  assert.match(ws, /<h1 className="text-2xl font-bold tracking-tight text-white md:text-3xl">/);
+  assert.match(ws, /students === 1 \? t\("student", "sinh viên"\) : t\("students", "sinh viên"\)/);
+  assert.match(ws, /totalLabs === 1 \? t\("Lab", "Lab"\) : t\("Labs", "Labs"\)/);
+  assert.match(pages, /course\.labCount === 1 \? t\("Lab", "Lab"\) : t\("Labs", "Labs"\)/);
+  assert.match(admin, /date\.toLocaleDateString\("vi-VN"\)\}<\/span>\{" "\}/);
+});
