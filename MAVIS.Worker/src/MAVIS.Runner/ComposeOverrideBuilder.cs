@@ -12,7 +12,7 @@ public sealed record RunnerExecutionProfile(string CollectorImage, string Instru
     IReadOnlyDictionary<string, RuntimeServiceProfile> Applications, int MemoryMiB = 256, double Cpus = 1,
     int TimeoutSeconds = 120, bool ApprovedForLocalPoc = false, string? ScenarioRunnerImage = null,
     string DotnetInstrumentationVersion = "1.17.0", string JavaInstrumentationVersion = "2.32.0", IReadOnlyDictionary<string, IReadOnlyList<RuntimeEnvironmentBinding>>? EnvironmentBindings = null,
-    StudioTopology? StudioTopology = null, int ProbeRps = 5, SeedHookProfile? SeedHook = null,
+    StudioTopology? StudioTopology = null, int ProbeRps = 1, SeedHookProfile? SeedHook = null,
     IReadOnlyDictionary<string, IReadOnlyList<string>>? AllowedEnvKeys = null,
     IReadOnlyDictionary<string, string>? AlternateImages = null);
 

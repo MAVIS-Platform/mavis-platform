@@ -647,7 +647,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
     private readonly SemaphoreSlim _telemetryGate = new(1, 1);
     private readonly object _probeLock = new();
     private ILineStreamHandle? _probeStream;
-    private int _currentProbeRps = 5;
+    private int _currentProbeRps = 1;
     private JsonNode? _latestProbeNode;
     private JsonNode? _latestServiceGraphNode;
     private TraceCorrelationResult? _lastLiveTrace;

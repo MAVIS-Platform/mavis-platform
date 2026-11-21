@@ -280,6 +280,23 @@ public sealed class TraceTelemetryV2Tests
     }
 
     [Fact]
+    public void ServiceGraphScraperNormalizesPascalCaseOtelServiceNamesToCanonicalKeys()
+    {
+        var scraper = new PrometheusServiceGraphScraper(["api-gateway", "fruit-catalog-api"]);
+        var exposition = """
+            traces_service_graph_request_total{client="ApiGateway",server="FruitCatalog.API"} 10
+            traces_service_graph_request_failed_total{client="ApiGateway",server="FruitCatalog.API"} 2
+            """;
+
+        var edges = scraper.Update(exposition, 2.0);
+
+        var edge = Assert.Single(edges);
+        Assert.Equal("api-gateway", edge.Client);
+        Assert.Equal("fruit-catalog-api", edge.Server);
+        Assert.Equal(20.0, edge.ErrorRatePercent);
+    }
+
+    [Fact]
     public async Task LiveProbeEmitsFramesAndAppliesDynamicTargetRpsEvenWithSynchronizedBlockingStdin()
     {
         // Regression test: SyncTextReader (Console.In) blocks synchronously on ReadLineAsync; LiveProbeRunner must still emit frames and react to SET_LOAD.

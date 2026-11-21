@@ -11,7 +11,7 @@ public sealed record LiveProbeEnvelope(
     HttpScenarioDefinition Scenario,
     IReadOnlyDictionary<string, Uri> Endpoints,
     IReadOnlyDictionary<string, string> Secrets,
-    int TargetRps = 5,
+    int TargetRps = 1,
     string? CollectorMetricsUrl = "http://mavis-collector:8889/metrics");
 
 public sealed record LiveProbeRouteMetrics(
@@ -72,7 +72,7 @@ public sealed class LiveProbeRunner
             .ToArray();
         using var client = HttpScenarioRunner.CreateClient();
         var samples = new ConcurrentQueue<Sample>();
-        var scraper = new PrometheusServiceGraphScraper();
+        var scraper = new PrometheusServiceGraphScraper(envelope.Endpoints.Keys);
         using var inFlight = new SemaphoreSlim(32);
 
         // Run on a dedicated worker thread so even a synchronized TextReader (like Console.In) can never block load/emit startup.
@@ -296,6 +296,34 @@ public sealed class LiveProbeRunner
 /// </summary>
 public sealed class PrometheusServiceGraphScraper
 {
+    private readonly Dictionary<string, string> _canonicalByNormalized = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _canonicalExact = new(StringComparer.Ordinal);
+
+    public PrometheusServiceGraphScraper(IEnumerable<string>? canonicalServices = null)
+    {
+        if (canonicalServices is null) return;
+        var ambiguous = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var svc in canonicalServices)
+        {
+            if (string.IsNullOrWhiteSpace(svc)) continue;
+            var trimmed = svc.Trim();
+            _canonicalExact.Add(trimmed);
+            var norm = NormalizeKey(trimmed);
+            if (norm.Length == 0) continue;
+            if (!_canonicalByNormalized.TryAdd(norm, trimmed)) ambiguous.Add(norm);
+        }
+        foreach (var dup in ambiguous) _canonicalByNormalized.Remove(dup);
+    }
+
+    private string ResolveService(string value)
+    {
+        if (_canonicalExact.Contains(value)) return value;
+        return _canonicalByNormalized.TryGetValue(NormalizeKey(value), out var canonical) ? canonical : value;
+    }
+
+    private static string NormalizeKey(string value) =>
+        new string(value.Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray());
+
     private sealed class EdgeCounters
     {
         public double Total;
@@ -342,7 +370,7 @@ public sealed class PrometheusServiceGraphScraper
         return results;
     }
 
-    private static Dictionary<(string Client, string Server), EdgeCounters> Parse(string text)
+    private Dictionary<(string Client, string Server), EdgeCounters> Parse(string text)
     {
         var map = new Dictionary<(string Client, string Server), EdgeCounters>();
         foreach (var raw in text.Split('\n'))
@@ -371,7 +399,7 @@ public sealed class PrometheusServiceGraphScraper
             }
             if (string.IsNullOrEmpty(client) || string.IsNullOrEmpty(server)) continue;
 
-            var key = (client, server);
+            var key = (ResolveService(client), ResolveService(server));
             if (!map.TryGetValue(key, out var counters)) map[key] = counters = new EdgeCounters();
             if (isTotal) counters.Total += value;
             else if (isFailed) counters.Failed += value;

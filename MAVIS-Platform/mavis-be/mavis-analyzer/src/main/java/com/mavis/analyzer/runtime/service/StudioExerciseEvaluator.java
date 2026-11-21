@@ -60,10 +60,11 @@ public final class StudioExerciseEvaluator {
         boolean hasChange = primaryChange != null;
 
         List<JsonNode> frames = historyFrames != null ? historyFrames : List.of();
+        Map<String, String> canonicalServices = buildCanonicalServiceIndex(confirmedActions, predicted, frames, latestTelemetry);
         WindowSplit split = splitBeforeAfter(frames, primaryChange, confirmedActions, latestTelemetry);
 
         Map<String, ServiceImpact> observedMap = detectObservedAffectedServices(
-                confirmedActions, primaryChange, split.before(), split.after(), latestTelemetry);
+                confirmedActions, primaryChange, split.before(), split.after(), latestTelemetry, canonicalServices);
 
         ArrayNode observedArr = out.putArray("observedAffectedServices");
         ArrayNode detailsArr = out.putArray("impactDetails");
@@ -107,7 +108,7 @@ public final class StudioExerciseEvaluator {
         int passedCount = 0;
         for (int i = 0; i < specs.size(); i++) {
             RuleSpec spec = specs.get(i);
-            RuleOutcome outcome = evaluateRule(spec, split, latestTelemetry, confirmedActions, f1Score, predictionLocked, hasChange);
+            RuleOutcome outcome = evaluateRule(spec, split, latestTelemetry, confirmedActions, f1Score, predictionLocked, hasChange, canonicalServices);
             if (outcome.passed) passedCount++;
             ObjectNode r = rulesArr.addObject()
                     .put("id", "rule-" + (i + 1))
@@ -253,7 +254,8 @@ public final class StudioExerciseEvaluator {
             JsonNode primaryChange,
             List<JsonNode> beforeFrames,
             List<JsonNode> afterFrames,
-            JsonNode latestTelemetry) {
+            JsonNode latestTelemetry,
+            Map<String, String> canonicalServices) {
         Map<String, ServiceImpact> map = new TreeMap<>();
 
         // 1. Direct container / replica / CPU faults from confirmed actions
@@ -306,8 +308,8 @@ public final class StudioExerciseEvaluator {
         }
 
         // 3. Before vs After serviceGraph edge deltas (propagated caller + callee impact)
-        Map<String, EdgeAgg> beforeEdges = aggregateEdges(beforeFrames);
-        Map<String, EdgeAgg> afterEdges = aggregateEdges(afterFrames);
+        Map<String, EdgeAgg> beforeEdges = aggregateEdges(beforeFrames, canonicalServices);
+        Map<String, EdgeAgg> afterEdges = aggregateEdges(afterFrames, canonicalServices);
         for (var entry : afterEdges.entrySet()) {
             EdgeAgg after = entry.getValue();
             EdgeAgg before = beforeEdges.get(entry.getKey());
@@ -316,7 +318,7 @@ public final class StudioExerciseEvaluator {
             double errDelta = curErr - prevErr;
             if (errDelta >= ERROR_DELTA_THRESHOLD_PCT) {
                 for (String endpoint : List.of(after.client, after.server)) {
-                    if (endpoint == null || endpoint.isBlank() || "mavis-collector".equals(endpoint)) continue;
+                    if (isIgnoredServiceEndpoint(endpoint)) continue;
                     ServiceImpact imp = map.computeIfAbsent(endpoint, ServiceImpact::new);
                     imp.reasons.add("EDGE_ERROR_PROPAGATION:" + after.client + "->" + after.server);
                     imp.errorDeltaPct = maxAbs(imp.errorDeltaPct, errDelta);
@@ -327,7 +329,7 @@ public final class StudioExerciseEvaluator {
             if (prevP95 != null && curP95 != null && isLatencyRegression(prevP95, curP95)) {
                 double delta = curP95 - prevP95;
                 for (String endpoint : List.of(after.client, after.server)) {
-                    if (endpoint == null || endpoint.isBlank() || "mavis-collector".equals(endpoint)) continue;
+                    if (isIgnoredServiceEndpoint(endpoint)) continue;
                     ServiceImpact imp = map.computeIfAbsent(endpoint, ServiceImpact::new);
                     imp.reasons.add("EDGE_LATENCY_DEGRADATION:" + after.client + "->" + after.server);
                     imp.p95DeltaMs = maxAbs(imp.p95DeltaMs, delta);
@@ -362,8 +364,8 @@ public final class StudioExerciseEvaluator {
         if (latestTelemetry != null && latestTelemetry.path("spans").isArray()) {
             Map<String, int[]> spanCounts = new LinkedHashMap<>();
             for (JsonNode span : latestTelemetry.path("spans")) {
-                String svc = span.path("runtimeService").asText("").trim();
-                if (svc.isBlank() || "mavis-collector".equals(svc)) continue;
+                String svc = normalizeServiceName(span.path("runtimeService").asText(""), canonicalServices);
+                if (isIgnoredServiceEndpoint(svc)) continue;
                 int[] counts = spanCounts.computeIfAbsent(svc, k -> new int[2]);
                 counts[0]++;
                 boolean isErr = "ERROR".equalsIgnoreCase(span.path("spanStatus").asText(""))
@@ -447,14 +449,15 @@ public final class StudioExerciseEvaluator {
             List<JsonNode> confirmedActions,
             Double f1Score,
             boolean predictionLocked,
-            boolean hasChange) {
+            boolean hasChange,
+            Map<String, String> canonicalServices) {
         Double observed = switch (spec.metric) {
             case "IMPACT_F1" -> f1Score;
             case "REPLICAS" -> resolveReplicas(spec.target, latestTelemetry, confirmedActions);
-            case "TRACE_EDGE" -> resolveTraceEdgeObserved(spec.target, latestTelemetry, split.after());
-            case "ERROR_RATE" -> resolveErrorRate(spec.target, latestTelemetry, split.after(), confirmedActions);
-            case "EDGE_ERROR_RATE" -> resolveEdgeErrorRate(spec.target, latestTelemetry, split.after());
-            case "P95_MS" -> resolveP95Ms(spec.target, latestTelemetry, split.after(), confirmedActions);
+            case "TRACE_EDGE" -> resolveTraceEdgeObserved(spec.target, latestTelemetry, split.after(), canonicalServices);
+            case "ERROR_RATE" -> resolveErrorRate(spec.target, latestTelemetry, split.after(), confirmedActions, canonicalServices);
+            case "EDGE_ERROR_RATE" -> resolveEdgeErrorRate(spec.target, latestTelemetry, split.after(), canonicalServices);
+            case "P95_MS" -> resolveP95Ms(spec.target, latestTelemetry, split.after(), confirmedActions, canonicalServices);
             case "P95_DELTA_PCT" -> resolveP95DeltaPct(spec.target, split, confirmedActions);
             default -> null;
         };
@@ -490,19 +493,21 @@ public final class StudioExerciseEvaluator {
         return null;
     }
 
-    private static Double resolveTraceEdgeObserved(String edgeTarget, JsonNode latestTelemetry, List<JsonNode> afterFrames) {
+    private static Double resolveTraceEdgeObserved(String edgeTarget, JsonNode latestTelemetry, List<JsonNode> afterFrames, Map<String, String> canonicalServices) {
         String[] parts = edgeTarget.split("->");
         if (parts.length != 2) return 0.0;
-        String from = parts[0].trim();
-        String to = parts[1].trim();
+        String from = normalizeServiceName(parts[0], canonicalServices);
+        String to = normalizeServiceName(parts[1], canonicalServices);
         if (latestTelemetry != null) {
             for (JsonNode edge : latestTelemetry.path("interactions")) {
-                if (from.equals(edge.path("fromService").asText()) && to.equals(edge.path("toService").asText())) {
+                if (from.equals(normalizeServiceName(edge.path("fromService").asText(), canonicalServices))
+                        && to.equals(normalizeServiceName(edge.path("toService").asText(), canonicalServices))) {
                     return 1.0;
                 }
             }
             for (JsonNode sg : latestTelemetry.path("serviceGraph")) {
-                if (from.equals(sg.path("client").asText()) && to.equals(sg.path("server").asText())
+                if (from.equals(normalizeServiceName(sg.path("client").asText(), canonicalServices))
+                        && to.equals(normalizeServiceName(sg.path("server").asText(), canonicalServices))
                         && sg.path("rps").asDouble(0) > 0) {
                     return 1.0;
                 }
@@ -510,7 +515,8 @@ public final class StudioExerciseEvaluator {
         }
         for (JsonNode frame : afterFrames) {
             for (JsonNode sg : frame.path("serviceGraph")) {
-                if (from.equals(sg.path("client").asText()) && to.equals(sg.path("server").asText())
+                if (from.equals(normalizeServiceName(sg.path("client").asText(), canonicalServices))
+                        && to.equals(normalizeServiceName(sg.path("server").asText(), canonicalServices))
                         && sg.path("rps").asDouble(0) > 0) {
                     return 1.0;
                 }
@@ -519,9 +525,9 @@ public final class StudioExerciseEvaluator {
         return 0.0;
     }
 
-    private static Double resolveErrorRate(String target, JsonNode latestTelemetry, List<JsonNode> afterFrames, List<JsonNode> confirmedActions) {
+    private static Double resolveErrorRate(String target, JsonNode latestTelemetry, List<JsonNode> afterFrames, List<JsonNode> confirmedActions, Map<String, String> canonicalServices) {
         if (target.contains("->")) {
-            return resolveEdgeErrorRate(target, latestTelemetry, afterFrames);
+            return resolveEdgeErrorRate(target, latestTelemetry, afterFrames, canonicalServices);
         }
         if ("ALL".equalsIgnoreCase(target)) {
             if (latestTelemetry != null && latestTelemetry.path("probe").isObject()
@@ -534,7 +540,7 @@ public final class StudioExerciseEvaluator {
                     return lastAfter.path("errorRatePercent").asDouble();
                 }
             }
-            return spanErrorRate(null, latestTelemetry);
+            return spanErrorRate(null, latestTelemetry, canonicalServices);
         }
         if (latestTelemetry != null && latestTelemetry.path("probe").path("routes").isArray()) {
             double reqs = 0, errs = 0;
@@ -546,18 +552,19 @@ public final class StudioExerciseEvaluator {
             }
             if (reqs > 0) return (100.0 * errs) / reqs;
         }
-        return spanErrorRate(target, latestTelemetry);
+        return spanErrorRate(target, latestTelemetry, canonicalServices);
     }
 
-    private static Double resolveEdgeErrorRate(String edgeTarget, JsonNode latestTelemetry, List<JsonNode> afterFrames) {
+    private static Double resolveEdgeErrorRate(String edgeTarget, JsonNode latestTelemetry, List<JsonNode> afterFrames, Map<String, String> canonicalServices) {
         String[] parts = edgeTarget.split("->");
         if (parts.length != 2) return null;
-        String key = parts[0].trim() + "->" + parts[1].trim();
-        Map<String, EdgeAgg> agg = aggregateEdges(afterFrames);
+        String key = normalizeServiceName(parts[0], canonicalServices) + "->" + normalizeServiceName(parts[1], canonicalServices);
+        Map<String, EdgeAgg> agg = aggregateEdges(afterFrames, canonicalServices);
         if (agg.containsKey(key)) return agg.get(key).avgErrorPct();
         if (latestTelemetry != null && latestTelemetry.path("serviceGraph").isArray()) {
             for (JsonNode sg : latestTelemetry.path("serviceGraph")) {
-                String sgKey = sg.path("client").asText("").trim() + "->" + sg.path("server").asText("").trim();
+                String sgKey = normalizeServiceName(sg.path("client").asText(""), canonicalServices) + "->"
+                        + normalizeServiceName(sg.path("server").asText(""), canonicalServices);
                 if (key.equals(sgKey) && sg.path("errorRatePercent").isNumber()) {
                     return sg.path("errorRatePercent").asDouble();
                 }
@@ -566,16 +573,17 @@ public final class StudioExerciseEvaluator {
         return null;
     }
 
-    private static Double resolveP95Ms(String target, JsonNode latestTelemetry, List<JsonNode> afterFrames, List<JsonNode> confirmedActions) {
+    private static Double resolveP95Ms(String target, JsonNode latestTelemetry, List<JsonNode> afterFrames, List<JsonNode> confirmedActions, Map<String, String> canonicalServices) {
         if (target.contains("->")) {
             String[] parts = target.split("->");
             if (parts.length != 2) return null;
-            String key = parts[0].trim() + "->" + parts[1].trim();
-            Map<String, EdgeAgg> agg = aggregateEdges(afterFrames);
+            String key = normalizeServiceName(parts[0], canonicalServices) + "->" + normalizeServiceName(parts[1], canonicalServices);
+            Map<String, EdgeAgg> agg = aggregateEdges(afterFrames, canonicalServices);
             if (agg.containsKey(key) && agg.get(key).avgP95() != null) return agg.get(key).avgP95();
             if (latestTelemetry != null && latestTelemetry.path("serviceGraph").isArray()) {
                 for (JsonNode sg : latestTelemetry.path("serviceGraph")) {
-                    String sgKey = sg.path("client").asText("").trim() + "->" + sg.path("server").asText("").trim();
+                    String sgKey = normalizeServiceName(sg.path("client").asText(""), canonicalServices) + "->"
+                            + normalizeServiceName(sg.path("server").asText(""), canonicalServices);
                     if (key.equals(sgKey) && sg.path("p95Ms").isNumber()) return sg.path("p95Ms").asDouble();
                 }
             }
@@ -592,7 +600,7 @@ public final class StudioExerciseEvaluator {
                     return lastAfter.path("p95LatencyMs").asDouble();
                 }
             }
-            return spanP95Ms(null, latestTelemetry);
+            return spanP95Ms(null, latestTelemetry, canonicalServices);
         }
         if (latestTelemetry != null && latestTelemetry.path("probe").path("routes").isArray()) {
             double maxP95 = -1;
@@ -603,7 +611,7 @@ public final class StudioExerciseEvaluator {
             }
             if (maxP95 >= 0) return maxP95;
         }
-        return spanP95Ms(target, latestTelemetry);
+        return spanP95Ms(target, latestTelemetry, canonicalServices);
     }
 
     private static Double resolveP95DeltaPct(String target, WindowSplit split, List<JsonNode> confirmedActions) {
@@ -644,11 +652,12 @@ public final class StudioExerciseEvaluator {
         return count > 0 ? sum / count : null;
     }
 
-    private static Double spanErrorRate(String service, JsonNode telemetry) {
+    private static Double spanErrorRate(String service, JsonNode telemetry, Map<String, String> canonicalServices) {
         if (telemetry == null || !telemetry.path("spans").isArray()) return null;
+        String expected = service != null ? normalizeServiceName(service, canonicalServices) : null;
         int total = 0, errs = 0;
         for (JsonNode span : telemetry.path("spans")) {
-            if (service != null && !service.equals(span.path("runtimeService").asText())) continue;
+            if (expected != null && !expected.equals(normalizeServiceName(span.path("runtimeService").asText(""), canonicalServices))) continue;
             total++;
             boolean isErr = "ERROR".equalsIgnoreCase(span.path("spanStatus").asText(""))
                     || span.path("circuitOpen").asBoolean(false)
@@ -658,11 +667,12 @@ public final class StudioExerciseEvaluator {
         return total > 0 ? (100.0 * errs / total) : null;
     }
 
-    private static Double spanP95Ms(String service, JsonNode telemetry) {
+    private static Double spanP95Ms(String service, JsonNode telemetry, Map<String, String> canonicalServices) {
         if (telemetry == null || !telemetry.path("spans").isArray()) return null;
+        String expected = service != null ? normalizeServiceName(service, canonicalServices) : null;
         List<Double> ms = new ArrayList<>();
         for (JsonNode span : telemetry.path("spans")) {
-            if (service != null && !service.equals(span.path("runtimeService").asText())) continue;
+            if (expected != null && !expected.equals(normalizeServiceName(span.path("runtimeService").asText(""), canonicalServices))) continue;
             String raw = span.path("durationNanoseconds").asText("");
             if (raw.isBlank()) continue;
             try {
@@ -703,13 +713,13 @@ public final class StudioExerciseEvaluator {
         Double avgP95() { return p95Count > 0 ? p95Sum / p95Count : null; }
     }
 
-    private static Map<String, EdgeAgg> aggregateEdges(List<JsonNode> frames) {
+    private static Map<String, EdgeAgg> aggregateEdges(List<JsonNode> frames, Map<String, String> canonicalServices) {
         Map<String, EdgeAgg> map = new LinkedHashMap<>();
         for (JsonNode frame : frames) {
             if (!frame.path("serviceGraph").isArray()) continue;
             for (JsonNode sg : frame.path("serviceGraph")) {
-                String c = sg.path("client").asText("").trim();
-                String s = sg.path("server").asText("").trim();
+                String c = normalizeServiceName(sg.path("client").asText(""), canonicalServices);
+                String s = normalizeServiceName(sg.path("server").asText(""), canonicalServices);
                 if (c.isBlank() || s.isBlank()) continue;
                 EdgeAgg agg = map.computeIfAbsent(c + "->" + s, k -> new EdgeAgg(c, s));
                 if (sg.path("errorRatePercent").isNumber()) {
@@ -723,6 +733,66 @@ public final class StudioExerciseEvaluator {
             }
         }
         return map;
+    }
+
+    private static Map<String, String> buildCanonicalServiceIndex(
+            List<JsonNode> confirmedActions,
+            Set<String> predicted,
+            List<JsonNode> frames,
+            JsonNode latestTelemetry) {
+        Set<String> canonical = new LinkedHashSet<>();
+        if (predicted != null) canonical.addAll(predicted);
+        for (JsonNode a : confirmedActions) {
+            String svc = a.path("service").asText("").trim();
+            if (!svc.isBlank()) canonical.add(svc);
+        }
+        collectServicesFromFrame(latestTelemetry, canonical);
+        for (JsonNode frame : frames) collectServicesFromFrame(frame, canonical);
+        Map<String, String> index = new HashMap<>();
+        Set<String> ambiguous = new HashSet<>();
+        for (String svc : canonical) {
+            String norm = alnumLower(svc);
+            if (norm.isEmpty()) continue;
+            String existing = index.putIfAbsent(norm, svc);
+            if (existing != null && !existing.equals(svc)) ambiguous.add(norm);
+        }
+        ambiguous.forEach(index::remove);
+        return index;
+    }
+
+    private static void collectServicesFromFrame(JsonNode frame, Set<String> out) {
+        if (frame == null || !frame.path("services").isArray()) return;
+        for (JsonNode s : frame.path("services")) {
+            String name = s.path("service").asText("").trim();
+            if (!name.isBlank()) out.add(name);
+        }
+    }
+
+    private static String normalizeServiceName(String raw, Map<String, String> canonicalIndex) {
+        if (raw == null) return "";
+        String trimmed = raw.trim();
+        if (trimmed.isBlank()) return "";
+        if (canonicalIndex == null || canonicalIndex.isEmpty()) return trimmed;
+        String resolved = canonicalIndex.get(alnumLower(trimmed));
+        return resolved != null ? resolved : trimmed;
+    }
+
+    private static boolean isIgnoredServiceEndpoint(String endpoint) {
+        if (endpoint == null || endpoint.isBlank()) return true;
+        String lower = endpoint.trim().toLowerCase(Locale.ROOT);
+        return "mavis-collector".equals(lower)
+                || "unknown".equals(lower)
+                || "unknown_service".equals(lower)
+                || lower.startsWith("unknown_service:");
+    }
+
+    private static String alnumLower(String value) {
+        StringBuilder sb = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (Character.isLetterOrDigit(c)) sb.append(Character.toLowerCase(c));
+        }
+        return sb.toString();
     }
 
     private static final class RouteAgg {

@@ -14,6 +14,7 @@ public sealed class RuntimeLifecycleTests
         public bool FailActions;
         public bool Interactive;
         public int ScenarioCalls;
+        public string[]? ScenarioStatuses;
         public bool InteractiveStudio => Interactive;
         public IReadOnlyList<RuntimeInfrastructureActionResult> ObservedInfrastructureActions => Actions;
         public Task PrepareAndStartAsync(CancellationToken ct)
@@ -26,8 +27,11 @@ public sealed class RuntimeLifecycleTests
         public Task WaitUntilReadyAsync(CancellationToken ct) => Task.CompletedTask;
         public Task<HttpScenarioOutcome> ExecuteScenarioAsync(CancellationToken ct)
         {
-            ScenarioCalls++;
-            return Task.FromResult(new HttpScenarioOutcome("s", ScenarioCalls > 1 ? "Passed" : "Failed", []));
+            var idx = ScenarioCalls++;
+            var outcome = ScenarioStatuses is not null && idx < ScenarioStatuses.Length
+                ? ScenarioStatuses[idx]
+                : (ScenarioCalls > 1 ? "Passed" : "Failed");
+            return Task.FromResult(new HttpScenarioOutcome("s", outcome, []));
         }
         public Task<IReadOnlyList<RuntimeInfrastructureActionResult>> ExecuteInfrastructureActionsAsync(CancellationToken ct) =>
             FailActions ? throw new RuntimeStageException("INFRASTRUCTURE_ACTION_UNCONFIRMED") : Task.FromResult(Actions);
@@ -78,6 +82,22 @@ public sealed class RuntimeLifecycleTests
 
         Assert.Equal(2, backend.ScenarioCalls);
         Assert.Equal("Passed", result.ScenarioStatus);
+    }
+
+    [Fact]
+    public async Task StudioPreservesPassingBaselineWhenFaultOrLoadDrillEndsDegraded()
+    {
+        var action = new RuntimeInfrastructureActionResult("PAUSE", "catalog", 1, 0,
+            new() { ["replicas"] = 1 }, new() { ["replicas"] = 0 }, DateTimeOffset.UtcNow, true);
+        var degradedEnd = new Backend { Actions = [action], Interactive = true, ScenarioStatuses = ["Passed", "Failed"] };
+        var passedDrill = await RuntimeSessionLifecycle.RunAsync(degradedEnd, 5);
+        Assert.Equal(2, degradedEnd.ScenarioCalls);
+        Assert.Equal("Passed", passedDrill.ScenarioStatus);
+
+        var unrecovered = new Backend { Actions = [action], Interactive = true, ScenarioStatuses = ["Failed", "Failed"] };
+        var failedRecovery = await RuntimeSessionLifecycle.RunAsync(unrecovered, 5);
+        Assert.Equal(2, unrecovered.ScenarioCalls);
+        Assert.Equal("Failed", failedRecovery.ScenarioStatus);
     }
 
     [Fact]

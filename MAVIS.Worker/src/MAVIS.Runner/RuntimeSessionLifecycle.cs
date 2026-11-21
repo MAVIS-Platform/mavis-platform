@@ -44,10 +44,14 @@ public static class RuntimeSessionLifecycle
             await backend.WaitUntilReadyAsync(deadline.Token);
             scenario = await backend.ExecuteScenarioAsync(deadline.Token);
             infrastructureActions = await backend.ExecuteInfrastructureActionsAsync(deadline.Token);
-            // A Studio session starts from a prepared broken state: the initial scenario records
-            // the baseline. Verify the exercise outcome again after the student's actions.
+            // A Studio session may start broken (Recovery) or healthy (Change Impact / Load):
+            // re-check after student actions, keeping a verified passing baseline if an intentional fault or load drill ends degraded.
             if (backend.InteractiveStudio && infrastructureActions.Count > 0)
-                scenario = await backend.ExecuteScenarioAsync(deadline.Token);
+            {
+                var finalScenario = await backend.ExecuteScenarioAsync(deadline.Token);
+                if (finalScenario.Status == "Passed" || scenario.Status != "Passed")
+                    scenario = finalScenario;
+            }
             status = "Completed"; // Processing completion is separate from scenario pass/fail.
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested && !deadline.IsCancellationRequested)
