@@ -131,3 +131,14 @@ test("Bug #08: workspaces exposes an h1 landmark, singular/plural counts avoid '
   assert.match(pages, /course\.labCount === 1 \? t\("Lab", "Lab"\) : t\("Labs", "Labs"\)/);
   assert.match(admin, /date\.toLocaleDateString\("vi-VN"\)\}<\/span>\{" "\}/);
 });
+
+test("Bug #09: CourseBuilder prevents horizontal grid overflow and Passkey table compacts padding with truncated labels", () => {
+  const builder = read("src/features/courses/course-builder.tsx");
+  const access = read("src/features/workspaces/course-access.tsx");
+
+  assert.match(builder, /className="min-w-0 space-y-4"/);
+  assert.match(builder, /className="min-w-0 space-y-4 rounded-xl border bg-muted\/15 p-4 lg:sticky lg:top-6"/);
+  assert.match(builder, /overflow-x-auto rounded-lg border bg-background p-3/);
+  assert.match(access, /className="block max-w-40 truncate"/);
+  assert.match(access, /className="whitespace-nowrap px-2\.5 py-2 font-medium"/);
+});

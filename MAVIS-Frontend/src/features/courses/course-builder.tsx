@@ -498,7 +498,7 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
 
       {data && (
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] lg:items-start">
-          <div className="space-y-4">
+          <div className="min-w-0 space-y-4">
             {isDraft && (
               <>
                 <form onSubmit={addModule} className="grid gap-2 rounded-lg border bg-muted/20 p-3 sm:grid-cols-2">
@@ -892,7 +892,7 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
 
           <aside
             aria-label={t("Curriculum Inspector", "Trình xem & sửa học liệu")}
-            className="space-y-4 rounded-xl border bg-muted/15 p-4 lg:sticky lg:top-6"
+            className="min-w-0 space-y-4 rounded-xl border bg-muted/15 p-4 lg:sticky lg:top-6"
           >
             {isDraft && editingItem ? (
               <form onSubmit={saveItem} className="space-y-3">
@@ -962,7 +962,7 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
                   <p className="text-sm text-muted-foreground">{inspectedItem.item.description}</p>
                 )}
                 {inspectedItem.item.type === "THEORY" && (
-                  <div className="rounded-lg border bg-background p-3">
+                  <div className="overflow-x-auto rounded-lg border bg-background p-3">
                     {typeof inspectedItem.item.content?.["body"] === "string" &&
                     inspectedItem.item.content["body"].trim() ? (
                       <MarkdownPreview markdown={inspectedItem.item.content["body"]} />

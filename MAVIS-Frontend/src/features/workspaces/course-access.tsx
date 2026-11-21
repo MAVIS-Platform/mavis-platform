@@ -1305,12 +1305,12 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
           <table className="w-full text-left text-xs">
             <thead className="border-b bg-muted/40 text-muted-foreground">
               <tr>
-                <th className="px-3.5 py-2.5 font-medium">{t("Passkey", "Mã Passkey")}</th>
-                <th className="px-3.5 py-2.5 font-medium">{t("Label", "Nhãn")}</th>
-                <th className="px-3.5 py-2.5 font-medium">{t("Usage", "Đã dùng")}</th>
-                <th className="px-3.5 py-2.5 font-medium">{t("Expires", "Hết hạn")}</th>
-                <th className="px-3.5 py-2.5 font-medium">{t("Status", "Trạng thái")}</th>
-                <th className="px-3.5 py-2.5 text-right font-medium">{t("Actions", "Thao tác")}</th>
+                <th className="whitespace-nowrap px-2.5 py-2 font-medium">{t("Passkey", "Mã Passkey")}</th>
+                <th className="whitespace-nowrap px-2.5 py-2 font-medium">{t("Label", "Nhãn")}</th>
+                <th className="whitespace-nowrap px-2.5 py-2 font-medium">{t("Usage", "Đã dùng")}</th>
+                <th className="whitespace-nowrap px-2.5 py-2 font-medium">{t("Expires", "Hết hạn")}</th>
+                <th className="whitespace-nowrap px-2.5 py-2 font-medium">{t("Status", "Trạng thái")}</th>
+                <th className="whitespace-nowrap px-2.5 py-2 text-right font-medium">{t("Actions", "Thao tác")}</th>
               </tr>
             </thead>
             <tbody className="divide-y">
@@ -1319,7 +1319,7 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
                 const isEditing = editingId === item.id;
                 return (
                   <tr key={item.id} className="align-middle hover:bg-muted/20">
-                    <td className="px-3.5 py-2.5 font-mono">
+                    <td className="px-2.5 py-2 font-mono">
                       {isEditing ? (
                         <Input
                           className="h-7 w-32 font-mono text-xs"
@@ -1332,7 +1332,7 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
                           type="button"
                           onClick={() => handleCopy(item.id, item.code!)}
                           title={t("Click to copy passkey", "Bấm để sao chép")}
-                          className="inline-flex items-center gap-1.5 rounded-md border border-teal-500/30 bg-teal-500/10 px-2.5 py-1 font-mono text-xs font-semibold text-teal-700 transition hover:bg-teal-500/20 dark:text-teal-300"
+                          className="inline-flex whitespace-nowrap items-center gap-1.5 rounded-md border border-teal-500/30 bg-teal-500/10 px-2 py-1 font-mono text-xs font-semibold text-teal-700 transition hover:bg-teal-500/20 dark:text-teal-300"
                         >
                           <span>{item.code}</span>
                           {copiedId === item.id ? (
@@ -1345,20 +1345,31 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
                         <span className="text-muted-foreground">••••</span>
                       )}
                     </td>
-                    <td className="px-3.5 py-2.5 text-foreground/90">
+                    <td className="px-2.5 py-2 text-foreground/90">
                       {isEditing ? (
                         <Input
-                          className="h-7 w-44 text-xs"
+                          className="h-7 w-40 text-xs"
                           value={editLabel}
                           onChange={(e) => setEditLabel(e.target.value)}
                         />
-                      ) : item.label === "Mã ghi danh lớp học" || item.label === "Class Passkey" ? (
-                        t("Class Passkey", "Mã ghi danh lớp học")
                       ) : (
-                        item.label || <span className="text-muted-foreground">—</span>
+                        <span
+                          className="block max-w-40 truncate"
+                          title={
+                            item.label === "Mã ghi danh lớp học" || item.label === "Class Passkey"
+                              ? t("Class Passkey", "Mã ghi danh lớp học")
+                              : item.label || undefined
+                          }
+                        >
+                          {item.label === "Mã ghi danh lớp học" || item.label === "Class Passkey" ? (
+                            t("Class Passkey", "Mã ghi danh lớp học")
+                          ) : (
+                            item.label || <span className="text-muted-foreground">—</span>
+                          )}
+                        </span>
                       )}
                     </td>
-                    <td className="px-3.5 py-2.5 tabular-nums text-muted-foreground">
+                    <td className="whitespace-nowrap px-2.5 py-2 tabular-nums text-muted-foreground">
                       {isEditing ? (
                         <Input
                           type="number"
@@ -1372,7 +1383,7 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
                         `${item.usedCount} / ${item.maxUses ?? "∞"}`
                       )}
                     </td>
-                    <td className="px-3.5 py-2.5 text-muted-foreground">
+                    <td className="whitespace-nowrap px-2.5 py-2 text-muted-foreground">
                       {isEditing ? (
                         <Input
                           type="number"
@@ -1385,25 +1396,25 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
                         new Date(item.expiresAt).toLocaleDateString()
                       )}
                     </td>
-                    <td className="px-3.5 py-2.5">
+                    <td className="whitespace-nowrap px-2.5 py-2">
                       {item.active ? (
-                        <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-0.5 font-medium text-emerald-700 dark:text-emerald-400">
+                        <span className="inline-flex whitespace-nowrap items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 font-medium text-emerald-700 dark:text-emerald-400">
                           <span className="size-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
                           {t("Active", "Đang hoạt động")}
                         </span>
                       ) : expired ? (
-                        <span className="inline-flex items-center gap-1.5 rounded-full border border-rose-500/25 bg-rose-500/10 px-2.5 py-0.5 font-medium text-rose-700 dark:text-rose-400">
+                        <span className="inline-flex whitespace-nowrap items-center gap-1.5 rounded-full border border-rose-500/25 bg-rose-500/10 px-2 py-0.5 font-medium text-rose-700 dark:text-rose-400">
                           <span className="size-1.5 rounded-full bg-rose-500" aria-hidden="true" />
                           {t("Expired", "Đã hết hạn")}
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/50 px-2.5 py-0.5 font-medium text-muted-foreground">
+                        <span className="inline-flex whitespace-nowrap items-center gap-1.5 rounded-full border border-border bg-muted/50 px-2 py-0.5 font-medium text-muted-foreground">
                           <span className="size-1.5 rounded-full bg-muted-foreground" aria-hidden="true" />
                           {t("Paused", "Đang tạm khóa")}
                         </span>
                       )}
                     </td>
-                    <td className="px-3.5 py-2.5 text-right">
+                    <td className="px-2.5 py-2 text-right">
                       <div className="flex flex-nowrap items-center justify-end gap-1">
                         {isEditing ? (
                           <>
