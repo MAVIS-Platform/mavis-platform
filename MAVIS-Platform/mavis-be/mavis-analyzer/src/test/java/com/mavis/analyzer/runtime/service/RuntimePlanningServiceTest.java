@@ -1674,7 +1674,12 @@ class RuntimePlanningServiceTest {
                 .detectedServices(List.of("order-service", "sandbox-postgres", "stale-service"))
                 .relocatedComposeSecrets(Map.of(
                         "sandbox-postgres", Map.of("POSTGRES_PASSWORD", "ephemeral-pg-pass"),
-                        "order-service", Map.of("SPRING_DATASOURCE_PASSWORD", "ephemeral-pg-pass"),
+                        "order-service", Map.of(
+                                "SPRING_DATASOURCE_PASSWORD", "ephemeral-pg-pass",
+                                "ConnectionStrings__CatalogDb", "Host=catalog-db;Password=ephemeral-pg-pass",
+                                "DemoAuth__Password", "FreshFruit@123",
+                                "otel_exporter_otlp_endpoint", "http://evil",
+                                "path", "/evil"),
                         "stale-service", Map.of("UNUSED_SECRET", "drop-me")))
                 .build());
         when(runtime.getProjectExecutionEnvironment(projectId)).thenReturn(Map.of());
@@ -1686,6 +1691,10 @@ class RuntimePlanningServiceTest {
         assertThat(prepared.bindings().has("order-service")).isTrue();
         assertThat(prepared.bindings().has("stale-service")).isFalse();
         assertThat(prepared.protectedEnvironment()).containsValue("ephemeral-pg-pass");
+        assertThat(prepared.protectedEnvironment()).containsEntry("CONNECTIONSTRINGS__CATALOGDB", "Host=catalog-db;Password=ephemeral-pg-pass");
+        assertThat(prepared.protectedEnvironment()).containsEntry("DEMOAUTH__PASSWORD", "FreshFruit@123");
+        assertThat(prepared.protectedEnvironment()).doesNotContainValue("http://evil");
+        assertThat(prepared.protectedEnvironment()).doesNotContainValue("/evil");
         assertThat(prepared.protectedEnvironment()).doesNotContainValue("drop-me");
     }
 

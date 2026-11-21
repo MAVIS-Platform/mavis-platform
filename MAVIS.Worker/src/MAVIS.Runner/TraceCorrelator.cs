@@ -25,6 +25,15 @@ public static class TraceCorrelator
         using var document = JsonDocument.Parse(otlpJson, new JsonDocumentOptions { MaxDepth = 64 });
         if (!document.RootElement.TryGetProperty("resourceSpans", out var resources) || resources.ValueKind != JsonValueKind.Array)
             throw new ArgumentException("Expected OTLP JSON resourceSpans array.");
+        var normalizedMappings = new Dictionary<string, (string ServiceKey, string ModelElementId)>(StringComparer.Ordinal);
+        var ambiguousNormalized = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var pair in confirmedMappings)
+        {
+            var norm = NormalizeServiceKey(pair.Key);
+            if (norm.Length == 0) continue;
+            if (!normalizedMappings.TryAdd(norm, (pair.Key, pair.Value))) ambiguousNormalized.Add(norm);
+        }
+        foreach (var dup in ambiguousNormalized) normalizedMappings.Remove(dup);
         foreach (var resource in resources.EnumerateArray())
         {
             var service = "unknown";
@@ -33,6 +42,13 @@ public static class TraceCorrelator
                     if (attribute.TryGetProperty("key", out var key) && key.GetString() == "service.name" &&
                         attribute.TryGetProperty("value", out var value) && value.TryGetProperty("stringValue", out var text)) service = text.GetString() ?? "unknown";
             if (!resource.TryGetProperty("scopeSpans", out var scopes)) { warnings.Add("MISSING_SCOPE_SPANS"); continue; }
+            var canonicalService = service;
+            var resolvedMapped = confirmedMappings.GetValueOrDefault(service);
+            if (string.IsNullOrWhiteSpace(resolvedMapped) && normalizedMappings.TryGetValue(NormalizeServiceKey(service), out var normalizedMatch))
+            {
+                canonicalService = normalizedMatch.ServiceKey;
+                resolvedMapped = normalizedMatch.ModelElementId;
+            }
             foreach (var scope in scopes.EnumerateArray())
             {
                 if (!scope.TryGetProperty("spans", out var entries)) continue;
@@ -44,7 +60,7 @@ public static class TraceCorrelator
                     if (!Hex(trace, 32) || !Hex(id, 16) || parent.Length > 0 && !Hex(parent, 16))
                     { warnings.Add("INVALID_SPAN_ID"); continue; }
                     if (spans.Count >= 100_000) throw new ArgumentException("Trace span limit exceeded.");
-                    var mapped = confirmedMappings.GetValueOrDefault(service);
+                    var mapped = resolvedMapped;
                     if (string.IsNullOrWhiteSpace(mapped)) { mapped = null; warnings.Add("UNMAPPED_SERVICE"); }
                     string? startTime = null, duration = null, status = null;
                     if (ulong.TryParse(Text(entry, "startTimeUnixNano"), out var start) && ulong.TryParse(Text(entry, "endTimeUnixNano"), out var end) && end >= start)
@@ -76,7 +92,7 @@ public static class TraceCorrelator
                     // Labels come only from allowlisted low-cardinality attributes; free-form span names are never trusted.
                     route ??= dbOperation is not null ? Label($"{dbSystem ?? "db"} {dbOperation}", 128)
                         : destination is not null ? Label($"{messagingSystem ?? "messaging"} {destination}", 128) : null;
-                    var span = new CorrelatedSpan(trace, id, parent.Length == 0 ? null : parent, service, mapped,
+                    var span = new CorrelatedSpan(trace, id, parent.Length == 0 ? null : parent, canonicalService, mapped,
                         Text(entry, "kind"), traceSteps?.GetValueOrDefault(trace), startTime, duration, status, httpStatus, httpMethod, route);
                     if (!spans.TryAdd((trace, id), span)) warnings.Add("DUPLICATE_SPAN_ID");
                 }
@@ -119,6 +135,8 @@ public static class TraceCorrelator
 
     private static string Text(JsonElement e, string key) => e.TryGetProperty(key, out var value) ? value.ToString() : "";
     private static bool Hex(string value, int length) => value.Length == length && value.All(Uri.IsHexDigit) && value.Any(c => c != '0');
+    private static string NormalizeServiceKey(string value) =>
+        new string(value.Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray());
     // Bounded, control-free labels only; values come from untrusted workload spans.
     private static string? Label(string value, int max)
     {

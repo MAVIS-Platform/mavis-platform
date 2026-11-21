@@ -65,8 +65,8 @@ public static class ComposeOverrideBuilder
             var protectedEnvironment = new Dictionary<string,string>();
             foreach (var binding in profile.EnvironmentBindings?.GetValueOrDefault(service) ?? [])
             {
-                if (protectedEnvironment.Count >= 64 || binding is null || !System.Text.RegularExpressions.Regex.IsMatch(binding.Name,"^[A-Z][A-Z0-9_]{0,63}$") ||
-                    new[]{"OTEL_","JAVA_","JDK_","DOTNET_","CORECLR_","LD_","MAVIS_"}.Any(prefix=>binding.Name.StartsWith(prefix,StringComparison.Ordinal)) || binding.Name=="PATH" ||
+                if (protectedEnvironment.Count >= 64 || binding is null || !System.Text.RegularExpressions.Regex.IsMatch(binding.Name,"^[A-Za-z][A-Za-z0-9_]{0,63}$") ||
+                    new[]{"OTEL_","JAVA_","JDK_","DOTNET_","CORECLR_","LD_","MAVIS_"}.Any(prefix=>binding.Name.StartsWith(prefix,StringComparison.OrdinalIgnoreCase)) || string.Equals(binding.Name,"PATH",StringComparison.OrdinalIgnoreCase) ||
                     protectedValues is null || !protectedValues.TryGetValue(binding.Reference,out var value)) throw new ArgumentException("Application environment binding unavailable or reserved.");
                 // Compose interpolation must not expand user inputs against the runner host environment.
                 protectedEnvironment[binding.Name]=value.Replace("$", "$$", StringComparison.Ordinal);

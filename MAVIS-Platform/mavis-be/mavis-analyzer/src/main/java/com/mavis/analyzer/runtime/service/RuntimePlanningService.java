@@ -2872,23 +2872,28 @@ public class RuntimePlanningService {
    }
   });
 
-  // 2. Relocated literal secrets stripped from sandboxComposeYaml (zero data loss)
+  // 2. Relocated literal secrets stripped from sandboxComposeYaml (zero data loss, including mixed-case .NET keys like ConnectionStrings__CatalogDb)
   if(pre.getRelocatedComposeSecrets()!=null&&!pre.getRelocatedComposeSecrets().isEmpty()){
-   Map<String,Set<String>> distinctByKey=new HashMap<>();
+   Map<String,Set<String>> distinctByUpperKey=new HashMap<>();
    pre.getRelocatedComposeSecrets().forEach((svc,secMap)->{
     if(!composeServices.contains(svc)||secMap==null)return;
     secMap.forEach((k,v)->{
-     if(!userOverriddenKeys.contains(k)&&isBindableEnvName(k)&&v!=null&&!v.isBlank()&&v.length()<=16000){
-      distinctByKey.computeIfAbsent(k,x->new LinkedHashSet<>()).add(v);
+     if(!userOverriddenKeys.contains(k)&&isBindableTargetEnvName(k)&&v!=null&&!v.isBlank()&&v.length()<=16000){
+      String upperKey=k.toUpperCase(Locale.ROOT);
+      if(!userOverriddenKeys.contains(upperKey)){
+       distinctByUpperKey.computeIfAbsent(upperKey,x->new LinkedHashSet<>()).add(v);
+      }
      }
     });
    });
    pre.getRelocatedComposeSecrets().forEach((svc,secMap)->{
     if(!composeServices.contains(svc)||secMap==null)return;
     secMap.forEach((k,v)->{
-     if(userOverriddenKeys.contains(k)||!isBindableEnvName(k)||v==null||v.isBlank()||v.length()>16000)return;
-     boolean needsScope=distinctByKey.getOrDefault(k,Set.of()).size()>1||(protectedEnv.containsKey(k)&&!v.equals(protectedEnv.get(k)));
-     String ref=needsScope?scopedEnvRef(svc,k):k;
+     if(userOverriddenKeys.contains(k)||!isBindableTargetEnvName(k)||v==null||v.isBlank()||v.length()>16000)return;
+     String upperKey=k.toUpperCase(Locale.ROOT);
+     if(userOverriddenKeys.contains(upperKey))return;
+     boolean needsScope=distinctByUpperKey.getOrDefault(upperKey,Set.of()).size()>1||(protectedEnv.containsKey(upperKey)&&!v.equals(protectedEnv.get(upperKey)));
+     String ref=needsScope?scopedEnvRef(svc,upperKey):upperKey;
      if(!isBindableEnvName(ref))return;
      protectedEnv.put(ref,v);
      serviceBindings.computeIfAbsent(svc,x->new LinkedHashMap<>()).put(k,ref);
@@ -3060,6 +3065,12 @@ public class RuntimePlanningService {
 
  private static boolean isBindableEnvName(String name){
   return name!=null&&name.matches("[A-Z][A-Z0-9_]{0,63}")&&!"PATH".equals(name)&&RESERVED_ENV_PREFIXES.stream().noneMatch(name::startsWith);
+ }
+
+ private static boolean isBindableTargetEnvName(String name){
+  if(name==null||!name.matches("[A-Za-z][A-Za-z0-9_]{0,63}"))return false;
+  String upper=name.toUpperCase(Locale.ROOT);
+  return !"PATH".equals(upper)&&RESERVED_ENV_PREFIXES.stream().noneMatch(upper::startsWith);
  }
 
  private static final Set<String> EXTERNAL_DATASOURCE_OVERRIDE_KEYS=Set.of(

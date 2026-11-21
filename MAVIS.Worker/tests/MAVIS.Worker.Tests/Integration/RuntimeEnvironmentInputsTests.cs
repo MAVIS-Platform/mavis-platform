@@ -16,8 +16,27 @@ public sealed class RuntimeEnvironmentInputsTests {
   RunnerExecutionProfile Profile(string name)=>new("collector@sha256:"+digest,"mavis-agents-v1",new Dictionary<string,RuntimeServiceProfile>{{"app",new("java",8080)}},ApprovedForLocalPoc:true,EnvironmentBindings:new Dictionary<string,IReadOnlyList<RuntimeEnvironmentBinding>>{{"app",new[]{new RuntimeEnvironmentBinding(name,"INPUT")}}});
   var values=new Dictionary<string,string>{{"INPUT","fixture"}};
   using var result=JsonDocument.Parse(ComposeOverrideBuilder.Build(pre,Profile("DB_PASSWORD"),Path.Combine(Path.GetTempPath(),"collector.yaml"),values));Assert.Equal("fixture",result.RootElement.GetProperty("services").GetProperty("app").GetProperty("environment").GetProperty("DB_PASSWORD").GetString());
+  using var dotnetResult=JsonDocument.Parse(ComposeOverrideBuilder.Build(pre,Profile("ConnectionStrings__CatalogDb"),Path.Combine(Path.GetTempPath(),"collector.yaml"),values));Assert.Equal("fixture",dotnetResult.RootElement.GetProperty("services").GetProperty("app").GetProperty("environment").GetProperty("ConnectionStrings__CatalogDb").GetString());
   Assert.Throws<ArgumentException>(()=>ComposeOverrideBuilder.Build(pre,Profile("JAVA_TOOL_OPTIONS"),Path.Combine(Path.GetTempPath(),"collector.yaml"),values));
   Assert.Throws<ArgumentException>(()=>ComposeOverrideBuilder.Build(pre,Profile("JDK_JAVA_OPTIONS"),Path.Combine(Path.GetTempPath(),"collector.yaml"),values));
+  Assert.Throws<ArgumentException>(()=>ComposeOverrideBuilder.Build(pre,Profile("otel_exporter_otlp_endpoint"),Path.Combine(Path.GetTempPath(),"collector.yaml"),values));
+  Assert.Throws<ArgumentException>(()=>ComposeOverrideBuilder.Build(pre,Profile("dotnet_startup_hooks"),Path.Combine(Path.GetTempPath(),"collector.yaml"),values));
+  Assert.Throws<ArgumentException>(()=>ComposeOverrideBuilder.Build(pre,Profile("path"),Path.Combine(Path.GetTempPath(),"collector.yaml"),values));
+ }
+
+ [Fact] public void TraceCorrelatorNormalizesDotnetServiceNamesToComposeServiceKeys(){
+  var traceId=new string('1',32);var parentId=new string('2',16);var childId=new string('3',16);
+  var otlpJson=JsonSerializer.Serialize(new{resourceSpans=new object[]{
+   new{resource=new{attributes=new[]{new{key="service.name",value=new{stringValue="ApiGateway"}}}},scopeSpans=new[]{new{spans=new[]{new{traceId,spanId=parentId,parentSpanId="",kind="SPAN_KIND_SERVER",startTimeUnixNano="1000",endTimeUnixNano="2000"}}}}},
+   new{resource=new{attributes=new[]{new{key="service.name",value=new{stringValue="FruitCatalog.API"}}}},scopeSpans=new[]{new{spans=new[]{new{traceId,spanId=childId,parentSpanId=parentId,kind="SPAN_KIND_SERVER",startTimeUnixNano="1100",endTimeUnixNano="1900"}}}}}
+  }});
+  var result=TraceCorrelator.Correlate("sess","model",otlpJson,new Dictionary<string,string>{{"api-gateway","elem-gw"},{"fruit-catalog-api","elem-cat"}});
+  Assert.DoesNotContain("UNMAPPED_SERVICE",result.Warnings);
+  Assert.Contains(result.Spans,s=>s.RuntimeService=="api-gateway"&&s.ModelServiceId=="elem-gw");
+  Assert.Contains(result.Spans,s=>s.RuntimeService=="fruit-catalog-api"&&s.ModelServiceId=="elem-cat");
+  var interaction=Assert.Single(result.Interactions!);
+  Assert.Equal("api-gateway",interaction.FromService);
+  Assert.Equal("fruit-catalog-api",interaction.ToService);
  }
 
  private static RuntimeRunDefinition Definition()=>new("session","model","source","profile","services: {}",new("collector@sha256:"+new string('a',64),"agents",new Dictionary<string,RuntimeServiceProfile>()),new("session",[]),new Dictionary<string,string>(),ResourceProject:"mavisrun-"+new string('a',32),ProtectedEnvironmentAvailable:true);
