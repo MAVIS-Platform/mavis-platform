@@ -5,6 +5,11 @@ namespace MAVIS.Runner;
 
 public sealed record DockerCommandResult(int ExitCode, string StandardOutput, string? StandardError = null);
 
+public interface ILineStreamHandle : IAsyncDisposable
+{
+    Task WriteLineAsync(string line, CancellationToken ct);
+}
+
 public interface IDockerCommands
 {
     Task<DockerCommandResult> RunAsync(IReadOnlyList<string> arguments, string workingDirectory, int timeoutSeconds, CancellationToken ct);
@@ -12,6 +17,8 @@ public interface IDockerCommands
         => throw new NotSupportedException("Docker stdin adapter is required.");
     Task<IAsyncDisposable?> StartLineStreamAsync(IReadOnlyList<string> arguments, string workingDirectory, string? input, Action<string> onLine, CancellationToken ct)
         => Task.FromResult<IAsyncDisposable?>(null);
+    Task<ILineStreamHandle?> StartInteractiveLineStreamAsync(IReadOnlyList<string> arguments, string workingDirectory, string initialLine, Action<string> onLine, CancellationToken ct)
+        => Task.FromResult<ILineStreamHandle?>(null);
 }
 
 /// <summary>ArgumentList avoids shell interpolation. Output is bounded and stderr is never returned as project diagnostics.</summary>
@@ -24,6 +31,13 @@ public sealed class DockerCommands : IDockerCommands
         => await ExecuteAsync(arguments, workingDirectory, timeoutSeconds, input, ct);
 
     public async Task<IAsyncDisposable?> StartLineStreamAsync(IReadOnlyList<string> arguments, string workingDirectory, string? input, Action<string> onLine, CancellationToken ct)
+        => await StartLineStreamInternalAsync(arguments, workingDirectory, input, keepInputOpen: false, onLine, ct);
+
+    public Task<ILineStreamHandle?> StartInteractiveLineStreamAsync(IReadOnlyList<string> arguments, string workingDirectory, string initialLine, Action<string> onLine, CancellationToken ct)
+        => StartLineStreamInternalAsync(arguments, workingDirectory, initialLine, keepInputOpen: true, onLine, ct);
+
+    private static async Task<ILineStreamHandle?> StartLineStreamInternalAsync(
+        IReadOnlyList<string> arguments, string workingDirectory, string? input, bool keepInputOpen, Action<string> onLine, CancellationToken ct)
     {
         var start = new ProcessStartInfo("docker")
         {
@@ -31,7 +45,7 @@ public sealed class DockerCommands : IDockerCommands
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
-            RedirectStandardInput = input is not null,
+            RedirectStandardInput = input is not null || keepInputOpen,
             CreateNoWindow = true
         };
         foreach (var argument in arguments) start.ArgumentList.Add(argument);
@@ -39,8 +53,16 @@ public sealed class DockerCommands : IDockerCommands
         if (process is null) return null;
         if (input is not null)
         {
-            await process.StandardInput.WriteAsync(input.AsMemory(), ct);
-            process.StandardInput.Close();
+            if (keepInputOpen)
+            {
+                await process.StandardInput.WriteLineAsync(input.AsMemory(), ct);
+                await process.StandardInput.FlushAsync(ct);
+            }
+            else
+            {
+                await process.StandardInput.WriteAsync(input.AsMemory(), ct);
+                process.StandardInput.Close();
+            }
         }
         var streamCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         var stdoutTask = Task.Run(async () =>
@@ -62,16 +84,35 @@ public sealed class DockerCommands : IDockerCommands
             try { while (await process.StandardError.ReadLineAsync(streamCts.Token) is not null) { } }
             catch { }
         }, CancellationToken.None);
-        return new LineStreamHandle(process, streamCts, stdoutTask, stderrTask);
+        return new LineStreamHandle(process, streamCts, stdoutTask, stderrTask, keepInputOpen);
     }
 
-    private sealed class LineStreamHandle(Process process, CancellationTokenSource cts, Task stdoutTask, Task stderrTask) : IAsyncDisposable
+    private sealed class LineStreamHandle(Process process, CancellationTokenSource cts, Task stdoutTask, Task stderrTask, bool keepInputOpen) : ILineStreamHandle
     {
+        private readonly SemaphoreSlim _writeGate = new(1, 1);
+
+        public async Task WriteLineAsync(string line, CancellationToken ct)
+        {
+            if (!keepInputOpen || process.HasExited) throw new InvalidOperationException("Interactive stdin stream is not open.");
+            await _writeGate.WaitAsync(ct);
+            try
+            {
+                await process.StandardInput.WriteLineAsync(line.AsMemory(), ct);
+                await process.StandardInput.FlushAsync(ct);
+            }
+            finally
+            {
+                _writeGate.Release();
+            }
+        }
+
         public async ValueTask DisposeAsync()
         {
             cts.Cancel();
+            if (keepInputOpen) { try { process.StandardInput.Close(); } catch { } }
             try { if (!process.HasExited) process.Kill(entireProcessTree: true); } catch { }
             try { await Task.WhenAll(stdoutTask, stderrTask).WaitAsync(TimeSpan.FromSeconds(3)); } catch { }
+            _writeGate.Dispose();
             cts.Dispose();
             process.Dispose();
         }

@@ -6,7 +6,7 @@ import { useApi, useApiMutation, useApiQuery } from "@/hooks/use-api";
 import { contracts, type Response as ApiResponse } from "@/lib/api/contracts";
 import { captureStudioImage } from "./studio-observability";
 
-type StudioAction = "START" | "STOP" | "SCALE" | "PAUSE" | "RESUME" | "THROTTLE_CPU";
+type StudioAction = "START" | "STOP" | "SCALE" | "PAUSE" | "RESUME" | "THROTTLE_CPU" | "SET_LOAD";
 type StudioState = ApiResponse<"studioState">;
 const TERMINAL_STUDIO_STATUSES = new Set([
   "COMPLETED",
@@ -69,6 +69,7 @@ export function useStudioSession(sessionId: string) {
     { enabled: !!sessionId, poll: true, ...(sseConnected ? { refreshMs: 12000 } : {}) },
   );
   const action = useApiMutation("studioAction");
+  const prediction = useApiMutation("studioPrediction");
   const finish = useApiMutation("studioFinish");
   const cancel = useApiMutation("stopRuntime");
   const capture = useApiMutation("studioCapture");
@@ -86,11 +87,13 @@ export function useStudioSession(sessionId: string) {
     service: string;
     replicas?: number;
     cpuPercent?: number;
+    targetRps?: number;
   } | null>(null);
   const prevStatusRef = useRef<string | undefined>(undefined);
 
   // Reset transient per-session UI state when switching or restarting sessions.
   const resetAction = action.reset;
+  const resetPrediction = prediction.reset;
   const resetFinish = finish.reset;
   const resetCancel = cancel.reset;
   const resetCapture = capture.reset;
@@ -103,10 +106,11 @@ export function useStudioSession(sessionId: string) {
     pending.current = null;
     prevStatusRef.current = undefined;
     resetAction();
+    resetPrediction();
     resetFinish();
     resetCancel();
     resetCapture();
-  }, [sessionId, resetAction, resetFinish, resetCancel, resetCapture]);
+  }, [sessionId, resetAction, resetPrediction, resetFinish, resetCancel, resetCapture]);
 
   const data = state.data;
   const executionStatus = data?.executionStatus?.toUpperCase() ?? "";
@@ -204,6 +208,7 @@ export function useStudioSession(sessionId: string) {
     targetService = target,
     overrideReplicas?: number,
     cpuPercent?: number,
+    targetRps?: number,
   ) {
     if (!data) return;
     const requestedReplicas = overrideReplicas ?? replicas;
@@ -216,7 +221,8 @@ export function useStudioSession(sessionId: string) {
       previous.action === kind &&
       previous.service === targetService &&
       previous.replicas === (kind === "SCALE" ? requestedReplicas : undefined) &&
-      previous.cpuPercent === (kind === "THROTTLE_CPU" ? cpuPercent : undefined)
+      previous.cpuPercent === (kind === "THROTTLE_CPU" ? cpuPercent : undefined) &&
+      previous.targetRps === (kind === "SET_LOAD" ? targetRps : undefined)
         ? previous
         : {
             actionId: crypto.randomUUID(),
@@ -224,6 +230,7 @@ export function useStudioSession(sessionId: string) {
             service: targetService,
             ...(kind === "SCALE" ? { replicas: requestedReplicas } : {}),
             ...(kind === "THROTTLE_CPU" && cpuPercent !== undefined ? { cpuPercent } : {}),
+            ...(kind === "SET_LOAD" && targetRps !== undefined ? { targetRps } : {}),
           };
     pending.current = command;
     setActionError(null);
@@ -234,6 +241,24 @@ export function useStudioSession(sessionId: string) {
     } catch (error) {
       setActionError(
         error instanceof Error ? error : new Error("Studio action was not confirmed"),
+      );
+      await state.refetch();
+    }
+  }
+
+  async function submitPrediction(predictedServices: string[], rationale: string) {
+    if (!data || predictedServices.length === 0) return;
+    setActionError(null);
+    try {
+      await prediction.mutateAsync({
+        sessionId,
+        predictedServices,
+        ...(rationale.trim() ? { rationale: rationale.trim() } : {}),
+      });
+      await state.refetch();
+    } catch (error) {
+      setActionError(
+        error instanceof Error ? error : new Error("Could not lock Change Impact prediction"),
       );
       await state.refetch();
     }
@@ -332,6 +357,7 @@ export function useStudioSession(sessionId: string) {
     canScaleTarget,
     busy,
     action,
+    prediction,
     finish,
     cancel,
     capture,
@@ -344,6 +370,7 @@ export function useStudioSession(sessionId: string) {
     chaosTarget,
     setChaosTarget,
     send,
+    submitPrediction,
     finishStudio,
     cancelStudio,
     captureSnapshot,

@@ -1,0 +1,150 @@
+package com.mavis.analyzer.runtime.service;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.junit.jupiter.api.Test;
+
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class StudioExerciseEvaluatorTest {
+
+    private final ObjectMapper mapper = new ObjectMapper();
+
+    @Test
+    void changeImpactComputesExactPrecisionRecallAndF1FromObservedEdgeAndReplicaDeltas() {
+        ObjectNode criteria = mapper.createObjectNode();
+        criteria.put("exerciseType", "CHANGE_IMPACT");
+        criteria.put("predictionRequired", true);
+        criteria.put("minImpactF1", 0.7);
+        criteria.putObject("targetChangeAction").put("action", "PAUSE").put("service", "payment");
+
+        ObjectNode control = mapper.createObjectNode();
+        ObjectNode pred = control.putObject("prediction");
+        pred.putArray("predictedServices").add("payment").add("orders").add("catalog");
+        pred.put("rationale", "Orders calls payment synchronously");
+        pred.put("lockedAt", "2026-11-21T10:00:00Z");
+
+        ArrayNode actions = control.putArray("actions");
+        ObjectNode pause = actions.addObject()
+                .put("actionId", "a1")
+                .put("action", "PAUSE")
+                .put("service", "payment")
+                .put("status", "CONFIRMED")
+                .put("requestedAt", "2026-11-21T10:00:10Z")
+                .put("completedAt", "2026-11-21T10:00:12Z");
+        pause.putObject("result")
+                .put("action", "PAUSE")
+                .put("service", "payment")
+                .put("replicasBefore", 1)
+                .put("replicasAfter", 0)
+                .put("confirmed", true);
+
+        ObjectNode beforeFrame = frame("2026-11-21T10:00:05Z", 1, 1, 0.0, 25.0, 0.0, 18.0);
+        ObjectNode afterFrame = frame("2026-11-21T10:00:20Z", 1, 0, 80.0, 420.0, 75.0, 390.0);
+
+        ObjectNode eval = StudioExerciseEvaluator.evaluate(mapper, criteria, control, afterFrame, List.of(beforeFrame, afterFrame));
+
+        assertTrue(eval.path("predictionLocked").asBoolean());
+        assertTrue(eval.path("evaluated").asBoolean());
+        // Observed: orders + payment (catalog unaffected -> 1 FP, 2 TP, 0 FN)
+        assertEquals(2, eval.path("impact").path("truePositives").size());
+        assertEquals(1, eval.path("impact").path("falsePositives").size());
+        assertEquals("catalog", eval.path("impact").path("falsePositives").get(0).asText());
+        assertEquals(0, eval.path("impact").path("falseNegatives").size());
+        // precision = 2/3 = 0.6667, recall = 2/2 = 1.0, f1 = 4/5 = 0.8
+        assertEquals(0.6667, eval.path("impact").path("precision").asDouble(), 0.001);
+        assertEquals(1.0, eval.path("impact").path("recall").asDouble(), 0.001);
+        assertEquals(0.8, eval.path("impact").path("f1Score").asDouble(), 0.001);
+        assertTrue(eval.path("passed").asBoolean());
+        assertEquals(100, eval.path("autoScorePercent").asInt());
+    }
+
+    @Test
+    void declarativeRulesEvaluateScaleOutLatencyDropReplicasAndEdgeErrors() {
+        ObjectNode criteria = mapper.createObjectNode();
+        criteria.put("exerciseType", "SCALE_UNDER_LOAD");
+        criteria.put("maxErrorRatePercent", 5);
+        criteria.putArray("minReplicas").addObject().put("service", "orders").put("count", 2);
+        ArrayNode rules = criteria.putArray("rules");
+        rules.addObject().put("metric", "P95_DELTA_PCT").put("target", "ALL").put("operator", "LTE").put("threshold", -20.0);
+        rules.addObject().put("metric", "P95_MS").put("target", "orders").put("operator", "LT").put("threshold", 150.0);
+        rules.addObject().put("metric", "EDGE_ERROR_RATE").put("target", "orders->payment").put("operator", "LTE").put("threshold", 1.0);
+
+        ObjectNode control = mapper.createObjectNode();
+        ObjectNode scale = control.putArray("actions").addObject()
+                .put("action", "SCALE").put("service", "orders").put("status", "CONFIRMED")
+                .put("requestedAt", "2026-11-21T10:00:10Z").put("completedAt", "2026-11-21T10:00:15Z");
+        scale.putObject("result").put("replicasBefore", 1).put("replicasAfter", 2).put("confirmed", true);
+
+        ObjectNode beforeFrame = frame("2026-11-21T10:00:05Z", 1, 1, 0.0, 200.0, 0.0, 40.0);
+        ObjectNode afterFrame = frame("2026-11-21T10:00:25Z", 2, 1, 0.0, 110.0, 0.0, 35.0);
+
+        ObjectNode eval = StudioExerciseEvaluator.evaluate(mapper, criteria, control, afterFrame, List.of(beforeFrame, afterFrame));
+
+        assertTrue(eval.path("evaluated").asBoolean());
+        assertTrue(eval.path("passed").asBoolean());
+        assertEquals(5, eval.path("totalRules").asInt());
+        assertEquals(5, eval.path("passedRules").asInt());
+        assertEquals(100, eval.path("autoScorePercent").asInt());
+        JsonNode deltaRule = findRule(eval, "P95_DELTA_PCT");
+        assertNotNull(deltaRule);
+        assertEquals(-45.0, deltaRule.path("observedValue").asDouble(), 0.1);
+        assertTrue(deltaRule.path("passed").asBoolean());
+    }
+
+    @Test
+    void predictionRequiredFailsGracefullyUntilLockedAndChangeApplied() {
+        ObjectNode criteria = mapper.createObjectNode();
+        criteria.put("exerciseType", "CHANGE_IMPACT");
+        criteria.put("predictionRequired", true);
+        ObjectNode control = mapper.createObjectNode();
+        control.putArray("actions");
+        ObjectNode telemetry = frame("2026-11-21T10:00:05Z", 1, 1, 0.0, 25.0, 0.0, 15.0);
+
+        ObjectNode eval = StudioExerciseEvaluator.evaluate(mapper, criteria, control, telemetry, List.of(telemetry));
+
+        assertFalse(eval.path("predictionLocked").asBoolean());
+        assertFalse(eval.path("evaluated").asBoolean());
+        assertFalse(eval.path("passed").asBoolean());
+        assertEquals(0, eval.path("passedRules").asInt());
+        assertEquals(1, eval.path("totalRules").asInt());
+        assertTrue(eval.path("rules").get(0).path("reason").asText().contains("Lock your Change Impact prediction"));
+    }
+
+    private ObjectNode frame(String observedAt, int ordersRep, int paymentRep,
+                             double probeErr, double probeP95, double edgeErr, double edgeP95) {
+        ObjectNode f = mapper.createObjectNode().put("observedAt", observedAt);
+        ArrayNode svcs = f.putArray("services");
+        svcs.addObject().put("service", "orders").put("replicas", Math.max(1, ordersRep)).put("runningReplicas", ordersRep);
+        svcs.addObject().put("service", "payment").put("replicas", Math.max(1, paymentRep)).put("runningReplicas", paymentRep);
+        ObjectNode probe = f.putObject("probe")
+                .put("targetRps", 10)
+                .put("rps", 10.0)
+                .put("requests", 10)
+                .put("errors", (int) Math.round(probeErr / 10.0))
+                .put("errorRatePercent", probeErr)
+                .put("p50Ms", probeP95 * 0.6)
+                .put("p95Ms", probeP95)
+                .put("p99Ms", probeP95 * 1.2);
+        probe.putArray("routes").addObject()
+                .put("stepId", "s1").put("service", "orders").put("method", "GET").put("path", "/orders")
+                .put("requests", 10).put("errors", (int) Math.round(probeErr / 10.0))
+                .put("errorRatePercent", probeErr).put("p95Ms", probeP95);
+        f.putArray("serviceGraph").addObject()
+                .put("client", "orders").put("server", "payment")
+                .put("rps", 10.0).put("errorsPerSec", edgeErr / 10.0)
+                .put("errorRatePercent", edgeErr).put("p95Ms", edgeP95);
+        return f;
+    }
+
+    private static JsonNode findRule(ObjectNode eval, String metric) {
+        for (JsonNode r : eval.path("rules")) {
+            if (metric.equals(r.path("metric").asText())) return r;
+        }
+        return null;
+    }
+}

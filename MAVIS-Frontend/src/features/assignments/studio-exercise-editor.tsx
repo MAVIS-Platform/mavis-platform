@@ -13,6 +13,27 @@ import type { Assignment } from "./requirements";
 type BaselineRequest = { method: "GET" | "HEAD"; path: string; expectedStatus: number | null };
 type TraceEdge = { from: string; to: string };
 type ReplicaTarget = { service: string; count: number };
+type ChangeAction = {
+  action: "STOP" | "START" | "SCALE" | "PAUSE" | "RESUME" | "THROTTLE_CPU" | "SET_LOAD";
+  service: string;
+  replicas?: number | null;
+  cpuPercent?: number | null;
+  targetRps?: number | null;
+};
+type DeclarativeRule = {
+  metric: "ERROR_RATE" | "EDGE_ERROR_RATE" | "P95_MS" | "P95_DELTA_PCT" | "REPLICAS" | "TRACE_EDGE" | "IMPACT_F1";
+  target: string;
+  operator: "LT" | "LTE" | "GT" | "GTE" | "EQ";
+  threshold: number;
+  label?: string | null;
+};
+type ExerciseTemplateKey =
+  | "CHANGE_IMPACT"
+  | "CASCADING_FAILURE"
+  | "CIRCUIT_BREAKER"
+  | "SCALE_UNDER_LOAD"
+  | "CONFIG_REGRESSION"
+  | "CUSTOM";
 
 type ExerciseView = {
   runtimeProjectId: string | null;
@@ -26,6 +47,11 @@ type ExerciseView = {
     maxP95Ms: number | null;
     requiredTraceEdge: TraceEdge | null;
     minReplicas: ReplicaTarget[];
+    exerciseType?: ExerciseTemplateKey | null;
+    predictionRequired?: boolean | null;
+    minImpactF1?: number | null;
+    targetChangeAction?: ChangeAction | null;
+    rules?: DeclarativeRule[] | null;
   };
   instructions: string;
   revision: number;
@@ -44,10 +70,36 @@ type Form = {
   traceTo: string;
   replicaService: string;
   replicaCount: string;
+  exerciseType: ExerciseTemplateKey;
+  predictionRequired: boolean;
+  minImpactF1: string;
+  changeActionKind: "" | ChangeAction["action"];
+  changeActionService: string;
+  changeActionValue: string;
+  rules: DeclarativeRule[];
   instructions: string;
 };
 
-const ACTIONS = ["START", "STOP", "SCALE", "CONNECT", "DISCONNECT"] as const;
+const ACTIONS = [
+  "START",
+  "STOP",
+  "SCALE",
+  "PAUSE",
+  "RESUME",
+  "THROTTLE_CPU",
+  "SET_LOAD",
+  "CONNECT",
+  "DISCONNECT",
+] as const;
+
+const RULE_METRICS: ReadonlyArray<{ value: DeclarativeRule["metric"]; label: string }> = [
+  { value: "ERROR_RATE", label: "Error Rate (%)" },
+  { value: "EDGE_ERROR_RATE", label: "Edge Error (%)" },
+  { value: "P95_MS", label: "p95 Latency (ms)" },
+  { value: "P95_DELTA_PCT", label: "p95 Delta (%)" },
+  { value: "REPLICAS", label: "Replicas" },
+  { value: "IMPACT_F1", label: "Change Impact F1" },
+];
 
 const EMPTY: Form = {
   runtimeModelId: "",
@@ -61,6 +113,13 @@ const EMPTY: Form = {
   traceTo: "",
   replicaService: "",
   replicaCount: "",
+  exerciseType: "CUSTOM",
+  predictionRequired: false,
+  minImpactF1: "0.7",
+  changeActionKind: "",
+  changeActionService: "",
+  changeActionValue: "",
+  rules: [],
   instructions: "",
 };
 
@@ -108,6 +167,7 @@ export function StudioExerciseEditor({
       return;
     }
     const replica = current.successCriteria?.minReplicas?.[0];
+    const change = current.successCriteria?.targetChangeAction;
     setExtraReplicas(current.successCriteria?.minReplicas?.slice(1) ?? []);
     setForm({
       runtimeModelId: referenceSource?.modelId ?? current.runtimeModelId ?? defaultModelId ?? "",
@@ -126,74 +186,226 @@ export function StudioExerciseEditor({
       traceTo: current.successCriteria?.requiredTraceEdge?.to ?? "",
       replicaService: replica?.service ?? "",
       replicaCount: replica?.count == null ? "" : String(replica.count),
+      exerciseType: current.successCriteria?.exerciseType ?? "CUSTOM",
+      predictionRequired: Boolean(current.successCriteria?.predictionRequired),
+      minImpactF1:
+        current.successCriteria?.minImpactF1 == null
+          ? "0.7"
+          : String(current.successCriteria.minImpactF1),
+      changeActionKind: change?.action ?? "",
+      changeActionService: change?.service ?? "",
+      changeActionValue:
+        change?.replicas != null
+          ? String(change.replicas)
+          : change?.cpuPercent != null
+            ? String(change.cpuPercent)
+            : change?.targetRps != null
+              ? String(change.targetRps)
+              : "",
+      rules: current.successCriteria?.rules ?? [],
       instructions: current.instructions ?? "",
     });
   }, [exercise.data, referenceSource?.modelId, defaultModelId]);
 
-  const applyPreset = () => {
-    const hasCommerce =
-      applications.includes("api-gateway") || applications.includes("order-service");
-    const hasOrdersDemo =
-      applications.includes("orders") ||
-      applications.includes("payment") ||
-      applications.includes("orders-payment-route");
+  const applyTemplate = (template: ExerciseTemplateKey) => {
+    const nonControllers = applications.filter((app) => app !== "orders-payment-route");
+    const primary = applications.includes("api-gateway")
+      ? "api-gateway"
+      : applications.includes("orders")
+        ? "orders"
+        : nonControllers[0] ?? applications[0] ?? "order-service";
+    const middle = applications.includes("order-service")
+      ? "order-service"
+      : nonControllers.find((app) => app !== primary) ?? primary;
+    const leaf = applications.includes("payment-service")
+      ? "payment-service"
+      : applications.includes("payment")
+        ? "payment"
+        : nonControllers[nonControllers.length - 1] ?? middle;
+    const baselinePath = primary === "api-gateway"
+      ? "/api/gateway/orders"
+      : primary === "orders"
+        ? "/orders"
+        : "/health";
+
     setSavedNotice(false);
     setExtraReplicas([]);
-    if (hasCommerce && !hasOrdersDemo) {
-      const targetScale = applications.includes("order-service")
-        ? "order-service"
-        : applications[0] ?? "api-gateway";
-      const stopTarget = applications.includes("payment-service")
-        ? ["payment-service"]
-        : applications.length > 1
-          ? [applications[applications.length - 1]!]
-          : [];
+
+    if (template === "CHANGE_IMPACT") {
       setForm((current) => ({
         ...current,
-        baselineRequests: [{ method: "GET", path: "/api/gateway/orders", expectedStatus: 200 }],
-        stoppedServices: stopTarget,
+        exerciseType: "CHANGE_IMPACT",
+        baselineRequests: [{ method: "GET", path: baselinePath, expectedStatus: 200 }],
+        stoppedServices: [],
         stoppedControllers: "",
-        allowedActions: [...ACTIONS],
-        maxErrorRatePercent: "0",
-        maxP95Ms: "2500",
-        traceFrom: "api-gateway",
-        traceTo: targetScale === "api-gateway" ? "" : targetScale,
-        replicaService: targetScale,
-        replicaCount: "2",
+        allowedActions: ["PAUSE", "RESUME", "STOP", "START", "SET_LOAD"],
+        maxErrorRatePercent: "",
+        maxP95Ms: "",
+        traceFrom: "",
+        traceTo: "",
+        replicaService: "",
+        replicaCount: "",
+        predictionRequired: true,
+        minImpactF1: "0.7",
+        changeActionKind: "PAUSE",
+        changeActionService: leaf,
+        changeActionValue: "",
+        rules: [
+          {
+            metric: "IMPACT_F1",
+            target: "PREDICTION",
+            operator: "GTE",
+            threshold: 0.7,
+            label: "Change Impact F1 >= 0.70",
+          },
+        ],
         instructions: t(
-          `The stack starts with ${stopTarget.join(", ") || "a downstream service"} stopped. (1) START stopped services so GET /api/gateway/orders succeeds with 0% errors, (2) SCALE ${targetScale} to 2 replicas, capture Before/After snapshots, and click Finish Studio to seal the RuntimeReceipt.`,
-          `Hệ thống bắt đầu với ${stopTarget.join(", ") || "dịch vụ phụ"} đang dừng. (1) Bật (START) service để GET /api/gateway/orders đạt 0% lỗi, (2) Nhân bản (SCALE) ${targetScale} lên 2 replicas, chụp Snapshot và nhấn Finish Studio để ký RuntimeReceipt.`,
+          `Inspect the live service map, predict every service that will degrade when ${leaf} freezes, lock your prediction, then execute PAUSE on ${leaf} and observe real RED/edge propagation.`,
+          `Quan sát sơ đồ service sống, dự đoán các service sẽ bị ảnh hưởng khi ${leaf} bị treo, khóa dự đoán, sau đó thực thi PAUSE lên ${leaf} và đối chiếu F1 tự động.`,
         ),
       }));
       return;
     }
-    const nonControllers = applications.filter((app) => app !== "orders-payment-route");
-    const primary = applications.includes("orders")
-      ? "orders"
-      : nonControllers[0] ?? applications[0] ?? "orders";
-    const secondary = applications.includes("payment")
-      ? "payment"
-      : nonControllers.find((app) => app !== primary) ?? (hasOrdersDemo ? "payment" : "");
-    const controller = applications.includes("orders-payment-route")
-      ? "orders-payment-route"
-      : "";
+
+    if (template === "CASCADING_FAILURE") {
+      setForm((current) => ({
+        ...current,
+        exerciseType: "CASCADING_FAILURE",
+        baselineRequests: [{ method: "GET", path: baselinePath, expectedStatus: 200 }],
+        stoppedServices: [],
+        stoppedControllers: "",
+        allowedActions: ["PAUSE", "RESUME", "STOP", "START"],
+        maxErrorRatePercent: "",
+        maxP95Ms: "",
+        traceFrom: "",
+        traceTo: "",
+        replicaService: "",
+        replicaCount: "",
+        predictionRequired: true,
+        minImpactF1: "0.7",
+        changeActionKind: "STOP",
+        changeActionService: leaf,
+        changeActionValue: "",
+        rules: [
+          {
+            metric: "EDGE_ERROR_RATE",
+            target: `${middle}->${leaf}`,
+            operator: "GT",
+            threshold: 50,
+            label: `Edge ${middle}→${leaf} error > 50%`,
+          },
+          {
+            metric: "IMPACT_F1",
+            target: "PREDICTION",
+            operator: "GTE",
+            threshold: 0.7,
+            label: "Cascading Impact F1 >= 0.70",
+          },
+        ],
+        instructions: t(
+          `Predict the cascading failure blast radius when ${leaf} stops, lock prediction, trigger STOP on ${leaf}, capture Before/After evidence, then restore it.`,
+          `Dự đoán bán kính lan truyền lỗi khi ${leaf} dừng, khóa dự đoán, dừng ${leaf}, chụp Before/After rồi khôi phục.`,
+        ),
+      }));
+      return;
+    }
+
+    if (template === "SCALE_UNDER_LOAD") {
+      setForm((current) => ({
+        ...current,
+        exerciseType: "SCALE_UNDER_LOAD",
+        baselineRequests: [{ method: "GET", path: baselinePath, expectedStatus: 200 }],
+        stoppedServices: [],
+        stoppedControllers: "",
+        allowedActions: ["SET_LOAD", "SCALE", "START", "STOP"],
+        maxErrorRatePercent: "5",
+        maxP95Ms: "500",
+        traceFrom: "",
+        traceTo: "",
+        replicaService: middle,
+        replicaCount: "2",
+        predictionRequired: false,
+        minImpactF1: "0.7",
+        changeActionKind: "SET_LOAD",
+        changeActionService: primary,
+        changeActionValue: "30",
+        rules: [
+          {
+            metric: "P95_DELTA_PCT",
+            target: "ALL",
+            operator: "LTE",
+            threshold: -15,
+            label: "p95 latency improves by >= 15% after scaling",
+          },
+        ],
+        instructions: t(
+          `Raise live probe load to 30 RPS, observe p95 latency rise on ${middle}, then SCALE ${middle} to >= 2 replicas so error rate stays <= 5% and p95 drops.`,
+          `Tăng tải probe lên 30 RPS, quan sát p95 tăng trên ${middle}, sau đó SCALE ${middle} lên >= 2 replicas để lỗi <= 5% và p95 giảm.`,
+        ),
+      }));
+      return;
+    }
+
+    if (template === "CONFIG_REGRESSION") {
+      setForm((current) => ({
+        ...current,
+        exerciseType: "CONFIG_REGRESSION",
+        baselineRequests: [{ method: "GET", path: baselinePath, expectedStatus: 200 }],
+        stoppedServices: [],
+        stoppedControllers: "",
+        allowedActions: ["THROTTLE_CPU", "SCALE", "SET_LOAD"],
+        maxErrorRatePercent: "5",
+        maxP95Ms: "800",
+        traceFrom: "",
+        traceTo: "",
+        replicaService: "",
+        replicaCount: "",
+        predictionRequired: true,
+        minImpactF1: "0.7",
+        changeActionKind: "THROTTLE_CPU",
+        changeActionService: middle,
+        changeActionValue: "25",
+        rules: [
+          {
+            metric: "P95_MS",
+            target: middle,
+            operator: "LT",
+            threshold: 800,
+            label: `p95(${middle}) < 800ms after recovery`,
+          },
+        ],
+        instructions: t(
+          `Predict which upstream callers slow down when ${middle} is throttled to 25% CPU, apply THROTTLE_CPU 25%, measure real p95 latency regression, then restore CPU to 100% or scale out.`,
+          `Dự đoán service chậm theo khi giới hạn CPU ${middle} xuống 25%, áp dụng THROTTLE_CPU 25%, đo độ trễ p95 rồi khôi phục 100% hoặc scale.`,
+        ),
+      }));
+      return;
+    }
+
+    // Default / CIRCUIT_BREAKER recovery template
+    const controller = applications.includes("orders-payment-route") ? "orders-payment-route" : "";
     setForm((current) => ({
       ...current,
-      baselineRequests: [
-        { method: "GET", path: primary === "orders" ? "/orders" : "/health", expectedStatus: 200 },
-      ],
-      stoppedServices: secondary ? [secondary] : [],
+      exerciseType: "CIRCUIT_BREAKER",
+      baselineRequests: [{ method: "GET", path: baselinePath, expectedStatus: 200 }],
+      stoppedServices: leaf && leaf !== primary ? [leaf] : [],
       stoppedControllers: controller,
       allowedActions: [...ACTIONS],
       maxErrorRatePercent: "0",
       maxP95Ms: "2500",
       traceFrom: primary,
-      traceTo: secondary,
-      replicaService: primary,
+      traceTo: leaf === primary ? "" : leaf,
+      replicaService: middle,
       replicaCount: "2",
+      predictionRequired: false,
+      minImpactF1: "0.7",
+      changeActionKind: "",
+      changeActionService: "",
+      changeActionValue: "",
+      rules: [],
       instructions: t(
-        `The stack starts with ${secondary || primary}${controller ? ` and ${controller}` : ""} stopped. (1) START ${secondary || primary}${controller ? ` & connect ${controller}` : ""} to restore 0% error rate, (2) SCALE ${primary} to at least 2 replicas, capture Before/After snapshots, and click Finish Studio to seal the RuntimeReceipt.`,
-        `Hệ thống bắt đầu với ${secondary || primary}${controller ? ` và ${controller}` : ""} đang dừng. (1) Bật (START) ${secondary || primary}${controller ? ` và nối ${controller}` : ""} về 0% lỗi, (2) Scale ${primary} lên tối thiểu 2 replicas, chụp Snapshot và nhấn Finish Studio.`,
+        `The stack starts with ${leaf}${controller ? ` and ${controller}` : ""} stopped. (1) START ${leaf} to restore 0% error rate, (2) SCALE ${middle} to at least 2 replicas, capture Before/After snapshots, and click Finish Studio to seal the RuntimeReceipt.`,
+        `Hệ thống bắt đầu với ${leaf}${controller ? ` và ${controller}` : ""} đang dừng. (1) Bật (START) ${leaf} về 0% lỗi, (2) Scale ${middle} lên tối thiểu 2 replicas, chụp Snapshot và nhấn Finish Studio.`,
       ),
     }));
   };
@@ -232,6 +444,17 @@ export function StudioExerciseEditor({
         form.replicaService.trim() && form.replicaCount
           ? { service: form.replicaService.trim(), count: Number(form.replicaCount) }
           : null;
+      const numericChangeVal = form.changeActionValue ? Number(form.changeActionValue) : null;
+      const targetChangeAction =
+        form.changeActionKind && form.changeActionService.trim()
+          ? {
+              action: form.changeActionKind,
+              service: form.changeActionService.trim(),
+              replicas: form.changeActionKind === "SCALE" ? (numericChangeVal ?? 2) : null,
+              cpuPercent: form.changeActionKind === "THROTTLE_CPU" ? (numericChangeVal ?? 25) : null,
+              targetRps: form.changeActionKind === "SET_LOAD" ? (numericChangeVal ?? 25) : null,
+            }
+          : null;
       return api<ExerciseView>(
         `workspaces/${workspaceId}/course-labs/${assignmentId}/studio-exercise`,
         {
@@ -258,6 +481,17 @@ export function StudioExerciseEditor({
               maxP95Ms: form.maxP95Ms ? Number(form.maxP95Ms) : null,
               requiredTraceEdge: edge,
               minReplicas: [...(replica ? [replica] : []), ...extraReplicas],
+              exerciseType: form.exerciseType,
+              predictionRequired: form.predictionRequired,
+              minImpactF1: form.predictionRequired && form.minImpactF1 ? Number(form.minImpactF1) : null,
+              targetChangeAction,
+              rules: form.rules.map((rule) => ({
+                metric: rule.metric,
+                target: rule.target.trim() || "ALL",
+                operator: rule.operator,
+                threshold: Number(rule.threshold),
+                label: rule.label?.trim() || null,
+              })),
             },
             instructions: form.instructions.trim(),
           }),
@@ -286,33 +520,54 @@ export function StudioExerciseEditor({
 
   return (
     <div className="space-y-5">
-      {/* Compact Repo + Preset Strip */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/70 pb-3">
-        <div className="flex min-w-0 items-center gap-2 text-xs">
-          <GitBranch className="size-3.5 shrink-0 text-emerald-500" aria-hidden="true" />
-          <span className="truncate font-mono font-medium text-foreground">
-            {referenceSource?.projectName
-              ? referenceSource.projectName
-              : form.runtimeModelId
-                ? `model ${form.runtimeModelId.slice(0, 8)}`
-                : t("No repository linked", "Chưa gắn repo")}
-          </span>
-          {exercise.data && (
-            <span className="rounded border border-border bg-muted/40 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-              rev {exercise.data.revision}
+      {/* Compact Repo + C4 Exercise Template Library Strip */}
+      <div className="space-y-2.5 border-b border-border/70 pb-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2 text-xs">
+            <GitBranch className="size-3.5 shrink-0 text-emerald-500" aria-hidden="true" />
+            <span className="truncate font-mono font-medium text-foreground">
+              {referenceSource?.projectName
+                ? referenceSource.projectName
+                : form.runtimeModelId
+                  ? `model ${form.runtimeModelId.slice(0, 8)}`
+                  : t("No repository linked", "Chưa gắn repo")}
             </span>
-          )}
+            {exercise.data && (
+              <span className="rounded border border-border bg-muted/40 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                rev {exercise.data.revision}
+              </span>
+            )}
+          </div>
+          <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            {t("1-Click Exercise Templates", "Thư viện mẫu bài tập")}
+          </span>
         </div>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          onClick={applyPreset}
-          className="h-7 gap-1 px-2.5 text-xs"
-        >
-          <Zap className="size-3 text-amber-400" aria-hidden="true" />
-          {t("Auto-fill preset", "Điền nhanh mẫu")}
-        </Button>
+        <div className="flex flex-wrap gap-1.5">
+          {(
+            [
+              { id: "CHANGE_IMPACT", label: t("Change Impact (Auto-Graded)", "Change Impact (Tự chấm)") },
+              { id: "CASCADING_FAILURE", label: t("Cascading Failure", "Lỗi lan truyền") },
+              { id: "CIRCUIT_BREAKER", label: t("Recovery / Circuit Breaker", "Phục hồi / Circuit Breaker") },
+              { id: "SCALE_UNDER_LOAD", label: t("Scale-Out under Load", "Scale dưới tải cao") },
+              { id: "CONFIG_REGRESSION", label: t("CPU Degradation", "Suy giảm CPU") },
+            ] as const
+          ).map((tpl) => {
+            const active = form.exerciseType === tpl.id;
+            return (
+              <Button
+                key={tpl.id}
+                type="button"
+                size="sm"
+                variant={active ? "default" : "outline"}
+                onClick={() => applyTemplate(tpl.id)}
+                className="h-7 gap-1 px-2.5 text-[11px]"
+              >
+                <Zap className="size-3 text-amber-400" aria-hidden="true" />
+                {tpl.label}
+              </Button>
+            );
+          })}
+        </div>
       </div>
 
       {/* 1. Baseline Probe Endpoints */}
@@ -556,6 +811,204 @@ export function StudioExerciseEditor({
               onChange={(event) => setForm({ ...form, replicaCount: event.target.value })}
             />
           </label>
+        </div>
+      </section>
+
+      {/* 3b. C2 Change Impact & C3 Declarative Pass Rules */}
+      <section className="space-y-3 border-t border-border/60 pt-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            {t("Change Impact & Declarative Rules", "Change Impact & Tiêu chí khai báo")}
+          </p>
+          <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-foreground">
+            <input
+              type="checkbox"
+              checked={form.predictionRequired}
+              onChange={(event) =>
+                setForm({ ...form, predictionRequired: event.target.checked })
+              }
+              className="size-3.5 accent-primary"
+            />
+            {t("Require student prediction before change", "Bắt buộc sinh viên dự đoán trước khi đổi")}
+          </label>
+        </div>
+
+        <div className="grid gap-2.5 sm:grid-cols-4">
+          <label className="space-y-1 text-xs text-muted-foreground">
+            <span>{t("Prescribed change", "Thao tác đề bài")}</span>
+            <select
+              className="h-8 w-full rounded-md border border-border bg-background px-2 font-mono text-xs text-foreground"
+              value={form.changeActionKind}
+              onChange={(event) =>
+                setForm({
+                  ...form,
+                  changeActionKind: event.target.value as Form["changeActionKind"],
+                })
+              }
+            >
+              <option value="">{t("None", "Không cố định")}</option>
+              <option value="PAUSE">PAUSE</option>
+              <option value="STOP">STOP</option>
+              <option value="THROTTLE_CPU">THROTTLE_CPU</option>
+              <option value="SET_LOAD">SET_LOAD</option>
+              <option value="SCALE">SCALE</option>
+            </select>
+          </label>
+          <label className="space-y-1 text-xs text-muted-foreground">
+            <span>{t("Target service", "Service mục tiêu")}</span>
+            {allServices.length > 0 ? (
+              <select
+                className="h-8 w-full rounded-md border border-border bg-background px-2 font-mono text-xs text-foreground"
+                value={form.changeActionService}
+                onChange={(event) => setForm({ ...form, changeActionService: event.target.value })}
+              >
+                <option value="">—</option>
+                {allServices.map((svc) => (
+                  <option key={svc} value={svc}>
+                    {svc}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <Input
+                className="h-8 font-mono text-xs"
+                value={form.changeActionService}
+                placeholder="payment-service"
+                onChange={(event) => setForm({ ...form, changeActionService: event.target.value })}
+              />
+            )}
+          </label>
+          <label className="space-y-1 text-xs text-muted-foreground">
+            <span>
+              {form.changeActionKind === "THROTTLE_CPU"
+                ? "CPU (%)"
+                : form.changeActionKind === "SET_LOAD"
+                  ? "Target RPS"
+                  : form.changeActionKind === "SCALE"
+                    ? "Replicas"
+                    : t("Action param", "Tham số")}
+            </span>
+            <Input
+              className="h-8 font-mono text-xs"
+              type="number"
+              disabled={!["THROTTLE_CPU", "SET_LOAD", "SCALE"].includes(form.changeActionKind)}
+              value={form.changeActionValue}
+              placeholder="25"
+              onChange={(event) => setForm({ ...form, changeActionValue: event.target.value })}
+            />
+          </label>
+          <label className="space-y-1 text-xs text-muted-foreground">
+            <span>{t("Min Impact F1 (0–1)", "F1 tối thiểu (0–1)")}</span>
+            <Input
+              className="h-8 font-mono text-xs"
+              type="number"
+              step="0.05"
+              min={0}
+              max={1}
+              disabled={!form.predictionRequired}
+              value={form.minImpactF1}
+              onChange={(event) => setForm({ ...form, minImpactF1: event.target.value })}
+            />
+          </label>
+        </div>
+
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] font-medium text-muted-foreground">
+              {t("Declarative auto-grade rules", "Điều kiện tự chấm dạng khai báo")}
+            </span>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={form.rules.length >= 12}
+              onClick={() =>
+                setForm({
+                  ...form,
+                  rules: [
+                    ...form.rules,
+                    { metric: "P95_MS", target: allServices[0] ?? "ALL", operator: "LT", threshold: 300 },
+                  ],
+                })
+              }
+              className="h-6 px-2 text-[11px] text-muted-foreground hover:text-foreground"
+            >
+              <Plus className="mr-1 size-3" aria-hidden="true" />
+              {t("Add rule", "Thêm điều kiện")}
+            </Button>
+          </div>
+          {form.rules.map((rule, idx) => (
+            <div key={idx} className="grid grid-cols-[1.2fr_1.1fr_0.6fr_0.7fr_auto] items-center gap-1.5">
+              <select
+                aria-label="Rule metric"
+                className="h-8 rounded-md border border-border bg-background px-1.5 font-mono text-[11px] text-foreground"
+                value={rule.metric}
+                onChange={(event) => {
+                  const next = [...form.rules];
+                  next[idx] = { ...rule, metric: event.target.value as DeclarativeRule["metric"] };
+                  setForm({ ...form, rules: next });
+                }}
+              >
+                {RULE_METRICS.map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+              <Input
+                className="h-8 font-mono text-[11px]"
+                value={rule.target}
+                placeholder="ALL or svcA->svcB"
+                onChange={(event) => {
+                  const next = [...form.rules];
+                  next[idx] = { ...rule, target: event.target.value };
+                  setForm({ ...form, rules: next });
+                }}
+              />
+              <select
+                aria-label="Rule operator"
+                className="h-8 rounded-md border border-border bg-background px-1.5 font-mono text-[11px] text-foreground"
+                value={rule.operator}
+                onChange={(event) => {
+                  const next = [...form.rules];
+                  next[idx] = { ...rule, operator: event.target.value as DeclarativeRule["operator"] };
+                  setForm({ ...form, rules: next });
+                }}
+              >
+                <option value="LT">&lt;</option>
+                <option value="LTE">&lt;=</option>
+                <option value="GT">&gt;</option>
+                <option value="GTE">&gt;=</option>
+                <option value="EQ">=</option>
+              </select>
+              <Input
+                className="h-8 font-mono text-[11px]"
+                type="number"
+                step="any"
+                value={Number.isFinite(rule.threshold) ? String(rule.threshold) : ""}
+                onChange={(event) => {
+                  const next = [...form.rules];
+                  next[idx] = { ...rule, threshold: Number(event.target.value || 0) };
+                  setForm({ ...form, rules: next });
+                }}
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                aria-label="Remove rule"
+                className="size-8 shrink-0 p-0 text-muted-foreground hover:text-destructive"
+                onClick={() =>
+                  setForm({
+                    ...form,
+                    rules: form.rules.filter((_, i) => i !== idx),
+                  })
+                }
+              >
+                <Trash2 className="size-3.5" aria-hidden="true" />
+              </Button>
+            </div>
+          ))}
         </div>
       </section>
 

@@ -363,4 +363,55 @@ class RuntimeStudioServiceTest {
 
         assertEquals(3, session.getStudioControl().path("actions").size());
     }
+
+    @Test void setLoadValidatesTargetRpsAndPredictionLocksBeforeChangeAndFreezesIntoSnapshot() {
+        // SET_LOAD requires targetRps; STOP forbids targetRps
+        assertThrows(BusinessException.class, () -> service.submit(id,
+                new RuntimeStudioService.ActionRequest(UUID.randomUUID(), "SET_LOAD", "orders", null, null, null)));
+        assertThrows(BusinessException.class, () -> service.submit(id,
+                new RuntimeStudioService.ActionRequest(UUID.randomUUID(), "STOP", "orders", null, null, 20)));
+
+        // Configure exercise criteria on the session
+        ((com.fasterxml.jackson.databind.node.ObjectNode) session.getScenarioConfig())
+                .putObject("exerciseCriteria")
+                .put("exerciseType", "CHANGE_IMPACT")
+                .put("predictionRequired", true)
+                .put("minImpactF1", 0.7);
+        session.setSourceSnapshot(SourceSnapshot.builder().id(UUID.randomUUID()).build());
+
+        // Lock prediction before any change
+        var afterPredict = service.submitPrediction(id,
+                new RuntimeStudioService.PredictionRequest(java.util.List.of("orders"), "Load test impact"));
+        assertTrue(afterPredict.path("prediction").path("predictedServices").isArray());
+        assertEquals("orders", afterPredict.path("prediction").path("predictedServices").get(0).asText());
+
+        // Second prediction attempt is rejected (immutable once locked)
+        assertThrows(BusinessException.class, () -> service.submitPrediction(id,
+                new RuntimeStudioService.PredictionRequest(java.util.List.of("orders"), "Changed my mind")));
+
+        // Submit and acknowledge SET_LOAD = 25 RPS
+        UUID loadId = UUID.randomUUID();
+        service.submit(id, new RuntimeStudioService.ActionRequest(loadId, "SET_LOAD", "orders", null, null, 25));
+        var cmd = service.poll(id, session.getResourceProject());
+        assertEquals(25, cmd.path("command").path("targetRps").asInt());
+        var loadResult = mapper.createObjectNode().put("confirmed", true).put("action", "SET_LOAD")
+                .put("service", "orders").put("replicasBefore", 1).put("replicasAfter", 1);
+        loadResult.putObject("metricsBefore").put("targetRps", 5);
+        loadResult.putObject("metricsAfter").put("targetRps", 25);
+        service.acknowledge(id, new RuntimeStudioService.AckRequest(loadId, id, session.getResourceProject(), "CONFIRMED", loadResult));
+
+        // Publish telemetry and verify capture freezes prediction + exerciseEvaluation
+        var telem = mapper.createObjectNode().put("observedAt", "2026-11-21T10:00:20Z");
+        telem.putArray("services").addObject().put("service", "orders").put("replicas", 1).put("runningReplicas", 1);
+        service.telemetry(id, new RuntimeStudioService.TelemetryRequest(id, session.getResourceProject(), telem));
+
+        var state = service.state(id);
+        assertTrue(state.has("exerciseEvaluation"));
+        assertTrue(state.path("exerciseEvaluation").path("predictionLocked").asBoolean());
+
+        var captured = service.capture(id, new RuntimeStudioService.CaptureRequest("Captured load test", null, "2026-11-21T10:00:20Z"));
+        assertTrue(captured.has("prediction"));
+        assertTrue(captured.has("exerciseEvaluation"));
+        assertFalse(captured.path("digest").asText().isBlank());
+    }
 }

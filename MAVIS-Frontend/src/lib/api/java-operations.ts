@@ -747,6 +747,11 @@ export async function executeJava(
       return get(`analyzer/runtime/sessions/${id(input, "sessionId")}/studio`);
     case "studioAction":
       return post(`analyzer/runtime/sessions/${id(input, "sessionId")}/studio/actions`, input);
+    case "studioPrediction":
+      return post(`analyzer/runtime/sessions/${id(input, "sessionId")}/studio/prediction`, {
+        predictedServices: input["predictedServices"],
+        rationale: input["rationale"] ?? "",
+      });
     case "studioFinish":
       return post(`analyzer/runtime/sessions/${id(input, "sessionId")}/studio/finish`, {});
     case "studioCapture":

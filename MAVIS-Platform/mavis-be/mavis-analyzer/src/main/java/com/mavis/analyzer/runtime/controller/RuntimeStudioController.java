@@ -44,6 +44,10 @@ public class RuntimeStudioController {
             @Valid @RequestBody RuntimeStudioService.ActionRequest request) {
         return ApiResponse.success("Studio action queued", studio.submit(sessionId, request));
     }
+    @PostMapping("/prediction") public ApiResponse<JsonNode> prediction(@PathVariable UUID sessionId,
+            @Valid @RequestBody RuntimeStudioService.PredictionRequest request) {
+        return ApiResponse.success("Studio prediction locked", studio.submitPrediction(sessionId, request));
+    }
     @PostMapping("/finish") public ApiResponse<JsonNode> finish(@PathVariable UUID sessionId) {
         return ApiResponse.success("Studio finish requested", studio.finish(sessionId));
     }

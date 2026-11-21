@@ -423,6 +423,18 @@ public class CourseLabStudentService {
         }
         scenarioNode.put("timeoutSeconds", 300);
         scenarioConfig.putArray("infrastructureActions");
+        JsonNode criteriaNode = activeExercise != null
+                ? activeExercise.get("successCriteria")
+                : (exercise == null ? null : exercise.getSuccessCriteria());
+        if (criteriaNode != null && criteriaNode.isObject()) {
+            scenarioConfig.set("exerciseCriteria", criteriaNode.deepCopy());
+        }
+        JsonNode allowedActionsNode = activeExercise != null
+                ? activeExercise.get("allowedActions")
+                : (exercise == null ? null : exercise.getAllowedActions());
+        if (allowedActionsNode != null && allowedActionsNode.isArray()) {
+            scenarioConfig.set("allowedActions", allowedActionsNode.deepCopy());
+        }
 
         // Re-hydrate relocated Compose secrets (e.g. sandbox-postgres POSTGRES_PASSWORD) and sealed project inputs.
         Map<String, String> protectedEnvironment = Map.of();

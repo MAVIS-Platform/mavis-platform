@@ -64,19 +64,23 @@ public sealed class LiveProbeRunner
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
-    public async Task RunAsync(LiveProbeEnvelope envelope, TextWriter output, CancellationToken ct)
+    public async Task RunAsync(LiveProbeEnvelope envelope, TextWriter output, CancellationToken ct, TextReader? controlInput = null)
     {
-        var targetRps = Math.Clamp(envelope.TargetRps, 1, 50);
+        var currentTargetRps = Math.Clamp(envelope.TargetRps, 1, 50);
         var safeSteps = envelope.Scenario.Steps
             .Where(step => step.Method is "GET" or "HEAD" && envelope.Endpoints.ContainsKey(step.Service))
             .ToArray();
         using var client = HttpScenarioRunner.CreateClient();
         var samples = new ConcurrentQueue<Sample>();
         var scraper = new PrometheusServiceGraphScraper();
-        using var inFlight = new SemaphoreSlim(Math.Clamp(targetRps * 2, 2, 16));
+        using var inFlight = new SemaphoreSlim(32);
+
+        var controlTask = controlInput is not null
+            ? ReadControlLoopAsync(controlInput, next => Volatile.Write(ref currentTargetRps, next), ct)
+            : Task.CompletedTask;
 
         var loadTask = safeSteps.Length > 0
-            ? RunLoadLoopAsync(client, safeSteps, envelope.Endpoints, envelope.Secrets, targetRps, inFlight, samples, ct)
+            ? RunLoadLoopAsync(client, safeSteps, envelope.Endpoints, envelope.Secrets, () => Volatile.Read(ref currentTargetRps), inFlight, samples, ct)
             : Task.CompletedTask;
 
         try
@@ -90,7 +94,8 @@ public sealed class LiveProbeRunner
                 var drained = new List<Sample>();
                 while (samples.TryDequeue(out var s)) drained.Add(s);
 
-                var probe = AggregateProbe(targetRps, windowSeconds, safeSteps, drained);
+                var activeTargetRps = Volatile.Read(ref currentTargetRps);
+                var probe = AggregateProbe(activeTargetRps, windowSeconds, safeSteps, drained);
                 var edges = await ScrapeServiceGraphAsync(client, envelope.CollectorMetricsUrl, scraper, windowSeconds, ct);
                 var frame = new LiveProbeFrame(DateTimeOffset.UtcNow, probe, edges);
                 await output.WriteLineAsync(JsonSerializer.Serialize(frame, JsonOptions));
@@ -103,7 +108,43 @@ public sealed class LiveProbeRunner
         finally
         {
             try { await loadTask; } catch (OperationCanceledException) { }
+            try { await controlTask; } catch (OperationCanceledException) { }
         }
+    }
+
+    public static bool TryParseTargetRpsCommand(string line, out int targetRps)
+    {
+        targetRps = 0;
+        if (string.IsNullOrWhiteSpace(line) || line.Length > 512) return false;
+        try
+        {
+            using var doc = JsonDocument.Parse(line);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object
+                && doc.RootElement.TryGetProperty("targetRps", out var prop)
+                && prop.TryGetInt32(out var parsed))
+            {
+                targetRps = Math.Clamp(parsed, 1, 50);
+                return true;
+            }
+        }
+        catch (JsonException) { }
+        return false;
+    }
+
+    private static async Task ReadControlLoopAsync(TextReader controlInput, Action<int> onTargetRps, CancellationToken ct)
+    {
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                var line = await controlInput.ReadLineAsync(ct);
+                if (line is null) return; // EOF (e.g. non-interactive stdin closed after envelope).
+                if (TryParseTargetRpsCommand(line, out var nextRps))
+                    onTargetRps(nextRps);
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (IOException) { }
     }
 
     private static async Task RunLoadLoopAsync(
@@ -111,19 +152,28 @@ public sealed class LiveProbeRunner
         HttpScenarioStep[] steps,
         IReadOnlyDictionary<string, Uri> endpoints,
         IReadOnlyDictionary<string, string> secrets,
-        int targetRps,
+        Func<int> getTargetRps,
         SemaphoreSlim inFlight,
         ConcurrentQueue<Sample> samples,
         CancellationToken ct)
     {
-        var interval = TimeSpan.FromMilliseconds(Math.Max(20, 1000.0 / targetRps));
-        using var ticker = new PeriodicTimer(interval);
+        using var ticker = new PeriodicTimer(TimeSpan.FromMilliseconds(20));
+        var clock = Stopwatch.StartNew();
+        var tokens = 1.0;
         var index = 0;
         while (await ticker.WaitForNextTickAsync(ct))
         {
-            if (!inFlight.Wait(0)) continue; // Backpressure: never pile up unbounded tasks if services stall.
-            var step = steps[index++ % steps.Length];
-            _ = SendOneAsync(client, step, endpoints[step.Service], secrets, inFlight, samples, ct);
+            var elapsed = clock.Elapsed.TotalSeconds;
+            clock.Restart();
+            var targetRps = Math.Clamp(getTargetRps(), 1, 50);
+            tokens = Math.Min(Math.Max(2.0, targetRps * 0.25), tokens + elapsed * targetRps);
+            while (tokens >= 1.0)
+            {
+                tokens -= 1.0;
+                if (!inFlight.Wait(0)) break; // Backpressure: never pile up unbounded tasks if services stall.
+                var step = steps[index++ % steps.Length];
+                _ = SendOneAsync(client, step, endpoints[step.Service], secrets, inFlight, samples, ct);
+            }
         }
     }
 

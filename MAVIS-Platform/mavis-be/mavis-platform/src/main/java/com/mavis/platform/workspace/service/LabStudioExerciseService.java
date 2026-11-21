@@ -38,9 +38,17 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class LabStudioExerciseService {
 
-    private static final Set<String> ACTIONS = Set.of("START", "STOP", "SCALE", "CONNECT", "DISCONNECT");
+    private static final Set<String> ACTIONS = Set.of(
+            "START", "STOP", "SCALE", "CONNECT", "DISCONNECT", "PAUSE", "RESUME", "THROTTLE_CPU", "SET_LOAD");
+    private static final Set<String> CHANGE_ACTIONS = Set.of("STOP", "START", "SCALE", "PAUSE", "RESUME", "THROTTLE_CPU", "SET_LOAD");
+    private static final Set<String> EXERCISE_TYPES = Set.of(
+            "CHANGE_IMPACT", "CASCADING_FAILURE", "CIRCUIT_BREAKER", "SCALE_UNDER_LOAD", "CONFIG_REGRESSION", "CUSTOM");
+    private static final Set<String> RULE_METRICS = Set.of(
+            "ERROR_RATE", "EDGE_ERROR_RATE", "P95_MS", "P95_DELTA_PCT", "REPLICAS", "TRACE_EDGE", "IMPACT_F1");
+    private static final Set<String> RULE_OPERATORS = Set.of("LT", "LTE", "GT", "GTE", "EQ");
     private static final Set<String> METHODS = Set.of("GET", "HEAD");
     private static final int MAX_BASELINE = 10;
+    private static final int MAX_RULES = 12;
     private static final int MAX_INSTRUCTIONS = 10_000;
 
     private final LabStudioExerciseRepository exercises;
@@ -59,8 +67,19 @@ public class LabStudioExerciseService {
 
     public record ReplicaTarget(String service, Integer count) {}
 
+    public record ChangeAction(String action, String service, Integer replicas, Integer cpuPercent, Integer targetRps) {}
+
+    public record DeclarativeRule(String metric, String target, String operator, Double threshold, String label) {}
+
     public record SuccessCriteria(Integer maxErrorRatePercent, Integer maxP95Ms,
-                                  TraceEdge requiredTraceEdge, List<ReplicaTarget> minReplicas) {}
+                                  TraceEdge requiredTraceEdge, List<ReplicaTarget> minReplicas,
+                                  String exerciseType, Boolean predictionRequired, Double minImpactF1,
+                                  ChangeAction targetChangeAction, List<DeclarativeRule> rules) {
+        public SuccessCriteria(Integer maxErrorRatePercent, Integer maxP95Ms,
+                               TraceEdge requiredTraceEdge, List<ReplicaTarget> minReplicas) {
+            this(maxErrorRatePercent, maxP95Ms, requiredTraceEdge, minReplicas, null, null, null, null, List.of());
+        }
+    }
 
     public record ExerciseRequest(UUID runtimeProjectId, UUID runtimeModelId, UUID runtimeSnapshotId,
                                   List<BaselineRequest> baselineRequests, InitialState initialState,
@@ -225,7 +244,66 @@ public class LabStudioExerciseService {
                     }
                     return new ReplicaTarget(target.service().trim(), target.count());
                 }).toList();
-        return new SuccessCriteria(errorRate, p95, edge, replicas);
+        String exerciseType = null;
+        if (criteria.exerciseType() != null && !criteria.exerciseType().isBlank()) {
+            exerciseType = criteria.exerciseType().trim().toUpperCase(Locale.ROOT);
+            if (!EXERCISE_TYPES.contains(exerciseType)) {
+                throw invalid("Unsupported exerciseType: " + exerciseType);
+            }
+        }
+        Boolean predictionRequired = Boolean.TRUE.equals(criteria.predictionRequired()) ? Boolean.TRUE : null;
+        Double minImpactF1 = criteria.minImpactF1();
+        if (minImpactF1 != null && (!Double.isFinite(minImpactF1) || minImpactF1 < 0.0 || minImpactF1 > 1.0)) {
+            throw invalid("minImpactF1 must be between 0.0 and 1.0");
+        }
+        ChangeAction changeAction = normalizeChangeAction(criteria.targetChangeAction());
+        List<DeclarativeRule> rules = normalizeRules(criteria.rules());
+        return new SuccessCriteria(errorRate, p95, edge, replicas,
+                exerciseType, predictionRequired, minImpactF1, changeAction, rules);
+    }
+
+    private ChangeAction normalizeChangeAction(ChangeAction action) {
+        if (action == null) return null;
+        String kind = action.action() == null ? "" : action.action().trim().toUpperCase(Locale.ROOT);
+        String service = action.service() == null ? "" : action.service().trim();
+        if (!CHANGE_ACTIONS.contains(kind) || service.isBlank() || service.length() > 128) {
+            throw invalid("Invalid targetChangeAction");
+        }
+        if ("SCALE".equals(kind) && (action.replicas() == null || action.replicas() < 1 || action.replicas() > 8)) {
+            throw invalid("SCALE targetChangeAction requires replicas 1-8");
+        }
+        if ("THROTTLE_CPU".equals(kind) && (action.cpuPercent() == null || action.cpuPercent() < 10 || action.cpuPercent() > 100)) {
+            throw invalid("THROTTLE_CPU targetChangeAction requires cpuPercent 10-100");
+        }
+        if ("SET_LOAD".equals(kind) && (action.targetRps() == null || action.targetRps() < 1 || action.targetRps() > 50)) {
+            throw invalid("SET_LOAD targetChangeAction requires targetRps 1-50");
+        }
+        return new ChangeAction(kind, service,
+                "SCALE".equals(kind) ? action.replicas() : null,
+                "THROTTLE_CPU".equals(kind) ? action.cpuPercent() : null,
+                "SET_LOAD".equals(kind) ? action.targetRps() : null);
+    }
+
+    private List<DeclarativeRule> normalizeRules(List<DeclarativeRule> rules) {
+        if (rules == null || rules.isEmpty()) return List.of();
+        if (rules.size() > MAX_RULES) {
+            throw invalid("At most " + MAX_RULES + " declarative rules are allowed");
+        }
+        return rules.stream().map(rule -> {
+            if (rule == null) throw invalid("Declarative rule cannot be null");
+            String metric = rule.metric() == null ? "" : rule.metric().trim().toUpperCase(Locale.ROOT);
+            String operator = rule.operator() == null ? "" : rule.operator().trim().toUpperCase(Locale.ROOT);
+            String target = rule.target() == null || rule.target().isBlank() ? "ALL" : rule.target().trim();
+            if (!RULE_METRICS.contains(metric)) throw invalid("Unsupported rule metric: " + metric);
+            if (!RULE_OPERATORS.contains(operator)) throw invalid("Unsupported rule operator: " + operator);
+            if (target.length() > 256) throw invalid("Rule target exceeds 256 characters");
+            if (rule.threshold() == null || !Double.isFinite(rule.threshold())) {
+                throw invalid("Rule threshold must be a finite number");
+            }
+            String label = rule.label() == null ? "" : rule.label().trim();
+            if (label.length() > 200) label = label.substring(0, 200);
+            return new DeclarativeRule(metric, target, operator, rule.threshold(), label.isBlank() ? null : label);
+        }).toList();
     }
 
     private Assignment lab(UUID workspaceId, UUID assignmentId) {

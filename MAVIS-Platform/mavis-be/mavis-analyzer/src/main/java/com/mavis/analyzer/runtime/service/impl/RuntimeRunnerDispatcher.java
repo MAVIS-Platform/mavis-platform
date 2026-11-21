@@ -531,7 +531,7 @@ public class RuntimeRunnerDispatcher {
                     || configuredRunnerImg.startsWith("mcr.microsoft.com/dotnet/aspnet")
                     || configuredRunnerImg.endsWith("0000000000000000000000000000000000000000000000000000000000000001");
             if (needsBuiltRunnerImg) {
-                String runnerImgId = captureCommandStdout(List.of("docker", "image", "inspect", "--format", "{{.Id}}", "mavis-poc-runner:3"), 10);
+                String runnerImgId = captureCommandStdout(List.of("docker", "image", "inspect", "--format", "{{.Id}}", "mavis-poc-runner:4"), 10);
                 if (runnerImgId == null || !runnerImgId.matches("^sha256:[0-9a-f]{64}$")) {
                     Optional<Path> dllOpt = resolvePrebuiltRunnerDll(projPath, false);
                     Path dllDir = dllOpt.map(Path::getParent).orElse(null);
@@ -558,7 +558,7 @@ public class RuntimeRunnerDispatcher {
                             }
                             Path dfCopy = buildCtx.resolve("Runner.Dockerfile");
                             Files.copy(dockerfile, dfCopy);
-                            probeCommandZeroExit(List.of("docker", "build", "--quiet", "--file", dfCopy.toString(), "-t", "mavis-poc-runner:3", buildCtx.toString()), 120);
+                            probeCommandZeroExit(List.of("docker", "build", "--quiet", "--file", dfCopy.toString(), "-t", "mavis-poc-runner:4", buildCtx.toString()), 120);
                         } finally {
                             try (Stream<Path> walk = Files.walk(buildCtx)) {
                                 walk.sorted(Comparator.reverseOrder()).forEach(p -> {
@@ -566,7 +566,7 @@ public class RuntimeRunnerDispatcher {
                                 });
                             }
                         }
-                        runnerImgId = captureCommandStdout(List.of("docker", "image", "inspect", "--format", "{{.Id}}", "mavis-poc-runner:3"), 10);
+                        runnerImgId = captureCommandStdout(List.of("docker", "image", "inspect", "--format", "{{.Id}}", "mavis-poc-runner:4"), 10);
                     }
                 }
                 if (runnerImgId != null && runnerImgId.matches("^sha256:[0-9a-f]{64}$")) {

@@ -11,7 +11,7 @@ public sealed record RuntimeRunDefinition(string SessionId, string ModelVersionI
     string? ResourceProject = null, bool ProtectedEnvironmentAvailable = false,
     IReadOnlyList<RuntimeInfrastructureActionDefinition>? InfrastructureActions = null, bool InteractiveStudio = false);
 
-public sealed record RuntimeInfrastructureActionDefinition(string Action, string Service, int? Replicas = null, int? CpuPercent = null);
+public sealed record RuntimeInfrastructureActionDefinition(string Action, string Service, int? Replicas = null, int? CpuPercent = null, int? TargetRps = null);
 public sealed record RuntimeInfrastructureActionResult(string Action, string Service, int ReplicasBefore, int ReplicasAfter,
     JsonObject MetricsBefore, JsonObject MetricsAfter, DateTimeOffset PerformedAt, bool Confirmed);
 
@@ -298,7 +298,9 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             await PublishStudioTelemetrySafeAsync(ct);
             using var telemetryStop = CancellationTokenSource.CreateLinkedTokenSource(ct);
             var probeName = ResourceProject + "-probe";
+            _currentProbeRps = Math.Clamp(definition.Profile.ProbeRps, 1, 50);
             var probeHandle = await StartLiveProbeAsync(probeName, telemetryStop.Token);
+            _probeStream = probeHandle as ILineStreamHandle;
             var telemetryLoop = RunTelemetryLoopAsync(telemetryStop.Token);
             try {
                 while (true) {
@@ -317,7 +319,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
                     var status = "FAILED";
                     var resultCount = _observedActions.Count;
                     try {
-                        await ExecuteActionsAsync([new(item.Action, item.Service, item.Replicas, item.CpuPercent)], ct);
+                        await ExecuteActionsAsync([new(item.Action, item.Service, item.Replicas, item.CpuPercent, item.TargetRps)], ct);
                         result = _observedActions.Last();
                         status = result.Confirmed ? "CONFIRMED" : "FAILED";
                     } catch (Exception) when (!ct.IsCancellationRequested) {
@@ -329,6 +331,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
                     await PublishStudioTelemetrySafeAsync(ct);
                 }
             } finally {
+                _probeStream = null;
                 telemetryStop.Cancel();
                 try { await telemetryLoop; } catch (OperationCanceledException) { }
                 if (probeHandle is not null)
@@ -357,18 +360,22 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
         {
             var action = item.Action?.Trim().ToUpperInvariant();
             var service = item.Service?.Trim();
-            if (action is not ("STOP" or "START" or "SCALE" or "PAUSE" or "RESUME" or "THROTTLE_CPU") || string.IsNullOrWhiteSpace(service) ||
+            if (action is not ("STOP" or "START" or "SCALE" or "PAUSE" or "RESUME" or "THROTTLE_CPU" or "SET_LOAD") || string.IsNullOrWhiteSpace(service) ||
                 !definition.Profile.Applications.ContainsKey(service))
                 throw new RuntimeStageException("INFRASTRUCTURE_ACTION_INVALID");
             if (action == "SCALE" && item.Replicas is not (>= 1 and <= 8))
                 throw new RuntimeStageException("REPLICA_BOUNDS_EXCEEDED");
             if (action == "THROTTLE_CPU" && item.CpuPercent is not (>= 10 and <= 100))
                 throw new RuntimeStageException("CPU_THROTTLE_BOUNDS_EXCEEDED");
+            if (action == "SET_LOAD" && item.TargetRps is not (>= 1 and <= 50))
+                throw new RuntimeStageException("LOAD_BOUNDS_EXCEEDED");
 
             Stage = "INFRASTRUCTURE_" + action;
             var before = await ReadServiceState(service, ct);
             var actionWaitTimeout = ComposeOverrideBuilder.IsKernelSandboxedRuntime(IsolationRuntime) ? "60" : "30";
             double? appliedCpus = null;
+            int? rpsBefore = null;
+            int? rpsAfter = null;
             if (action == "STOP") await Require(["stop", "--timeout", "5", service], ct);
             else if (action == "START") await Require(["start", service], ct);
             else if (action == "PAUSE") await Require(["pause", service], ct);
@@ -381,6 +388,15 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
                 var updated = await docker.RunAsync(new[] { "update", "--cpus", cpuArg }.Concat(before.runningIds).ToArray(), _directory!, 15, ct);
                 if (updated.ExitCode != 0) throw new RuntimeStageException("DOCKER_UPDATE_FAILED");
             }
+            else if (action == "SET_LOAD")
+            {
+                if (_probeStream is null) throw new RuntimeStageException("LIVE_PROBE_UNAVAILABLE");
+                rpsBefore = _currentProbeRps > 0 ? _currentProbeRps : Math.Clamp(definition.Profile.ProbeRps, 1, 50);
+                rpsAfter = item.TargetRps!.Value;
+                var cmdJson = JsonSerializer.Serialize(new { targetRps = rpsAfter.Value });
+                await _probeStream.WriteLineAsync(cmdJson, ct);
+                _currentProbeRps = rpsAfter.Value;
+            }
             else await Require(["up", "--detach", "--no-deps", "--no-recreate", "--no-build", "--pull", "never",
                 "--wait", "--wait-timeout", actionWaitTimeout, "--scale", service + "=" + item.Replicas, service], ct);
             var after = await ReadServiceState(service, ct);
@@ -391,24 +407,25 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
                 "PAUSE" => before.running > 0 && after.running == 0 && after.paused > 0,
                 "RESUME" => before.paused > 0 && after.running >= 1 && after.paused == 0,
                 "THROTTLE_CPU" => before.running > 0 && after.running == before.running,
+                "SET_LOAD" => after.running == before.running && rpsAfter is >= 1 and <= 50,
                 _ => before.running > 0 && after.running == item.Replicas && before.running != after.running
             };
             if (expected && action is "START" or "SCALE" or "RESUME")
                 expected = await WaitForServiceReadyAsync(service, ct);
             var performedAt = DateTimeOffset.UtcNow;
             results.Add(new(action, service, before.running, after.running,
-                Metrics(before, beforeWorkload, null, null), Metrics(after, null, item.CpuPercent, appliedCpus), performedAt, expected));
+                Metrics(before, beforeWorkload, null, null, rpsBefore), Metrics(after, null, item.CpuPercent, appliedCpus, rpsAfter), performedAt, expected));
             var afterWorkload = expected && beforeWorkload is not null ? await ExecuteWorkloadAsync(ct) : null;
             if (afterWorkload is not null)
                 RememberTraceSteps(afterWorkload);
-            results[^1] = results[^1] with { MetricsAfter = Metrics(after, afterWorkload, item.CpuPercent, appliedCpus) };
+            results[^1] = results[^1] with { MetricsAfter = Metrics(after, afterWorkload, item.CpuPercent, appliedCpus, rpsAfter) };
             beforeWorkload = afterWorkload;
             _scenario = afterWorkload ?? _scenario;
             if (!expected) throw new RuntimeStageException("INFRASTRUCTURE_ACTION_UNCONFIRMED");
         }
         return results;
 
-        static JsonObject Metrics((int total, int running, int paused, string[] runningIds) value, HttpScenarioOutcome? workload, int? cpuPercent, double? appliedCpus)
+        static JsonObject Metrics((int total, int running, int paused, string[] runningIds) value, HttpScenarioOutcome? workload, int? cpuPercent, double? appliedCpus, int? targetRps)
         {
             var metrics = new JsonObject
             {
@@ -418,6 +435,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             if (value.paused > 0) metrics["pausedReplicas"] = value.paused;
             if (cpuPercent is int pct) metrics["cpuPercent"] = pct;
             if (appliedCpus is double cpus) metrics["targetCpus"] = cpus;
+            if (targetRps is int rps) metrics["targetRps"] = rps;
             if (workload is not null)
             {
                 var traceIds=new JsonArray();
@@ -530,6 +548,8 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
     private static readonly TimeSpan TelemetryInterval = TimeSpan.FromSeconds(2);
     private readonly SemaphoreSlim _telemetryGate = new(1, 1);
     private readonly object _probeLock = new();
+    private ILineStreamHandle? _probeStream;
+    private int _currentProbeRps = 5;
     private JsonNode? _latestProbeNode;
     private JsonNode? _latestServiceGraphNode;
     private TraceCorrelationResult? _lastLiveTrace;
@@ -567,6 +587,8 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             }
             args.Add(definition.Profile.ScenarioRunnerImage!);
             args.Add("live-probe");
+            var interactive = await docker.StartInteractiveLineStreamAsync(args, _directory, input, OnLiveProbeLine, ct);
+            if (interactive is not null) return interactive;
             return await docker.StartLineStreamAsync(args, _directory, input, OnLiveProbeLine, ct);
         }
         catch

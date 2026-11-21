@@ -89,6 +89,7 @@ export function operationPermission(operation: Operation): Permission | undefine
       "saveScenario",
       "startRuntime",
       "studioAction",
+      "studioPrediction",
       "studioFinish",
       "studioCapture",
       "runtimeApprove",

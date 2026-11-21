@@ -63,6 +63,7 @@ import {
 } from "./live-sandbox-parity";
 import { LiveTerminalConsole } from "./live-terminal-console";
 import { StudioRedCharts } from "./studio-red-charts";
+import { StudioExercisePanel } from "./studio-exercise-panel";
 import { resolveRunningReplicas, useStudioSession } from "./use-studio-session";
 
 type LiveRuntimeReplay = {
@@ -3382,8 +3383,53 @@ export function LiveStudioWorkbench({
                         ))}
                       </div>
                     </div>
+                    <div className="space-y-1 border-t border-slate-800 pt-2">
+                      <div className="flex items-center justify-between text-[10px] uppercase tracking-wide text-slate-500">
+                        <span>Live Probe Load (RPS)</span>
+                        <span className="font-mono text-sky-300">
+                          {data.telemetry?.probe?.targetRps ?? 5} RPS
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-4 gap-1">
+                        {[5, 15, 30, 50].map((rps) => (
+                          <Button
+                            key={rps}
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={busy}
+                            onClick={() =>
+                              void studio.send("SET_LOAD", selected, undefined, undefined, rps)
+                            }
+                            className={`h-7 whitespace-nowrap font-mono text-[11px] ${
+                              data.telemetry?.probe?.targetRps === rps
+                                ? "border-sky-400 bg-sky-500/20 text-sky-200"
+                                : "border-slate-700 bg-slate-950/60 text-slate-200 hover:border-sky-400"
+                            }`}
+                          >
+                            {rps}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
                   </section>
                 )}
+                {!isPreviewMode &&
+                  studio.services.length > 0 &&
+                  (data.executionStatus === "RUNNING" || Boolean(data.exerciseEvaluation)) && (
+                    <StudioExercisePanel
+                      data={data}
+                      services={studio.services}
+                      busy={busy}
+                      submittingPrediction={studio.prediction.isPending}
+                      onLockPrediction={(svcs, rationale) =>
+                        studio.submitPrediction(svcs, rationale)
+                      }
+                      onRunPrescribedChange={(kind, svc, rep, cpu, rps) =>
+                        studio.send(kind, svc, rep, cpu, rps)
+                      }
+                    />
+                  )}
               </div>
             )}
           </aside>

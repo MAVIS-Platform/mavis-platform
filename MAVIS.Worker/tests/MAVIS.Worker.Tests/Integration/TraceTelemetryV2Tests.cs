@@ -266,6 +266,125 @@ public sealed class TraceTelemetryV2Tests
         finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
     }
 
+    [Fact]
+    public void LiveProbeParsesAndClampsDynamicTargetRpsCommands()
+    {
+        Assert.True(LiveProbeRunner.TryParseTargetRpsCommand("{\"targetRps\":25}", out var rps25));
+        Assert.Equal(25, rps25);
+        Assert.True(LiveProbeRunner.TryParseTargetRpsCommand("{\"targetRps\":999}", out var clampedHigh));
+        Assert.Equal(50, clampedHigh);
+        Assert.True(LiveProbeRunner.TryParseTargetRpsCommand("{\"targetRps\":0}", out var clampedLow));
+        Assert.Equal(1, clampedLow);
+        Assert.False(LiveProbeRunner.TryParseTargetRpsCommand("not-json", out _));
+        Assert.False(LiveProbeRunner.TryParseTargetRpsCommand("{}", out _));
+    }
+
+    [Fact]
+    public async Task SetLoadStreamsTargetRpsToInteractiveLiveProbeWithoutRestartingContainers()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mavis-setload-" + Guid.NewGuid().ToString("N"));
+        var project = "mavisrun-" + Guid.NewGuid().ToString("N");
+        var dir = Path.Combine(root, project);
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var digest = new string('a', 64);
+            var profile = new RunnerExecutionProfile("collector@sha256:" + digest, "mavis-agents-v1",
+                new Dictionary<string, RuntimeServiceProfile> { ["orders"] = new("java", 8080) },
+                ApprovedForLocalPoc: true, ScenarioRunnerImage: "sha256:" + digest, ProbeRps: 5);
+            var definition = new RuntimeRunDefinition("s1", "m1", "snap1", "prof1",
+                $"services:\n  orders:\n    image: orders@sha256:{digest}\n",
+                profile, new("s1", [new("req", "orders", "GET", "/orders", 200)]),
+                new Dictionary<string, string> { ["orders"] = "id-1" },
+                "cfg", "scn", project, InteractiveStudio: true);
+            var probeStream = new RecordingLineStream();
+            var docker = new SetLoadStudioDocker(probeStream);
+            using var handler = new SetLoadStudioHandler(definition);
+            using var studio = new JavaRuntimeClient(new Uri("http://127.0.0.1:8080"), "fixture-key", handler);
+            var session = new DockerComposeSession(definition, root, "receivers: {}", docker, studio: studio);
+            typeof(DockerComposeSession).GetField("_directory", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+                .SetValue(session, dir);
+            var endpoints = (Dictionary<string, Uri>)typeof(DockerComposeSession)
+                .GetField("_endpoints", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+                .GetValue(session)!;
+            endpoints["orders"] = new Uri("http://orders:8080");
+
+            var actions = await session.ExecuteInfrastructureActionsAsync(CancellationToken.None);
+
+            var setLoad = Assert.Single(actions);
+            Assert.True(setLoad.Confirmed);
+            Assert.Equal("SET_LOAD", setLoad.Action);
+            Assert.Equal(5, setLoad.MetricsBefore["targetRps"]!.GetValue<int>());
+            Assert.Equal(30, setLoad.MetricsAfter["targetRps"]!.GetValue<int>());
+            var written = Assert.Single(probeStream.WrittenLines);
+            Assert.Equal("{\"targetRps\":30}", written);
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
+    }
+
+    private sealed class RecordingLineStream : ILineStreamHandle
+    {
+        public List<string> WrittenLines { get; } = [];
+        public Task WriteLineAsync(string line, CancellationToken ct) { WrittenLines.Add(line); return Task.CompletedTask; }
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class SetLoadStudioDocker(ILineStreamHandle stream) : IDockerCommands
+    {
+        public Task<DockerCommandResult> RunAsync(IReadOnlyList<string> args, string workingDirectory, int timeoutSeconds, CancellationToken ct)
+        {
+            if (args[0] == "compose" && args.Contains("ps"))
+            {
+                var fmtIdx = args.ToList().IndexOf("--format");
+                var fmt = fmtIdx >= 0 ? args[fmtIdx + 1] : "";
+                return Task.FromResult(new DockerCommandResult(0,
+                    fmt.Contains("{{.Service}}", StringComparison.Ordinal) ? "orders|orders-1|running\n" : "orders-1|running\n"));
+            }
+            return Task.FromResult(new DockerCommandResult(0, ""));
+        }
+
+        public Task<ILineStreamHandle?> StartInteractiveLineStreamAsync(IReadOnlyList<string> args, string workingDirectory, string initialLine, Action<string> onLine, CancellationToken ct)
+            => Task.FromResult<ILineStreamHandle?>(stream);
+
+        public Task<DockerCommandResult> RunWithInputAsync(IReadOnlyList<string> args, string workingDirectory, int timeoutSeconds, string input, CancellationToken ct)
+        {
+            var outcome = new HttpScenarioOutcome("s1", "Passed",
+                [new HttpStepOutcome("req", "Passed", 200, new string('1', 32), new string('2', 16), 4)]);
+            var json = System.Text.Json.JsonSerializer.Serialize(outcome, new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase });
+            return Task.FromResult(new DockerCommandResult(0, json));
+        }
+    }
+
+    private sealed class SetLoadStudioHandler(RuntimeRunDefinition definition) : HttpMessageHandler
+    {
+        private int _acked;
+        private readonly string _actionId = Guid.NewGuid().ToString();
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            var route = request.RequestUri!.Segments.Last();
+            object data = route switch
+            {
+                "commands" => _acked >= 1
+                    ? new { definition.SessionId, definition.ResourceProject, finishRequested = true, command = (object?)null }
+                    : new
+                    {
+                        definition.SessionId,
+                        definition.ResourceProject,
+                        finishRequested = false,
+                        command = new { actionId = _actionId, action = "SET_LOAD", service = "orders", replicas = (int?)null, cpuPercent = (int?)null, targetRps = (int?)30 }
+                    },
+                "telemetry" => new { definition.SessionId, definition.ResourceProject },
+                _ => new { actionId = _actionId, status = _acked++ == 0 ? "CONFIRMED" : "CONFIRMED" }
+            };
+            var body = System.Text.Json.JsonSerializer.Serialize(new { status = 200, data }, RuntimeLifecycleJournal.Json);
+            return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json")
+            });
+        }
+    }
+
     private sealed class FaultActionMockDocker : IDockerCommands
     {
         private string _state = "running";

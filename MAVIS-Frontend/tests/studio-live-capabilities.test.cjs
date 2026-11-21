@@ -314,3 +314,98 @@ test("Phase B RED series, 30s before/after window, and trace waterfall compute a
   assert.equal(rows[1].widthPct, 60);
   assert.equal(rows[1].isError, true);
 });
+
+test("Phase C contracts accept SET_LOAD, studioPrediction, and Change Impact exerciseEvaluation", () => {
+  const { contracts } = require("../src/lib/api/contracts.ts");
+  const { validateResponse } = require("../src/lib/api/validate-response.ts");
+  const sessionId = "550e8400-e29b-41d4-a716-446655440000";
+  const actionId = "660e8400-e29b-41d4-a716-446655440000";
+
+  assert.equal(
+    contracts.studioAction.input.safeParse({
+      sessionId,
+      actionId,
+      action: "SET_LOAD",
+      service: "orders",
+      targetRps: 30,
+    }).success,
+    true,
+  );
+  assert.equal(
+    contracts.studioAction.input.safeParse({
+      sessionId,
+      actionId,
+      action: "SET_LOAD",
+      service: "orders",
+      targetRps: 99,
+    }).success,
+    false,
+  );
+  assert.equal(
+    contracts.studioPrediction.input.safeParse({
+      sessionId,
+      predictedServices: ["orders", "payment"],
+      rationale: "Orders calls payment synchronously",
+    }).success,
+    true,
+  );
+
+  const parsed = validateResponse("studioState", { sessionId }, {
+    sessionId,
+    interactive: true,
+    services: ["orders", "payment"],
+    finishRequested: false,
+    executionStatus: "RUNNING",
+    cleanupStatus: "PENDING",
+    actions: [
+      {
+        actionId,
+        action: "SET_LOAD",
+        service: "orders",
+        targetRps: 30,
+        status: "CONFIRMED",
+        requestedAt: "2026-11-21T10:00:00Z",
+      },
+    ],
+    prediction: {
+      predictedServices: ["orders", "payment"],
+      rationale: "Sync call chain",
+      lockedAt: "2026-11-21T09:59:50Z",
+    },
+    exerciseEvaluation: {
+      exerciseType: "CHANGE_IMPACT",
+      predictionRequired: true,
+      predictionLocked: true,
+      predictedServices: ["orders", "payment"],
+      observedAffectedServices: ["orders", "payment"],
+      impact: {
+        truePositives: ["orders", "payment"],
+        falsePositives: [],
+        falseNegatives: [],
+        precision: 1,
+        recall: 1,
+        f1Score: 1,
+      },
+      rules: [
+        {
+          id: "rule-1",
+          label: "Change Impact F1 >= 0.7",
+          metric: "IMPACT_F1",
+          target: "PREDICTION",
+          operator: "GTE",
+          threshold: 0.7,
+          observedValue: 1,
+          passed: true,
+          reason: "Observed 1 (expected >= 0.7)",
+        },
+      ],
+      passedRules: 1,
+      totalRules: 1,
+      evaluated: true,
+      autoScorePercent: 100,
+      passed: true,
+    },
+  });
+  assert.equal(parsed.exerciseEvaluation.impact.f1Score, 1);
+  assert.equal(parsed.exerciseEvaluation.passed, true);
+});

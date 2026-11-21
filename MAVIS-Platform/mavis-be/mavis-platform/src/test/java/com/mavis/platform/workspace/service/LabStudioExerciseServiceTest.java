@@ -148,4 +148,42 @@ class LabStudioExerciseServiceTest {
         verify(projects).save(project);
         verify(assignments).save(lab);
     }
+
+    @Test
+    void savesChangeImpactTemplateWithFaultActionsAndDeclarativeRules() {
+        var actor = User.builder().id(UUID.randomUUID()).fullName("Lecturer").build();
+        when(assignments.findById(labId)).thenReturn(Optional.of(lab));
+        when(access.requireCurrentActiveUser()).thenReturn(actor);
+        when(exercises.findByAssignmentId(labId)).thenReturn(Optional.empty());
+        when(exercises.save(any(LabStudioExercise.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        var criteria = new LabStudioExerciseService.SuccessCriteria(
+                null, 500, null, List.of(),
+                "CHANGE_IMPACT", true, 0.75,
+                new LabStudioExerciseService.ChangeAction("PAUSE", "payment-service", null, null, null),
+                List.of(new LabStudioExerciseService.DeclarativeRule("EDGE_ERROR_RATE", "order-service->payment-service", "GT", 50.0, "Edge fails")));
+        var request = new LabStudioExerciseService.ExerciseRequest(
+                null, null, null,
+                List.of(new LabStudioExerciseService.BaselineRequest("GET", "/orders", 200)),
+                new LabStudioExerciseService.InitialState(List.of(), List.of()),
+                List.of("PAUSE", "RESUME", "THROTTLE_CPU", "SET_LOAD"),
+                criteria,
+                "Predict affected services before pausing payment-service.");
+
+        var view = service.save(workspaceId, labId, request);
+
+        assertEquals("CHANGE_IMPACT", view.successCriteria().exerciseType());
+        assertEquals(Boolean.TRUE, view.successCriteria().predictionRequired());
+        assertEquals(0.75, view.successCriteria().minImpactF1());
+        assertEquals("PAUSE", view.successCriteria().targetChangeAction().action());
+        assertEquals(1, view.successCriteria().rules().size());
+        assertEquals(List.of("PAUSE", "RESUME", "THROTTLE_CPU", "SET_LOAD"), view.allowedActions());
+
+        // Reject unsupported declarative rule metric
+        var badRule = new LabStudioExerciseService.SuccessCriteria(
+                null, null, null, List.of(), "CUSTOM", false, null, null,
+                List.of(new LabStudioExerciseService.DeclarativeRule("BOGUS_METRIC", "ALL", "LTE", 10.0, null)));
+        assertThrows(BusinessException.class, () -> service.save(workspaceId, labId,
+                new LabStudioExerciseService.ExerciseRequest(null, null, null, List.of(), null, null, badRule, "bad")));
+    }
 }

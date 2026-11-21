@@ -36,14 +36,21 @@ public class RuntimeStudioService {
     private StudioTelemetryHub telemetryHub;
 
     public record ActionRequest(@NotNull UUID actionId,
-                                @NotNull @Pattern(regexp="START|STOP|SCALE|PAUSE|RESUME|THROTTLE_CPU") String action,
+                                @NotNull @Pattern(regexp="START|STOP|SCALE|PAUSE|RESUME|THROTTLE_CPU|SET_LOAD") String action,
                                 @NotBlank @Size(max=128) String service,
                                 @Min(1) @Max(8) Integer replicas,
-                                @Min(10) @Max(100) Integer cpuPercent) {
+                                @Min(10) @Max(100) Integer cpuPercent,
+                                @Min(1) @Max(50) Integer targetRps) {
         public ActionRequest(UUID actionId, String action, String service, Integer replicas) {
-            this(actionId, action, service, replicas, null);
+            this(actionId, action, service, replicas, null, null);
+        }
+        public ActionRequest(UUID actionId, String action, String service, Integer replicas, Integer cpuPercent) {
+            this(actionId, action, service, replicas, cpuPercent, null);
         }
     }
+    public record PredictionRequest(
+            @NotEmpty @Size(max = 20) java.util.List<@NotBlank @Size(max = 128) String> predictedServices,
+            @Size(max = 2000) String rationale) {}
     public record AckRequest(@NotNull UUID actionId, @NotNull UUID sessionId, @NotBlank String resourceProject,
                              @NotNull @Pattern(regexp="CONFIRMED|FAILED") String status, JsonNode result) {}
     public record TelemetryRequest(@NotNull UUID sessionId, @NotBlank String resourceProject,
@@ -146,6 +153,15 @@ public class RuntimeStudioService {
             .put("capturedAt", OffsetDateTime.now().toString()).put("explanation", request.explanation().trim());
         evidence.set("telemetry", effectiveTelemetry.deepCopy());
         evidence.set("actions", control.withArray("actions").deepCopy());
+        JsonNode exerciseCriteria = extractExerciseCriteria(session);
+        if (control.hasNonNull("prediction")) {
+            evidence.set("prediction", control.get("prediction").deepCopy());
+        }
+        if (exerciseCriteria != null || control.hasNonNull("prediction")) {
+            java.util.List<JsonNode> history = liveSnapshot != null ? liveSnapshot.history() : java.util.List.of();
+            evidence.set("exerciseEvaluation",
+                    StudioExerciseEvaluator.evaluate(mapper, exerciseCriteria, control, effectiveTelemetry, history));
+        }
         if(request.imageData()!=null) {
             try {
                 if(!request.imageData().startsWith("data:image/png;base64,") || request.imageData().length()>1500000) throw new IllegalArgumentException();
@@ -190,6 +206,51 @@ public class RuntimeStudioService {
     }
 
     @Transactional
+    public JsonNode submitPrediction(UUID id, PredictionRequest request) {
+        RuntimeSession session = locked(id);
+        access.requireProjectWriteAccess(session.getProject());
+        if (queueCoordinator != null) queueCoordinator.recordUiHeartbeat(id);
+        requireRunning(session);
+        ObjectNode control = control(session);
+        if (control.path("finishRequested").asBoolean()) throw error(ErrorCode.CONFLICT, "Studio is finishing.");
+        if (control.hasNonNull("prediction")) {
+            throw error(ErrorCode.CONFLICT, "Change Impact prediction is already locked for this session.");
+        }
+        for (JsonNode action : control.withArray("actions")) {
+            if ("CONFIRMED".equals(action.path("status").asText())) {
+                throw error(ErrorCode.CONFLICT, "Lock your Change Impact prediction before applying a change.");
+            }
+        }
+        var allowedServices = session.getConfirmedServiceMappings() == null
+                ? Set.<String>of()
+                : session.getConfirmedServiceMappings().keySet();
+        java.util.List<String> cleaned = request.predictedServices().stream()
+                .map(s -> s == null ? "" : s.trim())
+                .filter(s -> !s.isBlank())
+                .distinct()
+                .sorted()
+                .toList();
+        if (cleaned.isEmpty()) {
+            throw error(ErrorCode.BAD_REQUEST, "Select at least one service to predict.");
+        }
+        for (String svc : cleaned) {
+            if (!allowedServices.contains(svc) || "mavis-collector".equals(svc)) {
+                throw error(ErrorCode.BAD_REQUEST, "Predicted service is outside the confirmed session scope: " + svc);
+            }
+        }
+        ObjectNode prediction = mapper.createObjectNode();
+        var arr = prediction.putArray("predictedServices");
+        cleaned.forEach(arr::add);
+        prediction.put("rationale", request.rationale() == null ? "" : request.rationale().trim());
+        prediction.put("lockedAt", OffsetDateTime.now().toString());
+        control.set("prediction", prediction);
+        control.put("lastUiActivityAt", OffsetDateTime.now().toString());
+        save(session, control);
+        notifyStateAfterCommit(session);
+        return view(session);
+    }
+
+    @Transactional
     public JsonNode submit(UUID id, ActionRequest request) {
         RuntimeSession session = locked(id);
         access.requireProjectWriteAccess(session.getProject());
@@ -201,7 +262,8 @@ public class RuntimeStudioService {
                 if (!request.action().equals(action.path("action").asText()) ||
                     !request.service().equals(action.path("service").asText()) ||
                     (request.replicas() == null ? action.hasNonNull("replicas") : request.replicas() != action.path("replicas").asInt()) ||
-                    (request.cpuPercent() == null ? action.hasNonNull("cpuPercent") : request.cpuPercent() != action.path("cpuPercent").asInt()))
+                    (request.cpuPercent() == null ? action.hasNonNull("cpuPercent") : request.cpuPercent() != action.path("cpuPercent").asInt()) ||
+                    (request.targetRps() == null ? action.hasNonNull("targetRps") : request.targetRps() != action.path("targetRps").asInt()))
                     throw error(ErrorCode.CONFLICT, "Action ID was already used for a different command.");
                 return view(session);
             }
@@ -217,7 +279,7 @@ public class RuntimeStudioService {
                     (!"SCALE".equals(request.action()) || block.path("canScale").asBoolean());
             for (var link : topology.path("connections"))
                 allowed |= request.service().equals(link.path("controllerService").asText()) &&
-                    !("SCALE".equals(request.action()) || "THROTTLE_CPU".equals(request.action()));
+                    !("SCALE".equals(request.action()) || "THROTTLE_CPU".equals(request.action()) || "SET_LOAD".equals(request.action()));
             if (!allowed) throw error(ErrorCode.BAD_REQUEST, "Action is not enabled for this prepared block or connection.");
         }
         if (control.path("finishRequested").asBoolean()) throw error(ErrorCode.CONFLICT, "Studio is finishing.");
@@ -233,6 +295,8 @@ public class RuntimeStudioService {
             throw error(ErrorCode.BAD_REQUEST, "Replicas are required only for SCALE.");
         if (("THROTTLE_CPU".equals(request.action())) != (request.cpuPercent() != null))
             throw error(ErrorCode.BAD_REQUEST, "cpuPercent (10-100) is required only for THROTTLE_CPU.");
+        if (("SET_LOAD".equals(request.action())) != (request.targetRps() != null))
+            throw error(ErrorCode.BAD_REQUEST, "targetRps (1-50) is required only for SET_LOAD.");
         ObjectNode action = mapper.valueToTree(request);
         action.put("requestedAt", OffsetDateTime.now().toString());
         if (control.path("simulatedSandbox").asBoolean(false)) {
@@ -241,7 +305,7 @@ public class RuntimeStudioService {
                 case "STOP", "PAUSE" -> 0;
                 case "START", "RESUME" -> Math.max(1, before == 0 ? 1 : before);
                 case "SCALE" -> request.replicas() == null ? 1 : request.replicas();
-                case "THROTTLE_CPU" -> before;
+                case "THROTTLE_CPU", "SET_LOAD" -> before;
                 default -> before;
             };
             if ((Set.of("STOP", "PAUSE").contains(request.action()) && before == 0)
@@ -250,29 +314,39 @@ public class RuntimeStudioService {
                     || ("SCALE".equals(request.action()) && before == after)) {
                 throw error(ErrorCode.CONFLICT, "Service already in requested replica state.");
             }
+            int prevRps = Math.max(1, control.path("simulatedProbeRps").asInt(5));
+            int nextRps = "SET_LOAD".equals(request.action()) && request.targetRps() != null ? request.targetRps() : prevRps;
+            control.put("simulatedProbeRps", nextRps);
             double throttleFactor = "THROTTLE_CPU".equals(request.action()) && request.cpuPercent() != null
                     ? 100.0 / Math.max(10, request.cpuPercent())
                     : 1.0;
+            double loadFactor = 1.0 + Math.max(0, nextRps - 5) * 0.03;
             ObjectNode result = mapper.createObjectNode()
                     .put("action", request.action())
                     .put("service", request.service())
                     .put("replicasBefore", before)
                     .put("replicasAfter", after)
                     .put("confirmed", true);
-            result.putObject("metricsBefore")
+            ObjectNode metricsBefore = result.putObject("metricsBefore")
                     .put("runningReplicas", before)
                     .put("errorRate", before == 0 ? 1.0 : 0.0)
                     .put("errorRatePercent", before == 0 ? 100.0 : 0.0)
                     .put("requestCount", 3)
                     .put("p95LatencyMs", before == 0 ? 0.0 : Math.max(12.0, 48.0 / Math.max(1, before)));
+            if ("SET_LOAD".equals(request.action())) {
+                metricsBefore.put("targetRps", prevRps);
+            }
             ObjectNode metricsAfter = result.putObject("metricsAfter")
                     .put("runningReplicas", after)
                     .put("errorRate", after == 0 ? 1.0 : 0.0)
                     .put("errorRatePercent", after == 0 ? 100.0 : 0.0)
                     .put("requestCount", 3)
-                    .put("p95LatencyMs", after == 0 ? 0.0 : Math.max(12.0, (48.0 / Math.max(1, after)) * throttleFactor));
+                    .put("p95LatencyMs", after == 0 ? 0.0 : Math.max(12.0, (48.0 / Math.max(1, after)) * throttleFactor * loadFactor));
             if (request.cpuPercent() != null) {
                 metricsAfter.put("cpuPercent", request.cpuPercent());
+            }
+            if (request.targetRps() != null) {
+                metricsAfter.put("targetRps", request.targetRps());
             }
             action.put("status", "CONFIRMED");
             action.put("completedAt", OffsetDateTime.now().toString());
@@ -487,20 +561,33 @@ public class RuntimeStudioService {
             for (JsonNode action : result.withArray("actions"))
                 if (Set.of("PENDING", "RUNNING").contains(action.path("status").asText()))
                     ((ObjectNode) action).put("status", "INTERRUPTED");
+        java.util.List<JsonNode> historyList = java.util.List.of();
         if (interactive && telemetryHub != null && !terminal) {
-            telemetryHub.latest(session.getId()).ifPresent(live -> {
+            var liveOpt = telemetryHub.latest(session.getId());
+            if (liveOpt.isPresent()) {
+                var live = liveOpt.get();
                 if (live.latestTelemetry() != null) {
                     result.set("telemetry", live.latestTelemetry());
                     if (live.receivedAt() != null) result.put("telemetryReceivedAt", live.receivedAt());
                 }
                 if (!live.history().isEmpty()) {
+                    historyList = live.history();
                     var historyNode = result.putArray("telemetryHistory");
                     int from = Math.max(0, live.history().size() - 60);
                     for (int i = from; i < live.history().size(); i++) {
                         historyNode.add(live.history().get(i));
                     }
                 }
-            });
+            }
+        }
+        JsonNode exerciseCriteria = extractExerciseCriteria(session);
+        if (exerciseCriteria != null) {
+            result.set("exerciseCriteria", exerciseCriteria.deepCopy());
+        }
+        if (interactive && (exerciseCriteria != null || result.hasNonNull("prediction"))) {
+            JsonNode effectiveTelemetry = result.hasNonNull("telemetry") ? result.get("telemetry") : null;
+            result.set("exerciseEvaluation",
+                    StudioExerciseEvaluator.evaluate(mapper, exerciseCriteria, result, effectiveTelemetry, historyList));
         }
         var services = result.putArray("services");
         JsonNode topology = null;
@@ -587,8 +674,18 @@ public class RuntimeStudioService {
                 int pct = result.path("metricsAfter").path("cpuPercent").asInt(0);
                 yield before > 0 && after == before && pct >= 10 && pct <= 100;
             }
+            case "SET_LOAD" -> {
+                int rps = result.path("metricsAfter").path("targetRps").asInt(0);
+                yield before >= 0 && after == before && rps >= 1 && rps <= 50;
+            }
             default -> false;
         };
+    }
+
+    private static JsonNode extractExerciseCriteria(RuntimeSession session) {
+        if (session == null || session.getScenarioConfig() == null) return null;
+        JsonNode node = session.getScenarioConfig().get("exerciseCriteria");
+        return node != null && node.isObject() ? node : null;
     }
 
     private int currentSimulatedReplicas(ObjectNode control, String service) {
@@ -692,6 +789,21 @@ public class RuntimeStudioService {
             prevSpanId = spanId;
             prevService = svc;
         }
+        int simTargetRps = Math.max(1, control.path("simulatedProbeRps").asInt(5));
+        boolean anyDown = replicaMap.values().stream().anyMatch(c -> c <= 0);
+        int simReqs = simTargetRps;
+        int simErrs = anyDown ? simReqs : 0;
+        double simP95 = anyDown ? 45.0 : Math.round((18.0 + Math.max(0, simTargetRps - 5) * 1.4) * 100.0) / 100.0;
+        ObjectNode probeNode = telemetry.putObject("probe")
+                .put("targetRps", simTargetRps)
+                .put("rps", (double) simTargetRps)
+                .put("requests", simReqs)
+                .put("errors", simErrs)
+                .put("errorRatePercent", anyDown ? 100.0 : 0.0)
+                .put("p50Ms", Math.round(simP95 * 0.55 * 100.0) / 100.0)
+                .put("p95Ms", simP95)
+                .put("p99Ms", Math.round(simP95 * 1.35 * 100.0) / 100.0);
+        probeNode.putArray("routes");
         telemetry.putArray("warnings").add("SIMULATED_SANDBOX_TELEMETRY");
         control.set("telemetry", telemetry);
         control.put("telemetryReceivedAt", now);

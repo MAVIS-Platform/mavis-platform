@@ -198,6 +198,8 @@ public sealed class ManagedDockerRuntimeTests
             => Record(args, () => docker.RunWithInputAsync(args, directory, timeout, input, ct));
         public Task<IAsyncDisposable?> StartLineStreamAsync(IReadOnlyList<string> args, string directory, string? input, Action<string> onLine, CancellationToken ct)
             => docker.StartLineStreamAsync(args, directory, input, onLine, ct);
+        public Task<ILineStreamHandle?> StartInteractiveLineStreamAsync(IReadOnlyList<string> args, string directory, string initialLine, Action<string> onLine, CancellationToken ct)
+            => docker.StartInteractiveLineStreamAsync(args, directory, initialLine, onLine, ct);
         private async Task<DockerCommandResult> Record(IReadOnlyList<string> args, Func<Task<DockerCommandResult>> run)
         {
             var timer = System.Diagnostics.Stopwatch.StartNew();
