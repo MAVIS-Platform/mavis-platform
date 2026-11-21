@@ -1844,3 +1844,24 @@ test("Bug #11: ChapterQuizRunner enforces full answers, shows questionResults fe
   assert.match(runner, /canViewFeedback = !backendQuizEnabled \|\| Boolean\(currentAttempt\.questionResults\?\.length\)/);
   assert.match(runner, /<QuizPreview[\s\S]*?questions=\{displayedQuestions\}/);
 });
+
+test("Bug #12: CSHARP-MS-2026 uses native .NET 8 InteractiveConceptStage scenarios and avoids Java quiz fallback leakage", () => {
+  const { getScenarioForLessonOrLab } = require("../src/features/courses/designed-to-scale-scenarios.ts");
+  for (let ch = 1; ch <= 12; ch++) {
+    const code = `csharp-v2-ch${String(ch).padStart(2, "0")}`;
+    const mod = ch <= 3 ? 1 : ch <= 6 ? 2 : ch <= 9 ? 3 : ch <= 11 ? 4 : 5;
+    const scenario = getScenarioForLessonOrLab(mod, code, "CSHARP-MS-2026");
+    assert.ok(scenario.code.startsWith("csharp-"), `${code} should map to csharp-* scenario`);
+    const dump = JSON.stringify(scenario);
+    assert.doesNotMatch(dump, /Java 21|Resilience4j|Tomcat|OpenFeign|Eureka/);
+  }
+  const ch10 = getScenarioForLessonOrLab(4, "Chương 10: Polly v8 & Microsoft.Extensions.Http.Resilience", "CSHARP-MS-2026");
+  assert.equal(ch10.code, "csharp-v2-ch10");
+
+  const syllabus = read("src/features/courses/student-course-syllabus.tsx");
+  const outline = read("src/features/courses/course-outline.tsx");
+  assert.match(syllabus, /getScenarioForLessonOrLab\([\s\S]*?workspace\.code/);
+  assert.match(syllabus, /isJavaCourseraWorkspace && !item\.assignmentId/);
+  assert.match(outline, /LazyOutlineQuizDetails/);
+  assert.match(outline, /courseTrackHint/);
+});

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import {
   BookOpen,
   CheckCircle2,
@@ -197,6 +198,14 @@ function CourseOutlineBody({
       : draft?.status ?? "";
   const labs = new Map((roadmap.data?.labs ?? []).map((lab) => [lab.assignmentId, lab]));
   const assignmentById = new Map((assignments.data ?? []).map((assignment) => [assignment.id, assignment]));
+  const isCsharpCourse =
+    workspace?.code?.toUpperCase() === "CSHARP-MS-2026" ||
+    /(?:csharp|c#|\.net|dotnet|trái cây)/i.test(courseTitle ?? "");
+  const courseTrackHint = isCsharpCourse
+    ? "CSHARP"
+    : isJavaCourseraWorkspace
+      ? "JAVA"
+      : undefined;
 
   if (isLoadError) {
     return (
@@ -405,8 +414,30 @@ function CourseOutlineBody({
                     item.type === "QUIZ"
                       ? (item.quizQuestions && item.quizQuestions.length > 0
                           ? item.quizQuestions
-                          : matchQuizQuestionsForItem(module.position, item.title))
+                          : !item.assignmentId && isJavaCourseraWorkspace && !isCsharpCourse
+                            ? matchQuizQuestionsForItem(module.position, item.title)
+                            : [])
                       : [];
+                  const curriculumCode =
+                    typeof item.content?.["curriculumCode"] === "string"
+                      ? String(item.content["curriculumCode"])
+                      : undefined;
+                  const itemTrackHint = curriculumCode?.toLowerCase().startsWith("csharp-")
+                    ? "CSHARP"
+                    : courseTrackHint;
+                  const quizSummaryLabel = item.assignmentId
+                    ? canManage
+                      ? t("View Question Bank", "Xem Bộ Câu Hỏi")
+                      : t("Take Quiz", "Làm Trắc Nghiệm")
+                    : canManage
+                      ? t(
+                          `View Question Bank (${quizQuestions.length} Qs)`,
+                          `Xem Bộ Câu Hỏi (${quizQuestions.length} câu)`,
+                        )
+                      : t(
+                          `Take Quiz (${quizQuestions.length} Qs)`,
+                          `Làm Trắc Nghiệm (${quizQuestions.length} câu)`,
+                        );
                   return (
                     <li key={item.id} className="flex flex-wrap items-start gap-3 px-4 py-3.5 sm:px-5">
                       <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-md bg-muted/60 text-muted-foreground">
@@ -444,30 +475,23 @@ function CourseOutlineBody({
                               <InteractiveConceptStage
                                 scenario={getScenarioForLessonOrLab(
                                   module.position,
-                                  typeof item.content?.["curriculumCode"] === "string"
-                                    ? String(item.content["curriculumCode"])
-                                    : item.title,
+                                  curriculumCode ?? item.title,
+                                  itemTrackHint,
                                 )}
                               />
                               <MarkdownPreview markdown={String(item.content["body"])} />
                             </div>
                           </details>
                         )}
-                        {item.type === "QUIZ" && quizQuestions.length > 0 && (
-                          <details className="mt-2 text-sm">
-                            <summary className="inline-flex cursor-pointer items-center gap-1.5 rounded-md bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-800 hover:bg-sky-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:bg-sky-950/50 dark:text-sky-300">
-                              ❓ {canManage
-                                ? t(`View Question Bank (${quizQuestions.length} Qs)`, `Xem Bộ Câu Hỏi (${quizQuestions.length} câu)`)
-                                : t(`Take Quiz (${quizQuestions.length} Qs)`, `Làm Trắc Nghiệm (${quizQuestions.length} câu)`)}
-                            </summary>
-                            <ChapterQuizRunner
-                              title={item.title}
-                              questions={quizQuestions}
-                              canManage={canManage}
-                              workspaceId={workspaceId}
-                              assignmentId={item.assignmentId}
-                            />
-                          </details>
+                        {item.type === "QUIZ" && (Boolean(item.assignmentId) || quizQuestions.length > 0) && (
+                          <LazyOutlineQuizDetails
+                            summaryLabel={quizSummaryLabel}
+                            title={item.title}
+                            questions={quizQuestions}
+                            canManage={canManage}
+                            workspaceId={workspaceId}
+                            assignmentId={item.assignmentId}
+                          />
                         )}
                         {item.type === "ESSAY" && typeof item.content?.["prompt"] === "string" && (
                           <details className="mt-2 text-sm">
@@ -535,5 +559,44 @@ function CourseOutlineBody({
         })}
       </ol>
     </section>
+  );
+}
+
+function LazyOutlineQuizDetails({
+  summaryLabel,
+  title,
+  questions,
+  canManage,
+  workspaceId,
+  assignmentId,
+}: {
+  summaryLabel: string;
+  title: string;
+  questions: QuizQuestionData[];
+  canManage: boolean;
+  workspaceId: string;
+  assignmentId?: string | null | undefined;
+}) {
+  const [opened, setOpened] = useState(false);
+  return (
+    <details
+      className="mt-2 text-sm"
+      onToggle={(event) => {
+        if (event.currentTarget.open) setOpened(true);
+      }}
+    >
+      <summary className="inline-flex cursor-pointer items-center gap-1.5 rounded-md bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-800 hover:bg-sky-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:bg-sky-950/50 dark:text-sky-300">
+        ❓ {summaryLabel}
+      </summary>
+      {opened && (
+        <ChapterQuizRunner
+          title={title}
+          questions={questions}
+          canManage={canManage}
+          workspaceId={workspaceId}
+          assignmentId={assignmentId}
+        />
+      )}
+    </details>
   );
 }

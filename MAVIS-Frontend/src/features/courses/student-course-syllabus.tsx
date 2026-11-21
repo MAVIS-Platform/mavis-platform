@@ -119,6 +119,7 @@ export function StudentCourseSyllabus({
       (!sub.workspaceId && classAssignmentIds.has(sub.assignmentId)),
   );
 
+  const isJavaCourseraWorkspace = workspace.code?.toUpperCase() === "JAVA-MS-2026";
   const syllabusModules: OutlineModuleData[] = useMemo(() => {
     const rawModules = publishedCourse.data?.snapshot?.modules;
     if (Array.isArray(rawModules) && rawModules.length > 0) {
@@ -138,7 +139,7 @@ export function StudentCourseSyllabus({
               ? { curriculumCode: String(item.content["curriculumCode"]) }
               : {}),
             quizQuestions:
-              item.type === "QUIZ"
+              item.type === "QUIZ" && isJavaCourseraWorkspace && !item.assignmentId
                 ? matchQuizQuestionsForItem(mod.position, item.title)
                 : undefined,
           }));
@@ -186,7 +187,6 @@ export function StudentCourseSyllabus({
     if (publishedCourse.isPending) {
       return [];
     }
-    const isJavaCourseraWorkspace = workspace.code?.toUpperCase() === "JAVA-MS-2026";
     if (!isJavaCourseraWorkspace) {
       return [];
     }
@@ -194,7 +194,7 @@ export function StudentCourseSyllabus({
       ...mod,
       items: mod.items.filter((item) => item.type !== "ESSAY"),
     }));
-  }, [publishedCourse.data?.snapshot?.modules, publishedCourse.isPending, workspace.code, assignmentsQuery.data, labs]);
+  }, [publishedCourse.data?.snapshot?.modules, publishedCourse.isPending, isJavaCourseraWorkspace, assignmentsQuery.data, labs]);
 
   const flattenedItems = useMemo(
     () => syllabusModules.flatMap((mod) => mod.items.map((item) => ({ module: mod, item }))),
@@ -750,6 +750,7 @@ export function StudentCourseSyllabus({
                               (typeof activeItem.content?.["curriculumCode"] === "string"
                                 ? String(activeItem.content["curriculumCode"])
                                 : activeItem.title),
+                            workspace.code,
                           )}
                         />
                         <div className="prose-sm max-w-none rounded-xl border bg-background p-4 sm:p-6">
@@ -841,10 +842,12 @@ export function StudentCourseSyllabus({
                               questions={
                                 chapterQuizItem.quizQuestions?.length
                                   ? chapterQuizItem.quizQuestions
-                                  : matchQuizQuestionsForItem(
-                                      activeModule.position,
-                                      chapterQuizItem.title,
-                                    )
+                                  : isJavaCourseraWorkspace && !chapterQuizItem.assignmentId
+                                    ? matchQuizQuestionsForItem(
+                                        activeModule.position,
+                                        chapterQuizItem.title,
+                                      )
+                                    : []
                               }
                               canManage={false}
                               workspaceId={workspaceId}
@@ -872,13 +875,25 @@ export function StudentCourseSyllabus({
                       </div>
                     )}
 
+                  {activeItem.type === "THEORY" &&
+                    typeof activeItem.content?.["body"] !== "string" && (
+                      <div className="rounded-xl border border-dashed bg-muted/20 p-5 text-sm text-muted-foreground">
+                        {t(
+                          "No theory content has been published for this lesson yet.",
+                          "Bài học này chưa có nội dung lý thuyết được công bố.",
+                        )}
+                      </div>
+                    )}
+
                   {activeItem.type === "QUIZ" && (
                     <ChapterQuizRunner
                       title={activeItem.title}
                       questions={
                         activeItem.quizQuestions?.length
                           ? activeItem.quizQuestions
-                          : matchQuizQuestionsForItem(activeModule.position, activeItem.title)
+                          : isJavaCourseraWorkspace && !activeItem.assignmentId
+                            ? matchQuizQuestionsForItem(activeModule.position, activeItem.title)
+                            : []
                       }
                       canManage={false}
                       workspaceId={workspaceId}

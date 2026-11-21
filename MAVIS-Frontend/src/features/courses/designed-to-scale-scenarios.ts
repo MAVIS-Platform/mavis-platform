@@ -1407,6 +1407,378 @@ export const DESIGNED_TO_SCALE_SCENARIOS: Record<string, ConceptScenario> = {
       },
     ],
   },
+
+  "csharp-v2-ch01": {
+    code: "csharp-v2-ch01",
+    modulePosition: 1,
+    title: ".NET 8 Solution C1–C3, DDD/CQRS & DI Captive Dependency Guard",
+    titleVi: "Cấu Trúc Solution .NET 8 C1–C3, DDD/CQRS & Chống Lỗi Captive Dependency",
+    nodes: [
+      n("gateway", "ApiGateway (YARP)", "Edge Reverse Proxy", 90, 145, "src/ApiGateway/Program.cs", "YARP Cluster Router", "Routes /api/fruits & /api/orders", "Edge -> Catalog / Ordering"),
+      n("catalog", "FruitCatalog.API", "Data-Driven CRUD (.NET 8)", 295, 80, "src/FruitCatalog.API/Program.cs", "Minimal API + CatalogDbContext", "Simple CRUD + DTO Projection", "Owned catalog_db"),
+      n("ordering", "FruitOrdering.API", "DDD + CQRS (.NET 8)", 295, 215, "src/FruitOrdering.API/Domain/Order.cs", "Order AggregateRoot + MediatR", "private set + Domain Events", "Enforces Domain Invariants"),
+      n("di", "DI Scope Guard", "IServiceScopeFactory", 505, 145, "src/FruitOrdering.API/Workers/OutboxWorker.cs", "BackgroundService (Singleton)", "CreateAsyncScope() per tick", "Prevents Scoped DbContext capture"),
+      n("handler", "IExceptionHandler", "ProblemDetails RFC 7807", 690, 145, "src/BuildingBlocks/GlobalExceptionHandler.cs", ".NET 8 IExceptionHandler", "Maps DomainException -> 422 JSON", "Clean HTTP Boundary"),
+    ],
+    edges: [
+      { id: "e1", from: "gateway", to: "catalog", label: "CRUD Read" },
+      { id: "e2", from: "gateway", to: "ordering", label: "Command" },
+      { id: "e3", from: "ordering", to: "di", label: "Async Scope" },
+      { id: "e4", from: "di", to: "handler", label: "RFC 7807" },
+    ],
+    steps: [
+      {
+        step: 1,
+        title: "Each .csproj Maps 1-to-1 to a C2 Service Container",
+        titleVi: "Mỗi .csproj ánh xạ 1-1 với một C2 Service Container",
+        explanation: "FruitCatalog.API uses lean CRUD while FruitOrdering.API enforces DDD Aggregate Roots with isolated DbContext.",
+        explanationVi: "FruitCatalog.API dùng CRUD gọn nhẹ còn FruitOrdering.API áp dụng DDD Aggregate Root + CQRS với DbContext tách biệt hoàn toàn.",
+        businessRule: "Bounded Context (.sln/.csproj)",
+        latency: "4 ms",
+        httpStatus: "C2 MAPPED",
+        c4Level: "C2",
+        activeEdges: [
+          { edgeId: "e1", packetLabel: "FruitCatalog.csproj", tone: "active" },
+          { edgeId: "e2", packetLabel: "FruitOrdering.csproj", tone: "active" },
+        ],
+        nodeStates: { gateway: "healthy", catalog: "active", ordering: "active", di: "idle", handler: "idle" },
+      },
+      {
+        step: 2,
+        title: "C# 12 Record Value Objects & Aggregate Invariants",
+        titleVi: "C# 12 Record & Private Setter Bảo Toàn Invariant",
+        explanation: "Order protects its line items with private set and AsReadOnly(), rejecting SharedModels.csproj DbContext coupling.",
+        explanationVi: "Order bảo vệ danh sách sản phẩm bằng private set và IReadOnlyCollection, cấm tạo SharedModels.csproj chứa chung DbContext.",
+        businessRule: "DDD Aggregate Encapsulation",
+        latency: "7 ms",
+        httpStatus: "DOMAIN VALID",
+        c4Level: "C3",
+        activeEdges: [{ edgeId: "e2", packetLabel: "Order.AddItem()", tone: "healthy" }],
+        nodeStates: { gateway: "healthy", catalog: "healthy", ordering: "healthy", di: "idle", handler: "idle" },
+      },
+      {
+        step: 3,
+        title: "IServiceScopeFactory Prevents Captive Dependency",
+        titleVi: "IServiceScopeFactory Ngăn Bẫy Captive Dependency",
+        explanation: "A Singleton BackgroundService resolves Scoped FruitOrderingDbContext via CreateAsyncScope() instead of constructor injection.",
+        explanationVi: "BackgroundService (Singleton) mở scope mới qua IServiceScopeFactory thay vì giữ trực tiếp Scoped DbContext suốt vòng đời app.",
+        businessRule: "ASP.NET Core DI Lifetime",
+        latency: "9 ms",
+        httpStatus: "SCOPE SAFE",
+        c4Level: "C3",
+        activeEdges: [{ edgeId: "e3", packetLabel: "CreateAsyncScope()", tone: "warning" }],
+        nodeStates: { gateway: "healthy", catalog: "healthy", ordering: "healthy", di: "active", handler: "idle" },
+      },
+      {
+        step: 4,
+        title: ".NET 8 IExceptionHandler Emits RFC 7807 ProblemDetails",
+        titleVi: "IExceptionHandler Trả Lỗi Chuẩn ProblemDetails RFC 7807",
+        explanation: "ASP.NET Core 8 global exception handler translates domain validation failures to structured JSON 4xx without leaking internals.",
+        explanationVi: "Tầng biên ASP.NET Core 8 chuyển lỗi nghiệp vụ thành JSON ProblemDetails 400/422 nhất quán, an toàn thông tin.",
+        businessRule: "RFC 7807 Boundary",
+        latency: "12 ms",
+        httpStatus: "200 / 422 CLEAN",
+        c4Level: "C3",
+        activeEdges: [{ edgeId: "e4", packetLabel: "ProblemDetails", tone: "healthy" }],
+        nodeStates: { gateway: "healthy", catalog: "healthy", ordering: "healthy", di: "healthy", handler: "healthy" },
+      },
+    ],
+  },
+
+  "csharp-v2-ch04": {
+    code: "csharp-v2-ch04",
+    modulePosition: 2,
+    title: "YARP Gateway, IOptions<T> ValidateOnStart & Roslyn Typed HttpClient",
+    titleVi: "YARP Gateway, IOptions<T> & Typed HttpClient Trích Xuất Roslyn CALL_SITE",
+    nodes: [
+      n("client", "Client / Swagger", "Bearer JWT Caller", 85, 145, "client/FruitCheckout.http", "HTTP + Authorization Header", "JWT Token", "External Consumer"),
+      n("yarp", "ApiGateway (YARP)", "Reverse Proxy + RateLimit", 265, 145, "src/ApiGateway/appsettings.json", "YARP ReverseProxy + JWT Bearer", "Transforms X-User-Id, strips internal headers", "Routes via Docker DNS"),
+      n("ordering", "FruitOrdering.API", "CatalogApiClient (Typed)", 475, 145, "src/FruitOrdering.API/Clients/CatalogApiClient.cs", "AddHttpClient<ICatalogClient, CatalogApiClient>", "IHttpClientFactory SocketsHttpHandler pool", "Roslyn extracts CALL_SITE"),
+      n("catalog", "FruitCatalog.API", "Downstream Service", 685, 145, "src/FruitCatalog.API/Controllers/FruitsController.cs", "Catalog Endpoint (:8080)", "Reverse BFS Target", "Upstream: Ordering + Gateway"),
+    ],
+    edges: [
+      { id: "e1", from: "client", to: "yarp", label: "POST /api/orders" },
+      { id: "e2", from: "yarp", to: "ordering", label: "Docker DNS :8080" },
+      { id: "e3", from: "ordering", to: "catalog", label: "Typed HttpClient CALL_SITE" },
+    ],
+    steps: [
+      {
+        step: 1,
+        title: "IOptions<T> ValidateOnStart Fails Fast on Missing Secrets",
+        titleVi: "IOptions<T> ValidateOnStart Kiểm Tra Cấu Hình Khi Khởi Động",
+        explanation: "OptionsBuilder.ValidateDataAnnotations().ValidateOnStart() blocks boot if JWT signing key or downstream Docker DNS URI is blank.",
+        explanationVi: "Khởi động fail-fast ngay từ Program.cs nếu thiếu khóa JWT hoặc Service URL trong biến môi trường Docker.",
+        businessRule: "Externalized Config Guard",
+        latency: "Startup",
+        httpStatus: "OPTIONS VALIDATED",
+        c4Level: "C2",
+        activeEdges: [{ edgeId: "e1", packetLabel: "JWT Validated", tone: "active" }],
+        nodeStates: { client: "healthy", yarp: "active", ordering: "idle", catalog: "idle" },
+      },
+      {
+        step: 2,
+        title: "YARP Reverse Proxy Authenticates JWT & Strips Edge Noise",
+        titleVi: "YARP Xác Thực JWT Bearer & Định Tuyến Qua Docker DNS",
+        explanation: "Microsoft YARP forwards authenticated /api/orders/** calls over internal Docker DNS http://fruit-ordering-api:8080.",
+        explanationVi: "YARP kiểm tra chữ ký JWT Bearer, áp FixedWindowLimiter và định tuyến qua tên service Docker DNS nội bộ.",
+        businessRule: "Edge Security Boundary",
+        latency: "6 ms",
+        httpStatus: "YARP ROUTING",
+        c4Level: "C2",
+        activeEdges: [{ edgeId: "e2", packetLabel: "http://fruit-ordering-api:8080", tone: "active" }],
+        nodeStates: { client: "healthy", yarp: "healthy", ordering: "active", catalog: "idle" },
+      },
+      {
+        step: 3,
+        title: "IHttpClientFactory Prevents Socket Exhaustion & Stale DNS",
+        titleVi: "IHttpClientFactory Loại Bỏ Socket Exhaustion & Stale DNS",
+        explanation: "Typed CatalogApiClient reuses pooled HttpMessageHandlers with automatic 2-minute handler rotation (zero TIME_WAIT leak).",
+        explanationVi: "Dùng Typed HttpClient thay cho new HttpClient() giúp tái sử dụng connection pool và làm mới DNS khi container scale.",
+        businessRule: "Typed Client Pooling",
+        latency: "15 ms",
+        httpStatus: "CALL_SITE GROUNDED",
+        c4Level: "C3",
+        activeEdges: [{ edgeId: "e3", packetLabel: "CatalogApiClient.cs:24", tone: "healthy" }],
+        nodeStates: { client: "healthy", yarp: "healthy", ordering: "active", catalog: "active" },
+      },
+      {
+        step: 4,
+        title: "Roslyn Records CALL_SITE & Cycle-Safe Reverse BFS Computes Radius",
+        titleVi: "Roslyn Ghi Nhận CALL_SITE & Reverse BFS Tính Bán Kính Tác Động",
+        explanation: "Changing FruitCatalog.API contract flags FruitOrdering.API (hop 1) and ApiGateway (hop 2) cleanly using Queue + visited set.",
+        explanationVi: "Khi sửa API của FruitCatalog.API, Reverse BFS truy ngược chính xác Direct Callers và Indirect Callers kể cả khi đồ thị có cycle.",
+        businessRule: "RULE-04 · Reverse BFS",
+        latency: "18 ms",
+        httpStatus: "RADIUS 2 HOPS",
+        c4Level: "C2",
+        activeEdges: [{ edgeId: "e3", packetLabel: "Impact Trace", tone: "warning" }],
+        nodeStates: { client: "healthy", yarp: "warning", ordering: "warning", catalog: "healthy" },
+      },
+    ],
+  },
+
+  "csharp-v2-ch07": {
+    code: "csharp-v2-ch07",
+    modulePosition: 3,
+    title: "EF Core 8 Polyglot Persistence, Redis Cache & MassTransit Saga",
+    titleVi: "EF Core 8 Cô Lập Database, Redis Cache & MassTransit Outbox / Saga",
+    nodes: [
+      n("ordering", "FruitOrdering.API", "OrderDbContext + Outbox", 95, 145, "src/FruitOrdering.API/Data/OrderDbContext.cs", "EF Core 8 + MassTransit Outbox", "Single ACID Transaction", "Owns ordering_db only"),
+      n("broker", "RabbitMQ Event Bus", "MassTransit Publish", 300, 145, "src/BuildingBlocks/EventBus/IntegrationEvents.cs", "OrderCreatedIntegrationEvent", "At-Least-Once Delivery", "Async decoupling"),
+      n("catalog", "FruitCatalog.API", "IdempotentConsumer + catalog_db", 515, 80, "src/FruitCatalog.API/Consumers/ReserveFruitConsumer.cs", "ProcessedEventId Guard", "Compensates on failure", "Owns catalog_db"),
+      n("basket", "FruitBasket.API", "Redis IDistributedCache", 515, 215, "src/FruitBasket.API/Repositories/RedisBasketRepo.cs", "StackExchangeRedis + TTL", "Clears cart async", "No SQL dependency"),
+    ],
+    edges: [
+      { id: "e1", from: "ordering", to: "broker", label: "Outbox Flush" },
+      { id: "e2", from: "broker", to: "catalog", label: "Reserve Stock" },
+      { id: "e3", from: "broker", to: "basket", label: "Clear Cart" },
+    ],
+    steps: [
+      {
+        step: 1,
+        title: "Database-per-Service Eliminates Shared DbContext",
+        titleVi: "Database-per-Service Ngăn Chia Sẻ Chuỗi Kết Nối EF Core",
+        explanation: "Ordering owns ordering_db PostgreSQL, Catalog owns catalog_db, and Basket uses Redis — zero cross-service SQL JOINs.",
+        explanationVi: "Mỗi .NET microservice sở hữu một DbContext và cơ sở dữ liệu riêng biệt (PostgreSQL + Redis), tránh lỗi SHARED_DATABASE.",
+        businessRule: "EF Core 8 Data Sovereignty",
+        latency: "10 ms",
+        httpStatus: "DB ISOLATED",
+        c4Level: "C2",
+        activeEdges: [],
+        nodeStates: { ordering: "active", broker: "idle", catalog: "idle", basket: "idle" },
+      },
+      {
+        step: 2,
+        title: "MassTransit Transactional Outbox Commits Atomically",
+        titleVi: "Lưu Order & IntegrationEventOutbox Trong Cùng Transaction",
+        explanation: "Order row and OutboxMessage persist inside one BeginTransactionAsync() commit before publishing to RabbitMQ.",
+        explanationVi: "Bảng đơn hàng và OutboxMessage được ghi đồng thời vào PostgreSQL nên không mất sự kiện ngay cả khi RabbitMQ tạm ngắt.",
+        businessRule: "Zero Dual-Write Loss",
+        latency: "18 ms",
+        httpStatus: "OUTBOX COMMITTED",
+        c4Level: "C3",
+        activeEdges: [{ edgeId: "e1", packetLabel: "OrderCreatedEvent", tone: "active" }],
+        nodeStates: { ordering: "healthy", broker: "active", catalog: "idle", basket: "idle" },
+      },
+      {
+        step: 3,
+        title: "Idempotent Consumers Deduplicate Redelivered Messages",
+        titleVi: "Idempotent Consumer Chống Trừ Kho Trùng Khi Replay",
+        explanation: "ReserveFruitConsumer checks MessageId in ProcessedMessages before decrementing catalog stock, protecting Saga consistency.",
+        explanationVi: "Consumer kiểm tra khóa MessageId trong PostgreSQL trước khi trừ tồn kho trái cây, an toàn khi broker gửi lại message.",
+        businessRule: "Consumer Idempotency",
+        latency: "24 ms",
+        httpStatus: "IDEMPOTENT OK",
+        c4Level: "C3",
+        activeEdges: [
+          { edgeId: "e2", packetLabel: "ReserveStock", tone: "healthy" },
+          { edgeId: "e3", packetLabel: "DeleteBasket(Redis)", tone: "healthy" },
+        ],
+        nodeStates: { ordering: "healthy", broker: "healthy", catalog: "active", basket: "active" },
+      },
+      {
+        step: 4,
+        title: "Saga Compensation Reverts Stock on Downstream Rejection",
+        titleVi: "Saga Bù Trừ Hoàn Kho Khi Nghiệp Vụ Hạ Lưu Thất Bại",
+        explanation: "If stock reservation fails, OrderStockFailedIntegrationEvent transitions Order to Cancelled instead of distributed 2PC.",
+        explanationVi: "Nếu giữ kho thất bại, sự kiện bù trừ đưa Order sang Cancelled để đạt Eventual Consistency gọn nhẹ.",
+        businessRule: "Saga Choreography",
+        latency: "29 ms",
+        httpStatus: "SAGA CONSISTENT",
+        c4Level: "Runtime",
+        activeEdges: [{ edgeId: "e2", packetLabel: "Compensate If Reject", tone: "warning" }],
+        nodeStates: { ordering: "healthy", broker: "healthy", catalog: "healthy", basket: "healthy" },
+      },
+    ],
+  },
+
+  "csharp-v2-ch10": {
+    code: "csharp-v2-ch10",
+    modulePosition: 4,
+    title: "Polly v8 Standard Resilience Pipeline & .NET Observability",
+    titleVi: "Polly v8 Resilience Pipeline & Health Probes / OpenTelemetry .NET",
+    nodes: [
+      n("ordering", "FruitOrdering.API", "AddStandardResilienceHandler()", 105, 145, "src/FruitOrdering.API/Extensions/ResilienceSetup.cs", "Polly v8 Strategy Pipeline", "TotalTimeout -> Retry+Jitter -> Breaker", "Protects Kestrel ThreadPool"),
+      n("catalog", "FruitCatalog.API", "Downstream HTTP Container", 335, 90, "src/FruitCatalog.API/Program.cs", "STOPPED on Studio Chaos", "Fails fast with HTTP 503", "Triggers Circuit Breaker"),
+      n("probes", "Health Endpoints", "/health/live vs /health/ready", 335, 205, "src/FruitOrdering.API/Health/HealthConfig.cs", "Predicate Tag Filtering", "live = process only; ready = DB+MQ", "Stops cascading restarts"),
+      n("otel", "OTel .NET Collector", "Activity + W3C traceparent", 615, 145, "src/BuildingBlocks/Observability/OtelExtensions.cs", "OpenTelemetry.Instrumentation", "Correlates Before vs After p95", "Captures OTel Trace Waterfall"),
+    ],
+    edges: [
+      { id: "e1", from: "ordering", to: "catalog", label: "Polly v8 Guarded Call" },
+      { id: "e2", from: "ordering", to: "probes", label: "Tagged Checks" },
+      { id: "e3", from: "catalog", to: "otel", label: "Traceparent Span" },
+      { id: "e4", from: "ordering", to: "otel", label: "Breaker State Metric" },
+    ],
+    steps: [
+      {
+        step: 1,
+        title: "Steady State With W3C Traceparent Propagation",
+        titleVi: "Trạng Thái Bình Thường & Truyền Ngữ Cảnh OpenTelemetry",
+        explanation: "AddOpenTelemetry() injects traceparent automatically on Typed HttpClient requests from FruitOrdering.API to FruitCatalog.API.",
+        explanationVi: "OpenTelemetry .NET tự động gắn W3C traceparent lên mọi request HttpClient giúp truy vết xuyên container.",
+        businessRule: "W3C Trace Context",
+        latency: "16 ms",
+        httpStatus: "200 CLOSED",
+        c4Level: "Runtime",
+        activeEdges: [
+          { edgeId: "e1", packetLabel: "200 OK (CLOSED)", tone: "healthy" },
+          { edgeId: "e3", packetLabel: "OTel Span", tone: "active" },
+        ],
+        nodeStates: { ordering: "healthy", catalog: "healthy", probes: "healthy", otel: "active" },
+      },
+      {
+        step: 2,
+        title: "Container Stopped — Retry + Jitter Absorbs Transient Glitch",
+        titleVi: "Dừng FruitCatalog.API — Retry + Exponential Backoff + Jitter",
+        explanation: "Polly v8 executes AttemptTimeout inside Retry with randomized jitter so simultaneous retries do not thundering-herd Kestrel.",
+        explanationVi: "Chiến lược Retry bọc ngoài AttemptTimeout kèm Jitter tránh bão thử lại khi FruitCatalog.API vừa ngắt.",
+        businessRule: "Polly v8 Pipeline Order",
+        latency: "210 ms",
+        httpStatus: "RETRY_JITTER",
+        c4Level: "Runtime",
+        activeEdges: [{ edgeId: "e1", packetLabel: "Retry + Jitter", tone: "warning" }],
+        nodeStates: { ordering: "warning", catalog: "error", probes: "healthy", otel: "active" },
+      },
+      {
+        step: 3,
+        title: "Circuit Breaker Opens — Instant 503 Fail-Fast Fallback",
+        titleVi: "Circuit Breaker Mở Mạch — Phản Hồi 503 Tức Thì",
+        explanation: "Once FailureRatio crosses threshold, Polly opens the circuit cleanly so FruitOrdering.API responds in milliseconds without exhausting sockets.",
+        explanationVi: "Cầu dao Polly mở mạch cắt lỗ tức thì tại Ordering, giữ p95 ổn định và bảo vệ /health/live luôn sống.",
+        businessRule: "Fail-Fast Resilience",
+        latency: "5 ms",
+        httpStatus: "503 OPEN (FAST)",
+        c4Level: "Runtime",
+        activeEdges: [{ edgeId: "e4", packetLabel: "Circuit=OPEN", tone: "warning" }],
+        nodeStates: { ordering: "active", catalog: "error", probes: "healthy", otel: "healthy" },
+      },
+      {
+        step: 4,
+        title: "/health/live vs /health/ready Isolation Saves Uptime",
+        titleVi: "Tách Bạch /health/live & /health/ready Chống Restart Dây Chuyền",
+        explanation: "/health/live checks zero DB/broker dependencies (Predicate = _ => false); only /health/ready marks container unready during outage.",
+        explanationVi: "Chỉ /health/ready kiểm tra DB/RabbitMQ, còn /health/live chỉ kiểm tra tiến trình .NET nên Orchestrator không restart nhầm.",
+        businessRule: "K8s/Compose Probe Safety",
+        latency: "4 ms",
+        httpStatus: "LIVE=200 READY=503",
+        c4Level: "Runtime",
+        activeEdges: [{ edgeId: "e2", packetLabel: "Tagged Readiness", tone: "healthy" }],
+        nodeStates: { ordering: "healthy", catalog: "error", probes: "active", otel: "healthy" },
+      },
+    ],
+  },
+
+  "csharp-v2-ch12": {
+    code: "csharp-v2-ch12",
+    modulePosition: 5,
+    title: "Docker Multi-Stage (.NET 8), WebApplicationFactory & Horizontal Scale",
+    titleVi: "Docker Multi-Stage (.NET 8 Non-Root), WebApplicationFactory & Scale 1→8",
+    nodes: [
+      n("stage1", "Dockerfile SDK 8", "COPY *.csproj + dotnet restore", 90, 145, "src/FruitCatalog.API/Dockerfile", "mcr.microsoft.com/dotnet/sdk:8.0", "Caches NuGet layer separately", "Build-time only"),
+      n("stage2", "Runtime aspnet:8.0", "USER app · Port 8080", 285, 145, "src/FruitCatalog.API/Dockerfile", "mcr.microsoft.com/dotnet/aspnet:8.0", "ASPNETCORE_HTTP_PORTS=8080 non-root", "Small hardened image"),
+      n("test", "Testing Pyramid", "WebApplicationFactory + Testcontainers", 485, 85, "tests/FruitOrdering.IntegrationTests/OrderFlowTests.cs", "Real PostgreSQL & RabbitMQ", "Replaces InMemory provider traps", "Verifies SQL & Outbox"),
+      n("scale", "Scale 1 -> 4 Replicas", "Stateless Round-Robin + Redis", 675, 145, "docker-compose.yml", "FruitCatalog.API x4 + YARP", "No fixed container_name", "Measured in Before vs After"),
+    ],
+    edges: [
+      { id: "e1", from: "stage1", to: "stage2", label: "dotnet publish" },
+      { id: "e2", from: "stage2", to: "test", label: "Integration Suite" },
+      { id: "e3", from: "stage2", to: "scale", label: "Replica Push" },
+    ],
+    steps: [
+      {
+        step: 1,
+        title: "Copy .csproj First to Maximize Docker NuGet Layer Cache",
+        titleVi: "Tách COPY *.csproj + dotnet restore Tối Ưu Build Cache",
+        explanation: "Restoring NuGet packages before COPY . . avoids re-downloading all dependencies whenever a C# controller changes.",
+        explanationVi: "Chạy dotnet restore trên các file .csproj/.sln trước khi chép mã nguồn giúp CI/CD tái sử dụng Docker layer cache.",
+        businessRule: "Docker Layer Cache",
+        latency: "Fast Build",
+        httpStatus: "CACHE HIT",
+        c4Level: "C2",
+        activeEdges: [{ edgeId: "e1", packetLabel: "Publish Release", tone: "active" }],
+        nodeStates: { stage1: "active", stage2: "idle", test: "idle", scale: "idle" },
+      },
+      {
+        step: 2,
+        title: ".NET 8 Minimal Image Listens on Non-Root Port 8080",
+        titleVi: "Image aspnet:8.0 Gọn Nhẹ Chạy Quyền Non-Root USER app (:8080)",
+        explanation: ".NET 8 containers default to port 8080 under unprivileged user 'app', reducing image attack surface by >70% vs SDK image.",
+        explanationVi: "Container runtime .NET 8 chạy cổng 8080 dưới quyền user không phải root, thỏa mãn tiêu chuẩn bảo mật Runner.",
+        businessRule: "Non-Root Security PRR",
+        latency: "Boot < 1s",
+        httpStatus: "PORT 8080 SAFE",
+        c4Level: "C2",
+        activeEdges: [{ edgeId: "e2", packetLabel: "Verify Non-Root", tone: "healthy" }],
+        nodeStates: { stage1: "healthy", stage2: "active", test: "idle", scale: "idle" },
+      },
+      {
+        step: 3,
+        title: "WebApplicationFactory + Testcontainers Replaces Fake InMemory DB",
+        titleVi: "Kiểm Thử Thật Bằng WebApplicationFactory & Testcontainers",
+        explanation: "Integration tests boot real PostgreSQL and RabbitMQ containers so EF Core migrations and Outbox constraints are genuinely proven.",
+        explanationVi: "Testcontainers khởi tạo PostgreSQL/RabbitMQ thật trong CI để kiểm chứng EF Core migration và transaction chuẩn xác.",
+        businessRule: "Real Infra Testing",
+        latency: "CI Green",
+        httpStatus: "TESTS PASSED",
+        c4Level: "C3",
+        activeEdges: [{ edgeId: "e2", packetLabel: "Real Postgres+RMQ", tone: "healthy" }],
+        nodeStates: { stage1: "healthy", stage2: "healthy", test: "active", scale: "idle" },
+      },
+      {
+        step: 4,
+        title: "Stateless Replicas Scale 1 -> 4+ in MAVIS Studio Live",
+        titleVi: "Nhân Bản Stateless Replica 1 -> 4+ Trên MAVIS Studio Live",
+        explanation: "Removing fixed container_name and storing sessions in Redis allows FruitCatalog.API to scale horizontally under load.",
+        explanationVi: "Nhờ không khóa cứng container_name và giữ state trên Redis/Postgres, dịch vụ scale 1→8 replica cân tải mượt mà.",
+        businessRule: "Horizontal Scale 1..8",
+        latency: "p95 Dropped",
+        httpStatus: "4/4 UP",
+        c4Level: "Runtime",
+        activeEdges: [{ edgeId: "e3", packetLabel: "Round-Robin 4x", tone: "healthy" }],
+        nodeStates: { stage1: "healthy", stage2: "healthy", test: "healthy", scale: "healthy" },
+      },
+    ],
+  },
 };
 
 const MODULE_DEFAULT_CODES: Record<number, string> = {
@@ -1418,12 +1790,73 @@ const MODULE_DEFAULT_CODES: Record<number, string> = {
   6: "java-12",
 };
 
+const CSHARP_MODULE_DEFAULT_CODES: Record<number, string> = {
+  1: "csharp-v2-ch01",
+  2: "csharp-v2-ch04",
+  3: "csharp-v2-ch07",
+  4: "csharp-v2-ch10",
+  5: "csharp-v2-ch12",
+};
+
+function selectCsharpScenario(modulePosition?: number | null | undefined, normalized = ""): ConceptScenario {
+  if (/csharp-v2-ch0[1-3]/.test(normalized) || normalized.includes("captive dependency") || normalized.includes("solution")) {
+    return DESIGNED_TO_SCALE_SCENARIOS["csharp-v2-ch01"]!;
+  }
+  if (
+    /csharp-v2-ch0[4-6]/.test(normalized) ||
+    normalized.includes("yarp") ||
+    normalized.includes("roslyn") ||
+    normalized.includes("ihttpclientfactory") ||
+    normalized.includes("typed client") ||
+    normalized.includes("ioptions") ||
+    normalized.includes("call_site")
+  ) {
+    return DESIGNED_TO_SCALE_SCENARIOS["csharp-v2-ch04"]!;
+  }
+  if (
+    /csharp-v2-ch0[7-9]/.test(normalized) ||
+    normalized.includes("ef core") ||
+    normalized.includes("masstransit") ||
+    normalized.includes("rabbitmq") ||
+    normalized.includes("redis")
+  ) {
+    return DESIGNED_TO_SCALE_SCENARIOS["csharp-v2-ch07"]!;
+  }
+  if (
+    /csharp-v2-ch1[0-1]/.test(normalized) ||
+    normalized.includes("polly") ||
+    normalized.includes("http.resilience") ||
+    normalized.includes("health checks")
+  ) {
+    return DESIGNED_TO_SCALE_SCENARIOS["csharp-v2-ch10"]!;
+  }
+  if (
+    normalized.includes("csharp-v2-ch12") ||
+    normalized.includes("multi-stage") ||
+    normalized.includes("webapplicationfactory") ||
+    normalized.includes("testcontainers")
+  ) {
+    return DESIGNED_TO_SCALE_SCENARIOS["csharp-v2-ch12"]!;
+  }
+  const csharpModCode = (modulePosition && CSHARP_MODULE_DEFAULT_CODES[modulePosition]) || "csharp-v2-ch01";
+  return DESIGNED_TO_SCALE_SCENARIOS[csharpModCode] ?? DESIGNED_TO_SCALE_SCENARIOS["csharp-v2-ch01"]!;
+}
+
 export function getScenarioForLessonOrLab(
   modulePosition?: number | null | undefined,
   codeOrTitle?: string | null | undefined,
+  trackHint?: string | null | undefined,
 ): ConceptScenario {
+  const normalized = (codeOrTitle ?? "").toLowerCase();
+  const hint = (trackHint ?? "").toLowerCase();
+  const isCsharp =
+    /(?:csharp|c#|\.net|dotnet|yarp|polly|ef core|masstransit|roslyn|fruitcatalog|fruitordering|ihttpclientfactory|ioptions|problem\s*details|trái cây)/.test(
+      `${hint} ${normalized}`,
+    );
+  if (isCsharp) {
+    return selectCsharpScenario(modulePosition, normalized);
+  }
   if (codeOrTitle) {
-    const normalized = codeOrTitle.toLowerCase();
     for (const [code, scenario] of Object.entries(DESIGNED_TO_SCALE_SCENARIOS)) {
       if (normalized === code || normalized.includes(`(${code})`) || normalized.includes(code)) {
         return scenario;
