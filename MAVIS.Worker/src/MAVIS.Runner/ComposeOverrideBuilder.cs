@@ -96,6 +96,9 @@ public static class ComposeOverrideBuilder
                 }
                 else if (app.Runtime is "dotnet8-linux-x64-glibc" or "dotnet8-linux-x64-musl")
                 {
+                    // .NET AddOtlpExporter(o => o.Endpoint = new Uri(ep)) drops /v1/traces on HTTP; gRPC on 4317 works for both native OTel SDK and AutoInstrumentation.
+                    environment["OTEL_EXPORTER_OTLP_ENDPOINT"] = "http://mavis-collector:4317";
+                    environment["OTEL_EXPORTER_OTLP_PROTOCOL"] = "grpc";
                     bool musl = app.Runtime == "dotnet8-linux-x64-musl";
                     string agentHome = musl ? "/mavis-otel/dotnet-musl" : "/mavis-otel/dotnet";
                     string nativeDirectory = musl ? "linux-musl-x64" : "linux-x64";

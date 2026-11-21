@@ -16,7 +16,12 @@ public sealed class RuntimeEnvironmentInputsTests {
   RunnerExecutionProfile Profile(string name)=>new("collector@sha256:"+digest,"mavis-agents-v1",new Dictionary<string,RuntimeServiceProfile>{{"app",new("java",8080)}},ApprovedForLocalPoc:true,EnvironmentBindings:new Dictionary<string,IReadOnlyList<RuntimeEnvironmentBinding>>{{"app",new[]{new RuntimeEnvironmentBinding(name,"INPUT")}}});
   var values=new Dictionary<string,string>{{"INPUT","fixture"}};
   using var result=JsonDocument.Parse(ComposeOverrideBuilder.Build(pre,Profile("DB_PASSWORD"),Path.Combine(Path.GetTempPath(),"collector.yaml"),values));Assert.Equal("fixture",result.RootElement.GetProperty("services").GetProperty("app").GetProperty("environment").GetProperty("DB_PASSWORD").GetString());
-  using var dotnetResult=JsonDocument.Parse(ComposeOverrideBuilder.Build(pre,Profile("ConnectionStrings__CatalogDb"),Path.Combine(Path.GetTempPath(),"collector.yaml"),values));Assert.Equal("fixture",dotnetResult.RootElement.GetProperty("services").GetProperty("app").GetProperty("environment").GetProperty("ConnectionStrings__CatalogDb").GetString());
+  var dotnetProfile=new RunnerExecutionProfile("collector@sha256:"+digest,"mavis-agents-v1",new Dictionary<string,RuntimeServiceProfile>{{"app",new("dotnet8-linux-x64-musl",8080,"/health/live")}},ApprovedForLocalPoc:true,EnvironmentBindings:new Dictionary<string,IReadOnlyList<RuntimeEnvironmentBinding>>{{"app",new[]{new RuntimeEnvironmentBinding("ConnectionStrings__CatalogDb","INPUT")}}});
+  using var dotnetResult=JsonDocument.Parse(ComposeOverrideBuilder.Build(pre,dotnetProfile,Path.Combine(Path.GetTempPath(),"collector.yaml"),values));
+  var dotnetEnv=dotnetResult.RootElement.GetProperty("services").GetProperty("app").GetProperty("environment");
+  Assert.Equal("fixture",dotnetEnv.GetProperty("ConnectionStrings__CatalogDb").GetString());
+  Assert.Equal("http://mavis-collector:4317",dotnetEnv.GetProperty("OTEL_EXPORTER_OTLP_ENDPOINT").GetString());
+  Assert.Equal("grpc",dotnetEnv.GetProperty("OTEL_EXPORTER_OTLP_PROTOCOL").GetString());
   Assert.Throws<ArgumentException>(()=>ComposeOverrideBuilder.Build(pre,Profile("JAVA_TOOL_OPTIONS"),Path.Combine(Path.GetTempPath(),"collector.yaml"),values));
   Assert.Throws<ArgumentException>(()=>ComposeOverrideBuilder.Build(pre,Profile("JDK_JAVA_OPTIONS"),Path.Combine(Path.GetTempPath(),"collector.yaml"),values));
   Assert.Throws<ArgumentException>(()=>ComposeOverrideBuilder.Build(pre,Profile("otel_exporter_otlp_endpoint"),Path.Combine(Path.GetTempPath(),"collector.yaml"),values));
