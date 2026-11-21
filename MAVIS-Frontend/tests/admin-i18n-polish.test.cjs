@@ -156,3 +156,12 @@ test("Bug #10: Admin Health diagnostics and Accounts filter controls are localiz
   assert.match(locale, /host-wide metrics and workload Runner are not probed\./);
   assert.match(locale, /gVisor \(runsc\) not installed on host/);
 });
+
+test("Bug #16: AppShell cancels active React Query requests before sign-out", () => {
+  const shell = read("src/components/app-shell.tsx");
+
+  assert.match(
+    shell,
+    /async function logout\(\)\s*\{[\s\S]*?await queryClient\.cancelQueries\(\);\s*await signOut\.mutateAsync\(\{\}\);/,
+  );
+});

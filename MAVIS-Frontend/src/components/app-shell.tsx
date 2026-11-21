@@ -170,6 +170,7 @@ function ManagedShellChrome(props: AppShellProps) {
   async function logout() {
     setSigningOut(true);
     try {
+      await queryClient.cancelQueries();
       await signOut.mutateAsync({});
       await queryClient.cancelQueries();
       queryClient.clear();
