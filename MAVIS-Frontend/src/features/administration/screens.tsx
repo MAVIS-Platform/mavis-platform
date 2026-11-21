@@ -195,34 +195,34 @@ export function Accounts() {
             setSearch(v);
             setPage(1);
           }}
-          label="Search name or email"
+          label={t("Search name or email", "Tìm kiếm theo tên hoặc email")}
         />
         <SelectField
-          label="Role"
+          label={t("Role", "Vai trò")}
           value={role}
           onChange={(v) => {
             setRole(v);
             setPage(1);
           }}
           options={[
-            { value: "all", label: "All roles" },
-            { value: "admin", label: "System Administrator" },
-            { value: "lecturer", label: "Lecturer" },
-            { value: "student", label: "Student" },
+            { value: "all", label: t("All roles", "Tất cả vai trò") },
+            { value: "admin", label: t("System Administrator", "Quản trị viên hệ thống") },
+            { value: "lecturer", label: t("Lecturer", "Giảng viên") },
+            { value: "student", label: t("Student", "Sinh viên") },
           ]}
         />
         <SelectField
-          label="Account status"
+          label={t("Account status", "Trạng thái tài khoản")}
           value={state}
           onChange={(v) => {
             setState(v);
             setPage(1);
           }}
           options={[
-            { value: "all", label: "All statuses" },
-            { value: "ACTIVE", label: "Active" },
-            { value: "LOCKED", label: "Locked" },
-            { value: "PENDING_VERIFICATION", label: "Pending verification" },
+            { value: "all", label: t("All statuses", "Tất cả trạng thái") },
+            { value: "ACTIVE", label: t("Active", "Đang hoạt động") },
+            { value: "LOCKED", label: t("Locked", "Đang khóa") },
+            { value: "PENDING_VERIFICATION", label: t("Pending verification", "Chờ kích hoạt") },
           ]}
         />
       </div>

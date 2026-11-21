@@ -1986,6 +1986,13 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Connection validation succeeded.": "Kiểm tra kết nối cơ sở dữ liệu thành công.",
   "Readiness endpoint responded successfully.": "Điểm kiểm tra sẵn sàng phản hồi thành công.",
   "Storage volume is accessible.": "Ổ lưu trữ có thể truy cập bình thường.",
+  "Application API": "API Ứng dụng",
+  "Backend process and its configured dependencies; host-wide metrics and workload Runner are not probed.":
+    "Tiến trình máy chủ và các dịch vụ phụ thuộc đã cấu hình; chỉ số toàn máy chủ và Runner thực thi không được thăm dò ở đây.",
+  "gVisor (runsc) not installed on host — running in hardened runc mode. Run sudo bash /opt/mavis/deploy/install-gvisor.sh to enable Stage 3 kernel isolation.":
+    "gVisor (runsc) chưa được cài trên máy chủ — đang chạy ở chế độ runc tăng cường bảo mật. Chạy sudo bash /opt/mavis/deploy/install-gvisor.sh để bật cách ly nhân Stage 3.",
+  "Explicit gVisor runtime (runsc) is configured but not installed on host. Run: sudo bash /opt/mavis/deploy/install-gvisor.sh":
+    "Runtime gVisor (runsc) được cấu hình tường minh nhưng chưa cài trên máy chủ. Chạy: sudo bash /opt/mavis/deploy/install-gvisor.sh",
   "Backend API": "API Máy chủ (Backend)",
   PostgreSQL: "Cơ sở dữ liệu PostgreSQL",
   "Analysis Worker": "Worker Phân tích",

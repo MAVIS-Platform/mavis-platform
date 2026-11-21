@@ -453,7 +453,7 @@ export function SystemHealth() {
               </div>
             )}
             <p className="text-xs text-muted-foreground">
-              {data.scope}{" "}
+              {t(data.scope)}{" "}
               {t(
                 "An available Worker does not confirm workload Runner readiness.",
                 "Worker sẵn sàng không đồng nghĩa Runner thực thi tải đã được kích hoạt.",
@@ -556,7 +556,7 @@ export function SystemHealth() {
               {rt.warnings.length > 0 && (
                 <ul className="space-y-1.5 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-800 dark:text-amber-200">
                   {rt.warnings.map((w) => (
-                    <li key={w}>• {w}</li>
+                    <li key={w}>• {t(w)}</li>
                   ))}
                 </ul>
               )}

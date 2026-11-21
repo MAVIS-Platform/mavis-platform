@@ -142,3 +142,17 @@ test("Bug #09: CourseBuilder prevents horizontal grid overflow and Passkey table
   assert.match(access, /className="block max-w-40 truncate"/);
   assert.match(access, /className="whitespace-nowrap px-2\.5 py-2 font-medium"/);
 });
+
+test("Bug #10: Admin Health diagnostics and Accounts filter controls are localized in EN/VI dictionary", () => {
+  const ops = read("src/features/administration/operations.tsx");
+  const admin = read("src/features/administration/screens.tsx");
+  const locale = read("src/lib/i18n/locale-context.tsx");
+
+  assert.match(ops, /\{t\(data\.scope\)\}/);
+  assert.match(ops, /\{t\(w\)\}/);
+  assert.match(admin, /label=\{t\("Search name or email"/);
+  assert.match(admin, /label=\{t\("Account status"/);
+  assert.match(locale, /"Application API":\s*"API Ứng dụng"/);
+  assert.match(locale, /host-wide metrics and workload Runner are not probed\./);
+  assert.match(locale, /gVisor \(runsc\) not installed on host/);
+});
