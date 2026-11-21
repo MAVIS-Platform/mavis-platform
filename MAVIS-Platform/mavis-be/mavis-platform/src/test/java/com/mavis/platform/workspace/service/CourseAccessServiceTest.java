@@ -439,4 +439,31 @@ class CourseAccessServiceTest {
                 eq(workspaceId), any());
     }
 
+    @Test
+    void publishBlocksStudioExerciseLabWhenRuntimeTopologyIsMissing() {
+        var labStudioExercises = mock(com.mavis.common.repository.LabStudioExerciseRepository.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(courses, "labStudioExercises", labStudioExercises);
+        when(workspaces.findLockedById(workspaceId)).thenReturn(Optional.of(workspace));
+        when(assignments.findLockedById(assignmentId)).thenReturn(Optional.of(assignment));
+        var project = Project.builder().id(UUID.randomUUID()).workspace(workspace).status("ACTIVE")
+                .projectType("TEACHER_REFERENCE").isReferenceTemplate(true).build();
+        var source = SourceSnapshot.builder().id(UUID.randomUUID()).project(project).isPublished(true)
+                .sourceType("GITHUB_COMMIT").commitSha("1".repeat(40))
+                .artifactHash("a".repeat(64)).storagePath("reference.zip").build();
+        var model = ModelVersion.builder().id(UUID.randomUUID()).sourceSnapshot(source).build();
+        assignment.setReferenceModel(model);
+        var exercise = com.mavis.common.entity.LabStudioExercise.builder()
+                .assignment(assignment)
+                .revision(1)
+                .build();
+        when(labStudioExercises.findByAssignmentId(assignmentId)).thenReturn(Optional.of(exercise));
+        when(configurations.findById(project.getId())).thenReturn(Optional.empty());
+
+        var ex = assertThrows(BusinessException.class, () -> courses.publish(workspaceId, assignmentId));
+
+        assertEquals(ErrorCode.CONFLICT, ex.getErrorCode());
+        assertEquals("STUDIO_READINESS_BLOCKED", ex.getStableCode());
+        assertNull(assignment.getLabOrder());
+    }
+
 }

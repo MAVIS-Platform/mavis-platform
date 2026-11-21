@@ -95,6 +95,9 @@ public class CourseLabStudentService {
     @org.springframework.beans.factory.annotation.Value("${mavis.runtime.max-queued-studio-sessions:30}")
     private int maxQueuedStudioSessions = 30;
 
+    @org.springframework.beans.factory.annotation.Value("${mavis.runtime.user-start-cooldown-seconds:15}")
+    private long userStartCooldownSeconds = 15;
+
     // Prevents double-click Start from spawning duplicate Studio sessions for the same student and lab.
     private final java.util.concurrent.locks.ReentrantLock[] startSessionLocks =
             java.util.stream.IntStream.range(0, 64)
@@ -322,7 +325,7 @@ public class CourseLabStudentService {
             throw new BusinessException(ErrorCode.FORBIDDEN, "Studio runtime source belongs to another workspace");
         }
 
-        int stripe = Math.floorMod(java.util.Objects.hash(assignmentId, actor.getId()), startSessionLocks.length);
+        int stripe = Math.floorMod(java.util.Objects.hash(actor.getId()), startSessionLocks.length);
         var startLock = startSessionLocks[stripe];
         startLock.lock();
         try {
@@ -345,6 +348,25 @@ public class CourseLabStudentService {
             String exec = existing.getExecutionStatus() == null ? "" : existing.getExecutionStatus().toUpperCase(Locale.ROOT);
             if (ACTIVE_SESSION_STATUSES.contains(exec) && existing.getCancelRequestedAt() == null) {
                 return existing;
+            }
+        }
+        // Phase E3: enforce global max 1 active non-simulated session per user across all Labs/projects.
+        if (actor.getId() != null) {
+            long globalUserActive = runtimeSessions.countActiveNonSimulatedByUser(actor.getId(), ACTIVE_SESSION_STATUSES);
+            if (globalUserActive >= 1) {
+                throw new BusinessException(ErrorCode.CONFLICT, "USER_ACTIVE_SESSION_LIMIT",
+                        "You already have an active Studio Live session running in another Lab. Stop or finish it before starting a new one.");
+            }
+            if (userStartCooldownSeconds > 0) {
+                java.time.OffsetDateTime lastCreated = runtimeSessions.findLatestNonSimulatedCreatedAtByUser(actor.getId());
+                if (lastCreated != null) {
+                    long elapsed = java.time.Duration.between(lastCreated.toInstant(), java.time.Instant.now()).getSeconds();
+                    if (elapsed >= 0 && elapsed < userStartCooldownSeconds) {
+                        long remaining = userStartCooldownSeconds - elapsed;
+                        throw new BusinessException(ErrorCode.CONFLICT, "RUN_COOLDOWN_ACTIVE",
+                                "Please wait " + remaining + "s before starting another Studio Live session.");
+                    }
+                }
             }
         }
         long queuedSessions = runtimeSessions.countByExecutionStatusIn(Set.of("QUEUED"));

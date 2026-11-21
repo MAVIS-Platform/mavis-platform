@@ -140,11 +140,15 @@ public class CourseAccessService {
             }
             referenceArchive.resolve(snapshot, true);
         }
+        copyTopologySnapshot(assignment);
+        copyExerciseSnapshot(assignment);
+        if (assignment.getStudioExerciseSnapshot() != null && assignment.getStudioTopologySnapshot() == null) {
+            throw new BusinessException(ErrorCode.CONFLICT, "STUDIO_READINESS_BLOCKED",
+                    "Studio Live exercise is configured, but Docker runtime topology is not ready yet. Run Sync Docker in Step 5 before publishing.");
+        }
         int next = assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId)
                 .stream().mapToInt(Assignment::getLabOrder).max().orElse(0) + 1;
         assignment.setLabOrder(next);
-        copyTopologySnapshot(assignment);
-        copyExerciseSnapshot(assignment);
         syncDerivedLabComposition(assignment);
         workspace.setCourseMode(true);
         audit("COURSE_LAB_PUBLISHED", "ASSIGNMENT", assignmentId);

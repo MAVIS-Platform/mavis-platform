@@ -409,3 +409,42 @@ test("Phase C contracts accept SET_LOAD, studioPrediction, and Change Impact exe
   assert.equal(parsed.exerciseEvaluation.impact.f1Score, 1);
   assert.equal(parsed.exerciseEvaluation.passed, true);
 });
+
+test("Phase E5 adminRuntimeHealth and adminSweepOrphans contracts enforce admin-only permission", () => {
+  const { validateResponse } = require("../src/lib/api/validate-response.ts");
+  const { operationPermission } = require("../src/lib/auth/permissions.ts");
+
+  assert.equal(operationPermission("adminRuntimeHealth"), "admin:manage");
+  assert.equal(operationPermission("adminSweepOrphans"), "admin:manage");
+
+  const health = validateResponse("adminRuntimeHealth", {}, {
+    surveyReadiness: "READY",
+    runnerMode: "AUTO",
+    configuredOciRuntime: "auto",
+    effectiveOciRuntime: "runsc",
+    dockerReachable: true,
+    gvisorAvailable: true,
+    sandboxRegistryConfigured: false,
+    activeSessions: 1,
+    queuedSessions: 2,
+    maxActiveSessions: 2,
+    maxQueuedSessions: 30,
+    diskFreeMiB: 15000,
+    diskTotalMiB: 40960,
+    diskLowWarning: false,
+    orphansReapedTotal: 3,
+    abandonedReapedTotal: 1,
+    staleDispatchesReapedTotal: 0,
+    oldestQueuedWaitSeconds: 12,
+    alertsConfigured: true,
+    warnings: [],
+  });
+  assert.equal(health.effectiveOciRuntime, "runsc");
+  assert.equal(health.oldestQueuedWaitSeconds, 12);
+
+  const sweep = validateResponse("adminSweepOrphans", {}, {
+    orphansRemoved: 2,
+    diskPruned: true,
+  });
+  assert.equal(sweep.orphansRemoved, 2);
+});

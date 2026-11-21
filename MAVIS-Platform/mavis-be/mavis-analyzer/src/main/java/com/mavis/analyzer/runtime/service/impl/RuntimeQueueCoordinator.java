@@ -87,8 +87,18 @@ public class RuntimeQueueCoordinator {
     @Value("${mavis.runner.state-root:}")
     private String runnerStateRoot = "";
 
+    @Value("${mavis.runtime.alert-webhook-url:}")
+    private String alertWebhookUrl = "";
+
+    @Value("${mavis.runtime.alert-cooldown-seconds:600}")
+    private long alertCooldownSeconds = 600;
+
+    @Value("${mavis.runtime.alert-queue-wait-seconds:60}")
+    private long alertQueueWaitSeconds = 60;
+
     private final ConcurrentHashMap<UUID, Instant> uiHeartbeats = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, Instant> dispatchTimestamps = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Instant> lastAlerts = new ConcurrentHashMap<>();
     private final AtomicLong orphansReapedTotal = new AtomicLong();
     private final AtomicLong abandonedReapedTotal = new AtomicLong();
     private final AtomicLong staleDispatchesReapedTotal = new AtomicLong();
@@ -116,7 +126,24 @@ public class RuntimeQueueCoordinator {
             long orphansReapedTotal,
             long abandonedReapedTotal,
             long staleDispatchesReapedTotal,
-            List<String> warnings) {}
+            long oldestQueuedWaitSeconds,
+            boolean alertsConfigured,
+            List<String> warnings) {
+        public RuntimeHealthSnapshot(
+                String surveyReadiness, String runnerMode, String configuredOciRuntime, String effectiveOciRuntime,
+                boolean dockerReachable, boolean gvisorAvailable, boolean sandboxRegistryConfigured,
+                long activeSessions, long queuedSessions, int maxActiveSessions, int maxQueuedSessions,
+                long diskFreeMiB, long diskTotalMiB, boolean diskLowWarning,
+                long orphansReapedTotal, long abandonedReapedTotal, long staleDispatchesReapedTotal,
+                List<String> warnings) {
+            this(surveyReadiness, runnerMode, configuredOciRuntime, effectiveOciRuntime,
+                    dockerReachable, gvisorAvailable, sandboxRegistryConfigured,
+                    activeSessions, queuedSessions, maxActiveSessions, maxQueuedSessions,
+                    diskFreeMiB, diskTotalMiB, diskLowWarning,
+                    orphansReapedTotal, abandonedReapedTotal, staleDispatchesReapedTotal,
+                    0L, false, warnings);
+        }
+    }
 
     public record WorkerClaimResult(boolean claimed, UUID sessionId, String resourceProject) {
         public static WorkerClaimResult empty() {
@@ -269,6 +296,7 @@ public class RuntimeQueueCoordinator {
             reapAbandonedStudioSessions(now);
             reapStuckSessions(now);
             drainQueueIfCapacityAvailable();
+            evaluateAndNotifyAlerts(now);
         } catch (Exception e) {
             log.warn("Runtime queue sweep encountered an error: {}", e.getMessage());
         }
@@ -459,6 +487,7 @@ public class RuntimeQueueCoordinator {
         try {
             sweepOrphanDockerResources(Instant.now());
             checkAndProtectDiskSpace();
+            evaluateAndNotifyAlerts(Instant.now());
         } catch (Exception e) {
             log.warn("Runtime host watchdog error: {}", e.getMessage());
         }
@@ -601,6 +630,11 @@ public class RuntimeQueueCoordinator {
             warnings.add("REMOTE_WORKER mode without MAVIS_RUNNER_SANDBOX_REGISTRY: Dockerfile-built Labs need a shared registry so remote Worker VPSs can pull images.");
         }
 
+        long oldestWaitSec = computeOldestQueuedWaitSeconds(Instant.now());
+        if (oldestWaitSec > Math.max(10L, alertQueueWaitSeconds)) {
+            if ("READY".equals(readiness)) readiness = "DEGRADED";
+            warnings.add("Oldest queued Studio session has waited " + oldestWaitSec + "s (threshold " + alertQueueWaitSeconds + "s).");
+        }
         return new RuntimeHealthSnapshot(
                 readiness,
                 runnerMode,
@@ -619,7 +653,108 @@ public class RuntimeQueueCoordinator {
                 orphansReapedTotal.get(),
                 abandonedReapedTotal.get(),
                 staleDispatchesReapedTotal.get(),
+                oldestWaitSec,
+                isWebhookConfigured(),
                 warnings);
+    }
+
+    /** Phase E4: evaluates low disk, queue wait, and boot failure rate; dispatches rate-limited webhook alerts when configured. */
+    public int evaluateAndNotifyAlerts(Instant now) {
+        if (!isWebhookConfigured()) return 0;
+        int sent = 0;
+        long freeMiB = usableDiskMiB();
+        if (freeMiB >= 0 && freeMiB < Math.max(256L, lowDiskThresholdMiB)) {
+            if (dispatchRateLimitedAlert("LOW_DISK", now,
+                    "MAVIS Runtime Alert [LOW_DISK]: Free disk dropped to " + freeMiB + " MiB (threshold " + lowDiskThresholdMiB + " MiB).")) {
+                sent++;
+            }
+        }
+        long oldestWait = computeOldestQueuedWaitSeconds(now);
+        if (oldestWait > Math.max(10L, alertQueueWaitSeconds)) {
+            if (dispatchRateLimitedAlert("QUEUE_WAIT", now,
+                    "MAVIS Runtime Alert [QUEUE_WAIT]: Oldest queued Studio session has waited " + oldestWait + "s (threshold " + alertQueueWaitSeconds + "s).")) {
+                sent++;
+            }
+        }
+        double failRate = computeRecentBootFailureRatePercent(now);
+        if (failRate > 15.0) {
+            if (dispatchRateLimitedAlert("HIGH_BOOT_FAILURE_RATE", now,
+                    String.format(Locale.ROOT, "MAVIS Runtime Alert [HIGH_BOOT_FAILURE_RATE]: Recent boot failure rate is %.1f%% (> 15%%).", failRate))) {
+                sent++;
+            }
+        }
+        return sent;
+    }
+
+    private boolean isWebhookConfigured() {
+        if (alertWebhookUrl == null || alertWebhookUrl.isBlank()) return false;
+        String trimmed = alertWebhookUrl.trim();
+        return trimmed.startsWith("https://") || trimmed.startsWith("http://");
+    }
+
+    private long computeOldestQueuedWaitSeconds(Instant now) {
+        List<RuntimeSession> queued = runtimeSessionRepository.findByExecutionStatusAndCancelRequestedAtIsNullOrderByCreatedAtAsc("QUEUED");
+        if (queued == null || queued.isEmpty() || queued.get(0).getCreatedAt() == null) return 0L;
+        return Math.max(0L, Duration.between(queued.get(0).getCreatedAt().toInstant(), now).getSeconds());
+    }
+
+    private double computeRecentBootFailureRatePercent(Instant now) {
+        List<RuntimeSession> recent = runtimeSessionRepository.findTop20ByCompletedAtIsNotNullOrderByCompletedAtDesc();
+        if (recent == null || recent.isEmpty()) return 0.0;
+        Instant cutoff = now.minusSeconds(3600);
+        int total = 0;
+        int failed = 0;
+        for (RuntimeSession s : recent) {
+            if (s.getCompletedAt() == null || s.getCompletedAt().toInstant().isBefore(cutoff)) continue;
+            if (s.getStudioControl() != null && s.getStudioControl().path("simulatedSandbox").asBoolean(false)) continue;
+            String exec = s.getExecutionStatus() == null ? "" : s.getExecutionStatus().toUpperCase(Locale.ROOT);
+            if ("CANCELLED".equals(exec)) continue;
+            total++;
+            if ("FAILED".equals(exec) || "TIMED_OUT".equals(exec) || "TIMEDOUT".equals(exec) || "TIMEOUT".equals(exec)) {
+                failed++;
+            }
+        }
+        return total >= 5 ? (100.0 * failed / total) : 0.0;
+    }
+
+    private boolean dispatchRateLimitedAlert(String alertKey, Instant now, String message) {
+        long cooldown = Math.max(30L, alertCooldownSeconds);
+        Instant previous = lastAlerts.get(alertKey);
+        if (previous != null && Duration.between(previous, now).getSeconds() < cooldown) {
+            return false;
+        }
+        try {
+            ObjectNode payload = objectMapper.createObjectNode()
+                    .put("content", message)
+                    .put("text", message)
+                    .put("alertKey", alertKey)
+                    .put("severity", "WARNING")
+                    .put("observedAt", now.toString());
+            if (sendWebhookPayload(objectMapper.writeValueAsString(payload))) {
+                lastAlerts.put(alertKey, now);
+                return true;
+            }
+        } catch (Exception e) {
+            log.warn("Failed to send runtime alert {} (webhook delivery failed)", alertKey);
+        }
+        return false;
+    }
+
+    protected boolean sendWebhookPayload(String jsonBody) {
+        try {
+            var client = java.net.http.HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofSeconds(5))
+                    .build();
+            var request = java.net.http.HttpRequest.newBuilder(java.net.URI.create(alertWebhookUrl.trim()))
+                    .timeout(Duration.ofSeconds(5))
+                    .header("Content-Type", "application/json")
+                    .POST(java.net.http.HttpRequest.BodyPublishers.ofString(jsonBody, StandardCharsets.UTF_8))
+                    .build();
+            var response = client.send(request, java.net.http.HttpResponse.BodyHandlers.discarding());
+            return response.statusCode() >= 200 && response.statusCode() < 300;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private void refreshDockerAndRuntimeProbe() {

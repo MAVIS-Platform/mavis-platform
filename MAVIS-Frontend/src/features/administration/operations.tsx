@@ -298,9 +298,12 @@ export function AdminCommandHeader({
 export function SystemHealth() {
   const { t } = useLocale();
   const health = useApiQuery("adminHealth", {}, { refreshMs: 30000 });
+  const runtimeHealth = useApiQuery("adminRuntimeHealth", {}, { refreshMs: 15000 });
+  const sweepOrphans = useApiMutation("adminSweepOrphans");
   const counts = useApiQuery("platformSummary", {});
   const data = health.data,
     issues = data?.checks.filter((c) => c.status !== "UP") ?? [];
+  const rt = runtimeHealth.data;
   const icons: Record<string, typeof Server> = {
     backend: Server,
     database: Database,
@@ -311,17 +314,19 @@ export function SystemHealth() {
     <div className="space-y-6">
       <AdminCommandHeader
         active="health"
-        refreshing={health.isFetching}
+        refreshing={health.isFetching || runtimeHealth.isFetching}
         onRefresh={() => {
           void health.refetch();
+          void runtimeHealth.refetch();
           void counts.refetch();
         }}
       />
       <AdminToolbar
-        fetching={health.isFetching}
+        fetching={health.isFetching || runtimeHealth.isFetching}
         updatedAt={health.dataUpdatedAt}
         refresh={() => {
           void health.refetch();
+          void runtimeHealth.refetch();
           void counts.refetch();
         }}
       >
@@ -451,6 +456,101 @@ export function SystemHealth() {
           </div>
         )}
       </RequestState>
+      <DetailPanel
+        title={t("Studio Runtime Ops & Sandbox Queue", "Vận hành Studio Runtime & Hàng chờ Sandbox")}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            {rt && (
+              <StatusBadge
+                status={`${rt.surveyReadiness} · ${rt.effectiveOciRuntime}`}
+                variant={
+                  rt.surveyReadiness === "READY"
+                    ? "success"
+                    : rt.surveyReadiness === "DEGRADED"
+                      ? "warning"
+                      : "destructive"
+                }
+              />
+            )}
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={sweepOrphans.isPending}
+              onClick={() =>
+                sweepOrphans.mutate(
+                  {},
+                  {
+                    onSuccess: () => {
+                      void runtimeHealth.refetch();
+                    },
+                  },
+                )
+              }
+            >
+              {sweepOrphans.isPending
+                ? t("Sweeping…", "Đang dọn dẹp…")
+                : t("Sweep Orphans & Cache", "Dọn container mồ côi")}
+            </Button>
+          </div>
+        }
+      >
+        <RequestState query={runtimeHealth}>
+          {rt && (
+            <div className="space-y-4">
+              {sweepOrphans.data && (
+                <p
+                  role="status"
+                  className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300"
+                >
+                  {t(
+                    `Sweep finished: ${sweepOrphans.data.orphansRemoved} orphan stack(s) removed${sweepOrphans.data.diskPruned ? " · stale cache pruned" : ""}.`,
+                    `Đã dọn dẹp: xóa ${sweepOrphans.data.orphansRemoved} stack mồ côi${sweepOrphans.data.diskPruned ? " · đã giải phóng bộ đệm ổ đĩa" : ""}.`,
+                  )}
+                </p>
+              )}
+              {sweepOrphans.error && <ErrorState error={sweepOrphans.error} />}
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <SummaryCard
+                  label={t("Active Sandbox Slots", "Slot Sandbox đang chạy")}
+                  value={`${rt.activeSessions} / ${rt.maxActiveSessions}`}
+                  description={`${t("Mode", "Chế độ")}: ${rt.runnerMode} · OCI: ${rt.effectiveOciRuntime}`}
+                />
+                <SummaryCard
+                  label={t("FIFO Queue Depth", "Độ sâu hàng chờ FIFO")}
+                  value={`${rt.queuedSessions} / ${rt.maxQueuedSessions}`}
+                  description={
+                    rt.oldestQueuedWaitSeconds
+                      ? `${t("Oldest wait", "Chờ lâu nhất")}: ${rt.oldestQueuedWaitSeconds}s`
+                      : t("No sessions waiting", "Không có phiên đang chờ")
+                  }
+                />
+                <SummaryCard
+                  label={t("Runner Host Disk Free", "Ổ đĩa trống máy Runner")}
+                  value={rt.diskFreeMiB >= 0 ? `${(rt.diskFreeMiB / 1024).toFixed(1)} GB` : "—"}
+                  description={
+                    rt.diskTotalMiB > 0
+                      ? `${(rt.diskTotalMiB / 1024).toFixed(1)} GB ${t("total", "tổng")}${rt.diskLowWarning ? " · LOW DISK" : ""}`
+                      : t("Host volume", "Ổ đĩa máy chủ")
+                  }
+                />
+                <SummaryCard
+                  label={t("Watchdog Reaped", "Watchdog đã thu hồi")}
+                  value={rt.orphansReapedTotal + rt.abandonedReapedTotal + rt.staleDispatchesReapedTotal}
+                  description={`${rt.orphansReapedTotal} orphans · ${rt.abandonedReapedTotal} idle · ${rt.staleDispatchesReapedTotal} stale`}
+                />
+              </div>
+              {rt.warnings.length > 0 && (
+                <ul className="space-y-1.5 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-800 dark:text-amber-200">
+                  {rt.warnings.map((w) => (
+                    <li key={w}>• {w}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </RequestState>
+      </DetailPanel>
       <DetailPanel
         title={t("Platform inventory", "Tổng quan tài nguyên nền tảng")}
         actions={

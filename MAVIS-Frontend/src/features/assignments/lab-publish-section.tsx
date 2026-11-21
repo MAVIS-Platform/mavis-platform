@@ -279,6 +279,21 @@ export function LabPublishSection({
 
         {hasStudio &&
           readiness.data &&
+          readiness.data.readinessGrade === "BLOCKED" && (
+            <p
+              role="alert"
+              className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-xs leading-5 text-destructive"
+            >
+              {t(
+                "Publish blocked (Readiness: BLOCKED). Fix Docker preflight or run Sync Docker in Step 5 before opening this Studio Lab to students.",
+                "Chặn xuất bản (Readiness: BLOCKED). Hãy sửa lỗi Docker preflight hoặc chạy Đồng bộ Docker ở Bước 5 trước khi mở Lab Studio cho sinh viên.",
+              )}
+            </p>
+          )}
+
+        {hasStudio &&
+          readiness.data &&
+          readiness.data.readinessGrade !== "BLOCKED" &&
           !readiness.data.runnerReady && (
             <p className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs leading-5 text-amber-800 dark:text-amber-200">
               {t(
@@ -300,6 +315,14 @@ export function LabPublishSection({
             position={setupLab?.position}
             sessionId={verifiedSession?.id}
             canFreeze={canFreeze}
+            publishBlockedReason={
+              hasStudio && readiness.data?.readinessGrade === "BLOCKED"
+                ? t(
+                    "Studio Live readiness is BLOCKED. Run Sync Docker in Step 5 first.",
+                    "Trạng thái Studio Live đang BLOCKED. Hãy Đồng bộ Docker ở Bước 5 trước.",
+                  )
+                : undefined
+            }
           />
           <ExportLabButton
             workspaceId={workspaceId}

@@ -32,6 +32,8 @@ export function operationPermission(operation: Operation): Permission | undefine
       "adminJobs",
       "platformSummary",
       "adminHealth",
+      "adminRuntimeHealth",
+      "adminSweepOrphans",
       "adminAiUsage",
       "forceStopRuntimeSession",
       "adminAnnouncements",

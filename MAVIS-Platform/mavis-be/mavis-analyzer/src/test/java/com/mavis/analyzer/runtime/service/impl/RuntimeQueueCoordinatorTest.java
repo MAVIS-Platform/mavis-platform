@@ -325,4 +325,47 @@ class RuntimeQueueCoordinatorTest {
         assertThat(health.diskLowWarning()).isTrue();
         assertThat(health.surveyReadiness()).isEqualTo("DEGRADED");
     }
+
+    @Test
+    void webhookAlertingFiresForLowDiskQueueWaitAndBootFailureRateWithRateLimiting() {
+        Instant now = Instant.now();
+        java.util.List<String> sentPayloads = new java.util.ArrayList<>();
+        RuntimeQueueCoordinator stub = new RuntimeQueueCoordinator(repository, dispatcher, mapper) {
+            @Override
+            protected long usableDiskMiB() { return 512L; }
+            @Override
+            protected boolean sendWebhookPayload(String jsonBody) {
+                sentPayloads.add(jsonBody);
+                return true;
+            }
+        };
+        ReflectionTestUtils.setField(stub, "alertWebhookUrl", "https://hooks.example.test/mavis");
+        ReflectionTestUtils.setField(stub, "lowDiskThresholdMiB", 2048L);
+        ReflectionTestUtils.setField(stub, "alertQueueWaitSeconds", 60L);
+        ReflectionTestUtils.setField(stub, "alertCooldownSeconds", 600L);
+
+        RuntimeSession oldQueued = RuntimeSession.builder().id(UUID.randomUUID()).executionStatus("QUEUED")
+                .createdAt(OffsetDateTime.ofInstant(now.minusSeconds(120), ZoneOffset.UTC)).build();
+        when(repository.findByExecutionStatusAndCancelRequestedAtIsNullOrderByCreatedAtAsc("QUEUED"))
+                .thenReturn(List.of(oldQueued));
+        List<RuntimeSession> recent = List.of(
+                RuntimeSession.builder().executionStatus("FAILED").completedAt(OffsetDateTime.ofInstant(now.minusSeconds(30), ZoneOffset.UTC)).build(),
+                RuntimeSession.builder().executionStatus("FAILED").completedAt(OffsetDateTime.ofInstant(now.minusSeconds(40), ZoneOffset.UTC)).build(),
+                RuntimeSession.builder().executionStatus("COMPLETED").completedAt(OffsetDateTime.ofInstant(now.minusSeconds(50), ZoneOffset.UTC)).build(),
+                RuntimeSession.builder().executionStatus("COMPLETED").completedAt(OffsetDateTime.ofInstant(now.minusSeconds(60), ZoneOffset.UTC)).build(),
+                RuntimeSession.builder().executionStatus("COMPLETED").completedAt(OffsetDateTime.ofInstant(now.minusSeconds(70), ZoneOffset.UTC)).build()
+        );
+        when(repository.findTop20ByCompletedAtIsNotNullOrderByCompletedAtDesc()).thenReturn(recent);
+
+        int firstCount = stub.evaluateAndNotifyAlerts(now);
+        assertThat(firstCount).isEqualTo(3);
+        assertThat(sentPayloads).anyMatch(p -> p.contains("LOW_DISK"));
+        assertThat(sentPayloads).anyMatch(p -> p.contains("QUEUE_WAIT"));
+        assertThat(sentPayloads).anyMatch(p -> p.contains("HIGH_BOOT_FAILURE_RATE"));
+
+        // Immediate repeat inside cooldown window must send 0 duplicate alerts
+        assertThat(stub.evaluateAndNotifyAlerts(now.plusSeconds(30))).isZero();
+        // After cooldown elapses, alerts fire again
+        assertThat(stub.evaluateAndNotifyAlerts(now.plusSeconds(650))).isEqualTo(3);
+    }
 }

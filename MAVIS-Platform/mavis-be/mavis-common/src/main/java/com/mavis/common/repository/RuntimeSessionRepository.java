@@ -22,6 +22,20 @@ public interface RuntimeSessionRepository extends JpaRepository<RuntimeSession, 
     @Query(value = "SELECT COUNT(*) FROM runtime_sessions WHERE execution_status IN (:statuses) "
             + "AND COALESCE(studio_control->>'simulatedSandbox', 'false') <> 'true'", nativeQuery = true)
     long countActiveNonSimulated(@Param("statuses") java.util.Collection<String> statuses);
+
+    /** Phase E3: global active session count for one user across all Labs/projects (excluding simulated sandboxes). */
+    @Query(value = "SELECT COUNT(*) FROM runtime_sessions WHERE triggered_by = :userId "
+            + "AND execution_status IN (:statuses) AND cancel_requested_at IS NULL "
+            + "AND COALESCE(studio_control->>'simulatedSandbox', 'false') <> 'true'", nativeQuery = true)
+    long countActiveNonSimulatedByUser(@Param("userId") UUID userId, @Param("statuses") java.util.Collection<String> statuses);
+
+    /** Phase E3: most recent non-simulated session creation time for one user (cooldown enforcement). */
+    @Query(value = "SELECT MAX(created_at) FROM runtime_sessions WHERE triggered_by = :userId "
+            + "AND COALESCE(studio_control->>'simulatedSandbox', 'false') <> 'true'", nativeQuery = true)
+    java.time.OffsetDateTime findLatestNonSimulatedCreatedAtByUser(@Param("userId") UUID userId);
+
+    /** Phase E4: recent terminal sessions for boot failure rate monitoring. */
+    List<RuntimeSession> findTop20ByCompletedAtIsNotNullOrderByCompletedAtDesc();
     long countByExecutionStatusAndCreatedAtBefore(String executionStatus, java.time.OffsetDateTime createdAt);
     List<RuntimeSession> findByExecutionStatusOrderByCreatedAtAsc(String executionStatus);
     List<RuntimeSession> findByExecutionStatusAndCancelRequestedAtIsNullOrderByCreatedAtAsc(String executionStatus);

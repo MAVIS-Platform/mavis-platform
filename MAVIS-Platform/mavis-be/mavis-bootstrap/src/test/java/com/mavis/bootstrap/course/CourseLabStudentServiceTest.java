@@ -465,4 +465,25 @@ class CourseLabStudentServiceTest {
                 .isInstanceOfSatisfying(BusinessException.class,
                         ex -> assertThat(ex.getStableCode()).isEqualTo("STUDIO_QUEUE_FULL"));
     }
+
+    @Test
+    void startLabStudioSessionEnforcesGlobalPerUserActiveQuotaAndStartCooldown() {
+        when(courseLabs.hasPassedCurrentQuiz(lab, student.getId())).thenReturn(true);
+        when(runtimeSessions.findByAssignmentIdAndTriggeredBy_IdOrderByCreatedAtDesc(labId, student.getId())).thenReturn(List.of());
+        when(runtimeSessions.findByProject_Workspace_IdAndTriggeredBy_IdOrderByCreatedAtDesc(workspaceId, student.getId())).thenReturn(List.of());
+
+        // Active session in another Lab blocks starting a second one
+        when(runtimeSessions.countActiveNonSimulatedByUser(any(), any())).thenReturn(1L);
+        assertThatThrownBy(() -> service.startLabStudioSession(workspaceId, labId))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        ex -> assertThat(ex.getStableCode()).isEqualTo("USER_ACTIVE_SESSION_LIMIT"));
+
+        // Even with 0 active sessions, rapid restart within cooldown is rejected
+        when(runtimeSessions.countActiveNonSimulatedByUser(any(), any())).thenReturn(0L);
+        when(runtimeSessions.findLatestNonSimulatedCreatedAtByUser(student.getId()))
+                .thenReturn(java.time.OffsetDateTime.now().minusSeconds(3));
+        assertThatThrownBy(() -> service.startLabStudioSession(workspaceId, labId))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        ex -> assertThat(ex.getStableCode()).isEqualTo("RUN_COOLDOWN_ACTIVE"));
+    }
 }

@@ -931,6 +931,10 @@ export async function executeJava(
       return get("admin/ai-usage");
     case "adminHealth":
       return get("admin/health");
+    case "adminRuntimeHealth":
+      return get("admin/runtime-health");
+    case "adminSweepOrphans":
+      return post("admin/runtime-health/sweep-orphans", {});
     case "platformSummary": {
       const a = z
         .object({

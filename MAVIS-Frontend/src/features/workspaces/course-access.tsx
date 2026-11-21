@@ -1540,12 +1540,14 @@ export function PublishCourseLab({
   position,
   sessionId,
   canFreeze = true,
+  publishBlockedReason,
 }: {
   workspaceId: string;
   assignmentId: string;
   position?: number | undefined;
   sessionId?: string | undefined;
   canFreeze?: boolean | undefined;
+  publishBlockedReason?: string | undefined;
 }) {
   const t = useCourseText();
   const cache = useQueryClient();
@@ -1610,8 +1612,10 @@ export function PublishCourseLab({
       <Button
         type="button"
         size="sm"
-        disabled={publish.isPending}
+        disabled={publish.isPending || Boolean(publishBlockedReason)}
+        title={publishBlockedReason}
         onClick={() => {
+          if (publishBlockedReason) return;
           if (
             window.confirm(
               t(
