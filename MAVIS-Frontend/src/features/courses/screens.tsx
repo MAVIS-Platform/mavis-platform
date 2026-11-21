@@ -43,12 +43,20 @@ import {
 } from "@/components/ui/dialog";
 
 import { useLocale } from "@/lib/i18n/locale-context";
-import { getRuleName } from "@/features/architecture/three-e-content";
+import {
+  buildDeterministicThreeESimplified,
+  buildThreeEAiContext,
+  buildThreeESubjectContext,
+  checkThreeEScopeGuardrail,
+  collectConcreteThreeEEvidences,
+  getRuleName,
+} from "@/features/architecture/three-e-content";
+import { Input } from "@/components/ui/input";
 import { ArchitectureGraph, ElementDetailsPanel } from "@/features/architecture/components";
 import { ArchitectureDiagrams } from "@/features/architecture/architecture-diagrams";
 import { DiagramPreview } from "@/features/architecture/diagram-preview";
 import { buildStudioLiveHref } from "@/features/runtime/standalone-studio-live";
-import type { ArchitecturalModel } from "@/types/domain";
+import type { ArchitecturalModel, Evidence } from "@/types/domain";
 import { CourseBuilder } from "./course-builder";
 import { useCourseQuiz } from "./course-quiz";
 import { CourseSetupPanel } from "./course-setup";
@@ -1309,10 +1317,19 @@ function StepContent({
   studentContext?: StudentLabContext | undefined;
   studentContextLoading?: boolean | undefined;
 }) {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const client = useApi();
   const [selectedGraphId, setSelectedGraphId] = useState<string | null>(null);
-  const [tutorQuery, setTutorQuery] = useState<"none" | "grounded" | "out_of_scope">("none");
+  const [tutorInput, setTutorInput] = useState("");
+  const [tutorLoading, setTutorLoading] = useState(false);
+  const [tutorHistory, setTutorHistory] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
+  const [tutorReply, setTutorReply] = useState<{
+    question: string;
+    answer: string;
+    blocked?: boolean;
+    provider?: string;
+    citations?: string[];
+  } | null>(null);
   const runtimeConfigurationMissing = step === 2 && !requiresRuntime;
   const runtimePrerequisiteMissing = step === 2 && requiresRuntime && !runtimeReady && !preview;
   const runtimeUnavailable = runtimeConfigurationMissing || runtimePrerequisiteMissing;
@@ -1416,9 +1433,127 @@ function StepContent({
     (selectedConnection
       ? `${activeModel?.elements.find((item) => item.id === selectedConnection.from)?.name ?? selectedConnection.from} → ${activeModel?.elements.find((item) => item.id === selectedConnection.to)?.name ?? selectedConnection.to}`
       : null);
+  const selectedTutorElement =
+    activeModel?.elements.find((el) => el.id === selectedGraphId) ?? activeModel?.elements[0];
   const openSelectedContextInTutor = () => {
-    setTutorQuery("grounded");
+    const subjectName =
+      selectedArchitectureLabel ?? selectedTutorElement?.name ?? "this architecture";
+    const promptText = t(
+      `Explain the static dependencies, contracts, and source evidence of ${subjectName}.`,
+      `Giải thích phụ thuộc tĩnh, hợp đồng kết nối và bằng chứng mã nguồn của ${subjectName}.`,
+    );
+    setTutorInput(promptText);
+    void askAiTutor(promptText);
     document.getElementById("lab-ai-tutor")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const askAiTutor = async (rawQuestion: string) => {
+    const q = rawQuestion.trim();
+    if (!q || tutorLoading) return;
+    const targetId =
+      selectedGraphId ?? activeModel?.elements[0]?.id ?? activeModel?.edges[0]?.id ?? "";
+    if (!activeModel || !targetId) {
+      setTutorReply({
+        question: q,
+        answer: t(
+          "Static architecture model is still loading. Try again once C1–C3 elements appear.",
+          "Mô hình kiến trúc tĩnh đang tải. Hãy thử lại sau khi các phần tử C1–C3 hiển thị.",
+        ),
+        blocked: false,
+        provider: "model-pending",
+      });
+      return;
+    }
+    const ctx = buildThreeESubjectContext({ model: activeModel, selectedId: targetId });
+    const refEvidences: Evidence[] = (referenceArchitecture?.evidences ?? []).map((ev) => ({
+      id: ev.id,
+      origin: "persisted" as const,
+      kind: "source" as const,
+      sourceType: ev.sourceType ?? undefined,
+      location: ev.locator ?? "Source",
+      snippet: ev.excerpt ?? "",
+      complete: true,
+    }));
+    const concreteEvidences = collectConcreteThreeEEvidences(activeModel, ctx, refEvidences);
+    const deterministic3E = buildDeterministicThreeESimplified(
+      activeModel,
+      ctx,
+      concreteEvidences,
+      [],
+      locale,
+    );
+    const threeEAiCtx = buildThreeEAiContext(activeModel, ctx, concreteEvidences, []);
+    const citations = threeEAiCtx.codeSnippets.map((snippet) => snippet.locator).filter(Boolean).slice(0, 3);
+    const guard = checkThreeEScopeGuardrail(q, threeEAiCtx, locale);
+    if (!guard.allowed && guard.refusalMessage) {
+      setTutorReply({
+        question: q,
+        answer: guard.refusalMessage,
+        blocked: true,
+        provider: "scope-guardrail",
+      });
+      return;
+    }
+    setTutorLoading(true);
+    try {
+      const res = await fetch("/api/ai-diagram-semantics", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          modelVersionId: activeModel.id,
+          projectId: activeModel.projectId,
+          scopeKey: `lab:${labId}`,
+          threeEChat: {
+            threeEContext: threeEAiCtx,
+            currentExplanation: {
+              explainSimple: deterministic3E.explainSimple,
+              exploreSimple: deterministic3E.exploreSimple,
+              evaluateSimple: deterministic3E.evaluateSimple,
+            },
+            history: tutorHistory.slice(-4),
+            question: q,
+            locale,
+          },
+        }),
+      });
+      const data = (res.ok ? await res.json() : null) as {
+        answer?: string;
+        blocked?: boolean;
+        provider?: string;
+      } | null;
+      const fallbackSummary = [deterministic3E.explainSimple, deterministic3E.exploreSimple]
+        .filter(Boolean)
+        .join(" ");
+      const answer = data?.answer?.trim() || fallbackSummary;
+      const blocked = Boolean(data?.blocked);
+      setTutorReply({
+        question: q,
+        answer,
+        blocked,
+        provider: data?.provider ?? "ast-skeleton",
+        citations,
+      });
+      if (!blocked) {
+        setTutorHistory((prev) => [
+          ...prev.slice(-4),
+          { role: "user", content: q },
+          { role: "assistant", content: answer },
+        ]);
+      }
+    } catch {
+      const fallbackSummary = [deterministic3E.explainSimple, deterministic3E.evaluateSimple]
+        .filter(Boolean)
+        .join(" ");
+      setTutorReply({
+        question: q,
+        answer: fallbackSummary,
+        blocked: false,
+        provider: "ast-skeleton",
+        citations,
+      });
+    } finally {
+      setTutorLoading(false);
+    }
   };
 
   return (
@@ -1753,97 +1888,128 @@ function StepContent({
               )}
 
               <div id="lab-ai-tutor">
-              <DetailPanel
-                title={t(
-                  "Evidence-Grounded AI Architecture Tutor (BR-05 & DS-02b)",
-                  "Trợ lý AI kiến trúc có bằng chứng (BR-05 & DS-02b)",
-                )}
-              >
-                <p className="text-xs text-muted-foreground">
-                  {t(
-                    "Ask questions grounded in C1–C3 static nodes and file paths, or test an out-of-scope refusal (DS-02b).",
-                    "Hỏi AI dựa trên Node C1–C3 và đường dẫn mã nguồn chuẩn, hoặc kiểm thử kịch bản từ chối ngoài phạm vi (DS-02b).",
+                <DetailPanel
+                  title={t(
+                    "Evidence-Grounded AI Architecture Tutor (BR-05 & DS-02b)",
+                    "Trợ lý AI kiến trúc có bằng chứng (BR-05 & DS-02b)",
                   )}
-                </p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={tutorQuery === "grounded" ? "default" : "outline"}
-                    onClick={() =>
-                      setTutorQuery((cur) => (cur === "grounded" ? "none" : "grounded"))
-                    }
-                  >
-                    🔍{" "}
+                >
+                  <p className="text-xs text-muted-foreground">
                     {t(
-                      "Explain Selected C1–C3 Coupling & Contracts",
-                      "Giải thích Phụ thuộc & Hợp đồng C1–C3",
+                      "Ask questions grounded in C1–C3 static nodes and file paths, or test an out-of-scope refusal (DS-02b).",
+                      "Hỏi AI dựa trên Node C1–C3 và đường dẫn mã nguồn chuẩn, hoặc kiểm thử kịch bản từ chối ngoài phạm vi (DS-02b).",
                     )}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={tutorQuery === "out_of_scope" ? "destructive" : "outline"}
-                    onClick={() =>
-                      setTutorQuery((cur) => (cur === "out_of_scope" ? "none" : "out_of_scope"))
-                    }
+                  </p>
+                  <form
+                    className="mt-3 flex flex-wrap gap-2"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void askAiTutor(tutorInput);
+                    }}
                   >
-                    🧪{" "}
-                    {t(
-                      "Test Out-of-Scope Prompt (Demo DS-02b)",
-                      "Thử câu hỏi ngoài phạm vi: Giá Bitcoin 2030? (DS-02b)",
-                    )}
-                  </Button>
-                </div>
-                {tutorQuery === "grounded" &&
-                  (() => {
-                    const contextElement = selectedElement ?? activeModel?.elements[0];
-                    const contextEdge = selectedConnection ?? activeModel?.edges[0];
-                    const isDotNet = activeModel?.elements.some(
-                      (el) =>
-                        (el.technology ?? "").toLowerCase().includes(".net") ||
-                        (el.evidence?.[0]?.location ?? "").toLowerCase().endsWith(".cs") ||
-                        el.name.toLowerCase().includes("fruit"),
-                    );
-                    const evidenceLocation =
-                      contextElement?.evidence?.[0]?.location ??
-                      contextEdge?.evidence?.[0]?.location ??
-                      (isDotNet
-                        ? "src/Services/PaymentService/Program.cs"
-                        : "order-service/src/main/java/com/curated/order/PaymentClient.java");
-                    return (
-                      <div className="mt-3 space-y-1.5 rounded-xl border border-teal-200 bg-teal-50/60 p-3.5 text-xs dark:border-teal-800 dark:bg-teal-950/20">
-                        <p className="font-semibold text-teal-950 dark:text-teal-200">
-                          ✅{" "}
-                          {t(
-                            "Evidence-Grounded Answer (Citing Static C1–C3 Model)",
-                            "Trả lời có đối chiếu Bằng chứng Tĩnh C1–C3",
-                          )}
-                        </p>
-                        <p className="leading-5 text-muted-foreground">
-                          [{selectedConnection ? t("Connection", "Kết nối") : t("Element", "Phần tử")}: <code>{selectedArchitectureLabel ?? contextElement?.name ?? "order-service"}</code>] · [File:{" "}
-                          <code>{evidenceLocation}</code>] · [Contract:{" "}
-                          <code>{contextEdge?.protocol ?? "SERVICE_HTTP_CALL"}</code>] —{" "}
-                          {t(
-                            "Cross-container calls follow explicit HTTP/RPC contracts separated from private database ownership.",
-                            "Lời gọi liên dịch vụ đi qua hợp đồng API/Event rõ ràng, tách biệt hoàn toàn khỏi quyền sở hữu DB nội bộ.",
-                          )}
-                        </p>
-                      </div>
-                    );
-                  })()}
-                {tutorQuery === "out_of_scope" && (
-                  <div
-                    role="alert"
-                    className="mt-3 rounded-xl border border-destructive/40 bg-destructive/10 p-3.5 text-xs font-medium text-destructive"
-                  >
-                    {t(
-                      "Refused (BR-05 / DS-02b): Question is outside the verified C1–C3 static source architecture evidence of this Lab repository.",
-                      "Từ chối trả lời (BR-05 / DS-02b): Câu hỏi nằm ngoài phạm vi bằng chứng kiến trúc tĩnh C1–C3 của kho mã nguồn Lab hiện tại.",
-                    )}
+                    <Input
+                      value={tutorInput}
+                      onChange={(event) => setTutorInput(event.target.value)}
+                      disabled={tutorLoading}
+                      className="min-w-60 flex-1 text-xs"
+                      aria-label={t(
+                        "Ask the AI Architecture Tutor",
+                        "Đặt câu hỏi cho Trợ lý AI Kiến trúc",
+                      )}
+                      placeholder={t(
+                        `Ask about ${selectedArchitectureLabel ?? selectedTutorElement?.name ?? "this service"} coupling, boundaries or source evidence…`,
+                        `Hỏi về phụ thuộc, ranh giới hoặc bằng chứng mã nguồn của ${selectedArchitectureLabel ?? selectedTutorElement?.name ?? "dịch vụ này"}…`,
+                      )}
+                    />
+                    <Button type="submit" size="sm" disabled={tutorLoading || !tutorInput.trim()}>
+                      {tutorLoading ? t("Analyzing…", "Đang phân tích…") : t("Ask AI", "Hỏi AI")}
+                    </Button>
+                  </form>
+                  <div className="mt-2.5 flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={tutorLoading}
+                      onClick={() => {
+                        const subjectName = selectedArchitectureLabel ?? selectedTutorElement?.name ?? "this architecture";
+                        const promptText = t(
+                          `Explain the static dependencies, contracts, and source evidence of ${subjectName}.`,
+                          `Giải thích phụ thuộc tĩnh, hợp đồng kết nối và bằng chứng mã nguồn của ${subjectName}.`,
+                        );
+                        setTutorInput(promptText);
+                        void askAiTutor(promptText);
+                      }}
+                    >
+                      🔍{" "}
+                      {t(
+                        "Explain Selected C1–C3 Coupling & Contracts",
+                        "Giải thích Phụ thuộc & Hợp đồng C1–C3",
+                      )}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={tutorLoading}
+                      onClick={() => {
+                        const oosPrompt = t(
+                          "What will Bitcoin price be in 2030?",
+                          "Giá Bitcoin năm 2030 là bao nhiêu?",
+                        );
+                        setTutorInput(oosPrompt);
+                        void askAiTutor(oosPrompt);
+                      }}
+                    >
+                      🧪{" "}
+                      {t(
+                        "Test Out-of-Scope Prompt (Demo DS-02b)",
+                        "Thử câu hỏi ngoài phạm vi (DS-02b)",
+                      )}
+                    </Button>
                   </div>
-                )}
-              </DetailPanel>
+                  {tutorReply &&
+                    (tutorReply.blocked ? (
+                      <div
+                        role="alert"
+                        className="mt-3 space-y-1 rounded-xl border border-destructive/40 bg-destructive/10 p-3.5 text-xs text-destructive"
+                      >
+                        <p className="font-semibold">
+                          {t(
+                            "Refused (BR-05 / DS-02b) · Out of Scope",
+                            "Từ chối trả lời (BR-05 / DS-02b) · Ngoài phạm vi",
+                          )}
+                        </p>
+                        <p className="leading-5">{tutorReply.answer}</p>
+                      </div>
+                    ) : (
+                      <div className="mt-3 space-y-2 rounded-xl border border-teal-200 bg-teal-50/60 p-3.5 text-xs dark:border-teal-800 dark:bg-teal-950/20">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="font-semibold text-teal-950 dark:text-teal-200">
+                            ✅{" "}
+                            {t(
+                              "Evidence-Grounded Answer (Citing Static C1–C3 Model)",
+                              "Trả lời có đối chiếu Bằng chứng Tĩnh C1–C3",
+                            )}
+                          </p>
+                          {tutorReply.provider && (
+                            <Badge variant="outline" className="font-mono text-[10px] uppercase">
+                              {tutorReply.provider}
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="whitespace-pre-wrap leading-5 text-foreground/90">
+                          {tutorReply.answer}
+                        </p>
+                        {tutorReply.citations && tutorReply.citations.length > 0 && (
+                          <p className="text-[11px] text-muted-foreground">
+                            {t("Cited source evidence:", "Bằng chứng mã nguồn tham chiếu:")}{" "}
+                            <span className="font-mono">{tutorReply.citations.join(" · ")}</span>
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                </DetailPanel>
               </div>
             </>
           ) : (

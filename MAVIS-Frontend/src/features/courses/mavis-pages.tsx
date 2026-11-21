@@ -315,6 +315,7 @@ export function MavisHomePage() {
 export function MavisCoursesPage() {
   const { t } = useLocale();
   const courses = useApiQuery("workspaces", {});
+  const [passkeyOpen, setPasskeyOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [view, setView] = useState<"card" | "list">("card");
   const [sort, setSort] = useState<"ASC" | "DESC">("ASC");
@@ -335,14 +336,33 @@ export function MavisCoursesPage() {
   return (
     <MavisShell>
       <div className="space-y-6">
-        <PageTitle title={t("My Courses", "Khóa học của tôi")} />
+        <PasskeyEnrollmentModal open={passkeyOpen} onClose={() => setPasskeyOpen(false)} />
+        <PageTitle
+          title={t("My Courses", "Khóa học của tôi")}
+          description={t(
+            "Continue your enrolled classes or enter a Lecturer Passkey to join a new class.",
+            "Tiếp tục học các lớp đã ghi danh hoặc nhập mã Passkey của Giảng viên để tham gia lớp mới.",
+          )}
+        />
         <section aria-labelledby="course-overview" className="rounded-2xl border bg-card p-5">
-          <h2 id="course-overview" className="text-lg font-semibold">
-            {t("Course Overview", "Tổng quan khóa học")}
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {t("Overview of your enrolled courses.", "Tổng quan các khóa học bạn đã ghi danh.")}
-          </p>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 id="course-overview" className="text-lg font-semibold">
+                {t("Course Overview", "Tổng quan khóa học")}
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {t("Overview of your enrolled courses.", "Tổng quan các khóa học bạn đã ghi danh.")}
+              </p>
+            </div>
+            <Button
+              type="button"
+              onClick={() => setPasskeyOpen(true)}
+              className="gap-1.5"
+            >
+              <KeyRound className="size-4" aria-hidden="true" />
+              {t("Enter Class Passkey", "Nhập Mã Lớp (Passkey)")}
+            </Button>
+          </div>
           <div className="mt-5 flex flex-wrap items-end gap-3">
             <label className="grid min-w-64 flex-1 gap-1 text-sm font-medium">
               {t("Search Courses", "Tìm kiếm khóa học")}

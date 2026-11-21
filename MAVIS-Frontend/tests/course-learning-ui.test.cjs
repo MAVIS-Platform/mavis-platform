@@ -1739,3 +1739,24 @@ test("normalizeWorkspaceGradebook maps Java userId/completedLabsCount/sequenceOr
   assert.equal(normalized.students[0].totalLabsCount, 5);
   assert.equal(normalized.students[0].averageScoreTenScale, 9.5);
 });
+
+test("Wave 2: MarkdownPreview formats inline LaTeX math safely without touching prices or code spans", () => {
+  const { formatInlineMath } = require("../src/components/shared/markdown-preview.tsx");
+  assert.equal(
+    formatInlineMath("Scale from $1 \\to 4$ ($8$ instances) with $\\ge 70\\%$ coverage and $\\rightarrow$ arrow"),
+    "Scale from 1 → 4 (8 instances) with ≥ 70% coverage and → arrow",
+  );
+  assert.equal(formatInlineMath("Budget is $100 and limit is $200"), "Budget is $100 and limit is $200");
+  assert.equal(formatInlineMath("Code `$1 \\to 4$` stays literal"), "Code `$1 \\to 4$` stays literal");
+});
+
+test("Wave 2: Course access removes JAVA2026 leak, FrozenArtifacts handles V2 null/undefined diagramVersionId, and AI Tutor uses threeEChat", () => {
+  const courseAccess = read("src/features/workspaces/course-access.tsx");
+  const frozen = read("src/features/submissions/frozen-artifacts.tsx");
+  const screens = read("src/features/courses/screens.tsx");
+
+  assert.doesNotMatch(courseAccess, /JAVA2026|EXPIRED_KEY_999|Quick test helpers|useBootstrapJavaCoursera/);
+  assert.match(frozen, /!submission\.diagramVersionId/);
+  assert.match(screens, /threeEChat/);
+  assert.doesNotMatch(screens, /PaymentClient\.java/);
+});

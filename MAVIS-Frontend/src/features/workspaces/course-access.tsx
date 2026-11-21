@@ -872,8 +872,8 @@ export function CourseEnrollment({
     <DetailPanel title={t("Join a class with Passkey", "Tham gia lớp bằng Passkey")}>
       <p className="text-xs text-muted-foreground">
         {t(
-          "Enter the 4–32 character Passkey issued by your Lecturer (e.g. JAVA2026) to enroll immediately.",
-          "Nhập mã Passkey (4–32 ký tự, VD: JAVA2026) do Giảng viên cấp để ghi danh ngay vào lớp học.",
+          "Enter the 4–32 character Passkey issued by your Lecturer to enroll immediately.",
+          "Nhập mã Passkey (4–32 ký tự) do Giảng viên cấp để ghi danh ngay vào lớp học.",
         )}
       </p>
       <form
@@ -888,14 +888,14 @@ export function CourseEnrollment({
         <div className="min-w-[260px] flex-1 max-w-md">
           <FormField
             label="Passkey"
-            hint={t("4–32 characters (letters, digits, - or _). Example: JAVA2026.", "Từ 4–32 ký tự (chữ, số, - hoặc _). Ví dụ: JAVA2026.")}
+            hint={t("4–32 characters (letters, digits, - or _).", "Từ 4–32 ký tự (chữ cái, số, - hoặc _).")}
           >
             {(props) => (
               <Input
                 {...props}
                 required
                 className="font-mono tracking-wider"
-                placeholder="JAVA2026"
+                placeholder={t("Enter class passkey", "Nhập mã Passkey của lớp")}
                 pattern="[A-Za-z0-9_\-]{4,32}"
                 minLength={4}
                 maxLength={32}
@@ -916,40 +916,6 @@ export function CourseEnrollment({
           {redeem.isPending ? t("Joining…", "Đang tham gia…") : t("Join class", "Vào lớp")}
         </Button>
       </form>
-      <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
-        <span className="text-muted-foreground">{t("Quick test helpers:", "Thao tác nhanh:")}</span>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          className="h-7 px-2.5 text-xs"
-          onClick={() => {
-            setCode("JAVA2026");
-            setRequestId(undefined);
-            redeem.reset();
-          }}
-        >
-          ✨ {t("Fill Valid Key: JAVA2026", "Điền nhanh mã chuẩn: JAVA2026")}
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          className="h-7 border-amber-300 px-2.5 text-xs text-amber-800 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-300"
-          disabled={redeem.isPending}
-          onClick={() => {
-            setCode("EXPIRED_KEY_999");
-            const id = crypto.randomUUID();
-            setRequestId(id);
-            redeem.reset();
-            window.setTimeout(() => {
-              redeem.mutate(id);
-            }, 0);
-          }}
-        >
-          🧪 {t("Test Invalid Key (Demo DS-01b)", "Thử mã sai / hết hạn (Demo DS-01b)")}
-        </Button>
-      </div>
       {redeem.error && (
         <p
           role="alert"
@@ -1622,29 +1588,4 @@ export function PublishCourseLab({
       )}
     </div>
   );
-}
-
-export type BootstrapJavaCourseraResult = {
-  workspaceId: string;
-  code: string;
-  name: string;
-};
-
-export function useBootstrapJavaCoursera() {
-  const cache = useQueryClient();
-  return useMutation({
-    mutationFn: () =>
-      courseApi<BootstrapJavaCourseraResult>("workspaces/bootstrap-java-coursera", {
-        method: "POST",
-      }),
-    onSuccess: (data) => {
-      void cache.invalidateQueries({ queryKey: ["api", "workspaces"] });
-      void cache.invalidateQueries({ queryKey: ["api", "assignments"] });
-      void cache.invalidateQueries({ queryKey: ["api", "course-authoring", data.workspaceId] });
-      void cache.invalidateQueries({ queryKey: roadmapKey(data.workspaceId) });
-      if (typeof window !== "undefined") {
-        window.location.assign(`/workspace-overview?workspace=${encodeURIComponent(data.workspaceId)}`);
-      }
-    },
-  });
 }

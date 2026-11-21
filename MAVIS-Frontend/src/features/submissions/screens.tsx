@@ -44,22 +44,24 @@ function MySubmissions() {
   const params = useSearchParams();
   const selection = useSelection();
   const assignmentId = params?.get("assignment") || "";
-  const workspaceId = params?.get("workspace") || selection.workspaceId || "";
+  const urlWorkspaceId = params?.get("workspace") || "";
+  const [selectedClassFilter, setSelectedClassFilter] = useState("");
+  const workspaceId = urlWorkspaceId || selectedClassFilter || "";
   const workspaces = useApiQuery("workspaces", {});
   const assignments = useApiQuery(
     "assignments",
-    { workspaceId },
-    { enabled: Boolean(workspaceId) },
+    { workspaceId: workspaceId || selection.workspaceId },
+    { enabled: Boolean(workspaceId || selection.workspaceId) },
   );
   const query = useApiQuery("submissions", workspaceId ? { workspaceId } : {});
   const classAssignmentIds = new Set((assignments.data ?? []).map((item) => item.id));
   const rows = filterStudentSubmissions(
     query.data ?? [],
-    workspaceId,
-    assignmentId,
+    workspaceId || undefined,
+    assignmentId || undefined,
     classAssignmentIds,
   );
-  const workspace = workspaces.data?.find((item) => item.id === workspaceId);
+  const workspace = workspaces.data?.find((item) => item.id === (urlWorkspaceId || workspaceId));
   const list = (
     <div className="space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
@@ -74,8 +76,23 @@ function MySubmissions() {
             )}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {!workspaceId && (workspaces.data?.length ?? 0) > 0 && <WorkspaceSelector />}
+        <div className="flex flex-wrap items-end gap-2">
+          {!urlWorkspaceId && (workspaces.data?.length ?? 0) > 0 && (
+            <div className="min-w-52">
+              <SelectField
+                label={t("Class filter", "Lọc theo lớp")}
+                value={selectedClassFilter}
+                onChange={setSelectedClassFilter}
+                options={[
+                  { value: "", label: t("All classes", "Tất cả lớp học") },
+                  ...(workspaces.data ?? []).map((w) => ({
+                    value: w.id,
+                    label: w.code ? `${w.code} · ${w.name}` : w.name,
+                  })),
+                ]}
+              />
+            </div>
+          )}
           {workspace && (
             <Button asChild size="sm" variant="outline">
               <Link href={`/roadmap?workspace=${encodeURIComponent(workspace.id)}`}>
@@ -756,6 +773,7 @@ function SubmissionList({ rows }: { rows: import("@/types/domain").Submission[] 
   );
 }
 function SubmissionResult({ submission }: { submission: Submission }) {
+  const { t } = useLocale();
   if (submission.reviewStatus !== undefined && submission.reviewStatus !== null) {
     const outcome = resolveSubmissionOutcome({
       status: submission.reviewStatus,
@@ -774,8 +792,8 @@ function SubmissionResult({ submission }: { submission: Submission }) {
           ? ` · ${formatTenScaleScore(submission.reviewScore, submission.reviewScoreTenScale)}`
           : ""}
         {outcome && (
-          <Badge className="ml-2" variant={outcome === "PASS" ? "success" : "warning"}>
-            {outcome === "PASS" ? "Pass" : "Needs revision"}
+          <Badge className="ml-2 whitespace-nowrap" variant={outcome === "PASS" ? "success" : "warning"}>
+            {outcome === "PASS" ? t("Pass", "Đạt") : t("Needs revision", "Cần chỉnh sửa")}
           </Badge>
         )}
       </span>
@@ -785,24 +803,25 @@ function SubmissionResult({ submission }: { submission: Submission }) {
 }
 
 function SubmissionResultQuery({ submissionId }: { submissionId: string }) {
+  const { t } = useLocale();
   const query = useApiQuery("submissionReview", { submissionId });
   const outcome = query.data ? resolveSubmissionOutcome(query.data) : null;
   return (
     <span className="text-xs">
       {query.isError ? (
-        "Review unavailable"
+        t("Review unavailable", "Không thể tải đánh giá")
       ) : query.data ? (
         <>
           <StatusLabel status={query.data.status} />
           {query.data.score !== null ? ` · ${formatTenScaleScore(query.data.score)}` : ""}
           {outcome && (
-            <Badge className="ml-2" variant={outcome === "PASS" ? "success" : "warning"}>
-              {outcome === "PASS" ? "Pass" : "Needs revision"}
+            <Badge className="ml-2 whitespace-nowrap" variant={outcome === "PASS" ? "success" : "warning"}>
+              {outcome === "PASS" ? t("Pass", "Đạt") : t("Needs revision", "Cần chỉnh sửa")}
             </Badge>
           )}
         </>
       ) : (
-        "Loading…"
+        t("Loading…", "Đang tải…")
       )}
     </span>
   );

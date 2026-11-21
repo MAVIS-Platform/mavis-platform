@@ -145,12 +145,58 @@ export function sanitizeMojibake(input: string): string {
   return out.trim();
 }
 
+const MATH_COMMAND_REPLACEMENTS: ReadonlyArray<readonly [RegExp, string]> = [
+  [/\\(?:leq|le)\b/g, "≤"],
+  [/\\(?:geq|ge)\b/g, "≥"],
+  [/\\(?:neq|ne)\b/g, "≠"],
+  [/\\approx\b/g, "≈"],
+  [/\\times\b/g, "×"],
+  [/\\(?:rightarrow|to)\b/g, "→"],
+  [/\\(?:leftarrow|gets)\b/g, "←"],
+  [/\\leftrightarrow\b/g, "↔"],
+  [/\\alpha\b/g, "α"],
+  [/\\beta\b/g, "β"],
+  [/\\gamma\b/g, "γ"],
+  [/\\Delta\b/g, "Δ"],
+  [/\\delta\b/g, "δ"],
+  [/\\mu\b/g, "μ"],
+  [/\\infty\b/g, "∞"],
+  [/\\%/g, "%"],
+  [/\\(?:textbf|textit|textrm|mathrm|text|code)\{([^}]*)\}/g, "$1"],
+];
+
+function convertMathBody(expr: string): string {
+  let out = expr;
+  for (const [pattern, replacement] of MATH_COMMAND_REPLACEMENTS) {
+    out = out.replace(pattern, replacement);
+  }
+  return out.replace(/\s{2,}/g, " ").trim();
+}
+
+/** Converts inline LaTeX math spans (e.g. `$1 \to 4$`, `$\rightarrow$`, `$8$`) outside code spans while leaving currency like `$100` untouched. */
+export function formatInlineMath(text: string): string {
+  return text
+    .split(/(`[^`]+`)/g)
+    .map((segment) => {
+      if (segment.startsWith("`") && segment.endsWith("`")) return segment;
+      return segment.replace(/\$(?!\s)([^$\n]{1,120}?)(?<!\s)\$/g, (full, expr: string) => {
+        const hasLatexOrMathSymbol =
+          /\\[a-zA-Z%]+|[=<>^_{}+*/→←↔≤≥≠≈×]/.test(expr);
+        const isCompactToken =
+          /^[A-Za-z0-9_().\-,]+(?:\s[+\-*/=<>]\s[A-Za-z0-9_().\-,]+)*$/.test(expr);
+        if (!hasLatexOrMathSymbol && !isCompactToken) return full;
+        return convertMathBody(expr);
+      });
+    })
+    .join("");
+}
+
 function safeHref(value: string) {
   return value.startsWith("/") || /^https?:\/\//i.test(value) ? value : null;
 }
 
 function inline(text: string): ReactNode[] {
-  const cleaned = sanitizeMojibake(text);
+  const cleaned = formatInlineMath(sanitizeMojibake(text));
   const parts = cleaned.split(INLINE);
   return parts.map((part, index) => {
     if (!part) return null;
@@ -438,7 +484,7 @@ export function MarkdownPreview({
   if (!blocks.length) {
     return (
       <div data-markdown-theme={activeTheme} className={`${styles.root} ${className}`.trim()}>
-        <p className={styles.paragraph}>{sanitizeMojibake(parsed.body)}</p>
+        <p className={styles.paragraph}>{formatInlineMath(sanitizeMojibake(parsed.body))}</p>
       </div>
     );
   }

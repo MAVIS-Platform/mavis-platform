@@ -78,7 +78,29 @@ export function StudentCourseSyllabus({
   const submissionsQuery = useApiQuery("submissions", { workspaceId });
   const [activeTab, setActiveTab] = useState<"player" | "submissions" | "library">("player");
 
-  const labs = roadmap.data?.labs ?? [];
+  const rawLabs = roadmap.data?.labs ?? [];
+  const passedSubmissionAssignmentIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const sub of submissionsQuery.data ?? []) {
+      const passedByScore =
+        sub.reviewStatus === "GRADED" &&
+        typeof sub.reviewScore === "number" &&
+        sub.reviewScore > 50;
+      if (sub.labOutcome === "PASSED" || passedByScore) {
+        ids.add(sub.assignmentId);
+      }
+    }
+    return ids;
+  }, [submissionsQuery.data]);
+  const labs = useMemo(
+    () =>
+      rawLabs.map((item) =>
+        item.state !== "PASSED" && passedSubmissionAssignmentIds.has(item.assignmentId)
+          ? { ...item, state: "PASSED" as const, reason: null }
+          : item,
+      ),
+    [rawLabs, passedSubmissionAssignmentIds],
+  );
   const summary = computeCourseProgressSummary(labs);
   const defaultLabId = summary.nextActiveLab?.assignmentId ?? labs[0]?.assignmentId ?? "";
   const [selectedLabId, setSelectedLabId] = useState<string>("");
@@ -130,6 +152,9 @@ export function StudentCourseSyllabus({
           })),
       }));
     }
+    if (publishedCourse.isPending) {
+      return [];
+    }
     const isJavaCourseraWorkspace = workspace.code?.toUpperCase() === "JAVA-MS-2026";
     if (!isJavaCourseraWorkspace) {
       return [];
@@ -138,7 +163,7 @@ export function StudentCourseSyllabus({
       ...mod,
       items: mod.items.filter((item) => item.type !== "ESSAY"),
     }));
-  }, [publishedCourse.data?.snapshot?.modules, assignmentsQuery.data, labs]);
+  }, [publishedCourse.data?.snapshot?.modules, publishedCourse.isPending, workspace.code, assignmentsQuery.data, labs]);
 
   const flattenedItems = useMemo(
     () => syllabusModules.flatMap((mod) => mod.items.map((item) => ({ module: mod, item }))),
@@ -490,6 +515,14 @@ export function StudentCourseSyllabus({
               : "min-w-0 space-y-6"
           }
         >
+          {activeTab === "player" &&
+            !isLearningWorkspace &&
+            publishedCourse.isPending &&
+            syllabusModules.length === 0 && (
+              <section className="rounded-2xl border bg-card p-6 text-sm text-muted-foreground shadow-sm">
+                {t("Loading course curriculum…", "Đang tải nội dung khóa học…")}
+              </section>
+            )}
           {activeTab === "player" && !isLearningWorkspace && courseContentModule && (
             <section className="space-y-5 rounded-2xl border bg-card p-5 shadow-sm sm:p-6">
               <div className="border-b pb-4">
@@ -528,14 +561,38 @@ export function StudentCourseSyllabus({
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
                   {courseContentModule.items.map((item) => {
                     const badgeMeta = itemBadgeMeta(item.type, t);
+                    const isLabItem = ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(
+                      item.type,
+                    );
+                    const linkedLab =
+                      isLabItem && item.assignmentId
+                        ? labs.find((l) => l.assignmentId === item.assignmentId)
+                        : undefined;
+                    const isPassed = linkedLab?.state === "PASSED";
+                    const isLocked = linkedLab?.state === "LOCKED";
                     return (
                       <button
                         key={item.id}
                         type="button"
                         onClick={() => selectCurriculumItem(item)}
-                        className="group rounded-xl border bg-background p-3 text-left transition-all hover:border-primary hover:shadow-sm"
+                        className={`group rounded-xl border bg-background p-3 text-left transition-all hover:border-primary hover:shadow-sm ${
+                          isLocked ? "border-border/60 opacity-85" : ""
+                        }`}
                       >
-                        <span className="text-xs">{badgeMeta.emoji}</span>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs">{badgeMeta.emoji}</span>
+                          {isPassed ? (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300">
+                              <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
+                              {t("Passed", "Đã đạt")}
+                            </span>
+                          ) : isLocked ? (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
+                              <Lock className="h-3 w-3" aria-hidden="true" />
+                              {t("Locked", "Đang khóa")}
+                            </span>
+                          ) : null}
+                        </div>
                         <span className="mt-1 block text-sm font-semibold group-hover:text-primary">
                           {item.title}
                         </span>

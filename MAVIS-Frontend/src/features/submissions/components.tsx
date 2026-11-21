@@ -70,14 +70,21 @@ export function SubmissionVersionHeader({ submission }: { submission: Submission
   }
 
   return (
-    <DetailPanel title="Submitted snapshot">
-      <StatusBadge status="Frozen submitted results · read-only" variant="source" />
+    <DetailPanel title={t("Submitted snapshot", "Hồ sơ bài nộp đã khóa")}>
+      <div className="flex flex-wrap items-center gap-2">
+        <StatusBadge
+          status={t("Frozen submitted results · read-only", "Kết quả nộp đã khóa · chỉ đọc")}
+          variant="source"
+        />
+        {submission.labMode && <StatusBadge status={submission.labMode} variant="outline" />}
+      </div>
       <p className="break-all text-xs text-muted-foreground">
-        Submission {submission.id} · submitted {submission.submittedAt}
+        {t("Submission", "Bài nộp")} {submission.id} · {t("submitted", "đã nộp")}{" "}
+        {submission.submittedAt}
       </p>
       <p className="break-all text-sm">
-        Model {submission.model.id} · revision {submission.model.revision} · source{" "}
-        {submission.snapshot.id}
+        {t("Model", "Mô hình")} {submission.model.id} · {t("revision", "bản")} {submission.model.revision} ·{" "}
+        {t("source", "nguồn")} {submission.snapshot.id}
       </p>
       <p className="text-sm">
         {submission.studentName || submission.studentId} ·{" "}
@@ -87,11 +94,19 @@ export function SubmissionVersionHeader({ submission }: { submission: Submission
           submission.assignmentId,
         )}
       </p>
-      <p className="break-all text-xs text-muted-foreground">
-        Diagram {submission.diagramVersionId ?? "not loaded"} · Evaluation{" "}
-        {submission.evaluationRunId ?? "not included"} · Compliance{" "}
-        {submission.complianceScore ?? "not evaluated"}
-      </p>
+      {submission.diagramVersionId || submission.evaluationRunId ? (
+        <p className="break-all text-xs text-muted-foreground">
+          {t("Diagram", "Sơ đồ")}: {submission.diagramVersionId ?? t("none attached", "không có")} ·{" "}
+          {t("Evaluation", "Đánh giá tĩnh")}: {submission.evaluationRunId ?? t("none attached", "không có")} ·{" "}
+          {t("Compliance", "Tuân thủ 3E")}: {submission.complianceScore ?? t("not evaluated", "chưa đánh giá")}
+        </p>
+      ) : (
+        <p className="break-all text-xs text-muted-foreground">
+          {submission.labMode ? `${t("Lab mode", "Chế độ Lab")}: ${submission.labMode} · ` : ""}
+          {t("Compliance", "Tuân thủ 3E")}:{" "}
+          {submission.complianceScore ?? t("not evaluated", "chưa đánh giá")}
+        </p>
+      )}
       {submission.submissionNotes && (
         <p className="whitespace-pre-wrap text-sm">{submission.submissionNotes}</p>
       )}
@@ -136,6 +151,7 @@ export function FeedbackPanel({
   submission: Submission;
   selectedId?: string | null;
 }) {
+  const { t } = useLocale();
   const canReview = usePermission("submission:review");
   const save = useApiMutation("feedback");
   const [text, setText] = useState("");
@@ -143,7 +159,7 @@ export function FeedbackPanel({
   const node = submission.model.elements.find((n) => n.id === target),
     edge = submission.model.edges.find((e) => e.id === target);
   return (
-    <DetailPanel title="Feedback on this submission version">
+    <DetailPanel title={t("Feedback on this submission version", "Nhận xét cho bản nộp này")}>
       {submission.feedback.length ? (
         <ul className="space-y-3">
           {submission.feedback.map((feedback) => (
@@ -151,10 +167,10 @@ export function FeedbackPanel({
               <p className="whitespace-pre-wrap text-sm">{feedback.text}</p>
               <p className="text-xs text-muted-foreground">
                 {feedback.elementId
-                  ? `Element: ${submission.model.elements.find((e) => e.id === feedback.elementId)?.name ?? feedback.elementId}`
+                  ? `${t("Element", "Thành phần")}: ${submission.model.elements.find((e) => e.id === feedback.elementId)?.name ?? feedback.elementId}`
                   : feedback.relationshipId
-                    ? `Relationship: ${feedback.relationshipId}`
-                    : "General submission feedback"}
+                    ? `${t("Relationship", "Quan hệ")}: ${feedback.relationshipId}`
+                    : t("General submission feedback", "Nhận xét chung cho bài nộp")}
               </p>
               <FeedbackActions feedback={feedback} submissionId={submission.id} />
               <p className="mt-2 text-xs text-muted-foreground">
@@ -164,13 +180,17 @@ export function FeedbackPanel({
           ))}
         </ul>
       ) : (
-        <p className="text-sm text-muted-foreground">No feedback saved for this submission.</p>
+        <p className="text-sm text-muted-foreground">
+          {t("No feedback saved for this submission.", "Chưa có nhận xét nào cho bài nộp này.")}
+        </p>
       )}
       {canReview && (
         <>
           <p className="text-xs text-muted-foreground">
-            Inline feedback is visible to the student immediately. Use the private grading draft
-            above for notes you are not ready to publish.
+            {t(
+              "Inline feedback is visible to the student immediately. Use the private grading draft above for notes you are not ready to publish.",
+              "Nhận xét trực tiếp sẽ hiển thị cho sinh viên ngay lập tức. Hãy dùng bản nháp chấm điểm nếu chưa muốn công bố.",
+            )}
           </p>
           {(() => {
             const elementNameById = new Map(
@@ -178,21 +198,21 @@ export function FeedbackPanel({
             );
             return (
               <SelectField
-                label="Feedback target"
+                label={t("Feedback target", "Đối tượng nhận xét")}
                 value={target}
                 onChange={setTarget}
                 options={[
-                  { value: "", label: "General feedback" },
+                  { value: "", label: t("General feedback", "Nhận xét chung") },
                   ...submission.model.elements.map((e) => ({
                     value: e.id,
-                    label: `Element · ${e.name}`,
+                    label: `${t("Element", "Thành phần")} · ${e.name}`,
                   })),
                   ...submission.model.edges.map((e) => {
                     const fromName = elementNameById.get(e.from) ?? e.from.slice(0, 8);
                     const toName = elementNameById.get(e.to) ?? e.to.slice(0, 8);
                     return {
                       value: e.id,
-                      label: `Relationship · ${fromName} → ${toName} (${e.protocol})`,
+                      label: `${t("Relationship", "Quan hệ")} · ${fromName} → ${toName} (${e.protocol})`,
                     };
                   }),
                 ]}
@@ -201,12 +221,15 @@ export function FeedbackPanel({
           })()}
           {selectedId && (
             <Button variant="outline" size="sm" onClick={() => setTarget(selectedId)}>
-              Use selected graph item
+              {t("Use selected graph item", "Dùng thành phần đồ thị đang chọn")}
             </Button>
           )}
           <FormField
-            label="Review feedback"
-            hint={`Feedback is saved to submission ${submission.id}, model revision ${submission.model.revision}.`}
+            label={t("Review feedback", "Nội dung nhận xét")}
+            hint={t(
+              `Feedback is saved to submission ${submission.id}, model revision ${submission.model.revision}.`,
+              `Nhận xét được lưu vào bài nộp ${submission.id}, phiên bản mô hình ${submission.model.revision}.`,
+            )}
           >
             {(props) => (
               <Textarea
@@ -233,7 +256,7 @@ export function FeedbackPanel({
               )
             }
           >
-            {save.isPending ? "Saving feedback…" : "Save feedback"}
+            {save.isPending ? t("Saving feedback…", "Đang lưu nhận xét…") : t("Save feedback", "Lưu nhận xét")}
           </Button>
           {save.isError && <ErrorState error={save.error} />}
         </>
@@ -243,6 +266,7 @@ export function FeedbackPanel({
 }
 
 function SubmissionExport({ submissionId }: { submissionId: string }) {
+  const { t } = useLocale();
   const query = useApiQuery("submissionExport", { submissionId }, { enabled: false });
   return (
     <div>
@@ -259,7 +283,7 @@ function SubmissionExport({ submissionId }: { submissionId: string }) {
             );
         }}
       >
-        Export frozen submission bundle
+        {t("Export frozen submission bundle", "Xuất gói hồ sơ bài nộp")}
       </Button>
       {query.error && <ErrorState error={query.error} />}
     </div>
@@ -272,6 +296,7 @@ function FeedbackActions({
   feedback: Submission["feedback"][number];
   submissionId: string;
 }) {
+  const { t } = useLocale();
   const session = useSession(),
     update = useApiMutation("updateFeedback"),
     remove = useApiMutation("deleteFeedback");
@@ -282,7 +307,7 @@ function FeedbackActions({
     <div className="mt-2 space-y-2">
       {editing && (
         <Textarea
-          aria-label="Edit feedback text"
+          aria-label={t("Edit feedback text", "Sửa nội dung nhận xét")}
           value={text}
           onChange={(e) => setText(e.target.value)}
           maxLength={5000}
@@ -302,18 +327,18 @@ function FeedbackActions({
               : setEditing(true)
           }
         >
-          {editing ? "Save feedback changes" : "Edit feedback"}
+          {editing ? t("Save feedback changes", "Lưu thay đổi nhận xét") : t("Edit feedback", "Sửa nhận xét")}
         </Button>
         <Button
           size="sm"
           variant="outline"
           disabled={remove.isPending}
           onClick={() => {
-            if (window.confirm("Delete your feedback?"))
+            if (window.confirm(t("Delete your feedback?", "Xóa nhận xét này?")))
               remove.mutate({ submissionId, feedbackId: feedback.id });
           }}
         >
-          Delete feedback
+          {t("Delete feedback", "Xóa nhận xét")}
         </Button>
       </div>
       {(update.error || remove.error) && <ErrorState error={update.error ?? remove.error} />}
