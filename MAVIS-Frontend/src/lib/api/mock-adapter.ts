@@ -944,6 +944,21 @@ export class MockAdapter implements ApiAdapter {
         this.record("configureIntegration", i.id);
         return i;
       }
+      case "testIntegration": {
+        const p = contracts.testIntegration.input.parse(raw);
+        const i = this.find(this.integrations, (item) => item.id === p.integrationId);
+        this.record("testIntegration", i.id);
+        return {
+          id: i.id,
+          name: i.name,
+          enabled: i.enabled,
+          reachable: i.enabled,
+          status: i.enabled ? "REACHABLE" : "DISABLED",
+          latencyMs: 12,
+          message: i.enabled ? "Mock integration reachable." : "Integration is currently disabled.",
+          checkedAt: new Date().toISOString(),
+        };
+      }
       case "profiles":
         return this.profiles;
       case "configureProfile": {

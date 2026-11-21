@@ -10,9 +10,11 @@ import {
   Check,
   Clock3,
   Code2,
+  Download,
   Network,
   ShieldCheck,
 } from "lucide-react";
+import { MarkdownPreview } from "@/components/shared/markdown-preview";
 import { SearchInput } from "@/components/shared/forms";
 import { useApi, useApiMutation, useApiQuery, useSelection, useSession } from "@/hooks/use-api";
 import {
@@ -1052,6 +1054,15 @@ export function LabWorkspace() {
               labId={lab.id}
               labOrder={lab.labOrder}
               labTitle={lab.title}
+              labInstructions={lab.instructions || studentContext.data?.assignment?.description || ""}
+              moduleTheoryItems={moduleItems
+                .filter((item) => item.type === "THEORY")
+                .map((item) => ({
+                  id: item.id,
+                  title: item.title,
+                  body: typeof item.content?.["body"] === "string" ? item.content["body"] : "",
+                }))
+                .filter((item) => item.body.trim().length > 0)}
               moduleQuizHref={
                 moduleQuizItem
                   ? `/roadmap?workspace=${encodeURIComponent(workspaceId)}&item=${encodeURIComponent(moduleQuizItem.id)}`
@@ -1268,6 +1279,8 @@ function StepContent({
   labId,
   labOrder,
   labTitle,
+  labInstructions,
+  moduleTheoryItems,
   moduleQuizHref,
   projectId,
   referenceProjectId,
@@ -1299,6 +1312,8 @@ function StepContent({
   labId: string;
   labOrder?: number | null | undefined;
   labTitle?: string | undefined;
+  labInstructions?: string | undefined;
+  moduleTheoryItems?: Array<{ id: string; title: string; body: string }> | undefined;
   moduleQuizHref: string;
   projectId: string;
   referenceProjectId?: string | undefined;
@@ -1829,11 +1844,29 @@ function StepContent({
                       )}
                     </p>
                   </div>
-                  <Badge variant="outline" className="font-mono">
-                    {modelRevision !== undefined
-                      ? `Model Revision r${modelRevision}`
-                      : "Revision pending"}
-                  </Badge>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="outline" className="font-mono">
+                      {modelRevision !== undefined
+                        ? `Model Revision r${modelRevision}`
+                        : t("Revision pending", "Đang chờ bản phân tích")}
+                    </Badge>
+                    {client.mode === "backend" && Boolean(snapshotId || referenceArchitecture?.snapshotId) && (
+                      <Button asChild size="sm" variant="outline">
+                        <a
+                          href={`/api/backend/assignments/${encodeURIComponent(labId)}/reference-source`}
+                          download
+                          title={
+                            studentContext?.assignment?.referenceSource?.artifactHash
+                              ? `SHA-256: ${studentContext.assignment.referenceSource.artifactHash}`
+                              : t("Download curated reference source archive", "Tải tệp nén mã nguồn tham chiếu đã ghim")
+                          }
+                        >
+                          <Download className="mr-1.5 size-3.5" aria-hidden="true" />
+                          {t("Download Reference .zip", "Tải mã nguồn (.zip)")}
+                        </a>
+                      </Button>
+                    )}
+                  </div>
                 </div>
 
                 <div
@@ -2152,10 +2185,32 @@ function StepContent({
               </div>
             </>
           ) : (
-            <div className="rounded-xl border border-dashed bg-muted/20 px-4 py-3 text-xs text-muted-foreground">
-              {t(
-                "Theory-focused Lab — no reference repository or static C1–C3 diagrams are attached to this Lab.",
-                "Lab tập trung vào lý thuyết — không yêu cầu mã nguồn tham chiếu hay sơ đồ C1–C3.",
+            <div className="space-y-4">
+              {labInstructions?.trim() || (moduleTheoryItems && moduleTheoryItems.length > 0) ? (
+                <DetailPanel
+                  title={t("Lesson & Reading Material", "Nội dung Lý thuyết & Tài liệu đọc")}
+                >
+                  <div className="space-y-5">
+                    {labInstructions?.trim() && (
+                      <div className="rounded-xl border bg-background p-4 sm:p-5">
+                        <MarkdownPreview markdown={labInstructions} />
+                      </div>
+                    )}
+                    {moduleTheoryItems?.map((item) => (
+                      <article key={item.id} className="space-y-2 rounded-xl border bg-background p-4 sm:p-5">
+                        <h4 className="text-sm font-semibold text-foreground">{item.title}</h4>
+                        <MarkdownPreview markdown={item.body} />
+                      </article>
+                    ))}
+                  </div>
+                </DetailPanel>
+              ) : (
+                <div className="rounded-xl border border-dashed bg-muted/20 px-4 py-3 text-xs text-muted-foreground">
+                  {t(
+                    "Theory-focused Lab — no reference repository or static C1–C3 diagrams are attached to this Lab.",
+                    "Lab tập trung vào lý thuyết — không yêu cầu mã nguồn tham chiếu hay sơ đồ C1–C3.",
+                  )}
+                </div>
               )}
             </div>
           )}

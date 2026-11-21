@@ -34,6 +34,7 @@ export function validateResponse<K extends Operation>(
     setAccountLock: "accountId",
     setAccountRole: "accountId",
     configureIntegration: "integrationId",
+    testIntegration: "integrationId",
     configureProfile: "profileId",
   };
   const idKey = ids[operation];

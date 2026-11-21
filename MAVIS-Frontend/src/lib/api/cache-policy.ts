@@ -98,6 +98,7 @@ export const mutationInvalidations: Partial<Record<Operation, readonly Operation
   setAccountRole: ["accounts", "audit", "workspaces"],
   setAccountLock: ["accounts", "audit"],
   configureIntegration: ["integrations", "audit"],
+  testIntegration: ["audit"],
   configureProfile: ["profiles", "runtimeConfiguration", "audit"],
 };
 const record = (value: unknown): Record<string, unknown> =>

@@ -33,6 +33,72 @@ public class AdminRuntimeController {
  private Map<String,Object> integration(PlatformRuntimeSettings.Integration i){return Map.of("id",i.id(),"name",i.name(),"enabled",i.enabled(),"revision",i.revision(),"status",i.id().equals("github")?"PUBLIC_ONLY":i.id().equals("gemini-ai")?(keys.hasValidKey()?"CONFIGURED":"NOT_CONFIGURED"):"UNVERIFIED","persistence","PROCESS_LOCAL_RESETS_ON_RESTART","connectionVerified",false);}
  @GetMapping("/integrations") public ApiResponse<?> integrations(){policy.requireSystemAdmin();return ApiResponse.success(settings.integrations().stream().map(this::integration).toList());}
  @PatchMapping("/integrations/{id}") public ApiResponse<?> integration(@PathVariable String id,@Valid @RequestBody Toggle r){policy.requireSystemAdmin();return ApiResponse.success(integration(settings.updateIntegration(id,r.enabled(),r.expectedRevision(),n->record("CONFIGURE_INTEGRATION","INTEGRATION",id,Map.of("enabled",n.enabled(),"revision",n.revision())))));}
+ @PostMapping("/integrations/{id}/test")
+ public ApiResponse<?> testIntegration(@PathVariable String id) {
+  policy.requireSystemAdmin();
+  var target = settings.integrations().stream()
+          .filter(i -> i.id().equals(id))
+          .findFirst()
+          .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Integration not found"));
+  long started = System.nanoTime();
+  boolean reachable;
+  String status;
+  String message;
+  if ("github".equals(id)) {
+   try {
+    var client = java.net.http.HttpClient.newBuilder()
+            .connectTimeout(java.time.Duration.ofSeconds(3))
+            .build();
+    var req = java.net.http.HttpRequest.newBuilder(java.net.URI.create("https://api.github.com"))
+            .timeout(java.time.Duration.ofSeconds(3))
+            .method("HEAD", java.net.http.HttpRequest.BodyPublishers.noBody())
+            .header("User-Agent", "MAVIS-Admin-Probe")
+            .build();
+    int code = client.send(req, java.net.http.HttpResponse.BodyHandlers.discarding()).statusCode();
+    reachable = code >= 200 && code < 500;
+    status = reachable ? "REACHABLE" : "DEGRADED";
+    message = "GitHub API responded HTTP " + code;
+   } catch (Exception ex) {
+    reachable = false;
+    status = "UNREACHABLE";
+    message = "GitHub API probe failed: " + ex.getClass().getSimpleName();
+   }
+  } else if ("gemini-ai".equals(id)) {
+   reachable = keys.hasValidKey();
+   status = reachable ? "CONFIGURED" : "NOT_CONFIGURED";
+   message = reachable
+           ? "Gemini API credentials configured and ready."
+           : "Gemini API key is not configured on this server.";
+  } else if ("otel-collector".equals(id)) {
+   if (queueCoordinator != null) {
+    var health = queueCoordinator.getRuntimeHealth();
+    reachable = !"UNAVAILABLE".equalsIgnoreCase(health.surveyReadiness());
+    status = health.surveyReadiness();
+    message = "Runner " + health.runnerMode() + " (" + health.effectiveOciRuntime()
+            + ") · slots " + health.activeSessions() + "/" + health.maxActiveSessions()
+            + " · queue " + health.queuedSessions() + "/" + health.maxQueuedSessions();
+   } else {
+    reachable = false;
+    status = "UNAVAILABLE";
+    message = "RuntimeQueueCoordinator unavailable on this node.";
+   }
+  } else {
+   reachable = false;
+   status = "UNVERIFIED";
+   message = "No live probe configured for integration " + id;
+  }
+  long latencyMs = Math.max(1L, (System.nanoTime() - started) / 1_000_000L);
+  record("TEST_INTEGRATION", "INTEGRATION", id, Map.of("reachable", reachable, "status", status, "latencyMs", latencyMs));
+  return ApiResponse.success(Map.of(
+          "id", target.id(),
+          "name", target.name(),
+          "enabled", target.enabled(),
+          "reachable", reachable,
+          "status", status,
+          "latencyMs", latencyMs,
+          "message", message,
+          "checkedAt", OffsetDateTime.now().toString()));
+ }
  @GetMapping({"/profiles","/runner-profiles"}) public ApiResponse<?> profiles(){policy.requireSystemAdmin();return ApiResponse.success(settings.profiles());}
  @PatchMapping({"/profiles/{id}","/runner-profiles/{id}"}) public ApiResponse<?> profile(@PathVariable String id,@Valid @RequestBody ProfileUpdate r){policy.requireSystemAdmin();return ApiResponse.success(settings.updateProfile(id,r.enabled(),r.expectedRevision(),r.memoryMiB(),r.cpus(),r.timeoutSeconds(),n->record("CONFIGURE_RUNNER_PROFILE","RUNNER_PROFILE",id,Map.of("enabled",n.enabled(),"revision",n.revision(),"memoryMiB",n.memoryMiB(),"cpus",n.cpus(),"timeoutSeconds",n.timeoutSeconds()))));}
  private void record(String action,String type,String id,Map<String,Object> values){var details=new HashMap<>(values);details.put("configurationId",id);details.put("persistence","PROCESS_LOCAL");audit.recordAuditLog(action,type,UUID.nameUUIDFromBytes((type+":"+id).getBytes(StandardCharsets.UTF_8)),details);}

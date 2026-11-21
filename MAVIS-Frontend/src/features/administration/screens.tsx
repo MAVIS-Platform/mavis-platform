@@ -376,7 +376,26 @@ export function Integrations() {
   const { t } = useLocale();
   const query = useApiQuery("integrations", {});
   const mutation = useApiMutation("configureIntegration");
+  const probe = useApiMutation("testIntegration");
   const [selected, setSelected] = useState<Response<"integrations">[number] | null>(null);
+  const [probingId, setProbingId] = useState<string | null>(null);
+  const [probeResults, setProbeResults] = useState<
+    Record<string, Response<"testIntegration">>
+  >({});
+
+  const runProbe = async (integrationId: string) => {
+    setProbingId(integrationId);
+    probe.reset();
+    try {
+      const result = await probe.mutateAsync({ integrationId });
+      setProbeResults((prev) => ({ ...prev, [integrationId]: result }));
+    } catch {
+      /* Error rendered below */
+    } finally {
+      setProbingId(null);
+    }
+  };
+
   return (
     <div className="space-y-5">
       <AdminToolbar
@@ -390,39 +409,76 @@ export function Integrations() {
       </AdminToolbar>
       <Notice>
         {t(
-          "Enabled does not mean connected. Connection verification is shown separately; changes to these switches currently reset when the server restarts.",
-          "Đang bật không đồng nghĩa đã kết nối thành công. Trạng thái xác minh kết nối hiển thị riêng bên dưới; các thay đổi sẽ đặt lại khi khởi động lại máy chủ.",
+          "Enabled does not mean connected. Use Test connection to probe live provider status; toggle changes currently reset when the server restarts.",
+          "Đang bật không đồng nghĩa đã kết nối thành công. Bấm Kiểm tra kết nối để đo trạng thái trực tiếp; các thay đổi bật/tắt sẽ đặt lại khi khởi động lại máy chủ.",
         )}
       </Notice>
+      {probe.isError && <ErrorState error={probe.error} />}
       <RequestState query={query} empty={!query.data?.length}>
         <div className="grid gap-4 lg:grid-cols-2">
-          {query.data?.map((item) => (
-            <DetailPanel key={item.id} title={item.name}>
-              <StatusBadge status={item.enabled ? t("Enabled", "Đang bật") : t("Disabled", "Đang tắt")} />
-              <p className="text-xs text-muted-foreground">
-                {t("Revision", "Phiên bản")} {item.revision} ·{" "}
-                {item.status === "CONFIGURED"
-                  ? t("Credentials configured.", "Đã cấu hình khóa xác thực.")
-                  : item.status === "PUBLIC_ONLY"
-                    ? t("Public repositories only.", "Chỉ truy cập repository công khai.")
-                    : t("Configuration unavailable.", "Chưa có cấu hình.")}{" "}
-                {item.connectionVerified
-                  ? t("Connection verified.", "Đã xác minh kết nối.")
-                  : t("Connection not verified.", "Chưa xác minh kết nối.")}
-              </p>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  mutation.reset();
-                  setSelected(item);
-                }}
-              >
-                {item.enabled
-                  ? t("Disable integration", "Tắt tích hợp")
-                  : t("Enable integration", "Bật tích hợp")}
-              </Button>
-            </DetailPanel>
-          ))}
+          {query.data?.map((item) => {
+            const tested = probeResults[item.id];
+            const verified = tested ? tested.reachable : item.connectionVerified;
+            return (
+              <DetailPanel key={item.id} title={item.name}>
+                <div className="flex flex-wrap items-center gap-2">
+                  <StatusBadge status={item.enabled ? t("Enabled", "Đang bật") : t("Disabled", "Đang tắt")} />
+                  {tested && (
+                    <StatusBadge
+                      status={
+                        tested.reachable
+                          ? `${t("Connected", "Kết nối tốt")} · ${tested.latencyMs}ms`
+                          : `${t("Unreachable", "Không kết nối được")} · ${tested.status}`
+                      }
+                      variant={tested.reachable ? "success" : "warning"}
+                    />
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {t("Revision", "Phiên bản")} {item.revision} ·{" "}
+                  {item.status === "CONFIGURED"
+                    ? t("Credentials configured.", "Đã cấu hình khóa xác thực.")
+                    : item.status === "PUBLIC_ONLY"
+                      ? t("Public repositories only.", "Chỉ truy cập repository công khai.")
+                      : t("Configuration unavailable.", "Chưa có cấu hình.")}{" "}
+                  {verified
+                    ? t("Connection verified.", "Đã xác minh kết nối.")
+                    : t("Connection not verified.", "Chưa xác minh kết nối.")}
+                </p>
+                {tested && (
+                  <p role="status" className="rounded-md border bg-muted/30 px-2.5 py-1.5 text-xs text-foreground">
+                    {tested.message}
+                  </p>
+                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={probingId !== null}
+                    onClick={() => void runProbe(item.id)}
+                  >
+                    {probingId === item.id
+                      ? t("Testing…", "Đang kiểm tra…")
+                      : t("Test connection", "Kiểm tra kết nối")}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      mutation.reset();
+                      setSelected(item);
+                    }}
+                  >
+                    {item.enabled
+                      ? t("Disable integration", "Tắt tích hợp")
+                      : t("Enable integration", "Bật tích hợp")}
+                  </Button>
+                </div>
+              </DetailPanel>
+            );
+          })}
         </div>
         <ConfirmDialog
           open={Boolean(selected)}
@@ -455,6 +511,7 @@ export function Integrations() {
 export function RuntimeProfiles() {
   const { t } = useLocale();
   const q = useApiQuery("profiles", {});
+  const runtimeHealth = useApiQuery("adminRuntimeHealth", {}, { refreshMs: 30000 });
   const [tab, setTab] = useState<"profiles" | "sessions" | "quotas">("profiles");
   return (
     <div className="space-y-5">
@@ -511,6 +568,23 @@ export function RuntimeProfiles() {
             {t(
               "Profile changes affect new runtime sessions. Review limits before enabling a profile.",
               "Thay đổi hồ sơ sẽ áp dụng cho các phiên Runtime mới. Hãy kiểm tra kỹ giới hạn tài nguyên trước khi bật.",
+            )}
+            {runtimeHealth.data && (
+              <span className="mt-1.5 block text-xs text-foreground">
+                {t("Runner capacity:", "Hạn mức Runner hiện tại:")}{" "}
+                <strong>
+                  {runtimeHealth.data.activeSessions}/{runtimeHealth.data.maxActiveSessions}{" "}
+                  {t("active slots", "slot đang chạy")}
+                </strong>{" "}
+                · {t("Queue", "Hàng chờ")}:{" "}
+                <strong>
+                  {runtimeHealth.data.queuedSessions}/{runtimeHealth.data.maxQueuedSessions}
+                </strong>{" "}
+                · OCI: <code className="font-mono">{runtimeHealth.data.effectiveOciRuntime}</code> ·{" "}
+                <Link href="/administration/health" className="text-primary underline">
+                  {t("Open Runtime Ops", "Mở giám sát Runtime")}
+                </Link>
+              </span>
             )}
           </Notice>
           <RequestState query={q} empty={!q.data?.length}>

@@ -23,6 +23,11 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Choose two different snapshots.": "Chọn hai minh chứng khác nhau.",
   "Studio snapshots attached": "Minh chứng Studio đã đính kèm",
   "Frozen Studio evidence": "Minh chứng Studio đã đóng băng",
+  "Loading evidence": "Đang tải minh chứng",
+  "Studio snapshot": "Minh chứng Studio",
+  "Grading · SpeedGrader": "Chấm bài · Chấm nhanh",
+  "Submission Review": "Đánh giá bài nộp",
+  "Submissions Queue": "Danh sách chờ chấm",
   "Could not export graph": "Không thể xuất sơ đồ",
   "Worker verified impact paths": "Đường tác động đã được Worker xác minh",
   "Worker impact is unavailable. Static reference paths are shown above.":

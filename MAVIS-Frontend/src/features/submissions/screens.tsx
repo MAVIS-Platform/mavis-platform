@@ -698,7 +698,7 @@ function SubmissionList({ rows }: { rows: import("@/types/domain").Submission[] 
   return (
     <div className="min-w-0 space-y-4">
       <SearchInput
-        label="Search submissions"
+        label={t("Search submissions", "Tìm kiếm bài nộp")}
         value={search}
         onChange={(value) => {
           setSearch(value);

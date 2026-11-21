@@ -1076,6 +1076,20 @@ export const contracts = {
     d.integrationSchema,
     true,
   ),
+  testIntegration: contract(
+    z.object({ integrationId: id }),
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      enabled: z.boolean(),
+      reachable: z.boolean(),
+      status: z.string(),
+      latencyMs: z.number(),
+      message: z.string(),
+      checkedAt: z.string(),
+    }),
+    true,
+  ),
   profiles: contract(nothing, z.array(d.profileSchema)),
   configureProfile: contract(
     z.object({

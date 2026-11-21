@@ -886,6 +886,11 @@ export async function executeJava(
         `admin/integrations/${encodeURIComponent(z.string().min(1).parse(input["integrationId"]))}`,
         input,
       );
+    case "testIntegration":
+      return post(
+        `admin/integrations/${encodeURIComponent(z.string().min(1).parse(input["integrationId"]))}/test`,
+        {},
+      );
     case "configureProfile":
       return patch(
         `admin/profiles/${encodeURIComponent(z.string().min(1).parse(input["profileId"]))}`,

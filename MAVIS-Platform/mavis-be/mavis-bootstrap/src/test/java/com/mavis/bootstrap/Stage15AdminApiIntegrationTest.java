@@ -28,6 +28,9 @@ class Stage15AdminApiIntegrationTest extends ApiIntegrationContext {
   }
   mvc.perform(patch("/api/v1/admin/integrations/github").header("Authorization",auth(admin)).contentType(MediaType.APPLICATION_JSON).content(body(Map.of("enabled",false,"expectedRevision",1)))).andExpect(status().isOk()).andExpect(jsonPath("$.data.revision").value(2)).andExpect(jsonPath("$.data.connectionVerified").value(false));
   mvc.perform(patch("/api/v1/admin/integrations/github").header("Authorization",auth(admin)).contentType(MediaType.APPLICATION_JSON).content(body(Map.of("enabled",true,"expectedRevision",1)))).andExpect(status().isConflict());
+  mvc.perform(post("/api/v1/admin/integrations/gemini-ai/test").header("Authorization",auth(student))).andExpect(status().isForbidden());
+  mvc.perform(post("/api/v1/admin/integrations/gemini-ai/test").header("Authorization",auth(admin))).andExpect(status().isOk()).andExpect(jsonPath("$.data.id").value("gemini-ai")).andExpect(jsonPath("$.data.checkedAt").isNotEmpty());
+  mvc.perform(post("/api/v1/admin/integrations/unknown/test").header("Authorization",auth(admin))).andExpect(status().isNotFound());
   mvc.perform(patch("/api/v1/admin/profiles/JAVA_SPRING_OTEL_V1").header("Authorization",auth(admin)).contentType(MediaType.APPLICATION_JSON).content(body(Map.of("enabled",true,"expectedRevision",1,"memoryMiB",512,"cpus",0.5,"timeoutSeconds",60)))).andExpect(status().isOk()).andExpect(jsonPath("$.data.memoryMiB").value(512)).andExpect(jsonPath("$.data.revision").value(2));
   mvc.perform(patch("/api/v1/admin/profiles/JAVA_SPRING_OTEL_V1").header("Authorization",auth(admin)).contentType(MediaType.APPLICATION_JSON).content(body(Map.of("enabled",true,"expectedRevision",2,"memoryMiB",4096)))).andExpect(status().isBadRequest());
   mvc.perform(get("/api/v1/admin/dashboard-stats").header("Authorization",auth(admin))).andExpect(status().isOk()).andExpect(jsonPath("$.data.healthStatus").value("unknown"));

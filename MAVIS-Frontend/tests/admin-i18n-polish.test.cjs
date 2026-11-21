@@ -195,3 +195,26 @@ test("Lecturer UX Pack 1: single-line breadcrumbs & class tabs, Google mark isol
   assert.match(grading, /applyScoreToAllSnapshots/);
   assert.match(subComponents, /Technical verification IDs & digests/);
 });
+
+test("Council Scope Gap Pack: Student Download Reference ZIP, THEORY_ONLY Markdown reader, Admin Test Connection, and VI parity", () => {
+  const courses = read("src/features/courses/screens.tsx");
+  const admin = read("src/features/administration/screens.tsx");
+  const locale = read("src/lib/i18n/locale-context.tsx");
+  const subScreens = read("src/features/submissions/screens.tsx");
+  const workbench = read("src/features/runtime/live-studio-workbench.tsx");
+
+  assert.match(courses, /\/api\/backend\/assignments\/\$\{encodeURIComponent\(labId\)\}\/reference-source/);
+  assert.match(courses, /Download Reference \.zip/);
+  assert.match(courses, /Lesson & Reading Material/);
+  assert.match(courses, /<MarkdownPreview markdown=\{labInstructions\} \/>/);
+  assert.match(admin, /useApiMutation\("testIntegration"\)/);
+  assert.match(admin, /Test connection/);
+  assert.match(admin, /adminRuntimeHealth/);
+  assert.match(locale, /"Grading · SpeedGrader":\s*"Chấm bài · Chấm nhanh"/);
+  assert.match(locale, /"Submission Review":\s*"Đánh giá bài nộp"/);
+  assert.match(locale, /"Submissions Queue":\s*"Danh sách chờ chấm"/);
+  assert.match(locale, /"Loading evidence":\s*"Đang tải minh chứng"/);
+  assert.match(subScreens, /label=\{t\("Search submissions", "Tìm kiếm bài nộp"\)\}/);
+  assert.match(workbench, /t\("Finish Studio", "Kết thúc Studio"\)/);
+  assert.match(workbench, /t\("Service Telemetry", "Thông số Dịch vụ"\)/);
+});

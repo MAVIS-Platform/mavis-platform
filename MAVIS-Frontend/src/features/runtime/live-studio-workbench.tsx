@@ -38,6 +38,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ErrorState } from "@/components/shared/request-state";
 import { useApiQuery } from "@/hooks/use-api";
+import { useLocale } from "@/lib/i18n/locale-context";
 import type { Response } from "@/lib/api/contracts";
 import {
   StudioObservability,
@@ -309,6 +310,7 @@ export function LiveStudioWorkbench({
   previewServiceMappings?: Record<string, string> | undefined;
   authoring?: LiveStudioAuthoringProps | undefined;
 }) {
+  const { t } = useLocale();
   const startHref = projectId
     ? `/sessions?${new URLSearchParams({ project: projectId, studio: "1" })}`
     : "/sessions?studio=1";
@@ -1364,16 +1366,34 @@ export function LiveStudioWorkbench({
           {showLiveSessionControls && (() => {
             const finishDisabledReason =
               data.executionStatus !== "RUNNING"
-                ? "Wait until the Docker session reaches RUNNING"
+                ? t(
+                    "Wait until the Docker session reaches RUNNING",
+                    "Vui lòng đợi phiên Docker đạt trạng thái RUNNING",
+                  )
                 : data.finishRequested || finish.isPending
-                  ? "Finishing Studio session and sealing receipt…"
+                  ? t(
+                      "Finishing Studio session and sealing receipt…",
+                      "Đang kết thúc phiên Studio và niêm phong biên nhận…",
+                    )
                   : action.isPending || waiting
-                    ? "Wait for the current runtime action to complete"
+                    ? t(
+                        "Wait for the current runtime action to complete",
+                        "Vui lòng đợi thao tác runtime hiện tại hoàn tất",
+                      )
                     : capturing || capture.isPending
-                      ? "Wait for the snapshot capture to finish"
+                      ? t(
+                          "Wait for the snapshot capture to finish",
+                          "Vui lòng đợi quá trình chụp snapshot hoàn tất",
+                        )
                       : !hasConfirmedAction
-                        ? "Run at least one confirmed action (Pause, Resume, Stop, Start, or Scale) and capture a snapshot before finishing"
-                        : "Finish Studio and seal your verifiable RuntimeReceipt";
+                        ? t(
+                            "Run at least one confirmed action (Pause, Resume, Stop, Start, or Scale) and capture a snapshot before finishing",
+                            "Thực hiện ít nhất 1 thao tác được xác nhận (Pause, Resume, Stop, Start hoặc Scale) và chụp 1 Snapshot trước khi kết thúc",
+                          )
+                        : t(
+                            "Finish Studio and seal your verifiable RuntimeReceipt",
+                            "Kết thúc Studio và ký niêm phong RuntimeReceipt",
+                          );
             const finishDisabled =
               finish.isPending ||
               action.isPending ||
@@ -1391,10 +1411,10 @@ export function LiveStudioWorkbench({
                   size="sm"
                   className="h-7 bg-emerald-600 px-2.5 text-[11px] text-white hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-400"
                   disabled={finishDisabled}
-                  aria-label={finishDisabled ? `Finish Studio (${finishDisabledReason})` : "Finish Studio"}
+                  aria-label={finishDisabled ? `${t("Finish Studio", "Kết thúc Studio")} (${finishDisabledReason})` : t("Finish Studio", "Kết thúc Studio")}
                   onClick={() => void finishStudio()}
                 >
-                  Finish Studio
+                  {t("Finish Studio", "Kết thúc Studio")}
                 </Button>
               </span>
               <Button
@@ -1405,7 +1425,7 @@ export function LiveStudioWorkbench({
                 disabled={cancel.isPending || (data.executionStatus !== "RUNNING" && !isBooting)}
                 onClick={() => void cancelStudio()}
               >
-                Cancel
+                {t("Cancel", "Hủy phiên")}
               </Button>
             </>
             );
@@ -2211,29 +2231,29 @@ export function LiveStudioWorkbench({
               : [];
 
             return (
-              <section aria-label="Service telemetry" className="space-y-2.5">
+              <section aria-label={t("Service telemetry", "Thông số Telemetry dịch vụ")} className="min-w-0 space-y-2.5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h2 className="text-xs font-semibold text-slate-200">
-                    Service Telemetry ({rows.length})
+                    {t("Service Telemetry", "Thông số Dịch vụ")} ({rows.length})
                   </h2>
                   <span className="text-[11px] text-slate-400">
-                    {observedLabel} · Read-only
+                    {observedLabel} · {t("Read-only", "Chỉ đọc")}
                   </span>
                 </div>
 
-                <div className="overflow-x-auto rounded-lg border border-slate-800">
+                <div className="max-w-full overflow-x-auto rounded-lg border border-slate-800">
                   <table className="mavis-tabular w-full whitespace-nowrap text-left text-xs">
                     <thead className="bg-slate-900 text-[11px] text-slate-400">
                       <tr>
                         {[
-                          "Service",
-                          "Status",
-                          "Replicas",
+                          t("Service", "Dịch vụ"),
+                          t("Status", "Trạng thái"),
+                          t("Replicas", "Bản sao"),
                           "CPU",
                           "RAM",
-                          "Net I/O",
+                          t("Net I/O", "Mạng I/O"),
                           "p95",
-                          "Req / Err%",
+                          t("Req / Err%", "Yêu cầu / Lỗi%"),
                           "Spans",
                         ].map((heading) => (
                           <th key={heading} scope="col" className="px-2.5 py-2 font-medium">

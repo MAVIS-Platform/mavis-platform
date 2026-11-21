@@ -124,6 +124,13 @@ export function SocialSignIn({
           },
           { once: true },
         );
+        iframe.addEventListener(
+          "error",
+          () => {
+            if (live) setGoogleFailed(true);
+          },
+          { once: true },
+        );
       } else {
         setGoogleReady(true);
       }
@@ -190,7 +197,7 @@ export function SocialSignIn({
           {googleEnabled ? (
             <div
               className={`${circleButtonClass} isolate overflow-hidden [clip-path:circle(50%)] focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-card ${
-                googleReady ? "border-white/80 bg-white" : ""
+                googleReady ? "border-border/80 bg-white dark:border-white/80" : ""
               } ${busy ? "pointer-events-none opacity-40" : "cursor-pointer"}`}
               title={t("Continue with Google", "Tiếp tục với Google")}
             >

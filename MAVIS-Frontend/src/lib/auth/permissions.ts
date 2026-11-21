@@ -26,6 +26,7 @@ export function operationPermission(operation: Operation): Permission | undefine
       "setAccountRole",
       "integrations",
       "configureIntegration",
+      "testIntegration",
       "profiles",
       "configureProfile",
       "audit",
