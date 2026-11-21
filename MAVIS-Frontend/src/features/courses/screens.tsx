@@ -575,6 +575,7 @@ export function LabWorkspace() {
     module.items.some((item) => item.assignmentId === assignmentId),
   );
   const moduleItems = currentModule?.items ?? [];
+  const moduleQuizItem = moduleItems.find((item) => item.type === "QUIZ") ?? null;
   const lab = assignments.data?.find((item) => item.id === assignmentId);
   const labTier = resolveLabTier(lab);
   const isTheoryOnlyLab = labTier === "THEORY_ONLY";
@@ -1049,6 +1050,11 @@ export function LabWorkspace() {
               labId={lab.id}
               labOrder={lab.labOrder}
               labTitle={lab.title}
+              moduleQuizHref={
+                moduleQuizItem
+                  ? `/roadmap?workspace=${encodeURIComponent(workspaceId)}&item=${encodeURIComponent(moduleQuizItem.id)}`
+                  : `/roadmap?workspace=${encodeURIComponent(workspaceId)}`
+              }
               projectId={projectId}
               modelQuery={modelQuery}
               referenceModelQuery={referenceModelQuery}
@@ -1262,6 +1268,7 @@ function StepContent({
   labId,
   labOrder,
   labTitle,
+  moduleQuizHref,
   projectId,
   modelQuery,
   referenceModelQuery,
@@ -1290,6 +1297,7 @@ function StepContent({
   labId: string;
   labOrder?: number | null | undefined;
   labTitle?: string | undefined;
+  moduleQuizHref: string;
   projectId: string;
   modelQuery: string | null;
   referenceModelQuery?: string | null | undefined;
@@ -1323,6 +1331,8 @@ function StepContent({
   const runtimeConfigurationMissing = step === 2 && !requiresRuntime;
   const runtimePrerequisiteMissing = step === 2 && requiresRuntime && !runtimeReady && !preview;
   const runtimeUnavailable = runtimeConfigurationMissing || runtimePrerequisiteMissing;
+  const moduleQuiz = studentContext?.quiz ?? null;
+  const moduleQuizStatus = moduleQuiz?.latestStatus ?? "NOT_ATTEMPTED";
   const [runtimeConfigurationDialogOpen, setRuntimeConfigurationDialogOpen] = useState(false);
 
   useEffect(() => {
@@ -1437,6 +1447,23 @@ function StepContent({
                     "Hoàn tất các nội dung bắt buộc của Module, sau đó quay lại đây để bắt đầu thực hành Runtime Studio.",
                   )}
             </DialogDescription>
+            {runtimePrerequisiteMissing && (
+              <div className="rounded-lg border bg-muted/40 p-3 text-sm">
+                <p className="font-medium text-foreground">
+                  {t("Required before Runtime Studio", "Yêu cầu trước khi vào Runtime Studio")}
+                </p>
+                <p className="mt-1 text-muted-foreground">
+                  {t("Complete the Module Quiz", "Hoàn thành Quiz của Module")}: {moduleQuiz?.lesson ?? t("current module", "Module hiện tại")}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {t("Passing score", "Điểm đạt")}: {moduleQuiz?.passPercent ?? 70}% · {t("Current status", "Trạng thái hiện tại")}: {moduleQuizStatus === "NEEDS_RETRY"
+                    ? t("Not passed — retry the quiz", "Chưa đạt — hãy làm lại Quiz")
+                    : moduleQuizStatus === "NOT_ATTEMPTED"
+                      ? t("Not started", "Chưa làm")
+                      : t("In progress", "Đang thực hiện")}
+                </p>
+              </div>
+            )}
           </DialogHeader>
           <DialogFooter>
             {runtimeConfigurationMissing && !isStudent && (
@@ -1445,6 +1472,13 @@ function StepContent({
                   href={`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&tab=studio`}
                 >
                   {t("Configure Runtime Studio", "Cấu hình Runtime Studio")}
+                </Link>
+              </Button>
+            )}
+            {runtimePrerequisiteMissing && (
+              <Button asChild>
+                <Link href={moduleQuizHref}>
+                  {t("Go to Module Quiz", "Đi tới Quiz của Module")}
                 </Link>
               </Button>
             )}

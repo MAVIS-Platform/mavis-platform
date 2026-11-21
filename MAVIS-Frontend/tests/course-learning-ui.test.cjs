@@ -694,6 +694,10 @@ test("Stage 1 reference views, Step 4 submit bridge, and student BFF endpoints a
   assert.ok(course.includes('scrollIntoView({ behavior: "smooth", block: "start" })'));
   assert.ok(course.includes("Runtime Studio is not configured"));
   assert.ok(course.includes("Configure Runtime Studio"));
+  assert.ok(course.includes("Required before Runtime Studio"));
+  assert.ok(course.includes("Complete the Module Quiz"));
+  assert.ok(course.includes("Go to Module Quiz"));
+  assert.ok(read("src/features/courses/student-course-syllabus.tsx").includes('searchParams.get("item")'));
   assert.equal(allowedBackendPath(`workspaces/${ws}/course-labs/${labId}/student-context`), true);
   assert.equal(allowedBackendPath(`workspaces/${ws}/course-labs/${labId}/studio-sessions`), true);
   assert.equal(

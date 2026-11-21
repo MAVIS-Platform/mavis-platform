@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CheckCircle2,
@@ -69,6 +69,7 @@ export function StudentCourseSyllabus({
 }) {
   const { t } = useLocale();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const client = useApi();
   const workspaceId = workspace.id;
   const roadmap = useCourseRoadmap(workspaceId);
@@ -148,6 +149,17 @@ export function StudentCourseSyllabus({
   const [practicePanel, setPracticePanel] = useState<"none" | "quiz" | "essay">("none");
   const isLearningWorkspace = selectedItemId !== "";
   const learningContentRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const requestedItemId = searchParams.get("item");
+    if (!requestedItemId) return;
+    const entry = flattenedItems.find((candidate) => candidate.item.id === requestedItemId);
+    if (!entry) return;
+    setSelectedItemId(entry.item.id);
+    setSelectedModuleId(entry.module.id);
+    setPracticePanel("none");
+    if (entry.item.assignmentId) setSelectedLabId(entry.item.assignmentId);
+  }, [flattenedItems, searchParams]);
 
   useEffect(() => {
     if (isLearningWorkspace) {
