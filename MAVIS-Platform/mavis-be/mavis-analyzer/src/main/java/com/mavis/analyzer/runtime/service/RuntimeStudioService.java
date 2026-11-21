@@ -109,8 +109,11 @@ public class RuntimeStudioService {
                 return mapper.createObjectNode().put("sessionId", id.toString()).put("resourceProject", request.resourceProject());
             }
         }
-        // Detach the unlocked L1 entity before acquiring the row lock so concurrent snapshots/actions are never overwritten.
-        if (entityManager != null) entityManager.detach(session);
+        // Flush any outer test-tx changes, then detach the unlocked L1 entity before acquiring the row lock.
+        if (entityManager != null) {
+            entityManager.flush();
+            entityManager.detach(session);
+        }
         RuntimeSession lockedSession = locked(id);
         if (!request.resourceProject().equals(lockedSession.getResourceProject()))
             throw error(ErrorCode.CONFLICT, "Runner allocation mismatch.");
@@ -510,8 +513,11 @@ public class RuntimeStudioService {
             return response.put("finishRequested", finishRequested).put("cancelRequested", false);
         }
         // Only lock the session row and rewrite studio_control when actually claiming a PENDING action.
-        // Detach the unlocked L1 entity before acquiring the row lock so concurrent snapshots/actions are never overwritten.
-        if (entityManager != null) entityManager.detach(session);
+        // Flush any outer test-tx changes, then detach the unlocked L1 entity before acquiring the row lock.
+        if (entityManager != null) {
+            entityManager.flush();
+            entityManager.detach(session);
+        }
         RuntimeSession lockedSession = locked(id);
         if (!resourceProject.equals(lockedSession.getResourceProject())) throw error(ErrorCode.CONFLICT, "Runner allocation mismatch.");
         if (lockedSession.getCancelRequestedAt() != null) {
