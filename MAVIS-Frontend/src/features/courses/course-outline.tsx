@@ -492,7 +492,9 @@ function CourseOutlineBody({
                             </div>
                           </details>
                         )}
-                        {item.type === "QUIZ" && (Boolean(item.assignmentId) || quizQuestions.length > 0) && (
+                        {item.type === "QUIZ" &&
+                          (!lockedForStudent || canManage) &&
+                          (Boolean(item.assignmentId) || quizQuestions.length > 0) && (
                           <LazyOutlineQuizDetails
                             summaryLabel={quizSummaryLabel}
                             title={item.title}

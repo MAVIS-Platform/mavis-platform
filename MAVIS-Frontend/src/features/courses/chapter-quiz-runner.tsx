@@ -220,10 +220,13 @@ export function ChapterQuizRunner({
     );
   }
   if (backendQuizEnabled && backendQuiz.isError) {
+    const isForbidden = backendQuiz.error instanceof ApiError && backendQuiz.error.status === 403;
     return (
       <div
         role="alert"
-        className="mx-auto mt-6 max-w-[850px] space-y-3 rounded-xl border border-destructive/30 p-4 text-sm"
+        className={`mx-auto mt-6 max-w-[850px] space-y-3 rounded-xl border p-4 text-sm ${
+          isForbidden ? "border-amber-300 bg-amber-50/60 dark:border-amber-800 dark:bg-amber-950/20" : "border-destructive/30"
+        }`}
       >
         <p>
           {backendQuiz.error instanceof ApiError && backendQuiz.error.status === 404
@@ -231,11 +234,18 @@ export function ChapterQuizRunner({
                 "This module Quiz has not been published yet.",
                 "Quiz của Module này chưa được công bố.",
               )
-            : t("The module Quiz could not be loaded.", "Không thể tải Quiz của Module.")}
+            : isForbidden
+              ? t(
+                  "This module Quiz is locked until you pass the previous Lab.",
+                  "Quiz của Module này đang bị khóa — hãy hoàn thành bài Lab trước để mở khóa.",
+                )
+              : t("The module Quiz could not be loaded.", "Không thể tải Quiz của Module.")}
         </p>
-        <Button type="button" variant="outline" onClick={() => void backendQuiz.refetch()}>
-          {t("Retry", "Thử lại")}
-        </Button>
+        {!isForbidden && (
+          <Button type="button" variant="outline" onClick={() => void backendQuiz.refetch()}>
+            {t("Retry", "Thử lại")}
+          </Button>
+        )}
       </div>
     );
   }

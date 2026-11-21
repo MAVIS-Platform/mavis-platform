@@ -1914,3 +1914,16 @@ test("Bug #15: THEORY_ONLY labMode is preserved in contracts, submissionSchema a
   );
   assert.match(ops, /sub\.labMode === "THEORY_ONLY"/);
 });
+
+test("Bug #17: locked Module Quizzes are gated in syllabus/outline and ChapterQuizRunner handles 403 prerequisite lock", () => {
+  const syllabus = read("src/features/courses/student-course-syllabus.tsx");
+  const outline = read("src/features/courses/course-outline.tsx");
+  const runner = read("src/features/courses/chapter-quiz-runner.tsx");
+
+  assert.match(syllabus, /const isItemLocked = \(item: OutlineItemData\)/);
+  assert.match(syllabus, /hasAssignmentGate = isLabItem \|\| item\.type === "QUIZ"/);
+  assert.match(syllabus, /disabled=\{!nextEntry \|\| isItemLocked\(nextEntry\.item\)\}/);
+  assert.match(outline, /item\.type === "QUIZ" &&\s*\(!lockedForStudent \|\| canManage\)/);
+  assert.match(runner, /backendQuiz\.error\.status === 403/);
+  assert.match(runner, /This module Quiz is locked until you pass the previous Lab\./);
+});

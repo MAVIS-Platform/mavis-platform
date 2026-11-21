@@ -263,8 +263,15 @@ export function StudentCourseSyllabus({
         ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(item.type) &&
         labs.find((l) => l.assignmentId === item.assignmentId)?.state === "LOCKED",
     );
+  const isItemLocked = (item: OutlineItemData) =>
+    isItemLockedLab(item) ||
+    Boolean(
+      item.assignmentId &&
+        item.type === "QUIZ" &&
+        labs.find((l) => l.assignmentId === item.assignmentId)?.state === "LOCKED",
+    );
   const selectCurriculumItem = (item: OutlineItemData) => {
-    if (isItemLockedLab(item)) {
+    if (isItemLocked(item)) {
       return;
     }
     if (item.assignmentId && ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(item.type)) {
@@ -339,20 +346,31 @@ export function StudentCourseSyllabus({
             >
               {activeModule?.items.map((item) => {
                 const selected = item.id === activeItem?.id;
+                const locked = isItemLocked(item);
                 return (
                   <button
                     key={item.id}
                     type="button"
+                    disabled={locked}
+                    aria-disabled={locked || undefined}
                     onClick={() => selectCurriculumItem(item)}
                     className={`w-full rounded-lg px-2.5 py-2 text-left text-xs transition-colors ${
-                      selected
-                        ? "bg-emerald-100 font-semibold text-emerald-950 dark:bg-emerald-950/40 dark:text-emerald-100"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                      locked
+                        ? "cursor-not-allowed text-muted-foreground/60 opacity-75"
+                        : selected
+                          ? "bg-emerald-100 font-semibold text-emerald-950 dark:bg-emerald-950/40 dark:text-emerald-100"
+                          : "text-muted-foreground hover:bg-muted hover:text-foreground"
                     }`}
                   >
                     <span className="line-clamp-2 block">{item.title}</span>
-                    <span className="mt-0.5 block text-[10px] font-normal opacity-80">
-                      {itemBadgeMeta(item.type, t).label}
+                    <span className="mt-0.5 flex items-center gap-1 text-[10px] font-normal opacity-80">
+                      <span>{itemBadgeMeta(item.type, t).label}</span>
+                      {locked && (
+                        <>
+                          <Lock className="h-2.5 w-2.5 text-amber-600" aria-hidden="true" />
+                          <span>{t("Locked", "Đang khóa")}</span>
+                        </>
+                      )}
                     </span>
                   </button>
                 );
@@ -632,8 +650,9 @@ export function StudentCourseSyllabus({
                     const isLabItem = ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(
                       item.type,
                     );
+                    const hasAssignmentGate = isLabItem || item.type === "QUIZ";
                     const linkedLab =
-                      isLabItem && item.assignmentId
+                      hasAssignmentGate && item.assignmentId
                         ? labs.find((l) => l.assignmentId === item.assignmentId)
                         : undefined;
                     const isPassed = linkedLab?.state === "PASSED";
@@ -754,7 +773,7 @@ export function StudentCourseSyllabus({
                         type="button"
                         size="sm"
                         variant="outline"
-                        disabled={!nextEntry}
+                        disabled={!nextEntry || isItemLocked(nextEntry.item)}
                         onClick={() => nextEntry && selectCurriculumItem(nextEntry.item)}
                       >
                         {t("Next", "Bài tiếp theo")}
@@ -800,21 +819,28 @@ export function StudentCourseSyllabus({
                             <Button
                               type="button"
                               size="sm"
-                              disabled={isItemLockedLab(nextEntry.item)}
+                              disabled={isItemLocked(nextEntry.item)}
                               onClick={() => selectCurriculumItem(nextEntry.item)}
                             >
                               <span className="max-w-[260px] truncate">
-                                {nextEntry.item.type === "QUIZ"
+                                {isItemLocked(nextEntry.item)
                                   ? t(
-                                      `Continue to Quiz · ${nextEntry.item.title}`,
-                                      `Làm Quiz · ${nextEntry.item.title}`,
+                                      "Locked · Pass previous Lab to unlock Quiz",
+                                      "Đang khóa · Hoàn thành Lab trước để mở Quiz",
                                     )
-                                  : t(
-                                      `Next: ${nextEntry.item.title}`,
-                                      `Tiếp theo: ${nextEntry.item.title}`,
-                                    )}
+                                  : nextEntry.item.type === "QUIZ"
+                                    ? t(
+                                        `Continue to Quiz · ${nextEntry.item.title}`,
+                                        `Làm Quiz · ${nextEntry.item.title}`,
+                                      )
+                                    : t(
+                                        `Next: ${nextEntry.item.title}`,
+                                        `Tiếp theo: ${nextEntry.item.title}`,
+                                      )}
                               </span>
-                              <ChevronRight className="ml-1 h-4 w-4 shrink-0" aria-hidden="true" />
+                              {!isItemLocked(nextEntry.item) && (
+                                <ChevronRight className="ml-1 h-4 w-4 shrink-0" aria-hidden="true" />
+                              )}
                             </Button>
                           ) : (
                             <span className="text-xs font-medium text-muted-foreground">
