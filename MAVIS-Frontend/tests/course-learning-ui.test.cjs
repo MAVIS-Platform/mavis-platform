@@ -1865,3 +1865,21 @@ test("Bug #12: CSHARP-MS-2026 uses native .NET 8 InteractiveConceptStage scenari
   assert.match(outline, /LazyOutlineQuizDetails/);
   assert.match(outline, /courseTrackHint/);
 });
+
+test("Bug #13: MarkdownPreview handles nested inline code in bold, blockquote bullets, extended LaTeX & clean titles", () => {
+  const { formatInlineMath } = require("../src/components/shared/markdown-preview.tsx");
+  const { formatCoursePlainText } = require("../src/lib/format/course-display.ts");
+  const md = read("src/components/shared/markdown-preview.tsx");
+
+  assert.equal(formatInlineMath("Scale $$1 \\to 4$$ or $ 1 \\to 4 $ and $1 \\\\to 4$"), "Scale 1 → 4 or 1 → 4 and 1 → 4");
+  assert.equal(
+    formatInlineMath("Server=${DB_HOST};Database=app;User=${DB_USER:-postgres};Password=${DB_PASS}"),
+    "Server=${DB_HOST};Database=app;User=${DB_USER:-postgres};Password=${DB_PASS}",
+  );
+  assert.equal(
+    formatCoursePlainText("Chương 06: Dùng `IHttpClientFactory` & IOptions&lt;T&gt; ($1 \\to 4$)"),
+    "Chương 06: Dùng IHttpClientFactory & IOptions<T> (1 → 4)",
+  );
+  assert.match(md, /inline\(inner, depth \+ 1\)/);
+  assert.match(md, /bqBullet/);
+});

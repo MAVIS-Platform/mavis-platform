@@ -113,7 +113,8 @@ const THEME_STYLES: Record<MarkdownTheme, ThemeClasses> = {
   },
 };
 
-const INLINE = /(\[[^\]]+\]\((?:https?:\/\/|\/)[^\s)]+\)|`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/g;
+const INLINE =
+  /(\[[^\]]+\]\((?:https?:\/\/|\/)[^\s)]+\)|`[^`]+`|\*\*[^*\n]+(?:\*(?!\*)[^*\n]*)*\*\*|\*(?!\s)[^*\n]+?(?<!\s)\*)/g;
 
 const MOJIBAKE_REPLACEMENTS: ReadonlyArray<readonly [RegExp, string]> = [
   [/ðŸ“–/g, "📖"],
@@ -146,23 +147,23 @@ export function sanitizeMojibake(input: string): string {
 }
 
 const MATH_COMMAND_REPLACEMENTS: ReadonlyArray<readonly [RegExp, string]> = [
-  [/\\(?:leq|le)\b/g, "≤"],
-  [/\\(?:geq|ge)\b/g, "≥"],
-  [/\\(?:neq|ne)\b/g, "≠"],
-  [/\\approx\b/g, "≈"],
-  [/\\times\b/g, "×"],
-  [/\\(?:rightarrow|to)\b/g, "→"],
-  [/\\(?:leftarrow|gets)\b/g, "←"],
-  [/\\leftrightarrow\b/g, "↔"],
-  [/\\alpha\b/g, "α"],
-  [/\\beta\b/g, "β"],
-  [/\\gamma\b/g, "γ"],
-  [/\\Delta\b/g, "Δ"],
-  [/\\delta\b/g, "δ"],
-  [/\\mu\b/g, "μ"],
-  [/\\infty\b/g, "∞"],
-  [/\\%/g, "%"],
-  [/\\(?:textbf|textit|textrm|mathrm|text|code)\{([^}]*)\}/g, "$1"],
+  [/\\{1,2}(?:leq|le)\b/g, "≤"],
+  [/\\{1,2}(?:geq|ge)\b/g, "≥"],
+  [/\\{1,2}(?:neq|ne)\b/g, "≠"],
+  [/\\{1,2}approx\b/g, "≈"],
+  [/\\{1,2}times\b/g, "×"],
+  [/\\{1,2}(?:rightarrow|to)\b/g, "→"],
+  [/\\{1,2}(?:leftarrow|gets)\b/g, "←"],
+  [/\\{1,2}leftrightarrow\b/g, "↔"],
+  [/\\{1,2}alpha\b/g, "α"],
+  [/\\{1,2}beta\b/g, "β"],
+  [/\\{1,2}gamma\b/g, "γ"],
+  [/\\{1,2}Delta\b/g, "Δ"],
+  [/\\{1,2}delta\b/g, "δ"],
+  [/\\{1,2}mu\b/g, "μ"],
+  [/\\{1,2}infty\b/g, "∞"],
+  [/\\{1,2}%/g, "%"],
+  [/\\{1,2}(?:textbf|textit|textrm|mathrm|text|code)\{([^}]*)\}/g, "$1"],
 ];
 
 function convertMathBody(expr: string): string {
@@ -173,20 +174,25 @@ function convertMathBody(expr: string): string {
   return out.replace(/\s{2,}/g, " ").trim();
 }
 
-/** Converts inline LaTeX math spans (e.g. `$1 \to 4$`, `$\rightarrow$`, `$8$`) outside code spans while leaving currency like `$100` untouched. */
+/** Converts inline LaTeX math spans (e.g. `$1 \to 4$`, `$\rightarrow$`, `$8$`) outside code spans while leaving currency like `$100` and env `${VAR}` untouched. */
 export function formatInlineMath(text: string): string {
   return text
     .split(/(`[^`]+`)/g)
     .map((segment) => {
       if (segment.startsWith("`") && segment.endsWith("`")) return segment;
-      return segment.replace(/\$(?!\s)([^$\n]{1,120}?)(?<!\s)\$/g, (full, expr: string) => {
+      const replaceMath = (full: string, expr: string) => {
         const hasLatexOrMathSymbol =
-          /\\[a-zA-Z%]+|[=<>^_{}+*/→←↔≤≥≠≈×]/.test(expr);
+          /\\{1,2}[a-zA-Z%]+|[=<>^_{}+*/→←↔≤≥≠≈×]/.test(expr);
         const isCompactToken =
           /^[A-Za-z0-9_().\-,]+(?:\s[+\-*/=<>]\s[A-Za-z0-9_().\-,]+)*$/.test(expr);
         if (!hasLatexOrMathSymbol && !isCompactToken) return full;
         return convertMathBody(expr);
-      });
+      };
+      return segment
+        .replace(/\$\$(?!\{)(?!\s)([^$\n]{1,200}?)(?<!\s)\$\$/g, replaceMath)
+        .replace(/\$\$(?!\{)\s*([^$\n]{1,200}?\\{1,2}[a-zA-Z%]+[^$\n]*?)\s*\$\$/g, replaceMath)
+        .replace(/\$(?!\{)(?!\s)([^$\n]{1,120}?)(?<!\s)\$/g, replaceMath)
+        .replace(/\$(?!\{)\s*([^$\n]{1,120}?\\{1,2}[a-zA-Z%]+[^$\n]*?)\s*\$/g, replaceMath);
     })
     .join("");
 }
@@ -195,8 +201,8 @@ function safeHref(value: string) {
   return value.startsWith("/") || /^https?:\/\//i.test(value) ? value : null;
 }
 
-function inline(text: string): ReactNode[] {
-  const cleaned = formatInlineMath(sanitizeMojibake(text));
+function inline(text: string, depth = 0): ReactNode[] {
+  const cleaned = depth === 0 ? formatInlineMath(sanitizeMojibake(text)) : text;
   const parts = cleaned.split(INLINE);
   return parts.map((part, index) => {
     if (!part) return null;
@@ -210,11 +216,13 @@ function inline(text: string): ReactNode[] {
         </code>
       );
     }
-    if (part.startsWith("**") && part.endsWith("**")) {
-      return <strong key={index}>{part.slice(2, -2)}</strong>;
+    if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
+      const inner = part.slice(2, -2);
+      return <strong key={index}>{depth < 3 ? inline(inner, depth + 1) : inner}</strong>;
     }
-    if (part.startsWith("*") && part.endsWith("*")) {
-      return <em key={index}>{part.slice(1, -1)}</em>;
+    if (part.startsWith("*") && part.endsWith("*") && part.length > 2) {
+      const inner = part.slice(1, -1);
+      return <em key={index}>{depth < 3 ? inline(inner, depth + 1) : inner}</em>;
     }
     const link = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(part);
     if (link) {
@@ -416,12 +424,21 @@ export function MarkdownPreview({
     if (blockquoteMatch) {
       flushParagraph();
       flushList();
+      const bqText = blockquoteMatch[1]!.trim();
+      const bqBullet = /^[-*•]\s+(.*)$/.exec(bqText);
       blocks.push(
         <blockquote
           key={blocks.length}
           className={styles.blockquote}
         >
-          {inline(blockquoteMatch[1]!)}
+          {bqBullet ? (
+            <>
+              <span className="mr-1.5 font-semibold not-italic">•</span>
+              {inline(bqBullet[1]!)}
+            </>
+          ) : (
+            inline(blockquoteMatch[1]!)
+          )}
         </blockquote>,
       );
       continue;

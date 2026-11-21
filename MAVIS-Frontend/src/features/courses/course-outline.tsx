@@ -19,7 +19,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useLocale } from "@/lib/i18n/locale-context";
-import { formatCourseLabTitle } from "@/lib/format/course-display";
+import { formatCourseLabTitle, formatCoursePlainText } from "@/lib/format/course-display";
 import { ApiError } from "@/lib/errors/api-error";
 import { useApiQuery } from "@/hooks/use-api";
 import { useCourseAuthoring, useCourseRoadmap, usePublishedCourse } from "@/features/workspaces/course-access";
@@ -185,12 +185,21 @@ function CourseOutlineBody({
     : rawModules;
   const modules: OutlineModule[] = baseModules.map((mod) => ({
     ...mod,
-    items: mod.items.filter((item) => item.type !== "ESSAY"),
+    title: formatCoursePlainText(mod.title),
+    description: mod.description ? formatCoursePlainText(mod.description) : null,
+    items: mod.items
+      .filter((item) => item.type !== "ESSAY")
+      .map((item) => ({
+        ...item,
+        title: formatCoursePlainText(item.title),
+        description: item.description ? formatCoursePlainText(item.description) : null,
+      })),
   }));
-  const courseTitle =
+  const courseTitle = formatCoursePlainText(
     published?.snapshot.title ??
-    (draftModules.length > 0 ? draft?.title : undefined) ??
-    (isJavaCourseraWorkspace ? JAVA_COURSERA_COURSE_TITLE : workspace?.name);
+      (draftModules.length > 0 ? draft?.title : undefined) ??
+      (isJavaCourseraWorkspace ? JAVA_COURSERA_COURSE_TITLE : workspace?.name),
+  );
   const courseStatus = published
     ? `v${published.version}`
     : isCatalogFallback
@@ -463,7 +472,7 @@ function CourseOutlineBody({
                         <p className="text-sm font-medium text-foreground">{item.title}</p>
                         {(item.description || (assignment?.title && assignment.title !== item.title)) && (
                           <p className="mt-0.5 text-xs text-muted-foreground">
-                            {item.description || assignment?.title}
+                            {formatCoursePlainText(item.description || assignment?.title)}
                           </p>
                         )}
                         {item.type === "THEORY" && typeof item.content?.["body"] === "string" && (

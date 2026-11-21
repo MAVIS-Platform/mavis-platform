@@ -69,32 +69,57 @@ export function formatTenScaleScore(
 
 const REDUNDANT_QUESTION_PREFIX = /^(?:(?:Câu|Question|Q)\s*#?\s*\d+\s*[:.)\-–]\s*|\d+\s*[.)]\s+)/i;
 
+const PLAIN_LATEX_REPLACEMENTS: ReadonlyArray<readonly [RegExp, string]> = [
+  [/\\{1,2}(?:leq|le)\b/g, "≤"],
+  [/\\{1,2}(?:geq|ge)\b/g, "≥"],
+  [/\\{1,2}(?:neq|ne)\b/g, "≠"],
+  [/\\{1,2}approx\b/g, "≈"],
+  [/\\{1,2}times\b/g, "×"],
+  [/\\{1,2}(?:rightarrow|to)\b/g, "→"],
+  [/\\{1,2}leftrightarrow\b/g, "↔"],
+  [/\\{1,2}alpha\b/g, "α"],
+  [/\\{1,2}beta\b/g, "β"],
+  [/\\{1,2}gamma\b/g, "γ"],
+  [/\\{1,2}delta\b/gi, "Δ"],
+  [/\\{1,2}mu\b/g, "μ"],
+  [/\\{1,2}infty\b/g, "∞"],
+  [/\\{1,2}%/g, "%"],
+  [/\\{1,2}(?:textbf|textit|textrm|mathrm|text|code)\{([^}]*)\}/g, "$1"],
+];
+
+function convertInlineLatexToken(expr: string): string {
+  let out = expr;
+  for (const [pattern, replacement] of PLAIN_LATEX_REPLACEMENTS) {
+    out = out.replace(pattern, replacement);
+  }
+  return out.replace(/\s{2,}/g, " ").trim();
+}
+
+export function formatCoursePlainText(value?: string | null): string {
+  if (!value) return "";
+  let s = decodePlainTextEntities(value).trim();
+  const replaceMath = (full: string, expr: string) => {
+    const hasLatex = /\\{1,2}[a-zA-Z%]+|[=<>^_{}+*/→←↔≤≥≠≈×]/.test(expr);
+    const isCompact =
+      /^[A-Za-z0-9_().\-,]+(?:\s[+\-*/=<>]\s[A-Za-z0-9_().\-,]+)*$/.test(expr);
+    return hasLatex || isCompact ? convertInlineLatexToken(expr) : full;
+  };
+  s = s
+    .replace(/\$\$(?!\{)\s*([^$\n]+?)\s*\$\$/g, replaceMath)
+    .replace(/\$(?!\{)\s*([^$\n]{1,120}?)\s*\$/g, replaceMath)
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\*\*([^*]+)\*\*/g, "$1");
+  return s.replace(/\s{2,}/g, " ").trim();
+}
+
 export function sanitizeQuizPlainText(text: string | null | undefined): string {
   if (!text) return "";
-  let s = text.trim();
-  const latexReplacements: Array<[RegExp, string]> = [
-    [/\\(?:leq|le)\b/g, "≤"],
-    [/\\(?:geq|ge)\b/g, "≥"],
-    [/\\(?:neq|ne)\b/g, "≠"],
-    [/\\approx\b/g, "≈"],
-    [/\\times\b/g, "×"],
-    [/\\(?:rightarrow|to)\b/g, "→"],
-    [/\\leftrightarrow\b/g, "↔"],
-    [/\\alpha\b/g, "α"],
-    [/\\beta\b/g, "β"],
-    [/\\gamma\b/g, "γ"],
-    [/\\delta\b/gi, "Δ"],
-    [/\\mu\b/g, "μ"],
-    [/\\infty\b/g, "∞"],
-    [/\\(?:textbf|textit|textrm|mathrm|text|code)\{([^}]*)\}/g, "$1"],
-    [/\$\$([^$]+)\$\$/g, "$1"],
-    [/\$([^$]+)\$/g, "$1"],
-    [/\*\*([^*]+)\*\*/g, "$1"],
-    [/`([^`]+)`/g, "$1"],
-  ];
-  for (const [pattern, replacement] of latexReplacements) {
-    s = s.replace(pattern, replacement);
-  }
+  let s = convertInlineLatexToken(decodePlainTextEntities(text).trim());
+  s = s
+    .replace(/\$\$(?!\{)([^$]+)\$\$/g, "$1")
+    .replace(/\$(?!\{)([^$]+)\$/g, "$1")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/`([^`]+)`/g, "$1");
   return s.replace(/\s{2,}/g, " ").trim();
 }
 

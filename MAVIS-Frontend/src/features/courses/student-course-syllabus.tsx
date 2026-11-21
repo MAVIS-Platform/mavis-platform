@@ -21,7 +21,7 @@ import { MarkdownPreview } from "@/components/shared/markdown-preview";
 import { RequestState } from "@/components/shared/request-state";
 import { useApi, useApiQuery } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
-import { formatCourseLabTitle, formatTenScaleScore } from "@/lib/format/course-display";
+import { formatCourseLabTitle, formatCoursePlainText, formatTenScaleScore } from "@/lib/format/course-display";
 import { computeCourseProgressSummary } from "@/lib/coursera-ui-helpers";
 import { useCourseRoadmap, usePublishedCourse } from "@/features/workspaces/course-access";
 import { ChapterQuizRunner } from "./chapter-quiz-runner";
@@ -129,8 +129,8 @@ export function StudentCourseSyllabus({
           .map((item) => ({
             id: item.id,
             type: item.type as OutlineItemData["type"],
-            title: item.title,
-            description: item.description ?? null,
+            title: formatCoursePlainText(item.title),
+            description: item.description ? formatCoursePlainText(item.description) : null,
             position: item.position,
             assignmentId: item.assignmentId ?? null,
             required: item.required,
@@ -175,11 +175,11 @@ export function StudentCourseSyllabus({
         }
         return {
           id: mod.id,
-          title: mod.title,
-          description: mod.description ?? null,
+          title: formatCoursePlainText(mod.title),
+          description: mod.description ? formatCoursePlainText(mod.description) : null,
           position: mod.position,
           prerequisiteModuleId: mod.prerequisiteModuleId ?? null,
-          labTitle: labItem?.title ?? mod.title,
+          labTitle: formatCoursePlainText(labItem?.title ?? mod.title),
           items: mappedItems,
         };
       });
