@@ -1883,3 +1883,14 @@ test("Bug #13: MarkdownPreview handles nested inline code in bold, blockquote bu
   assert.match(md, /inline\(inner, depth \+ 1\)/);
   assert.match(md, /bqBullet/);
 });
+
+test("Bug #14: StudentCourseSyllabus fixes Module badge label, disables locked Lab cards & adds bottom lesson nav", () => {
+  const syllabus = read("src/features/courses/student-course-syllabus.tsx");
+
+  assert.doesNotMatch(syllabus, /t\(`Chapter \$\{activeModule\.position\}`, `Chương \$\{activeModule\.position\}`\)/);
+  assert.match(syllabus, /t\(`Module \$\{activeModule\.position\}`, `Module \$\{activeModule\.position\}`\)/);
+  assert.match(syllabus, /disabled=\{isLocked\}/);
+  assert.match(syllabus, /Pass previous Lab to unlock/);
+  assert.match(syllabus, /isItemLockedLab/);
+  assert.match(syllabus, /Continue to Quiz/);
+});

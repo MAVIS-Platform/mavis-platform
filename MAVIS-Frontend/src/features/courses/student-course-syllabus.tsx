@@ -257,7 +257,16 @@ export function StudentCourseSyllabus({
   const activeLabRecord =
     (chapterAssignmentId ? labs.find((l) => l.assignmentId === chapterAssignmentId) : undefined) ??
     selectedLab;
+  const isItemLockedLab = (item: OutlineItemData) =>
+    Boolean(
+      item.assignmentId &&
+        ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(item.type) &&
+        labs.find((l) => l.assignmentId === item.assignmentId)?.state === "LOCKED",
+    );
   const selectCurriculumItem = (item: OutlineItemData) => {
+    if (isItemLockedLab(item)) {
+      return;
+    }
     if (item.assignmentId && ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(item.type)) {
       router.push(
         `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(item.assignmentId)}&step=1`,
@@ -633,9 +642,15 @@ export function StudentCourseSyllabus({
                       <button
                         key={item.id}
                         type="button"
-                        onClick={() => selectCurriculumItem(item)}
-                        className={`group rounded-xl border bg-background p-3 text-left transition-all hover:border-primary hover:shadow-sm ${
-                          isLocked ? "border-border/60 opacity-85" : ""
+                        disabled={isLocked}
+                        aria-disabled={isLocked || undefined}
+                        onClick={() => {
+                          if (!isLocked) selectCurriculumItem(item);
+                        }}
+                        className={`group rounded-xl border bg-background p-3 text-left transition-all ${
+                          isLocked
+                            ? "cursor-not-allowed border-border/60 opacity-75"
+                            : "hover:border-primary hover:shadow-sm"
                         }`}
                       >
                         <div className="flex items-center justify-between gap-2">
@@ -652,7 +667,11 @@ export function StudentCourseSyllabus({
                             </span>
                           ) : null}
                         </div>
-                        <span className="mt-1 block text-sm font-semibold group-hover:text-primary">
+                        <span
+                          className={`mt-1 block text-sm font-semibold ${
+                            isLocked ? "text-muted-foreground" : "group-hover:text-primary"
+                          }`}
+                        >
                           {item.title}
                         </span>
                         <span className="mt-1 block text-xs text-muted-foreground">
@@ -661,6 +680,11 @@ export function StudentCourseSyllabus({
                             ? ` · ~${item.estimatedMinutes} ${t("min", "phút")}`
                             : ""}
                         </span>
+                        {isLocked && (
+                          <span className="mt-1 block text-[11px] text-amber-700 dark:text-amber-300">
+                            {t("Pass previous Lab to unlock", "Hoàn thành Lab trước để mở khóa")}
+                          </span>
+                        )}
                       </button>
                     );
                   })}
@@ -693,7 +717,7 @@ export function StudentCourseSyllabus({
                     <div className="min-w-0 space-y-1.5">
                       <div className="flex flex-wrap items-center gap-2">
                         <Badge variant="outline" className="font-mono">
-                          {t(`Chapter ${activeModule.position}`, `Chương ${activeModule.position}`)}
+                          {t(`Module ${activeModule.position}`, `Module ${activeModule.position}`)}
                         </Badge>
                         <Badge
                           variant="outline"
@@ -755,6 +779,48 @@ export function StudentCourseSyllabus({
                         />
                         <div className="prose-sm max-w-none rounded-xl border bg-background p-4 sm:p-6">
                           <MarkdownPreview markdown={String(activeItem.content["body"])} />
+                        </div>
+
+                        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/20 p-4">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={!prevEntry}
+                            onClick={() => prevEntry && selectCurriculumItem(prevEntry.item)}
+                          >
+                            <ChevronLeft className="mr-1 h-4 w-4 shrink-0" aria-hidden="true" />
+                            <span className="max-w-[240px] truncate">
+                              {prevEntry
+                                ? t(`Prev: ${prevEntry.item.title}`, `Trước: ${prevEntry.item.title}`)
+                                : t("Prev", "Bài trước")}
+                            </span>
+                          </Button>
+                          {nextEntry ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              disabled={isItemLockedLab(nextEntry.item)}
+                              onClick={() => selectCurriculumItem(nextEntry.item)}
+                            >
+                              <span className="max-w-[260px] truncate">
+                                {nextEntry.item.type === "QUIZ"
+                                  ? t(
+                                      `Continue to Quiz · ${nextEntry.item.title}`,
+                                      `Làm Quiz · ${nextEntry.item.title}`,
+                                    )
+                                  : t(
+                                      `Next: ${nextEntry.item.title}`,
+                                      `Tiếp theo: ${nextEntry.item.title}`,
+                                    )}
+                              </span>
+                              <ChevronRight className="ml-1 h-4 w-4 shrink-0" aria-hidden="true" />
+                            </Button>
+                          ) : (
+                            <span className="text-xs font-medium text-muted-foreground">
+                              {t("End of Module theory", "Đã hết bài lý thuyết trong Module")}
+                            </span>
+                          )}
                         </div>
 
                         {/* OLP-inspired Chapter Practice Box directly under Lesson */}
