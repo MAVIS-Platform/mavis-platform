@@ -2743,6 +2743,46 @@ public class RuntimePlanningService {
   return resolved;
  }
 
+ /** Phase E2: asynchronously pre-pulls pinned registry images when a Lab is published so students avoid cold pull delays. */
+ @org.springframework.context.event.EventListener
+ public void onLabPublished(com.mavis.common.event.LabPublishedEvent event) {
+  if (event == null || event.projectId() == null) return;
+  RuntimeConfiguration cfg = configurations.findById(event.projectId()).orElse(null);
+  if (cfg == null || cfg.getProfile() == null) return;
+  String composeYaml = cfg.getProfile().path("sandboxCompose").asText("");
+  if (composeYaml.isBlank()) return;
+  List<String> registryImages = extractPinnedRegistryImages(composeYaml);
+  if (registryImages.isEmpty()) return;
+  java.util.concurrent.CompletableFuture.runAsync(() -> prepullRegistryImagesBestEffort(registryImages));
+ }
+
+ static List<String> extractPinnedRegistryImages(String composeYaml) {
+  if (composeYaml == null || composeYaml.isBlank()) return List.of();
+  Set<String> images = new LinkedHashSet<>();
+  var matcher = java.util.regex.Pattern.compile("(?m)^\\s*image:\\s*[\"']?([^\\s\"']+?@sha256:[0-9a-fA-F]{64})[\"']?\\s*$")
+          .matcher(composeYaml);
+  while (matcher.find()) {
+   String ref = matcher.group(1).trim();
+   if (!ref.isEmpty() && !ref.startsWith("sha256:")) images.add(ref);
+  }
+  return List.copyOf(images);
+ }
+
+ private void prepullRegistryImagesBestEffort(List<String> images) {
+  for (String ref : images) {
+   try {
+    Process inspect = new ProcessBuilder("docker", "image", "inspect", ref).redirectErrorStream(true).start();
+    if (inspect.waitFor(10, java.util.concurrent.TimeUnit.SECONDS) && inspect.exitValue() == 0) {
+     continue; // Already cached locally
+    }
+    Process pull = new ProcessBuilder("docker", "pull", "--quiet", ref).redirectErrorStream(true).start();
+    pull.waitFor(120, java.util.concurrent.TimeUnit.SECONDS);
+   } catch (Exception ignored) {
+    // Best-effort warmup; never disrupts publish flow.
+   }
+  }
+ }
+
  private record ExecutionEnvironment(Map<String,String> protectedEnvironment,ObjectNode bindings){}
 
  private ExecutionEnvironment buildExecutionEnvironment(UUID projectId,JsonNode profile,PreflightCheckResponseDTO pre,JsonNode apps){

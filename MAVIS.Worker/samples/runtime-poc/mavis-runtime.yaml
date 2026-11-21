@@ -1,0 +1,24 @@
+# Deterministic MAVIS Studio Live runtime contract (Golden Reference Repo)
+version: 1
+services:
+  gateway:
+    runtime: java
+    port: 8080
+    readinessPath: "/health"
+  orders:
+    runtime: dotnet8-linux-x64-glibc
+    port: 8080
+    readinessPath: "/health"
+  payment:
+    runtime: java
+    port: 8080
+    readinessPath: "/health"
+  catalog:
+    runtime: dotnet8-linux-x64-glibc
+    port: 8080
+    readinessPath: "/health"
+seed:
+  service: orders
+  method: GET
+  path: "/health"
+  expectedStatus: 200

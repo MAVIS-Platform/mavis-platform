@@ -8,7 +8,7 @@ namespace MAVIS.Runner;
 /// <summary>Proposed round-2 Java callback transport. No credentials or response bodies in errors.</summary>
 public sealed class JavaRuntimeClient : IRuntimeLifecycleObserver, IDisposable
 {
-    public sealed record StudioCommand(string ActionId, string Action, string Service, int? Replicas, int? CpuPercent = null, int? TargetRps = null);
+    public sealed record StudioCommand(string ActionId, string Action, string Service, int? Replicas, int? CpuPercent = null, int? TargetRps = null, string? EnvKey = null, string? EnvValue = null, string? TargetImage = null);
     public sealed record StudioPoll(bool FinishRequested, StudioCommand? Command, bool CancelRequested = false);
     public sealed record WorkerClaim(bool Claimed, string? SessionId, string? ResourceProject);
 

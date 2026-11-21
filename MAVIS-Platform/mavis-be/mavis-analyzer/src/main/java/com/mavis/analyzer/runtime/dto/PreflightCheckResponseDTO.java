@@ -119,6 +119,20 @@ public class PreflightCheckResponseDTO {
     @Builder.Default
     private Map<String, Map<String, String>> relocatedComposeSecrets = new HashMap<>();
 
+    /** Phase D4: Optional deterministic seed hook declared in mavis-runtime.yaml. */
+    private SeedHookDTO seedHook;
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class SeedHookDTO {
+        private String service;
+        private String method;
+        private String path;
+        private Integer expectedStatus;
+    }
+
     /** Services whose Spring Boot management.server.port differed from server.port and must be unified to main port in sandbox. Server-side only. */
     @com.fasterxml.jackson.annotation.JsonIgnore
     @Builder.Default

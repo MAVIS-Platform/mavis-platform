@@ -39,8 +39,8 @@ import java.util.UUID;
 public class LabStudioExerciseService {
 
     private static final Set<String> ACTIONS = Set.of(
-            "START", "STOP", "SCALE", "CONNECT", "DISCONNECT", "PAUSE", "RESUME", "THROTTLE_CPU", "SET_LOAD");
-    private static final Set<String> CHANGE_ACTIONS = Set.of("STOP", "START", "SCALE", "PAUSE", "RESUME", "THROTTLE_CPU", "SET_LOAD");
+            "START", "STOP", "SCALE", "CONNECT", "DISCONNECT", "PAUSE", "RESUME", "THROTTLE_CPU", "SET_LOAD", "SET_ENV", "SWAP_VERSION");
+    private static final Set<String> CHANGE_ACTIONS = Set.of("STOP", "START", "SCALE", "PAUSE", "RESUME", "THROTTLE_CPU", "SET_LOAD", "SET_ENV", "SWAP_VERSION");
     private static final Set<String> EXERCISE_TYPES = Set.of(
             "CHANGE_IMPACT", "CASCADING_FAILURE", "CIRCUIT_BREAKER", "SCALE_UNDER_LOAD", "CONFIG_REGRESSION", "CUSTOM");
     private static final Set<String> RULE_METRICS = Set.of(

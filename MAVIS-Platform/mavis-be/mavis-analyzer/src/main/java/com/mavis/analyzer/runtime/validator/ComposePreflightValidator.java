@@ -1058,6 +1058,23 @@ public class ComposePreflightValidator {
             dto.setServiceHealthConfidence(confidence);
             dto.setServiceHealthReasons(reasons);
             dto.setInfrastructureServices(infra);
+            if (root.get("seed") instanceof Map<?, ?> seedMap) {
+                String seedSvc = seedMap.get("service") != null ? String.valueOf(seedMap.get("service")).trim() : "";
+                String seedMethod = seedMap.get("method") != null ? String.valueOf(seedMap.get("method")).trim().toUpperCase(Locale.ROOT) : "POST";
+                String seedPath = seedMap.get("path") != null ? String.valueOf(seedMap.get("path")).trim() : "";
+                int seedStatus = seedMap.get("expectedStatus") instanceof Number n ? n.intValue() : 200;
+                if (!seedSvc.isEmpty() && RUNNER_NAME_PATTERN.matcher(seedSvc).matches()
+                        && Set.of("GET", "POST").contains(seedMethod)
+                        && seedPath.startsWith("/") && !seedPath.startsWith("//") && !seedPath.contains("\\") && seedPath.length() <= 256
+                        && seedStatus >= 200 && seedStatus < 300) {
+                    dto.setSeedHook(PreflightCheckResponseDTO.SeedHookDTO.builder()
+                            .service(seedSvc)
+                            .method(seedMethod)
+                            .path(seedPath)
+                            .expectedStatus(seedStatus)
+                            .build());
+                }
+            }
         } catch (Exception e) {
             log.warn("Ignoring malformed mavis-runtime.yaml contract in {}: {}", storagePath, e.getMessage());
         }

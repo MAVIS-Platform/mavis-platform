@@ -785,9 +785,10 @@ export const contracts = {
       passed:z.boolean(),
     }).nullish(),
     actions:z.array(z.object({
-      actionId:z.string().uuid(), action:z.enum(["START","STOP","SCALE","PAUSE","RESUME","THROTTLE_CPU","SET_LOAD"]), service:z.string(),
+      actionId:z.string().uuid(), action:z.enum(["START","STOP","SCALE","PAUSE","RESUME","THROTTLE_CPU","SET_LOAD","SET_ENV","SWAP_VERSION"]), service:z.string(),
       replicas:z.number().nullable().optional(), cpuPercent:z.number().int().min(10).max(100).nullable().optional(),
       targetRps:z.number().int().min(1).max(50).nullable().optional(),
+      envKey:z.string().max(64).nullish(), envValue:z.string().max(256).nullish(), targetImage:z.string().max(256).nullish(),
       status:z.enum(["PENDING","RUNNING","CONFIRMED","FAILED","INTERRUPTED"]),
       requestedAt:z.string(), completedAt:z.string().nullable().optional(), result:z.object({
         action:z.string(),service:z.string(),replicasBefore:z.number(),replicasAfter:z.number(),confirmed:z.boolean(),
@@ -795,10 +796,13 @@ export const contracts = {
       }).nullable().optional(),
     })),
   })),
-  studioAction: contract(z.object({sessionId:id,actionId:z.string().uuid(),action:z.enum(["START","STOP","SCALE","PAUSE","RESUME","THROTTLE_CPU","SET_LOAD"]),
+  studioAction: contract(z.object({sessionId:id,actionId:z.string().uuid(),action:z.enum(["START","STOP","SCALE","PAUSE","RESUME","THROTTLE_CPU","SET_LOAD","SET_ENV","SWAP_VERSION"]),
     service:z.string().min(1),replicas:z.number().int().min(1).max(8).optional(),
     cpuPercent:z.number().int().min(10).max(100).optional(),
-    targetRps:z.number().int().min(1).max(50).optional()}), z.unknown(), true),
+    targetRps:z.number().int().min(1).max(50).optional(),
+    envKey:z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/).optional(),
+    envValue:z.string().max(256).optional(),
+    targetImage:z.string().min(10).max(256).optional()}), z.unknown(), true),
   studioPrediction: contract(z.object({
     sessionId:id,
     predictedServices:z.array(z.string().min(1).max(128)).min(1).max(20),

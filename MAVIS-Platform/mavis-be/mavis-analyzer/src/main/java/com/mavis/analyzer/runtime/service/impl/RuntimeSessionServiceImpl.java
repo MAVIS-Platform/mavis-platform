@@ -63,7 +63,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
             "dotnetInstrumentationVersion", "javaInstrumentationVersion", "environmentBindings",
             // Required by the Runner to apply initially stopped blocks/connections and to
             // validate interactive Studio actions against the prepared topology.
-            "studioTopology", "probeRps");
+            "studioTopology", "probeRps", "seedHook", "allowedEnvKeys", "alternateImages");
     private static final List<String> RUNNER_STEP_FIELDS = List.of("id", "service", "method", "path", "expectedStatus", "jsonBody",
             "headers", "secretHeaders", "extract", "environmentVariables", "bodyReference", "envHeaders", "allowClientError");
     private static final Pattern EXCERPT_MAPPING_PATTERN = Pattern.compile("@(GetMapping|PostMapping|PutMapping|DeleteMapping|PatchMapping|RequestMapping)\\s*(?:\\(\\s*\"([^\"]*)\"\\s*\\))?");
@@ -1374,10 +1374,18 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
             profileNode.path("serviceImageOverrides").fields().forEachRemaining(e -> overrides.put(e.getKey(), e.getValue().asText("")));
         }
 
+        PreflightCheckResponseDTO detectedPreflight = null;
         if (profileNode != null && profileNode.hasNonNull("sandboxCompose") && !profileNode.get("sandboxCompose").asText().isBlank()) {
             composeYaml = profileNode.get("sandboxCompose").asText();
+            if (snapshot != null && snapshot.getId() != null && sourceSnapshotRepository.findById(snapshot.getId()).isPresent()
+                    && !profileNode.hasNonNull("seedHook")) {
+                try {
+                    detectedPreflight = runComposePreflight(snapshot.getId());
+                } catch (Exception ignored) {}
+            }
         } else if (snapshot != null && snapshot.getId() != null && sourceSnapshotRepository.findById(snapshot.getId()).isPresent()) {
             PreflightCheckResponseDTO check = runComposePreflight(snapshot.getId());
+            detectedPreflight = check;
             boolean needsRemediation = composeYaml.isBlank()
                     || !overrides.isEmpty()
                     || (check.getRunnerIssues() != null && !check.getRunnerIssues().isEmpty());
@@ -1462,6 +1470,9 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         var exportedProfile = profileNode.deepCopy();
         if (exportedProfile instanceof ObjectNode object) {
             object.retain(RUNNER_PROFILE_FIELDS);
+            if (!object.hasNonNull("seedHook") && detectedPreflight != null && detectedPreflight.getSeedHook() != null) {
+                object.set("seedHook", objectMapper.valueToTree(detectedPreflight.getSeedHook()));
+            }
             String configuredRunnerImg = object.path("scenarioRunnerImage").asText("").trim();
             if (configuredRunnerImg.startsWith("mcr.microsoft.com/dotnet/aspnet")) {
                 String builtId = RuntimeRunnerDispatcher.captureCommandStdout(

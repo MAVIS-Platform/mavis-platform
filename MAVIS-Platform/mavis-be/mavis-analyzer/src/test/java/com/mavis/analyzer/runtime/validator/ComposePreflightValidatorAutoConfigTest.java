@@ -980,4 +980,23 @@ class ComposePreflightValidatorAutoConfigTest {
         assertThat(dto.getInfrastructureServices()).contains("custom-cache");
         assertThat(dto.getServiceHealthPaths()).doesNotContainKey("custom-cache");
     }
+
+    @Test
+    void runtimeContractParsesDeterministicSeedHookAndGoldenReferenceRepoPassesPreflight() throws Exception {
+        Path goldenDir = Path.of("..", "..", "..", "MAVIS.Worker", "samples", "runtime-poc").toAbsolutePath().normalize();
+        if (!Files.isDirectory(goldenDir)) {
+            goldenDir = Path.of("..", "..", "MAVIS.Worker", "samples", "runtime-poc").toAbsolutePath().normalize();
+        }
+        String goldenCompose = Files.readString(goldenDir.resolve("docker-compose.golden.yml"));
+        PreflightCheckResponseDTO dto = validator.validate(goldenCompose);
+        validator.inspectSnapshotSource(goldenDir, dto);
+
+        assertThat(dto.getDetectedServices()).contains("gateway", "orders", "payment", "catalog");
+        assertThat(dto.getServiceStacks()).containsEntry("gateway", "java").containsEntry("orders", "dotnet8-linux-x64-glibc");
+        assertThat(dto.getSeedHook()).isNotNull();
+        assertThat(dto.getSeedHook().getService()).isEqualTo("orders");
+        assertThat(dto.getSeedHook().getMethod()).isEqualTo("GET");
+        assertThat(dto.getSeedHook().getPath()).isEqualTo("/health");
+        assertThat(dto.getSeedHook().getExpectedStatus()).isEqualTo(200);
+    }
 }

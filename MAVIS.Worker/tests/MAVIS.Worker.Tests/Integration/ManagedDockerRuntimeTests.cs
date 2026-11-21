@@ -62,13 +62,18 @@ public sealed class ManagedDockerRuntimeTests
                 }
             };
         }
-        var handler = new StudioJava(definition, prepared);
+        var handler = new StudioJava(definition, prepared, extendedFaults: !prepared && !musl);
         using var client = new JavaRuntimeClient(new Uri("http://127.0.0.1:8080"),"fixture-managed-key",handler);
         var outcome = await new ManagedRuntimeAdapter(client,new RecordedDocker(root))
             .RunAsync(definition.SessionId,Path.Combine(poc,"collector.yaml"),root);
         Assert.Equal("Completed",outcome.ExecutionStatus);
         Assert.Equal("Confirmed",outcome.CleanupStatus);
-        Assert.Equal(prepared ? new[]{"START","START","STOP","START","SCALE"} : new[]{"STOP","START","SCALE"}, outcome.InfrastructureActions!.Select(action=>action.Action));
+        var expectedActions = prepared
+            ? new[]{"START","START","STOP","START","SCALE"}
+            : (!musl
+                ? new[]{"STOP","START","PAUSE","RESUME","THROTTLE_CPU","SET_LOAD","SCALE"}
+                : new[]{"STOP","START","SCALE"});
+        Assert.Equal(expectedActions, outcome.InfrastructureActions!.Select(action=>action.Action));
         if (prepared) {
             Assert.Equal(0, outcome.InfrastructureActions![0].ReplicasBefore);
             Assert.Equal(1, outcome.InfrastructureActions[0].ReplicasAfter);
@@ -78,7 +83,7 @@ public sealed class ManagedDockerRuntimeTests
         }
         Assert.All(outcome.InfrastructureActions!, action=>Assert.True(action.Confirmed));
         Assert.Equal(2,outcome.InfrastructureActions!.Last().ReplicasAfter);
-        Assert.Equal(prepared ? 5 : 3,handler.Acknowledged);
+        Assert.Equal(expectedActions.Length,handler.Acknowledged);
         Assert.True(handler.Telemetry.Count>=4);
         Assert.Contains(handler.Telemetry,sample=>sample.GetProperty("spans").GetArrayLength()>0);
         Assert.Contains(handler.Telemetry,sample=>sample.TryGetProperty("probe",out var probe)&&probe.ValueKind==JsonValueKind.Object);
@@ -87,21 +92,37 @@ public sealed class ManagedDockerRuntimeTests
         Assert.NotEmpty(outcome.Trace!.Spans);
     }
 
-    private sealed class StudioJava(RuntimeRunDefinition definition, bool prepared = false) : HttpMessageHandler
+    private sealed class StudioJava(RuntimeRunDefinition definition, bool prepared = false, bool extendedFaults = false) : HttpMessageHandler
     {
         public int Acknowledged;
         public List<JsonElement> Telemetry {get;}=[];
-        private readonly string[] ids = Enumerable.Range(0,5).Select(_=>Guid.NewGuid().ToString()).ToArray();
+        private readonly string[] ids = Enumerable.Range(0,8).Select(_=>Guid.NewGuid().ToString()).ToArray();
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken ct)
         {
             object response;
             var route=request.RequestUri!.Segments.Last();
             if(route=="run-definition") response=definition;
             else if(route=="commands")
-                response=new {definition.SessionId,definition.ResourceProject,finishRequested=Acknowledged==(prepared?5:3),
-                    command=Acknowledged==(prepared?5:3)?null:new {actionId=ids[Acknowledged],action=(prepared ? new[]{"START","START","STOP","START","SCALE"} : new[]{"STOP","START","SCALE"})[Acknowledged],
-                        service=Acknowledged==(prepared?4:2)?"orders":prepared&&Acknowledged>0?"orders-payment-route":"payment",
-                        replicas=Acknowledged==(prepared?4:2)?(int?)2:null}};
+            {
+                var plan = prepared
+                    ? new (string Action, string Service, int? Replicas, int? Cpu, int? Rps)[] {
+                        ("START","payment",null,null,null),("START","orders-payment-route",null,null,null),
+                        ("STOP","orders-payment-route",null,null,null),("START","orders-payment-route",null,null,null),
+                        ("SCALE","orders",2,null,null) }
+                    : (extendedFaults
+                        ? new (string Action, string Service, int? Replicas, int? Cpu, int? Rps)[] {
+                            ("STOP","payment",null,null,null),("START","payment",null,null,null),
+                            ("PAUSE","payment",null,null,null),("RESUME","payment",null,null,null),
+                            ("THROTTLE_CPU","orders",null,50,null),("SET_LOAD","orders",null,null,15),
+                            ("SCALE","orders",2,null,null) }
+                        : new (string Action, string Service, int? Replicas, int? Cpu, int? Rps)[] {
+                            ("STOP","payment",null,null,null),("START","payment",null,null,null),("SCALE","orders",2,null,null) });
+                var done = Acknowledged >= plan.Length;
+                response=new {definition.SessionId,definition.ResourceProject,finishRequested=done,
+                    command=done?null:new {actionId=ids[Acknowledged],action=plan[Acknowledged].Action,
+                        service=plan[Acknowledged].Service,replicas=plan[Acknowledged].Replicas,
+                        cpuPercent=plan[Acknowledged].Cpu,targetRps=plan[Acknowledged].Rps}};
+            }
             else {
                 var body=await request.Content!.ReadAsStringAsync(ct);
                 using var json=JsonDocument.Parse(body);

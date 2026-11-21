@@ -69,6 +69,9 @@ public class CourseAccessService {
     @org.springframework.context.annotation.Lazy
     private CourseLabSeederService seeder;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private org.springframework.context.ApplicationEventPublisher events;
+
     public record Lab(UUID assignmentId, int position, String title, String state, String reason) {}
     public record Roadmap(boolean guided, String enrollmentStatus, List<Lab> labs) {}
     public record Passkey(String code, OffsetDateTime expiresAt) {}
@@ -152,6 +155,16 @@ public class CourseAccessService {
         syncDerivedLabComposition(assignment);
         workspace.setCourseMode(true);
         audit("COURSE_LAB_PUBLISHED", "ASSIGNMENT", assignmentId);
+        if (events != null) {
+            var runtimeModel = resolveStudioRuntimeModel(assignment);
+            if (runtimeModel != null && runtimeModel.getSourceSnapshot() != null
+                    && runtimeModel.getSourceSnapshot().getProject() != null) {
+                events.publishEvent(new com.mavis.common.event.LabPublishedEvent(
+                        assignmentId,
+                        runtimeModel.getSourceSnapshot().getProject().getId(),
+                        runtimeModel.getSourceSnapshot().getId()));
+            }
+        }
         return new Lab(assignmentId, next, assignment.getTitle(), "UNLOCKED", null);
     }
 

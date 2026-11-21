@@ -11,7 +11,7 @@ public sealed record RuntimeRunDefinition(string SessionId, string ModelVersionI
     string? ResourceProject = null, bool ProtectedEnvironmentAvailable = false,
     IReadOnlyList<RuntimeInfrastructureActionDefinition>? InfrastructureActions = null, bool InteractiveStudio = false);
 
-public sealed record RuntimeInfrastructureActionDefinition(string Action, string Service, int? Replicas = null, int? CpuPercent = null, int? TargetRps = null);
+public sealed record RuntimeInfrastructureActionDefinition(string Action, string Service, int? Replicas = null, int? CpuPercent = null, int? TargetRps = null, string? EnvKey = null, string? EnvValue = null, string? TargetImage = null);
 public sealed record RuntimeInfrastructureActionResult(string Action, string Service, int ReplicasBefore, int ReplicasAfter,
     JsonObject MetricsBefore, JsonObject MetricsAfter, DateTimeOffset PerformedAt, bool Confirmed);
 
@@ -38,6 +38,10 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
     private readonly List<RuntimeInfrastructureActionResult> _observedActions = [];
     private readonly List<string> _failureDiagnostics = [];
     private IReadOnlyList<string> _composeServices = [];
+    private Dictionary<string, string> _originalPinnedImages = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Dictionary<string, string>> _actionEnvOverrides = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _actionImageOverrides = new(StringComparer.Ordinal);
+    private bool _hasActionOverride;
     public IReadOnlyList<RuntimeInfrastructureActionResult> ObservedInfrastructureActions => _observedActions.AsReadOnly();
     public IReadOnlyList<string> FailureDiagnostics => _failureDiagnostics.AsReadOnly();
 
@@ -51,6 +55,9 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
         var preflight = ComposePreflight.Check(definition.ComposeYaml);
         if (!preflight.Compatible) throw new RuntimeStageException("PREFLIGHT_FAILED");
         _composeServices = preflight.Services;
+        _originalPinnedImages = preflight.PinnedImages is null
+            ? new Dictionary<string, string>(StringComparer.Ordinal)
+            : new Dictionary<string, string>(preflight.PinnedImages, StringComparer.Ordinal);
         ValidateStudioTopology();
         var requestedRuntime = ComposeOverrideBuilder.NormalizeOciRuntime(ociRuntime);
         _ = ComposeOverrideBuilder.Build(preflight, definition.Profile, Path.Combine(Path.GetFullPath(stateRoot), "validate", "collector.yaml"), secrets,
@@ -213,6 +220,8 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
                 if (result is not null) lastResult = result;
                 if (result?.Status == "Passed")
                 {
+                    if (definition.Profile.SeedHook is { } seed)
+                        await ExecuteSeedHookAsync(seed, ct);
                     if (definition.InteractiveStudio && definition.Profile.StudioTopology is { } topology)
                     {
                         var stopped = topology.Blocks.Where(block => block.InitiallyStopped).Select(block => block.Service)
@@ -319,7 +328,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
                     var status = "FAILED";
                     var resultCount = _observedActions.Count;
                     try {
-                        await ExecuteActionsAsync([new(item.Action, item.Service, item.Replicas, item.CpuPercent, item.TargetRps)], ct);
+                        await ExecuteActionsAsync([new(item.Action, item.Service, item.Replicas, item.CpuPercent, item.TargetRps, item.EnvKey, item.EnvValue, item.TargetImage)], ct);
                         result = _observedActions.Last();
                         status = result.Confirmed ? "CONFIRMED" : "FAILED";
                     } catch (Exception) when (!ct.IsCancellationRequested) {
@@ -360,7 +369,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
         {
             var action = item.Action?.Trim().ToUpperInvariant();
             var service = item.Service?.Trim();
-            if (action is not ("STOP" or "START" or "SCALE" or "PAUSE" or "RESUME" or "THROTTLE_CPU" or "SET_LOAD") || string.IsNullOrWhiteSpace(service) ||
+            if (action is not ("STOP" or "START" or "SCALE" or "PAUSE" or "RESUME" or "THROTTLE_CPU" or "SET_LOAD" or "SET_ENV" or "SWAP_VERSION") || string.IsNullOrWhiteSpace(service) ||
                 !definition.Profile.Applications.ContainsKey(service))
                 throw new RuntimeStageException("INFRASTRUCTURE_ACTION_INVALID");
             if (action == "SCALE" && item.Replicas is not (>= 1 and <= 8))
@@ -369,6 +378,10 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
                 throw new RuntimeStageException("CPU_THROTTLE_BOUNDS_EXCEEDED");
             if (action == "SET_LOAD" && item.TargetRps is not (>= 1 and <= 50))
                 throw new RuntimeStageException("LOAD_BOUNDS_EXCEEDED");
+            if (action == "SET_ENV" && !IsAllowedRuntimeEnvOverride(service, item.EnvKey, item.EnvValue))
+                throw new RuntimeStageException("ENV_OVERRIDE_INVALID");
+            if (action == "SWAP_VERSION" && !IsAllowedAlternateImage(service, item.TargetImage))
+                throw new RuntimeStageException("SWAP_IMAGE_INVALID");
 
             Stage = "INFRASTRUCTURE_" + action;
             var before = await ReadServiceState(service, ct);
@@ -376,6 +389,10 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             double? appliedCpus = null;
             int? rpsBefore = null;
             int? rpsAfter = null;
+            string? appliedEnvKey = null;
+            string? appliedEnvVal = null;
+            string? imageBefore = null;
+            string? imageAfter = null;
             if (action == "STOP") await Require(["stop", "--timeout", "5", service], ct);
             else if (action == "START") await Require(["start", service], ct);
             else if (action == "PAUSE") await Require(["pause", service], ct);
@@ -397,6 +414,26 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
                 await _probeStream.WriteLineAsync(cmdJson, ct);
                 _currentProbeRps = rpsAfter.Value;
             }
+            else if (action == "SET_ENV")
+            {
+                appliedEnvKey = item.EnvKey!.Trim();
+                appliedEnvVal = item.EnvValue!;
+                if (!_actionEnvOverrides.TryGetValue(service, out var envMap))
+                    _actionEnvOverrides[service] = envMap = new Dictionary<string, string>(StringComparer.Ordinal);
+                envMap[appliedEnvKey] = appliedEnvVal;
+                await WriteActionOverrideAsync(ct);
+                await Require(["up", "--detach", "--no-deps", "--force-recreate", "--no-build", "--pull", "never",
+                    "--wait", "--wait-timeout", actionWaitTimeout, service], ct);
+            }
+            else if (action == "SWAP_VERSION")
+            {
+                imageBefore = _actionImageOverrides.GetValueOrDefault(service) ?? _originalPinnedImages.GetValueOrDefault(service) ?? "";
+                imageAfter = item.TargetImage!.Trim();
+                _actionImageOverrides[service] = imageAfter;
+                await WriteActionOverrideAsync(ct);
+                await Require(["up", "--detach", "--no-deps", "--force-recreate", "--no-build", "--pull", "never",
+                    "--wait", "--wait-timeout", actionWaitTimeout, service], ct);
+            }
             else await Require(["up", "--detach", "--no-deps", "--no-recreate", "--no-build", "--pull", "never",
                 "--wait", "--wait-timeout", actionWaitTimeout, "--scale", service + "=" + item.Replicas, service], ct);
             var after = await ReadServiceState(service, ct);
@@ -408,24 +445,29 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
                 "RESUME" => before.paused > 0 && after.running >= 1 && after.paused == 0,
                 "THROTTLE_CPU" => before.running > 0 && after.running == before.running,
                 "SET_LOAD" => after.running == before.running && rpsAfter is >= 1 and <= 50,
+                "SET_ENV" => after.running >= 1 && !string.IsNullOrEmpty(appliedEnvKey),
+                "SWAP_VERSION" => after.running >= 1 && !string.IsNullOrEmpty(imageAfter),
                 _ => before.running > 0 && after.running == item.Replicas && before.running != after.running
             };
-            if (expected && action is "START" or "SCALE" or "RESUME")
+            if (expected && action is "START" or "SCALE" or "RESUME" or "SET_ENV" or "SWAP_VERSION")
                 expected = await WaitForServiceReadyAsync(service, ct);
             var performedAt = DateTimeOffset.UtcNow;
             results.Add(new(action, service, before.running, after.running,
-                Metrics(before, beforeWorkload, null, null, rpsBefore), Metrics(after, null, item.CpuPercent, appliedCpus, rpsAfter), performedAt, expected));
+                Metrics(before, beforeWorkload, null, null, rpsBefore, null, null, imageBefore),
+                Metrics(after, null, item.CpuPercent, appliedCpus, rpsAfter, appliedEnvKey, appliedEnvVal is null ? null : RedactSecrets(appliedEnvVal), imageAfter),
+                performedAt, expected));
             var afterWorkload = expected && beforeWorkload is not null ? await ExecuteWorkloadAsync(ct) : null;
             if (afterWorkload is not null)
                 RememberTraceSteps(afterWorkload);
-            results[^1] = results[^1] with { MetricsAfter = Metrics(after, afterWorkload, item.CpuPercent, appliedCpus, rpsAfter) };
+            results[^1] = results[^1] with { MetricsAfter = Metrics(after, afterWorkload, item.CpuPercent, appliedCpus, rpsAfter, appliedEnvKey, appliedEnvVal is null ? null : RedactSecrets(appliedEnvVal), imageAfter) };
             beforeWorkload = afterWorkload;
             _scenario = afterWorkload ?? _scenario;
             if (!expected) throw new RuntimeStageException("INFRASTRUCTURE_ACTION_UNCONFIRMED");
         }
         return results;
 
-        static JsonObject Metrics((int total, int running, int paused, string[] runningIds) value, HttpScenarioOutcome? workload, int? cpuPercent, double? appliedCpus, int? targetRps)
+        static JsonObject Metrics((int total, int running, int paused, string[] runningIds) value, HttpScenarioOutcome? workload,
+            int? cpuPercent, double? appliedCpus, int? targetRps, string? envKey, string? envValue, string? image)
         {
             var metrics = new JsonObject
             {
@@ -436,6 +478,9 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             if (cpuPercent is int pct) metrics["cpuPercent"] = pct;
             if (appliedCpus is double cpus) metrics["targetCpus"] = cpus;
             if (targetRps is int rps) metrics["targetRps"] = rps;
+            if (!string.IsNullOrEmpty(envKey)) metrics["envKey"] = envKey;
+            if (envValue is not null) metrics["envValue"] = envValue;
+            if (!string.IsNullOrEmpty(image)) metrics["image"] = image;
             if (workload is not null)
             {
                 var traceIds=new JsonArray();
@@ -847,10 +892,94 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
         }
     }
 
-    private Task<DockerCommandResult> Command(IReadOnlyList<string> arguments, CancellationToken ct) => docker.RunAsync(
-        new[] { "compose", "--project-name", ResourceProject, "--file", Path.Combine(_directory!, "compose.yaml"), "--file", Path.Combine(_directory!, "override.json") }.Concat(arguments).ToArray(),
-        _directory!, arguments[0] == "up" ? Math.Clamp(definition.Profile.TimeoutSeconds, 1, 300) + 30
-            : (arguments[0] is "down" or "stop" ? 45 : 15), ct);
+    private async Task ExecuteSeedHookAsync(SeedHookProfile seed, CancellationToken ct)
+    {
+        var method = seed.Method?.Trim().ToUpperInvariant() ?? "POST";
+        var path = seed.Path?.Trim() ?? "";
+        if (string.IsNullOrWhiteSpace(seed.Service) || !_endpoints.ContainsKey(seed.Service)
+            || method is not ("GET" or "POST")
+            || !path.StartsWith('/') || path.StartsWith("//", StringComparison.Ordinal) || path.Contains('\\') || path.Length > 256
+            || seed.ExpectedStatus is < 200 or >= 300)
+            throw new RuntimeStageException("SEED_HOOK_INVALID");
+        Stage = "SEED_HOOK";
+        var seedScenario = new HttpScenarioDefinition("studio-seed",
+            [new("seed", seed.Service, method, path, seed.ExpectedStatus)], 15);
+        var outcome = await RunInsideNetwork(seedScenario, _endpoints, secrets ?? new Dictionary<string, string>(), ct);
+        if (outcome.Status != "Passed")
+        {
+            RecordDiagnostic(DiagnosticCode("SEED_HOOK_FAILED", seed.Service));
+            throw new RuntimeStageException("SEED_HOOK_FAILED");
+        }
+    }
+
+    private bool IsAllowedRuntimeEnvOverride(string service, string? envKey, string? envValue)
+    {
+        if (string.IsNullOrWhiteSpace(envKey) || envValue is null || envValue.Length > 256) return false;
+        if (envValue.Any(c => c is '\r' or '\n' or '\0')) return false;
+        var key = envKey.Trim();
+        if (!System.Text.RegularExpressions.Regex.IsMatch(key, "^[A-Z][A-Z0-9_]{0,63}$")) return false;
+        if (key == "PATH" || new[] { "OTEL_", "JAVA_", "JDK_", "DOTNET_", "CORECLR_", "LD_", "MAVIS_" }
+                .Any(prefix => key.StartsWith(prefix, StringComparison.Ordinal)))
+            return false;
+        if (definition.Profile.AllowedEnvKeys is not null
+            && definition.Profile.AllowedEnvKeys.TryGetValue(service, out var allowed)
+            && allowed is { Count: > 0 }
+            && !allowed.Contains(key, StringComparer.Ordinal))
+            return false;
+        return true;
+    }
+
+    private bool IsAllowedAlternateImage(string service, string? targetImage)
+    {
+        if (string.IsNullOrWhiteSpace(targetImage)) return false;
+        var img = targetImage.Trim();
+        if (!PinnedRunnerImage(img)) return false;
+        if (definition.Profile.AlternateImages is not null
+            && definition.Profile.AlternateImages.TryGetValue(service, out var alt)
+            && StringComparer.Ordinal.Equals(alt, img))
+            return true;
+        return _originalPinnedImages.TryGetValue(service, out var orig) && StringComparer.Ordinal.Equals(orig, img);
+    }
+
+    private async Task WriteActionOverrideAsync(CancellationToken ct)
+    {
+        var servicesObj = new Dictionary<string, object>();
+        foreach (var svc in _actionEnvOverrides.Keys.Union(_actionImageOverrides.Keys, StringComparer.Ordinal))
+        {
+            var entry = new Dictionary<string, object>();
+            if (_actionImageOverrides.TryGetValue(svc, out var img)) entry["image"] = img;
+            if (_actionEnvOverrides.TryGetValue(svc, out var env) && env.Count > 0)
+            {
+                // Escape '$' so Docker Compose never expands runner host env vars.
+                entry["environment"] = env.ToDictionary(kv => kv.Key, kv => kv.Value.Replace("$", "$$", StringComparison.Ordinal));
+            }
+            servicesObj[svc] = entry;
+        }
+        var path = Path.Combine(_directory!, "action-override.json");
+        var json = JsonSerializer.Serialize(new { services = servicesObj }, new JsonSerializerOptions { WriteIndented = true });
+        await File.WriteAllTextAsync(path, json, ct);
+        _hasActionOverride = true;
+    }
+
+    private Task<DockerCommandResult> Command(IReadOnlyList<string> arguments, CancellationToken ct)
+    {
+        var cmd = new List<string>
+        {
+            "compose", "--project-name", ResourceProject,
+            "--file", Path.Combine(_directory!, "compose.yaml"),
+            "--file", Path.Combine(_directory!, "override.json")
+        };
+        if (_hasActionOverride)
+        {
+            cmd.Add("--file");
+            cmd.Add(Path.Combine(_directory!, "action-override.json"));
+        }
+        cmd.AddRange(arguments);
+        return docker.RunAsync(
+            cmd,
+            _directory!, arguments[0] == "up" ? Math.Clamp(definition.Profile.TimeoutSeconds, 1, 300) + 30
+                : (arguments[0] is "down" or "stop" ? 45 : 15), ct);
+    }
 
     private static bool PinnedRunnerImage(string? image)
     {

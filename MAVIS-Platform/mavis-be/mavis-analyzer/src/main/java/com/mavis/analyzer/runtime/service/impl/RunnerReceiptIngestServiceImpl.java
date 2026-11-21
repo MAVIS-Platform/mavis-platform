@@ -1585,7 +1585,7 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
             return false;
         }
         String type = action.getAction().trim().toUpperCase(Locale.ROOT);
-        if (!Set.of("STOP", "START", "SCALE", "PAUSE", "RESUME", "THROTTLE_CPU", "SET_LOAD").contains(type)) {
+        if (!Set.of("STOP", "START", "SCALE", "PAUSE", "RESUME", "THROTTLE_CPU", "SET_LOAD", "SET_ENV", "SWAP_VERSION").contains(type)) {
             return false;
         }
         Integer before = action.getReplicasBefore();
@@ -1604,6 +1604,14 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
             case "SET_LOAD" -> {
                 int rps = action.getMetricsAfter() != null ? action.getMetricsAfter().path("targetRps").asInt(0) : 0;
                 yield before >= 0 && before.equals(after) && rps >= 1 && rps <= 50;
+            }
+            case "SET_ENV" -> {
+                String key = action.getMetricsAfter() != null ? action.getMetricsAfter().path("envKey").asText("") : "";
+                yield after >= 1 && !key.isBlank();
+            }
+            case "SWAP_VERSION" -> {
+                String img = action.getMetricsAfter() != null ? action.getMetricsAfter().path("image").asText("") : "";
+                yield after >= 1 && (img.startsWith("sha256:") || img.contains("@sha256:"));
             }
             default -> false;
         };

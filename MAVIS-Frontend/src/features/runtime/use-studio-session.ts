@@ -6,7 +6,16 @@ import { useApi, useApiMutation, useApiQuery } from "@/hooks/use-api";
 import { contracts, type Response as ApiResponse } from "@/lib/api/contracts";
 import { captureStudioImage } from "./studio-observability";
 
-type StudioAction = "START" | "STOP" | "SCALE" | "PAUSE" | "RESUME" | "THROTTLE_CPU" | "SET_LOAD";
+type StudioAction =
+  | "START"
+  | "STOP"
+  | "SCALE"
+  | "PAUSE"
+  | "RESUME"
+  | "THROTTLE_CPU"
+  | "SET_LOAD"
+  | "SET_ENV"
+  | "SWAP_VERSION";
 type StudioState = ApiResponse<"studioState">;
 const TERMINAL_STUDIO_STATUSES = new Set([
   "COMPLETED",
@@ -88,6 +97,9 @@ export function useStudioSession(sessionId: string) {
     replicas?: number;
     cpuPercent?: number;
     targetRps?: number;
+    envKey?: string;
+    envValue?: string;
+    targetImage?: string;
   } | null>(null);
   const prevStatusRef = useRef<string | undefined>(undefined);
 
@@ -209,6 +221,7 @@ export function useStudioSession(sessionId: string) {
     overrideReplicas?: number,
     cpuPercent?: number,
     targetRps?: number,
+    extra?: { envKey?: string; envValue?: string; targetImage?: string },
   ) {
     if (!data) return;
     const requestedReplicas = overrideReplicas ?? replicas;
@@ -222,7 +235,10 @@ export function useStudioSession(sessionId: string) {
       previous.service === targetService &&
       previous.replicas === (kind === "SCALE" ? requestedReplicas : undefined) &&
       previous.cpuPercent === (kind === "THROTTLE_CPU" ? cpuPercent : undefined) &&
-      previous.targetRps === (kind === "SET_LOAD" ? targetRps : undefined)
+      previous.targetRps === (kind === "SET_LOAD" ? targetRps : undefined) &&
+      previous.envKey === (kind === "SET_ENV" ? extra?.envKey : undefined) &&
+      previous.envValue === (kind === "SET_ENV" ? extra?.envValue : undefined) &&
+      previous.targetImage === (kind === "SWAP_VERSION" ? extra?.targetImage : undefined)
         ? previous
         : {
             actionId: crypto.randomUUID(),
@@ -231,6 +247,12 @@ export function useStudioSession(sessionId: string) {
             ...(kind === "SCALE" ? { replicas: requestedReplicas } : {}),
             ...(kind === "THROTTLE_CPU" && cpuPercent !== undefined ? { cpuPercent } : {}),
             ...(kind === "SET_LOAD" && targetRps !== undefined ? { targetRps } : {}),
+            ...(kind === "SET_ENV" && extra?.envKey !== undefined && extra?.envValue !== undefined
+              ? { envKey: extra.envKey, envValue: extra.envValue }
+              : {}),
+            ...(kind === "SWAP_VERSION" && extra?.targetImage !== undefined
+              ? { targetImage: extra.targetImage }
+              : {}),
           };
     pending.current = command;
     setActionError(null);

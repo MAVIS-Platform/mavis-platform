@@ -414,4 +414,33 @@ class RuntimeStudioServiceTest {
         assertTrue(captured.has("exerciseEvaluation"));
         assertFalse(captured.path("digest").asText().isBlank());
     }
+
+    @Test void setEnvAndSwapVersionEnforceSecurityBoundariesAndAcknowledgeCleanly() {
+        // Reserved OTEL_* key rejected; unpinned image rejected
+        assertThrows(BusinessException.class, () -> service.submit(id,
+                new RuntimeStudioService.ActionRequest(UUID.randomUUID(), "SET_ENV", "orders", null, null, null, "OTEL_EXPORTER_OTLP_ENDPOINT", "http://evil", null)));
+        assertThrows(BusinessException.class, () -> service.submit(id,
+                new RuntimeStudioService.ActionRequest(UUID.randomUUID(), "SWAP_VERSION", "orders", null, null, null, null, null, "orders:latest")));
+
+        UUID envId = UUID.randomUUID();
+        service.submit(id, new RuntimeStudioService.ActionRequest(envId, "SET_ENV", "orders", null, null, null, "FEATURE_TIMEOUT_MS", "500", null));
+        var cmd1 = service.poll(id, session.getResourceProject());
+        assertEquals("FEATURE_TIMEOUT_MS", cmd1.path("command").path("envKey").asText());
+        var envResult = mapper.createObjectNode().put("confirmed", true).put("action", "SET_ENV")
+                .put("service", "orders").put("replicasBefore", 1).put("replicasAfter", 1);
+        envResult.putObject("metricsAfter").put("envKey", "FEATURE_TIMEOUT_MS").put("envValue", "500");
+        service.acknowledge(id, new RuntimeStudioService.AckRequest(envId, id, session.getResourceProject(), "CONFIRMED", envResult));
+
+        String pinnedV2 = "orders@sha256:" + "b".repeat(64);
+        UUID swapId = UUID.randomUUID();
+        service.submit(id, new RuntimeStudioService.ActionRequest(swapId, "SWAP_VERSION", "orders", null, null, null, null, null, pinnedV2));
+        var cmd2 = service.poll(id, session.getResourceProject());
+        assertEquals(pinnedV2, cmd2.path("command").path("targetImage").asText());
+        var swapResult = mapper.createObjectNode().put("confirmed", true).put("action", "SWAP_VERSION")
+                .put("service", "orders").put("replicasBefore", 1).put("replicasAfter", 1);
+        swapResult.putObject("metricsAfter").put("image", pinnedV2);
+        service.acknowledge(id, new RuntimeStudioService.AckRequest(swapId, id, session.getResourceProject(), "CONFIRMED", swapResult));
+
+        assertEquals(2, session.getStudioControl().path("actions").size());
+    }
 }

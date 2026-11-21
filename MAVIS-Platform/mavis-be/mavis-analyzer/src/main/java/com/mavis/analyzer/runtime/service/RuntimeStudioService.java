@@ -36,16 +36,22 @@ public class RuntimeStudioService {
     private StudioTelemetryHub telemetryHub;
 
     public record ActionRequest(@NotNull UUID actionId,
-                                @NotNull @Pattern(regexp="START|STOP|SCALE|PAUSE|RESUME|THROTTLE_CPU|SET_LOAD") String action,
+                                @NotNull @Pattern(regexp="START|STOP|SCALE|PAUSE|RESUME|THROTTLE_CPU|SET_LOAD|SET_ENV|SWAP_VERSION") String action,
                                 @NotBlank @Size(max=128) String service,
                                 @Min(1) @Max(8) Integer replicas,
                                 @Min(10) @Max(100) Integer cpuPercent,
-                                @Min(1) @Max(50) Integer targetRps) {
+                                @Min(1) @Max(50) Integer targetRps,
+                                @Size(max=64) String envKey,
+                                @Size(max=256) String envValue,
+                                @Size(max=256) String targetImage) {
         public ActionRequest(UUID actionId, String action, String service, Integer replicas) {
-            this(actionId, action, service, replicas, null, null);
+            this(actionId, action, service, replicas, null, null, null, null, null);
         }
         public ActionRequest(UUID actionId, String action, String service, Integer replicas, Integer cpuPercent) {
-            this(actionId, action, service, replicas, cpuPercent, null);
+            this(actionId, action, service, replicas, cpuPercent, null, null, null, null);
+        }
+        public ActionRequest(UUID actionId, String action, String service, Integer replicas, Integer cpuPercent, Integer targetRps) {
+            this(actionId, action, service, replicas, cpuPercent, targetRps, null, null, null);
         }
     }
     public record PredictionRequest(
@@ -263,7 +269,10 @@ public class RuntimeStudioService {
                     !request.service().equals(action.path("service").asText()) ||
                     (request.replicas() == null ? action.hasNonNull("replicas") : request.replicas() != action.path("replicas").asInt()) ||
                     (request.cpuPercent() == null ? action.hasNonNull("cpuPercent") : request.cpuPercent() != action.path("cpuPercent").asInt()) ||
-                    (request.targetRps() == null ? action.hasNonNull("targetRps") : request.targetRps() != action.path("targetRps").asInt()))
+                    (request.targetRps() == null ? action.hasNonNull("targetRps") : request.targetRps() != action.path("targetRps").asInt()) ||
+                    !java.util.Objects.equals(request.envKey(), action.hasNonNull("envKey") ? action.path("envKey").asText() : null) ||
+                    !java.util.Objects.equals(request.envValue(), action.hasNonNull("envValue") ? action.path("envValue").asText() : null) ||
+                    !java.util.Objects.equals(request.targetImage(), action.hasNonNull("targetImage") ? action.path("targetImage").asText() : null))
                     throw error(ErrorCode.CONFLICT, "Action ID was already used for a different command.");
                 return view(session);
             }
@@ -279,7 +288,8 @@ public class RuntimeStudioService {
                     (!"SCALE".equals(request.action()) || block.path("canScale").asBoolean());
             for (var link : topology.path("connections"))
                 allowed |= request.service().equals(link.path("controllerService").asText()) &&
-                    !("SCALE".equals(request.action()) || "THROTTLE_CPU".equals(request.action()) || "SET_LOAD".equals(request.action()));
+                    !("SCALE".equals(request.action()) || "THROTTLE_CPU".equals(request.action()) || "SET_LOAD".equals(request.action())
+                            || "SET_ENV".equals(request.action()) || "SWAP_VERSION".equals(request.action()));
             if (!allowed) throw error(ErrorCode.BAD_REQUEST, "Action is not enabled for this prepared block or connection.");
         }
         if (control.path("finishRequested").asBoolean()) throw error(ErrorCode.CONFLICT, "Studio is finishing.");
@@ -297,6 +307,30 @@ public class RuntimeStudioService {
             throw error(ErrorCode.BAD_REQUEST, "cpuPercent (10-100) is required only for THROTTLE_CPU.");
         if (("SET_LOAD".equals(request.action())) != (request.targetRps() != null))
             throw error(ErrorCode.BAD_REQUEST, "targetRps (1-50) is required only for SET_LOAD.");
+        if (("SET_ENV".equals(request.action())) != (request.envKey() != null || request.envValue() != null))
+            throw error(ErrorCode.BAD_REQUEST, "envKey and envValue are required only for SET_ENV.");
+        if ("SET_ENV".equals(request.action())) {
+            String k = request.envKey() == null ? "" : request.envKey().trim();
+            if (!k.matches("^[A-Z][A-Z0-9_]{0,63}$") || "PATH".equals(k)
+                    || java.util.List.of("OTEL_", "JAVA_", "JDK_", "DOTNET_", "CORECLR_", "LD_", "MAVIS_").stream().anyMatch(k::startsWith)
+                    || request.envValue() == null || request.envValue().contains("\n") || request.envValue().contains("\r") || request.envValue().contains("\0")) {
+                throw error(ErrorCode.BAD_REQUEST, "Invalid or reserved environment variable override.");
+            }
+            JsonNode allow = session.getScenarioConfig().path("profile").path("allowedEnvKeys").path(request.service());
+            if (allow.isArray() && !allow.isEmpty()) {
+                boolean listed = false;
+                for (JsonNode entry : allow) listed |= k.equals(entry.asText(""));
+                if (!listed) throw error(ErrorCode.BAD_REQUEST, "Environment variable is not in the lecturer allowlist for this service.");
+            }
+        }
+        if (("SWAP_VERSION".equals(request.action())) != (request.targetImage() != null))
+            throw error(ErrorCode.BAD_REQUEST, "targetImage is required only for SWAP_VERSION.");
+        if ("SWAP_VERSION".equals(request.action())) {
+            String img = request.targetImage() == null ? "" : request.targetImage().trim();
+            if (!(img.startsWith("sha256:") || img.contains("@sha256:"))) {
+                throw error(ErrorCode.BAD_REQUEST, "SWAP_VERSION requires a digest-pinned image reference.");
+            }
+        }
         ObjectNode action = mapper.valueToTree(request);
         action.put("requestedAt", OffsetDateTime.now().toString());
         if (control.path("simulatedSandbox").asBoolean(false)) {
@@ -305,7 +339,7 @@ public class RuntimeStudioService {
                 case "STOP", "PAUSE" -> 0;
                 case "START", "RESUME" -> Math.max(1, before == 0 ? 1 : before);
                 case "SCALE" -> request.replicas() == null ? 1 : request.replicas();
-                case "THROTTLE_CPU", "SET_LOAD" -> before;
+                case "THROTTLE_CPU", "SET_LOAD", "SET_ENV", "SWAP_VERSION" -> before;
                 default -> before;
             };
             if ((Set.of("STOP", "PAUSE").contains(request.action()) && before == 0)
@@ -677,6 +711,14 @@ public class RuntimeStudioService {
             case "SET_LOAD" -> {
                 int rps = result.path("metricsAfter").path("targetRps").asInt(0);
                 yield before >= 0 && after == before && rps >= 1 && rps <= 50;
+            }
+            case "SET_ENV" -> {
+                String k = result.path("metricsAfter").path("envKey").asText("");
+                yield after >= 1 && !k.isBlank();
+            }
+            case "SWAP_VERSION" -> {
+                String img = result.path("metricsAfter").path("image").asText("");
+                yield after >= 1 && (img.startsWith("sha256:") || img.contains("@sha256:"));
             }
             default -> false;
         };

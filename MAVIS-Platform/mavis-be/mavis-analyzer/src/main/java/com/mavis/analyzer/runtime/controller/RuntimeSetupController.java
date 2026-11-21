@@ -150,6 +150,14 @@ public class RuntimeSetupController {
                 yaml.append("  ").append(svc).append(":\n    role: infra\n");
             }
         }
+        JsonNode seed = profile.path("seedHook");
+        if (seed.isObject() && !seed.path("service").asText("").isBlank() && !seed.path("path").asText("").isBlank()) {
+            yaml.append("seed:\n")
+                .append("  service: ").append(seed.path("service").asText()).append("\n")
+                .append("  method: ").append(seed.path("method").asText("POST")).append("\n")
+                .append("  path: \"").append(seed.path("path").asText().replace("\"", "")).append("\"\n")
+                .append("  expectedStatus: ").append(seed.path("expectedStatus").asInt(200)).append("\n");
+        }
         return yaml.toString();
     }
 

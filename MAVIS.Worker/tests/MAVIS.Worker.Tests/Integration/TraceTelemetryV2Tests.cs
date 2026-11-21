@@ -456,6 +456,117 @@ public sealed class TraceTelemetryV2Tests
         }
     }
 
+    [Fact]
+    public async Task SetEnvAndSwapVersionEnforceAllowlistsAndWriteActionOverrideFile()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mavis-envswap-" + Guid.NewGuid().ToString("N"));
+        var project = "mavisrun-" + Guid.NewGuid().ToString("N");
+        var dir = Path.Combine(root, project);
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var v1 = "orders@sha256:" + new string('a', 64);
+            var v2 = "orders@sha256:" + new string('b', 64);
+            var unauthorized = "evil@sha256:" + new string('c', 64);
+            var profile = new RunnerExecutionProfile("collector@sha256:" + new string('a', 64), "mavis-agents-v1",
+                new Dictionary<string, RuntimeServiceProfile> { ["orders"] = new("java", 8080) },
+                ApprovedForLocalPoc: true, ScenarioRunnerImage: "sha256:" + new string('a', 64),
+                AllowedEnvKeys: new Dictionary<string, IReadOnlyList<string>> { ["orders"] = ["FEATURE_FAST_CHECKOUT"] },
+                AlternateImages: new Dictionary<string, string> { ["orders"] = v2 });
+            var definition = new RuntimeRunDefinition("s1", "m1", "snap1", "prof1",
+                $"services:\n  orders:\n    image: {v1}\n",
+                profile, new("s1", [new("req", "orders", "GET", "/orders", 200)]),
+                new Dictionary<string, string> { ["orders"] = "id-1" },
+                "cfg", "scn", project,
+                InfrastructureActions: [
+                    new("SET_ENV", "orders", EnvKey: "FEATURE_FAST_CHECKOUT", EnvValue: "true$1"),
+                    new("SWAP_VERSION", "orders", TargetImage: v2)
+                ]);
+            var docker = new FaultActionMockDocker();
+            var session = new DockerComposeSession(definition, root, "receivers: {}", docker);
+            typeof(DockerComposeSession).GetField("_directory", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+                .SetValue(session, dir);
+            typeof(DockerComposeSession).GetField("_originalPinnedImages", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+                .SetValue(session, new Dictionary<string, string> { ["orders"] = v1 });
+
+            var results = await session.ExecuteInfrastructureActionsAsync(CancellationToken.None);
+
+            Assert.Equal(2, results.Count);
+            Assert.All(results, r => Assert.True(r.Confirmed));
+            Assert.Equal("FEATURE_FAST_CHECKOUT", results[0].MetricsAfter["envKey"]!.GetValue<string>());
+            Assert.Equal(v2, results[1].MetricsAfter["image"]!.GetValue<string>());
+            var overrideText = await File.ReadAllTextAsync(Path.Combine(dir, "action-override.json"));
+            Assert.Contains("true$$1", overrideText);
+            Assert.Contains(v2, overrideText);
+            Assert.Contains(docker.Calls, c => c.Contains("action-override.json", StringComparer.OrdinalIgnoreCase) || c.Any(a => a.EndsWith("action-override.json", StringComparison.OrdinalIgnoreCase)));
+
+            // Reject reserved OTEL_* key and unlisted alternate image
+            var badEnvDef = definition with { InfrastructureActions = [new("SET_ENV", "orders", EnvKey: "OTEL_EXPORTER", EnvValue: "http://evil")] };
+            var badEnvSession = new DockerComposeSession(badEnvDef, root, "receivers: {}", docker);
+            typeof(DockerComposeSession).GetField("_directory", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.SetValue(badEnvSession, dir);
+            var ex1 = await Assert.ThrowsAsync<RuntimeStageException>(() => badEnvSession.ExecuteInfrastructureActionsAsync(CancellationToken.None));
+            Assert.Equal("ENV_OVERRIDE_INVALID", ex1.Code);
+
+            var badSwapDef = definition with { InfrastructureActions = [new("SWAP_VERSION", "orders", TargetImage: unauthorized)] };
+            var badSwapSession = new DockerComposeSession(badSwapDef, root, "receivers: {}", docker);
+            typeof(DockerComposeSession).GetField("_directory", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.SetValue(badSwapSession, dir);
+            var ex2 = await Assert.ThrowsAsync<RuntimeStageException>(() => badSwapSession.ExecuteInfrastructureActionsAsync(CancellationToken.None));
+            Assert.Equal("SWAP_IMAGE_INVALID", ex2.Code);
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public async Task DeterministicSeedHookRunsOnceAfterReadinessBeforeInitialStop()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mavis-seed-" + Guid.NewGuid().ToString("N"));
+        var project = "mavisrun-" + Guid.NewGuid().ToString("N");
+        var dir = Path.Combine(root, project);
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var digest = new string('a', 64);
+            var profile = new RunnerExecutionProfile("collector@sha256:" + digest, "mavis-agents-v1",
+                new Dictionary<string, RuntimeServiceProfile> { ["orders"] = new("java", 8080) },
+                ApprovedForLocalPoc: true, ScenarioRunnerImage: "sha256:" + digest,
+                SeedHook: new SeedHookProfile("orders", "POST", "/internal/seed", 200));
+            var definition = new RuntimeRunDefinition("s1", "m1", "snap1", "prof1",
+                $"services:\n  orders:\n    image: orders@sha256:{digest}\n",
+                profile, new("s1", [new("req", "orders", "GET", "/orders", 200)]),
+                new Dictionary<string, string> { ["orders"] = "id-1" },
+                "cfg", "scn", project);
+            var inputs = new List<string>();
+            var docker = new SeedHookDocker(inputs);
+            var session = new DockerComposeSession(definition, root, "receivers: {}", docker);
+            typeof(DockerComposeSession).GetField("_directory", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.SetValue(session, dir);
+            var endpoints = (Dictionary<string, Uri>)typeof(DockerComposeSession)
+                .GetField("_endpoints", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(session)!;
+            endpoints["orders"] = new Uri("http://orders:8080");
+            endpoints["mavis-collector"] = new Uri("http://mavis-collector:13133");
+
+            await session.WaitUntilReadyAsync(CancellationToken.None);
+
+            Assert.Equal(2, inputs.Count); // 1 = readiness probe, 2 = studio-seed hook
+            Assert.Contains("/internal/seed", inputs[1]);
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
+    }
+
+    private sealed class SeedHookDocker(List<string> inputs) : IDockerCommands
+    {
+        public Task<DockerCommandResult> RunAsync(IReadOnlyList<string> args, string workingDirectory, int timeoutSeconds, CancellationToken ct)
+            => Task.FromResult(new DockerCommandResult(0, ""));
+
+        public Task<DockerCommandResult> RunWithInputAsync(IReadOnlyList<string> args, string workingDirectory, int timeoutSeconds, string input, CancellationToken ct)
+        {
+            inputs.Add(input);
+            var outcome = new HttpScenarioOutcome("s1", "Passed",
+                [new HttpStepOutcome("seed", "Passed", 200, new string('1', 32), new string('2', 16), 3)]);
+            var json = System.Text.Json.JsonSerializer.Serialize(outcome, new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase });
+            return Task.FromResult(new DockerCommandResult(0, json));
+        }
+    }
+
     private sealed class FaultActionMockDocker : IDockerCommands
     {
         private string _state = "running";
