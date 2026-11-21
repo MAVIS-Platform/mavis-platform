@@ -29,10 +29,10 @@ public interface RuntimeSessionRepository extends JpaRepository<RuntimeSession, 
             + "AND COALESCE(studio_control->>'simulatedSandbox', 'false') <> 'true'", nativeQuery = true)
     long countActiveNonSimulatedByUser(@Param("userId") UUID userId, @Param("statuses") java.util.Collection<String> statuses);
 
-    /** Phase E3: most recent non-simulated session creation time for one user (cooldown enforcement). */
-    @Query(value = "SELECT MAX(created_at) FROM runtime_sessions WHERE triggered_by = :userId "
+    /** Phase E3: most recent non-simulated session creation epoch seconds for one user (cooldown enforcement). */
+    @Query(value = "SELECT CAST(EXTRACT(EPOCH FROM MAX(created_at)) AS BIGINT) FROM runtime_sessions WHERE triggered_by = :userId "
             + "AND COALESCE(studio_control->>'simulatedSandbox', 'false') <> 'true'", nativeQuery = true)
-    java.time.OffsetDateTime findLatestNonSimulatedCreatedAtByUser(@Param("userId") UUID userId);
+    Long findLatestNonSimulatedCreatedEpochSecondsByUser(@Param("userId") UUID userId);
 
     /** Phase E4: recent terminal sessions for boot failure rate monitoring. */
     List<RuntimeSession> findTop20ByCompletedAtIsNotNullOrderByCompletedAtDesc();

@@ -114,20 +114,28 @@ public class AssignmentServiceImpl implements AssignmentService {
 
         if (assignments.getFirst().getWorkspace() != null && assignments.getFirst().getWorkspace().isCourseMode()) {
             User actor = accessPolicyService.requireCurrentActiveUser();
-            boolean hasOrderedLabs = assignments.stream().anyMatch(a -> a.getLabOrder() != null);
-            List<Assignment> activeOrdered = hasOrderedLabs
-                    ? assignments.stream()
-                            .filter(a -> a.getLabOrder() != null)
-                            .sorted(Comparator.comparing(Assignment::getLabOrder)
-                                    .thenComparing(Assignment::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())))
-                            .toList()
-                    : assignments;
+            List<Assignment> nonArchived = assignments.stream()
+                    .filter(a -> a.getAiPolicy() == null || !a.getAiPolicy().path("archivedV1").asBoolean(false))
+                    .toList();
             if (CourseLabPolicy.isStudent(actor)) {
+                boolean hasOrderedLabs = nonArchived.stream().anyMatch(a -> a.getLabOrder() != null);
+                List<Assignment> activeOrdered = hasOrderedLabs
+                        ? nonArchived.stream()
+                                .filter(a -> a.getLabOrder() != null)
+                                .sorted(Comparator.comparing(Assignment::getLabOrder)
+                                        .thenComparing(Assignment::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())))
+                                .toList()
+                        : nonArchived;
                 assignments = activeOrdered.stream()
                         .filter(assignment -> courseLabs.canOpen(assignment, actor))
                         .toList();
             } else {
-                assignments = activeOrdered;
+                // Lecturers see published labs ascending by labOrder, followed by active unpublished drafts newest-first.
+                assignments = nonArchived.stream()
+                        .sorted(Comparator
+                                .comparing(Assignment::getLabOrder, Comparator.nullsLast(Comparator.naturalOrder()))
+                                .thenComparing(Assignment::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
+                        .toList();
             }
         }
         if (assignments.isEmpty()) {

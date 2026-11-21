@@ -358,9 +358,9 @@ public class CourseLabStudentService {
                         "You already have an active Studio Live session running in another Lab. Stop or finish it before starting a new one.");
             }
             if (userStartCooldownSeconds > 0) {
-                java.time.OffsetDateTime lastCreated = runtimeSessions.findLatestNonSimulatedCreatedAtByUser(actor.getId());
-                if (lastCreated != null) {
-                    long elapsed = java.time.Duration.between(lastCreated.toInstant(), java.time.Instant.now()).getSeconds();
+                Long lastCreatedEpochSec = runtimeSessions.findLatestNonSimulatedCreatedEpochSecondsByUser(actor.getId());
+                if (lastCreatedEpochSec != null) {
+                    long elapsed = java.time.Instant.now().getEpochSecond() - lastCreatedEpochSec;
                     if (elapsed >= 0 && elapsed < userStartCooldownSeconds) {
                         long remaining = userStartCooldownSeconds - elapsed;
                         throw new BusinessException(ErrorCode.CONFLICT, "RUN_COOLDOWN_ACTIVE",

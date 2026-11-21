@@ -480,8 +480,8 @@ class CourseLabStudentServiceTest {
 
         // Even with 0 active sessions, rapid restart within cooldown is rejected
         when(runtimeSessions.countActiveNonSimulatedByUser(any(), any())).thenReturn(0L);
-        when(runtimeSessions.findLatestNonSimulatedCreatedAtByUser(student.getId()))
-                .thenReturn(java.time.OffsetDateTime.now().minusSeconds(3));
+        when(runtimeSessions.findLatestNonSimulatedCreatedEpochSecondsByUser(student.getId()))
+                .thenReturn(java.time.Instant.now().getEpochSecond() - 3);
         assertThatThrownBy(() -> service.startLabStudioSession(workspaceId, labId))
                 .isInstanceOfSatisfying(BusinessException.class,
                         ex -> assertThat(ex.getStableCode()).isEqualTo("RUN_COOLDOWN_ACTIVE"));

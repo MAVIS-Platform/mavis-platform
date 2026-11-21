@@ -186,9 +186,22 @@ public class RuntimeSession {
             if (service.isBlank() || before < 0 || before > 8 || after < 0 || after > 8
                     || !action.path("metricsBefore").isObject() || !action.path("metricsAfter").isObject()) continue;
             boolean changed = switch (type) {
-                case "STOP" -> before > 0 && after == 0;
-                case "START" -> before == 0 && after > 0;
+                case "STOP", "PAUSE" -> before > 0 && after == 0;
+                case "START", "RESUME" -> before == 0 && after > 0;
                 case "SCALE" -> before > 0 && after > 0 && before != after;
+                case "THROTTLE_CPU" -> {
+                    int pct = action.path("metricsAfter").path("cpuPercent").asInt(0);
+                    yield before > 0 && after == before && pct >= 10 && pct <= 100;
+                }
+                case "SET_LOAD" -> {
+                    int rps = action.path("metricsAfter").path("targetRps").asInt(0);
+                    yield before >= 0 && after == before && rps >= 1 && rps <= 50;
+                }
+                case "SET_ENV" -> after >= 1 && !action.path("metricsAfter").path("envKey").asText("").isBlank();
+                case "SWAP_VERSION" -> {
+                    String img = action.path("metricsAfter").path("image").asText("");
+                    yield after >= 1 && (img.startsWith("sha256:") || img.contains("@sha256:"));
+                }
                 default -> false;
             };
             if (!changed) continue;

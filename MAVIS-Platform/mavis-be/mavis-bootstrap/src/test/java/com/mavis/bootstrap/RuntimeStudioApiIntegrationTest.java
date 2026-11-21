@@ -727,4 +727,55 @@ class RuntimeStudioApiIntegrationTest extends ApiIntegrationContext {
             bridge.stop(0);
         }
     }
+
+    @Test
+    void nativeQuotaAndCooldownQueriesWorkOnPostgresAndPauseActionVerifiesStudioEvidence() {
+        var role = roles.findByCode("STUDENT").orElseGet(() -> roles.save(Role.builder().code("STUDENT").name("Student").build()));
+        var user = users.saveAndFlush(User.builder().email("quota-" + UUID.randomUUID() + "@mavis.edu.vn")
+                .passwordHash("test-only-hash").fullName("Quota User").role(role).build());
+        var project = projects.saveAndFlush(Project.builder().name("Quota Project").owner(user).build());
+        var snapshot = snapshots.saveAndFlush(SourceSnapshot.builder().project(project).sourceType("ZIP_UPLOAD")
+                .artifactHash("b".repeat(64)).storagePath("quota.zip").build());
+
+        org.assertj.core.api.Assertions.assertThat(sessions.countActiveNonSimulatedByUser(user.getId(), java.util.Set.of("QUEUED", "RUNNING"))).isZero();
+        org.assertj.core.api.Assertions.assertThat(sessions.findLatestNonSimulatedCreatedEpochSecondsByUser(user.getId())).isNull();
+
+        // Simulated sessions must be ignored by both active quota and cooldown queries
+        sessions.saveAndFlush(RuntimeSession.builder().project(project).sourceSnapshot(snapshot).triggeredBy(user)
+                .executionStatus("RUNNING")
+                .studioControl(mapper.createObjectNode().put("simulatedSandbox", true)).build());
+        org.assertj.core.api.Assertions.assertThat(sessions.countActiveNonSimulatedByUser(user.getId(), java.util.Set.of("QUEUED", "RUNNING"))).isZero();
+        org.assertj.core.api.Assertions.assertThat(sessions.findLatestNonSimulatedCreatedEpochSecondsByUser(user.getId())).isNull();
+
+        // Real non-simulated session must be counted and return epoch seconds cleanly (no OffsetDateTime converter error on PostgreSQL)
+        var real = sessions.saveAndFlush(RuntimeSession.builder().project(project).sourceSnapshot(snapshot).triggeredBy(user)
+                .executionStatus("RUNNING")
+                .studioControl(mapper.createObjectNode().put("simulatedSandbox", false)).build());
+        org.assertj.core.api.Assertions.assertThat(sessions.countActiveNonSimulatedByUser(user.getId(), java.util.Set.of("QUEUED", "RUNNING"))).isEqualTo(1L);
+        Long epochSec = sessions.findLatestNonSimulatedCreatedEpochSecondsByUser(user.getId());
+        org.assertj.core.api.Assertions.assertThat(epochSec).isNotNull().isGreaterThan(1_700_000_000L);
+
+        // Phase C1 PAUSE action with confirmed before/after metrics satisfies hasVerifiedStudioEvidence()
+        var planned = mapper.createObjectNode().put("interactiveStudio", true);
+        var ctrl = mapper.createObjectNode();
+        ctrl.putArray("actions").addObject().put("action", "PAUSE").put("service", "payment-service");
+        var receipt = mapper.createObjectNode();
+        receipt.putObject("outcome").putObject("trace").putArray("spans").addObject().put("spanId", "s1");
+        var act = receipt.putArray("infrastructureActions").addObject()
+                .put("confirmed", true).put("action", "PAUSE").put("service", "payment-service")
+                .put("replicasBefore", 1).put("replicasAfter", 0);
+        act.putObject("metricsBefore").put("replicas", 1);
+        act.putObject("metricsAfter").put("replicas", 0);
+        real.setScenarioConfig(planned);
+        real.setStudioControl(ctrl);
+        real.setRunnerReceiptJson(receipt);
+        real.setReceiptDigest("sha256:abc");
+        real.setExecutionStatus("COMPLETED");
+        real.setScenarioStatus("PASSED");
+        real.setEvidenceStatus("AVAILABLE");
+        real.setCleanupStatus("CONFIRMED");
+        real.setSandboxEnforcementConfirmed(true);
+        real.setTraceStatus("COMPLETE");
+        org.assertj.core.api.Assertions.assertThat(real.hasVerifiedStudioEvidence()).isTrue();
+    }
 }

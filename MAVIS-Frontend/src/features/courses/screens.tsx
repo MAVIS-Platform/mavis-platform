@@ -1360,10 +1360,17 @@ function StepContent({
   );
   const runtimeEvidenceHref = `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=2${previewParam}`;
 
+  const resolvedModelProjectId =
+    referenceArchitecture?.projectId ??
+    studentContext?.assignment?.referenceSource?.projectId ??
+    projectId;
   const fallbackModelQuery = useApiQuery(
     "model",
-    { modelId: modelId ?? "", ...(projectId ? { projectId } : {}) },
-    { enabled: !inlineReferenceModel && Boolean(modelId) && step === 1 },
+    {
+      modelId: modelId ?? "",
+      ...(resolvedModelProjectId ? { projectId: resolvedModelProjectId } : {}),
+    },
+    { enabled: !inlineReferenceModel && Boolean(modelId) && Boolean(studentContext) && step === 1 },
   );
   const activeModel = inlineReferenceModel ?? fallbackModelQuery.data;
 
@@ -1966,7 +1973,7 @@ function StepContent({
                     )}
                   </p>
                   <Step2StaticImpact
-                    projectId={projectId}
+                    projectId={resolvedModelProjectId}
                     modelId={modelId}
                     modelQuery={modelQuery}
                     sourceLink={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=1${previewParam}`}

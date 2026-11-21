@@ -1620,6 +1620,7 @@ export function LiveStudioWorkbench({
             }`}
           >
             <div className="flex h-9 shrink-0 items-center gap-1 border-b border-slate-800 px-2.5">
+              <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {(
                 [
                   ["stats", "Stats", "Stats"],
@@ -1689,7 +1690,8 @@ export function LiveStudioWorkbench({
                   </span>
                 </button>
               ))}
-              <div className="ml-auto flex shrink-0 items-center gap-1.5 pl-1 text-[10px] text-slate-500">
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5 pl-1 text-[10px] text-slate-500">
                 <span className="hidden whitespace-nowrap rounded-full border border-slate-800 bg-slate-950/70 px-2 py-0.5 font-mono text-slate-300 2xl:inline-flex">
                   {data.finishRequested
                     ? "Finishing"
@@ -1726,7 +1728,7 @@ export function LiveStudioWorkbench({
                 )}
                 {data.telemetry?.observedAt && (
                   <span
-                    className={`hidden shrink-0 items-center gap-1 whitespace-nowrap xl:inline-flex ${
+                    className={`hidden shrink-0 items-center gap-1 whitespace-nowrap 2xl:inline-flex ${
                       telemetryStale ? "text-amber-300" : ""
                     }`}
                     title={
