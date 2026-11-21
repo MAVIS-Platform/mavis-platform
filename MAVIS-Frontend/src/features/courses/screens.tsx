@@ -851,8 +851,8 @@ export function LabWorkspace() {
       )}
     >
       {workspace && lab && (
-        <div className="space-y-5">
-          <header className="mavis-hero-surface p-5 text-white">
+        <div className="space-y-4">
+          <header className="mavis-hero-surface p-4 text-white sm:p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="min-w-0 space-y-2">
                 <div className="flex flex-wrap items-center gap-2 text-xs text-sky-100/90">
@@ -873,33 +873,36 @@ export function LabWorkspace() {
                     </>
                   )}
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="space-y-2">
                   <h1 className="text-xl font-bold tracking-tight text-white sm:text-2xl">
                     {lab.title}
                   </h1>
-                  <Badge
-                    variant="outline"
-                    className="border-white/25 bg-white/15 font-mono text-xs text-white"
-                  >
-                    {t("Class", "Lớp")} {workspace.code || "—"}
-                  </Badge>
-                  <Badge className="border-teal-300/30 bg-teal-400/20 text-teal-50">
-                    {requiresRuntime
-                      ? t("Studio Live Practice Lab", "Lab Thực Hành Studio Live")
-                      : isTheoryOnlyLab
-                        ? t("Theory Only Lab", "Lab Chỉ Lý Thuyết")
-                        : t("Theory & Quiz Lab", "Lab Lý Thuyết & Quiz")}
-                  </Badge>
-                  {preview && <Badge variant="warning">{t("Preview", "Xem trước")}</Badge>}
-                  {readiness.map((gate) => (
+                  <div className="flex flex-wrap items-center gap-2">
                     <Badge
-                      key={gate.label}
                       variant="outline"
-                      className="border-white/20 bg-white/10 text-[11px] font-normal text-sky-100"
+                      className="border-white/25 bg-white/15 font-mono text-xs text-white"
                     >
-                      {gate.label}: {gate.state}
+                      {t("Class", "Lớp")} {workspace.code || "—"}
                     </Badge>
-                  ))}
+                    <Badge className="border-teal-300/30 bg-teal-400/20 text-teal-50">
+                      {requiresRuntime
+                        ? t("Studio Live Practice Lab", "Lab Thực Hành Studio Live")
+                        : isTheoryOnlyLab
+                          ? t("Theory Only Lab", "Lab Chỉ Lý Thuyết")
+                          : t("Theory & Quiz Lab", "Lab Lý Thuyết & Quiz")}
+                    </Badge>
+                    {preview && <Badge variant="warning">{t("Preview", "Xem trước")}</Badge>}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1 text-[11px] text-sky-100">
+                    {readiness.map((gate) => (
+                      <span
+                        key={gate.label}
+                        className="rounded-md border border-white/15 bg-slate-950/15 px-2 py-1"
+                      >
+                        <span className="text-sky-200">{gate.label}</span>: {gate.state}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               </div>
               <div
@@ -1003,27 +1006,6 @@ export function LabWorkspace() {
             progress={progress}
             preview={preview}
           />
-
-          {(() => {
-            const activeMeta = resolveStepMeta(displayedStep, {
-              hasReferenceArch,
-              isTheoryOnlyLab,
-              requiresRuntime,
-            });
-            return (
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-primary/20 bg-primary/5 px-4 py-2.5 text-xs text-foreground">
-                <p>
-                  <span className="font-semibold text-primary">
-                    {t(`Phase ${activeMeta.id}/3`, `Giai đoạn ${activeMeta.id}/3`)} ·{" "}
-                    {t(activeMeta.title, activeMeta.titleVi)}:
-                  </span>{" "}
-                  <span className="text-muted-foreground">
-                    {t(activeMeta.description, activeMeta.descriptionVi)}
-                  </span>
-                </p>
-              </div>
-            );
-          })()}
 
           <div className="min-w-0 space-y-5">
             <StepContent
@@ -1192,42 +1174,38 @@ function StaticEvaluationSummary({
           )}
           <div className="divide-y rounded-xl border bg-background">
             {ruleRows.map((row) => (
-              <div
-                key={row.ruleId}
-                className="flex flex-wrap items-start justify-between gap-3 p-3 text-xs"
-              >
-                <div className="min-w-0 flex-1 space-y-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono font-semibold text-foreground">{row.ruleId}</span>
-                    <span className="font-medium text-foreground">{row.label}</span>
+              <details key={row.ruleId} className="group text-xs">
+                <summary className="flex cursor-pointer list-none flex-wrap items-start justify-between gap-3 p-3 marker:content-none">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono font-semibold text-foreground">{row.ruleId}</span>
+                      <span className="font-medium text-foreground">{row.label}</span>
+                    </div>
                   </div>
+                  <div className="flex shrink-0 flex-wrap items-center gap-2">
+                    <div className="text-right">
+                      <span className="block text-[10px] uppercase tracking-wide text-muted-foreground">{t("Rule Status", "Trạng thái")}</span>
+                      <StatusBadge status={row.status} />
+                    </div>
+                    <div className="text-right">
+                      <span className="block text-[10px] uppercase tracking-wide text-muted-foreground">{t("Severity", "Mức độ")}</span>
+                      <Badge variant="outline" className="font-mono text-[10px]">{row.severity}</Badge>
+                    </div>
+                  </div>
+                </summary>
+                <div className="space-y-2 border-t px-3 py-2.5">
                   {(row.unverifiedMetadata || row.status === "NEEDS_REVIEW") && (
                     <p className="text-[11px] font-medium text-amber-700 dark:text-amber-300">
-                      {t(
-                        "Missing Call-Site / Evidence Grounding (Needs Review)",
-                        "Thiếu bằng chứng Call-Site / cần rà soát",
-                      )}
+                      {t("Missing Call-Site / Evidence Grounding (Needs Review)", "Thiếu bằng chứng Call-Site / cần rà soát")}
                     </p>
                   )}
-                  {row.message && <p className="text-muted-foreground leading-5">{row.message}</p>}
+                  {row.message ? (
+                    <p className="leading-5 text-muted-foreground">{row.message}</p>
+                  ) : (
+                    <p className="leading-5 text-muted-foreground">{t("No additional persisted finding detail is available for this rule.", "Chưa có chi tiết finding được lưu thêm cho quy tắc này.")}</p>
+                  )}
                 </div>
-                <div className="flex shrink-0 flex-wrap items-center gap-2">
-                  <div className="text-right">
-                    <span className="block text-[10px] uppercase tracking-wide text-muted-foreground">
-                      {t("Rule Status", "Trạng thái")}
-                    </span>
-                    <StatusBadge status={row.status} />
-                  </div>
-                  <div className="text-right">
-                    <span className="block text-[10px] uppercase tracking-wide text-muted-foreground">
-                      {t("Severity", "Mức độ")}
-                    </span>
-                    <Badge variant="outline" className="font-mono text-[10px]">
-                      {row.severity}
-                    </Badge>
-                  </div>
-                </div>
-              </div>
+              </details>
             ))}
           </div>
         </div>
@@ -1432,6 +1410,16 @@ function StepContent({
         !studioStateQuery.data.telemetry &&
         !(studioStateQuery.data as Record<string, unknown>)["simulatedSandbox"])),
   );
+  const selectedElement = activeModel?.elements.find((item) => item.id === selectedGraphId);
+  const selectedConnection = activeModel?.edges.find((item) => item.id === selectedGraphId);
+  const selectedArchitectureLabel = selectedElement?.name ??
+    (selectedConnection
+      ? `${activeModel?.elements.find((item) => item.id === selectedConnection.from)?.name ?? selectedConnection.from} → ${activeModel?.elements.find((item) => item.id === selectedConnection.to)?.name ?? selectedConnection.to}`
+      : null);
+  const openSelectedContextInTutor = () => {
+    setTutorQuery("grounded");
+    document.getElementById("lab-ai-tutor")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   return (
     <>
@@ -1495,83 +1483,75 @@ function StepContent({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <div className="rounded-2xl border bg-card p-6">
-        <div className="flex items-start gap-4">
-          <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+      <section className="rounded-xl border bg-card px-4 py-4 sm:px-5">
+        <div className="flex items-start gap-3">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
             <Icon aria-hidden="true" />
           </div>
-          <div>
+          <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
               {t(`Phase ${step} / 3`, `Giai đoạn ${step} / 3`)}
             </p>
-            <h2 className="mt-1 text-xl font-semibold">{t(current.title, current.titleVi)}</h2>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            <h2 className="mt-0.5 text-lg font-semibold">{t(current.title, current.titleVi)}</h2>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">
               {t(current.description, current.descriptionVi)}
             </p>
           </div>
         </div>
-      </div>
+        <dl className="mt-4 grid gap-3 border-t pt-3 text-xs sm:grid-cols-3">
+          <div>
+            <dt className="font-semibold uppercase tracking-wide text-muted-foreground">
+              {t("Learning objective", "Mục tiêu học tập")}
+            </dt>
+            <dd className="mt-1 leading-5 text-foreground">
+              {step === 1
+                ? t("Understand the curated architecture through evidence.", "Hiểu kiến trúc tham chiếu thông qua evidence.")
+                : step === 2
+                  ? t("Observe and validate impact in the runtime scenario.", "Quan sát và kiểm chứng tác động trong kịch bản runtime.")
+                  : t("Review evidence and submit the completed Lab.", "Kiểm tra evidence và nộp Lab hoàn tất.")}
+            </dd>
+          </div>
+          <div>
+            <dt className="font-semibold uppercase tracking-wide text-muted-foreground">
+              {t("Reference snapshot", "Snapshot tham chiếu")}
+            </dt>
+            <dd className="mt-1 leading-5 text-foreground">
+              {hasReferenceArch
+                ? t("Curated C1–C3 model and source evidence ready.", "Mô hình C1–C3 và evidence mã nguồn đã sẵn sàng.")
+                : t("No reference snapshot is required for this Lab.", "Lab này không yêu cầu snapshot tham chiếu.")}
+            </dd>
+          </div>
+          <div>
+            <dt className="font-semibold uppercase tracking-wide text-muted-foreground">
+              {t("Next requirement", "Yêu cầu tiếp theo")}
+            </dt>
+            <dd className="mt-1 leading-5 text-foreground">
+              {step === 1
+                ? requiresRuntime
+                  ? t("Pass the Module Quiz before Runtime Studio.", "Đạt Quiz Module trước khi vào Runtime Studio.")
+                  : t("Review static evidence before submitting.", "Rà soát evidence tĩnh trước khi nộp.")
+                : step === 2
+                  ? t("Seal verified runtime evidence before submission.", "Niêm phong evidence runtime đã xác minh trước khi nộp.")
+                  : t("Complete the required submission fields.", "Hoàn tất các trường bắt buộc của bài nộp.")}
+            </dd>
+          </div>
+        </dl>
+      </section>
 
       {step === 1 && (
         <div className="space-y-5">
-          <section className="grid gap-3 rounded-2xl border bg-card p-5 text-sm shadow-sm md:grid-cols-3">
-            <div className="space-y-1">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                {t("Lab objective", "Mục tiêu Lab")}
-              </p>
-              <p className="font-medium">
-                {t(
-                  "Use the module knowledge against a curated system snapshot.",
-                  "Áp dụng kiến thức của Module trên snapshot hệ thống đã được chọn lọc.",
-                )}
-              </p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                {t("Reference snapshot", "Snapshot tham chiếu")}
-              </p>
-              <p className="font-medium">
-                {hasReferenceArch
-                  ? t(
-                      "C1–C3 model and source evidence are ready.",
-                      "Mô hình C1–C3 và bằng chứng mã nguồn đã sẵn sàng.",
-                    )
-                  : t(
-                      "No repository snapshot is required for this Lab.",
-                      "Lab này không yêu cầu snapshot repository.",
-                    )}
-              </p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                {t("Required input", "Điều kiện đầu vào")}
-              </p>
-              <p className="font-medium">
-                {isTheoryOnlyLab
-                  ? t("Complete the static evidence.", "Hoàn tất evidence tĩnh.")
-                  : t(
-                      "Review the static evidence before continuing to Runtime Studio.",
-                      "Hoàn tất việc xem evidence tĩnh trước khi chuyển sang Runtime Studio.",
-                    )}
-              </p>
-            </div>
-          </section>
-
           {hasReferenceArch ? (
             <>
-              <div className="space-y-4 rounded-2xl border bg-card p-5">
+              <section className="space-y-4 rounded-xl border bg-card p-4 sm:p-5" aria-label={t("Architecture workspace", "Không gian kiến trúc")}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <Badge variant="secondary">
+                    <h3 className="text-base font-semibold text-foreground">
+                      {t("Architecture workspace", "Không gian kiến trúc")}
+                    </h3>
+                    <p className="mt-1 text-sm leading-6 text-muted-foreground">
                       {t(
-                        "Read-Only Structural Views (C1–C3 + Dependency Graph) · Static source evidence only (not runtime trace)",
-                        "Góc nhìn cấu trúc chỉ đọc (C1–C3 + Đồ thị phụ thuộc) · Chỉ từ bằng chứng mã nguồn tĩnh (không phải dấu vết runtime)",
-                      )}
-                    </Badge>
-                    <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                      {t(
-                        "Switch inline between C1–C3 diagrams and the interactive Dependency Graph grounded directly on the Lecturer's curated reference snapshot.",
-                        "Chuyển đổi trực tiếp giữa các sơ đồ C1–C3 và Đồ thị phụ thuộc ngay tại đây dựa trên mã nguồn chuẩn do Giảng viên biên soạn.",
+                        "Explore the curated C1–C3 views and Dependency Graph. Select a node or connection to inspect its evidence.",
+                        "Khám phá các góc nhìn C1–C3 và Đồ thị phụ thuộc đã được chọn lọc. Chọn node hoặc kết nối để xem evidence.",
                       )}
                     </p>
                   </div>
@@ -1612,19 +1592,35 @@ function StepContent({
 
                 {inlineC4View !== "GRAPH" ? (
                   activeModel && activeModel.elements.length > 0 ? (
-                    <div className="space-y-4">
-                      <ArchitectureDiagrams
-                        model={activeModel}
-                        guidedStatic
-                        controlledKind={inlineC4View}
-                        hideKindSelector
-                        systemName={labTitle}
-                        selectedId={selectedGraphId}
-                        onSelect={setSelectedGraphId}
-                      />
-                      {selectedGraphId && (
-                        <ElementDetailsPanel model={activeModel} selectedId={selectedGraphId} />
-                      )}
+                    <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+                      <div className="min-w-0">
+                        <ArchitectureDiagrams
+                          model={activeModel}
+                          guidedStatic
+                          controlledKind={inlineC4View}
+                          hideKindSelector
+                          systemName={labTitle}
+                          selectedId={selectedGraphId}
+                          onSelect={setSelectedGraphId}
+                        />
+                      </div>
+                      <aside className="min-w-0 rounded-lg border bg-muted/15 p-3">
+                        <div className="mb-3 flex items-center justify-between gap-2">
+                          <h4 className="text-sm font-semibold">{t("Inspector", "Bảng kiểm tra")}</h4>
+                          {selectedArchitectureLabel && (
+                            <Button type="button" size="sm" variant="outline" onClick={openSelectedContextInTutor}>
+                              {t("Explain with AI", "Giải thích bằng AI")}
+                            </Button>
+                          )}
+                        </div>
+                        {selectedGraphId ? (
+                          <ElementDetailsPanel model={activeModel} selectedId={selectedGraphId} />
+                        ) : (
+                          <p className="text-sm leading-6 text-muted-foreground">
+                            {t("Select an element or connection in the diagram to inspect its role, relationships, and source evidence.", "Chọn một phần tử hoặc kết nối trên sơ đồ để xem vai trò, quan hệ và evidence mã nguồn.")}
+                          </p>
+                        )}
+                      </aside>
                     </div>
                   ) : activeDiagramMermaid ? (
                     <DiagramPreview
@@ -1642,7 +1638,7 @@ function StepContent({
                     </p>
                   )
                 ) : activeModel ? (
-                  <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+                  <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
                     <div className="min-w-0 overflow-x-auto">
                       <ArchitectureGraph
                         model={activeModel}
@@ -1650,16 +1646,50 @@ function StepContent({
                         onSelect={setSelectedGraphId}
                       />
                     </div>
-                    <div className="min-w-0">
-                      <ElementDetailsPanel model={activeModel} selectedId={selectedGraphId} />
-                    </div>
+                    <aside className="min-w-0 rounded-lg border bg-muted/15 p-3">
+                      <div className="mb-3 flex items-center justify-between gap-2">
+                        <h4 className="text-sm font-semibold">{t("Inspector", "Bảng kiểm tra")}</h4>
+                        {selectedArchitectureLabel && (
+                          <Button type="button" size="sm" variant="outline" onClick={openSelectedContextInTutor}>
+                            {t("Explain with AI", "Giải thích bằng AI")}
+                          </Button>
+                        )}
+                      </div>
+                      {selectedGraphId ? (
+                        <ElementDetailsPanel model={activeModel} selectedId={selectedGraphId} />
+                      ) : (
+                        <p className="text-sm leading-6 text-muted-foreground">
+                          {t("Select a node or connection to inspect its relationship and source evidence.", "Chọn node hoặc kết nối để xem quan hệ và evidence mã nguồn.")}
+                        </p>
+                      )}
+                    </aside>
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground">
                     {t("Loading architectural model…", "Đang tải mô hình kiến trúc…")}
                   </p>
                 )}
-              </div>
+              </section>
+
+              <details className="group rounded-xl border bg-card">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-semibold marker:content-none">
+                  <span>{t("Static impact hypothesis (Reverse BFS)", "Giả thuyết tác động tĩnh (Reverse BFS)")}</span>
+                  <span className="text-xs font-normal text-muted-foreground group-open:hidden">
+                    {t("Open impact explorer", "Mở trình khám phá tác động")}
+                  </span>
+                </summary>
+                <div className="border-t px-4 py-4">
+                  <Step2StaticImpact
+                    projectId={resolvedModelProjectId}
+                    modelId={modelId}
+                    modelQuery={modelQuery}
+                    sourceLink={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=1${previewParam}`}
+                    inlineModel={activeModel}
+                    waitForContext={studentContextLoading}
+                    onOpenC1C3View={onOpenC1C3View}
+                  />
+                </div>
+              </details>
 
               {referenceArchitecture?.evaluation?.findings &&
               referenceArchitecture.evaluation.findings.length > 0 ? (
@@ -1672,28 +1702,21 @@ function StepContent({
                   <div className="space-y-4">
                     <div className="divide-y rounded-xl border bg-background">
                       {referenceArchitecture.evaluation.findings.map((finding) => (
-                        <div
-                          key={finding.id}
-                          className="flex flex-wrap items-start justify-between gap-3 p-3 text-xs"
-                        >
-                          <div className="min-w-0 flex-1 space-y-1">
-                            <div className="flex flex-wrap items-center gap-2">
+                        <details key={finding.id} className="group text-xs">
+                          <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 p-3 marker:content-none">
+                            <div className="flex min-w-0 flex-wrap items-center gap-2">
                               <span className="font-mono font-semibold">{finding.ruleId}</span>
-                              <span className="font-medium">
-                                {getRuleName(finding.ruleId, "en")}
-                              </span>
+                              <span className="font-medium">{getRuleName(finding.ruleId, "en")}</span>
                             </div>
-                            {finding.message && (
-                              <p className="leading-5 text-muted-foreground">{finding.message}</p>
-                            )}
-                          </div>
-                          <div className="flex shrink-0 items-center gap-2">
-                            <StatusBadge status={finding.status} />
-                            <Badge variant="outline" className="font-mono text-[10px]">
-                              {finding.severity}
-                            </Badge>
-                          </div>
-                        </div>
+                            <div className="flex shrink-0 items-center gap-2">
+                              <StatusBadge status={finding.status} />
+                              <Badge variant="outline" className="font-mono text-[10px]">{finding.severity}</Badge>
+                            </div>
+                          </summary>
+                          {finding.message && (
+                            <p className="border-t px-3 py-2.5 leading-5 text-muted-foreground">{finding.message}</p>
+                          )}
+                        </details>
                       ))}
                     </div>
                     {referenceArchitecture.evidences.length > 0 && (
@@ -1729,6 +1752,7 @@ function StepContent({
                 />
               )}
 
+              <div id="lab-ai-tutor">
               <DetailPanel
                 title={t(
                   "Evidence-Grounded AI Architecture Tutor (BR-05 & DS-02b)",
@@ -1773,8 +1797,8 @@ function StepContent({
                 </div>
                 {tutorQuery === "grounded" &&
                   (() => {
-                    const firstEl = activeModel?.elements[0];
-                    const firstEdge = activeModel?.edges[0];
+                    const contextElement = selectedElement ?? activeModel?.elements[0];
+                    const contextEdge = selectedConnection ?? activeModel?.edges[0];
                     const isDotNet = activeModel?.elements.some(
                       (el) =>
                         (el.technology ?? "").toLowerCase().includes(".net") ||
@@ -1782,8 +1806,8 @@ function StepContent({
                         el.name.toLowerCase().includes("fruit"),
                     );
                     const evidenceLocation =
-                      firstEl?.evidence?.[0]?.location ??
-                      firstEdge?.evidence?.[0]?.location ??
+                      contextElement?.evidence?.[0]?.location ??
+                      contextEdge?.evidence?.[0]?.location ??
                       (isDotNet
                         ? "src/Services/PaymentService/Program.cs"
                         : "order-service/src/main/java/com/curated/order/PaymentClient.java");
@@ -1797,9 +1821,9 @@ function StepContent({
                           )}
                         </p>
                         <p className="leading-5 text-muted-foreground">
-                          [Node: <code>{firstEl?.name ?? "order-service"}</code>] · [File:{" "}
+                          [{selectedConnection ? t("Connection", "Kết nối") : t("Element", "Phần tử")}: <code>{selectedArchitectureLabel ?? contextElement?.name ?? "order-service"}</code>] · [File:{" "}
                           <code>{evidenceLocation}</code>] · [Contract:{" "}
-                          <code>{firstEdge?.protocol ?? "SERVICE_HTTP_CALL"}</code>] —{" "}
+                          <code>{contextEdge?.protocol ?? "SERVICE_HTTP_CALL"}</code>] —{" "}
                           {t(
                             "Cross-container calls follow explicit HTTP/RPC contracts separated from private database ownership.",
                             "Lời gọi liên dịch vụ đi qua hợp đồng API/Event rõ ràng, tách biệt hoàn toàn khỏi quyền sở hữu DB nội bộ.",
@@ -1820,6 +1844,7 @@ function StepContent({
                   </div>
                 )}
               </DetailPanel>
+              </div>
             </>
           ) : (
             <div className="rounded-xl border border-dashed bg-muted/20 px-4 py-3 text-xs text-muted-foreground">
@@ -1830,50 +1855,6 @@ function StepContent({
             </div>
           )}
 
-          <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-teal-200 bg-teal-50/70 p-5 dark:border-teal-800/60 dark:bg-teal-950/20">
-            <div className="space-y-1">
-              <p className="text-sm font-semibold text-teal-950 dark:text-teal-100">
-                {hasReferenceArch
-                  ? t(
-                      "Finished reviewing the snapshot and C1–C3 architecture?",
-                      "Bạn đã hoàn tất xem snapshot và kiến trúc C1–C3?",
-                    )
-                  : t(
-                      "Finished reviewing the Static Studio brief?",
-                      "Bạn đã xem xong tóm tắt Static Studio?",
-                    )}
-              </p>
-              <p className="text-xs text-teal-900/80 dark:text-teal-300/80">
-                {hasReferenceArch
-                  ? t(
-                      "Use the static graph to form an impact hypothesis, then continue to Runtime Studio.",
-                      "Dùng đồ thị tĩnh để lập giả thuyết tác động, sau đó chuyển sang Runtime Studio.",
-                    )
-                  : isTheoryOnlyLab
-                    ? t(
-                        "This Lab does not require Runtime Studio; continue to evidence and submission when your static work is complete.",
-                        "Lab này không yêu cầu Runtime Studio; hãy chuyển sang evidence và nộp bài khi hoàn tất phần tĩnh.",
-                      )
-                    : t(
-                        "Continue to the Runtime Studio phase when it is available.",
-                        "Chuyển sang giai đoạn Runtime Studio khi sẵn sàng.",
-                      )}
-              </p>
-            </div>
-            <Button asChild className="bg-teal-600 text-white hover:bg-teal-700">
-              <Link
-                href={
-                  isTheoryOnlyLab
-                    ? submitHref
-                    : `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=2${previewParam}`
-                }
-              >
-                {isTheoryOnlyLab
-                  ? t("Continue to Evidence & Submit →", "Sang Evidence & Submit →")
-                  : t("Continue to Runtime Studio →", "Sang Runtime Studio →")}
-              </Link>
-            </Button>
-          </div>
         </div>
       )}
 
@@ -2010,27 +1991,6 @@ function StepContent({
             </DetailPanel>
           ) : (
             <>
-              {hasReferenceArch && (
-                <DetailPanel
-                  title={t("Impact Analysis Workspace", "Không gian phân tích tác động")}
-                >
-                  <p className="mb-4 text-sm leading-6 text-muted-foreground">
-                    {t(
-                      "Use Reverse BFS on the curated dependency graph to form a static impact hypothesis, then compare it with the observed Runtime Studio evidence below.",
-                      "Dùng Reverse BFS trên đồ thị phụ thuộc đã chọn lọc để lập giả thuyết tác động tĩnh, sau đó đối chiếu với evidence quan sát được trong Runtime Studio bên dưới.",
-                    )}
-                  </p>
-                  <Step2StaticImpact
-                    projectId={resolvedModelProjectId}
-                    modelId={modelId}
-                    modelQuery={modelQuery}
-                    sourceLink={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=1${previewParam}`}
-                    inlineModel={activeModel}
-                    waitForContext={studentContextLoading}
-                    onOpenC1C3View={onOpenC1C3View}
-                  />
-                </DetailPanel>
-              )}
               {requiresRuntime && (
                 <DetailPanel title={t("MAVIS Studio Live", "MAVIS Studio Live")}>
                   {preview ? (
@@ -2203,7 +2163,7 @@ function StepContent({
         </div>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-card p-4">
+      <div className="sticky bottom-3 z-20 flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card/95 p-3 shadow-sm backdrop-blur sm:p-4">
         <Button asChild variant="outline" disabled={step === 1}>
           {step === 1 ? (
             <span>{t("Previous step", "Bước trước")}</span>

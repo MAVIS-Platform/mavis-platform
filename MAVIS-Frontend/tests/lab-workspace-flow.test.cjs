@@ -45,8 +45,8 @@ test("LabWorkspace unifies navigation into a single sticky horizontal stepper wi
     /lg:grid-cols-\[260px_minmax\(0,1fr\)\]/,
     "Duplicate 260px left LabToc sidebar should be removed so diagrams use full width",
   );
-  assert.match(screens, /Lab objective/);
-  assert.match(screens, /Impact Analysis Workspace/);
+  assert.match(screens, /Learning objective/);
+  assert.match(screens, /Static impact hypothesis/);
 
   const html = renderToStaticMarkup(
     React.createElement(LabToc, {

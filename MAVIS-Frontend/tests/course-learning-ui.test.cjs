@@ -288,9 +288,9 @@ test("LabWorkspace uses a class-module-Lab breadcrumb, a focused entry summary a
 
   assert.match(course, /LabToc/);
   assert.match(course, /preview/i);
-  assert.match(course, /Lab objective/);
+  assert.match(course, /Learning objective/);
   assert.match(course, /Reference snapshot/);
-  assert.match(course, /Required input/);
+  assert.match(course, /Next requirement/);
   assert.match(course, /t\("Class", "Lớp"\)/);
   assert.match(course, /t\("Module", "Chương"\)/);
 });
@@ -363,9 +363,7 @@ test("new Course and Lab surfaces expose direct Vietnamese copy", () => {
 test("Guided Lab Step 1 exposes inline C1-C3 & Dependency Graph views, pinned IDs, and 5-rule 3E evaluation", () => {
   const course = read("src/features/courses/screens.tsx");
   assert.ok(
-    course.includes(
-      "Read-Only Structural Views (C1–C3 + Dependency Graph) · Static source evidence only (not runtime trace)",
-    ),
+    course.includes("Explore the curated C1–C3 views and Dependency Graph."),
   );
   assert.ok(course.includes("C1 System Context"));
   assert.ok(course.includes("C2 Container"));
