@@ -17,6 +17,8 @@ spring:
         reWriteBatchedInserts: true
 
   jpa:
+    # Disable OSIV so long-lived SSE streams (/studio/stream) never pin HikariCP DB connections.
+    open-in-view: false
     # Khng cho php JPA t? ??ng t?o b?ng v chng ta s? dng Flyway
     hibernate:
       ddl-auto: validate

@@ -361,8 +361,8 @@ function StandaloneStudioContent() {
   const liveStudioVerified =
     Boolean(verifiedSession) ||
     Boolean(
-      studioStateQuery.data?.receiptDigest ||
-      studioStateQuery.data?.executionStatus === "COMPLETED",
+      studioStateQuery.data?.executionStatus === "COMPLETED" &&
+        studioStateQuery.data?.receiptDigest,
     );
 
   const needsSandboxBootstrap = Boolean(

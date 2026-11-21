@@ -1800,7 +1800,9 @@ function StepContent({
             <dd className="mt-1 leading-5 text-foreground">
               {step === 1
                 ? requiresRuntime
-                  ? t("Pass the Module Quiz before Runtime Studio.", "Đạt Quiz Module trước khi vào Runtime Studio.")
+                  ? !runtimePrerequisiteMissing
+                    ? t("Launch Runtime Studio and complete your live experiment.", "Mở Runtime Studio và hoàn thành thực nghiệm trực tiếp.")
+                    : t("Pass the Module Quiz before Runtime Studio.", "Đạt Quiz Module trước khi vào Runtime Studio.")
                   : t("Review static evidence before submitting.", "Rà soát evidence tĩnh trước khi nộp.")
                 : step === 2
                   ? t("Seal verified runtime evidence before submission.", "Niêm phong evidence runtime đã xác minh trước khi nộp.")

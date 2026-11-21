@@ -94,10 +94,10 @@ export function Step2StaticImpact({
 
   return (
     <div className="space-y-5">
-      <div className="rounded-2xl border border-teal-200/80 bg-gradient-to-r from-teal-50/80 via-emerald-50/50 to-white p-4 shadow-xs">
+      <div className="rounded-2xl border border-teal-200/80 bg-gradient-to-r from-teal-50/80 via-emerald-50/50 to-white p-4 shadow-xs dark:border-teal-800/70 dark:from-teal-950/40 dark:via-emerald-950/25 dark:to-card">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2 text-sm font-semibold text-teal-950">
-            <GitBranch className="size-4 text-teal-600" />
+          <div className="flex items-center gap-2 text-sm font-semibold text-teal-950 dark:text-teal-100">
+            <GitBranch className="size-4 text-teal-600 dark:text-teal-400" />
             <span>
               {t(
                 "Reverse BFS Impact Simulator — Static impact check",
@@ -105,13 +105,13 @@ export function Step2StaticImpact({
               )}
             </span>
           </div>
-          <Badge variant="outline" className="border-teal-300 bg-white text-teal-700">
+          <Badge variant="outline" className="border-teal-300 bg-white text-teal-700 dark:border-teal-700 dark:bg-teal-950/60 dark:text-teal-200">
             {t("3 quick steps", "3 bước thực hành")}
           </Badge>
         </div>
-        <ol className="mt-3 grid gap-2 text-xs leading-5 text-slate-700 md:grid-cols-3">
-          <li className="rounded-xl border border-teal-100 bg-white/90 px-3 py-2">
-            <span className="font-semibold text-teal-800">
+        <ol className="mt-3 grid gap-2 text-xs leading-5 text-slate-700 dark:text-slate-300 md:grid-cols-3">
+          <li className="rounded-xl border border-teal-100 bg-white/90 px-3 py-2 dark:border-teal-900/60 dark:bg-card/85">
+            <span className="font-semibold text-teal-800 dark:text-teal-300">
               {t("1. Pick a target service:", "1. Chọn node đích (Service/DB):")}
             </span>{" "}
             {t(
@@ -119,8 +119,8 @@ export function Step2StaticImpact({
               "Nhấp vào thành phần bên dưới để giả lập sự cố hoặc thay đổi API.",
             )}
           </li>
-          <li className="rounded-xl border border-teal-100 bg-white/90 px-3 py-2">
-            <span className="font-semibold text-teal-800">
+          <li className="rounded-xl border border-teal-100 bg-white/90 px-3 py-2 dark:border-teal-900/60 dark:bg-card/85">
+            <span className="font-semibold text-teal-800 dark:text-teal-300">
               {t("2. Inspect blast radius:", "2. Quan sát bán kính ảnh hưởng:")}
             </span>{" "}
             {t(
@@ -128,8 +128,8 @@ export function Step2StaticImpact({
               "Xem các caller phụ thuộc ngược chiều mũi tên và vùng cách ly an toàn.",
             )}
           </li>
-          <li className="rounded-xl border border-teal-100 bg-white/90 px-3 py-2">
-            <span className="font-semibold text-teal-800">
+          <li className="rounded-xl border border-teal-100 bg-white/90 px-3 py-2 dark:border-teal-900/60 dark:bg-card/85">
+            <span className="font-semibold text-teal-800 dark:text-teal-300">
               {t("3. Verify 3E & apply:", "3. Đối chiếu 3E & thực hành:")}
             </span>{" "}
             {t(
