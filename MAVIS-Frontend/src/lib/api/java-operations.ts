@@ -202,6 +202,7 @@ export async function executeJava(
         status: z.string(),
         myRoleInWorkspace: z.string().nullish(),
         createdById: z.string().uuid().optional(),
+        createdByName: z.string().nullish(),
         description: z.string().nullish(),
         members: z.array(memberSchema).optional(),
       })
@@ -211,6 +212,7 @@ export async function executeJava(
     return {
       ...w,
       code: w.code ?? "",
+      ...(w.createdByName ? { createdByName: w.createdByName } : {}),
       myRole: w.myRoleInWorkspace ?? null,
       description: w.description ?? "",
       members: members.map((m) => ({

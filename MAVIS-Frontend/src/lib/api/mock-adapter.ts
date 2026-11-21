@@ -258,7 +258,8 @@ export class MockAdapter implements ApiAdapter {
       revision: model.revision, sourceType: "ZIP_UPLOAD", repositoryUrl: project.repository || null };
   }
   private classroomView(room: MockAdapter["classrooms"][number]) {
-    return { id:room.id,code:room.code,name:room.name,status:room.status,createdById:room.ownerId,myRole:room.members.find(m => m.id === this.user?.id)?.role.toUpperCase() ?? null,members:room.members };
+    const ownerName = room.members.find((m) => m.id === room.ownerId)?.name;
+    return { id:room.id,code:room.code,name:room.name,status:room.status,createdById:room.ownerId,...(ownerName ? { createdByName: ownerName } : {}),myRole:room.members.find(m => m.id === this.user?.id)?.role.toUpperCase() ?? null,members:room.members };
   }
   private record(operation: string, resourceId: string) {
     this.audit.push({

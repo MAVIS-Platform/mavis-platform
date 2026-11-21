@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { UserAvatar } from "@/components/shared/user-avatar";
 import {
   useCoursePasskeys,
   useCreateCoursePasskey,
@@ -405,6 +406,11 @@ export function CourseWorkspaceShell({
   const pathname = usePathname();
   const members = workspace.members ?? [];
   const students = members.filter((member) => member.role.toUpperCase() === "STUDENT").length;
+  const creatorMember =
+    (workspace.createdById
+      ? members.find((member) => member.id === workspace.createdById)
+      : undefined) ?? members.find((member) => member.role.toUpperCase() === "LECTURER");
+  const creatorName = workspace.createdByName?.trim() || creatorMember?.name?.trim() || "";
   const isStudent = workspace.myRole?.toUpperCase() === "STUDENT";
   const activeStaffTab = resolveStaffTab(pathname, active);
   const activeStudentTab = resolveStudentTab(pathname, active);
@@ -434,12 +440,32 @@ export function CourseWorkspaceShell({
               </Badge>
               {!isStudent && <ClassHeaderPasskey workspaceId={workspace.id} />}
             </div>
-            <p className="inline-flex items-center gap-1.5 text-xs text-white/80">
-              <Users className="size-3.5" aria-hidden="true" />
-              <span>
-                {students} {students === 1 ? t("student", "sinh viên") : t("students", "sinh viên")}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-white/80">
+              {creatorName && (
+                <span className="inline-flex items-center gap-1.5 font-medium text-white">
+                  <UserAvatar
+                    name={creatorName}
+                    avatarUrl={creatorMember?.avatarUrl}
+                    size="xs"
+                    className="size-5 ring-1 ring-white/30"
+                  />
+                  <span>
+                    {t("Instructor", "Giảng viên")}: {creatorName}
+                  </span>
+                </span>
+              )}
+              {creatorName && (
+                <span className="text-white/40" aria-hidden="true">
+                  ·
+                </span>
+              )}
+              <span className="inline-flex items-center gap-1.5">
+                <Users className="size-3.5" aria-hidden="true" />
+                <span>
+                  {students} {students === 1 ? t("student", "sinh viên") : t("students", "sinh viên")}
+                </span>
               </span>
-            </p>
+            </div>
           </div>
           {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
         </div>

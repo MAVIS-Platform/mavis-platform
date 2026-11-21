@@ -5190,6 +5190,19 @@ test("My Workspaces is a compact LMS class list with tabs and a module outline",
   const membersHtml = renderComp(WorkspaceMembers, "ws-swd");
   assert.match(membersHtml, /Class sections/, "lecturer class view shows unified 7-tab navigation");
   assert.match(membersHtml, /Students &amp; Access/);
+  assert.match(
+    membersHtml,
+    /Instructor:.*Lecturer/,
+    "course header displays the course creator / instructor next to student count",
+  );
+  const rosterBody = membersHtml.match(/<tbody[\s\S]*?<\/tbody>/)?.[0] ?? "";
+  assert.match(rosterBody, /Student A/, "Students & Access table lists enrolled students");
+  assert.doesNotMatch(
+    rosterBody,
+    />Lecturer</,
+    "Students & Access table excludes the lecturer/creator row",
+  );
+  assert.doesNotMatch(membersHtml, /All roles/, "Students & Access omits redundant role filter");
   client.setQueryData(["api", "session", {}], {
     user: { id: "u2", name: "Student A", email: "student@example.com", role: "student" },
   });
@@ -5198,6 +5211,11 @@ test("My Workspaces is a compact LMS class list with tabs and a module outline",
     studentMembersHtml,
     /aria-label="Class sections"/,
     "members view keeps class tabs available across roles",
+  );
+  assert.match(
+    studentMembersHtml,
+    /Instructor:.*Lecturer/,
+    "students joining a course see the course creator / instructor in the course header",
   );
   client.setQueryData(["api", "session", {}], {
     user: { id: "u1", name: "Lecturer", email: "lec@example.com", role: "lecturer" },

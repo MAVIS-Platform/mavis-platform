@@ -432,9 +432,16 @@ export function Courses() {
                   const memberCount = workspace.members.length;
                   const isLecturer =
                     workspace.myRole === "LECTURER" || session.data?.user?.role === "admin";
-                  const lecturerNames = workspace.members
-                    .filter((member) => member.role.toUpperCase() === "LECTURER")
-                    .map((member) => member.name);
+                  const lecturerNames = Array.from(
+                    new Set(
+                      [
+                        workspace.createdByName?.trim(),
+                        ...workspace.members
+                          .filter((member) => member.role.toUpperCase() === "LECTURER")
+                          .map((member) => member.name?.trim()),
+                      ].filter((name): name is string => Boolean(name)),
+                    ),
+                  );
                   return (
                     <StudentCourseProgressCard
                       key={workspace.id}

@@ -8,7 +8,7 @@ import { CourseCover } from "@/components/course-cover";
 import { useApiMutation, useApiQuery, useSession, useSelection } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
 import { ErrorState, RequestState } from "@/components/shared/request-state";
-import { Pagination, SearchInput, SelectField } from "@/components/shared/forms";
+import { Pagination, SearchInput } from "@/components/shared/forms";
 import { DataTable, DetailPanel } from "@/components/shared/data";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { CreateWorkspace, WorkspaceControls } from "./manage";
@@ -246,6 +246,13 @@ export function Workspaces() {
             const students = members.filter(
               (member) => member.role.toUpperCase() === "STUDENT",
             ).length;
+            const creatorName =
+              workspace.createdByName?.trim() ||
+              (workspace.createdById
+                ? members.find((member) => member.id === workspace.createdById)?.name?.trim()
+                : undefined) ||
+              members.find((member) => member.role.toUpperCase() === "LECTURER")?.name?.trim() ||
+              "";
             const archived = (workspace.status ?? "ACTIVE") === "ARCHIVED";
             const workspaceUrl = `/workspace-overview?workspace=${encodeURIComponent(workspace.id)}`;
             return (
@@ -272,8 +279,9 @@ export function Workspaces() {
                   )}
                 </CourseCover>
                 <div className="flex flex-1 flex-col gap-3 p-5">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                    {t("Lecturer", "Giảng viên")}
+                  <p className="truncate text-xs tracking-wide text-muted-foreground">
+                    <span className="uppercase">{t("Lecturer", "Giảng viên")}</span>
+                    {creatorName ? ` · ${creatorName}` : ""}
                   </p>
                   <Link
                     className="truncate text-xl font-semibold tracking-tight text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -461,7 +469,6 @@ export function WorkspaceMembers() {
   const query = useApiQuery("workspaces", {});
   const remove = useApiMutation("removeWorkspaceMember");
   const [search, setSearch] = useState("");
-  const [roleFilter, setRoleFilter] = useState("ALL");
   const workspace = query.data?.find((w) => w.id === workspaceId);
   const canManage =
     workspace?.myRole?.toUpperCase() === "LECTURER" || session.data?.user?.role === "admin";
@@ -484,17 +491,13 @@ export function WorkspaceMembers() {
   const gradebookLoading = canManage && gradebook.isPending && !gradebook.data;
   const gradebookFailed = canManage && gradebook.isError && !gradebook.data;
   const totalLabs = gradebook.data?.labs.length ?? 0;
-  const studentCount = (workspace?.members ?? []).filter(
+  const studentMembers = (workspace?.members ?? []).filter(
     (m) => m.role.toUpperCase() === "STUDENT",
-  ).length;
-  const filteredMembers = (workspace?.members ?? []).filter((m) => {
-    const matchesSearch =
-      !search.trim() ||
-      m.name.toLowerCase().includes(search.trim().toLowerCase()) ||
-      (m.email ?? "").toLowerCase().includes(search.trim().toLowerCase()) ||
-      m.role.toLowerCase().includes(search.trim().toLowerCase());
-    const matchesRole = roleFilter === "ALL" || m.role.toUpperCase() === roleFilter;
-    return matchesSearch && matchesRole;
+  );
+  const studentCount = studentMembers.length;
+  const filteredStudents = studentMembers.filter((m) => {
+    const q = search.trim().toLowerCase();
+    return !q || m.name.toLowerCase().includes(q) || (m.email ?? "").toLowerCase().includes(q);
   });
   return (
     <RequestState query={query} empty={!workspace}>
@@ -542,26 +545,16 @@ export function WorkspaceMembers() {
                   </Link>
                 </div>
               )}
-              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_12rem]">
+              <div className="max-w-md">
                 <SearchInput
                   label={t("Filter students", "Tìm kiếm sinh viên")}
                   value={search}
                   onChange={setSearch}
                 />
-                <SelectField
-                  label={t("Role", "Vai trò")}
-                  value={roleFilter}
-                  onChange={setRoleFilter}
-                  options={[
-                    { value: "ALL", label: t("All roles", "Tất cả vai trò") },
-                    { value: "STUDENT", label: t("Student", "Sinh viên") },
-                    { value: "LECTURER", label: t("Lecturer", "Giảng viên") },
-                  ]}
-                />
               </div>
               {remove.error && <ErrorState error={remove.error} />}
               <DataTable
-                rows={filteredMembers}
+                rows={filteredStudents}
                 rowKey={(m) => m.id}
                 caption={t("Class roster & progress", "Danh sách sinh viên & tiến độ học")}
                 columns={[
@@ -569,7 +562,7 @@ export function WorkspaceMembers() {
                     key: "name",
                     label: t("Name", "Họ tên"),
                     render: (m) => (
-                      <div className="flex items-center gap-2.5">
+                      <div className="flex items-center gap-2.5 whitespace-nowrap">
                         <UserAvatar name={m.name} avatarUrl={m.avatarUrl} size="sm" />
                         <span className="font-medium text-foreground">{m.name}</span>
                       </div>
@@ -585,21 +578,9 @@ export function WorkspaceMembers() {
                     ),
                   },
                   {
-                    key: "role",
-                    label: t("Role", "Vai trò"),
-                    render: (m) => (
-                      <span className="inline-flex rounded-full border bg-muted/40 px-2 py-0.5 text-[11px] font-medium capitalize text-muted-foreground">
-                        {m.role.toLowerCase()}
-                      </span>
-                    ),
-                  },
-                  {
                     key: "status",
                     label: t("Status", "Trạng thái"),
                     render: (m) => {
-                      if (m.role.toUpperCase() !== "STUDENT") {
-                        return <span className="text-xs text-muted-foreground">—</span>;
-                      }
                       if (gradebookLoading) {
                         return <span className="text-xs text-muted-foreground">{t("Loading…", "Đang tải…")}</span>;
                       }
@@ -629,9 +610,6 @@ export function WorkspaceMembers() {
                     key: "progress",
                     label: t("Learning Progress", "Tiến độ học tập"),
                     render: (m) => {
-                      if (m.role.toUpperCase() !== "STUDENT") {
-                        return <span className="text-xs text-muted-foreground">—</span>;
-                      }
                       if (gradebookLoading) {
                         return <span className="text-xs text-muted-foreground">{t("Loading…", "Đang tải…")}</span>;
                       }
@@ -678,9 +656,6 @@ export function WorkspaceMembers() {
                     key: "avgScore",
                     label: t("Average Score", "Điểm trung bình"),
                     render: (m) => {
-                      if (m.role.toUpperCase() !== "STUDENT") {
-                        return <span className="text-xs text-muted-foreground">—</span>;
-                      }
                       if (gradebookLoading) {
                         return <span className="text-xs text-muted-foreground">{t("Loading…", "Đang tải…")}</span>;
                       }

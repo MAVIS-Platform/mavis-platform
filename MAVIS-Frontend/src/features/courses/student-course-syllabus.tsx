@@ -313,12 +313,17 @@ export function StudentCourseSyllabus({
 
   const lecturerNames = Array.from(
     new Set(
-      (workspace.members ?? [])
-        .filter((member) => member.role.toUpperCase() === "LECTURER")
-        .map((member) => member.name?.trim())
-        .filter(
-          (name): name is string => Boolean(name) && !/^(lecture|lecturer|giảng viên)$/i.test(name),
-        ),
+      [
+        workspace.createdByName?.trim(),
+        ...(workspace.members ?? [])
+          .filter((member) => member.role.toUpperCase() === "LECTURER")
+          .map((member) => member.name?.trim()),
+      ].filter(
+        (name): name is string =>
+          typeof name === "string" &&
+          name.length > 0 &&
+          !/^(lecture|lecturer|giảng viên)$/i.test(name),
+      ),
     ),
   );
 

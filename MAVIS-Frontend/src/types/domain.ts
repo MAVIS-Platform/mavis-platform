@@ -267,6 +267,7 @@ export const explanationSchema = z.object({
 });
 export const workspaceSchema = z.object({
   createdById: z.string().optional(),
+  createdByName: z.string().nullish(),
   description: z.string().optional(),
   id: z.string(),
   name: z.string(),
