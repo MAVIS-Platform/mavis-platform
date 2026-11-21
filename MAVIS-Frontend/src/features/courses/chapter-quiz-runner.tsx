@@ -14,21 +14,38 @@ import type { QuizQuestionData } from "./java-coursera-curriculum-data";
 import { useCourseQuiz } from "./course-quiz";
 
 const PASS_PERCENT = 70;
+type QuestionType = "SINGLE_CHOICE" | "MULTI_CHOICE" | "TRUE_FALSE";
+type RunnerQuestionData = QuizQuestionData & { type?: QuestionType | undefined };
+type BackendQuestionResult = {
+  id: string;
+  correct: boolean;
+  explanation?: string | null | undefined;
+};
 type QuizAttemptStatus = "NOT_STARTED" | "IN_PROGRESS" | "SUBMITTED";
 type StoredQuizAttempt = {
   attemptId: string;
   status: QuizAttemptStatus;
-  answers: Record<string, number>;
+  answers: Record<string, number | number[]>;
   correctCount?: number;
   submittedAt?: string | undefined;
   scorePercent?: number;
+  passed?: boolean;
+  questionResults?: BackendQuestionResult[] | undefined;
 };
 
 type BackendQuizResult = {
   correctCount: number;
   totalQuestions: number;
   status: "PASSED" | "NEEDS_RETRY";
+  questionResults?: BackendQuestionResult[] | undefined;
 };
+
+function toSelectedIndexes(value: number | number[] | undefined): number[] {
+  if (Array.isArray(value)) {
+    return value.filter((item) => typeof item === "number" && Number.isInteger(item));
+  }
+  return typeof value === "number" && Number.isInteger(value) ? [value] : [];
+}
 
 function makeAttemptId() {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -66,8 +83,12 @@ export function ChapterQuizRunner({
   const { t } = useLocale();
   const client = useApi();
   const cache = useQueryClient();
-  const backendQuizEnabled = client.mode === "backend" && Boolean(assignmentId) && !canManage;
-  const backendQuiz = useCourseQuiz(workspaceId, assignmentId ?? "", backendQuizEnabled);
+  const hasAssignmentBackend = client.mode === "backend" && Boolean(assignmentId);
+  const backendQuizEnabled = hasAssignmentBackend && !canManage;
+  const backendQuiz = useCourseQuiz(workspaceId, assignmentId ?? "", hasAssignmentBackend);
+  const passPercent = backendQuizEnabled
+    ? (backendQuiz.data?.passPercent ?? PASS_PERCENT)
+    : PASS_PERCENT;
   const storageKey = useMemo(
     () => attemptStorageKey(workspaceId, assignmentId, title),
     [assignmentId, title, workspaceId],
@@ -114,9 +135,11 @@ export function ChapterQuizRunner({
       correct === null || correct === undefined || total === 0
         ? attempt?.scorePercent
         : Math.round((correct / total) * 100);
+    const recordedPassed = backendQuiz.data.latestStatus === "PASSED";
     if (
       attempt?.status === "SUBMITTED" &&
       attempt.scorePercent === recordedScore &&
+      attempt.passed === recordedPassed &&
       attempt.submittedAt === (backendQuiz.data.latestSubmittedAt ?? attempt.submittedAt)
     ) {
       return;
@@ -125,6 +148,8 @@ export function ChapterQuizRunner({
       attemptId: attempt?.attemptId || `recorded-${backendQuiz.data.version}`,
       status: "SUBMITTED",
       answers: attempt?.answers ?? {},
+      passed: recordedPassed,
+      ...(attempt?.questionResults ? { questionResults: attempt.questionResults } : {}),
     };
     const submittedAt = backendQuiz.data.latestSubmittedAt ?? attempt?.submittedAt;
     if (submittedAt) recordedAttempt.submittedAt = submittedAt;
@@ -142,40 +167,52 @@ export function ChapterQuizRunner({
           body: JSON.stringify({
             attemptId: nextAttempt.attemptId,
             version: backendQuiz.data?.version,
-            selections: (backendQuiz.data?.questions ?? []).map((question, index) => {
-              const answer = nextAttempt.answers[question.id ?? `question-${index}`];
-              return typeof answer === "number" ? [answer] : [];
-            }),
+            selections: (backendQuiz.data?.questions ?? []).map((question, index) =>
+              toSelectedIndexes(nextAttempt.answers[question.id ?? `question-${index}`]),
+            ),
           }),
         },
       ),
     onSuccess: (result, nextAttempt) => {
+      const total = Math.max(result.totalQuestions, 1);
       updateAttempt({
         ...nextAttempt,
         status: "SUBMITTED",
         submittedAt: new Date().toISOString(),
         correctCount: result.correctCount,
-        scorePercent: Math.round((result.correctCount / result.totalQuestions) * 100),
+        scorePercent: Math.round((result.correctCount / total) * 100),
+        passed: result.status === "PASSED",
+        questionResults: result.questionResults ?? [],
       });
+      if (result.questionResults?.length) {
+        setShowFeedback(true);
+      }
       void cache.invalidateQueries({ queryKey: ["api", "course-quiz", workspaceId, assignmentId] });
       void cache.invalidateQueries({
         queryKey: ["api", "student-lab-context", workspaceId, assignmentId],
       });
+      void cache.invalidateQueries({ queryKey: ["api", "course-roadmap", workspaceId] });
+      void cache.invalidateQueries({ queryKey: ["api", "workspace-gradebook", workspaceId] });
+      void cache.invalidateQueries({ queryKey: ["api", "workspaces"] });
     },
   });
 
-  const displayedQuestions = useMemo<QuizQuestionData[]>(() => {
-    if (!backendQuizEnabled) return questions;
-    return (backendQuiz.data?.questions ?? []).map((question, index) => ({
-      id: question.id ?? `question-${index}`,
-      prompt: question.prompt,
-      options: question.options,
-      correctOption: -1,
-      explanation: "",
-    }));
-  }, [backendQuiz.data?.questions, backendQuizEnabled, questions]);
+  const displayedQuestions = useMemo<RunnerQuestionData[]>(() => {
+    if (hasAssignmentBackend && backendQuiz.data?.questions) {
+      return backendQuiz.data.questions.map((question, index) => ({
+        id: question.id ?? `question-${index}`,
+        prompt: question.prompt,
+        type: question.type ?? "SINGLE_CHOICE",
+        options: question.options,
+        correctOption: -1,
+        explanation: "",
+      }));
+    }
+    if (backendQuizEnabled) return [];
+    return questions;
+  }, [backendQuiz.data?.questions, backendQuizEnabled, hasAssignmentBackend, questions]);
 
-  if (backendQuizEnabled && backendQuiz.isPending) {
+  if (hasAssignmentBackend && backendQuiz.isPending) {
     return (
       <p className="mx-auto mt-8 max-w-[850px] text-sm text-muted-foreground">
         {t("Loading quiz…", "Đang tải Quiz…")}
@@ -203,6 +240,16 @@ export function ChapterQuizRunner({
     );
   }
 
+  if (canManage)
+    return (
+      <QuizPreview
+        title={title}
+        questions={displayedQuestions}
+        workspaceId={workspaceId}
+        assignmentId={assignmentId}
+      />
+    );
+
   if (!displayedQuestions.length) {
     return (
       <div className="mx-auto mt-6 max-w-[850px] rounded-xl border border-dashed bg-muted/20 p-4 text-sm text-muted-foreground">
@@ -214,15 +261,6 @@ export function ChapterQuizRunner({
     );
   }
 
-  if (canManage)
-    return (
-      <QuizPreview
-        title={title}
-        questions={questions}
-        workspaceId={workspaceId}
-        assignmentId={assignmentId}
-      />
-    );
   if (!isHydrated)
     return (
       <p className="mx-auto mt-8 max-w-[850px] text-sm text-muted-foreground">
@@ -236,6 +274,7 @@ export function ChapterQuizRunner({
       <QuizLanding
         title={title}
         questionCount={displayedQuestions.length}
+        passPercent={passPercent}
         onStart={() =>
           updateAttempt({ attemptId: makeAttemptId(), status: "IN_PROGRESS", answers: {} })
         }
@@ -243,29 +282,35 @@ export function ChapterQuizRunner({
     );
   }
 
-  const selectedCorrectCount = displayedQuestions.filter(
-    (question) => currentAttempt.answers[question.id] === question.correctOption,
-  ).length;
+  const selectedCorrectCount = displayedQuestions.filter((question) => {
+    const selected = toSelectedIndexes(currentAttempt.answers[question.id]);
+    return selected.length === 1 && selected[0] === question.correctOption;
+  }).length;
   const correctCount = currentAttempt.correctCount ?? selectedCorrectCount;
   const scorePercent =
     currentAttempt.scorePercent ?? Math.round((correctCount / displayedQuestions.length) * 100);
+  const canViewFeedback = !backendQuizEnabled || Boolean(currentAttempt.questionResults?.length);
   if (currentAttempt.status === "SUBMITTED") {
     return (
       <QuizResult
         title={title}
         scorePercent={scorePercent}
+        passPercent={passPercent}
+        passedOverride={currentAttempt.passed}
         correctCount={correctCount}
         questionCount={displayedQuestions.length}
         submittedAt={currentAttempt.submittedAt}
         showFeedback={showFeedback}
-        canViewFeedback={!backendQuizEnabled}
+        canViewFeedback={canViewFeedback}
         questions={displayedQuestions}
         answers={currentAttempt.answers}
+        questionResults={currentAttempt.questionResults}
         nextLessonTitle={nextLessonTitle}
         onToggleFeedback={() => setShowFeedback((current) => !current)}
-        onRetry={() =>
-          updateAttempt({ attemptId: makeAttemptId(), status: "IN_PROGRESS", answers: {} })
-        }
+        onRetry={() => {
+          setShowFeedback(false);
+          updateAttempt({ attemptId: makeAttemptId(), status: "IN_PROGRESS", answers: {} });
+        }}
         onNextLesson={onNextLesson}
       />
     );
@@ -276,12 +321,20 @@ export function ChapterQuizRunner({
       title={title}
       questions={displayedQuestions}
       answers={currentAttempt.answers}
-      onAnswer={(questionId, optionIndex) =>
+      passPercent={passPercent}
+      requireAllAnswered={backendQuizEnabled}
+      onAnswer={(questionId, optionIndex, multi) => {
+        const currentSelected = toSelectedIndexes(currentAttempt.answers[questionId]);
+        const nextValue: number | number[] = multi
+          ? currentSelected.includes(optionIndex)
+            ? currentSelected.filter((idx) => idx !== optionIndex)
+            : [...currentSelected, optionIndex].sort((a, b) => a - b)
+          : optionIndex;
         updateAttempt({
           ...currentAttempt,
-          answers: { ...currentAttempt.answers, [questionId]: optionIndex },
-        })
-      }
+          answers: { ...currentAttempt.answers, [questionId]: nextValue },
+        });
+      }}
       submitting={submitBackendAttempt.isPending}
       submitError={submitBackendAttempt.error}
       onSubmit={() => {
@@ -301,10 +354,12 @@ export function ChapterQuizRunner({
 function QuizLanding({
   title,
   questionCount,
+  passPercent,
   onStart,
 }: {
   title: string;
   questionCount: number;
+  passPercent: number;
   onStart: () => void;
 }) {
   const { t } = useLocale();
@@ -345,7 +400,7 @@ function QuizLanding({
           </div>
           <div className="flex items-center justify-between gap-3">
             <dt className="text-muted-foreground">{t("Passing score", "Ngưỡng đạt")}</dt>
-            <dd className="font-semibold">{PASS_PERCENT}%</dd>
+            <dd className="font-semibold">{passPercent}%</dd>
           </div>
           <div className="flex items-center justify-between gap-3">
             <dt className="text-muted-foreground">{t("Time limit", "Thời lượng")}</dt>
@@ -361,23 +416,28 @@ function QuizTaking({
   title,
   questions,
   answers,
+  passPercent,
+  requireAllAnswered,
   onAnswer,
   onSubmit,
   submitting = false,
   submitError,
 }: {
   title: string;
-  questions: QuizQuestionData[];
-  answers: Record<string, number>;
-  onAnswer: (questionId: string, optionIndex: number) => void;
+  questions: RunnerQuestionData[];
+  answers: Record<string, number | number[]>;
+  passPercent: number;
+  requireAllAnswered: boolean;
+  onAnswer: (questionId: string, optionIndex: number, multi: boolean) => void;
   onSubmit: () => void;
   submitting?: boolean;
   submitError?: Error | null;
 }) {
   const { t } = useLocale();
   const answeredCount = questions.filter(
-    (question) => typeof answers[question.id] === "number",
+    (question) => toSelectedIndexes(answers[question.id]).length > 0,
   ).length;
+  const remainingCount = Math.max(questions.length - answeredCount, 0);
   const allAnswered = answeredCount === questions.length;
   return (
     <section className="mx-auto mt-6 max-w-[850px] pb-10">
@@ -392,63 +452,81 @@ function QuizTaking({
             )}
           </span>
           <span aria-hidden="true">·</span>
-          <span>{t(`Passing score ${PASS_PERCENT}%`, `Ngưỡng đạt ${PASS_PERCENT}%`)}</span>
+          <span>{t(`Passing score ${passPercent}%`, `Ngưỡng đạt ${passPercent}%`)}</span>
         </div>
       </header>
       <ol className="mt-8 space-y-10">
-        {questions.map((question, questionIndex) => (
-          <li
-            key={question.id}
-            className="grid gap-3 sm:grid-cols-[2rem_minmax(0,1fr)_auto] sm:gap-5"
-          >
-            <span className="font-semibold tabular-nums text-muted-foreground">
-              {questionIndex + 1}.
-            </span>
-            <fieldset>
-              <legend className="text-base font-medium leading-7">
-                {formatQuizQuestionPrompt(question.prompt)}
-              </legend>
-              <div className="mt-4 space-y-3">
-                {question.options.map((option, optionIndex) => {
-                  const inputId = `${question.id}-option-${optionIndex}`;
-                  return (
-                    <label
-                      key={inputId}
-                      htmlFor={inputId}
-                      className="flex cursor-pointer items-start gap-3 text-sm leading-6"
-                    >
-                      <input
-                        id={inputId}
-                        name={question.id}
-                        type="radio"
-                        value={optionIndex}
-                        checked={answers[question.id] === optionIndex}
-                        onChange={() => onAnswer(question.id, optionIndex)}
-                        disabled={submitting}
-                        className="mt-1 size-4 shrink-0 accent-primary"
-                      />
-                      <span>{sanitizeQuizPlainText(option)}</span>
-                    </label>
-                  );
-                })}
-              </div>
-            </fieldset>
-            <Badge variant="secondary" className="h-fit w-fit whitespace-nowrap text-xs">
-              {t("1 point", "1 điểm")}
-            </Badge>
-          </li>
-        ))}
+        {questions.map((question, questionIndex) => {
+          const multi = question.type === "MULTI_CHOICE";
+          const selectedIndexes = toSelectedIndexes(answers[question.id]);
+          return (
+            <li
+              key={question.id}
+              className="grid gap-3 sm:grid-cols-[2rem_minmax(0,1fr)_auto] sm:gap-5"
+            >
+              <span className="font-semibold tabular-nums text-muted-foreground">
+                {questionIndex + 1}.
+              </span>
+              <fieldset>
+                <legend className="text-base font-medium leading-7">
+                  {formatQuizQuestionPrompt(question.prompt)}
+                  {multi && (
+                    <span className="ml-2 text-xs font-normal text-muted-foreground">
+                      ({t("Select all that apply", "Chọn tất cả đáp án đúng")})
+                    </span>
+                  )}
+                </legend>
+                <div className="mt-4 space-y-3">
+                  {question.options.map((option, optionIndex) => {
+                    const inputId = `${question.id}-option-${optionIndex}`;
+                    return (
+                      <label
+                        key={inputId}
+                        htmlFor={inputId}
+                        className="flex cursor-pointer items-start gap-3 text-sm leading-6"
+                      >
+                        <input
+                          id={inputId}
+                          name={question.id}
+                          type={multi ? "checkbox" : "radio"}
+                          value={optionIndex}
+                          checked={selectedIndexes.includes(optionIndex)}
+                          onChange={() => onAnswer(question.id, optionIndex, multi)}
+                          disabled={submitting}
+                          className="mt-1 size-4 shrink-0 accent-primary"
+                        />
+                        <span>{sanitizeQuizPlainText(option)}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </fieldset>
+              <Badge variant="secondary" className="h-fit w-fit whitespace-nowrap text-xs">
+                {t("1 point", "1 điểm")}
+              </Badge>
+            </li>
+          );
+        })}
       </ol>
       <div className="mt-10 flex flex-wrap items-center justify-between gap-3 border-t pt-5">
         <p className="text-sm text-muted-foreground">
           {allAnswered
             ? t("All questions are answered.", "Bạn đã trả lời tất cả câu hỏi.")
-            : t(
-                "You can submit now, or finish the remaining questions first.",
-                "Bạn có thể nộp ngay hoặc hoàn thành các câu còn lại.",
-              )}
+            : requireAllAnswered
+              ? t(
+                  `Please answer all remaining ${remainingCount} question(s) before submitting.`,
+                  `Vui lòng trả lời nốt ${remainingCount} câu còn lại trước khi nộp bài.`,
+                )
+              : t(
+                  "You can submit now, or finish the remaining questions first.",
+                  "Bạn có thể nộp ngay hoặc hoàn thành các câu còn lại.",
+                )}
         </p>
-        <Button type="button" disabled={answeredCount === 0 || submitting} onClick={onSubmit}>
+        <Button
+          type="button"
+          disabled={(requireAllAnswered ? !allAnswered : answeredCount === 0) || submitting}
+          onClick={onSubmit}
+        >
           {submitting ? t("Submitting…", "Đang nộp…") : t("Submit Quiz", "Nộp Quiz")}
         </Button>
       </div>
@@ -467,6 +545,8 @@ function QuizTaking({
 function QuizResult({
   title,
   scorePercent,
+  passPercent,
+  passedOverride,
   correctCount,
   questionCount,
   submittedAt,
@@ -474,6 +554,7 @@ function QuizResult({
   canViewFeedback,
   questions,
   answers,
+  questionResults,
   nextLessonTitle,
   onToggleFeedback,
   onRetry,
@@ -481,20 +562,23 @@ function QuizResult({
 }: {
   title: string;
   scorePercent: number;
+  passPercent: number;
+  passedOverride?: boolean | undefined;
   correctCount: number;
   questionCount: number;
   submittedAt?: string | undefined;
   showFeedback: boolean;
   canViewFeedback: boolean;
-  questions: QuizQuestionData[];
-  answers: Record<string, number>;
+  questions: RunnerQuestionData[];
+  answers: Record<string, number | number[]>;
+  questionResults?: BackendQuestionResult[] | undefined;
   nextLessonTitle?: string | undefined;
   onToggleFeedback: () => void;
   onRetry: () => void;
   onNextLesson?: (() => void) | undefined;
 }) {
   const { t } = useLocale();
-  const passed = scorePercent >= PASS_PERCENT;
+  const passed = typeof passedOverride === "boolean" ? passedOverride : scorePercent >= passPercent;
   const submittedLabel = submittedAt
     ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(
         new Date(submittedAt),
@@ -538,7 +622,7 @@ function QuizResult({
             {passed ? t("You passed!", "Bạn đã đạt!") : t("Not passed yet", "Bạn chưa đạt")}
           </div>
           <p className="mt-2 text-sm text-muted-foreground">
-            {t(`Passing score: ${PASS_PERCENT}%.`, `Ngưỡng đạt: ${PASS_PERCENT}%.`)}
+            {t(`Passing score: ${passPercent}%.`, `Ngưỡng đạt: ${passPercent}%.`)}
           </p>
           <p className="mt-3 text-3xl font-bold tabular-nums">{scorePercent}%</p>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -575,10 +659,53 @@ function QuizResult({
         </aside>
       </div>
       {canViewFeedback && showFeedback && (
-        <ol className="space-y-6 border-t p-6 sm:p-8">
+        <ol className="space-y-4 border-t p-6 sm:p-8">
           {questions.map((question, index) => {
-            const selectedOption = answers[question.id];
-            const isCorrect = selectedOption === question.correctOption;
+            if (questionResults && questionResults.length > 0) {
+              const result =
+                questionResults.find((item) => item.id === question.id) ?? questionResults[index];
+              if (!result) return null;
+              const selectedIndexes = toSelectedIndexes(answers[question.id]);
+              const selectedText = selectedIndexes
+                .map((optIdx) => question.options[optIdx])
+                .filter((opt): opt is string => typeof opt === "string")
+                .map((opt) => sanitizeQuizPlainText(opt))
+                .join(", ");
+              return (
+                <li key={question.id} className="rounded-lg border p-3.5 text-sm">
+                  <p className="flex items-start gap-2 font-medium">
+                    {result.correct ? (
+                      <CheckCircle2
+                        className="mt-0.5 size-4 shrink-0 text-emerald-600"
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <XCircle
+                        className="mt-0.5 size-4 shrink-0 text-rose-600"
+                        aria-hidden="true"
+                      />
+                    )}
+                    <span>
+                      {index + 1}. {formatQuizQuestionPrompt(question.prompt)}
+                    </span>
+                  </p>
+                  <p
+                    className={`mt-2 text-xs font-medium ${result.correct ? "text-emerald-700 dark:text-emerald-300" : "text-rose-700 dark:text-rose-300"}`}
+                  >
+                    {result.correct ? t("Correct", "Chính xác") : t("Review needed", "Cần xem lại")}
+                    {selectedText ? ` · ${t("Your answer", "Bạn chọn")}: ${selectedText}` : ""}
+                  </p>
+                  {result.explanation && (
+                    <p className="mt-1.5 text-xs leading-5 text-muted-foreground">
+                      {sanitizeQuizPlainText(result.explanation)}
+                    </p>
+                  )}
+                </li>
+              );
+            }
+            const selectedIndexes = toSelectedIndexes(answers[question.id]);
+            const isCorrect =
+              selectedIndexes.length === 1 && selectedIndexes[0] === question.correctOption;
             return (
               <li key={question.id} className="text-sm">
                 <p className="font-medium">

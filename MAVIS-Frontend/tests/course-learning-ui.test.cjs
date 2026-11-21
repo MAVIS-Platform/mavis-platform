@@ -1829,3 +1829,18 @@ test("Bug #07: formatLabModeLabel humanizes labMode enums and SubmissionReview b
   assert.match(screens, /formatLabModeLabel\(s\.labMode, t\)/);
   assert.match(components, /formatLabModeLabel\(submission\.labMode, t\)/);
 });
+
+test("Bug #11: ChapterQuizRunner enforces full answers, shows questionResults feedback, honors dynamic passPercent & MULTI_CHOICE", () => {
+  const runner = read("src/features/courses/chapter-quiz-runner.tsx");
+
+  assert.match(runner, /questionResults\?:/);
+  assert.match(runner, /type=\{multi \? "checkbox" : "radio"\}/);
+  assert.match(runner, /const passPercent =/);
+  assert.match(runner, /requireAllAnswered/);
+  assert.match(runner, /disabled=\{\(requireAllAnswered \? !allAnswered : answeredCount === 0\) \|\| submitting\}/);
+  assert.match(runner, /queryKey: \["api", "course-roadmap", workspaceId\]/);
+  assert.match(runner, /queryKey: \["api", "workspace-gradebook", workspaceId\]/);
+  assert.match(runner, /queryKey: \["api", "workspaces"\]/);
+  assert.match(runner, /canViewFeedback = !backendQuizEnabled \|\| Boolean\(currentAttempt\.questionResults\?\.length\)/);
+  assert.match(runner, /<QuizPreview[\s\S]*?questions=\{displayedQuestions\}/);
+});
