@@ -236,7 +236,7 @@ export function Step2StaticImpact({
               "Đang chờ mô hình phân tích tĩnh được ghim để chạy Reverse BFS.",
             )}
           </p>
-        ) : modelQueryResult.isPending ? (
+        ) : !model && (waitForContext || modelQueryResult.isPending) ? (
           <p role="status" className="text-sm text-muted-foreground">
             {t("Loading architectural dependency graph…", "Đang tải đồ thị phụ thuộc kiến trúc…")}
           </p>

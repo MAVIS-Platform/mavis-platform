@@ -1055,7 +1055,7 @@ export function LabWorkspace() {
               moduleQuizHref={
                 moduleQuizItem
                   ? `/roadmap?workspace=${encodeURIComponent(workspaceId)}&item=${encodeURIComponent(moduleQuizItem.id)}`
-                  : `/roadmap?workspace=${encodeURIComponent(workspaceId)}`
+                  : `/roadmap?workspace=${encodeURIComponent(workspaceId)}&item=${encodeURIComponent(`lab-quiz:${lab.id}`)}`
               }
               projectId={projectId}
               referenceProjectId={referenceProjectId}

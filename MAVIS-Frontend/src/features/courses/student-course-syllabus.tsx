@@ -122,16 +122,8 @@ export function StudentCourseSyllabus({
   const syllabusModules: OutlineModuleData[] = useMemo(() => {
     const rawModules = publishedCourse.data?.snapshot?.modules;
     if (Array.isArray(rawModules) && rawModules.length > 0) {
-      return rawModules.map((mod) => ({
-        id: mod.id,
-        title: mod.title,
-        description: mod.description ?? null,
-        position: mod.position,
-        prerequisiteModuleId: mod.prerequisiteModuleId ?? null,
-        labTitle:
-          mod.items.find((it) => ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(it.type))
-            ?.title ?? mod.title,
-        items: (mod.items ?? [])
+      return rawModules.map((mod) => {
+        const mappedItems: OutlineItemData[] = (mod.items ?? [])
           .filter((item) => item.type !== "ESSAY")
           .map((item) => ({
             id: item.id,
@@ -149,8 +141,47 @@ export function StudentCourseSyllabus({
               item.type === "QUIZ"
                 ? matchQuizQuestionsForItem(mod.position, item.title)
                 : undefined,
-          })),
-      }));
+          }));
+        const hasQuizItem = mappedItems.some((item) => item.type === "QUIZ");
+        const labItem = mappedItems.find(
+          (item) =>
+            item.assignmentId &&
+            ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(item.type),
+        );
+        const linkedAssignment = labItem?.assignmentId
+          ? assignmentsQuery.data?.find((a) => a.id === labItem.assignmentId)
+          : undefined;
+        const aiPolicy =
+          linkedAssignment?.aiPolicy && typeof linkedAssignment.aiPolicy === "object"
+            ? (linkedAssignment.aiPolicy as Record<string, unknown>)
+            : null;
+        const skipsQuiz =
+          linkedAssignment?.labMode === "THEORY_ONLY" ||
+          aiPolicy?.["skipQuiz"] === true ||
+          aiPolicy?.["labTier"] === "THEORY_ONLY";
+        if (!hasQuizItem && labItem?.assignmentId && !skipsQuiz) {
+          const insertAt = mappedItems.indexOf(labItem);
+          mappedItems.splice(Math.max(0, insertAt), 0, {
+            id: `lab-quiz:${labItem.assignmentId}`,
+            type: "QUIZ",
+            title: `Quiz · ${linkedAssignment?.title ?? labItem.title}`,
+            description: null,
+            position: labItem.position,
+            assignmentId: labItem.assignmentId,
+            required: true,
+            quizQuestions: [],
+          });
+        }
+        return {
+          id: mod.id,
+          title: mod.title,
+          description: mod.description ?? null,
+          position: mod.position,
+          prerequisiteModuleId: mod.prerequisiteModuleId ?? null,
+          labTitle: labItem?.title ?? mod.title,
+          items: mappedItems,
+        };
+      });
     }
     if (publishedCourse.isPending) {
       return [];

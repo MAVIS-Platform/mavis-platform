@@ -152,7 +152,10 @@ export function useUpdateCoursePasskey(workspaceId: string) {
         method: "PUT",
         body: JSON.stringify(body),
       }),
-    onSuccess: () => {
+    onSuccess: (updated) => {
+      cache.setQueryData<PasskeyItem[]>(passkeysKey(workspaceId), (prev) =>
+        prev ? prev.map((item) => (item.id === updated.id ? updated : item)) : prev,
+      );
       void cache.invalidateQueries({ queryKey: passkeysKey(workspaceId) });
       void cache.invalidateQueries({ queryKey: passkeyKey(workspaceId) });
       void cache.invalidateQueries({ queryKey: ["api", "course-setup", workspaceId] });
@@ -167,7 +170,10 @@ export function useDeleteCoursePasskey(workspaceId: string) {
       courseApi<null>(`workspaces/${workspaceId}/course-passkeys/${passkeyId}`, {
         method: "DELETE",
       }),
-    onSuccess: () => {
+    onSuccess: (_data, deletedId) => {
+      cache.setQueryData<PasskeyItem[]>(passkeysKey(workspaceId), (prev) =>
+        prev ? prev.filter((item) => item.id !== deletedId) : prev,
+      );
       void cache.invalidateQueries({ queryKey: passkeysKey(workspaceId) });
       void cache.invalidateQueries({ queryKey: passkeyKey(workspaceId) });
       void cache.invalidateQueries({ queryKey: ["api", "course-setup", workspaceId] });
@@ -348,7 +354,16 @@ export function useCourseAuthoring(workspaceId: string, enabled = true) {
         `workspaces/${workspaceId}/course/publish`,
         { method: "POST" },
       ),
-    onSuccess: () => {
+    onSuccess: (publishedRes) => {
+      cache.setQueryData<AuthoringCourse>(["api", "course-authoring", workspaceId], (prev) =>
+        prev
+          ? {
+              ...prev,
+              status: "PUBLISHED",
+              publishedVersion: publishedRes.version,
+            }
+          : prev,
+      );
       void cache.invalidateQueries({ queryKey: ["api", "course-authoring", workspaceId] });
       void cache.invalidateQueries({ queryKey: ["api", "course-published", workspaceId] });
       void cache.invalidateQueries({ queryKey: ["api", "course-versions", workspaceId] });

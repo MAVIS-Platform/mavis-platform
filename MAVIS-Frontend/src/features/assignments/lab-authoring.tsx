@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
@@ -80,6 +80,13 @@ export function LabAuthoring() {
             : "create";
   const requestedAssignmentId = params?.get("assignment") || "";
   const [createdAssignmentId, setCreatedAssignmentId] = useState("");
+  const prevRequestedAssignmentIdRef = useRef(requestedAssignmentId);
+  useEffect(() => {
+    if (prevRequestedAssignmentIdRef.current && !requestedAssignmentId) {
+      setCreatedAssignmentId("");
+    }
+    prevRequestedAssignmentIdRef.current = requestedAssignmentId;
+  }, [requestedAssignmentId]);
   const requestedTab = params?.get("tab") ?? params?.get("step") ?? null;
   const activeAssignmentId = requestedAssignmentId || createdAssignmentId;
   const [tab, setTab] = useState<Tab>(
