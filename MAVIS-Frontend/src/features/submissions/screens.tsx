@@ -472,7 +472,7 @@ function ClassGradebookMatrix({
         return [
           student.fullName,
           student.email,
-          `${student.passedLabs}/${data.labs.length}`,
+          `${student.passedLabs ?? 0}/${data.labs.length}`,
           student.averageScore !== null
             ? formatTenScaleScore(student.averageScore, student.averageScoreTenScale)
             : "",
@@ -514,8 +514,11 @@ function ClassGradebookMatrix({
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-xs text-muted-foreground">
-              {gradebook.data.students.length} {t("students", "sinh viên")} ·{" "}
-              {gradebook.data.labs.length} {t("Labs", "Lab")}
+              {gradebook.data.students.length}{" "}
+              {gradebook.data.students.length === 1
+                ? t("student", "sinh viên")
+                : t("students", "sinh viên")}{" "}
+              · {gradebook.data.labs.length} {t("Labs", "Lab")}
             </p>
             <Button type="button" size="sm" variant="outline" onClick={exportCsv}>
               <Download className="mr-1.5 size-4" aria-hidden="true" />
@@ -548,7 +551,7 @@ function ClassGradebookMatrix({
                         <p className="text-[11px] text-muted-foreground">{student.email}</p>
                       </td>
                       <td className="px-3 py-3 font-medium">
-                        {student.passedLabs}/{gradebook.data.labs.length}
+                        {student.passedLabs ?? 0}/{gradebook.data.labs.length}
                       </td>
                       <td className="px-3 py-3 font-semibold">
                         {student.averageScore !== null

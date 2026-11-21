@@ -1710,3 +1710,32 @@ test("Studio Live workbench and terminal display live FIFO queue position for QU
   assert.match(terminal, /Queued \(\$\{posLabel\}\)\$\{slotInfo\}/);
   assert.match(errors, /STUDIO_QUEUE_FULL:/);
 });
+
+test("normalizeWorkspaceGradebook maps Java userId/completedLabsCount/sequenceOrder to FE gradebook fields", () => {
+  const { normalizeWorkspaceGradebook } = require("../src/lib/format/gradebook.ts");
+  const normalized = normalizeWorkspaceGradebook({
+    workspaceId: "ws-java",
+    workspaceName: "JAVA-MS-2026",
+    labs: [
+      { assignmentId: "lab-1", title: "Service Boundaries", sequenceOrder: 1, published: true, quizPassScore: 70 },
+    ],
+    students: [
+      {
+        userId: "stu-1",
+        fullName: "Nguyen Van A",
+        email: "sv.java@mavis.edu.vn",
+        completedLabsCount: 1,
+        totalLabsCount: 5,
+        averageScore: 95,
+        averageScoreTenScale: 9.5,
+        cells: [],
+      },
+    ],
+  });
+
+  assert.equal(normalized.labs[0].labOrder, 1);
+  assert.equal(normalized.students[0].studentId, "stu-1");
+  assert.equal(normalized.students[0].passedLabs, 1);
+  assert.equal(normalized.students[0].totalLabsCount, 5);
+  assert.equal(normalized.students[0].averageScoreTenScale, 9.5);
+});

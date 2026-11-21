@@ -68,7 +68,7 @@ public class AdminRuntimeController {
   return ApiResponse.success("Orphan runtime sweep completed",
           Map.of("orphansRemoved", removed, "diskPruned", diskPruned, "health", queueCoordinator.getRuntimeHealth()));
  }
- @GetMapping("/jobs") @Transactional(readOnly=true) public ApiResponse<?> jobs(){policy.requireSystemAdmin();return ApiResponse.success(jobs.findAll(PageRequest.of(0,50,Sort.by(Sort.Direction.DESC,"startedAt"))).stream().map(j->{
+ @GetMapping("/jobs") @Transactional(readOnly=true) public ApiResponse<?> jobs(){policy.requireSystemAdmin();return ApiResponse.success(jobs.findRecentWithContext(PageRequest.of(0,50)).stream().map(j->{
   var project = j.getProject();
   var workspace = project != null ? project.getWorkspace() : null;
   Map<String,Object> row = new LinkedHashMap<>();

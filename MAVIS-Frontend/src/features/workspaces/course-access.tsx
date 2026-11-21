@@ -770,48 +770,30 @@ export function useAutoConfigureStudio(workspaceId: string, assignmentId: string
   });
 }
 
-export type GradebookLab = {
-  assignmentId: string;
-  title: string;
-  labOrder: number | null;
-  labMode: string;
-};
+import {
+  normalizeWorkspaceGradebook,
+  type GradebookCell,
+  type GradebookLab,
+  type GradebookStudent,
+  type WorkspaceGradebook,
+} from "@/lib/format/gradebook";
 
-export type GradebookCell = {
-  assignmentId: string;
-  quizBestScore: number | null;
-  quizPassed: boolean;
-  submissionId: string | null;
-  submittedAt: string | null;
-  reviewStatus: string | null;
-  reviewScore: number | null;
-  reviewScoreTenScale?: number | null;
-  labOutcome: string | null;
-};
-
-export type GradebookStudent = {
-  studentId: string;
-  fullName: string;
-  email: string;
-  passedLabs: number;
-  averageScore: number | null;
-  averageScoreTenScale?: number | null;
-  cells: GradebookCell[];
-};
-
-export type WorkspaceGradebook = {
-  workspaceId: string;
-  workspaceName: string;
-  labs: GradebookLab[];
-  students: GradebookStudent[];
+export {
+  normalizeWorkspaceGradebook,
+  type GradebookCell,
+  type GradebookLab,
+  type GradebookStudent,
+  type WorkspaceGradebook,
 };
 
 export function useWorkspaceGradebook(workspaceId: string, enabled = true) {
   const client = useApi();
   return useQuery({
     queryKey: ["api", "workspace-gradebook", workspaceId],
-    queryFn: ({ signal }) =>
-      courseApi<WorkspaceGradebook>(`workspaces/${workspaceId}/gradebook`, { signal }),
+    queryFn: async ({ signal }) => {
+      const raw = await courseApi<unknown>(`workspaces/${workspaceId}/gradebook`, { signal });
+      return normalizeWorkspaceGradebook(raw);
+    },
     enabled: client.mode === "backend" && Boolean(workspaceId) && enabled,
   });
 }

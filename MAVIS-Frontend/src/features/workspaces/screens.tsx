@@ -24,6 +24,7 @@ import { CourseOutline } from "@/features/courses/course-outline";
 import { CourseBuilder } from "@/features/courses/course-builder";
 import { CourseSetupPanel } from "@/features/courses/course-setup";
 import { useLocale } from "@/lib/i18n/locale-context";
+import { formatTenScaleScore, toTenScaleScore } from "@/lib/format/course-display";
 
 const WORKSPACES_PER_PAGE = 6;
 
@@ -628,18 +629,22 @@ export function WorkspaceMembers() {
                         return <span className="text-xs text-muted-foreground">—</span>;
                       }
                       const stats = studentStatsById.get(m.id);
-                      if (stats?.averageScore == null) {
+                      const tenScale = toTenScaleScore(
+                        stats?.averageScore,
+                        stats?.averageScoreTenScale,
+                      );
+                      if (tenScale === null) {
                         return <span className="text-xs text-muted-foreground">—</span>;
                       }
                       return (
                         <span
                           className={
-                            stats.averageScore > 50
+                            tenScale > 5
                               ? "font-semibold text-emerald-700 dark:text-emerald-400"
                               : "font-semibold text-amber-700 dark:text-amber-400"
                           }
                         >
-                          {stats.averageScore}/100
+                          {formatTenScaleScore(stats?.averageScore, stats?.averageScoreTenScale)}
                         </span>
                       );
                     },

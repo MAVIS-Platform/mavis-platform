@@ -98,22 +98,40 @@ public class CourseLabPolicy {
     }
 
     public boolean canOpen(Assignment lab, User student) {
-        if (lab.getLabOrder() == null || !"ACTIVE".equals(lab.getWorkspace().getStatus())) {
+        if (lab == null || student == null || lab.getLabOrder() == null
+                || lab.getWorkspace() == null || !"ACTIVE".equals(lab.getWorkspace().getStatus())) {
             return false;
         }
         return Boolean.TRUE.equals(jdbc.queryForObject("""
                 SELECT EXISTS (
                     SELECT 1 FROM workspace_members m
                     WHERE m.workspace_id = ? AND m.user_id = ? AND m.member_role = 'STUDENT'
-                ) AND NOT EXISTS (
-                    SELECT 1 FROM assignments preceding
-                    WHERE preceding.workspace_id = ? AND preceding.lab_order < ?
-                    AND NOT EXISTS (
-                        SELECT 1 FROM course_lab_results r
-                        WHERE r.assignment_id = preceding.id AND r.student_id = ? AND r.passed
-                    )
+                ) AND (
+                    CASE
+                        WHEN EXISTS (SELECT 1 FROM lab_prerequisites lp WHERE lp.assignment_id = ?) THEN
+                            NOT EXISTS (
+                                SELECT 1 FROM lab_prerequisites lp
+                                WHERE lp.assignment_id = ?
+                                  AND NOT EXISTS (
+                                      SELECT 1 FROM course_lab_results r
+                                      WHERE r.assignment_id = lp.prerequisite_assignment_id
+                                        AND r.student_id = ? AND r.passed
+                                  )
+                            )
+                        ELSE
+                            NOT EXISTS (
+                                SELECT 1 FROM assignments preceding
+                                WHERE preceding.workspace_id = ? AND preceding.lab_order < ?
+                                  AND NOT EXISTS (
+                                      SELECT 1 FROM course_lab_results r
+                                      WHERE r.assignment_id = preceding.id
+                                        AND r.student_id = ? AND r.passed
+                                  )
+                            )
+                    END
                 )
                 """, Boolean.class, lab.getWorkspace().getId(), student.getId(),
+                lab.getId(), lab.getId(), student.getId(),
                 lab.getWorkspace().getId(), lab.getLabOrder(), student.getId()));
     }
 
