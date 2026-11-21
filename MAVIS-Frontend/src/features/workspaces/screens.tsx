@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { ErrorState, RequestState } from "@/components/shared/request-state";
 import { Pagination, SearchInput, SelectField } from "@/components/shared/forms";
 import { DataTable, DetailPanel } from "@/components/shared/data";
+import { UserAvatar } from "@/components/shared/user-avatar";
 import { CreateWorkspace, WorkspaceControls } from "./manage";
 import {
   CoursePasskey,
@@ -564,7 +565,16 @@ export function WorkspaceMembers() {
                 rowKey={(m) => m.id}
                 caption={t("Class roster & progress", "Danh sách sinh viên & tiến độ học")}
                 columns={[
-                  { key: "name", label: t("Name", "Họ tên"), render: (m) => m.name },
+                  {
+                    key: "name",
+                    label: t("Name", "Họ tên"),
+                    render: (m) => (
+                      <div className="flex items-center gap-2.5">
+                        <UserAvatar name={m.name} avatarUrl={m.avatarUrl} size="sm" />
+                        <span className="font-medium text-foreground">{m.name}</span>
+                      </div>
+                    ),
+                  },
                   {
                     key: "email",
                     label: t("Email", "Email"),

@@ -191,6 +191,7 @@ export async function executeJava(
       userId: z.string().uuid(),
       fullName: z.string(),
       email: z.string().nullish(),
+      avatarUrl: z.string().nullish(),
       memberRole: z.string(),
     });
     const { members: embedded, ...w } = z
@@ -216,6 +217,7 @@ export async function executeJava(
         id: m.userId,
         name: m.fullName,
         ...(m.email ? { email: m.email } : {}),
+        ...(m.avatarUrl ? { avatarUrl: m.avatarUrl } : {}),
         role: m.memberRole.toLowerCase(),
       })),
     };
@@ -690,6 +692,7 @@ export async function executeJava(
         createdAt: z.string().nullish(),
         roleCode: z.string(),
         email: z.string().nullish(),
+        avatarUrl: z.string().nullish(),
         status: z.string(),
       })
       .parse(raw);
@@ -698,6 +701,7 @@ export async function executeJava(
       name: a.fullName,
       createdAt: a.createdAt ?? null,
       email: a.email ?? "",
+      ...(a.avatarUrl ? { avatarUrl: a.avatarUrl } : {}),
       role: roleView(a.roleCode),
       locked: a.status === "LOCKED" || a.status === "INACTIVE",
       status: a.status === "INACTIVE" ? "LOCKED" : a.status,
@@ -1352,17 +1356,29 @@ export async function executeJava(
       return list.parse(await get("projects")).map(projectView);
     case "projectOverviews": {
       const rows = list.parse(await get("projects"));
-      const enrich = async (raw: unknown) => {
+      const enrich = async (raw: unknown, withDetails: boolean) => {
+        if (!withDetails) return projectOverviewView(raw, [], null, null);
         const projectId = javaProject.parse(raw).id;
-        const jobsRequest = get(`analyzer/projects/${projectId}/jobs`).catch(() => null);
-        const sessionsRequest = get(`analyzer/projects/${projectId}/runtime-sessions`).catch(
-          () => null,
-        );
-        // Overview cards must not wait for full architecture graphs just to count services.
-        const [jobs, sessions] = await Promise.all([jobsRequest, sessionsRequest]);
+        const fastTimeout = AbortSignal.timeout(3500);
+        const fastGet = (path: string) =>
+          javaRequest(path, token, { signal: fastTimeout }).catch(() => null);
+        // Cap per-project overview lookup so profile/dashboard KPIs never stall behind slow N+1 fan-out.
+        const [jobs, sessions] = await Promise.all([
+          fastGet(`analyzer/projects/${projectId}/jobs`),
+          fastGet(`analyzer/projects/${projectId}/runtime-sessions`),
+        ]);
         return projectOverviewView(raw, jobs, null, sessions);
       };
-      return Promise.all(rows.map(enrich));
+      const results: ReturnType<typeof projectOverviewView>[] = [];
+      const batchSize = 4;
+      for (let i = 0; i < rows.length; i += batchSize) {
+        const chunk = rows.slice(i, i + batchSize);
+        const chunkOut = await Promise.all(
+          chunk.map((raw, idx) => enrich(raw, i + idx < 8)),
+        );
+        results.push(...chunkOut);
+      }
+      return results;
     }
     case "project":
       return projectView(await get(`projects/${id(input, "projectId")}`));

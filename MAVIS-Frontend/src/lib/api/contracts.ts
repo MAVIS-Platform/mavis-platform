@@ -131,7 +131,8 @@ export const contracts = {
         fullName: z.string().trim().min(1).max(255),
         currentPassword: z.string().min(1).max(100).optional(),
         newPassword: z.string().min(6).max(100).optional(),
-        avatarUrl: z.string().url().max(1000).nullable().optional(),
+        avatarUrl: d.avatarUrlSchema.nullable().optional(),
+        clearAvatar: z.boolean().optional(),
         preferredLocale: z.enum(["en", "vi"]).optional(),
       })
       .refine((value) => value.newPassword === undefined || Boolean(value.currentPassword), {

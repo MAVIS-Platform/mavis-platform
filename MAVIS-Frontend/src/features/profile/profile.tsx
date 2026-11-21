@@ -1,6 +1,21 @@
 "use client";
+import Link from "next/link";
 import { useRef, useState, type FormEvent } from "react";
-import { Check, Copy, Eye, EyeOff, KeyRound, LoaderCircle, UserRound } from "lucide-react";
+import {
+  ArrowUpRight,
+  BookOpen,
+  Camera,
+  Check,
+  Copy,
+  Eye,
+  EyeOff,
+  Globe,
+  KeyRound,
+  LoaderCircle,
+  Mail,
+  ShieldCheck,
+  Trash2,
+} from "lucide-react";
 import { useApi, useApiMutation, useApiQuery, useSession } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +29,8 @@ import {
 } from "@/components/ui/dialog";
 import { ErrorState, LoadingState } from "@/components/shared/request-state";
 import { ScreenHelpTrigger } from "@/components/shared/screen-guided-tour";
+import { UserAvatar } from "@/components/shared/user-avatar";
+import { AvatarStudioDialog } from "./avatar-studio-dialog";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { hasPermission } from "@/lib/auth/permissions";
 import { roleLabels } from "@/lib/navigation";
@@ -25,15 +42,17 @@ export function Profile() {
   const { t } = useLocale();
   const session = useSession();
   return (
-    <div className="mx-auto w-full min-w-0 max-w-3xl space-y-5">
-      <header>
-        <div className="flex items-center gap-2">
-          <h1 className="text-xl font-semibold tracking-tight">{t("My Profile")}</h1>
-          <ScreenHelpTrigger screenId="profile" />
+    <div className="mx-auto w-full min-w-0 max-w-5xl space-y-6">
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold tracking-tight">{t("My Profile")}</h1>
+            <ScreenHelpTrigger screenId="profile" />
+          </div>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">
+            {t("Manage your personal information and account security.")}
+          </p>
         </div>
-        <p className="mt-1 text-sm leading-6 text-muted-foreground">
-          {t("Manage your personal information and account security.")}
-        </p>
       </header>
       {session.isPending ? (
         <LoadingState label="Loading profile…" />
@@ -88,11 +107,14 @@ function ProfileStatistics({ role }: { role: User["role"] }) {
         ? t("Unavailable")
         : amount;
   const failed = projects.isError || workspaces.isError || submissions.isError;
+  const workspaceList = (workspaces.data ?? []).filter(
+    (w): w is NonNullable<typeof workspaces.data>[number] => Boolean(w && w.id && w.name),
+  );
   return (
-    <div className="mt-4 border-t pt-4">
+    <div className="mt-5 space-y-5 border-t pt-5">
       <dl
         aria-label={t("Account statistics")}
-        className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4"
+        className="grid grid-cols-2 gap-2.5"
       >
         {[
           ["Projects", value(projects, projectList.length)],
@@ -100,15 +122,17 @@ function ProfileStatistics({ role }: { role: User["role"] }) {
           ["Workspaces joined", value(workspaces, workspaces.data?.length ?? 0)],
           ["Submissions", value(submissions, submissions.data?.length ?? 0)],
         ].map(([label, amount]) => (
-          <div key={label} className="min-w-0">
-            <dt className="text-xs leading-5 text-muted-foreground">{t(String(label))}</dt>
-            <dd className="mt-1 break-words text-sm font-semibold">{amount}</dd>
+          <div
+            key={label}
+            className="min-w-0 rounded-xl border border-border/70 bg-muted/25 px-3 py-2.5"
+          >
+            <dt className="truncate text-[11px] font-medium leading-4 text-muted-foreground">{t(String(label))}</dt><dd className="mavis-tabular mt-1 break-words text-base font-bold text-foreground">{amount}</dd>
           </div>
         ))}
       </dl>
       {failed && (
         <div
-          className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
+          className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-muted-foreground"
           role="status"
         >
           <span>{t("Some account statistics could not be loaded.")}</span>
@@ -125,6 +149,50 @@ function ProfileStatistics({ role }: { role: User["role"] }) {
           >
             {t("Retry")}
           </Button>
+        </div>
+      )}
+      {workspaceList.length > 0 && (
+        <div className="space-y-2 border-t pt-4">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <BookOpen className="size-3.5 text-primary" aria-hidden="true" />
+              {role === "lecturer"
+                ? t("Classes Teaching", "Lớp đang giảng dạy")
+                : t("Enrolled Courses", "Khóa học đã tham gia")}
+            </h3>
+            <span className="mavis-tabular text-[11px] text-muted-foreground">
+              {workspaceList.length}
+            </span>
+          </div>
+          <ul className="space-y-1.5">
+            {workspaceList.slice(0, 4).map((ws) => (
+              <li key={ws.id}>
+                <Link
+                  href={
+                    role === "lecturer"
+                      ? `/workspace-overview?workspace=${encodeURIComponent(ws.id)}`
+                      : `/roadmap?workspace=${encodeURIComponent(ws.id)}`
+                  }
+                  className="group flex items-center justify-between gap-2 rounded-lg border border-border/60 bg-background/70 px-3 py-2 text-xs transition-colors hover:border-primary/40 hover:bg-muted/40"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold text-foreground group-hover:text-primary">
+                      {ws.name}
+                    </p>
+                    {ws.code && (
+                      <p className="truncate font-mono text-[10px] text-muted-foreground">
+                        {ws.code}
+                      </p>
+                    )}
+                  </div>
+                  <ArrowUpRight
+                    className="size-3.5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-primary"
+                    aria-hidden="true"
+                  />
+                </Link>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </div>
@@ -145,9 +213,11 @@ export function ProfileDetails({ user }: { user: User }) {
   const [notice, setNotice] = useState("");
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
+  const [avatarDialogOpen, setAvatarDialogOpen] = useState(false);
   const [copyNotice, setCopyNotice] = useState("");
   const [copied, setCopied] = useState(false);
   const savingName = useRef(false);
+
   async function saveName(event: FormEvent) {
     event.preventDefault();
     if (savingName.current || passwordSaving || update.isPending) return;
@@ -162,13 +232,19 @@ export function ProfileDetails({ user }: { user: User }) {
     savingName.current = true;
     setNameError("");
     setNotice("");
+    const trimmedAvatar = avatarUrl.trim();
+    const clearingAvatar = Boolean(user.avatarUrl) && !trimmedAvatar;
     try {
       const result = await update.mutateAsync({
         fullName: fullName.trim(),
-        avatarUrl: avatarUrl.trim() || null,
+        avatarUrl: trimmedAvatar || null,
+        ...(clearingAvatar ? { clearAvatar: true } : {}),
         preferredLocale,
       });
       setFullName(result.user?.name ?? fullName.trim());
+      if (result.user && "avatarUrl" in result.user) {
+        setAvatarUrl(result.user.avatarUrl ?? "");
+      }
       setLocale?.(preferredLocale);
       setNotice("Profile updated successfully.");
     } catch {
@@ -177,6 +253,7 @@ export function ProfileDetails({ user }: { user: User }) {
       savingName.current = false;
     }
   }
+
   async function copyAccountId() {
     try {
       await navigator.clipboard.writeText(user.id);
@@ -187,201 +264,334 @@ export function ProfileDetails({ user }: { user: User }) {
       setCopyNotice("Unable to copy. Select the Account ID to copy it.");
     }
   }
-  const parts = user.name.trim().split(/\s+/).filter(Boolean);
-  const initials =
-    parts.length > 1
-      ? `${parts[0]?.charAt(0) ?? ""}${parts.at(-1)?.charAt(0) ?? ""}`.toUpperCase()
-      : (parts[0]?.slice(0, 2).toUpperCase() ?? "");
+
+  const canUploadPhoto = api.mode === "backend" && !update.isPending && !passwordSaving;
+  const isFormDirty =
+    fullName.trim() !== user.name ||
+    avatarUrl !== (user.avatarUrl ?? "") ||
+    preferredLocale !== (user.preferredLocale ?? activeLocale);
+
   return (
     <>
-      <section
-        aria-label={t("Profile summary")}
-        className="min-w-0 rounded-xl border bg-card p-5 sm:p-6 [overflow-wrap:anywhere]"
-      >
-        <div className="flex min-w-0 items-start gap-4">
-          <div
-            aria-hidden="true"
-            className="flex size-12 shrink-0 items-center justify-center rounded-full bg-primary/10 text-base font-semibold text-primary"
-          >
-            {avatarUrl ? (
-              <img src={avatarUrl} alt="" className="size-12 rounded-full object-cover" />
-            ) : (
-              initials || <UserRound className="size-5" />
-            )}
-          </div>
-          <div className="min-w-0 flex-1">
-            <h2 className="break-words text-lg font-semibold leading-7">
-              {user.name || t("Full name not available")}
-            </h2>
-            <p className="mt-1 break-words text-sm leading-6 text-muted-foreground">
-              {user.email || t("Email not available")}
-            </p>
-            <Badge variant="secondary" className="mt-2 max-w-full whitespace-normal">
-              {t(roleLabels[user.role])}
-            </Badge>
-          </div>
-        </div>
-        <div className="mt-4 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-          <span>{t("Account ID:")}</span>
-          <code className="min-w-0 break-all font-mono">{user.id}</code>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-8 gap-1.5 px-2 text-xs"
-            aria-label={t("Copy Account ID")}
-            onClick={() => void copyAccountId()}
-          >
-            {copied ? (
-              <Check className="size-3.5" aria-hidden="true" />
-            ) : (
-              <Copy className="size-3.5" aria-hidden="true" />
-            )}
-            {t("Copy")}
-          </Button>
-        </div>
-        {copyNotice && (
-          <p role="status" className="mt-2 text-xs text-muted-foreground">
-            {t(copyNotice)}
-          </p>
-        )}
-        {hasPermission(user.role, "project:read") && <ProfileStatistics role={user.role} />}
-      </section>
-      {notice && (
-        <p
-          role="status"
-          className="rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 text-sm leading-6"
+      <div className="grid min-w-0 gap-6 lg:grid-cols-[340px_minmax(0,1fr)] lg:items-start">
+        <section
+          aria-label={t("Profile summary")}
+          className="min-w-0 overflow-hidden rounded-2xl border bg-card shadow-sm [overflow-wrap:anywhere]"
         >
-          {t(notice)}
-        </p>
-      )}
-      <section
-        aria-labelledby="profile-information"
-        className="min-w-0 rounded-xl border bg-card p-5 sm:p-6 [overflow-wrap:anywhere]"
-      >
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 id="profile-information" className="text-base font-semibold">
-            {t("Personal Information")}
-          </h2>
-          <Button
-            type="button"
-            variant="outline"
-            className="gap-2"
-            disabled={api.mode !== "backend" || update.isPending || !user.name.trim()}
-            onClick={() => setPasswordDialogOpen(true)}
-          >
-            <KeyRound className="size-4" aria-hidden="true" />
-            {t("Change Password")}
-          </Button>
-        </div>
-        <form noValidate onSubmit={saveName} className="mt-5 space-y-5">
-          <div>
-            <label htmlFor="profile-full-name" className="text-sm font-medium">
-              {t("Full Name")}
-            </label>
-            <Input
-              id="profile-full-name"
-              className="mt-2 h-11 w-full min-w-0"
-              value={fullName}
-              maxLength={255}
-              required
-              autoComplete="name"
-              disabled={update.isPending || passwordSaving}
-              aria-invalid={Boolean(nameError)}
-              aria-describedby={nameError ? "profile-name-error" : undefined}
-              onChange={(e) => {
-                setFullName(e.target.value);
-                setNameError("");
-              }}
+          <div className="relative h-24 bg-gradient-to-r from-teal-700 via-sky-700 to-indigo-700 dark:from-teal-900 dark:via-sky-900 dark:to-indigo-950">
+            <div
+              aria-hidden="true"
+              className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.22),transparent_60%)]"
             />
-            {nameError && (
-              <p id="profile-name-error" role="alert" className="mt-2 text-sm text-destructive">
-                {t(nameError)}
+          </div>
+          <div className="px-5 pb-5 sm:px-6 sm:pb-6">
+            <div className="-mt-12 flex items-end justify-between gap-3">
+              <div className="relative inline-flex">
+                <UserAvatar
+                  name={fullName || user.name}
+                  avatarUrl={avatarUrl}
+                  size="xl"
+                  className="ring-4 ring-card"
+                />
+                {canUploadPhoto && (
+                  <button
+                    type="button"
+                    aria-label={t("Update profile photo", "Cập nhật ảnh đại diện")}
+                    title={t("Update profile photo", "Cập nhật ảnh đại diện")}
+                    onClick={() => setAvatarDialogOpen(true)}
+                    className="absolute bottom-0 right-0 flex size-8 items-center justify-center rounded-full border-2 border-card bg-primary text-primary-foreground shadow-sm transition-transform hover:scale-105 hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <Camera className="size-3.5" aria-hidden="true" />
+                  </button>
+                )}
+              </div>
+              <Badge
+                variant="secondary"
+                className="mb-1 max-w-full whitespace-normal border border-primary/20 bg-primary/10 text-primary"
+              >
+                {t(roleLabels[user.role])}
+              </Badge>
+            </div>
+
+            <div className="mt-4 min-w-0">
+              <h2 className="break-words text-xl font-bold leading-7 text-foreground">
+                {user.name || t("Full name not available")}
+              </h2>
+              <p className="mt-1 flex items-center gap-1.5 break-words text-sm leading-6 text-muted-foreground">
+                <Mail className="size-3.5 shrink-0" aria-hidden="true" />
+                <span className="min-w-0 break-all">{user.email || t("Email not available")}</span>
+              </p>
+            </div>
+
+            <div className="mt-4 flex min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-border/60 bg-muted/25 px-2.5 py-1.5 text-xs text-muted-foreground">
+              <span className="shrink-0 font-medium">{t("Account ID:")}</span>
+              <code className="min-w-0 flex-1 truncate font-mono text-[11px]" title={user.id}>
+                {user.id}
+              </code>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className={`h-7 gap-1 px-2 text-[11px] ${
+                  copied ? "text-emerald-600 dark:text-emerald-400" : ""
+                }`}
+                aria-label={t("Copy Account ID")}
+                onClick={() => void copyAccountId()}
+              >
+                {copied ? (
+                  <Check className="size-3.5" aria-hidden="true" />
+                ) : (
+                  <Copy className="size-3.5" aria-hidden="true" />
+                )}
+                {copied ? t("Copied!", "Đã chép!") : t("Copy")}
+              </Button>
+            </div>
+            {copyNotice && (
+              <p role="status" className="mt-1.5 text-xs text-muted-foreground">
+                {t(copyNotice)}
               </p>
             )}
+
+            {hasPermission(user.role, "project:read") && <ProfileStatistics role={user.role} />}
           </div>
-          <dl className="grid min-w-0 gap-5 sm:grid-cols-[minmax(0,1fr)_auto]">
-            <div className="min-w-0">
-              <dt className="text-sm font-medium">{t("Email")}</dt>
-              <dd className="mt-2 text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere]">
-                {user.email || t("Email not available")}
-              </dd>
-            </div>
-            <div className="min-w-0">
-              <dt className="text-sm font-medium">{t("Role")}</dt>
-              <dd className="mt-2">
-                <Badge variant="secondary" className="max-w-full whitespace-normal">
-                  {t(roleLabels[user.role])}
-                </Badge>
-              </dd>
-            </div>
-          </dl>
-          <div>
-            <label htmlFor="profile-avatar" className="text-sm font-medium">
-              {t("Avatar URL")}
-            </label>
-            <Input
-              id="profile-avatar"
-              className="mt-2"
-              type="url"
-              maxLength={1000}
-              value={avatarUrl}
-              onChange={(e) => setAvatarUrl(e.target.value)}
-            />
-          </div>
-          <div>
-            <label htmlFor="profile-locale" className="text-sm font-medium">
-              {t("Preferred language")}
-            </label>
-            <select
-              id="profile-locale"
-              className="mt-2 h-11 w-full rounded-md border bg-background px-3"
-              value={preferredLocale}
-              onChange={(e) => setPreferredLocale(e.target.value as "en" | "vi")}
+        </section>
+
+        <div className="min-w-0 space-y-5">
+          {notice && (
+            <p
+              role="status"
+              className="flex items-center gap-2 rounded-xl border border-emerald-500/35 bg-emerald-500/10 px-4 py-3 text-sm font-medium text-emerald-800 dark:text-emerald-200"
             >
-              <option value="en">English</option>
-              <option value="vi">Tiếng Việt</option>
-            </select>
-          </div>
-          {update.error && <ErrorState error={update.error} />}
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Button
-              type="submit"
-              disabled={
-                update.isPending ||
-                passwordSaving ||
-                !fullName.trim() ||
-                fullName.trim().length > 255 ||
-                (fullName.trim() === user.name &&
-                  avatarUrl === (user.avatarUrl ?? "") &&
-                  preferredLocale === (user.preferredLocale ?? activeLocale))
-              }
-              className="h-11 w-full sm:w-auto"
-            >
-              {update.isPending && (
-                <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
-              )}
-              {t(update.isPending ? "Saving…" : "Save Changes")}
-            </Button>
-            {fullName !== user.name && (
+              <Check className="size-4 shrink-0" aria-hidden="true" />
+              {t(notice)}
+            </p>
+          )}
+
+          <section
+            aria-labelledby="profile-information"
+            className="min-w-0 rounded-2xl border bg-card p-5 shadow-sm sm:p-6 [overflow-wrap:anywhere]"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+              <div>
+                <h2 id="profile-information" className="text-lg font-semibold text-foreground">
+                  {t("Personal Information")}
+                </h2>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {t(
+                    "Keep your display name, photo, and language consistent across classes and certificates.",
+                    "Đồng bộ họ tên, ảnh đại diện và ngôn ngữ hiển thị trên toàn bộ lớp học và hồ sơ bài nộp.",
+                  )}
+                </p>
+              </div>
               <Button
                 type="button"
                 variant="outline"
-                className="h-11 w-full sm:w-auto"
-                disabled={update.isPending || passwordSaving}
-                onClick={() => {
-                  setFullName(user.name);
-                  setNameError("");
-                  setNotice("");
-                  update.reset();
-                }}
+                size="sm"
+                className="gap-2"
+                disabled={api.mode !== "backend" || update.isPending || !user.name.trim()}
+                onClick={() => setPasswordDialogOpen(true)}
               >
-                {t("Reset")}
+                <KeyRound className="size-4" aria-hidden="true" />
+                {t("Change Password")}
               </Button>
-            )}
-          </div>
-        </form>
-      </section>
+            </div>
+
+            <div className="mt-5 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-border/70 bg-muted/20 p-4">
+              <div className="flex min-w-0 items-center gap-3.5">
+                <UserAvatar name={fullName || user.name} avatarUrl={avatarUrl} size="lg" />
+                <div className="min-w-0 space-y-0.5">
+                  <p className="text-sm font-semibold text-foreground">
+                    {t("Profile Photo", "Ảnh đại diện")}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {t(
+                      "PNG, JPG, or WebP up to 2 MB · Square crop supported",
+                      "PNG, JPG hoặc WebP tối đa 2 MB · Hỗ trợ cắt khung tròn & thu phóng",
+                    )}
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={!canUploadPhoto}
+                  onClick={() => setAvatarDialogOpen(true)}
+                >
+                  <Camera className="mr-1.5 size-3.5" aria-hidden="true" />
+                  {avatarUrl
+                    ? t("Change photo", "Đổi ảnh")
+                    : t("Upload photo", "Tải ảnh lên")}
+                </Button>
+                {avatarUrl && canUploadPhoto && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    onClick={() => setAvatarDialogOpen(true)}
+                  >
+                    <Trash2 className="mr-1.5 size-3.5" aria-hidden="true" />
+                    {t("Remove", "Xóa ảnh")}
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            <form noValidate onSubmit={saveName} className="mt-5 space-y-5">
+              <div className="grid gap-5 sm:grid-cols-2">
+                <div className="min-w-0">
+                  <label htmlFor="profile-full-name" className="text-sm font-medium">
+                    {t("Full Name")}
+                  </label>
+                  <Input
+                    id="profile-full-name"
+                    className="mt-2 h-11 w-full min-w-0"
+                    value={fullName}
+                    maxLength={255}
+                    required
+                    autoComplete="name"
+                    disabled={update.isPending || passwordSaving}
+                    aria-invalid={Boolean(nameError)}
+                    aria-describedby={nameError ? "profile-name-error" : undefined}
+                    onChange={(e) => {
+                      setFullName(e.target.value);
+                      setNameError("");
+                    }}
+                  />
+                  {nameError && (
+                    <p id="profile-name-error" role="alert" className="mt-2 text-sm text-destructive">
+                      {t(nameError)}
+                    </p>
+                  )}
+                </div>
+
+                <div className="min-w-0">
+                  <label
+                    htmlFor="profile-locale"
+                    className="flex items-center gap-1.5 text-sm font-medium"
+                  >
+                    <Globe className="size-3.5 text-muted-foreground" aria-hidden="true" />
+                    {t("Preferred language")}
+                  </label>
+                  <select
+                    id="profile-locale"
+                    className="mt-2 h-11 w-full rounded-md border bg-background px-3 text-sm"
+                    value={preferredLocale}
+                    onChange={(e) => setPreferredLocale(e.target.value as "en" | "vi")}
+                  >
+                    <option value="en">English</option>
+                    <option value="vi">Tiếng Việt</option>
+                  </select>
+                </div>
+              </div>
+
+              <dl className="grid min-w-0 gap-4 rounded-xl border border-border/60 bg-muted/15 p-4 sm:grid-cols-[minmax(0,1fr)_auto]">
+                <div className="min-w-0">
+                  <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    {t("Email")}
+                  </dt>
+                  <dd className="mt-1.5 flex flex-wrap items-center gap-2 text-sm font-medium text-foreground [overflow-wrap:anywhere]">
+                    <span>{user.email || t("Email not available")}</span>
+                    {user.email && (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300">
+                        <ShieldCheck className="size-3" aria-hidden="true" />
+                        {t("Verified", "Đã xác minh")}
+                      </span>
+                    )}
+                  </dd>
+                </div>
+                <div className="min-w-0">
+                  <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    {t("Role")}
+                  </dt>
+                  <dd className="mt-1.5">
+                    <Badge variant="secondary" className="max-w-full whitespace-normal">
+                      {t(roleLabels[user.role])}
+                    </Badge>
+                  </dd>
+                </div>
+              </dl>
+
+              <details className="rounded-xl border border-border/60 bg-muted/10 px-4 py-3 text-sm">
+                <summary className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground">
+                  {t("Advanced: Use an external image URL", "Nâng cao: Dùng đường dẫn ảnh bên ngoài (URL)")}
+                </summary>
+                <div className="mt-3">
+                  <label htmlFor="profile-avatar" className="text-xs font-medium text-muted-foreground">
+                    {t("Avatar URL")}
+                  </label>
+                  <Input
+                    id="profile-avatar"
+                    className="mt-1.5 h-10 text-xs"
+                    type="url"
+                    maxLength={1000}
+                    placeholder="https://example.com/photo.jpg"
+                    value={avatarUrl}
+                    onChange={(e) => setAvatarUrl(e.target.value)}
+                  />
+                </div>
+              </details>
+
+              {update.error && <ErrorState error={update.error} />}
+              <div className="flex flex-col gap-2 border-t pt-4 sm:flex-row">
+                <Button
+                  type="submit"
+                  disabled={
+                    update.isPending ||
+                    passwordSaving ||
+                    !fullName.trim() ||
+                    fullName.trim().length > 255 ||
+                    !isFormDirty
+                  }
+                  className="h-11 w-full sm:w-auto"
+                >
+                  {update.isPending && (
+                    <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
+                  )}
+                  {t(update.isPending ? "Saving…" : "Save Changes")}
+                </Button>
+                {fullName !== user.name && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-11 w-full sm:w-auto"
+                    disabled={update.isPending || passwordSaving}
+                    onClick={() => {
+                      setFullName(user.name);
+                      setNameError("");
+                      setNotice("");
+                      update.reset();
+                    }}
+                  >
+                    {t("Reset")}
+                  </Button>
+                )}
+              </div>
+            </form>
+          </section>
+        </div>
+      </div>
+
+      {avatarDialogOpen && (
+        <AvatarStudioDialog
+          open={avatarDialogOpen}
+          onOpenChange={setAvatarDialogOpen}
+          userName={fullName || user.name}
+          currentAvatarUrl={avatarUrl || null}
+          disabled={!canUploadPhoto}
+          onAvatarUpdated={(nextUrl) => {
+            setAvatarUrl(nextUrl ?? "");
+            setNotice(
+              nextUrl
+                ? t("Profile photo updated successfully.", "Cập nhật ảnh đại diện thành công.")
+                : t("Profile photo removed.", "Đã xóa ảnh đại diện."),
+            );
+          }}
+        />
+      )}
+
       <Dialog
         open={passwordDialogOpen}
         onOpenChange={(open) => {

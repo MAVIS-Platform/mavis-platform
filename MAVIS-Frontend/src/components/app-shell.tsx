@@ -18,6 +18,7 @@ import { NotificationBell } from "@/features/notifications/inbox";
 import { AppearanceSelector } from "@/components/appearance-selector";
 import { LocaleSwitchButton, useLocale } from "@/lib/i18n/locale-context";
 import { MavisLogo } from "@/components/mavis-logo";
+import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -196,6 +197,8 @@ function ManagedShellChrome(props: AppShellProps) {
       selectedWorkspaceId={selection.workspaceId}
       navigationQuery={props.navigationQuery ?? (params.toString() ? `?${params}` : "")}
       displayName={session.data?.user?.name ?? "Design preview"}
+      displayEmail={session.data?.user?.email ?? undefined}
+      avatarUrl={session.data?.user?.avatarUrl ?? undefined}
       apiMode={api.mode}
       signOutPending={signingOut || signOut.isPending}
       onSignOut={() => void logout()}
@@ -219,6 +222,8 @@ function ShellChrome({
   contentVariant: contentOverride,
   onPreviewNavigate,
   displayName = "Design preview",
+  displayEmail,
+  avatarUrl,
   apiMode,
   signOutPending = false,
   onSignOut,
@@ -226,6 +231,8 @@ function ShellChrome({
   workspaces?: ReadonlyArray<{ id: string; name: string; code?: string | undefined }>;
   selectedWorkspaceId?: string;
   displayName?: string;
+  displayEmail?: string | undefined;
+  avatarUrl?: string | undefined;
   apiMode?: "mock" | "backend";
   signOutPending?: boolean;
   onSignOut?: () => void;
@@ -658,20 +665,13 @@ function ShellChrome({
                         className="h-10 gap-2 rounded-xl px-2"
                         aria-label={t("Profile menu", "Menu hồ sơ")}
                       >
-                        <span className="relative flex size-8 items-center justify-center rounded-full border border-primary/20 bg-primary text-primary-foreground">
-                          <span className="text-xs font-semibold">
-                            {(() => {
-                              const parts = displayName.trim().split(/\s+/).filter(Boolean);
-                              return parts.length > 1
-                                ? `${parts[0]?.[0] ?? ""}${parts.at(-1)?.[0] ?? ""}`.toUpperCase()
-                                : (parts[0]?.slice(0, 2).toUpperCase() ?? "MV");
-                            })()}
-                          </span>
-                          <span
-                            aria-hidden="true"
-                            className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border-2 border-background bg-emerald-500"
-                          />
-                        </span>
+                        <UserAvatar
+                          name={displayName}
+                          avatarUrl={avatarUrl}
+                          size="sm"
+                          online
+                          className="border-primary/20 bg-primary text-primary-foreground"
+                        />
                         <span className="hidden text-left lg:block">
                           <span className="block max-w-36 truncate text-xs font-medium">
                             {displayName}
@@ -683,12 +683,22 @@ function ShellChrome({
                         <ChevronDown className="hidden size-3 lg:block" />
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-60 rounded-xl p-2">
-                      <DropdownMenuLabel className="px-2 py-3">
-                        <span className="block text-sm">{displayName}</span>
-                        <span className="mt-1 block text-xs font-normal text-muted-foreground">
-                          {t(roleLabels[role] ?? role)}
-                        </span>
+                    <DropdownMenuContent align="end" className="w-64 rounded-xl p-2">
+                      <DropdownMenuLabel className="px-2 py-2.5">
+                        <div className="flex items-center gap-2.5">
+                          <UserAvatar name={displayName} avatarUrl={avatarUrl} size="md" />
+                          <div className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-semibold">{displayName}</span>
+                            {displayEmail && (
+                              <span className="block truncate text-[11px] font-normal text-muted-foreground">
+                                {displayEmail}
+                              </span>
+                            )}
+                            <span className="mt-0.5 block text-[10px] font-medium text-primary">
+                              {t(roleLabels[role] ?? role)}
+                            </span>
+                          </div>
+                        </div>
                       </DropdownMenuLabel>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem asChild>

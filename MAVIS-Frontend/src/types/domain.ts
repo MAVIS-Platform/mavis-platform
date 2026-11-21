@@ -4,6 +4,15 @@ import { z } from "zod";
 // before enabling an operation; see docs/architecture/api-integration.md.
 export const roleSchema = z.enum(["student", "lecturer", "admin"]);
 export type AppRole = z.infer<typeof roleSchema>;
+export const avatarUrlSchema = z
+  .string()
+  .max(1000)
+  .refine(
+    (value) =>
+      /^https?:\/\/\S+$/i.test(value) ||
+      /^\/api\/backend\/auth\/avatars\/[a-f0-9-]+(?:\?[a-zA-Z0-9=&._-]+)?$/i.test(value),
+    { message: "Use an http(s) image URL or an uploaded MAVIS avatar." },
+  );
 export const sessionSchema = z.object({
   user: z
     .object({
@@ -11,7 +20,7 @@ export const sessionSchema = z.object({
       name: z.string(),
       role: roleSchema,
       email: z.string().email().nullish(),
-      avatarUrl: z.string().url().nullish(),
+      avatarUrl: avatarUrlSchema.nullish(),
       preferredLocale: z.enum(["en", "vi"]).optional(),
     })
     .nullable(),
@@ -269,6 +278,7 @@ export const workspaceSchema = z.object({
       id: z.string(),
       name: z.string(),
       email: z.string().optional(),
+      avatarUrl: avatarUrlSchema.nullish(),
       role: z.string(),
     }),
   ),
@@ -399,6 +409,7 @@ export type Submission = z.infer<typeof submissionSchema>;
 export const accountSchema = z.object({
   createdAt: z.string().nullish(),
   email: z.string().optional(),
+  avatarUrl: avatarUrlSchema.nullish(),
   status: z.string().optional(),
   id: z.string(),
   name: z.string(),

@@ -18,6 +18,7 @@ public class WorkspaceMemberResponseDTO {
     private UUID userId;
     private String email;
     private String fullName;
+    private String avatarUrl;
     private String globalRole;
     private String memberRole;
     private OffsetDateTime joinedAt;

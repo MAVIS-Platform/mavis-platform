@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  avatarUrlSchema,
   projectSchema,
   snapshotSchema,
   analysisJobSchema,
@@ -406,7 +407,7 @@ export function userView(raw: unknown) {
       fullName: z.string(),
       role: z.string(),
       email: z.string().email().nullish(),
-      avatarUrl: z.string().url().nullish(),
+      avatarUrl: avatarUrlSchema.nullish(),
       preferredLocale: z.enum(["en", "vi"]).optional(),
     })
     .parse(raw);

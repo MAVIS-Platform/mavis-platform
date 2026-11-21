@@ -177,11 +177,13 @@ async function handler(request: NextRequest, context: { params: Promise<{ path: 
         });
       return response;
     }
+    const isAvatarAsset = request.method === "GET" && path.startsWith("auth/avatars/");
     const response = new NextResponse(await upstream.arrayBuffer(), {
       status: upstream.status,
       headers: {
         "Content-Type": upstream.headers.get("content-type") ?? "application/json",
-        "Cache-Control": "no-store",
+        "Cache-Control": isAvatarAsset && upstream.ok ? "private, max-age=86400" : "no-store",
+        ...(isAvatarAsset ? { "X-Content-Type-Options": "nosniff" } : {}),
         ...(upstream.headers.get("content-disposition")
           ? { "Content-Disposition": upstream.headers.get("content-disposition")! }
           : {}),

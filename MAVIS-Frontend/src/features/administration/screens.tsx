@@ -7,6 +7,7 @@ import { Plus } from "lucide-react";
 import { summarizeJobModel } from "@/lib/navigation/admin-job-review";
 import { useApiMutation, useApiQuery } from "@/hooks/use-api";
 import { DataTable, DetailPanel, StatusBadge, SummaryCard } from "@/components/shared/data";
+import { UserAvatar } from "@/components/shared/user-avatar";
 import { RequestState, ErrorState } from "@/components/shared/request-state";
 import { ConfirmDialog, SearchInput, SelectField } from "@/components/shared/forms";
 import { Badge } from "@/components/ui/badge";
@@ -242,18 +243,7 @@ export function Accounts() {
                 label: t("Account", "Tài khoản"),
                 render: (a) => (
                   <div className="flex min-w-44 max-w-60 items-center gap-2.5">
-                    <span
-                      aria-hidden="true"
-                      className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary"
-                    >
-                      {a.name
-                        .trim()
-                        .split(/\s+/)
-                        .map((part) => part[0])
-                        .slice(-2)
-                        .join("")
-                        .toUpperCase()}
-                    </span>
+                    <UserAvatar name={a.name} avatarUrl={a.avatarUrl} size="sm" />
                     <div className="min-w-0 space-y-0.5">
                       <p className="truncate font-semibold text-foreground">{a.name}</p>
                       {a.email && <p className="truncate text-xs text-muted-foreground">{a.email}</p>}

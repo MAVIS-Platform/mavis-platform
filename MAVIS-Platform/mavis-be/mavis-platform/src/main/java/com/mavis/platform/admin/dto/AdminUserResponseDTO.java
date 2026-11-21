@@ -18,6 +18,7 @@ public class AdminUserResponseDTO {
     private UUID id;
     private String email;
     private String fullName;
+    private String avatarUrl;
     private String roleCode;
     private String roleName;
     private String status;
@@ -30,6 +31,7 @@ public class AdminUserResponseDTO {
                 .id(user.getId())
                 .email(user.getEmail())
                 .fullName(user.getFullName())
+                .avatarUrl(user.getAvatarUrl())
                 .roleCode(user.getRole() != null ? user.getRole().getCode() : null)
                 .roleName(user.getRole() != null ? user.getRole().getName() : null)
                 .status(user.getStatus())

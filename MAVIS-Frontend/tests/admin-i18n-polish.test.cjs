@@ -218,3 +218,26 @@ test("Council Scope Gap Pack: Student Download Reference ZIP, THEORY_ONLY Markdo
   assert.match(workbench, /t\("Finish Studio", "Kết thúc Studio"\)/);
   assert.match(workbench, /t\("Service Telemetry", "Thông số Dịch vụ"\)/);
 });
+
+test("Coursera Profile & Unified Avatar System: UserAvatar everywhere, AvatarStudioDialog cropper, BFF avatar routes, and bounded projectOverviews", () => {
+  const userAvatar = read("src/components/shared/user-avatar.tsx");
+  const avatarDialog = read("src/features/profile/avatar-studio-dialog.tsx");
+  const profile = read("src/features/profile/profile.tsx");
+  const appShell = read("src/components/app-shell.tsx");
+  const workspaces = read("src/features/workspaces/screens.tsx");
+  const admin = read("src/features/administration/screens.tsx");
+  const backendPath = read("src/lib/api/backend-path.ts");
+  const domain = read("src/types/domain.ts");
+
+  assert.match(userAvatar, /referrerPolicy="no-referrer"/);
+  assert.match(userAvatar, /onError=\{\(\) => setBroken\(true\)\}/);
+  assert.match(avatarDialog, /\/api\/backend\/auth\/me\/avatar/);
+  assert.match(avatarDialog, /image\/webp/);
+  assert.match(profile, /<AvatarStudioDialog/);
+  assert.match(profile, /lg:grid-cols-\[340px_minmax\(0,1fr\)\]/);
+  assert.match(appShell, /<UserAvatar[\s\S]*avatarUrl=\{avatarUrl\}/);
+  assert.match(workspaces, /<UserAvatar name=\{m\.name\} avatarUrl=\{m\.avatarUrl\}/);
+  assert.match(admin, /<UserAvatar name=\{a\.name\} avatarUrl=\{a\.avatarUrl\}/);
+  assert.ok(backendPath.includes("auth\\/(?:login|me(?:\\/avatar)?|avatars\\/[a-f0-9-]+)"));
+  assert.match(domain, /export const avatarUrlSchema/);
+});
