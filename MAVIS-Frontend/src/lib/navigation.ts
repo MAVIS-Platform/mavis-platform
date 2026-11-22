@@ -32,6 +32,7 @@ export type WorkspaceScope = "global" | "project" | "workspace" | "review";
 export type NavigationItem = {
   id: string;
   label: string;
+  eyebrow?: string;
   icon: LucideIcon;
   // Only existing screen implementations have an href. Planned screens never
   // point at nonexistent routes. These are UI routes, not backend contracts.

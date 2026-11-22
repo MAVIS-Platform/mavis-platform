@@ -87,12 +87,12 @@
   --popover: #FFFFFF;
   --foreground: #1F1F1F;
   --muted-foreground: #3D4756;
-  --border: #CFD8E3;
-  --input: #94A3B8;
+  --border: #B8C4D4;
+  --input: #7D8FA6;
   --primary: #0056D2;
   --primary-foreground: #FFFFFF;
   --primary-hover: #00419E;
-  --secondary: #E6ECF4;
+  --secondary: #E2E9F2;
   --secondary-foreground: #1F1F1F;
   --accent: #E8F1FD;
   --pressed: #D6E6FB;
@@ -100,7 +100,7 @@
   --selected-foreground: #00419E;
   --ring: #0056D2;
   --disabled-background: #E6ECF4;
-  --disabled-foreground: #5B6678;
+  --disabled-foreground: #4B5565;
   --hero-background: #E8F1FD;
   --section-background: #EEF2F7;
   --body-text: #3D4756;

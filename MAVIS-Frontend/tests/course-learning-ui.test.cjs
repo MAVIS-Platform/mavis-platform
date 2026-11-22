@@ -735,7 +735,7 @@ test("Course builder exposes immutable publishing and BFF routes for structured 
   const builder = read("src/features/courses/course-builder.tsx");
   const { allowedBackendPath } = require("../src/lib/api/backend-path.ts");
   const workspace = "11111111-1111-1111-1111-111111111111";
-  assert.ok(builder.includes("Publish course version"));
+  assert.ok(builder.includes("Publish changes"));
   assert.ok(builder.includes("STATIC_LAB"));
   assert.ok(builder.includes("RUNTIME_LAB"));
   assert.ok(builder.includes("prerequisiteModuleId"));
@@ -1398,7 +1398,7 @@ test("Lecturer flow, 1-Click Login, MockAdapter JAVA-MS-2026, and clean routes h
   const teacherDashSrc = read("src/features/workspaces/teacher-dashboard.tsx");
   assert.ok(!workspacesSrc.includes("/workspace-members"));
   assert.ok(!teacherDashSrc.includes("/workspace-members"));
-  assert.ok(workspacesSrc.includes("ClassPasskeyDialog"));
+  assert.ok(!workspacesSrc.includes("ClassPasskeyDialog"));
   assert.ok(teacherDashSrc.includes("#class-passkey"));
 
   const managerSrc = read("src/features/courses/lecturer-curriculum-manager.tsx");
@@ -2065,4 +2065,116 @@ test("Task #10 Perf & Gradebook UX: Gradebook compacts Lab columns for 1280px an
   assert.match(submissions, /className="min-w-28 px-2\.5 py-2\.5 font-semibold"/);
   assert.match(courses, /studentContextLoading \|\| fallbackModelQuery\.isPending/);
   assert.match(javaOps, /mapWithConcurrency\(rows,\s*10,/);
+});
+
+test("Studio Live Telemetry & Stats preserve failed/timed-out service status and Logs & Traces badge count instead of falling back to Preview Prepared", () => {
+  const workbench = read("src/features/runtime/live-studio-workbench.tsx");
+  const { resolveTelemetryServiceStatus } = require("../src/features/runtime/live-studio-workbench.tsx");
+
+  assert.equal(
+    resolveTelemetryServiceStatus({
+      isPreview: true,
+      running: 1,
+      executionStatus: "NOT_STARTED",
+      lastSessionFailed: false,
+      isTimedOut: false,
+      isBooting: false,
+    }).label,
+    "Prepared",
+  );
+  assert.equal(
+    resolveTelemetryServiceStatus({
+      isPreview: true,
+      running: 0,
+      executionStatus: "NOT_STARTED",
+      lastSessionFailed: false,
+      isTimedOut: false,
+      isBooting: false,
+    }).label,
+    "Starts Down",
+  );
+  assert.equal(
+    resolveTelemetryServiceStatus({
+      isPreview: false,
+      running: undefined,
+      executionStatus: "FAILED",
+      lastSessionFailed: true,
+      isTimedOut: false,
+      isBooting: false,
+    }).label,
+    "Failed",
+  );
+  assert.equal(
+    resolveTelemetryServiceStatus({
+      isPreview: false,
+      running: undefined,
+      executionStatus: "TIMED_OUT",
+      lastSessionFailed: true,
+      isTimedOut: true,
+      isBooting: false,
+    }).label,
+    "Timed Out",
+  );
+  assert.equal(
+    resolveTelemetryServiceStatus({
+      isPreview: false,
+      running: 0,
+      executionStatus: "FAILED",
+      lastSessionFailed: true,
+      isTimedOut: false,
+      isBooting: false,
+    }).label,
+    "Down",
+  );
+  assert.equal(
+    resolveTelemetryServiceStatus({
+      isPreview: false,
+      running: 1,
+      executionStatus: "RUNNING",
+      lastSessionFailed: false,
+      isTimedOut: false,
+      isBooting: false,
+    }).label,
+    "Running",
+  );
+  assert.equal(
+    resolveTelemetryServiceStatus({
+      isPreview: false,
+      running: undefined,
+      executionStatus: "QUEUED",
+      lastSessionFailed: false,
+      isTimedOut: false,
+      isBooting: true,
+    }).label,
+    "Booting",
+  );
+  assert.equal(
+    resolveTelemetryServiceStatus({
+      isPreview: false,
+      running: undefined,
+      executionStatus: "CANCELLED",
+      lastSessionFailed: false,
+      isTimedOut: false,
+      isBooting: false,
+    }).label,
+    "Stopped",
+  );
+
+  assert.match(workbench, /const observedData: Studio = useMemo/);
+  assert.match(workbench, /const isTelemetryPreview = isPreviewMode && !lastSessionFailed;/);
+  assert.match(workbench, /const logsAndTracesCount =/);
+  assert.match(workbench, /id === "logs" && \(terminalAlertSignal \|\| isBooting\)/);
+  assert.match(workbench, /hasLiveRuntimeState/);
+});
+
+test("CourseOutline header renders course description and step-by-step learning outcomes", () => {
+  const { stripModulePrefix } = require("../src/features/courses/course-outline.tsx");
+  assert.equal(stripModulePrefix("Module 1: .NET 8 Microservices Foundations"), ".NET 8 Microservices Foundations");
+  assert.equal(stripModulePrefix("Chương 2 - Phân tích phụ thuộc"), "Phân tích phụ thuộc");
+  assert.equal(stripModulePrefix("Observability Basics"), "Observability Basics");
+
+  const outline = read("src/features/courses/course-outline.tsx");
+  assert.ok(outline.includes("Learning Outcomes & Progression"));
+  assert.ok(outline.includes("syllabusSummary"));
+  assert.ok(outline.includes("published?.snapshot.description"));
 });

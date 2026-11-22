@@ -280,7 +280,7 @@ export function LabAuthoring() {
 
   const hubContent = (
     <div className="space-y-4">
-      <div className="space-y-2 rounded-xl border bg-card p-2">
+      <div className="space-y-3 rounded-2xl border border-slate-300 bg-card p-3 shadow-sm dark:border-border">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <nav
             aria-label={t("Lab workspace", "Không gian Lab")}
@@ -295,6 +295,11 @@ export function LabAuthoring() {
                   type="button"
                   size="sm"
                   variant={active ? "default" : "ghost"}
+                  className={
+                    active
+                      ? "font-semibold"
+                      : "font-semibold text-foreground/80 hover:bg-primary/10 hover:text-primary"
+                  }
                   aria-pressed={active}
                   onClick={() => changeSection(item.id)}
                 >
@@ -306,9 +311,9 @@ export function LabAuthoring() {
           </nav>
 
           {section === "create" && (
-            <div className="flex flex-wrap items-center gap-1.5">
+            <div className="flex flex-wrap items-center gap-2">
               {assignment && (
-                <Badge variant={isPublished ? "success" : "secondary"}>
+                <Badge variant={isPublished ? "success" : "secondary"} className="font-semibold">
                   {isPublished ? t("Published", "Đã công bố") : t("Draft", "Bản nháp")}
                 </Badge>
               )}
@@ -323,7 +328,7 @@ export function LabAuthoring() {
                       `/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(nextId)}&tab=info`,
                     );
                   }}
-                  className="h-8 w-48 overflow-hidden text-ellipsis whitespace-nowrap rounded-md border bg-background px-2.5 text-xs font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                  className="h-9 w-52 overflow-hidden text-ellipsis whitespace-nowrap rounded-lg border border-slate-300 bg-card px-3 text-[13px] font-semibold text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 dark:border-border"
                 >
                   <option value="">
                     {t("Switch Lab…", "Chuyển nhanh bài Lab…")}
@@ -372,7 +377,7 @@ export function LabAuthoring() {
         {section === "create" && (
           <nav
             aria-label={t("Lab creation steps", "Các bước tạo Lab")}
-            className="flex flex-wrap items-center gap-1 border-t pt-2"
+            className="flex flex-wrap items-center gap-1.5 border-t border-slate-200 pt-2.5 dark:border-border"
           >
             {navItems.map((item, index) => {
               const meta = TAB_LABELS[item.id];
@@ -389,25 +394,29 @@ export function LabAuthoring() {
                   }
                   onClick={() => navigate(item.id)}
                   aria-current={active ? "step" : undefined}
-                  className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors ${
+                  className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-left text-[13px] font-semibold transition-colors ${
                     active
-                      ? "bg-primary text-primary-foreground shadow-2xs"
-                      : item.skipped
-                        ? "text-muted-foreground opacity-65 hover:bg-muted hover:text-foreground"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                  } disabled:cursor-not-allowed disabled:opacity-40`}
+                      ? "border-primary bg-primary text-primary-foreground shadow-xs"
+                      : !item.enabled
+                        ? "border-slate-200 bg-slate-50 text-foreground/65 dark:border-border dark:bg-muted/30"
+                        : item.skipped
+                          ? "border-slate-200 bg-card text-foreground/75 hover:border-primary/40 hover:text-primary dark:border-border"
+                          : "border-slate-300 bg-card text-foreground hover:border-primary/50 hover:bg-primary/5 hover:text-primary dark:border-border"
+                  } disabled:cursor-not-allowed`}
                 >
                   {item.done ? (
                     <CheckCircle2
-                      className={`size-3.5 shrink-0 ${
+                      className={`size-4 shrink-0 ${
                         active ? "text-primary-foreground" : "text-emerald-600 dark:text-emerald-400"
                       }`}
                       aria-hidden="true"
                     />
                   ) : (
                     <span
-                      className={`grid size-4 shrink-0 place-items-center rounded-full border text-[10px] font-semibold ${
-                        active ? "border-primary-foreground/60" : "border-current/40"
+                      className={`grid size-5 shrink-0 place-items-center rounded-full text-[11px] font-bold ${
+                        active
+                          ? "bg-white/20 text-primary-foreground"
+                          : "bg-slate-200/80 text-foreground dark:bg-muted"
                       }`}
                       aria-hidden="true"
                     >

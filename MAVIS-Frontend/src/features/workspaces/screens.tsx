@@ -18,7 +18,7 @@ import {
   useWorkspaceGradebook,
 } from "./course-access";
 import { ReferenceManagement } from "./reference-manage";
-import { ClassPasskeyDialog, CourseWorkspaceShell } from "@/features/courses/course-workspace-shell";
+import { CourseWorkspaceShell } from "@/features/courses/course-workspace-shell";
 import { LecturerCurriculumManager } from "@/features/courses/lecturer-curriculum-manager";
 import { Courses, CourseRoadmap as CourseRoadmapScreen } from "@/features/courses/screens";
 import { CourseOutline } from "@/features/courses/course-outline";
@@ -39,7 +39,6 @@ export function Workspaces() {
   const session = useSession();
   const { workspaceId } = useSelection();
   const [showCreate, setShowCreate] = useState(false);
-  const [passkeyWorkspaceId, setPasskeyWorkspaceId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "archived">("all");
   const [page, setPage] = useState(1);
@@ -229,12 +228,6 @@ export function Workspaces() {
       )}
 
       {canCreate && showCreate && <CreateWorkspace onClose={() => setShowCreate(false)} />}
-      {passkeyWorkspaceId && (
-        <ClassPasskeyDialog
-          workspaceId={passkeyWorkspaceId}
-          onClose={() => setPasskeyWorkspaceId(null)}
-        />
-      )}
 
       <RequestState query={query} empty={false}>
         {Boolean(query.data?.length) && (
@@ -317,13 +310,6 @@ export function Workspaces() {
                           : t("Up to date", "Đã cập nhật")}
                       </span>
                     )}
-                    <button
-                      type="button"
-                      onClick={() => setPasskeyWorkspaceId(workspace.id)}
-                      className="inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 font-medium text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-900/40"
-                    >
-                      {t("Passkey", "Passkey lớp")}
-                    </button>
                   </div>
                   <div className="mt-auto grid grid-cols-2 gap-3 border-t pt-4">
                     <Button asChild>

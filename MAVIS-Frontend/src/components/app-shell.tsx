@@ -322,10 +322,8 @@ function ShellChrome({
         const workspaceEntries = workspaces.map((w) => {
           const entry: NavigationItem = {
             id: `workspace:${w.id}`,
-            label:
-              w.code && !w.name.toLowerCase().includes(w.code.toLowerCase())
-                ? `${w.code} · ${w.name}`
-                : w.name,
+            ...(w.code ? { eyebrow: w.code } : {}),
+            label: w.name,
             icon: BookOpen,
             href:
               role === "student"
@@ -899,7 +897,7 @@ function NavigationGroups({
                         <CollapsibleTrigger asChild>
                           <button
                             type="button"
-                            aria-label={`${expanded ? t("Collapse") : t("Expand")} ${t(item.label)} menu`}
+                            aria-label={`${expanded ? t("Collapse") : t("Expand")} ${item.eyebrow ? `${item.eyebrow} · ${t(item.label)}` : t(item.label)} menu`}
                             aria-expanded={expanded}
                             className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           >
@@ -1008,13 +1006,14 @@ function NavigationEntry({
   const workspaceDepth = item.id.startsWith("workspace:") ? item.id.split(":").length - 1 : 0;
   const isWorkspaceRoot = Boolean(item.children?.length);
   const isWorkspaceChild = workspaceDepth >= 1 && !isWorkspaceRoot;
+  const fullLabel = item.eyebrow ? `${item.eyebrow} · ${t(item.label)}` : t(item.label);
   const className = cn(
     "flex w-full items-center gap-2.5 text-left transition-colors",
     collapsed && "min-h-9 justify-center rounded-md px-0",
     !collapsed && "rounded-md px-2",
     !collapsed &&
       (isWorkspaceRoot
-        ? "min-h-10 px-2.5 text-[13px] font-semibold"
+        ? "min-h-10 px-2.5 py-1.5 text-[13px] font-semibold"
         : isWorkspaceChild
           ? "min-h-8 text-xs"
           : "min-h-9 text-xs leading-5"),
@@ -1035,7 +1034,18 @@ function NavigationEntry({
       />
       {!collapsed && (
         <>
-          <span className="min-w-0 flex-1">{t(item.label)}</span>
+          {item.eyebrow ? (
+            <span className="min-w-0 flex-1 leading-tight">
+              <span className="block truncate font-mono text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                {item.eyebrow}
+              </span>
+              <span className="block truncate text-[13px] font-semibold text-foreground">
+                {t(item.label)}
+              </span>
+            </span>
+          ) : (
+            <span className="min-w-0 flex-1 truncate">{t(item.label)}</span>
+          )}
           {!preview && !item.href && (
             <span className="text-[9px] font-normal">{t("Planned", "Đã lên kế hoạch")}</span>
           )}
@@ -1048,7 +1058,8 @@ function NavigationEntry({
       className={className}
       onClick={() => onNavigate(item.id)}
       aria-current={active ? currentKind : undefined}
-      aria-label={t(item.label)}
+      aria-label={fullLabel}
+      title={fullLabel}
     >
       {content}
     </button>
@@ -1056,13 +1067,14 @@ function NavigationEntry({
     <Link
       href={item.href}
       className={className}
+      title={fullLabel}
       aria-current={active ? currentKind : undefined}
-      aria-label={t(item.label)}
+      aria-label={fullLabel}
     >
       {content}
     </Link>
   ) : (
-    <button disabled className={className} aria-label={`${item.label} · planned`}>
+    <button disabled className={className} aria-label={`${fullLabel} · planned`} title={fullLabel}>
       {content}
     </button>
   );
@@ -1070,7 +1082,7 @@ function NavigationEntry({
     <Tooltip>
       <TooltipTrigger asChild>{control}</TooltipTrigger>
       <TooltipContent side="right">
-        {t(item.label)}
+        {fullLabel}
         {!preview && !item.href ? ` · ${t("planned", "đã lên kế hoạch")}` : ""}
       </TooltipContent>
     </Tooltip>

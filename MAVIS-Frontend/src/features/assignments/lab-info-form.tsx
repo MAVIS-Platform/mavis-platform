@@ -94,34 +94,42 @@ export function LabInfoForm({
 
   return (
     <form onSubmit={submit} className="space-y-5">
-      <section className="space-y-5 rounded-xl border bg-card p-5" aria-labelledby="lab-info-heading">
-        <div className="flex items-center justify-between gap-2 border-b pb-3">
-          <div className="flex items-center gap-2">
-            <ClipboardList className="size-4 text-primary" aria-hidden="true" />
-            <h2 id="lab-info-heading" className="text-base font-semibold">
+      <section
+        className="space-y-5 rounded-2xl border border-slate-300 bg-card p-6 shadow-sm dark:border-border"
+        aria-labelledby="lab-info-heading"
+      >
+        <div className="flex items-center justify-between gap-2 border-b border-slate-200 pb-3.5 dark:border-border">
+          <div className="flex items-center gap-2.5">
+            <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+              <ClipboardList className="size-4" aria-hidden="true" />
+            </span>
+            <h2 id="lab-info-heading" className="text-lg font-bold text-foreground">
               {t("Lab information", "Thông tin Lab")}
             </h2>
           </div>
-          <span className="text-xs text-muted-foreground tabular-nums">{title.length}/255</span>
+          <span className="text-xs font-semibold text-foreground/65 tabular-nums">
+            {title.length}/255
+          </span>
         </div>
 
-        <label className="block space-y-1.5 text-sm font-medium">
+        <label className="block space-y-1.5 text-sm font-semibold text-foreground">
           <span>{t("Lab title", "Tên Lab")}</span>
           <Input
             aria-label={t("Lab title", "Tên Lab")}
             required
             maxLength={255}
+            className="h-10 border-slate-300 bg-card text-foreground dark:border-border"
             value={title}
             onChange={(event) => setTitle(event.target.value)}
           />
         </label>
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <label className="block space-y-1.5 text-sm font-medium">
+          <label className="block space-y-1.5 text-sm font-semibold text-foreground">
             <span>{t("Lab mode", "Chế độ Lab")}</span>
             <select
               aria-label={t("Lab mode", "Chế độ Lab")}
-              className="h-10 w-full rounded-md border bg-background px-3 text-sm font-normal"
+              className="h-10 w-full rounded-md border border-slate-300 bg-card px-3 text-sm font-medium text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 dark:border-border"
               value={labMode}
               onChange={(event) => {
                 setLabMode(
@@ -141,11 +149,12 @@ export function LabInfoForm({
               </option>
             </select>
           </label>
-          <label className="block space-y-1.5 text-sm font-medium">
+          <label className="block space-y-1.5 text-sm font-semibold text-foreground">
             <span>{t("Due date (optional)", "Hạn nộp (tùy chọn)")}</span>
             <Input
               type="datetime-local"
               aria-label={t("Due date", "Hạn nộp")}
+              className="h-10 border-slate-300 bg-card text-foreground dark:border-border"
               value={dueLocal}
               onChange={(event) => {
                 setDueLocal(event.target.value);
@@ -158,19 +167,22 @@ export function LabInfoForm({
         {/* Instructions, learning goals and completion criteria */}
         <div className="space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <label htmlFor="lab-instructions-input" className="text-sm font-medium">
+            <label htmlFor="lab-instructions-input" className="text-sm font-semibold text-foreground">
               {t("Description (Markdown)", "Mô tả (Markdown)")}
             </label>
-            <div role="tablist" className="inline-flex rounded-lg border bg-muted/40 p-0.5 text-xs">
+            <div
+              role="tablist"
+              className="inline-flex rounded-lg border border-slate-300 bg-slate-100 p-0.5 text-xs dark:border-border dark:bg-muted/50"
+            >
               <button
                 type="button"
                 role="tab"
                 aria-selected={guideTab === "write"}
                 onClick={() => setGuideTab("write")}
-                className={`rounded-md px-2.5 py-1 font-medium transition-colors ${
+                className={`rounded-md px-3 py-1 font-semibold transition-colors ${
                   guideTab === "write"
-                    ? "bg-background text-foreground shadow-xs"
-                    : "text-muted-foreground hover:text-foreground"
+                    ? "bg-card text-primary shadow-xs"
+                    : "text-foreground/75 hover:text-foreground"
                 }`}
               >
                 {t("Write", "Soạn thảo")}
@@ -180,10 +192,10 @@ export function LabInfoForm({
                 role="tab"
                 aria-selected={guideTab === "preview"}
                 onClick={() => setGuideTab("preview")}
-                className={`rounded-md px-2.5 py-1 font-medium transition-colors ${
+                className={`rounded-md px-3 py-1 font-semibold transition-colors ${
                   guideTab === "preview"
-                    ? "bg-background text-foreground shadow-xs"
-                    : "text-muted-foreground hover:text-foreground"
+                    ? "bg-card text-primary shadow-xs"
+                    : "text-foreground/75 hover:text-foreground"
                 }`}
               >
                 {t("Preview", "Xem trước")}
@@ -196,6 +208,7 @@ export function LabInfoForm({
               aria-label={t("Description", "Mô tả")}
               maxLength={10000}
               rows={5}
+              className="border-slate-300 bg-card text-foreground dark:border-border"
               value={instructions}
               onChange={(event) => {
                 setInstructions(event.target.value);
@@ -203,7 +216,7 @@ export function LabInfoForm({
               }}
             />
           ) : (
-            <div className="min-h-36 rounded-lg border bg-background p-4 text-sm">
+            <div className="min-h-36 rounded-lg border border-slate-300 bg-card p-4 text-sm dark:border-border">
               {instructions.trim() ? (
                 <MarkdownPreview markdown={instructions} />
               ) : (

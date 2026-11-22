@@ -157,16 +157,16 @@ export function AuthFlow({
         </Link>
         <AppearanceSelector />
       </header>
-      <main className="mx-auto mt-12 w-full max-w-md rounded-2xl border bg-card p-7 sm:mt-20 sm:p-10">
+      <main className="mx-auto mt-12 w-full max-w-md rounded-2xl border border-slate-300 bg-card p-7 shadow-md dark:border-border sm:mt-20 sm:p-10">
         <Link
           href="/login"
-          className="mb-7 inline-flex items-center gap-2 text-sm text-muted-foreground"
+          className="mb-6 inline-flex items-center gap-2 text-sm font-semibold text-primary hover:underline"
         >
           <ArrowLeft size={16} />
           Back to sign in
         </Link>
-        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-        <p className="mb-7 mt-3 text-sm leading-6 text-muted-foreground">{description}</p>
+        <h1 className="text-2xl font-bold tracking-tight text-foreground">{title}</h1>
+        <p className="mb-7 mt-2.5 text-sm leading-6 text-foreground/75">{description}</p>
         <form
           method="post"
           className="space-y-5"
@@ -176,11 +176,12 @@ export function AuthFlow({
           }}
         >
           {flow === "register" && (
-            <label className="block space-y-2 text-sm font-medium">
+            <label className="block space-y-2 text-sm font-semibold text-foreground">
               <span>Full name</span>
               <Input
                 required
                 autoComplete="name"
+                className="h-11 border-slate-300 bg-card text-foreground dark:border-border"
                 value={name}
                 disabled={busy}
                 onChange={(e) => setName(e.target.value)}
@@ -188,17 +189,18 @@ export function AuthFlow({
             </label>
           )}
           {needsCode ? (
-            <div className="space-y-2 text-sm">
-              <p className="font-medium">Email</p>
-              <p className="break-words text-muted-foreground">{email}</p>
+            <div className="space-y-1.5 text-sm">
+              <p className="font-semibold text-foreground">Email</p>
+              <p className="break-words font-medium text-foreground/80">{email}</p>
             </div>
           ) : (
-            <label className="block space-y-2 text-sm font-medium">
+            <label className="block space-y-2 text-sm font-semibold text-foreground">
               <span>Email</span>
               <Input
                 required
                 type="email"
                 autoComplete="email"
+                className="h-11 border-slate-300 bg-card text-foreground dark:border-border"
                 value={email}
                 disabled={busy}
                 onChange={(e) => {
@@ -230,26 +232,28 @@ export function AuthFlow({
           )}
           {showsPassword && (
             <>
-              <label className="block space-y-2 text-sm font-medium">
+              <label className="block space-y-2 text-sm font-semibold text-foreground">
                 <span>{flow === "register" ? "Password" : "New password"}</span>
                 <Input
                   required
                   type="password"
                   autoComplete="new-password"
                   minLength={6}
+                  className="h-11 border-slate-300 bg-card text-foreground dark:border-border"
                   value={password}
                   disabled={busy}
                   onChange={(e) => setPassword(e.target.value)}
                 />
               </label>
-              <p className="text-xs text-muted-foreground">{t("Use at least 6 characters.")}</p>
-              <label className="block space-y-2 text-sm font-medium">
+              <p className="text-xs font-medium text-foreground/65">{t("Use at least 6 characters.")}</p>
+              <label className="block space-y-2 text-sm font-semibold text-foreground">
                 <span>Confirm password</span>
                 <Input
                   required
                   type="password"
                   autoComplete="new-password"
                   minLength={6}
+                  className="h-11 border-slate-300 bg-card text-foreground dark:border-border"
                   value={confirm}
                   disabled={busy}
                   onChange={(e) => setConfirm(e.target.value)}

@@ -745,16 +745,16 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
     <section
       id="course-builder"
       aria-labelledby="course-builder-title"
-      className="overflow-hidden rounded-xl border bg-card shadow-xs"
+      className="overflow-hidden rounded-2xl border border-slate-300 bg-card shadow-sm dark:border-border"
     >
       {/* Compact Unified Workspace Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-card px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-card px-5 py-3.5 dark:border-border">
         <div className="flex min-w-0 flex-wrap items-center gap-2.5">
           <h2
             id="course-builder-title"
-            className="flex items-center gap-2 text-sm font-semibold text-foreground"
+            className="flex items-center gap-2 text-base font-bold text-foreground"
           >
-            <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+            <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground">
               <BookOpen className="size-4" aria-hidden="true" />
             </span>
             {t("Course builder", "Trình tạo khóa học")}
@@ -763,17 +763,17 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
             <>
               <Badge
                 variant={data.status === "PUBLISHED" ? "success" : "secondary"}
-                className="gap-1 text-[11px]"
+                className="gap-1 px-2.5 py-0.5 text-xs font-semibold"
               >
                 {data.status === "PUBLISHED" && <Lock className="size-3" aria-hidden="true" />}
                 {data.status === "PUBLISHED"
                   ? t("Published", "Đã xuất bản")
                   : data.status === "ARCHIVED"
                     ? t("Archived", "Đã lưu trữ")
-                    : t("Draft", "Bản nháp")}{" "}
-                · r{data.draftRevision} · v{data.publishedVersion}
+                    : t("Draft", "Bản nháp")}
+                {data.publishedVersion > 0 ? ` · v${data.publishedVersion}` : ""}
               </Badge>
-              <span className="hidden text-xs text-muted-foreground sm:inline">
+              <span className="hidden text-[13px] font-medium text-foreground/75 sm:inline">
                 {modules.length}{" "}
                 {modules.length === 1 ? t("module", "chương") : t("modules", "chương")} ·{" "}
                 {flatItems.length}{" "}
@@ -784,11 +784,12 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {data && (
+          {isDraft && (
             <Button
               type="button"
               size="sm"
-              variant={showCourseInfo ? "secondary" : "ghost"}
+              variant={showCourseInfo ? "secondary" : "outline"}
+              className="border-slate-300 font-semibold text-foreground dark:border-border"
               onClick={() => setShowCourseInfo((open) => !open)}
             >
               <Settings2 className="mr-1.5 size-3.5" aria-hidden="true" />
@@ -799,13 +800,14 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
             <Button
               type="button"
               size="sm"
+              className="font-semibold"
               disabled={course.startDraft.isPending}
               onClick={() => course.startDraft.mutate()}
             >
               <Pencil className="mr-1.5 size-3.5" aria-hidden="true" />
               {course.startDraft.isPending
-                ? t("Starting draft…", "Đang tạo nháp…")
-                : t("Start new draft", "Tạo bản nháp mới")}
+                ? t("Opening editor…", "Đang mở chế độ sửa…")
+                : t("Edit curriculum", "Chỉnh sửa đề cương")}
             </Button>
           )}
           {isDraft && (
@@ -814,6 +816,7 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
                 type="button"
                 size="sm"
                 variant="outline"
+                className="border-slate-300 font-semibold text-foreground dark:border-border"
                 disabled={busy}
                 onClick={openAddModule}
               >
@@ -823,6 +826,7 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
               <Button
                 type="button"
                 size="sm"
+                className="font-semibold"
                 disabled={!modules.length || course.publish.isPending}
                 onClick={() => {
                   if (
@@ -838,8 +842,8 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
               >
                 <Send className="mr-1.5 size-3.5" aria-hidden="true" />
                 {course.publish.isPending
-                  ? t("Publishing…", "Đang publish…")
-                  : t("Publish course version", "Publish phiên bản khóa học")}
+                  ? t("Publishing…", "Đang xuất bản…")
+                  : t("Publish changes", "Xuất bản cập nhật")}
               </Button>
             </>
           )}
@@ -955,7 +959,7 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
                   placeholder={t("Filter modules or labs…", "Tìm chương hoặc bài Lab…")}
                   value={outlineQuery}
                   onChange={(event) => setOutlineQuery(event.target.value)}
-                  className="h-8 w-full rounded-md border bg-background pr-7 pl-8 text-xs outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                  className="h-9 w-full rounded-lg border border-slate-300 bg-card pr-7 pl-8 text-[13px] text-foreground placeholder:text-foreground/50 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 dark:border-border"
                 />
                 {outlineQuery && (
                   <button
@@ -1077,11 +1081,13 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
                     return (
                       <li
                         key={module.id}
-                        className={`overflow-hidden rounded-lg border bg-card transition-colors ${
-                          isModuleEditing ? "border-primary/60 ring-1 ring-primary/20" : ""
+                        className={`overflow-hidden rounded-xl border bg-card shadow-2xs transition-colors ${
+                          isModuleEditing
+                            ? "border-primary ring-1 ring-primary/25"
+                            : "border-slate-300/90 dark:border-border"
                         }`}
                       >
-                        <div className="flex items-start gap-1.5 px-3 py-2.5">
+                        <div className="flex items-start gap-1.5 px-3.5 py-3">
                           <button
                             type="button"
                             onClick={() =>
@@ -1091,25 +1097,27 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
                               }))
                             }
                             aria-expanded={!isCollapsed}
-                            className="flex min-w-0 flex-1 items-start gap-2 text-left"
+                            title={
+                              prereqTitle
+                                ? `${t("Prerequisite", "Tiên quyết")}: ${prereqTitle}`
+                                : undefined
+                            }
+                            className="flex min-w-0 flex-1 items-start gap-2.5 text-left"
                           >
-                            <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-primary/10 text-[11px] font-semibold text-primary">
+                            <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-md bg-primary text-xs font-bold text-primary-foreground">
                               {module.position}
                             </span>
                             <span className="min-w-0 flex-1">
-                              <span className="block text-[13px] font-semibold leading-snug text-foreground">
+                              <span className="block text-sm font-bold leading-snug text-foreground">
                                 {module.title}
                               </span>
-                              <span className="mt-0.5 block text-[11px] text-muted-foreground">
+                              <span className="mt-0.5 block text-xs font-medium text-foreground/70">
                                 {visibleItems.length} {labUnit}
                                 {breakdown ? ` · ${breakdown}` : ""}
-                                {prereqTitle
-                                  ? ` · ${t("Prereq", "Tiên quyết")}: ${prereqTitle}`
-                                  : ""}
                               </span>
                             </span>
                             <ChevronDown
-                              className={`mt-1 size-3.5 shrink-0 text-muted-foreground transition-transform ${
+                              className={`mt-1 size-4 shrink-0 text-foreground/70 transition-transform ${
                                 isCollapsed ? "-rotate-90" : ""
                               }`}
                               aria-hidden="true"
@@ -1181,14 +1189,8 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
 
                         {!isCollapsed && (
                           <>
-                            {module.description && (
-                              <p className="border-t bg-muted/15 px-3 py-1.5 text-[11px] text-muted-foreground">
-                                {module.description}
-                              </p>
-                            )}
-
                             {visibleItems.length > 0 ? (
-                              <ol className="divide-y border-t">
+                              <ol className="divide-y divide-slate-200 border-t border-slate-200 dark:divide-border dark:border-border">
                                 {visibleItems.map((item) => {
                                   const resolvedType = resolveBuilderItemType(item);
                                   const meta = TYPE_META[resolvedType] ?? TYPE_META.THEORY;
@@ -1203,48 +1205,46 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
                                   return (
                                     <li key={item.id}>
                                       <div
-                                        className={`group flex items-start gap-1.5 px-3 py-2 transition-colors ${
+                                        className={`group flex items-start gap-2 px-3.5 py-2.5 transition-colors ${
                                           isInspected
-                                            ? "border-l-[3px] border-l-primary bg-primary/[0.07] pl-[9px]"
-                                            : "hover:bg-muted/35"
+                                            ? "border-l-[3px] border-l-primary bg-[#EEF4FF] pl-[11px] dark:bg-primary/12"
+                                            : "hover:bg-slate-50 dark:hover:bg-muted/35"
                                         }`}
                                       >
                                         <button
                                           type="button"
                                           aria-current={isInspected ? "true" : undefined}
                                           onClick={() => selectItem(module.id, item.id)}
-                                          className="flex min-w-0 flex-1 items-start gap-2 text-left"
+                                          className="flex min-w-0 flex-1 items-start gap-2.5 text-left"
                                         >
                                           <Icon
-                                            className={`mt-0.5 size-3.5 shrink-0 ${
-                                              isInspected ? "text-primary" : "text-muted-foreground"
+                                            className={`mt-0.5 size-4 shrink-0 ${
+                                              isInspected ? "text-primary" : "text-foreground/65"
                                             }`}
                                             aria-hidden="true"
                                           />
                                           <span className="min-w-0 flex-1">
                                             <span
-                                              className={`block line-clamp-2 text-[13px] leading-snug ${
-                                                isInspected
-                                                  ? "font-semibold text-primary"
-                                                  : "font-medium text-foreground"
+                                              className={`block line-clamp-2 text-[13.5px] font-semibold leading-snug ${
+                                                isInspected ? "text-primary" : "text-foreground"
                                               }`}
                                             >
                                               {item.title}
                                             </span>
-                                            <span className="mt-1 flex flex-wrap items-center gap-1.5">
+                                            <span className="mt-1.5 flex flex-wrap items-center gap-2">
                                               <span
-                                                className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium leading-none ${meta.tone}`}
+                                                className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[11px] font-semibold leading-none ${meta.tone}`}
                                               >
                                                 {t(meta.shortEn, meta.shortVi)}
                                               </span>
                                               {mins && (
-                                                <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground">
-                                                  <Clock className="size-2.5" aria-hidden="true" />
+                                                <span className="inline-flex items-center gap-1 text-xs font-medium text-foreground/65">
+                                                  <Clock className="size-3" aria-hidden="true" />
                                                   {mins} {t("min", "phút")}
                                                 </span>
                                               )}
                                               {!item.required && (
-                                                <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                                                <span className="rounded border border-border bg-muted px-1.5 py-0.5 text-[11px] font-medium text-foreground/75">
                                                   {t("Optional", "Không bắt buộc")}
                                                 </span>
                                               )}
@@ -1666,9 +1666,9 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
             ) : inspectedItem ? (
               <div className="flex min-h-0 flex-1 flex-col">
                 {/* Pinned Inspector Header with Immediate Actions & Prev/Next Stepper */}
-                <div className="border-b bg-card/60 px-5 py-3.5">
+                <div className="border-b border-slate-200 bg-card px-6 py-4 dark:border-border">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="min-w-0 truncate text-xs font-medium text-muted-foreground">
+                    <p className="min-w-0 truncate text-xs font-semibold text-primary">
                       {/^(?:Module|Chương)\s*\d+/i.test(inspectedItem.module.title.trim())
                         ? inspectedItem.module.title
                         : `${t(
@@ -1677,8 +1677,8 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
                           )} · ${inspectedItem.module.title}`}
                     </p>
                     {flatItems.length > 1 && (
-                      <div className="flex shrink-0 items-center gap-1">
-                        <span className="px-1 font-mono text-[11px] text-muted-foreground">
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <span className="px-1 font-mono text-xs font-semibold text-foreground/75">
                           {activeFlatIndex + 1}/{flatItems.length}
                         </span>
                         <button
@@ -1689,7 +1689,7 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
                             if (prev) selectItem(prev.module.id, prev.item.id);
                           }}
                           title={t("Previous item", "Bài trước")}
-                          className="rounded border bg-background p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-35"
+                          className="rounded-md border border-slate-300 bg-card p-1.5 text-foreground hover:border-primary hover:text-primary disabled:opacity-35 dark:border-border"
                         >
                           <ChevronLeft className="size-3.5" aria-hidden="true" />
                           <span className="sr-only">{t("Previous item", "Bài trước")}</span>
@@ -1702,7 +1702,7 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
                             if (next) selectItem(next.module.id, next.item.id);
                           }}
                           title={t("Next item", "Bài tiếp theo")}
-                          className="rounded border bg-background p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-35"
+                          className="rounded-md border border-slate-300 bg-card p-1.5 text-foreground hover:border-primary hover:text-primary disabled:opacity-35 dark:border-border"
                         >
                           <ChevronRight className="size-3.5" aria-hidden="true" />
                           <span className="sr-only">{t("Next item", "Bài tiếp theo")}</span>
@@ -1713,25 +1713,25 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
 
                   <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
-                      <h3 className="text-base font-semibold leading-snug text-foreground">
+                      <h3 className="text-lg font-bold leading-snug text-foreground sm:text-xl">
                         {inspectedItem.item.title}
                       </h3>
-                      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
                         {inspectedMeta && (
                           <span
-                            className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium ${inspectedMeta.tone}`}
+                            className={`inline-flex items-center gap-1 rounded-md border px-2.5 py-0.5 text-xs font-semibold ${inspectedMeta.tone}`}
                           >
                             {t(inspectedMeta.en, inspectedMeta.vi)}
                           </span>
                         )}
                         {inspectedDuration && (
-                          <span className="inline-flex items-center gap-1 rounded-md border bg-muted/40 px-2 py-0.5 text-[11px] text-muted-foreground">
+                          <span className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-card px-2.5 py-0.5 text-xs font-medium text-foreground/75 dark:border-border">
                             <Clock className="size-3" aria-hidden="true" />
                             {inspectedDuration} {t("min", "phút")}
                           </span>
                         )}
                         {!inspectedItem.item.required && (
-                          <Badge variant="secondary" className="text-[11px]">
+                          <Badge variant="secondary" className="text-xs font-semibold">
                             {t("Optional", "Không bắt buộc")}
                           </Badge>
                         )}
@@ -1740,7 +1740,12 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
 
                     <div className="flex shrink-0 flex-wrap items-center gap-1.5">
                       {inspectedItem.item.assignmentId && (
-                        <Button asChild size="sm" variant="outline">
+                        <Button
+                          asChild
+                          size="sm"
+                          variant="outline"
+                          className="border-primary/40 font-semibold text-primary hover:bg-primary/10 hover:text-primary"
+                        >
                           <Link
                             href={`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(inspectedItem.item.assignmentId)}`}
                           >
@@ -1766,22 +1771,22 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
                 {/* Independently Scrollable Preview Body */}
                 <div
                   ref={inspectorBodyRef}
-                  className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4"
+                  className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5"
                 >
                   {(inspectedLinkedAssignment || inspectedItem.item.description) && (
-                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/20 px-3.5 py-2 text-xs">
+                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-primary/20 bg-[#F4F8FF] px-4 py-2.5 text-[13px] dark:bg-primary/5">
                       {inspectedLinkedAssignment && (
                         <div className="min-w-0">
-                          <span className="font-semibold uppercase tracking-wide text-muted-foreground">
+                          <span className="font-semibold uppercase tracking-wide text-primary">
                             {t("Linked Lab", "Lab liên kết")}:
                           </span>{" "}
-                          <span className="font-medium text-foreground">
+                          <span className="font-semibold text-foreground">
                             {inspectedLinkedAssignment.title}
                           </span>
                         </div>
                       )}
                       {inspectedItem.item.description && (
-                        <span className="text-muted-foreground">
+                        <span className="leading-5 text-foreground/85">
                           {inspectedItem.item.description}
                         </span>
                       )}
@@ -1789,7 +1794,7 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
                   )}
 
                   {inspectedItem.item.type === "THEORY" && (
-                    <div className="overflow-x-auto rounded-lg border bg-background p-4 [&_pre]:whitespace-pre-wrap [&_pre]:break-words">
+                    <div className="overflow-x-auto rounded-lg border bg-background p-4 border-slate-300/90 shadow-2xs dark:border-border [&_pre]:whitespace-pre-wrap [&_pre]:break-words">
                       {inspectedBodyMarkdown ? (
                         <MarkdownPreview markdown={inspectedBodyMarkdown} />
                       ) : (
@@ -1859,17 +1864,27 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
 
       {/* Compact Immutable Version History Footer */}
       {data && (
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t bg-muted/10 px-4 py-2 text-xs text-muted-foreground">
-          <div className="truncate">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-card px-5 py-2.5 text-xs dark:border-border">
+          <div
+            className="truncate font-medium text-foreground/75"
+            title={
+              course.versions.data?.length
+                ? course.versions.data
+                    .map((version) => `v${version.version} (${version.snapshotDigest})`)
+                    .join(" · ")
+                : undefined
+            }
+          >
             {course.versions.data?.length
-              ? `${t("Published immutable versions:", "Phiên bản đã publish bất biến:")} ${course.versions.data
-                  .map((version) => `v${version.version} (${version.snapshotDigest.slice(0, 14)}…)`)
-                  .join(" · ")}`
+              ? t(
+                  `Current version: v${data.publishedVersion} · ${course.versions.data.length} published versions`,
+                  `Phiên bản hiện tại: v${data.publishedVersion} · ${course.versions.data.length} lần xuất bản`,
+                )
               : t("No published version yet.", "Chưa có phiên bản được publish.")}
           </div>
           {data.status === "PUBLISHED" && (
-            <span className="shrink-0 text-[11px] text-emerald-700 dark:text-emerald-300">
-              {t("Published snapshot is read-only", "Bản đã publish là chỉ đọc")}
+            <span className="shrink-0 font-semibold text-emerald-700 dark:text-emerald-300">
+              {t("Published · Read-only", "Đã xuất bản · Chỉ đọc")}
             </span>
           )}
         </div>

@@ -14,6 +14,7 @@ import {
   Lock,
   Play,
   Plus,
+  Target,
   type LucideIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -41,6 +42,11 @@ import { resolveLabTier } from "@/features/assignments/requirements";
 
 export function isMissingCourseError(error: unknown) {
   return error instanceof ApiError && error.status === 404;
+}
+
+export function stripModulePrefix(title: string): string {
+  const cleaned = title.replace(/^(?:module|chương|chapter|phần)\s*\d+\s*[:.\-–—]\s*/i, "").trim();
+  return cleaned || title.trim();
 }
 
 type ItemType = "THEORY" | "QUIZ" | "ESSAY" | "STATIC_LAB" | "IMPACT_LAB" | "RUNTIME_LAB";
@@ -209,6 +215,12 @@ function CourseOutlineBody({
       (draftModules.length > 0 ? draft?.title : undefined) ??
       (isJavaCourseraWorkspace ? JAVA_COURSERA_COURSE_TITLE : workspace?.name),
   );
+  const courseDescription = formatCoursePlainText(
+    published?.snapshot.description ??
+      (draftModules.length > 0 ? draft?.description : undefined) ??
+      workspace?.description ??
+      "",
+  );
   const courseStatus = published
     ? `v${published.version}`
     : isCatalogFallback
@@ -299,48 +311,170 @@ function CourseOutlineBody({
     );
   }
 
+  const resolveItemType = (item: OutlineItem) => {
+    const linked = item.assignmentId ? assignmentById.get(item.assignmentId) : undefined;
+    if (linked && ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(item.type)) {
+      const tier = resolveLabTier(linked);
+      return tier === "THEORY_QUIZ_STUDIO"
+        ? "RUNTIME_LAB"
+        : tier === "THEORY_ONLY"
+          ? "STATIC_LAB"
+          : "IMPACT_LAB";
+    }
+    return item.type;
+  };
+  const totalLabs = modules.reduce((total, module) => total + module.items.length, 0);
+  const totalTheoryOnly = modules.reduce(
+    (total, module) =>
+      total +
+      module.items.filter((i) => {
+        const rt = resolveItemType(i);
+        return rt === "THEORY" || rt === "STATIC_LAB";
+      }).length,
+    0,
+  );
+  const totalQuizLabs = modules.reduce(
+    (total, module) =>
+      total +
+      module.items.filter((i) => {
+        const rt = resolveItemType(i);
+        return rt === "QUIZ" || rt === "IMPACT_LAB";
+      }).length,
+    0,
+  );
+  const totalStudioLabs = modules.reduce(
+    (total, module) =>
+      total + module.items.filter((i) => resolveItemType(i) === "RUNTIME_LAB").length,
+    0,
+  );
+  const firstStageTitle = stripModulePrefix(modules[0]?.title ?? "");
+  const lastStageTitle = stripModulePrefix(modules[modules.length - 1]?.title ?? "");
+  const syllabusSummary =
+    courseDescription ||
+    (modules.length === 1
+      ? t(
+          `Focused curriculum covering ${firstStageTitle} with structured lessons and hands-on Labs.`,
+          `Lộ trình tập trung vào ${firstStageTitle} kết hợp bài học có cấu trúc và thực hành Lab.`,
+        )
+      : t(
+          `Structured ${modules.length}-stage progression from ${firstStageTitle} to ${lastStageTitle}, combining theory, quizzes, and hands-on architecture Labs.`,
+          `Lộ trình ${modules.length} chặng từ ${firstStageTitle} đến ${lastStageTitle}, kết hợp lý thuyết, kiểm tra kiến thức và thực hành kiến trúc.`,
+        ));
+
   return (
     <section aria-labelledby="course-outline-title" className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-card px-5 py-4 shadow-xs">
-        <div className="min-w-0 space-y-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline" className="border-teal-300 bg-teal-50 text-teal-800 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-300">
-              {t("Course Syllabus", "Đề cương học phần")}
-            </Badge>
-            {courseStatus && <Badge variant="secondary">{courseStatus}</Badge>}
+      <div className="overflow-hidden rounded-2xl border border-border/90 bg-card shadow-xs">
+        <div className="space-y-3.5 px-5 py-5 sm:px-6">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0 flex-1 space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge
+                  variant="outline"
+                  className="border-primary/25 bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary"
+                >
+                  {t("Course Syllabus", "Đề cương học phần")}
+                </Badge>
+                {courseStatus && (
+                  <Badge variant="secondary" className="text-xs font-semibold text-foreground">
+                    {courseStatus}
+                  </Badge>
+                )}
+              </div>
+              <h2
+                id="course-outline-title"
+                className="text-xl font-bold tracking-tight text-foreground sm:text-2xl"
+              >
+                {courseTitle || t("Class content", "Nội dung lớp")}
+              </h2>
+              <p className="max-w-4xl text-sm leading-6 text-foreground/80">
+                {syllabusSummary}
+              </p>
+            </div>
+            {canManage && (
+              <Button asChild size="sm" variant="default" className="shrink-0 font-semibold">
+                <Link
+                  href={`/workspace-overview?workspace=${encodeURIComponent(workspaceId)}&view=course-authoring`}
+                >
+                  {t("Setup Labs in Curriculum", "Cấu hình Lab trong Curriculum")}
+                </Link>
+              </Button>
+            )}
           </div>
-          <h2 id="course-outline-title" className="text-base font-semibold tracking-tight sm:text-lg">
-            {courseTitle || t("Class content", "Nội dung lớp")}
-          </h2>
-          <p className="text-xs text-muted-foreground">
-            {modules.length} {t("chapters", "chương")} ·{" "}
-            {modules.reduce((total, module) => total + module.items.length, 0)}{" "}
-            {t("Labs in curriculum", "bài Lab trong lộ trình")}
-          </p>
+
+          <div className="flex flex-wrap items-center gap-2 pt-0.5 text-[13px] text-foreground/75">
+            <span className="inline-flex items-center rounded-full border border-border bg-background px-3 py-1 font-semibold text-foreground">
+              {modules.length} {t("chapters", "chương")}
+            </span>
+            <span className="inline-flex items-center rounded-full border border-border bg-background px-3 py-1 font-semibold text-foreground">
+              {totalLabs} {t("Labs in curriculum", "bài Lab trong lộ trình")}
+            </span>
+            {totalTheoryOnly > 0 && (
+              <span className="inline-flex items-center rounded-full border border-border/80 bg-card px-3 py-1 font-medium">
+                {totalTheoryOnly} {t("Theory Only", "Lab chỉ Lý thuyết")}
+              </span>
+            )}
+            {totalQuizLabs > 0 && (
+              <span className="inline-flex items-center rounded-full border border-border/80 bg-card px-3 py-1 font-medium">
+                {totalQuizLabs} {t("Theory + Quiz", "Lab Lý thuyết + Quiz")}
+              </span>
+            )}
+            {totalStudioLabs > 0 && (
+              <span className="inline-flex items-center rounded-full border border-primary/25 bg-primary/10 px-3 py-1 font-semibold text-primary">
+                {totalStudioLabs} {t("Full Studio", "Lab có cả Studio")}
+              </span>
+            )}
+          </div>
         </div>
-        {canManage && (
-          <Button asChild size="sm" variant="outline">
-            <Link href={`/workspace-overview?workspace=${encodeURIComponent(workspaceId)}&view=course-authoring`}>
-              {t("Setup Labs in Curriculum", "Cấu hình Lab trong Curriculum")}
-            </Link>
-          </Button>
-        )}
+
+        <div className="space-y-3 border-t border-border/80 bg-[#F4F8FF] px-5 py-4 dark:bg-primary/5 sm:px-6">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="inline-flex items-center gap-2 text-sm font-bold text-foreground">
+              <Target className="size-4 text-primary" aria-hidden="true" />
+              {t("Learning Outcomes & Progression", "Mục tiêu & Lộ trình kết quả đạt được")}
+            </h3>
+            <span className="text-[13px] font-medium text-foreground/70">
+              {t("What you'll master step by step", "Kiến thức & kỹ năng đạt được theo từng chặng")}
+            </span>
+          </div>
+          <ol className="grid gap-3 sm:grid-cols-2">
+            {modules.map((module, index) => {
+              const stageTitle = stripModulePrefix(module.title);
+              const previewItems = module.items
+                .slice(0, 2)
+                .map((item) => item.title)
+                .filter(Boolean);
+              const extraCount = Math.max(0, module.items.length - previewItems.length);
+              const outcomeDetail =
+                module.description ||
+                (previewItems.length > 0
+                  ? previewItems.join(" · ") +
+                    (extraCount > 0 ? ` (+${extraCount} ${t("more", "nữa")})` : "")
+                  : "");
+              return (
+                <li
+                  key={module.id}
+                  className="flex items-start gap-3 rounded-xl border border-border/80 bg-card px-3.5 py-3 shadow-2xs"
+                >
+                  <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold tabular-nums text-primary-foreground">
+                    {index + 1}
+                  </span>
+                  <div className="min-w-0 space-y-0.5">
+                    <p className="text-sm font-semibold leading-snug text-foreground">{stageTitle}</p>
+                    {outcomeDetail && (
+                      <p className="line-clamp-2 text-[13px] leading-5 text-foreground/75">
+                        {outcomeDetail}
+                      </p>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        </div>
       </div>
 
       <ol className="space-y-3">
         {modules.map((module) => {
-          const resolveItemType = (item: OutlineItem) => {
-            const linked = item.assignmentId ? assignmentById.get(item.assignmentId) : undefined;
-            if (linked && ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(item.type)) {
-              const tier = resolveLabTier(linked);
-              return tier === "THEORY_QUIZ_STUDIO"
-                ? "RUNTIME_LAB"
-                : tier === "THEORY_ONLY"
-                  ? "STATIC_LAB"
-                  : "IMPACT_LAB";
-            }
-            return item.type;
-          };
           const theoryOnlyCount = module.items.filter((i) => {
             const rt = resolveItemType(i);
             return rt === "THEORY" || rt === "STATIC_LAB";
@@ -370,15 +504,17 @@ function CourseOutlineBody({
           <li key={module.id}>
             <details
               open={canManage ? module.position === 1 : true}
-              className="group overflow-hidden rounded-2xl border bg-card shadow-xs transition-colors hover:border-teal-300/80"
+              className="group overflow-hidden rounded-2xl border border-border/90 bg-card shadow-xs transition-colors hover:border-primary/40"
             >
-              <summary className="flex cursor-pointer list-none flex-wrap items-center gap-3 px-4 py-3.5 sm:px-5">
-                <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-teal-600/10 text-sm font-bold text-teal-700 dark:text-teal-300">
+              <summary className="flex cursor-pointer list-none flex-wrap items-center gap-3.5 px-5 py-4">
+                <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary text-sm font-bold text-primary-foreground">
                   {module.position}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block font-semibold text-foreground">{module.title}</span>
-                  <span className="block text-xs text-muted-foreground">
+                  <span className="block text-base font-bold leading-snug text-foreground sm:text-[17px]">
+                    {module.title}
+                  </span>
+                  <span className="mt-0.5 block text-[13px] text-foreground/70">
                     {module.items.length}{" "}
                     {module.items.length === 1 ? t("Lab", "bài Lab") : t("Labs", "bài Lab")}
                     {breakdown ? ` · ${breakdown}` : ""}
@@ -390,16 +526,18 @@ function CourseOutlineBody({
                       : ""}
                   </span>
                 </span>
-                <Badge variant="outline" className="group-open:hidden">
+                <Badge variant="outline" className="font-semibold text-foreground group-open:hidden">
                   {module.items.length}
                 </Badge>
                 <ChevronDown
-                  className="size-4 text-muted-foreground transition-transform group-open:rotate-180"
+                  className="size-4 text-foreground/70 transition-transform group-open:rotate-180"
                   aria-hidden="true"
                 />
               </summary>
               {module.description && (
-                <p className="border-t bg-muted/20 px-5 py-2.5 text-sm text-muted-foreground">{module.description}</p>
+                <p className="border-t border-border/80 bg-[#F8FAFC] px-5 py-3 text-sm leading-6 text-foreground/85 dark:bg-muted/20">
+                  {module.description}
+                </p>
               )}
               <ul className="divide-y border-t">
                 {module.items.map((item, idx) => {
@@ -446,20 +584,20 @@ function CourseOutlineBody({
                           `Làm Trắc Nghiệm (${quizQuestions.length} câu)`,
                         );
                   return (
-                    <li key={item.id} className="flex flex-wrap items-start gap-3 px-4 py-3.5 sm:px-5">
-                      <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-md bg-muted/60 text-muted-foreground">
+                    <li key={item.id} className="flex flex-wrap items-start gap-3.5 px-5 py-4">
+                      <span className="mt-0.5 grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
                         <Icon className="size-4" aria-hidden="true" />
                       </span>
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="rounded bg-teal-500/10 px-1.5 py-0.5 font-mono text-[11px] font-bold text-teal-700 dark:text-teal-300">
+                          <span className="rounded bg-primary/10 px-2 py-0.5 font-mono text-xs font-bold text-primary">
                             Lab {idx + 1}
                           </span>
-                          <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          <span className="text-xs font-semibold uppercase tracking-wide text-foreground/65">
                             {t(meta.en, meta.vi)}
                           </span>
                           {item.estimatedMinutes && (
-                            <span className="text-[11px] text-muted-foreground">
+                            <span className="text-xs text-foreground/65">
                               · ~{item.estimatedMinutes} {t("min", "phút")}
                             </span>
                           )}
@@ -473,15 +611,17 @@ function CourseOutlineBody({
                             </Badge>
                           )}
                         </div>
-                        <p className="text-sm font-medium text-foreground">{item.title}</p>
+                        <p className="mt-1 text-[15px] font-semibold leading-snug text-foreground">
+                          {item.title}
+                        </p>
                         {(item.description || (assignment?.title && assignment.title !== item.title)) && (
-                          <p className="mt-0.5 text-xs text-muted-foreground">
+                          <p className="mt-1 text-[13px] leading-5 text-foreground/75">
                             {formatCoursePlainText(item.description || assignment?.title)}
                           </p>
                         )}
                         {item.type === "THEORY" && typeof item.content?.["body"] === "string" && (
-                          <details className="mt-2 text-sm">
-                            <summary className="inline-flex cursor-pointer items-center gap-1.5 rounded-md bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-800 hover:bg-teal-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:bg-teal-950/50 dark:text-teal-300">
+                          <details className="mt-2.5 text-sm">
+                            <summary className="inline-flex cursor-pointer items-center gap-1.5 rounded-md bg-primary/10 px-3 py-1.5 text-[13px] font-semibold text-primary hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                               📖 {t("Read lesson", "Đọc bài học")}
                             </summary>
                             <div className="mt-3 max-w-4xl space-y-4 rounded-xl border bg-background p-4 shadow-xs sm:p-5">
@@ -569,7 +709,16 @@ function CourseOutlineBody({
                           </Badge>
                         )}
                         {href && (
-                          <Button asChild size="sm" variant={isLab ? "outline" : "ghost"}>
+                          <Button
+                            asChild
+                            size="sm"
+                            variant={!canManage && isLab ? "default" : "outline"}
+                            className={
+                              !canManage && isLab
+                                ? "font-semibold"
+                                : "border-primary/40 font-semibold text-primary hover:bg-primary/10 hover:text-primary"
+                            }
+                          >
                             <Link href={href}>
                               {canManage
                                 ? t("Manage", "Quản lý")

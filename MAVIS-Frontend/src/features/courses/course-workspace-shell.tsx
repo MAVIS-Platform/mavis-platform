@@ -2,32 +2,22 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import {
   ArrowLeft,
-  Check,
   ClipboardCheck,
-  Copy,
   FilePlus2,
   GraduationCap,
-  KeyRound,
   LayoutGrid,
   Map,
-  RefreshCw,
   Settings,
   Users,
-  X,
   Zap,
   type LucideIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/shared/user-avatar";
-import {
-  useCoursePasskeys,
-  useCreateCoursePasskey,
-  useDeleteCoursePasskey,
-} from "@/features/workspaces/course-access";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { cn } from "@/lib/utils";
 import type { Response } from "@/lib/api/contracts";
@@ -155,140 +145,6 @@ function resolveStudentTab(pathname: string | null, active: CourseWorkspaceTab):
     return "lab";
   }
   return "syllabus";
-}
-
-export function ClassPasskeyDialog({
-  workspaceId,
-  onClose,
-}: {
-  workspaceId: string;
-  onClose: () => void;
-}) {
-  const { t } = useLocale();
-  const passkeysQuery = useCoursePasskeys(workspaceId);
-  const createKey = useCreateCoursePasskey(workspaceId);
-  const deleteKey = useDeleteCoursePasskey(workspaceId);
-  const [copied, setCopied] = useState(false);
-  const autoCreatedForWorkspaceRef = useRef<string | null>(null);
-
-  const activePasskeys = (passkeysQuery.data ?? []).filter((pk) => pk.active && pk.code);
-  const currentKey = activePasskeys[0] ?? null;
-  const busy = createKey.isPending || deleteKey.isPending;
-
-  useEffect(() => {
-    if (
-      passkeysQuery.isSuccess &&
-      activePasskeys.length === 0 &&
-      !createKey.isPending &&
-      autoCreatedForWorkspaceRef.current !== workspaceId
-    ) {
-      autoCreatedForWorkspaceRef.current = workspaceId;
-      createKey.mutate({ validHours: 720 });
-    }
-  }, [passkeysQuery.isSuccess, activePasskeys.length, createKey, workspaceId]);
-
-  const handleRegenerate = async () => {
-    const oldKeys = [...activePasskeys];
-    await createKey.mutateAsync({ validHours: 720 });
-    for (const old of oldKeys) {
-      await deleteKey.mutateAsync(old.id).catch(() => undefined);
-    }
-    setCopied(false);
-  };
-
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={t("Class Passkey", "Mã ghi danh lớp học")}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4 backdrop-blur-xs"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-md space-y-4 rounded-2xl border bg-card p-5 text-card-foreground shadow-xl"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-teal-600 dark:text-teal-400">
-              <KeyRound className="size-3.5" aria-hidden="true" />
-              {t("Class Passkey", "Mã Ghi Danh Lớp Học")}
-            </p>
-            <h2 className="mt-1 text-base font-bold">
-              {t("Auto-generated Enrollment Key", "Mã Passkey Tự Động Cho Sinh Viên")}
-            </h2>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {t(
-                "Share this key with students so they can join the class immediately.",
-                "Gửi mã này cho sinh viên để nhập và vào lớp ngay lập tức.",
-              )}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-            aria-label={t("Close", "Đóng")}
-          >
-            <X className="size-4" aria-hidden="true" />
-          </button>
-        </div>
-
-        <div className="flex items-center justify-between gap-2 rounded-xl border border-emerald-300/80 bg-emerald-50/60 px-4 py-3 dark:border-emerald-800 dark:bg-emerald-950/30">
-          <span className="select-all font-mono text-xl font-bold tracking-wider text-emerald-950 dark:text-emerald-100">
-            {currentKey?.code ??
-              (busy ? t("Generating…", "Đang tạo mã…") : t("No active key", "Chưa có mã"))}
-          </span>
-          {currentKey?.code && (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                void navigator.clipboard?.writeText(currentKey.code ?? "").then(() => {
-                  setCopied(true);
-                  window.setTimeout(() => setCopied(false), 2000);
-                });
-              }}
-            >
-              {copied ? (
-                <>
-                  <Check className="mr-1.5 size-3.5 text-emerald-600" aria-hidden="true" />
-                  {t("Copied", "Đã chép")}
-                </>
-              ) : (
-                <>
-                  <Copy className="mr-1.5 size-3.5" aria-hidden="true" />
-                  {t("Copy", "Sao chép")}
-                </>
-              )}
-            </Button>
-          )}
-        </div>
-
-        <div className="flex items-center justify-between gap-2 pt-1">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={busy}
-            onClick={() => void handleRegenerate()}
-          >
-            <RefreshCw
-              className={cn("mr-1.5 size-3.5", busy && "animate-spin")}
-              aria-hidden="true"
-            />
-            {busy
-              ? t("Regenerating…", "Đang tạo lại…")
-              : t("Regenerate Key", "Regenerate (Tạo mã mới)")}
-          </Button>
-          <Button type="button" size="sm" onClick={onClose}>
-            {t("Done", "Xong")}
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
 }
 
 export function CourseWorkspaceShell({

@@ -123,21 +123,21 @@ export default function LoginPage() {
       </header>
       <main className="mx-auto grid w-full max-w-6xl flex-1 items-center gap-6 px-4 py-3 sm:px-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:gap-12">
         <section className="hidden self-center lg:block">
-          <h1 className="max-w-lg text-4xl font-semibold leading-[1.18] tracking-tight">
+          <h1 className="max-w-lg text-4xl font-bold leading-[1.15] tracking-tight text-foreground">
             {t("Understand your services.", "Hiểu rõ các service của bạn.")}
             <br />
             <span className="text-primary">
               {t("See the connections.", "Xem các mối liên kết.")}
             </span>
           </h1>
-          <p className="mt-5 max-w-md text-base leading-7 text-muted-foreground">
+          <p className="mt-4 max-w-md text-base leading-7 text-foreground/80">
             {t(
               "Explore your architecture, trace dependencies, and make changes with the source evidence in view.",
               "Khám phá kiến trúc, lần theo các phụ thuộc và kiểm chứng tác động thay đổi với bằng chứng mã nguồn rõ ràng.",
             )}
           </p>
           <ArchitecturePreview />
-          <div className="mt-7 grid grid-cols-3 gap-4 border-t pt-6">
+          <div className="mt-7 grid grid-cols-3 gap-4 border-t border-border pt-6">
             {[
               {
                 icon: Layers3,
@@ -156,22 +156,24 @@ export default function LoginPage() {
               },
             ].map((item) => (
               <div key={item.title}>
-                <item.icon className="mb-2 size-4 text-primary" />
-                <p className="text-sm font-medium">{item.title}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{item.text}</p>
+                <span className="mb-2 inline-flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <item.icon className="size-4" />
+                </span>
+                <p className="text-sm font-semibold text-foreground">{item.title}</p>
+                <p className="mt-0.5 text-[13px] text-foreground/75">{item.text}</p>
               </div>
             ))}
           </div>
         </section>
         <section
-          className="mx-auto w-full min-w-0 max-w-md rounded-2xl border border-border/80 bg-card p-6 sm:p-8"
+          className="mx-auto w-full min-w-0 max-w-md rounded-2xl border border-border bg-card p-6 shadow-md sm:p-8"
           aria-labelledby="login-title"
         >
           <div className="mb-6">
-            <h2 id="login-title" className="text-balance text-2xl font-semibold tracking-tight">
+            <h2 id="login-title" className="text-balance text-2xl font-bold tracking-tight text-foreground">
               {t("Sign in", "Đăng nhập")}
             </h2>
-            <p className="mt-1.5 text-sm text-muted-foreground">
+            <p className="mt-1.5 text-sm text-foreground/75">
               {t("Continue to MAVIS.", "Tiếp tục vào MAVIS.")}
             </p>
           </div>
@@ -257,11 +259,11 @@ export default function LoginPage() {
               aria-busy={real.isPending}
             >
               <div className="space-y-2">
-                <label htmlFor="login-email" className="text-sm font-medium">
+                <label htmlFor="login-email" className="text-sm font-semibold text-foreground">
                   Email 
                 </label>
                 <div className="relative">
-                  <Mail className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Mail className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-foreground/60" />
                   <Input
                     id="login-email"
                     name="email"
@@ -269,7 +271,7 @@ export default function LoginPage() {
                     autoComplete="username"
                     required
                     placeholder="you@example.com"
-                    className="h-11 pl-10"
+                    className="h-11 border-border bg-background/60 pl-10 text-foreground"
                     value={email}
                     disabled={real.isPending}
                     onChange={(e) => setEmail(e.target.value)}
@@ -277,7 +279,7 @@ export default function LoginPage() {
                 </div>
               </div>
               <div className="space-y-2">
-                <label htmlFor="login-password" className="text-sm font-medium">
+                <label htmlFor="login-password" className="text-sm font-semibold text-foreground">
                   {t("Password", "Mật khẩu")}
                 </label>
                 <div className="relative">
@@ -288,14 +290,14 @@ export default function LoginPage() {
                     autoComplete="current-password"
                     required
                     placeholder={t("Enter your password", "Nhập mật khẩu của bạn")}
-                    className="h-11 pr-12"
+                    className="h-11 border-border bg-background/60 pr-12 text-foreground"
                     value={password}
                     disabled={real.isPending}
                     onChange={(e) => setPassword(e.target.value)}
                   />
                   <button
                     type="button"
-                    className="absolute right-1 top-1/2 flex size-10 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="absolute right-1 top-1/2 flex size-10 -translate-y-1/2 items-center justify-center rounded-md text-foreground/65 hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     aria-label={
                       showPassword
                         ? t("Hide password", "Ẩn mật khẩu")
@@ -312,7 +314,7 @@ export default function LoginPage() {
               <div className="flex justify-end">
                 <Link
                   href="/auth/forgot-password"
-                  className="text-xs font-medium text-primary hover:underline"
+                  className="text-[13px] font-semibold text-primary hover:underline"
                 >
                   {t("Forgot password?", "Quên mật khẩu?")}
                 </Link>
@@ -340,15 +342,15 @@ export default function LoginPage() {
           {api.mode === "backend" && (
             <>
               <SocialSignIn onSignedIn={finish} nextPath={params.get("next")} />
-              <div className="mt-6 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+              <div className="mt-6 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[13px] text-foreground/75">
                 <span>
                   {t("No account?", "Chưa có tài khoản?")}{" "}
-                  <Link href="/auth/register" className="font-medium text-primary hover:underline">
+                  <Link href="/auth/register" className="font-semibold text-primary hover:underline">
                     {t("Sign up", "Đăng ký")}
                   </Link>
                 </span>
                 <span aria-hidden="true">·</span>
-                <Link href="/auth/verify" className="font-medium text-primary hover:underline">
+                <Link href="/auth/verify" className="font-semibold text-primary hover:underline">
                   {t("Verify email", "Xác minh email")}
                 </Link>
               </div>
@@ -356,7 +358,7 @@ export default function LoginPage() {
           )}
         </section>
       </main>
-      <footer className="shrink-0 px-4 py-3 text-center text-xs text-muted-foreground">
+      <footer className="shrink-0 px-4 py-3 text-center text-xs font-medium text-foreground/65">
         {t(
           "MAVIS · Microservices Architecture Visualization",
           "MAVIS · Trực quan hóa Kiến trúc Microservices",
@@ -388,13 +390,13 @@ function ArchitecturePreview() {
     { path: "M314 105 L412 105", declared: false },
   ];
   return (
-    <figure className="mt-6 rounded-xl border border-border/60 bg-card/40 p-4">
-      <figcaption className="mb-2 text-xs font-medium text-muted-foreground">
+    <figure className="mt-6 rounded-xl border border-border bg-card p-4 shadow-sm">
+      <figcaption className="mb-2 text-xs font-semibold text-foreground/80">
         Illustrative dependency graph
       </figcaption>
       <svg
         viewBox="0 0 500 245"
-        className="w-full opacity-80"
+        className="w-full"
         fill="none"
         role="img"
         aria-label="Sample dependency graph: API gateway, orders, inventory and payments services connected to their databases"
@@ -417,8 +419,8 @@ function ArchitecturePreview() {
             key={edge.path}
             d={edge.path}
             stroke={networkColor(services)}
-            strokeWidth="1.4"
-            strokeOpacity="0.7"
+            strokeWidth="1.6"
+            strokeOpacity="0.9"
             strokeDasharray={edge.declared ? "5 4" : undefined}
             markerEnd={`url(#${markerId})`}
           />
@@ -431,13 +433,14 @@ function ArchitecturePreview() {
               r={n.radius}
               fill={networkColor(n.type)}
               className="stroke-foreground"
-              strokeWidth="1.3"
+              strokeWidth="1.4"
             />
             <text
               x={n.x}
               y={n.y + n.radius + 16}
               className="fill-foreground"
-              fontSize="10"
+              fontSize="11"
+              fontWeight="600"
               fontFamily="monospace"
               textAnchor="middle"
             >
