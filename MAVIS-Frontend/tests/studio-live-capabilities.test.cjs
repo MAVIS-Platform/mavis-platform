@@ -477,3 +477,18 @@ test("LiveStudioWorkbench exposes draggable resize handles on inspector, mission
     assert.ok(src.includes(`aria-label="${label}"`), `Missing resize handle: ${label}`);
   }
 });
+
+test("LiveStudioWorkbench left tool rail Snapshots & Logs buttons toggle closed when already active", () => {
+  const src = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/live-studio-workbench.tsx"),
+    "utf8",
+  );
+  assert.match(
+    src,
+    /Snapshots & History[\s\S]{0,400}if \(!bottomCollapsed && tab === "snapshots"\)\s*\{\s*setBottomCollapsed\(true\);/,
+  );
+  assert.match(
+    src,
+    /Logs & Traces[\s\S]{0,400}if \(!bottomCollapsed && tab !== "snapshots"\)\s*\{\s*setBottomCollapsed\(true\);/,
+  );
+});

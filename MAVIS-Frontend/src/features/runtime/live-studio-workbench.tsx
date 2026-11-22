@@ -2048,7 +2048,7 @@ export function LiveStudioWorkbench({
             {/* LEFT VERTICAL FLOATING TOOL RAIL (Original MAVIS Architecture Workbench — Figma/Miro Style) */}
             <nav
               aria-label={t("Studio tools", "Công cụ Studio")}
-              className={`pointer-events-auto absolute top-4 left-4 z-20 flex flex-col items-center gap-1 p-1.5 ${styleCfg.railClass}`}
+              className={`pointer-events-auto absolute top-4 left-4 z-20 flex flex-col items-center gap-1.5 p-1.5 ${styleCfg.railClass}`}
             >
               <button
                 type="button"
@@ -2138,9 +2138,14 @@ export function LiveStudioWorkbench({
                   type="button"
                   title={t("Snapshots & History", "Lịch sử Snapshot")}
                   aria-label={t("Snapshots & History", "Lịch sử Snapshot")}
+                  aria-pressed={!bottomCollapsed && tab === "snapshots"}
                   onClick={() => {
-                    setTab("snapshots");
-                    setBottomCollapsed(false);
+                    if (!bottomCollapsed && tab === "snapshots") {
+                      setBottomCollapsed(true);
+                    } else {
+                      setTab("snapshots");
+                      setBottomCollapsed(false);
+                    }
                   }}
                   className={`relative grid size-9 place-items-center rounded-xl transition ${
                     !bottomCollapsed && tab === "snapshots"
@@ -2152,7 +2157,10 @@ export function LiveStudioWorkbench({
                 >
                   <History className="size-4" aria-hidden="true" />
                   {snapshotCount > 0 && (
-                    <span className="absolute -top-0.5 -right-0.5 grid size-4 place-items-center rounded-full bg-emerald-600 text-[9.5px] font-bold text-white">
+                    <span
+                      style={{ fontSize: 9, lineHeight: 1 }}
+                      className="pointer-events-none absolute -top-1 -right-1 grid min-w-4 place-items-center rounded-full bg-emerald-600 px-1 py-0.5 font-mono font-bold text-white ring-2 ring-white dark:ring-slate-900"
+                    >
                       {snapshotCount}
                     </span>
                   )}
@@ -2163,8 +2171,9 @@ export function LiveStudioWorkbench({
                 type="button"
                 title={t("Logs & Traces", "Logs & Traces")}
                 aria-label={t("Logs & Traces", "Logs & Traces")}
+                aria-pressed={!bottomCollapsed && tab !== "snapshots"}
                 onClick={() => {
-                  if (!bottomCollapsed && tab === "logs") {
+                  if (!bottomCollapsed && tab !== "snapshots") {
                     setBottomCollapsed(true);
                   } else {
                     setTab("logs");
@@ -2181,7 +2190,10 @@ export function LiveStudioWorkbench({
               >
                 <Terminal className="size-4" aria-hidden="true" />
                 {logsAndTracesCount > 0 && (
-                  <span className="absolute -top-0.5 -right-1 rounded-full bg-sky-600 px-1 font-mono text-[9px] font-bold text-white">
+                  <span
+                    style={{ fontSize: 9, lineHeight: 1 }}
+                    className="pointer-events-none absolute -top-1 -right-1 rounded-full bg-sky-600 px-1 py-0.5 font-mono font-bold text-white ring-2 ring-white dark:ring-slate-900"
+                  >
                     {logsAndTracesCount > 99 ? "99+" : logsAndTracesCount}
                   </span>
                 )}
