@@ -203,12 +203,12 @@ function LecturerAssignments({ embedded = false }: { embedded?: boolean } = {}) 
                       )}
                       {quizPublished && (
                         <Badge variant="outline" className="text-[11px]">
-                          Quiz v{setupLab?.quizVersion}
+                          {t("Quiz", "Trắc nghiệm")} v{setupLab?.quizVersion}
                         </Badge>
                       )}
                       {studioReady && (
                         <Badge variant="outline" className="text-[11px]">
-                          Studio Live
+                          {t("Studio Live", "Thực hành Studio Live")}
                         </Badge>
                       )}
                       {!sourceReady && !quizPublished && !studioReady && (

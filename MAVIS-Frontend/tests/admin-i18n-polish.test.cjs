@@ -128,7 +128,7 @@ test("Bug #08: workspaces exposes an h1 landmark, singular/plural counts avoid '
   assert.match(ws, /<h1 className="text-2xl font-bold tracking-tight text-white md:text-3xl">/);
   assert.match(ws, /students === 1 \? t\("student", "sinh viên"\) : t\("students", "sinh viên"\)/);
   assert.match(ws, /totalLabs === 1 \? t\("Lab", "Lab"\) : t\("Labs", "Labs"\)/);
-  assert.match(pages, /course\.labCount === 1 \? t\("Lab", "Lab"\) : t\("Labs", "Labs"\)/);
+  assert.match(pages, /course\.labCount === 1 \? t\("Lab", "bài Lab"\) : t\("Labs", "bài Lab"\)/);
   assert.match(admin, /date\.toLocaleDateString\("vi-VN"\)\}<\/span>\{" "\}/);
 });
 
@@ -240,4 +240,50 @@ test("Coursera Profile & Unified Avatar System: UserAvatar everywhere, AvatarStu
   assert.match(admin, /<UserAvatar name=\{a\.name\} avatarUrl=\{a\.avatarUrl\}/);
   assert.ok(backendPath.includes("auth\\/(?:login|me(?:\\/avatar)?|avatars\\/[a-f0-9-]+)"));
   assert.match(domain, /export const avatarUrlSchema/);
+});
+
+test("Task #02 i18n parity: Notifications localize completely in VI, 'all'/'All' maps cleanly to 'Tất cả', and Admin/Lab badges are localized", () => {
+  const { localizeNotification } = require("../src/features/notifications/localize.ts");
+  const locale = read("src/lib/i18n/locale-context.tsx");
+  const inbox = read("src/features/notifications/inbox.tsx");
+  const admin = read("src/features/administration/screens.tsx");
+  const courses = read("src/features/courses/screens.tsx");
+  const components = read("src/features/architecture/components.tsx");
+
+  const unlocked = localizeNotification(
+    { title: "Next Lab unlocked", body: "Lab 02: Circuit Breaker is now available." },
+    "vi",
+  );
+  assert.equal(unlocked.title, "Bài Lab tiếp theo đã được mở khóa");
+  assert.match(unlocked.body, /hiện đã được mở khóa/);
+
+  const published = localizeNotification(
+    { title: "Course Published: SWD392 Java", body: "Submission received" },
+    "vi",
+  );
+  assert.equal(published.title, "Khóa học đã xuất bản: SWD392 Java");
+
+  const runtimeNotice = localizeNotification(
+    {
+      title: "Runtime session updated",
+      body: "OrderPlatform. Execution: COMPLETED. Review evidence and cleanup.",
+    },
+    "vi",
+  );
+  assert.equal(runtimeNotice.title, "Phiên thực nghiệm Runtime đã cập nhật");
+  assert.match(runtimeNotice.body, /Trạng thái thực thi: Hoàn tất/);
+
+  const enNotice = localizeNotification(
+    { title: "Submission received", body: "Your assignment submission has been saved." },
+    "en",
+  );
+  assert.equal(enNotice.title, "Submission received");
+
+  assert.match(inbox, /localizeNotification\(item, locale\)/);
+  assert.match(locale, /\ball:\s*"Tất cả"/);
+  assert.match(locale, /\bAll:\s*"Tất cả"/);
+  assert.match(locale, /"Announcement Management":\s*"Quản lý Thông báo"/);
+  assert.match(admin, /formatAuditActionLabel/);
+  assert.doesNotMatch(courses, /chuyển Lab sang WF-04|sẵn sàng cho WF-04/);
+  assert.match(components, /"Tất cả tầng kiến trúc"/);
 });

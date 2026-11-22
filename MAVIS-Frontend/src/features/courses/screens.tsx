@@ -832,6 +832,24 @@ export function LabWorkspace() {
       t,
     ],
   );
+  const readinessStateLabel = (state: string) => {
+    switch (state) {
+      case "READY":
+        return t("Ready", "Sẵn sàng");
+      case "IN PROGRESS":
+        return t("In progress", "Đang xử lý");
+      case "MISSING":
+        return t("Missing", "Chưa có");
+      case "PASSED":
+        return t("Passed", "Đã đạt");
+      case "VERIFIED":
+        return t("Verified", "Đã xác minh");
+      case "LOCKED":
+        return t("Locked", "Đang khóa");
+      default:
+        return state;
+    }
+  };
 
   if (!workspaceId)
     return (
@@ -927,7 +945,7 @@ export function LabWorkspace() {
                         key={gate.label}
                         className="rounded-md border border-white/15 bg-slate-950/15 px-2 py-1"
                       >
-                        <span className="text-sky-200">{gate.label}</span>: {gate.state}
+                        <span className="text-sky-200">{gate.label}</span>: {readinessStateLabel(gate.state)}
                       </span>
                     ))}
                   </div>
@@ -1226,7 +1244,13 @@ function StaticEvaluationSummary({
                     </div>
                     <div className="text-right">
                       <span className="block text-[10px] uppercase tracking-wide text-muted-foreground">{t("Severity", "Mức độ")}</span>
-                      <Badge variant="outline" className="font-mono text-[10px]">{row.severity}</Badge>
+                      <Badge variant="outline" className="text-[10px]">
+                        {row.severity === "ERROR"
+                          ? t("Error", "Lỗi")
+                          : row.severity === "WARNING"
+                            ? t("Warning", "Cảnh báo")
+                            : t("Info", "Thông tin")}
+                      </Badge>
                     </div>
                   </div>
                 </summary>
@@ -1623,7 +1647,7 @@ function StepContent({
         return {
           title: phaseIssue === "runtime-failed" ? t("Runtime Studio session needs attention", "Phiên Runtime Studio cần được kiểm tra") : t("Need help with Runtime Studio?", "Cần hỗ trợ với Runtime Studio?"),
           description: phaseIssue === "runtime-failed" ? t("The current Runtime Studio session did not start or finish correctly, so its evidence is not valid yet.", "Phiên Runtime Studio hiện tại chưa khởi chạy hoặc hoàn tất đúng nên evidence chưa hợp lệ.") : t("Runtime Studio is where you run the assigned scenario and capture observed evidence using only allowed actions.", "Runtime Studio là nơi bạn chạy kịch bản được giao và lưu evidence quan sát với các thao tác được phép."),
-          recovery: t("Open Studio Live, inspect the session, use only Stop, Start, or Scale, capture a snapshot, then choose Finish Studio. If it fails again, copy the report for your lecturer.", "Mở Studio Live, kiểm tra phiên, chỉ dùng Stop, Start hoặc Scale, lưu snapshot rồi chọn Finish Studio. Nếu vẫn lỗi, sao chép báo cáo gửi giảng viên."),
+          recovery: t("Open Studio Live, inspect the session, use only Stop, Start, or Scale, capture a snapshot, then choose Finish Studio. If it fails again, copy the report for your lecturer.", "Mở Studio Live, kiểm tra phiên, chỉ dùng Stop, Start hoặc Scale, lưu snapshot rồi chọn Hoàn tất Studio. Nếu vẫn lỗi, sao chép báo cáo gửi giảng viên."),
           actionLabel: t("Open Runtime Studio", "Mở Runtime Studio"),
           action: () => window.location.assign(standaloneStudioHref),
         };
@@ -1631,8 +1655,8 @@ function StepContent({
       case "submission-runtime":
         return {
           title: t("Runtime evidence is incomplete", "Evidence Runtime chưa đầy đủ"),
-          description: t("This Lab needs a verified Runtime Studio receipt before it can be submitted to WF-04.", "Lab này cần receipt Runtime Studio đã xác minh trước khi có thể nộp sang WF-04."),
-          recovery: t("Return to Runtime Studio, complete the scenario, capture the required evidence, and select Finish Studio to seal the receipt.", "Hãy quay lại Runtime Studio, hoàn tất kịch bản, lưu evidence bắt buộc và chọn Finish Studio để niêm phong receipt."),
+          description: t("This Lab needs a verified Runtime Studio receipt before it can be submitted for grading.", "Lab này cần biên nhận Runtime Studio đã xác minh trước khi nộp bài để giảng viên chấm điểm."),
+          recovery: t("Return to Runtime Studio, complete the scenario, capture the required evidence, and select Finish Studio to seal the receipt.", "Hãy quay lại Runtime Studio, hoàn tất kịch bản, lưu bằng chứng bắt buộc và chọn Hoàn tất Studio để niêm phong biên nhận."),
           actionLabel: t("Return to Runtime Studio", "Quay lại Runtime Studio"),
           action: () => window.location.assign(runtimeEvidenceHref),
         };
@@ -1854,7 +1878,7 @@ function StepContent({
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge variant="outline" className="font-mono">
                       {modelRevision !== undefined
-                        ? `Model Revision r${modelRevision}`
+                        ? t(`Model revision r${modelRevision}`, `Mô hình phiên bản r${modelRevision}`)
                         : t("Revision pending", "Đang chờ bản phân tích")}
                     </Badge>
                     {client.mode === "backend" && Boolean(snapshotId || referenceArchitecture?.snapshotId) && (
@@ -2020,11 +2044,17 @@ function StepContent({
                           <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 p-3 marker:content-none">
                             <div className="flex min-w-0 flex-wrap items-center gap-2">
                               <span className="font-mono font-semibold">{finding.ruleId}</span>
-                              <span className="font-medium">{getRuleName(finding.ruleId, "en")}</span>
+                              <span className="font-medium">{getRuleName(finding.ruleId, locale)}</span>
                             </div>
                             <div className="flex shrink-0 items-center gap-2">
                               <StatusBadge status={finding.status} />
-                              <Badge variant="outline" className="font-mono text-[10px]">{finding.severity}</Badge>
+                              <Badge variant="outline" className="text-[10px]">
+                                {finding.severity === "ERROR"
+                                  ? t("Error", "Lỗi")
+                                  : finding.severity === "WARNING"
+                                    ? t("Warning", "Cảnh báo")
+                                    : t("Info", "Thông tin")}
+                              </Badge>
                             </div>
                           </summary>
                           {finding.message && (
@@ -2043,9 +2073,15 @@ function StepContent({
                             <div key={ev.id} className="rounded-xl border bg-muted/20 p-3 text-xs">
                               <div className="flex flex-wrap items-center justify-between gap-2">
                                 <span className="font-mono font-semibold text-foreground">
-                                  {ev.locator || "Source location"}
+                                  {ev.locator || t("Source location", "Vị trí mã nguồn")}
                                 </span>
-                                {ev.sourceType && <Badge variant="outline">{ev.sourceType}</Badge>}
+                                {ev.sourceType && (
+                                  <Badge variant="outline">
+                                    {ev.sourceType === "STATIC_CODE"
+                                      ? t("Source code", "Mã nguồn tĩnh")
+                                      : ev.sourceType}
+                                  </Badge>
+                                )}
                               </div>
                               {ev.excerpt && (
                                 <pre className="mt-2 overflow-x-auto rounded bg-background p-2 font-mono text-[11px] leading-relaxed text-muted-foreground">
@@ -2247,8 +2283,8 @@ function StepContent({
                 <DetailPanel title={t("Runtime Evidence Review", "Kiểm tra Evidence Runtime")}>
                   <p className="text-sm leading-6 text-muted-foreground">
                     {t(
-                      "Review the sealed Runtime Studio evidence before sending this Lab to WF-04. The final submission keeps this receipt linked to your explanation.",
-                      "Kiểm tra evidence Runtime Studio đã được niêm phong trước khi chuyển Lab sang WF-04. Bài nộp cuối sẽ liên kết receipt này với phần giải trình của bạn.",
+                      "Review the sealed Runtime Studio evidence before submitting this Lab for grading. The final submission keeps this receipt linked to your explanation.",
+                      "Kiểm tra bằng chứng Runtime Studio đã được niêm phong trước khi nộp bài Lab để giảng viên chấm điểm. Bài nộp cuối sẽ liên kết biên nhận này với phần giải trình của bạn.",
                     )}
                   </p>
                   {studioStateQuery.isPending ? (
@@ -2266,12 +2302,12 @@ function StepContent({
                         detail={
                           runtimeEvidence?.receiptDigest
                             ? t(
-                                "Receipt sealed and ready for WF-04.",
-                                "Receipt đã được niêm phong và sẵn sàng cho WF-04.",
+                                "Receipt sealed and ready for final submission.",
+                                "Biên nhận đã được niêm phong và sẵn sàng nộp bài.",
                               )
                             : t(
                                 "Finish the Runtime Studio session to seal its receipt.",
-                                "Hoàn tất Runtime Studio để niêm phong receipt.",
+                                "Hoàn tất Runtime Studio để niêm phong biên nhận.",
                               )
                         }
                       />
@@ -2381,7 +2417,7 @@ function StepContent({
                         </div>
                         <div className="rounded-lg bg-background/80 px-3 py-2">
                           <span className="font-semibold">
-                            2.2 {t("Operate & Finish Studio", "Thực hành & Finish Studio")}
+                            2.2 {t("Operate & Finish Studio", "Thực hành & Hoàn tất Studio")}
                           </span>
                           <p className="mt-0.5 text-muted-foreground">
                             {t(
@@ -2396,8 +2432,8 @@ function StepContent({
                           </span>
                           <p className="mt-0.5 text-muted-foreground">
                             {t(
-                              "Continue to Evidence Review after Finish Studio",
-                              "Sang Kiểm tra Evidence sau khi Finish Studio",
+                              "Continue to Evidence Review after finishing Studio",
+                              "Sang Kiểm tra Evidence sau khi hoàn tất Studio",
                             )}
                           </p>
                         </div>
@@ -2422,7 +2458,7 @@ function StepContent({
                               <Badge variant="warning">
                                 {t(
                                   "Action & Finish Studio Required",
-                                  "Cần chạy thao tác & Finish Studio",
+                                  "Cần thao tác & Hoàn tất Studio",
                                 )}
                               </Badge>
                             )}
@@ -2435,7 +2471,7 @@ function StepContent({
                           <p className="text-xs text-slate-400">
                             {t(
                               "Open the full-screen Studio Live to inspect live containers, run Start/Stop/Scale actions, and click Finish Studio to seal your receipt before submitting below.",
-                              "Mở màn hình Studio Live toàn màn hình để thao tác container thật, chạy Start/Stop/Scale và nhấn Finish Studio để đóng gói biên nhận trước khi nộp bài bên dưới.",
+                              "Mở màn hình Studio Live toàn màn hình để thao tác container thật, chạy Start/Stop/Scale và nhấn Kết thúc Studio để đóng gói biên nhận trước khi nộp bài bên dưới.",
                             )}
                           </p>
                         </div>

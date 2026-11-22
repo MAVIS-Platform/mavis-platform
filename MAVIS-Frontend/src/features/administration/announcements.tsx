@@ -78,7 +78,7 @@ function iso(value: string) {
 }
 
 export function AdminAnnouncements() {
-  const { t } = useLocale();
+  const { locale, t } = useLocale();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<Status | undefined>();
   const [editingId, setEditingId] = useState<string>();
@@ -322,7 +322,8 @@ export function AdminAnnouncements() {
                         {item.content}
                       </p>
                       <p className="mt-3 text-xs text-muted-foreground">
-                        {t("Updated", "Cập nhật lúc")} {new Date(item.updatedAt).toLocaleString()}{" "}
+                        {t("Updated", "Cập nhật lúc")}{" "}
+                        {new Date(item.updatedAt).toLocaleString(locale === "vi" ? "vi-VN" : "en-US")}{" "}
                         {t("by", "bởi")} {item.createdByName}
                       </p>
                     </div>

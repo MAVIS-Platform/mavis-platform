@@ -437,8 +437,11 @@ export function Step2StaticImpact({
                         </div>
                         <Badge variant={entry.distance === 1 ? "default" : "secondary"}>
                           {entry.distance === 1
-                            ? "Direct · Hop 1"
-                            : `Indirect · Hop ${entry.distance}`}
+                            ? t("Direct · Hop 1", "Trực tiếp · Chặng 1")
+                            : t(
+                                `Indirect · Hop ${entry.distance}`,
+                                `Gián tiếp · Chặng ${entry.distance}`,
+                              )}
                         </Badge>
                       </li>
                     ))}

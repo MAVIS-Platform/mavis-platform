@@ -24,6 +24,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { SelectField, Pagination } from "@/components/shared/forms";
 import { useLocale } from "@/lib/i18n/locale-context";
 import type { Request, Response } from "@/lib/api/contracts";
+import { localizeNotification } from "./localize";
 
 const categories = [
   { value: "", label: "All activity" },
@@ -54,7 +55,11 @@ const icons: Record<string, typeof Bell> = {
   ACCOUNT: Shield,
   SYSTEM: Activity,
 };
-function timeLabel(value: string, t: (en: string, vi?: string) => string) {
+function timeLabel(
+  value: string,
+  locale: "en" | "vi",
+  t: (en: string, vi?: string) => string,
+) {
   const date = new Date(value),
     minutes = Math.max(0, Math.floor((Date.now() - date.getTime()) / 60000));
   return minutes < 1
@@ -63,7 +68,7 @@ function timeLabel(value: string, t: (en: string, vi?: string) => string) {
       ? `${minutes} ${t("m ago", "phút trước")}`
       : minutes < 1440
         ? `${Math.floor(minutes / 60)} ${t("h ago", "giờ trước")}`
-        : date.toLocaleDateString();
+        : date.toLocaleDateString(locale === "vi" ? "vi-VN" : "en-US");
 }
 function NotificationList({
   items,
@@ -74,12 +79,13 @@ function NotificationList({
   compact?: boolean;
   onNavigate?: () => void;
 }) {
-  const { t } = useLocale();
+  const { locale, t } = useLocale();
   const read = useApiMutation("readNotification");
   return (
     <ul className="divide-y" aria-label={t("Notifications", "Thông báo")}>
       {items.map((item) => {
         const Icon = icons[item.category] ?? Bell;
+        const localized = localizeNotification(item, locale);
         return (
           <li
             key={item.id}
@@ -100,7 +106,7 @@ function NotificationList({
                 <p
                   className={`break-words text-sm ${item.readAt ? "font-medium" : "font-semibold"}`}
                 >
-                  {item.title}
+                  {localized.title}
                 </p>
                 {!item.readAt && (
                   <span
@@ -110,14 +116,14 @@ function NotificationList({
                 )}
               </div>
               <p className="mt-1 break-words text-xs leading-5 text-muted-foreground">
-                {item.body}
+                {localized.body}
               </p>
               <time
                 dateTime={item.createdAt}
-                title={new Date(item.createdAt).toLocaleString()}
+                title={new Date(item.createdAt).toLocaleString(locale === "vi" ? "vi-VN" : "en-US")}
                 className="mt-1 block text-xs text-muted-foreground"
               >
-                {timeLabel(item.createdAt, t)}
+                {timeLabel(item.createdAt, locale, t)}
               </time>
             </Link>
             {!item.readAt ? (
@@ -126,7 +132,7 @@ function NotificationList({
                 size="icon"
                 className="size-8 shrink-0"
                 disabled={read.isPending}
-                aria-label={`${t("Mark as read", "Đánh dấu đã đọc")}: ${item.title}`}
+                aria-label={`${t("Mark as read", "Đánh dấu đã đọc")}: ${localized.title}`}
                 title={t("Mark as read", "Đánh dấu đã đọc")}
                 onClick={() => read.mutate({ notificationId: item.id })}
               >

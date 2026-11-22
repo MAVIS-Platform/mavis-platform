@@ -597,7 +597,7 @@ export function AllCoursesPage({ initialQuery = "" }: { initialQuery?: string })
                       </p>
                       <p className="mt-3 text-xs text-muted-foreground">
                         {course.labCount}{" "}
-                        {course.labCount === 1 ? t("Lab", "Lab") : t("Labs", "Labs")} ·{" "}
+                        {course.labCount === 1 ? t("Lab", "bài Lab") : t("Labs", "bài Lab")} ·{" "}
                         {course.lecturerName}
                       </p>
                       {course.enrolled ? (

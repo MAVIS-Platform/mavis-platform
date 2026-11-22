@@ -1203,8 +1203,46 @@ export function AdminAnalysisJobs() {
     </div>
   );
 }
+const AUDIT_ACTION_LABELS: Record<string, { en: string; vi: string }> = {
+  USER_LOGIN: { en: "User sign-in", vi: "Đăng nhập tài khoản" },
+  USER_LOGOUT: { en: "User sign-out", vi: "Đăng xuất" },
+  USER_CREATE: { en: "Create account", vi: "Tạo tài khoản" },
+  USER_LOCK: { en: "Lock account", vi: "Khóa tài khoản" },
+  USER_UNLOCK: { en: "Unlock account", vi: "Mở khóa tài khoản" },
+  USER_ROLE_UPDATE: { en: "Update role", vi: "Cập nhật vai trò" },
+  PASSWORD_CHANGE: { en: "Change password", vi: "Đổi mật khẩu" },
+  CONFIGURE_INTEGRATION: { en: "Configure integration", vi: "Cấu hình tích hợp" },
+  CONFIGURE_RUNNER_PROFILE: { en: "Configure runtime profile", vi: "Cấu hình Runtime Profile" },
+  WORKSPACE_CREATE: { en: "Create class", vi: "Tạo lớp học" },
+  WORKSPACE_UPDATE: { en: "Update class", vi: "Cập nhật lớp học" },
+  WORKSPACE_ARCHIVE: { en: "Archive class", vi: "Lưu trữ lớp học" },
+  ASSIGNMENT_CREATE: { en: "Create Lab", vi: "Tạo bài Lab" },
+  ASSIGNMENT_UPDATE: { en: "Update Lab", vi: "Cập nhật bài Lab" },
+  SUBMISSION_CREATE: { en: "Submit Lab", vi: "Nộp bài Lab" },
+  SUBMISSION_REVIEW: { en: "Grade submission", vi: "Chấm điểm bài nộp" },
+  RUNTIME_START: { en: "Start runtime session", vi: "Khởi chạy phiên Runtime" },
+  RUNTIME_STOP: { en: "Stop runtime session", vi: "Dừng phiên Runtime" },
+  ANNOUNCEMENT_CREATE: { en: "Create announcement", vi: "Tạo thông báo" },
+  ANNOUNCEMENT_PUBLISH: { en: "Publish announcement", vi: "Công bố thông báo" },
+};
+
+function formatAuditActionLabel(
+  action: string,
+  t: (en: string, vi?: string) => string,
+): string {
+  const known = AUDIT_ACTION_LABELS[action];
+  if (known) return t(known.en, known.vi);
+  const words = action
+    .trim()
+    .split("_")
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(" ");
+  return t(words || action);
+}
+
 export function AuditRecords() {
-  const { t } = useLocale();
+  const { locale, t } = useLocale();
   const q = useApiQuery("audit", {});
   const [tab, setTab] = useState<"audit" | "jobs">("audit");
   const [search, setSearch] = useState(""),
@@ -1277,7 +1315,7 @@ export function AuditRecords() {
                 { value: "all", label: t("All actions", "Tất cả hành động") },
                 ...Array.from(new Set((q.data ?? []).map((a) => a.action)))
                   .sort()
-                  .map((value) => ({ value, label: value.replaceAll("_", " ").toLowerCase() })),
+                  .map((value) => ({ value, label: formatAuditActionLabel(value, t) })),
               ]}
             />
           </div>
@@ -1293,8 +1331,8 @@ export function AuditRecords() {
                     key: "at",
                     label: t("Time", "Thời gian"),
                     render: (a) => (
-                      <span className="whitespace-nowrap text-xs" title={a.at}>
-                        {new Date(a.at).toLocaleString()}
+                      <span className="whitespace-nowrap text-xs tabular-nums" title={a.at}>
+                        {new Date(a.at).toLocaleString(locale === "vi" ? "vi-VN" : "en-US")}
                       </span>
                     ),
                   },
@@ -1309,7 +1347,7 @@ export function AuditRecords() {
                             : "outline"
                         }
                       >
-                        {a.action.replaceAll("_", " ")}
+                        {formatAuditActionLabel(a.action, t)}
                       </Badge>
                     ),
                   },

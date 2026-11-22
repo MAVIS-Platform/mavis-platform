@@ -8,6 +8,7 @@ import { DetailPanel } from "@/components/shared/data";
 import { EmptyState } from "@/components/shared/request-state";
 import { FilterControls, SearchInput, SelectField } from "@/components/shared/forms";
 import type { ArchitecturalModel, Evidence, ModelSummary } from "@/types/domain";
+import { useLocale } from "@/lib/i18n/locale-context";
 import { projectGraphModel } from "./graph-projection";
 import { DependencyNetwork } from "./dependency-network";
 
@@ -621,6 +622,8 @@ export function ArchitectureGraph({
   selectedId: string | null;
   onSelect: (id: string | null) => void;
 }) {
+  const localeCtx = useLocale();
+  const t = localeCtx.t;
   const [layer, setLayer] = useState("all");
   const [expanded, setExpanded] = useState(false);
   const [origin, setOrigin] = useState<"all" | "source" | "deployment" | "runtime">("all");
@@ -642,16 +645,21 @@ export function ArchitectureGraph({
   const group = projection.model.edges.find(
     (edge) => edge.id === selectedId || edge.underlyingEdgeIds?.includes(selectedId ?? ""),
   );
+  const layerOptions = [
+    { value: "all", label: t("All layers", "Tất cả tầng kiến trúc") },
+    { value: "edge", label: t("Edge & Gateway", "Tầng Biên & Cổng (Edge)") },
+    { value: "domain", label: t("Domain Services", "Tầng Nghiệp vụ (Domain)") },
+    { value: "platform", label: t("Platform & Infra", "Tầng Nền tảng (Platform)") },
+    { value: "data", label: t("Data & Storage", "Tầng Dữ liệu (Data)") },
+    { value: "unclassified", label: t("Unclassified", "Chưa phân tầng") },
+  ];
   return (
     <div className="space-y-3">
       <SelectField
-        label="Layer"
+        label={t("Architecture layer", "Tầng kiến trúc")}
         value={layer}
         onChange={setLayer}
-        options={["all", "edge", "domain", "platform", "data", "unclassified"].map((value) => ({
-          value,
-          label: value,
-        }))}
+        options={layerOptions}
       />
       <DependencyNetwork
         model={model}

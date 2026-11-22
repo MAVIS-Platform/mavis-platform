@@ -760,10 +760,15 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
             <>
               <Badge
                 variant={data.status === "PUBLISHED" ? "success" : "secondary"}
-                className="gap-1 font-mono text-[11px]"
+                className="gap-1 text-[11px]"
               >
                 {data.status === "PUBLISHED" && <Lock className="size-3" aria-hidden="true" />}
-                {data.status} · r{data.draftRevision} · v{data.publishedVersion}
+                {data.status === "PUBLISHED"
+                  ? t("Published", "Đã xuất bản")
+                  : data.status === "ARCHIVED"
+                    ? t("Archived", "Đã lưu trữ")
+                    : t("Draft", "Bản nháp")}{" "}
+                · r{data.draftRevision} · v{data.publishedVersion}
               </Badge>
               <span className="hidden text-xs text-muted-foreground sm:inline">
                 {modules.length}{" "}
@@ -1232,7 +1237,7 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
                                               {mins && (
                                                 <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground">
                                                   <Clock className="size-2.5" aria-hidden="true" />
-                                                  {mins}m
+                                                  {mins} {t("min", "phút")}
                                                 </span>
                                               )}
                                               {!item.required && (
