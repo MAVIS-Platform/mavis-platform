@@ -366,3 +366,28 @@ test("Task #12 Admin Runtime Sessions Timeout: backend-adapter grants runtimeRea
   const backendAdapter = read("src/lib/api/backend-adapter.ts");
   assert.match(backendAdapter, /"contextCandidates",\s*"runtimeReadSessions",\s*\]\.includes\(operation\)\s*\?\s*60000/);
 });
+
+test("Task #13 Studio Snapshot Sync, Zero-Snapshot Submit Guard, Live Stats & Copy Polish", () => {
+  const cachePolicy = read("src/lib/api/cache-policy.ts");
+  const studioHook = read("src/features/runtime/use-studio-session.ts");
+  const labSubmission = read("src/features/courses/lab-submission-v2.tsx");
+  const courseScreens = read("src/features/courses/screens.tsx");
+  const workbench = read("src/features/runtime/live-studio-workbench.tsx");
+
+  assert.match(cachePolicy, /studioCapture:\s*\["studioState"/);
+  assert.match(cachePolicy, /studioFinish:\s*\[\s*"studioState"/);
+  assert.match(
+    studioHook,
+    /captureSnapshot[\s\S]*queryClient\.invalidateQueries\(\{\s*queryKey:\s*\["api",\s*"studioState",\s*\{\s*sessionId\s*\}\]\s*\}\)/,
+  );
+  assert.match(studioHook, /captureSnapshot[\s\S]*student-lab-studio-sessions/);
+
+  assert.match(courseScreens, /capturedSnapshotCount=\{/);
+  assert.match(labSubmission, /missingStudioSnapshot/);
+  assert.match(labSubmission, /disabled=\{submit\.isPending \|\| missingStudioSnapshot\}/);
+  assert.doesNotMatch(labSubmission, /WF-04 readiness|DS-04b|QA \/ Demo Dossier Presets/);
+
+  assert.match(workbench, /hasAnyReplicaSample/);
+  assert.match(workbench, /Live Docker running — awaiting probe traffic/);
+});
+

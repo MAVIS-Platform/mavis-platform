@@ -364,6 +364,8 @@ export function useStudioSession(sessionId: string) {
           observedAt: data.telemetry?.observedAt,
         });
         setExplanation("");
+        await queryClient.invalidateQueries({ queryKey: ["api", "studioState", { sessionId }] });
+        void queryClient.invalidateQueries({ queryKey: ["api", "student-lab-studio-sessions"] });
         await state.refetch();
       } catch (error) {
         setDownloadError(error instanceof Error ? error : new Error("Could not capture evidence"));

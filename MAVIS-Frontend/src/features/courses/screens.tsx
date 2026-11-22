@@ -2394,6 +2394,11 @@ function StepContent({
                 labTitle={labTitle}
                 labMode={labMode}
                 runtimeSessionId={verifiedSessionForSubmit}
+                capturedSnapshotCount={
+                  requiresRuntime ? (runtimeEvidence?.snapshots?.length ?? 0) : undefined
+                }
+                studioStateLoading={requiresRuntime && studioStateQuery.isPending}
+                runtimeEvidenceHref={requiresRuntime ? runtimeEvidenceHref : undefined}
                 initialSubmission={studentContext?.latestSubmission}
                 initialReview={studentContext?.latestReview}
                 hasReferenceArch={hasReferenceArch}

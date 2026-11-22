@@ -110,6 +110,9 @@ export function LabSubmissionV2({
   labTitle,
   labMode,
   runtimeSessionId,
+  capturedSnapshotCount,
+  studioStateLoading,
+  runtimeEvidenceHref,
   initialSubmission,
   initialReview,
   hasReferenceArch = true,
@@ -121,6 +124,9 @@ export function LabSubmissionV2({
   labTitle?: string | undefined;
   labMode: string;
   runtimeSessionId?: string | undefined;
+  capturedSnapshotCount?: number | undefined;
+  studioStateLoading?: boolean | undefined;
+  runtimeEvidenceHref?: string | undefined;
   initialSubmission?: { id: string; submittedAt?: string | null } | null | undefined;
   initialReview?: StudentLabLatestReview | null | undefined;
   hasReferenceArch?: boolean | undefined;
@@ -195,6 +201,12 @@ export function LabSubmissionV2({
   );
   const activeReview = review.data ?? initialReview;
   const canSubmit = answer.trim().length > 0 && (!studio || Boolean(runtimeSessionId));
+  const missingStudioSnapshot =
+    studio &&
+    Boolean(runtimeSessionId) &&
+    !studioStateLoading &&
+    typeof capturedSnapshotCount === "number" &&
+    capturedSnapshotCount === 0;
 
   if (latest && !revising) {
     return (
@@ -348,6 +360,26 @@ export function LabSubmissionV2({
               )}
             </p>
           )}
+          {missingStudioSnapshot && (
+            <div
+              role="status"
+              className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-500/35 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200"
+            >
+              <span>
+                {t(
+                  "Capture at least one Studio Snapshot with your observation note before submitting this Lab.",
+                  "Hãy chụp ít nhất một Snapshot Studio kèm ghi chú quan sát trước khi nộp bài Lab này.",
+                )}
+              </span>
+              {runtimeEvidenceHref && (
+                <Button asChild size="sm" variant="outline">
+                  <Link href={runtimeEvidenceHref}>
+                    {t("Capture Snapshot in Studio", "Mở Studio để chụp Snapshot")}
+                  </Link>
+                </Button>
+              )}
+            </div>
+          )}
           {submit.error && (
             <p role="alert" className="text-sm text-destructive">
               {submit.error.message}
@@ -357,13 +389,13 @@ export function LabSubmissionV2({
             <div className="space-y-3 rounded-xl border border-teal-200/80 bg-teal-50/40 p-3.5 text-xs dark:border-teal-900 dark:bg-teal-950/20">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="font-semibold text-teal-950 dark:text-teal-200">
-                  📊 {t("WF-04 readiness estimate & evidence bundle", "Dự báo mức sẵn sàng WF-04 & gói evidence")}
+                  📊 {t("Submission readiness estimate & evidence bundle", "Dự báo mức sẵn sàng nộp bài & gói bằng chứng")}
                 </span>
                 <Badge variant={passesRubricPreview ? "success" : "destructive"}>
                   {estimatedRubricScore.toFixed(1)} / 10.0 ·{" "}
                   {passesRubricPreview
                     ? t("APPROVED Eligible (> 5.0)", "ĐẠT (> 5.0 → Mở Lab tiếp theo)")
-                    : t("DS-04b Revision Needed (≤ 5.0)", "Cần sửa (≤ 5.0 · DS-04b)")}
+                    : t("Revision Needed (≤ 5.0)", "Cần bổ sung & sửa lại (≤ 5.0)")}
                 </Badge>
               </div>
               <p className="text-muted-foreground">
@@ -406,7 +438,7 @@ export function LabSubmissionV2({
               </div>
               <details className="pt-1">
                 <summary className="cursor-pointer select-none text-[11px] font-medium text-muted-foreground hover:text-foreground">
-                  ⚙ {t("QA / Demo Dossier Presets", "Mẫu kiểm thử nhanh (Demo)")}
+                  ⚙ {t("Quick Reference Dossier Templates", "Mẫu hồ sơ giải trình tham khảo")}
                 </summary>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <Button
@@ -439,7 +471,7 @@ export function LabSubmissionV2({
                       } catch {}
                     }}
                   >
-                    🧪 {t("Fill Flawed Draft to Test DS-04b (≤ 5.0)", "Điền Thiết Kế Lỗi Test DS-04b (≤ 5.0)")}
+                    🧪 {t("Fill Revision-Needed Sample (≤ 5.0)", "Điền mẫu thiếu tiêu chí (≤ 5.0)")}
                   </Button>
                 </div>
               </details>
@@ -453,12 +485,16 @@ export function LabSubmissionV2({
             <Button
               type="button"
               className="bg-teal-600 text-white hover:bg-teal-700"
-              disabled={submit.isPending}
+              disabled={submit.isPending || missingStudioSnapshot}
               onClick={() => {
                 if (!canSubmit) {
                   onRequestHelp?.(
                     studio && !runtimeSessionId ? "submission-runtime" : "submission-explanation",
                   );
+                  return;
+                }
+                if (missingStudioSnapshot) {
+                  onRequestHelp?.("submission-runtime");
                   return;
                 }
                 const nowIso = new Date().toISOString();

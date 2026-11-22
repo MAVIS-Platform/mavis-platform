@@ -1888,6 +1888,9 @@ export function LiveStudioWorkbench({
               (sum, service) => sum + (runningFor(observedData, service) ?? 0),
               0,
             );
+            const hasAnyReplicaSample = observedData.services.some(
+              (service) => runningFor(observedData, service) !== undefined,
+            );
             const downServicesCount = blocks.filter(
               (b) => runningFor(observedData, b.service) === 0,
             ).length;
@@ -1986,7 +1989,7 @@ export function LiveStudioWorkbench({
                     <dl className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
                       {[
                         ["Error rate", errNum !== null ? `${metric(errNum)}%` : "—"],
-                        ["Running pods", observedRunningReplicas.toLocaleString()],
+                        ["Running pods", hasAnyReplicaSample ? observedRunningReplicas.toLocaleString() : "—"],
                         ["Services down", downServicesCount.toLocaleString()],
                         ["Confirmed actions", observedConfirmed.length.toLocaleString()],
                       ].map(([kLabel, kValue]) => (
@@ -2043,7 +2046,14 @@ export function LiveStudioWorkbench({
                         label: "Measured requests",
                         value: reqNum !== null ? reqNum.toLocaleString() : "—",
                         unit: reqNum !== null ? "req" : "",
-                        detail: reqNum !== null ? "Latest probe workload" : "Start Live Docker to measure",
+                        detail:
+                          reqNum !== null
+                            ? "Latest probe workload"
+                            : observedData.executionStatus === "RUNNING"
+                              ? "Live Docker running — awaiting probe traffic"
+                              : isBooting
+                                ? "Booting Live Docker containers…"
+                                : "Start Live Docker to measure",
                         warning: false,
                       },
                       {
