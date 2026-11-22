@@ -1,7 +1,7 @@
 "use client";
 import { useApi, useApiQuery } from "@/hooks/use-api";
 import { RequestState } from "@/components/shared/request-state";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DetailPanel } from "@/components/shared/data";
@@ -281,19 +281,96 @@ function ElementEvidenceContext({
     </RequestState>
   );
 }
+export type InspectorTab = "overview" | "relationships" | "evidence" | "ai";
+
+function cleanArchitectureDescription(raw: string | null | undefined): string {
+  if (!raw) return "";
+  return raw
+    .replace(/(?:\/?data\/uploads\/[^\s·,;)]+|[^\s·,;)]*_source_extracted[^\s·,;)]*)/gi, "")
+    .replace(/\b(?:PACKAGE|CLASS_INTERFACE|SERVICE_CONTAINER|COMPONENT|CONTROLLER|ENTITY|REPOSITORY)\s*·\s*(?=$|·)/gi, "")
+    .replace(/\s*·\s*$/g, "")
+    .replace(/^\s*·\s*/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+function summarizeSwdRole(
+  element: ArchitecturalModel["elements"][number] | undefined,
+  edge: ArchitecturalModel["edges"][number] | undefined,
+  t: (en: string, vi?: string) => string,
+): string {
+  if (edge && !element) {
+    return t(
+      "Static dependency contract between caller and callee. Inspect protocol, direction, and source evidence.",
+      "Hợp đồng phụ thuộc tĩnh nối giữa thành phần gọi và thành phần được gọi. Kiểm tra giao thức, chiều gọi và bằng chứng mã nguồn.",
+    );
+  }
+  const type = (element?.elementType ?? "").toUpperCase();
+  const layer = (element?.layer ?? "").toLowerCase();
+  if (type.includes("GATEWAY") || layer === "edge") {
+    return t(
+      "Entry gateway / edge router that handles incoming requests and dispatches them to downstream domain services.",
+      "Cổng API / tầng biên tiếp nhận yêu cầu từ client và điều tuyến sang các dịch vụ nghiệp vụ bên trong.",
+    );
+  }
+  if (type.includes("DATABASE")) {
+    return t(
+      "Dedicated persistent datastore (Database-per-Service pattern in SWD) storing domain entities.",
+      "Cơ sở dữ liệu lưu trữ bền vững cho dịch vụ (theo nguyên tắc Database-per-Service trong SWD).",
+    );
+  }
+  if (type.includes("BROKER") || type.includes("CHANNEL") || type.includes("QUEUE")) {
+    return t(
+      "Asynchronous messaging channel / broker decoupling event producers from downstream consumers.",
+      "Kênh truyền thông điệp / hàng đợi bất đồng bộ giúp tách rời bên phát sự kiện và bên tiêu thụ.",
+    );
+  }
+  if (type.includes("EXTERNAL") || type.includes("PERSON")) {
+    return t(
+      "External actor or third-party system outside your deployed architecture boundary.",
+      "Tác nhân bên ngoài hoặc hệ thống đối tác nằm ngoài ranh giới triển khai của hệ thống.",
+    );
+  }
+  if (type.includes("SERVICE")) {
+    return t(
+      "Autonomous microservice / application container encapsulating bounded domain logic and APIs.",
+      "Microservice / container nghiệp vụ độc lập, đóng gói logic miền và cung cấp API / sự kiện.",
+    );
+  }
+  return t(
+    "Structural code module (Controller, Service, Repository, or Client) participating in dependency flow.",
+    "Thành phần mã nguồn cấu trúc (Controller, Service, Repository hoặc Client) tham gia luồng phụ thuộc.",
+  );
+}
+
 export function ElementDetailsPanel({
   model,
   selectedId,
   onSelect,
+  aiPanel,
+  activeTab: controlledTab,
+  onTabChange,
+  onExplainWithAi,
 }: {
   model: ArchitecturalModel;
   selectedId: string | null;
   onSelect?: (id: string) => void;
+  aiPanel?: ReactNode;
+  activeTab?: InspectorTab | undefined;
+  onTabChange?: ((tab: InspectorTab) => void) | undefined;
+  onExplainWithAi?: (() => void) | undefined;
 }) {
-  const [activeTab, setActiveTab] = useState<"overview" | "relationships" | "evidence">("overview");
+  const localeCtx = useLocale();
+  const t = localeCtx.t;
+  const [internalTab, setInternalTab] = useState<InspectorTab>("overview");
+  const currentTab = controlledTab ?? internalTab;
+  const selectTab = (next: InspectorTab) => {
+    if (onTabChange) onTabChange(next);
+    else setInternalTab(next);
+  };
   useEffect(() => {
-    setActiveTab("overview");
-  }, [selectedId]);
+    if (!onTabChange) setInternalTab("overview");
+  }, [selectedId, onTabChange]);
   const element = model.elements.find((e) => e.id === selectedId);
   const edge = model.edges.find((e) => e.id === selectedId);
   const incoming = element ? model.edges.filter((relation) => relation.to === element.id) : [];
@@ -303,7 +380,12 @@ export function ElementDetailsPanel({
     : undefined;
   const children = element ? model.elements.filter((node) => node.parentId === element.id) : [];
   const nameOf = (id: string) => model.elements.find((node) => node.id === id)?.name ?? id;
-  function connectionList(title: string, relations: ArchitecturalModel["edges"]) {
+  const cleanedDescription = cleanArchitectureDescription(element?.description);
+  function connectionList(
+    title: string,
+    titleVi: string,
+    relations: ArchitecturalModel["edges"],
+  ) {
     const grouped = new Map<string, ArchitecturalModel["edges"]>();
     for (const relation of relations) {
       const key = `${relation.from}:${relation.to}`;
@@ -313,8 +395,10 @@ export function ElementDetailsPanel({
     return (
       <section aria-label={`${title} relationships`} className="space-y-2">
         <h4 className="text-sm font-semibold">
-          {title} ({relations.length} relationship{relations.length === 1 ? "" : "s"} ·{" "}
-          {relationshipGroups.length} peer{relationshipGroups.length === 1 ? "" : "s"})
+          {t(title, titleVi)} ({relations.length}{" "}
+          {t(relations.length === 1 ? "relationship" : "relationships", "quan hệ")} ·{" "}
+          {relationshipGroups.length}{" "}
+          {t(relationshipGroups.length === 1 ? "peer" : "peers", "thành phần")})
         </h4>
         {relationshipGroups.length ? (
           <ul className="space-y-2">
@@ -347,7 +431,11 @@ export function ElementDetailsPanel({
                           {protocol}
                         </Badge>
                       ))}
-                      {uncertain && <Badge variant="warning">Uncertain mapping</Badge>}
+                      {uncertain && (
+                        <Badge variant="warning">
+                          {t("Needs verification", "Cần đối chiếu")}
+                        </Badge>
+                      )}
                     </div>
                   </div>
                   {onSelect && (
@@ -360,7 +448,7 @@ export function ElementDetailsPanel({
                         onSelect(relation.from === element?.id ? relation.to : relation.from)
                       }
                     >
-                      Inspect peer →
+                      {t("Inspect peer →", "Xem thành phần →")}
                     </Button>
                   )}
                 </li>
@@ -369,7 +457,9 @@ export function ElementDetailsPanel({
           </ul>
         ) : (
           <p className="text-xs text-muted-foreground">
-            No {title.toLowerCase()} relationships in this model.
+            {title === "Incoming"
+              ? t("No incoming callers in this model.", "Không có thành phần gọi đến.")
+              : t("No outgoing dependencies in this model.", "Không có phụ thuộc gọi ra.")}
           </p>
         )}
       </section>
@@ -404,25 +494,65 @@ export function ElementDetailsPanel({
         subject={element ? "element" : "relationship"}
       />
     );
-  const detailTabs = element
+  const detailTabs: Array<{ id: InspectorTab; label: string }> = element
     ? [
-        { id: "overview" as const, label: "Overview" },
+        { id: "overview", label: t("Overview", "Tổng quan") },
         {
-          id: "relationships" as const,
-          label: `Relationships (${incoming.length + outgoing.length})`,
+          id: "relationships",
+          label: `${t("Relationships", "Quan hệ")} (${incoming.length + outgoing.length})`,
         },
-        { id: "evidence" as const, label: "Evidence" },
+        { id: "evidence", label: t("Evidence", "Bằng chứng") },
+        ...(aiPanel ? [{ id: "ai" as const, label: t("Ask AI", "Hỏi AI") }] : []),
       ]
-    : [
-        { id: "overview" as const, label: "Overview" },
-        { id: "evidence" as const, label: "Evidence" },
-      ];
+    : edge
+      ? [
+          { id: "overview", label: t("Overview", "Tổng quan") },
+          { id: "evidence", label: t("Evidence", "Bằng chứng") },
+          ...(aiPanel ? [{ id: "ai" as const, label: t("Ask AI", "Hỏi AI") }] : []),
+        ]
+      : aiPanel
+        ? [
+            { id: "overview", label: t("Overview", "Tổng quan") },
+            { id: "ai", label: t("Ask AI", "Hỏi AI") },
+          ]
+        : [];
+  const visibleTab =
+    detailTabs.some((tab) => tab.id === currentTab) ? currentTab : (detailTabs[0]?.id ?? "overview");
+  const aiButton =
+    aiPanel || onExplainWithAi ? (
+      <div className="pt-1">
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="w-full"
+          onClick={() => {
+            selectTab("ai");
+            onExplainWithAi?.();
+          }}
+        >
+          {t("Explain with AI", "Giải thích bằng AI")}
+        </Button>
+      </div>
+    ) : null;
+
   return (
-    <DetailPanel title={edge && !element ? "Relationship details" : "Element details"}>
-      {(element || edge) && (
+    <DetailPanel
+      title={
+        edge && !element
+          ? t("Relationship details", "Chi tiết quan hệ kết nối")
+          : element
+            ? t("Element details", "Chi tiết thành phần kiến trúc")
+            : t("Architecture Inspector", "Kiểm tra Kiến trúc SWD")
+      }
+    >
+      {detailTabs.length > 0 && (
         <div
           role="tablist"
-          aria-label={element ? "Element detail sections" : "Relationship detail sections"}
+          aria-label={t(
+            element ? "Element detail sections" : "Architecture inspector tabs",
+            "Các mục kiểm tra kiến trúc",
+          )}
           className="grid gap-1 rounded-lg border bg-muted/40 p-1"
           style={{ gridTemplateColumns: `repeat(${detailTabs.length}, minmax(0, 1fr))` }}
         >
@@ -431,10 +561,10 @@ export function ElementDetailsPanel({
               key={tab.id}
               type="button"
               role="tab"
-              aria-selected={activeTab === tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${
-                activeTab === tab.id
+              aria-selected={visibleTab === tab.id}
+              onClick={() => selectTab(tab.id)}
+              className={`rounded-md px-2 py-1.5 text-[11px] font-medium transition-colors ${
+                visibleTab === tab.id
                   ? "bg-background text-foreground shadow-xs"
                   : "text-muted-foreground hover:text-foreground"
               }`}
@@ -448,8 +578,8 @@ export function ElementDetailsPanel({
         <>
           <div
             role="tabpanel"
-            hidden={activeTab !== "overview"}
-            className="space-y-2 rounded-lg border bg-muted/20 p-3"
+            hidden={visibleTab !== "overview"}
+            className="space-y-2.5 rounded-lg border bg-muted/20 p-3"
           >
             <div className="flex flex-wrap items-center gap-1.5">
               {element.elementType && (
@@ -459,7 +589,7 @@ export function ElementDetailsPanel({
               )}
               {element.layer && (
                 <Badge variant="secondary" className="text-[11px]">
-                  Layer: {element.layer}
+                  {t("Layer", "Tầng")}: {element.layer}
                 </Badge>
               )}
               {element.technology && (
@@ -469,12 +599,15 @@ export function ElementDetailsPanel({
               )}
             </div>
             <h3 className="font-mono text-base font-semibold">{element.name}</h3>
-            {element.description && (
-              <p className="text-sm text-muted-foreground">{element.description}</p>
+            <p className="text-xs leading-5 text-muted-foreground">
+              {summarizeSwdRole(element, undefined, t)}
+            </p>
+            {cleanedDescription && cleanedDescription !== element.name && (
+              <p className="text-xs text-muted-foreground">{cleanedDescription}</p>
             )}
             {parent && (
               <p className="text-xs text-muted-foreground">
-                Parent container:{" "}
+                {t("Parent container:", "Thuộc Container:")}{" "}
                 {onSelect ? (
                   <button
                     type="button"
@@ -491,7 +624,10 @@ export function ElementDetailsPanel({
             {children.length > 0 && (
               <div className="space-y-1.5 pt-1">
                 <p className="text-xs font-medium text-muted-foreground">
-                  Contained components / classifiers ({children.length}):
+                  {t(
+                    `Contained components / classifiers (${children.length}):`,
+                    `Thành phần con bên trong (${children.length}):`,
+                  )}
                 </p>
                 <div className="flex flex-wrap gap-1.5">
                   {children.slice(0, 12).map((child) =>
@@ -515,25 +651,33 @@ export function ElementDetailsPanel({
                   )}
                   {children.length > 12 && (
                     <span className="self-center text-[11px] text-muted-foreground">
-                      +{children.length - 12} more
+                      +{children.length - 12} {t("more", "nữa")}
                     </span>
                   )}
                 </div>
               </div>
             )}
+            {aiButton}
           </div>
-          <div role="tabpanel" hidden={activeTab !== "relationships"} className="space-y-4">
-            {connectionList("Incoming", incoming)}
-            {connectionList("Outgoing", outgoing)}
+          <div role="tabpanel" hidden={visibleTab !== "relationships"} className="space-y-4">
+            {connectionList("Incoming", "Thành phần gọi đến", incoming)}
+            {connectionList("Outgoing", "Phụ thuộc gọi ra", outgoing)}
           </div>
-          <div role="tabpanel" hidden={activeTab !== "evidence"} className="space-y-3">
-            <h4 className="text-sm font-semibold">Saved evidence context</h4>
+          <div role="tabpanel" hidden={visibleTab !== "evidence"} className="space-y-3">
+            <h4 className="text-sm font-semibold">
+              {t("Saved evidence context", "Bằng chứng mã nguồn đã lưu")}
+            </h4>
             {resolved}
           </div>
+          {aiPanel && (
+            <div role="tabpanel" hidden={visibleTab !== "ai"} className="space-y-3">
+              {aiPanel}
+            </div>
+          )}
         </>
       ) : edge ? (
         <>
-          <div role="tabpanel" hidden={activeTab !== "overview"} className="space-y-3">
+          <div role="tabpanel" hidden={visibleTab !== "overview"} className="space-y-3">
             <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
               <div className="flex flex-wrap items-center gap-1.5">
                 <Badge variant="outline" className="font-mono text-[11px]">
@@ -544,13 +688,16 @@ export function ElementDetailsPanel({
                 </Badge>
                 {edge.originLayer && (
                   <Badge variant="outline" className="text-[11px]">
-                    Origin: {edge.originLayer}
+                    {t("Origin", "Nguồn gốc")}: {edge.originLayer}
                   </Badge>
                 )}
               </div>
               <h3 className="font-mono text-sm font-semibold">
                 {nameOf(edge.from)} → {nameOf(edge.to)} · {edge.protocol}
               </h3>
+              <p className="text-xs leading-5 text-muted-foreground">
+                {summarizeSwdRole(undefined, edge, t)}
+              </p>
               {onSelect && (
                 <div className="flex flex-wrap gap-2 pt-1">
                   <Button
@@ -560,7 +707,7 @@ export function ElementDetailsPanel({
                     className="h-7 text-xs"
                     onClick={() => onSelect(edge.from)}
                   >
-                    Source: {nameOf(edge.from)}
+                    {t("Source", "Bên gọi")}: {nameOf(edge.from)}
                   </Button>
                   <Button
                     type="button"
@@ -569,46 +716,59 @@ export function ElementDetailsPanel({
                     className="h-7 text-xs"
                     onClick={() => onSelect(edge.to)}
                   >
-                    Target: {nameOf(edge.to)}
+                    {t("Target", "Bên nhận")}: {nameOf(edge.to)}
                   </Button>
                 </div>
               )}
+              {aiButton}
             </div>
             <p className="text-xs text-muted-foreground">
-              Origin: {edge.originLayer ?? "unknown"} · Resolution:{" "}
-              {edge.resolutionStatus ?? "unknown"}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Linked evidence:{" "}
+              {t("Linked evidence:", "Bằng chứng liên kết:")}{" "}
               <span className="font-medium text-foreground">
                 {edge.evidenceCount === null || edge.evidenceCount === undefined
-                  ? "— (unverified / not loaded)"
+                  ? t("— (not verified yet)", "— (chưa đối chiếu)")
                   : edge.evidenceCount === 0
-                    ? "0 (verified: no evidence attached)"
-                    : `${edge.evidenceCount} verified evidence item(s)${
+                    ? t("0 (verified: no evidence attached)", "0 (đã kiểm tra: chưa gắn mã nguồn)")
+                    : `${edge.evidenceCount} ${t("verified evidence item(s)", "bằng chứng đã xác minh")}${
                         edge.underlyingEdgeIds && edge.underlyingEdgeIds.length > 1
-                          ? ` (deduplicated across ${edge.underlyingEdgeIds.length} member relationships)`
+                          ? ` (${t("grouped across", "gộp từ")} ${edge.underlyingEdgeIds.length} ${t("relationships", "quan hệ")})`
                           : ""
                       }`}
               </span>
             </p>
-            {edge.underlyingEdgeIds && edge.underlyingEdgeIds.length > 1 && (
-              <p className="text-xs text-muted-foreground">
-                Aggregated relationship ({edge.underlyingEdgeIds.length} member relationships)
-              </p>
-            )}
-            {edge.uncertain && <Badge variant="warning">Uncertain mapping</Badge>}
           </div>
-          <div role="tabpanel" hidden={activeTab !== "evidence"} className="space-y-3">
-            <h4 className="text-sm font-semibold">Saved evidence context</h4>
+          <div role="tabpanel" hidden={visibleTab !== "evidence"} className="space-y-3">
+            <h4 className="text-sm font-semibold">
+              {t("Saved evidence context", "Bằng chứng mã nguồn đã lưu")}
+            </h4>
             {resolved}
           </div>
+          {aiPanel && (
+            <div role="tabpanel" hidden={visibleTab !== "ai"} className="space-y-3">
+              {aiPanel}
+            </div>
+          )}
         </>
       ) : (
-        <p className="text-sm text-muted-foreground">Select a service or relationship.</p>
+        <>
+          <div role="tabpanel" hidden={visibleTab !== "overview"} className="space-y-2">
+            <p className="text-xs leading-5 text-muted-foreground">
+              {t(
+                "Select a service, container, or connection in the diagram to inspect its SWD role, inbound/outbound dependencies, and source code evidence.",
+                "Chọn một service, container hoặc kết nối trên sơ đồ để xem vai trò SWD, quan hệ gọi đến/đi và bằng chứng mã nguồn.",
+              )}
+            </p>
+            {aiButton}
+          </div>
+          {aiPanel && (
+            <div role="tabpanel" hidden={visibleTab !== "ai"} className="space-y-3">
+              {aiPanel}
+            </div>
+          )}
+        </>
       )}
-      <p className="break-all text-xs text-muted-foreground">
-        Model {model.id} · revision {model.revision} · source {model.snapshotId}
+      <p className="text-[11px] text-muted-foreground">
+        {t(`Model revision r${model.revision}`, `Mô hình phiên bản r${model.revision}`)}
       </p>
     </DetailPanel>
   );

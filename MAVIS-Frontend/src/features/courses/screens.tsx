@@ -54,7 +54,11 @@ import {
   getRuleName,
 } from "@/features/architecture/three-e-content";
 import { Input } from "@/components/ui/input";
-import { ArchitectureGraph, ElementDetailsPanel } from "@/features/architecture/components";
+import {
+  ArchitectureGraph,
+  ElementDetailsPanel,
+  type InspectorTab,
+} from "@/features/architecture/components";
 import { ArchitectureDiagrams } from "@/features/architecture/architecture-diagrams";
 import { DiagramPreview } from "@/features/architecture/diagram-preview";
 import { buildStudioLiveHref } from "@/features/runtime/standalone-studio-live";
@@ -232,6 +236,14 @@ function toInlineArchitecturalModel(
     elements,
     edges,
   };
+}
+
+function cleanDisplaySourceLocator(raw: string | null | undefined): string {
+  if (!raw) return "";
+  return raw
+    .replace(/^\/?data\/uploads\/[^/\s]+(?:\/|_source_extracted\/)?/i, "")
+    .replace(/^[^/]*_source_extracted\//i, "")
+    .trim();
 }
 
 function sanitizeMermaidId(raw: string): string {
@@ -1377,6 +1389,7 @@ function StepContent({
   const { t, locale } = useLocale();
   const client = useApi();
   const [selectedGraphId, setSelectedGraphId] = useState<string | null>(null);
+  const [inspectorTab, setInspectorTab] = useState<InspectorTab>("overview");
   const [tutorInput, setTutorInput] = useState("");
   const [tutorLoading, setTutorLoading] = useState(false);
   const [tutorHistory, setTutorHistory] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
@@ -1505,9 +1518,10 @@ function StepContent({
       `Explain the static dependencies, contracts, and source evidence of ${subjectName}.`,
       `Giải thích phụ thuộc tĩnh, hợp đồng kết nối và bằng chứng mã nguồn của ${subjectName}.`,
     );
+    setInspectorTab("ai");
     setTutorInput(promptText);
     void askAiTutor(promptText);
-    document.getElementById("lab-ai-tutor")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    document.getElementById("lab-ai-tutor")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   };
 
   const askAiTutor = async (rawQuestion: string) => {
@@ -1546,7 +1560,10 @@ function StepContent({
       locale,
     );
     const threeEAiCtx = buildThreeEAiContext(activeModel, ctx, concreteEvidences, []);
-    const citations = threeEAiCtx.codeSnippets.map((snippet) => snippet.locator).filter(Boolean).slice(0, 3);
+    const citations = threeEAiCtx.codeSnippets
+      .map((snippet) => cleanDisplaySourceLocator(snippet.locator))
+      .filter(Boolean)
+      .slice(0, 3);
     const guard = checkThreeEScopeGuardrail(q, threeEAiCtx, locale);
     if (!guard.allowed && guard.refusalMessage) {
       setTutorReply({
@@ -1618,6 +1635,123 @@ function StepContent({
       setTutorLoading(false);
     }
   };
+
+  const tutorPanelNode = (
+    <div id="lab-ai-tutor" className="scroll-mt-36">
+      <div className="space-y-3">
+        <div className="space-y-1">
+          <p className="text-xs font-semibold text-foreground">
+            {t("AI Architecture Tutor", "Trợ lý AI Kiến trúc SWD")}
+          </p>
+          <p className="text-xs leading-5 text-muted-foreground">
+            {t(
+              "Ask questions grounded in the selected C1–C3 component, relationships, and source code.",
+              "Đặt câu hỏi dựa trên thành phần C1–C3 đang chọn, các quan hệ và bằng chứng mã nguồn.",
+            )}
+          </p>
+        </div>
+        <form
+          className="flex flex-col gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void askAiTutor(tutorInput);
+          }}
+        >
+          <Input
+            value={tutorInput}
+            onChange={(event) => setTutorInput(event.target.value)}
+            disabled={tutorLoading}
+            className="text-xs"
+            aria-label={t(
+              "Ask the AI Architecture Tutor",
+              "Đặt câu hỏi cho Trợ lý AI Kiến trúc",
+            )}
+            placeholder={t(
+              `Ask about ${selectedArchitectureLabel ?? selectedTutorElement?.name ?? "this service"} coupling or source…`,
+              `Hỏi về phụ thuộc, vai trò hoặc mã nguồn của ${selectedArchitectureLabel ?? selectedTutorElement?.name ?? "dịch vụ này"}…`,
+            )}
+          />
+          <Button type="submit" size="sm" disabled={tutorLoading || !tutorInput.trim()}>
+            {tutorLoading ? t("Analyzing…", "Đang phân tích…") : t("Ask AI", "Hỏi AI")}
+          </Button>
+        </form>
+        <div className="flex flex-wrap gap-1.5">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-auto px-2.5 py-1 text-left text-[11px] leading-4"
+            disabled={tutorLoading}
+            onClick={() => {
+              const subjectName =
+                selectedArchitectureLabel ?? selectedTutorElement?.name ?? "this architecture";
+              const promptText = t(
+                `Explain the SWD role, dependencies, and source evidence of ${subjectName}.`,
+                `Giải thích vai trò SWD, các phụ thuộc và bằng chứng mã nguồn của ${subjectName}.`,
+              );
+              setTutorInput(promptText);
+              void askAiTutor(promptText);
+            }}
+          >
+            {t("Role & dependencies", "Vai trò & phụ thuộc")}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-auto px-2.5 py-1 text-left text-[11px] leading-4"
+            disabled={tutorLoading}
+            onClick={() => {
+              const subjectName =
+                selectedArchitectureLabel ?? selectedTutorElement?.name ?? "this component";
+              const promptText = t(
+                `What breaks or gets impacted if ${subjectName} becomes unavailable?`,
+                `Nếu ${subjectName} ngừng hoạt động thì các thành phần nào bị ảnh hưởng?`,
+              );
+              setTutorInput(promptText);
+              void askAiTutor(promptText);
+            }}
+          >
+            {t("Failure impact", "Ảnh hưởng nếu gián đoạn")}
+          </Button>
+        </div>
+        {tutorReply &&
+          (tutorReply.blocked ? (
+            <div
+              role="alert"
+              className="space-y-1 rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive"
+            >
+              <p className="font-semibold">
+                {t("Outside Diagram Scope", "Ngoài phạm vi sơ đồ kiến trúc")}
+              </p>
+              <p className="leading-5">{tutorReply.answer}</p>
+            </div>
+          ) : (
+            <div className="space-y-2 rounded-xl border border-teal-200 bg-teal-50/60 p-3 text-xs dark:border-teal-800 dark:bg-teal-950/20">
+              <div className="flex flex-wrap items-center justify-between gap-1.5">
+                <p className="font-semibold text-teal-950 dark:text-teal-200">
+                  {t("Evidence-Grounded Answer", "Giải thích đối chiếu Bằng chứng")}
+                </p>
+                {tutorReply.provider && (
+                  <Badge variant="outline" className="font-mono text-[10px] uppercase">
+                    {tutorReply.provider}
+                  </Badge>
+                )}
+              </div>
+              <p className="whitespace-pre-wrap leading-5 text-foreground/90">
+                {tutorReply.answer}
+              </p>
+              {tutorReply.citations && tutorReply.citations.length > 0 && (
+                <p className="text-[11px] text-muted-foreground">
+                  {t("Cited source evidence:", "Bằng chứng mã nguồn tham chiếu:")}{" "}
+                  <span className="break-all font-mono">{tutorReply.citations.join(" · ")}</span>
+                </p>
+              )}
+            </div>
+          ))}
+      </div>
+    </div>
+  );
 
   const openPhaseIssue = (issue: LabPhaseIssueKind) => {
     setReportCopied(false);
@@ -1932,7 +2066,7 @@ function StepContent({
 
                 {inlineC4View !== "GRAPH" ? (
                   activeModel && activeModel.elements.length > 0 ? (
-                    <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+                    <div className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
                       <div className="min-w-0">
                         <ArchitectureDiagrams
                           model={activeModel}
@@ -1944,41 +2078,45 @@ function StepContent({
                           onSelect={setSelectedGraphId}
                         />
                       </div>
-                      <aside className="min-w-0 rounded-lg border bg-muted/15 p-3">
-                        <div className="mb-3 flex items-center justify-between gap-2">
-                          <h4 className="text-sm font-semibold">{t("Inspector", "Bảng kiểm tra")}</h4>
-                          {selectedArchitectureLabel && (
-                            <Button type="button" size="sm" variant="outline" onClick={openSelectedContextInTutor}>
-                              {t("Explain with AI", "Giải thích bằng AI")}
-                            </Button>
-                          )}
-                        </div>
-                        {selectedGraphId ? (
-                          <ElementDetailsPanel model={activeModel} selectedId={selectedGraphId} />
-                        ) : (
-                          <p className="text-sm leading-6 text-muted-foreground">
-                            {t("Select an element or connection in the diagram to inspect its role, relationships, and source evidence.", "Chọn một phần tử hoặc kết nối trên sơ đồ để xem vai trò, quan hệ và evidence mã nguồn.")}
-                          </p>
-                        )}
+                      <aside className="min-w-0 xl:sticky xl:top-20 xl:max-h-[calc(100vh-6rem)] xl:overflow-y-auto">
+                        <ElementDetailsPanel
+                          model={activeModel}
+                          selectedId={selectedGraphId}
+                          onSelect={setSelectedGraphId}
+                          activeTab={inspectorTab}
+                          onTabChange={setInspectorTab}
+                          onExplainWithAi={openSelectedContextInTutor}
+                          aiPanel={tutorPanelNode}
+                        />
                       </aside>
                     </div>
                   ) : activeDiagramMermaid ? (
-                    <DiagramPreview
-                      title={`C4 ${inlineC4View}`}
-                      content={activeDiagramMermaid}
-                      format="MERMAID"
-                      style="clean"
-                    />
+                    <div className="space-y-4">
+                      <DiagramPreview
+                        title={`C4 ${inlineC4View}`}
+                        content={activeDiagramMermaid}
+                        format="MERMAID"
+                        style="clean"
+                      />
+                      <DetailPanel title={t("AI Architecture Tutor", "Trợ lý AI Kiến trúc SWD")}>
+                        {tutorPanelNode}
+                      </DetailPanel>
+                    </div>
                   ) : (
-                    <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
-                      {t(
-                        "Diagram projection is loading or unavailable for this view; switch to Dependency Graph to inspect elements.",
-                        "Chưa có dữ liệu sơ đồ cho góc nhìn này; hãy chuyển sang Đồ thị phụ thuộc để kiểm tra.",
-                      )}
-                    </p>
+                    <div className="space-y-4">
+                      <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+                        {t(
+                          "Diagram projection is loading or unavailable for this view; switch to Dependency Graph to inspect elements.",
+                          "Chưa có dữ liệu sơ đồ cho góc nhìn này; hãy chuyển sang Đồ thị phụ thuộc để kiểm tra.",
+                        )}
+                      </p>
+                      <DetailPanel title={t("AI Architecture Tutor", "Trợ lý AI Kiến trúc SWD")}>
+                        {tutorPanelNode}
+                      </DetailPanel>
+                    </div>
                   )
                 ) : activeModel ? (
-                  <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+                  <div className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
                     <div className="min-w-0 overflow-x-auto">
                       <ArchitectureGraph
                         model={activeModel}
@@ -1986,22 +2124,16 @@ function StepContent({
                         onSelect={setSelectedGraphId}
                       />
                     </div>
-                    <aside className="min-w-0 rounded-lg border bg-muted/15 p-3">
-                      <div className="mb-3 flex items-center justify-between gap-2">
-                        <h4 className="text-sm font-semibold">{t("Inspector", "Bảng kiểm tra")}</h4>
-                        {selectedArchitectureLabel && (
-                          <Button type="button" size="sm" variant="outline" onClick={openSelectedContextInTutor}>
-                            {t("Explain with AI", "Giải thích bằng AI")}
-                          </Button>
-                        )}
-                      </div>
-                      {selectedGraphId ? (
-                        <ElementDetailsPanel model={activeModel} selectedId={selectedGraphId} />
-                      ) : (
-                        <p className="text-sm leading-6 text-muted-foreground">
-                          {t("Select a node or connection to inspect its relationship and source evidence.", "Chọn node hoặc kết nối để xem quan hệ và evidence mã nguồn.")}
-                        </p>
-                      )}
+                    <aside className="min-w-0 xl:sticky xl:top-20 xl:max-h-[calc(100vh-6rem)] xl:overflow-y-auto">
+                      <ElementDetailsPanel
+                        model={activeModel}
+                        selectedId={selectedGraphId}
+                        onSelect={setSelectedGraphId}
+                        activeTab={inspectorTab}
+                        onTabChange={setInspectorTab}
+                        onExplainWithAi={openSelectedContextInTutor}
+                        aiPanel={tutorPanelNode}
+                      />
                     </aside>
                   </div>
                 ) : (
@@ -2074,8 +2206,9 @@ function StepContent({
                           {referenceArchitecture.evidences.slice(0, 8).map((ev) => (
                             <div key={ev.id} className="rounded-xl border bg-muted/20 p-3 text-xs">
                               <div className="flex flex-wrap items-center justify-between gap-2">
-                                <span className="font-mono font-semibold text-foreground">
-                                  {ev.locator || t("Source location", "Vị trí mã nguồn")}
+                                <span className="break-all font-mono font-semibold text-foreground">
+                                  {cleanDisplaySourceLocator(ev.locator) ||
+                                    t("Source location", "Vị trí mã nguồn")}
                                 </span>
                                 {ev.sourceType && (
                                   <Badge variant="outline">
@@ -2103,131 +2236,6 @@ function StepContent({
                   allowRunEvaluation={!isStudent && Boolean(viewModelQuery)}
                 />
               )}
-
-              <div id="lab-ai-tutor" className="scroll-mt-36">
-                <DetailPanel
-                  title={t(
-                    "Evidence-Grounded AI Architecture Tutor (BR-05 & DS-02b)",
-                    "Trợ lý AI kiến trúc có bằng chứng (BR-05 & DS-02b)",
-                  )}
-                >
-                  <p className="text-xs text-muted-foreground">
-                    {t(
-                      "Ask questions grounded in C1–C3 static nodes and file paths, or test an out-of-scope refusal (DS-02b).",
-                      "Hỏi AI dựa trên Node C1–C3 và đường dẫn mã nguồn chuẩn, hoặc kiểm thử kịch bản từ chối ngoài phạm vi (DS-02b).",
-                    )}
-                  </p>
-                  <form
-                    className="mt-3 flex flex-wrap gap-2"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      void askAiTutor(tutorInput);
-                    }}
-                  >
-                    <Input
-                      value={tutorInput}
-                      onChange={(event) => setTutorInput(event.target.value)}
-                      disabled={tutorLoading}
-                      className="min-w-60 flex-1 text-xs"
-                      aria-label={t(
-                        "Ask the AI Architecture Tutor",
-                        "Đặt câu hỏi cho Trợ lý AI Kiến trúc",
-                      )}
-                      placeholder={t(
-                        `Ask about ${selectedArchitectureLabel ?? selectedTutorElement?.name ?? "this service"} coupling, boundaries or source evidence…`,
-                        `Hỏi về phụ thuộc, ranh giới hoặc bằng chứng mã nguồn của ${selectedArchitectureLabel ?? selectedTutorElement?.name ?? "dịch vụ này"}…`,
-                      )}
-                    />
-                    <Button type="submit" size="sm" disabled={tutorLoading || !tutorInput.trim()}>
-                      {tutorLoading ? t("Analyzing…", "Đang phân tích…") : t("Ask AI", "Hỏi AI")}
-                    </Button>
-                  </form>
-                  <div className="mt-2.5 flex flex-wrap gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      disabled={tutorLoading}
-                      onClick={() => {
-                        const subjectName = selectedArchitectureLabel ?? selectedTutorElement?.name ?? "this architecture";
-                        const promptText = t(
-                          `Explain the static dependencies, contracts, and source evidence of ${subjectName}.`,
-                          `Giải thích phụ thuộc tĩnh, hợp đồng kết nối và bằng chứng mã nguồn của ${subjectName}.`,
-                        );
-                        setTutorInput(promptText);
-                        void askAiTutor(promptText);
-                      }}
-                    >
-                      🔍{" "}
-                      {t(
-                        "Explain Selected C1–C3 Coupling & Contracts",
-                        "Giải thích Phụ thuộc & Hợp đồng C1–C3",
-                      )}
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      disabled={tutorLoading}
-                      onClick={() => {
-                        const oosPrompt = t(
-                          "What will Bitcoin price be in 2030?",
-                          "Giá Bitcoin năm 2030 là bao nhiêu?",
-                        );
-                        setTutorInput(oosPrompt);
-                        void askAiTutor(oosPrompt);
-                      }}
-                    >
-                      🧪{" "}
-                      {t(
-                        "Test Out-of-Scope Prompt (Demo DS-02b)",
-                        "Thử câu hỏi ngoài phạm vi (DS-02b)",
-                      )}
-                    </Button>
-                  </div>
-                  {tutorReply &&
-                    (tutorReply.blocked ? (
-                      <div
-                        role="alert"
-                        className="mt-3 space-y-1 rounded-xl border border-destructive/40 bg-destructive/10 p-3.5 text-xs text-destructive"
-                      >
-                        <p className="font-semibold">
-                          {t(
-                            "Refused (BR-05 / DS-02b) · Out of Scope",
-                            "Từ chối trả lời (BR-05 / DS-02b) · Ngoài phạm vi",
-                          )}
-                        </p>
-                        <p className="leading-5">{tutorReply.answer}</p>
-                      </div>
-                    ) : (
-                      <div className="mt-3 space-y-2 rounded-xl border border-teal-200 bg-teal-50/60 p-3.5 text-xs dark:border-teal-800 dark:bg-teal-950/20">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <p className="font-semibold text-teal-950 dark:text-teal-200">
-                            ✅{" "}
-                            {t(
-                              "Evidence-Grounded Answer (Citing Static C1–C3 Model)",
-                              "Trả lời có đối chiếu Bằng chứng Tĩnh C1–C3",
-                            )}
-                          </p>
-                          {tutorReply.provider && (
-                            <Badge variant="outline" className="font-mono text-[10px] uppercase">
-                              {tutorReply.provider}
-                            </Badge>
-                          )}
-                        </div>
-                        <p className="whitespace-pre-wrap leading-5 text-foreground/90">
-                          {tutorReply.answer}
-                        </p>
-                        {tutorReply.citations && tutorReply.citations.length > 0 && (
-                          <p className="text-[11px] text-muted-foreground">
-                            {t("Cited source evidence:", "Bằng chứng mã nguồn tham chiếu:")}{" "}
-                            <span className="font-mono">{tutorReply.citations.join(" · ")}</span>
-                          </p>
-                        )}
-                      </div>
-                    ))}
-                </DetailPanel>
-              </div>
             </>
           ) : (
             <div className="space-y-4">

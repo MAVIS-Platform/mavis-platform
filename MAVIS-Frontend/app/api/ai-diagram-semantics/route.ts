@@ -111,13 +111,20 @@ Given the selected architectural element or relationship and its extracted sourc
 Return valid JSON only.`;
 
 const THREE_E_CHAT_SYSTEM_PROMPT = `EVIDENCE POLICY: Only the supplied source snippets are evidence, and they are partial. Prior explanations and chat history are not evidence; do not repeat unsupported claims from them. Clearly label inferences as unverified and missing facts as unknown. Do not infer business behavior, human actors or runtime calls from names, deployment links or configuration alone.
-You are a strictly-scoped 3E (Explain · Explore · Evaluate) Software Architecture AI Assistant.
+You are a clear, beginner-friendly Software Architecture & Design (SWD) AI Tutor assistant.
 STRICT SCOPE GUARDRAIL:
 1. You are strictly locked to the currently selected architectural element/relationship (target.title, target.type), its direct inboundPeers/outboundPeers, its childComponents, and its codeSnippets.
 2. NEVER answer off-topic questions (food, weather, daily life, entertainment, general coding tasks, trivia) or questions about unrelated services outside target.title's direct architectural scope.
-3. If userQuestion is unrelated to the software architecture, code evidence, dependencies, or design risks of target.title, DO NOT answer the question. Instead, return { "offTopic": true, "answer": "<1-sentence refusal in English stating you only answer questions about target.title's architecture and code evidence>" }.
-4. For valid in-scope questions, respond in English regardless of the language of userQuestion. Use 2-4 concise sentences, citing concrete classes, files, methods, or peers from the provided context.
+3. If userQuestion is unrelated to the software architecture, code evidence, dependencies, or design risks of target.title, DO NOT answer the question. Instead, return { "offTopic": true, "answer": "<1-sentence refusal stating you only answer questions about target.title's architecture and code evidence>" }.
+4. For valid in-scope questions, explain clearly in 2-4 concise plain-text sentences suitable for a student learning Software Architecture (no raw JSON fragments or internal container /data/uploads/ paths), citing concrete classes, files, methods, or peers from the provided context.
 Return valid JSON only: { "answer": "concise response", "offTopic": false, "evidenceRefs": ["supplied-snippet-id"] }`;
+
+function cleanSourceLocator(raw: string): string {
+  return raw
+    .replace(/^\/?data\/uploads\/[^/\s]+(?:\/|_source_extracted\/)?/i, "")
+    .replace(/^[^/]*_source_extracted\//i, "")
+    .trim();
+}
 
 async function callStructuredLlm<T>(
   resolved: { key: string; provider: "openai" | "gemini" },
@@ -297,36 +304,36 @@ export async function POST(request: NextRequest) {
       }
 
       const buildFallbackAnswer = (): string => {
-        const files = tCtx.codeSnippets.map((s) => s.locator).filter(Boolean);
+        const files = tCtx.codeSnippets.map((s) => cleanSourceLocator(s.locator)).filter(Boolean);
         const inbound = tCtx.inboundPeers.slice(0, 4).join(", ");
         const outbound = tCtx.outboundPeers.slice(0, 4).join(", ");
         const children = tCtx.childComponents.slice(0, 5).join(", ");
         if (locale === "vi") {
           const parts: string[] = [
-            `Về "${tCtx.title}" (${tCtx.type}): ${tCtx.summary}`,
+            `"${tCtx.title}" (${tCtx.type}): ${tCtx.summary}`,
           ];
           if (inbound || outbound) {
             parts.push(
-              `Các kết nối mô hình đã khai báo: ${inbound ? `kết nối đến [${inbound}]` : "không ghi nhận đối tác gọi đến"}${
-                outbound ? ` và gọi ra [${outbound}]` : ""
+              `Luồng kết nối đã ghi nhận: ${inbound ? `được gọi bởi [${inbound}]` : "chưa ghi nhận thành phần gọi đến"}${
+                outbound ? ` và phụ thuộc tới [${outbound}]` : ""
               }.`,
             );
           }
           if (children) {
-            parts.push(`Các component bên trong: ${children}.`);
+            parts.push(`Thành phần bên trong: ${children}.`);
           }
           if (files.length > 0) {
-            parts.push(`Bằng chứng mã nguồn đặt tại: ${files.slice(0, 3).join(", ")}.`);
+            parts.push(`Mã nguồn đối chiếu tại: ${files.slice(0, 3).join(", ")}.`);
           }
           return parts.join(" ");
         }
         const parts: string[] = [
-          `Regarding "${tCtx.title}" (${tCtx.type}): ${tCtx.summary}`,
+          `"${tCtx.title}" (${tCtx.type}): ${tCtx.summary}`,
         ];
         if (inbound || outbound) {
           parts.push(
-            `Declared model connections: ${inbound ? `incoming [${inbound}]` : "no incoming peers recorded"}${
-              outbound ? ` and outgoing [${outbound}]` : ""
+            `Recorded architecture connections: ${inbound ? `called by [${inbound}]` : "no incoming callers recorded"}${
+              outbound ? ` and depends on [${outbound}]` : ""
             }.`,
           );
         }

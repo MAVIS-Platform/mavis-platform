@@ -6724,3 +6724,28 @@ test("Task #03 architecture viewer: C1-C3 viewer provides Zoom, Fit, Pan/Drag, F
   assert.doesNotMatch(viewer, /\{parsed\.scopeMeta\}/);
   assert.match(screens, /role="tab"\s*\n\s*aria-selected=\{inlineC4View === tab\.id\}/);
 });
+
+test("Task #04 SWD Inspector: 4-tab Sticky Inspector integrates Grounded AI Tutor, sanitizes upload paths, and hides internal DS-02b/BR-05 tags", () => {
+  const components = fs.readFileSync(
+    path.join(root, "src/features/architecture/components.tsx"),
+    "utf8",
+  );
+  const screens = fs.readFileSync(
+    path.join(root, "src/features/courses/screens.tsx"),
+    "utf8",
+  );
+  const route = fs.readFileSync(
+    path.join(root, "app/api/ai-diagram-semantics/route.ts"),
+    "utf8",
+  );
+
+  assert.match(components, /export type InspectorTab = "overview" \| "relationships" \| "evidence" \| "ai"/);
+  assert.match(components, /cleanArchitectureDescription/);
+  assert.match(components, /summarizeSwdRole/);
+  assert.doesNotMatch(components, /Model \$\{model\.id\} · revision/);
+  assert.match(screens, /id="lab-ai-tutor" className="scroll-mt-36/);
+  assert.match(screens, /xl:sticky xl:top-20 xl:max-h-\[calc\(100vh-6rem\)\] xl:overflow-y-auto/);
+  assert.match(screens, /aiPanel=\{tutorPanelNode\}/);
+  assert.doesNotMatch(screens, /BR-05 & DS-02b|Demo DS-02b/);
+  assert.match(route, /cleanSourceLocator/);
+});
