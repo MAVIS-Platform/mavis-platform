@@ -41,7 +41,12 @@ export default async function AdminPage({ params }: { params: Promise<{ screen: 
     <AppShell scope="global" activeId={screen} pageTitle={config.title} contentVariant="workspace">
       <div className="mx-auto w-full max-w-[1600px]">
         <PageContainer>
-          {!hasAdminBanner && <SectionHeader title={config.title} />}
+          {!hasAdminBanner && (
+            <SectionHeader
+              title={config.title}
+              backHref={screen === "announcements" ? "/administration/health" : undefined}
+            />
+          )}
           <Screen />
         </PageContainer>
       </div>

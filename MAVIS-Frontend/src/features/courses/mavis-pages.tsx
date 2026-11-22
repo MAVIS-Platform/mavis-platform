@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
+  ArrowLeft,
   ArrowRight,
   KeyRound,
   List,
@@ -467,6 +468,14 @@ export function AllCoursesPage({ initialQuery = "" }: { initialQuery?: string })
     <MavisShell>
       <div className="space-y-6">
         <PasskeyEnrollmentModal open={passkeyOpen} onClose={() => setPasskeyOpen(false)} />
+        <div>
+          <Button asChild variant="ghost" size="sm" className="-ml-2 h-8 gap-1.5 text-muted-foreground">
+            <Link href="/courses">
+              <ArrowLeft className="size-4" aria-hidden="true" />
+              {t("Back to My Courses", "Quay lại Khóa học của tôi")}
+            </Link>
+          </Button>
+        </div>
         <PageTitle
           title={t("All Courses", "Tất cả khóa học")}
           description={t(

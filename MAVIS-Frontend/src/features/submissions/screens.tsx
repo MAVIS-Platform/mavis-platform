@@ -3,7 +3,7 @@ import { FrozenArtifacts } from "./frozen-artifacts";
 import { StudioSubmissionEvidence } from "./studio-evidence";
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Download } from "lucide-react";
+import { ArrowLeft, Download } from "lucide-react";
 import { useApiQuery, usePermission, useSelection } from "@/hooks/use-api";
 import { useSearchParams } from "next/navigation";
 import { SelectField, SearchInput, Pagination } from "@/components/shared/forms";
@@ -98,10 +98,18 @@ function MySubmissions() {
               />
             </div>
           )}
-          {workspace && (
+          {workspace ? (
             <Button asChild size="sm" variant="outline">
               <Link href={`/roadmap?workspace=${encodeURIComponent(workspace.id)}`}>
+                <ArrowLeft className="mr-1.5 size-3.5" aria-hidden="true" />
                 {t("Back to class", "Quay lại lớp")}
+              </Link>
+            </Button>
+          ) : (
+            <Button asChild size="sm" variant="outline">
+              <Link href="/courses">
+                <ArrowLeft className="mr-1.5 size-3.5" aria-hidden="true" />
+                {t("Back to My Courses", "Quay lại Khóa học của tôi")}
               </Link>
             </Button>
           )}

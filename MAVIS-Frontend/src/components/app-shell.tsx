@@ -593,7 +593,9 @@ function ShellChrome({
                               ? `/submissions${navigationQuery}`
                               : role === "student"
                                 ? `/courses${navigationQuery}`
-                                : `/workspaces${navigationQuery}`,
+                                : selectedWorkspaceId
+                                  ? `/workspace-overview?workspace=${encodeURIComponent(selectedWorkspaceId)}`
+                                  : `/workspaces${navigationQuery}`,
                         visibility: "lg" as const,
                       },
                     ]

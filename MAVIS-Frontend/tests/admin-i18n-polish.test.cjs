@@ -297,3 +297,22 @@ test("Task #06 modern Profile: social hero cover, Back navigation, single-line R
   assert.doesNotMatch(profile, /Advanced: Use an external image URL/);
   assert.doesNotMatch(profile, /<dt className="truncate/);
 });
+
+test("Task #07 Navigation & Layout: SectionHeader supports backHref, /submissions/[id] avoids raw UUID crumb, Lecturer breadcrumb targets workspace-overview, and /lab removes sticky overlap", () => {
+  const page = read("src/components/layout/page.tsx");
+  const subDetail = read("app/submissions/[submissionId]/page.tsx");
+  const notifPage = read("app/notifications/page.tsx");
+  const appShell = read("src/components/app-shell.tsx");
+  const courses = read("src/features/courses/screens.tsx");
+  const wsShell = read("src/features/courses/course-workspace-shell.tsx");
+
+  assert.match(page, /backHref\?:/);
+  assert.doesNotMatch(subDetail, /contextName=\{submissionId\}/);
+  assert.match(subDetail, /backHref="\/submissions"/);
+  assert.match(notifPage, /backHref="\/"/);
+  assert.match(appShell, /\/workspace-overview\?workspace=\$\{encodeURIComponent\(selectedWorkspaceId\)\}/);
+  assert.match(wsShell, /Back to classes/);
+  assert.match(courses, /sticky=\{false\}/);
+  assert.doesNotMatch(courses, /sticky bottom-3/);
+  assert.match(courses, /id="lab-switcher"[\s\S]*min-w-\[240px\] max-w-\[380px\]/);
+});

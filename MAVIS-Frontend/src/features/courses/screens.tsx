@@ -984,7 +984,7 @@ export function LabWorkspace() {
                         );
                       }
                     }}
-                    className="h-8 max-w-56 truncate rounded-lg border border-white/25 bg-white/12 px-2.5 text-xs leading-tight text-white outline-none hover:bg-white/20"
+                    className="h-8 min-w-[240px] max-w-[380px] truncate rounded-lg border border-white/25 bg-white/12 px-2.5 text-xs leading-tight text-white outline-none hover:bg-white/20"
                   >
                     {(roadmap.data?.labs ?? []).map((item) => {
                       const icon =
@@ -1056,7 +1056,7 @@ export function LabWorkspace() {
 
           <LabToc
             layout="stepper"
-            sticky={displayedStep !== 3}
+            sticky={false}
             steps={tocSteps}
             activeStep={displayedStep}
             moduleTitle={currentModule?.title}
@@ -2577,7 +2577,7 @@ function StepContent({
         </div>
       )}
 
-      <div className="sticky bottom-3 z-20 flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card/95 p-3 shadow-sm backdrop-blur sm:p-4">
+      <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-3 shadow-xs sm:p-4">
         {step > 1 && (
           <Button asChild variant="outline">
             <Link

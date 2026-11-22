@@ -12,12 +12,12 @@ export default async function SubmissionPage({
       scope="review"
       activeId="review"
       pageTitle="Submission Details & Review"
-      contextName={submissionId}
     >
       <PageContainer>
         <SectionHeader
           title="Submission Details & Review"
           screenId="submission-review"
+          backHref="/submissions"
         />
         <SubmissionReview submissionId={submissionId} />
       </PageContainer>

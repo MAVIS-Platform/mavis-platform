@@ -9,6 +9,7 @@ export default function Notifications() {
           <SectionHeader
             title="Notifications"
             description="Stay up to date with your assignments, projects and account."
+            backHref="/"
           />
           <NotificationCenter />
         </PageContainer>

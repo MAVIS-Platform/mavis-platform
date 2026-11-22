@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
+  ArrowLeft,
   Check,
   ClipboardCheck,
   Copy,
@@ -420,6 +421,17 @@ export function CourseWorkspaceShell({
       <header className="overflow-hidden rounded-2xl bg-gradient-to-r from-emerald-950 via-emerald-800 to-teal-600 p-5 text-white shadow-lg sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="min-w-0 space-y-2">
+            {!isStudent && (
+              <div>
+                <Link
+                  href="/workspaces"
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-white/80 transition-colors hover:text-white"
+                >
+                  <ArrowLeft className="size-3.5" aria-hidden="true" />
+                  {t("Back to classes", "Quay lại danh sách lớp")}
+                </Link>
+              </div>
+            )}
             <div className="flex flex-wrap items-center gap-2.5">
               <h1 className="text-xl font-bold tracking-tight sm:text-2xl">{workspace.name}</h1>
               {workspace.code && (

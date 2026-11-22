@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { ChevronRight } from "lucide-react";
+import { ArrowLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { ScreenHelpTrigger } from "@/components/shared/screen-guided-tour";
@@ -31,16 +31,31 @@ export function SectionHeader({
   description,
   actions,
   screenId,
+  backHref,
+  backLabel,
 }: {
   title: string;
   description?: string;
   actions?: ReactNode;
   screenId?: string;
+  backHref?: string | undefined;
+  backLabel?: string | undefined;
 }) {
   const { t } = useLocale();
   return (
     <div className="flex flex-wrap items-end justify-between gap-4">
       <div>
+        {backHref && (
+          <div className="mb-1.5">
+            <Link
+              href={backHref}
+              className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+            >
+              <ArrowLeft className="size-3.5" aria-hidden="true" />
+              {backLabel ? t(backLabel) : t("Back", "Quay lại")}
+            </Link>
+          </div>
+        )}
         <div className="flex items-center gap-2">
           <h1 className="text-xl font-semibold tracking-tight">{t(title)}</h1>
           <ScreenHelpTrigger screenId={screenId ?? title} />
