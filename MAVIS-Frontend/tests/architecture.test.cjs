@@ -6705,3 +6705,22 @@ test("backendErrorCode and publicErrorCode map duplicate and class/lab business 
   assert.equal(backendErrorCode("workspaces", 400, "unexpected internal stack trace"), undefined);
   assert.match(publicErrors.WORKSPACE_CODE_EXISTS, /already exists/i);
 });
+
+test("Task #03 architecture viewer: C1-C3 viewer provides Zoom, Fit, Pan/Drag, Fullscreen, strips raw Semantic review banner, and exposes ARIA tab semantics", () => {
+  const viewer = fs.readFileSync(
+    path.join(root, "src/features/architecture/architecture-svg-viewer.tsx"),
+    "utf8",
+  );
+  const screens = fs.readFileSync(
+    path.join(root, "src/features/courses/screens.tsx"),
+    "utf8",
+  );
+
+  assert.match(viewer, /fitToView/);
+  assert.match(viewer, /toggleFullscreen/);
+  assert.match(viewer, /Math\.hypot\(dx, dy\) > 5/);
+  assert.match(viewer, /e\.ctrlKey && !e\.metaKey|!event\.ctrlKey && !event\.metaKey/);
+  assert.match(viewer, /formatLocalizedScopeMeta/);
+  assert.doesNotMatch(viewer, /\{parsed\.scopeMeta\}/);
+  assert.match(screens, /role="tab"\s*\n\s*aria-selected=\{inlineC4View === tab\.id\}/);
+});

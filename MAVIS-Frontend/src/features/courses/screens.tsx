@@ -1919,6 +1919,8 @@ function StepContent({
                     <Button
                       key={tab.id}
                       type="button"
+                      role="tab"
+                      aria-selected={inlineC4View === tab.id}
                       size="sm"
                       variant={inlineC4View === tab.id ? "default" : "outline"}
                       onClick={() => onSelectInlineC4View(tab.id)}

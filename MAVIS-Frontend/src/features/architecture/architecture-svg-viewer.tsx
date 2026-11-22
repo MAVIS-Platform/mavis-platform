@@ -1,6 +1,22 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { Maximize2, Minimize2, RotateCcw, ScanSearch, ZoomIn, ZoomOut } from "lucide-react";
+import { useLocale } from "@/lib/i18n/locale-context";
+
+function formatLocalizedScopeMeta(
+  raw: string,
+  t: (en: string, vi?: string) => string,
+): string {
+  const match = /(\d+)\s+shapes?.*?(\d+)\s+displayed\s+relationships?/i.exec(raw);
+  if (match) {
+    return t(
+      `${match[1]} elements · ${match[2]} relationships`,
+      `${match[1]} thành phần · ${match[2]} quan hệ`,
+    );
+  }
+  return raw.replace(/^Semantic review required\s*·?\s*/i, "").trim();
+}
 
 interface ParsedSvgNode {
   id: string;
@@ -665,11 +681,29 @@ export function ArchitectureSvgViewer({
   selectedId?: string | null | undefined;
   onSelect?: ((id: string) => void) | undefined;
 }) {
+  const localeCtx = useLocale();
+  const t = localeCtx.t;
   const uid = useId().replace(/:/g, "");
   const arrowId = `mavis-arrow-${uid}`;
   const arrowActiveId = `mavis-arrow-active-${uid}`;
   const shadowId = `mavis-shadow-${uid}`;
+  const containerRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isNativeFullscreen, setIsNativeFullscreen] = useState(false);
+  const [isOverlayFullscreen, setIsOverlayFullscreen] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragRef = useRef<{
+    active: boolean;
+    pointerId: number;
+    startX: number;
+    startY: number;
+    originX: number;
+    originY: number;
+    moved: boolean;
+  }>({ active: false, pointerId: -1, startX: 0, startY: 0, originX: 0, originY: 0, moved: false });
+  const suppressClickRef = useRef(false);
   const [isDark, setIsDark] = useState(() =>
     typeof document !== "undefined" && document.documentElement.classList.contains("dark"),
   );
@@ -688,70 +722,237 @@ export function ArchitectureSvgViewer({
 
   useEffect(() => {
     setZoom(1);
+    setPan({ x: 0, y: 0 });
   }, [xml]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const onFullscreenChange = () => {
+      setIsNativeFullscreen(document.fullscreenElement === containerRef.current);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsOverlayFullscreen(false);
+      }
+    };
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, []);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const onWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey && !event.metaKey) return;
+      event.preventDefault();
+      const delta = event.deltaY > 0 ? -0.1 : 0.1;
+      setZoom((z) => Math.max(0.4, Math.min(2.5, Math.round((z + delta) * 100) / 100)));
+    };
+    viewport.addEventListener("wheel", onWheel, { passive: false });
+    return () => viewport.removeEventListener("wheel", onWheel);
+  }, [parsed]);
+
+  const fitToView = useCallback(() => {
+    if (!parsed) return;
+    const viewport = viewportRef.current;
+    if (viewport) {
+      const vw = Math.max(240, viewport.clientWidth - 24);
+      const vh = Math.max(200, viewport.clientHeight - 24);
+      const fitScale = Math.min(vw / Math.max(1, parsed.vbW), vh / Math.max(1, parsed.vbH));
+      const clamped = Math.max(0.4, Math.min(1.6, Math.round(fitScale * 100) / 100));
+      setZoom(clamped);
+    } else {
+      setZoom(1);
+    }
+    setPan({ x: 0, y: 0 });
+  }, [parsed]);
+
+  const toggleFullscreen = useCallback(async () => {
+    const el = containerRef.current;
+    if (!el || typeof document === "undefined") return;
+    if (document.fullscreenElement === el) {
+      try {
+        await document.exitFullscreen();
+      } catch {
+        setIsOverlayFullscreen(false);
+      }
+      return;
+    }
+    if (isOverlayFullscreen) {
+      setIsOverlayFullscreen(false);
+      return;
+    }
+    try {
+      if (typeof el.requestFullscreen === "function") {
+        await el.requestFullscreen();
+        return;
+      }
+    } catch {
+      // Fallback to CSS fixed overlay
+    }
+    setIsOverlayFullscreen(true);
+  }, [isOverlayFullscreen]);
 
   if (!parsed) {
     return (
       <div className="flex h-[320px] items-center justify-center bg-muted/15 p-6 text-sm text-muted-foreground">
-        Preparing architecture diagram…
+        {t("Preparing architecture diagram…", "Đang dựng sơ đồ kiến trúc…")}
       </div>
     );
   }
 
-  const canvasHeight = Math.max(320, Math.min(640, Math.round(parsed.vbH + 56)));
+  const isFullscreen = isNativeFullscreen || isOverlayFullscreen;
+  const canvasHeight = isFullscreen
+    ? "calc(100vh - 110px)"
+    : Math.max(320, Math.min(640, Math.round(parsed.vbH + 56)));
   const edgeStrokeDefault = isDark ? "#7c8fa8" : "#475569";
   const edgeStrokeSelected = isDark ? "#38bdf8" : "#2563eb";
   const dotColor = isDark ? "rgba(148, 163, 184, 0.14)" : "rgba(100, 116, 139, 0.28)";
+  const cleanScopeMeta = parsed.scopeMeta ? formatLocalizedScopeMeta(parsed.scopeMeta, t) : "";
+  const isModifiedView = zoom !== 1 || pan.x !== 0 || pan.y !== 0;
 
   return (
-    <div className="flex flex-col overflow-hidden bg-background/40">
-      {/* Compact Blueprint Header & Zoom Controls */}
+    <div
+      ref={containerRef}
+      className={
+        isOverlayFullscreen
+          ? "fixed inset-0 z-50 flex flex-col overflow-hidden bg-background"
+          : "flex flex-col overflow-hidden bg-background/40"
+      }
+    >
+      {/* Compact Blueprint Header & Interactive Controls */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50/90 px-4 py-2 text-xs dark:border-border/60 dark:bg-muted/15">
         <div className="flex flex-wrap items-center gap-2 text-muted-foreground">
           {parsed.title && (
             <span className="font-semibold text-slate-900 dark:text-foreground">{parsed.title}</span>
           )}
-          {parsed.scopeMeta && (
+          {cleanScopeMeta && (
             <span className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium tabular-nums text-slate-600 dark:border-border/60 dark:bg-muted/60 dark:text-muted-foreground">
-              {parsed.scopeMeta}
+              {cleanScopeMeta}
             </span>
           )}
         </div>
-        <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-0.5 text-[11px] shadow-2xs dark:border-border/70 dark:bg-background/80">
+        <div className="flex flex-wrap items-center gap-1 rounded-lg border border-slate-200 bg-white p-0.5 text-[11px] shadow-2xs dark:border-border/70 dark:bg-background/80">
           <button
             type="button"
-            onClick={() => setZoom((z) => Math.max(0.6, Math.round((z - 0.15) * 100) / 100))}
-            className="rounded px-2 py-0.5 font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:text-muted-foreground dark:hover:bg-muted dark:hover:text-foreground"
-            aria-label="Zoom out"
+            onClick={() => setZoom((z) => Math.max(0.4, Math.round((z - 0.15) * 100) / 100))}
+            className="inline-flex items-center rounded px-1.5 py-1 font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:text-muted-foreground dark:hover:bg-muted dark:hover:text-foreground"
+            aria-label={t("Zoom out", "Thu nhỏ")}
+            title={t("Zoom out", "Thu nhỏ")}
           >
-            −
+            <ZoomOut className="size-3.5" aria-hidden="true" />
           </button>
           <span className="min-w-[42px] text-center font-mono font-semibold tabular-nums text-slate-800 dark:text-foreground/85">
             {Math.round(zoom * 100)}%
           </span>
           <button
             type="button"
-            onClick={() => setZoom((z) => Math.min(2, Math.round((z + 0.15) * 100) / 100))}
-            className="rounded px-2 py-0.5 font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:text-muted-foreground dark:hover:bg-muted dark:hover:text-foreground"
-            aria-label="Zoom in"
+            onClick={() => setZoom((z) => Math.min(2.5, Math.round((z + 0.15) * 100) / 100))}
+            className="inline-flex items-center rounded px-1.5 py-1 font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:text-muted-foreground dark:hover:bg-muted dark:hover:text-foreground"
+            aria-label={t("Zoom in", "Phóng to")}
+            title={t("Zoom in", "Phóng to")}
           >
-            +
+            <ZoomIn className="size-3.5" aria-hidden="true" />
           </button>
-          {zoom !== 1 && (
+          <button
+            type="button"
+            onClick={fitToView}
+            className="inline-flex items-center gap-1 rounded border-l border-slate-200 px-2 py-0.5 font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:border-border/60 dark:text-muted-foreground dark:hover:bg-muted dark:hover:text-foreground"
+            aria-label={t("Zoom to fit", "Vừa khung hình")}
+            title={t("Fit diagram to viewport", "Căn vừa khung hình")}
+          >
+            <ScanSearch className="size-3" aria-hidden="true" />
+            <span>{t("Fit", "Vừa khung")}</span>
+          </button>
+          {isModifiedView && (
             <button
               type="button"
-              onClick={() => setZoom(1)}
-              className="ml-0.5 rounded border-l border-slate-200 px-2 py-0.5 font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:border-border/60 dark:text-muted-foreground dark:hover:bg-muted dark:hover:text-foreground"
+              onClick={() => {
+                setZoom(1);
+                setPan({ x: 0, y: 0 });
+              }}
+              className="inline-flex items-center gap-1 rounded border-l border-slate-200 px-2 py-0.5 font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:border-border/60 dark:text-muted-foreground dark:hover:bg-muted dark:hover:text-foreground"
+              aria-label={t("Reset zoom", "Đặt lại 100%")}
+              title={t("Reset view to 100%", "Đặt lại 100%")}
             >
-              Reset
+              <RotateCcw className="size-3" aria-hidden="true" />
+              <span>{t("Reset", "Đặt lại")}</span>
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => void toggleFullscreen()}
+            className="inline-flex items-center gap-1 rounded border-l border-slate-200 px-2 py-0.5 font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:border-border/60 dark:text-muted-foreground dark:hover:bg-muted dark:hover:text-foreground"
+            aria-label={
+              isFullscreen
+                ? t("Exit fullscreen", "Thoát toàn màn hình")
+                : t("Fullscreen", "Toàn màn hình")
+            }
+            title={
+              isFullscreen
+                ? t("Exit fullscreen (Esc)", "Thoát toàn màn hình (Esc)")
+                : t("Fullscreen", "Mở toàn màn hình")
+            }
+          >
+            {isFullscreen ? (
+              <Minimize2 className="size-3.5" aria-hidden="true" />
+            ) : (
+              <Maximize2 className="size-3.5" aria-hidden="true" />
+            )}
+          </button>
         </div>
       </div>
 
-      {/* Drafting Canvas */}
+      {/* Drafting Canvas with Pan & Drag */}
       <div
-        className="flex w-full overflow-auto p-3"
+        ref={viewportRef}
+        onDoubleClick={fitToView}
+        onPointerDown={(event) => {
+          if (event.button !== 0) return;
+          dragRef.current = {
+            active: true,
+            pointerId: event.pointerId,
+            startX: event.clientX,
+            startY: event.clientY,
+            originX: pan.x,
+            originY: pan.y,
+            moved: false,
+          };
+        }}
+        onPointerMove={(event) => {
+          const d = dragRef.current;
+          if (!d.active || d.pointerId !== event.pointerId) return;
+          const dx = event.clientX - d.startX;
+          const dy = event.clientY - d.startY;
+          if (!d.moved && Math.hypot(dx, dy) > 5) {
+            d.moved = true;
+            setIsDragging(true);
+            suppressClickRef.current = true;
+          }
+          if (d.moved) {
+            setPan({ x: Math.round(d.originX + dx), y: Math.round(d.originY + dy) });
+          }
+        }}
+        onPointerUp={() => {
+          dragRef.current.active = false;
+          setIsDragging(false);
+        }}
+        onPointerCancel={() => {
+          dragRef.current.active = false;
+          setIsDragging(false);
+          suppressClickRef.current = false;
+        }}
+        onClickCapture={(event) => {
+          if (suppressClickRef.current) {
+            suppressClickRef.current = false;
+            event.stopPropagation();
+          }
+        }}
+        className={`flex w-full overflow-auto p-3 ${isDragging ? "cursor-grabbing" : "cursor-grab"}`}
         style={{
           height: canvasHeight,
           backgroundColor: isDark ? "#080d17" : "#f1f5f9",
@@ -762,9 +963,9 @@ export function ArchitectureSvgViewer({
         <svg
           viewBox={parsed.viewBox}
           preserveAspectRatio="xMidYMid meet"
-          className="m-auto block shrink-0 select-none"
-          style={
-            zoom <= 1
+          className="m-auto block shrink-0 select-none transition-transform duration-75 ease-out"
+          style={{
+            ...(zoom <= 1
               ? {
                   width: `${Math.round(zoom * 100)}%`,
                   height: `${Math.round(zoom * 100)}%`,
@@ -774,8 +975,9 @@ export function ArchitectureSvgViewer({
               : {
                   width: `${Math.round(parsed.vbW * zoom)}px`,
                   height: `${Math.round(parsed.vbH * zoom)}px`,
-                }
-          }
+                }),
+            transform: pan.x !== 0 || pan.y !== 0 ? `translate(${pan.x}px, ${pan.y}px)` : undefined,
+          }}
           role="img"
           aria-label="Architecture diagram SVG preview"
         >
@@ -1113,40 +1315,43 @@ export function ArchitectureSvgViewer({
           {parsed.hasBoundary && (
             <span className="inline-flex items-center gap-1.5">
               <span className="inline-block h-3 w-4 rounded-xs border border-dashed border-slate-500 dark:border-slate-400" />
-              Boundary
+              {t("System Boundary", "Ranh giới hệ thống")}
             </span>
           )}
           <span className="inline-flex items-center gap-1.5">
             <span className="inline-block h-3 w-4 rounded-xs border border-blue-600 bg-blue-100 dark:border-sky-500/70 dark:bg-sky-500/20" />
-            Service / System
+            {t("Service / System", "Dịch vụ / Hệ thống")}
           </span>
           {parsed.hasDatabase && (
             <span className="inline-flex items-center gap-1.5">
               <span className="inline-block h-3 w-3.5 rounded-full border border-emerald-600 bg-emerald-100 dark:border-emerald-500/70 dark:bg-emerald-500/20" />
-              Database
+              {t("Database", "Cơ sở dữ liệu")}
             </span>
           )}
           {parsed.hasChannel && (
             <span className="inline-flex items-center gap-1.5">
               <span className="inline-block h-3 w-4 rounded-xs border-x-2 border-y border-violet-600 bg-violet-100 dark:border-violet-500/70 dark:bg-violet-500/20" />
-              Message Channel
+              {t("Message Channel", "Kênh sự kiện / Hàng đợi")}
             </span>
           )}
           {parsed.edges.length > 0 && (
             <span className="inline-flex items-center gap-1.5">
               <span className="inline-block w-4 border-t-[1.5px] border-slate-500 dark:border-slate-400" />
-              Source call
+              {t("Source call", "Lệnh gọi mã nguồn")}
             </span>
           )}
           {parsed.hasDashedEdge && (
             <span className="inline-flex items-center gap-1.5">
               <span className="inline-block w-4 border-t-[1.5px] border-dashed border-slate-500 dark:border-slate-400" />
-              Compose / Config
+              {t("Compose / Config", "Cấu hình / Compose")}
             </span>
           )}
           {onSelect && (
             <span className="ml-auto hidden text-[11px] font-normal text-slate-500 dark:text-muted-foreground/75 sm:inline">
-              Click a node or edge to inspect
+              {t(
+                "Drag to pan · Ctrl+Scroll to zoom · Click a node or edge to inspect",
+                "Kéo để di chuyển · Ctrl+Cuộn để phóng to · Nhấp phần tử/kết nối để kiểm tra",
+              )}
             </span>
           )}
         </div>

@@ -288,7 +288,7 @@ export function ArchitectureDiagrams({
                 onChange={setService}
                 options={containers.map((node) => ({
                   value: node.id,
-                  label: `${node.name}${node.count === 0 ? " · no components extracted" : ""}`,
+                  label: `${node.name}${node.count === 0 ? ` · ${t("no components extracted", "chưa tách thành phần con")}` : ""}`,
                 }))}
               />
             </div>
@@ -296,11 +296,11 @@ export function ArchitectureDiagrams({
           {showServiceScopeSelect && (
             <div className="w-full sm:w-80">
               <SelectField
-                label="Service"
+                label={t("Service", "Dịch vụ (Service)")}
                 value={kind === "UML_CLASS" ? service || container?.id || "ALL" : service || "ALL"}
                 onChange={setService}
                 options={[
-                  { value: "ALL", label: "All services" },
+                  { value: "ALL", label: t("All services", "Tất cả Service") },
                   ...containers.map((node) => ({
                     value: node.id,
                     label: node.name,
@@ -358,7 +358,9 @@ export function ArchitectureDiagrams({
           {error}
         </p>
       ) : !xml ? (
-        <p role="status" className="p-6 text-sm text-muted-foreground">Preparing diagram…</p>
+        <p role="status" className="p-6 text-sm text-muted-foreground">
+          {t("Preparing diagram…", "Đang dựng sơ đồ kiến trúc…")}
+        </p>
       ) : (
         <div className={guidedStatic ? "" : "space-y-2.5"}>
           {/* C4 Top 3E Element & Relationship Inspector Bar */}
@@ -373,8 +375,8 @@ export function ArchitectureDiagrams({
             >
               <div className="grid gap-3 sm:grid-cols-2">
                 <SearchableThreeESelect
-                  label="Element to explore"
-                  placeholder="Select or search elements…"
+                  label={t("Element to explore", "Chọn thành phần để kiểm tra")}
+                  placeholder={t("Select or search elements…", "Chọn hoặc tìm thành phần…")}
                   selectedValue={selectedId}
                   onSelect={onSelect}
                   options={c4DocNodes.map((node, idx) => ({
@@ -389,8 +391,8 @@ export function ArchitectureDiagrams({
                   }))}
                 />
                 <SearchableThreeESelect
-                  label="Connection to explore"
-                  placeholder="Select or search connections…"
+                  label={t("Connection to explore", "Chọn kết nối để kiểm tra")}
+                  placeholder={t("Select or search connections…", "Chọn hoặc tìm kết nối…")}
                   selectedValue={selectedId}
                   onSelect={onSelect}
                   options={c4DocEdges.map((edge, idx) => ({
@@ -400,7 +402,9 @@ export function ArchitectureDiagrams({
                     sublabel:
                       [
                         edge.description,
-                        edge.underlyingCount > 1 ? `${edge.underlyingCount} calls` : "",
+                        edge.underlyingCount > 1
+                          ? `${edge.underlyingCount} ${t("calls", "lượt gọi")}`
+                          : "",
                       ]
                         .filter(Boolean)
                         .join(" · ") || undefined,
