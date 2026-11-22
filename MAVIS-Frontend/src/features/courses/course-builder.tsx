@@ -1,22 +1,32 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BookOpen,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ChevronUp,
+  ChevronsDownUp,
+  ChevronsUpDown,
+  Clock,
   Code2,
   ExternalLink,
-  Eye,
   FileText,
   GitFork,
   HelpCircle,
+  Lock,
   Pencil,
   Play,
   Plus,
   Save,
+  Search,
+  Send,
+  Settings2,
   Trash2,
+  X,
+  Zap,
   type LucideIcon,
 } from "lucide-react";
 import { MarkdownPreview } from "@/components/shared/markdown-preview";
@@ -32,13 +42,58 @@ import { labTierMeta, resolveLabTier } from "@/features/assignments/requirements
 const itemTypes = ["THEORY", "QUIZ", "ESSAY", "STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"] as const;
 type ItemType = (typeof itemTypes)[number];
 
-const TYPE_META: Record<ItemType, { en: string; vi: string; icon: LucideIcon }> = {
-  THEORY: { en: "Theory Lab", vi: "Lab chỉ Lý thuyết", icon: BookOpen },
-  QUIZ: { en: "Theory + Quiz Lab", vi: "Lab Lý thuyết + Quiz", icon: HelpCircle },
-  ESSAY: { en: "Essay", vi: "Tự luận", icon: FileText },
-  STATIC_LAB: { en: "Theory Only Lab", vi: "Lab chỉ Lý thuyết", icon: Code2 },
-  IMPACT_LAB: { en: "Theory + Quiz Lab", vi: "Lab Lý thuyết + Quiz", icon: GitFork },
-  RUNTIME_LAB: { en: "Theory + Quiz + Studio Lab", vi: "Lab Lý thuyết + Quiz + Studio", icon: Play },
+const TYPE_META: Record<
+  ItemType,
+  { en: string; vi: string; shortEn: string; shortVi: string; icon: LucideIcon; tone: string }
+> = {
+  THEORY: {
+    en: "Theory Lab",
+    vi: "Lab chỉ Lý thuyết",
+    shortEn: "Theory Only",
+    shortVi: "Chỉ Lý thuyết",
+    icon: BookOpen,
+    tone: "text-teal-700 bg-teal-500/10 border-teal-500/25 dark:text-teal-300",
+  },
+  QUIZ: {
+    en: "Theory + Quiz Lab",
+    vi: "Lab Lý thuyết + Quiz",
+    shortEn: "Theory + Quiz",
+    shortVi: "Lý thuyết + Quiz",
+    icon: HelpCircle,
+    tone: "text-indigo-700 bg-indigo-500/10 border-indigo-500/25 dark:text-indigo-300",
+  },
+  ESSAY: {
+    en: "Essay",
+    vi: "Tự luận",
+    shortEn: "Essay",
+    shortVi: "Tự luận",
+    icon: FileText,
+    tone: "text-amber-700 bg-amber-500/10 border-amber-500/25 dark:text-amber-300",
+  },
+  STATIC_LAB: {
+    en: "Theory Only Lab",
+    vi: "Lab chỉ Lý thuyết",
+    shortEn: "Theory Only",
+    shortVi: "Chỉ Lý thuyết",
+    icon: Code2,
+    tone: "text-teal-700 bg-teal-500/10 border-teal-500/25 dark:text-teal-300",
+  },
+  IMPACT_LAB: {
+    en: "Theory + Quiz Lab",
+    vi: "Lab Lý thuyết + Quiz",
+    shortEn: "Theory + Quiz",
+    shortVi: "Lý thuyết + Quiz",
+    icon: GitFork,
+    tone: "text-indigo-700 bg-indigo-500/10 border-indigo-500/25 dark:text-indigo-300",
+  },
+  RUNTIME_LAB: {
+    en: "Theory + Quiz + Studio Lab",
+    vi: "Lab Lý thuyết + Quiz + Studio",
+    shortEn: "Full Studio",
+    shortVi: "Có cả Studio",
+    icon: Play,
+    tone: "text-emerald-700 bg-emerald-500/10 border-emerald-500/25 dark:text-emerald-300",
+  },
 };
 
 type Item = {
@@ -59,6 +114,15 @@ type Module = {
   position: number;
   prerequisiteModuleId: string | null;
   items: Item[];
+};
+
+type AssignmentRow = {
+  id: string;
+  title: string;
+  instructions?: string;
+  labMode?: string | null;
+  requireRuntimeTrace?: boolean;
+  aiPolicy?: unknown;
 };
 
 type ItemDraft = {
@@ -93,7 +157,10 @@ function parseRubric(value: string) {
     .map((line) => {
       const [criterion, score] = line.split("|").map((part) => part.trim());
       const parsed = score === undefined || score === "" ? 10 : Number(score);
-      return { criterion: criterion || "Criterion", maxScore: Number.isFinite(parsed) ? parsed : 10 };
+      return {
+        criterion: criterion || "Criterion",
+        maxScore: Number.isFinite(parsed) ? parsed : 10,
+      };
     });
 }
 
@@ -111,10 +178,10 @@ function rubricText(rubric: unknown) {
 
 function contentFromDraft(draft: ItemDraft): Record<string, unknown> {
   const mins = Number.parseInt(draft.estimatedMinutes, 10);
-  const meta =
-    Number.isFinite(mins) && mins > 0 && mins <= 600 ? { estimatedMinutes: mins } : {};
+  const meta = Number.isFinite(mins) && mins > 0 && mins <= 600 ? { estimatedMinutes: mins } : {};
   if (draft.type === "THEORY") return { ...meta, body: draft.body.trim() };
-  if (draft.type === "ESSAY") return { ...meta, prompt: draft.prompt.trim(), rubric: parseRubric(draft.rubric) };
+  if (draft.type === "ESSAY")
+    return { ...meta, prompt: draft.prompt.trim(), rubric: parseRubric(draft.rubric) };
   return meta;
 }
 
@@ -140,7 +207,10 @@ function draftValid(draft: ItemDraft) {
   if (!draft.title.trim()) return false;
   if (draft.type === "THEORY" && !draft.body.trim()) return false;
   if (draft.type === "ESSAY" && !draft.prompt.trim()) return false;
-  if (["QUIZ", "STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(draft.type) && !draft.assignmentId) {
+  if (
+    ["QUIZ", "STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(draft.type) &&
+    !draft.assignmentId
+  ) {
     return false;
   }
   return true;
@@ -157,6 +227,11 @@ function itemTypeForAssignment(assignment: {
   return "IMPACT_LAB";
 }
 
+function itemEstimatedMinutes(item: Item): number | null {
+  const raw = item.content?.["estimatedMinutes"];
+  return typeof raw === "number" && Number.isFinite(raw) && raw > 0 ? raw : null;
+}
+
 function ItemFields({
   draft,
   onChange,
@@ -165,14 +240,7 @@ function ItemFields({
 }: {
   draft: ItemDraft;
   onChange: (patch: Partial<ItemDraft>) => void;
-  assignments: Array<{
-    id: string;
-    title: string;
-    instructions?: string;
-    labMode?: string | null;
-    requireRuntimeTrace?: boolean;
-    aiPolicy?: unknown;
-  }>;
+  assignments: AssignmentRow[];
   t: (en: string, vi: string) => string;
 }) {
   const isLegacyRawTheory = draft.type === "THEORY" && !draft.assignmentId;
@@ -182,9 +250,9 @@ function ItemFields({
       : assignments;
   const needsAssignment = !isLegacyRawTheory;
   return (
-    <div className="space-y-3">
+    <div className="space-y-3.5">
       {needsAssignment && (
-        <label className="space-y-1 text-xs font-medium">
+        <label className="block space-y-1 text-xs font-medium">
           <span>{t("Select created Lab", "Chọn bài Lab đã tạo (từ tab Tạo Lab)")}</span>
           <select
             className="w-full rounded-md border bg-background px-3 py-2 text-sm"
@@ -199,14 +267,19 @@ function ItemFields({
                   title: draft.title.trim() ? draft.title : picked.title,
                   description: draft.description.trim()
                     ? draft.description
-                    : (picked.instructions?.split("\n")[0]?.replace(/^#+\s*/, "").slice(0, 160) ?? ""),
+                    : (picked.instructions
+                        ?.split("\n")[0]
+                        ?.replace(/^#+\s*/, "")
+                        .slice(0, 160) ?? ""),
                 });
               } else {
                 onChange({ assignmentId: "" });
               }
             }}
           >
-            <option value="">{t("Choose a Lab in this class…", "Chọn bài Lab trong lớp này…")}</option>
+            <option value="">
+              {t("Choose a Lab in this class…", "Chọn bài Lab trong lớp này…")}
+            </option>
             {(labs.length > 0 ? labs : assignments).map((assignment) => {
               const tier = resolveLabTier(assignment);
               const meta = labTierMeta(tier);
@@ -220,7 +293,7 @@ function ItemFields({
         </label>
       )}
       <div className="grid gap-3 sm:grid-cols-2">
-        <label className="space-y-1 text-xs font-medium">
+        <label className="block space-y-1 text-xs font-medium">
           <span>{t("Lab tier in this chapter", "Cấp độ bài Lab trong Chương / Mốc")}</span>
           <select
             className="w-full rounded-md border bg-background px-3 py-2 text-sm"
@@ -242,7 +315,7 @@ function ItemFields({
             ))}
           </select>
         </label>
-        <label className="space-y-1 text-xs font-medium">
+        <label className="block space-y-1 text-xs font-medium">
           <span>{t("Display title in chapter", "Tên hiển thị trong chương")}</span>
           <Input
             required
@@ -253,15 +326,15 @@ function ItemFields({
           />
         </label>
       </div>
-      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_160px]">
-        <label className="space-y-1 text-xs font-medium">
+      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_150px]">
+        <label className="block space-y-1 text-xs font-medium">
           <span>{t("Short description", "Mô tả ngắn")}</span>
           <Input
             value={draft.description}
             onChange={(event) => onChange({ description: event.target.value })}
           />
         </label>
-        <label className="space-y-1 text-xs font-medium">
+        <label className="block space-y-1 text-xs font-medium">
           <span>{t("Duration (min)", "Thời lượng (phút)")}</span>
           <Input
             type="number"
@@ -275,16 +348,14 @@ function ItemFields({
         </label>
       </div>
       {isLegacyRawTheory && (
-        <div className="space-y-1.5">
-          <label className="space-y-1 text-xs font-medium">
-            <span>{t("Theory content", "Nội dung lý thuyết")}</span>
-            <Textarea
-              rows={7}
-              value={draft.body}
-              onChange={(event) => onChange({ body: event.target.value })}
-            />
-          </label>
-        </div>
+        <label className="block space-y-1 text-xs font-medium">
+          <span>{t("Theory content", "Nội dung lý thuyết")}</span>
+          <Textarea
+            rows={9}
+            value={draft.body}
+            onChange={(event) => onChange({ body: event.target.value })}
+          />
+        </label>
       )}
       <label className="flex items-center gap-2 text-xs font-medium">
         <input
@@ -302,47 +373,150 @@ function ItemFields({
 export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
   const { t } = useLocale();
   const course = useCourseAuthoring(workspaceId);
-  const assignments = useApiQuery("assignments", { workspaceId }, { enabled: Boolean(workspaceId) });
+  const assignments = useApiQuery(
+    "assignments",
+    { workspaceId },
+    { enabled: Boolean(workspaceId) },
+  );
+
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [showCourseInfo, setShowCourseInfo] = useState(false);
+
+  const [outlineQuery, setOutlineQuery] = useState("");
+  const [collapsedModules, setCollapsedModules] = useState<Record<string, boolean>>({});
+
+  const [showAddModule, setShowAddModule] = useState(false);
   const [moduleTitle, setModuleTitle] = useState("");
   const [moduleDescription, setModuleDescription] = useState("");
   const [modulePrerequisite, setModulePrerequisite] = useState("");
-  const [drafts, setDrafts] = useState<Record<string, ItemDraft>>({});
+
   const [editingModule, setEditingModule] = useState<Module | null>(null);
   const [editModuleTitle, setEditModuleTitle] = useState("");
   const [editModuleDescription, setEditModuleDescription] = useState("");
   const [editModulePrerequisite, setEditModulePrerequisite] = useState("");
-  const [editingItem, setEditingItem] = useState<{ moduleId: string; itemId: string; draft: ItemDraft } | null>(null);
-  const [selectedItem, setSelectedItem] = useState<{ moduleId: string; itemId: string } | null>(null);
+
+  const [addingItemModuleId, setAddingItemModuleId] = useState<string | null>(null);
+  const [drafts, setDrafts] = useState<Record<string, ItemDraft>>({});
+
+  const [editingItem, setEditingItem] = useState<{
+    moduleId: string;
+    itemId: string;
+    draft: ItemDraft;
+  } | null>(null);
+  const [selectedItem, setSelectedItem] = useState<{ moduleId: string; itemId: string } | null>(
+    null,
+  );
+
   const inspectorRef = useRef<HTMLElement>(null);
+  const inspectorBodyRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setTitle(course.data?.title ?? "");
     setDescription(course.data?.description ?? "");
   }, [course.data?.id, course.data?.title, course.data?.description]);
 
-  useEffect(() => {
-    if (!editingItem || !inspectorRef.current) return;
-    inspectorRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    const firstInput = inspectorRef.current.querySelector<HTMLInputElement>("input[type='text'], input:not([type])");
-    firstInput?.focus({ preventScroll: true });
-  }, [editingItem?.itemId]);
+  const isDraft = course.data?.status === "DRAFT";
 
-  if (course.isPending) {
-    return <p className="text-sm text-muted-foreground">{t("Loading course builder…", "Đang tải trình tạo khóa học…")}</p>;
-  }
+  useEffect(() => {
+    if (!isDraft) {
+      setShowAddModule(false);
+      setEditingModule(null);
+      setAddingItemModuleId(null);
+      setEditingItem(null);
+    }
+  }, [isDraft]);
+
+  const editingItemId = editingItem?.itemId ?? null;
+
+  useEffect(() => {
+    if (!editingItemId || !inspectorRef.current) return;
+    inspectorRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    const firstInput = inspectorRef.current.querySelector<HTMLInputElement>(
+      "input[type='text'], input:not([type])",
+    );
+    firstInput?.focus({ preventScroll: true });
+  }, [editingItemId]);
+
+  useEffect(() => {
+    inspectorBodyRef.current?.scrollTo({ top: 0 });
+  }, [
+    selectedItem?.itemId,
+    editingItem?.itemId,
+    addingItemModuleId,
+    editingModule?.id,
+    showAddModule,
+  ]);
 
   const data = course.data;
-  const modules = (data?.modules as Module[] | undefined) ?? [];
-  const assignmentRows = (assignments.data ?? []) as Array<{
-    id: string;
-    title: string;
-    instructions?: string;
-    labMode?: string | null;
-    requireRuntimeTrace?: boolean;
-    aiPolicy?: unknown;
-  }>;
+  const modules = useMemo(() => (data?.modules as Module[] | undefined) ?? [], [data?.modules]);
+  const assignmentRows = useMemo(
+    () => (assignments.data ?? []) as AssignmentRow[],
+    [assignments.data],
+  );
+
+  const resolveBuilderItemType = (item: Item): ItemType => {
+    const linked = item.assignmentId
+      ? assignmentRows.find((a) => a.id === item.assignmentId)
+      : undefined;
+    if (linked) {
+      return itemTypeForAssignment(linked);
+    }
+    return item.type;
+  };
+
+  const flatItems = useMemo(() => {
+    const entries: Array<{ module: Module; item: Item }> = [];
+    for (const mod of modules) {
+      for (const item of mod.items) {
+        if (item.type !== "ESSAY") entries.push({ module: mod, item });
+      }
+    }
+    return entries;
+  }, [modules]);
+
+  const normalizedQuery = outlineQuery.trim().toLowerCase();
+  const filteredModules = useMemo(() => {
+    if (!normalizedQuery) {
+      return modules.map((mod) => ({
+        module: mod,
+        visibleItems: mod.items.filter((item) => item.type !== "ESSAY"),
+      }));
+    }
+    return modules
+      .map((mod) => {
+        const allVisible = mod.items.filter((item) => item.type !== "ESSAY");
+        const moduleMatches =
+          mod.title.toLowerCase().includes(normalizedQuery) ||
+          (mod.description?.toLowerCase().includes(normalizedQuery) ?? false);
+        if (moduleMatches) return { module: mod, visibleItems: allVisible };
+        const matchedItems = allVisible.filter((item) => {
+          const linked = item.assignmentId
+            ? assignmentRows.find((a) => a.id === item.assignmentId)
+            : undefined;
+          return (
+            item.title.toLowerCase().includes(normalizedQuery) ||
+            (linked?.title.toLowerCase().includes(normalizedQuery) ?? false)
+          );
+        });
+        return { module: mod, visibleItems: matchedItems };
+      })
+      .filter(({ module, visibleItems }) => {
+        const moduleMatches =
+          module.title.toLowerCase().includes(normalizedQuery) ||
+          (module.description?.toLowerCase().includes(normalizedQuery) ?? false);
+        return moduleMatches || visibleItems.length > 0;
+      });
+  }, [modules, normalizedQuery, assignmentRows]);
+
+  if (course.isPending) {
+    return (
+      <div className="rounded-xl border bg-card p-6 text-sm text-muted-foreground">
+        {t("Loading course builder…", "Đang tải trình tạo khóa học…")}
+      </div>
+    );
+  }
+
   const busy =
     course.save.isPending ||
     course.addModule.isPending ||
@@ -356,22 +530,83 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
 
   const inspectedItem = (() => {
     const targetId = editingItem?.itemId ?? selectedItem?.itemId;
-    for (const mod of modules) {
-      const visibleItems = mod.items.filter((item) => item.type !== "ESSAY");
-      const found = targetId ? visibleItems.find((item) => item.id === targetId) : visibleItems[0];
-      if (found) return { module: mod, item: found };
+    if (targetId) {
+      const exact = flatItems.find((entry) => entry.item.id === targetId);
+      if (exact) return exact;
     }
-    return null;
+    return flatItems[0] ?? null;
   })();
-  const isDraft = data?.status === "DRAFT";
+
+  const activeFlatIndex = inspectedItem
+    ? flatItems.findIndex((entry) => entry.item.id === inspectedItem.item.id)
+    : -1;
+
+  const allCollapsed = modules.length > 0 && modules.every((m) => collapsedModules[m.id]);
+
+  const toggleAllModules = () => {
+    if (allCollapsed) {
+      setCollapsedModules({});
+    } else {
+      const next: Record<string, boolean> = {};
+      for (const m of modules) next[m.id] = true;
+      setCollapsedModules(next);
+    }
+  };
 
   const draftFor = (moduleId: string) => drafts[moduleId] ?? emptyDraft();
   const updateDraft = (moduleId: string, patch: Partial<ItemDraft>) =>
-    setDrafts((current) => ({ ...current, [moduleId]: { ...(current[moduleId] ?? emptyDraft()), ...patch } }));
+    setDrafts((current) => ({
+      ...current,
+      [moduleId]: { ...(current[moduleId] ?? emptyDraft()), ...patch },
+    }));
+
+  const clearRightEditors = () => {
+    setShowAddModule(false);
+    setEditingModule(null);
+    setAddingItemModuleId(null);
+    setEditingItem(null);
+  };
+
+  const selectItem = (moduleId: string, itemId: string) => {
+    clearRightEditors();
+    setSelectedItem({ moduleId, itemId });
+  };
+
+  const openAddModule = () => {
+    clearRightEditors();
+    setShowAddModule(true);
+  };
+
+  const openEditModule = (mod: Module) => {
+    clearRightEditors();
+    setEditingModule(mod);
+    setEditModuleTitle(mod.title);
+    setEditModuleDescription(mod.description ?? "");
+    setEditModulePrerequisite(mod.prerequisiteModuleId ?? "");
+  };
+
+  const openAddItem = (moduleId: string) => {
+    clearRightEditors();
+    setAddingItemModuleId(moduleId);
+    setCollapsedModules((prev) => ({ ...prev, [moduleId]: false }));
+  };
+
+  const openEditItem = (moduleId: string, item: Item) => {
+    clearRightEditors();
+    setSelectedItem({ moduleId, itemId: item.id });
+    setEditingItem({ moduleId, itemId: item.id, draft: draftFromItem(item) });
+  };
 
   const saveCourse = (event: React.FormEvent) => {
     event.preventDefault();
-    course.save.mutate({ title, description });
+    course.save.mutate(
+      { title, description },
+      {
+        onSuccess: () => {
+          if (data) setShowCourseInfo(false);
+        },
+      },
+    );
   };
 
   const addModule = (event: React.FormEvent) => {
@@ -387,15 +622,9 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
         setModuleTitle("");
         setModuleDescription("");
         setModulePrerequisite("");
+        setShowAddModule(false);
       },
     });
-  };
-
-  const startEditModule = (module: Module) => {
-    setEditingModule(module);
-    setEditModuleTitle(module.title);
-    setEditModuleDescription(module.description ?? "");
-    setEditModulePrerequisite(module.prerequisiteModuleId ?? "");
   };
 
   const saveModule = (event: React.FormEvent) => {
@@ -433,7 +662,12 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
     };
     if (draft.description.trim()) body.description = draft.description.trim();
     if (draft.assignmentId) body.assignmentId = draft.assignmentId;
-    course.addItem.mutate(body, { onSuccess: () => setDrafts((current) => ({ ...current, [moduleId]: emptyDraft() })) });
+    course.addItem.mutate(body, {
+      onSuccess: () => {
+        setDrafts((current) => ({ ...current, [moduleId]: emptyDraft() }));
+        setAddingItemModuleId(null);
+      },
+    });
   };
 
   const saveItem = (event: React.FormEvent) => {
@@ -462,663 +696,1174 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
     course.updateItem.mutate(body, { onSuccess: () => setEditingItem(null) });
   };
 
+  const addingItemModule = addingItemModuleId
+    ? (modules.find((mod) => mod.id === addingItemModuleId) ?? null)
+    : null;
+
+  const inspectedResolvedType = inspectedItem ? resolveBuilderItemType(inspectedItem.item) : null;
+  const inspectedMeta = inspectedResolvedType
+    ? (TYPE_META[inspectedResolvedType] ?? TYPE_META.THEORY)
+    : null;
+  const inspectedLinkedAssignment = inspectedItem?.item.assignmentId
+    ? assignmentRows.find((a) => a.id === inspectedItem.item.assignmentId)
+    : undefined;
+  const inspectedBodyMarkdown =
+    inspectedItem && typeof inspectedItem.item.content?.["body"] === "string"
+      ? inspectedItem.item.content["body"].trim()
+      : "";
+  const inspectedDuration = inspectedItem ? itemEstimatedMinutes(inspectedItem.item) : null;
+
+  const activeError =
+    (course.save.isError &&
+      t("Could not save the course draft.", "Không lưu được bản nháp khóa học.")) ||
+    (course.startDraft.isError &&
+      t("Could not create a new draft.", "Không tạo được bản nháp mới.")) ||
+    (course.addModule.isError && t("Could not add the module.", "Không thêm được chương.")) ||
+    (course.updateModule.isError &&
+      t("Could not update the module.", "Không cập nhật được chương.")) ||
+    (course.deleteModule.isError && t("Could not delete the module.", "Không xóa được chương.")) ||
+    (course.addItem.isError &&
+      t(
+        "Could not add the learning item. Verify the linked Lab belongs to this class and required content is filled.",
+        "Không thêm được nội dung. Kiểm tra Lab liên kết thuộc lớp này và nội dung bắt buộc đã nhập.",
+      )) ||
+    (course.updateItem.isError &&
+      t("Could not update the learning item.", "Không cập nhật được nội dung.")) ||
+    (course.deleteItem.isError &&
+      t("Could not delete the learning item.", "Không xóa được nội dung.")) ||
+    (course.publish.isError &&
+      t(
+        "Course could not be published. Every module needs at least one item and linked Labs must belong to this class.",
+        "Không publish được khóa học. Mỗi chương cần ít nhất một nội dung và Lab liên kết phải thuộc lớp này.",
+      )) ||
+    null;
+
   return (
-    <section id="course-builder" aria-labelledby="course-builder-title" className="space-y-5 rounded-xl border bg-card p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 id="course-builder-title" className="flex items-center gap-2 font-semibold">
-            <BookOpen className="size-4" aria-hidden="true" />
+    <section
+      id="course-builder"
+      aria-labelledby="course-builder-title"
+      className="overflow-hidden rounded-xl border bg-card shadow-xs"
+    >
+      {/* Compact Unified Workspace Header */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-card px-4 py-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-2.5">
+          <h2
+            id="course-builder-title"
+            className="flex items-center gap-2 text-sm font-semibold text-foreground"
+          >
+            <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+              <BookOpen className="size-4" aria-hidden="true" />
+            </span>
             {t("Course builder", "Trình tạo khóa học")}
           </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {t(
-              "Organize theory, quizzes, essays and Labs into modules. Published versions are immutable.",
-              "Tổ chức lý thuyết, Quiz, tự luận và Lab thành chương. Phiên bản đã công bố là bất biến.",
-            )}
-          </p>
+          {data && (
+            <>
+              <Badge
+                variant={data.status === "PUBLISHED" ? "success" : "secondary"}
+                className="gap-1 font-mono text-[11px]"
+              >
+                {data.status === "PUBLISHED" && <Lock className="size-3" aria-hidden="true" />}
+                {data.status} · r{data.draftRevision} · v{data.publishedVersion}
+              </Badge>
+              <span className="hidden text-xs text-muted-foreground sm:inline">
+                {modules.length}{" "}
+                {modules.length === 1 ? t("module", "chương") : t("modules", "chương")} ·{" "}
+                {flatItems.length}{" "}
+                {flatItems.length === 1 ? t("Lab", "bài Lab") : t("Labs", "bài Lab")}
+              </span>
+            </>
+          )}
         </div>
-        {data && (
-          <Badge variant={data.status === "PUBLISHED" ? "success" : "secondary"}>
-            {data.status} · r{data.draftRevision} · v{data.publishedVersion}
-          </Badge>
-        )}
+
+        <div className="flex flex-wrap items-center gap-2">
+          {data && (
+            <Button
+              type="button"
+              size="sm"
+              variant={showCourseInfo ? "secondary" : "ghost"}
+              onClick={() => setShowCourseInfo((open) => !open)}
+            >
+              <Settings2 className="mr-1.5 size-3.5" aria-hidden="true" />
+              {t("Course info", "Thông tin khóa")}
+            </Button>
+          )}
+          {data?.status === "PUBLISHED" && (
+            <Button
+              type="button"
+              size="sm"
+              disabled={course.startDraft.isPending}
+              onClick={() => course.startDraft.mutate()}
+            >
+              <Pencil className="mr-1.5 size-3.5" aria-hidden="true" />
+              {course.startDraft.isPending
+                ? t("Starting draft…", "Đang tạo nháp…")
+                : t("Start new draft", "Tạo bản nháp mới")}
+            </Button>
+          )}
+          {isDraft && (
+            <>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                onClick={openAddModule}
+              >
+                <Plus className="mr-1 size-3.5" aria-hidden="true" />
+                {t("New module", "Thêm chương")}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                disabled={!modules.length || course.publish.isPending}
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      t(
+                        "Publish an immutable snapshot of this course roadmap?",
+                        "Publish bản snapshot bất biến của lộ trình khóa học?",
+                      ),
+                    )
+                  )
+                    course.publish.mutate();
+                }}
+              >
+                <Send className="mr-1.5 size-3.5" aria-hidden="true" />
+                {course.publish.isPending
+                  ? t("Publishing…", "Đang publish…")
+                  : t("Publish course version", "Publish phiên bản khóa học")}
+              </Button>
+            </>
+          )}
+        </div>
       </div>
 
-      <form onSubmit={saveCourse} className="grid gap-3 md:grid-cols-[1fr_2fr_auto]">
-        <Input
-          aria-label={t("Course title", "Tên khóa học")}
-          required
-          maxLength={255}
-          placeholder={t("Course title", "Tên khóa học")}
-          value={title}
-          onChange={(event) => setTitle(event.target.value)}
-        />
-        <Input
-          aria-label={t("Course description", "Mô tả khóa học")}
-          placeholder={t("Description", "Mô tả")}
-          value={description}
-          onChange={(event) => setDescription(event.target.value)}
-        />
-        <Button disabled={busy}>
-          <Save className="mr-1 size-4" aria-hidden="true" />
-          {t("Save draft", "Lưu bản nháp")}
-        </Button>
-      </form>
-      {course.save.isError && (
-        <p role="alert" className="text-sm text-destructive">
-          {t("Could not save the course draft.", "Không lưu được bản nháp khóa học.")}
-        </p>
-      )}
-      {course.startDraft.isError && (
-        <p role="alert" className="text-sm text-destructive">
-          {t("Could not create a new draft.", "Không tạo được bản nháp mới.")}
-        </p>
+      {/* Collapsible Course Metadata Strip (always visible when creating a new course) */}
+      {(!data || showCourseInfo) && (
+        <div className="border-b bg-muted/20 px-4 py-3">
+          <form
+            onSubmit={saveCourse}
+            className="grid gap-2.5 md:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)_auto]"
+          >
+            <Input
+              aria-label={t("Course title", "Tên khóa học")}
+              required
+              maxLength={255}
+              disabled={data?.status === "PUBLISHED"}
+              placeholder={t("Course title", "Tên khóa học")}
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+            />
+            <Input
+              aria-label={t("Course description", "Mô tả khóa học")}
+              disabled={data?.status === "PUBLISHED"}
+              placeholder={t("Description", "Mô tả")}
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+            />
+            <div className="flex items-center gap-1.5">
+              <Button size="sm" disabled={busy || data?.status === "PUBLISHED"}>
+                <Save className="mr-1.5 size-3.5" aria-hidden="true" />
+                {t("Save draft", "Lưu bản nháp")}
+              </Button>
+              {data && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setShowCourseInfo(false)}
+                  aria-label={t("Close", "Đóng")}
+                >
+                  <X className="size-4" aria-hidden="true" />
+                </Button>
+              )}
+            </div>
+          </form>
+          {data?.status === "PUBLISHED" && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              {t(
+                "Published versions are immutable. Start a separate draft to continue editing.",
+                "Phiên bản đã publish là bất biến. Tạo bản nháp riêng để tiếp tục chỉnh sửa.",
+              )}
+            </p>
+          )}
+          {!data && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              {t(
+                "Save the course details to start its roadmap.",
+                "Lưu thông tin khóa học để bắt đầu tạo lộ trình.",
+              )}
+            </p>
+          )}
+        </div>
       )}
 
-      {!data && (
-        <p className="text-sm text-muted-foreground">
-          {t("Save the course details to start its roadmap.", "Lưu thông tin khóa học để bắt đầu tạo lộ trình.")}
-        </p>
+      {/* Alerts (0px when idle) */}
+      {activeError && (
+        <div
+          role="alert"
+          className="border-b bg-destructive/10 px-4 py-2 text-xs font-medium text-destructive"
+        >
+          {activeError}
+        </div>
       )}
-
-      {data && data.status === "PUBLISHED" && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3">
-          <p className="text-sm">
-            {t(
-              "Published versions are immutable. Start a separate draft to continue editing.",
-              "Phiên bản đã publish là bất biến. Tạo bản nháp riêng để tiếp tục chỉnh sửa.",
-            )}
-          </p>
-          <Button type="button" variant="outline" disabled={course.startDraft.isPending} onClick={() => course.startDraft.mutate()}>
-            {t("Start new draft", "Tạo bản nháp mới")}
+      {course.publish.isSuccess && (
+        <div
+          role="status"
+          className="flex flex-wrap items-center justify-between gap-2 border-b bg-emerald-500/10 px-4 py-2 text-xs text-emerald-800 dark:text-emerald-200"
+        >
+          <span>
+            {t("Published immutable version", "Đã publish phiên bản bất biến")} v
+            {course.publish.data.version} ·{" "}
+            <span className="font-mono">{course.publish.data.snapshotDigest.slice(0, 18)}…</span>
+          </span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs"
+            disabled={course.startDraft.isPending}
+            onClick={() => course.startDraft.mutate()}
+          >
+            {t("Continue in a new draft", "Tiếp tục bằng bản nháp mới")}
           </Button>
         </div>
       )}
 
+      {/* Dual-Pane Fixed-Viewport Studio Workbench */}
       {data && (
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] lg:items-start">
-          <div className="min-w-0 space-y-4">
-            {isDraft && (
-              <>
-                <form onSubmit={addModule} className="grid gap-2 rounded-lg border bg-muted/20 p-3 sm:grid-cols-2">
-                  <Input
-                    aria-label={t("Module title", "Tên chương")}
-                    required
-                    maxLength={255}
-                    placeholder={t("New module", "Chương mới")}
-                    value={moduleTitle}
-                    onChange={(event) => setModuleTitle(event.target.value)}
-                  />
-                  <Input
-                    aria-label={t("Module description", "Mô tả chương")}
-                    placeholder={t("Optional description", "Mô tả không bắt buộc")}
-                    value={moduleDescription}
-                    onChange={(event) => setModuleDescription(event.target.value)}
-                  />
-                  <select
-                    aria-label={t("Prerequisite module", "Chương tiên quyết")}
-                    className="rounded-md border bg-background px-3 py-2 text-sm"
-                    value={modulePrerequisite}
-                    onChange={(event) => setModulePrerequisite(event.target.value)}
+        <div className="grid min-w-0 divide-y lg:h-[clamp(520px,calc(100vh-11.5rem),760px)] lg:grid-cols-[minmax(300px,0.84fr)_minmax(0,1.16fr)] lg:divide-x lg:divide-y-0">
+          {/* LEFT PANE: Independently Scrollable Curriculum Outline */}
+          <div className="flex min-h-0 min-w-0 flex-col bg-muted/10">
+            <div className="flex items-center gap-2 border-b bg-card/80 px-3 py-2">
+              <div className="relative min-w-0 flex-1">
+                <Search
+                  className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground"
+                  aria-hidden="true"
+                />
+                <input
+                  type="search"
+                  aria-label={t("Filter modules or labs", "Tìm chương hoặc bài Lab")}
+                  placeholder={t("Filter modules or labs…", "Tìm chương hoặc bài Lab…")}
+                  value={outlineQuery}
+                  onChange={(event) => setOutlineQuery(event.target.value)}
+                  className="h-8 w-full rounded-md border bg-background pr-7 pl-8 text-xs outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                />
+                {outlineQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setOutlineQuery("")}
+                    aria-label={t("Clear filter", "Xóa bộ lọc")}
+                    className="absolute top-1/2 right-2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                   >
-                    <option value="">{t("No module prerequisite", "Không có chương tiên quyết")}</option>
-                    {modules.map((module) => (
-                      <option key={module.id} value={module.id}>
-                        {module.position}. {module.title}
-                      </option>
-                    ))}
-                  </select>
-                  <Button variant="outline" disabled={busy}>
-                    <Plus className="mr-1 size-4" aria-hidden="true" />
-                    {t("Add module", "Thêm chương")}
-                  </Button>
-                </form>
-                {course.addModule.isError && (
-                  <p role="alert" className="text-sm text-destructive">
-                    {t("Could not add the module.", "Không thêm được chương.")}
-                  </p>
+                    <X className="size-3.5" aria-hidden="true" />
+                  </button>
                 )}
-              </>
-            )}
-
-            <ol className="space-y-3">
-              {modules.map((module) => {
-                const draft = draftFor(module.id);
-                const visibleItems = module.items.filter((item) => item.type !== "ESSAY");
-                const resolveBuilderItemType = (item: (typeof visibleItems)[number]) => {
-                  const linked = item.assignmentId
-                    ? assignmentRows.find((a) => a.id === item.assignmentId)
-                    : undefined;
-                  if (linked && ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(item.type)) {
-                    return itemTypeForAssignment(linked);
+              </div>
+              {modules.length > 0 && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 shrink-0 px-2 text-xs text-muted-foreground"
+                  onClick={toggleAllModules}
+                  title={
+                    allCollapsed
+                      ? t("Expand all modules", "Mở tất cả chương")
+                      : t("Collapse all modules", "Thu gọn tất cả chương")
                   }
-                  return item.type;
-                };
-                const theoryOnlyCount = visibleItems.filter((i) => {
-                  const rt = resolveBuilderItemType(i);
-                  return rt === "THEORY" || rt === "STATIC_LAB";
-                }).length;
-                const quizLabCount = visibleItems.filter((i) => {
-                  const rt = resolveBuilderItemType(i);
-                  return rt === "QUIZ" || rt === "IMPACT_LAB";
-                }).length;
-                const studioLabCount = visibleItems.filter(
-                  (i) => resolveBuilderItemType(i) === "RUNTIME_LAB",
-                ).length;
-                const breakdown = [
-                  theoryOnlyCount > 0
-                    ? `${theoryOnlyCount} ${t("Theory Only", "Chỉ Lý thuyết")}`
-                    : null,
-                  quizLabCount > 0
-                    ? `${quizLabCount} ${t("Theory + Quiz", "Lý thuyết + Quiz")}`
-                    : null,
-                  studioLabCount > 0
-                    ? `${studioLabCount} ${t("Full Studio", "Có cả Studio")}`
-                    : null,
-                ]
-                  .filter(Boolean)
-                  .join(" · ");
-                return (
-                  <li key={module.id} className="rounded-xl border">
-                    <details open className="group">
-                      <summary className="flex cursor-pointer list-none flex-wrap items-center gap-2 px-4 py-3">
-                        <span className="grid size-7 shrink-0 place-items-center rounded-full bg-primary/10 text-sm font-semibold">
-                          {module.position}
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <p className="font-medium">{module.title}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {visibleItems.length}{" "}
-                            {visibleItems.length === 1 ? t("Lab", "bài Lab") : t("Labs", "bài Lab")}
-                            {breakdown ? ` · ${breakdown}` : ""}
-                            {module.prerequisiteModuleId
-                              ? ` · ${t("Prerequisite", "Tiên quyết")}: ${
-                                  modules.find((candidate) => candidate.id === module.prerequisiteModuleId)?.title ?? "—"
-                                }`
-                              : ""}
-                          </p>
-                        </div>
-                        <ChevronDown className="size-4 text-muted-foreground group-open:hidden" aria-hidden="true" />
-                      </summary>
-                      {module.description && (
-                        <p className="border-t px-4 py-2 text-sm text-muted-foreground">{module.description}</p>
-                      )}
-                      {isDraft && (
-                        <div className="flex flex-wrap items-center gap-1 border-t px-4 py-2">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            disabled={busy || module.position <= 1}
-                            onClick={() => course.moveModule.mutate({ moduleId: module.id, direction: "UP" })}
-                          >
-                            <ChevronUp className="mr-1 size-3.5" aria-hidden="true" />
-                            {t("Move up", "Lên")}
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            disabled={busy || module.position >= modules.length}
-                            onClick={() => course.moveModule.mutate({ moduleId: module.id, direction: "DOWN" })}
-                          >
-                            <ChevronDown className="mr-1 size-3.5" aria-hidden="true" />
-                            {t("Move down", "Xuống")}
-                          </Button>
-                          <Button type="button" size="sm" variant="ghost" onClick={() => startEditModule(module)}>
-                            <Pencil className="mr-1 size-3.5" aria-hidden="true" />
-                            {t("Edit module", "Sửa chương")}
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            className="text-destructive hover:text-destructive"
-                            disabled={busy}
-                            onClick={() => {
-                              if (
-                                window.confirm(
-                                  t(
-                                    `Delete module "${module.title}" and all its items?`,
-                                    `Xóa chương "${module.title}" và toàn bộ nội dung bên trong?`,
-                                  ),
-                                )
-                              ) {
-                                course.deleteModule.mutate({ moduleId: module.id });
-                              }
-                            }}
-                          >
-                            <Trash2 className="mr-1 size-3.5" aria-hidden="true" />
-                            {t("Delete module", "Xóa chương")}
-                          </Button>
-                        </div>
-                      )}
+                >
+                  {allCollapsed ? (
+                    <ChevronsUpDown className="size-3.5" aria-hidden="true" />
+                  ) : (
+                    <ChevronsDownUp className="size-3.5" aria-hidden="true" />
+                  )}
+                  <span className="sr-only">
+                    {allCollapsed
+                      ? t("Expand all modules", "Mở tất cả chương")
+                      : t("Collapse all modules", "Thu gọn tất cả chương")}
+                  </span>
+                </Button>
+              )}
+            </div>
 
-                      {isDraft && editingModule?.id === module.id && (
-                        <form onSubmit={saveModule} className="space-y-2 border-t bg-muted/20 px-4 py-3">
-                          <Input
-                            aria-label={t("Module title", "Tên chương")}
-                            value={editModuleTitle}
-                            maxLength={255}
-                            onChange={(event) => setEditModuleTitle(event.target.value)}
-                          />
-                          <Input
-                            aria-label={t("Module description", "Mô tả chương")}
-                            value={editModuleDescription}
-                            onChange={(event) => setEditModuleDescription(event.target.value)}
-                          />
-                          <select
-                            aria-label={t("Prerequisite module", "Chương tiên quyết")}
-                            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                            value={editModulePrerequisite}
-                            onChange={(event) => setEditModulePrerequisite(event.target.value)}
-                          >
-                            <option value="">{t("No module prerequisite", "Không có chương tiên quyết")}</option>
-                            {modules
-                              .filter((candidate) => candidate.position < module.position)
-                              .map((candidate) => (
-                                <option key={candidate.id} value={candidate.id}>
-                                  {candidate.position}. {candidate.title}
-                                </option>
-                              ))}
-                          </select>
-                          <div className="flex gap-2">
-                            <Button size="sm" disabled={busy}>
-                              {t("Save module", "Lưu chương")}
-                            </Button>
-                            <Button size="sm" type="button" variant="ghost" onClick={() => setEditingModule(null)}>
-                              {t("Cancel", "Hủy")}
-                            </Button>
-                          </div>
-                        </form>
-                      )}
+            <div className="min-h-0 flex-1 overflow-y-auto p-3">
+              {modules.length === 0 ? (
+                <div className="flex h-full min-h-[220px] flex-col items-center justify-center rounded-lg border border-dashed p-6 text-center">
+                  <p className="text-sm font-medium text-foreground">
+                    {t("No modules yet", "Chưa có chương nào")}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {isDraft
+                      ? t(
+                          "Create your first module to organize Labs and readings.",
+                          "Tạo chương đầu tiên để sắp xếp các bài Lab và tài liệu học.",
+                        )
+                      : t(
+                          "Start a new draft to add modules to this curriculum.",
+                          "Tạo bản nháp mới để thêm chương vào giáo trình này.",
+                        )}
+                  </p>
+                  {isDraft && (
+                    <Button type="button" size="sm" className="mt-3" onClick={openAddModule}>
+                      <Plus className="mr-1 size-3.5" aria-hidden="true" />
+                      {t("Add module", "Thêm chương")}
+                    </Button>
+                  )}
+                </div>
+              ) : filteredModules.length === 0 ? (
+                <div className="rounded-lg border border-dashed p-5 text-center text-xs text-muted-foreground">
+                  <p>
+                    {t(
+                      "No matching modules or Labs.",
+                      "Không tìm thấy chương hoặc bài Lab phù hợp.",
+                    )}
+                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="mt-2 h-7 text-xs"
+                    onClick={() => setOutlineQuery("")}
+                  >
+                    {t("Clear filter", "Xóa bộ lọc")}
+                  </Button>
+                </div>
+              ) : (
+                <ol className="space-y-2.5">
+                  {filteredModules.map(({ module, visibleItems }) => {
+                    const isCollapsed = Boolean(collapsedModules[module.id]) && !normalizedQuery;
+                    const theoryOnlyCount = visibleItems.filter((i) => {
+                      const rt = resolveBuilderItemType(i);
+                      return rt === "THEORY" || rt === "STATIC_LAB";
+                    }).length;
+                    const quizLabCount = visibleItems.filter((i) => {
+                      const rt = resolveBuilderItemType(i);
+                      return rt === "QUIZ" || rt === "IMPACT_LAB";
+                    }).length;
+                    const studioLabCount = visibleItems.filter(
+                      (i) => resolveBuilderItemType(i) === "RUNTIME_LAB",
+                    ).length;
+                    const breakdown = [
+                      theoryOnlyCount > 0
+                        ? `${theoryOnlyCount} ${t("Theory Only", "Chỉ Lý thuyết")}`
+                        : null,
+                      quizLabCount > 0
+                        ? `${quizLabCount} ${t("Theory + Quiz", "Lý thuyết + Quiz")}`
+                        : null,
+                      studioLabCount > 0
+                        ? `${studioLabCount} ${t("Full Studio", "Có cả Studio")}`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ");
+                    const prereqTitle = module.prerequisiteModuleId
+                      ? modules.find((candidate) => candidate.id === module.prerequisiteModuleId)
+                          ?.title
+                      : null;
+                    const isModuleEditing =
+                      editingModule?.id === module.id || addingItemModuleId === module.id;
+                    // prettier-ignore
+                    const labUnit = visibleItems.length === 1 ? t("Lab", "bài Lab") : t("Labs", "bài Lab");
 
-                      {visibleItems.length > 0 ? (
-                        <ol className="divide-y border-t">
-                          {visibleItems.map((item, idx) => {
-                            const linkedAssignment = item.assignmentId
-                              ? assignmentRows.find((a) => a.id === item.assignmentId)
-                              : undefined;
-                            const resolvedType = linkedAssignment
-                              ? itemTypeForAssignment(linkedAssignment)
-                              : item.type;
-                            const meta = TYPE_META[resolvedType] ?? TYPE_META.THEORY;
-                            const Icon = meta.icon;
-                            const isInspected = inspectedItem?.item.id === item.id;
-                            return (
-                              <li
-                                key={item.id}
-                                className={`px-4 py-3 transition-colors ${isInspected ? "bg-primary/5" : ""}`}
+                    return (
+                      <li
+                        key={module.id}
+                        className={`overflow-hidden rounded-lg border bg-card transition-colors ${
+                          isModuleEditing ? "border-primary/60 ring-1 ring-primary/20" : ""
+                        }`}
+                      >
+                        <div className="flex items-start gap-1.5 px-3 py-2.5">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setCollapsedModules((prev) => ({
+                                ...prev,
+                                [module.id]: !prev[module.id],
+                              }))
+                            }
+                            aria-expanded={!isCollapsed}
+                            className="flex min-w-0 flex-1 items-start gap-2 text-left"
+                          >
+                            <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-primary/10 text-[11px] font-semibold text-primary">
+                              {module.position}
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block text-[13px] font-semibold leading-snug text-foreground">
+                                {module.title}
+                              </span>
+                              <span className="mt-0.5 block text-[11px] text-muted-foreground">
+                                {visibleItems.length} {labUnit}
+                                {breakdown ? ` · ${breakdown}` : ""}
+                                {prereqTitle
+                                  ? ` · ${t("Prereq", "Tiên quyết")}: ${prereqTitle}`
+                                  : ""}
+                              </span>
+                            </span>
+                            <ChevronDown
+                              className={`mt-1 size-3.5 shrink-0 text-muted-foreground transition-transform ${
+                                isCollapsed ? "-rotate-90" : ""
+                              }`}
+                              aria-hidden="true"
+                            />
+                          </button>
+
+                          {isDraft && (
+                            <div className="flex shrink-0 items-center gap-0.5">
+                              <button
+                                type="button"
+                                disabled={busy || module.position <= 1}
+                                onClick={() =>
+                                  course.moveModule.mutate({ moduleId: module.id, direction: "UP" })
+                                }
+                                title={t("Move module up", "Chuyển chương lên")}
+                                className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30"
                               >
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] font-semibold text-muted-foreground">
-                                    Lab {idx + 1}
-                                  </span>
-                                  <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                                  <Badge variant="outline">{t(meta.en, meta.vi)}</Badge>
-                                  <button
-                                    type="button"
-                                    className="min-w-0 flex-1 truncate text-left text-sm font-medium hover:text-primary hover:underline"
-                                    onClick={() => setSelectedItem({ moduleId: module.id, itemId: item.id })}
-                                  >
-                                    {item.title}
-                                  </button>
-                                  {!item.required && <Badge variant="secondary">{t("Optional", "Không bắt buộc")}</Badge>}
-                                </div>
-                                {item.description && (
-                                  <p className="mt-1 pl-6 text-xs text-muted-foreground">{item.description}</p>
-                                )}
-                                {item.assignmentId && (
-                                  <p className="mt-1 pl-6 text-xs text-muted-foreground">
-                                    {t("Linked Lab", "Lab liên kết")}:{" "}
-                                    {linkedAssignment?.title ?? item.assignmentId}
-                                  </p>
-                                )}
-                                {isDraft && (
-                                  <div className="mt-2 flex flex-wrap gap-1 pl-6">
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      variant="ghost"
-                                      disabled={busy}
-                                      onClick={() => course.moveItem.mutate({ moduleId: module.id, itemId: item.id, direction: "UP" })}
-                                    >
-                                      <ChevronUp className="size-3.5" aria-hidden="true" />
-                                      <span className="sr-only">{t("Move up", "Lên")}</span>
-                                    </Button>
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      variant="ghost"
-                                      disabled={busy}
-                                      onClick={() => course.moveItem.mutate({ moduleId: module.id, itemId: item.id, direction: "DOWN" })}
-                                    >
-                                      <ChevronDown className="size-3.5" aria-hidden="true" />
-                                      <span className="sr-only">{t("Move down", "Xuống")}</span>
-                                    </Button>
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      variant="ghost"
-                                      onClick={() => {
-                                        setSelectedItem({ moduleId: module.id, itemId: item.id });
-                                        setEditingItem({ moduleId: module.id, itemId: item.id, draft: draftFromItem(item) });
-                                      }}
-                                    >
-                                      <Pencil className="size-3.5" aria-hidden="true" />
-                                      <span className="sr-only">{t("Edit", "Sửa")}</span>
-                                    </Button>
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      variant="ghost"
-                                      disabled={busy}
-                                      onClick={() => {
-                                        if (window.confirm(t("Remove this Lab from the module?", "Xóa bài Lab này khỏi chương?"))) {
-                                          course.deleteItem.mutate({ moduleId: module.id, itemId: item.id });
-                                        }
-                                      }}
-                                    >
-                                      <Trash2 className="size-3.5" aria-hidden="true" />
-                                      <span className="sr-only">{t("Delete", "Xóa")}</span>
-                                    </Button>
-                                  </div>
-                                )}
-                              </li>
-                            );
-                          })}
-                        </ol>
-                      ) : (
-                        <div className="flex flex-wrap items-center justify-between gap-2 border-t px-4 py-3 text-sm text-muted-foreground">
-                          <span>
-                            {t(
-                              "No Labs assigned to this milestone yet.",
-                              "Chương (Mốc) này chưa được gắn bài Lab nào.",
-                            )}
-                          </span>
-                          {isDraft && assignmentRows.length > 0 && (
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              disabled={busy}
-                              onClick={() => {
-                                void (async () => {
-                                  for (const a of assignmentRows) {
-                                    await course.addItem.mutateAsync({
-                                      moduleId: module.id,
-                                      type: itemTypeForAssignment(a),
-                                      title: a.title,
-                                      description:
-                                        a.instructions
-                                          ?.split("\n")[0]
-                                          ?.replace(/^#+\s*/, "")
-                                          .slice(0, 160) ?? "",
-                                      required: true,
-                                      content: {},
-                                      assignmentId: a.id,
-                                    });
+                                <ChevronUp className="size-3.5" aria-hidden="true" />
+                                <span className="sr-only">{t("Move up", "Lên")}</span>
+                              </button>
+                              <button
+                                type="button"
+                                disabled={busy || module.position >= modules.length}
+                                onClick={() =>
+                                  course.moveModule.mutate({
+                                    moduleId: module.id,
+                                    direction: "DOWN",
+                                  })
+                                }
+                                title={t("Move module down", "Chuyển chương xuống")}
+                                className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30"
+                              >
+                                <ChevronDown className="size-3.5" aria-hidden="true" />
+                                <span className="sr-only">{t("Move down", "Xuống")}</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => openEditModule(module)}
+                                title={t("Edit module", "Sửa chương")}
+                                className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                              >
+                                <Pencil className="size-3.5" aria-hidden="true" />
+                                <span className="sr-only">{t("Edit module", "Sửa chương")}</span>
+                              </button>
+                              <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() => {
+                                  if (
+                                    window.confirm(
+                                      t(
+                                        `Delete module "${module.title}" and all its items?`,
+                                        `Xóa chương "${module.title}" và toàn bộ nội dung bên trong?`,
+                                      ),
+                                    )
+                                  ) {
+                                    course.deleteModule.mutate({ moduleId: module.id });
                                   }
-                                })();
-                              }}
-                            >
-                              ⚡{" "}
-                              {t(
-                                `Assign all ${assignmentRows.length} created Lab(s) to this module`,
-                                `Gắn nhanh ${assignmentRows.length} bài Lab đã tạo vào Chương này`,
-                              )}
-                            </Button>
+                                }}
+                                title={t("Delete module", "Xóa chương")}
+                                className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-30"
+                              >
+                                <Trash2 className="size-3.5" aria-hidden="true" />
+                                <span className="sr-only">{t("Delete module", "Xóa chương")}</span>
+                              </button>
+                            </div>
                           )}
                         </div>
-                      )}
 
-                      {isDraft && (
-                        <details className="border-t px-4 py-3">
-                          <summary className="flex cursor-pointer items-center gap-2 text-sm font-medium text-teal-700 dark:text-teal-300">
-                            <Plus className="size-4" aria-hidden="true" />
-                            {t("Add Lab to this milestone", "Thêm bài Lab vào Chương / Mốc này")}
-                          </summary>
-                          <form onSubmit={(event) => addItem(module.id, event)} className="mt-3 space-y-3">
-                            <ItemFields
-                              draft={draft}
-                              onChange={(patch) => updateDraft(module.id, patch)}
-                              assignments={assignmentRows}
-                              t={t}
-                            />
-                            <Button size="sm" disabled={busy || !draftValid(draft)}>
-                              {course.addItem.isPending
-                                ? t("Saving…", "Đang lưu…")
-                                : draft.type === "THEORY"
-                                  ? t("Add lesson to module", "Thêm bài học vào Chương")
-                                  : t("Add Lab to module", "Gắn bài Lab vào Chương")}
-                            </Button>
-                          </form>
-                        </details>
-                      )}
-                    </details>
-                  </li>
-                );
-              })}
-            </ol>
+                        {!isCollapsed && (
+                          <>
+                            {module.description && (
+                              <p className="border-t bg-muted/15 px-3 py-1.5 text-[11px] text-muted-foreground">
+                                {module.description}
+                              </p>
+                            )}
 
-            {course.addItem.isError && (
-              <p role="alert" className="text-sm text-destructive">
-                {t(
-                  "Could not add the learning item. Verify the linked Lab belongs to this class and required content is filled.",
-                  "Không thêm được nội dung. Kiểm tra Lab liên kết thuộc lớp này và nội dung bắt buộc đã nhập.",
-                )}
-              </p>
-            )}
-            {course.updateItem.isError && (
-              <p role="alert" className="text-sm text-destructive">
-                {t("Could not update the learning item.", "Không cập nhật được nội dung.")}
-              </p>
-            )}
-            {course.deleteItem.isError && (
-              <p role="alert" className="text-sm text-destructive">
-                {t("Could not delete the learning item.", "Không xóa được nội dung.")}
-              </p>
-            )}
-            {course.updateModule.isError && (
-              <p role="alert" className="text-sm text-destructive">
-                {t("Could not update the module.", "Không cập nhật được chương.")}
-              </p>
-            )}
-            {course.deleteModule.isError && (
-              <p role="alert" className="text-sm text-destructive">
-                {t("Could not delete the module.", "Không xóa được chương.")}
-              </p>
-            )}
+                            {visibleItems.length > 0 ? (
+                              <ol className="divide-y border-t">
+                                {visibleItems.map((item) => {
+                                  const resolvedType = resolveBuilderItemType(item);
+                                  const meta = TYPE_META[resolvedType] ?? TYPE_META.THEORY;
+                                  const Icon = meta.icon;
+                                  const mins = itemEstimatedMinutes(item);
+                                  const isInspected =
+                                    !showAddModule &&
+                                    !editingModule &&
+                                    !addingItemModuleId &&
+                                    inspectedItem?.item.id === item.id;
+
+                                  return (
+                                    <li key={item.id}>
+                                      <div
+                                        className={`group flex items-start gap-1.5 px-3 py-2 transition-colors ${
+                                          isInspected
+                                            ? "border-l-[3px] border-l-primary bg-primary/[0.07] pl-[9px]"
+                                            : "hover:bg-muted/35"
+                                        }`}
+                                      >
+                                        <button
+                                          type="button"
+                                          aria-current={isInspected ? "true" : undefined}
+                                          onClick={() => selectItem(module.id, item.id)}
+                                          className="flex min-w-0 flex-1 items-start gap-2 text-left"
+                                        >
+                                          <Icon
+                                            className={`mt-0.5 size-3.5 shrink-0 ${
+                                              isInspected ? "text-primary" : "text-muted-foreground"
+                                            }`}
+                                            aria-hidden="true"
+                                          />
+                                          <span className="min-w-0 flex-1">
+                                            <span
+                                              className={`block line-clamp-2 text-[13px] leading-snug ${
+                                                isInspected
+                                                  ? "font-semibold text-primary"
+                                                  : "font-medium text-foreground"
+                                              }`}
+                                            >
+                                              {item.title}
+                                            </span>
+                                            <span className="mt-1 flex flex-wrap items-center gap-1.5">
+                                              <span
+                                                className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium leading-none ${meta.tone}`}
+                                              >
+                                                {t(meta.shortEn, meta.shortVi)}
+                                              </span>
+                                              {mins && (
+                                                <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground">
+                                                  <Clock className="size-2.5" aria-hidden="true" />
+                                                  {mins}m
+                                                </span>
+                                              )}
+                                              {!item.required && (
+                                                <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                                                  {t("Optional", "Không bắt buộc")}
+                                                </span>
+                                              )}
+                                            </span>
+                                          </span>
+                                        </button>
+
+                                        {isDraft && (
+                                          <div className="flex shrink-0 items-center gap-0.5 pt-0.5 opacity-80 transition-opacity group-hover:opacity-100">
+                                            <button
+                                              type="button"
+                                              disabled={busy}
+                                              onClick={() =>
+                                                course.moveItem.mutate({
+                                                  moduleId: module.id,
+                                                  itemId: item.id,
+                                                  direction: "UP",
+                                                })
+                                              }
+                                              title={t("Move up", "Lên")}
+                                              className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30"
+                                            >
+                                              <ChevronUp className="size-3.5" aria-hidden="true" />
+                                              <span className="sr-only">{t("Move up", "Lên")}</span>
+                                            </button>
+                                            <button
+                                              type="button"
+                                              disabled={busy}
+                                              onClick={() =>
+                                                course.moveItem.mutate({
+                                                  moduleId: module.id,
+                                                  itemId: item.id,
+                                                  direction: "DOWN",
+                                                })
+                                              }
+                                              title={t("Move down", "Xuống")}
+                                              className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30"
+                                            >
+                                              <ChevronDown
+                                                className="size-3.5"
+                                                aria-hidden="true"
+                                              />
+                                              <span className="sr-only">
+                                                {t("Move down", "Xuống")}
+                                              </span>
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => openEditItem(module.id, item)}
+                                              title={t("Edit", "Sửa")}
+                                              className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                                            >
+                                              <Pencil className="size-3.5" aria-hidden="true" />
+                                              <span className="sr-only">{t("Edit", "Sửa")}</span>
+                                            </button>
+                                            <button
+                                              type="button"
+                                              disabled={busy}
+                                              onClick={() => {
+                                                if (
+                                                  window.confirm(
+                                                    t(
+                                                      "Remove this Lab from the module?",
+                                                      "Xóa bài Lab này khỏi chương?",
+                                                    ),
+                                                  )
+                                                ) {
+                                                  course.deleteItem.mutate({
+                                                    moduleId: module.id,
+                                                    itemId: item.id,
+                                                  });
+                                                }
+                                              }}
+                                              title={t("Delete", "Xóa")}
+                                              className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-30"
+                                            >
+                                              <Trash2 className="size-3.5" aria-hidden="true" />
+                                              <span className="sr-only">{t("Delete", "Xóa")}</span>
+                                            </button>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </li>
+                                  );
+                                })}
+                              </ol>
+                            ) : (
+                              <div className="flex flex-wrap items-center justify-between gap-2 border-t px-3 py-2.5 text-xs text-muted-foreground">
+                                <span>
+                                  {t(
+                                    "No Labs assigned to this milestone yet.",
+                                    "Chương (Mốc) này chưa được gắn bài Lab nào.",
+                                  )}
+                                </span>
+                                {isDraft && assignmentRows.length > 0 && (
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 text-xs"
+                                    disabled={busy}
+                                    onClick={() => {
+                                      void (async () => {
+                                        for (const a of assignmentRows) {
+                                          await course.addItem.mutateAsync({
+                                            moduleId: module.id,
+                                            type: itemTypeForAssignment(a),
+                                            title: a.title,
+                                            description:
+                                              a.instructions
+                                                ?.split("\n")[0]
+                                                ?.replace(/^#+\s*/, "")
+                                                .slice(0, 160) ?? "",
+                                            required: true,
+                                            content: {},
+                                            assignmentId: a.id,
+                                          });
+                                        }
+                                      })();
+                                    }}
+                                  >
+                                    <Zap className="mr-1 size-3" aria-hidden="true" />
+                                    {t(
+                                      `Assign all ${assignmentRows.length}`,
+                                      `Gắn nhanh ${assignmentRows.length} Lab`,
+                                    )}
+                                  </Button>
+                                )}
+                              </div>
+                            )}
+
+                            {isDraft && (
+                              <div className="border-t bg-muted/10 px-3 py-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => openAddItem(module.id)}
+                                  className="inline-flex items-center gap-1.5 text-xs font-medium text-teal-700 hover:underline dark:text-teal-300"
+                                >
+                                  <Plus className="size-3.5" aria-hidden="true" />
+                                  {t(
+                                    "Add Lab to this milestone",
+                                    "Thêm bài Lab vào Chương / Mốc này",
+                                  )}
+                                </button>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ol>
+              )}
+            </div>
           </div>
 
+          {/* RIGHT PANE: Pinned-Header Inspector & Focused Editor */}
           <aside
             ref={inspectorRef}
             aria-label={t("Curriculum Inspector", "Trình xem & sửa học liệu")}
-            className="min-w-0 space-y-4 rounded-xl border bg-muted/15 p-4 lg:sticky lg:top-6"
+            className="flex min-h-0 min-w-0 flex-col bg-background"
           >
-            {isDraft && editingItem ? (
-              <form onSubmit={saveItem} className="space-y-3 rounded-lg ring-2 ring-primary/25 p-2 -m-2">
-                <div className="flex items-center justify-between border-b pb-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    {t("Editing Learning Item", "Đang chỉnh sửa nội dung")}
-                  </p>
-                  <Button size="sm" type="button" variant="ghost" onClick={() => setEditingItem(null)}>
-                    {t("Close", "Đóng")}
+            {isDraft && showAddModule ? (
+              <form onSubmit={addModule} className="flex min-h-0 flex-1 flex-col">
+                <div className="flex items-center justify-between gap-2 border-b bg-card/60 px-5 py-3">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-primary">
+                      {t("New Module", "Chương mới")}
+                    </p>
+                    <h3 className="text-sm font-semibold">
+                      {t("Add a chapter to the roadmap", "Thêm một chương vào lộ trình khóa học")}
+                    </h3>
+                  </div>
+                  <Button
+                    size="sm"
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setShowAddModule(false)}
+                  >
+                    <X className="size-4" aria-hidden="true" />
+                    <span className="sr-only">{t("Close", "Đóng")}</span>
                   </Button>
                 </div>
-                <ItemFields
-                  draft={editingItem.draft}
-                  onChange={(patch) =>
-                    setEditingItem((current) =>
-                      current ? { ...current, draft: { ...current.draft, ...patch } } : current,
-                    )
-                  }
-                  assignments={assignmentRows}
-                  t={t}
-                />
-                <div className="flex gap-2">
+                <div
+                  ref={inspectorBodyRef}
+                  className="min-h-0 flex-1 space-y-3.5 overflow-y-auto p-5"
+                >
+                  <label className="block space-y-1 text-xs font-medium">
+                    <span>{t("Module title", "Tên chương")}</span>
+                    <Input
+                      required
+                      maxLength={255}
+                      placeholder={t(
+                        "e.g., Module 1: Architecture Foundations",
+                        "VD: Chương 1: Nền tảng kiến trúc",
+                      )}
+                      value={moduleTitle}
+                      onChange={(event) => setModuleTitle(event.target.value)}
+                    />
+                  </label>
+                  <label className="block space-y-1 text-xs font-medium">
+                    <span>{t("Module description", "Mô tả chương")}</span>
+                    <Textarea
+                      rows={3}
+                      placeholder={t(
+                        "Optional learning outcomes for this chapter…",
+                        "Mục tiêu học tập của chương (không bắt buộc)…",
+                      )}
+                      value={moduleDescription}
+                      onChange={(event) => setModuleDescription(event.target.value)}
+                    />
+                  </label>
+                  <label className="block space-y-1 text-xs font-medium">
+                    <span>{t("Prerequisite module", "Chương tiên quyết")}</span>
+                    <select
+                      className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                      value={modulePrerequisite}
+                      onChange={(event) => setModulePrerequisite(event.target.value)}
+                    >
+                      <option value="">
+                        {t("No module prerequisite", "Không có chương tiên quyết")}
+                      </option>
+                      {modules.map((mod) => (
+                        <option key={mod.id} value={mod.id}>
+                          {mod.position}. {mod.title}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <div className="flex items-center justify-end gap-2 border-t bg-muted/15 px-5 py-3">
+                  <Button
+                    size="sm"
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setShowAddModule(false)}
+                  >
+                    {t("Cancel", "Hủy")}
+                  </Button>
+                  <Button size="sm" disabled={busy || !moduleTitle.trim()}>
+                    <Plus className="mr-1 size-3.5" aria-hidden="true" />
+                    {t("Add module", "Thêm chương")}
+                  </Button>
+                </div>
+              </form>
+            ) : isDraft && editingModule ? (
+              <form onSubmit={saveModule} className="flex min-h-0 flex-1 flex-col">
+                <div className="flex items-center justify-between gap-2 border-b bg-card/60 px-5 py-3">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-primary">
+                      {t(
+                        `Editing Module ${editingModule.position}`,
+                        `Chỉnh sửa Chương ${editingModule.position}`,
+                      )}
+                    </p>
+                    <h3 className="text-sm font-semibold">{editingModule.title}</h3>
+                  </div>
+                  <Button
+                    size="sm"
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setEditingModule(null)}
+                  >
+                    <X className="size-4" aria-hidden="true" />
+                    <span className="sr-only">{t("Close", "Đóng")}</span>
+                  </Button>
+                </div>
+                <div
+                  ref={inspectorBodyRef}
+                  className="min-h-0 flex-1 space-y-3.5 overflow-y-auto p-5"
+                >
+                  <label className="block space-y-1 text-xs font-medium">
+                    <span>{t("Module title", "Tên chương")}</span>
+                    <Input
+                      required
+                      maxLength={255}
+                      value={editModuleTitle}
+                      onChange={(event) => setEditModuleTitle(event.target.value)}
+                    />
+                  </label>
+                  <label className="block space-y-1 text-xs font-medium">
+                    <span>{t("Module description", "Mô tả chương")}</span>
+                    <Textarea
+                      rows={3}
+                      value={editModuleDescription}
+                      onChange={(event) => setEditModuleDescription(event.target.value)}
+                    />
+                  </label>
+                  <label className="block space-y-1 text-xs font-medium">
+                    <span>{t("Prerequisite module", "Chương tiên quyết")}</span>
+                    <select
+                      className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                      value={editModulePrerequisite}
+                      onChange={(event) => setEditModulePrerequisite(event.target.value)}
+                    >
+                      <option value="">
+                        {t("No module prerequisite", "Không có chương tiên quyết")}
+                      </option>
+                      {modules
+                        .filter((candidate) => candidate.position < editingModule.position)
+                        .map((candidate) => (
+                          <option key={candidate.id} value={candidate.id}>
+                            {candidate.position}. {candidate.title}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                </div>
+                <div className="flex items-center justify-end gap-2 border-t bg-muted/15 px-5 py-3">
+                  <Button
+                    size="sm"
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setEditingModule(null)}
+                  >
+                    {t("Cancel", "Hủy")}
+                  </Button>
+                  <Button size="sm" disabled={busy || !editModuleTitle.trim()}>
+                    {t("Save module", "Lưu chương")}
+                  </Button>
+                </div>
+              </form>
+            ) : isDraft && addingItemModule ? (
+              <form
+                onSubmit={(event) => addItem(addingItemModule.id, event)}
+                className="flex min-h-0 flex-1 flex-col"
+              >
+                <div className="flex items-center justify-between gap-2 border-b bg-card/60 px-5 py-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-[11px] font-semibold uppercase tracking-wide text-primary">
+                      {t("Add Lab to Module", "Thêm bài Lab vào Chương")}{" "}
+                      {addingItemModule.position}
+                    </p>
+                    <h3 className="truncate text-sm font-semibold">{addingItemModule.title}</h3>
+                  </div>
+                  <Button
+                    size="sm"
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setAddingItemModuleId(null)}
+                  >
+                    <X className="size-4" aria-hidden="true" />
+                    <span className="sr-only">{t("Close", "Đóng")}</span>
+                  </Button>
+                </div>
+                <div ref={inspectorBodyRef} className="min-h-0 flex-1 overflow-y-auto p-5">
+                  <ItemFields
+                    draft={draftFor(addingItemModule.id)}
+                    onChange={(patch) => updateDraft(addingItemModule.id, patch)}
+                    assignments={assignmentRows}
+                    t={t}
+                  />
+                </div>
+                <div className="flex items-center justify-end gap-2 border-t bg-muted/15 px-5 py-3">
+                  <Button
+                    size="sm"
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setAddingItemModuleId(null)}
+                  >
+                    {t("Cancel", "Hủy")}
+                  </Button>
+                  <Button size="sm" disabled={busy || !draftValid(draftFor(addingItemModule.id))}>
+                    {course.addItem.isPending
+                      ? t("Saving…", "Đang lưu…")
+                      : draftFor(addingItemModule.id).type === "THEORY"
+                        ? t("Add lesson to module", "Thêm bài học vào Chương")
+                        : t("Add Lab to module", "Gắn bài Lab vào Chương")}
+                  </Button>
+                </div>
+              </form>
+            ) : isDraft && editingItem ? (
+              <form onSubmit={saveItem} className="flex min-h-0 flex-1 flex-col">
+                <div className="flex items-center justify-between gap-2 border-b bg-card/60 px-5 py-3">
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-primary">
+                      {t("Editing Learning Item", "Đang chỉnh sửa nội dung")}
+                    </p>
+                    <h3 className="truncate text-sm font-semibold">
+                      {editingItem.draft.title || "—"}
+                    </h3>
+                  </div>
+                  <Button
+                    size="sm"
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setEditingItem(null)}
+                  >
+                    <X className="size-4" aria-hidden="true" />
+                    <span className="sr-only">{t("Close", "Đóng")}</span>
+                  </Button>
+                </div>
+                <div ref={inspectorBodyRef} className="min-h-0 flex-1 overflow-y-auto p-5">
+                  <ItemFields
+                    draft={editingItem.draft}
+                    onChange={(patch) =>
+                      setEditingItem((current) =>
+                        current ? { ...current, draft: { ...current.draft, ...patch } } : current,
+                      )
+                    }
+                    assignments={assignmentRows}
+                    t={t}
+                  />
+                </div>
+                <div className="flex items-center justify-end gap-2 border-t bg-muted/15 px-5 py-3">
+                  <Button
+                    size="sm"
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setEditingItem(null)}
+                  >
+                    {t("Cancel", "Hủy")}
+                  </Button>
                   <Button size="sm" disabled={busy || !draftValid(editingItem.draft)}>
                     {t("Save item", "Lưu nội dung")}
-                  </Button>
-                  <Button size="sm" type="button" variant="ghost" onClick={() => setEditingItem(null)}>
-                    {t("Cancel", "Hủy")}
                   </Button>
                 </div>
               </form>
             ) : inspectedItem ? (
-              <div className="space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-2.5">
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground">
-                      {inspectedItem.module.position}. {inspectedItem.module.title}
-                    </p>
-                    <h3 className="text-base font-semibold">{inspectedItem.item.title}</h3>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <Badge variant="outline">
+              <div className="flex min-h-0 flex-1 flex-col">
+                {/* Pinned Inspector Header with Immediate Actions & Prev/Next Stepper */}
+                <div className="border-b bg-card/60 px-5 py-3.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="min-w-0 truncate text-xs font-medium text-muted-foreground">
                       {t(
-                        TYPE_META[inspectedItem.item.type]?.en ?? inspectedItem.item.type,
-                        TYPE_META[inspectedItem.item.type]?.vi ?? inspectedItem.item.type,
-                      )}
-                    </Badge>
-                    {isDraft && (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() =>
-                          setEditingItem({
-                            moduleId: inspectedItem.module.id,
-                            itemId: inspectedItem.item.id,
-                            draft: draftFromItem(inspectedItem.item),
-                          })
-                        }
-                      >
-                        <Pencil className="mr-1 size-3.5" aria-hidden="true" />
-                        {t("Edit", "Sửa")}
-                      </Button>
+                        `Module ${inspectedItem.module.position}`,
+                        `Chương ${inspectedItem.module.position}`,
+                      )}{" "}
+                      · {inspectedItem.module.title}
+                    </p>
+                    {flatItems.length > 1 && (
+                      <div className="flex shrink-0 items-center gap-1">
+                        <span className="px-1 font-mono text-[11px] text-muted-foreground">
+                          {activeFlatIndex + 1}/{flatItems.length}
+                        </span>
+                        <button
+                          type="button"
+                          disabled={activeFlatIndex <= 0}
+                          onClick={() => {
+                            const prev = flatItems[activeFlatIndex - 1];
+                            if (prev) selectItem(prev.module.id, prev.item.id);
+                          }}
+                          title={t("Previous item", "Bài trước")}
+                          className="rounded border bg-background p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-35"
+                        >
+                          <ChevronLeft className="size-3.5" aria-hidden="true" />
+                          <span className="sr-only">{t("Previous item", "Bài trước")}</span>
+                        </button>
+                        <button
+                          type="button"
+                          disabled={activeFlatIndex < 0 || activeFlatIndex >= flatItems.length - 1}
+                          onClick={() => {
+                            const next = flatItems[activeFlatIndex + 1];
+                            if (next) selectItem(next.module.id, next.item.id);
+                          }}
+                          title={t("Next item", "Bài tiếp theo")}
+                          className="rounded border bg-background p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-35"
+                        >
+                          <ChevronRight className="size-3.5" aria-hidden="true" />
+                          <span className="sr-only">{t("Next item", "Bài tiếp theo")}</span>
+                        </button>
+                      </div>
                     )}
+                  </div>
+
+                  <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <h3 className="text-base font-semibold leading-snug text-foreground">
+                        {inspectedItem.item.title}
+                      </h3>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                        {inspectedMeta && (
+                          <span
+                            className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium ${inspectedMeta.tone}`}
+                          >
+                            {t(inspectedMeta.en, inspectedMeta.vi)}
+                          </span>
+                        )}
+                        {inspectedDuration && (
+                          <span className="inline-flex items-center gap-1 rounded-md border bg-muted/40 px-2 py-0.5 text-[11px] text-muted-foreground">
+                            <Clock className="size-3" aria-hidden="true" />
+                            {inspectedDuration} {t("min", "phút")}
+                          </span>
+                        )}
+                        {!inspectedItem.item.required && (
+                          <Badge variant="secondary" className="text-[11px]">
+                            {t("Optional", "Không bắt buộc")}
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+                      {inspectedItem.item.assignmentId && (
+                        <Button asChild size="sm" variant="outline">
+                          <Link
+                            href={`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(inspectedItem.item.assignmentId)}`}
+                          >
+                            <ExternalLink className="mr-1.5 size-3.5" aria-hidden="true" />
+                            {t("Open in Lab Authoring Studio", "Mở trong trình soạn Lab")}
+                          </Link>
+                        </Button>
+                      )}
+                      {isDraft && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => openEditItem(inspectedItem.module.id, inspectedItem.item)}
+                        >
+                          <Pencil className="mr-1.5 size-3.5" aria-hidden="true" />
+                          {t("Edit", "Sửa")}
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 </div>
-                {inspectedItem.item.description && (
-                  <p className="text-sm text-muted-foreground">{inspectedItem.item.description}</p>
-                )}
-                {inspectedItem.item.type === "THEORY" && (
-                  <div className="overflow-x-auto rounded-lg border bg-background p-3">
-                    {typeof inspectedItem.item.content?.["body"] === "string" &&
-                    inspectedItem.item.content["body"].trim() ? (
-                      <MarkdownPreview markdown={inspectedItem.item.content["body"]} />
-                    ) : (
-                      <p className="text-xs text-muted-foreground">
-                        {t("No theory Markdown body written yet.", "Chưa có nội dung Markdown lý thuyết.")}
-                      </p>
+
+                {/* Independently Scrollable Preview Body */}
+                <div
+                  ref={inspectorBodyRef}
+                  className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4"
+                >
+                  {(inspectedLinkedAssignment || inspectedItem.item.description) && (
+                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/20 px-3.5 py-2 text-xs">
+                      {inspectedLinkedAssignment && (
+                        <div className="min-w-0">
+                          <span className="font-semibold uppercase tracking-wide text-muted-foreground">
+                            {t("Linked Lab", "Lab liên kết")}:
+                          </span>{" "}
+                          <span className="font-medium text-foreground">
+                            {inspectedLinkedAssignment.title}
+                          </span>
+                        </div>
+                      )}
+                      {inspectedItem.item.description && (
+                        <span className="text-muted-foreground">
+                          {inspectedItem.item.description}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {inspectedItem.item.type === "THEORY" && (
+                    <div className="overflow-x-auto rounded-lg border bg-background p-4 [&_pre]:whitespace-pre-wrap [&_pre]:break-words">
+                      {inspectedBodyMarkdown ? (
+                        <MarkdownPreview markdown={inspectedBodyMarkdown} />
+                      ) : (
+                        <p className="text-xs text-muted-foreground">
+                          {t(
+                            "No theory Markdown body written yet.",
+                            "Chưa có nội dung Markdown lý thuyết.",
+                          )}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {inspectedItem.item.type !== "THEORY" &&
+                    inspectedItem.item.type !== "ESSAY" &&
+                    inspectedLinkedAssignment?.instructions?.trim() && (
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          {t("Lab Overview & Instructions", "Tổng quan & Hướng dẫn bài Lab")}
+                        </p>
+                        <div className="overflow-x-auto rounded-lg border bg-background p-4 [&_pre]:whitespace-pre-wrap [&_pre]:break-words">
+                          <MarkdownPreview markdown={inspectedLinkedAssignment.instructions} />
+                        </div>
+                      </div>
                     )}
-                  </div>
-                )}
-                {inspectedItem.item.type === "ESSAY" && (
-                  <div className="space-y-2 rounded-lg border bg-background p-3 text-sm">
-                    <p className="font-medium">{String(inspectedItem.item.content?.["prompt"] ?? "")}</p>
-                    {Array.isArray(inspectedItem.item.content?.["rubric"]) && (
-                      <ul className="list-disc pl-5 text-xs text-muted-foreground">
-                        {(inspectedItem.item.content["rubric"] as Array<{ criterion?: string; maxScore?: number }>).map(
-                          (entry, idx) => (
+
+                  {inspectedItem.item.type === "ESSAY" && (
+                    <div className="space-y-2 rounded-lg border bg-background p-4 text-sm">
+                      <p className="font-medium">
+                        {String(inspectedItem.item.content?.["prompt"] ?? "")}
+                      </p>
+                      {Array.isArray(inspectedItem.item.content?.["rubric"]) && (
+                        <ul className="list-disc pl-5 text-xs text-muted-foreground">
+                          {(
+                            inspectedItem.item.content["rubric"] as Array<{
+                              criterion?: string;
+                              maxScore?: number;
+                            }>
+                          ).map((entry, idx) => (
                             <li key={idx}>
                               {entry.criterion} · {entry.maxScore} pts
                             </li>
-                          ),
-                        )}
-                      </ul>
-                    )}
-                  </div>
-                )}
-                {inspectedItem.item.assignmentId && (
-                  <div className="space-y-2 rounded-lg border bg-background p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      {t("Linked Assignment / Lab", "Bài Lab / Quiz liên kết")}
-                    </p>
-                    <p className="text-sm font-medium">
-                      {assignmentRows.find((a) => a.id === inspectedItem.item.assignmentId)?.title ??
-                        inspectedItem.item.assignmentId}
-                    </p>
-                    <Button asChild size="sm" variant="outline">
-                      <Link
-                        href={`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(inspectedItem.item.assignmentId)}`}
-                      >
-                        <ExternalLink className="mr-1.5 size-3.5" aria-hidden="true" />
-                        {t("Open in Lab Authoring Studio", "Mở trong trình soạn Lab")}
-                      </Link>
-                    </Button>
-                  </div>
-                )}
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">
-                {t(
-                  "Add a module on the left or click an item to preview and edit its content here.",
-                  "Thêm chương bên trái hoặc bấm vào một nội dung để xem trước và chỉnh sửa tại đây.",
-                )}
-              </p>
+              <div className="flex min-h-[280px] flex-1 flex-col items-center justify-center p-8 text-center">
+                <BookOpen className="size-8 text-muted-foreground/40" aria-hidden="true" />
+                <p className="mt-3 text-sm font-medium text-foreground">
+                  {t("Select a lesson to inspect", "Chọn một bài học để xem trước")}
+                </p>
+                <p className="mt-1 max-w-sm text-xs text-muted-foreground">
+                  {t(
+                    "Add a module on the left or click an item to preview and edit its content here.",
+                    "Thêm chương bên trái hoặc bấm vào một nội dung để xem trước và chỉnh sửa tại đây.",
+                  )}
+                </p>
+              </div>
             )}
           </aside>
         </div>
       )}
 
-      {isDraft && (
-        <>
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
-            <div className="text-xs text-muted-foreground">
-              {course.versions.data?.length
-                ? `${t("Published immutable versions:", "Phiên bản đã publish bất biến:")} ${course.versions.data
-                    .map((version) => `v${version.version} (${version.snapshotDigest.slice(0, 18)}…)`)
-                    .join(" · ")}`
-                : t("No published version yet.", "Chưa có phiên bản được publish.")}
-            </div>
-            <Button
-              type="button"
-              disabled={!modules.length || course.publish.isPending}
-              onClick={() => {
-                if (
-                  window.confirm(
-                    t(
-                      "Publish an immutable snapshot of this course roadmap?",
-                      "Publish bản snapshot bất biến của lộ trình khóa học?",
-                    ),
-                  )
-                )
-                  course.publish.mutate();
-              }}
-            >
-              {course.publish.isPending
-                ? t("Publishing…", "Đang publish…")
-                : t("Publish course version", "Publish phiên bản khóa học")}
-            </Button>
+      {/* Compact Immutable Version History Footer */}
+      {data && (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t bg-muted/10 px-4 py-2 text-xs text-muted-foreground">
+          <div className="truncate">
+            {course.versions.data?.length
+              ? `${t("Published immutable versions:", "Phiên bản đã publish bất biến:")} ${course.versions.data
+                  .map((version) => `v${version.version} (${version.snapshotDigest.slice(0, 14)}…)`)
+                  .join(" · ")}`
+              : t("No published version yet.", "Chưa có phiên bản được publish.")}
           </div>
-          {course.publish.isError && (
-            <p role="alert" className="text-sm text-destructive">
-              {t(
-                "Course could not be published. Every module needs at least one item and linked Labs must belong to this class.",
-                "Không publish được khóa học. Mỗi chương cần ít nhất một nội dung và Lab liên kết phải thuộc lớp này.",
-              )}
-            </p>
+          {data.status === "PUBLISHED" && (
+            <span className="shrink-0 text-[11px] text-emerald-700 dark:text-emerald-300">
+              {t("Published snapshot is read-only", "Bản đã publish là chỉ đọc")}
+            </span>
           )}
-          {course.publish.isSuccess && (
-            <div role="status" className="space-y-2 text-sm text-success">
-              <p>
-                {t("Published immutable version", "Đã publish phiên bản bất biến")} v
-                {course.publish.data.version} · {course.publish.data.snapshotDigest}
-              </p>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={course.startDraft.isPending}
-                onClick={() => course.startDraft.mutate()}
-              >
-                {t("Continue in a new draft", "Tiếp tục bằng bản nháp mới")}
-              </Button>
-            </div>
-          )}
-        </>
+        </div>
       )}
     </section>
   );

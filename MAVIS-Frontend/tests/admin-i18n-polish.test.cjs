@@ -132,13 +132,13 @@ test("Bug #08: workspaces exposes an h1 landmark, singular/plural counts avoid '
   assert.match(admin, /date\.toLocaleDateString\("vi-VN"\)\}<\/span>\{" "\}/);
 });
 
-test("Bug #09: CourseBuilder prevents horizontal grid overflow and Passkey table compacts padding with truncated labels", () => {
+test("Bug #09: CourseBuilder uses independent-scroll dual-pane layout preventing overflow and Passkey table compacts padding with truncated labels", () => {
   const builder = read("src/features/courses/course-builder.tsx");
   const access = read("src/features/workspaces/course-access.tsx");
 
-  assert.match(builder, /className="min-w-0 space-y-4"/);
-  assert.match(builder, /className="min-w-0 space-y-4 rounded-xl border bg-muted\/15 p-4 lg:sticky lg:top-6"/);
-  assert.match(builder, /overflow-x-auto rounded-lg border bg-background p-3/);
+  assert.match(builder, /lg:h-\[clamp\(520px,calc\(100vh-11\.5rem\),760px\)\]/);
+  assert.match(builder, /className="flex min-h-0 min-w-0 flex-col bg-background"/);
+  assert.match(builder, /overflow-x-auto rounded-lg border bg-background p-4/);
   assert.match(access, /className="block max-w-40 truncate"/);
   assert.match(access, /className="whitespace-nowrap px-2\.5 py-2 font-medium"/);
 });
