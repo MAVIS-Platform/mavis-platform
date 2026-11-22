@@ -28,6 +28,10 @@ function isFrameworkClassNoise(name: string): boolean {
   return /^(?:System|Microsoft)\./.test(name);
 }
 
+function isUnresolvedPlaceholder(name: string): boolean {
+  return /^Unresolved\b/i.test(name.trim());
+}
+
 /**
  * Step 2 interactive Reverse BFS impact explorer and C1-C3 reference view back-links
  * grounded exclusively on the Lab's pinned static architectural model.
@@ -74,13 +78,18 @@ export function Step2StaticImpact({
       if (isFrameworkClassNoise(candidate.name)) continue;
       const probe = computeArchitectureImpact(model, candidate.id, scope);
       const isArchitectural = ARCHITECTURAL_NODE_TYPES.has(candidate.elementType);
-      const isServiceOrData =
-        candidate.elementType === "SERVICE_CONTAINER" || candidate.elementType === "DATABASE";
-      const tierBonus = isServiceOrData
-        ? 1_000_000
-        : isArchitectural
-          ? 500_000
-          : 0;
+      const isPlaceholder = isUnresolvedPlaceholder(candidate.name);
+      const tierBonus = isPlaceholder
+        ? 100_000
+        : candidate.elementType === "SERVICE_CONTAINER"
+          ? 2_000_000
+          : candidate.elementType === "DATABASE" ||
+              candidate.elementType === "QUEUE_BROKER" ||
+              candidate.elementType === "MESSAGE_CHANNEL"
+            ? 1_000_000
+            : isArchitectural
+              ? 500_000
+              : 0;
       const hasImpact = probe.upstreamImpacted.length > 0 ? 100_000 : 0;
       const score =
         tierBonus +
@@ -95,7 +104,9 @@ export function Step2StaticImpact({
     }
     if (bestId && bestScore > 1) return bestId;
     const preferred =
-      model.elements.find((el) => el.elementType === "SERVICE_CONTAINER") ?? model.elements[0]!;
+      model.elements.find(
+        (el) => el.elementType === "SERVICE_CONTAINER" && !isUnresolvedPlaceholder(el.name),
+      ) ?? model.elements[0]!;
     return preferred.id;
   }, [model, selectedTargetId, scope]);
 
@@ -108,8 +119,9 @@ export function Step2StaticImpact({
     if (!impact) return [];
     const rank = (el: { name: string; elementType: string }) => {
       if (isFrameworkClassNoise(el.name)) return 3;
+      if (isUnresolvedPlaceholder(el.name)) return 1;
       if (ARCHITECTURAL_NODE_TYPES.has(el.elementType)) return 0;
-      return 1;
+      return 2;
     };
     return [...impact.candidateTargets].sort(
       (a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name),

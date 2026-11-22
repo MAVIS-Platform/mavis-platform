@@ -201,7 +201,7 @@ export function TeacherDashboard() {
                           </Badge>
                           <div className="flex items-center gap-1.5">
                             <Link
-                              href={`/workspace-overview?workspace=${encodeURIComponent(workspace.id)}#class-passkey`}
+                              href={`/members?workspace=${encodeURIComponent(workspace.id)}&tab=settings#class-passkey`}
                               onClick={() => selection.setWorkspaceId(workspace.id)}
                               className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300"
                             >

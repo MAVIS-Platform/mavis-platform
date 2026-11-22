@@ -44,7 +44,7 @@ function stepHref(stepId: string, data: CourseSetup, workspaceId: string) {
       : workspace;
   }
   if (stepId === "passkey") {
-    return `/workspace-overview?workspace=${encodeURIComponent(workspaceId)}#class-passkey`;
+    return `/members?workspace=${encodeURIComponent(workspaceId)}&tab=settings#class-passkey`;
   }
   if (stepId === "preview")
     return data.previewAssignmentId

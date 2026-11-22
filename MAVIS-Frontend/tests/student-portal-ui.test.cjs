@@ -90,6 +90,7 @@ test("Student Courses & Syllabus portals use theme-adaptive mavis-hero-surface w
 test("Student Syllabus hero & Reverse BFS polish: clean Instructor/Up-next pills, service-first BFS target, collapsed BCL noise, and non-null C1 labels", () => {
   const syllabus = read("src/features/courses/student-course-syllabus.tsx");
   const impact = read("src/features/courses/step2-static-impact.tsx");
+  const screens = read("src/features/courses/screens.tsx");
   const proj = read("src/features/architecture/diagram-projections.ts");
 
   assert.doesNotMatch(syllabus, /👨‍🏫/);
@@ -97,7 +98,9 @@ test("Student Syllabus hero & Reverse BFS polish: clean Instructor/Up-next pills
   assert.match(syllabus, /shrink-0 whitespace-nowrap text-emerald-100\/90/);
   assert.match(syllabus, /min-w-0 truncate font-semibold/);
   assert.match(impact, /isFrameworkClassNoise/);
+  assert.match(impact, /isUnresolvedPlaceholder/);
   assert.match(impact, /ARCHITECTURAL_NODE_TYPES/);
   assert.match(impact, /lowLevelUnaffected/);
+  assert.doesNotMatch(screens, /description:\s*`\$\{el\.elementType\}\s*·\s*\$\{el\.scope\}`/);
   assert.match(proj, /replace\(\/\\s\*·\\s\*null\\b\/gi/);
 });

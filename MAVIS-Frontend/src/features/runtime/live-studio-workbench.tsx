@@ -277,6 +277,46 @@ function metric(value: unknown) {
     : "—";
 }
 
+export function resolveTelemetryServiceStatus({
+  isPreview,
+  running,
+  executionStatus,
+  lastSessionFailed,
+  isTimedOut,
+  isBooting,
+}: {
+  isPreview: boolean;
+  running: number | undefined;
+  executionStatus: string;
+  lastSessionFailed: boolean;
+  isTimedOut: boolean;
+  isBooting: boolean;
+}): { label: string; textClass: string; dotClass: string } {
+  if (isPreview) {
+    return running === 0
+      ? { label: "Starts Down", textClass: "text-amber-300", dotClass: "bg-amber-400" }
+      : { label: "Prepared", textClass: "text-sky-300", dotClass: "bg-sky-400" };
+  }
+  if (running !== undefined) {
+    return running === 0
+      ? { label: "Down", textClass: "text-rose-300", dotClass: "bg-rose-400" }
+      : { label: "Running", textClass: "text-emerald-300", dotClass: "bg-emerald-400" };
+  }
+  if (isTimedOut) {
+    return { label: "Timed Out", textClass: "text-rose-300", dotClass: "bg-rose-400" };
+  }
+  if (lastSessionFailed) {
+    return { label: "Failed", textClass: "text-rose-300", dotClass: "bg-rose-400" };
+  }
+  if (executionStatus.toUpperCase() === "CANCELLED") {
+    return { label: "Stopped", textClass: "text-slate-400", dotClass: "bg-slate-500" };
+  }
+  if (isBooting) {
+    return { label: "Booting", textClass: "text-amber-300", dotClass: "bg-amber-400" };
+  }
+  return { label: "Waiting", textClass: "text-slate-400", dotClass: "bg-slate-500" };
+}
+
 export function LiveStudioWorkbench({
   sessions,
   sessionId,
@@ -347,11 +387,16 @@ export function LiveStudioWorkbench({
     ["CANCELLED", "FAILED", "TIMED_OUT", "TIMEDOUT", "TIMEOUT"].includes(
       liveData!.executionStatus.toUpperCase(),
     );
+  const hasLiveRuntimeState =
+    Boolean(liveData) &&
+    !isTerminalAuthorSession &&
+    (liveData!.services.length > 0 ||
+      Boolean(liveData!.topology) ||
+      Boolean(liveData!.telemetry?.observedAt) ||
+      liveData!.executionStatus.toUpperCase() === "RUNNING" ||
+      BOOTING_STATUSES.has(liveData!.executionStatus.toUpperCase()));
   const isPreviewMode =
-    !activeSessionId ||
-    !liveData ||
-    isTerminalAuthorSession ||
-    (liveData.services.length === 0 && !liveData.topology);
+    !activeSessionId || !liveData || isTerminalAuthorSession || !hasLiveRuntimeState;
   const effectivePreviewTopology = useMemo<Studio["topology"] | undefined>(() => {
     if (!previewTopology) return undefined;
     if (!authoring) return previewTopology;
@@ -370,7 +415,22 @@ export function LiveStudioWorkbench({
   }, [previewTopology, authoring]);
 
   const data: Studio = useMemo(() => {
-    if (!isPreviewMode && liveData) return liveData;
+    if (!isPreviewMode && liveData) {
+      if (liveData.services.length > 0 || liveData.topology) return liveData;
+      const fallbackServices =
+        liveData.telemetry?.services.map((item) => item.service).filter(Boolean) ??
+        (effectivePreviewTopology
+          ? [
+              ...effectivePreviewTopology.blocks.map((b) => b.service),
+              ...effectivePreviewTopology.connections.map((c) => c.controllerService),
+            ]
+          : []);
+      return {
+        ...liveData,
+        services: fallbackServices,
+        ...(effectivePreviewTopology ? { topology: effectivePreviewTopology } : {}),
+      };
+    }
     if (!effectivePreviewTopology) return EMPTY_STUDIO;
     const previewServices = [
       ...effectivePreviewTopology.blocks.map((b) => b.service),
@@ -969,15 +1029,21 @@ export function LiveStudioWorkbench({
 
   const activeSessionMeta = sessions.find((item) => item.id === activeSessionId);
   const isBooting = Boolean(
-    starting || BOOTING_STATUSES.has(data.executionStatus.toUpperCase()),
+    starting ||
+      BOOTING_STATUSES.has(data.executionStatus.toUpperCase()) ||
+      BOOTING_STATUSES.has(liveData?.executionStatus?.toUpperCase() ?? ""),
   );
   const failedStatuses = ["FAILED", "TIMED_OUT", "TIMEDOUT", "TIMEOUT"];
+  const timedOutStatuses = ["TIMED_OUT", "TIMEDOUT", "TIMEOUT"];
   const lastSessionFailed =
     failedStatuses.includes(data.executionStatus.toUpperCase()) ||
     failedStatuses.includes(liveData?.executionStatus?.toUpperCase() ?? "") ||
     failedStatuses.includes(activeSessionMeta?.executionStatus?.toUpperCase() ?? "");
   const isCancelling = data.executionStatus.toUpperCase() === "CANCELLING";
-  const isTimedOut = ["TIMED_OUT", "TIMEDOUT", "TIMEOUT"].includes(data.executionStatus.toUpperCase());
+  const isTimedOut =
+    timedOutStatuses.includes(data.executionStatus.toUpperCase()) ||
+    timedOutStatuses.includes(liveData?.executionStatus?.toUpperCase() ?? "") ||
+    timedOutStatuses.includes(activeSessionMeta?.executionStatus?.toUpperCase() ?? "");
 
   const failedSessionDetail = useApiQuery(
     "runtimeReadSession",
@@ -1023,12 +1089,33 @@ export function LiveStudioWorkbench({
     return data;
   }, [isTerminalAuthorSession, liveData, data]);
 
+  // Keep real observed/failed telemetry in Stats & Telemetry tabs instead of replacing it with fake Preview status.
+  const observedData: Studio = useMemo(() => {
+    if (!lastSessionFailed) return data;
+    if (liveData) return terminalData;
+    const { telemetry: _previewTelemetry, ...withoutPreviewTelemetry } = data;
+    return withoutPreviewTelemetry;
+  }, [lastSessionFailed, liveData, terminalData, data]);
+  const isTelemetryPreview = isPreviewMode && !lastSessionFailed;
+
   const terminalSystemError =
     mutationError ??
     (lastSessionFailed && failedDiagnostics.length === 0
       ? "Studio Live session failed on Runner. Check diagnostics or click Run to retry."
       : null);
   const terminalAlertSignal = terminalSystemError ?? failedDiagnostics[0] ?? null;
+  const logsAndTracesCount =
+    (terminalData.telemetry?.services ?? []).reduce(
+      (sum, svc) =>
+        sum +
+        (svc.logs
+          ? svc.logs.split(/\r?\n/).filter((line) => line.trim().length > 0).length
+          : 0),
+      0,
+    ) +
+    (terminalData.telemetry?.spans.length ?? 0) +
+    failedDiagnostics.length +
+    (terminalSystemError ? 1 : 0);
 
   // Auto-open the Logs & Traces terminal on boot start or new error so all status/errors stay inside the terminal
   const wasBootingRef = useRef(false);
@@ -1665,33 +1752,13 @@ export function LiveStudioWorkbench({
                   ["stats", "Stats", "Stats"],
                   [
                     "telemetry",
-                    `Telemetry (${data.services.length})`,
-                    `Service Telemetry & Impact (${data.services.length})`,
+                    `Telemetry (${observedData.services.length})`,
+                    `Service Telemetry & Impact (${observedData.services.length})`,
                   ],
                   [
                     "logs",
-                    `Logs & Traces (${
-                      (data.telemetry?.services ?? []).reduce(
-                        (sum, svc) =>
-                          sum +
-                          (svc.logs
-                            ? svc.logs.split(/\r?\n/).filter((line) => line.trim().length > 0)
-                                .length
-                            : 0),
-                        0,
-                      ) + (data.telemetry?.spans.length ?? 0)
-                    })`,
-                    `Logs & Traces (${
-                      (data.telemetry?.services ?? []).reduce(
-                        (sum, svc) =>
-                          sum +
-                          (svc.logs
-                            ? svc.logs.split(/\r?\n/).filter((line) => line.trim().length > 0)
-                                .length
-                            : 0),
-                        0,
-                      ) + (data.telemetry?.spans.length ?? 0)
-                    })`,
+                    `Logs & Traces (${logsAndTracesCount})`,
+                    `Logs & Traces (${logsAndTracesCount})`,
                   ],
                   [
                     "snapshots",
@@ -1716,11 +1783,11 @@ export function LiveStudioWorkbench({
                 >
                   <span className="inline-flex items-center gap-1.5">
                     {label}
-                    {id === "logs" && (terminalSystemError || isBooting) && (
+                    {id === "logs" && (terminalAlertSignal || isBooting) && (
                       <span
                         aria-hidden="true"
                         className={`size-1.5 rounded-full ${
-                          terminalSystemError
+                          terminalAlertSignal
                             ? "bg-rose-400"
                             : "animate-pulse bg-amber-400"
                         }`}
@@ -1817,13 +1884,21 @@ export function LiveStudioWorkbench({
               }
             >
           {tab === "stats" && (() => {
+            const observedRunningReplicas = observedData.services.reduce(
+              (sum, service) => sum + (runningFor(observedData, service) ?? 0),
+              0,
+            );
             const downServicesCount = blocks.filter(
-              (b) => (runningFor(data, b.service) ?? 0) === 0,
+              (b) => runningFor(observedData, b.service) === 0,
             ).length;
-            const liveProbe = data.telemetry?.probe;
-            const rawReq = lastConfirmed?.result?.metricsAfter["requestCount"];
-            const rawP95 = lastConfirmed?.result?.metricsAfter["p95LatencyMs"];
-            const rawErr = lastConfirmed?.result?.metricsAfter["errorRatePercent"];
+            const liveProbe = observedData.telemetry?.probe;
+            const observedConfirmed = observedData.actions.filter(
+              (item) => item.status === "CONFIRMED" && item.result,
+            );
+            const observedLastConfirmed = observedConfirmed[observedConfirmed.length - 1];
+            const rawReq = observedLastConfirmed?.result?.metricsAfter["requestCount"];
+            const rawP95 = observedLastConfirmed?.result?.metricsAfter["p95LatencyMs"];
+            const rawErr = observedLastConfirmed?.result?.metricsAfter["errorRatePercent"];
             const reqNum =
               liveProbe && liveProbe.requests > 0
                 ? liveProbe.requests
@@ -1842,7 +1917,7 @@ export function LiveStudioWorkbench({
                 : typeof rawErr === "number" && Number.isFinite(rawErr)
                   ? rawErr
                   : null;
-            const spanCount = data.telemetry?.spans.length ?? 0;
+            const spanCount = observedData.telemetry?.spans.length ?? 0;
 
             let totalCpuPct = 0;
             let cpuSamples = 0;
@@ -1852,15 +1927,15 @@ export function LiveStudioWorkbench({
             let totalRamLimitMiB = 0;
             let totalVcpuAllocated = 0;
 
-            const cpusPerPod = data.limits?.cpus ?? 1;
-            const memPerPodMiB = data.limits?.memoryMiB ?? 1024;
+            const cpusPerPod = observedData.limits?.cpus ?? 1;
+            const memPerPodMiB = observedData.limits?.memoryMiB ?? 1024;
             for (const block of blocks) {
-              const rep = runningFor(data, block.service) ?? 0;
+              const rep = runningFor(observedData, block.service) ?? 0;
               if (rep > 0) {
                 totalVcpuAllocated += cpusPerPod * rep;
                 totalRamLimitMiB += memPerPodMiB * rep;
               }
-              const obs = data.telemetry?.services.find((s) => s.service === block.service);
+              const obs = observedData.telemetry?.services.find((s) => s.service === block.service);
               let svcCpu = 0;
               let hasSvcCpu = false;
               for (const st of obs?.stats ?? []) {
@@ -1875,7 +1950,7 @@ export function LiveStudioWorkbench({
                 if (st.memory) {
                   const [usedPart, limPart] = st.memory.split("/");
                   totalRamUsedMiB += parseLiveMemMiB(usedPart);
-                  if (data.limits?.memoryMiB === undefined && limPart) {
+                  if (observedData.limits?.memoryMiB === undefined && limPart) {
                     const parsedLim = parseLiveMemMiB(limPart);
                     if (parsedLim > 0 && rep === 0) totalRamLimitMiB += parsedLim;
                   }
@@ -1911,9 +1986,9 @@ export function LiveStudioWorkbench({
                     <dl className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
                       {[
                         ["Error rate", errNum !== null ? `${metric(errNum)}%` : "—"],
-                        ["Running pods", totalRunningReplicas.toLocaleString()],
+                        ["Running pods", observedRunningReplicas.toLocaleString()],
                         ["Services down", downServicesCount.toLocaleString()],
-                        ["Confirmed actions", confirmedActions.length.toLocaleString()],
+                        ["Confirmed actions", observedConfirmed.length.toLocaleString()],
                       ].map(([kLabel, kValue]) => (
                         <div key={kLabel} className="flex items-baseline gap-2">
                           <dt className="text-slate-400">{kLabel}</dt>
@@ -1923,29 +1998,35 @@ export function LiveStudioWorkbench({
                     </dl>
                     <span
                       className={`shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ${
-                        downServicesCount
+                        lastSessionFailed
                           ? "bg-rose-500/15 text-rose-300"
-                          : isPreviewMode
-                            ? "bg-sky-500/15 text-sky-300"
-                            : "bg-emerald-500/15 text-emerald-300"
+                          : downServicesCount
+                            ? "bg-rose-500/15 text-rose-300"
+                            : isTelemetryPreview
+                              ? "bg-sky-500/15 text-sky-300"
+                              : "bg-emerald-500/15 text-emerald-300"
                       }`}
                     >
-                      {downServicesCount
-                        ? `${downServicesCount} down`
-                        : isPreviewMode
-                          ? "Setup preview"
-                          : blocks.length
-                            ? "Healthy"
-                            : "No services"}
+                      {lastSessionFailed
+                        ? isTimedOut
+                          ? "Timed out"
+                          : "Failed"
+                        : downServicesCount
+                          ? `${downServicesCount} down`
+                          : isTelemetryPreview
+                            ? "Setup preview"
+                            : blocks.length
+                              ? "Healthy"
+                              : "No services"}
                     </span>
                   </div>
                 </header>
 
                 <StudioRedCharts
-                  history={data.telemetryHistory}
-                  actions={data.actions}
-                  serviceGraph={data.telemetry?.serviceGraph}
-                  spans={data.telemetry?.spans}
+                  history={observedData.telemetryHistory}
+                  actions={observedData.actions}
+                  serviceGraph={observedData.telemetry?.serviceGraph}
+                  spans={observedData.telemetry?.spans}
                   onSelectTrace={(tid) => {
                     setInspectedTraceId(tid);
                     setTab("logs");
@@ -2019,13 +2100,13 @@ export function LiveStudioWorkbench({
                         detail:
                           cpuSamples > 0
                             ? `${avgCpuPct.toFixed(1)}% average CPU load${peakCpuService ? ` · Highest: ${peakCpuService}` : ""}`
-                            : `${totalRunningReplicas} pod(s) allocated · live CPU measured when Docker runs`,
+                            : `${observedRunningReplicas} pod(s) allocated · live CPU measured when Docker runs`,
                       },
                       {
                         label: "RAM usage",
                         rightText: `${Math.round(totalRamUsedMiB).toLocaleString()} / ${Math.round(ramPoolMiB).toLocaleString()} MiB`,
                         pct: ramBarPct,
-                        detail: `${Math.max(0, Math.round(ramPoolMiB - totalRamUsedMiB)).toLocaleString()} MiB available across ${totalRunningReplicas} pod(s)`,
+                        detail: `${Math.max(0, Math.round(ramPoolMiB - totalRamUsedMiB)).toLocaleString()} MiB available across ${observedRunningReplicas} pod(s)`,
                       },
                     ].map(({ label, rightText, pct, detail }) => (
                       <div
@@ -2069,9 +2150,9 @@ export function LiveStudioWorkbench({
                   ))}
                 </div>
 
-                {data.actions.length > 0 && (
+                {observedData.actions.length > 0 && (
                   <ol className="space-y-1.5 text-[11px]">
-                    {data.actions.map((item) => (
+                    {observedData.actions.map((item) => (
                       <li
                         key={item.actionId}
                         className="rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-1.5"
@@ -2098,25 +2179,35 @@ export function LiveStudioWorkbench({
           })()}
 
           {tab === "telemetry" && (() => {
-            const observedDate = data.telemetry?.observedAt
-              ? new Date(data.telemetry.observedAt)
+            const observedDate = observedData.telemetry?.observedAt
+              ? new Date(observedData.telemetry.observedAt)
               : null;
             const observedLabel =
               observedDate && Number.isFinite(observedDate.getTime())
-                ? `Observed ${observedDate.toLocaleTimeString()}`
-                : isPreviewMode
-                  ? "Preview · Live metrics populate when Docker runs"
-                  : "Waiting for container telemetry";
+                ? `Observed ${observedDate.toLocaleTimeString()}${
+                    lastSessionFailed ? (isTimedOut ? " · Timed out" : " · Failed") : ""
+                  }`
+                : lastSessionFailed
+                  ? isTimedOut
+                    ? "Session timed out · Check Logs & Traces"
+                    : "Session failed · Check Logs & Traces"
+                  : observedData.executionStatus.toUpperCase() === "CANCELLED"
+                    ? "Session cancelled"
+                    : isTelemetryPreview
+                      ? mutationError
+                        ? "Preview · Start failed — check Logs & Traces"
+                        : "Preview · Live metrics populate when Docker runs"
+                      : "Waiting for container telemetry";
 
-            const rows = data.services.map((service) => {
-              const telemetry = data.telemetry?.services.find(
+            const rows = observedData.services.map((service) => {
+              const telemetry = observedData.telemetry?.services.find(
                 (item) => item.service === service,
               );
               const agg = summarizeServiceStats(telemetry?.stats);
-              const running = runningFor(data, service);
+              const running = runningFor(observedData, service);
               const desired = telemetry?.replicas;
-              const result = lastResultFor(data, service);
-              const svcLimit = data.limits?.services?.[service];
+              const result = lastResultFor(observedData, service);
+              const svcLimit = observedData.limits?.services?.[service];
               const netStats = (telemetry?.stats ?? [])
                 .map((st) => st.network?.trim())
                 .filter((v): v is string => Boolean(v));
@@ -2126,7 +2217,7 @@ export function LiveStudioWorkbench({
                   : netStats.length === 1
                     ? netStats[0]!
                     : `${netStats[0]} (+${netStats.length - 1})`;
-              const serviceSpans = (data.telemetry?.spans ?? []).filter(
+              const serviceSpans = (observedData.telemetry?.spans ?? []).filter(
                 (span) => span.runtimeService === service,
               );
               const errorSpanCount = serviceSpans.filter(
@@ -2168,33 +2259,18 @@ export function LiveStudioWorkbench({
               const rawErr = result?.metricsAfter["errorRatePercent"];
               const errRate =
                 typeof rawErr === "number" && Number.isFinite(rawErr) ? rawErr : undefined;
-              const statusLabel = isPreviewMode
-                ? running === 0
-                  ? "Starts Down"
-                  : "Prepared"
-                : running === undefined
-                  ? "Waiting"
-                  : running === 0
-                    ? "Down"
-                    : "Running";
-              const statusClass = isPreviewMode
-                ? running === 0
-                  ? "text-amber-300"
-                  : "text-sky-300"
-                : running === 0
-                  ? "text-rose-300"
-                  : running === undefined
-                    ? "text-slate-400"
-                    : "text-emerald-300";
-              const dotClass = isPreviewMode
-                ? running === 0
-                  ? "bg-amber-400"
-                  : "bg-sky-400"
-                : running === 0
-                  ? "bg-rose-400"
-                  : running === undefined
-                    ? "bg-slate-500"
-                    : "bg-emerald-400";
+              const {
+                label: statusLabel,
+                textClass: statusClass,
+                dotClass,
+              } = resolveTelemetryServiceStatus({
+                isPreview: isTelemetryPreview,
+                running,
+                executionStatus: observedData.executionStatus,
+                lastSessionFailed,
+                isTimedOut,
+                isBooting,
+              });
               return {
                 service,
                 telemetry,
@@ -2398,11 +2474,11 @@ export function LiveStudioWorkbench({
                         )}
                       </div>
                       <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-400">
-                        {data.limits?.cpus !== undefined && (
+                        {observedData.limits?.cpus !== undefined && (
                           <span className="font-mono">
-                            Quota: {data.limits.cpus} vCPU
-                            {data.limits.memoryMiB !== undefined
-                              ? ` · ${data.limits.memoryMiB} MiB`
+                            Quota: {observedData.limits.cpus} vCPU
+                            {observedData.limits.memoryMiB !== undefined
+                              ? ` · ${observedData.limits.memoryMiB} MiB`
                               : ""}
                           </span>
                         )}

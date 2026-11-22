@@ -324,6 +324,10 @@ export function LiveTerminalConsole({
       level = "ERROR";
       message =
         "Runner session FAILED — inspect container logs above or click Run to start a fresh session.";
+    } else if (rawStatus === "TIMED_OUT" || rawStatus === "TIMEDOUT" || rawStatus === "TIMEOUT") {
+      level = "ERROR";
+      message =
+        "Runner session TIMED OUT — inspect container logs above or click Run to start a fresh session.";
     } else if (rawStatus === "COMPLETED") {
       message = "Session completed and runtime evidence sealed.";
     } else if (rawStatus === "CANCELLED") {
@@ -690,7 +694,9 @@ export function LiveTerminalConsole({
                 className={`size-1.5 rounded-full ${
                   isBooting || waiting
                     ? "animate-pulse bg-amber-400"
-                    : data.executionStatus === "FAILED" ||
+                    : ["FAILED", "TIMED_OUT", "TIMEDOUT", "TIMEOUT"].includes(
+                          data.executionStatus.toUpperCase(),
+                        ) ||
                         Boolean(systemError) ||
                         diagnosticLines.length > 0
                       ? "bg-rose-400"
@@ -705,7 +711,9 @@ export function LiveTerminalConsole({
                 className={
                   isBooting || waiting
                     ? "text-amber-300"
-                    : data.executionStatus === "FAILED" ||
+                    : ["FAILED", "TIMED_OUT", "TIMEDOUT", "TIMEOUT"].includes(
+                          data.executionStatus.toUpperCase(),
+                        ) ||
                         Boolean(systemError) ||
                         diagnosticLines.length > 0
                       ? "text-rose-300"
@@ -722,6 +730,10 @@ export function LiveTerminalConsole({
                     ? `BOOTING · ${data.executionStatus === "NOT_STARTED" ? "STARTING" : data.executionStatus}`
                   : waiting
                     ? "APPLYING"
+                    : ["TIMED_OUT", "TIMEDOUT", "TIMEOUT"].includes(
+                          data.executionStatus.toUpperCase(),
+                        )
+                      ? "TIMED OUT"
                     : data.executionStatus === "FAILED" ||
                         Boolean(systemError) ||
                         diagnosticLines.length > 0

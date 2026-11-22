@@ -205,7 +205,7 @@ function toInlineArchitecturalModel(
     elementType: el.elementType,
     parentId: el.parentElementId ?? null,
     technology: el.languageStack ?? null,
-    description: `${el.elementType} · ${el.scope}`,
+    description: el.scope && el.scope !== "null" ? el.scope.trim() : "",
     evidence: [],
   }));
   const nodeIds = new Set(elements.map((el) => el.id));
