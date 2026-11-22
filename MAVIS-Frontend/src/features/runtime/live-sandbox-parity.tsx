@@ -983,24 +983,35 @@ export function LiveSandboxParity({
         >
           {(() => {
             const isPreview = data.executionStatus !== "RUNNING" && !data.telemetry?.observedAt;
+            const isPaused =
+              !isPreview &&
+              running === 0 &&
+              [...data.actions]
+                .reverse()
+                .find((item) => item.service === selected && item.status === "CONFIRMED")?.action ===
+                "PAUSE";
             const statusText = isPreview
               ? running === 0
                 ? "Starts Down"
                 : "Prepared"
               : running === undefined
                 ? "Waiting"
-                : running === 0
-                  ? "Stopped"
-                  : "Running";
+                : isPaused
+                  ? "Paused"
+                  : running === 0
+                    ? "Stopped"
+                    : "Running";
             const statusTone = isPreview
               ? running === 0
                 ? "font-semibold text-amber-300"
                 : "font-semibold text-sky-300"
               : running === undefined
                 ? "text-slate-400"
-                : running === 0
-                  ? "font-semibold text-rose-300"
-                  : "font-semibold text-emerald-300";
+                : isPaused
+                  ? "font-semibold text-amber-300"
+                  : running === 0
+                    ? "font-semibold text-rose-300"
+                    : "font-semibold text-emerald-300";
             return (
               <div className="flex flex-wrap items-baseline justify-between gap-1 text-[11px]">
                 <span className="font-mono text-slate-300">{selected || "—"}</span>
@@ -1173,7 +1184,15 @@ export function LiveSandboxParity({
             </button>
             <button
               type="button"
-              disabled={busy || running === undefined || running > 0}
+              disabled={
+                busy ||
+                running === undefined ||
+                running > 0 ||
+                [...data.actions]
+                  .reverse()
+                  .find((item) => item.service === selected && item.status === "CONFIRMED")
+                  ?.action === "PAUSE"
+              }
               onClick={() => void command("START", selected)}
               className="h-7 min-w-0 shrink-0 whitespace-nowrap rounded border border-emerald-500/40 bg-emerald-500/15 px-2 text-[11px] font-semibold text-emerald-200 transition-colors hover:bg-emerald-500/25 disabled:opacity-40"
             >

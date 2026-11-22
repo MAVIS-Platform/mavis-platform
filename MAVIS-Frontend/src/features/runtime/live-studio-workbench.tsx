@@ -268,6 +268,15 @@ function runningFor(data: Studio, service: string) {
   return resolveRunningReplicas(data, service);
 }
 
+function servicePhase(data: Studio, service: string): "running" | "paused" | "stopped" {
+  const running = runningFor(data, service) ?? 0;
+  if (running > 0) return "running";
+  const last = [...data.actions]
+    .reverse()
+    .find((a) => a.service === service && a.status === "CONFIRMED");
+  return last?.action === "PAUSE" ? "paused" : "stopped";
+}
+
 function lastResultFor(data: Studio, service: string) {
   return [...data.actions]
     .reverse()
@@ -1432,17 +1441,31 @@ export function LiveStudioWorkbench({
     liveProbeMetrics != null && Number.isFinite(liveProbeMetrics.rps)
       ? Number(liveProbeMetrics.rps.toFixed(1))
       : null;
-  const stoppedServiceNames = services.filter((svc) => runningFor(data, svc) === 0);
-  const pausedServiceNames = services.filter((svc) => {
-    if (runningFor(data, svc) === 0) return false;
-    const latest = [...(data.actions ?? [])]
-      .reverse()
-      .find((item) => item.service === svc && item.status === "CONFIRMED");
-    return latest?.action === "PAUSE";
-  });
+  const stoppedServiceNames = services.filter(
+    (svc) => runningFor(data, svc) === 0 && servicePhase(data, svc) === "stopped",
+  );
+  const pausedServiceNames = services.filter((svc) => servicePhase(data, svc) === "paused");
   const faultedServices = [...stoppedServiceNames, ...pausedServiceNames];
   const snapshotCount = data.snapshots?.length ?? 0;
   const healthyCount = Math.max(0, services.length - faultedServices.length);
+  const needsPrediction =
+    !isPreviewMode &&
+    !authoring &&
+    Boolean(
+      (data.exerciseCriteria as { predictionRequired?: boolean } | null | undefined)
+        ?.predictionRequired || data.exerciseEvaluation?.predictionRequired,
+    ) &&
+    !(data.prediction?.predictedServices?.length) &&
+    !hasConfirmedAction &&
+    data.executionStatus === "RUNNING";
+  const autoOpenedPredictionRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!needsPrediction || !sessionId) return;
+    if (autoOpenedPredictionRef.current === sessionId) return;
+    autoOpenedPredictionRef.current = sessionId;
+    setRightCardMode("service");
+    setShowRight(true);
+  }, [needsPrediction, sessionId]);
   const parsedAuthorMaxErr =
     authoring?.maxErrorRatePercent && Number.isFinite(Number(authoring.maxErrorRatePercent))
       ? Number(authoring.maxErrorRatePercent)
@@ -2325,6 +2348,24 @@ export function LiveStudioWorkbench({
                     <p className={isLight ? "font-medium text-slate-700" : "font-medium text-slate-200"}>
                       {effectiveMissionInstructions}
                     </p>
+                    {needsPrediction && (
+                      <p
+                        role="status"
+                        className={`flex items-start gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11.5px] font-medium ${
+                          isLight
+                            ? "border-amber-300 bg-amber-50 text-amber-900"
+                            : "border-amber-500/40 bg-amber-500/15 text-amber-200"
+                        }`}
+                      >
+                        <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+                        <span>
+                          {t(
+                            "Lock your impact prediction before your first action.",
+                            "Hãy khóa dự đoán tác động trước thao tác đầu tiên.",
+                          )}
+                        </span>
+                      </p>
+                    )}
                     <ul className="space-y-1.5 pt-0.5 text-[12.5px]">
                       <li className="flex items-center justify-between gap-2">
                         <span className="text-muted-foreground">{t("Run a live Docker action", "Thực hiện 1 thao tác Docker")}</span>
@@ -2582,10 +2623,15 @@ export function LiveStudioWorkbench({
                                     "Run at least one confirmed action (Pause, Resume, Stop, Start, or Scale) and capture a snapshot before finishing",
                                     "Thực hiện ít nhất 1 thao tác được xác nhận (Pause, Resume, Stop, Start hoặc Scale) và chụp 1 Snapshot trước khi kết thúc",
                                   )
-                                : t(
-                                    "Finish Studio and seal your verifiable RuntimeReceipt",
-                                    "Kết thúc Studio và ký niêm phong RuntimeReceipt",
-                                  );
+                                : (data.snapshots?.length ?? 0) === 0
+                                  ? t(
+                                      "Capture at least one evidence snapshot before finishing.",
+                                      "Chụp ít nhất 1 snapshot bằng chứng trước khi kết thúc.",
+                                    )
+                                  : t(
+                                      "Finish Studio and seal your verifiable RuntimeReceipt",
+                                      "Kết thúc Studio và ký niêm phong RuntimeReceipt",
+                                    );
                       const finishDisabled =
                         finish.isPending ||
                         action.isPending ||
@@ -2593,6 +2639,7 @@ export function LiveStudioWorkbench({
                         capture.isPending ||
                         waiting ||
                         !hasConfirmedAction ||
+                        (data.snapshots?.length ?? 0) === 0 ||
                         data.finishRequested ||
                         data.executionStatus !== "RUNNING";
                       return (
@@ -4448,12 +4495,9 @@ export function LiveStudioWorkbench({
                   const selStats = summarizeServiceStats(selObs?.stats);
                   const selBlock = blocks.find((b) => b.service === selSvc);
                   const selCanScale = Boolean(selBlock?.canScale ?? (selSvc && !data.topology));
-                  const selStopped = selRunning === 0;
-                  const selPaused =
-                    !selStopped &&
-                    [...data.actions]
-                      .reverse()
-                      .find((a) => a.service === selSvc && a.status === "CONFIRMED")?.action === "PAUSE";
+                  const selPhase = selSvc ? servicePhase(data, selSvc) : "stopped";
+                  const selPaused = selPhase === "paused";
+                  const selStopped = selRunning === 0 && !selPaused;
                   const canLiveAct = !isPreviewMode && data.executionStatus === "RUNNING" && Boolean(selSvc);
                   return (
                     <section aria-label={t("Live Service Controls", "Điều khiển Service")} className="space-y-3.5 text-[13px] text-slate-900">
@@ -4465,19 +4509,19 @@ export function LiveStudioWorkbench({
                           </span>
                           <span
                             className={`shrink-0 rounded-full border px-2 py-0.5 font-mono text-[11px] font-bold ${
-                              selStopped
-                                ? "border-rose-300 bg-rose-50 text-rose-700"
-                                : selPaused
-                                  ? "border-amber-300 bg-amber-50 text-amber-800"
+                              selPaused
+                                ? "border-amber-300 bg-amber-50 text-amber-800"
+                                : selStopped
+                                  ? "border-rose-300 bg-rose-50 text-rose-700"
                                   : selRunning && selRunning > 0
                                     ? "border-emerald-300 bg-emerald-50 text-emerald-700"
                                     : "border-slate-300 bg-white text-slate-600"
                             }`}
                           >
-                            {selStopped
-                              ? "CRASHED · 0x"
-                              : selPaused
-                                ? `PAUSED · ${selRunning ?? 1}x`
+                            {selPaused
+                              ? "PAUSED"
+                              : selStopped
+                                ? "CRASHED · 0x"
                                 : selRunning != null
                                   ? `RUNNING · ${selRunning}x`
                                   : "STANDBY"}
@@ -4506,7 +4550,7 @@ export function LiveStudioWorkbench({
                       </div>
 
                       {/* Real Docker Lifecycle & Fault Injection Actions */}
-                      <div className="space-y-2">
+                      <div className="space-y-2.5">
                         <div className="flex items-center justify-between">
                           <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
                             {t("Live Docker Actions", "Thao tác Docker thật")}
@@ -4522,7 +4566,7 @@ export function LiveStudioWorkbench({
                             type="button"
                             size="sm"
                             variant="outline"
-                            disabled={!canLiveAct || busy || selStopped}
+                            disabled={!canLiveAct || busy || selPhase !== "running"}
                             onClick={() => void dispatchCommand("STOP", selSvc)}
                             className="h-9 whitespace-nowrap border-rose-300 bg-rose-50 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400"
                           >
@@ -4533,7 +4577,7 @@ export function LiveStudioWorkbench({
                             type="button"
                             size="sm"
                             variant="outline"
-                            disabled={!canLiveAct || busy || !selStopped}
+                            disabled={!canLiveAct || busy || selPhase !== "stopped"}
                             onClick={() => void dispatchCommand("START", selSvc)}
                             className="h-9 whitespace-nowrap border-emerald-300 bg-emerald-50 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400"
                           >
@@ -4544,7 +4588,7 @@ export function LiveStudioWorkbench({
                             type="button"
                             size="sm"
                             variant="outline"
-                            disabled={!canLiveAct || busy || selStopped || selPaused}
+                            disabled={!canLiveAct || busy || selPhase !== "running"}
                             onClick={() => void studio.send("PAUSE", selSvc)}
                             className="h-9 whitespace-nowrap border-amber-300 bg-amber-50 text-xs font-semibold text-amber-800 hover:bg-amber-100 disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400"
                           >
@@ -4554,7 +4598,7 @@ export function LiveStudioWorkbench({
                             type="button"
                             size="sm"
                             variant="outline"
-                            disabled={!canLiveAct || busy || !selPaused}
+                            disabled={!canLiveAct || busy || selPhase !== "paused"}
                             onClick={() => void studio.send("RESUME", selSvc)}
                             className="h-9 whitespace-nowrap border-sky-300 bg-sky-50 text-xs font-semibold text-sky-700 hover:bg-sky-100 disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400"
                           >
@@ -4562,29 +4606,70 @@ export function LiveStudioWorkbench({
                           </Button>
                         </div>
 
-                        {/* Scale & CPU Throttle */}
-                        <div className="grid grid-cols-2 gap-2">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            disabled={!canLiveAct || busy || !selCanScale || selStopped || (selRunning ?? 1) >= 8}
-                            onClick={() => void dispatchCommand("SCALE", selSvc, Math.min(8, (selRunning ?? 1) + 1))}
-                            className="h-8 whitespace-nowrap border-slate-300 bg-white text-xs font-semibold text-slate-800 hover:bg-slate-100 disabled:bg-slate-50 disabled:text-slate-400"
-                          >
-                            <Plus className="mr-1 size-3.5" aria-hidden="true" />
-                            Scale +1
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            disabled={!canLiveAct || busy || selStopped}
-                            onClick={() => void studio.send("THROTTLE_CPU", selSvc, undefined, 20)}
-                            className="h-8 whitespace-nowrap border-slate-300 bg-white text-xs font-semibold text-slate-800 hover:bg-slate-100 disabled:bg-slate-50 disabled:text-slate-400"
-                          >
-                            CPU 20%
-                          </Button>
+                        {/* Scale */}
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={!canLiveAct || busy || !selCanScale || selPhase !== "running" || (selRunning ?? 1) >= 8}
+                          onClick={() => void dispatchCommand("SCALE", selSvc, Math.min(8, (selRunning ?? 1) + 1))}
+                          className="h-8 w-full whitespace-nowrap border-slate-300 bg-white text-xs font-semibold text-slate-800 hover:bg-slate-100 disabled:bg-slate-50 disabled:text-slate-400"
+                        >
+                          <Plus className="mr-1 size-3.5" aria-hidden="true" />
+                          Scale +1
+                        </Button>
+
+                        {/* CPU Throttle (cgroup) */}
+                        <div className="space-y-1">
+                          <span className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">
+                            {t("CPU Throttle (cgroup)", "Giới hạn CPU (cgroup)")}
+                          </span>
+                          <div className="grid grid-cols-3 gap-1.5">
+                            {[25, 50, 100].map((pct) => (
+                              <Button
+                                key={pct}
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                disabled={!canLiveAct || busy || selPhase !== "running"}
+                                onClick={() => void studio.send("THROTTLE_CPU", selSvc, undefined, pct)}
+                                className="h-8 whitespace-nowrap border-slate-300 bg-white font-mono text-xs font-semibold text-slate-800 hover:border-sky-400 hover:bg-sky-50 disabled:bg-slate-50 disabled:text-slate-400"
+                              >
+                                CPU {pct}%
+                              </Button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Live Probe Load (RPS) */}
+                        <div className="space-y-1 border-t border-slate-200 pt-2">
+                          <div className="flex items-center justify-between text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">
+                            <span>{t("Live Probe Load (RPS)", "Tải Probe trực tiếp (RPS)")}</span>
+                            <span className="font-mono text-sky-700">
+                              {data.telemetry?.probe?.targetRps ?? 5} RPS
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-4 gap-1.5">
+                            {[5, 15, 30, 50].map((rps) => (
+                              <Button
+                                key={rps}
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                disabled={!canLiveAct || busy}
+                                onClick={() =>
+                                  void studio.send("SET_LOAD", selSvc, undefined, undefined, rps)
+                                }
+                                className={`h-8 whitespace-nowrap font-mono text-xs font-semibold ${
+                                  data.telemetry?.probe?.targetRps === rps
+                                    ? "border-sky-500 bg-sky-50 text-sky-800"
+                                    : "border-slate-300 bg-white text-slate-800 hover:border-sky-400 hover:bg-sky-50 disabled:bg-slate-50 disabled:text-slate-400"
+                                }`}
+                              >
+                                {rps}
+                              </Button>
+                            ))}
+                          </div>
                         </div>
                       </div>
 
@@ -4597,6 +4682,7 @@ export function LiveStudioWorkbench({
                           <div className="flex flex-wrap gap-1.5">
                             {services.map((svc) => {
                               const rep = runningFor(data, svc);
+                              const phase = servicePhase(data, svc);
                               const active = svc === selSvc;
                               return (
                                 <button
@@ -4611,7 +4697,13 @@ export function LiveStudioWorkbench({
                                 >
                                   <span
                                     className={`size-1.5 rounded-full ${
-                                      rep === 0 ? "bg-rose-500" : rep && rep > 0 ? "bg-emerald-500" : "bg-slate-400"
+                                      phase === "paused"
+                                        ? "bg-amber-500"
+                                        : rep === 0
+                                          ? "bg-rose-500"
+                                          : rep && rep > 0
+                                            ? "bg-emerald-500"
+                                            : "bg-slate-400"
                                     }`}
                                     aria-hidden="true"
                                   />
@@ -5212,7 +5304,9 @@ export function LiveStudioWorkbench({
                   label="Live inspector"
                   authoring={authoring}
                 />
-                {!isPreviewMode && selected && data.executionStatus === "RUNNING" && (
+                {!isPreviewMode && selected && data.executionStatus === "RUNNING" && (() => {
+                  const darkPhase = servicePhase(data, selected);
+                  return (
                   <section
                     aria-label="Live Docker fault injection"
                     className="space-y-2 rounded-lg border border-amber-500/25 bg-slate-900/70 p-2.5 text-xs"
@@ -5226,7 +5320,7 @@ export function LiveStudioWorkbench({
                         type="button"
                         size="sm"
                         variant="outline"
-                        disabled={busy || (runningFor(data, selected) ?? 0) === 0}
+                        disabled={busy || darkPhase !== "running"}
                         onClick={() => void studio.send("PAUSE", selected)}
                         className="h-7 whitespace-nowrap border-amber-500/40 bg-amber-500/10 text-[11px] text-amber-200 hover:bg-amber-500/20"
                       >
@@ -5236,7 +5330,7 @@ export function LiveStudioWorkbench({
                         type="button"
                         size="sm"
                         variant="outline"
-                        disabled={busy || (runningFor(data, selected) ?? 1) > 0}
+                        disabled={busy || darkPhase !== "paused"}
                         onClick={() => void studio.send("RESUME", selected)}
                         className="h-7 whitespace-nowrap border-emerald-500/40 bg-emerald-500/10 text-[11px] text-emerald-200 hover:bg-emerald-500/20"
                       >
@@ -5254,7 +5348,7 @@ export function LiveStudioWorkbench({
                             type="button"
                             size="sm"
                             variant="outline"
-                            disabled={busy || (runningFor(data, selected) ?? 0) === 0}
+                            disabled={busy || darkPhase !== "running"}
                             onClick={() => void studio.send("THROTTLE_CPU", selected, undefined, pct)}
                             className="h-7 whitespace-nowrap border-slate-700 bg-slate-950/60 font-mono text-[11px] text-slate-200 hover:border-sky-400"
                           >
@@ -5293,7 +5387,8 @@ export function LiveStudioWorkbench({
                       </div>
                     </div>
                   </section>
-                )}
+                  );
+                })()}
                 {!isPreviewMode &&
                   studio.services.length > 0 &&
                   (data.executionStatus === "RUNNING" || Boolean(data.exerciseEvaluation)) && (

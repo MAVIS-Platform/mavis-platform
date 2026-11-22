@@ -22,8 +22,6 @@ export function labSubmissionDraftKey(
 
 type LabRubricProfile = {
   items: [string, string, string];
-  sampleDossier: string;
-  flawedSample: string;
   c2Target: string;
   c3Target: string;
 };
@@ -40,9 +38,6 @@ function resolveLabRubricProfile(
         "Database-per-Service Boundary",
         "Immutable DTO / Port Contract",
       ],
-      sampleDossier:
-        "Hồ sơ kiến trúc Lab 01: Phân tách Bounded Context rõ ràng giữa Order và Inventory, áp dụng Database-per-Service (chống Shared Monolith DB), và dùng Immutable DTO/Record tại biên Controller -> Application Port -> Adapter.",
-      flawedSample: "Gộp chung 1 bảng Shared DB.",
       c2Target: "order-service",
       c3Target: "InventoryClientPort",
     };
@@ -54,9 +49,6 @@ function resolveLabRubricProfile(
         "Resilient Sync Fallback / Timeout",
         "Transactional Outbox + X-Idempotency-Key",
       ],
-      sampleDossier:
-        "Hồ sơ kiến trúc Lab 02: Định tuyến qua API Gateway, cấu hình timeout + Circuit Breaker fallback cho OpenFeign/HTTP Client, và dùng Transactional Outbox + X-Idempotency-Key đảm bảo nhất quán Saga.",
-      flawedSample: "Gọi sync không timeout, không idempotency.",
       c2Target: "api-gateway",
       c3Target: "OutboxEventPublisher",
     };
@@ -68,9 +60,6 @@ function resolveLabRubricProfile(
         "Visited-Set Loop Prevention",
         "Async Event / Bulkhead Decoupling",
       ],
-      sampleDossier:
-        "Hồ sơ kiến trúc Lab 03: Truy vết Reverse BFS với Visited Set để xác định đúng trực tiếp (Hop 1) và gián tiếp (Hop 2+), chặn lặp vô hạn khi có chu trình phụ thuộc và cô lập điểm nghẽn bằng Messaging/Bulkhead.",
-      flawedSample: "Duyệt không có Visited Set.",
       c2Target: "payment-service",
       c3Target: "DomainEventBroker",
     };
@@ -82,9 +71,6 @@ function resolveLabRubricProfile(
         "Health Probes (/health/ready & /live)",
         "Bounded Context & Idempotent Settlement",
       ],
-      sampleDossier:
-        "Hồ sơ kiến trúc Lab 05: Bảo toàn W3C traceparent xuyên suốt Gateway -> Service -> Message Broker, tách Liveness/Readiness probes tránh high-cardinality metrics, và khóa trùng thanh toán bằng Idempotency Key.",
-      flawedSample: "Thiếu readiness probe và trace ID.",
       c2Target: "fruit-payment-service",
       c3Target: "TraceContextPropagator",
     };
@@ -95,9 +81,6 @@ function resolveLabRubricProfile(
       "Database-per-Service Isolation",
       "Scale & p95 Latency Recovery",
     ],
-    sampleDossier:
-      "Hồ sơ kiến trúc Studio Live: Kích hoạt Resilience4j Circuit Breaker (CLOSED/OPEN/HALF_OPEN) kèm Fallback, tách Database-per-Service ngăn lock contention, và mở rộng replica giữ p95 dưới ngưỡng SLA sau sự cố.",
-    flawedSample: "Shared DB và không giới hạn retry.",
     c2Target: "order-service",
     c3Target: "ResiliencePolicyPort",
   };
@@ -156,18 +139,6 @@ export function LabSubmissionV2({
     databasePerService: true,
     idempotencyKey: true,
   });
-
-  const checklistScore =
-    (mitigations.circuitBreaker ? 1 : 0) +
-    (mitigations.databasePerService ? 1 : 0) +
-    (mitigations.idempotencyKey ? 1 : 0);
-  const estimatedRubricScore = useMemo(() => {
-    const baseQuiz = 2.7; // 30% Quiz weight
-    const topologyScore = answer.trim().length >= 80 ? 3.5 : answer.trim().length > 0 ? 1.8 : 0.8;
-    const mitigationScore = Math.round((checklistScore / 3) * 2.6 * 10) / 10;
-    return Math.min(10, Math.round((baseQuiz + topologyScore + mitigationScore) * 10) / 10);
-  }, [answer, checklistScore]);
-  const passesRubricPreview = estimatedRubricScore > 5.0;
 
   useEffect(() => {
     try {
@@ -386,23 +357,9 @@ export function LabSubmissionV2({
             </p>
           )}
           {showArchRubric && (
-            <div className="space-y-3 rounded-xl border border-teal-200/80 bg-teal-50/40 p-3.5 text-xs dark:border-teal-900 dark:bg-teal-950/20">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="font-semibold text-teal-950 dark:text-teal-200">
-                  📊 {t("Submission readiness estimate & evidence bundle", "Dự báo mức sẵn sàng nộp bài & gói bằng chứng")}
-                </span>
-                <Badge variant={passesRubricPreview ? "success" : "destructive"}>
-                  {estimatedRubricScore.toFixed(1)} / 10.0 ·{" "}
-                  {passesRubricPreview
-                    ? t("APPROVED Eligible (> 5.0)", "ĐẠT (> 5.0 → Mở Lab tiếp theo)")
-                    : t("Revision Needed (≤ 5.0)", "Cần bổ sung & sửa lại (≤ 5.0)")}
-                </Badge>
-              </div>
-              <p className="text-muted-foreground">
-                {t(
-                  "30% Module Quiz + 40% C1–C3 snapshot architecture + 30% runtime evidence and mitigation explanation",
-                  "Cấu trúc điểm: 30% Quiz của Module + 40% kiến trúc snapshot C1–C3 + 30% evidence runtime và giải trình phương án xử lý",
-                )}
+            <div className="space-y-2.5 rounded-xl border border-teal-200/80 bg-teal-50/40 p-3.5 text-xs dark:border-teal-900 dark:bg-teal-950/20">
+              <p className="font-semibold text-teal-950 dark:text-teal-200">
+                {t("Architecture mitigation checklist", "Danh mục tiêu chí kiến trúc")}
               </p>
               <div className="flex flex-wrap gap-3">
                 <label className="inline-flex cursor-pointer items-center gap-1.5 font-medium">
@@ -436,45 +393,6 @@ export function LabSubmissionV2({
                   {rubricProfile.items[2]}
                 </label>
               </div>
-              <details className="pt-1">
-                <summary className="cursor-pointer select-none text-[11px] font-medium text-muted-foreground hover:text-foreground">
-                  ⚙ {t("Quick Reference Dossier Templates", "Mẫu hồ sơ giải trình tham khảo")}
-                </summary>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-7 border-emerald-300 bg-background px-2.5 text-xs text-emerald-800 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-950/40"
-                    onClick={() => {
-                      const sample = rubricProfile.sampleDossier;
-                      setMitigations({ circuitBreaker: true, databasePerService: true, idempotencyKey: true });
-                      setAnswer(sample);
-                      try {
-                        window.localStorage.setItem(draftKey, sample);
-                      } catch {}
-                    }}
-                  >
-                    🚀 {t("Fill Passing Architectural Dossier (> 5.0)", "Điền Hồ Sơ Chuẩn Đạt Rubric (8.8/10)")}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-7 border-rose-300 bg-background px-2.5 text-xs text-rose-800 hover:bg-rose-50 dark:border-rose-800 dark:text-rose-300 dark:hover:bg-rose-950/40"
-                    onClick={() => {
-                      const flawed = rubricProfile.flawedSample;
-                      setMitigations({ circuitBreaker: false, databasePerService: false, idempotencyKey: false });
-                      setAnswer(flawed);
-                      try {
-                        window.localStorage.setItem(draftKey, flawed);
-                      } catch {}
-                    }}
-                  >
-                    🧪 {t("Fill Revision-Needed Sample (≤ 5.0)", "Điền mẫu thiếu tiêu chí (≤ 5.0)")}
-                  </Button>
-                </div>
-              </details>
             </div>
           )}
 
@@ -532,7 +450,7 @@ export function LabSubmissionV2({
                     assignmentId,
                     runtimeSessionId: studio ? runtimeSessionId! : null,
                     submissionNotes: showArchRubric
-                      ? `${trimmed}\n[RubricPreview=${estimatedRubricScore}/10; CB=${mitigations.circuitBreaker}; DBPerService=${mitigations.databasePerService}; Idempotency=${mitigations.idempotencyKey}]`
+                      ? `${trimmed}\n[CB=${mitigations.circuitBreaker}; DBPerService=${mitigations.databasePerService}; Idempotency=${mitigations.idempotencyKey}]`
                       : trimmed,
                     theoryAnswers: showArchRubric
                       ? [
@@ -540,7 +458,7 @@ export function LabSubmissionV2({
                           {
                             sectionId: "MITIGATION",
                             title: "Reverse BFS & Resilience Mitigations",
-                            answer: `ScorePreview=${estimatedRubricScore}/10 (${passesRubricPreview ? "APPROVED_ELIGIBLE" : "DS04B_REVISION"})`,
+                            answer: `${rubricProfile.items[0]}=${mitigations.circuitBreaker}; ${rubricProfile.items[1]}=${mitigations.databasePerService}; ${rubricProfile.items[2]}=${mitigations.idempotencyKey}`,
                           },
                         ]
                       : [{ sectionId: "THEORY", title: "Theory explanation", answer: trimmed }],

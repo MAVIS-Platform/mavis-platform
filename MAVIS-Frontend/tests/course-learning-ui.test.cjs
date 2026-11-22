@@ -1377,7 +1377,8 @@ test("ADM-V2 Enterprise Control Center wires Admin Studio Setup Hub and 1-click 
   assert.match(adminOps, /href:\s*"\/administration\/studio-setup"/);
   assert.match(adminPage, /"studio-setup":\s*\{\s*title:\s*"Studio Setup",\s*component:\s*AdminStudioSetup\s*\}/);
   assert.match(adminScreens, /export function AdminStudioSetup\(\)/);
-  assert.match(adminScreens, /href="\/administration\/studio"/);
+  assert.match(adminScreens, /href="\/workspaces"/);
+  assert.doesNotMatch(adminScreens, /href="\/administration\/studio"/);
   assert.doesNotMatch(runtimeBackend, /administration\/studio/);
   assert.ok(adminScreens.includes("createAccount"));
   assert.ok(adminScreens.includes("Activate"));
