@@ -81,48 +81,52 @@ export function Breadcrumbs({
   items: readonly { label: string; href?: string; visibility?: "sm" | "lg" }[];
 }) {
   const { t } = useLocale();
+  const visibleItems = items.filter((item) => item.label.trim().length > 0);
   return (
-    <nav aria-label="Breadcrumb" className="min-w-0 flex-1 overflow-hidden">
+    <nav aria-label={t("Breadcrumb")} className="min-w-0 flex-1 overflow-hidden">
       <ol className="flex min-w-0 flex-nowrap items-center gap-1.5 overflow-hidden whitespace-nowrap text-xs text-muted-foreground sm:gap-2">
-        {items.map((item, i) => {
+        {visibleItems.map((item, i) => {
           const text = t(item.label);
+          const isLast = i === visibleItems.length - 1;
           return (
             <li
               key={`${item.label}-${i}`}
               className={cn(
                 "min-w-0 items-center gap-1.5 sm:gap-2",
-                item.visibility === "sm"
-                  ? "hidden shrink-0 sm:flex"
-                  : item.visibility === "lg"
-                    ? "hidden shrink min-w-0 lg:flex"
-                    : "flex min-w-0 shrink",
+                isLast
+                  ? "flex min-w-24 flex-1"
+                  : item.visibility === "sm"
+                    ? "hidden shrink-0 sm:flex"
+                    : item.visibility === "lg"
+                      ? "hidden shrink min-w-0 xl:flex"
+                      : "flex min-w-0 shrink",
               )}
             >
-              {item.href ? (
+              {item.href && !isLast ? (
                 <Link
                   href={item.href}
                   title={text}
                   className={cn(
                     "block truncate whitespace-nowrap transition-colors hover:text-foreground",
-                    item.visibility === "lg" ? "max-w-40 xl:max-w-56" : "shrink-0",
+                    item.visibility === "lg" ? "max-w-44 2xl:max-w-60" : "shrink-0",
                   )}
                 >
                   {text}
                 </Link>
               ) : (
                 <span
-                  aria-current={i === items.length - 1 ? "page" : undefined}
+                  aria-current={isLast ? "page" : undefined}
                   title={text}
                   className={cn(
                     "block truncate whitespace-nowrap",
-                    i === items.length - 1 && "font-medium text-foreground",
-                    item.visibility === "lg" && "max-w-40 xl:max-w-56",
+                    isLast && "font-medium text-foreground",
+                    item.visibility === "lg" && "max-w-44 2xl:max-w-60",
                   )}
                 >
                   {text}
                 </span>
               )}
-              {i < items.length - 1 && (
+              {!isLast && (
                 <ChevronRight className="size-3 shrink-0" aria-hidden="true" />
               )}
             </li>

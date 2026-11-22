@@ -65,6 +65,11 @@ class CurriculumV2IntegrityTest {
         assertTrue(ch.lesson().length() >= 1500, "Lesson markdown too short for " + id);
         assertTrue(ch.exercise().length() >= 60, "Exercise markdown too short for " + id);
         assertFalse(RAW_LATEX.matcher(stripCodeSegments(ch.lesson())).find(), "Raw LaTeX leak in lesson for " + id);
+        assertFalse(ch.lesson().contains("Step 4 (MAVIS Studio)")
+                || ch.lesson().contains("MAVIS Studio (Step 4)")
+                || ch.lesson().contains("Step 4 —")
+                || ch.lesson().contains("Step 3 & Step 4"),
+                "Stale Step 4 / WF-04 workflow numbering in lesson for " + id);
         assertFalse(RAW_LATEX.matcher(stripCodeSegments(ch.exercise())).find(), "Raw LaTeX leak in exercise for " + id);
         assertNotNull(ch.sources());
         assertFalse(ch.sources().isEmpty(), "Missing sources for " + id);

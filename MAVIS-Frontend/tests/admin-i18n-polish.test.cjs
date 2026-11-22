@@ -339,3 +339,25 @@ test("Task #09 i18n, Modal Overlay & Navigation Polish: Inspector Evidence local
   assert.match(dialog, /backdrop-blur-xs/);
   assert.match(teacherDash, /decodePlainTextEntities\(workspace\.description\)/);
 });
+
+test("Task #11 Final Polish: NOT_APPLICABLE Cleanup translates cleanly in EN/VI and Breadcrumbs filter empty labels & protect current-page width", () => {
+  const { translatedStatusLabel } = require("../src/lib/status-label.ts");
+  const locale = read("src/lib/i18n/locale-context.tsx");
+  const pageLayout = read("src/components/layout/page.tsx");
+  const appShell = read("src/components/app-shell.tsx");
+
+  assert.match(locale, /"Not applicable":\s*"Không áp dụng"/);
+  assert.match(locale, /NOT_APPLICABLE:\s*"Không áp dụng"/);
+  assert.equal(
+    translatedStatusLabel("NOT_APPLICABLE", (s) => (s === "Not applicable" || s === "NOT_APPLICABLE" ? "Không áp dụng" : s)),
+    "Không áp dụng",
+  );
+  assert.equal(
+    translatedStatusLabel("NOT_APPLICABLE", (s) => s),
+    "Not applicable",
+  );
+
+  assert.match(pageLayout, /const visibleItems = items\.filter/);
+  assert.match(pageLayout, /isLast\s*\?\s*"flex min-w-24 flex-1"/);
+  assert.match(appShell, /hidden h-8 max-w-40[\s\S]*lg:inline-flex/);
+});

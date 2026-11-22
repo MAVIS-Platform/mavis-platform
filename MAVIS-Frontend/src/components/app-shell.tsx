@@ -619,7 +619,7 @@ function ShellChrome({
                       type="button"
                       size="sm"
                       variant="outline"
-                      className="hidden h-8 max-w-48 gap-1.5 rounded-full border-emerald-200 bg-emerald-50/70 px-3 text-xs font-medium text-emerald-900 hover:bg-emerald-100 md:inline-flex dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200"
+                      className="hidden h-8 max-w-40 gap-1.5 rounded-full border-emerald-200 bg-emerald-50/70 px-3 text-xs font-medium text-emerald-900 hover:bg-emerald-100 lg:inline-flex dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200"
                     >
                       <span className="truncate">
                         {workspaces.find((w) => w.id === selectedWorkspaceId)?.code ||

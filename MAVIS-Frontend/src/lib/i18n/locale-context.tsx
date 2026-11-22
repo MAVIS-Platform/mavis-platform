@@ -2040,6 +2040,10 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Live Sessions & Force-Stop": "Phiên chạy thực tế & Dừng khẩn cấp",
   "AI Quotas & Integrations": "Hạn mức AI & Tích hợp",
   "Latest 50 sessions returned by the server": "50 phiên gần nhất máy chủ trả về",
+  "Not applicable": "Không áp dụng",
+  NOT_APPLICABLE: "Không áp dụng",
+  "Not required": "Không yêu cầu",
+  NOT_REQUIRED: "Không yêu cầu",
   "Inspect session details": "Xem chi tiết phiên",
   "Force Stop": "Dừng khẩn cấp",
   "Manage access, pending activations, and teaching roles with 1-click updates.":

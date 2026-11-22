@@ -513,7 +513,18 @@ public class CourseLabSeederService {
                         .flatMap(m -> m.items().stream())
                         .anyMatch(item -> item.content() != null
                                 && item.content().path("body").asText("").contains("ðŸ"));
-                upToDate = totalItems >= expectedItemCount && firstTheoryBody.length() >= 1500 && !hasMojibake;
+                boolean hasStaleStepCopy = existing.modules().stream()
+                        .flatMap(m -> m.items().stream())
+                        .anyMatch(item -> {
+                            if (item.content() == null) return false;
+                            String body = item.content().path("body").asText("");
+                            return body.contains("Step 4 (MAVIS Studio)")
+                                    || body.contains("MAVIS Studio (Step 4)")
+                                    || body.contains("Step 4 —")
+                                    || body.contains("Step 3 & Step 4");
+                        });
+                upToDate = totalItems >= expectedItemCount && firstTheoryBody.length() >= 1500
+                        && !hasMojibake && !hasStaleStepCopy;
             }
             if (upToDate) {
                 return;
@@ -672,7 +683,7 @@ public class CourseLabSeederService {
                                     : "Nghiên cứu kiến trúc tham chiếu C1–C3, quy tắc 3E và luồng phụ thuộc trước khi làm Quiz Gate.")
                             + "\n\n- Quan sát sơ đồ kiến trúc C1–C3 và đồ thị phụ thuộc ở Bước 1.\n"
                             + "- Phân tích vùng ảnh hưởng bằng Reverse BFS ở Bước 2.\n"
-                            + "- Vượt qua Quiz Gate (>= 80%) ở Bước 3 trước khi thực nghiệm ở Bước 4.";
+                            + "- Vượt qua Quiz Gate (>= 70%) trước khi thực nghiệm trên MAVIS Runtime Studio và nộp bằng chứng.";
                     ObjectNode theoryContent = json.createObjectNode().put("body", theoryBody);
                     courseAuthoring.addItem(workspaceId, moduleId,
                             new CourseAuthoringService.ItemRequest(
