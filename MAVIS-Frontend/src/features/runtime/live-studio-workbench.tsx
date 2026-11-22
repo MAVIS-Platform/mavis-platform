@@ -2731,40 +2731,31 @@ export function LiveStudioWorkbench({
               : Math.min(100, (totalVcpuAllocated / maxPoolVcpu) * 100);
             const ramBarPct = Math.min(100, (totalRamUsedMiB / ramPoolMiB) * 100);
 
+            const hasRedVisuals =
+              (observedData.telemetryHistory?.some((f) => f.probe && typeof f.probe["rps"] === "number") ?? false) ||
+              (observedData.telemetry?.serviceGraph?.length ?? 0) > 0;
+            const latestAction = observedData.actions[observedData.actions.length - 1];
+
             return (
               <section
-                className="mavis-tabular mx-auto max-w-6xl space-y-4 px-1 py-1"
+                className="mavis-tabular mx-auto max-w-6xl space-y-2.5 px-1 py-0.5"
                 aria-labelledby="live-cluster-overview"
               >
+                {/* Row 1: Compact Header */}
                 <header
-                  className={`flex flex-wrap items-center justify-between gap-2 border-b pb-3 ${
+                  className={`flex flex-wrap items-center justify-between gap-2 border-b pb-2 ${
                     isLight ? "border-slate-200" : "border-slate-800"
                   }`}
                 >
-                  <h2
-                    id="live-cluster-overview"
-                    className={`text-base font-bold ${isLight ? "text-slate-900" : "text-slate-100"}`}
-                  >
-                    Cluster Overview
-                  </h2>
-                  <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
-                    <dl className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
-                      {[
-                        ["Error rate", errNum !== null ? `${metric(errNum)}%` : "—"],
-                        ["Running pods", hasAnyReplicaSample ? observedRunningReplicas.toLocaleString() : "—"],
-                        ["Services down", downServicesCount.toLocaleString()],
-                        ["Confirmed actions", observedConfirmed.length.toLocaleString()],
-                      ].map(([kLabel, kValue]) => (
-                        <div key={kLabel} className="flex items-baseline gap-2">
-                          <dt className={isLight ? "text-slate-500" : "text-slate-400"}>{kLabel}</dt>
-                          <dd className={`font-semibold tabular-nums ${isLight ? "text-slate-900" : "text-slate-200"}`}>
-                            {kValue}
-                          </dd>
-                        </div>
-                      ))}
-                    </dl>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2
+                      id="live-cluster-overview"
+                      className={`text-sm font-bold ${isLight ? "text-slate-900" : "text-slate-100"}`}
+                    >
+                      Cluster Overview
+                    </h2>
                     <span
-                      className={`shrink-0 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-semibold ${
+                      className={`shrink-0 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
                         lastSessionFailed || downServicesCount
                           ? isLight
                             ? "border-rose-200 bg-rose-50 text-rose-700"
@@ -2791,193 +2782,260 @@ export function LiveStudioWorkbench({
                               : "No services"}
                     </span>
                   </div>
-                </header>
 
-                <StudioRedCharts
-                  history={observedData.telemetryHistory}
-                  actions={observedData.actions}
-                  serviceGraph={observedData.telemetry?.serviceGraph}
-                  spans={observedData.telemetry?.spans}
-                  isLight={isLight}
-                  onSelectTrace={(tid) => {
-                    setInspectedTraceId(tid);
-                    setTab("logs");
-                  }}
-                />
-
-                <section aria-label="Traffic & reliability">
-                  <h3 className={`mb-2 text-xs font-bold ${isLight ? "text-slate-800" : "text-slate-200"}`}>
-                    Traffic &amp; reliability
-                  </h3>
-                  <dl className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,140px),1fr))] gap-2.5">
+                  <dl className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
                     {[
-                      {
-                        label: "Measured requests",
-                        value: reqNum !== null ? reqNum.toLocaleString() : "—",
-                        unit: reqNum !== null ? "req" : "",
-                        detail:
-                          reqNum !== null
-                            ? "Latest probe workload"
-                            : observedData.executionStatus === "RUNNING"
-                              ? "Live Docker running — awaiting probe traffic"
-                              : isBooting
-                                ? "Booting Live Docker containers…"
-                                : "Start Live Docker to measure",
-                        warning: false,
-                      },
-                      {
-                        label: "Observed E2E p95",
-                        value: p95Num !== null ? metric(p95Num) : "—",
-                        unit: p95Num !== null ? "ms" : "",
-                        detail: "Measured from live probe",
-                        warning: p95Num !== null && p95Num > 500,
-                      },
-                      {
-                        label: "Error rate",
-                        value: errNum !== null ? metric(errNum) : "—",
-                        unit: errNum !== null ? "%" : "",
-                        detail: "HTTP 5xx & failed spans",
-                        warning: errNum !== null && errNum > 0,
-                      },
-                      {
-                        label: "Observed spans",
-                        value: spanCount.toLocaleString(),
-                        unit: "spans",
-                        detail: "Live OpenTelemetry traces",
-                        warning: false,
-                      },
-                    ].map(({ label, value, unit, detail, warning }) => (
-                      <div
-                        key={label}
-                        className={`rounded-xl border p-3 ${
-                          isLight
-                            ? "border-slate-200 bg-slate-50/70"
-                            : "border-slate-700/80 bg-slate-900"
-                        }`}
-                      >
-                        <dt className={`text-xs font-medium ${isLight ? "text-slate-600" : "text-slate-300"}`}>
-                          {label}
-                        </dt>
-                        <dd
-                          className={`mt-1 font-mono text-lg font-bold tabular-nums ${
-                            warning
-                              ? isLight ? "text-rose-600" : "text-rose-300"
-                              : isLight ? "text-slate-900" : "text-slate-100"
-                          }`}
-                        >
-                          {value}{" "}
-                          {unit && (
-                            <span className={`text-[11px] font-medium ${isLight ? "text-slate-500" : "text-slate-400"}`}>
-                              {unit}
-                            </span>
-                          )}
-                          <span className={`mt-1 block font-sans text-[11px] font-normal ${isLight ? "text-slate-500" : "text-slate-400"}`}>
-                            {detail}
-                          </span>
+                      ["Pods", hasAnyReplicaSample ? observedRunningReplicas.toLocaleString() : "—"],
+                      ["Down", downServicesCount.toLocaleString()],
+                      ["Actions", observedConfirmed.length.toLocaleString()],
+                    ].map(([kLabel, kValue]) => (
+                      <div key={kLabel} className="flex items-baseline gap-1.5">
+                        <dt className={isLight ? "text-slate-500" : "text-slate-400"}>{kLabel}</dt>
+                        <dd className={`font-mono font-semibold tabular-nums ${isLight ? "text-slate-900" : "text-slate-200"}`}>
+                          {kValue}
                         </dd>
                       </div>
                     ))}
                   </dl>
-                </section>
+                </header>
 
-                <section aria-label="Resource capacity">
-                  <h3 className={`mb-2 text-xs font-bold ${isLight ? "text-slate-800" : "text-slate-200"}`}>
-                    Resource capacity
-                  </h3>
-                  <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,230px),1fr))] gap-2.5">
-                    {[
-                      {
-                        label: "CPU allocation",
-                        rightText: `${Number(totalVcpuAllocated.toFixed(1))} / ${maxPoolVcpu} vCPU`,
-                        pct: cpuBarPct,
-                        detail:
-                          cpuSamples > 0
-                            ? `${avgCpuPct.toFixed(1)}% average CPU load${peakCpuService ? ` · Highest: ${peakCpuService}` : ""}`
-                            : `${observedRunningReplicas} pod(s) allocated · live CPU measured when Docker runs`,
-                      },
-                      {
-                        label: "RAM usage",
-                        rightText: `${Math.round(totalRamUsedMiB).toLocaleString()} / ${Math.round(ramPoolMiB).toLocaleString()} MiB`,
-                        pct: ramBarPct,
-                        detail: `${Math.max(0, Math.round(ramPoolMiB - totalRamUsedMiB)).toLocaleString()} MiB available across ${observedRunningReplicas} pod(s)`,
-                      },
-                    ].map(({ label, rightText, pct, detail }) => (
-                      <div
-                        key={label}
-                        className={`space-y-2 rounded-xl border p-3 ${
-                          isLight
-                            ? "border-slate-200 bg-slate-50/70"
-                            : "border-slate-700/80 bg-slate-900"
-                        }`}
-                      >
-                        <div className="flex flex-wrap items-baseline justify-between gap-1.5">
-                          <span className={`text-xs font-semibold ${isLight ? "text-slate-900" : "text-slate-200"}`}>
-                            {label}
+                {/* Row 2: Compact Executive Split (RED Charts + Unified KPI & Capacity Card) */}
+                <div
+                  className={`grid items-start gap-2.5 ${
+                    hasRedVisuals ? "xl:grid-cols-[minmax(0,1.55fr)_minmax(310px,1fr)]" : ""
+                  }`}
+                >
+                  {hasRedVisuals && (
+                    <div className="min-w-0">
+                      <StudioRedCharts
+                        history={observedData.telemetryHistory}
+                        actions={observedData.actions}
+                        serviceGraph={observedData.telemetry?.serviceGraph}
+                        spans={observedData.telemetry?.spans}
+                        isLight={isLight}
+                        onSelectTrace={(tid) => {
+                          setInspectedTraceId(tid);
+                          setTab("logs");
+                        }}
+                      />
+                    </div>
+                  )}
+
+                  <div
+                    className={`grid gap-3 rounded-xl border p-3 ${
+                      hasRedVisuals ? "" : "md:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] md:items-center"
+                    } ${
+                      isLight
+                        ? "border-slate-200 bg-slate-50/70"
+                        : "border-slate-800 bg-slate-900/75"
+                    }`}
+                  >
+                    <section aria-label="Traffic & reliability">
+                      <div className="mb-1.5 flex flex-wrap items-baseline justify-between gap-2">
+                        <h3 className={`text-[11px] font-bold uppercase tracking-wide ${isLight ? "text-slate-500" : "text-slate-400"}`}>
+                          Traffic &amp; reliability
+                        </h3>
+                        {reqNum === null && (
+                          <span className="text-[10.5px] text-muted-foreground">
+                            {observedData.executionStatus === "RUNNING"
+                              ? "Live Docker running — awaiting probe traffic"
+                              : isBooting
+                                ? "Booting Live Docker…"
+                                : "Start Live Docker to measure"}
                           </span>
-                          <span className={`font-mono text-xs tabular-nums ${isLight ? "text-slate-700" : "text-slate-300"}`}>
-                            {rightText}
-                          </span>
-                        </div>
-                        <div
-                          className={`h-2 overflow-hidden rounded-full ${isLight ? "bg-slate-200" : "bg-slate-800"}`}
-                          aria-hidden="true"
-                        >
-                          <div
-                            className="h-full rounded-full bg-sky-500 transition-all"
-                            style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
-                          />
-                        </div>
-                        <p className={`break-words text-[11px] ${isLight ? "text-slate-600" : "text-slate-400"}`}>
-                          {detail}
-                        </p>
+                        )}
                       </div>
-                    ))}
-                  </div>
-                </section>
+                      <dl className="grid grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-4 xl:grid-cols-2">
+                        {[
+                          {
+                            label: "Requests",
+                            value: reqNum !== null ? reqNum.toLocaleString() : "—",
+                            unit: reqNum !== null ? "req" : "",
+                            warning: false,
+                          },
+                          {
+                            label: "E2E p95",
+                            value: p95Num !== null ? metric(p95Num) : "—",
+                            unit: p95Num !== null ? "ms" : "",
+                            warning: p95Num !== null && p95Num > 500,
+                          },
+                          {
+                            label: "Error rate",
+                            value: errNum !== null ? metric(errNum) : "—",
+                            unit: errNum !== null ? "%" : "",
+                            warning: errNum !== null && errNum > 0,
+                          },
+                          {
+                            label: "Spans",
+                            value: spanCount.toLocaleString(),
+                            unit: "",
+                            warning: false,
+                          },
+                        ].map(({ label, value, unit, warning }) => (
+                          <div
+                            key={label}
+                            className={`rounded-lg border px-2.5 py-1.5 ${
+                              isLight
+                                ? "border-slate-200/80 bg-white"
+                                : "border-slate-800 bg-slate-950/60"
+                            }`}
+                          >
+                            <dt className={`text-[10.5px] font-medium ${isLight ? "text-slate-500" : "text-slate-400"}`}>
+                              {label}
+                            </dt>
+                            <dd
+                              className={`mt-0.5 font-mono text-sm font-bold tabular-nums ${
+                                warning
+                                  ? isLight ? "text-rose-600" : "text-rose-300"
+                                  : isLight ? "text-slate-900" : "text-slate-100"
+                              }`}
+                            >
+                              {value}
+                              {unit && (
+                                <span className={`ml-1 text-[10.5px] font-medium ${isLight ? "text-slate-500" : "text-slate-400"}`}>
+                                  {unit}
+                                </span>
+                              )}
+                            </dd>
+                          </div>
+                        ))}
+                      </dl>
+                    </section>
 
-                <div className="grid grid-cols-1 gap-1.5 text-[11.5px] sm:grid-cols-2 lg:grid-cols-4">
+                    <section
+                      aria-label="Resource capacity"
+                      className={`space-y-2 ${
+                        hasRedVisuals
+                          ? `border-t pt-2.5 ${isLight ? "border-slate-200" : "border-slate-800"}`
+                          : `border-t pt-2.5 md:border-t-0 md:border-l md:pt-0 md:pl-3 ${isLight ? "border-slate-200" : "border-slate-800"}`
+                      }`}
+                    >
+                      <h3 className={`text-[11px] font-bold uppercase tracking-wide ${isLight ? "text-slate-500" : "text-slate-400"}`}>
+                        Resource capacity
+                      </h3>
+                      {[
+                        {
+                          label: "CPU",
+                          rightText: `${Number(totalVcpuAllocated.toFixed(1))}/${maxPoolVcpu} vCPU${
+                            cpuSamples > 0 ? ` · ${avgCpuPct.toFixed(1)}%` : ""
+                          }`,
+                          pct: cpuBarPct,
+                        },
+                        {
+                          label: "RAM",
+                          rightText: `${Math.round(totalRamUsedMiB).toLocaleString()} / ${Math.round(ramPoolMiB).toLocaleString()} MiB`,
+                          pct: ramBarPct,
+                        },
+                      ].map(({ label, rightText, pct }) => (
+                        <div key={label} className="space-y-1">
+                          <div className="flex items-baseline justify-between gap-2 text-[11px]">
+                            <span className={`font-semibold ${isLight ? "text-slate-800" : "text-slate-200"}`}>
+                              {label}
+                            </span>
+                            <span className={`font-mono tabular-nums ${isLight ? "text-slate-600" : "text-slate-300"}`}>
+                              {rightText}
+                            </span>
+                          </div>
+                          <div
+                            className={`h-1.5 overflow-hidden rounded-full ${isLight ? "bg-slate-200" : "bg-slate-800"}`}
+                            aria-hidden="true"
+                          >
+                            <div
+                              className="h-full rounded-full bg-sky-500 transition-all"
+                              style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                      {peakCpuService && cpuSamples > 0 && (
+                        <p className={`text-[10.5px] ${isLight ? "text-slate-500" : "text-slate-400"}`}>
+                          Peak CPU: <span className="font-mono font-medium">{peakCpuService}</span> · {observedRunningReplicas} pod(s)
+                        </p>
+                      )}
+                    </section>
+                  </div>
+                </div>
+
+                {/* Row 3: Slim 4-Step Mission Checklist */}
+                <div className="grid grid-cols-1 gap-1.5 text-[11px] sm:grid-cols-2 lg:grid-cols-4">
                   {checklist.map(([label, done]) => (
                     <div
                       key={label}
-                      className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 font-medium ${
+                      className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 font-medium ${
                         done
                           ? isLight
-                            ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                            ? "border-emerald-200 bg-emerald-50/80 text-emerald-800"
                             : "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
                           : isLight
-                            ? "border-slate-200 bg-slate-50 text-slate-600"
+                            ? "border-slate-200 bg-white text-slate-600"
                             : "border-slate-800 bg-slate-900/70 text-slate-400"
                       }`}
                     >
                       <span className="font-mono">{done ? "✓" : "○"}</span>
-                      <span>{label}</span>
+                      <span className="truncate">{label}</span>
                     </div>
                   ))}
                 </div>
 
+                {/* Row 4: Collapsible Light/Dark Action Log */}
                 {observedData.actions.length > 0 && (
-                  <ol className="space-y-1.5 text-[11px]">
-                    {observedData.actions.map((item) => (
-                      <li
-                        key={item.actionId}
-                        className="rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-1.5"
-                      >
-                        <span className="font-semibold text-slate-200">
-                          {item.action} {item.service}
-                          {item.replicas ? ` → ${item.replicas}` : ""}
+                  <details
+                    className={`rounded-lg border text-[11px] ${
+                      isLight
+                        ? "border-slate-200 bg-slate-50/75 text-slate-700"
+                        : "border-slate-800 bg-slate-900/65 text-slate-300"
+                    }`}
+                  >
+                    <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 px-3 py-1.5 font-medium select-none">
+                      <span className="inline-flex flex-wrap items-center gap-1.5 font-mono">
+                        <span className={isLight ? "font-sans font-semibold text-slate-800" : "font-sans font-semibold text-slate-100"}>
+                          Action history ({observedData.actions.length})
                         </span>
-                        <span className="text-slate-400"> · {item.status}</span>
-                        {item.result && (
-                          <span className="mavis-tabular ml-2 font-mono text-slate-400">
-                            replicas {item.result.replicasBefore} → {item.result.replicasAfter} ·
-                            requests {metric(item.result.metricsAfter["requestCount"])} · p95{" "}
-                            {metric(item.result.metricsAfter["p95LatencyMs"])} ms · errors{" "}
-                            {metric(item.result.metricsAfter["errorRatePercent"])}%
-                          </span>
+                        {latestAction && (
+                          <>
+                            <span aria-hidden="true" className="opacity-40">·</span>
+                            <span>
+                              {latestAction.action} {latestAction.service}
+                              {latestAction.replicas ? ` → ${latestAction.replicas}` : ""}
+                            </span>
+                            {latestAction.result && (
+                              <span className="text-muted-foreground">
+                                ({latestAction.result.replicasBefore}→{latestAction.result.replicasAfter}× · p95{" "}
+                                {metric(latestAction.result.metricsAfter["p95LatencyMs"])}ms · err{" "}
+                                {metric(latestAction.result.metricsAfter["errorRatePercent"])}%)
+                              </span>
+                            )}
+                          </>
                         )}
-                      </li>
-                    ))}
-                  </ol>
+                      </span>
+                      <span className="text-[11px] text-muted-foreground">History ▾</span>
+                    </summary>
+                    <ol
+                      className={`divide-y border-t px-3 ${
+                        isLight ? "divide-slate-200/80 border-slate-200 bg-white" : "divide-slate-800 border-slate-800 bg-slate-950/50"
+                      }`}
+                    >
+                      {observedData.actions.map((item) => (
+                        <li key={item.actionId} className="flex flex-wrap items-center justify-between gap-2 py-1.5 font-mono">
+                          <span>
+                            <strong className={isLight ? "text-slate-900" : "text-slate-100"}>
+                              {item.action} {item.service}
+                              {item.replicas ? ` → ${item.replicas}` : ""}
+                            </strong>
+                            <span className="ml-1.5 text-muted-foreground">· {item.status}</span>
+                          </span>
+                          {item.result && (
+                            <span className="mavis-tabular text-muted-foreground">
+                              {item.result.replicasBefore}→{item.result.replicasAfter}× · req{" "}
+                              {metric(item.result.metricsAfter["requestCount"])} · p95{" "}
+                              {metric(item.result.metricsAfter["p95LatencyMs"])} ms · err{" "}
+                              {metric(item.result.metricsAfter["errorRatePercent"])}%
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                    </ol>
+                  </details>
                 )}
               </section>
             );

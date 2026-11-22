@@ -455,110 +455,107 @@ export function StudioRedCharts({
 
       {beforeAfter && (
         <div
-          className={`rounded-xl border p-3 text-xs ${
-            isLight ? "border-slate-200 bg-white shadow-2xs" : "border-slate-800 bg-slate-900/75"
+          className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-1.5 text-xs ${
+            isLight ? "border-sky-200/80 bg-sky-50/55 text-slate-800" : "border-slate-800 bg-slate-900/75 text-slate-200"
           }`}
         >
-          <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
-            <span className={`font-semibold ${isLight ? "text-slate-900" : "text-slate-200"}`}>
-              30s Before / After —{" "}
-              <span className={`font-mono ${isLight ? "text-sky-700" : "text-sky-300"}`}>
-                {beforeAfter.actionLabel}
-              </span>
+          <span className="font-semibold">
+            30s Before / After ·{" "}
+            <span className={`font-mono ${isLight ? "text-sky-700" : "text-sky-300"}`}>
+              {beforeAfter.actionLabel}
             </span>
-            <span className="font-mono text-[10.5px] text-slate-500">
-              before n={beforeAfter.beforeSamples} · after n={beforeAfter.afterSamples}
+          </span>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-[11.5px] tabular-nums">
+            <span>
+              <span className="text-muted-foreground">RPS </span>
+              {fmt(beforeAfter.rpsBefore, 1)}→{fmt(beforeAfter.rpsAfter, 1)}
             </span>
-          </div>
-          <div className="grid grid-cols-3 gap-2 font-mono tabular-nums">
-            <div
-              className={`rounded-lg border px-2.5 py-1.5 ${
-                isLight ? "border-slate-200 bg-slate-50" : "border-slate-800/80 bg-slate-950/60"
+            <span>
+              <span className="text-muted-foreground">p95 </span>
+              {fmt(beforeAfter.p95BeforeMs, 1)}→{fmt(beforeAfter.p95AfterMs, 1)}ms
+            </span>
+            <span
+              className={`font-semibold ${
+                (beforeAfter.errorAfterPct ?? 0) > (beforeAfter.errorBeforePct ?? 0) + 1
+                  ? isLight ? "text-rose-600" : "text-rose-300"
+                  : isLight ? "text-emerald-700" : "text-emerald-300"
               }`}
             >
-              <div className="text-[10.5px] text-slate-500">RPS</div>
-              <div className={isLight ? "font-semibold text-slate-900" : "text-slate-100"}>
-                {fmt(beforeAfter.rpsBefore, 1)} → {fmt(beforeAfter.rpsAfter, 1)}
-              </div>
-            </div>
-            <div
-              className={`rounded-lg border px-2.5 py-1.5 ${
-                isLight ? "border-slate-200 bg-slate-50" : "border-slate-800/80 bg-slate-950/60"
-              }`}
-            >
-              <div className="text-[10.5px] text-slate-500">p95 Latency</div>
-              <div className={isLight ? "font-semibold text-slate-900" : "text-slate-100"}>
-                {fmt(beforeAfter.p95BeforeMs, 1)} ms → {fmt(beforeAfter.p95AfterMs, 1)} ms
-              </div>
-            </div>
-            <div
-              className={`rounded-lg border px-2.5 py-1.5 ${
-                isLight ? "border-slate-200 bg-slate-50" : "border-slate-800/80 bg-slate-950/60"
-              }`}
-            >
-              <div className="text-[10.5px] text-slate-500">Error Rate</div>
-              <div
-                className={`font-semibold ${
-                  (beforeAfter.errorAfterPct ?? 0) > (beforeAfter.errorBeforePct ?? 0) + 1
-                    ? isLight ? "text-rose-600" : "text-rose-300"
-                    : isLight ? "text-emerald-700" : "text-emerald-300"
-                }`}
-              >
-                {fmt(beforeAfter.errorBeforePct, 1)}% → {fmt(beforeAfter.errorAfterPct, 1)}%
-              </div>
-            </div>
+              <span className="font-normal text-muted-foreground">Err </span>
+              {fmt(beforeAfter.errorBeforePct, 1)}%→{fmt(beforeAfter.errorAfterPct, 1)}%
+            </span>
           </div>
         </div>
       )}
 
-      {serviceGraph && serviceGraph.length > 0 && (
-        <div
-          className={`overflow-x-auto rounded-xl border ${
-            isLight ? "border-slate-200 bg-white shadow-2xs" : "border-slate-800 bg-slate-900/75"
-          }`}
-        >
-          <table className="mavis-tabular w-full text-left font-mono text-xs">
-            <thead
-              className={`border-b text-[11px] uppercase tracking-wide ${
-                isLight
-                  ? "border-slate-200 bg-slate-50 text-slate-600"
-                  : "border-slate-800 text-slate-500"
-              }`}
-            >
-              <tr>
-                <th className="px-3 py-2 font-semibold">Live Edge (OTel servicegraph)</th>
-                <th className="px-3 py-2 font-semibold">RPS</th>
-                <th className="px-3 py-2 font-semibold">p95</th>
-                <th className="px-3 py-2 font-semibold">Error %</th>
-              </tr>
-            </thead>
-            <tbody className={`divide-y ${isLight ? "divide-slate-200/80" : "divide-slate-800/70"}`}>
-              {serviceGraph.map((edge) => (
-                <tr key={`${edge.client}->${edge.server}`}>
-                  <td className={`px-3 py-1.5 ${isLight ? "text-slate-900" : "text-slate-200"}`}>
-                    {edge.client} <span className="text-slate-400">→</span> {edge.server}
-                  </td>
-                  <td className={`px-3 py-1.5 font-semibold ${isLight ? "text-emerald-700" : "text-emerald-300"}`}>
-                    {fmt(edge.rps, 1)}
-                  </td>
-                  <td className={`px-3 py-1.5 ${isLight ? "text-slate-800" : "text-slate-200"}`}>
-                    {edge.p95Ms != null ? `${fmt(edge.p95Ms, 1)} ms` : "—"}
-                  </td>
-                  <td
-                    className={`px-3 py-1.5 font-semibold ${
-                      edge.errorRatePercent > 0
-                        ? isLight ? "text-rose-600" : "text-rose-300"
-                        : isLight ? "text-slate-500" : "text-slate-400"
+      {serviceGraph && serviceGraph.length > 0 && (() => {
+        const failingEdges = serviceGraph.filter((edge) => edge.errorRatePercent > 0).length;
+        return (
+          <details
+            className={`overflow-hidden rounded-lg border text-xs ${
+              isLight ? "border-slate-200 bg-slate-50/70 text-slate-700" : "border-slate-800 bg-slate-900/65 text-slate-300"
+            }`}
+          >
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-1.5 font-medium select-none">
+              <span className="inline-flex items-center gap-2">
+                <span>Service-to-service edges ({serviceGraph.length})</span>
+                {failingEdges > 0 && (
+                  <span
+                    className={`rounded-full px-1.5 py-0.5 font-mono text-[10px] font-semibold ${
+                      isLight ? "bg-rose-100 text-rose-700" : "bg-rose-500/20 text-rose-300"
                     }`}
                   >
-                    {fmt(edge.errorRatePercent, 1)}%
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+                    {failingEdges} error{failingEdges > 1 ? "s" : ""}
+                  </span>
+                )}
+              </span>
+              <span className="text-[11px] text-muted-foreground">Details ▾</span>
+            </summary>
+            <div className={`overflow-x-auto border-t ${isLight ? "border-slate-200 bg-white" : "border-slate-800 bg-slate-950/50"}`}>
+              <table className="mavis-tabular w-full text-left font-mono text-xs">
+                <thead
+                  className={`border-b text-[11px] uppercase tracking-wide ${
+                    isLight
+                      ? "border-slate-200 bg-slate-50 text-slate-600"
+                      : "border-slate-800 text-slate-500"
+                  }`}
+                >
+                  <tr>
+                    <th className="px-3 py-1.5 font-semibold">Live Edge (OTel servicegraph)</th>
+                    <th className="px-3 py-1.5 font-semibold">RPS</th>
+                    <th className="px-3 py-1.5 font-semibold">p95</th>
+                    <th className="px-3 py-1.5 font-semibold">Error %</th>
+                  </tr>
+                </thead>
+                <tbody className={`divide-y ${isLight ? "divide-slate-200/80" : "divide-slate-800/70"}`}>
+                  {serviceGraph.map((edge) => (
+                    <tr key={`${edge.client}->${edge.server}`}>
+                      <td className={`px-3 py-1.5 ${isLight ? "text-slate-900" : "text-slate-200"}`}>
+                        {edge.client} <span className="text-slate-400">→</span> {edge.server}
+                      </td>
+                      <td className={`px-3 py-1.5 font-semibold ${isLight ? "text-emerald-700" : "text-emerald-300"}`}>
+                        {fmt(edge.rps, 1)}
+                      </td>
+                      <td className={`px-3 py-1.5 ${isLight ? "text-slate-800" : "text-slate-200"}`}>
+                        {edge.p95Ms != null ? `${fmt(edge.p95Ms, 1)} ms` : "—"}
+                      </td>
+                      <td
+                        className={`px-3 py-1.5 font-semibold ${
+                          edge.errorRatePercent > 0
+                            ? isLight ? "text-rose-600" : "text-rose-300"
+                            : isLight ? "text-slate-500" : "text-slate-400"
+                        }`}
+                      >
+                        {fmt(edge.errorRatePercent, 1)}%
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </details>
+        );
+      })()}
     </div>
   );
 }
