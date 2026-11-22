@@ -359,4 +359,28 @@ class RuntimeRunnerDispatcherTest {
                 "MAVIS_RUNTIME_DIAGNOSTIC=PREFLIGHT_FAILED\n");
         assertThat(dispatcher.shouldRetryPreAllocationFailure(preflightSession, tempDir)).isFalse();
     }
+
+    @Test
+    void twoDistinctSessionsDispatchTrulyConcurrentlyWithoutPinning() throws Exception {
+        var sessions = mock(RuntimeSessionRepository.class);
+        var receipt = mock(RunnerReceiptIngestService.class);
+        var service = mock(RuntimeSessionService.class);
+        var dispatcher = newDispatcher(sessions, receipt, service);
+
+        UUID s1 = UUID.randomUUID();
+        UUID s2 = UUID.randomUUID();
+        var bothEntered = new java.util.concurrent.CountDownLatch(2);
+        when(sessions.findById(any())).thenAnswer(inv -> {
+            bothEntered.countDown();
+            boolean met = bothEntered.await(5, java.util.concurrent.TimeUnit.SECONDS);
+            assertThat(met).as("Both runner dispatches must run concurrently without carrier pinning").isTrue();
+            UUID id = inv.getArgument(0);
+            return Optional.of(RuntimeSession.builder().id(id).executionStatus("COMPLETED").build());
+        });
+
+        var f1 = dispatcher.dispatchSessionAsync(s1);
+        var f2 = dispatcher.dispatchSessionAsync(s2);
+        java.util.concurrent.CompletableFuture.allOf(f1, f2).get(10, java.util.concurrent.TimeUnit.SECONDS);
+        assertThat(bothEntered.getCount()).isZero();
+    }
 }

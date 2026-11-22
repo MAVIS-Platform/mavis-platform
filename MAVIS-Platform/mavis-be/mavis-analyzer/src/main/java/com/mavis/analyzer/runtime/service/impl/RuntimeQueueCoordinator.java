@@ -906,6 +906,13 @@ public class RuntimeQueueCoordinator {
         if (transactionTemplate == null) {
             return action.get();
         }
+        // afterCommit() triggers drainQueueIfCapacityAvailable while the outer TX resources are still bound;
+        // REQUIRES_NEW guarantees READY_FOR_DISPATCH commits independently before async dispatch starts.
+        if (transactionTemplate.getTransactionManager() != null) {
+            var requiresNew = new TransactionTemplate(transactionTemplate.getTransactionManager());
+            requiresNew.setPropagationBehavior(org.springframework.transaction.TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+            return requiresNew.execute(status -> action.get());
+        }
         return transactionTemplate.execute(status -> action.get());
     }
 }

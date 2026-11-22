@@ -94,9 +94,13 @@ public class RuntimeRunnerDispatcher {
                 && !"mavis-local-runner-secret-key".equals(runnerServiceKey);
     }
 
-    // Runner waits block up to 420s each; never run them on the shared ForkJoin common pool.
+    // Runner waits block up to 420s each on Process.waitFor; platform daemon threads avoid Java 21 virtual-thread carrier pinning on 1-vCPU hosts.
     private static final java.util.concurrent.ExecutorService RUNNER_EXECUTOR =
-            java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
+            java.util.concurrent.Executors.newCachedThreadPool(r -> {
+                Thread t = new Thread(r, "mavis-runner-dispatch");
+                t.setDaemon(true);
+                return t;
+            });
 
     public boolean isExecuting(UUID sessionId) {
         return sessionId != null && sessionLocks.containsKey(sessionId);
@@ -185,7 +189,8 @@ public class RuntimeRunnerDispatcher {
         return Set.of("COMPLETED", "CANCELLED", "FAILED", "TIMED_OUT", "TIMEOUT").contains(exec);
     }
 
-    private final java.util.concurrent.ConcurrentHashMap<UUID, Object> sessionLocks = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.concurrent.ConcurrentHashMap<UUID, java.util.concurrent.locks.ReentrantLock> sessionLocks =
+            new java.util.concurrent.ConcurrentHashMap<>();
 
     public boolean isAllowSimulatedFallback() {
         return false;
@@ -197,58 +202,61 @@ public class RuntimeRunnerDispatcher {
     }
 
     void executeSessionInternal(UUID sessionId) {
-        Object lock = sessionLocks.computeIfAbsent(sessionId, k -> new Object());
-        synchronized (lock) {
+        var lock = sessionLocks.computeIfAbsent(sessionId, k -> new java.util.concurrent.locks.ReentrantLock());
+        lock.lock();
+        try {
+            log.info("Bắt đầu điều phối thực thi phiên thực nghiệm {}", sessionId);
+
+            RuntimeSession session = runtimeSessionRepository.findById(sessionId)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy session: " + sessionId));
+
+            if (isTerminalOrCommitted(session)) {
+                log.info("Phiên thực nghiệm {} đã kết thúc ({}), trả về kết quả idempotent", sessionId, session.getExecutionStatus());
+                return;
+            }
+
+            if (tryAutoImportOutboxReceipt(session)) {
+                return;
+            }
+
+            boolean managedAvailable = ("AUTO".equalsIgnoreCase(runnerMode) || "MANAGED_CLI".equalsIgnoreCase(runnerMode))
+                    && isManagedCliEnvironmentAvailable();
+
+            if (!managedAvailable) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "Runtime runner unavailable. No application was executed and no observed trace was generated.");
+            }
+
+            if (!hasValidRunnerServiceKey()) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST,
+                        "Dedicated runner credential (MAVIS_RUNNER_SERVICE_KEY) is not configured on backend. No synthetic trace was generated.");
+            }
+
+            if ("NOT_STARTED".equalsIgnoreCase(session.getExecutionStatus()) || "PENDING".equalsIgnoreCase(session.getScenarioStatus())) {
+                session.setScenarioStatus("APPROVED");
+                session.setExecutionStatus("READY_FOR_DISPATCH");
+                session = runtimeSessionRepository.save(session);
+            }
+
             try {
-                log.info("Bắt đầu điều phối thực thi phiên thực nghiệm {}", sessionId);
-
-                RuntimeSession session = runtimeSessionRepository.findById(sessionId)
-                        .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy session: " + sessionId));
-
-                if (isTerminalOrCommitted(session)) {
-                    log.info("Phiên thực nghiệm {} đã kết thúc ({}), trả về kết quả idempotent", sessionId, session.getExecutionStatus());
-                    return;
-                }
-
-                if (tryAutoImportOutboxReceipt(session)) {
-                    return;
-                }
-
-                boolean managedAvailable = ("AUTO".equalsIgnoreCase(runnerMode) || "MANAGED_CLI".equalsIgnoreCase(runnerMode))
-                        && isManagedCliEnvironmentAvailable();
-
-                if (!managedAvailable) {
-                    throw new BusinessException(ErrorCode.BAD_REQUEST, "Runtime runner unavailable. No application was executed and no observed trace was generated.");
-                }
-
-                if (!hasValidRunnerServiceKey()) {
-                    throw new BusinessException(ErrorCode.BAD_REQUEST,
-                            "Dedicated runner credential (MAVIS_RUNNER_SERVICE_KEY) is not configured on backend. No synthetic trace was generated.");
-                }
-
-                if ("NOT_STARTED".equalsIgnoreCase(session.getExecutionStatus()) || "PENDING".equalsIgnoreCase(session.getScenarioStatus())) {
-                    session.setScenarioStatus("APPROVED");
-                    session.setExecutionStatus("READY_FOR_DISPATCH");
-                    session = runtimeSessionRepository.save(session);
-                }
-
-                try {
-                    executeManagedCli(session);
-                } catch (Exception failure) {
-                    log.warn("Managed runtime execution failed for {}", sessionId, failure);
-                    String detail = failure.getMessage() != null && !failure.getMessage().isBlank()
-                            ? SecretRedactor.redactString(failure.getMessage())
-                            : "Check runner status.";
-                    throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR,
-                            "Runtime execution failed. No synthetic trace was substituted. " + detail);
-                }
-            } catch (BusinessException be) {
-                throw be;
-            } catch (Exception executionFailure) {
-                log.error("Runtime execution failed for {}", sessionId, executionFailure);
-                throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR, "Runtime execution failed. Check runner diagnostics.");
-            } finally {
+                executeManagedCli(session);
+            } catch (Exception failure) {
+                log.warn("Managed runtime execution failed for {}", sessionId, failure);
+                String detail = failure.getMessage() != null && !failure.getMessage().isBlank()
+                        ? SecretRedactor.redactString(failure.getMessage())
+                        : "Check runner status.";
+                throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR,
+                        "Runtime execution failed. No synthetic trace was substituted. " + detail);
+            }
+        } catch (BusinessException be) {
+            throw be;
+        } catch (Exception executionFailure) {
+            log.error("Runtime execution failed for {}", sessionId, executionFailure);
+            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR, "Runtime execution failed. Check runner diagnostics.");
+        } finally {
+            try {
                 sessionLocks.remove(sessionId, lock);
+            } finally {
+                lock.unlock();
             }
         }
     }
@@ -466,11 +474,13 @@ public class RuntimeRunnerDispatcher {
     static boolean probeCommandZeroExit(List<String> cmd, int timeoutSeconds) {
         try {
             Process proc = new ProcessBuilder(cmd).redirectErrorStream(true).start();
-            Thread.ofVirtual().start(() -> {
+            Thread drainer = new Thread(() -> {
                 try (var in = proc.getInputStream()) {
                     in.transferTo(java.io.OutputStream.nullOutputStream());
                 } catch (Exception ignored) {}
-            });
+            }, "mavis-runner-probe-drain");
+            drainer.setDaemon(true);
+            drainer.start();
             if (!proc.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
                 proc.destroyForcibly();
                 return false;
@@ -618,34 +628,42 @@ public class RuntimeRunnerDispatcher {
         }
     }
 
+    private static final java.util.concurrent.locks.ReentrantLock INSTRUMENTATION_VOLUME_LOCK =
+            new java.util.concurrent.locks.ReentrantLock();
+
     // Never replace a shared agent volume: an older session may still be using it.
-    static synchronized boolean prepareInstrumentationVolume(ObjectNode profile, Path bundle) {
-        String volume = "mavis-agents-java-2-32-0-dotnet-1-17-0-bundle-3";
-        String labels = captureCommandStdout(List.of("docker", "volume", "inspect", "--format", "{{json .Labels}}", volume), 10);
-        if (hasCurrentBundleLabels(labels)) {
-            profile.put("instrumentationVolume", volume);
-            return true;
-        }
-        // If this name already exists with different contents, preserve it too.
-        if (labels != null) volume += "-" + UUID.randomUUID().toString().substring(0, 8);
-        String helper = "mcr.microsoft.com/dotnet/aspnet@sha256:d5633778c754e89a386882eddf8dbee6942447a8a4b8267c19cf1e1158d0b0ac";
-        if (!probeCommandZeroExit(List.of("docker", "pull", helper), 120)) return false;
-        if (!probeCommandZeroExit(List.of("docker", "volume", "create",
-                "--label", "mavis.poc.managed=true", "--label", "mavis.bundle.rev=3",
-                "--label", "mavis.dotnet.version=1.17.0", "--label", "mavis.dotnet.musl.version=1.17.0",
-                "--label", "mavis.java.version=2.32.0", volume), 15)) return false;
-        String container = "mavis-agent-seed-" + UUID.randomUUID().toString().substring(0, 8);
-        boolean seeded = false;
+    static boolean prepareInstrumentationVolume(ObjectNode profile, Path bundle) {
+        INSTRUMENTATION_VOLUME_LOCK.lock();
         try {
-            if (probeCommandZeroExit(List.of("docker", "create", "--name", container, "-v", volume + ":/agents", helper), 20)) {
-                seeded = probeCommandZeroExit(List.of("docker", "cp", bundle.toString() + "/.", container + ":/agents/"), 30);
+            String volume = "mavis-agents-java-2-32-0-dotnet-1-17-0-bundle-3";
+            String labels = captureCommandStdout(List.of("docker", "volume", "inspect", "--format", "{{json .Labels}}", volume), 10);
+            if (hasCurrentBundleLabels(labels)) {
+                profile.put("instrumentationVolume", volume);
+                return true;
             }
+            // If this name already exists with different contents, preserve it too.
+            if (labels != null) volume += "-" + UUID.randomUUID().toString().substring(0, 8);
+            String helper = "mcr.microsoft.com/dotnet/aspnet@sha256:d5633778c754e89a386882eddf8dbee6942447a8a4b8267c19cf1e1158d0b0ac";
+            if (!probeCommandZeroExit(List.of("docker", "pull", helper), 120)) return false;
+            if (!probeCommandZeroExit(List.of("docker", "volume", "create",
+                    "--label", "mavis.poc.managed=true", "--label", "mavis.bundle.rev=3",
+                    "--label", "mavis.dotnet.version=1.17.0", "--label", "mavis.dotnet.musl.version=1.17.0",
+                    "--label", "mavis.java.version=2.32.0", volume), 15)) return false;
+            String container = "mavis-agent-seed-" + UUID.randomUUID().toString().substring(0, 8);
+            boolean seeded = false;
+            try {
+                if (probeCommandZeroExit(List.of("docker", "create", "--name", container, "-v", volume + ":/agents", helper), 20)) {
+                    seeded = probeCommandZeroExit(List.of("docker", "cp", bundle.toString() + "/.", container + ":/agents/"), 30);
+                }
+            } finally {
+                probeCommandZeroExit(List.of("docker", "rm", "-f", container), 10);
+                if (!seeded) probeCommandZeroExit(List.of("docker", "volume", "rm", volume), 10);
+            }
+            if (seeded) profile.put("instrumentationVolume", volume);
+            return seeded;
         } finally {
-            probeCommandZeroExit(List.of("docker", "rm", "-f", container), 10);
-            if (!seeded) probeCommandZeroExit(List.of("docker", "volume", "rm", volume), 10);
+            INSTRUMENTATION_VOLUME_LOCK.unlock();
         }
-        if (seeded) profile.put("instrumentationVolume", volume);
-        return seeded;
     }
 
     private void executeManagedCli(RuntimeSession session) throws Exception {
