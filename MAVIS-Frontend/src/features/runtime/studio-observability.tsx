@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { LayoutGrid, Maximize2, Minus, Plus } from "lucide-react";
 import { useApiQuery } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
 import { useLocale } from "@/lib/i18n/locale-context";
@@ -1095,6 +1096,7 @@ export function StudioObservability({
   simulated = false,
   canvasOnly = false,
   defaultView = "2D",
+  surfaceTheme = "dark",
 }: {
   data: Studio;
   selected: string;
@@ -1111,7 +1113,9 @@ export function StudioObservability({
   simulated?: boolean;
   canvasOnly?: boolean;
   defaultView?: "2D" | "3D";
+  surfaceTheme?: "light" | "dark";
 }) {
+  const isLight = surfaceTheme === "light";
   const { t } = useLocale();
   const [view, setView] = useState<"2D" | "3D">(defaultView);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("LAYERED");
@@ -1616,9 +1620,15 @@ export function StudioObservability({
     <div className={canvasOnly ? "relative flex h-full min-h-0 flex-1 flex-col overflow-hidden" : "space-y-4"}>
       {exportError && <p role="alert">{t("Could not export graph")}</p>}
 
-      {/* Canvas view switch */}
+      {/* Floating Bottom-Right Canvas Controls Pill (GonnaCrash style) */}
       {canvasOnly ? (
-        <div className="pointer-events-auto absolute top-2.5 right-3 z-10 inline-flex items-center gap-1 rounded-full border border-slate-700/80 bg-slate-950/85 p-1 shadow-md backdrop-blur-md">
+        <div
+          className={`pointer-events-auto absolute right-4 bottom-4 z-20 inline-flex items-center gap-1 rounded-full border px-1.5 py-1 shadow-md backdrop-blur-md ${
+            isLight
+              ? "border-slate-300 bg-white/95 text-slate-800"
+              : "border-slate-700/80 bg-slate-950/90 text-slate-200"
+          }`}
+        >
           {(["2D", "3D"] as const).map((mode) => (
             <button
               key={mode}
@@ -1628,15 +1638,74 @@ export function StudioObservability({
                 if (view !== mode) onSound?.("select");
                 setView(mode);
               }}
-              className={`rounded-full px-2.5 py-0.5 font-mono text-[11px] font-semibold transition ${
+              className={`rounded-full px-2.5 py-1 font-mono text-xs font-semibold transition ${
                 view === mode
-                  ? "bg-slate-100 text-slate-950 shadow-xs"
-                  : "text-slate-400 hover:text-slate-200"
+                  ? isLight
+                    ? "bg-slate-900 text-white shadow-xs"
+                    : "bg-slate-100 text-slate-950 shadow-xs"
+                  : isLight
+                    ? "text-slate-500 hover:text-slate-900"
+                    : "text-slate-400 hover:text-slate-200"
               }`}
             >
               {mode}
             </button>
           ))}
+          <span
+            className={`mx-0.5 h-4 w-px ${isLight ? "bg-slate-200" : "bg-slate-700"}`}
+            aria-hidden="true"
+          />
+          <button
+            type="button"
+            title={t("Auto-layout", "Tự sắp xếp")}
+            aria-label={t("Auto-layout", "Tự sắp xếp")}
+            onClick={() => {
+              setCustomOffsets({});
+              setPinnedPositions({});
+            }}
+            className={`rounded-full p-1.5 transition ${
+              isLight ? "hover:bg-slate-100" : "hover:bg-slate-800"
+            }`}
+          >
+            <LayoutGrid className="size-3.5" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            title={t("Fit to view", "Vừa khung hình")}
+            aria-label={t("Fit to view", "Vừa khung hình")}
+            onClick={() => {
+              setPan({ x: 0, y: 0 });
+              setZoom(1);
+              setCamera({ yaw: 0.55, pitch: 0.38 });
+            }}
+            className={`rounded-full p-1.5 transition ${
+              isLight ? "hover:bg-slate-100" : "hover:bg-slate-800"
+            }`}
+          >
+            <Maximize2 className="size-3.5" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            title={t("Zoom out", "Thu nhỏ")}
+            aria-label={t("Zoom out", "Thu nhỏ")}
+            onClick={() => setZoom((z) => Math.max(0.4, Number((z - 0.15).toFixed(2))))}
+            className={`rounded-full p-1.5 transition ${
+              isLight ? "hover:bg-slate-100" : "hover:bg-slate-800"
+            }`}
+          >
+            <Minus className="size-3.5" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            title={t("Zoom in", "Phóng to")}
+            aria-label={t("Zoom in", "Phóng to")}
+            onClick={() => setZoom((z) => Math.min(2.2, Number((z + 0.15).toFixed(2))))}
+            className={`rounded-full p-1.5 transition ${
+              isLight ? "hover:bg-slate-100" : "hover:bg-slate-800"
+            }`}
+          >
+            <Plus className="size-3.5" aria-hidden="true" />
+          </button>
         </div>
       ) : (
         <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-lg border bg-muted/30 p-2">
@@ -1851,7 +1920,9 @@ export function StudioObservability({
           viewBox="0 0 1200 660"
           className={
             canvasOnly
-              ? "h-full w-full select-none bg-[#070b14]"
+              ? isLight
+                ? "h-full w-full select-none bg-[#FBFBF8]"
+                : "h-full w-full select-none bg-[#070b14]"
               : "min-w-[640px] w-full select-none rounded-lg border bg-background shadow-inner"
           }
           role="group"
@@ -2009,12 +2080,12 @@ export function StudioObservability({
         >
           <defs>
             <pattern id="studio-grid" width="24" height="24" patternUnits="userSpaceOnUse">
-              <path
-                d="M 24 0 L 0 0 0 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="0.5"
-                opacity="0.08"
+              <circle
+                cx="12"
+                cy="12"
+                r={isLight ? "1.15" : "1.05"}
+                fill={isLight ? "#CBD5E1" : "#334155"}
+                opacity={isLight ? "0.8" : "0.55"}
               />
             </pattern>
           </defs>
@@ -2255,14 +2326,16 @@ export function StudioObservability({
               const wireSelected = activeWire?.from === edge.fromService && activeWire.to === edge.toService;
               const wireName = `${nodeNames?.[edge.fromService] ?? edge.fromService} → ${nodeNames?.[edge.toService] ?? edge.toService}`;
               const edgeColor = wireSelected
-                ? "#7dd3fc"
+                ? "#0056D2"
                 : edgeSevered
-                  ? "#f43f5e"
+                  ? "#e11d48"
                   : edgeDegraded
-                    ? "#f59e0b"
+                    ? "#d97706"
                     : sg && sg.rps > 0
-                      ? "#10b981"
-                      : "#64748b";
+                      ? "#059669"
+                      : isLight
+                        ? "#475569"
+                        : "#64748b";
               const strokeWeight = wireSelected
                 ? "3.2"
                 : sg && sg.rps > 0
@@ -2328,15 +2401,15 @@ export function StudioObservability({
                         width={badgeWidth}
                         height="18"
                         rx="8"
-                        fill="#090d16"
-                        stroke={edgeSevered ? "#f43f5e" : edgeDegraded ? "#f59e0b" : wireSelected ? "#7dd3fc" : sg && sg.rps > 0 ? "#10b981" : "#334155"}
+                        fill={isLight ? (edgeSevered ? "#fff1f2" : edgeDegraded ? "#fffbeb" : "#ffffff") : "#090d16"}
+                        stroke={edgeSevered ? "#e11d48" : edgeDegraded ? "#d97706" : wireSelected ? "#0056D2" : sg && sg.rps > 0 ? "#059669" : isLight ? "#cbd5e1" : "#334155"}
                         strokeWidth="1"
                       />
                       <text
                         x={mx}
                         y={my + 3.5}
                         textAnchor="middle"
-                        fill={edgeSevered ? "#fda4af" : edgeDegraded ? "#fde68a" : "#e2e8f0"}
+                        fill={isLight ? (edgeSevered ? "#be123c" : edgeDegraded ? "#b45309" : "#0f172a") : (edgeSevered ? "#fda4af" : edgeDegraded ? "#fde68a" : "#e2e8f0")}
                         fontFamily="monospace"
                         fontSize="10"
                         fontWeight="600"
@@ -2618,26 +2691,215 @@ export function StudioObservability({
                   className="group cursor-grab outline-none active:cursor-grabbing"
                 >
                   <title>{nodeName} · {live ? (isStopped ? t("Service stopped (Fault injected)") : t("running")) : t("Waiting for telemetry")}</title>
-                  <g transform={`translate(${point.x}, ${point.y})`}>
-                    <rect x="-74" y="-39" width="148" height="76" rx="12" fill="transparent"
-                      className="group-focus-visible:stroke-sky-300" strokeWidth="1.5" />
-                    {(isSelected || isDropTarget) && (
-                      <circle cy="-9" r="31" fill={theme.stroke} fillOpacity="0.12"
-                        stroke={theme.stroke} strokeOpacity="0.7"
-                        strokeDasharray={isDropTarget ? "4 3" : undefined} />
-                    )}
-                    {render2DServiceSymbol(name, archetype, healthTint)}
-                    <rect data-studio-node-label x={-labelWidth / 2} y={labelY} width={labelWidth} height={labelHeight} rx="10"
-                      fill="#0b1220" stroke={healthColor ?? (isSelected || isDropTarget ? theme.stroke : "#334155")} />
-                    <text x="-13" y="31.5" textAnchor="middle" fill="#f8fafc" fontSize="11" fontWeight="600">
-                      {displayName}
-                    </text>
-                    <text x={labelWidth / 2 - 15} y="31.5" textAnchor="middle"
-                      fill={healthTint ?? "#cbd5e1"} fontSize="9" fontWeight="600">
-                      {isStopped ? "×0" : live ? `×${live.runningReplicas}` : "—"}
-                    </text>
-                  </g>
-                  {renderConnectPort(name, point.x + 34, point.y - 9, isSelected || isDropTarget)}
+                  {(() => {
+                    const lastSvcAction = [...(data.actions ?? [])]
+                      .reverse()
+                      .find((a) => a.service === name && a.status === "CONFIRMED");
+                    const isPaused = !isStopped && lastSvcAction?.action === "PAUSE";
+                    const isThrottled =
+                      !isStopped &&
+                      !isPaused &&
+                      (lastSvcAction?.action === "THROTTLE_CPU" || status === "Bottleneck");
+                    const stampLabel = isStopped
+                      ? "CRASHED"
+                      : isPaused
+                        ? "PAUSED"
+                        : isThrottled
+                          ? "THROTTLED"
+                          : isImpactedByOutage
+                            ? "IMPACTED"
+                            : null;
+                    const stampColor = isStopped
+                      ? "#e11d48"
+                      : isPaused || isThrottled
+                        ? "#d97706"
+                        : "#ea580c";
+                    const replicasLabel = isStopped
+                      ? "0x"
+                      : live
+                        ? `${live.runningReplicas}x`
+                        : "1x";
+                    const roleSubtitle =
+                      archetype === "DATABASE"
+                        ? "Database"
+                        : archetype === "GATEWAY"
+                          ? "API Gateway"
+                          : archetype === "QUEUE"
+                            ? "Message Broker"
+                            : "Microservice";
+                    const cardW = Math.max(176, displayName.length * 7.8 + 64);
+                    const cardH = 62;
+                    const halfW = cardW / 2;
+                    const cardFill = isLight
+                      ? isStopped
+                        ? "#fff1f2"
+                        : isPaused || isThrottled || isImpactedByOutage
+                          ? "#fffbeb"
+                          : "#ffffff"
+                      : isStopped
+                        ? "#2a0913"
+                        : isPaused || isThrottled || isImpactedByOutage
+                          ? "#261b07"
+                          : "#111827";
+                    const cardStroke = isStopped
+                      ? "#e11d48"
+                      : isPaused || isThrottled || isImpactedByOutage
+                        ? "#d97706"
+                        : isSelected || isDropTarget
+                          ? "#0056D2"
+                          : isLight
+                            ? "#1e293b"
+                            : "#334155";
+                    const titleFill = isLight ? "#0f172a" : "#f8fafc";
+                    const subFill = isLight ? "#475569" : "#94a3b8";
+                    const iconBg = isStopped
+                      ? isLight ? "#ffe4e6" : "#4c0519"
+                      : archetype === "DATABASE"
+                        ? isLight ? "#dcfce7" : "#064e3b"
+                        : archetype === "GATEWAY"
+                          ? isLight ? "#e0f2fe" : "#0c4a6e"
+                          : archetype === "QUEUE"
+                            ? isLight ? "#f3e8ff" : "#3b0764"
+                            : isLight ? "#eff6ff" : "#1e3a8a";
+                    const iconInk = isStopped
+                      ? "#e11d48"
+                      : archetype === "DATABASE"
+                        ? "#059669"
+                        : archetype === "GATEWAY"
+                          ? "#0284c7"
+                          : archetype === "QUEUE"
+                            ? "#7c3aed"
+                            : "#0056D2";
+                    const barColor = isStopped
+                      ? "#e11d48"
+                      : isPaused || isThrottled || isImpactedByOutage
+                        ? "#f59e0b"
+                        : "#10b981";
+                    const barRatio = isStopped ? 1 : isPaused || isThrottled ? 0.85 : isImpactedByOutage ? 0.72 : 0.35;
+
+                    return (
+                      <g transform={`translate(${point.x}, ${point.y})`}>
+                        {archetype === "DATABASE" ? (
+                          <g style={{ filter: isSelected ? "drop-shadow(0 0 8px rgba(0,86,210,0.35))" : "drop-shadow(0 2px 6px rgba(15,23,42,0.08))" }}>
+                            <path
+                              d={`M ${-halfW} ${-cardH / 2 + 10} L ${-halfW} ${cardH / 2 - 8} A ${halfW} 10 0 0 0 ${halfW} ${cardH / 2 - 8} L ${halfW} ${-cardH / 2 + 10} Z`}
+                              fill={cardFill}
+                              stroke={cardStroke}
+                              strokeWidth={isSelected || isStopped ? 2.2 : 1.5}
+                            />
+                            <ellipse
+                              cx="0"
+                              cy={-cardH / 2 + 10}
+                              rx={halfW}
+                              ry="10"
+                              fill={isStopped ? (isLight ? "#fecdd3" : "#4c0519") : (isLight ? "#dcfce7" : "#064e3b")}
+                              stroke={cardStroke}
+                              strokeWidth={isSelected || isStopped ? 2.2 : 1.5}
+                            />
+                          </g>
+                        ) : (
+                          <rect
+                            data-studio-node-label
+                            x={-halfW}
+                            y={-cardH / 2}
+                            width={cardW}
+                            height={cardH}
+                            rx="12"
+                            fill={cardFill}
+                            stroke={cardStroke}
+                            strokeWidth={isSelected || isStopped ? 2.2 : 1.5}
+                            style={{
+                              filter: isSelected
+                                ? "drop-shadow(0 0 8px rgba(0,86,210,0.32))"
+                                : "drop-shadow(0 2px 6px rgba(15,23,42,0.08))",
+                            }}
+                          />
+                        )}
+                        {/* Component icon chip */}
+                        <rect
+                          x={-halfW + 10}
+                          y={archetype === "DATABASE" ? -8 : -16}
+                          width="28"
+                          height="28"
+                          rx="8"
+                          fill={iconBg}
+                        />
+                        {renderNodeFunctionGlyph(
+                          name,
+                          archetype,
+                          -halfW + 24,
+                          archetype === "DATABASE" ? 6 : -2,
+                          iconInk,
+                        )}
+                        {/* Service Name + Subtitle */}
+                        <text
+                          x={-halfW + 46}
+                          y={archetype === "DATABASE" ? 2 : -4}
+                          textAnchor="start"
+                          fill={titleFill}
+                          fontSize="12.5"
+                          fontWeight="700"
+                        >
+                          {displayName}
+                        </text>
+                        <text
+                          x={-halfW + 46}
+                          y={archetype === "DATABASE" ? 16 : 11}
+                          textAnchor="start"
+                          fill={subFill}
+                          fontSize="10.5"
+                          fontWeight="500"
+                        >
+                          {replicasLabel} · {roleSubtitle}
+                        </text>
+                        {/* Live mini health/load bar along bottom edge (GonnaCrash signature) */}
+                        <rect
+                          x={-halfW + 12}
+                          y={cardH / 2 - 9}
+                          width={cardW - 24}
+                          height="3.5"
+                          rx="2"
+                          fill={isLight ? "#e2e8f0" : "#1e293b"}
+                        />
+                        <rect
+                          x={-halfW + 12}
+                          y={cardH / 2 - 9}
+                          width={(cardW - 24) * barRatio}
+                          height="3.5"
+                          rx="2"
+                          fill={barColor}
+                        />
+                        {/* Tilted GonnaCrash CRASHED / PAUSED / THROTTLED / IMPACTED Stamp */}
+                        {stampLabel && (
+                          <g transform={`translate(${-halfW + 6}, ${-cardH / 2 - 6}) rotate(-7)`}>
+                            <rect
+                              x="-2"
+                              y="-11"
+                              width={stampLabel.length * 7.2 + 12}
+                              height="17"
+                              rx="4"
+                              fill={isLight ? "#ffffff" : "#0f172a"}
+                              stroke={stampColor}
+                              strokeWidth="1.6"
+                            />
+                            <text
+                              x={(stampLabel.length * 7.2 + 10) / 2 - 1}
+                              y="1"
+                              textAnchor="middle"
+                              fill={stampColor}
+                              fontFamily="monospace"
+                              fontSize="9.5"
+                              fontWeight="800"
+                              letterSpacing="0.5"
+                            >
+                              {stampLabel}
+                            </text>
+                          </g>
+                        )}
+                      </g>
+                    );
+                  })()}
+                  {renderConnectPort(name, point.x + 88, point.y, isSelected || isDropTarget)}
                 </g>
               );
             })}

@@ -43,3 +43,20 @@ test("Lecturer Grading Workspace enforces side-by-side layout at lg+ and display
   assert.match(grading, /NEEDS REVISION — next Lab remains locked/);
   assert.match(grading, /mavis-tabular/);
 });
+
+test("Studio Live uses Canvas-First light dot-grid whiteboard, 2D default cards, floating mission sticky note, collapsed logs drawer, and diagnostics/celebration overlays", () => {
+  const obs = read("src/features/runtime/studio-observability.tsx");
+  const live = read("src/features/runtime/live-studio-workbench.tsx");
+  const standalone = read("src/features/runtime/standalone-studio-live.tsx");
+
+  assert.match(obs, /surfaceTheme\?: "light" \| "dark"/);
+  assert.match(obs, /#FBFBF8/);
+  assert.match(obs, /CRASHED/);
+  assert.match(live, /const \[studioTheme, setStudioTheme\] = useState<"light" \| "dark">\("light"\)/);
+  assert.match(live, /const \[bottomCollapsed, setBottomCollapsed\] = useState\(true\)/);
+  assert.match(live, /defaultView="2D"/);
+  assert.match(live, /bg-\[#FEF08A\]/);
+  assert.match(live, /Logs & Traces/);
+  assert.match(live, /verifiedModalOpen/);
+  assert.match(standalone, /missionCard=\{missionCardProps\}/);
+});

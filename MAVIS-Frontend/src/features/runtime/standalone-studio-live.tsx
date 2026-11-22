@@ -15,7 +15,6 @@ import {
   Play,
   RefreshCw,
   SlidersHorizontal,
-  Target,
   X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -239,7 +238,6 @@ function StandaloneStudioContent() {
   const [configTab, setConfigTab] = useState<ConfigTab>("exercise");
   const [visualSaved, setVisualSaved] = useState(false);
   const [visualError, setVisualError] = useState("");
-  const [showStudentMission, setShowStudentMission] = useState(true);
   const autoStartedRef = useRef(false);
 
   const previewTopology = useMemo(
@@ -835,17 +833,27 @@ function StandaloneStudioContent() {
         title={
           isAuthorMode ? t("Back to Lab Setup", "Về thiết lập Lab") : t("Back to Lab", "Về bài Lab")
         }
-        className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-slate-700 bg-slate-900 px-2 text-xs font-medium text-slate-200 transition-colors hover:bg-slate-800 hover:text-white"
+        className="inline-flex h-7 shrink-0 items-center gap-1 rounded-lg border border-border bg-card px-2 text-xs font-medium text-foreground transition-colors hover:bg-accent"
       >
         <ArrowLeft className="size-3.5" aria-hidden="true" />
         <span className="hidden sm:inline">{t("Back", "Quay lại")}</span>
       </Link>
 
       <div className="flex min-w-0 items-center gap-1.5" title={labTitle || undefined}>
-        <Activity className="size-3.5 shrink-0 text-emerald-400" aria-hidden="true" />
-        <span className="shrink-0 text-xs font-semibold tracking-tight text-white">
-          Studio Live
+        <Activity className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+        <span className="shrink-0 text-xs font-bold tracking-tight text-foreground">
+          MAVIS Live
         </span>
+        {labTitle && (
+          <>
+            <span className="hidden text-muted-foreground/60 lg:inline" aria-hidden="true">
+              /
+            </span>
+            <span className="hidden max-w-[180px] truncate text-xs font-medium text-muted-foreground lg:inline xl:max-w-[260px]">
+              {labTitle}
+            </span>
+          </>
+        )}
       </div>
 
       {isAuthorMode && setupLab?.topologyFrozen && (
@@ -854,7 +862,7 @@ function StandaloneStudioContent() {
         </Badge>
       )}
       {!isAuthorMode && liveStudioVerified && (
-        <span className="hidden items-center gap-1 rounded-full border border-emerald-500/35 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-300 md:inline-flex">
+        <span className="hidden items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/12 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 md:inline-flex">
           <CheckCircle2 className="size-3" aria-hidden="true" />
           {t("Sealed", "Đã đóng gói")}
         </span>
@@ -869,11 +877,11 @@ function StandaloneStudioContent() {
           <Button
             type="button"
             size="sm"
-            variant="ghost"
+            variant="outline"
             aria-label={t("Advanced Config", "Cấu hình nâng cao")}
             title={t("Advanced Config & Sync Docker", "Cấu hình nâng cao & Đồng bộ Docker")}
             onClick={() => setConfigModalOpen(true)}
-            className="h-7 px-2 text-[11px] text-slate-300 hover:bg-slate-800 hover:text-white"
+            className="h-8 w-8 p-0"
           >
             <SlidersHorizontal className="size-3.5" aria-hidden="true" />
           </Button>
@@ -889,7 +897,7 @@ function StandaloneStudioContent() {
             asChild
             size="sm"
             variant="outline"
-            className="h-7 border-indigo-500/40 bg-indigo-500/10 px-2 text-[11px] text-indigo-200 hover:bg-indigo-500/20"
+            className="h-8 px-2.5 text-xs"
           >
             <Link
               href={buildStudioLiveHref({
@@ -907,7 +915,7 @@ function StandaloneStudioContent() {
           <Button
             asChild
             size="sm"
-            className="h-7 bg-emerald-600 px-2.5 text-[11px] text-white hover:bg-emerald-500"
+            className="h-8 bg-emerald-600 px-2.5 text-xs text-white hover:bg-emerald-500"
           >
             <Link href={publishHref}>
               {t("Done · Step 6", "Xong · Bước 6")}
@@ -924,7 +932,7 @@ function StandaloneStudioContent() {
               asChild
               size="sm"
               variant="outline"
-              className="h-7 border-slate-700 bg-slate-900 px-2 text-[11px] text-slate-200 hover:bg-slate-800 hover:text-white"
+              className="h-8 px-2.5 text-xs"
             >
               <Link
                 href={buildStudioLiveHref({
@@ -940,22 +948,6 @@ function StandaloneStudioContent() {
               </Link>
             </Button>
           )}
-          {studentExercise && (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => setShowStudentMission((v) => !v)}
-              className={`h-7 px-2 text-[11px] ${
-                showStudentMission
-                  ? "border-sky-500/50 bg-sky-500/15 text-sky-200 hover:bg-sky-500/25"
-                  : "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800 hover:text-white"
-              }`}
-            >
-              <Target className="mr-1 size-3" aria-hidden="true" />
-              {t("Mission", "Đề bài")}
-            </Button>
-          )}
           {needsSandboxBootstrap && activeSessionId && (
             <Button
               type="button"
@@ -963,7 +955,7 @@ function StandaloneStudioContent() {
               variant="outline"
               disabled={bootstrapStudio.isPending}
               onClick={() => bootstrapStudio.mutate(activeSessionId)}
-              className="h-7 border-amber-500/40 bg-amber-500/10 px-2 text-[11px] text-amber-200 hover:bg-amber-500/20"
+              className="h-8 border-amber-500/50 bg-amber-50 px-2.5 text-xs text-amber-800 hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-200 dark:hover:bg-amber-500/20"
             >
               {bootstrapStudio.isPending
                 ? t("Activating Sandbox…", "Đang kích hoạt Sandbox…")
@@ -974,7 +966,7 @@ function StandaloneStudioContent() {
             <Button
               asChild
               size="sm"
-              className="h-7 bg-emerald-600 px-2.5 text-[11px] text-white hover:bg-emerald-500"
+              className="h-8 bg-emerald-600 px-2.5 text-xs text-white hover:bg-emerald-500"
             >
               <Link href={submitHref}>
                 {t("Submit Lab", "Nộp bài Lab")}
@@ -987,98 +979,34 @@ function StandaloneStudioContent() {
     </div>
   );
 
+  const missionCardProps = useMemo(() => {
+    if (isAuthorMode || studentQuizLocked) return undefined;
+    if (!studentExercise && !liveStudioVerified) return undefined;
+    return {
+      instructions: studentExercise?.instructions ?? null,
+      maxErrorRatePercent: studentExercise?.successCriteria?.maxErrorRatePercent ?? null,
+      maxP95Ms: studentExercise?.successCriteria?.maxP95Ms ?? null,
+      minReplicas: studentExercise?.successCriteria?.minReplicas ?? null,
+      stoppedServices: studentExercise?.initialState?.stoppedServices ?? null,
+      requiredTraceEdge: studentExercise?.successCriteria?.requiredTraceEdge ?? null,
+      submitHref,
+      verified: liveStudioVerified,
+    };
+  }, [isAuthorMode, studentQuizLocked, studentExercise, liveStudioVerified, submitHref]);
+
   return (
-    <div className="flex h-svh w-screen flex-col overflow-hidden bg-[#070b12] text-slate-100">
+    <div className="flex h-svh w-screen flex-col overflow-hidden bg-[#FBFBF8] text-foreground">
       {/* Fallback App Bar only on loading/prepare/locked screens; when canvas is active, merged into 1 single top bar */}
       {!isWorkbenchActive && (
-        <header className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-slate-800 bg-[#070b12] px-3">
+        <header className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border bg-card px-3.5">
           {headerLeft}
           {headerRight}
         </header>
       )}
 
-      {/* Collapsible Student Mission Bar */}
-      {!isAuthorMode && !studentQuizLocked && studentExercise && showStudentMission && (
-        <div className="shrink-0 border-b border-slate-800 bg-[#0d1422] px-4 py-2.5 text-xs">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0 space-y-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-semibold text-emerald-300">
-                  {t("Studio Exercise", "Nhiệm vụ Studio")}
-                </span>
-                {studentExercise.instructions && (
-                  <span className="text-slate-200">{studentExercise.instructions}</span>
-                )}
-              </div>
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-400">
-                {!!studentExercise.initialState?.stoppedServices?.length && (
-                  <span>
-                    {t("Initially stopped", "Dừng sẵn")}:{" "}
-                    <code className="font-mono text-rose-300">
-                      {studentExercise.initialState.stoppedServices.join(", ")}
-                    </code>
-                  </span>
-                )}
-                {!!studentExercise.initialState?.stoppedControllers?.length && (
-                  <span>
-                    {t("Disconnected wires", "Ngắt kết nối")}:{" "}
-                    <code className="font-mono text-amber-300">
-                      {studentExercise.initialState.stoppedControllers.join(", ")}
-                    </code>
-                  </span>
-                )}
-                {studentExercise.successCriteria?.maxErrorRatePercent != null && (
-                  <span>
-                    {t("Max error", "Lỗi tối đa")}:{" "}
-                    <strong className="text-slate-200">
-                      {studentExercise.successCriteria.maxErrorRatePercent}%
-                    </strong>
-                  </span>
-                )}
-                {studentExercise.successCriteria?.maxP95Ms != null && (
-                  <span>
-                    {t("Max p95", "p95 tối đa")}:{" "}
-                    <strong className="text-slate-200">
-                      {studentExercise.successCriteria.maxP95Ms} ms
-                    </strong>
-                  </span>
-                )}
-                {!!studentExercise.successCriteria?.minReplicas?.length && (
-                  <span>
-                    {t("Target replicas", "Replica tối thiểu")}:{" "}
-                    <code className="font-mono text-sky-300">
-                      {studentExercise.successCriteria.minReplicas
-                        .map((target) => `${target.service ?? ""} ×${target.count ?? 0}`)
-                        .join(", ")}
-                    </code>
-                  </span>
-                )}
-                {studentExercise.successCriteria?.requiredTraceEdge && (
-                  <span>
-                    {t("Required trace", "Trace bắt buộc")}:{" "}
-                    <code className="font-mono text-emerald-300">
-                      {studentExercise.successCriteria.requiredTraceEdge.from} →{" "}
-                      {studentExercise.successCriteria.requiredTraceEdge.to}
-                    </code>
-                  </span>
-                )}
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowStudentMission(false)}
-              className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-white"
-              aria-label={t("Hide mission", "Ẩn đề bài")}
-            >
-              <X className="size-3.5" aria-hidden="true" />
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Error strips if any mutation fails */}
       {(autoStudio.error || startStudio.error || bootstrapStudio.error) && (
-        <div className="shrink-0 space-y-1 border-b border-rose-500/30 bg-rose-950/30 px-4 py-2">
+        <div className="shrink-0 space-y-1 border-b border-destructive/30 bg-destructive/10 px-4 py-2">
           {autoStudio.error && <ErrorState error={autoStudio.error} />}
           {startStudio.error && <ErrorState error={startStudio.error} />}
           {bootstrapStudio.error && <ErrorState error={bootstrapStudio.error} />}
@@ -1088,8 +1016,8 @@ function StandaloneStudioContent() {
       {/* Main Full-Viewport Studio Live Surface */}
       <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {!workspaceId || !assignmentId ? (
-          <div className="m-auto max-w-md space-y-3 rounded-2xl border border-slate-800 bg-[#0b101b] p-6 text-center">
-            <p className="text-sm font-medium text-slate-200">
+          <div className="m-auto max-w-md space-y-3 rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
+            <p className="text-sm font-medium text-foreground">
               {t(
                 "Open Studio Live from a Lab workspace.",
                 "Hãy mở Studio Live từ một bài Lab trong lớp học.",
@@ -1104,12 +1032,12 @@ function StandaloneStudioContent() {
             <LoadingState label={t("Loading Studio Live…", "Đang tải Studio Live…")} />
           </div>
         ) : studentQuizLocked ? (
-          <div className="m-auto max-w-md space-y-3 rounded-2xl border border-slate-800 bg-[#0b101b] p-6 text-center">
-            <Lock className="mx-auto size-7 text-amber-400" aria-hidden="true" />
-            <h1 className="text-base font-semibold text-white">
+          <div className="m-auto max-w-md space-y-3 rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
+            <Lock className="mx-auto size-7 text-amber-500" aria-hidden="true" />
+            <h1 className="text-base font-semibold text-foreground">
               {t("Runtime access required", "Cần điều kiện truy cập Runtime")}
             </h1>
-            <p className="text-xs leading-5 text-slate-400">
+            <p className="text-xs leading-5 text-muted-foreground">
               {t(
                 "Complete the required course work before starting your MAVIS Runtime Studio session.",
                 "Hoàn tất các yêu cầu của khóa học trước khi bắt đầu phiên MAVIS Runtime Studio.",
@@ -1120,9 +1048,9 @@ function StandaloneStudioContent() {
             </Button>
           </div>
         ) : isAuthorMode && !projectId ? (
-          <div className="m-auto max-w-md space-y-3 rounded-2xl border border-slate-800 bg-[#0b101b] p-6 text-center">
-            <Lock className="mx-auto size-7 text-slate-400" aria-hidden="true" />
-            <p className="text-sm text-slate-200">
+          <div className="m-auto max-w-md space-y-3 rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
+            <Lock className="mx-auto size-7 text-muted-foreground" aria-hidden="true" />
+            <p className="text-sm text-foreground">
               {t(
                 "Import a repository with Docker Compose in Step 2 first.",
                 "Hãy nhập kho mã nguồn có Docker Compose ở Bước 2 trước.",
@@ -1137,11 +1065,11 @@ function StandaloneStudioContent() {
             </Button>
           </div>
         ) : isAuthorMode && !showAuthorCanvas ? (
-          <div className="m-auto flex max-w-lg flex-col items-center rounded-2xl border border-slate-800 bg-[#0b101b] px-8 py-10 text-center">
-            <span className="flex size-14 items-center justify-center rounded-2xl border border-slate-700 bg-slate-900 text-emerald-400">
+          <div className="m-auto flex max-w-lg flex-col items-center rounded-2xl border border-border bg-card px-8 py-10 text-center shadow-sm">
+            <span className="flex size-14 items-center justify-center rounded-2xl border border-border bg-muted text-emerald-600">
               <Container className="size-7" aria-hidden="true" />
             </span>
-            <h1 className="mt-4 text-base font-semibold text-white">
+            <h1 className="mt-4 text-base font-semibold text-foreground">
               {t("Prepare Docker Runtime", "Chuẩn bị Docker Runtime")}
             </h1>
             {availableApplications.length > 0 && (
@@ -1149,7 +1077,7 @@ function StandaloneStudioContent() {
                 {availableApplications.map((svc) => (
                   <span
                     key={svc}
-                    className="rounded-md border border-slate-700 bg-slate-950 px-2 py-0.5 font-mono text-xs text-slate-200"
+                    className="rounded-md border border-border bg-muted px-2 py-0.5 font-mono text-xs text-foreground"
                   >
                     {svc}
                   </span>
@@ -1157,7 +1085,7 @@ function StandaloneStudioContent() {
               </div>
             )}
             {readinessBlockers.length > 0 && (
-              <div className="mt-4 w-full rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-left text-xs text-amber-300">
+              <div className="mt-4 w-full rounded-xl border border-amber-400/50 bg-amber-50 px-4 py-3 text-left text-xs text-amber-900 dark:bg-amber-500/10 dark:text-amber-300">
                 <p className="mb-1 flex items-center gap-1.5 font-medium">
                   <AlertTriangle className="size-3.5 shrink-0" aria-hidden="true" />
                   {t("Docker preflight check", "Kiểm tra Docker")}
@@ -1205,6 +1133,7 @@ function StandaloneStudioContent() {
             previewModelId={previewModelId}
             previewServiceMappings={previewServiceMappings}
             authoring={authoringProps}
+            missionCard={missionCardProps}
           />
         )}
       </main>
@@ -1348,7 +1277,7 @@ export function StandaloneStudioLive() {
   return (
     <Suspense
       fallback={
-        <div className="flex h-svh w-screen items-center justify-center bg-[#070b12] text-slate-300">
+        <div className="flex h-svh w-screen items-center justify-center bg-[#FBFBF8] text-foreground">
           <LoadingState label="Loading Studio Live…" />
         </div>
       }

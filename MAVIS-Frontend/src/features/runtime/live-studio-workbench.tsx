@@ -11,13 +11,18 @@ import {
   type ReactNode,
 } from "react";
 import {
+  AlertTriangle,
   ArrowRight,
   Camera,
   Check,
+  CheckCircle2,
   ChevronDown,
   ChevronUp,
+  History,
+  Lightbulb,
   Maximize2,
   Minimize2,
+  Moon,
   PanelLeft,
   PanelRight,
   Play,
@@ -26,11 +31,15 @@ import {
   RotateCcw,
   Save,
   Server,
+  SlidersHorizontal,
   Sparkles,
   Square,
+  Sun,
   Target,
+  Terminal,
   Trash2,
   Video,
+  X,
   Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -333,6 +342,7 @@ export function LiveStudioWorkbench({
   previewModelId,
   previewServiceMappings,
   authoring,
+  missionCard,
 }: {
   sessions: readonly SessionOption[];
   sessionId: string;
@@ -349,6 +359,16 @@ export function LiveStudioWorkbench({
   previewModelId?: string | undefined;
   previewServiceMappings?: Record<string, string> | undefined;
   authoring?: LiveStudioAuthoringProps | undefined;
+  missionCard?: {
+    instructions?: string | null | undefined;
+    maxErrorRatePercent?: number | null | undefined;
+    maxP95Ms?: number | null | undefined;
+    minReplicas?: Array<{ service?: string; count?: number }> | null | undefined;
+    stoppedServices?: string[] | null | undefined;
+    requiredTraceEdge?: { from?: string; to?: string } | null | undefined;
+    submitHref?: string | null | undefined;
+    verified?: boolean | undefined;
+  } | undefined;
 }) {
   const { t } = useLocale();
   const startHref = projectId
@@ -481,12 +501,44 @@ export function LiveStudioWorkbench({
   useEffect(() => {
     setInspectedTraceId(null);
   }, [sessionId]);
-  const [showLeft, setShowLeft] = useState(true);
-  const [showRight, setShowRight] = useState(true);
+  // GonnaCrash Canvas-First LIVE defaults: airy light whiteboard, 90% canvas open, floating contextual cards.
+  const [studioTheme, setStudioTheme] = useState<"light" | "dark">("light");
+  const isLight = studioTheme === "light";
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("mavis.studio-theme");
+      if (saved === "light" || saved === "dark") setStudioTheme(saved);
+    } catch {
+      // ignore storage restrictions
+    }
+  }, []);
+  const setThemePersisted = (next: "light" | "dark") => {
+    setStudioTheme(next);
+    try {
+      localStorage.setItem("mavis.studio-theme", next);
+    } catch {
+      // ignore storage restrictions
+    }
+  };
+  const [showLeft, setShowLeft] = useState(false);
+  const [showRight, setShowRight] = useState(() => Boolean(authoring));
+  const [rightCardMode, setRightCardMode] = useState<"service" | "diagnostics">("service");
+  const [missionCollapsed, setMissionCollapsed] = useState(false);
+  const [missionHidden, setMissionHidden] = useState(false);
+  const [telemetryPopoverOpen, setTelemetryPopoverOpen] = useState(false);
+  const [settingsPopoverOpen, setSettingsPopoverOpen] = useState(false);
+  const [verifiedModalOpen, setVerifiedModalOpen] = useState(false);
+  const prevFinishSuccessRef = useRef(false);
+  useEffect(() => {
+    if (finish.isSuccess && !prevFinishSuccessRef.current) {
+      setVerifiedModalOpen(true);
+    }
+    prevFinishSuccessRef.current = finish.isSuccess;
+  }, [finish.isSuccess]);
   const [leftWidth, setLeftWidth] = useState(244);
-  const [rightWidth, setRightWidth] = useState(276);
-  const [bottomHeight, setBottomHeight] = useState(232);
-  const [bottomCollapsed, setBottomCollapsed] = useState(false);
+  const [rightWidth, setRightWidth] = useState(324);
+  const [bottomHeight, setBottomHeight] = useState(256);
+  const [bottomCollapsed, setBottomCollapsed] = useState(true);
   const [resizingAxis, setResizingAxis] = useState<"left" | "right" | "bottom" | null>(null);
   const resizeCleanupRef = useRef<(() => void) | null>(null);
   const [expanded, setExpanded] = useState(false);
@@ -1249,22 +1301,79 @@ export function LiveStudioWorkbench({
                   : "IDLE";
 
   const showLiveSessionControls = !authoring || !isPreviewMode || isBooting;
+  const liveProbeMetrics = data.telemetry?.probe;
+  const liveP95Ms =
+    liveProbeMetrics?.p95Ms != null && Number.isFinite(liveProbeMetrics.p95Ms)
+      ? Math.round(liveProbeMetrics.p95Ms)
+      : typeof lastConfirmed?.result?.metricsAfter["p95LatencyMs"] === "number"
+        ? Math.round(Number(lastConfirmed.result.metricsAfter["p95LatencyMs"]))
+        : null;
+  const liveErrorPct =
+    liveProbeMetrics != null && Number.isFinite(liveProbeMetrics.errorRatePercent)
+      ? Number(liveProbeMetrics.errorRatePercent.toFixed(1))
+      : typeof lastConfirmed?.result?.metricsAfter["errorRatePercent"] === "number"
+        ? Number(Number(lastConfirmed.result.metricsAfter["errorRatePercent"]).toFixed(1))
+        : null;
+  const liveRps =
+    liveProbeMetrics != null && Number.isFinite(liveProbeMetrics.rps)
+      ? Number(liveProbeMetrics.rps.toFixed(1))
+      : null;
+  const stoppedServiceNames = services.filter((svc) => runningFor(data, svc) === 0);
+  const pausedServiceNames = services.filter((svc) => {
+    if (runningFor(data, svc) === 0) return false;
+    const latest = [...(data.actions ?? [])]
+      .reverse()
+      .find((item) => item.service === svc && item.status === "CONFIRMED");
+    return latest?.action === "PAUSE";
+  });
+  const faultedServices = [...stoppedServiceNames, ...pausedServiceNames];
+  const snapshotCount = data.snapshots?.length ?? 0;
+  const healthyCount = Math.max(0, services.length - faultedServices.length);
+  const parsedAuthorMaxErr =
+    authoring?.maxErrorRatePercent && Number.isFinite(Number(authoring.maxErrorRatePercent))
+      ? Number(authoring.maxErrorRatePercent)
+      : null;
+  const effectiveMissionInstructions =
+    missionCard?.instructions?.trim() ||
+    authoring?.instructions?.trim() ||
+    t(
+      "Click any live microservice on the canvas to inject faults, scale replicas, observe live Change Impact, and capture a Snapshot.",
+      "Bấm vào bất kỳ microservice đang chạy nào trên sơ đồ để tiêm lỗi, scale replica, quan sát Change Impact trực tiếp và chụp Snapshot.",
+    );
+  const missionMaxErr: number | null = missionCard?.maxErrorRatePercent ?? parsedAuthorMaxErr;
+  const missionMaxP95: number | null = missionCard?.maxP95Ms ?? null;
+  const missionMinReplicas: Array<{ service?: string; count?: number }> | null =
+    missionCard?.minReplicas ??
+    (authoring?.replicaService
+      ? [{ service: authoring.replicaService, count: Number(authoring.replicaCount) || 1 }]
+      : null);
 
   return (
     <div
       data-testid="live-workbench"
+      data-studio-theme={studioTheme}
+      data-theme={studioTheme}
       className={
         expanded
-          ? "fixed inset-0 z-50 flex h-screen w-screen flex-col overflow-hidden bg-[#070b12] text-slate-100"
-          : "flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden bg-[#070b12] text-slate-100"
+          ? `fixed inset-0 z-50 flex h-screen w-screen flex-col overflow-hidden ${isLight ? "bg-[#FBFBF8] text-slate-900" : "dark bg-[#070b12] text-slate-100"}`
+          : `flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden ${isLight ? "bg-[#FBFBF8] text-slate-900" : "dark bg-[#070b12] text-slate-100"}`
       }
     >
-      {/* Single Unified Top Studio Bar */}
-      <div className="flex min-h-11 shrink-0 flex-wrap items-center gap-2 border-b border-slate-800 bg-[#0b101b] px-3 py-1.5">
+      {/* GonnaCrash-Inspired Slim Top Bar */}
+      <div
+        className={`relative z-30 flex min-h-12 shrink-0 flex-wrap items-center gap-2 border-b px-3.5 py-1.5 ${
+          isLight
+            ? "border-slate-200 bg-white/95 text-slate-900 shadow-2xs"
+            : "border-slate-800 bg-[#0b101b] text-slate-100"
+        }`}
+      >
         {standaloneHeader?.left && (
           <>
             {standaloneHeader.left}
-            <span className="h-4 w-px shrink-0 bg-slate-800" aria-hidden="true" />
+            <span
+              className={`h-4 w-px shrink-0 ${isLight ? "bg-slate-200" : "bg-slate-800"}`}
+              aria-hidden="true"
+            />
           </>
         )}
 
@@ -1274,18 +1383,28 @@ export function LiveStudioWorkbench({
           data.executionStatus === "COMPLETED" ||
           lastSessionFailed) && (
           <span
-            className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[10px] font-semibold ${statusTone}`}
+            className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono text-xs font-semibold ${
+              isLight
+                ? data.executionStatus === "RUNNING"
+                  ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                  : isBooting || isQueued || isCancelling
+                    ? "border-sky-300 bg-sky-50 text-sky-800"
+                    : lastSessionFailed
+                      ? "border-rose-300 bg-rose-50 text-rose-800"
+                      : "border-slate-300 bg-slate-100 text-slate-700"
+                : statusTone
+            }`}
           >
             <span
-              className={`size-1.5 rounded-full ${
+              className={`size-2 rounded-full ${
                 data.executionStatus === "RUNNING"
-                  ? "animate-pulse bg-emerald-400"
+                  ? "animate-pulse bg-emerald-500"
                   : isQueued || isCancelling
-                    ? "animate-pulse bg-amber-400"
+                    ? "animate-pulse bg-amber-500"
                     : isBooting
-                      ? "animate-pulse bg-sky-400"
+                      ? "animate-pulse bg-sky-500"
                       : lastSessionFailed
-                        ? "bg-rose-400"
+                        ? "bg-rose-500"
                         : "bg-slate-400"
               }`}
               aria-hidden="true"
@@ -1294,101 +1413,140 @@ export function LiveStudioWorkbench({
           </span>
         )}
 
-        {(!authoring || !isPreviewMode || isBooting) && (
-          <label className="flex min-w-0 items-center gap-1.5 text-[11px] text-slate-400">
-            <select
-              aria-label="Select active or recent runtime session"
-              value={activeSessionId}
-              onChange={(event) => onSelectSession(event.target.value)}
-              className="h-7 w-36 shrink-0 overflow-hidden text-ellipsis whitespace-nowrap rounded border border-slate-700 bg-slate-950 px-2 text-[11px] text-slate-100"
-            >
-              {authoring && <option value="">Design Preview</option>}
-              {sessions.length > 0 ? (
-                sessions.map((session) => {
-                  const displayStatus =
-                    session.id === activeSessionId && liveData?.executionStatus
-                      ? liveData.executionStatus
-                      : (session.executionStatus ?? "SESSION");
-                  return (
-                    <option key={session.id} value={session.id}>
-                      {session.id.slice(0, 8)} · {displayStatus}
-                    </option>
-                  );
-                })
-              ) : (
-                !authoring && <option value="">No live sessions</option>
-              )}
-            </select>
-          </label>
-        )}
-
-        {data.executionStatus !== "RUNNING" &&
-          (onStartSession ? (
-            <Button
-              type="button"
-              size="sm"
-              className={`h-7 px-2.5 text-[11px] ${
-                authoring
-                  ? "border border-emerald-500/45 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25 disabled:border-sky-500/40 disabled:bg-sky-900/70 disabled:text-sky-200"
-                  : "bg-emerald-600 text-white hover:bg-emerald-500 disabled:bg-sky-900/70 disabled:text-sky-200"
-              }`}
-              disabled={isBooting || isCancelling || cancel.isPending}
-              onClick={onStartSession}
-            >
-              {isBooting ? (
-                <RefreshCw aria-hidden="true" className="mr-1 size-3 animate-spin" />
-              ) : (
-                <Play aria-hidden="true" className="mr-1 size-3" />
-              )}
-              {isQueued ? `Queued${data.queuePosition ? ` #${data.queuePosition}` : "…"}` : isBooting ? "Booting…" : "Run"}
-            </Button>
-          ) : (
-            <Button asChild size="sm" className="h-7 px-2.5 text-[11px]">
-              <Link href={startHref}>
-                {projectName ? `Prepare and start ${projectName}` : "Prepare and start Live project"}
-              </Link>
-            </Button>
-          ))}
-
-        {!hideSwitchToSandbox && onSwitchToSandbox && (
-          <Button
+        {/* Center GonnaCrash Live Telemetry Pill (click for breakdown & session switcher) */}
+        <div className="relative mx-auto hidden md:block">
+          <button
             type="button"
-            size="sm"
-            variant="outline"
-            className="h-7 border-slate-600 bg-slate-900 px-2 text-[11px] text-slate-200 hover:bg-slate-800 hover:text-white"
-            onClick={onSwitchToSandbox}
+            onClick={() => {
+              setTelemetryPopoverOpen((open) => !open);
+              setSettingsPopoverOpen(false);
+            }}
+            className={`inline-flex items-center gap-2.5 rounded-full border px-3.5 py-1 text-xs font-medium shadow-2xs transition ${
+              isLight
+                ? "border-slate-300 bg-[#F8FAFC] text-slate-800 hover:border-slate-400 hover:bg-white"
+                : "border-slate-700 bg-slate-900/90 text-slate-200 hover:border-slate-600"
+            }`}
           >
-            Switch to Sandbox
-          </Button>
-        )}
-
-        {/* Inline Live Telemetry Pill */}
-        {data.executionStatus === "RUNNING" && (
-          <div className="hidden items-center gap-2 rounded-md border border-slate-800 bg-slate-950/80 px-2 py-1 font-mono text-[10px] text-slate-300 xl:flex">
-            <span>{totalRunningReplicas} pods</span>
-            {lastConfirmed?.result && (
+            <span className="inline-flex items-center gap-1.5 font-semibold">
+              <span
+                className={`size-2 rounded-full ${
+                  faultedServices.length > 0
+                    ? "bg-rose-500"
+                    : data.executionStatus === "RUNNING"
+                      ? "bg-emerald-500"
+                      : "bg-slate-400"
+                }`}
+                aria-hidden="true"
+              />
+              {healthyCount}/{services.length || 0} {t("Services", "Dịch vụ")}
+            </span>
+            <span className={isLight ? "text-slate-300" : "text-slate-600"}>|</span>
+            <span className="font-mono">
+              {liveRps != null ? `${liveRps} req/s` : `${totalRunningReplicas} pods`}
+            </span>
+            {liveP95Ms != null && (
               <>
-                <span className="text-slate-600">·</span>
-                <span>p95 {metric(lastConfirmed.result.metricsAfter["p95LatencyMs"])}ms</span>
-                <span className="text-slate-600">·</span>
+                <span className={isLight ? "text-slate-300" : "text-slate-600"}>·</span>
+                <span className="font-mono">p95 {liveP95Ms}ms</span>
+              </>
+            )}
+            {liveErrorPct != null && (
+              <>
+                <span className={isLight ? "text-slate-300" : "text-slate-600"}>·</span>
                 <span
-                  className={
-                    Number(lastConfirmed.result.metricsAfter["errorRatePercent"] ?? 0) > 0
-                      ? "text-rose-300"
-                      : "text-emerald-300"
-                  }
+                  className={`font-mono font-semibold ${
+                    liveErrorPct > 0
+                      ? isLight ? "text-rose-600" : "text-rose-300"
+                      : isLight ? "text-emerald-700" : "text-emerald-300"
+                  }`}
                 >
-                  err {metric(lastConfirmed.result.metricsAfter["errorRatePercent"])}%
+                  {liveErrorPct}% err
                 </span>
               </>
             )}
-          </div>
-        )}
+            <ChevronDown className="size-3.5 opacity-60" aria-hidden="true" />
+          </button>
 
+          {telemetryPopoverOpen && (
+            <div
+              className={`absolute left-1/2 top-full z-40 mt-2 w-80 -translate-x-1/2 space-y-3 rounded-2xl border p-4 shadow-xl ${
+                isLight
+                  ? "border-slate-300 bg-white text-slate-900"
+                  : "border-slate-700 bg-[#0d1422] text-slate-100"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-bold">{t("Live Runtime Telemetry", "Thông số Runtime trực tiếp")}</span>
+                <button
+                  type="button"
+                  onClick={() => setTelemetryPopoverOpen(false)}
+                  className="rounded p-1 opacity-70 hover:opacity-100"
+                  aria-label={t("Close", "Đóng")}
+                >
+                  <X className="size-3.5" aria-hidden="true" />
+                </button>
+              </div>
+              <dl className="grid grid-cols-2 gap-2 text-xs">
+                <div className={`rounded-lg border p-2 ${isLight ? "border-slate-200 bg-slate-50" : "border-slate-800 bg-slate-900/60"}`}>
+                  <dt className="text-muted-foreground">{t("Running Pods", "Pod đang chạy")}</dt>
+                  <dd className="mt-0.5 font-mono text-sm font-bold">{totalRunningReplicas}</dd>
+                </div>
+                <div className={`rounded-lg border p-2 ${isLight ? "border-slate-200 bg-slate-50" : "border-slate-800 bg-slate-900/60"}`}>
+                  <dt className="text-muted-foreground">{t("Snapshots", "Snapshot đã lưu")}</dt>
+                  <dd className="mt-0.5 font-mono text-sm font-bold">{snapshotCount}</dd>
+                </div>
+                <div className={`rounded-lg border p-2 ${isLight ? "border-slate-200 bg-slate-50" : "border-slate-800 bg-slate-900/60"}`}>
+                  <dt className="text-muted-foreground">P95 Latency</dt>
+                  <dd className="mt-0.5 font-mono text-sm font-bold">{liveP95Ms != null ? `${liveP95Ms} ms` : "—"}</dd>
+                </div>
+                <div className={`rounded-lg border p-2 ${isLight ? "border-slate-200 bg-slate-50" : "border-slate-800 bg-slate-900/60"}`}>
+                  <dt className="text-muted-foreground">{t("Error Rate", "Tỉ lệ lỗi")}</dt>
+                  <dd className={`mt-0.5 font-mono text-sm font-bold ${liveErrorPct && liveErrorPct > 0 ? "text-rose-600" : "text-emerald-600"}`}>
+                    {liveErrorPct != null ? `${liveErrorPct}%` : "—"}
+                  </dd>
+                </div>
+              </dl>
+              {(!authoring || !isPreviewMode || isBooting) && (
+                <label className="block space-y-1 text-xs">
+                  <span className="font-medium text-muted-foreground">{t("Runtime session", "Phiên chạy Docker")}</span>
+                  <select
+                    aria-label="Select active or recent runtime session"
+                    value={activeSessionId}
+                    onChange={(event) => onSelectSession(event.target.value)}
+                    className={`h-8 w-full rounded-lg border px-2 text-xs ${
+                      isLight
+                        ? "border-slate-300 bg-white text-slate-900"
+                        : "border-slate-700 bg-slate-950 text-slate-100"
+                    }`}
+                  >
+                    {authoring && <option value="">Design Preview</option>}
+                    {sessions.length > 0 ? (
+                      sessions.map((session) => {
+                        const displayStatus =
+                          session.id === activeSessionId && liveData?.executionStatus
+                            ? liveData.executionStatus
+                            : (session.executionStatus ?? "SESSION");
+                        return (
+                          <option key={session.id} value={session.id}>
+                            {session.id.slice(0, 8)} · {displayStatus}
+                          </option>
+                        );
+                      })
+                    ) : (
+                      !authoring && <option value="">No live sessions</option>
+                    )}
+                  </select>
+                </label>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Right Actions Cluster (GonnaCrash-style icon buttons + primary Run/Finish pill + Settings) */}
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
           {authoring && authoring.saved && !missionDirty && (
-            <span className="hidden items-center gap-1 text-[10.5px] font-medium text-emerald-400 lg:inline-flex">
-              <Check aria-hidden="true" className="size-3" /> Saved
+            <span className="hidden items-center gap-1 text-xs font-medium text-emerald-600 lg:inline-flex">
+              <Check aria-hidden="true" className="size-3.5" /> Saved
             </span>
           )}
 
@@ -1400,19 +1558,112 @@ export function LiveStudioWorkbench({
               disabled={authoring.saving}
               onClick={captureLiveCanvasAsExercise}
               title="Save currently stopped services and scaled replicas on the canvas as the Lab exercise"
-              className="h-7 border-teal-500/40 bg-teal-500/10 px-2 text-[11px] text-teal-200 hover:bg-teal-500/20"
+              className="h-8 px-2.5 text-xs"
             >
-              <Save aria-hidden="true" className="mr-1 size-3" />
-              {authoring.saving ? "Saving…" : "Save Canvas State"}
+              <Save aria-hidden="true" className="mr-1 size-3.5" />
+              {authoring.saving ? "Saving…" : "Save Canvas"}
             </Button>
           )}
 
+          {/* Snapshots History Icon Button */}
           {showLiveSessionControls && (
+            <button
+              type="button"
+              title={t("Snapshots & History", "Lịch sử Snapshot")}
+              aria-label={t("Snapshots & History", "Lịch sử Snapshot")}
+              onClick={() => {
+                setTab("snapshots");
+                setBottomCollapsed(false);
+                setSettingsPopoverOpen(false);
+                setTelemetryPopoverOpen(false);
+              }}
+              className={`relative inline-flex h-8 w-8 items-center justify-center rounded-lg border transition ${
+                isLight
+                  ? "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+                  : "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"
+              }`}
+            >
+              <History className="size-4" aria-hidden="true" />
+              {snapshotCount > 0 && (
+                <span className="absolute -top-1 -right-1 grid size-4 place-items-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
+                  {snapshotCount}
+                </span>
+              )}
+            </button>
+          )}
+
+          {/* Impact / Diagnostics Lightbulb Icon Button */}
+          <button
+            type="button"
+            title={t("Impact & Root Cause Diagnostics", "Chẩn đoán Change Impact")}
+            aria-label={t("Impact & Root Cause Diagnostics", "Chẩn đoán Change Impact")}
+            onClick={() => {
+              setRightCardMode("diagnostics");
+              setShowRight((open) => (rightCardMode === "diagnostics" ? !open : true));
+              setSettingsPopoverOpen(false);
+              setTelemetryPopoverOpen(false);
+            }}
+            className={`relative inline-flex h-8 w-8 items-center justify-center rounded-lg border transition ${
+              showRight && rightCardMode === "diagnostics"
+                ? "border-primary bg-primary/10 text-primary"
+                : isLight
+                  ? "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+                  : "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"
+            }`}
+          >
+            <Lightbulb className="size-4" aria-hidden="true" />
+            {faultedServices.length > 0 && (
+              <span className="absolute -top-1 -right-1 size-2.5 rounded-full bg-amber-500 ring-2 ring-white dark:ring-slate-950" />
+            )}
+          </button>
+
+          {/* Primary Start / Run Button when not RUNNING */}
+          {data.executionStatus !== "RUNNING" &&
+            (onStartSession ? (
+              <Button
+                type="button"
+                size="sm"
+                className="h-8 rounded-lg bg-[#0056D2] px-3.5 text-xs font-semibold text-white shadow-xs hover:bg-[#00419E] disabled:opacity-60"
+                disabled={isBooting || isCancelling || cancel.isPending}
+                onClick={onStartSession}
+              >
+                {isBooting ? (
+                  <RefreshCw aria-hidden="true" className="mr-1.5 size-3.5 animate-spin" />
+                ) : (
+                  <Play aria-hidden="true" className="mr-1.5 size-3.5 fill-current" />
+                )}
+                {isQueued ? `Queued${data.queuePosition ? ` #${data.queuePosition}` : "…"}` : isBooting ? "Booting…" : "Run"}
+              </Button>
+            ) : (
+              <Button asChild size="sm" className="h-8 rounded-lg px-3 text-xs">
+                <Link href={startHref}>
+                  {projectName ? `Prepare and start ${projectName}` : "Prepare and start Live project"}
+                </Link>
+              </Button>
+            ))}
+
+          {!hideSwitchToSandbox && onSwitchToSandbox && (
             <Button
               type="button"
               size="sm"
               variant="outline"
-              className="h-7 border-slate-600 bg-slate-900 px-2 text-[11px] text-slate-200 hover:bg-slate-800 hover:text-white disabled:opacity-40"
+              className="h-8 px-2.5 text-xs"
+              onClick={onSwitchToSandbox}
+            >
+              Switch to Sandbox
+            </Button>
+          )}
+
+          {showLiveSessionControls && data.executionStatus === "RUNNING" && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className={`h-8 px-2.5 text-xs font-semibold ${
+                isLight
+                  ? "border-slate-300 bg-white text-slate-800 hover:bg-slate-50"
+                  : "border-slate-600 bg-slate-900 text-slate-200 hover:bg-slate-800"
+              }`}
               disabled={
                 data.executionStatus !== "RUNNING" ||
                 !data.telemetry ||
@@ -1422,6 +1673,7 @@ export function LiveStudioWorkbench({
               }
               onClick={() => {
                 setTab("snapshots");
+                setBottomCollapsed(false);
                 if (explanation.trim() && !waiting) {
                   void captureSnapshot(
                     graphRef.current?.querySelector<SVGSVGElement>("svg[data-studio-graph]") ??
@@ -1432,10 +1684,11 @@ export function LiveStudioWorkbench({
                 }
               }}
             >
-              <Camera aria-hidden="true" className="mr-1 size-3.5" />
+              <Camera aria-hidden="true" className="mr-1.5 size-3.5" />
               Snapshot
             </Button>
           )}
+
           {recordingSteps > 0 && (
             <Button
               type="button"
@@ -1443,44 +1696,40 @@ export function LiveStudioWorkbench({
               variant="outline"
               disabled={savingReplay}
               onClick={() => void stopAndSaveLiveReplay()}
-              className="h-7 border-rose-500/50 bg-rose-500/15 px-2 font-mono text-[10.5px] text-rose-200 hover:bg-rose-500/25"
+              className="h-8 border-rose-500/50 bg-rose-500/15 px-2.5 font-mono text-xs text-rose-600 dark:text-rose-200"
             >
-              <span className="mr-1.5 size-1.5 animate-pulse rounded-full bg-rose-400" aria-hidden="true" />
+              <span className="mr-1.5 size-1.5 animate-pulse rounded-full bg-rose-500" aria-hidden="true" />
               REC {String(Math.floor(recordingSeconds / 60)).padStart(2, "0")}:
               {String(recordingSeconds % 60).padStart(2, "0")} · {recordingSteps}
             </Button>
           )}
-          {showLiveSessionControls && (() => {
+
+          {showLiveSessionControls && data.executionStatus === "RUNNING" && (() => {
             const finishDisabledReason =
-              data.executionStatus !== "RUNNING"
+              data.finishRequested || finish.isPending
                 ? t(
-                    "Wait until the Docker session reaches RUNNING",
-                    "Vui lòng đợi phiên Docker đạt trạng thái RUNNING",
+                    "Finishing Studio session and sealing receipt…",
+                    "Đang kết thúc phiên Studio và niêm phong biên nhận…",
                   )
-                : data.finishRequested || finish.isPending
+                : action.isPending || waiting
                   ? t(
-                      "Finishing Studio session and sealing receipt…",
-                      "Đang kết thúc phiên Studio và niêm phong biên nhận…",
+                      "Wait for the current runtime action to complete",
+                      "Vui lòng đợi thao tác runtime hiện tại hoàn tất",
                     )
-                  : action.isPending || waiting
+                  : capturing || capture.isPending
                     ? t(
-                        "Wait for the current runtime action to complete",
-                        "Vui lòng đợi thao tác runtime hiện tại hoàn tất",
+                        "Wait for the snapshot capture to finish",
+                        "Vui lòng đợi quá trình chụp snapshot hoàn tất",
                       )
-                    : capturing || capture.isPending
+                    : !hasConfirmedAction
                       ? t(
-                          "Wait for the snapshot capture to finish",
-                          "Vui lòng đợi quá trình chụp snapshot hoàn tất",
+                          "Run at least one confirmed action (Pause, Resume, Stop, Start, or Scale) and capture a snapshot before finishing",
+                          "Thực hiện ít nhất 1 thao tác được xác nhận (Pause, Resume, Stop, Start hoặc Scale) và chụp 1 Snapshot trước khi kết thúc",
                         )
-                      : !hasConfirmedAction
-                        ? t(
-                            "Run at least one confirmed action (Pause, Resume, Stop, Start, or Scale) and capture a snapshot before finishing",
-                            "Thực hiện ít nhất 1 thao tác được xác nhận (Pause, Resume, Stop, Start hoặc Scale) và chụp 1 Snapshot trước khi kết thúc",
-                          )
-                        : t(
-                            "Finish Studio and seal your verifiable RuntimeReceipt",
-                            "Kết thúc Studio và ký niêm phong RuntimeReceipt",
-                          );
+                      : t(
+                          "Finish Studio and seal your verifiable RuntimeReceipt",
+                          "Kết thúc Studio và ký niêm phong RuntimeReceipt",
+                        );
             const finishDisabled =
               finish.isPending ||
               action.isPending ||
@@ -1491,12 +1740,11 @@ export function LiveStudioWorkbench({
               data.finishRequested ||
               data.executionStatus !== "RUNNING";
             return (
-            <>
               <span className="inline-flex" title={finishDisabledReason}>
                 <Button
                   type="button"
                   size="sm"
-                  className="h-7 bg-emerald-600 px-2.5 text-[11px] text-white hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-400"
+                  className="h-8 rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-45"
                   disabled={finishDisabled}
                   aria-label={finishDisabled ? `${t("Finish Studio", "Kết thúc Studio")} (${finishDisabledReason})` : t("Finish Studio", "Kết thúc Studio")}
                   onClick={() => void finishStudio()}
@@ -1504,50 +1752,148 @@ export function LiveStudioWorkbench({
                   {t("Finish Studio", "Kết thúc Studio")}
                 </Button>
               </span>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-7 border-slate-600 bg-slate-900 px-2 text-[11px] text-slate-200 hover:bg-slate-800 hover:text-white disabled:opacity-40"
-                disabled={cancel.isPending || (data.executionStatus !== "RUNNING" && !isBooting)}
-                onClick={() => void cancelStudio()}
-              >
-                {t("Cancel", "Hủy phiên")}
-              </Button>
-            </>
             );
           })()}
 
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            aria-pressed={showLeft}
-            aria-label="Toggle blocks sidebar"
-            title={showLeft ? "Hide Blocks sidebar" : "Show Blocks sidebar"}
-            onClick={() => setShowLeft((value) => !value)}
-            className={`h-7 px-1.5 text-[11px] hover:bg-slate-800 hover:text-white ${
-              showLeft ? "text-slate-200" : "text-slate-500"
-            }`}
-          >
-            <PanelLeft aria-hidden="true" className="size-3.5" />
-            {!standalone && <span className="ml-1">Blocks</span>}
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            aria-pressed={showRight}
-            aria-label="Toggle inspector sidebar"
-            title={showRight ? "Hide Setup / Inspector sidebar" : "Show Setup / Inspector sidebar"}
-            onClick={() => setShowRight((value) => !value)}
-            className={`h-7 px-1.5 text-[11px] hover:bg-slate-800 hover:text-white ${
-              showRight ? "text-slate-200" : "text-slate-500"
-            }`}
-          >
-            <PanelRight aria-hidden="true" className="size-3.5" />
-            {!standalone && <span className="ml-1">Inspector</span>}
-          </Button>
+          {/* GonnaCrash-Style Settings Popover Trigger */}
+          <div className="relative">
+            <button
+              type="button"
+              aria-label={t("Studio settings", "Cài đặt Studio")}
+              title={t("Studio settings", "Cài đặt Studio")}
+              onClick={() => {
+                setSettingsPopoverOpen((open) => !open);
+                setTelemetryPopoverOpen(false);
+              }}
+              className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border transition ${
+                settingsPopoverOpen
+                  ? "border-primary bg-primary/10 text-primary"
+                  : isLight
+                    ? "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+                    : "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"
+              }`}
+            >
+              <SlidersHorizontal className="size-4" aria-hidden="true" />
+            </button>
+
+            {settingsPopoverOpen && (
+              <div
+                className={`absolute right-0 top-full z-40 mt-2 w-72 space-y-3 rounded-2xl border p-4 shadow-xl ${
+                  isLight
+                    ? "border-slate-300 bg-white text-slate-900"
+                    : "border-slate-700 bg-[#0d1422] text-slate-100"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-bold">{t("Studio Settings", "Cài đặt Studio")}</span>
+                  <button
+                    type="button"
+                    onClick={() => setSettingsPopoverOpen(false)}
+                    className="rounded p-1 opacity-70 hover:opacity-100"
+                    aria-label={t("Close", "Đóng")}
+                  >
+                    <X className="size-3.5" aria-hidden="true" />
+                  </button>
+                </div>
+
+                {/* Light / Dark Whiteboard Theme Switcher */}
+                <div className="flex items-center justify-between gap-2 text-xs">
+                  <span className="font-medium">{t("Canvas Theme", "Chế độ màu")}</span>
+                  <div className={`inline-flex rounded-lg border p-0.5 ${isLight ? "border-slate-200 bg-slate-100" : "border-slate-700 bg-slate-900"}`}>
+                    <button
+                      type="button"
+                      onClick={() => setThemePersisted("light")}
+                      className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 font-semibold ${
+                        isLight ? "bg-white text-slate-900 shadow-2xs" : "text-slate-400"
+                      }`}
+                    >
+                      <Sun className="size-3.5" aria-hidden="true" />
+                      Light
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setThemePersisted("dark")}
+                      className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 font-semibold ${
+                        !isLight ? "bg-slate-800 text-white shadow-2xs" : "text-slate-500"
+                      }`}
+                    >
+                      <Moon className="size-3.5" aria-hidden="true" />
+                      Dark
+                    </button>
+                  </div>
+                </div>
+
+                {/* Panel Toggles */}
+                <div className="space-y-1.5 border-t pt-2.5 text-xs">
+                  <button
+                    type="button"
+                    aria-pressed={showRight}
+                    onClick={() => {
+                      setShowRight((v) => !v);
+                      setSettingsPopoverOpen(false);
+                    }}
+                    className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left transition ${
+                      isLight ? "hover:bg-slate-100" : "hover:bg-slate-800"
+                    }`}
+                  >
+                    <span className="inline-flex items-center gap-2">
+                      <PanelRight className="size-3.5" aria-hidden="true" />
+                      {t("Service Controls Card", "Thẻ điều khiển Service")}
+                    </span>
+                    <span className="font-mono text-xs text-primary">{showRight ? "ON" : "OFF"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={showLeft}
+                    onClick={() => {
+                      setShowLeft((v) => !v);
+                      setSettingsPopoverOpen(false);
+                    }}
+                    className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left transition ${
+                      isLight ? "hover:bg-slate-100" : "hover:bg-slate-800"
+                    }`}
+                  >
+                    <span className="inline-flex items-center gap-2">
+                      <PanelLeft className="size-3.5" aria-hidden="true" />
+                      {t("Service List Sidebar", "Danh sách Service")}
+                    </span>
+                    <span className="font-mono text-xs text-primary">{showLeft ? "ON" : "OFF"}</span>
+                  </button>
+                  {missionHidden && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMissionHidden(false);
+                        setMissionCollapsed(false);
+                        setSettingsPopoverOpen(false);
+                      }}
+                      className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left transition ${
+                        isLight ? "hover:bg-slate-100" : "hover:bg-slate-800"
+                      }`}
+                    >
+                      <span className="inline-flex items-center gap-2">
+                        <Target className="size-3.5 text-amber-600" aria-hidden="true" />
+                        {t("Show Mission Note", "Hiện tờ Mục tiêu")}
+                      </span>
+                    </button>
+                  )}
+                  {showLiveSessionControls && (data.executionStatus === "RUNNING" || isBooting) && (
+                    <button
+                      type="button"
+                      disabled={cancel.isPending}
+                      onClick={() => {
+                        setSettingsPopoverOpen(false);
+                        void cancelStudio();
+                      }}
+                      className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left font-medium text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40"
+                    >
+                      <span>{t("Stop & Cancel Session", "Dừng & Hủy phiên Docker")}</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
 
           {standaloneHeader?.right}
 
@@ -1559,100 +1905,86 @@ export function LiveStudioWorkbench({
               aria-label={expanded ? "Exit fullscreen Studio Live" : "Expand Studio Live fullscreen"}
               title={expanded ? "Exit fullscreen (Esc)" : "Expand fullscreen"}
               onClick={() => setExpanded((value) => !value)}
-              className="h-7 px-2 text-slate-300 hover:bg-slate-800 hover:text-white"
+              className="h-8 px-2"
             >
               {expanded ? (
-                <Minimize2 aria-hidden="true" className="size-3.5" />
+                <Minimize2 aria-hidden="true" className="size-4" />
               ) : (
-                <Maximize2 aria-hidden="true" className="size-3.5" />
+                <Maximize2 aria-hidden="true" className="size-4" />
               )}
             </Button>
           )}
         </div>
       </div>
 
-      {/* Main 3-Column IDE Layout: Full-Height Resizable Left Blocks | Center (Canvas + Resizable Bottom Dock) | Full-Height Resizable Right Setup */}
-      <div className="flex min-h-0 flex-1 overflow-hidden">
+      {/* GonnaCrash Canvas-First Full-Bleed Workspace with Floating Contextual Islands */}
+      <div className="relative flex min-h-0 flex-1 overflow-hidden">
         {showLeft && (
-          <aside
-            style={{
-              width: leftWidth,
-              scrollbarWidth: "thin",
-              scrollbarColor: "#334155 #0b101b",
-            }}
-            className="h-full shrink-0 overflow-x-hidden overflow-y-auto bg-[#0b101b] p-2.5"
-          >
-            <LiveSandboxParity
-              data={data}
-              selected={canvasSelected}
-              busy={isPreviewMode ? false : busy}
-              onSelect={(svc) => {
-                studio.setService(svc);
-                if (svc) setSetupPanel("service");
+          <>
+            <aside
+              style={{
+                width: leftWidth,
+                scrollbarWidth: "thin",
+                scrollbarColor: isLight ? "#cbd5e1 #ffffff" : "#334155 #0b101b",
               }}
-              onCommand={dispatchCommand}
-              sections={["library"]}
-              compact
-              label="Live block library"
-              authoring={authoring}
-              activeSetupPanel={setupPanel}
-              onSelectSetupPanel={(panel) => {
-                setSetupPanel(panel);
-                setShowRight(true);
-              }}
+              className={`h-full shrink-0 overflow-x-hidden overflow-y-auto border-r p-2.5 ${
+                isLight ? "border-slate-200 bg-white text-slate-900" : "border-slate-800 bg-[#0b101b] text-slate-100"
+              }`}
+            >
+              <LiveSandboxParity
+                data={data}
+                selected={canvasSelected}
+                busy={isPreviewMode ? false : busy}
+                onSelect={(svc) => {
+                  studio.setService(svc);
+                  if (svc) {
+                    setSetupPanel("service");
+                    setRightCardMode("service");
+                    setShowRight(true);
+                  }
+                }}
+                onCommand={dispatchCommand}
+                sections={["library"]}
+                compact
+                label="Live block library"
+                authoring={authoring}
+                activeSetupPanel={setupPanel}
+                onSelectSetupPanel={(panel) => {
+                  setSetupPanel(panel);
+                  setRightCardMode("service");
+                  setShowRight(true);
+                }}
+              />
+            </aside>
+            <div
+              role="separator"
+              tabIndex={0}
+              aria-orientation="vertical"
+              aria-label="Resize blocks panel"
+              aria-valuenow={leftWidth}
+              aria-valuemin={180}
+              aria-valuemax={560}
+              onPointerDown={(event) => startResize("left", event)}
+              onDoubleClick={() => setShowLeft(false)}
+              className="w-1 shrink-0 cursor-col-resize bg-transparent transition-colors hover:bg-primary/30"
             />
-          </aside>
+          </>
         )}
 
-        {/* LEFT RESIZE SPLITTER */}
-        <div
-          role="separator"
-          tabIndex={0}
-          aria-orientation="vertical"
-          aria-label="Resize blocks panel"
-          aria-valuenow={showLeft ? leftWidth : 0}
-          aria-valuemin={180}
-          aria-valuemax={560}
-          title="Drag left/right to resize Blocks panel (double-click to collapse/expand)"
-          onPointerDown={(event) => startResize("left", event)}
-          onDoubleClick={() => setShowLeft((value) => !value)}
-          onKeyDown={(event) => {
-            if (event.key === "ArrowRight") {
-              event.preventDefault();
-              setShowLeft(true);
-              setLeftWidth((w) => Math.min(560, w + 16));
-            } else if (event.key === "ArrowLeft") {
-              event.preventDefault();
-              setLeftWidth((w) => Math.max(180, w - 16));
-            }
-          }}
-          className={`group relative flex w-1.5 shrink-0 cursor-col-resize items-center justify-center border-x border-slate-800 bg-slate-950 transition-colors hover:bg-sky-500/25 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sky-400 ${
-            resizingAxis === "left" ? "bg-sky-500/35" : ""
-          }`}
-        >
-          <div
-            className={`h-10 w-0.5 rounded-full transition-colors ${
-              resizingAxis === "left"
-                ? "bg-sky-400"
-                : "bg-slate-700 group-hover:bg-sky-400"
-            }`}
-          />
-        </div>
-
-        {/* Center Column: Interactive 3D/2D Canvas + Strictly Bounded Resizable Bottom Telemetry Dock */}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#070b12]">
-          <div ref={graphRef} className="relative min-h-[160px] min-w-0 flex-1 overflow-hidden p-2.5">
+        {/* Center Full-Bleed Interactive Live Canvas + Slide-Up Telemetry/Logs Drawer */}
+        <div className={`relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${isLight ? "bg-[#FBFBF8]" : "bg-[#070b12]"}`}>
+          <div ref={graphRef} className="relative min-h-[240px] min-w-0 flex-1 overflow-hidden">
             {state.isError && state.data && (
               <div
                 role="status"
-                className="absolute inset-x-4 top-4 z-20 flex items-center justify-between gap-2 rounded-md border border-amber-500/40 bg-amber-950/90 px-3 py-1.5 text-xs text-amber-100 shadow-lg backdrop-blur"
+                className="absolute left-1/2 top-4 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full border border-amber-400/70 bg-amber-50 px-4 py-1.5 text-xs font-medium text-amber-900 shadow-lg dark:bg-amber-950/90 dark:text-amber-100"
               >
                 <span>Connection interrupted — keeping last live view while retrying…</span>
                 <Button
                   type="button"
                   size="sm"
                   variant="outline"
-                  className="h-6 border-amber-400/50 bg-transparent px-2 text-[11px] text-amber-100 hover:bg-amber-900/60"
+                  className="h-6 px-2 text-xs"
                   onClick={() => void state.refetch()}
                 >
                   Retry now
@@ -1660,18 +1992,25 @@ export function LiveStudioWorkbench({
               </div>
             )}
             {state.isError && !state.data ? (
-              <ErrorState error={state.error} onRetry={() => void state.refetch()} />
+              <div className="p-6">
+                <ErrorState error={state.error} onRetry={() => void state.refetch()} />
+              </div>
             ) : data.services.length > 0 || data.topology ? (
               <StudioObservability
                 data={data}
                 selected={canvasSelected}
                 onSelect={(svc) => {
                   studio.setService(svc);
-                  if (svc) setSetupPanel("service");
+                  if (svc) {
+                    setSetupPanel("service");
+                    setRightCardMode("service");
+                    setShowRight(true);
+                  }
                 }}
                 busy={isPreviewMode ? false : busy}
                 canvasOnly
-                defaultView="3D"
+                defaultView="2D"
+                surfaceTheme={studioTheme}
                 nodeNames={nodeNames}
                 {...(configuredEdges && configuredEdges.length > 0 ? { configuredEdges } : {})}
                 onConnect={connect}
@@ -1679,11 +2018,14 @@ export function LiveStudioWorkbench({
                 onQuickAction={quickAction}
               />
             ) : (
-              <div className="grid h-full place-items-center rounded-lg border border-dashed border-slate-700 bg-slate-950/40 p-6 text-center">
-                <div className="max-w-md space-y-2.5">
-                  <Server aria-hidden="true" className="mx-auto size-8 text-slate-500" />
-                  <p className="text-sm font-semibold text-slate-100">
-                    No live Docker session selected
+              <div className="grid h-full place-items-center p-6 text-center">
+                <div className={`max-w-md space-y-3 rounded-2xl border p-6 shadow-sm ${isLight ? "border-slate-300 bg-white text-slate-900" : "border-slate-700 bg-slate-950/70 text-slate-100"}`}>
+                  <Server aria-hidden="true" className="mx-auto size-8 text-primary" />
+                  <p className="text-base font-bold">
+                    {t("No live Docker session running yet", "Chưa có phiên Docker chạy trực tiếp")}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {t("Start the live sandbox to boot the real microservices on this canvas.", "Bấm Run để khởi động các microservice thật ngay trên sơ đồ này.")}
                   </p>
                   {onStartSession ? (
                     <Button type="button" size="sm" disabled={isBooting} onClick={onStartSession}>
@@ -1701,51 +2043,247 @@ export function LiveStudioWorkbench({
                 </div>
               </div>
             )}
+
+            {/* TOP-LEFT FLOATING YELLOW STICKY MISSION NOTE (GonnaCrash Signature) */}
+            {!missionHidden && (
+              <div
+                aria-label={t("Lab Mission", "Mục tiêu Lab")}
+                className={`pointer-events-auto absolute top-4 left-4 z-20 w-72 rounded-xl border shadow-md transition-all ${
+                  isLight
+                    ? "border-amber-400/80 bg-[#FEF08A]/95 text-[#1C1917]"
+                    : "border-amber-500/40 bg-amber-950/90 text-amber-50"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2 px-3.5 py-2.5">
+                  <span className="inline-flex items-center gap-1.5 text-xs font-bold tracking-tight">
+                    <Target className="size-3.5 shrink-0" aria-hidden="true" />
+                    {t("Mission", "Mục tiêu")}
+                  </span>
+                  <div className="flex items-center gap-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setMissionCollapsed((c) => !c)}
+                      aria-label={missionCollapsed ? t("Expand mission", "Mở rộng mục tiêu") : t("Collapse mission", "Thu gọn mục tiêu")}
+                      className="rounded p-1 opacity-75 hover:bg-black/10 hover:opacity-100"
+                    >
+                      {missionCollapsed ? (
+                        <ChevronDown className="size-3.5" aria-hidden="true" />
+                      ) : (
+                        <ChevronUp className="size-3.5" aria-hidden="true" />
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMissionHidden(true)}
+                      aria-label={t("Hide mission note", "Ẩn tờ mục tiêu")}
+                      className="rounded p-1 opacity-75 hover:bg-black/10 hover:opacity-100"
+                    >
+                      <X className="size-3.5" aria-hidden="true" />
+                    </button>
+                  </div>
+                </div>
+                {!missionCollapsed && (
+                  <div className="space-y-2.5 border-t border-amber-500/25 px-3.5 pt-2.5 pb-3 text-xs leading-relaxed">
+                    <p className="font-medium">{effectiveMissionInstructions}</p>
+                    <ul className="space-y-1.5 pt-0.5 text-xs">
+                      <li className="flex items-center justify-between gap-2">
+                        <span>{t("Run a live Docker action", "Thực hiện 1 thao tác Docker")}</span>
+                        <span className={`font-bold ${hasConfirmedAction ? "text-emerald-700 dark:text-emerald-300" : "opacity-60"}`}>
+                          {hasConfirmedAction ? "✓" : "○"}
+                        </span>
+                      </li>
+                      <li className="flex items-center justify-between gap-2">
+                        <span>{t("Capture evidence Snapshot", "Chụp Snapshot minh chứng")}</span>
+                        <span className={`font-mono font-bold ${snapshotCount > 0 ? "text-emerald-700 dark:text-emerald-300" : "opacity-60"}`}>
+                          {snapshotCount > 0 ? `${snapshotCount} ✓` : "0/1"}
+                        </span>
+                      </li>
+                      {missionMaxErr != null && (
+                        <li className="flex items-center justify-between gap-2">
+                          <span>{t(`Error rate ≤ ${missionMaxErr}%`, `Tỉ lệ lỗi ≤ ${missionMaxErr}%`)}</span>
+                          <span
+                            className={`font-mono font-bold ${
+                              liveErrorPct == null
+                                ? "opacity-60"
+                                : liveErrorPct <= missionMaxErr
+                                  ? "text-emerald-700 dark:text-emerald-300"
+                                  : "text-rose-700 dark:text-rose-300"
+                            }`}
+                          >
+                            {liveErrorPct != null ? `${liveErrorPct}% ${liveErrorPct <= missionMaxErr ? "✓" : "✕"}` : "—"}
+                          </span>
+                        </li>
+                      )}
+                      {missionMaxP95 != null && (
+                        <li className="flex items-center justify-between gap-2">
+                          <span>{t(`P95 latency ≤ ${missionMaxP95} ms`, `Độ trễ P95 ≤ ${missionMaxP95} ms`)}</span>
+                          <span
+                            className={`font-mono font-bold ${
+                              liveP95Ms == null
+                                ? "opacity-60"
+                                : liveP95Ms <= missionMaxP95
+                                  ? "text-emerald-700 dark:text-emerald-300"
+                                  : "text-rose-700 dark:text-rose-300"
+                            }`}
+                          >
+                            {liveP95Ms != null ? `${liveP95Ms}ms ${liveP95Ms <= missionMaxP95 ? "✓" : "✕"}` : "—"}
+                          </span>
+                        </li>
+                      )}
+                      {missionMinReplicas && missionMinReplicas.length > 0 &&
+                        missionMinReplicas.map((req, idx) => {
+                          const svc = req.service ?? "";
+                          const targetCount = req.count ?? 1;
+                          const cur = runningFor(data, svc) ?? 0;
+                          const ok = cur >= targetCount;
+                          return (
+                            <li key={`${svc}-${idx}`} className="flex items-center justify-between gap-2">
+                              <span className="truncate font-mono">{svc} ≥ {targetCount}x</span>
+                              <span className={`font-mono font-bold ${ok ? "text-emerald-700 dark:text-emerald-300" : "text-rose-700 dark:text-rose-300"}`}>
+                                {cur}x {ok ? "✓" : "✕"}
+                              </span>
+                            </li>
+                          );
+                        })}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* BOTTOM-LEFT FLOATING LIVE STATUS & ACTION CARD (GonnaCrash Signature) */}
+            {bottomCollapsed && (
+              <div
+                className={`pointer-events-auto absolute bottom-4 left-4 z-20 flex flex-wrap items-center gap-2.5 rounded-2xl border px-3.5 py-2.5 shadow-lg backdrop-blur-md ${
+                  isLight
+                    ? "border-slate-300 bg-white/95 text-slate-900"
+                    : "border-slate-700 bg-[#0d1422]/95 text-slate-100"
+                }`}
+              >
+                <span
+                  className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-mono text-xs font-extrabold uppercase tracking-wide ${
+                    missionCard?.verified || data.executionStatus === "COMPLETED"
+                      ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                      : faultedServices.length > 0
+                        ? "border-rose-500/60 bg-rose-500/10 text-rose-700 dark:text-rose-300"
+                        : data.executionStatus === "RUNNING"
+                          ? "border-sky-500/50 bg-sky-500/10 text-sky-700 dark:text-sky-300"
+                          : "border-slate-400/50 bg-slate-500/10 text-slate-600 dark:text-slate-300"
+                  }`}
+                >
+                  {missionCard?.verified || data.executionStatus === "COMPLETED"
+                    ? t("VERIFIED", "ĐÃ XÁC MINH")
+                    : faultedServices.length > 0
+                      ? t("IMPACT ACTIVE", "ĐANG SỰ CỐ")
+                      : data.executionStatus === "RUNNING"
+                        ? t("LIVE", "ĐANG CHẠY")
+                        : t("STANDBY", "SẴN SÀNG")}
+                </span>
+                <span className="max-w-60 truncate text-xs font-medium text-muted-foreground">
+                  {faultedServices.length > 0
+                    ? t(
+                        `${faultedServices.join(", ")} faulted — click a node or view impact`,
+                        `${faultedServices.join(", ")} đang sự cố — xem chẩn đoán`,
+                      )
+                    : data.executionStatus === "RUNNING"
+                      ? t("Click any microservice to inject fault or scale", "Bấm vào service để tiêm lỗi hoặc scale")
+                      : t("Click Run to start live Docker containers", "Bấm Run để khởi chạy Docker thật")}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRightCardMode("diagnostics");
+                    setShowRight(true);
+                  }}
+                  className={`rounded-lg border px-2.5 py-1 text-xs font-semibold transition ${
+                    isLight
+                      ? "border-slate-300 bg-slate-50 text-slate-800 hover:bg-slate-100"
+                      : "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"
+                  }`}
+                >
+                  {t("Why / Impact", "Xem tác động")}
+                </button>
+                {missionCard?.verified && missionCard.submitHref && (
+                  <Button asChild size="sm" className="h-7 rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white hover:bg-emerald-700">
+                    <Link href={missionCard.submitHref}>
+                      {t("Submit Lab", "Nộp bài")}
+                      <ArrowRight className="ml-1 size-3.5" aria-hidden="true" />
+                    </Link>
+                  </Button>
+                )}
+              </div>
+            )}
+
+            {/* BOTTOM-RIGHT FLOATING LOGS & TRACES DRAWER PILL (Next to StudioObservability's 2D/3D/Zoom Pill) */}
+            {bottomCollapsed && (
+              <button
+                type="button"
+                onClick={() => {
+                  setTab("logs");
+                  setBottomCollapsed(false);
+                }}
+                className={`pointer-events-auto absolute right-[258px] bottom-4 z-20 inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-semibold shadow-md backdrop-blur-md transition ${
+                  isLight
+                    ? "border-slate-300 bg-white/95 text-slate-800 hover:bg-slate-50"
+                    : "border-slate-700/80 bg-slate-950/90 text-slate-200 hover:bg-slate-900"
+                }`}
+              >
+                <Terminal className="size-3.5 text-primary" aria-hidden="true" />
+                <span>{t("Logs & Traces", "Logs & Traces")}</span>
+                {logsAndTracesCount > 0 && (
+                  <span className="rounded-full bg-primary/15 px-1.5 py-0.2 font-mono text-[11px] font-bold text-primary">
+                    {logsAndTracesCount}
+                  </span>
+                )}
+                {(terminalAlertSignal || isBooting) && (
+                  <span
+                    aria-hidden="true"
+                    className={`size-2 rounded-full ${
+                      terminalAlertSignal ? "bg-rose-500" : "animate-pulse bg-amber-500"
+                    }`}
+                  />
+                )}
+              </button>
+            )}
           </div>
 
-          {/* BOTTOM RESIZE SPLITTER */}
+          {/* SLIDE-UP BOTTOM TELEMETRY, LOGS & SNAPSHOTS DRAWER (Hidden by default so canvas gets 90% of viewport) */}
+          {!bottomCollapsed && (
+          <>
           <div
             role="separator"
             tabIndex={0}
             aria-orientation="horizontal"
             aria-label="Resize telemetry dock"
-            aria-valuenow={bottomCollapsed ? 36 : bottomHeight}
-            aria-valuemin={100}
+            aria-valuenow={bottomHeight}
+            aria-valuemin={120}
             aria-valuemax={540}
-            title="Drag up/down to resize Telemetry dock (double-click to collapse/expand)"
+            title="Drag up/down to resize Logs & Telemetry drawer"
             onPointerDown={(event) => startResize("bottom", event)}
-            onDoubleClick={() => setBottomCollapsed((value) => !value)}
+            onDoubleClick={() => setBottomCollapsed(true)}
             onKeyDown={(event) => {
               if (event.key === "ArrowUp") {
                 event.preventDefault();
-                setBottomCollapsed(false);
                 setBottomHeight((h) => Math.min(540, h + 20));
               } else if (event.key === "ArrowDown") {
                 event.preventDefault();
-                setBottomHeight((h) => Math.max(100, h - 20));
+                setBottomHeight((h) => Math.max(120, h - 20));
               }
             }}
-            className={`group relative flex h-1.5 shrink-0 cursor-row-resize items-center justify-center border-y border-slate-800 bg-slate-950 transition-colors hover:bg-sky-500/25 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sky-400 ${
-              resizingAxis === "bottom" ? "bg-sky-500/35" : ""
+            className={`group relative flex h-1.5 shrink-0 cursor-row-resize items-center justify-center border-y transition-colors hover:bg-primary/25 ${
+              isLight ? "border-slate-200 bg-slate-100" : "border-slate-800 bg-slate-950"
             }`}
           >
-            <div
-              className={`h-0.5 w-10 rounded-full transition-colors ${
-                resizingAxis === "bottom"
-                  ? "bg-sky-400"
-                  : "bg-slate-700 group-hover:bg-sky-400"
-              }`}
-            />
+            <div className="h-0.5 w-10 rounded-full bg-slate-400 group-hover:bg-primary" />
           </div>
 
-          {/* Bottom Telemetry, Logs & Snapshots Dock — aligned strictly inside the center column */}
           <div
-            style={{ height: bottomCollapsed ? 36 : bottomHeight }}
-            className={`flex min-w-0 shrink-0 flex-col overflow-hidden bg-[#0b101b] ${
+            style={{ height: bottomHeight }}
+            className={`flex min-w-0 shrink-0 flex-col overflow-hidden bg-[#0b101b] text-slate-100 ${
               resizingAxis === "bottom" ? "" : "transition-[height] duration-150"
             }`}
           >
-            <div className="flex h-9 shrink-0 items-center gap-1 border-b border-slate-800 px-2.5">
+            <div className="flex h-10 shrink-0 items-center gap-1 border-b border-slate-800 px-3">
               <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {(
                 [
@@ -1775,7 +2313,7 @@ export function LiveStudioWorkbench({
                     setTab(id);
                     setBottomCollapsed(false);
                   }}
-                  className={`shrink-0 whitespace-nowrap rounded px-2 py-1 text-[11px] font-semibold ${
+                  className={`shrink-0 whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-semibold ${
                     tab === id
                       ? "bg-slate-800 text-slate-100"
                       : "text-slate-400 hover:text-slate-200"
@@ -1871,6 +2409,15 @@ export function LiveStudioWorkbench({
                   ) : (
                     <ChevronUp aria-hidden="true" className="size-3.5" />
                   )}
+                </button>
+                <button
+                  type="button"
+                  aria-label={t("Close logs drawer", "Đóng ngăn Logs & Telemetry")}
+                  title={t("Close drawer", "Đóng")}
+                  onClick={() => setBottomCollapsed(true)}
+                  className="grid size-6 shrink-0 place-items-center rounded border border-slate-800 bg-slate-950/70 text-slate-400 transition-colors hover:border-slate-700 hover:text-slate-100"
+                >
+                  <X aria-hidden="true" className="size-3.5" />
                 </button>
               </div>
             </div>
@@ -3012,53 +3559,186 @@ export function LiveStudioWorkbench({
             </div>
             )}
           </div>
+          </>
+          )}
         </div>
 
-        {/* RIGHT RESIZE SPLITTER */}
-        <div
-          role="separator"
-          tabIndex={0}
-          aria-orientation="vertical"
-          aria-label="Resize inspector panel"
-          aria-valuenow={showRight ? rightWidth : 0}
-          aria-valuemin={220}
-          aria-valuemax={560}
-          title="Drag left/right to resize Inspector panel (double-click to collapse/expand)"
-          onPointerDown={(event) => startResize("right", event)}
-          onDoubleClick={() => setShowRight((value) => !value)}
-          onKeyDown={(event) => {
-            if (event.key === "ArrowLeft") {
-              event.preventDefault();
-              setShowRight(true);
-              setRightWidth((w) => Math.min(560, w + 16));
-            } else if (event.key === "ArrowRight") {
-              event.preventDefault();
-              setRightWidth((w) => Math.max(220, w - 16));
-            }
-          }}
-          className={`group relative flex w-1.5 shrink-0 cursor-col-resize items-center justify-center border-x border-slate-800 bg-slate-950 transition-colors hover:bg-sky-500/25 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sky-400 ${
-            resizingAxis === "right" ? "bg-sky-500/35" : ""
-          }`}
-        >
-          <div
-            className={`h-10 w-0.5 rounded-full transition-colors ${
-              resizingAxis === "right"
-                ? "bg-sky-400"
-                : "bg-slate-700 group-hover:bg-sky-400"
-            }`}
-          />
-        </div>
-
-        {/* Full-Height Right Setup & Inspector Panel (Context-sensitive to Left Block / Function) */}
+        {/* FLOATING RIGHT CONTEXTUAL CARD (GonnaCrash Style — Only 1 Card Open at a Time, Close Returns 100% Canvas) */}
         {showRight && (
           <aside
             style={{
-              width: rightWidth,
               scrollbarWidth: "thin",
-              scrollbarColor: "#334155 #0a0f18",
+              scrollbarColor: isLight ? "#cbd5e1 #ffffff" : "#334155 #0a0f18",
             }}
-            className="h-full shrink-0 overflow-x-hidden overflow-y-auto bg-[#0a0f18] p-2.5"
+            className={`pointer-events-auto absolute top-4 right-4 z-20 flex max-h-[calc(100%-6.25rem)] w-[336px] max-w-[calc(100%-2rem)] flex-col overflow-hidden rounded-2xl border shadow-2xl ${
+              isLight
+                ? "border-slate-300 bg-white/98 text-slate-900"
+                : "border-slate-700 bg-[#0d1422]/98 text-slate-100"
+            }`}
           >
+            {/* Floating Card Header with Close Button */}
+            <div
+              className={`flex shrink-0 items-center justify-between gap-2 border-b px-4 py-2.5 ${
+                isLight ? "border-slate-200 bg-slate-50/90" : "border-slate-800 bg-slate-950/70"
+              }`}
+            >
+              <div className="min-w-0">
+                <p className="truncate text-sm font-bold">
+                  {rightCardMode === "diagnostics" && (!authoring || setupPanel === "service")
+                    ? t("Impact & Diagnostics", "Chẩn đoán Change Impact")
+                    : authoring && setupPanel === "presets"
+                      ? t("Scenario Setup", "Thiết lập kịch bản")
+                      : authoring && setupPanel === "mission"
+                        ? t("Mission Setup", "Thiết lập mục tiêu")
+                        : selected || t("Service Controls", "Điều khiển Service")}
+                </p>
+              </div>
+              <button
+                type="button"
+                aria-label={t("Close panel", "Đóng thẻ")}
+                onClick={() => setShowRight(false)}
+                className={`rounded-lg p-1 transition ${
+                  isLight ? "text-slate-500 hover:bg-slate-200 hover:text-slate-900" : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                }`}
+              >
+                <X className="size-4" aria-hidden="true" />
+              </button>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-3">
+              {rightCardMode === "diagnostics" && (!authoring || setupPanel === "service") ? (
+                <section aria-label={t("Change Impact Diagnostics", "Chẩn đoán Change Impact")} className="space-y-3.5 text-xs">
+                  {/* Overall Status Stamp */}
+                  <div
+                    className={`rounded-xl border p-3 ${
+                      faultedServices.length > 0
+                        ? isLight ? "border-rose-200 bg-rose-50/80" : "border-rose-500/30 bg-rose-950/30"
+                        : isLight ? "border-emerald-200 bg-emerald-50/80" : "border-emerald-500/30 bg-emerald-950/30"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="inline-flex items-center gap-1.5 font-bold">
+                        {faultedServices.length > 0 ? (
+                          <AlertTriangle className="size-4 text-rose-600" aria-hidden="true" />
+                        ) : (
+                          <CheckCircle2 className="size-4 text-emerald-600" aria-hidden="true" />
+                        )}
+                        {faultedServices.length > 0
+                          ? t("Fault & Impact Detected", "Phát hiện sự cố & lan truyền")
+                          : t("All Services Healthy", "Hệ thống đang hoạt động ổn định")}
+                      </span>
+                      <span className="font-mono font-semibold">
+                        {healthyCount}/{services.length}
+                      </span>
+                    </div>
+                    <p className="mt-1.5 leading-relaxed opacity-85">
+                      {faultedServices.length > 0
+                        ? t(
+                            `Faulted container(s): ${faultedServices.join(", ")}. Observe upstream errors and P95 spikes, then capture a Snapshot.`,
+                            `Container gặp sự cố: ${faultedServices.join(", ")}. Quan sát lỗi dây chuyền ở dịch vụ gọi lên trên và chụp Snapshot minh chứng.`,
+                          )
+                        : t(
+                            "Click any microservice on the canvas to stop, pause, throttle CPU, or scale replicas and watch real Docker & OpenTelemetry impact.",
+                            "Bấm vào bất kỳ microservice nào trên sơ đồ để dừng, tạm ngưng, bóp CPU hoặc scale replica và theo dõi tác động thực tế qua Docker & OTel.",
+                          )}
+                    </p>
+                  </div>
+
+                  {/* Criteria Breakdown (GonnaCrash "Kết quả" style) */}
+                  <div className="space-y-1.5">
+                    <h4 className="font-bold uppercase tracking-wide text-muted-foreground">
+                      {t("Live Results", "Kết quả trực tiếp")}
+                    </h4>
+                    <div className={`divide-y rounded-xl border ${isLight ? "divide-slate-200 border-slate-200 bg-slate-50/60" : "divide-slate-800 border-slate-800 bg-slate-900/50"}`}>
+                      <div className="flex items-center justify-between px-3 py-2">
+                        <span>{t("Error Rate", "Tỉ lệ lỗi HTTP")}</span>
+                        <span className={`font-mono font-bold ${liveErrorPct && liveErrorPct > 0 ? "text-rose-600" : "text-emerald-600"}`}>
+                          {liveErrorPct != null ? `${liveErrorPct}%` : "—"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between px-3 py-2">
+                        <span>P95 Latency</span>
+                        <span className="font-mono font-bold">
+                          {liveP95Ms != null ? `${liveP95Ms} ms` : "—"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between px-3 py-2">
+                        <span>{t("Confirmed Actions", "Thao tác đã xác nhận")}</span>
+                        <span className="font-mono font-bold">
+                          {data.actions.filter((a) => a.status === "CONFIRMED").length}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between px-3 py-2">
+                        <span>{t("Sealed Snapshots", "Snapshot minh chứng")}</span>
+                        <span className="font-mono font-bold">{snapshotCount}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Recent Action Timeline (GonnaCrash "Diễn biến" style) */}
+                  <div className="space-y-1.5">
+                    <h4 className="font-bold uppercase tracking-wide text-muted-foreground">
+                      {t("Timeline", "Diễn biến")}
+                    </h4>
+                    {data.actions.length > 0 ? (
+                      <ul className="space-y-1.5">
+                        {data.actions.slice(-5).reverse().map((act) => (
+                          <li
+                            key={act.actionId}
+                            className={`flex items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 font-mono text-xs ${
+                              isLight ? "border-slate-200 bg-white" : "border-slate-800 bg-slate-900/60"
+                            }`}
+                          >
+                            <span className="truncate font-semibold">
+                              {act.action} {act.service}
+                            </span>
+                            <span
+                              className={
+                                act.status === "CONFIRMED"
+                                  ? "text-emerald-600"
+                                  : act.status === "FAILED"
+                                    ? "text-rose-600"
+                                    : "text-amber-600"
+                              }
+                            >
+                              {act.status}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-muted-foreground">
+                        {t("No Docker actions executed yet.", "Chưa có thao tác Docker nào được chạy.")}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex gap-2 pt-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="flex-1 text-xs"
+                      onClick={() => {
+                        setTab("logs");
+                        setBottomCollapsed(false);
+                      }}
+                    >
+                      <Terminal className="mr-1.5 size-3.5" aria-hidden="true" />
+                      {t("Open Logs & Traces", "Mở Logs & Traces")}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="flex-1 text-xs"
+                      onClick={() => setRightCardMode("service")}
+                    >
+                      {t("Control Service", "Điều khiển Service")}
+                    </Button>
+                  </div>
+                </section>
+              ) : (
+              <div className="dark rounded-xl bg-[#0a0f18] p-2.5 text-slate-100">
             {authoring && (
               <div
                 role="tablist"
@@ -3559,9 +4239,98 @@ export function LiveStudioWorkbench({
                   )}
               </div>
             )}
+              </div>
+              )}
+            </div>
           </aside>
         )}
       </div>
+
+      {/* GONNACRASH-STYLE SESSION VERIFIED CELEBRATION MODAL */}
+      {verifiedModalOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={t("Live Session Verified", "Phiên Studio Live đã xác minh")}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs"
+          onClick={() => setVerifiedModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-md space-y-5 rounded-3xl border border-slate-300 bg-white p-6 text-center text-slate-900 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-50 px-3 py-0.5 text-xs font-bold text-emerald-700">
+                <CheckCircle2 className="size-3.5" aria-hidden="true" />
+                {t("Verified", "Đã xác minh")}
+              </span>
+              <button
+                type="button"
+                onClick={() => setVerifiedModalOpen(false)}
+                className="rounded-lg p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                aria-label={t("Close", "Đóng")}
+              >
+                <X className="size-4" aria-hidden="true" />
+              </button>
+            </div>
+            <div className="space-y-1.5">
+              <div className="mx-auto grid size-14 place-items-center rounded-2xl bg-emerald-100 text-emerald-700">
+                <CheckCircle2 className="size-8" aria-hidden="true" />
+              </div>
+              <h3 className="text-xl font-bold tracking-tight">
+                {t("Runtime Evidence Sealed!", "Minh chứng Runtime đã niêm phong!")}
+              </h3>
+              <p className="text-sm text-slate-600">
+                {t(
+                  "Your live Docker session and OpenTelemetry receipt are ready to attach to your Lab submission.",
+                  "Phiên chạy Docker thật và biên nhận OpenTelemetry của bạn đã sẵn sàng để nộp bài Lab.",
+                )}
+              </p>
+            </div>
+            <div className="grid grid-cols-3 gap-2.5 text-left">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs text-slate-500">{t("Error Rate", "Tỉ lệ lỗi")}</p>
+                <p className="mt-0.5 font-mono text-sm font-bold text-slate-900">
+                  {liveErrorPct != null ? `${liveErrorPct}%` : "0%"}
+                </p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs text-slate-500">P95 Latency</p>
+                <p className="mt-0.5 font-mono text-sm font-bold text-slate-900">
+                  {liveP95Ms != null ? `${liveP95Ms} ms` : "—"}
+                </p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs text-slate-500">Snapshots</p>
+                <p className="mt-0.5 font-mono text-sm font-bold text-emerald-700">
+                  {snapshotCount}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2.5 pt-1">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1 rounded-xl border-slate-300"
+                onClick={() => setVerifiedModalOpen(false)}
+              >
+                {t("Stay on Canvas", "Ở lại sơ đồ")}
+              </Button>
+              {missionCard?.submitHref && (
+                <Button
+                  asChild
+                  className="flex-1 rounded-xl bg-[#0056D2] font-semibold text-white hover:bg-[#00419E]"
+                >
+                  <Link href={missionCard.submitHref}>
+                    {t("Submit Lab", "Nộp bài Lab")}
+                    <ArrowRight className="ml-1.5 size-4" aria-hidden="true" />
+                  </Link>
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
