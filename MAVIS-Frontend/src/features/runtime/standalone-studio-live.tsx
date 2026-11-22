@@ -9,7 +9,6 @@ import {
   AlertTriangle,
   ArrowLeft,
   ArrowRight,
-  CheckCircle2,
   Container,
   Lock,
   Play,
@@ -833,15 +832,15 @@ function StandaloneStudioContent() {
         title={
           isAuthorMode ? t("Back to Lab Setup", "Về thiết lập Lab") : t("Back to Lab", "Về bài Lab")
         }
-        className="inline-flex h-7 shrink-0 items-center gap-1 rounded-lg border border-border bg-card px-2 text-xs font-medium text-foreground transition-colors hover:bg-accent"
+        className="inline-flex h-7 shrink-0 items-center gap-1 rounded-lg border border-border bg-card px-2 text-[13px] font-medium text-foreground transition-colors hover:bg-accent"
       >
         <ArrowLeft className="size-3.5" aria-hidden="true" />
-        <span className="hidden sm:inline">{t("Back", "Quay lại")}</span>
+        <span className="hidden xl:inline">{t("Back", "Quay lại")}</span>
       </Link>
 
       <div className="flex min-w-0 items-center gap-1.5" title={labTitle || undefined}>
         <Activity className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
-        <span className="shrink-0 text-xs font-bold tracking-tight text-foreground">
+        <span className="shrink-0 text-[13px] font-bold tracking-tight text-foreground">
           MAVIS Live
         </span>
         {labTitle && (
@@ -849,7 +848,7 @@ function StandaloneStudioContent() {
             <span className="hidden text-muted-foreground/60 lg:inline" aria-hidden="true">
               /
             </span>
-            <span className="hidden max-w-[180px] truncate text-xs font-medium text-muted-foreground lg:inline xl:max-w-[260px]">
+            <span className="hidden max-w-[155px] truncate text-[13px] font-medium text-muted-foreground lg:inline xl:max-w-[215px]">
               {labTitle}
             </span>
           </>
@@ -860,12 +859,6 @@ function StandaloneStudioContent() {
         <Badge variant="success" className="hidden md:inline-flex">
           {t("Frozen", "Đã khóa")}
         </Badge>
-      )}
-      {!isAuthorMode && liveStudioVerified && (
-        <span className="hidden items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/12 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 md:inline-flex">
-          <CheckCircle2 className="size-3" aria-hidden="true" />
-          {t("Sealed", "Đã đóng gói")}
-        </span>
       )}
     </div>
   );
@@ -897,7 +890,7 @@ function StandaloneStudioContent() {
             asChild
             size="sm"
             variant="outline"
-            className="h-8 px-2.5 text-xs"
+            className="h-8 px-2.5 text-[13px]"
           >
             <Link
               href={buildStudioLiveHref({
@@ -909,13 +902,13 @@ function StandaloneStudioContent() {
               })}
             >
               <Play className="mr-1 size-3" aria-hidden="true" />
-              {t("Test as Student", "Thử vai Sinh viên")}
+              {t("Test as Student", "Thử vai SV")}
             </Link>
           </Button>
           <Button
             asChild
             size="sm"
-            className="h-8 bg-emerald-600 px-2.5 text-xs text-white hover:bg-emerald-500"
+            className="h-8 bg-emerald-600 px-2.5 text-[13px] text-white hover:bg-emerald-500"
           >
             <Link href={publishHref}>
               {t("Done · Step 6", "Xong · Bước 6")}
@@ -932,7 +925,8 @@ function StandaloneStudioContent() {
               asChild
               size="sm"
               variant="outline"
-              className="h-8 px-2.5 text-xs"
+              title={t("Switch to Author Mode", "Chuyển sang Chế độ Giảng viên")}
+              className="h-8 px-2.5 text-[13px]"
             >
               <Link
                 href={buildStudioLiveHref({
@@ -944,7 +938,7 @@ function StandaloneStudioContent() {
                 })}
               >
                 <SlidersHorizontal className="mr-1 size-3" aria-hidden="true" />
-                {t("Author Mode", "Chế độ Giảng viên")}
+                {t("Author", "Giảng viên")}
               </Link>
             </Button>
           )}
@@ -955,23 +949,11 @@ function StandaloneStudioContent() {
               variant="outline"
               disabled={bootstrapStudio.isPending}
               onClick={() => bootstrapStudio.mutate(activeSessionId)}
-              className="h-8 border-amber-500/50 bg-amber-50 px-2.5 text-xs text-amber-800 hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-200 dark:hover:bg-amber-500/20"
+              className="h-8 border-amber-500/50 bg-amber-50 px-2.5 text-[13px] text-amber-800 hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-200 dark:hover:bg-amber-500/20"
             >
               {bootstrapStudio.isPending
                 ? t("Activating Sandbox…", "Đang kích hoạt Sandbox…")
                 : t("Activate Simulated Sandbox Telemetry", "Kích hoạt Sandbox Telemetry")}
-            </Button>
-          )}
-          {liveStudioVerified && (
-            <Button
-              asChild
-              size="sm"
-              className="h-8 bg-emerald-600 px-2.5 text-xs text-white hover:bg-emerald-500"
-            >
-              <Link href={submitHref}>
-                {t("Submit Lab", "Nộp bài Lab")}
-                <ArrowRight className="ml-1 size-3" aria-hidden="true" />
-              </Link>
             </Button>
           )}
         </>

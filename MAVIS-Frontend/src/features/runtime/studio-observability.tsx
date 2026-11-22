@@ -1417,8 +1417,8 @@ export function StudioObservability({
         y = (row - (rows - 1) / 2) * spY;
       } else {
         const loc = colLocation.get(name) ?? { colIdx: 0, rowIdx: 0, rowCount: 1 };
-        const spX = totalCols <= 1 ? 0 : Math.min(260, 920 / (totalCols - 1));
-        const spY = loc.rowCount <= 1 ? 0 : Math.min(145, 460 / (loc.rowCount - 1));
+        const spX = totalCols <= 1 ? 0 : Math.min(285, 980 / (totalCols - 1));
+        const spY = loc.rowCount <= 1 ? 0 : Math.min(185, 480 / (loc.rowCount - 1));
         x = (loc.colIdx - (totalCols - 1) / 2) * spX;
         y = (loc.rowIdx - (loc.rowCount - 1) / 2) * spY;
       }
@@ -2200,13 +2200,28 @@ export function StudioObservability({
           )}
 
           {/* Static Dependency Edges + Severed Link / Circuit Breaker Banner when target is STOPPED */}
-          {staticEdges.map((edge) => {
+          {(() => {
+            const observedPairs = new Set(
+              (telemetry?.interactions ?? [])
+                .filter((edge) => !traceId || edge.traceId === traceId)
+                .map((edge) => `${edge.fromService}->${edge.toService}`),
+            );
+            return staticEdges.map((edge) => {
             const from = positions.get(edge.from);
             const to = positions.get(edge.to);
             if (!from || !to) return null;
             const targetStopped = resolveLiveReplicas(edge.to) === 0;
-            const midX = (from.x + to.x) / 2;
-            const midY = (from.y + to.y) / 2;
+            const hasObservedOverlay = observedPairs.has(`${edge.from}->${edge.to}`);
+            const isSkipColumn = view === "2D" && Math.abs(to.x - from.x) > 340;
+            const ctrlX = (from.x + to.x) / 2;
+            const ctrlY = isSkipColumn
+              ? Math.max(from.y, to.y) + 68
+              : (from.y + to.y) / 2;
+            const staticPathD = isSkipColumn
+              ? `M ${from.x} ${from.y} Q ${ctrlX} ${ctrlY} ${to.x} ${to.y}`
+              : `M ${from.x} ${from.y} L ${to.x} ${to.y}`;
+            const midX = isSkipColumn ? 0.25 * from.x + 0.5 * ctrlX + 0.25 * to.x : (from.x + to.x) / 2;
+            const midY = isSkipColumn ? 0.25 * from.y + 0.5 * ctrlY + 0.25 * to.y : (from.y + to.y) / 2;
             return (
               <g key={edge.id}
                 data-studio-edge-from={edge.from} data-studio-edge-to={edge.to}
@@ -2225,37 +2240,35 @@ export function StudioObservability({
                 className="cursor-pointer outline-none"
               >
                 <title>{configuredEdges ? "Configured route, awaiting observed traces" : "Static dependency"} · {edge.protocol}</title>
-                {configuredEdges && <line x1={from.x} y1={from.y} x2={to.x} y2={to.y}
+                {configuredEdges && <path d={staticPathD} fill="none"
                   stroke="transparent" strokeWidth="16" vectorEffect="non-scaling-stroke" pointerEvents="stroke" />}
-                <line
-                  x1={from.x}
-                  y1={from.y}
-                  x2={to.x}
-                  y2={to.y}
-                  stroke={targetStopped ? "var(--destructive)" : activeWire?.from === edge.from && activeWire.to === edge.to ? "#7dd3fc" : "#64748b"}
+                <path
+                  d={staticPathD}
+                  fill="none"
+                  stroke={targetStopped ? "var(--destructive)" : activeWire?.from === edge.from && activeWire.to === edge.to ? "#0056D2" : isLight ? "#94a3b8" : "#64748b"}
                   strokeDasharray={targetStopped ? "6 4" : "5 5"}
-                  strokeWidth={targetStopped ? "2.2" : "1.8"}
-                  opacity={targetStopped ? "0.95" : "0.72"}
+                  strokeWidth={targetStopped ? "2.1" : "1.6"}
+                  opacity={targetStopped ? "0.9" : "0.75"}
                 />
-                {renderWireArrow(from, to, getNodeLabel(nodeNames?.[edge.to] ?? edge.to, view), targetStopped ? "var(--destructive)" : "#94a3b8", false, view === "3D" ? sculptureScale(resolveLiveReplicas(edge.to)) : 1)}
-                {targetStopped && (
+                {renderWireArrow(isSkipColumn ? { x: ctrlX, y: ctrlY } : from, to, getNodeLabel(nodeNames?.[edge.to] ?? edge.to, view), targetStopped ? "var(--destructive)" : "#94a3b8", false, view === "3D" ? sculptureScale(resolveLiveReplicas(edge.to)) : 1)}
+                {targetStopped && !hasObservedOverlay && (
                   <g>
                     <rect
-                      x={midX - 54}
+                      x={midX - 42}
                       y={midY - 10}
-                      width="108"
-                      height="18"
-                      rx="4"
-                      fill="var(--background)"
-                      stroke="var(--destructive)"
+                      width="84"
+                      height="19"
+                      rx="9.5"
+                      fill={isLight ? "#fff1f2" : "#2a0913"}
+                      stroke="#e11d48"
                       strokeWidth="1.2"
                     />
                     <text
                       x={midX}
-                      y={midY + 2}
+                      y={midY + 3}
                       textAnchor="middle"
-                      fill="var(--destructive)"
-                      fontSize="9"
+                      fill={isLight ? "#be123c" : "#fda4af"}
+                      fontSize="9.5"
                       fontWeight="700"
                     >
                       Unavailable
@@ -2264,7 +2277,8 @@ export function StudioObservability({
                 )}
               </g>
             );
-          })}
+          });
+          })()}
 
           {/* Observed Live OTel Trace Edges + OTel servicegraph RED overlay */}
           {(() => {
@@ -2869,9 +2883,9 @@ export function StudioObservability({
                           rx="2"
                           fill={barColor}
                         />
-                        {/* Tilted GonnaCrash CRASHED / PAUSED / THROTTLED / IMPACTED Stamp */}
+                        {/* Tilted GonnaCrash CRASHED / PAUSED / THROTTLED / IMPACTED Stamp (top-right, clear of incoming left edges) */}
                         {stampLabel && (
-                          <g transform={`translate(${-halfW + 6}, ${-cardH / 2 - 6}) rotate(-7)`}>
+                          <g transform={`translate(${halfW - (stampLabel.length * 7.2 + 12) + 4}, ${-cardH / 2 - 5}) rotate(6)`}>
                             <rect
                               x="-2"
                               y="-11"

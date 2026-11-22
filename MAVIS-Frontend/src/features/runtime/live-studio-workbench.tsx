@@ -1359,9 +1359,9 @@ export function LiveStudioWorkbench({
           : `flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden ${isLight ? "bg-[#FBFBF8] text-slate-900" : "dark bg-[#070b12] text-slate-100"}`
       }
     >
-      {/* GonnaCrash-Inspired Slim Top Bar */}
+      {/* GonnaCrash-Inspired Single-Row Slim Top Bar */}
       <div
-        className={`relative z-30 flex min-h-12 shrink-0 flex-wrap items-center gap-2 border-b px-3.5 py-1.5 ${
+        className={`relative z-30 flex h-12 shrink-0 flex-nowrap items-center gap-2 border-b px-3 ${
           isLight
             ? "border-slate-200 bg-white/95 text-slate-900 shadow-2xs"
             : "border-slate-800 bg-[#0b101b] text-slate-100"
@@ -1383,7 +1383,7 @@ export function LiveStudioWorkbench({
           data.executionStatus === "COMPLETED" ||
           lastSessionFailed) && (
           <span
-            className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono text-xs font-semibold ${
+            className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[12px] font-semibold ${
               isLight
                 ? data.executionStatus === "RUNNING"
                   ? "border-emerald-300 bg-emerald-50 text-emerald-800"
@@ -1414,14 +1414,14 @@ export function LiveStudioWorkbench({
         )}
 
         {/* Center GonnaCrash Live Telemetry Pill (click for breakdown & session switcher) */}
-        <div className="relative mx-auto hidden md:block">
+        <div className="relative mx-auto hidden shrink-0 lg:block">
           <button
             type="button"
             onClick={() => {
               setTelemetryPopoverOpen((open) => !open);
               setSettingsPopoverOpen(false);
             }}
-            className={`inline-flex items-center gap-2.5 rounded-full border px-3.5 py-1 text-xs font-medium shadow-2xs transition ${
+            className={`inline-flex items-center gap-2 whitespace-nowrap rounded-full border px-3 py-1 text-[13px] font-medium shadow-2xs transition ${
               isLight
                 ? "border-slate-300 bg-[#F8FAFC] text-slate-800 hover:border-slate-400 hover:bg-white"
                 : "border-slate-700 bg-slate-900/90 text-slate-200 hover:border-slate-600"
@@ -2083,9 +2083,9 @@ export function LiveStudioWorkbench({
                   </div>
                 </div>
                 {!missionCollapsed && (
-                  <div className="space-y-2.5 border-t border-amber-500/25 px-3.5 pt-2.5 pb-3 text-xs leading-relaxed">
+                  <div className="space-y-2 border-t border-amber-500/25 px-3.5 pt-2.5 pb-3 text-[13px] leading-snug">
                     <p className="font-medium">{effectiveMissionInstructions}</p>
-                    <ul className="space-y-1.5 pt-0.5 text-xs">
+                    <ul className="space-y-1.5 pt-0.5 text-[12.5px]">
                       <li className="flex items-center justify-between gap-2">
                         <span>{t("Run a live Docker action", "Thực hiện 1 thao tác Docker")}</span>
                         <span className={`font-bold ${hasConfirmedAction ? "text-emerald-700 dark:text-emerald-300" : "opacity-60"}`}>
@@ -2179,7 +2179,7 @@ export function LiveStudioWorkbench({
                         ? t("LIVE", "ĐANG CHẠY")
                         : t("STANDBY", "SẴN SÀNG")}
                 </span>
-                <span className="max-w-60 truncate text-xs font-medium text-muted-foreground">
+                <span className="max-w-[360px] truncate text-[13px] font-medium text-muted-foreground">
                   {faultedServices.length > 0
                     ? t(
                         `${faultedServices.join(", ")} faulted — click a node or view impact`,
@@ -2195,7 +2195,7 @@ export function LiveStudioWorkbench({
                     setRightCardMode("diagnostics");
                     setShowRight(true);
                   }}
-                  className={`rounded-lg border px-2.5 py-1 text-xs font-semibold transition ${
+                  className={`rounded-lg border px-2.5 py-1 text-[13px] font-semibold transition ${
                     isLight
                       ? "border-slate-300 bg-slate-50 text-slate-800 hover:bg-slate-100"
                       : "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"
@@ -2204,7 +2204,7 @@ export function LiveStudioWorkbench({
                   {t("Why / Impact", "Xem tác động")}
                 </button>
                 {missionCard?.verified && missionCard.submitHref && (
-                  <Button asChild size="sm" className="h-7 rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white hover:bg-emerald-700">
+                  <Button asChild size="sm" className="h-7 rounded-lg bg-emerald-600 px-3 text-[13px] font-semibold text-white hover:bg-emerald-700">
                     <Link href={missionCard.submitHref}>
                       {t("Submit Lab", "Nộp bài")}
                       <ArrowRight className="ml-1 size-3.5" aria-hidden="true" />
@@ -3737,6 +3737,238 @@ export function LiveStudioWorkbench({
                     </Button>
                   </div>
                 </section>
+              ) : isLight && !authoring ? (
+                (() => {
+                  const selSvc = canvasSelected || selected || services[0] || "";
+                  const selRunning = selSvc ? runningFor(data, selSvc) : undefined;
+                  const selObs = selSvc ? data.telemetry?.services.find((s) => s.service === selSvc) : undefined;
+                  const selStats = summarizeServiceStats(selObs?.stats);
+                  const selBlock = blocks.find((b) => b.service === selSvc);
+                  const selCanScale = Boolean(selBlock?.canScale ?? (selSvc && !data.topology));
+                  const selStopped = selRunning === 0;
+                  const selPaused =
+                    !selStopped &&
+                    [...data.actions]
+                      .reverse()
+                      .find((a) => a.service === selSvc && a.status === "CONFIRMED")?.action === "PAUSE";
+                  const canLiveAct = !isPreviewMode && data.executionStatus === "RUNNING" && Boolean(selSvc);
+                  return (
+                    <section aria-label={t("Live Service Controls", "Điều khiển Service")} className="space-y-3.5 text-[13px] text-slate-900">
+                      {/* Service Picker & Status */}
+                      <div className="rounded-xl border border-slate-200 bg-slate-50/90 p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="truncate font-mono text-sm font-bold text-slate-900">
+                            {selSvc || t("No service selected", "Chưa chọn service")}
+                          </span>
+                          <span
+                            className={`shrink-0 rounded-full border px-2 py-0.5 font-mono text-[11px] font-bold ${
+                              selStopped
+                                ? "border-rose-300 bg-rose-50 text-rose-700"
+                                : selPaused
+                                  ? "border-amber-300 bg-amber-50 text-amber-800"
+                                  : selRunning && selRunning > 0
+                                    ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                                    : "border-slate-300 bg-white text-slate-600"
+                            }`}
+                          >
+                            {selStopped
+                              ? "CRASHED · 0x"
+                              : selPaused
+                                ? `PAUSED · ${selRunning ?? 1}x`
+                                : selRunning != null
+                                  ? `RUNNING · ${selRunning}x`
+                                  : "STANDBY"}
+                          </span>
+                        </div>
+                        <dl className="mavis-tabular mt-2.5 grid grid-cols-3 gap-1.5 text-center">
+                          <div className="rounded-lg border border-slate-200 bg-white px-2 py-1.5">
+                            <dt className="text-[11px] text-slate-500">Replicas</dt>
+                            <dd className="font-mono text-xs font-bold text-slate-900">
+                              {selRunning ?? "—"}
+                            </dd>
+                          </div>
+                          <div className="rounded-lg border border-slate-200 bg-white px-2 py-1.5">
+                            <dt className="text-[11px] text-slate-500">CPU</dt>
+                            <dd className="font-mono text-xs font-bold text-slate-900">
+                              {selStats.cpu}
+                            </dd>
+                          </div>
+                          <div className="rounded-lg border border-slate-200 bg-white px-2 py-1.5">
+                            <dt className="text-[11px] text-slate-500">RAM</dt>
+                            <dd className="font-mono text-xs font-bold text-slate-900">
+                              {selStats.memory}
+                            </dd>
+                          </div>
+                        </dl>
+                      </div>
+
+                      {/* Real Docker Lifecycle & Fault Injection Actions */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                            {t("Live Docker Actions", "Thao tác Docker thật")}
+                          </p>
+                          {!canLiveAct && (
+                            <span className="text-[11px] font-medium text-amber-700">
+                              {t("Click Run to activate", "Bấm Run để bật")}
+                            </span>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={!canLiveAct || busy || selStopped}
+                            onClick={() => void dispatchCommand("STOP", selSvc)}
+                            className="h-9 whitespace-nowrap border-rose-300 bg-rose-50 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400"
+                          >
+                            <Square className="mr-1.5 size-3.5 fill-current" aria-hidden="true" />
+                            Stop
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={!canLiveAct || busy || !selStopped}
+                            onClick={() => void dispatchCommand("START", selSvc)}
+                            className="h-9 whitespace-nowrap border-emerald-300 bg-emerald-50 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400"
+                          >
+                            <Play className="mr-1.5 size-3.5 fill-current" aria-hidden="true" />
+                            Start
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={!canLiveAct || busy || selStopped || selPaused}
+                            onClick={() => void studio.send("PAUSE", selSvc)}
+                            className="h-9 whitespace-nowrap border-amber-300 bg-amber-50 text-xs font-semibold text-amber-800 hover:bg-amber-100 disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400"
+                          >
+                            Pause
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={!canLiveAct || busy || !selPaused}
+                            onClick={() => void studio.send("RESUME", selSvc)}
+                            className="h-9 whitespace-nowrap border-sky-300 bg-sky-50 text-xs font-semibold text-sky-700 hover:bg-sky-100 disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400"
+                          >
+                            Resume
+                          </Button>
+                        </div>
+
+                        {/* Scale & CPU Throttle */}
+                        <div className="grid grid-cols-2 gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={!canLiveAct || busy || !selCanScale || selStopped || (selRunning ?? 1) >= 8}
+                            onClick={() => void dispatchCommand("SCALE", selSvc, Math.min(8, (selRunning ?? 1) + 1))}
+                            className="h-8 whitespace-nowrap border-slate-300 bg-white text-xs font-semibold text-slate-800 hover:bg-slate-100 disabled:bg-slate-50 disabled:text-slate-400"
+                          >
+                            <Plus className="mr-1 size-3.5" aria-hidden="true" />
+                            Scale +1
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={!canLiveAct || busy || selStopped}
+                            onClick={() => void studio.send("THROTTLE_CPU", selSvc, undefined, 20)}
+                            className="h-8 whitespace-nowrap border-slate-300 bg-white text-xs font-semibold text-slate-800 hover:bg-slate-100 disabled:bg-slate-50 disabled:text-slate-400"
+                          >
+                            CPU 20%
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Quick Service Switcher Chips */}
+                      {services.length > 1 && (
+                        <div className="space-y-1.5 border-t border-slate-200 pt-2.5">
+                          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                            {t("All Services", "Tất cả Service")} ({services.length})
+                          </p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {services.map((svc) => {
+                              const rep = runningFor(data, svc);
+                              const active = svc === selSvc;
+                              return (
+                                <button
+                                  key={svc}
+                                  type="button"
+                                  onClick={() => studio.setService(svc)}
+                                  className={`inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 font-mono text-[11.5px] font-semibold transition ${
+                                    active
+                                      ? "border-primary bg-primary/10 text-primary"
+                                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                                  }`}
+                                >
+                                  <span
+                                    className={`size-1.5 rounded-full ${
+                                      rep === 0 ? "bg-rose-500" : rep && rep > 0 ? "bg-emerald-500" : "bg-slate-400"
+                                    }`}
+                                    aria-hidden="true"
+                                  />
+                                  {svc}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Change Impact Exercise Panel (Prediction Lock & F1 Check) */}
+                      {!isPreviewMode &&
+                        studio.services.length > 0 &&
+                        (data.executionStatus === "RUNNING" || Boolean(data.exerciseEvaluation)) && (
+                          <div className="dark rounded-xl border border-slate-200 bg-slate-900 p-2.5 text-slate-100">
+                            <StudioExercisePanel
+                              data={data}
+                              services={studio.services}
+                              busy={busy}
+                              submittingPrediction={studio.prediction.isPending}
+                              onLockPrediction={(svcs, rationale) =>
+                                studio.submitPrediction(svcs, rationale)
+                              }
+                              onRunPrescribedChange={(kind, svc, rep, cpu, rps) =>
+                                studio.send(kind, svc, rep, cpu, rps)
+                              }
+                            />
+                          </div>
+                        )}
+
+                      {/* Bottom Quick Shortcuts */}
+                      <div className="flex gap-2 border-t border-slate-200 pt-2.5">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="flex-1 text-xs"
+                          onClick={() => setRightCardMode("diagnostics")}
+                        >
+                          <Lightbulb className="mr-1.5 size-3.5" aria-hidden="true" />
+                          {t("Why / Impact", "Xem tác động")}
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="flex-1 text-xs"
+                          onClick={() => {
+                            setTab("logs");
+                            setBottomCollapsed(false);
+                          }}
+                        >
+                          <Terminal className="mr-1.5 size-3.5" aria-hidden="true" />
+                          Logs
+                        </Button>
+                      </div>
+                    </section>
+                  );
+                })()
               ) : (
               <div className="dark rounded-xl bg-[#0a0f18] p-2.5 text-slate-100">
             {authoring && (
