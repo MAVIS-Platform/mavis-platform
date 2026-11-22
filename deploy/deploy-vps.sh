@@ -15,7 +15,7 @@ if [ -f .release.env ]; then
   old_prefix=$(sed -n 's/^IMAGE_PREFIX=//p' .release.env)
   old_tag=$(sed -n 's/^IMAGE_TAG=//p' .release.env)
 fi
-docker container prune -f >/dev/null 2>&1 || true
+docker container prune -f --filter "label!=com.docker.compose.project" >/dev/null 2>&1 || true
 docker builder prune -af >/dev/null 2>&1 || true
 docker image prune -f >/dev/null 2>&1 || true
 for img in $(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep "^${prefix}-" | grep -vE ":($tag|$old_tag)$" || true); do
@@ -234,6 +234,11 @@ if [ -e "$nullable_submission_ref_migration" ]; then
 fi
 # Ensure persistent data volume upload and worker directories are writable by app user 1654:1654
 docker run --rm --mount source=mavis_data,target=/data alpine:3.20 sh -c "mkdir -p /data/uploads /data/worker-artifacts && chown -R 1654:1654 /data/uploads /data/worker-artifacts" >/dev/null 2>&1 || true
+drain_deadline=$((SECONDS + 360))
+while docker ps --format '{{.Label "com.docker.compose.project"}}' 2>/dev/null | grep -Eq '^mavisrun-[0-9a-f]{32}$'; do
+  if [ "$SECONDS" -ge "$drain_deadline" ]; then echo "Studio drain timeout; deploying anyway."; break; fi
+  echo "Waiting for active Studio sessions to finish..."; sleep 10
+done
 if ! compose "$prefix" "$tag" "$incoming/compose.production.yml" up -d --no-build --remove-orphans || ! healthy; then
   echo "Deployment failed; restoring previous images and Compose."
   compose "$old_prefix" "$old_tag" "$previous/compose.production.yml" up -d --no-build --remove-orphans

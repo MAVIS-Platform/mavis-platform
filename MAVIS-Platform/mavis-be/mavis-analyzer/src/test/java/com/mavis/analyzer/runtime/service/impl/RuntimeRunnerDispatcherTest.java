@@ -188,6 +188,39 @@ class RuntimeRunnerDispatcherTest {
     }
 
     @Test
+    void filterProjectEnvDropsDangerousKeysAndPreservesValidApplicationKeys() {
+        Map<String, String> env = new LinkedHashMap<>();
+        env.put("LD_PRELOAD", "/tmp/evil.so");
+        env.put("DOTNET_STARTUP_HOOKS", "/tmp/hook.dll");
+        env.put("COREHOST_TRACE", "1");
+        env.put("ASPNETCORE_HOSTINGSTARTUPASSEMBLIES", "Evil");
+        env.put("DOCKER_HOST", "tcp://1.2.3.4:2375");
+        env.put("MAVIS_RUNNER_SERVICE_KEY", "stolen");
+        env.put("JAVA_TOOL_OPTIONS", "-javaagent:/tmp/a.jar");
+        env.put("JDK_JAVA_OPTIONS", "-Xmx1g");
+        env.put("_JAVA_OPTIONS", "-Xmx1g");
+        env.put("SSL_CERT_FILE", "/tmp/ca.pem");
+        env.put("NODE_OPTIONS", "--require /tmp/a.js");
+        env.put("PYTHONPATH", "/tmp/py");
+        env.put("PATH", "/tmp/bin");
+        env.put("HOME", "/tmp");
+        env.put("HTTP_PROXY", "http://evil:8080");
+        env.put("BASH_ENV", "/tmp/pwn.sh");
+        env.put("BAD-KEY", "nope");
+        env.put("DB_PASSWORD", "s3cr3t");
+        env.put("API_KEY", "k-123");
+        env.put("ConnectionStrings__CatalogDb", "Host=catalog-db;Database=catalog");
+
+        Map<String, String> filtered = RuntimeRunnerDispatcher.filterProjectEnv(env);
+        assertThat(filtered).containsOnlyKeys("DB_PASSWORD", "API_KEY", "ConnectionStrings__CatalogDb");
+        assertThat(filtered.get("DB_PASSWORD")).isEqualTo("s3cr3t");
+        assertThat(filtered.get("API_KEY")).isEqualTo("k-123");
+        assertThat(filtered.get("ConnectionStrings__CatalogDb")).isEqualTo("Host=catalog-db;Database=catalog");
+        assertThat(RuntimeRunnerDispatcher.buildSecretAllowlist(filtered))
+                .containsExactly("DB_PASSWORD", "API_KEY", "ConnectionStrings__CatalogDb");
+    }
+
+    @Test
     void tryAutoImportOutboxReceiptSyncsExistingReceiptUnderInternalBypass() throws Exception {
         var sessions = mock(RuntimeSessionRepository.class);
         var receipt = mock(RunnerReceiptIngestService.class);

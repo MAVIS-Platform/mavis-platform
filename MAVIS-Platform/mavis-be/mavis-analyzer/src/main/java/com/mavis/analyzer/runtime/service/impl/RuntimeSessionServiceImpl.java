@@ -1758,6 +1758,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy dự án với ID: " + projectId));
 
         accessPolicyService.requireProjectWriteAccess(project);
+        forbidStudentWorkingRuntimeConfig(project);
 
         RuntimeProjectConfigDTO current = getProjectRuntimeConfig(projectId);
         int nextRevision = request != null && request.getExpectedRevision() != null
@@ -1827,9 +1828,19 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         return updated;
     }
 
+    private static void forbidStudentWorkingRuntimeConfig(Project project) {
+        if (project != null && "STUDENT_WORKING".equals(project.getProjectType())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "STUDENT_RUNTIME_CONFIG_FORBIDDEN",
+                    "Runtime configuration of a student sandbox is managed by the lab.");
+        }
+    }
+
     @Override
     public void storeProjectSecrets(UUID projectId, Map<String, String> secretValues) {
         if (projectId == null || secretValues == null || secretValues.isEmpty()) return;
+        if (projectRepository != null) {
+            projectRepository.findById(projectId).ifPresent(RuntimeSessionServiceImpl::forbidStudentWorkingRuntimeConfig);
+        }
         Map<String, String> store = projectSecrets.computeIfAbsent(projectId, k -> new ConcurrentHashMap<>());
         for (Map.Entry<String, String> entry : secretValues.entrySet()) {
             String key = entry.getKey() != null ? entry.getKey().trim() : "";

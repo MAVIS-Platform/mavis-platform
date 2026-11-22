@@ -152,7 +152,7 @@ jobs:
     needs: images
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     permissions:
       contents: read
       packages: read
@@ -216,7 +216,7 @@ jobs:
             echo "SCP failed after 3 attempts" >&2
             return 1
           }
-          retry_ssh "docker container prune -f >/dev/null 2>&1 || true; docker builder prune -af >/dev/null 2>&1 || true; docker image prune -f >/dev/null 2>&1 || true; mkdir -p '$incoming'" "prepare remote incoming directory"
+          retry_ssh "docker container prune -f --filter 'label!=com.docker.compose.project' >/dev/null 2>&1 || true; docker builder prune -af >/dev/null 2>&1 || true; docker image prune -f >/dev/null 2>&1 || true; mkdir -p '$incoming'" "prepare remote incoming directory"
           retry_scp deploy/compose.production.yml deploy/compose.runner-worker.yml deploy/install-gvisor.sh deploy/check-studio-readiness.sh deploy/deploy-vps.sh deploy/apply-course-schema.py \
             MAVIS-Platform/mavis-be/mavis-bootstrap/src/main/resources/db/migration/V26__Course_Lab_Access.sql \
             MAVIS-Platform/mavis-be/mavis-bootstrap/src/main/resources/db/migration/V27__Course_Quizzes.sql \

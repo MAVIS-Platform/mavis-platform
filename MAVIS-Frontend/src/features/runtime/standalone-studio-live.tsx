@@ -54,6 +54,37 @@ export type StudioExerciseView = {
     maxP95Ms: number | null;
     requiredTraceEdge: { from: string; to: string } | null;
     minReplicas: Array<{ service: string; count: number }>;
+    exerciseType?:
+      | "CHANGE_IMPACT"
+      | "CASCADING_FAILURE"
+      | "CIRCUIT_BREAKER"
+      | "SCALE_UNDER_LOAD"
+      | "CONFIG_REGRESSION"
+      | "CUSTOM"
+      | null;
+    predictionRequired?: boolean | null;
+    minImpactF1?: number | null;
+    targetChangeAction?: {
+      action: "STOP" | "START" | "SCALE" | "PAUSE" | "RESUME" | "THROTTLE_CPU" | "SET_LOAD";
+      service: string;
+      replicas?: number | null;
+      cpuPercent?: number | null;
+      targetRps?: number | null;
+    } | null;
+    rules?: Array<{
+      metric:
+        | "ERROR_RATE"
+        | "EDGE_ERROR_RATE"
+        | "P95_MS"
+        | "P95_DELTA_PCT"
+        | "REPLICAS"
+        | "TRACE_EDGE"
+        | "IMPACT_F1";
+      target: string;
+      operator: "LT" | "LTE" | "GT" | "GTE" | "EQ";
+      threshold: number;
+      label?: string | null;
+    }> | null;
   };
   instructions: string;
   revision: number;
@@ -483,11 +514,13 @@ function StandaloneStudioContent() {
           {
             method: "PUT",
             body: JSON.stringify({
+              ...cur,
               runtimeProjectId,
               runtimeModelId,
               runtimeSnapshotId,
               baselineRequests: nextBaseline,
               initialState: {
+                ...cur?.initialState,
                 stoppedServices: input.stoppedServices ?? cur?.initialState?.stoppedServices ?? [],
                 stoppedControllers:
                   input.stoppedControllers ?? cur?.initialState?.stoppedControllers ?? [],
@@ -496,6 +529,7 @@ function StandaloneStudioContent() {
                 ? cur.allowedActions
                 : ["START", "STOP", "SCALE", "CONNECT", "DISCONNECT"],
               successCriteria: {
+                ...cur?.successCriteria,
                 maxErrorRatePercent: nextMaxErr,
                 maxP95Ms: cur?.successCriteria?.maxP95Ms ?? null,
                 requiredTraceEdge: cur?.successCriteria?.requiredTraceEdge ?? null,

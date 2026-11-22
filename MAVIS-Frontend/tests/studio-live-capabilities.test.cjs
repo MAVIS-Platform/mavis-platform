@@ -502,3 +502,19 @@ test("LiveStudioWorkbench floating Inspector and Mission cards support header dr
   assert.ok(src.includes('data-drag-handle="inspector"'));
   assert.ok(src.includes('data-drag-handle="mission"'));
 });
+
+test("Author Mode visual save preserves Change Impact successCriteria fields", () => {
+  const src = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/standalone-studio-live.tsx"),
+    "utf8",
+  );
+  assert.match(src, /exerciseType\?:/);
+  assert.match(src, /predictionRequired\?:/);
+  assert.match(src, /minImpactF1\?:/);
+  assert.match(src, /targetChangeAction\?:/);
+  assert.match(src, /rules\?:/);
+  assert.match(
+    src,
+    /body:\s*JSON\.stringify\(\{\s*\.\.\.cur,[\s\S]*successCriteria:\s*\{\s*\.\.\.cur\?\.successCriteria,/,
+  );
+});

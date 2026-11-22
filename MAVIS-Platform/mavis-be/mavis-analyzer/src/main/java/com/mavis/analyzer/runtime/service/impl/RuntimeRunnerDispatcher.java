@@ -39,8 +39,15 @@ public class RuntimeRunnerDispatcher {
     private static final String DEFAULT_RUNNER_PROJECT_PATH = "../MAVIS.Worker/src/MAVIS.Runner/MAVIS.Runner.csproj";
     private static final String DEFAULT_COLLECTOR_CONFIG_PATH = "samples/runtime-poc/collector.yaml";
     private static final Pattern SECRET_KEY_PATTERN = Pattern.compile("^[A-Za-z0-9_]{1,128}$");
+    private static final Pattern PROJECT_ENV_KEY_PATTERN = Pattern.compile("^[A-Za-z_][A-Za-z0-9_]{0,63}$");
     private static final List<String> RESERVED_ENV_PREFIXES = List.of(
             "OTEL_", "JAVA_", "JDK_", "DOTNET_", "CORECLR_", "LD_", "MAVIS_");
+    private static final List<String> BLOCKED_PROJECT_ENV_PREFIXES = List.of(
+            "LD_", "DOTNET_", "COREHOST_", "CORECLR_", "ASPNETCORE_", "DOCKER_", "MAVIS_",
+            "JAVA_", "JDK_", "_JAVA", "SSL_", "NODE_", "PYTHON");
+    private static final Set<String> BLOCKED_PROJECT_ENV_EXACT = Set.of(
+            "PATH", "HOME", "TMPDIR", "SHELL", "ENV", "BASH_ENV",
+            "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY");
 
     private final RuntimeSessionRepository runtimeSessionRepository;
     private final ModelElementRepository modelElementRepository;
@@ -754,23 +761,49 @@ public class RuntimeRunnerDispatcher {
                 || "MAVIS_RUNTIME_DIAGNOSTIC=OCI_RUNTIME_UNAVAILABLE".equals(line));
     }
 
+    static Map<String, String> filterProjectEnv(Map<String, String> env) {
+        if (env == null || env.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<String, String> filtered = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : env.entrySet()) {
+            String key = entry.getKey();
+            String value = entry.getValue();
+            if (key == null || value == null || !PROJECT_ENV_KEY_PATTERN.matcher(key).matches()) {
+                log.warn("Dropped disallowed project environment key for runner: {}", key);
+                continue;
+            }
+            String upper = key.toUpperCase(Locale.ROOT);
+            boolean blocked = BLOCKED_PROJECT_ENV_EXACT.contains(upper)
+                    || BLOCKED_PROJECT_ENV_PREFIXES.stream().anyMatch(upper::startsWith);
+            if (blocked) {
+                log.warn("Dropped disallowed project environment key for runner: {}", key);
+                continue;
+            }
+            filtered.put(key, value);
+        }
+        return filtered;
+    }
+
     private int runRunnerProcess(RuntimeSession session, List<String> command, Path stateDir) throws Exception {
         ProcessBuilder pb = new ProcessBuilder(command);
+        List<String> allowlist = Collections.emptyList();
+        if (session.getProject() != null && session.getProject().getId() != null) {
+            Map<String, String> projectEnv = runtimeSessionService.getProjectExecutionEnvironment(session.getProject().getId());
+            Map<String, String> filteredEnv = filterProjectEnv(projectEnv);
+            if (!filteredEnv.isEmpty()) {
+                pb.environment().putAll(filteredEnv);
+                allowlist = buildSecretAllowlist(filteredEnv);
+            }
+        }
         pb.environment().put("MAVIS_RUNNER_ALLOW_LOCAL_POC", "1");
         pb.environment().put("MAVIS_RUNNER_SERVICE_KEY", runnerServiceKey);
         if (ociRuntime != null && !ociRuntime.isBlank()) {
             pb.environment().put("MAVIS_RUNNER_OCI_RUNTIME", ociRuntime.trim());
         }
         pb.environment().put("MAVIS_RUNNER_GVISOR_WRITABLE_ROOTFS", gvisorWritableRootfs ? "1" : "0");
-        if (session.getProject() != null && session.getProject().getId() != null) {
-            Map<String, String> projectEnv = runtimeSessionService.getProjectExecutionEnvironment(session.getProject().getId());
-            if (projectEnv != null && !projectEnv.isEmpty()) {
-                pb.environment().putAll(projectEnv);
-                List<String> allowlist = buildSecretAllowlist(projectEnv);
-                if (!allowlist.isEmpty()) {
-                    pb.environment().put("MAVIS_RUNNER_SECRET_ALLOWLIST", String.join(",", allowlist));
-                }
-            }
+        if (!allowlist.isEmpty()) {
+            pb.environment().put("MAVIS_RUNNER_SECRET_ALLOWLIST", String.join(",", allowlist));
         }
         pb.redirectErrorStream(true);
         pb.redirectOutput(stateDir.resolve("runner-" + session.getId() + ".log").toFile());

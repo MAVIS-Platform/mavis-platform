@@ -278,7 +278,10 @@ class CourseLabStudentServiceTest {
         String compose = "services:\n  payment-service:\n    image: sha256:" + "d".repeat(64);
         var referenceConfiguration = new RuntimeConfiguration();
         referenceConfiguration.setSourceSnapshotId(refSnapshot.getId());
-        referenceConfiguration.setProfile(json.createObjectNode().put("sandboxCompose", compose));
+        ObjectNode refProfile = json.createObjectNode().put("sandboxCompose", compose);
+        refProfile.putObject("allowedEnvKeys").putArray("payment-service").add("FEATURE_FLAG");
+        refProfile.putObject("alternateImages").putArray("payment-service").add("payment@sha256:" + "e".repeat(64));
+        referenceConfiguration.setProfile(refProfile);
         when(runtimeConfigurations.findById(refProject.getId())).thenReturn(Optional.of(referenceConfiguration));
 
         ObjectNode envBindings = json.createObjectNode();
@@ -301,6 +304,10 @@ class CourseLabStudentServiceTest {
         assertThat(reqCaptor.getValue().getScenarioConfig().path("interactiveStudio").asBoolean()).isTrue();
         assertThat(reqCaptor.getValue().getScenarioConfig().path("profile").path("sandboxCompose").asText())
                 .isEqualTo(compose);
+        assertThat(reqCaptor.getValue().getScenarioConfig().path("profile").path("allowedEnvKeys")
+                .path("payment-service").get(0).asText()).isEqualTo("FEATURE_FLAG");
+        assertThat(reqCaptor.getValue().getScenarioConfig().path("profile").path("alternateImages")
+                .path("payment-service").get(0).asText()).isEqualTo("payment@sha256:" + "e".repeat(64));
         assertThat(reqCaptor.getValue().getScenarioConfig().path("profile").path("environmentBindings")
                 .path("sandbox-postgres").get(0).path("name").asText()).isEqualTo("POSTGRES_PASSWORD");
         assertThat(reqCaptor.getValue().getConfirmedServiceMappings()).containsKey("payment-service");

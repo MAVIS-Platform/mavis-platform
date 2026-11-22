@@ -293,6 +293,36 @@ public class RuntimeStudioService {
         var topology = PreparedStudioTopology.read(
             session.getScenarioConfig().path("profile"),
             session.getConfirmedServiceMappings() == null ? Set.of() : session.getConfirmedServiceMappings().keySet(), mapper);
+        JsonNode allowedActionsNode = session.getScenarioConfig() == null ? null : session.getScenarioConfig().path("allowedActions");
+        if (allowedActionsNode != null && allowedActionsNode.isArray() && !allowedActionsNode.isEmpty()) {
+            Set<String> allowedSet = new java.util.HashSet<>();
+            for (JsonNode entry : allowedActionsNode) {
+                if (entry != null && entry.isTextual() && !entry.asText().isBlank()) {
+                    allowedSet.add(entry.asText().trim().toUpperCase(Locale.ROOT));
+                }
+            }
+            if (!allowedSet.isEmpty()) {
+                String requestedAction = request.action().toUpperCase(Locale.ROOT);
+                boolean permitted = allowedSet.contains(requestedAction);
+                if (!permitted && topology != null) {
+                    boolean isController = false;
+                    for (var link : topology.path("connections")) {
+                        if (request.service().equals(link.path("controllerService").asText())) {
+                            isController = true;
+                            break;
+                        }
+                    }
+                    if (isController) {
+                        permitted = ("START".equals(requestedAction) && allowedSet.contains("CONNECT"))
+                                || ("STOP".equals(requestedAction) && allowedSet.contains("DISCONNECT"));
+                    }
+                }
+                if (!permitted) {
+                    throw new BusinessException(ErrorCode.FORBIDDEN, "STUDIO_ACTION_NOT_ALLOWED",
+                            "This lab does not allow " + request.action() + ".");
+                }
+            }
+        }
         if (topology != null) {
             boolean allowed = false;
             for (var block : topology.path("blocks"))

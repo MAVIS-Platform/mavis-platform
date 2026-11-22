@@ -5,6 +5,14 @@ cat > /tmp/stubs/docker <<'STUB'
 #!/usr/bin/env bash
 set -e
 if [ "$1" = login ]; then cat >/dev/null; exit 0; fi
+if [ "$1" = container ] && [ "$2" = prune ]; then printf '%s\n' "$*" >> /tmp/prune-calls; exit 0; fi
+if [ "$1" = ps ]; then
+  if [ -f /tmp/active-studio-once ]; then
+    rm -f /tmp/active-studio-once
+    echo "mavisrun-0123456789abcdef0123456789abcdef"
+  fi
+  exit 0
+fi
 if [ "$1" = exec ]; then
   if [ -f /tmp/fail-tag ] && [ "$(cat /tmp/current-tag)" = "$(cat /tmp/fail-tag)" ]; then exit 1; fi
   exit 0
@@ -27,7 +35,10 @@ for tag in "$tag1" "$tag2" "$tag3"; do
   mkdir -p "/opt/mavis/incoming-$tag"
   echo 'name: mavis' > "/opt/mavis/incoming-$tag/compose.production.yml"
 done
-printf 'test-token\n' | bash /source/deploy-vps.sh "$tag1" ghcr.io/mavis-platform/mavis-platform test-user
+touch /tmp/active-studio-once
+printf 'test-token\n' | bash /source/deploy-vps.sh "$tag1" ghcr.io/mavis-platform/mavis-platform test-user | tee /tmp/deploy-tag1.log
+grep -q 'Waiting for active Studio sessions to finish...' /tmp/deploy-tag1.log
+grep -q -- '--filter label!=com.docker.compose.project' /tmp/prune-calls
 grep -q "IMAGE_TAG=$tag1" /opt/mavis/.release.env
 grep -q 'INITIAL_ENV=preserved' /opt/mavis/.env.production
 grep -q '^MAVIS_RUNTIME_ENVIRONMENT_KEY=.\+' /opt/mavis/.env.production

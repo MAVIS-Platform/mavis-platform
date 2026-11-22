@@ -458,4 +458,45 @@ class RuntimeStudioServiceTest {
         service.telemetry(id, new RuntimeStudioService.TelemetryRequest(id, session.getResourceProject(), frame));
         verify(hub).publish(eq(id), any(), anyString(), eq(false), eq("RUNNING"));
     }
+
+    @Test
+    void labAllowedActionsEnforcedServerSideWithConnectDisconnectControllerException() throws Exception {
+        session.setConfirmedServiceMappings(Map.of(
+                "orders", UUID.randomUUID().toString(),
+                "payment", UUID.randomUUID().toString(),
+                "orders-payment-route", UUID.randomUUID().toString()));
+        var config = (ObjectNode) session.getScenarioConfig();
+        config.set("profile", mapper.readTree("""
+          {"studioTopology":{"version":1,
+            "blocks":[
+              {"service":"orders","label":"Orders","canScale":true},
+              {"service":"payment","label":"Payment","canScale":false}
+            ],
+            "connections":[
+              {"from":"orders","to":"payment","controllerService":"orders-payment-route","protocol":"HTTP"}
+            ]}}
+          """));
+        var allowed = config.putArray("allowedActions");
+        allowed.add("START").add("STOP").add("SCALE");
+
+        var forbidden = assertThrows(BusinessException.class, () -> service.submit(id,
+                new RuntimeStudioService.ActionRequest(UUID.randomUUID(), "THROTTLE_CPU", "orders", null, 25, null)));
+        assertEquals(com.mavis.common.exception.ErrorCode.FORBIDDEN, forbidden.getErrorCode());
+        assertEquals("STUDIO_ACTION_NOT_ALLOWED", forbidden.getStableCode());
+
+        var ok = service.submit(id, new RuntimeStudioService.ActionRequest(UUID.randomUUID(), "STOP", "orders", null));
+        assertEquals(1, ok.path("actions").size());
+
+        // CONNECT / DISCONNECT permit START / STOP on a connection controller even when START / STOP are not listed
+        session.setStudioControl(mapper.createObjectNode());
+        var connAllowed = config.putArray("allowedActions");
+        connAllowed.add("CONNECT").add("DISCONNECT");
+
+        assertThrows(BusinessException.class, () -> service.submit(id,
+                new RuntimeStudioService.ActionRequest(UUID.randomUUID(), "STOP", "orders", null)));
+
+        var disconnectOk = service.submit(id, new RuntimeStudioService.ActionRequest(
+                UUID.randomUUID(), "STOP", "orders-payment-route", null));
+        assertEquals(1, disconnectOk.path("actions").size());
+    }
 }

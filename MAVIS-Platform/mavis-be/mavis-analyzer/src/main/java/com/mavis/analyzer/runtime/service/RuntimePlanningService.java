@@ -182,9 +182,16 @@ public class RuntimePlanningService {
   return pre.getRunnerIssues()!=null?new ArrayList<>(pre.getRunnerIssues()):List.of();
  }
 
+ private static void forbidStudentWorkingRuntimeConfig(Project project){
+  if(project!=null&&"STUDENT_WORKING".equals(project.getProjectType())){
+   throw new BusinessException(ErrorCode.FORBIDDEN,"STUDENT_RUNTIME_CONFIG_FORBIDDEN",
+     "Runtime configuration of a student sandbox is managed by the lab.");
+  }
+ }
+
  @Transactional
  public BuildImagesView buildSandboxImages(UUID id,BuildImagesRequest r){
-  lock(id);
+  forbidStudentWorkingRuntimeConfig(lock(id));
   if(imageBuilder==null)throw new BusinessException(ErrorCode.FORBIDDEN,"Local sandbox image building service is unavailable");
   var c=configurations.findById(id).orElse(null);
   UUID snapshotId=(r!=null&&r.snapshotId()!=null)?r.snapshotId():(c!=null?c.getSourceSnapshotId():sources.findFirstByProjectIdOrderByCreatedAtDesc(id).map(SourceSnapshot::getId).orElse(null));
@@ -231,7 +238,7 @@ public class RuntimePlanningService {
  }
 
  @Transactional
- public ConfigurationView saveConfiguration(UUID id,ConfigurationRequest r){lock(id);var c=configurations.findById(id).orElseGet(RuntimeConfiguration::new);if(c.getRevision()!=r.expectedRevision())throw new BusinessException(ErrorCode.CONFLICT);
+ public ConfigurationView saveConfiguration(UUID id,ConfigurationRequest r){forbidStudentWorkingRuntimeConfig(lock(id));var c=configurations.findById(id).orElseGet(RuntimeConfiguration::new);if(c.getRevision()!=r.expectedRevision())throw new BusinessException(ErrorCode.CONFLICT);
   var source=sources.findById(r.snapshotId()).orElseThrow(()->new BusinessException(ErrorCode.NOT_FOUND));var model=models.findById(r.modelId()).orElseThrow(()->new BusinessException(ErrorCode.NOT_FOUND));
   if("RUNTIME_ENRICHED".equalsIgnoreCase(model.getOrigin())&&model.getBaseModelVersion()!=null)model=model.getBaseModelVersion();
   if(!source.getProject().getId().equals(id)||!model.getProject().getId().equals(id)||model.getSourceSnapshot()==null||!model.getSourceSnapshot().getId().equals(source.getId()))throw new BusinessException(ErrorCode.BAD_REQUEST,"Source/model scope mismatch");
