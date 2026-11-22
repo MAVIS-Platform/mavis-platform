@@ -11,19 +11,19 @@
 @theme inline {
   --font-sans: var(--font-ui);
   --font-mono: var(--font-technical);
-  /* Scale Tailwind typography to match Coursera's Source Sans 3 readability on desktop. */
-  --text-xs: 0.875rem;
-  --text-xs--line-height: 1.35rem;
-  --text-sm: 1rem;
-  --text-sm--line-height: 1.5rem;
-  --text-base: 1.125rem;
-  --text-base--line-height: 1.7rem;
-  --text-lg: 1.25rem;
-  --text-lg--line-height: 1.85rem;
-  --text-xl: 1.5rem;
-  --text-xl--line-height: 2rem;
-  --text-2xl: 1.75rem;
-  --text-2xl--line-height: 2.25rem;
+  /* Scale Tailwind typography across the whole app for effortless desktop readability with Source Sans 3. */
+  --text-xs: 0.9375rem;
+  --text-xs--line-height: 1.4rem;
+  --text-sm: 1.0625rem;
+  --text-sm--line-height: 1.55rem;
+  --text-base: 1.1875rem;
+  --text-base--line-height: 1.75rem;
+  --text-lg: 1.3125rem;
+  --text-lg--line-height: 1.9rem;
+  --text-xl: 1.5625rem;
+  --text-xl--line-height: 2.1rem;
+  --text-2xl: 1.875rem;
+  --text-2xl--line-height: 2.35rem;
   --radius-sm: 0.25rem;
   --radius-md: var(--radius-control);
   --radius-lg: var(--radius-card);
@@ -270,24 +270,24 @@
   --section-gap: var(--space-8);
   --grid-gap: var(--space-6);
   --workspace-gap: var(--space-4);
-  --text-page: 2rem;
-  --line-page: 2.5rem;
-  --text-section: 1.5rem;
-  --line-section: 2rem;
-  --text-card-title: 1.25rem;
-  --line-card-title: 1.75rem;
-  --text-subsection: 1.125rem;
-  --text-body: 1.0625rem;
-  --line-body: 1.6rem;
-  --text-data: 0.9375rem;
-  --line-data: 1.4rem;
-  --text-label: 0.9375rem;
-  --line-label: 1.4rem;
-  --text-help: 0.875rem;
-  --line-help: 1.35rem;
+  --text-page: 2.125rem;
+  --line-page: 2.65rem;
+  --text-section: 1.625rem;
+  --line-section: 2.15rem;
+  --text-card-title: 1.3125rem;
+  --line-card-title: 1.85rem;
+  --text-subsection: 1.1875rem;
+  --text-body: 1.125rem;
+  --line-body: 1.7rem;
+  --text-data: 1rem;
+  --line-data: 1.45rem;
+  --text-label: 1rem;
+  --line-label: 1.45rem;
+  --text-help: 0.9375rem;
+  --line-help: 1.4rem;
   --text-caption: var(--text-help);
-  --text-code: 0.9375rem;
-  --line-code: 1.4rem;
+  --text-code: 1rem;
+  --line-code: 1.45rem;
   --line-heading: 1.25;
   --shadow-none: none;
   --motion-fast: 120ms;
@@ -382,8 +382,10 @@
 @media (max-width: 767px) { :root { --text-page: 1.75rem; --line-page: 2.25rem; } }
 @keyframes mavis-indeterminate { 0% { transform: translateX(-110%); } 50% { transform: translateX(55%); } 100% { transform: translateX(220%); } }
 .mavis-indeterminate-bar { width: 45%; animation: mavis-indeterminate 1.35s cubic-bezier(0.4, 0, 0.2, 1) infinite; }
-/* Floor legacy micro font utilities so badges and sidebar eyebrows stay readable on desktop. */
-.text-\[10px\] { font-size: 0.75rem; line-height: 1.1rem; }
-.text-\[11px\] { font-size: 0.8125rem; line-height: 1.2rem; }
+/* Floor all legacy arbitrary micro/small font utilities so every badge, eyebrow, and telemetry label stays readable. */
+.text-\[8\.5px\], .text-\[9px\], .text-\[9\.5px\], .text-\[10px\], .text-\[10\.5px\] { font-size: 0.8125rem; line-height: 1.2rem; }
+.text-\[11px\], .text-\[11\.5px\], .text-\[0\.8rem\] { font-size: 0.875rem; line-height: 1.3rem; }
+.text-\[13px\], .text-\[13\.5px\] { font-size: 0.9375rem; line-height: 1.4rem; }
+.text-\[14\.5px\], .text-\[15px\] { font-size: 1.0625rem; line-height: 1.55rem; }
 
 @media (prefers-reduced-motion: reduce) { :root { --motion-fast: 0ms; --motion-normal: 0ms; } *:not(.animate-spin):not(.mavis-indeterminate-bar), *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0ms !important; scroll-behavior: auto !important; } }
