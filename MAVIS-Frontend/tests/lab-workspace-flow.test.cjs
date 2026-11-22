@@ -170,4 +170,8 @@ test("Coursera CDS contrast palette & simplified Lab header deduplicate prefixes
   const outline = read("src/features/courses/course-outline.tsx");
   assert.match(outline, /Curriculum overview:/);
   assert.doesNotMatch(outline, /Labs in curriculum/);
+
+  const labTheory = read("src/features/assignments/lab-theory-section.tsx");
+  assert.match(labTheory, /attachedTitles\.has\(item\.title\.trim\(\)\.toLowerCase\(\)\)/);
+  assert.match(labTheory, /assetOnlyTheoryItems/);
 });

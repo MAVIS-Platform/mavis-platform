@@ -603,6 +603,9 @@ export function LabTheorySection({
     attachedAssets.map((a) => a.courseItemId).filter((id): id is string => Boolean(id)),
   );
   const attachedAssetIds = new Set(attachedAssets.map((a) => a.assetId));
+  const attachedTitles = new Set(
+    attachedAssets.map((a) => a.title.trim().toLowerCase()).filter(Boolean),
+  );
   const selectedLibraryAsset = libraryAssets.find((asset) => asset.id === libraryItemId);
   const reference = assignment.referenceSource;
   const studentCtx = useStudentLabContext(
@@ -622,26 +625,70 @@ export function LabTheorySection({
   const activeDiagramMermaid =
     refArch?.diagrams?.find((d) => d.level?.toUpperCase() === c4Tab)?.mermaidDsl ?? null;
 
-  useEffect(() => {
-    if (!selectedModule) return;
-    const nextBodies: Record<string, string> = {};
-    const nextThemes: Record<string, MarkdownTheme> = {};
-    for (const item of selectedModule.items) {
-      if (item.type !== "THEORY") continue;
-      const parsed = extractMarkdownTheme(bodyOf(item));
-      nextBodies[item.id] = parsed.body;
-      nextThemes[item.id] = parsed.theme;
-    }
-    setBodies(nextBodies);
-    setThemes(nextThemes);
-  }, [selectedModule?.id, selectedModule?.items.length]);
+  const moduleTheoryItems =
+    selectedModule?.items.filter((item) => item.type === "THEORY") ?? [];
+  const directTheoryItems = moduleTheoryItems.filter(
+    (item) =>
+      item.assignmentId === assignment.id ||
+      attachedCourseItemIds.has(item.id) ||
+      attachedTitles.has(item.title.trim().toLowerCase()),
+  );
+  const matchedCourseTheoryItems =
+    directTheoryItems.length > 0 ? directTheoryItems : moduleTheoryItems;
+  const matchedTitles = new Set(
+    matchedCourseTheoryItems.map((item) => item.title.trim().toLowerCase()),
+  );
+  const matchedItemIds = new Set(matchedCourseTheoryItems.map((item) => item.id));
+  const assetOnlyTheoryItems: TheoryItem[] = attachedAssets
+    .filter(
+      (attached) =>
+        !(attached.courseItemId && matchedItemIds.has(attached.courseItemId)) &&
+        !matchedTitles.has(attached.title.trim().toLowerCase()),
+    )
+    .map((attached) => {
+      const lib = libraryAssets.find((a) => a.id === attached.assetId);
+      return {
+        id: `asset:${attached.assetId}`,
+        type: "THEORY",
+        title: lib?.title || attached.title,
+        description: null,
+        assignmentId: assignment.id,
+        content: { body: lib?.body ?? "", format: "markdown" },
+        required: true,
+      };
+    });
+  const theoryItems: TheoryItem[] = [...matchedCourseTheoryItems, ...assetOnlyTheoryItems];
 
-  const theoryItems =
-    selectedModule?.items.filter(
-      (item) =>
-        item.type === "THEORY" &&
-        (item.assignmentId === assignment.id || attachedCourseItemIds.has(item.id)),
-    ) ?? [];
+  useEffect(() => {
+    if (theoryItems.length === 0) return;
+    setBodies((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const item of theoryItems) {
+        if (next[item.id] !== undefined) continue;
+        const parsed = extractMarkdownTheme(bodyOf(item));
+        next[item.id] = parsed.body;
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+    setThemes((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const item of theoryItems) {
+        if (next[item.id] !== undefined) continue;
+        const parsed = extractMarkdownTheme(bodyOf(item));
+        next[item.id] = parsed.theme;
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [
+    selectedModule?.id,
+    selectedModule?.items.length,
+    attachedAssets.length,
+    libraryAssets.length,
+  ]);
 
   return (
     <div className="space-y-5">
@@ -721,9 +768,13 @@ export function LabTheorySection({
             </p>
             <ul className="space-y-3">
               {theoryItems.map((item) => {
+                const isAssetOnly = item.id.startsWith("asset:");
                 const linkedAsset =
+                  attachedAssets.find((asset) => `asset:${asset.assetId}` === item.id) ??
                   attachedAssets.find((asset) => asset.courseItemId === item.id) ??
-                  attachedAssets.find((asset) => asset.title === item.title);
+                  attachedAssets.find(
+                    (asset) => asset.title.trim().toLowerCase() === item.title.trim().toLowerCase(),
+                  );
                 const cardBusy = savingBusy && savingItemId === item.id;
                 return (
                   <li key={item.id} className="space-y-3 rounded-xl border bg-muted/15 p-4">
@@ -763,30 +814,32 @@ export function LabTheorySection({
                           disabled={cardBusy}
                           onClick={() =>
                             void saveWithAutoPublish(item.id, async (_draft, mod) => {
-                              const targetItem =
-                                mod.items.find(
-                                  (it) =>
-                                    it.id === item.id ||
-                                    (it.type === "THEORY" &&
-                                      (it.assignmentId === item.assignmentId || it.title === item.title)),
-                                ) ?? item;
                               const fallback = extractMarkdownTheme(bodyOf(item));
                               const cleanBody = bodies[item.id] ?? fallback.body;
                               const activeItemTheme = themes[item.id] ?? fallback.theme;
                               const themedBody = applyMarkdownTheme(cleanBody, activeItemTheme);
-                              await course.updateItem.mutateAsync({
-                                moduleId: mod.id,
-                                itemId: targetItem.id,
-                                type: "THEORY",
-                                title: item.title,
-                                description: item.description ?? "",
-                                required: item.required,
-                                assignmentId: item.assignmentId ?? assignment.id,
-                                content: {
-                                  body: themedBody,
-                                  format: "markdown",
-                                },
-                              });
+                              if (!isAssetOnly) {
+                                const targetItem =
+                                  mod.items.find(
+                                    (it) =>
+                                      it.id === item.id ||
+                                      (it.type === "THEORY" &&
+                                        (it.assignmentId === item.assignmentId || it.title === item.title)),
+                                  ) ?? item;
+                                await course.updateItem.mutateAsync({
+                                  moduleId: mod.id,
+                                  itemId: targetItem.id,
+                                  type: "THEORY",
+                                  title: item.title,
+                                  description: item.description ?? "",
+                                  required: item.required,
+                                  assignmentId: item.assignmentId ?? assignment.id,
+                                  content: {
+                                    body: themedBody,
+                                    format: "markdown",
+                                  },
+                                });
+                              }
                               if (linkedAsset) {
                                 await api(
                                   `workspaces/${workspaceId}/theory-assets/${linkedAsset.assetId}`,
