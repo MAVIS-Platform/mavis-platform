@@ -1483,10 +1483,12 @@ function StepContent({
   }, [activeModel, inlineC4View, referenceArchitecture?.diagrams]);
 
   const submitHref = `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=3${previewParam}#lab-submit`;
+  const hasSubmittedLab = Boolean(studentContext?.latestSubmission?.id);
   const jumpToSubmissionBox = () => {
     const submissionBox = document.getElementById("lab-submit");
     if (!submissionBox) return;
     submissionBox.scrollIntoView({ behavior: "smooth", block: "start" });
+    submissionBox.querySelector<HTMLTextAreaElement>("textarea")?.focus({ preventScroll: true });
     window.history.replaceState(null, "", submitHref);
   };
   const standaloneStudioHref = buildStudioLiveHref({
@@ -2616,9 +2618,11 @@ function StepContent({
           )}
         </span>
         {step === 3 ? (
-          <Button size="sm" variant="outline" onClick={jumpToSubmissionBox}>
-            {t("Jump to Submission Box", "Đi tới Khung Nộp bài")} <ArrowRight />
-          </Button>
+          !hasSubmittedLab && !preview ? (
+            <Button size="sm" variant="outline" onClick={jumpToSubmissionBox}>
+              {t("Jump to Submission Box", "Đi tới Khung Nộp bài")} <ArrowRight />
+            </Button>
+          ) : null
         ) : (
           <Button asChild={nextAvailable} disabled={!nextAvailable}>
             {nextAvailable ? (

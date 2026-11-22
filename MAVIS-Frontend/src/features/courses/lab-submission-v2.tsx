@@ -246,24 +246,21 @@ export function LabSubmissionV2({
                   )}
                 </div>
               )}
-            <div className="flex flex-wrap gap-2 pt-1">
+            <div className="flex flex-wrap items-center gap-2 pt-1">
               <Button asChild size="sm" className="bg-teal-600 text-white hover:bg-teal-700">
                 <Link href={`/roadmap?workspace=${encodeURIComponent(workspaceId)}`}>
-                  {t(
-                    "Back to Course Syllabus for Next Lesson →",
-                    "Quay về Lộ trình môn học để sang bài tiếp theo →",
-                  )}
+                  {t("Continue Syllabus", "Tiếp tục lộ trình")} <ArrowRight />
                 </Link>
               </Button>
               <Button asChild size="sm" variant="outline">
-                <Link href={`/submissions?workspace=${encodeURIComponent(workspaceId)}`}>
-                  {t("View submission and grade", "Xem bài nộp và điểm")} <ArrowRight />
+                <Link href={`/submissions/${encodeURIComponent(latest.id)}`}>
+                  {t("View submission", "Xem bài nộp")}
                 </Link>
               </Button>
               {activeReview?.labOutcome !== "PASSED" && (
-                <Button
-                  size="sm"
-                  variant="ghost"
+                <button
+                  type="button"
+                  className="ml-auto text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
                   onClick={() => {
                     if (!answer.trim()) {
                       const prior =
@@ -281,7 +278,7 @@ export function LabSubmissionV2({
                   }}
                 >
                   {t("Revise and resubmit", "Sửa và nộp lại")}
-                </Button>
+                </button>
               )}
             </div>
           </div>

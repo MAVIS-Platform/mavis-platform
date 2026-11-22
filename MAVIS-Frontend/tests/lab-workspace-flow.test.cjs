@@ -134,3 +134,13 @@ test("Non-runtime Labs (THEORY_ONLY / THEORY_QUIZ) omit Runtime (N/A) step and r
   assert.match(html, /2\. Evidence Review/);
   assert.doesNotMatch(html, /3\. Evidence Review/);
 });
+
+test("Step 3 submission flow hides dead Jump to Submission Box after submit, focuses textarea before submit, and links directly to submission detail", () => {
+  const screens = read("src/features/courses/screens.tsx");
+  const subV2 = read("src/features/courses/lab-submission-v2.tsx");
+
+  assert.match(screens, /const hasSubmittedLab = Boolean\(studentContext\?\.latestSubmission\?\.id\);/);
+  assert.match(screens, /!hasSubmittedLab && !preview \?/);
+  assert.match(screens, /querySelector<HTMLTextAreaElement>\("textarea"\)\?\.focus\(\{ preventScroll: true \}\)/);
+  assert.match(subV2, /href=\{`\/submissions\/\$\{encodeURIComponent\(latest\.id\)\}`\}/);
+});
