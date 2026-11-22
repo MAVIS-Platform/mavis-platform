@@ -488,12 +488,12 @@ test("submission lists deduplicate metadata and defer heavy assets until detail 
   const result=validateResponse(operation,input,await executeJava(operation,input,"dedup-fixture-"+operation,new AbortController().signal));
   assert.equal(result.length,2);assert.equal(result[0].model.revision,1);
   assert.equal(paths.filter(p=>p===`analyzer/models/${model}`).length,1);
-  assert.ok(!paths.some(p=>/\/(graph|elements)$/.test(p)||p.startsWith("analyzer/diagrams/")||p.startsWith("analyzer/runtime/")));
+  assert.ok(!paths.some(p=>/\/(graph|elements|feedbacks)$/.test(p)||p.startsWith("analyzer/diagrams/")||p.startsWith("analyzer/runtime/")));
  }
  paths.length=0;
  const detail=validateResponse("submission",{submissionId:job},await executeJava("submission",{submissionId:job},"dedup-detail-fixture",new AbortController().signal));
  assert.equal(detail.model.elements[0].name,"Service");assert.equal(detail.diagramLayout.frozenDocument,true);assert.equal(detail.runtime.id,node);
- assert.ok(paths.includes(`analyzer/models/${model}/graph`));assert.ok(paths.includes(`analyzer/models/${model}/elements`));
+ assert.ok(paths.includes(`analyzer/models/${model}/graph`));assert.ok(paths.includes(`analyzer/models/${model}/elements`));assert.ok(paths.includes(`submissions/${job}/feedbacks`));
  paths.length=0;
  await executeJava("submissions",{},"another-jwt",new AbortController().signal);
  assert.equal(paths.filter(p=>p===`analyzer/models/${model}`).length,1);

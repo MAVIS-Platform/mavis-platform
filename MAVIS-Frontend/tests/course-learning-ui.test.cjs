@@ -2053,3 +2053,14 @@ test("Task #08 Coursera UX Polish: CourseBuilder/CourseOutline keep Quiz distinc
   assert.match(submissions, /className="min-w-0 max-w-full overflow-x-auto rounded-xl border bg-card"/);
   assert.match(workspaces, /submissions\.isLoading \? "…" : submissions\.isSuccess \? pendingReviews : 0/);
 });
+
+test("Task #10 Perf & Gradebook UX: Gradebook compacts Lab columns for 1280px and /lab renders loading status while models hydrate", () => {
+  const submissions = read("src/features/submissions/screens.tsx");
+  const courses = read("src/features/courses/screens.tsx");
+  const javaOps = read("src/lib/api/java-operations.ts");
+
+  assert.match(submissions, /className="min-w-0 max-w-full space-y-4"/);
+  assert.match(submissions, /className="min-w-28 px-2\.5 py-2\.5 font-semibold"/);
+  assert.match(courses, /studentContextLoading \|\| fallbackModelQuery\.isPending/);
+  assert.match(javaOps, /mapWithConcurrency\(rows,\s*10,/);
+});

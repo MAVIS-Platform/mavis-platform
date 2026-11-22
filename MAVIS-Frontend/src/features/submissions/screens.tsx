@@ -543,7 +543,7 @@ function ClassGradebookMatrix({
       )}
     >
       {gradebook.data && (
-        <div className="space-y-4">
+        <div className="min-w-0 max-w-full space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-xs text-muted-foreground">
               {gradebook.data.students.length}{" "}
@@ -561,13 +561,13 @@ function ClassGradebookMatrix({
             <table className="w-full text-left text-xs">
               <thead className="border-b bg-muted/40 text-muted-foreground">
                 <tr>
-                  <th className="sticky left-0 bg-muted/40 px-4 py-3 font-semibold">
+                  <th className="sticky left-0 bg-muted/40 px-3 py-2.5 font-semibold">
                     {t("Student", "Sinh viên")}
                   </th>
-                  <th className="px-3 py-3 font-semibold">{t("Progress", "Tiến độ")}</th>
-                  <th className="px-3 py-3 font-semibold">{t("Avg Score", "Điểm TB")}</th>
+                  <th className="whitespace-nowrap px-2.5 py-2.5 font-semibold">{t("Progress", "Tiến độ")}</th>
+                  <th className="whitespace-nowrap px-2.5 py-2.5 font-semibold">{t("Avg Score", "Điểm TB")}</th>
                   {gradebook.data.labs.map((lab) => (
-                    <th key={lab.assignmentId} className="min-w-36 px-3 py-3 font-semibold">
+                    <th key={lab.assignmentId} className="min-w-28 px-2.5 py-2.5 font-semibold">
                       {formatCourseLabTitle(lab.title, lab.labOrder, lab.assignmentId)}
                     </th>
                   ))}
@@ -578,21 +578,21 @@ function ClassGradebookMatrix({
                   const cellMap = new Map(student.cells.map((c) => [c.assignmentId, c]));
                   return (
                     <tr key={student.studentId} className="hover:bg-muted/20">
-                      <td className="sticky left-0 bg-card px-4 py-3">
-                        <p className="font-medium text-foreground">{student.fullName}</p>
-                        <p className="text-[11px] text-muted-foreground">{student.email}</p>
+                      <td className="sticky left-0 max-w-44 bg-card px-3 py-2.5">
+                        <p className="truncate font-medium text-foreground">{student.fullName}</p>
+                        <p className="truncate text-[11px] text-muted-foreground">{student.email}</p>
                       </td>
-                      <td className="px-3 py-3 font-medium">
+                      <td className="whitespace-nowrap px-2.5 py-2.5 font-medium">
                         {student.passedLabs ?? 0}/{gradebook.data.labs.length}
                       </td>
-                      <td className="px-3 py-3 font-semibold">
+                      <td className="whitespace-nowrap px-2.5 py-2.5 font-semibold">
                         {student.averageScore !== null
                           ? formatTenScaleScore(student.averageScore, student.averageScoreTenScale)
                           : "—"}
                       </td>
                       {gradebook.data.labs.map((lab) => {
                         const cell = cellMap.get(lab.assignmentId);
-                        if (!cell) return <td key={lab.assignmentId} className="px-3 py-3">—</td>;
+                        if (!cell) return <td key={lab.assignmentId} className="px-2.5 py-2.5">—</td>;
                         const outcomeVariant =
                           cell.labOutcome === "PASSED"
                             ? "success"
@@ -600,7 +600,7 @@ function ClassGradebookMatrix({
                               ? "warning"
                               : "secondary";
                         return (
-                          <td key={lab.assignmentId} className="px-3 py-3 align-top">
+                          <td key={lab.assignmentId} className="px-2.5 py-2.5 align-top">
                             {cell.submissionId ? (
                               <Link
                                 href={`/submissions/${encodeURIComponent(cell.submissionId)}`}
@@ -610,8 +610,10 @@ function ClassGradebookMatrix({
                                   {cell.reviewScore !== null
                                     ? formatTenScaleScore(cell.reviewScore, cell.reviewScoreTenScale)
                                     : cell.labOutcome === "PASSED"
-                                      ? "PASS"
-                                      : cell.reviewStatus ?? "PENDING"}
+                                      ? t("Passed", "Đạt")
+                                      : cell.reviewStatus === "PENDING" || !cell.reviewStatus
+                                        ? t("Pending", "Chờ chấm")
+                                        : cell.reviewStatus}
                                 </Badge>
                                 {cell.quizBestScore !== null && (
                                   <span className="text-[11px] text-muted-foreground">

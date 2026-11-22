@@ -2102,6 +2102,15 @@ function StepContent({
                         {tutorPanelNode}
                       </DetailPanel>
                     </div>
+                  ) : studentContextLoading || fallbackModelQuery.isPending ? (
+                    <div className="space-y-4">
+                      <p role="status" className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+                        {t("Loading architecture diagram…", "Đang tải sơ đồ kiến trúc…")}
+                      </p>
+                      <DetailPanel title={t("AI Architecture Tutor", "Trợ lý AI Kiến trúc SWD")}>
+                        {tutorPanelNode}
+                      </DetailPanel>
+                    </div>
                   ) : (
                     <div className="space-y-4">
                       <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">

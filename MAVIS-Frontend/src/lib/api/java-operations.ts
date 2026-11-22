@@ -270,7 +270,11 @@ export async function executeJava(
       labMode: a.labMode ?? "LEGACY",
     };
   };
-  const coursework = async (raw: unknown, includeDetails = true) => {
+  const coursework = async (
+    raw: unknown,
+    includeDetails = true,
+    includeFeedback = true,
+  ) => {
     const sub = z
       .object({
         id: z.string().uuid(),
@@ -362,20 +366,26 @@ export async function executeJava(
         validation: "valid",
         evidenceComplete: true,
       };
-      feedback = await get(`submissions/${sub.id}/feedbacks`).catch(() => []);
+      feedback = includeFeedback
+        ? await get(`submissions/${sub.id}/feedbacks`).catch(() => [])
+        : [];
     } else if (!sub.modelVersionId || !sub.sourceSnapshotId || !sub.projectId) {
       if (includeDetails) throw new ApiError("contract", 502);
       usedFallback = true;
       const refs = fallbackRefs();
       m = refs.model;
       source = refs.source;
-      feedback = await get(`submissions/${sub.id}/feedbacks`).catch(() => []);
+      feedback = includeFeedback
+        ? await get(`submissions/${sub.id}/feedbacks`).catch(() => [])
+        : [];
     } else if (!includeDetails) {
       try {
         [m, source, feedback] = await Promise.all([
           model(sub.modelVersionId, false),
           snapshot(sub.sourceSnapshotId),
-          get(`submissions/${sub.id}/feedbacks`).catch(() => []),
+          includeFeedback
+            ? get(`submissions/${sub.id}/feedbacks`).catch(() => [])
+            : Promise.resolve([]),
         ]);
         if (
           m.id !== sub.modelVersionId ||
@@ -1234,7 +1244,7 @@ export async function executeJava(
       const rows = list.parse(
         await get(workspaceId ? `submissions/me?workspaceId=${workspaceId}` : "submissions/me"),
       );
-      return mapWithConcurrency(rows, 6, (row) => coursework(row, false));
+      return mapWithConcurrency(rows, 10, (row) => coursework(row, false, false));
     }
     case "workspaceSubmissions": {
       const workspaceId = id(input, "workspaceId");
@@ -1247,7 +1257,7 @@ export async function executeJava(
       }
       const suffix = query.toString() ? `?${query}` : "";
       const rows = list.parse(await get(`workspaces/${workspaceId}/submissions${suffix}`));
-      return mapWithConcurrency(rows, 6, (row) => coursework(row, false));
+      return mapWithConcurrency(rows, 10, (row) => coursework(row, false, false));
     }
     case "assignmentSubmissions": {
       const workspaceId = id(input, "workspaceId"),
@@ -1265,7 +1275,7 @@ export async function executeJava(
       const rows = list.parse(await get(`assignments/${assignmentId}/submissions${suffix}`));
       if (rows.some((row) => object.parse(row)["assignmentId"] !== assignmentId))
         throw new ApiError("contract", 502);
-      return Promise.all(rows.map((row) => coursework(row, false)));
+      return mapWithConcurrency(rows, 10, (row) => coursework(row, false, false));
     }
     case "submission":
       return coursework(await get(`submissions/${id(input, "submissionId")}`));
