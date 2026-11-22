@@ -103,3 +103,34 @@ test("Bug #06: Step footer clarifies locked Runtime Studio, lab switcher truncat
   assert.match(screens, /id="lab-ai-tutor" className="scroll-mt-36"/);
   assert.match(screens, /id="lab-switcher"[\s\S]*truncate[\s\S]*leading-tight/);
 });
+
+test("Non-runtime Labs (THEORY_ONLY / THEORY_QUIZ) omit Runtime (N/A) step and render a clean 2-step flow", () => {
+  const React = require("react");
+  const { renderToStaticMarkup } = require("react-dom/server");
+  const { LabToc } = require("../src/features/courses/lab-toc.tsx");
+  const screens = read("src/features/courses/screens.tsx");
+
+  assert.doesNotMatch(screens, /Runtime \(N\/A\)/);
+  assert.match(screens, /const displayedStep: 1 \| 2 \| 3 = !requiresRuntime && activeStep === 2 \? 3 : activeStep;/);
+  assert.match(screens, /learningSteps\.filter\(\(step\) => step\.id !== 2\)/);
+  assert.match(screens, /const prevStep: 1 \| 2 = step === 3 && !requiresRuntime \? 1 : \(\(step - 1\) as 1 \| 2\);/);
+  assert.match(screens, /const totalPhases = requiresRuntime \? 3 : 2;/);
+
+  const html = renderToStaticMarkup(
+    React.createElement(LabToc, {
+      layout: "stepper",
+      activeStep: 1,
+      progress: 50,
+      steps: [
+        { id: 1, label: "Static Studio", state: "complete", href: "/lab?step=1" },
+        { id: 3, label: "Evidence Review", state: "available", href: "/lab?step=3" },
+      ],
+      items: [],
+    }),
+  );
+
+  assert.match(html, /sm:grid-cols-2/);
+  assert.match(html, /1\. Static Studio/);
+  assert.match(html, /2\. Evidence Review/);
+  assert.doesNotMatch(html, /3\. Evidence Review/);
+});

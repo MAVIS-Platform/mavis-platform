@@ -140,8 +140,8 @@ export function LabToc({
             )}
           </div>
         </div>
-        <ol className="grid gap-2 sm:grid-cols-3">
-          {steps.map((step) => {
+        <ol className={cn("grid gap-2", steps.length <= 2 ? "sm:grid-cols-2" : "sm:grid-cols-3")}>
+          {steps.map((step, index) => {
             const current = step.id === activeStep;
             const locked = step.state === "locked";
             const complete = step.state === "complete";
@@ -171,7 +171,7 @@ export function LabToc({
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate">
-                    {step.id}. {step.label}
+                    {index + 1}. {step.label}
                   </span>
                   {locked && step.reason && (
                     <span className="block truncate text-[10px] font-normal text-muted-foreground">
@@ -238,7 +238,7 @@ export function LabToc({
         </div>
 
         <ol className="space-y-1">
-          {steps.map((step) => {
+          {steps.map((step, index) => {
             const current = step.id === activeStep;
             const content = (
               <span
@@ -253,7 +253,7 @@ export function LabToc({
                 </span>
                 <span className="min-w-0">
                   <span className="block font-medium">
-                    {step.id}. {step.label}
+                    {index + 1}. {step.label}
                   </span>
                   {step.state === "locked" && step.reason && (
                     <span className="mt-0.5 block text-[11px] leading-4 text-muted-foreground">

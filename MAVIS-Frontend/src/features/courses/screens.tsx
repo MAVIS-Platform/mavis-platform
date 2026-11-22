@@ -162,17 +162,22 @@ function resolveStepMeta(
         "Xem mục tiêu Lab và evidence cần có trước khi chuyển sang giai đoạn tiếp theo.",
     };
   }
-  if (step === 2 && !options.requiresRuntime) {
+  if (step === 1 && !options.requiresRuntime) {
     return {
       ...base,
-      title: "MAVIS Runtime Studio (Not Required)",
-      shortTitle: "Runtime (N/A)",
       description:
-        "This Lab does not require a runtime experiment. Continue to evidence and submission after Static Studio.",
-      titleVi: "MAVIS Runtime Studio (Không bắt buộc)",
-      shortTitleVi: "Runtime (K/Á)",
+        "Inspect the curated snapshot, C1–C3 architecture, dependency graph, and source evidence before submitting.",
       descriptionVi:
-        "Lab này không yêu cầu thực nghiệm runtime. Hoàn tất Static Studio rồi chuyển sang evidence và nộp bài.",
+        "Khảo sát snapshot chuẩn, kiến trúc C1–C3, đồ thị phụ thuộc và bằng chứng mã nguồn trước khi nộp bài.",
+    };
+  }
+  if (step === 3 && !options.requiresRuntime) {
+    return {
+      ...base,
+      description:
+        "Review your architecture notes and required evidence before submitting this Lab for grading.",
+      descriptionVi:
+        "Kiểm tra ghi chú kiến trúc và bằng chứng cần thiết trước khi nộp Lab để chấm điểm.",
     };
   }
   return base;
@@ -643,7 +648,7 @@ export function LabWorkspace() {
     lab?.requireRuntimeTrace === true ||
     lab?.labMode === "THEORY_QUIZ_STUDIO" ||
     studentContext.data?.studioExercise != null;
-  const displayedStep = activeStep;
+  const displayedStep: 1 | 2 | 3 = !requiresRuntime && activeStep === 2 ? 3 : activeStep;
   const refArch = studentContext.data?.referenceArchitecture ?? null;
   const studentStudioSessions = useStudentLabStudioSessions(
     workspaceId,
@@ -751,11 +756,14 @@ export function LabWorkspace() {
     2: requiresRuntime ? Boolean(verifiedStudioSession) : runtimeReady,
     3: hasSubmitted,
   };
-  const completedSteps = learningSteps.filter((step) => stepComplete[step.id]).length;
-  const progress = Math.round((completedSteps / learningSteps.length) * 100);
+  const visibleSteps = requiresRuntime
+    ? learningSteps
+    : learningSteps.filter((step) => step.id !== 2);
+  const completedSteps = visibleSteps.filter((step) => stepComplete[step.id]).length;
+  const progress = Math.round((completedSteps / visibleSteps.length) * 100);
   const stepAvailable = (id: 1 | 2 | 3) => {
     if (preview || id === 1) return true;
-    if (id === 2) return runtimeReady;
+    if (id === 2) return runtimeReady && requiresRuntime;
     return !requiresRuntime || Boolean(verifiedStudioSession);
   };
   const stepReason = (id: 1 | 2 | 3) => {
@@ -770,7 +778,7 @@ export function LabWorkspace() {
   };
   const labHref = (step: 1 | 2 | 3, extraView?: InlineC4View) =>
     `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignmentId)}&step=${step}${extraView ? `&view=${extraView}` : ""}${preview ? "&preview=1" : ""}`;
-  const tocSteps: LabTocStep[] = learningSteps.map((step) => {
+  const tocSteps: LabTocStep[] = visibleSteps.map((step) => {
     const meta = resolveStepMeta(step.id, { hasReferenceArch, isTheoryOnlyLab, requiresRuntime });
     const available = stepAvailable(step.id);
     const state = stepComplete[step.id]
@@ -791,7 +799,8 @@ export function LabWorkspace() {
   const tocItems: LabTocItem[] = moduleItems
     .filter((item) => item.type !== "QUIZ")
     .map((item) => {
-      const step = stepForItemType(item.type);
+      const rawStep = stepForItemType(item.type);
+      const step: 1 | 2 | 3 = !requiresRuntime && rawStep === 2 ? 1 : rawStep;
       return {
         id: item.id,
         title: item.title,
@@ -1492,6 +1501,9 @@ function StepContent({
   const Icon = current.icon;
   const next = step < 3 ? ((step + 1) as 2 | 3) : undefined;
   const nextStep = step === 1 && !requiresRuntime ? 3 : next;
+  const prevStep: 1 | 2 = step === 3 && !requiresRuntime ? 1 : ((step - 1) as 1 | 2);
+  const totalPhases = requiresRuntime ? 3 : 2;
+  const displayPhase = !requiresRuntime && step === 3 ? 2 : step;
   const nextAvailable =
     nextStep !== undefined && !(step === 2 && requiresRuntime && !liveStudioVerified && !preview);
   const needsSandboxBootstrap = Boolean(
@@ -1939,7 +1951,7 @@ function StepContent({
           </div>
           <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-              {t(`Phase ${step} / 3`, `Giai đoạn ${step} / 3`)}
+              {t(`Phase ${displayPhase} / ${totalPhases}`, `Giai đoạn ${displayPhase} / ${totalPhases}`)}
             </p>
             <h2 className="mt-0.5 text-lg font-semibold">{t(current.title, current.titleVi)}</h2>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
@@ -2590,7 +2602,7 @@ function StepContent({
         {step > 1 && (
           <Button asChild variant="outline">
             <Link
-              href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=${step - 1}${previewParam}`}
+              href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=${prevStep}${previewParam}`}
             >
               {t("Previous step", "Bước trước")}
             </Link>
