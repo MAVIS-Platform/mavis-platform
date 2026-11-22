@@ -12,6 +12,7 @@ import com.mavis.common.repository.WorkspaceMemberRepository;
 import com.mavis.common.repository.WorkspaceRepository;
 import com.mavis.common.utils.SecurityUtils;
 import com.mavis.platform.workspace.dto.*;
+import com.mavis.platform.workspace.service.CourseAccessService;
 import com.mavis.platform.workspace.service.WorkspaceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -33,6 +34,7 @@ public class WorkspaceServiceImpl implements WorkspaceService {
     private final AssignmentRepository assignmentRepository;
     private final UserRepository userRepository;
     private final com.mavis.common.security.AccessPolicyService accessPolicyService;
+    private final CourseAccessService courseAccessService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -69,6 +71,10 @@ public class WorkspaceServiceImpl implements WorkspaceService {
                 .build();
         workspaceMemberRepository.save(member);
         AuthorizationRequestCache.evictMembership(workspace.getId(), currentUserId);
+        // Auto-generate one default structured passkey when a new class is created.
+        courseAccessService.createPasskey(
+                workspace.getId(),
+                new CourseAccessService.CreatePasskeyRequest(null, null, 720, null));
 
         log.info("Workspace created: id={}, code={}, createdBy={}", workspace.getId(), workspace.getCode(), currentUser.getEmail());
 

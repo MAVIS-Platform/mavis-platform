@@ -383,10 +383,10 @@ function ShellChrome({
   const title =
     pathname === "/submissions"
       ? role === "lecturer"
-        ? "Grading & Gradebook"
+        ? "Grades"
         : "My Grades & Submissions"
       : pathname === "/workspace-overview" && params.get("view") === "course-authoring"
-        ? "Curriculum & Materials"
+        ? "Modules"
         : (pageTitle ?? activeItem?.label ?? route.title);
   const showSidebar = live || role !== "student";
 

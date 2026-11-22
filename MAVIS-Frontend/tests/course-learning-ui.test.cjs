@@ -72,7 +72,7 @@ test("student navigation keeps one unified Learning section and preserves all-ro
     "My Grades & Submissions",
     "My Classes",
     "Curriculum & Labs",
-    "Grading & Gradebook",
+    "Grades",
     "System Overview",
     "Users & Roles",
     "Governance & Audit",
@@ -1072,7 +1072,7 @@ test("Lab Library is available inside Lab Creation and Quiz can be generated fro
   assert.ok(authoring.includes('id: "theory-library", en: "Theory Library"'));
   assert.ok(authoring.includes("<Assignments embedded />"));
   assert.ok(authoring.includes("<TheoryLibrary />"));
-  assert.match(navigation, /id: "lab-authoring"[\s\S]*?label: "Lab Creation"/);
+  assert.match(navigation, /id: "lab-authoring"[\s\S]*?label: "Labs"/);
   assert.ok(authoring.includes('id: "library", en: "Lab Library"'));
   assert.ok(authoring.includes('id: "theory-library", en: "Theory Library"'));
   assert.ok(authoring.includes("<Assignments embedded />"));
@@ -1786,14 +1786,15 @@ test("Bug #01: useCourseAuthoring and CourseOutline gate course/published fetche
   assert.match(outline, /usePublishedCourse\(workspaceId\)/);
 });
 
-test("Bug #02: CourseBuilder resolves linked Lab assignment tiers in module summary breakdown and handles singular Lab labels", () => {
+test("Bug #02: CourseBuilder resolves linked Lab assignment tiers and keeps module headers tag-free", () => {
   const builder = read("src/features/courses/course-builder.tsx");
   const outline = read("src/features/courses/course-outline.tsx");
 
   assert.match(builder, /resolveBuilderItemType/);
   assert.match(builder, /itemTypeForAssignment\(linked\)/);
-  assert.match(builder, /visibleItems\.length === 1 \? t\("Lab", "bài Lab"\) : t\("Labs", "bài Lab"\)/);
-  assert.match(outline, /module\.items\.length === 1 \? t\("Lab", "bài Lab"\) : t\("Labs", "bài Lab"\)/);
+  assert.doesNotMatch(builder, /meta\.tone/);
+  assert.doesNotMatch(builder, /inspectedMeta\.tone/);
+  assert.doesNotMatch(outline, /Theory Only|Full Studio/);
 });
 
 test("Bug #03: decodePlainTextEntities decodes escaped entities and StudentCourseSyllabus shows empty roadmap notice", () => {

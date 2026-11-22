@@ -303,7 +303,7 @@ function CourseOutlineBody({
         </h2>
         <p className="mt-1.5 max-w-md text-sm text-muted-foreground">
           {t(
-            "Click to create your first module in Curriculum & Materials.",
+            "Click to create your first module in Modules.",
             "Bấm để tạo chương đầu tiên trong Đề cương & Học liệu.",
           )}
         </p>
@@ -469,33 +469,7 @@ function CourseOutlineBody({
       </div>
 
       <ol className="space-y-3">
-        {modules.map((module) => {
-          const theoryOnlyCount = module.items.filter((i) => {
-            const rt = resolveItemType(i);
-            return rt === "THEORY" || rt === "STATIC_LAB";
-          }).length;
-          const quizLabCount = module.items.filter((i) => {
-            const rt = resolveItemType(i);
-            return rt === "QUIZ" || rt === "IMPACT_LAB";
-          }).length;
-          const studioLabCount = module.items.filter(
-            (i) => resolveItemType(i) === "RUNTIME_LAB",
-          ).length;
-          const breakdown = [
-            theoryOnlyCount > 0
-              ? `${theoryOnlyCount} ${t("Theory Only", "Lab chỉ Lý thuyết")}`
-              : null,
-            quizLabCount > 0
-              ? `${quizLabCount} ${t("Theory + Quiz", "Lab Lý thuyết + Quiz")}`
-              : null,
-            studioLabCount > 0
-              ? `${studioLabCount} ${t("Full Studio", "Lab có cả Studio")}`
-              : null,
-          ]
-            .filter(Boolean)
-            .join(" · ");
-
-          return (
+        {modules.map((module) => (
           <li key={module.id}>
             <details
               open={canManage ? module.position === 1 : true}
@@ -508,17 +482,6 @@ function CourseOutlineBody({
                 <span className="min-w-0 flex-1">
                   <span className="block text-base font-bold leading-snug text-foreground sm:text-[17px]">
                     {module.title}
-                  </span>
-                  <span className="mt-1 block text-sm leading-5 text-muted-foreground">
-                    {module.items.length}{" "}
-                    {module.items.length === 1 ? t("Lab", "bài Lab") : t("Labs", "bài Lab")}
-                    {breakdown ? ` · ${breakdown}` : ""}
-                    {module.prerequisiteModuleId
-                      ? ` · ${t("Prerequisite", "Tiên quyết")}: ${
-                          modules.find((candidate) => candidate.id === module.prerequisiteModuleId)?.title
-                          ?? t("previous module", "chương trước")
-                        }`
-                      : ""}
                   </span>
                 </span>
                 <Badge variant="outline" className="font-semibold text-foreground group-open:hidden">
@@ -737,8 +700,7 @@ function CourseOutlineBody({
               </ul>
             </details>
           </li>
-          );
-        })}
+        ))}
       </ol>
     </section>
   );

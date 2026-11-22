@@ -86,7 +86,7 @@ export const globalNavigation: Record<AppRole, readonly NavigationGroup[]> = {
         },
         {
           id: "submissions",
-          label: "Grading & Gradebook",
+          label: "Grades",
           icon: ClipboardCheck,
           href: "/submissions",
         },
@@ -175,29 +175,29 @@ export const lecturerWorkspaceNavigation: readonly NavigationGroup[] = [
     items: [
       {
         id: "workspace-overview",
-        label: "Overview & Setup",
+        label: "Overview",
         icon: LayoutGrid,
         href: "/workspace-overview",
       },
       {
         id: "course-authoring",
-        label: "Curriculum & Materials",
+        label: "Modules",
         icon: GraduationCap,
         href: "/workspace-overview?view=course-authoring",
       },
       {
         id: "lab-authoring",
-        label: "Lab Creation",
+        label: "Labs",
         icon: FilePlus2,
         href: "/lab-authoring",
       },
       {
         id: "assignment-submissions",
-        label: "Grading & Gradebook",
+        label: "Grades",
         icon: ClipboardCheck,
         href: "/submissions",
       },
-      { id: "members", label: "Students & Access", icon: Users, href: "/members" },
+      { id: "members", label: "Students", icon: Users, href: "/members" },
       { id: "settings", label: "Settings", icon: Settings2, href: "/members?tab=settings" },
     ],
   },

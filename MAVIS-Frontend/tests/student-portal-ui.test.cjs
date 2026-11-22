@@ -95,7 +95,7 @@ test("Student Syllabus hero & Reverse BFS polish: clean Instructor/Up-next pills
 
   assert.doesNotMatch(syllabus, /👨‍🏫/);
   assert.doesNotMatch(syllabus, /mavis-tabular/);
-  assert.match(syllabus, /shrink-0 whitespace-nowrap text-emerald-100\/90/);
+  assert.doesNotMatch(syllabus, /Up next/);
   assert.match(syllabus, /min-w-0 truncate font-semibold/);
   assert.match(impact, /isFrameworkClassNoise/);
   assert.match(impact, /isUnresolvedPlaceholder/);

@@ -1048,7 +1048,7 @@ test("lecturer sidebar nests class destinations and keeps one Lab Creation menu"
   );
   assert.ok(html.includes('aria-label="Collapse SE180711 · FA menu"'));
   assert.ok(html.includes('href="/workspace-overview?workspace=class-1"'));
-  assert.ok(html.includes('aria-label="Lab Creation" href="/lab-authoring?workspace=class-1"'));
+  assert.ok(html.includes('aria-label="Labs" href="/lab-authoring?workspace=class-1"'));
   assert.ok(!html.includes('aria-label="Lab Library"'));
   assert.ok(!html.includes('aria-label="Theory Library"'));
   assert.ok(!html.includes("👨‍🏫 Lecturer"));
@@ -5161,12 +5161,12 @@ test("My Workspaces is a compact LMS class list with tabs and a module outline",
   assert.doesNotMatch(rootHtml, /Workspace code/, "Create class form stays closed until requested");
   const overviewHtml = renderComp(WorkspaceOverview, "ws-swd");
   assert.match(overviewHtml, /aria-label="Class sections"/);
-  assert.match(overviewHtml, /Overview &amp; Setup/);
-  assert.match(overviewHtml, /Curriculum &amp; Materials/);
-  assert.match(overviewHtml, /Lab Creation/);
+  assert.match(overviewHtml, />Overview</);
+  assert.match(overviewHtml, />Modules</);
+  assert.match(overviewHtml, />Labs</);
   assert.doesNotMatch(overviewHtml, /Lab Library/);
-  assert.match(overviewHtml, /Grading &amp; Gradebook/);
-  assert.match(overviewHtml, /Students &amp; Access/);
+  assert.match(overviewHtml, />Grades</);
+  assert.match(overviewHtml, />Students</);
   assert.doesNotMatch(overviewHtml, /aria-label="Class KPIs"/);
   assert.doesNotMatch(overviewHtml, /aria-label="Regenerate Class Passkey"/);
   assert.match(overviewHtml, /Foundations/);

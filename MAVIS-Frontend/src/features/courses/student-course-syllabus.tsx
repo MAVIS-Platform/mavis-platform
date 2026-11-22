@@ -561,20 +561,6 @@ export function StudentCourseSyllabus({
                         : t("Assigned Lecturer", "Giảng viên phụ trách lớp")}
                     </strong>
                   </span>
-                  {summary.nextActiveLab && (
-                    <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-emerald-300/35 bg-emerald-400/20 px-3 py-1 text-emerald-50">
-                      <span className="shrink-0 whitespace-nowrap text-emerald-100/90">
-                        {t("Up next", "Bài tiếp theo")}:
-                      </span>
-                      <strong className="min-w-0 truncate font-semibold">
-                        {formatCourseLabTitle(
-                          summary.nextActiveLab.title,
-                          summary.nextActiveLab.position,
-                          summary.nextActiveLab.assignmentId,
-                        )}
-                      </strong>
-                    </span>
-                  )}
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2.5">

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Copy, KeyRound, Pause, Pencil, Play, Plus, Trash2, X } from "lucide-react";
+import { Check, Copy, KeyRound, Pause, Pencil, Play, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1119,6 +1119,16 @@ export function CourseRoadmap({
   );
 }
 
+const PASSKEY_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+function generateStructuredPasskey(): string {
+  let suffix = "";
+  for (let i = 0; i < 6; i += 1) {
+    suffix += PASSKEY_ALPHABET[Math.floor(Math.random() * PASSKEY_ALPHABET.length)];
+  }
+  return `MAVIS-${suffix}`;
+}
+
 export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
   const t = useCourseText();
   const passkeys = useCoursePasskeys(workspaceId);
@@ -1131,8 +1141,7 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
   });
 
   const [showCreate, setShowCreate] = useState(false);
-  const [customCode, setCustomCode] = useState("");
-  const [label, setLabel] = useState("");
+  const [customCode, setCustomCode] = useState(() => generateStructuredPasskey());
   const [validHours, setValidHours] = useState(720);
   const [maxUses, setMaxUses] = useState<string>("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -1207,7 +1216,12 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
             type="button"
             size="sm"
             variant={showCreate ? "outline" : "default"}
-            onClick={() => setShowCreate((open) => !open)}
+            onClick={() =>
+              setShowCreate((open) => {
+                if (!open) setCustomCode(generateStructuredPasskey());
+                return !open;
+              })
+            }
           >
             {showCreate ? (
               <>
@@ -1226,21 +1240,19 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
 
       {showCreate && (
         <form
-          className="grid gap-3 rounded-xl border bg-muted/20 p-4 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_8rem_8rem_auto]"
+          className="grid gap-3 rounded-xl border bg-muted/20 p-4 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.2fr)_9rem_11rem_auto]"
           onSubmit={(event) => {
             event.preventDefault();
             const parsedMax = Number(maxUses);
             createKey.mutate(
               {
-                ...(customCode.trim() ? { customCode: customCode.trim() } : {}),
-                ...(label.trim() ? { label: label.trim() } : {}),
+                customCode: customCode || generateStructuredPasskey(),
                 validHours: validHours > 0 ? validHours : 720,
                 ...(maxUses.trim() && parsedMax > 0 ? { maxUses: parsedMax } : {}),
               },
               {
                 onSuccess: () => {
-                  setCustomCode("");
-                  setLabel("");
+                  setCustomCode(generateStructuredPasskey());
                   setMaxUses("");
                   setShowCreate(false);
                 },
@@ -1248,27 +1260,26 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
             );
           }}
         >
-          <FormField label={t("Custom code (optional)", "Mã tùy chọn (tùy ý)")}>
+          <FormField label={t("Passkey", "Mã Passkey")}>
             {(props) => (
-              <Input
-                {...props}
-                className="font-mono"
-                maxLength={32}
-                placeholder={t("Auto-generate if empty", "Để trống để tự tạo")}
-                value={customCode}
-                onChange={(event) => setCustomCode(event.target.value.replace(/\s+/g, "").slice(0, 32))}
-              />
-            )}
-          </FormField>
-          <FormField label={t("Label (optional)", "Nhãn gợi nhớ")}>
-            {(props) => (
-              <Input
-                {...props}
-                maxLength={120}
-                placeholder={t("e.g. Main Class · Fall 2026", "VD: Lớp chính thức · Fall 2026")}
-                value={label}
-                onChange={(event) => setLabel(event.target.value)}
-              />
+              <div className="flex items-center gap-1.5">
+                <Input
+                  {...props}
+                  readOnly
+                  className="bg-muted/40 font-mono font-semibold tracking-wide"
+                  value={customCode}
+                />
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="outline"
+                  aria-label={t("Regenerate passkey", "Tạo mã mới")}
+                  title={t("Regenerate passkey", "Tạo mã mới")}
+                  onClick={() => setCustomCode(generateStructuredPasskey())}
+                >
+                  <RefreshCw className="size-4" aria-hidden="true" />
+                </Button>
+              </div>
             )}
           </FormField>
           <FormField label={t("Valid (hours)", "Hiệu lực (giờ)")}>
@@ -1286,15 +1297,36 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
           </FormField>
           <FormField label={t("Max uses", "Giới hạn lượt")}>
             {(props) => (
-              <Input
-                {...props}
-                type="number"
-                min={1}
-                max={10000}
-                placeholder={t("Unlimited", "Không giới hạn")}
-                value={maxUses}
-                onChange={(event) => setMaxUses(event.target.value)}
-              />
+              <div className="flex items-center gap-1.5">
+                <Input
+                  {...props}
+                  type="number"
+                  min={0}
+                  max={10000}
+                  placeholder={t("Unlimited", "Không giới hạn")}
+                  value={maxUses}
+                  onChange={(event) => {
+                    const next = event.target.value;
+                    if (next === "" || Number(next) <= 0) {
+                      setMaxUses("");
+                    } else {
+                      setMaxUses(next);
+                    }
+                  }}
+                />
+                {maxUses !== "" && (
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="outline"
+                    aria-label={t("Reset to unlimited", "Đặt lại không giới hạn")}
+                    title={t("Reset to unlimited", "Đặt lại không giới hạn")}
+                    onClick={() => setMaxUses("")}
+                  >
+                    <X className="size-4" aria-hidden="true" />
+                  </Button>
+                )}
+              </div>
             )}
           </FormField>
           <div className="flex items-end">
@@ -1340,12 +1372,24 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
                   <tr key={item.id} className="align-middle hover:bg-muted/20">
                     <td className="px-2 py-2 font-mono">
                       {isEditing ? (
-                        <Input
-                          className="h-7 w-28 font-mono text-xs"
-                          value={editCode}
-                          maxLength={32}
-                          onChange={(e) => setEditCode(e.target.value.replace(/\s+/g, "").slice(0, 32))}
-                        />
+                        <div className="flex items-center gap-1">
+                          <Input
+                            readOnly
+                            className="h-7 w-28 bg-muted/40 font-mono text-xs"
+                            value={editCode}
+                          />
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="outline"
+                            className="size-7 shrink-0"
+                            aria-label={t("Regenerate passkey", "Tạo mã mới")}
+                            title={t("Regenerate passkey", "Tạo mã mới")}
+                            onClick={() => setEditCode(generateStructuredPasskey())}
+                          >
+                            <RefreshCw className="size-3.5" aria-hidden="true" />
+                          </Button>
+                        </div>
                       ) : item.code ? (
                         <button
                           type="button"
@@ -1395,14 +1439,32 @@ export function CoursePasskey({ workspaceId }: { workspaceId: string }) {
                     </td>
                     <td className="whitespace-nowrap px-2 py-2 tabular-nums text-muted-foreground">
                       {isEditing ? (
-                        <Input
-                          type="number"
-                          className="h-7 w-16 text-xs"
-                          min={1}
-                          placeholder="∞"
-                          value={editMaxUses}
-                          onChange={(e) => setEditMaxUses(e.target.value)}
-                        />
+                        <div className="flex items-center gap-1">
+                          <Input
+                            type="number"
+                            className="h-7 w-16 text-xs"
+                            min={0}
+                            placeholder="∞"
+                            value={editMaxUses}
+                            onChange={(e) => {
+                              const next = e.target.value;
+                              setEditMaxUses(next === "" || Number(next) <= 0 ? "" : next);
+                            }}
+                          />
+                          {editMaxUses !== "" && (
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="outline"
+                              className="size-7 shrink-0"
+                              aria-label={t("Reset to unlimited", "Đặt lại không giới hạn")}
+                              title={t("Reset to unlimited", "Đặt lại không giới hạn")}
+                              onClick={() => setEditMaxUses("")}
+                            >
+                              <X className="size-3.5" aria-hidden="true" />
+                            </Button>
+                          )}
+                        </div>
                       ) : (
                         `${item.usedCount} / ${item.maxUses ?? "∞"}`
                       )}

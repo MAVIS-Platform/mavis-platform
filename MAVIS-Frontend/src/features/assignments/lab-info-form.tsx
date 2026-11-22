@@ -34,9 +34,6 @@ export function LabInfoForm({
   const save = useApiMutation(assignment ? "updateAssignment" : "createAssignment");
   const [title, setTitle] = useState(assignment?.title ?? "");
   const [instructions, setInstructions] = useState(assignment?.instructions ?? "");
-  const [labMode, setLabMode] = useState<"THEORY_ONLY" | "THEORY_QUIZ" | "THEORY_QUIZ_STUDIO">(
-    assignment ? resolveLabTier(assignment) : "THEORY_QUIZ",
-  );
   const [dueLocal, setDueLocal] = useState(() => toDateTimeLocalValue(assignment?.dueAt));
   const [guideTab, setGuideTab] = useState<"write" | "preview">("write");
   const [stayMessage, setStayMessage] = useState("");
@@ -51,20 +48,21 @@ export function LabInfoForm({
     const parsedDue = dueLocal ? new Date(dueLocal) : null;
     const dueAtIso =
       parsedDue && !Number.isNaN(parsedDue.getTime()) ? parsedDue.toISOString() : null;
-    // DB lab_mode CHECK constraint allows LEGACY|THEORY_QUIZ|THEORY_QUIZ_STUDIO; THEORY_ONLY lives in aiPolicy.labTier.
-    const persistedLabMode = labMode === "THEORY_ONLY" ? "THEORY_QUIZ" : labMode;
+    // Preserve any existing tier/runtime setting; new Labs stay flexible and auto-detect from Steps 2–5.
+    const preservedTier = assignment ? resolveLabTier(assignment) : "THEORY_QUIZ";
+    const persistedLabMode = preservedTier === "THEORY_ONLY" ? "THEORY_QUIZ" : preservedTier;
     const payload: Record<string, unknown> = {
       workspaceId,
       ...(assignment ? { assignmentId: assignment.id } : {}),
       title: title.trim(),
       description: instructions,
       dueAt: dueAtIso,
-      requireRuntimeTrace: labMode === "THEORY_QUIZ_STUDIO",
+      requireRuntimeTrace: preservedTier === "THEORY_QUIZ_STUDIO",
       labMode: persistedLabMode,
       aiPolicy: {
         ...existingPolicy,
-        labTier: labMode,
-        skipQuiz: labMode === "THEORY_ONLY",
+        labTier: preservedTier,
+        skipQuiz: preservedTier === "THEORY_ONLY",
       },
       requiredDiagramTypes: [],
       clearReferenceSource: false,
@@ -112,42 +110,17 @@ export function LabInfoForm({
           </span>
         </div>
 
-        <label className="block space-y-1.5 text-sm font-semibold text-foreground">
-          <span>{t("Lab title", "Tên Lab")}</span>
-          <Input
-            aria-label={t("Lab title", "Tên Lab")}
-            required
-            maxLength={255}
-            className="h-10 border-slate-300 bg-card text-foreground dark:border-border"
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-          />
-        </label>
-
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_16rem]">
           <label className="block space-y-1.5 text-sm font-semibold text-foreground">
-            <span>{t("Lab mode", "Chế độ Lab")}</span>
-            <select
-              aria-label={t("Lab mode", "Chế độ Lab")}
-              className="h-10 w-full rounded-md border border-slate-300 bg-card px-3 text-sm font-medium text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 dark:border-border"
-              value={labMode}
-              onChange={(event) => {
-                setLabMode(
-                  event.target.value as "THEORY_ONLY" | "THEORY_QUIZ" | "THEORY_QUIZ_STUDIO",
-                );
-                if (stayMessage) setStayMessage("");
-              }}
-            >
-              <option value="THEORY_ONLY">
-                {t("Theory Only (no Quiz, no Studio)", "Chỉ Lý thuyết (không Quiz, không Studio)")}
-              </option>
-              <option value="THEORY_QUIZ">
-                {t("Theory + Quiz (Static / C1–C3)", "Lý thuyết + Quiz (Tĩnh / C1–C3)")}
-              </option>
-              <option value="THEORY_QUIZ_STUDIO">
-                {t("Theory + Quiz + Studio Live (Docker)", "Lý thuyết + Quiz + Studio Live (Docker)")}
-              </option>
-            </select>
+            <span>{t("Lab title", "Tên Lab")}</span>
+            <Input
+              aria-label={t("Lab title", "Tên Lab")}
+              required
+              maxLength={255}
+              className="h-10 border-slate-300 bg-card text-foreground dark:border-border"
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+            />
           </label>
           <label className="block space-y-1.5 text-sm font-semibold text-foreground">
             <span>{t("Due date (optional)", "Hạn nộp (tùy chọn)")}</span>
@@ -242,9 +215,7 @@ export function LabInfoForm({
         <Button type="submit" disabled={save.isPending || !title.trim()}>
           {save.isPending
             ? t("Saving Lab draft…", "Đang lưu bản nháp Lab…")
-            : labMode === "THEORY_ONLY"
-              ? t("Next Step 3: Lab Theory", "Sang Bước 3: Lý thuyết Lab")
-              : t("Next Step 2: Reference Source", "Sang Bước 2: Nguồn tham chiếu")}
+            : t("Next Step 2: Reference Source", "Sang Bước 2: Nguồn tham chiếu")}
           <ArrowRight className="ml-1.5 size-4" aria-hidden="true" />
         </Button>
       </div>

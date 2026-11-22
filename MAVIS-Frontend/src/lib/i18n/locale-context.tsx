@@ -2002,6 +2002,9 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
     "Mọi Snapshot bắt buộc phải đạt trên 5.0 / 10 để tự động mở khóa bài Lab tiếp theo.",
   "Overall written evaluation is required before publishing grades.":
     "Bắt buộc nhập nhận xét tổng thể trước khi công bố kết quả chấm điểm.",
+  "Modules": "Học phần",
+  "Labs": "Bài Lab",
+  "Grades": "Chấm điểm",
   "Overview & Setup": "Tổng quan & Khởi tạo",
   "Curriculum & Materials": "Đề cương & Học liệu",
   "Grading & Gradebook": "Chấm bài & Bảng điểm",

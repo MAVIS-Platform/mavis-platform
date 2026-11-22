@@ -104,7 +104,7 @@ test("Wave 3: Announcements, inbox, AppShell avatar contrast, and nested main fi
   assert.match(announcements, /useLocale\(/);
   assert.match(inbox, /useLocale\(/);
   assert.match(appShell, /bg-primary text-primary-foreground/);
-  assert.match(appShell, /"Grading & Gradebook"/);
+  assert.match(appShell, /"Grades"/);
   assert.match(appShell, /"My Grades & Submissions"/);
   assert.doesNotMatch(labAuthoring, /<main\b/);
 });
@@ -132,12 +132,12 @@ test("Bug #08: workspaces exposes an h1 landmark, singular/plural counts avoid '
   assert.match(admin, /date\.toLocaleDateString\("vi-VN"\)\}<\/span>\{" "\}/);
 });
 
-test("Bug #09: CourseBuilder uses independent-scroll dual-pane layout preventing overflow and Passkey table compacts padding with truncated labels", () => {
+test("Bug #09: CourseBuilder uses single-scroll accordion with slide-over drawer and Passkey table compacts padding with truncated labels", () => {
   const builder = read("src/features/courses/course-builder.tsx");
   const access = read("src/features/workspaces/course-access.tsx");
 
-  assert.match(builder, /lg:h-\[clamp\(520px,calc\(100vh-11\.5rem\),760px\)\]/);
-  assert.match(builder, /className="flex min-h-0 min-w-0 flex-col bg-background"/);
+  assert.match(builder, /fixed inset-0 z-50 flex justify-end bg-black\/40/);
+  assert.match(builder, /role="dialog"/);
   assert.match(builder, /overflow-x-auto rounded-lg border bg-background p-4/);
   assert.match(access, /className="block max-w-40 truncate"/);
   assert.match(access, /className="whitespace-nowrap px-2\.5 py-2 font-medium"/);
@@ -333,7 +333,7 @@ test("Task #09 i18n, Modal Overlay & Navigation Polish: Inspector Evidence local
   assert.match(archComp, /t\(\s*"No evidence is attached directly to this element\."/);
   assert.match(archComp, /Evidence for related relationships/);
   assert.match(appShell, /reviewSubmissionId/);
-  assert.match(appShell, /Curriculum & Materials/);
+  assert.match(appShell, /"Modules"/);
   assert.match(adminScreens, /role="tab"[\s\S]*aria-selected=\{tab === "profiles"\}/);
   assert.match(builder, /\^\(\?:Module\|Chương\)\\s\*\\d\+/);
   assert.match(dialog, /backdrop-blur-xs/);
