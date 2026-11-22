@@ -287,3 +287,13 @@ test("Task #02 i18n parity: Notifications localize completely in VI, 'all'/'All'
   assert.doesNotMatch(courses, /chuyển Lab sang WF-04|sẵn sàng cho WF-04/);
   assert.match(components, /"Tất cả tầng kiến trúc"/);
 });
+
+test("Task #06 modern Profile: social hero cover, Back navigation, single-line Role badge, non-truncating stats, and no external URL field", () => {
+  const profile = read("src/features/profile/profile.tsx");
+
+  assert.match(profile, /Social profile header/);
+  assert.match(profile, /<ArrowLeft/);
+  assert.match(profile, /whitespace-nowrap/);
+  assert.doesNotMatch(profile, /Advanced: Use an external image URL/);
+  assert.doesNotMatch(profile, /<dt className="truncate/);
+});

@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useRef, useState, type FormEvent } from "react";
 import {
+  ArrowLeft,
   ArrowUpRight,
   BookOpen,
   Camera,
@@ -39,12 +40,26 @@ import type { Response } from "@/lib/api/contracts";
 type User = NonNullable<Response<"session">["user"]>;
 
 export function Profile() {
-  const { t } = useLocale();
+  const { locale, t } = useLocale();
   const session = useSession();
+  const homeHref =
+    session.data?.user?.role === "admin"
+      ? "/administration/health"
+      : session.data?.user?.role === "lecturer"
+        ? "/workspaces"
+        : "/courses";
   return (
     <div className="mx-auto w-full min-w-0 max-w-5xl space-y-6">
-      <header className="flex flex-wrap items-end justify-between gap-3">
+      <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
+          <div className="mb-2">
+            <Button asChild variant="ghost" size="sm" className="-ml-2 h-8 gap-1.5 text-muted-foreground">
+              <Link href={homeHref}>
+                <ArrowLeft className="size-4" aria-hidden="true" />
+                {t("Back", "Quay lại")}
+              </Link>
+            </Button>
+          </div>
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-bold tracking-tight">{t("My Profile")}</h1>
             <ScreenHelpTrigger screenId="profile" />
@@ -59,7 +74,10 @@ export function Profile() {
       ) : session.error ? (
         <ErrorState error={session.error} onRetry={() => void session.refetch()} />
       ) : session.data?.user ? (
-        <ProfileDetails key={session.data.user.id} user={session.data.user} />
+        <ProfileDetails
+          key={`${session.data.user.id}:${locale === "vi" ? "vi" : "en"}`}
+          user={session.data.user}
+        />
       ) : (
         <p role="alert" className="text-sm">
           {t("Sign in to view your profile.")}
@@ -117,16 +135,17 @@ function ProfileStatistics({ role }: { role: User["role"] }) {
         className="grid grid-cols-2 gap-2.5"
       >
         {[
-          ["Projects", value(projects, projectList.length)],
-          ["Services indexed", value(projects, servicesValue)],
-          ["Workspaces joined", value(workspaces, workspaces.data?.length ?? 0)],
-          ["Submissions", value(submissions, submissions.data?.length ?? 0)],
+          [t("Projects", "Dự án"), value(projects, projectList.length)],
+          [t("Services indexed", "Dịch vụ đã quét"), value(projects, servicesValue)],
+          [t("Workspaces joined", "Lớp đã tham gia"), value(workspaces, workspaces.data?.length ?? 0)],
+          [t("Submissions", "Bài nộp"), value(submissions, submissions.data?.length ?? 0)],
         ].map(([label, amount]) => (
           <div
-            key={label}
+            key={String(label)}
             className="min-w-0 rounded-xl border border-border/70 bg-muted/25 px-3 py-2.5"
           >
-            <dt className="truncate text-[11px] font-medium leading-4 text-muted-foreground">{t(String(label))}</dt><dd className="mavis-tabular mt-1 break-words text-base font-bold text-foreground">{amount}</dd>
+            <dt className="text-[11px] font-medium leading-4 text-muted-foreground">{label}</dt>
+            <dd className="mavis-tabular mt-1 break-words text-base font-bold text-foreground">{amount}</dd>
           </div>
         ))}
       </dl>
@@ -207,7 +226,7 @@ export function ProfileDetails({ user }: { user: User }) {
   const [fullName, setFullName] = useState(user.name);
   const [avatarUrl, setAvatarUrl] = useState(user.avatarUrl ?? "");
   const [preferredLocale, setPreferredLocale] = useState<"en" | "vi">(
-    user.preferredLocale ?? activeLocale,
+    activeLocale || user.preferredLocale || "en",
   );
   const [nameError, setNameError] = useState("");
   const [notice, setNotice] = useState("");
@@ -273,57 +292,81 @@ export function ProfileDetails({ user }: { user: User }) {
 
   return (
     <>
+      <section
+        aria-label={t("Social profile header", "Ảnh bìa và đại diện")}
+        className="overflow-hidden rounded-2xl border bg-card shadow-sm"
+      >
+        <div className="relative h-36 bg-gradient-to-r from-sky-600 via-teal-600 to-indigo-600 dark:from-slate-900 dark:via-teal-900 dark:to-indigo-950">
+          <div
+            aria-hidden="true"
+            className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.28),transparent_60%)]"
+          />
+        </div>
+        <div className="flex flex-col gap-4 px-5 pb-5 sm:flex-row sm:items-end sm:justify-between sm:px-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
+            <div className="relative -mt-14 inline-flex w-fit shrink-0">
+              <UserAvatar
+                name={fullName || user.name}
+                avatarUrl={avatarUrl}
+                size="xl"
+                className="size-24 text-xl ring-4 ring-card sm:size-28"
+              />
+              {canUploadPhoto && (
+                <button
+                  type="button"
+                  aria-label={t("Update profile photo", "Cập nhật ảnh đại diện")}
+                  title={t("Upload photo from device", "Tải ảnh đại diện từ máy")}
+                  onClick={() => setAvatarDialogOpen(true)}
+                  className="absolute bottom-1 right-1 flex size-9 items-center justify-center rounded-full border-2 border-card bg-primary text-primary-foreground shadow-sm transition-transform hover:scale-105 hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <Camera className="size-4" aria-hidden="true" />
+                </button>
+              )}
+            </div>
+            <div className="min-w-0 space-y-1.5 sm:pb-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="break-words text-xl font-bold leading-7 text-foreground sm:text-2xl">
+                  {fullName || user.name || t("Full name not available")}
+                </h2>
+                <Badge
+                  variant="secondary"
+                  className="shrink-0 whitespace-nowrap border border-primary/20 bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary"
+                >
+                  {t(roleLabels[user.role])}
+                </Badge>
+              </div>
+              <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                <Mail className="size-3.5 shrink-0" aria-hidden="true" />
+                <span className="min-w-0 break-all">{user.email || t("Email not available")}</span>
+                {user.email && (
+                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300">
+                    <ShieldCheck className="size-3" aria-hidden="true" />
+                    {t("Verified", "Đã xác minh")}
+                  </span>
+                )}
+              </p>
+            </div>
+          </div>
+          {canUploadPhoto && (
+            <div className="flex flex-wrap items-center gap-2 sm:pb-1">
+              <Button type="button" size="sm" variant="outline" onClick={() => setAvatarDialogOpen(true)}>
+                <Camera className="mr-1.5 size-3.5" aria-hidden="true" />
+                {avatarUrl
+                  ? t("Change photo", "Đổi ảnh đại diện")
+                  : t("Upload photo", "Tải ảnh đại diện")}
+              </Button>
+            </div>
+          )}
+        </div>
+      </section>
+
       <div className="grid min-w-0 gap-6 lg:grid-cols-[340px_minmax(0,1fr)] lg:items-start">
         <section
           aria-label={t("Profile summary")}
-          className="min-w-0 overflow-hidden rounded-2xl border bg-card shadow-sm [overflow-wrap:anywhere]"
+          className="min-w-0 overflow-hidden rounded-2xl border bg-card p-5 shadow-sm [overflow-wrap:anywhere]"
         >
-          <div className="relative h-24 bg-gradient-to-r from-teal-700 via-sky-700 to-indigo-700 dark:from-teal-900 dark:via-sky-900 dark:to-indigo-950">
-            <div
-              aria-hidden="true"
-              className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.22),transparent_60%)]"
-            />
-          </div>
-          <div className="px-5 pb-5 sm:px-6 sm:pb-6">
-            <div className="-mt-12 flex items-end justify-between gap-3">
-              <div className="relative inline-flex">
-                <UserAvatar
-                  name={fullName || user.name}
-                  avatarUrl={avatarUrl}
-                  size="xl"
-                  className="ring-4 ring-card"
-                />
-                {canUploadPhoto && (
-                  <button
-                    type="button"
-                    aria-label={t("Update profile photo", "Cập nhật ảnh đại diện")}
-                    title={t("Update profile photo", "Cập nhật ảnh đại diện")}
-                    onClick={() => setAvatarDialogOpen(true)}
-                    className="absolute bottom-0 right-0 flex size-8 items-center justify-center rounded-full border-2 border-card bg-primary text-primary-foreground shadow-sm transition-transform hover:scale-105 hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    <Camera className="size-3.5" aria-hidden="true" />
-                  </button>
-                )}
-              </div>
-              <Badge
-                variant="secondary"
-                className="mb-1 max-w-full whitespace-normal border border-primary/20 bg-primary/10 text-primary"
-              >
-                {t(roleLabels[user.role])}
-              </Badge>
-            </div>
-
-            <div className="mt-4 min-w-0">
-              <h2 className="break-words text-xl font-bold leading-7 text-foreground">
-                {user.name || t("Full name not available")}
-              </h2>
-              <p className="mt-1 flex items-center gap-1.5 break-words text-sm leading-6 text-muted-foreground">
-                <Mail className="size-3.5 shrink-0" aria-hidden="true" />
-                <span className="min-w-0 break-all">{user.email || t("Email not available")}</span>
-              </p>
-            </div>
-
-            <div className="mt-4 flex min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-border/60 bg-muted/25 px-2.5 py-1.5 text-xs text-muted-foreground">
+          <div className="space-y-4">
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-border/60 bg-muted/25 px-2.5 py-1.5 text-xs text-muted-foreground">
               <span className="shrink-0 font-medium">{t("Account ID:")}</span>
               <code className="min-w-0 flex-1 truncate font-mono text-[11px]" title={user.id}>
                 {user.id}
@@ -347,7 +390,7 @@ export function ProfileDetails({ user }: { user: User }) {
               </Button>
             </div>
             {copyNotice && (
-              <p role="status" className="mt-1.5 text-xs text-muted-foreground">
+              <p role="status" className="text-xs text-muted-foreground">
                 {t(copyNotice)}
               </p>
             )}
@@ -507,32 +550,12 @@ export function ProfileDetails({ user }: { user: User }) {
                     {t("Role")}
                   </dt>
                   <dd className="mt-1.5">
-                    <Badge variant="secondary" className="max-w-full whitespace-normal">
+                    <Badge variant="secondary" className="whitespace-nowrap">
                       {t(roleLabels[user.role])}
                     </Badge>
                   </dd>
                 </div>
               </dl>
-
-              <details className="rounded-xl border border-border/60 bg-muted/10 px-4 py-3 text-sm">
-                <summary className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground">
-                  {t("Advanced: Use an external image URL", "Nâng cao: Dùng đường dẫn ảnh bên ngoài (URL)")}
-                </summary>
-                <div className="mt-3">
-                  <label htmlFor="profile-avatar" className="text-xs font-medium text-muted-foreground">
-                    {t("Avatar URL")}
-                  </label>
-                  <Input
-                    id="profile-avatar"
-                    className="mt-1.5 h-10 text-xs"
-                    type="url"
-                    maxLength={1000}
-                    placeholder="https://example.com/photo.jpg"
-                    value={avatarUrl}
-                    onChange={(e) => setAvatarUrl(e.target.value)}
-                  />
-                </div>
-              </details>
 
               {update.error && <ErrorState error={update.error} />}
               <div className="flex flex-col gap-2 border-t pt-4 sm:flex-row">
