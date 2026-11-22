@@ -108,6 +108,7 @@ public class RuntimeQueueCoordinator {
     private volatile long lastRuntimeProbeMillis = 0L;
     private volatile boolean cachedDockerReachable = false;
     private volatile boolean cachedGvisorAvailable = false;
+    private volatile Instant lastWorkerPollAt = null;
 
     public record CommandOutput(int exitCode, String stdout) {}
 
@@ -215,10 +216,21 @@ public class RuntimeQueueCoordinator {
         }
     }
 
+    public void recordWorkerPoll() {
+        lastWorkerPollAt = Instant.now();
+    }
+
+    public Instant getLastWorkerPollAt() {
+        return lastWorkerPollAt;
+    }
+
     /** Atomically claims the oldest QUEUED session for a remote Worker VPS (or local drain). */
     public WorkerClaimResult claimNextQueuedForRemoteWorker(String workerId, String isolationRuntime) {
         String safeWorker = (workerId == null || workerId.isBlank()) ? "remote-worker" : workerId.trim();
         String safeRuntime = (isolationRuntime == null || isolationRuntime.isBlank()) ? "runc" : isolationRuntime.trim();
+        if (!"local-dispatcher".equals(safeWorker)) {
+            lastWorkerPollAt = Instant.now();
+        }
         WorkerClaimResult result = runInTransaction(() -> {
             // FOR UPDATE SKIP LOCKED: two claimers can never receive the same row, and no stale cached entity is reused.
             RuntimeSession locked = runtimeSessionRepository.lockOldestQueued().orElse(null);
@@ -717,7 +729,13 @@ public class RuntimeQueueCoordinator {
     }
 
     public RuntimeHealthSnapshot getRuntimeHealth() {
-        refreshDockerAndRuntimeProbe();
+        return getRuntimeHealth(Instant.now());
+    }
+
+    RuntimeHealthSnapshot getRuntimeHealth(Instant now) {
+        if (!isRemoteWorkerMode()) {
+            refreshDockerAndRuntimeProbe();
+        }
         long active = countActiveSessions();
         long queued = countQueuedSessions();
         long freeMiB = usableDiskMiB();
@@ -748,12 +766,25 @@ public class RuntimeQueueCoordinator {
             if ("READY".equals(readiness)) readiness = "DEGRADED";
             warnings.add("Host free disk space is low (" + freeMiB + " MiB free; threshold " + lowDiskThresholdMiB + " MiB).");
         }
+        if (isRemoteWorkerMode()) {
+            Instant lastPoll = lastWorkerPollAt;
+            if (lastPoll == null) {
+                if ("READY".equals(readiness)) readiness = "DEGRADED";
+                warnings.add("No remote worker poll received yet in REMOTE_WORKER mode.");
+            } else {
+                long pollAgeSec = Math.max(0L, Duration.between(lastPoll, now).getSeconds());
+                if (pollAgeSec >= 30L) {
+                    if ("READY".equals(readiness)) readiness = "DEGRADED";
+                    warnings.add("Remote worker heartbeat is stale (" + pollAgeSec + "s since last poll; threshold 30s).");
+                }
+            }
+        }
         if (isRemoteWorkerMode() && (sandboxRegistry == null || sandboxRegistry.isBlank())) {
             if ("READY".equals(readiness)) readiness = "DEGRADED";
             warnings.add("REMOTE_WORKER mode without MAVIS_RUNNER_SANDBOX_REGISTRY: Dockerfile-built Labs need a shared registry so remote Worker VPSs can pull images.");
         }
 
-        long oldestWaitSec = computeOldestQueuedWaitSeconds(Instant.now());
+        long oldestWaitSec = computeOldestQueuedWaitSeconds(now);
         if (oldestWaitSec > Math.max(10L, alertQueueWaitSeconds)) {
             if ("READY".equals(readiness)) readiness = "DEGRADED";
             warnings.add("Oldest queued Studio session has waited " + oldestWaitSec + "s (threshold " + alertQueueWaitSeconds + "s).");

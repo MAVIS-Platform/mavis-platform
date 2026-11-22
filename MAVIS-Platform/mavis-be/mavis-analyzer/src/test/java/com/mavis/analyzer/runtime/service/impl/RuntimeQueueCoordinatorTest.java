@@ -471,4 +471,33 @@ class RuntimeQueueCoordinatorTest {
         assertThat(coordinator.reapAbandonedStudioSessions(now.plusSeconds(10))).isZero();
         assertThat(activeQueued.getExecutionStatus()).isEqualTo("QUEUED");
     }
+
+    @Test
+    void remoteWorkerHealthRequiresRecentWorkerPollWithin30Seconds() {
+        RuntimeQueueCoordinator stub = new RuntimeQueueCoordinator(repository, dispatcher, mapper) {
+            @Override
+            protected long usableDiskMiB() { return 20_000L; }
+            @Override
+            protected long totalDiskMiB() { return 40_000L; }
+        };
+        ReflectionTestUtils.setField(stub, "runnerMode", "REMOTE_WORKER");
+        ReflectionTestUtils.setField(stub, "sandboxRegistry", "ghcr.io/org/mavis-sandbox");
+        when(repository.lockOldestQueued()).thenReturn(Optional.empty());
+
+        var beforePoll = stub.getRuntimeHealth(Instant.now());
+        assertThat(beforePoll.surveyReadiness()).isEqualTo("DEGRADED");
+        assertThat(beforePoll.warnings()).anyMatch(w -> w.contains("No remote worker poll"));
+
+        stub.claimNextQueuedForRemoteWorker("worker-vps-1", "runc");
+        Instant polledAt = stub.getLastWorkerPollAt();
+        assertThat(polledAt).isNotNull();
+
+        var fresh = stub.getRuntimeHealth(polledAt.plusSeconds(10));
+        assertThat(fresh.surveyReadiness()).isEqualTo("READY");
+        assertThat(fresh.warnings()).isEmpty();
+
+        var stale = stub.getRuntimeHealth(polledAt.plusSeconds(45));
+        assertThat(stale.surveyReadiness()).isEqualTo("DEGRADED");
+        assertThat(stale.warnings()).anyMatch(w -> w.contains("Remote worker heartbeat is stale"));
+    }
 }

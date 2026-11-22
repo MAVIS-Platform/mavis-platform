@@ -249,6 +249,16 @@ cp "$incoming/compose.production.yml" deploy/compose.production.yml
 if [ -f "$incoming/compose.runner-worker.yml" ]; then cp "$incoming/compose.runner-worker.yml" deploy/compose.runner-worker.yml; fi
 if [ -f "$incoming/install-gvisor.sh" ]; then cp "$incoming/install-gvisor.sh" deploy/install-gvisor.sh && chmod 0755 deploy/install-gvisor.sh; fi
 if [ -f "$incoming/check-studio-readiness.sh" ]; then cp "$incoming/check-studio-readiness.sh" deploy/check-studio-readiness.sh && chmod 0755 deploy/check-studio-readiness.sh; fi
+if [ -f "$incoming/apply-course-schema.py" ]; then cp "$incoming/apply-course-schema.py" deploy/apply-course-schema.py; fi
+if [ -f "$incoming/backup-db.sh" ]; then
+  cp "$incoming/backup-db.sh" deploy/backup-db.sh && chmod 0755 deploy/backup-db.sh
+  if [ -d /etc/cron.d ] && [ -w /etc/cron.d ]; then
+    printf '15 3 * * * root /opt/mavis/deploy/backup-db.sh >> /var/log/mavis-db-backup.log 2>&1\n' > /etc/cron.d/mavis-db-backup
+    chmod 0644 /etc/cron.d/mavis-db-backup
+  else
+    echo "Skipping /etc/cron.d/mavis-db-backup install (requires write access to /etc/cron.d); see Runbook."
+  fi
+fi
 printf 'IMAGE_PREFIX=%s\nIMAGE_TAG=%s\n' "$prefix" "$tag" > .release.env
 python3 - "$prefix" "$tag" <<'PY'
 from pathlib import Path

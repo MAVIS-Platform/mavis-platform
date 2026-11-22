@@ -166,6 +166,29 @@ class MigrationTest(unittest.TestCase):
             self.assertEqual(destination.read_bytes(), b"old backup")
             self.assertFalse(destination.with_suffix(".pending").exists())
 
+    def test_backup_only_cli_mode_invokes_postgres_backup_without_migration(self):
+        import io
+        import json as _json
+
+        compose_json = _json.dumps({
+            "services": {
+                "backend": {
+                    "environment": {
+                        "MAVIS_DB_URL": "jdbc:postgresql://db.example.invalid:5432/mavis?sslmode=require",
+                        "MAVIS_DB_USERNAME": "app",
+                        "MAVIS_DB_PASSWORD": "secret",
+                    }
+                }
+            }
+        })
+        fake_client = Mock()
+        with patch.object(module, "PostgresClient", return_value=fake_client) as client_cls:
+            module.main(["--backup-only", "/tmp/daily-test.dump"], io.StringIO(compose_json))
+        client_cls.assert_called_once()
+        fake_client.backup.assert_called_once_with(Path("/tmp/daily-test.dump"))
+        fake_client.apply.assert_not_called()
+        fake_client.probe.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -512,6 +512,7 @@ public class RuntimeStudioService {
     @Transactional
     public JsonNode poll(UUID id, String resourceProject) {
         runner.requireRunnerService();
+        if (queueCoordinator != null) queueCoordinator.recordWorkerPoll();
         RuntimeSession session = sessions.findById(id)
                 .orElseThrow(() -> error(ErrorCode.NOT_FOUND, "Runtime session not found."));
         if (!resourceProject.equals(session.getResourceProject())) throw error(ErrorCode.CONFLICT, "Runner allocation mismatch.");

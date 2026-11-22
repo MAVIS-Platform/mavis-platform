@@ -4,13 +4,16 @@ namespace MAVIS.Runner;
 
 /// <summary>Shared-root managed execution. Java endpoint support and cross-language digest fixtures are deployment gates.</summary>
 public sealed class ManagedRuntimeAdapter(JavaRuntimeClient java, IDockerCommands docker,
-    string? ociRuntime = null, bool? writableRootfsUnderKernelSandbox = null)
+    string? ociRuntime = null, bool? writableRootfsUnderKernelSandbox = null,
+    Func<RuntimeRunDefinition, CancellationToken, Task<RuntimeRunDefinition>>? prepareDefinition = null)
 {
     public async Task<RuntimeSessionOutcome> RunAsync(string sessionId, string collectorConfigPath, string stateRoot,
         IReadOnlyDictionary<string, string>? secrets = null, CancellationToken ct = default)
     {
         if (!Path.IsPathFullyQualified(stateRoot)) throw new ArgumentException("Absolute state root required.");
         var definition = await java.GetDefinitionAsync(sessionId, ct);
+        if (prepareDefinition is not null)
+            definition = await prepareDefinition(definition, ct);
         if (definition.ProtectedEnvironmentAvailable)
         {
             var environment = await java.GetEnvironmentAsync(definition, ct);
