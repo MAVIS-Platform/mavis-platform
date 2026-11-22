@@ -18,6 +18,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
+  GripVertical,
   History,
   Layers,
   Lightbulb,
@@ -546,8 +547,11 @@ export function LiveStudioWorkbench({
   const [leftWidth, setLeftWidth] = useState(244);
   const [rightWidth, setRightWidth] = useState(340);
   const [rightHeight, setRightHeight] = useState<number | null>(null);
+  const [rightOffset, setRightOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [missionWidth, setMissionWidth] = useState(278);
   const [missionHeight, setMissionHeight] = useState<number | null>(null);
+  const [missionOffset, setMissionOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [frontPanel, setFrontPanel] = useState<"right" | "mission">("right");
   const [bottomHeight, setBottomHeight] = useState(256);
   const [bottomCollapsed, setBottomCollapsed] = useState(true);
   const rightCardRef = useRef<HTMLElement>(null);
@@ -664,6 +668,69 @@ export function LiveStudioWorkbench({
       document.body.style.userSelect = "";
       document.body.style.cursor = "";
       setResizingAxis(null);
+      resizeCleanupRef.current = null;
+    }
+
+    resizeCleanupRef.current = cleanup;
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", cleanup);
+    window.addEventListener("pointercancel", cleanup);
+  }
+
+  function startPanelDrag(
+    panel: "right" | "mission",
+    startEvent: ReactPointerEvent<HTMLDivElement>,
+  ) {
+    if (startEvent.button !== 0) return;
+    if ((startEvent.target as HTMLElement).closest("button, a, input, select, textarea")) return;
+    startEvent.preventDefault();
+    startEvent.stopPropagation();
+    resizeCleanupRef.current?.();
+    setFrontPanel(panel);
+
+    const card = panel === "right" ? rightCardRef.current : missionCardRef.current;
+    const cardRect = card?.getBoundingClientRect();
+    const parentRect = (card?.offsetParent as HTMLElement | null)?.getBoundingClientRect();
+    const startX = startEvent.clientX;
+    const startY = startEvent.clientY;
+    const initial = panel === "right" ? rightOffset : missionOffset;
+    const pw = parentRect?.width ?? window.innerWidth;
+    const ph = parentRect?.height ?? window.innerHeight;
+    const cw = cardRect?.width ?? (panel === "right" ? rightWidth : missionWidth);
+
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "grabbing";
+
+    function onPointerMove(moveEvent: PointerEvent) {
+      const nextX = initial.x + (moveEvent.clientX - startX);
+      const nextY = initial.y + (moveEvent.clientY - startY);
+      const minY = -8;
+      const maxY = Math.max(-8, ph - 72);
+      const clampedY = Math.max(minY, Math.min(maxY, Math.round(nextY)));
+
+      if (panel === "right") {
+        const minX = 16 - Math.max(8, pw - cw - 8);
+        const maxX = 8;
+        setRightOffset({
+          x: Math.max(minX, Math.min(maxX, Math.round(nextX))),
+          y: clampedY,
+        });
+      } else {
+        const minX = -62;
+        const maxX = Math.max(-62, pw - cw - 78);
+        setMissionOffset({
+          x: Math.max(minX, Math.min(maxX, Math.round(nextX))),
+          y: clampedY,
+        });
+      }
+    }
+
+    function cleanup() {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", cleanup);
+      window.removeEventListener("pointercancel", cleanup);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
       resizeCleanupRef.current = null;
     }
 
@@ -2200,20 +2267,33 @@ export function LiveStudioWorkbench({
               </button>
             </nav>
 
-            {/* MODERN MAVIS MISSION CARD (Docked cleanly beside Left Rail — Style-Aware & Freely Resizable) */}
+            {/* MODERN MAVIS MISSION CARD (Docked cleanly beside Left Rail — Freely Draggable & Resizable) */}
             {!missionHidden && (
               <div
                 ref={missionCardRef}
                 aria-label={t("Lab Mission", "Mục tiêu Lab")}
+                onPointerDown={() => setFrontPanel("mission")}
                 style={{
+                  left: 70 + missionOffset.x,
+                  top: 16 + missionOffset.y,
                   width: missionWidth,
+                  maxHeight: `calc(100% - ${Math.max(16, 16 + missionOffset.y) + 16}px)`,
                   ...(missionHeight != null && !missionCollapsed ? { height: missionHeight } : {}),
                 }}
-                className={`pointer-events-auto absolute top-4 left-[70px] z-20 flex max-h-[calc(100%-2rem)] max-w-[calc(100%-5.5rem)] flex-col overflow-hidden ${styleCfg.missionCardClass}`}
+                className={`pointer-events-auto absolute flex max-h-[calc(100%-2rem)] max-w-[calc(100%-1rem)] flex-col overflow-hidden ${
+                  frontPanel === "mission" ? "z-30" : "z-20"
+                } ${styleCfg.missionCardClass}`}
               >
                 <div className={`h-1.5 w-full shrink-0 ${styleCfg.missionAccentClass}`} aria-hidden="true" />
-                <div className="flex shrink-0 items-center justify-between gap-2 px-3.5 py-2.5">
+                <div
+                  data-drag-handle="mission"
+                  title={t("Drag to move · Double-click to reset position", "Kéo để di chuyển · Nhấp đúp để về vị trí cũ")}
+                  onPointerDown={(event) => startPanelDrag("mission", event)}
+                  onDoubleClick={() => setMissionOffset({ x: 0, y: 0 })}
+                  className="flex shrink-0 cursor-grab items-center justify-between gap-2 px-3 py-2.5 select-none active:cursor-grabbing"
+                >
                   <span className="inline-flex items-center gap-1.5 text-[13px] font-bold tracking-tight">
+                    <GripVertical className="size-3.5 shrink-0 opacity-45" aria-hidden="true" />
                     <Target className="size-3.5 shrink-0 text-primary" aria-hidden="true" />
                     {t("Lab Mission", "Mục tiêu Lab")}
                   </span>
@@ -4096,17 +4176,26 @@ export function LiveStudioWorkbench({
           )}
         </div>
 
-        {/* FLOATING RIGHT CONTEXTUAL CARD (Style-Aware & Freely Resizable on Left / Bottom / Corner Edges) */}
+        {/* FLOATING RIGHT CONTEXTUAL CARD (Style-Aware, Freely Draggable & Resizable) */}
         {showRight && (
           <aside
             ref={rightCardRef}
+            onPointerDown={() => setFrontPanel("right")}
             style={{
+              top: 16 + rightOffset.y,
+              right: 16 - rightOffset.x,
               width: rightWidth,
+              maxHeight:
+                rightHeight != null || rightOffset.y !== 0
+                  ? `calc(100% - ${Math.max(16, 16 + rightOffset.y) + 16}px)`
+                  : undefined,
               ...(rightHeight != null ? { height: rightHeight } : {}),
               scrollbarWidth: "thin",
               scrollbarColor: isLight ? "#cbd5e1 #ffffff" : "#334155 #0a0f18",
             }}
-            className={`pointer-events-auto absolute top-4 right-4 z-20 flex max-w-[calc(100%-2rem)] flex-col overflow-hidden ${
+            className={`pointer-events-auto absolute flex max-w-[calc(100%-1rem)] flex-col overflow-hidden ${
+              frontPanel === "right" ? "z-30" : "z-20"
+            } ${
               rightHeight != null ? "max-h-[calc(100%-2rem)]" : "max-h-[calc(100%-6.25rem)]"
             } ${styleCfg.floatingCardClass}`}
           >
@@ -4185,13 +4274,18 @@ export function LiveStudioWorkbench({
               }}
               className="absolute bottom-0 left-0 z-30 size-3.5 cursor-nesw-resize"
             />
-            {/* Floating Card Header with Close Button */}
+            {/* Floating Card Draggable Header with Close Button */}
             <div
-              className={`flex shrink-0 items-center justify-between gap-2 border-b px-4 py-2.5 ${
+              data-drag-handle="inspector"
+              title={t("Drag to move · Double-click to reset position", "Kéo để di chuyển · Nhấp đúp để về vị trí cũ")}
+              onPointerDown={(event) => startPanelDrag("right", event)}
+              onDoubleClick={() => setRightOffset({ x: 0, y: 0 })}
+              className={`flex shrink-0 cursor-grab items-center justify-between gap-2 border-b px-3.5 py-2.5 select-none active:cursor-grabbing ${
                 isLight ? "border-slate-200 bg-slate-50/90" : "border-slate-800 bg-slate-950/70"
               }`}
             >
-              <div className="min-w-0">
+              <div className="flex min-w-0 items-center gap-1.5">
+                <GripVertical className="size-3.5 shrink-0 opacity-45" aria-hidden="true" />
                 <p className="truncate text-sm font-bold">
                   {rightCardMode === "diagnostics" && (!authoring || setupPanel === "service")
                     ? t("Impact & Diagnostics", "Chẩn đoán Change Impact")

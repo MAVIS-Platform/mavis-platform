@@ -492,3 +492,13 @@ test("LiveStudioWorkbench left tool rail Snapshots & Logs buttons toggle closed 
     /Logs & Traces[\s\S]{0,400}if \(!bottomCollapsed && tab !== "snapshots"\)\s*\{\s*setBottomCollapsed\(true\);/,
   );
 });
+
+test("LiveStudioWorkbench floating Inspector and Mission cards support header drag-to-move", () => {
+  const src = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/live-studio-workbench.tsx"),
+    "utf8",
+  );
+  assert.match(src, /function startPanelDrag\(/);
+  assert.ok(src.includes('data-drag-handle="inspector"'));
+  assert.ok(src.includes('data-drag-handle="mission"'));
+});
