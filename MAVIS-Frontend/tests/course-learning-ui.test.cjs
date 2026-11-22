@@ -547,6 +547,8 @@ test("Studio in the guided Lab keeps Runtime Studio as a separate phase and conn
 test("Evidence & Submit receives the verified Runtime Studio session", () => {
   const lab = read("src/features/courses/screens.tsx");
   assert.match(lab, /runtimeSessionId=\{verifiedSessionForSubmit\}/);
+  assert.match(lab, /Boolean\(studentContext\?\.latestSubmission\)/);
+  assert.match(lab, /const runtimeEvidenceSatisfied = Boolean\(verifiedStudioSession\) \|\| hasSubmitted/);
   assert.match(lab, /Finish the MAVIS Runtime Studio exercise to seal a verified receipt/);
   assert.ok(lab.includes("Runtime Evidence Review"));
   assert.ok(lab.includes("Signed runtime receipt"));
@@ -692,8 +694,8 @@ test("Stage 1 reference views, Step 4 submit bridge, and student BFF endpoints a
   assert.ok(course.includes('scrollIntoView({ behavior: "smooth", block: "start" })'));
   assert.ok(course.includes("Runtime Studio is not configured"));
   assert.ok(course.includes("Configure Runtime Studio"));
-  assert.ok(course.includes("Required before Runtime Studio"));
-  assert.ok(course.includes("Complete the Module Quiz"));
+  assert.ok(course.includes("Complete the Module Quiz first"));
+  assert.ok(course.includes("Pass the Module Quiz to unlock Runtime Studio."));
   assert.ok(course.includes("Go to Module Quiz"));
   assert.ok(read("src/features/courses/student-course-syllabus.tsx").includes('searchParams.get("item")'));
   assert.equal(allowedBackendPath(`workspaces/${ws}/course-labs/${labId}/student-context`), true);
@@ -816,10 +818,10 @@ test("guided submission attaches verified Studio session when required and rende
   assert.match(composer, /stage3Ready && selectedRuntime\?\.studioVerified === true/);
 });
 
-test("Lab phases surface actionable issue dialogs and preserve a student report path", () => {
+test("Lab phases surface concise issue dialogs with a recovery action", () => {
   const lab = read("src/features/courses/screens.tsx");
   const subV2 = read("src/features/courses/lab-submission-v2.tsx");
-  assert.match(lab, /Copy report for lecturer/);
+  assert.doesNotMatch(lab, /Copy report for lecturer/);
   assert.match(lab, /Static Studio data could not load/);
   assert.match(lab, /Runtime Studio session needs attention/);
   assert.match(lab, /Runtime evidence is incomplete/);

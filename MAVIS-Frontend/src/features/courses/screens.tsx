@@ -751,9 +751,13 @@ export function LabWorkspace() {
 
   const hasReferenceArch = Boolean(activeModelId || referenceSnapshotId);
   const hasSubmitted = Boolean(studentContext.data?.latestSubmission);
+  // A frozen submission belongs to this Lab and already passed the runtime-receipt
+  // validation on the server. Session history may be pruned afterwards, so do not
+  // re-lock a learner who can already view their submitted dossier.
+  const runtimeEvidenceSatisfied = Boolean(verifiedStudioSession) || hasSubmitted;
   const stepComplete: Record<1 | 2 | 3, boolean> = {
     1: hasReferenceArch ? Boolean(activeModelId) : Boolean(lab || hasSubmitted || runtimeReady),
-    2: requiresRuntime ? Boolean(verifiedStudioSession) : runtimeReady,
+    2: requiresRuntime ? runtimeEvidenceSatisfied : runtimeReady,
     3: hasSubmitted,
   };
   const visibleSteps = requiresRuntime
@@ -764,12 +768,12 @@ export function LabWorkspace() {
   const stepAvailable = (id: 1 | 2 | 3) => {
     if (preview || id === 1) return true;
     if (id === 2) return runtimeReady && requiresRuntime;
-    return !requiresRuntime || Boolean(verifiedStudioSession);
+    return !requiresRuntime || runtimeEvidenceSatisfied;
   };
   const stepReason = (id: 1 | 2 | 3) => {
     if (id === 2 && !runtimeReady)
       return t("Runtime Studio is not available yet.", "Runtime Studio hiện chưa sẵn sàng.");
-    if (id === 3 && requiresRuntime && !verifiedStudioSession)
+    if (id === 3 && requiresRuntime && !runtimeEvidenceSatisfied)
       return t(
         "Finish MAVIS Runtime Studio and create a verified receipt before submitting.",
         "Hoàn tất MAVIS Runtime Studio và tạo receipt đã xác minh trước khi nộp bài.",
@@ -1412,12 +1416,9 @@ function StepContent({
   const runtimeConfigurationMissing = step === 2 && !requiresRuntime;
   const runtimePrerequisiteMissing = step === 2 && requiresRuntime && !runtimeReady && !preview;
   const runtimeUnavailable = runtimeConfigurationMissing || runtimePrerequisiteMissing;
-  const moduleQuiz = studentContext?.quiz ?? null;
-  const moduleQuizStatus = moduleQuiz?.latestStatus ?? "NOT_ATTEMPTED";
   const [runtimeConfigurationDialogOpen, setRuntimeConfigurationDialogOpen] = useState(false);
   const [phaseIssue, setPhaseIssue] = useState<LabPhaseIssueKind | null>(null);
   const [phaseIssueDialogOpen, setPhaseIssueDialogOpen] = useState(false);
-  const [reportCopied, setReportCopied] = useState(false);
   const shownAutomaticIssueKeys = useRef(new Set<string>());
 
   useEffect(() => {
@@ -1441,6 +1442,9 @@ function StepContent({
 
   const liveStudioVerified =
     studioVerified ||
+    // Keep Evidence Review available for an existing frozen WF-04 submission
+    // even when the original runtime session is no longer present in the list.
+    Boolean(studentContext?.latestSubmission) ||
     Boolean(
       studioStateQuery.data?.receiptDigest ||
       studioStateQuery.data?.executionStatus === "COMPLETED",
@@ -1768,7 +1772,6 @@ function StepContent({
   );
 
   const openPhaseIssue = (issue: LabPhaseIssueKind) => {
-    setReportCopied(false);
     setPhaseIssue(issue);
     setPhaseIssueDialogOpen(true);
   };
@@ -1834,15 +1837,6 @@ function StepContent({
         };
     }
   })();
-  const copyPhaseIssueReport = async () => {
-    const report = [`MAVIS Lab issue report`, `Lab: ${labTitle ?? labId}`, `Phase: ${step}/3 — ${current.title}`, `Issue: ${phaseIssueContent.title}`, `Workspace: ${workspaceId}`, `Assignment: ${labId}`, `Model: ${modelId ?? "not available"}${modelRevision !== undefined ? ` (r${modelRevision})` : ""}`, `Runtime session: ${activeStudioSessionId || "not started"}`].join("\n");
-    try {
-      await navigator.clipboard.writeText(report);
-      setReportCopied(true);
-    } catch {
-      setReportCopied(false);
-    }
-  };
   useEffect(() => {
     const automaticIssue = step === 1 && fallbackModelQuery.isError ? "static-data" : step === 2 && needsSandboxBootstrap ? "runtime-failed" : step === 3 && requiresRuntime && !liveStudioVerified && !preview ? "evidence-missing" : null;
     if (!automaticIssue || shownAutomaticIssueKeys.current.has(`${step}:${automaticIssue}`)) return;
@@ -1858,44 +1852,24 @@ function StepContent({
             <DialogTitle>
               {runtimeConfigurationMissing
                 ? t("Runtime Studio is not configured", "Runtime Studio chưa được cấu hình")
-                : t("Runtime Studio is locked", "Runtime Studio chưa được mở khóa")}
+                : t("Complete the Module Quiz first", "Hãy hoàn thành Quiz Module trước")}
             </DialogTitle>
             <DialogDescription>
               {runtimeConfigurationMissing
                 ? t(
-                    "This Lab has no prepared Runtime Studio topology yet. A lecturer must configure the runtime source, topology, and Studio exercise before students can start a session.",
-                    "Lab này chưa có topology Runtime Studio sẵn sàng. Giảng viên cần cấu hình nguồn runtime, topology và Studio exercise trước khi sinh viên có thể bắt đầu phiên thực hành.",
+                    "Runtime Studio is not ready for this Lab yet. Please contact your lecturer.",
+                    "Runtime Studio chưa sẵn sàng cho Lab này. Hãy liên hệ giảng viên.",
                   )
                 : t(
-                    "Complete the required module work, then return here to begin the Runtime Studio exercise.",
-                    "Hoàn tất các nội dung bắt buộc của Module, sau đó quay lại đây để bắt đầu thực hành Runtime Studio.",
+                    "Pass the Module Quiz to unlock Runtime Studio.",
+                    "Đạt Quiz của Module để mở khóa Runtime Studio.",
                   )}
             </DialogDescription>
-            {runtimePrerequisiteMissing && (
-              <div className="rounded-lg border bg-muted/40 p-3 text-sm">
-                <p className="font-medium text-foreground">
-                  {t("Required before Runtime Studio", "Yêu cầu trước khi vào Runtime Studio")}
-                </p>
-                <p className="mt-1 text-muted-foreground">
-                  {t("Complete the Module Quiz", "Hoàn thành Quiz của Module")}: {moduleQuiz?.lesson ?? t("current module", "Module hiện tại")}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {t("Passing score", "Điểm đạt")}: {moduleQuiz?.passPercent ?? 70}% · {t("Current status", "Trạng thái hiện tại")}: {moduleQuizStatus === "NEEDS_RETRY"
-                    ? t("Not passed — retry the quiz", "Chưa đạt — hãy làm lại Quiz")
-                    : moduleQuizStatus === "NOT_ATTEMPTED"
-                      ? t("Not started", "Chưa làm")
-                      : t("In progress", "Đang thực hiện")}
-                </p>
-              </div>
-            )}
           </DialogHeader>
           <DialogFooter>
             {runtimeConfigurationMissing && isStudent && (
-              <Button type="button" variant="outline" onClick={() => {
-                setRuntimeConfigurationDialogOpen(false);
-                openPhaseIssue("runtime-configuration");
-              }}>
-                {t("Report configuration issue", "Báo lỗi cấu hình")}
+              <Button type="button" variant="outline" onClick={() => setRuntimeConfigurationDialogOpen(false)}>
+                {t("Close", "Đóng")}
               </Button>
             )}
             {runtimeConfigurationMissing && !isStudent && (
@@ -1915,7 +1889,7 @@ function StepContent({
               </Button>
             )}
             <Button type="button" variant="outline" onClick={() => setRuntimeConfigurationDialogOpen(false)}>
-              {t("Back to Lab", "Quay lại Lab")}
+              {t("Close", "Đóng")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1924,19 +1898,9 @@ function StepContent({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{phaseIssueContent.title}</DialogTitle>
-            <DialogDescription>{phaseIssueContent.description}</DialogDescription>
+            <DialogDescription>{phaseIssueContent.recovery}</DialogDescription>
           </DialogHeader>
-          <div className="rounded-lg border bg-muted/40 p-3 text-sm">
-            <p className="font-medium text-foreground">{t("What you can do", "Bạn có thể làm gì")}</p>
-            <p className="mt-1 leading-6 text-muted-foreground">{phaseIssueContent.recovery}</p>
-          </div>
-          <p className="text-xs leading-5 text-muted-foreground">
-            {t("If the recovery steps do not resolve it, copy this report and send it to your lecturer with a screenshot.", "Nếu các bước tự xử lý không khắc phục được, hãy sao chép báo cáo này và gửi cho giảng viên kèm ảnh màn hình.")}
-          </p>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => void copyPhaseIssueReport()}>
-              {reportCopied ? t("Report copied", "Đã sao chép báo cáo") : t("Copy report for lecturer", "Sao chép báo cáo cho giảng viên")}
-            </Button>
             <Button type="button" onClick={() => {
               setPhaseIssueDialogOpen(false);
               phaseIssueContent.action();
