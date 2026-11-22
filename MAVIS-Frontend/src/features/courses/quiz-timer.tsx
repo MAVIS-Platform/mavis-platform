@@ -1,0 +1,113 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { AlarmClock, Clock3 } from "lucide-react";
+import { useLocale } from "@/lib/i18n/locale-context";
+
+/** Scales Quiz time allowance sensibly with question count (min 5 min, 1.5 min per question). */
+export function calculateQuizDurationMinutes(questionCount: number): number {
+  const normalized = Number.isFinite(questionCount) ? Math.max(1, questionCount) : 1;
+  return Math.max(5, Math.ceil(normalized * 1.5));
+}
+
+export function formatCountdown(remainingSeconds: number): string {
+  const safe = Math.max(0, Math.floor(remainingSeconds));
+  const mins = Math.floor(safe / 60);
+  const secs = safe % 60;
+  return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+}
+
+export function computeRemainingSeconds(
+  startedAtIso: string | undefined,
+  durationSeconds: number,
+  nowMs = Date.now(),
+): number {
+  if (!startedAtIso || !Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+    return Math.max(0, durationSeconds);
+  }
+  const startedMs = Date.parse(startedAtIso);
+  if (!Number.isFinite(startedMs)) return Math.max(0, durationSeconds);
+  const elapsedSec = Math.floor(Math.max(0, nowMs - startedMs) / 1000);
+  return Math.max(0, durationSeconds - elapsedSec);
+}
+
+export function QuizCountdownBanner({
+  startedAt,
+  durationSeconds,
+  stopped = false,
+  onExpire,
+}: {
+  startedAt: string | undefined;
+  durationSeconds: number;
+  stopped?: boolean | undefined;
+  onExpire?: (() => void) | undefined;
+}) {
+  const { t } = useLocale();
+  const [remainingSeconds, setRemainingSeconds] = useState(() =>
+    computeRemainingSeconds(startedAt, durationSeconds),
+  );
+  const expiredFiredRef = useRef(false);
+  const onExpireRef = useRef(onExpire);
+  onExpireRef.current = onExpire;
+
+  useEffect(() => {
+    expiredFiredRef.current = false;
+    setRemainingSeconds(computeRemainingSeconds(startedAt, durationSeconds));
+  }, [startedAt, durationSeconds]);
+
+  useEffect(() => {
+    if (stopped || !startedAt) return;
+    const tick = () => {
+      const next = computeRemainingSeconds(startedAt, durationSeconds);
+      setRemainingSeconds(next);
+      if (next === 0 && !expiredFiredRef.current) {
+        expiredFiredRef.current = true;
+        onExpireRef.current?.();
+      }
+    };
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    return () => window.clearInterval(timer);
+  }, [startedAt, durationSeconds, stopped]);
+
+  const totalMinutes = Math.max(1, Math.round(durationSeconds / 60));
+  const isExpired = remainingSeconds <= 0;
+  const isCritical = !isExpired && remainingSeconds <= 60;
+  const isWarning = !isExpired && !isCritical && remainingSeconds <= Math.max(120, Math.round(durationSeconds * 0.2));
+
+  const toneClass = isExpired || isCritical
+    ? "border-destructive/50 bg-destructive/10 text-destructive"
+    : isWarning
+      ? "border-amber-400/60 bg-amber-50/90 text-amber-950 dark:border-amber-700 dark:bg-amber-950/35 dark:text-amber-200"
+      : "border-teal-300/70 bg-teal-50/70 text-teal-950 dark:border-teal-800 dark:bg-teal-950/30 dark:text-teal-200";
+
+  return (
+    <div
+      role="timer"
+      aria-live="polite"
+      className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3.5 py-2 text-xs ${toneClass}`}
+    >
+      <div className="flex items-center gap-2 font-medium">
+        {isExpired || isCritical ? (
+          <AlarmClock className="size-4 shrink-0" aria-hidden="true" />
+        ) : (
+          <Clock3 className="size-4 shrink-0" aria-hidden="true" />
+        )}
+        <span>
+          {isExpired
+            ? t(
+                "Time expired — submit your answers to record your score.",
+                "Đã hết thời gian làm bài — hãy nộp bài để ghi nhận kết quả.",
+              )
+            : t(
+                `Quiz time remaining (${totalMinutes} min limit)`,
+                `Thời gian còn lại (Giới hạn ${totalMinutes} phút)`,
+              )}
+        </span>
+      </div>
+      <span className="rounded-md bg-background/80 px-2.5 py-0.5 font-mono text-sm font-bold tabular-nums shadow-2xs">
+        {formatCountdown(remainingSeconds)}
+      </span>
+    </div>
+  );
+}

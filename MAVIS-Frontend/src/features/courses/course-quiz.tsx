@@ -1,16 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, CheckCircle2, Lock, XCircle } from "lucide-react";
 import { DetailPanel } from "@/components/shared/data";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { MarkdownPreview } from "@/components/shared/markdown-preview";
+import { useSession } from "@/hooks/use-api";
 import { api, ApiError } from "@/lib/mainflow-api";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { formatQuizQuestionPrompt, sanitizeQuizPlainText } from "@/lib/format/course-display";
+import { calculateQuizDurationMinutes, QuizCountdownBanner } from "./quiz-timer";
 
 type QuestionType = "SINGLE_CHOICE" | "MULTI_CHOICE" | "TRUE_FALSE";
 type Question = {
@@ -130,8 +132,34 @@ function AttemptForm({
   submissionHref?: string | undefined;
 }) {
   const { t } = useLocale();
+  const session = useSession();
+  const userId = session.data?.user?.id ?? "anon";
   const [answers, setAnswers] = useState<Record<number, number[]>>({});
   const [attemptId, setAttemptId] = useState<string>();
+  const timerKey = `mavis:course-quiz-timer:${userId}:${path}:v${quiz.version}`;
+  const durationMinutes = calculateQuizDurationMinutes(quiz.questions.length);
+  const durationSeconds = durationMinutes * 60;
+  const [startedAt, setStartedAt] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (!canSubmit || quiz.runtimeUnlocked || typeof window === "undefined") {
+      setStartedAt(undefined);
+      return;
+    }
+    try {
+      const stored = window.localStorage.getItem(timerKey);
+      if (stored && Number.isFinite(Date.parse(stored))) {
+        setStartedAt(stored);
+      } else {
+        const now = new Date().toISOString();
+        window.localStorage.setItem(timerKey, now);
+        setStartedAt(now);
+      }
+    } catch {
+      setStartedAt(new Date().toISOString());
+    }
+  }, [canSubmit, quiz.runtimeUnlocked, timerKey]);
+
   const submit = useMutation({
     mutationFn: (id: string) =>
       api<Result>(`${path}/attempts`, {
@@ -143,10 +171,23 @@ function AttemptForm({
         }),
       }),
     onSuccess: (result) => {
-      if (result.status === "PASSED") refreshReadiness();
+      if (result.status === "PASSED") {
+        try {
+          window.localStorage.removeItem(timerKey);
+        } catch {
+          // Ignore storage removal errors
+        }
+        refreshReadiness();
+      }
     },
   });
   const answered = quiz.questions.every((_, index) => (answers[index]?.length ?? 0) > 0);
+  const triggerSubmit = () => {
+    if (!answered || submit.isPending) return;
+    const id = attemptId ?? crypto.randomUUID();
+    setAttemptId(id);
+    submit.mutate(id);
+  };
 
   const toggle = (questionIndex: number, optionIndex: number, multi: boolean) => {
     setAnswers((current) => {
@@ -169,17 +210,29 @@ function AttemptForm({
   return (
     <div className="space-y-5">
       {quiz.lesson && (
-        <details className="rounded-xl border bg-muted/20 p-3.5">
+        <details open className="rounded-xl border bg-muted/20 p-3.5">
           <summary className="cursor-pointer select-none text-xs font-semibold text-teal-800 dark:text-teal-300">
             {t(
-              "Reference Theory & Lesson Summary (Click to expand)",
-              "Xem nhanh lý thuyết tham chiếu trước khi làm Quiz (Nhấn để mở)",
+              "Reference Theory & Lesson Summary",
+              "Nội dung Lý thuyết tham chiếu trước khi làm Quiz",
             )}
           </summary>
           <div className="mt-3 border-t pt-3">
             <MarkdownPreview markdown={quiz.lesson} />
           </div>
         </details>
+      )}
+      {canSubmit && !quiz.runtimeUnlocked && !submit.data && startedAt && (
+        <QuizCountdownBanner
+          startedAt={startedAt}
+          durationSeconds={durationSeconds}
+          stopped={submit.isPending}
+          onExpire={() => {
+            if (answered && !submit.isPending) {
+              triggerSubmit();
+            }
+          }}
+        />
       )}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-teal-200/80 bg-gradient-to-r from-teal-50/80 via-emerald-50/50 to-card px-4 py-3 dark:border-teal-800/70 dark:from-teal-950/40 dark:via-emerald-950/25 dark:to-card">
         <div className="flex flex-wrap items-center gap-3 text-sm text-foreground/85">
@@ -248,7 +301,7 @@ function AttemptForm({
               </p>
               <p role="status" className="text-sm font-medium opacity-90">
                 PASSED (v{quiz.version}) ·{" "}
-                {t("Quiz passed · Step 4 unlocked!", "Đã đạt Quiz · Bước 4 đã mở khóa!")}
+                {t("Quiz passed · Next step unlocked!", "Đã đạt Quiz · Đã mở khóa bước tiếp theo!")}
               </p>
             </div>
             <Button
@@ -257,10 +310,10 @@ function AttemptForm({
             >
               <Link href={submissionHref ?? runtimeStepHref}>
                 {submissionHref
-                  ? t("Proceed to Step 4: Submit Lab", "Chuyển sang Bước 4: Nộp bài Lab")
+                  ? t("Proceed to Lab Submission", "Chuyển sang Nộp bài Lab")
                   : t(
-                      "Proceed to Step 4: Studio Live & Submit",
-                      "Tiếp tục Bước 4: Studio Live & Nộp bài",
+                      "Proceed to Runtime Studio & Submit",
+                      "Tiếp tục Runtime Studio & Nộp bài",
                     )}
                 <ArrowRight />
               </Link>
@@ -321,10 +374,10 @@ function AttemptForm({
               {t(
                 submissionHref
                   ? `Reach ${quiz.passPercent}% on the current Quiz (v${quiz.version}) before submitting this Lab.`
-                  : `Step 4 Live Studio & Submission is locked until you score at least ${quiz.passPercent}% on the current Quiz version (v${quiz.version}). Review the theory and retry if needed.`,
+                  : `Runtime Studio & Submission is locked until you score at least ${quiz.passPercent}% on the current Quiz version (v${quiz.version}). Review the theory and retry if needed.`,
                 submissionHref
                   ? `Hãy đạt ${quiz.passPercent}% ở Quiz hiện tại (v${quiz.version}) trước khi nộp Lab.`
-                  : `Bước 4 Studio Live & Nộp bài đang bị khóa cho đến khi bạn đạt tối thiểu ${quiz.passPercent}% ở phiên bản Quiz hiện tại (v${quiz.version}). Hãy ôn lại lý thuyết và làm lại nếu cần.`,
+                  : `Runtime Studio & Nộp bài đang bị khóa cho đến khi bạn đạt tối thiểu ${quiz.passPercent}% ở phiên bản Quiz hiện tại (v${quiz.version}). Hãy ôn lại lý thuyết và làm lại nếu cần.`,
               )}
             </span>
           </div>
@@ -433,36 +486,7 @@ function AttemptForm({
               </Button>
             </div>
           ) : (
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <details className="text-xs">
-                <summary className="cursor-pointer select-none text-[11px] font-medium text-muted-foreground hover:text-foreground">
-                  ⚙ {t("QA / Demo Controls", "Kiểm thử / Demo nhanh")}
-                </summary>
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="border-amber-300 text-xs text-amber-800 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-300"
-                    onClick={() => {
-                      const quickWrong: Record<number, number[]> = {};
-                      quiz.questions.forEach((q, idx) => {
-                        const lastOpt = Math.max(0, q.options.length - 1);
-                        quickWrong[idx] = [lastOpt];
-                      });
-                      setAnswers(quickWrong);
-                      setAttemptId(undefined);
-                      submit.reset();
-                    }}
-                  >
-                    🧪{" "}
-                    {t(
-                      "Pre-fill Quick Answers (Test DS-02b / Retry Gate)",
-                      "Điền nhanh lựa chọn mẫu (Kiểm thử Quiz Gate / DS-02b)",
-                    )}
-                  </Button>
-                </div>
-              </details>
+            <div className="flex flex-wrap items-center justify-end gap-3">
               <Button disabled={submit.isPending || !answered}>
                 {t("Submit Quiz", "Nộp Quiz")}
               </Button>

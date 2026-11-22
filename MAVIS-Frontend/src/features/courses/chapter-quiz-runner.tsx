@@ -12,6 +12,7 @@ import { useLocale } from "@/lib/i18n/locale-context";
 import { formatQuizQuestionPrompt, sanitizeQuizPlainText } from "@/lib/format/course-display";
 import type { QuizQuestionData } from "./java-coursera-curriculum-data";
 import { useCourseQuiz } from "./course-quiz";
+import { calculateQuizDurationMinutes, QuizCountdownBanner } from "./quiz-timer";
 
 const PASS_PERCENT = 70;
 type QuestionType = "SINGLE_CHOICE" | "MULTI_CHOICE" | "TRUE_FALSE";
@@ -26,6 +27,8 @@ type StoredQuizAttempt = {
   attemptId: string;
   status: QuizAttemptStatus;
   answers: Record<string, number | number[]>;
+  startedAt?: string | undefined;
+  durationSeconds?: number | undefined;
   correctCount?: number;
   submittedAt?: string | undefined;
   scorePercent?: number;
@@ -291,15 +294,46 @@ export function ChapterQuizRunner({
       </p>
     );
 
-  const currentAttempt = attempt ?? { attemptId: "", status: "NOT_STARTED" as const, answers: {} };
+  const durationMinutes = calculateQuizDurationMinutes(displayedQuestions.length);
+  const durationSeconds = durationMinutes * 60;
+  const activeAttempt = attempt ?? { attemptId: "", status: "NOT_STARTED" as const, answers: {} };
+  const resolvedStartedAt =
+    activeAttempt.startedAt ??
+    (activeAttempt.status === "IN_PROGRESS" ? new Date().toISOString() : undefined);
+  const resolvedDurationSeconds = activeAttempt.durationSeconds ?? durationSeconds;
+
+  const submitAttempt = () => {
+    const pickedCorrect = displayedQuestions.filter((question) => {
+      const selected = toSelectedIndexes(activeAttempt.answers[question.id]);
+      return selected.length === 1 && selected[0] === question.correctOption;
+    }).length;
+    const computedScore = Math.round((pickedCorrect / Math.max(1, displayedQuestions.length)) * 100);
+    const nextAttempt = {
+      ...activeAttempt,
+      status: "SUBMITTED",
+      submittedAt: new Date().toISOString(),
+      scorePercent: activeAttempt.scorePercent ?? computedScore,
+    } as StoredQuizAttempt;
+    if (backendQuizEnabled) submitBackendAttempt.mutate(nextAttempt);
+    else updateAttempt(nextAttempt);
+  };
+
+  const currentAttempt = activeAttempt;
   if (currentAttempt.status === "NOT_STARTED") {
     return (
       <QuizLanding
         title={title}
         questionCount={displayedQuestions.length}
         passPercent={passPercent}
+        durationMinutes={durationMinutes}
         onStart={() =>
-          updateAttempt({ attemptId: makeAttemptId(), status: "IN_PROGRESS", answers: {} })
+          updateAttempt({
+            attemptId: makeAttemptId(),
+            status: "IN_PROGRESS",
+            answers: {},
+            startedAt: new Date().toISOString(),
+            durationSeconds,
+          })
         }
       />
     );
@@ -332,12 +366,22 @@ export function ChapterQuizRunner({
         onToggleFeedback={() => setShowFeedback((current) => !current)}
         onRetry={() => {
           setShowFeedback(false);
-          updateAttempt({ attemptId: makeAttemptId(), status: "IN_PROGRESS", answers: {} });
+          updateAttempt({
+            attemptId: makeAttemptId(),
+            status: "IN_PROGRESS",
+            answers: {},
+            startedAt: new Date().toISOString(),
+            durationSeconds,
+          });
         }}
         onNextLesson={onNextLesson}
       />
     );
   }
+
+  const allAnsweredInRunner = displayedQuestions.every(
+    (question) => toSelectedIndexes(currentAttempt.answers[question.id]).length > 0,
+  );
 
   return (
     <QuizTaking
@@ -346,6 +390,14 @@ export function ChapterQuizRunner({
       answers={currentAttempt.answers}
       passPercent={passPercent}
       requireAllAnswered={backendQuizEnabled}
+      startedAt={resolvedStartedAt}
+      durationSeconds={resolvedDurationSeconds}
+      onExpire={() => {
+        if (submitBackendAttempt.isPending) return;
+        if (!backendQuizEnabled || allAnsweredInRunner) {
+          submitAttempt();
+        }
+      }}
       onAnswer={(questionId, optionIndex, multi) => {
         const currentSelected = toSelectedIndexes(currentAttempt.answers[questionId]);
         const nextValue: number | number[] = multi
@@ -355,21 +407,14 @@ export function ChapterQuizRunner({
           : optionIndex;
         updateAttempt({
           ...currentAttempt,
+          startedAt: resolvedStartedAt ?? new Date().toISOString(),
+          durationSeconds: resolvedDurationSeconds,
           answers: { ...currentAttempt.answers, [questionId]: nextValue },
         });
       }}
       submitting={submitBackendAttempt.isPending}
       submitError={submitBackendAttempt.error}
-      onSubmit={() => {
-        const nextAttempt = {
-          ...currentAttempt,
-          status: "SUBMITTED",
-          submittedAt: new Date().toISOString(),
-          scorePercent,
-        } as StoredQuizAttempt;
-        if (backendQuizEnabled) submitBackendAttempt.mutate(nextAttempt);
-        else updateAttempt(nextAttempt);
-      }}
+      onSubmit={submitAttempt}
     />
   );
 }
@@ -378,11 +423,13 @@ function QuizLanding({
   title,
   questionCount,
   passPercent,
+  durationMinutes,
   onStart,
 }: {
   title: string;
   questionCount: number;
   passPercent: number;
+  durationMinutes: number;
   onStart: () => void;
 }) {
   const { t } = useLocale();
@@ -427,7 +474,9 @@ function QuizLanding({
           </div>
           <div className="flex items-center justify-between gap-3">
             <dt className="text-muted-foreground">{t("Time limit", "Thời lượng")}</dt>
-            <dd>{t("Not configured", "Chưa cấu hình")}</dd>
+            <dd className="font-semibold">
+              {durationMinutes} {t("minutes", "phút")}
+            </dd>
           </div>
         </dl>
       </div>
@@ -441,6 +490,9 @@ function QuizTaking({
   answers,
   passPercent,
   requireAllAnswered,
+  startedAt,
+  durationSeconds,
+  onExpire,
   onAnswer,
   onSubmit,
   submitting = false,
@@ -451,6 +503,9 @@ function QuizTaking({
   answers: Record<string, number | number[]>;
   passPercent: number;
   requireAllAnswered: boolean;
+  startedAt?: string | undefined;
+  durationSeconds?: number | undefined;
+  onExpire?: (() => void) | undefined;
   onAnswer: (questionId: string, optionIndex: number, multi: boolean) => void;
   onSubmit: () => void;
   submitting?: boolean;
@@ -464,19 +519,29 @@ function QuizTaking({
   const allAnswered = answeredCount === questions.length;
   return (
     <section className="mx-auto mt-6 max-w-[850px] pb-10">
-      <header className="border-b pb-5">
-        <Badge variant="outline">{t("Graded assignment", "Bài kiểm tra tính điểm")}</Badge>
-        <h2 className="mt-2 text-2xl font-bold tracking-tight">{title}</h2>
-        <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-          <span>
-            {t(
-              `${answeredCount}/${questions.length} answered`,
-              `Đã trả lời ${answeredCount}/${questions.length} câu`,
-            )}
-          </span>
-          <span aria-hidden="true">·</span>
-          <span>{t(`Passing score ${passPercent}%`, `Ngưỡng đạt ${passPercent}%`)}</span>
+      <header className="space-y-4 border-b pb-5">
+        <div>
+          <Badge variant="outline">{t("Graded assignment", "Bài kiểm tra tính điểm")}</Badge>
+          <h2 className="mt-2 text-2xl font-bold tracking-tight">{title}</h2>
+          <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+            <span>
+              {t(
+                `${answeredCount}/${questions.length} answered`,
+                `Đã trả lời ${answeredCount}/${questions.length} câu`,
+              )}
+            </span>
+            <span aria-hidden="true">·</span>
+            <span>{t(`Passing score ${passPercent}%`, `Ngưỡng đạt ${passPercent}%`)}</span>
+          </div>
         </div>
+        {durationSeconds && durationSeconds > 0 && (
+          <QuizCountdownBanner
+            startedAt={startedAt}
+            durationSeconds={durationSeconds}
+            stopped={submitting}
+            onExpire={onExpire}
+          />
+        )}
       </header>
       <ol className="mt-8 space-y-10">
         {questions.map((question, questionIndex) => {

@@ -1991,3 +1991,49 @@ test("Full-Course E2E hardening: user-scoped Quiz storage, WF-04 422 codes, Snap
   const wsScreens = read("src/features/workspaces/screens.tsx");
   assert.match(wsScreens, /key:\s*"email"/);
 });
+
+test("Task #05 Quiz & Theory UX: Theory lessons stay unlocked before Quizzes, MarkdownPreview decodes HTML entities, InteractiveConceptStage avoids label truncation, and Countdown Timer scales with questions", () => {
+  const React = require("react");
+  const { renderToStaticMarkup } = require("react-dom/server");
+  const {
+    calculateQuizDurationMinutes,
+    formatCountdown,
+    computeRemainingSeconds,
+  } = require("../src/features/courses/quiz-timer.tsx");
+  const { MarkdownPreview } = require("../src/components/shared/markdown-preview.tsx");
+
+  assert.equal(calculateQuizDurationMinutes(2), 5);
+  assert.equal(calculateQuizDurationMinutes(5), 8);
+  assert.equal(calculateQuizDurationMinutes(12), 18);
+  assert.equal(formatCountdown(125), "02:05");
+  assert.equal(formatCountdown(0), "00:00");
+  assert.equal(
+    computeRemainingSeconds("2026-11-22T00:00:00Z", 600, Date.parse("2026-11-22T00:01:30Z")),
+    510,
+  );
+  assert.equal(
+    computeRemainingSeconds("2026-11-22T00:00:00Z", 60, Date.parse("2026-11-22T00:05:00Z")),
+    0,
+  );
+
+  const decodedHtml = renderToStaticMarkup(
+    React.createElement(MarkdownPreview, {
+      markdown: "Configure `IOptions&lt;ServiceUrlOptions&gt;` &lt;---&gt; CatalogAPI",
+    }),
+  );
+  assert.match(decodedHtml, /IOptions&lt;ServiceUrlOptions&gt;|IOptions<ServiceUrlOptions>/);
+  assert.doesNotMatch(decodedHtml, /&amp;lt;/);
+
+  const syllabus = read("src/features/courses/student-course-syllabus.tsx");
+  const quiz = read("src/features/courses/course-quiz.tsx");
+  const runner = read("src/features/courses/chapter-quiz-runner.tsx");
+  const stage = read("src/components/shared/interactive-concept-stage.tsx");
+
+  assert.match(syllabus, /if \(item\.type === "THEORY"\) return false;/);
+  assert.match(quiz, /<details open className="/);
+  assert.match(quiz, /<QuizCountdownBanner/);
+  assert.doesNotMatch(quiz, /Step 4|Bước 4|Test DS-02b/);
+  assert.match(runner, /calculateQuizDurationMinutes/);
+  assert.match(runner, /<QuizCountdownBanner/);
+  assert.doesNotMatch(stage, /node\.label\.length > 18/);
+});

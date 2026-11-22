@@ -280,6 +280,7 @@ export function StudentCourseSyllabus({
         labs.find((l) => l.assignmentId === item.assignmentId)?.state === "LOCKED",
     );
   const isItemLocked = (item: OutlineItemData) => {
+    if (item.type === "THEORY") return false;
     if (isItemLockedLab(item)) return true;
     if (item.assignmentId && labs.find((l) => l.assignmentId === item.assignmentId)?.state === "LOCKED") {
       return true;

@@ -132,7 +132,7 @@ export function InteractiveConceptStage({
       <div className="bg-[#0B0F17] px-3 py-4 sm:px-5">
         <div className="overflow-x-auto">
           <svg
-            viewBox="0 0 800 285"
+            viewBox="-20 0 840 285"
             className="h-[260px] w-full min-w-[620px] select-none sm:h-[300px]"
             role="img"
             aria-label={locale === "vi" ? scenario.titleVi : scenario.title}
@@ -259,6 +259,19 @@ export function InteractiveConceptStage({
               const status = activeStep.nodeStates[node.id] ?? "idle";
               const palette = paletteForStatus(status);
               const selected = inspectedNode?.id === node.id;
+              const words = node.label.split(/\s+/);
+              const titleLines: string[] = [];
+              let acc = "";
+              for (const w of words) {
+                if (!acc) acc = w;
+                else if (acc.length + 1 + w.length <= 20) acc += " " + w;
+                else {
+                  titleLines.push(acc);
+                  acc = w;
+                }
+              }
+              if (acc) titleLines.push(acc);
+              const visibleTitleLines = titleLines.slice(0, 2);
 
               return (
                 <g
@@ -269,10 +282,10 @@ export function InteractiveConceptStage({
                 >
                   {selected && (
                     <rect
-                      x="-74"
-                      y="-36"
-                      width="148"
-                      height="72"
+                      x="-84"
+                      y="-40"
+                      width="168"
+                      height="80"
                       rx="14"
                       fill="none"
                       stroke="#38BDF8"
@@ -281,33 +294,37 @@ export function InteractiveConceptStage({
                     />
                   )}
                   <rect
-                    x="-68"
-                    y="-30"
-                    width="136"
-                    height="60"
+                    x="-78"
+                    y="-34"
+                    width="156"
+                    height="68"
                     rx="11"
                     fill={palette.fill}
                     stroke={palette.stroke}
                     strokeWidth={status === "idle" ? 1.4 : 2.2}
                   />
-                  <circle cx="-53" cy="-14" r="4.5" fill={palette.dot} />
+                  <circle cx="-63" cy="-14" r="4.5" fill={palette.dot} />
                   <text
-                    x="-42"
-                    y="-10"
+                    x="-52"
+                    y={visibleTitleLines.length > 1 ? "-14" : "-10"}
                     fill={palette.text}
-                    fontSize="11.5"
+                    fontSize="11"
                     fontWeight="700"
                   >
-                    {node.label.length > 18 ? `${node.label.slice(0, 17)}…` : node.label}
+                    {visibleTitleLines.map((line, lineIdx) => (
+                      <tspan key={lineIdx} x="-52" dy={lineIdx === 0 ? 0 : 12}>
+                        {line}
+                      </tspan>
+                    ))}
                   </text>
                   <text
-                    x="-53"
-                    y="10"
+                    x="-63"
+                    y="17"
                     fill="#94A3B8"
                     fontSize="9.5"
                     fontFamily="ui-monospace, SFMono-Regular, monospace"
                   >
-                    {node.subLabel.length > 22 ? `${node.subLabel.slice(0, 21)}…` : node.subLabel}
+                    {node.subLabel.length > 26 ? `${node.subLabel.slice(0, 25)}…` : node.subLabel}
                   </text>
                 </g>
               );

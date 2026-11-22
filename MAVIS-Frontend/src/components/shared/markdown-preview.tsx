@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, type ReactNode } from "react";
+import { decodePlainTextEntities } from "@/lib/format/course-display";
 
 export type MarkdownTheme = "coursera" | "academic" | "docs" | "notes";
 
@@ -282,7 +283,7 @@ export function MarkdownPreview({
   className?: string;
   theme?: MarkdownTheme | undefined;
 }) {
-  const parsed = extractMarkdownTheme(markdown);
+  const parsed = extractMarkdownTheme(decodePlainTextEntities(markdown));
   const activeTheme: MarkdownTheme = theme ?? parsed.theme;
   const styles = THEME_STYLES[activeTheme];
   const lines = parsed.body.replace(/\r\n/g, "\n").split("\n");
