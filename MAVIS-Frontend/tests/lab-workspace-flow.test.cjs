@@ -102,6 +102,8 @@ test("Bug #06: Step footer clarifies locked Runtime Studio, lab switcher truncat
   assert.match(screens, /t\("Check Runtime Studio Requirement", "Xem yêu cầu Runtime Studio"\)/);
   assert.match(screens, /id="lab-ai-tutor"[\s\S]*className="fixed inset-x-4 bottom-4 z-50/);
   assert.match(screens, /sm:right-6 sm:bottom-6 sm:w-\[380px\]/);
+  assert.match(screens, /tutorMinimized[\s\S]*<MavisLogo compact className="size-full"/);
+  assert.match(screens, /setTutorMinimized\(true\)/);
   assert.match(screens, /id="lab-switcher"[\s\S]*truncate[\s\S]*leading-tight/);
 });
 
