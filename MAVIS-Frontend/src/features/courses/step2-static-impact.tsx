@@ -7,9 +7,26 @@ import { DetailPanel } from "@/components/shared/data";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useApiQuery } from "@/hooks/use-api";
-import { computeArchitectureImpact, type ImpactScopeMode } from "@/lib/architecture/reverse-bfs";
+import {
+  computeArchitectureImpact,
+  type ImpactScopeMode,
+  type UnaffectedElementEntry,
+} from "@/lib/architecture/reverse-bfs";
 import { useLocale } from "@/lib/i18n/locale-context";
 import type { ArchitecturalModel } from "@/types/domain";
+
+const ARCHITECTURAL_NODE_TYPES = new Set([
+  "SERVICE_CONTAINER",
+  "DATABASE",
+  "QUEUE_BROKER",
+  "MESSAGE_CHANNEL",
+  "EXTERNAL_SYSTEM",
+  "PERSON",
+]);
+
+function isFrameworkClassNoise(name: string): boolean {
+  return /^(?:System|Microsoft)\./.test(name);
+}
 
 /**
  * Step 2 interactive Reverse BFS impact explorer and C1-C3 reference view back-links
@@ -54,14 +71,23 @@ export function Step2StaticImpact({
     let bestId = "";
     let bestScore = -1;
     for (const candidate of candidates) {
+      if (isFrameworkClassNoise(candidate.name)) continue;
       const probe = computeArchitectureImpact(model, candidate.id, scope);
-      const isDownstreamType =
-        candidate.elementType === "SERVICE_CONTAINER" || candidate.elementType === "DATABASE" ? 1 : 0;
+      const isArchitectural = ARCHITECTURAL_NODE_TYPES.has(candidate.elementType);
+      const isServiceOrData =
+        candidate.elementType === "SERVICE_CONTAINER" || candidate.elementType === "DATABASE";
+      const tierBonus = isServiceOrData
+        ? 1_000_000
+        : isArchitectural
+          ? 500_000
+          : 0;
+      const hasImpact = probe.upstreamImpacted.length > 0 ? 100_000 : 0;
       const score =
+        tierBonus +
+        hasImpact +
         probe.indirectImpactCount * 1000 +
         probe.directImpactCount * 50 +
-        probe.upstreamImpacted.length * 10 +
-        isDownstreamType;
+        probe.upstreamImpacted.length * 10;
       if (score > bestScore) {
         bestScore = score;
         bestId = candidate.id;
@@ -77,6 +103,31 @@ export function Step2StaticImpact({
     if (!model || !activeTargetId) return null;
     return computeArchitectureImpact(model, activeTargetId, scope);
   }, [model, activeTargetId, scope]);
+
+  const sortedCandidates = useMemo(() => {
+    if (!impact) return [];
+    const rank = (el: { name: string; elementType: string }) => {
+      if (isFrameworkClassNoise(el.name)) return 3;
+      if (ARCHITECTURAL_NODE_TYPES.has(el.elementType)) return 0;
+      return 1;
+    };
+    return [...impact.candidateTargets].sort(
+      (a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name),
+    );
+  }, [impact]);
+
+  const { architecturalUnaffected, lowLevelUnaffected } = useMemo(() => {
+    const arch: UnaffectedElementEntry[] = [];
+    const low: UnaffectedElementEntry[] = [];
+    for (const item of impact?.unaffectedElements ?? []) {
+      if (ARCHITECTURAL_NODE_TYPES.has(item.elementType) && !isFrameworkClassNoise(item.name)) {
+        arch.push(item);
+      } else {
+        low.push(item);
+      }
+    }
+    return { architecturalUnaffected: arch, lowLevelUnaffected: low };
+  }, [impact]);
 
   const directCallers = useMemo(
     () => impact?.upstreamImpacted.filter((entry) => entry.distance === 1) ?? [],
@@ -261,7 +312,7 @@ export function Step2StaticImpact({
                     setSelectedTargetId(event.target.value);
                   }}
                 >
-                  {impact.candidateTargets.map((candidate) => (
+                  {sortedCandidates.map((candidate) => (
                     <option key={candidate.id} value={candidate.id}>
                       {candidate.name} ({candidate.elementType})
                     </option>
@@ -465,13 +516,35 @@ export function Step2StaticImpact({
                     )}
                   </p>
                 ) : (
-                  <div className="flex flex-wrap gap-1.5">
-                    {impact.unaffectedElements.map((item) => (
-                      <Badge key={item.elementId} variant="outline" className="font-normal">
-                        {item.name}
-                        {item.isolated ? ` · ${t("Isolated", "Cô lập")}` : ""}
-                      </Badge>
-                    ))}
+                  <div className="space-y-2">
+                    {architecturalUnaffected.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {architecturalUnaffected.map((item) => (
+                          <Badge key={item.elementId} variant="outline" className="font-normal">
+                            {item.name}
+                            {item.isolated ? ` · ${t("Isolated", "Cô lập")}` : ""}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                    {lowLevelUnaffected.length > 0 && (
+                      <details className="rounded-lg border bg-muted/15 px-3 py-2">
+                        <summary className="cursor-pointer text-[11px] font-medium text-muted-foreground hover:text-foreground">
+                          {t(
+                            `Show ${lowLevelUnaffected.length} code classes & framework types`,
+                            `Xem thêm ${lowLevelUnaffected.length} lớp mã nguồn & kiểu framework`,
+                          )}
+                        </summary>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {lowLevelUnaffected.map((item) => (
+                            <Badge key={item.elementId} variant="outline" className="font-normal">
+                              {item.name}
+                              {item.isolated ? ` · ${t("Isolated", "Cô lập")}` : ""}
+                            </Badge>
+                          ))}
+                        </div>
+                      </details>
+                    )}
                   </div>
                 )}
               </div>

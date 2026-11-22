@@ -535,7 +535,7 @@ export function StudentCourseSyllabus({
                   >
                     {workspace.code || t("CLASS", "LỚP")}
                   </Badge>
-                  <span className="mavis-tabular text-xs font-medium text-sky-100">
+                  <span className="tabular-nums text-xs font-medium text-sky-100">
                     {summary.totalLabs > 0
                       ? `${summary.completedLabs}/${summary.totalLabs} ${t("completed", "bài đã xong")} (${summary.completionPercent}%)`
                       : t("Course Workspace", "Lớp học MAVIS")}
@@ -551,18 +551,22 @@ export function StudentCourseSyllabus({
                   )}
                 </p>
                 <div className="flex flex-wrap items-center gap-2 pt-1 text-xs text-sky-100">
-                  <span className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/10 px-2.5 py-0.5">
-                    👨‍🏫 {t("Instructor", "Giảng viên")}:{" "}
-                    <strong className="font-semibold text-white">
+                  <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 py-1">
+                    <span className="shrink-0 whitespace-nowrap text-sky-100/85">
+                      {t("Instructor", "Giảng viên")}:
+                    </span>
+                    <strong className="min-w-0 truncate font-semibold text-white">
                       {lecturerNames.length
                         ? lecturerNames.join(" · ")
                         : t("Assigned Lecturer", "Giảng viên phụ trách lớp")}
                     </strong>
                   </span>
                   {summary.nextActiveLab && (
-                    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-300/35 bg-emerald-400/20 px-2.5 py-0.5 text-emerald-50">
-                      ▶ {t("Up next", "Bài tiếp theo")}:{" "}
-                      <strong className="font-semibold">
+                    <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-emerald-300/35 bg-emerald-400/20 px-3 py-1 text-emerald-50">
+                      <span className="shrink-0 whitespace-nowrap text-emerald-100/90">
+                        {t("Up next", "Bài tiếp theo")}:
+                      </span>
+                      <strong className="min-w-0 truncate font-semibold">
                         {formatCourseLabTitle(
                           summary.nextActiveLab.title,
                           summary.nextActiveLab.position,
@@ -599,7 +603,7 @@ export function StudentCourseSyllabus({
               <div className="mt-5 max-w-lg space-y-1.5">
                 <div className="flex justify-between text-xs text-sky-100">
                   <span>{t("Course Syllabus Progress", "Tiến Độ Hoàn Thành Khóa Học")}</span>
-                  <span className="mavis-tabular font-semibold text-white">
+                  <span className="tabular-nums font-semibold text-white">
                     {summary.completedLabs}/{summary.totalLabs} · {summary.completionPercent}%
                   </span>
                 </div>

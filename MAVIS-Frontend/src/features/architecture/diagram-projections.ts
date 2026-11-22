@@ -320,7 +320,8 @@ export function deriveC4ContextModel(model: ArchitecturalModel): {
       id: el.id,
       name: el.name,
       description:
-        el.description?.trim() || "External software system outside the target system boundary",
+        el.description?.replace(/\s*·\s*null\b/gi, "").trim() ||
+        "External software system outside the target system boundary",
       actionLabel:
         direction === "INBOUND" ? "Declared inbound dependency" : "Declared external dependency",
       direction,
