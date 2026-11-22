@@ -195,7 +195,7 @@ test("terminal timestamp parser normalizes container UTC logs and comparator is 
   let compareTerminalEntries;
   try {
     Module._load = function (id, ...args) {
-      if (id === "lucide-react" || id.endsWith("button") || id.endsWith("input")) return {};
+      if (id === "lucide-react" || id.endsWith("button") || id.endsWith("input") || id.endsWith("select")) return {};
       return originalLoad.call(this, id, ...args);
     };
     ({ parseTimestampPrefix, compareTerminalEntries } = require("../src/features/runtime/live-terminal-console.tsx"));
@@ -454,7 +454,7 @@ test("LiveTerminalConsole renders service filter as a compact dropdown instead o
     path.join(__dirname, "../src/features/runtime/live-terminal-console.tsx"),
     "utf8",
   );
-  assert.match(src, /<select[\s\S]*aria-label="Filter by service"[\s\S]*value=\{activeServiceFilter\}/);
+  assert.match(src, /<Select\s+value=\{activeServiceFilter\}\s+onValueChange=\{setServiceFilter\}>[\s\S]*<SelectTrigger[\s\S]*aria-label="Filter by service"/);
   assert.match(src, /All services \(\{serviceList\.length\}\)/);
   assert.doesNotMatch(src, /\{\/\* Service filter pills \*\/\}/);
 });

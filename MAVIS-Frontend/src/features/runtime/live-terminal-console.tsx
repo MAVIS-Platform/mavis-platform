@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Activity, Check, ChevronDown, Copy, Search, Terminal } from "lucide-react";
+import { Activity, Check, Copy, Search, Terminal } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { Response } from "@/lib/api/contracts";
 import { TraceWaterfallPanel } from "./studio-red-charts";
 
@@ -597,54 +604,60 @@ export function LiveTerminalConsole({
         </div>
 
         {/* Service filter dropdown */}
-        <div className="relative inline-flex shrink-0 items-center">
-          {activeServiceFilter !== "ALL" && (
-            <span
-              aria-hidden="true"
-              className={`pointer-events-none absolute left-2 size-1.5 rounded-full ${
-                serviceColorFor(activeServiceFilter, serviceList, isLight).dot
-              }`}
-            />
-          )}
-          <select
+        <Select value={activeServiceFilter} onValueChange={setServiceFilter}>
+          <SelectTrigger
             aria-label="Filter by service"
-            value={activeServiceFilter}
-            onChange={(event) => setServiceFilter(event.target.value)}
-            className={`h-7 max-w-[210px] cursor-pointer appearance-none rounded-md border py-0.5 pr-6 font-mono text-[11px] font-medium outline-none transition ${
-              activeServiceFilter !== "ALL" ? "pl-5" : "pl-2.5"
-            } ${
+            className={`h-7 w-auto min-w-[138px] max-w-[220px] shrink-0 gap-1.5 rounded-full px-2.5 py-0.5 font-mono text-[11px] font-medium transition focus:ring-1 focus:ring-offset-0 ${
               activeServiceFilter !== "ALL"
                 ? isLight
-                  ? "border-sky-400 bg-sky-50 text-sky-900 focus:border-sky-500"
-                  : "border-sky-500/50 bg-sky-500/15 text-sky-100 focus:border-sky-400"
+                  ? "border-sky-400 bg-sky-50 text-sky-900"
+                  : "border-sky-500/50 bg-sky-500/15 text-sky-100"
                 : isLight
-                  ? "border-slate-200 bg-white text-slate-700 hover:border-slate-300 focus:border-sky-400"
-                  : "border-slate-800 bg-[#05080f] text-slate-200 hover:border-slate-700 focus:border-sky-500/50"
+                  ? "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                  : "border-slate-800 bg-[#05080f] text-slate-200 hover:border-slate-700"
             }`}
           >
-            <option
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent
+            align="start"
+            className={
+              isLight
+                ? "border-slate-200 bg-white text-slate-900 shadow-lg"
+                : "border-slate-700 bg-[#0c1322] text-slate-100 shadow-xl"
+            }
+          >
+            <SelectItem
               value="ALL"
-              className={isLight ? "bg-white text-slate-900" : "bg-[#0a0f1a] text-slate-100"}
+              className={`min-h-8 py-1.5 font-mono text-xs ${
+                isLight
+                  ? "focus:bg-slate-100 focus:text-slate-900"
+                  : "focus:bg-slate-800 focus:text-slate-100"
+              }`}
             >
               All services ({serviceList.length})
-            </option>
-            {serviceList.map((svc) => (
-              <option
-                key={svc}
-                value={svc}
-                className={isLight ? "bg-white text-slate-900" : "bg-[#0a0f1a] text-slate-100"}
-              >
-                {svc}
-              </option>
-            ))}
-          </select>
-          <ChevronDown
-            aria-hidden="true"
-            className={`pointer-events-none absolute right-1.5 size-3.5 ${
-              isLight ? "text-slate-500" : "text-slate-400"
-            }`}
-          />
-        </div>
+            </SelectItem>
+            {serviceList.map((svc) => {
+              const color = serviceColorFor(svc, serviceList, isLight);
+              return (
+                <SelectItem
+                  key={svc}
+                  value={svc}
+                  className={`min-h-8 py-1.5 font-mono text-xs ${
+                    isLight
+                      ? "focus:bg-slate-100 focus:text-slate-900"
+                      : "focus:bg-slate-800 focus:text-slate-100"
+                  }`}
+                >
+                  <span className="inline-flex items-center gap-1.5">
+                    <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${color.dot}`} />
+                    {svc}
+                  </span>
+                </SelectItem>
+              );
+            })}
+          </SelectContent>
+        </Select>
 
         <div className="ml-auto flex flex-wrap items-center gap-1.5">
           {view === "console" && (
