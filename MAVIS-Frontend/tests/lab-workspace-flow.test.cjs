@@ -180,4 +180,10 @@ test("Coursera CDS contrast palette & simplified Lab header deduplicate prefixes
   const labTheory = read("src/features/assignments/lab-theory-section.tsx");
   assert.match(labTheory, /attachedTitles\.has\(item\.title\.trim\(\)\.toLowerCase\(\)\)/);
   assert.match(labTheory, /assetOnlyTheoryItems/);
+
+  const syllabus = read("src/features/courses/student-course-syllabus.tsx");
+  assert.match(syllabus, /divide-y divide-border overflow-hidden rounded-xl border bg-background/);
+  assert.doesNotMatch(syllabus, /mt-3 grid gap-2 sm:grid-cols-2/);
+  assert.doesNotMatch(syllabus, /badgeMeta\.emoji/);
+  assert.doesNotMatch(syllabus, /Build the module knowledge, validate it with a Quiz/);
 });

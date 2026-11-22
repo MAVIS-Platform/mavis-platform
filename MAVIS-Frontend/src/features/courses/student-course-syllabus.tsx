@@ -472,7 +472,7 @@ export function StudentCourseSyllabus({
                           {t(`Module ${mod.position}`, `Module ${mod.position}`)}
                         </span>
                         <span className="mt-0.5 block line-clamp-1 text-xs font-normal text-muted-foreground">
-                          {mod.title}
+                          {mod.title.replace(/^(?:Module|Chương)\s+\d+\s*[:–—-]\s*/i, "").trim() || mod.title}
                         </span>
                       </button>
                     );
@@ -661,39 +661,33 @@ export function StudentCourseSyllabus({
           {activeTab === "player" && !isLearningWorkspace && courseContentModule && (
             <section className="space-y-5 rounded-2xl border bg-card p-5 shadow-sm sm:p-6">
               <div className="border-b pb-4">
-                <Badge variant="outline" className="font-mono">
-                  {t(
-                    `Module ${courseContentModule.position}`,
-                    `Module ${courseContentModule.position}`,
-                  )}
-                </Badge>
-                <h2 className="mt-2 text-xl font-bold tracking-tight sm:text-2xl">
-                  {courseContentModule.title}
+                <h2 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+                  {`Module ${courseContentModule.position}: ${
+                    courseContentModule.title
+                      .replace(/^(?:Module|Chương)\s+\d+\s*[:–—-]\s*/i, "")
+                      .trim() || courseContentModule.title
+                  }`}
                 </h2>
                 <p className="mt-2 text-sm text-muted-foreground">
                   {courseContentModule.description ||
                     t(
-                      "Select a learning item to enter the focused Learning Workspace.",
-                      "Chọn một nội dung để mở Không gian học tập tập trung.",
+                      "Select a lesson below to start reading, take the Quiz, or open MAVIS Studio.",
+                      "Chọn một bài học bên dưới để đọc lý thuyết, làm Quiz hoặc mở MAVIS Studio.",
                     )}
                 </p>
               </div>
 
-              <div className="rounded-xl border bg-muted/20 p-4">
-                <h3 className="text-sm font-semibold">
-                  {t("Learning objectives", "Mục tiêu học tập")}
-                </h3>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {t(
-                    "Build the module knowledge, validate it with a Quiz, then apply it in MAVIS Studio.",
-                    "Xây dựng kiến thức Module, kiểm tra bằng Quiz, sau đó áp dụng trong MAVIS Studio.",
-                  )}
-                </p>
-              </div>
-
               <div>
-                <h3 className="text-sm font-semibold">{t("Lesson roadmap", "Lộ trình bài học")}</h3>
-                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-sm font-semibold text-foreground">
+                    {t("Module lessons", "Danh sách bài học")}
+                  </h3>
+                  <span className="text-xs font-semibold text-primary">
+                    {summary.completedLabs}/{summary.totalLabs || 0}{" "}
+                    {t("Labs completed", "Lab đã hoàn thành")}
+                  </span>
+                </div>
+                <div className="mt-3 divide-y divide-border overflow-hidden rounded-xl border bg-background">
                   {courseContentModule.items.map((item) => {
                     const badgeMeta = itemBadgeMeta(item.type, t);
                     const isLabItem = ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(
@@ -716,64 +710,56 @@ export function StudentCourseSyllabus({
                         onClick={() => {
                           if (!isLocked) selectCurriculumItem(item);
                         }}
-                        className={`group rounded-xl border bg-background p-3 text-left transition-all ${
+                        className={`group flex w-full items-center justify-between gap-4 px-4 py-3.5 text-left transition-colors ${
                           isLocked
-                            ? "cursor-not-allowed border-border/60 opacity-75"
-                            : "hover:border-primary hover:shadow-sm"
+                            ? "cursor-not-allowed opacity-70"
+                            : "hover:bg-accent/70"
                         }`}
                       >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-xs">{badgeMeta.emoji}</span>
+                        <div className="min-w-0 flex-1">
+                          <span
+                            className={`block text-sm font-semibold ${
+                              isLocked
+                                ? "text-muted-foreground"
+                                : "text-foreground group-hover:text-primary"
+                            }`}
+                          >
+                            {item.title}
+                          </span>
+                          <span className="mt-0.5 block text-xs text-muted-foreground">
+                            {badgeMeta.label}
+                            {item.estimatedMinutes
+                              ? ` · ~${item.estimatedMinutes} ${t("min", "phút")}`
+                              : ""}
+                          </span>
+                          {isLocked && (
+                            <span className="mt-1 block text-xs text-amber-700 dark:text-amber-300">
+                              {t("Pass previous Lab to unlock", "Hoàn thành Lab trước để mở khóa")}
+                            </span>
+                          )}
+                        </div>
+                        <div className="shrink-0">
                           {isPassed ? (
-                            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300">
-                              <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
+                            <span className="inline-flex items-center rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
                               {t("Passed", "Đã đạt")}
                             </span>
                           ) : isTheoryDone ? (
-                            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300">
-                              <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
+                            <span className="inline-flex items-center rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
                               {t("Completed", "Đã hoàn thành")}
                             </span>
                           ) : isLocked ? (
-                            <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
-                              <Lock className="h-3 w-3" aria-hidden="true" />
+                            <span className="inline-flex items-center rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs font-semibold text-amber-700 dark:text-amber-300">
                               {t("Locked", "Đang khóa")}
                             </span>
-                          ) : null}
+                          ) : (
+                            <span className="inline-flex items-center rounded-lg bg-primary px-3.5 py-1.5 text-xs font-semibold text-primary-foreground transition-colors group-hover:bg-primary/90">
+                              {t("Get started", "Bắt đầu")}
+                            </span>
+                          )}
                         </div>
-                        <span
-                          className={`mt-1 block text-sm font-semibold ${
-                            isLocked ? "text-muted-foreground" : "group-hover:text-primary"
-                          }`}
-                        >
-                          {item.title}
-                        </span>
-                        <span className="mt-1 block text-xs text-muted-foreground">
-                          {badgeMeta.label}
-                          {item.estimatedMinutes
-                            ? ` · ~${item.estimatedMinutes} ${t("min", "phút")}`
-                            : ""}
-                        </span>
-                        {isLocked && (
-                          <span className="mt-1 block text-[11px] text-amber-700 dark:text-amber-300">
-                            {t("Pass previous Lab to unlock", "Hoàn thành Lab trước để mở khóa")}
-                          </span>
-                        )}
                       </button>
                     );
                   })}
-                </div>
-              </div>
-
-              <div className="rounded-xl border bg-muted/20 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h3 className="text-sm font-semibold">
-                    {t("Module progress", "Tiến độ Module")}
-                  </h3>
-                  <span className="text-sm font-semibold text-primary">
-                    {summary.completedLabs}/{summary.totalLabs || 0}{" "}
-                    {t("Labs completed", "Lab đã hoàn thành")}
-                  </span>
                 </div>
               </div>
             </section>
@@ -797,7 +783,6 @@ export function StudentCourseSyllabus({
                           variant="outline"
                           className={itemBadgeMeta(activeItem.type, t).pillClass}
                         >
-                          {itemBadgeMeta(activeItem.type, t).emoji}{" "}
                           {itemBadgeMeta(activeItem.type, t).label}
                         </Badge>
                         {activeItem.estimatedMinutes && (
@@ -1166,9 +1151,6 @@ export function StudentCourseSyllabus({
                                         : "hover:bg-muted/50 text-foreground"
                                     }`}
                                   >
-                                    <span className="mt-0.5 shrink-0 text-xs">
-                                      {badgeMeta.emoji}
-                                    </span>
                                     <span className="min-w-0 flex-1">
                                       <span className="block leading-snug">{item.title}</span>
                                       <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10px] font-normal text-muted-foreground">
