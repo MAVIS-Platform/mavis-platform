@@ -1555,7 +1555,7 @@ test("Lecturer Studio Live authoring uses unified single top bar, non-red health
   assert.match(obs, /preserveMotion = false/);
   assert.match(recording, /serializeStudioGraph\(svg, true, true\)/);
   assert.match(evidence, /aria-label="Step traffic flows"/);
-  assert.match(live, /Screenshot PNG[\s\S]*Record runtime replay[\s\S]*Capture evidence snapshot/);
+  assert.match(live, /Capture evidence snapshot[\s\S]*Screenshot PNG[\s\S]*Record runtime replay/);
   assert.match(live, /aria-label="Runtime traffic flows"/);
   const exerciseEditor = read("src/features/assignments/studio-exercise-editor.tsx");
   const apiErrors = read("src/lib/errors/api-error.ts");

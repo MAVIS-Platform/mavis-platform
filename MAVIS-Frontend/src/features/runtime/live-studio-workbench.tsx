@@ -3412,137 +3412,58 @@ export function LiveStudioWorkbench({
 
           {tab === "snapshots" && (
             <section aria-label="Snapshots and runtime recording" className="space-y-3">
-              {/* Compact Header */}
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <h2 className={`text-xs font-bold ${isLight ? "text-slate-900" : "text-slate-100"}`}>
-                    Snapshots &amp; Runtime Recording
-                  </h2>
-                  <p className="text-[11px] text-muted-foreground">
-                    Capture topology screenshots (PNG) or record live runtime traffic flows between services.
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  {recordingSteps > 0 && (
-                    <span
-                      role="status"
-                      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono text-[11px] ${
-                        isLight
-                          ? "border-rose-300 bg-rose-50 text-rose-700"
-                          : "border-rose-500/40 bg-rose-500/15 text-rose-200"
-                      }`}
-                    >
-                      <span
-                        aria-hidden="true"
-                        className="size-1.5 animate-pulse rounded-full bg-rose-500"
-                      />
-                      Recording · {recordingSeconds}s · {recordingSteps} frames
-                    </span>
-                  )}
-                  {data.receiptDigest && (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="h-7 px-2.5 text-[11px]"
-                      onClick={() => void downloadReceipt()}
-                    >
-                      {data.receiptSignature ? "Download signed receipt" : "Download receipt"}
-                    </Button>
-                  )}
-                </div>
-              </div>
-
+              {/* BR-08 (INCOMPLETE_SCENARIO guard): warn students before sealing an empty session */}
               {!authoring && data.actions.length === 0 && !isPreviewMode && (
                 <p
                   role="note"
-                  className={`rounded-lg border px-2.5 py-1.5 text-[11px] leading-relaxed ${
+                  className={`rounded-lg border px-3 py-1.5 text-xs ${
                     isLight
-                      ? "border-amber-300 bg-amber-50 text-amber-900"
+                      ? "border-amber-200 bg-amber-50/80 text-amber-900"
                       : "border-amber-500/35 bg-amber-500/10 text-amber-200"
                   }`}
                 >
-                  BR-08 (INCOMPLETE_SCENARIO guard): Execute at least one Start, Stop, or Scale action on a live service before
-                  sealing your signed receipt.
+                  {t(
+                    "Run at least one live action (Stop, Start, Pause, or Scale) before sealing your signed receipt.",
+                    "Thực hiện ít nhất 1 thao tác live (Stop, Start, Pause hoặc Scale) trước khi niêm phong biên nhận.",
+                  )}
                 </p>
               )}
 
-              {/* Single-row Capture & Record Toolbar */}
+              {/* Primary Capture Bar + Compact Secondary Tools */}
               <div className="flex flex-wrap items-center gap-2">
-                <Input
-                  ref={snapshotNoteRef}
-                  aria-label="Explain the observed behavior"
-                  placeholder="Observation note (required for signed evidence snapshot)…"
-                  value={explanation}
-                  maxLength={4000}
-                  onChange={(event) => setExplanation(event.target.value)}
-                  className="h-8 min-w-52 flex-1 text-xs"
-                />
-
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={capturingScreen || blocks.length === 0}
-                  onClick={() => void captureCanvasScreenshot()}
-                  className={`h-8 px-2.5 text-[11.5px] font-semibold disabled:opacity-40 ${
-                    isLight
-                      ? "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
-                      : "border-emerald-500/40 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20"
-                  }`}
-                >
-                  <Camera aria-hidden="true" className="mr-1.5 size-3.5" />
-                  {capturingScreen ? "Capturing…" : "Screenshot PNG"}
-                </Button>
-
-                {recordingSteps === 0 ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={isPreviewMode || data.executionStatus !== "RUNNING" || savingReplay}
-                    title={
-                      isPreviewMode || data.executionStatus !== "RUNNING"
-                        ? "Start Live Docker first to record live runtime service-to-service traffic"
-                        : "Record live canvas video + traffic flow timeline"
-                    }
-                    onClick={startLiveReplayRecording}
-                    className={`h-8 px-2.5 text-[11.5px] font-semibold disabled:opacity-40 ${
+                <div className="relative flex min-w-[240px] flex-1 items-center">
+                  <Input
+                    ref={snapshotNoteRef}
+                    aria-label="Explain the observed behavior"
+                    placeholder={t(
+                      "Write a short observation note…",
+                      "Nhập ghi chú ngắn về hành vi quan sát được…",
+                    )}
+                    value={explanation}
+                    maxLength={4000}
+                    onChange={(event) => setExplanation(event.target.value)}
+                    className={`h-9 w-full text-xs ${!isPreviewMode && data.telemetry ? "pr-24" : ""} ${
                       isLight
-                        ? "border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100"
-                        : "border-sky-500/45 bg-sky-500/10 text-sky-200 hover:bg-sky-500/20"
+                        ? "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400"
+                        : "border-slate-700 bg-slate-900 text-slate-100 placeholder:text-slate-500"
                     }`}
-                  >
-                    <Video aria-hidden="true" className="mr-1.5 size-3.5" />
-                    Record runtime replay
-                  </Button>
-                ) : (
-                  <>
-                    <Button
+                  />
+                  {!isPreviewMode && data.telemetry && (
+                    <button
                       type="button"
-                      size="sm"
-                      variant="outline"
-                      disabled={savingReplay}
-                      onClick={addLiveReplayCheckpoint}
-                      className="h-8 border-slate-600 bg-slate-900 px-2.5 text-[11px] text-slate-200 hover:bg-slate-800"
+                      onClick={buildAutoObservationNote}
+                      title="Auto-fill summary"
+                      className={`absolute right-1.5 inline-flex h-6 items-center gap-1 rounded-md px-2 text-[11px] font-medium transition ${
+                        isLight
+                          ? "bg-slate-100 text-slate-700 hover:bg-sky-50 hover:text-sky-700"
+                          : "bg-slate-800 text-slate-200 hover:bg-slate-700 hover:text-white"
+                      }`}
                     >
-                      <Plus aria-hidden="true" className="mr-1 size-3" />
-                      Add checkpoint ({recordingSteps})
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      disabled={savingReplay}
-                      onClick={() => void stopAndSaveLiveReplay()}
-                      className="h-8 bg-rose-600 px-2.5 text-[11px] text-white hover:bg-rose-500"
-                    >
-                      <Square aria-hidden="true" className="mr-1.5 size-3 fill-current" />
-                      {savingReplay
-                        ? "Saving replay…"
-                        : `Stop & save replay (${recordingSeconds}s)`}
-                    </Button>
-                  </>
-                )}
+                      <Sparkles aria-hidden="true" className="size-3 text-sky-500" />
+                      Auto-fill
+                    </button>
+                  )}
+                </div>
 
                 <Button
                   type="button"
@@ -3562,272 +3483,407 @@ export function LiveStudioWorkbench({
                         null,
                     )
                   }
-                  className="h-8 px-2.5 text-[11px]"
+                  className="h-9 bg-[#0056D2] px-3.5 text-xs font-semibold text-white hover:bg-[#00419E] disabled:opacity-45"
                 >
-                  <Camera aria-hidden="true" className="mr-1 size-3" /> Capture evidence snapshot
+                  <Camera aria-hidden="true" className="mr-1.5 size-3.5" />
+                  Capture evidence snapshot
                 </Button>
 
-                {!isPreviewMode && data.telemetry && (
+                <div
+                  aria-hidden="true"
+                  className={`hidden h-5 w-px sm:block ${isLight ? "bg-slate-200" : "bg-slate-800"}`}
+                />
+
+                <div className="flex flex-wrap items-center gap-1.5">
                   <Button
                     type="button"
                     size="sm"
-                    variant="ghost"
-                    onClick={buildAutoObservationNote}
-                    className="h-8 px-2 text-[11px] text-slate-300 hover:bg-slate-800 hover:text-white"
+                    variant="outline"
+                    disabled={capturingScreen || blocks.length === 0}
+                    onClick={() => void captureCanvasScreenshot()}
+                    className={`h-8 px-2.5 text-xs font-medium disabled:opacity-40 ${
+                      isLight
+                        ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                        : "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"
+                    }`}
                   >
-                    <Sparkles aria-hidden="true" className="mr-1 size-3" />
-                    Auto-fill summary
+                    <Camera aria-hidden="true" className="mr-1.5 size-3.5" />
+                    {capturingScreen ? "Capturing…" : "Screenshot PNG"}
                   </Button>
-                )}
+
+                  {recordingSteps === 0 ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={isPreviewMode || data.executionStatus !== "RUNNING" || savingReplay}
+                      title={
+                        isPreviewMode || data.executionStatus !== "RUNNING"
+                          ? "Start Live Docker first to record live runtime service-to-service traffic"
+                          : "Record live canvas video + traffic flow timeline"
+                      }
+                      onClick={startLiveReplayRecording}
+                      className={`h-8 px-2.5 text-xs font-medium disabled:opacity-40 ${
+                        isLight
+                          ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                          : "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"
+                      }`}
+                    >
+                      <Video aria-hidden="true" className="mr-1.5 size-3.5" />
+                      Record runtime replay
+                    </Button>
+                  ) : (
+                    <>
+                      <span
+                        role="status"
+                        className={`inline-flex h-8 items-center gap-1.5 rounded-md border px-2 font-mono text-[11px] font-medium ${
+                          isLight
+                            ? "border-rose-300 bg-rose-50 text-rose-700"
+                            : "border-rose-500/40 bg-rose-500/15 text-rose-200"
+                        }`}
+                      >
+                        <span
+                          aria-hidden="true"
+                          className="size-1.5 animate-pulse rounded-full bg-rose-500"
+                        />
+                        {recordingSeconds}s · {recordingSteps}f
+                      </span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={savingReplay}
+                        onClick={addLiveReplayCheckpoint}
+                        className={`h-8 px-2.5 text-xs ${
+                          isLight
+                            ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                            : "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"
+                        }`}
+                      >
+                        <Plus aria-hidden="true" className="mr-1 size-3" />
+                        Add checkpoint ({recordingSteps})
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={savingReplay}
+                        onClick={() => void stopAndSaveLiveReplay()}
+                        className="h-8 bg-rose-600 px-2.5 text-xs text-white hover:bg-rose-500"
+                      >
+                        <Square aria-hidden="true" className="mr-1.5 size-3 fill-current" />
+                        {savingReplay
+                          ? "Saving replay…"
+                          : `Stop & save replay (${recordingSeconds}s)`}
+                      </Button>
+                    </>
+                  )}
+
+                  {data.receiptDigest && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className={`h-8 px-2.5 text-xs font-medium ${
+                        isLight
+                          ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                          : "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"
+                      }`}
+                      onClick={() => void downloadReceipt()}
+                    >
+                      {data.receiptSignature ? "Download signed receipt" : "Download receipt"}
+                    </Button>
+                  )}
+                </div>
               </div>
 
               {(downloadError || replayError) && (
-                <p role="alert" className="text-[11px] text-rose-300">
+                <p role="alert" className={`text-xs ${isLight ? "text-rose-700" : "text-rose-300"}`}>
                   {downloadError?.message ?? replayError}
                 </p>
               )}
 
-              {/* Live / Configured Runtime Call Flow Strip */}
-              <div className="rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2">
-                <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-300">
-                    {runtimeFlows.some((f) => f.observed)
-                      ? `Observed Runtime Traffic Flows (${runtimeFlows.length})`
-                      : `Active Service Routes (${runtimeFlows.length})`}
-                  </span>
-                  <span className="text-[10.5px] text-slate-400">
-                    {runtimeFlows.some((f) => f.observed)
-                      ? "Live service-to-service calls captured in video & replay checkpoints"
-                      : isPreviewMode
-                        ? "Screenshot works now · Start Live Docker to record live animated traffic video"
-                        : "Waiting for live requests between services…"}
-                  </span>
-                </div>
-                {runtimeFlows.length > 0 ? (
-                  <ul
-                    aria-label="Runtime traffic flows"
-                    className="flex flex-wrap gap-1.5 font-mono text-[10.5px]"
+              {/* Slim Collapsible Metrics & Traffic Context (collapsed by default so Snapshots stays clean) */}
+              {(runtimeFlows.length > 0 || (firstConfirmed?.result && lastConfirmed?.result)) && (
+                <details
+                  className={`rounded-lg border text-xs ${
+                    isLight
+                      ? "border-slate-200 bg-slate-50/75 text-slate-700"
+                      : "border-slate-800 bg-slate-900/60 text-slate-300"
+                  }`}
+                >
+                  <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 px-3 py-2 font-medium select-none">
+                    <span className="inline-flex flex-wrap items-center gap-2 font-mono text-[11.5px]">
+                      {firstConfirmed?.result && lastConfirmed?.result ? (
+                        <>
+                          <span className={isLight ? "font-sans font-semibold text-slate-800" : "font-sans font-semibold text-slate-100"}>
+                            Before → After:
+                          </span>
+                          <span>
+                            p95 {metric(firstConfirmed.result.metricsBefore["p95LatencyMs"])}→
+                            {metric(lastConfirmed.result.metricsAfter["p95LatencyMs"])} ms
+                          </span>
+                          <span aria-hidden="true" className="opacity-40">·</span>
+                          <span>
+                            err {metric(firstConfirmed.result.metricsBefore["errorRatePercent"])}%→
+                            {metric(lastConfirmed.result.metricsAfter["errorRatePercent"])}%
+                          </span>
+                          <span aria-hidden="true" className="opacity-40">·</span>
+                          <span>
+                            {lastConfirmed.result.service} {firstConfirmed.result.replicasBefore}→
+                            {lastConfirmed.result.replicasAfter}×
+                          </span>
+                        </>
+                      ) : (
+                        <span className={isLight ? "font-sans font-semibold text-slate-800" : "font-sans font-semibold text-slate-100"}>
+                          {t("Captured traffic context", "Ngữ cảnh luồng dịch vụ")}
+                        </span>
+                      )}
+                    </span>
+                    <span className="text-[11px] text-muted-foreground">
+                      {runtimeFlows.length} {runtimeFlows.length === 1 ? "flow" : "flows"} ▾
+                    </span>
+                  </summary>
+
+                  <div
+                    className={`space-y-2.5 border-t px-3 py-2.5 ${
+                      isLight ? "border-slate-200 bg-white/80" : "border-slate-800 bg-slate-950/50"
+                    }`}
                   >
-                    {runtimeFlows.map((flow) => (
-                      <li
-                        key={`${flow.from}-${flow.to}`}
-                        className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 ${
-                          flow.hasError
-                            ? "border-rose-500/40 bg-rose-500/10 text-rose-200"
-                            : flow.observed
-                              ? "border-sky-500/35 bg-sky-500/10 text-sky-100"
-                              : "border-slate-800 bg-slate-900/70 text-slate-300"
+                    {firstConfirmed?.result && lastConfirmed?.result && (
+                      <div className="mavis-tabular grid grid-cols-2 gap-2 font-mono text-[11px] sm:grid-cols-4">
+                        <div>
+                          <span className="block text-[10px] text-muted-foreground">Requests</span>
+                          <span>
+                            {metric(firstConfirmed.result.metricsBefore["requestCount"])} →{" "}
+                            {metric(lastConfirmed.result.metricsAfter["requestCount"])}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="block text-[10px] text-muted-foreground">p95 latency</span>
+                          <span>
+                            {metric(firstConfirmed.result.metricsBefore["p95LatencyMs"])} ms →{" "}
+                            {metric(lastConfirmed.result.metricsAfter["p95LatencyMs"])} ms
+                          </span>
+                        </div>
+                        <div>
+                          <span className="block text-[10px] text-muted-foreground">Error rate</span>
+                          <span>
+                            {metric(firstConfirmed.result.metricsBefore["errorRatePercent"])}% →{" "}
+                            {metric(lastConfirmed.result.metricsAfter["errorRatePercent"])}%
+                          </span>
+                        </div>
+                        <div>
+                          <span className="block text-[10px] text-muted-foreground">Replicas</span>
+                          <span>
+                            {firstConfirmed.result.service}: {firstConfirmed.result.replicasBefore} →{" "}
+                            {lastConfirmed.result.replicasAfter}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {runtimeFlows.length > 0 && (
+                      <ul
+                        aria-label="Runtime traffic flows"
+                        className="flex flex-wrap gap-1.5 font-mono text-[11px]"
+                      >
+                        {runtimeFlows.map((flow) => (
+                          <li
+                            key={`${flow.from}-${flow.to}`}
+                            className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 ${
+                              flow.hasError
+                                ? isLight
+                                  ? "border-rose-200 bg-rose-50 text-rose-800"
+                                  : "border-rose-500/40 bg-rose-500/10 text-rose-200"
+                                : flow.observed
+                                  ? isLight
+                                    ? "border-sky-200 bg-sky-50 text-sky-900"
+                                    : "border-sky-500/35 bg-sky-500/10 text-sky-100"
+                                  : isLight
+                                    ? "border-slate-200 bg-slate-50 text-slate-700"
+                                    : "border-slate-800 bg-slate-900/70 text-slate-300"
+                            }`}
+                          >
+                            <span className="font-semibold">{flow.from}</span>
+                            <span className="opacity-50">→</span>
+                            <span className="font-semibold">{flow.to}</span>
+                            <span className="opacity-70">· {flow.label}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </details>
+              )}
+
+              {/* Signed Evidence Snapshots */}
+              {(data.snapshots?.length ?? 0) > 0 && (
+                <div className="grid gap-2 md:grid-cols-2">
+                  {data.snapshots?.map((snapshot, idx) => (
+                    <div
+                      key={snapshot.id}
+                      className={`flex items-start justify-between gap-3 rounded-xl border p-3 text-xs ${
+                        isLight
+                          ? "border-slate-200 bg-slate-50/70 text-slate-900"
+                          : "border-slate-800 bg-slate-900/70 text-slate-100"
+                      }`}
+                    >
+                      <div className="min-w-0 space-y-1">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span
+                            className={`rounded-md px-1.5 py-0.5 font-mono text-[10px] font-semibold ${
+                              isLight
+                                ? "bg-emerald-100 text-emerald-800"
+                                : "bg-emerald-500/15 text-emerald-300"
+                            }`}
+                          >
+                            SNAPSHOT #{idx + 1}
+                          </span>
+                          <span className="text-[11px] text-muted-foreground">
+                            {new Date(snapshot.capturedAt).toLocaleTimeString()}
+                          </span>
+                        </div>
+                        <p className="leading-snug font-medium">{snapshot.explanation}</p>
+                        <p className="font-mono text-[10px] text-muted-foreground">
+                          #{snapshot.digest.slice(0, 14)}…
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-7 shrink-0 px-2.5 text-[11px]"
+                        onClick={() => void downloadSnapshot(snapshot.id)}
+                      >
+                        Download evidence
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Local Screenshots & Runtime Replays */}
+              {liveReplays.length > 0 && (
+                <div className="grid gap-2.5 lg:grid-cols-2">
+                  {liveReplays.map((replayItem) => {
+                    const isScreenshot = replayItem.kind === "LIVE_SCREENSHOT";
+                    return (
+                      <div
+                        key={replayItem.id}
+                        className={`space-y-2 rounded-xl border p-3 text-xs ${
+                          isLight
+                            ? "border-slate-200 bg-slate-50/70 text-slate-900"
+                            : "border-slate-800 bg-slate-900/75 text-slate-100"
                         }`}
                       >
-                        <span className="font-semibold text-sky-300">{flow.from}</span>
-                        <span className="text-slate-500">→</span>
-                        <span className="font-semibold text-emerald-300">{flow.to}</span>
-                        <span className="text-slate-400">· {flow.label}</span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-[11px] text-slate-500">
-                    No active routes or trace calls observed yet.
-                  </p>
-                )}
-              </div>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span
+                                className={`rounded-md px-1.5 py-0.5 font-mono text-[10px] font-semibold ${
+                                  isScreenshot
+                                    ? isLight
+                                      ? "bg-emerald-100 text-emerald-800"
+                                      : "bg-emerald-500/15 text-emerald-300"
+                                    : isLight
+                                      ? "bg-sky-100 text-sky-800"
+                                      : "bg-sky-500/15 text-sky-300"
+                                }`}
+                              >
+                                {isScreenshot ? "PNG" : "REPLAY"}
+                              </span>
+                              <span className="text-[11px] text-muted-foreground">
+                                {new Date(replayItem.capturedAt).toLocaleTimeString()}
+                                {!isScreenshot && ` · ${replayItem.replay.length} frames`}
+                                {replayItem.durationMs
+                                  ? ` · ${(replayItem.durationMs / 1000).toFixed(1)}s`
+                                  : ""}
+                              </span>
+                            </div>
+                            <p className="mt-1 font-medium">{replayItem.explanation}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => void removeLiveReplay(replayItem.id)}
+                            aria-label={isScreenshot ? "Delete screenshot" : "Delete runtime replay"}
+                            className={`rounded p-1 transition ${
+                              isLight
+                                ? "text-slate-400 hover:bg-slate-200/70 hover:text-rose-600"
+                                : "text-slate-500 hover:bg-slate-800 hover:text-rose-300"
+                            }`}
+                          >
+                            <Trash2 aria-hidden="true" className="size-3.5" />
+                          </button>
+                        </div>
 
-              {firstConfirmed?.result && lastConfirmed?.result && (
-                <div className="mavis-tabular rounded-lg border border-slate-800 bg-slate-950/70 p-2.5 text-[10.5px]">
-                  <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                    Before vs After Confirmed Metrics
-                  </p>
-                  <div className="grid grid-cols-2 gap-2 font-mono sm:grid-cols-4">
-                    <div>
-                      <span className="block text-[10px] text-slate-500">Requests</span>
-                      <span className="text-slate-200">
-                        {metric(firstConfirmed.result.metricsBefore["requestCount"])} →{" "}
-                        {metric(lastConfirmed.result.metricsAfter["requestCount"])}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="block text-[10px] text-slate-500">p95 latency</span>
-                      <span className="text-slate-200">
-                        {metric(firstConfirmed.result.metricsBefore["p95LatencyMs"])} ms →{" "}
-                        {metric(lastConfirmed.result.metricsAfter["p95LatencyMs"])} ms
-                      </span>
-                    </div>
-                    <div>
-                      <span className="block text-[10px] text-slate-500">Error rate</span>
-                      <span className="text-slate-200">
-                        {metric(firstConfirmed.result.metricsBefore["errorRatePercent"])}% →{" "}
-                        {metric(lastConfirmed.result.metricsAfter["errorRatePercent"])}%
-                      </span>
-                    </div>
-                    <div>
-                      <span className="block text-[10px] text-slate-500">Replicas delta</span>
-                      <span className="text-slate-200">
-                        {firstConfirmed.result.service}: {firstConfirmed.result.replicasBefore}{" "}
-                        → {lastConfirmed.result.service}: {lastConfirmed.result.replicasAfter}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              )}
+                        {isScreenshot && replayItem.imageData ? (
+                          <img
+                            src={replayItem.imageData}
+                            alt="Captured runtime topology screenshot"
+                            className={`max-h-60 w-full rounded-lg border object-contain ${
+                              isLight ? "border-slate-200 bg-white" : "border-slate-800 bg-[#070b14]"
+                            }`}
+                          />
+                        ) : (
+                          <>
+                            {replayItem.video && replayItem.video.size > 0 && (
+                              <StudioVideo
+                                blob={replayItem.video}
+                                durationMs={replayItem.durationMs ?? 0}
+                                posterSvg={replayItem.frame.svg}
+                              />
+                            )}
+                            <StudioEvidenceReplay frames={replayItem.replay} />
+                          </>
+                        )}
 
-              {liveReplays.length > 0 && (
-                <div className="space-y-2">
-                  <p className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-300">
-                    Screenshots &amp; Runtime Recordings ({liveReplays.length})
-                  </p>
-                  <div className="grid gap-2.5 lg:grid-cols-2">
-                    {liveReplays.map((replayItem) => {
-                      const isScreenshot = replayItem.kind === "LIVE_SCREENSHOT";
-                      return (
                         <div
-                          key={replayItem.id}
-                          className={`space-y-2 rounded-lg border bg-slate-950/75 p-2.5 text-[10.5px] ${
-                            isScreenshot ? "border-emerald-500/30" : "border-sky-500/30"
+                          className={`flex flex-wrap items-center justify-end gap-1.5 border-t pt-2 ${
+                            isLight ? "border-slate-200" : "border-slate-800"
                           }`}
                         >
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0">
-                              <div className="flex flex-wrap items-center gap-1.5">
-                                <span
-                                  className={`rounded px-1.5 py-0.5 font-mono text-[9.5px] font-semibold ${
-                                    isScreenshot
-                                      ? "bg-emerald-500/15 text-emerald-300"
-                                      : "bg-sky-500/15 text-sky-300"
-                                  }`}
-                                >
-                                  {isScreenshot ? "SCREENSHOT" : "RUNTIME VIDEO"}
-                                </span>
-                                <span className="text-[10px] text-slate-400">
-                                  {new Date(replayItem.capturedAt).toLocaleString()}
-                                  {!isScreenshot && ` · ${replayItem.replay.length} frames`}
-                                  {replayItem.durationMs
-                                    ? ` · ${(replayItem.durationMs / 1000).toFixed(1)}s`
-                                    : ""}
-                                </span>
-                              </div>
-                              <p className="mt-1 font-medium text-slate-200">
-                                {replayItem.explanation}
-                              </p>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => void removeLiveReplay(replayItem.id)}
-                              aria-label={isScreenshot ? "Delete screenshot" : "Delete runtime replay"}
-                              className="rounded p-1 text-slate-500 hover:bg-slate-800 hover:text-rose-300"
+                          {isScreenshot && replayItem.imageData && (
+                            <a
+                              href={replayItem.imageData}
+                              download={`mavis-screenshot-${replayItem.id.slice(0, 8)}.png`}
+                              className={`inline-flex h-7 items-center rounded-md border px-2.5 text-[11px] font-medium transition ${
+                                isLight
+                                  ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
+                                  : "border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700"
+                              }`}
                             >
-                              <Trash2 aria-hidden="true" className="size-3.5" />
-                            </button>
-                          </div>
-
-                          {isScreenshot && replayItem.imageData ? (
-                            <div className="space-y-1.5">
-                              <img
-                                src={replayItem.imageData}
-                                alt="Captured runtime topology screenshot"
-                                className="max-h-72 w-full rounded-md border border-slate-800 bg-[#070b14] object-contain"
-                              />
-                              {replayItem.frame.connections.length > 0 && (
-                                <ul className="flex flex-wrap gap-1 font-mono text-[10px]">
-                                  {replayItem.frame.connections.slice(0, 6).map((conn, idx) => (
-                                    <li
-                                      key={`${conn.from}-${conn.to}-${idx}`}
-                                      className="rounded border border-slate-800 bg-slate-900/80 px-1.5 py-0.5 text-slate-300"
-                                    >
-                                      <span className="text-sky-300">{conn.from}</span>
-                                      <span className="mx-1 text-slate-500">→</span>
-                                      <span className="text-emerald-300">{conn.to}</span>
-                                      {conn.protocol && (
-                                        <span className="ml-1 text-slate-400">
-                                          · {conn.protocol}
-                                        </span>
-                                      )}
-                                    </li>
-                                  ))}
-                                </ul>
-                              )}
-                            </div>
-                          ) : (
-                            <>
-                              {replayItem.video && replayItem.video.size > 0 && (
-                                <StudioVideo
-                                  blob={replayItem.video}
-                                  durationMs={replayItem.durationMs ?? 0}
-                                  posterSvg={replayItem.frame.svg}
-                                />
-                              )}
-                              <StudioEvidenceReplay frames={replayItem.replay} />
-                            </>
+                              Download PNG
+                            </a>
                           )}
-
-                          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 pt-1.5">
-                            <span className="truncate font-mono text-[9.5px] text-slate-500">
-                              {replayItem.digest.slice(0, 26)}…
-                            </span>
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              {isScreenshot && replayItem.imageData && (
-                                <a
-                                  href={replayItem.imageData}
-                                  download={`mavis-screenshot-${replayItem.id.slice(0, 8)}.png`}
-                                  className="inline-flex h-6 items-center rounded border border-emerald-500/40 bg-emerald-500/10 px-2 text-[10px] font-medium text-emerald-200 hover:bg-emerald-500/20"
-                                >
-                                  Download PNG
-                                </a>
-                              )}
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                className="h-6 border-sky-500/40 bg-sky-500/10 px-2 text-[10px] text-sky-200 hover:bg-sky-500/20"
-                                onClick={() => downloadStudioEvidence(replayItem)}
-                              >
-                                {isScreenshot ? "Download HTML" : "Download Replay HTML"}
-                              </Button>
-                            </div>
-                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-7 px-2.5 text-[11px]"
+                            onClick={() => downloadStudioEvidence(replayItem)}
+                          >
+                            {isScreenshot ? "Download HTML" : "Download Replay HTML"}
+                          </Button>
                         </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {(data.snapshots?.length ?? 0) > 0 && (
-                <div className="space-y-1.5">
-                  <p className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">
-                    Signed Session Snapshots ({data.snapshots?.length})
-                  </p>
-                  <div className="grid gap-1.5 md:grid-cols-2">
-                    {data.snapshots?.map((snapshot) => (
-                      <div
-                        key={snapshot.id}
-                        className="rounded-lg border border-slate-800 bg-slate-950/60 p-2.5 text-[10.5px]"
-                      >
-                        <p className="text-slate-200">
-                          {new Date(snapshot.capturedAt).toLocaleString()} · {snapshot.explanation}
-                        </p>
-                        <p className="mt-0.5 break-all font-mono text-[10px] text-slate-500">
-                          {snapshot.digest}
-                        </p>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="mt-1.5 h-7 border-slate-600 bg-slate-900 px-2 text-[10.5px] text-slate-200 hover:bg-slate-800 hover:text-white"
-                          onClick={() => void downloadSnapshot(snapshot.id)}
-                        >
-                          Download evidence
-                        </Button>
                       </div>
-                    ))}
-                  </div>
+                    );
+                  })}
                 </div>
               )}
 
               {!data.snapshots?.length && liveReplays.length === 0 && (
-                <p className="text-[11px] text-slate-500">
-                  No screenshots or runtime recordings captured yet.
-                </p>
+                <div
+                  className={`rounded-xl border border-dashed px-4 py-5 text-center text-xs ${
+                    isLight
+                      ? "border-slate-200 bg-slate-50/50 text-slate-500"
+                      : "border-slate-800 bg-slate-900/30 text-slate-400"
+                  }`}
+                >
+                  {t(
+                    "No snapshots yet. Enter a short note above (or click Auto-fill) and press Capture evidence snapshot.",
+                    "Chưa có snapshot nào. Nhập ghi chú ngắn phía trên (hoặc bấm Auto-fill) rồi nhấn Capture evidence snapshot.",
+                  )}
+                </div>
               )}
             </section>
           )}
