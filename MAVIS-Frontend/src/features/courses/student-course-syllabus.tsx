@@ -16,17 +16,20 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/shared/data";
-import { InteractiveConceptStage } from "@/components/shared/interactive-concept-stage";
 import { MarkdownPreview } from "@/components/shared/markdown-preview";
 import { RequestState } from "@/components/shared/request-state";
-import { useApi, useApiQuery } from "@/hooks/use-api";
+import { useApi, useApiQuery, useSession } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { formatCourseLabTitle, formatCoursePlainText, formatTenScaleScore } from "@/lib/format/course-display";
-import { computeCourseProgressSummary } from "@/lib/coursera-ui-helpers";
+import {
+  computeCourseProgressSummary,
+  readCompletedTheoryIds,
+  theoryCompletionStorageKey,
+  toggleCompletedTheoryId,
+} from "@/lib/coursera-ui-helpers";
 import { useCourseRoadmap, usePublishedCourse } from "@/features/workspaces/course-access";
 import { ChapterQuizRunner } from "./chapter-quiz-runner";
 import { CourseEssayItemPanel, type RubricRow } from "./course-essay-panel";
-import { getScenarioForLessonOrLab } from "./designed-to-scale-scenarios";
 import {
   buildCourseraModulesWithLabLinks,
   matchQuizQuestionsForItem,
@@ -71,7 +74,16 @@ export function StudentCourseSyllabus({
   const router = useRouter();
   const searchParams = useSearchParams();
   const client = useApi();
+  const session = useSession();
   const workspaceId = workspace.id;
+  const theoryStorageKey = theoryCompletionStorageKey(session.data?.user?.id, workspaceId);
+  const [completedTheoryIds, setCompletedTheoryIds] = useState<string[]>([]);
+  useEffect(() => {
+    setCompletedTheoryIds(readCompletedTheoryIds(theoryStorageKey));
+  }, [theoryStorageKey]);
+  const isTheoryCompleted = (itemId: string) => completedTheoryIds.includes(itemId);
+  const toggleTheoryCompleted = (itemId: string) =>
+    setCompletedTheoryIds((prev) => toggleCompletedTheoryId(theoryStorageKey, prev, itemId));
   const roadmap = useCourseRoadmap(workspaceId);
   const publishedCourse = usePublishedCourse(workspaceId);
   const assignmentsQuery = useApiQuery("assignments", { workspaceId });
@@ -370,6 +382,7 @@ export function StudentCourseSyllabus({
               {activeModule?.items.map((item) => {
                 const selected = item.id === activeItem?.id;
                 const locked = isItemLocked(item);
+                const theoryDone = item.type === "THEORY" && isTheoryCompleted(item.id);
                 return (
                   <button
                     key={item.id}
@@ -385,7 +398,15 @@ export function StudentCourseSyllabus({
                           : "text-muted-foreground hover:bg-muted hover:text-foreground"
                     }`}
                   >
-                    <span className="line-clamp-2 block">{item.title}</span>
+                    <span className="flex items-start justify-between gap-1.5">
+                      <span className="line-clamp-2 min-w-0 flex-1">{item.title}</span>
+                      {theoryDone && (
+                        <CheckCircle2
+                          className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400"
+                          aria-label={t("Completed", "Đã hoàn thành")}
+                        />
+                      )}
+                    </span>
                     <span className="mt-0.5 flex items-center gap-1 text-[10px] font-normal opacity-80">
                       <span>{itemBadgeMeta(item.type, t).label}</span>
                       {locked && (
@@ -679,6 +700,7 @@ export function StudentCourseSyllabus({
                         ? labs.find((l) => l.assignmentId === item.assignmentId)
                         : undefined;
                     const isPassed = linkedLab?.state === "PASSED";
+                    const isTheoryDone = item.type === "THEORY" && isTheoryCompleted(item.id);
                     const isLocked = isItemLocked(item);
                     return (
                       <button
@@ -701,6 +723,11 @@ export function StudentCourseSyllabus({
                             <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300">
                               <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
                               {t("Passed", "Đã đạt")}
+                            </span>
+                          ) : isTheoryDone ? (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300">
+                              <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
+                              {t("Completed", "Đã hoàn thành")}
                             </span>
                           ) : isLocked ? (
                             <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
@@ -773,6 +800,15 @@ export function StudentCourseSyllabus({
                             · ~{activeItem.estimatedMinutes} {t("min", "phút")}
                           </span>
                         )}
+                        {activeItem.type === "THEORY" && isTheoryCompleted(activeItem.id) && (
+                          <Badge
+                            variant="outline"
+                            className="gap-1 border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                          >
+                            <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
+                            {t("Completed", "Đã hoàn thành")}
+                          </Badge>
+                        )}
                       </div>
                       <h2 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
                         {activeItem.title}
@@ -809,18 +845,46 @@ export function StudentCourseSyllabus({
                   {activeItem.type === "THEORY" &&
                     typeof activeItem.content?.["body"] === "string" && (
                       <div className="space-y-6">
-                        <InteractiveConceptStage
-                          scenario={getScenarioForLessonOrLab(
-                            activeModule.position,
-                            activeItem.curriculumCode ??
-                              (typeof activeItem.content?.["curriculumCode"] === "string"
-                                ? String(activeItem.content["curriculumCode"])
-                                : activeItem.title),
-                            workspace.code,
-                          )}
-                        />
                         <div className="prose-sm max-w-none rounded-xl border bg-background p-4 sm:p-6">
                           <MarkdownPreview markdown={String(activeItem.content["body"])} />
+                        </div>
+
+                        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-500/25 bg-emerald-500/5 px-4 py-3.5">
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-foreground">
+                              {isTheoryCompleted(activeItem.id)
+                                ? t("Lesson completed", "Đã hoàn thành bài lý thuyết")
+                                : t("Finished reading this lesson?", "Bạn đã đọc xong bài lý thuyết này?")}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {isTheoryCompleted(activeItem.id)
+                                ? t(
+                                    "Marked as done in your course syllabus. You can continue to the next item.",
+                                    "Đã đánh dấu hoàn thành trong lộ trình học của bạn. Bạn có thể chuyển sang bài tiếp theo.",
+                                  )
+                                : t(
+                                    "Mark as completed to track your reading progress.",
+                                    "Bấm đánh dấu đã hoàn thành để lưu tiến độ đọc của bạn.",
+                                  )}
+                            </p>
+                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={isTheoryCompleted(activeItem.id) ? "outline" : "default"}
+                            aria-pressed={isTheoryCompleted(activeItem.id)}
+                            className={
+                              isTheoryCompleted(activeItem.id)
+                                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300"
+                                : "bg-emerald-600 text-white hover:bg-emerald-700"
+                            }
+                            onClick={() => toggleTheoryCompleted(activeItem.id)}
+                          >
+                            <CheckCircle2 className="mr-1.5 h-4 w-4" aria-hidden="true" />
+                            {isTheoryCompleted(activeItem.id)
+                              ? t("Completed", "Đã hoàn thành")
+                              : t("Mark as completed", "Đánh dấu đã hoàn thành")}
+                          </Button>
                         </div>
 
                         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/20 p-4">

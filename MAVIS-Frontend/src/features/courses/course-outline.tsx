@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   BookOpen,
   CheckCircle2,
@@ -20,14 +20,17 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { formatCourseLabTitle, formatCoursePlainText } from "@/lib/format/course-display";
+import {
+  readCompletedTheoryIds,
+  theoryCompletionStorageKey,
+  toggleCompletedTheoryId,
+} from "@/lib/coursera-ui-helpers";
 import { ApiError } from "@/lib/errors/api-error";
-import { useApiQuery } from "@/hooks/use-api";
+import { useApiQuery, useSession } from "@/hooks/use-api";
 import { useCourseAuthoring, useCourseRoadmap, usePublishedCourse } from "@/features/workspaces/course-access";
 import { MarkdownPreview } from "@/components/shared/markdown-preview";
-import { InteractiveConceptStage } from "@/components/shared/interactive-concept-stage";
 import { CourseEssayItemPanel, type RubricRow } from "./course-essay-panel";
 import { ChapterQuizRunner } from "./chapter-quiz-runner";
-import { getScenarioForLessonOrLab } from "./designed-to-scale-scenarios";
 import {
   JAVA_COURSERA_COURSE_TITLE,
   buildCourseraModulesWithLabLinks,
@@ -168,6 +171,12 @@ function CourseOutlineBody({
   onRetry: () => void;
 }) {
   const { t } = useLocale();
+  const session = useSession();
+  const theoryStorageKey = theoryCompletionStorageKey(session.data?.user?.id, workspaceId);
+  const [completedTheoryIds, setCompletedTheoryIds] = useState<string[]>([]);
+  useEffect(() => {
+    setCompletedTheoryIds(readCompletedTheoryIds(theoryStorageKey));
+  }, [theoryStorageKey]);
   const workspaces = useApiQuery("workspaces", {});
   const workspace = workspaces.data?.find((w) => w.id === workspaceId);
   const isJavaCourseraWorkspace = workspace?.code?.toUpperCase() === "JAVA-MS-2026";
@@ -210,11 +219,6 @@ function CourseOutlineBody({
   const isCsharpCourse =
     workspace?.code?.toUpperCase() === "CSHARP-MS-2026" ||
     /(?:csharp|c#|\.net|dotnet|trái cây)/i.test(courseTitle ?? "");
-  const courseTrackHint = isCsharpCourse
-    ? "CSHARP"
-    : isJavaCourseraWorkspace
-      ? "JAVA"
-      : undefined;
 
   if (isLoadError) {
     return (
@@ -427,13 +431,7 @@ function CourseOutlineBody({
                             ? matchQuizQuestionsForItem(module.position, item.title)
                             : [])
                       : [];
-                  const curriculumCode =
-                    typeof item.content?.["curriculumCode"] === "string"
-                      ? String(item.content["curriculumCode"])
-                      : undefined;
-                  const itemTrackHint = curriculumCode?.toLowerCase().startsWith("csharp-")
-                    ? "CSHARP"
-                    : courseTrackHint;
+                  const isTheoryDone = !canManage && item.type === "THEORY" && completedTheoryIds.includes(item.id);
                   const quizSummaryLabel = item.assignmentId
                     ? canManage
                       ? t("View Question Bank", "Xem Bộ Câu Hỏi")
@@ -468,6 +466,12 @@ function CourseOutlineBody({
                           {item.required === false && (
                             <Badge variant="outline">{t("Optional", "Không bắt buộc")}</Badge>
                           )}
+                          {isTheoryDone && (
+                            <Badge variant="success" className="gap-1">
+                              <CheckCircle2 className="size-3" aria-hidden="true" />
+                              {t("Completed", "Đã hoàn thành")}
+                            </Badge>
+                          )}
                         </div>
                         <p className="text-sm font-medium text-foreground">{item.title}</p>
                         {(item.description || (assignment?.title && assignment.title !== item.title)) && (
@@ -481,14 +485,37 @@ function CourseOutlineBody({
                               📖 {t("Read lesson", "Đọc bài học")}
                             </summary>
                             <div className="mt-3 max-w-4xl space-y-4 rounded-xl border bg-background p-4 shadow-xs sm:p-5">
-                              <InteractiveConceptStage
-                                scenario={getScenarioForLessonOrLab(
-                                  module.position,
-                                  curriculumCode ?? item.title,
-                                  itemTrackHint,
-                                )}
-                              />
                               <MarkdownPreview markdown={String(item.content["body"])} />
+                              {!canManage && (
+                                <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3">
+                                  <span className="text-xs text-muted-foreground">
+                                    {isTheoryDone
+                                      ? t("You have completed this reading.", "Bạn đã hoàn thành bài đọc lý thuyết này.")
+                                      : t("Finished reading? Mark this lesson as completed.", "Đã đọc xong? Đánh dấu hoàn thành bài lý thuyết này.")}
+                                  </span>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant={isTheoryDone ? "outline" : "default"}
+                                    aria-pressed={isTheoryDone}
+                                    className={
+                                      isTheoryDone
+                                        ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300"
+                                        : "bg-emerald-600 text-white hover:bg-emerald-700"
+                                    }
+                                    onClick={() =>
+                                      setCompletedTheoryIds((prev) =>
+                                        toggleCompletedTheoryId(theoryStorageKey, prev, item.id),
+                                      )
+                                    }
+                                  >
+                                    <CheckCircle2 className="mr-1.5 size-3.5" aria-hidden="true" />
+                                    {isTheoryDone
+                                      ? t("Completed", "Đã hoàn thành")
+                                      : t("Mark as completed", "Đánh dấu đã hoàn thành")}
+                                  </Button>
+                                </div>
+                              )}
                             </div>
                           </details>
                         )}

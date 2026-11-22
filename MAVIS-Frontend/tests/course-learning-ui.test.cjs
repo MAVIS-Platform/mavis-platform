@@ -1845,7 +1845,7 @@ test("Bug #11: ChapterQuizRunner enforces full answers, shows questionResults fe
   assert.match(runner, /<QuizPreview[\s\S]*?questions=\{displayedQuestions\}/);
 });
 
-test("Bug #12: CSHARP-MS-2026 uses native .NET 8 InteractiveConceptStage scenarios and avoids Java quiz fallback leakage", () => {
+test("Bug #12 + Coursera Clean Theory: THEORY lessons omit InteractiveConceptStage, render clean Markdown + Mark as completed, and avoid Java quiz fallback leakage", () => {
   const { getScenarioForLessonOrLab } = require("../src/features/courses/designed-to-scale-scenarios.ts");
   for (let ch = 1; ch <= 12; ch++) {
     const code = `csharp-v2-ch${String(ch).padStart(2, "0")}`;
@@ -1858,12 +1858,30 @@ test("Bug #12: CSHARP-MS-2026 uses native .NET 8 InteractiveConceptStage scenari
   const ch10 = getScenarioForLessonOrLab(4, "Chương 10: Polly v8 & Microsoft.Extensions.Http.Resilience", "CSHARP-MS-2026");
   assert.equal(ch10.code, "csharp-v2-ch10");
 
+  const {
+    theoryCompletionStorageKey,
+    toggleCompletedTheoryId,
+  } = require("../src/lib/coursera-ui-helpers.ts");
+  assert.notEqual(
+    theoryCompletionStorageKey("student-1", "ws-1"),
+    theoryCompletionStorageKey("student-2", "ws-1"),
+  );
+  assert.notEqual(
+    theoryCompletionStorageKey("student-1", "ws-1"),
+    theoryCompletionStorageKey("student-1", "ws-2"),
+  );
+  const key = theoryCompletionStorageKey("student-1", "ws-1");
+  assert.deepEqual(toggleCompletedTheoryId(key, [], "item-1"), ["item-1"]);
+  assert.deepEqual(toggleCompletedTheoryId(key, ["item-1"], "item-1"), []);
+
   const syllabus = read("src/features/courses/student-course-syllabus.tsx");
   const outline = read("src/features/courses/course-outline.tsx");
-  assert.match(syllabus, /getScenarioForLessonOrLab\([\s\S]*?workspace\.code/);
+  assert.doesNotMatch(syllabus, /<InteractiveConceptStage/);
+  assert.doesNotMatch(outline, /<InteractiveConceptStage/);
+  assert.match(syllabus, /Mark as completed/);
+  assert.match(outline, /Mark as completed/);
   assert.match(syllabus, /isJavaCourseraWorkspace && !item\.assignmentId/);
   assert.match(outline, /LazyOutlineQuizDetails/);
-  assert.match(outline, /courseTrackHint/);
 });
 
 test("Bug #13: MarkdownPreview handles nested inline code in bold, blockquote bullets, extended LaTeX & clean titles", () => {

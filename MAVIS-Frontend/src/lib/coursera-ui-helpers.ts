@@ -101,3 +101,44 @@ export function formatPasskeyCode(code?: string | null): string {
   if (normalized.length === 8) return `${normalized.slice(0, 4)}-${normalized.slice(4)}`;
   return normalized;
 }
+
+// shortcut: persisted per user/workspace in localStorage since backend has no standalone reading-progress endpoint; upgrade to API if cross-device sync is required.
+export function theoryCompletionStorageKey(
+  userId: string | null | undefined,
+  workspaceId: string,
+): string {
+  const userScope = (userId ?? "anonymous").trim() || "anonymous";
+  return `mavis:theory-completed:${userScope}:${workspaceId}`;
+}
+
+export function readCompletedTheoryIds(storageKey: string): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? parsed.filter((id): id is string => typeof id === "string" && id.length > 0)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+export function toggleCompletedTheoryId(
+  storageKey: string,
+  currentIds: ReadonlyArray<string>,
+  itemId: string,
+): string[] {
+  const next = currentIds.includes(itemId)
+    ? currentIds.filter((id) => id !== itemId)
+    : [...currentIds, itemId];
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify(next));
+    } catch {
+      // Ignore denied storage or quota failures cleanly.
+    }
+  }
+  return next;
+}
