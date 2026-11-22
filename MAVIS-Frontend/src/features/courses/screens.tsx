@@ -1746,7 +1746,11 @@ function StepContent({
   };
 
   const tutorAssistantPanel = (
-    <section id="lab-ai-tutor" className="scroll-mt-36 rounded-2xl border bg-card p-4 sm:p-5">
+    <section
+      id="lab-ai-tutor"
+      aria-label={t("MAVIS AI Assistant", "Trợ lý MAVIS AI")}
+      className="fixed inset-x-4 bottom-4 z-50 max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-2xl border bg-card p-4 shadow-2xl sm:inset-x-auto sm:right-6 sm:bottom-6 sm:w-[380px] sm:p-5"
+    >
       <header className="flex items-center gap-3 border-b pb-4">
         <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
           <Bot className="size-4" aria-hidden="true" />
@@ -2316,9 +2320,6 @@ function StepContent({
                         format="MERMAID"
                         style="clean"
                       />
-                      <DetailPanel title={t("AI Architecture Tutor", "Trợ lý AI Kiến trúc SWD")}>
-                        {tutorAssistantPanel}
-                      </DetailPanel>
                     </div>
                   ) : studentContextLoading || fallbackModelQuery.isPending ? (
                     <div className="space-y-4">
@@ -2328,9 +2329,6 @@ function StepContent({
                       >
                         {t("Loading architecture diagram…", "Đang tải sơ đồ kiến trúc…")}
                       </p>
-                      <DetailPanel title={t("AI Architecture Tutor", "Trợ lý AI Kiến trúc SWD")}>
-                        {tutorAssistantPanel}
-                      </DetailPanel>
                     </div>
                   ) : (
                     <div className="space-y-4">
@@ -2340,9 +2338,6 @@ function StepContent({
                           "Chưa có dữ liệu sơ đồ cho góc nhìn này; hãy chuyển sang Đồ thị phụ thuộc để kiểm tra.",
                         )}
                       </p>
-                      <DetailPanel title={t("AI Architecture Tutor", "Trợ lý AI Kiến trúc SWD")}>
-                        {tutorAssistantPanel}
-                      </DetailPanel>
                     </div>
                   )
                 ) : activeModel ? (
@@ -2382,7 +2377,7 @@ function StepContent({
                     {t("Loading architectural model…", "Đang tải mô hình kiến trúc…")}
                   </p>
                 )}
-                {activeModel && tutorAssistantPanel}
+                {tutorAssistantPanel}
               </section>
 
               {impactAnalysisOpen && selectedElement && (
