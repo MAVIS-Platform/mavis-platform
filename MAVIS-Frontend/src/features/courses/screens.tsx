@@ -249,6 +249,7 @@ function cleanDisplaySourceLocator(raw: string | null | undefined): string {
   return raw
     .replace(/^\/?data\/uploads\/[^/\s]+(?:\/|_source_extracted\/)?/i, "")
     .replace(/^[^/]*_source_extracted\//i, "")
+    .replace(/^[a-z0-9._-]+-[a-f0-9]{40}\//i, "")
     .trim();
 }
 
@@ -2141,61 +2142,103 @@ function StepContent({
                   )}
                 >
                   <div className="space-y-4">
-                    <div className="divide-y rounded-xl border bg-background">
-                      {referenceArchitecture.evaluation.findings.map((finding) => (
-                        <details key={finding.id} className="group text-xs">
-                          <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 p-3 marker:content-none">
-                            <div className="flex min-w-0 flex-wrap items-center gap-2">
-                              <span className="font-mono font-semibold">{finding.ruleId}</span>
-                              <span className="font-medium">{getRuleName(finding.ruleId, locale)}</span>
-                            </div>
-                            <div className="flex shrink-0 items-center gap-2">
-                              <StatusBadge status={finding.status} />
-                              <Badge variant="outline" className="text-[10px]">
-                                {finding.severity === "ERROR"
-                                  ? t("Error", "Lỗi")
-                                  : finding.severity === "WARNING"
-                                    ? t("Warning", "Cảnh báo")
-                                    : t("Info", "Thông tin")}
-                              </Badge>
-                            </div>
-                          </summary>
-                          {finding.message && (
-                            <p className="border-t px-3 py-2.5 leading-5 text-muted-foreground">{finding.message}</p>
-                          )}
-                        </details>
-                      ))}
+                    <div className="divide-y border-y">
+                      {(() => {
+                        const rankStatus = (status: string) =>
+                          status === "VIOLATION" ? 3 : status === "NEEDS_REVIEW" ? 2 : 1;
+                        const grouped = new Map<
+                          string,
+                          {
+                            ruleId: string;
+                            status: string;
+                            items: typeof referenceArchitecture.evaluation.findings;
+                          }
+                        >();
+                        for (const finding of referenceArchitecture.evaluation.findings) {
+                          const existing = grouped.get(finding.ruleId);
+                          if (!existing) {
+                            grouped.set(finding.ruleId, {
+                              ruleId: finding.ruleId,
+                              status: finding.status,
+                              items: [finding],
+                            });
+                          } else {
+                            existing.items.push(finding);
+                            if (rankStatus(finding.status) > rankStatus(existing.status)) {
+                              existing.status = finding.status;
+                            }
+                          }
+                        }
+                        return [...grouped.values()]
+                          .sort((a, b) => a.ruleId.localeCompare(b.ruleId))
+                          .map((group) => {
+                            const messages = group.items
+                              .map((item) => item.message?.trim())
+                              .filter((msg): msg is string => Boolean(msg));
+                            return (
+                              <details key={group.ruleId} className="group">
+                                <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 py-3 text-sm marker:content-none hover:bg-muted/40">
+                                  <div className="flex min-w-0 flex-wrap items-center gap-2.5">
+                                    <span className="rounded bg-muted px-2 py-0.5 font-mono text-xs font-semibold text-foreground">
+                                      {group.ruleId}
+                                    </span>
+                                    <span className="font-semibold text-foreground">
+                                      {getRuleName(group.ruleId, locale)}
+                                    </span>
+                                    {group.items.length > 1 && (
+                                      <span className="text-xs font-medium text-muted-foreground">
+                                        ({group.items.length}{" "}
+                                        {t("findings", "phát hiện")})
+                                      </span>
+                                    )}
+                                  </div>
+                                  <StatusBadge status={group.status} />
+                                </summary>
+                                {messages.length > 0 && (
+                                  <ul className="space-y-1.5 pb-3 pl-4 text-sm leading-6 text-muted-foreground list-disc">
+                                    {messages.map((msg, idx) => (
+                                      <li key={idx}>{msg}</li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </details>
+                            );
+                          });
+                      })()}
                     </div>
                     {referenceArchitecture.evidences.length > 0 && (
-                      <div className="space-y-2">
-                        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                          {t("Verified Source Code Evidence", "Bằng chứng mã nguồn đã xác minh")}
-                        </h3>
-                        <div className="grid gap-2.5 md:grid-cols-2">
+                      <details className="pt-1">
+                        <summary className="cursor-pointer text-sm font-semibold text-primary hover:underline">
+                          {t(
+                            `Verified Source Code Evidence (${referenceArchitecture.evidences.length})`,
+                            `Bằng chứng mã nguồn đã xác minh (${referenceArchitecture.evidences.length})`,
+                          )}
+                        </summary>
+                        <div className="mt-3 divide-y rounded-lg border bg-card">
                           {referenceArchitecture.evidences.slice(0, 8).map((ev) => (
-                            <div key={ev.id} className="rounded-xl border bg-muted/20 p-3 text-xs">
-                              <div className="flex flex-wrap items-center justify-between gap-2">
-                                <span className="break-all font-mono font-semibold text-foreground">
+                            <div key={ev.id} className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 text-sm">
+                              <div className="min-w-0">
+                                <span className="font-mono text-xs font-semibold text-foreground">
                                   {cleanDisplaySourceLocator(ev.locator) ||
                                     t("Source location", "Vị trí mã nguồn")}
                                 </span>
-                                {ev.sourceType && (
-                                  <Badge variant="outline">
-                                    {ev.sourceType === "STATIC_CODE"
-                                      ? t("Source code", "Mã nguồn tĩnh")
-                                      : ev.sourceType}
-                                  </Badge>
+                                {ev.excerpt && (
+                                  <code className="ml-2 rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
+                                    {ev.excerpt.trim().slice(0, 80)}
+                                  </code>
                                 )}
                               </div>
-                              {ev.excerpt && (
-                                <pre className="mt-2 overflow-x-auto rounded bg-background p-2 font-mono text-[11px] leading-relaxed text-muted-foreground">
-                                  {ev.excerpt}
-                                </pre>
+                              {ev.sourceType && (
+                                <Badge variant="secondary" className="text-[11px] font-medium">
+                                  {ev.sourceType === "STATIC_CODE"
+                                    ? t("Source code", "Mã nguồn tĩnh")
+                                    : ev.sourceType}
+                                </Badge>
                               )}
                             </div>
                           ))}
                         </div>
-                      </div>
+                      </details>
                     )}
                   </div>
                 </DetailPanel>

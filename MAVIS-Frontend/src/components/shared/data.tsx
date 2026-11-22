@@ -15,6 +15,20 @@ export function StatusLabel({
   return <>{preserveCase ? t(status) : translatedStatusLabel(status, t)}</>;
 }
 
+function semanticStatusClasses(status: string): string | undefined {
+  const key = status.trim().toUpperCase().replace(/[\s-]+/g, "_");
+  if (["PASS", "PASSED", "COMPLETED", "COMPLETE", "READY", "ACTIVE", "VERIFIED", "APPROVED"].includes(key)) {
+    return "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800/70 dark:bg-emerald-950/40 dark:text-emerald-200";
+  }
+  if (["VIOLATION", "FAILED", "ERROR", "REJECTED", "BLOCKED", "TIMED_OUT", "TIMEDOUT"].includes(key)) {
+    return "border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-800/70 dark:bg-rose-950/40 dark:text-rose-200";
+  }
+  if (["NEEDS_REVIEW", "WARNING", "PENDING", "RETURNED", "IN_PROGRESS", "PARTIAL"].includes(key)) {
+    return "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-800/70 dark:bg-amber-950/40 dark:text-amber-200";
+  }
+  return undefined;
+}
+
 export function StatusBadge({
   status,
   variant = "outline",
@@ -24,6 +38,14 @@ export function StatusBadge({
   variant?: BadgeProps["variant"];
   preserveCase?: boolean;
 }) {
+  const semanticClass = variant === "outline" ? semanticStatusClasses(status) : undefined;
+  if (semanticClass) {
+    return (
+      <Badge variant={variant} className={`whitespace-nowrap font-semibold ${semanticClass}`}>
+        <StatusLabel status={status} preserveCase={preserveCase} />
+      </Badge>
+    );
+  }
   return (
     <Badge variant={variant} className="whitespace-nowrap">
       <StatusLabel status={status} preserveCase={preserveCase} />
@@ -59,9 +81,9 @@ export function DetailPanel({
 }) {
   const { t } = useLocale();
   return (
-    <section className="space-y-4 rounded-xl border bg-card p-5 shadow-sm">
+    <section className="space-y-4 rounded-xl border bg-card p-5 shadow-xs">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-sm font-semibold">{t(title)}</h2>
+        <h2 className="text-base font-semibold text-foreground">{t(title)}</h2>
         {actions}
       </div>
       {children}
