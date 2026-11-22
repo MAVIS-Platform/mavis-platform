@@ -5174,7 +5174,7 @@ test("My Workspaces is a compact LMS class list with tabs and a module outline",
   assert.match(overviewHtml, /Lab 1 Architecture/);
   const authoringHtml = renderComp(WorkspaceOverview, "ws-swd", "view=course-authoring");
   assert.match(authoringHtml, /Delete module/);
-  assert.match(authoringHtml, /aria-label="Curriculum Inspector"/);
+  assert.doesNotMatch(authoringHtml, /aria-label="Curriculum Inspector"/);
   assert.doesNotMatch(authoringHtml, /id="course-outline-title"/);
   const setupHtml = renderComp(WorkspaceOverview, "ws-swd", "view=course-setup");
   assert.match(setupHtml, /Loading course setup/);
@@ -5188,7 +5188,7 @@ test("My Workspaces is a compact LMS class list with tabs and a module outline",
   );
   const membersHtml = renderComp(WorkspaceMembers, "ws-swd");
   assert.match(membersHtml, /Class sections/, "lecturer class view shows unified 7-tab navigation");
-  assert.match(membersHtml, /Students &amp; Access/);
+  assert.match(membersHtml, />Students</);
   assert.match(
     membersHtml,
     /Instructor:.*Lecturer/,
