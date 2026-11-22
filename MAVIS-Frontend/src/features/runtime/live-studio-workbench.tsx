@@ -2731,19 +2731,16 @@ export function LiveStudioWorkbench({
               : Math.min(100, (totalVcpuAllocated / maxPoolVcpu) * 100);
             const ramBarPct = Math.min(100, (totalRamUsedMiB / ramPoolMiB) * 100);
 
-            const hasRedVisuals =
-              (observedData.telemetryHistory?.some((f) => f.probe && typeof f.probe["rps"] === "number") ?? false) ||
-              (observedData.telemetry?.serviceGraph?.length ?? 0) > 0;
             const latestAction = observedData.actions[observedData.actions.length - 1];
 
             return (
               <section
-                className="mavis-tabular mx-auto max-w-6xl space-y-2.5 px-1 py-0.5"
+                className="mavis-tabular mx-auto max-w-6xl space-y-2 px-1 py-0.5"
                 aria-labelledby="live-cluster-overview"
               >
-                {/* Row 1: Compact Header */}
+                {/* Row 1: Compact Single-Line Header */}
                 <header
-                  className={`flex flex-wrap items-center justify-between gap-2 border-b pb-2 ${
+                  className={`flex flex-wrap items-center justify-between gap-2 border-b pb-1.5 ${
                     isLight ? "border-slate-200" : "border-slate-800"
                   }`}
                 >
@@ -2799,161 +2796,137 @@ export function LiveStudioWorkbench({
                   </dl>
                 </header>
 
-                {/* Row 2: Compact Executive Split (RED Charts + Unified KPI & Capacity Card) */}
+                {/* Row 2: Full-Width Unified KPI + Capacity Strip (always fits cleanly above the fold) */}
                 <div
-                  className={`grid items-start gap-2.5 ${
-                    hasRedVisuals ? "xl:grid-cols-[minmax(0,1.55fr)_minmax(310px,1fr)]" : ""
+                  className={`grid gap-2.5 rounded-xl border px-3 py-2 lg:grid-cols-[minmax(0,1.45fr)_minmax(260px,1fr)] lg:items-center ${
+                    isLight
+                      ? "border-slate-200 bg-slate-50/70"
+                      : "border-slate-800 bg-slate-900/75"
                   }`}
                 >
-                  {hasRedVisuals && (
-                    <div className="min-w-0">
-                      <StudioRedCharts
-                        history={observedData.telemetryHistory}
-                        actions={observedData.actions}
-                        serviceGraph={observedData.telemetry?.serviceGraph}
-                        spans={observedData.telemetry?.spans}
-                        isLight={isLight}
-                        onSelectTrace={(tid) => {
-                          setInspectedTraceId(tid);
-                          setTab("logs");
-                        }}
-                      />
-                    </div>
-                  )}
-
-                  <div
-                    className={`grid gap-3 rounded-xl border p-3 ${
-                      hasRedVisuals ? "" : "md:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] md:items-center"
-                    } ${
-                      isLight
-                        ? "border-slate-200 bg-slate-50/70"
-                        : "border-slate-800 bg-slate-900/75"
-                    }`}
-                  >
-                    <section aria-label="Traffic & reliability">
-                      <div className="mb-1.5 flex flex-wrap items-baseline justify-between gap-2">
-                        <h3 className={`text-[11px] font-bold uppercase tracking-wide ${isLight ? "text-slate-500" : "text-slate-400"}`}>
-                          Traffic &amp; reliability
-                        </h3>
-                        {reqNum === null && (
-                          <span className="text-[10.5px] text-muted-foreground">
-                            {observedData.executionStatus === "RUNNING"
-                              ? "Live Docker running — awaiting probe traffic"
-                              : isBooting
-                                ? "Booting Live Docker…"
-                                : "Start Live Docker to measure"}
-                          </span>
-                        )}
-                      </div>
-                      <dl className="grid grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-4 xl:grid-cols-2">
-                        {[
-                          {
-                            label: "Requests",
-                            value: reqNum !== null ? reqNum.toLocaleString() : "—",
-                            unit: reqNum !== null ? "req" : "",
-                            warning: false,
-                          },
-                          {
-                            label: "E2E p95",
-                            value: p95Num !== null ? metric(p95Num) : "—",
-                            unit: p95Num !== null ? "ms" : "",
-                            warning: p95Num !== null && p95Num > 500,
-                          },
-                          {
-                            label: "Error rate",
-                            value: errNum !== null ? metric(errNum) : "—",
-                            unit: errNum !== null ? "%" : "",
-                            warning: errNum !== null && errNum > 0,
-                          },
-                          {
-                            label: "Spans",
-                            value: spanCount.toLocaleString(),
-                            unit: "",
-                            warning: false,
-                          },
-                        ].map(({ label, value, unit, warning }) => (
-                          <div
-                            key={label}
-                            className={`rounded-lg border px-2.5 py-1.5 ${
-                              isLight
-                                ? "border-slate-200/80 bg-white"
-                                : "border-slate-800 bg-slate-950/60"
-                            }`}
-                          >
-                            <dt className={`text-[10.5px] font-medium ${isLight ? "text-slate-500" : "text-slate-400"}`}>
-                              {label}
-                            </dt>
-                            <dd
-                              className={`mt-0.5 font-mono text-sm font-bold tabular-nums ${
-                                warning
-                                  ? isLight ? "text-rose-600" : "text-rose-300"
-                                  : isLight ? "text-slate-900" : "text-slate-100"
-                              }`}
-                            >
-                              {value}
-                              {unit && (
-                                <span className={`ml-1 text-[10.5px] font-medium ${isLight ? "text-slate-500" : "text-slate-400"}`}>
-                                  {unit}
-                                </span>
-                              )}
-                            </dd>
-                          </div>
-                        ))}
-                      </dl>
-                    </section>
-
-                    <section
-                      aria-label="Resource capacity"
-                      className={`space-y-2 ${
-                        hasRedVisuals
-                          ? `border-t pt-2.5 ${isLight ? "border-slate-200" : "border-slate-800"}`
-                          : `border-t pt-2.5 md:border-t-0 md:border-l md:pt-0 md:pl-3 ${isLight ? "border-slate-200" : "border-slate-800"}`
-                      }`}
-                    >
-                      <h3 className={`text-[11px] font-bold uppercase tracking-wide ${isLight ? "text-slate-500" : "text-slate-400"}`}>
-                        Resource capacity
+                  <section aria-label="Traffic & reliability">
+                    <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
+                      <h3 className={`text-[10.5px] font-bold uppercase tracking-wide ${isLight ? "text-slate-500" : "text-slate-400"}`}>
+                        Traffic &amp; reliability
                       </h3>
+                      {reqNum === null && (
+                        <span className="text-[10.5px] text-muted-foreground">
+                          {observedData.executionStatus === "RUNNING"
+                            ? "Live Docker running — awaiting probe traffic"
+                            : isBooting
+                              ? "Booting Live Docker…"
+                              : "Start Live Docker to measure"}
+                        </span>
+                      )}
+                    </div>
+                    <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                       {[
                         {
-                          label: "CPU",
-                          rightText: `${Number(totalVcpuAllocated.toFixed(1))}/${maxPoolVcpu} vCPU${
-                            cpuSamples > 0 ? ` · ${avgCpuPct.toFixed(1)}%` : ""
-                          }`,
-                          pct: cpuBarPct,
+                          label: "Requests",
+                          value: reqNum !== null ? reqNum.toLocaleString() : "—",
+                          unit: reqNum !== null ? "req" : "",
+                          warning: false,
                         },
                         {
-                          label: "RAM",
-                          rightText: `${Math.round(totalRamUsedMiB).toLocaleString()} / ${Math.round(ramPoolMiB).toLocaleString()} MiB`,
-                          pct: ramBarPct,
+                          label: "E2E p95",
+                          value: p95Num !== null ? metric(p95Num) : "—",
+                          unit: p95Num !== null ? "ms" : "",
+                          warning: p95Num !== null && p95Num > 500,
                         },
-                      ].map(({ label, rightText, pct }) => (
-                        <div key={label} className="space-y-1">
-                          <div className="flex items-baseline justify-between gap-2 text-[11px]">
-                            <span className={`font-semibold ${isLight ? "text-slate-800" : "text-slate-200"}`}>
-                              {label}
-                            </span>
-                            <span className={`font-mono tabular-nums ${isLight ? "text-slate-600" : "text-slate-300"}`}>
-                              {rightText}
-                            </span>
-                          </div>
-                          <div
-                            className={`h-1.5 overflow-hidden rounded-full ${isLight ? "bg-slate-200" : "bg-slate-800"}`}
-                            aria-hidden="true"
+                        {
+                          label: "Error rate",
+                          value: errNum !== null ? metric(errNum) : "—",
+                          unit: errNum !== null ? "%" : "",
+                          warning: errNum !== null && errNum > 0,
+                        },
+                        {
+                          label: "Spans",
+                          value: spanCount.toLocaleString(),
+                          unit: "",
+                          warning: false,
+                        },
+                      ].map(({ label, value, unit, warning }) => (
+                        <div
+                          key={label}
+                          className={`rounded-lg border px-2.5 py-1 ${
+                            isLight
+                              ? "border-slate-200/80 bg-white"
+                              : "border-slate-800 bg-slate-950/60"
+                          }`}
+                        >
+                          <dt className={`text-[10px] font-medium ${isLight ? "text-slate-500" : "text-slate-400"}`}>
+                            {label}
+                          </dt>
+                          <dd
+                            className={`font-mono text-sm font-bold tabular-nums ${
+                              warning
+                                ? isLight ? "text-rose-600" : "text-rose-300"
+                                : isLight ? "text-slate-900" : "text-slate-100"
+                            }`}
                           >
-                            <div
-                              className="h-full rounded-full bg-sky-500 transition-all"
-                              style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
-                            />
-                          </div>
+                            {value}
+                            {unit && (
+                              <span className={`ml-0.5 text-[10px] font-medium ${isLight ? "text-slate-500" : "text-slate-400"}`}>
+                                {unit}
+                              </span>
+                            )}
+                          </dd>
                         </div>
                       ))}
+                    </dl>
+                  </section>
+
+                  <section
+                    aria-label="Resource capacity"
+                    className={`space-y-1.5 border-t pt-2 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-3 ${
+                      isLight ? "border-slate-200" : "border-slate-800"
+                    }`}
+                  >
+                    <div className="flex items-baseline justify-between gap-2">
+                      <h3 className={`text-[10.5px] font-bold uppercase tracking-wide ${isLight ? "text-slate-500" : "text-slate-400"}`}>
+                        Resource capacity
+                      </h3>
                       {peakCpuService && cpuSamples > 0 && (
-                        <p className={`text-[10.5px] ${isLight ? "text-slate-500" : "text-slate-400"}`}>
-                          Peak CPU: <span className="font-mono font-medium">{peakCpuService}</span> · {observedRunningReplicas} pod(s)
-                        </p>
+                        <span className={`text-[10px] ${isLight ? "text-slate-500" : "text-slate-400"}`}>
+                          Peak: <span className="font-mono font-medium">{peakCpuService}</span>
+                        </span>
                       )}
-                    </section>
-                  </div>
+                    </div>
+                    {[
+                      {
+                        label: "CPU",
+                        rightText: `${Number(totalVcpuAllocated.toFixed(1))}/${maxPoolVcpu} vCPU${
+                          cpuSamples > 0 ? ` · ${avgCpuPct.toFixed(1)}%` : ""
+                        }`,
+                        pct: cpuBarPct,
+                      },
+                      {
+                        label: "RAM",
+                        rightText: `${Math.round(totalRamUsedMiB).toLocaleString()} / ${Math.round(ramPoolMiB).toLocaleString()} MiB`,
+                        pct: ramBarPct,
+                      },
+                    ].map(({ label, rightText, pct }) => (
+                      <div key={label} className="space-y-0.5">
+                        <div className="flex items-baseline justify-between gap-2 text-[11px]">
+                          <span className={`font-semibold ${isLight ? "text-slate-800" : "text-slate-200"}`}>
+                            {label}
+                          </span>
+                          <span className={`font-mono tabular-nums ${isLight ? "text-slate-600" : "text-slate-300"}`}>
+                            {rightText}
+                          </span>
+                        </div>
+                        <div
+                          className={`h-1.5 overflow-hidden rounded-full ${isLight ? "bg-slate-200" : "bg-slate-800"}`}
+                          aria-hidden="true"
+                        >
+                          <div
+                            className="h-full rounded-full bg-sky-500 transition-all"
+                            style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </section>
                 </div>
 
                 {/* Row 3: Slim 4-Step Mission Checklist */}
@@ -2976,6 +2949,19 @@ export function LiveStudioWorkbench({
                     </div>
                   ))}
                 </div>
+
+                {/* Row 4: Live RED Charts + Collapsible Service Edges & Action History */}
+                <StudioRedCharts
+                  history={observedData.telemetryHistory}
+                  actions={observedData.actions}
+                  serviceGraph={observedData.telemetry?.serviceGraph}
+                  spans={observedData.telemetry?.spans}
+                  isLight={isLight}
+                  onSelectTrace={(tid) => {
+                    setInspectedTraceId(tid);
+                    setTab("logs");
+                  }}
+                />
 
                 {/* Row 4: Collapsible Light/Dark Action Log */}
                 {observedData.actions.length > 0 && (
