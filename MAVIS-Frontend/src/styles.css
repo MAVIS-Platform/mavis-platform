@@ -169,7 +169,7 @@
   --muted: oklch(0.29444 0.033069 257.67378);
   --popover: oklch(0.286429 0.03329 257.67289);
   --foreground: oklch(0.947483 0.014932 260.729517);
-  --muted-foreground: oklch(0.778175 0.032521 257.248306);
+  --muted-foreground: oklch(0.845 0.022 257);
   --border: oklch(0.371971 0.037027 257.780573);
   --input: oklch(0.590427 0.044464 255.388465);
   --primary: oklch(0.829445 0.084357 267.488612);
@@ -183,7 +183,7 @@
   --selected-foreground: oklch(0.920875 0.037759 265.84494);
   --ring: oklch(0.829445 0.084357 267.488612);
   --disabled-background: oklch(0.308516 0.039308 262.041855);
-  --disabled-foreground: oklch(0.665432 0.037022 257.865031);
+  --disabled-foreground: oklch(0.72 0.025 257);
   --hero-background: oklch(0.24 0.038 260);
   --section-background: oklch(0.27 0.032 258);
   --body-text: var(--muted-foreground);
@@ -382,4 +382,8 @@
 @media (max-width: 767px) { :root { --text-page: 1.75rem; --line-page: 2.25rem; } }
 @keyframes mavis-indeterminate { 0% { transform: translateX(-110%); } 50% { transform: translateX(55%); } 100% { transform: translateX(220%); } }
 .mavis-indeterminate-bar { width: 45%; animation: mavis-indeterminate 1.35s cubic-bezier(0.4, 0, 0.2, 1) infinite; }
+/* Floor legacy micro font utilities so badges and sidebar eyebrows stay readable on desktop. */
+.text-\[10px\] { font-size: 0.75rem; line-height: 1.1rem; }
+.text-\[11px\] { font-size: 0.8125rem; line-height: 1.2rem; }
+
 @media (prefers-reduced-motion: reduce) { :root { --motion-fast: 0ms; --motion-normal: 0ms; } *:not(.animate-spin):not(.mavis-indeterminate-bar), *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0ms !important; scroll-behavior: auto !important; } }

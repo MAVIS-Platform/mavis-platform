@@ -297,8 +297,8 @@ export function LabAuthoring() {
                   variant={active ? "default" : "ghost"}
                   className={
                     active
-                      ? "font-semibold"
-                      : "font-semibold text-foreground/80 hover:bg-primary/10 hover:text-primary"
+                      ? "px-2.5 text-xs font-semibold whitespace-nowrap"
+                      : "px-2.5 text-xs font-semibold whitespace-nowrap text-foreground/80 hover:bg-primary/10 hover:text-primary"
                   }
                   aria-pressed={active}
                   onClick={() => changeSection(item.id)}
@@ -311,9 +311,9 @@ export function LabAuthoring() {
           </nav>
 
           {section === "create" && (
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-1.5">
               {assignment && (
-                <Badge variant={isPublished ? "success" : "secondary"} className="font-semibold">
+                <Badge variant={isPublished ? "success" : "secondary"} className="shrink-0 font-semibold whitespace-nowrap">
                   {isPublished ? t("Published", "Đã công bố") : t("Draft", "Bản nháp")}
                 </Badge>
               )}
@@ -328,7 +328,7 @@ export function LabAuthoring() {
                       `/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(nextId)}&tab=info`,
                     );
                   }}
-                  className="h-9 w-52 overflow-hidden text-ellipsis whitespace-nowrap rounded-lg border border-slate-300 bg-card px-3 text-[13px] font-semibold text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 dark:border-border"
+                  className="h-9 w-44 2xl:w-52 overflow-hidden text-ellipsis whitespace-nowrap rounded-lg border border-slate-300 bg-card px-2.5 text-xs font-semibold text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 dark:border-border"
                 >
                   <option value="">
                     {t("Switch Lab…", "Chuyển nhanh bài Lab…")}
@@ -345,6 +345,7 @@ export function LabAuthoring() {
                   type="button"
                   size="sm"
                   variant="outline"
+                  className="shrink-0 px-2.5 text-xs whitespace-nowrap"
                   onClick={() => {
                     setCreatedAssignmentId("");
                     setTab("info");
@@ -356,7 +357,7 @@ export function LabAuthoring() {
                 </Button>
               )}
               {assignment && (
-                <Button asChild size="sm" variant="outline">
+                <Button asChild size="sm" variant="outline" className="shrink-0 px-2.5 text-xs whitespace-nowrap">
                   <Link
                     href={`/lab?${new URLSearchParams({
                       workspace: workspaceId,
@@ -394,7 +395,7 @@ export function LabAuthoring() {
                   }
                   onClick={() => navigate(item.id)}
                   aria-current={active ? "step" : undefined}
-                  className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-left text-[13px] font-semibold transition-colors ${
+                  className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-left text-xs font-semibold transition-colors ${
                     active
                       ? "border-primary bg-primary text-primary-foreground shadow-xs"
                       : !item.enabled
