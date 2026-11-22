@@ -448,3 +448,13 @@ test("Phase E5 adminRuntimeHealth and adminSweepOrphans contracts enforce admin-
   });
   assert.equal(sweep.orphansRemoved, 2);
 });
+
+test("LiveTerminalConsole renders service filter as a compact dropdown instead of horizontal pill buttons", () => {
+  const src = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/live-terminal-console.tsx"),
+    "utf8",
+  );
+  assert.match(src, /<select[\s\S]*aria-label="Filter by service"[\s\S]*value=\{activeServiceFilter\}/);
+  assert.match(src, /All services \(\{serviceList\.length\}\)/);
+  assert.doesNotMatch(src, /\{\/\* Service filter pills \*\/\}/);
+});

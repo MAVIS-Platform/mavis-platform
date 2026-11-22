@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Activity, Check, Copy, Search, Terminal } from "lucide-react";
+import { Activity, Check, ChevronDown, Copy, Search, Terminal } from "lucide-react";
 import type { Response } from "@/lib/api/contracts";
 import { TraceWaterfallPanel } from "./studio-red-charts";
 
@@ -431,10 +431,12 @@ export function LiveTerminalConsole({
   );
 
   const normalizedQuery = query.trim().toLowerCase();
+  const activeServiceFilter =
+    serviceFilter !== "ALL" && serviceList.includes(serviceFilter) ? serviceFilter : "ALL";
 
   const filteredEntries = useMemo(() => {
     return entries.filter((entry) => {
-      if (serviceFilter !== "ALL" && entry.service !== serviceFilter) return false;
+      if (activeServiceFilter !== "ALL" && entry.service !== activeServiceFilter) return false;
       if (levelFilter === "ERROR" && entry.level !== "ERROR") return false;
       if (levelFilter === "WARN" && entry.level !== "WARN" && entry.level !== "ERROR") {
         return false;
@@ -448,18 +450,18 @@ export function LiveTerminalConsole({
       }
       return true;
     });
-  }, [entries, serviceFilter, levelFilter, normalizedQuery]);
+  }, [entries, activeServiceFilter, levelFilter, normalizedQuery]);
 
   const filteredSpans = useMemo(() => {
     return spans.filter((span) => {
-      if (serviceFilter !== "ALL" && span.runtimeService !== serviceFilter) return false;
+      if (activeServiceFilter !== "ALL" && span.runtimeService !== activeServiceFilter) return false;
       if (normalizedQuery) {
         const hay = `${span.runtimeService} ${span.operationName ?? ""} ${span.traceId} ${span.httpStatusCode ?? ""}`.toLowerCase();
         if (!hay.includes(normalizedQuery)) return false;
       }
       return true;
     });
-  }, [spans, serviceFilter, normalizedQuery]);
+  }, [spans, activeServiceFilter, normalizedQuery]);
 
   // Newest spans first: the Runner sends spans oldest→newest, and only the recent window matters live.
   const visibleSpans = useMemo(() => filteredSpans.slice(-60).reverse(), [filteredSpans]);
@@ -594,46 +596,54 @@ export function LiveTerminalConsole({
           </button>
         </div>
 
-        {/* Service filter pills */}
-        <div className="flex min-w-0 flex-wrap items-center gap-1">
-          <button
-            type="button"
-            onClick={() => setServiceFilter("ALL")}
-            className={`rounded-md border px-1.5 py-0.5 font-mono text-[10.5px] font-medium transition ${
-              serviceFilter === "ALL"
+        {/* Service filter dropdown */}
+        <div className="relative inline-flex shrink-0 items-center">
+          {activeServiceFilter !== "ALL" && (
+            <span
+              aria-hidden="true"
+              className={`pointer-events-none absolute left-2 size-1.5 rounded-full ${
+                serviceColorFor(activeServiceFilter, serviceList, isLight).dot
+              }`}
+            />
+          )}
+          <select
+            aria-label="Filter by service"
+            value={activeServiceFilter}
+            onChange={(event) => setServiceFilter(event.target.value)}
+            className={`h-7 max-w-[210px] cursor-pointer appearance-none rounded-md border py-0.5 pr-6 font-mono text-[11px] font-medium outline-none transition ${
+              activeServiceFilter !== "ALL" ? "pl-5" : "pl-2.5"
+            } ${
+              activeServiceFilter !== "ALL"
                 ? isLight
-                  ? "border-sky-400 bg-sky-50 text-sky-800"
-                  : "border-sky-500/50 bg-sky-500/15 text-sky-200"
+                  ? "border-sky-400 bg-sky-50 text-sky-900 focus:border-sky-500"
+                  : "border-sky-500/50 bg-sky-500/15 text-sky-100 focus:border-sky-400"
                 : isLight
-                  ? "border-slate-200 bg-white text-slate-600 hover:text-slate-900"
-                  : "border-slate-800 bg-[#05080f] text-slate-400 hover:text-slate-200"
+                  ? "border-slate-200 bg-white text-slate-700 hover:border-slate-300 focus:border-sky-400"
+                  : "border-slate-800 bg-[#05080f] text-slate-200 hover:border-slate-700 focus:border-sky-500/50"
             }`}
           >
-            all
-          </button>
-          {serviceList.map((svc) => {
-            const color = serviceColorFor(svc, serviceList, isLight);
-            const active = serviceFilter === svc;
-            return (
-              <button
+            <option
+              value="ALL"
+              className={isLight ? "bg-white text-slate-900" : "bg-[#0a0f1a] text-slate-100"}
+            >
+              All services ({serviceList.length})
+            </option>
+            {serviceList.map((svc) => (
+              <option
                 key={svc}
-                type="button"
-                onClick={() => setServiceFilter(active ? "ALL" : svc)}
-                className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 font-mono text-[10.5px] font-medium transition ${
-                  active
-                    ? isLight
-                      ? "border-sky-400 bg-sky-50 text-slate-900"
-                      : "border-sky-500/50 bg-sky-500/15 text-slate-100"
-                    : isLight
-                      ? "border-slate-200 bg-white text-slate-600 hover:text-slate-900"
-                      : "border-slate-800 bg-[#05080f] text-slate-400 hover:text-slate-200"
-                }`}
+                value={svc}
+                className={isLight ? "bg-white text-slate-900" : "bg-[#0a0f1a] text-slate-100"}
               >
-                <span aria-hidden="true" className={`size-1.5 rounded-full ${color.dot}`} />
                 {svc}
-              </button>
-            );
-          })}
+              </option>
+            ))}
+          </select>
+          <ChevronDown
+            aria-hidden="true"
+            className={`pointer-events-none absolute right-1.5 size-3.5 ${
+              isLight ? "text-slate-500" : "text-slate-400"
+            }`}
+          />
         </div>
 
         <div className="ml-auto flex flex-wrap items-center gap-1.5">
@@ -759,7 +769,7 @@ export function LiveTerminalConsole({
           >
             <span className={isLight ? "text-slate-600" : "text-slate-400"}>
               <span className={isLight ? "font-bold text-emerald-600" : "text-emerald-400"}>$</span> docker compose -p {projectSlug} logs -f
-              {serviceFilter !== "ALL" ? ` ${serviceFilter}` : ""}
+              {activeServiceFilter !== "ALL" ? ` ${activeServiceFilter}` : ""}
             </span>
             <span className="inline-flex items-center gap-1.5 text-[10.5px] font-semibold">
               <span
