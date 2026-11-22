@@ -23,8 +23,10 @@ test("styles.css exposes MAVIS design polish utilities and reduced-motion safegu
   assert.match(css, /\.mavis-hero-surface\s*\{/);
   assert.match(css, /\.mavis-card-hover\s*\{/);
   assert.match(css, /\.mavis-tabular\s*\{/);
+  assert.match(css, /\.mavis-panel\s*\{[^}]*box-shadow:\s*var\(--shadow-low\)/);
   assert.match(css, /@keyframes mavis-packet-flow\s*\{/);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
+  assert.doesNotMatch(css, /#F7F8FC|#E8EDFF|#53638F/, "Light mode must avoid glaring lavender-tinted fatigue tokens");
 });
 
 test("locale-context.tsx defines Vietnamese translations for Student sidebar, Login, 4-stage Lab, and BR-10 grading", () => {

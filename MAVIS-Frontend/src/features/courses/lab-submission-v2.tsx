@@ -416,7 +416,7 @@ export function LabSubmissionV2({
                     type="button"
                     size="sm"
                     variant="outline"
-                    className="h-7 border-emerald-300 bg-background px-2.5 text-xs text-emerald-800 hover:bg-emerald-50"
+                    className="h-7 border-emerald-300 bg-background px-2.5 text-xs text-emerald-800 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-950/40"
                     onClick={() => {
                       const sample = rubricProfile.sampleDossier;
                       setMitigations({ circuitBreaker: true, databasePerService: true, idempotencyKey: true });
@@ -432,7 +432,7 @@ export function LabSubmissionV2({
                     type="button"
                     size="sm"
                     variant="outline"
-                    className="h-7 border-rose-300 bg-background px-2.5 text-xs text-rose-800 hover:bg-rose-50"
+                    className="h-7 border-rose-300 bg-background px-2.5 text-xs text-rose-800 hover:bg-rose-50 dark:border-rose-800 dark:text-rose-300 dark:hover:bg-rose-950/40"
                     onClick={() => {
                       const flawed = rubricProfile.flawedSample;
                       setMitigations({ circuitBreaker: false, databasePerService: false, idempotencyKey: false });

@@ -149,10 +149,10 @@ function CourseCard({ workspace, compact = false }: { workspace: Workspace; comp
 
 function PageTitle({ title, description }: { title: string; description?: string }) {
   return (
-    <section className="rounded-2xl border border-border bg-[var(--hero-background)] px-6 py-7 sm:px-8">
+    <section className="rounded-2xl border border-border bg-gradient-to-br from-sky-50 via-card to-indigo-50/70 px-6 py-7 shadow-[var(--shadow-low)] dark:from-slate-900 dark:via-slate-900 dark:to-sky-950/60 sm:px-8">
       <h1 className="text-3xl font-bold tracking-tight text-foreground">{title}</h1>
       {description && (
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--body-text)]">{description}</p>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">{description}</p>
       )}
     </section>
   );
@@ -524,7 +524,7 @@ export function AllCoursesPage({ initialQuery = "" }: { initialQuery?: string })
         </section>
         <section aria-labelledby="course-categories" className="space-y-3">
           <div className="flex items-center gap-2">
-            <Sparkles className="size-5 text-secondary" />
+            <Sparkles className="size-5 text-primary" />
             <h2 id="course-categories" className="text-xl font-semibold">
               {t("Course Categories", "Danh mục khóa học")}
             </h2>
@@ -610,7 +610,7 @@ export function AllCoursesPage({ initialQuery = "" }: { initialQuery?: string })
                       ) : (
                         <Button
                           type="button"
-                          className="mt-5 w-full bg-secondary text-secondary-foreground hover:bg-secondary/90"
+                          className="mt-5 w-full"
                           onClick={() => setPasskeyOpen(true)}
                         >
                           <KeyRound className="size-4" aria-hidden="true" />

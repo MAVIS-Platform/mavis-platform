@@ -181,9 +181,9 @@ function AttemptForm({
           </div>
         </details>
       )}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-teal-200/80 bg-gradient-to-r from-teal-50/80 via-emerald-50/50 to-white px-4 py-3">
-        <div className="flex flex-wrap items-center gap-3 text-sm text-slate-700">
-          <span className="font-semibold text-teal-950">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-teal-200/80 bg-gradient-to-r from-teal-50/80 via-emerald-50/50 to-card px-4 py-3 dark:border-teal-800/70 dark:from-teal-950/40 dark:via-emerald-950/25 dark:to-card">
+        <div className="flex flex-wrap items-center gap-3 text-sm text-foreground/85">
+          <span className="font-semibold text-teal-900 dark:text-teal-200">
             {t("Gatekeeper Quiz", "Bài kiểm tra mở khóa Lab")}
           </span>
           <span className="text-xs text-muted-foreground">
@@ -339,7 +339,7 @@ function AttemptForm({
                 disabled={submit.isPending || !!submit.data}
               >
                 <legend className="flex flex-wrap items-center gap-2 px-1 text-sm font-semibold text-foreground">
-                  <span className="inline-flex items-center rounded-md bg-teal-50 px-2 py-0.5 text-xs font-semibold text-teal-800 border border-teal-200">
+                  <span className="inline-flex items-center rounded-md border border-teal-200 bg-teal-50 px-2 py-0.5 text-xs font-semibold text-teal-800 dark:border-teal-800 dark:bg-teal-950/50 dark:text-teal-200">
                     {t("Question", "Câu")} {index + 1}
                   </span>
                   <span>{formatQuizQuestionPrompt(question.prompt)}</span>
@@ -357,8 +357,8 @@ function AttemptForm({
                         key={optionIndex}
                         className={`flex cursor-pointer items-start gap-3 rounded-xl border px-3.5 py-2.5 text-sm transition ${
                           isChecked
-                            ? "border-teal-500 bg-teal-50/70 font-medium text-teal-950"
-                            : "border-border/80 bg-background hover:border-teal-300 hover:bg-muted/30"
+                            ? "border-teal-500 bg-teal-50/70 font-medium text-teal-950 dark:border-teal-500/70 dark:bg-teal-950/40 dark:text-teal-100"
+                            : "border-border/80 bg-background hover:border-teal-400/70 hover:bg-muted/40"
                         }`}
                       >
                         <input

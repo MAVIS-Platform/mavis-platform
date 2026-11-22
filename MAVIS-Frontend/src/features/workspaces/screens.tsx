@@ -148,7 +148,7 @@ export function Workspaces() {
             <Button
               asChild
               variant="outline"
-              className="rounded-lg border-blue-200 text-[#0056d2] hover:bg-blue-50"
+              className="rounded-lg border-primary/40 text-primary hover:bg-primary/10"
             >
               <Link
                 href={(() => {
@@ -320,16 +320,16 @@ export function Workspaces() {
                     <button
                       type="button"
                       onClick={() => setPasskeyWorkspaceId(workspace.id)}
-                      className="inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 font-medium text-emerald-700 hover:bg-emerald-100"
+                      className="inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 font-medium text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-900/40"
                     >
                       {t("Passkey", "Passkey lớp")}
                     </button>
                   </div>
                   <div className="mt-auto grid grid-cols-2 gap-3 border-t pt-4">
-                    <Button asChild className="bg-[#0056d2] text-white hover:bg-[#0046ad]">
+                    <Button asChild>
                       <Link href={workspaceUrl}>{t("Open class", "Mở lớp")}</Link>
                     </Button>
-                    <Button asChild variant="outline" className="border-[#0056d2] text-[#0056d2]">
+                    <Button asChild variant="outline" className="border-primary/45 text-primary hover:bg-primary/10">
                       <Link
                         href={
                           "/submissions?workspace=" +
