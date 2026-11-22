@@ -44,19 +44,26 @@ test("Lecturer Grading Workspace enforces side-by-side layout at lg+ and display
   assert.match(grading, /mavis-tabular/);
 });
 
-test("Studio Live uses Canvas-First light dot-grid whiteboard, 2D default cards, floating mission sticky note, collapsed logs drawer, and diagnostics/celebration overlays", () => {
+test("Studio Live uses original MAVIS Architecture Workbench layout with 4 distinct visual styles, bright 3D stage, left tool rail, centered bottom dock, and style-aware drawers", () => {
+  const styles = read("src/features/runtime/studio-styles.ts");
   const obs = read("src/features/runtime/studio-observability.tsx");
   const live = read("src/features/runtime/live-studio-workbench.tsx");
   const standalone = read("src/features/runtime/standalone-studio-live.tsx");
 
-  assert.match(obs, /surfaceTheme\?: "light" \| "dark"/);
-  assert.match(obs, /#FBFBF8/);
-  assert.match(obs, /CRASHED/);
-  assert.match(live, /const \[studioTheme, setStudioTheme\] = useState<"light" \| "dark">\("light"\)/);
+  assert.match(styles, /"daylight"/);
+  assert.match(styles, /"blueprint"/);
+  assert.match(styles, /"pop"/);
+  assert.match(styles, /"control"/);
+  assert.match(styles, /wireMode: "orthogonal"/);
+  assert.match(obs, /studioStyle\?: StudioStyleId/);
+  assert.match(obs, /styleCfg\.deckTopFill/);
+  assert.match(obs, /absolute bottom-4 left-4/);
+  assert.match(live, /const \[studioStyle, setStudioStyle\] = useState<StudioStyleId>\("daylight"\)/);
   assert.match(live, /const \[bottomCollapsed, setBottomCollapsed\] = useState\(true\)/);
   assert.match(live, /defaultView="2D"/);
-  assert.match(live, /bg-\[#FEF08A\]/);
-  assert.match(live, /Logs & Traces/);
+  assert.match(live, /Studio tools/);
+  assert.match(live, /Live Command Dock/);
   assert.match(live, /verifiedModalOpen/);
+  assert.doesNotMatch(live, /bg-\[#FEF08A\]/, "MAVIS Studio Live must not copy 200Lab's yellow Post-it sticky note");
   assert.match(standalone, /missionCard=\{missionCardProps\}/);
 });

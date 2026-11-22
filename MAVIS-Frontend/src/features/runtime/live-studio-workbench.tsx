@@ -19,10 +19,11 @@ import {
   ChevronDown,
   ChevronUp,
   History,
+  Layers,
   Lightbulb,
   Maximize2,
   Minimize2,
-  Moon,
+  Palette,
   PanelLeft,
   PanelRight,
   Play,
@@ -34,7 +35,6 @@ import {
   SlidersHorizontal,
   Sparkles,
   Square,
-  Sun,
   Target,
   Terminal,
   Trash2,
@@ -75,6 +75,12 @@ import { LiveTerminalConsole } from "./live-terminal-console";
 import { StudioRedCharts } from "./studio-red-charts";
 import { StudioExercisePanel } from "./studio-exercise-panel";
 import { resolveRunningReplicas, useStudioSession } from "./use-studio-session";
+import {
+  STUDIO_STYLES,
+  STUDIO_STYLE_LIST,
+  resolveStudioStyle,
+  type StudioStyleId,
+} from "./studio-styles";
 
 type LiveRuntimeReplay = {
   id: string;
@@ -501,31 +507,33 @@ export function LiveStudioWorkbench({
   useEffect(() => {
     setInspectedTraceId(null);
   }, [sessionId]);
-  // GonnaCrash Canvas-First LIVE defaults: airy light whiteboard, 90% canvas open, floating contextual cards.
-  const [studioTheme, setStudioTheme] = useState<"light" | "dark">("light");
-  const isLight = studioTheme === "light";
+  // Original MAVIS Studio Live defaults: Daylight Cloud bright canvas, 90%+ open canvas, floating tool rail & bottom dock.
+  const [studioStyle, setStudioStyle] = useState<StudioStyleId>("daylight");
+  const styleCfg = STUDIO_STYLES[studioStyle];
+  const isLight = !styleCfg.isDark;
   useEffect(() => {
     try {
-      const saved = localStorage.getItem("mavis.studio-theme");
-      if (saved === "light" || saved === "dark") setStudioTheme(saved);
+      const saved = localStorage.getItem("mavis.studio-style") ?? localStorage.getItem("mavis.studio-theme");
+      if (saved) setStudioStyle(resolveStudioStyle(saved));
     } catch {
       // ignore storage restrictions
     }
   }, []);
-  const setThemePersisted = (next: "light" | "dark") => {
-    setStudioTheme(next);
+  const setStylePersisted = (next: StudioStyleId) => {
+    setStudioStyle(next);
     try {
-      localStorage.setItem("mavis.studio-theme", next);
+      localStorage.setItem("mavis.studio-style", next);
     } catch {
       // ignore storage restrictions
     }
   };
   const [showLeft, setShowLeft] = useState(false);
-  const [showRight, setShowRight] = useState(() => Boolean(authoring));
+  const [showRight, setShowRight] = useState(false);
   const [rightCardMode, setRightCardMode] = useState<"service" | "diagnostics">("service");
   const [missionCollapsed, setMissionCollapsed] = useState(false);
   const [missionHidden, setMissionHidden] = useState(false);
   const [telemetryPopoverOpen, setTelemetryPopoverOpen] = useState(false);
+  const [stylePopoverOpen, setStylePopoverOpen] = useState(false);
   const [settingsPopoverOpen, setSettingsPopoverOpen] = useState(false);
   const [verifiedModalOpen, setVerifiedModalOpen] = useState(false);
   const prevFinishSuccessRef = useRef(false);
@@ -1351,21 +1359,19 @@ export function LiveStudioWorkbench({
   return (
     <div
       data-testid="live-workbench"
-      data-studio-theme={studioTheme}
-      data-theme={studioTheme}
+      data-studio-style={studioStyle}
+      data-studio-theme={isLight ? "light" : "dark"}
+      data-theme={isLight ? "light" : "dark"}
+      style={{ background: styleCfg.canvasBg }}
       className={
         expanded
-          ? `fixed inset-0 z-50 flex h-screen w-screen flex-col overflow-hidden ${isLight ? "bg-[#FBFBF8] text-slate-900" : "dark bg-[#070b12] text-slate-100"}`
-          : `flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden ${isLight ? "bg-[#FBFBF8] text-slate-900" : "dark bg-[#070b12] text-slate-100"}`
+          ? `fixed inset-0 z-50 flex h-screen w-screen flex-col overflow-hidden ${isLight ? "text-slate-900" : "dark text-slate-100"}`
+          : `flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden ${isLight ? "text-slate-900" : "dark text-slate-100"}`
       }
     >
-      {/* GonnaCrash-Inspired Single-Row Slim Top Bar */}
+      {/* Original MAVIS Slim Single-Row Header */}
       <div
-        className={`relative z-30 flex h-12 shrink-0 flex-nowrap items-center gap-2 border-b px-3 ${
-          isLight
-            ? "border-slate-200 bg-white/95 text-slate-900 shadow-2xs"
-            : "border-slate-800 bg-[#0b101b] text-slate-100"
-        }`}
+        className={`relative z-30 flex h-12 shrink-0 flex-nowrap items-center gap-2 border-b px-3 ${styleCfg.topBarClass}`}
       >
         {standaloneHeader?.left && (
           <>
@@ -1383,7 +1389,7 @@ export function LiveStudioWorkbench({
           data.executionStatus === "COMPLETED" ||
           lastSessionFailed) && (
           <span
-            className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[12px] font-semibold ${
+            className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[11.5px] font-semibold ${
               isLight
                 ? data.executionStatus === "RUNNING"
                   ? "border-emerald-300 bg-emerald-50 text-emerald-800"
@@ -1413,139 +1419,10 @@ export function LiveStudioWorkbench({
           </span>
         )}
 
-        {/* Center GonnaCrash Live Telemetry Pill (click for breakdown & session switcher) */}
-        <div className="relative mx-auto hidden shrink-0 lg:block">
-          <button
-            type="button"
-            onClick={() => {
-              setTelemetryPopoverOpen((open) => !open);
-              setSettingsPopoverOpen(false);
-            }}
-            className={`inline-flex items-center gap-2 whitespace-nowrap rounded-full border px-3 py-1 text-[13px] font-medium shadow-2xs transition ${
-              isLight
-                ? "border-slate-300 bg-[#F8FAFC] text-slate-800 hover:border-slate-400 hover:bg-white"
-                : "border-slate-700 bg-slate-900/90 text-slate-200 hover:border-slate-600"
-            }`}
-          >
-            <span className="inline-flex items-center gap-1.5 font-semibold">
-              <span
-                className={`size-2 rounded-full ${
-                  faultedServices.length > 0
-                    ? "bg-rose-500"
-                    : data.executionStatus === "RUNNING"
-                      ? "bg-emerald-500"
-                      : "bg-slate-400"
-                }`}
-                aria-hidden="true"
-              />
-              {healthyCount}/{services.length || 0} {t("Services", "Dịch vụ")}
-            </span>
-            <span className={isLight ? "text-slate-300" : "text-slate-600"}>|</span>
-            <span className="font-mono">
-              {liveRps != null ? `${liveRps} req/s` : `${totalRunningReplicas} pods`}
-            </span>
-            {liveP95Ms != null && (
-              <>
-                <span className={isLight ? "text-slate-300" : "text-slate-600"}>·</span>
-                <span className="font-mono">p95 {liveP95Ms}ms</span>
-              </>
-            )}
-            {liveErrorPct != null && (
-              <>
-                <span className={isLight ? "text-slate-300" : "text-slate-600"}>·</span>
-                <span
-                  className={`font-mono font-semibold ${
-                    liveErrorPct > 0
-                      ? isLight ? "text-rose-600" : "text-rose-300"
-                      : isLight ? "text-emerald-700" : "text-emerald-300"
-                  }`}
-                >
-                  {liveErrorPct}% err
-                </span>
-              </>
-            )}
-            <ChevronDown className="size-3.5 opacity-60" aria-hidden="true" />
-          </button>
-
-          {telemetryPopoverOpen && (
-            <div
-              className={`absolute left-1/2 top-full z-40 mt-2 w-80 -translate-x-1/2 space-y-3 rounded-2xl border p-4 shadow-xl ${
-                isLight
-                  ? "border-slate-300 bg-white text-slate-900"
-                  : "border-slate-700 bg-[#0d1422] text-slate-100"
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-bold">{t("Live Runtime Telemetry", "Thông số Runtime trực tiếp")}</span>
-                <button
-                  type="button"
-                  onClick={() => setTelemetryPopoverOpen(false)}
-                  className="rounded p-1 opacity-70 hover:opacity-100"
-                  aria-label={t("Close", "Đóng")}
-                >
-                  <X className="size-3.5" aria-hidden="true" />
-                </button>
-              </div>
-              <dl className="grid grid-cols-2 gap-2 text-xs">
-                <div className={`rounded-lg border p-2 ${isLight ? "border-slate-200 bg-slate-50" : "border-slate-800 bg-slate-900/60"}`}>
-                  <dt className="text-muted-foreground">{t("Running Pods", "Pod đang chạy")}</dt>
-                  <dd className="mt-0.5 font-mono text-sm font-bold">{totalRunningReplicas}</dd>
-                </div>
-                <div className={`rounded-lg border p-2 ${isLight ? "border-slate-200 bg-slate-50" : "border-slate-800 bg-slate-900/60"}`}>
-                  <dt className="text-muted-foreground">{t("Snapshots", "Snapshot đã lưu")}</dt>
-                  <dd className="mt-0.5 font-mono text-sm font-bold">{snapshotCount}</dd>
-                </div>
-                <div className={`rounded-lg border p-2 ${isLight ? "border-slate-200 bg-slate-50" : "border-slate-800 bg-slate-900/60"}`}>
-                  <dt className="text-muted-foreground">P95 Latency</dt>
-                  <dd className="mt-0.5 font-mono text-sm font-bold">{liveP95Ms != null ? `${liveP95Ms} ms` : "—"}</dd>
-                </div>
-                <div className={`rounded-lg border p-2 ${isLight ? "border-slate-200 bg-slate-50" : "border-slate-800 bg-slate-900/60"}`}>
-                  <dt className="text-muted-foreground">{t("Error Rate", "Tỉ lệ lỗi")}</dt>
-                  <dd className={`mt-0.5 font-mono text-sm font-bold ${liveErrorPct && liveErrorPct > 0 ? "text-rose-600" : "text-emerald-600"}`}>
-                    {liveErrorPct != null ? `${liveErrorPct}%` : "—"}
-                  </dd>
-                </div>
-              </dl>
-              {(!authoring || !isPreviewMode || isBooting) && (
-                <label className="block space-y-1 text-xs">
-                  <span className="font-medium text-muted-foreground">{t("Runtime session", "Phiên chạy Docker")}</span>
-                  <select
-                    aria-label="Select active or recent runtime session"
-                    value={activeSessionId}
-                    onChange={(event) => onSelectSession(event.target.value)}
-                    className={`h-8 w-full rounded-lg border px-2 text-xs ${
-                      isLight
-                        ? "border-slate-300 bg-white text-slate-900"
-                        : "border-slate-700 bg-slate-950 text-slate-100"
-                    }`}
-                  >
-                    {authoring && <option value="">Design Preview</option>}
-                    {sessions.length > 0 ? (
-                      sessions.map((session) => {
-                        const displayStatus =
-                          session.id === activeSessionId && liveData?.executionStatus
-                            ? liveData.executionStatus
-                            : (session.executionStatus ?? "SESSION");
-                        return (
-                          <option key={session.id} value={session.id}>
-                            {session.id.slice(0, 8)} · {displayStatus}
-                          </option>
-                        );
-                      })
-                    ) : (
-                      !authoring && <option value="">No live sessions</option>
-                    )}
-                  </select>
-                </label>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Right Actions Cluster (GonnaCrash-style icon buttons + primary Run/Finish pill + Settings) */}
+        {/* Right Cluster: Live Metrics Popover + 4-Style Visual Picker + Settings + Mode actions */}
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
           {authoring && authoring.saved && !missionDirty && (
-            <span className="hidden items-center gap-1 text-xs font-medium text-emerald-600 lg:inline-flex">
+            <span className="hidden items-center gap-1 text-xs font-medium text-emerald-600 xl:inline-flex">
               <Check aria-hidden="true" className="size-3.5" /> Saved
             </span>
           )}
@@ -1558,136 +1435,264 @@ export function LiveStudioWorkbench({
               disabled={authoring.saving}
               onClick={captureLiveCanvasAsExercise}
               title="Save currently stopped services and scaled replicas on the canvas as the Lab exercise"
-              className="h-8 px-2.5 text-xs"
+              className="h-8 px-2.5 text-[12.5px]"
             >
               <Save aria-hidden="true" className="mr-1 size-3.5" />
               {authoring.saving ? "Saving…" : "Save Canvas"}
             </Button>
           )}
 
-          {/* Snapshots History Icon Button */}
-          {showLiveSessionControls && (
+          {/* Compact Live Metrics Summary & Session Switcher Popover */}
+          <div className="relative hidden shrink-0 lg:block">
             <button
               type="button"
-              title={t("Snapshots & History", "Lịch sử Snapshot")}
-              aria-label={t("Snapshots & History", "Lịch sử Snapshot")}
               onClick={() => {
-                setTab("snapshots");
-                setBottomCollapsed(false);
+                setTelemetryPopoverOpen((open) => !open);
+                setStylePopoverOpen(false);
                 setSettingsPopoverOpen(false);
-                setTelemetryPopoverOpen(false);
               }}
-              className={`relative inline-flex h-8 w-8 items-center justify-center rounded-lg border transition ${
+              className={`inline-flex h-8 items-center gap-2 whitespace-nowrap rounded-lg border px-2.5 text-[12.5px] font-medium transition ${
                 isLight
-                  ? "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
-                  : "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"
+                  ? "border-slate-200 bg-slate-50/90 text-slate-800 hover:border-slate-300 hover:bg-white"
+                  : "border-slate-700 bg-slate-900/90 text-slate-200 hover:border-slate-600"
               }`}
             >
-              <History className="size-4" aria-hidden="true" />
-              {snapshotCount > 0 && (
-                <span className="absolute -top-1 -right-1 grid size-4 place-items-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
-                  {snapshotCount}
+              <span className="inline-flex items-center gap-1.5 font-semibold">
+                <span
+                  className={`size-2 rounded-full ${
+                    faultedServices.length > 0
+                      ? "bg-rose-500"
+                      : data.executionStatus === "RUNNING"
+                        ? "bg-emerald-500"
+                        : "bg-slate-400"
+                  }`}
+                  aria-hidden="true"
+                />
+                {healthyCount}/{services.length || 0}
+              </span>
+              <span className={isLight ? "text-slate-300" : "text-slate-600"}>·</span>
+              <span className="font-mono">
+                {liveRps != null ? `${liveRps} rps` : `${totalRunningReplicas} pods`}
+              </span>
+              {liveP95Ms != null && (
+                <span className="hidden font-mono xl:inline">· {liveP95Ms}ms</span>
+              )}
+              {liveErrorPct != null && (
+                <span
+                  className={`font-mono font-semibold ${
+                    liveErrorPct > 0
+                      ? isLight ? "text-rose-600" : "text-rose-300"
+                      : isLight ? "text-emerald-700" : "text-emerald-300"
+                  }`}
+                >
+                  · {liveErrorPct}% err
                 </span>
               )}
+              <ChevronDown className="size-3.5 opacity-60" aria-hidden="true" />
             </button>
-          )}
 
-          {/* Impact / Diagnostics Lightbulb Icon Button */}
-          <button
-            type="button"
-            title={t("Impact & Root Cause Diagnostics", "Chẩn đoán Change Impact")}
-            aria-label={t("Impact & Root Cause Diagnostics", "Chẩn đoán Change Impact")}
-            onClick={() => {
-              setRightCardMode("diagnostics");
-              setShowRight((open) => (rightCardMode === "diagnostics" ? !open : true));
-              setSettingsPopoverOpen(false);
-              setTelemetryPopoverOpen(false);
-            }}
-            className={`relative inline-flex h-8 w-8 items-center justify-center rounded-lg border transition ${
-              showRight && rightCardMode === "diagnostics"
-                ? "border-primary bg-primary/10 text-primary"
-                : isLight
-                  ? "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
-                  : "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"
-            }`}
-          >
-            <Lightbulb className="size-4" aria-hidden="true" />
-            {faultedServices.length > 0 && (
-              <span className="absolute -top-1 -right-1 size-2.5 rounded-full bg-amber-500 ring-2 ring-white dark:ring-slate-950" />
-            )}
-          </button>
-
-          {/* Primary Start / Run Button when not RUNNING */}
-          {data.executionStatus !== "RUNNING" &&
-            (onStartSession ? (
-              <Button
-                type="button"
-                size="sm"
-                className="h-8 rounded-lg bg-[#0056D2] px-3.5 text-xs font-semibold text-white shadow-xs hover:bg-[#00419E] disabled:opacity-60"
-                disabled={isBooting || isCancelling || cancel.isPending}
-                onClick={onStartSession}
+            {telemetryPopoverOpen && (
+              <div
+                className={`absolute right-0 top-full z-40 mt-2 w-80 space-y-3 p-4 ${styleCfg.floatingCardClass}`}
               >
-                {isBooting ? (
-                  <RefreshCw aria-hidden="true" className="mr-1.5 size-3.5 animate-spin" />
-                ) : (
-                  <Play aria-hidden="true" className="mr-1.5 size-3.5 fill-current" />
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-bold">{t("Live Runtime Telemetry", "Thông số Runtime trực tiếp")}</span>
+                  <button
+                    type="button"
+                    onClick={() => setTelemetryPopoverOpen(false)}
+                    className="rounded p-1 opacity-70 hover:opacity-100"
+                    aria-label={t("Close", "Đóng")}
+                  >
+                    <X className="size-3.5" aria-hidden="true" />
+                  </button>
+                </div>
+                <dl className="grid grid-cols-2 gap-2 text-xs">
+                  <div className={`rounded-lg border p-2 ${isLight ? "border-slate-200 bg-slate-50" : "border-slate-800 bg-slate-900/60"}`}>
+                    <dt className="text-muted-foreground">{t("Running Pods", "Pod đang chạy")}</dt>
+                    <dd className="mt-0.5 font-mono text-sm font-bold">{totalRunningReplicas}</dd>
+                  </div>
+                  <div className={`rounded-lg border p-2 ${isLight ? "border-slate-200 bg-slate-50" : "border-slate-800 bg-slate-900/60"}`}>
+                    <dt className="text-muted-foreground">{t("Snapshots", "Snapshot đã lưu")}</dt>
+                    <dd className="mt-0.5 font-mono text-sm font-bold">{snapshotCount}</dd>
+                  </div>
+                  <div className={`rounded-lg border p-2 ${isLight ? "border-slate-200 bg-slate-50" : "border-slate-800 bg-slate-900/60"}`}>
+                    <dt className="text-muted-foreground">P95 Latency</dt>
+                    <dd className="mt-0.5 font-mono text-sm font-bold">{liveP95Ms != null ? `${liveP95Ms} ms` : "—"}</dd>
+                  </div>
+                  <div className={`rounded-lg border p-2 ${isLight ? "border-slate-200 bg-slate-50" : "border-slate-800 bg-slate-900/60"}`}>
+                    <dt className="text-muted-foreground">{t("Error Rate", "Tỉ lệ lỗi")}</dt>
+                    <dd className={`mt-0.5 font-mono text-sm font-bold ${liveErrorPct && liveErrorPct > 0 ? "text-rose-600" : "text-emerald-600"}`}>
+                      {liveErrorPct != null ? `${liveErrorPct}%` : "—"}
+                    </dd>
+                  </div>
+                </dl>
+                {(!authoring || !isPreviewMode || isBooting) && (
+                  <label className="block space-y-1 text-xs">
+                    <span className="font-medium text-muted-foreground">{t("Runtime session", "Phiên chạy Docker")}</span>
+                    <select
+                      aria-label="Select active or recent runtime session"
+                      value={activeSessionId}
+                      onChange={(event) => onSelectSession(event.target.value)}
+                      className={`h-8 w-full rounded-lg border px-2 text-xs ${
+                        isLight
+                          ? "border-slate-300 bg-white text-slate-900"
+                          : "border-slate-700 bg-slate-950 text-slate-100"
+                      }`}
+                    >
+                      {authoring && <option value="">Design Preview</option>}
+                      {sessions.length > 0 ? (
+                        sessions.map((session) => {
+                          const displayStatus =
+                            session.id === activeSessionId && liveData?.executionStatus
+                              ? liveData.executionStatus
+                              : (session.executionStatus ?? "SESSION");
+                          return (
+                            <option key={session.id} value={session.id}>
+                              {session.id.slice(0, 8)} · {displayStatus}
+                            </option>
+                          );
+                        })
+                      ) : (
+                        !authoring && <option value="">No live sessions</option>
+                      )}
+                    </select>
+                  </label>
                 )}
-                {isQueued ? `Queued${data.queuePosition ? ` #${data.queuePosition}` : "…"}` : isBooting ? "Booting…" : "Run"}
-              </Button>
-            ) : (
-              <Button asChild size="sm" className="h-8 rounded-lg px-3 text-xs">
-                <Link href={startHref}>
-                  {projectName ? `Prepare and start ${projectName}` : "Prepare and start Live project"}
-                </Link>
-              </Button>
-            ))}
+              </div>
+            )}
+          </div>
 
-          {!hideSwitchToSandbox && onSwitchToSandbox && (
-            <Button
+          {/* 4-Style Architectural Visual Switcher (Daylight Cloud / Blueprint / Tactile Pop / Control Glass) */}
+          <div className="relative">
+            <button
               type="button"
-              size="sm"
-              variant="outline"
-              className="h-8 px-2.5 text-xs"
-              onClick={onSwitchToSandbox}
-            >
-              Switch to Sandbox
-            </Button>
-          )}
-
-          {showLiveSessionControls && data.executionStatus === "RUNNING" && (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className={`h-8 px-2.5 text-xs font-semibold ${
-                isLight
-                  ? "border-slate-300 bg-white text-slate-800 hover:bg-slate-50"
-                  : "border-slate-600 bg-slate-900 text-slate-200 hover:bg-slate-800"
-              }`}
-              disabled={
-                data.executionStatus !== "RUNNING" ||
-                !data.telemetry ||
-                capturing ||
-                capture.isPending ||
-                (data.snapshots?.length ?? 0) >= 8
-              }
+              aria-label={t("Studio visual style", "Chọn phong cách Studio")}
+              title={t("Studio visual style", "Chọn phong cách Studio")}
               onClick={() => {
-                setTab("snapshots");
-                setBottomCollapsed(false);
-                if (explanation.trim() && !waiting) {
-                  void captureSnapshot(
-                    graphRef.current?.querySelector<SVGSVGElement>("svg[data-studio-graph]") ??
-                      null,
-                  );
-                } else {
-                  requestAnimationFrame(() => snapshotNoteRef.current?.focus());
-                }
+                setStylePopoverOpen((open) => !open);
+                setTelemetryPopoverOpen(false);
+                setSettingsPopoverOpen(false);
               }}
+              className={`inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 text-[12.5px] font-semibold transition ${
+                stylePopoverOpen
+                  ? "border-primary bg-primary/10 text-primary"
+                  : isLight
+                    ? "border-slate-200 bg-white text-slate-800 hover:border-slate-300 hover:bg-slate-50"
+                    : "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"
+              }`}
             >
-              <Camera aria-hidden="true" className="mr-1.5 size-3.5" />
-              Snapshot
-            </Button>
-          )}
+              <Palette className="size-3.5 text-primary" aria-hidden="true" />
+              <span className="hidden sm:inline">{t(styleCfg.name, styleCfg.nameVi)}</span>
+              <ChevronDown className="size-3 opacity-60" aria-hidden="true" />
+            </button>
+
+            {stylePopoverOpen && (
+              <div
+                aria-label={t("Choose Studio Style", "Chọn phong cách Studio")}
+                className={`absolute right-0 top-full z-40 mt-2 w-[340px] space-y-2.5 p-3.5 ${styleCfg.floatingCardClass}`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    {t("Studio Style", "Phong cách Studio")}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setStylePopoverOpen(false)}
+                    className="rounded p-1 opacity-70 hover:opacity-100"
+                    aria-label={t("Close", "Đóng")}
+                  >
+                    <X className="size-3.5" aria-hidden="true" />
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {STUDIO_STYLE_LIST.map((id) => {
+                    const item = STUDIO_STYLES[id];
+                    const active = studioStyle === id;
+                    return (
+                      <button
+                        key={id}
+                        type="button"
+                        aria-pressed={active}
+                        onClick={() => {
+                          setStylePersisted(id);
+                          setStylePopoverOpen(false);
+                        }}
+                        className={`group flex flex-col overflow-hidden rounded-xl border text-left transition ${
+                          active
+                            ? "border-primary ring-2 ring-primary/30"
+                            : isLight
+                              ? "border-slate-200 hover:border-slate-400"
+                              : "border-slate-700 hover:border-slate-500"
+                        }`}
+                      >
+                        <div
+                          style={{ background: item.canvasBgCss }}
+                          className="relative flex h-14 w-full items-center justify-center overflow-hidden border-b border-black/10 px-2"
+                        >
+                          {id === "blueprint" ? (
+                            <div className="flex items-center gap-2">
+                              <div className="h-6 w-12 rounded-[3px] border border-blue-500 bg-white px-1 py-0.5 font-mono text-[7px] font-bold text-blue-900 shadow-2xs">
+                                API
+                              </div>
+                              <div className="h-px w-4 bg-blue-500" />
+                              <div className="h-6 w-12 rounded-[3px] border border-blue-500 bg-white px-1 py-0.5 font-mono text-[7px] font-bold text-emerald-700 shadow-2xs">
+                                DB
+                              </div>
+                            </div>
+                          ) : id === "pop" ? (
+                            <div className="flex items-center gap-2">
+                              <div className="h-6 w-12 rounded-md border-2 border-slate-900 bg-sky-100 px-1 py-0.5 text-[7px] font-extrabold text-slate-900 shadow-[2px_2px_0_#0f172a]">
+                                API
+                              </div>
+                              <div className="h-0.5 w-3 bg-slate-900" />
+                              <div className="h-6 w-12 rounded-md border-2 border-slate-900 bg-emerald-100 px-1 py-0.5 text-[7px] font-extrabold text-slate-900 shadow-[2px_2px_0_#0f172a]">
+                                DB
+                              </div>
+                            </div>
+                          ) : id === "control" ? (
+                            <div className="flex items-center gap-2">
+                              <div className="h-6 w-12 overflow-hidden rounded-md border border-sky-400/50 bg-slate-900/95 shadow">
+                                <div className="h-1 w-full bg-sky-400" />
+                                <div className="px-1 pt-0.5 text-[7px] font-bold text-slate-100">API</div>
+                              </div>
+                              <div className="h-0.5 w-3 bg-emerald-400" />
+                              <div className="h-6 w-12 overflow-hidden rounded-md border border-emerald-400/50 bg-slate-900/95 shadow">
+                                <div className="h-1 w-full bg-emerald-400" />
+                                <div className="px-1 pt-0.5 text-[7px] font-bold text-slate-100">DB</div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <div className="h-6 w-12 overflow-hidden rounded-lg border border-sky-200 bg-white shadow-sm">
+                                <div className="h-1 w-full bg-sky-500" />
+                                <div className="px-1 pt-0.5 text-[7px] font-bold text-slate-800">API</div>
+                              </div>
+                              <div className="h-0.5 w-3 rounded bg-emerald-500" />
+                              <div className="h-6 w-12 overflow-hidden rounded-lg border border-emerald-200 bg-white shadow-sm">
+                                <div className="h-1 w-full bg-emerald-500" />
+                                <div className="px-1 pt-0.5 text-[7px] font-bold text-slate-800">DB</div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        <div className={`p-2 ${isLight ? "bg-white" : "bg-slate-900/90"}`}>
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="truncate text-[12px] font-bold">
+                              {t(item.name, item.nameVi)}
+                            </span>
+                            {active && <Check className="size-3.5 shrink-0 text-primary" aria-hidden="true" />}
+                          </div>
+                          <p className="mt-0.5 line-clamp-2 text-[10.5px] leading-tight text-muted-foreground">
+                            {t(item.tagline, item.taglineVi)}
+                          </p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
 
           {recordingSteps > 0 && (
             <Button
@@ -1704,58 +1709,19 @@ export function LiveStudioWorkbench({
             </Button>
           )}
 
-          {showLiveSessionControls && data.executionStatus === "RUNNING" && (() => {
-            const finishDisabledReason =
-              data.finishRequested || finish.isPending
-                ? t(
-                    "Finishing Studio session and sealing receipt…",
-                    "Đang kết thúc phiên Studio và niêm phong biên nhận…",
-                  )
-                : action.isPending || waiting
-                  ? t(
-                      "Wait for the current runtime action to complete",
-                      "Vui lòng đợi thao tác runtime hiện tại hoàn tất",
-                    )
-                  : capturing || capture.isPending
-                    ? t(
-                        "Wait for the snapshot capture to finish",
-                        "Vui lòng đợi quá trình chụp snapshot hoàn tất",
-                      )
-                    : !hasConfirmedAction
-                      ? t(
-                          "Run at least one confirmed action (Pause, Resume, Stop, Start, or Scale) and capture a snapshot before finishing",
-                          "Thực hiện ít nhất 1 thao tác được xác nhận (Pause, Resume, Stop, Start hoặc Scale) và chụp 1 Snapshot trước khi kết thúc",
-                        )
-                      : t(
-                          "Finish Studio and seal your verifiable RuntimeReceipt",
-                          "Kết thúc Studio và ký niêm phong RuntimeReceipt",
-                        );
-            const finishDisabled =
-              finish.isPending ||
-              action.isPending ||
-              capturing ||
-              capture.isPending ||
-              waiting ||
-              !hasConfirmedAction ||
-              data.finishRequested ||
-              data.executionStatus !== "RUNNING";
-            return (
-              <span className="inline-flex" title={finishDisabledReason}>
-                <Button
-                  type="button"
-                  size="sm"
-                  className="h-8 rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-45"
-                  disabled={finishDisabled}
-                  aria-label={finishDisabled ? `${t("Finish Studio", "Kết thúc Studio")} (${finishDisabledReason})` : t("Finish Studio", "Kết thúc Studio")}
-                  onClick={() => void finishStudio()}
-                >
-                  {t("Finish Studio", "Kết thúc Studio")}
-                </Button>
-              </span>
-            );
-          })()}
+          {!hideSwitchToSandbox && onSwitchToSandbox && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 px-2.5 text-xs"
+              onClick={onSwitchToSandbox}
+            >
+              Switch to Sandbox
+            </Button>
+          )}
 
-          {/* GonnaCrash-Style Settings Popover Trigger */}
+          {/* Workspace Options Popover Trigger */}
           <div className="relative">
             <button
               type="button"
@@ -1763,13 +1729,14 @@ export function LiveStudioWorkbench({
               title={t("Studio settings", "Cài đặt Studio")}
               onClick={() => {
                 setSettingsPopoverOpen((open) => !open);
+                setStylePopoverOpen(false);
                 setTelemetryPopoverOpen(false);
               }}
               className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border transition ${
                 settingsPopoverOpen
                   ? "border-primary bg-primary/10 text-primary"
                   : isLight
-                    ? "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+                    ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                     : "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"
               }`}
             >
@@ -1778,14 +1745,12 @@ export function LiveStudioWorkbench({
 
             {settingsPopoverOpen && (
               <div
-                className={`absolute right-0 top-full z-40 mt-2 w-72 space-y-3 rounded-2xl border p-4 shadow-xl ${
-                  isLight
-                    ? "border-slate-300 bg-white text-slate-900"
-                    : "border-slate-700 bg-[#0d1422] text-slate-100"
-                }`}
+                className={`absolute right-0 top-full z-40 mt-2 w-64 space-y-2 p-3.5 ${styleCfg.floatingCardClass}`}
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-bold">{t("Studio Settings", "Cài đặt Studio")}</span>
+                  <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    {t("Workspace Panels", "Bảng công cụ")}
+                  </span>
                   <button
                     type="button"
                     onClick={() => setSettingsPopoverOpen(false)}
@@ -1796,35 +1761,8 @@ export function LiveStudioWorkbench({
                   </button>
                 </div>
 
-                {/* Light / Dark Whiteboard Theme Switcher */}
-                <div className="flex items-center justify-between gap-2 text-xs">
-                  <span className="font-medium">{t("Canvas Theme", "Chế độ màu")}</span>
-                  <div className={`inline-flex rounded-lg border p-0.5 ${isLight ? "border-slate-200 bg-slate-100" : "border-slate-700 bg-slate-900"}`}>
-                    <button
-                      type="button"
-                      onClick={() => setThemePersisted("light")}
-                      className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 font-semibold ${
-                        isLight ? "bg-white text-slate-900 shadow-2xs" : "text-slate-400"
-                      }`}
-                    >
-                      <Sun className="size-3.5" aria-hidden="true" />
-                      Light
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setThemePersisted("dark")}
-                      className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 font-semibold ${
-                        !isLight ? "bg-slate-800 text-white shadow-2xs" : "text-slate-500"
-                      }`}
-                    >
-                      <Moon className="size-3.5" aria-hidden="true" />
-                      Dark
-                    </button>
-                  </div>
-                </div>
-
                 {/* Panel Toggles */}
-                <div className="space-y-1.5 border-t pt-2.5 text-xs">
+                <div className="space-y-1 text-xs">
                   <button
                     type="button"
                     aria-pressed={showRight}
@@ -1838,7 +1776,9 @@ export function LiveStudioWorkbench({
                   >
                     <span className="inline-flex items-center gap-2">
                       <PanelRight className="size-3.5" aria-hidden="true" />
-                      {t("Service Controls Card", "Thẻ điều khiển Service")}
+                      {authoring
+                        ? t("Scenario & Block Panel", "Bảng thiết lập Lab")
+                        : t("Service Controls Card", "Thẻ điều khiển Service")}
                     </span>
                     <span className="font-mono text-xs text-primary">{showRight ? "ON" : "OFF"}</span>
                   </button>
@@ -1872,8 +1812,8 @@ export function LiveStudioWorkbench({
                       }`}
                     >
                       <span className="inline-flex items-center gap-2">
-                        <Target className="size-3.5 text-amber-600" aria-hidden="true" />
-                        {t("Show Mission Note", "Hiện tờ Mục tiêu")}
+                        <Target className="size-3.5 text-primary" aria-hidden="true" />
+                        {t("Show Mission Card", "Hiện thẻ Mục tiêu")}
                       </span>
                     </button>
                   )}
@@ -1972,7 +1912,10 @@ export function LiveStudioWorkbench({
         )}
 
         {/* Center Full-Bleed Interactive Live Canvas + Slide-Up Telemetry/Logs Drawer */}
-        <div className={`relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${isLight ? "bg-[#FBFBF8]" : "bg-[#070b12]"}`}>
+        <div
+          style={{ background: styleCfg.canvasBg }}
+          className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+        >
           <div ref={graphRef} className="relative min-h-[240px] min-w-0 flex-1 overflow-hidden">
             {state.isError && state.data && (
               <div
@@ -2010,7 +1953,8 @@ export function LiveStudioWorkbench({
                 busy={isPreviewMode ? false : busy}
                 canvasOnly
                 defaultView="2D"
-                surfaceTheme={studioTheme}
+                studioStyle={studioStyle}
+                surfaceTheme={isLight ? "light" : "dark"}
                 nodeNames={nodeNames}
                 {...(configuredEdges && configuredEdges.length > 0 ? { configuredEdges } : {})}
                 onConnect={connect}
@@ -2019,7 +1963,7 @@ export function LiveStudioWorkbench({
               />
             ) : (
               <div className="grid h-full place-items-center p-6 text-center">
-                <div className={`max-w-md space-y-3 rounded-2xl border p-6 shadow-sm ${isLight ? "border-slate-300 bg-white text-slate-900" : "border-slate-700 bg-slate-950/70 text-slate-100"}`}>
+                <div className={`max-w-md space-y-3 p-6 ${styleCfg.floatingCardClass}`}>
                   <Server aria-hidden="true" className="mx-auto size-8 text-primary" />
                   <p className="text-base font-bold">
                     {t("No live Docker session running yet", "Chưa có phiên Docker chạy trực tiếp")}
@@ -2044,27 +1988,167 @@ export function LiveStudioWorkbench({
               </div>
             )}
 
-            {/* TOP-LEFT FLOATING YELLOW STICKY MISSION NOTE (GonnaCrash Signature) */}
+            {/* LEFT VERTICAL FLOATING TOOL RAIL (Original MAVIS Architecture Workbench — Figma/Miro Style) */}
+            <nav
+              aria-label={t("Studio tools", "Công cụ Studio")}
+              className={`pointer-events-auto absolute top-4 left-4 z-20 flex flex-col items-center gap-1 p-1.5 ${styleCfg.railClass}`}
+            >
+              <button
+                type="button"
+                title={t("Mission & Pass Criteria", "Mục tiêu & Tiêu chí")}
+                aria-label={t("Mission & Pass Criteria", "Mục tiêu & Tiêu chí")}
+                aria-pressed={!missionHidden}
+                onClick={() => {
+                  if (missionHidden) {
+                    setMissionHidden(false);
+                    setMissionCollapsed(false);
+                  } else {
+                    setMissionHidden(true);
+                  }
+                }}
+                className={`relative grid size-9 place-items-center rounded-xl transition ${
+                  !missionHidden
+                    ? "bg-primary text-primary-foreground shadow-xs"
+                    : isLight
+                      ? "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                      : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                }`}
+              >
+                <Target className="size-4" aria-hidden="true" />
+              </button>
+
+              <button
+                type="button"
+                title={
+                  authoring
+                    ? t("Scenario & Block Setup", "Thiết lập Kịch bản & Block")
+                    : t("Services & Controls", "Điều khiển Services")
+                }
+                aria-label={
+                  authoring
+                    ? t("Scenario & Block Setup", "Thiết lập Kịch bản & Block")
+                    : t("Services & Controls", "Điều khiển Services")
+                }
+                aria-pressed={showRight && rightCardMode === "service"}
+                onClick={() => {
+                  if (authoring) {
+                    setSetupPanel("presets");
+                    setRightCardMode("service");
+                    setShowRight((open) => (rightCardMode === "service" ? !open : true));
+                  } else {
+                    setRightCardMode("service");
+                    setShowRight((open) => (rightCardMode === "service" ? !open : true));
+                  }
+                }}
+                className={`relative grid size-9 place-items-center rounded-xl transition ${
+                  showRight && rightCardMode === "service"
+                    ? "bg-primary text-primary-foreground shadow-xs"
+                    : isLight
+                      ? "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                      : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                }`}
+              >
+                <Layers className="size-4" aria-hidden="true" />
+              </button>
+
+              <button
+                type="button"
+                title={t("Impact & Root Cause Diagnostics", "Chẩn đoán Change Impact")}
+                aria-label={t("Impact & Root Cause Diagnostics", "Chẩn đoán Change Impact")}
+                aria-pressed={showRight && rightCardMode === "diagnostics"}
+                onClick={() => {
+                  setRightCardMode("diagnostics");
+                  setShowRight((open) => (rightCardMode === "diagnostics" ? !open : true));
+                }}
+                className={`relative grid size-9 place-items-center rounded-xl transition ${
+                  showRight && rightCardMode === "diagnostics"
+                    ? "bg-primary text-primary-foreground shadow-xs"
+                    : isLight
+                      ? "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                      : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                }`}
+              >
+                <Lightbulb className="size-4" aria-hidden="true" />
+                {faultedServices.length > 0 && (
+                  <span className="absolute top-1 right-1 size-2 rounded-full bg-amber-500 ring-2 ring-white dark:ring-slate-900" />
+                )}
+              </button>
+
+              <span className={`my-0.5 h-px w-6 ${isLight ? "bg-slate-200" : "bg-slate-700"}`} aria-hidden="true" />
+
+              {showLiveSessionControls && (
+                <button
+                  type="button"
+                  title={t("Snapshots & History", "Lịch sử Snapshot")}
+                  aria-label={t("Snapshots & History", "Lịch sử Snapshot")}
+                  onClick={() => {
+                    setTab("snapshots");
+                    setBottomCollapsed(false);
+                  }}
+                  className={`relative grid size-9 place-items-center rounded-xl transition ${
+                    !bottomCollapsed && tab === "snapshots"
+                      ? "bg-primary text-primary-foreground shadow-xs"
+                      : isLight
+                        ? "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                        : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                  }`}
+                >
+                  <History className="size-4" aria-hidden="true" />
+                  {snapshotCount > 0 && (
+                    <span className="absolute -top-0.5 -right-0.5 grid size-4 place-items-center rounded-full bg-emerald-600 text-[9.5px] font-bold text-white">
+                      {snapshotCount}
+                    </span>
+                  )}
+                </button>
+              )}
+
+              <button
+                type="button"
+                title={t("Logs & Traces", "Logs & Traces")}
+                aria-label={t("Logs & Traces", "Logs & Traces")}
+                onClick={() => {
+                  if (!bottomCollapsed && tab === "logs") {
+                    setBottomCollapsed(true);
+                  } else {
+                    setTab("logs");
+                    setBottomCollapsed(false);
+                  }
+                }}
+                className={`relative grid size-9 place-items-center rounded-xl transition ${
+                  !bottomCollapsed && tab !== "snapshots"
+                    ? "bg-primary text-primary-foreground shadow-xs"
+                    : isLight
+                      ? "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                      : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                }`}
+              >
+                <Terminal className="size-4" aria-hidden="true" />
+                {logsAndTracesCount > 0 && (
+                  <span className="absolute -top-0.5 -right-1 rounded-full bg-sky-600 px-1 font-mono text-[9px] font-bold text-white">
+                    {logsAndTracesCount > 99 ? "99+" : logsAndTracesCount}
+                  </span>
+                )}
+              </button>
+            </nav>
+
+            {/* MODERN MAVIS MISSION CARD (Docked cleanly beside Left Rail — Style-Aware, NO yellow sticky note) */}
             {!missionHidden && (
               <div
                 aria-label={t("Lab Mission", "Mục tiêu Lab")}
-                className={`pointer-events-auto absolute top-4 left-4 z-20 w-72 rounded-xl border shadow-md transition-all ${
-                  isLight
-                    ? "border-amber-400/80 bg-[#FEF08A]/95 text-[#1C1917]"
-                    : "border-amber-500/40 bg-amber-950/90 text-amber-50"
-                }`}
+                className={`pointer-events-auto absolute top-4 left-[70px] z-20 w-[278px] overflow-hidden transition-all ${styleCfg.missionCardClass}`}
               >
+                <div className={`h-1.5 w-full ${styleCfg.missionAccentClass}`} aria-hidden="true" />
                 <div className="flex items-center justify-between gap-2 px-3.5 py-2.5">
-                  <span className="inline-flex items-center gap-1.5 text-xs font-bold tracking-tight">
-                    <Target className="size-3.5 shrink-0" aria-hidden="true" />
-                    {t("Mission", "Mục tiêu")}
+                  <span className="inline-flex items-center gap-1.5 text-[13px] font-bold tracking-tight">
+                    <Target className="size-3.5 shrink-0 text-primary" aria-hidden="true" />
+                    {t("Lab Mission", "Mục tiêu Lab")}
                   </span>
                   <div className="flex items-center gap-0.5">
                     <button
                       type="button"
                       onClick={() => setMissionCollapsed((c) => !c)}
                       aria-label={missionCollapsed ? t("Expand mission", "Mở rộng mục tiêu") : t("Collapse mission", "Thu gọn mục tiêu")}
-                      className="rounded p-1 opacity-75 hover:bg-black/10 hover:opacity-100"
+                      className="rounded p-1 opacity-70 hover:bg-black/5 hover:opacity-100 dark:hover:bg-white/10"
                     >
                       {missionCollapsed ? (
                         <ChevronDown className="size-3.5" aria-hidden="true" />
@@ -2075,39 +2159,41 @@ export function LiveStudioWorkbench({
                     <button
                       type="button"
                       onClick={() => setMissionHidden(true)}
-                      aria-label={t("Hide mission note", "Ẩn tờ mục tiêu")}
-                      className="rounded p-1 opacity-75 hover:bg-black/10 hover:opacity-100"
+                      aria-label={t("Hide mission card", "Ẩn thẻ mục tiêu")}
+                      className="rounded p-1 opacity-70 hover:bg-black/5 hover:opacity-100 dark:hover:bg-white/10"
                     >
                       <X className="size-3.5" aria-hidden="true" />
                     </button>
                   </div>
                 </div>
                 {!missionCollapsed && (
-                  <div className="space-y-2 border-t border-amber-500/25 px-3.5 pt-2.5 pb-3 text-[13px] leading-snug">
-                    <p className="font-medium">{effectiveMissionInstructions}</p>
+                  <div className={`space-y-2 border-t px-3.5 pt-2.5 pb-3 text-[13px] leading-snug ${isLight ? "border-slate-200/80" : "border-slate-800"}`}>
+                    <p className={isLight ? "font-medium text-slate-700" : "font-medium text-slate-200"}>
+                      {effectiveMissionInstructions}
+                    </p>
                     <ul className="space-y-1.5 pt-0.5 text-[12.5px]">
                       <li className="flex items-center justify-between gap-2">
-                        <span>{t("Run a live Docker action", "Thực hiện 1 thao tác Docker")}</span>
-                        <span className={`font-bold ${hasConfirmedAction ? "text-emerald-700 dark:text-emerald-300" : "opacity-60"}`}>
+                        <span className="text-muted-foreground">{t("Run a live Docker action", "Thực hiện 1 thao tác Docker")}</span>
+                        <span className={`font-bold ${hasConfirmedAction ? "text-emerald-600 dark:text-emerald-400" : "opacity-50"}`}>
                           {hasConfirmedAction ? "✓" : "○"}
                         </span>
                       </li>
                       <li className="flex items-center justify-between gap-2">
-                        <span>{t("Capture evidence Snapshot", "Chụp Snapshot minh chứng")}</span>
-                        <span className={`font-mono font-bold ${snapshotCount > 0 ? "text-emerald-700 dark:text-emerald-300" : "opacity-60"}`}>
+                        <span className="text-muted-foreground">{t("Capture evidence Snapshot", "Chụp Snapshot minh chứng")}</span>
+                        <span className={`font-mono font-bold ${snapshotCount > 0 ? "text-emerald-600 dark:text-emerald-400" : "opacity-50"}`}>
                           {snapshotCount > 0 ? `${snapshotCount} ✓` : "0/1"}
                         </span>
                       </li>
                       {missionMaxErr != null && (
                         <li className="flex items-center justify-between gap-2">
-                          <span>{t(`Error rate ≤ ${missionMaxErr}%`, `Tỉ lệ lỗi ≤ ${missionMaxErr}%`)}</span>
+                          <span className="text-muted-foreground">{t(`Error rate ≤ ${missionMaxErr}%`, `Tỉ lệ lỗi ≤ ${missionMaxErr}%`)}</span>
                           <span
                             className={`font-mono font-bold ${
                               liveErrorPct == null
-                                ? "opacity-60"
+                                ? "opacity-50"
                                 : liveErrorPct <= missionMaxErr
-                                  ? "text-emerald-700 dark:text-emerald-300"
-                                  : "text-rose-700 dark:text-rose-300"
+                                  ? "text-emerald-600 dark:text-emerald-400"
+                                  : "text-rose-600 dark:text-rose-400"
                             }`}
                           >
                             {liveErrorPct != null ? `${liveErrorPct}% ${liveErrorPct <= missionMaxErr ? "✓" : "✕"}` : "—"}
@@ -2116,14 +2202,14 @@ export function LiveStudioWorkbench({
                       )}
                       {missionMaxP95 != null && (
                         <li className="flex items-center justify-between gap-2">
-                          <span>{t(`P95 latency ≤ ${missionMaxP95} ms`, `Độ trễ P95 ≤ ${missionMaxP95} ms`)}</span>
+                          <span className="text-muted-foreground">{t(`P95 latency ≤ ${missionMaxP95} ms`, `Độ trễ P95 ≤ ${missionMaxP95} ms`)}</span>
                           <span
                             className={`font-mono font-bold ${
                               liveP95Ms == null
-                                ? "opacity-60"
+                                ? "opacity-50"
                                 : liveP95Ms <= missionMaxP95
-                                  ? "text-emerald-700 dark:text-emerald-300"
-                                  : "text-rose-700 dark:text-rose-300"
+                                  ? "text-emerald-600 dark:text-emerald-400"
+                                  : "text-rose-600 dark:text-rose-400"
                             }`}
                           >
                             {liveP95Ms != null ? `${liveP95Ms}ms ${liveP95Ms <= missionMaxP95 ? "✓" : "✕"}` : "—"}
@@ -2138,8 +2224,8 @@ export function LiveStudioWorkbench({
                           const ok = cur >= targetCount;
                           return (
                             <li key={`${svc}-${idx}`} className="flex items-center justify-between gap-2">
-                              <span className="truncate font-mono">{svc} ≥ {targetCount}x</span>
-                              <span className={`font-mono font-bold ${ok ? "text-emerald-700 dark:text-emerald-300" : "text-rose-700 dark:text-rose-300"}`}>
+                              <span className="truncate font-mono text-muted-foreground">{svc} ≥ {targetCount}x</span>
+                              <span className={`font-mono font-bold ${ok ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
                                 {cur}x {ok ? "✓" : "✕"}
                               </span>
                             </li>
@@ -2151,24 +2237,21 @@ export function LiveStudioWorkbench({
               </div>
             )}
 
-            {/* BOTTOM-LEFT FLOATING LIVE STATUS & ACTION CARD (GonnaCrash Signature) */}
+            {/* CENTERED BOTTOM FLOATING COMMAND DOCK (Original MAVIS Signature — Figma/macOS style) */}
             {bottomCollapsed && (
               <div
-                className={`pointer-events-auto absolute bottom-4 left-4 z-20 flex flex-wrap items-center gap-2.5 rounded-2xl border px-3.5 py-2.5 shadow-lg backdrop-blur-md ${
-                  isLight
-                    ? "border-slate-300 bg-white/95 text-slate-900"
-                    : "border-slate-700 bg-[#0d1422]/95 text-slate-100"
-                }`}
+                aria-label={t("Live Command Dock", "Thanh điều khiển trực tiếp")}
+                className={`pointer-events-auto absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 px-3 py-2 ${styleCfg.floatingPillClass}`}
               >
                 <span
-                  className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-mono text-xs font-extrabold uppercase tracking-wide ${
+                  className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-0.5 font-mono text-[11.5px] font-extrabold uppercase tracking-wide ${
                     missionCard?.verified || data.executionStatus === "COMPLETED"
-                      ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                      ? "border-emerald-400/60 bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
                       : faultedServices.length > 0
-                        ? "border-rose-500/60 bg-rose-500/10 text-rose-700 dark:text-rose-300"
+                        ? "border-rose-400/60 bg-rose-50 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300"
                         : data.executionStatus === "RUNNING"
-                          ? "border-sky-500/50 bg-sky-500/10 text-sky-700 dark:text-sky-300"
-                          : "border-slate-400/50 bg-slate-500/10 text-slate-600 dark:text-slate-300"
+                          ? "border-sky-400/60 bg-sky-50 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300"
+                          : "border-slate-300 bg-slate-100 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
                   }`}
                 >
                   {missionCard?.verified || data.executionStatus === "COMPLETED"
@@ -2179,32 +2262,165 @@ export function LiveStudioWorkbench({
                         ? t("LIVE", "ĐANG CHẠY")
                         : t("STANDBY", "SẴN SÀNG")}
                 </span>
-                <span className="max-w-[360px] truncate text-[13px] font-medium text-muted-foreground">
+
+                <span className="hidden max-w-[260px] truncate text-[13px] font-medium text-muted-foreground xl:inline">
                   {faultedServices.length > 0
-                    ? t(
-                        `${faultedServices.join(", ")} faulted — click a node or view impact`,
-                        `${faultedServices.join(", ")} đang sự cố — xem chẩn đoán`,
-                      )
+                    ? t(`${faultedServices.join(", ")} faulted`, `${faultedServices.join(", ")} đang sự cố`)
                     : data.executionStatus === "RUNNING"
-                      ? t("Click any microservice to inject fault or scale", "Bấm vào service để tiêm lỗi hoặc scale")
-                      : t("Click Run to start live Docker containers", "Bấm Run để khởi chạy Docker thật")}
+                      ? t("Click any node to act", "Bấm node để thao tác")
+                      : t("Boot real Docker stack", "Chạy Docker thật")}
                 </span>
+
+                <span className={`h-4 w-px shrink-0 ${isLight ? "bg-slate-200" : "bg-slate-700"}`} aria-hidden="true" />
+
+                {/* Primary Run / Boot CTA when not RUNNING */}
+                {data.executionStatus !== "RUNNING" &&
+                  (onStartSession ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-8 rounded-full bg-[#0056D2] px-4 text-[13px] font-semibold text-white shadow-xs hover:bg-[#00419E] disabled:opacity-60"
+                      disabled={isBooting || isCancelling || cancel.isPending}
+                      onClick={onStartSession}
+                    >
+                      {isBooting ? (
+                        <RefreshCw aria-hidden="true" className="mr-1.5 size-3.5 animate-spin" />
+                      ) : (
+                        <Play aria-hidden="true" className="mr-1.5 size-3.5 fill-current" />
+                      )}
+                      {isQueued ? `Queued${data.queuePosition ? ` #${data.queuePosition}` : "…"}` : isBooting ? "Booting…" : "Run"}
+                    </Button>
+                  ) : (
+                    <Button asChild size="sm" className="h-8 rounded-full px-3.5 text-[13px]">
+                      <Link href={startHref}>
+                        {projectName ? `Prepare & start ${projectName}` : "Prepare & start Live"}
+                      </Link>
+                    </Button>
+                  ))}
+
+                {/* Running controls: Snapshot + Finish Studio */}
+                {showLiveSessionControls && data.executionStatus === "RUNNING" && (
+                  <>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-8 rounded-full px-3 text-[13px] font-semibold"
+                      disabled={
+                        data.executionStatus !== "RUNNING" ||
+                        !data.telemetry ||
+                        capturing ||
+                        capture.isPending ||
+                        (data.snapshots?.length ?? 0) >= 8
+                      }
+                      onClick={() => {
+                        setTab("snapshots");
+                        setBottomCollapsed(false);
+                        if (explanation.trim() && !waiting) {
+                          void captureSnapshot(
+                            graphRef.current?.querySelector<SVGSVGElement>("svg[data-studio-graph]") ??
+                              null,
+                          );
+                        } else {
+                          requestAnimationFrame(() => snapshotNoteRef.current?.focus());
+                        }
+                      }}
+                    >
+                      <Camera aria-hidden="true" className="mr-1.5 size-3.5" />
+                      Snapshot
+                    </Button>
+
+                    {(() => {
+                      const finishDisabledReason =
+                        data.finishRequested || finish.isPending
+                          ? t(
+                              "Finishing Studio session and sealing receipt…",
+                              "Đang kết thúc phiên Studio và niêm phong biên nhận…",
+                            )
+                          : action.isPending || waiting
+                            ? t(
+                                "Wait for the current runtime action to complete",
+                                "Vui lòng đợi thao tác runtime hiện tại hoàn tất",
+                              )
+                            : capturing || capture.isPending
+                              ? t(
+                                  "Wait for the snapshot capture to finish",
+                                  "Vui lòng đợi quá trình chụp snapshot hoàn tất",
+                                )
+                              : !hasConfirmedAction
+                                ? t(
+                                    "Run at least one confirmed action (Pause, Resume, Stop, Start, or Scale) and capture a snapshot before finishing",
+                                    "Thực hiện ít nhất 1 thao tác được xác nhận (Pause, Resume, Stop, Start hoặc Scale) và chụp 1 Snapshot trước khi kết thúc",
+                                  )
+                                : t(
+                                    "Finish Studio and seal your verifiable RuntimeReceipt",
+                                    "Kết thúc Studio và ký niêm phong RuntimeReceipt",
+                                  );
+                      const finishDisabled =
+                        finish.isPending ||
+                        action.isPending ||
+                        capturing ||
+                        capture.isPending ||
+                        waiting ||
+                        !hasConfirmedAction ||
+                        data.finishRequested ||
+                        data.executionStatus !== "RUNNING";
+                      return (
+                        <span className="inline-flex" title={finishDisabledReason}>
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="h-8 rounded-full bg-emerald-600 px-3.5 text-[13px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-45"
+                            disabled={finishDisabled}
+                            aria-label={finishDisabled ? `${t("Finish Studio", "Kết thúc Studio")} (${finishDisabledReason})` : t("Finish Studio", "Kết thúc Studio")}
+                            onClick={() => void finishStudio()}
+                          >
+                            {t("Finish Studio", "Kết thúc Studio")}
+                          </Button>
+                        </span>
+                      );
+                    })()}
+                  </>
+                )}
+
                 <button
                   type="button"
                   onClick={() => {
                     setRightCardMode("diagnostics");
                     setShowRight(true);
                   }}
-                  className={`rounded-lg border px-2.5 py-1 text-[13px] font-semibold transition ${
+                  className={`h-8 whitespace-nowrap rounded-full border px-3 text-[12.5px] font-semibold transition ${
                     isLight
-                      ? "border-slate-300 bg-slate-50 text-slate-800 hover:bg-slate-100"
+                      ? "border-slate-200 bg-slate-50 text-slate-800 hover:bg-slate-100"
                       : "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"
                   }`}
                 >
-                  {t("Why / Impact", "Xem tác động")}
+                  {t("Impact", "Tác động")}
                 </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTab("logs");
+                    setBottomCollapsed(false);
+                  }}
+                  className={`inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 text-[12.5px] font-semibold transition ${
+                    isLight
+                      ? "border-slate-200 bg-slate-50 text-slate-800 hover:bg-slate-100"
+                      : "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"
+                  }`}
+                >
+                  <Terminal className="size-3.5 text-primary" aria-hidden="true" />
+                  <span>Logs &amp; Traces</span>
+                  {logsAndTracesCount > 0 && (
+                    <span className="rounded-full bg-primary/15 px-1.5 font-mono text-[11px] font-bold text-primary">
+                      {logsAndTracesCount}
+                    </span>
+                  )}
+                </button>
+
                 {missionCard?.verified && missionCard.submitHref && (
-                  <Button asChild size="sm" className="h-7 rounded-lg bg-emerald-600 px-3 text-[13px] font-semibold text-white hover:bg-emerald-700">
+                  <Button asChild size="sm" className="h-8 rounded-full bg-emerald-600 px-3.5 text-[13px] font-semibold text-white hover:bg-emerald-700">
                     <Link href={missionCard.submitHref}>
                       {t("Submit Lab", "Nộp bài")}
                       <ArrowRight className="ml-1 size-3.5" aria-hidden="true" />
@@ -2212,38 +2428,6 @@ export function LiveStudioWorkbench({
                   </Button>
                 )}
               </div>
-            )}
-
-            {/* BOTTOM-RIGHT FLOATING LOGS & TRACES DRAWER PILL (Next to StudioObservability's 2D/3D/Zoom Pill) */}
-            {bottomCollapsed && (
-              <button
-                type="button"
-                onClick={() => {
-                  setTab("logs");
-                  setBottomCollapsed(false);
-                }}
-                className={`pointer-events-auto absolute right-[258px] bottom-4 z-20 inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-semibold shadow-md backdrop-blur-md transition ${
-                  isLight
-                    ? "border-slate-300 bg-white/95 text-slate-800 hover:bg-slate-50"
-                    : "border-slate-700/80 bg-slate-950/90 text-slate-200 hover:bg-slate-900"
-                }`}
-              >
-                <Terminal className="size-3.5 text-primary" aria-hidden="true" />
-                <span>{t("Logs & Traces", "Logs & Traces")}</span>
-                {logsAndTracesCount > 0 && (
-                  <span className="rounded-full bg-primary/15 px-1.5 py-0.2 font-mono text-[11px] font-bold text-primary">
-                    {logsAndTracesCount}
-                  </span>
-                )}
-                {(terminalAlertSignal || isBooting) && (
-                  <span
-                    aria-hidden="true"
-                    className={`size-2 rounded-full ${
-                      terminalAlertSignal ? "bg-rose-500" : "animate-pulse bg-amber-500"
-                    }`}
-                  />
-                )}
-              </button>
             )}
           </div>
 
@@ -2279,11 +2463,15 @@ export function LiveStudioWorkbench({
 
           <div
             style={{ height: bottomHeight }}
-            className={`flex min-w-0 shrink-0 flex-col overflow-hidden bg-[#0b101b] text-slate-100 ${
+            className={`flex min-w-0 shrink-0 flex-col overflow-hidden border-t ${styleCfg.drawerClass} ${
               resizingAxis === "bottom" ? "" : "transition-[height] duration-150"
             }`}
           >
-            <div className="flex h-10 shrink-0 items-center gap-1 border-b border-slate-800 px-3">
+            <div
+              className={`flex h-10 shrink-0 items-center gap-1 border-b px-3 ${
+                isLight ? "border-slate-200 bg-slate-50/80" : "border-slate-800 bg-[#0b101b]"
+              }`}
+            >
               <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {(
                 [
@@ -2313,10 +2501,14 @@ export function LiveStudioWorkbench({
                     setTab(id);
                     setBottomCollapsed(false);
                   }}
-                  className={`shrink-0 whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-semibold ${
+                  className={`shrink-0 whitespace-nowrap rounded-lg px-2.5 py-1 text-[12.5px] font-semibold transition ${
                     tab === id
-                      ? "bg-slate-800 text-slate-100"
-                      : "text-slate-400 hover:text-slate-200"
+                      ? isLight
+                        ? "bg-slate-900 text-white shadow-2xs"
+                        : "bg-slate-800 text-slate-100"
+                      : isLight
+                        ? "text-slate-600 hover:bg-slate-200/70 hover:text-slate-900"
+                        : "text-slate-400 hover:text-slate-200"
                   }`}
                 >
                   <span className="inline-flex items-center gap-1.5">
@@ -2326,8 +2518,8 @@ export function LiveStudioWorkbench({
                         aria-hidden="true"
                         className={`size-1.5 rounded-full ${
                           terminalAlertSignal
-                            ? "bg-rose-400"
-                            : "animate-pulse bg-amber-400"
+                            ? "bg-rose-500"
+                            : "animate-pulse bg-amber-500"
                         }`}
                       />
                     )}
@@ -2335,8 +2527,14 @@ export function LiveStudioWorkbench({
                 </button>
               ))}
               </div>
-              <div className="flex shrink-0 items-center gap-1.5 pl-1 text-[10px] text-slate-500">
-                <span className="hidden whitespace-nowrap rounded-full border border-slate-800 bg-slate-950/70 px-2 py-0.5 font-mono text-slate-300 2xl:inline-flex">
+              <div className="flex shrink-0 items-center gap-1.5 pl-1 text-[11px] text-muted-foreground">
+                <span
+                  className={`hidden whitespace-nowrap rounded-full border px-2 py-0.5 font-mono 2xl:inline-flex ${
+                    isLight
+                      ? "border-slate-200 bg-white text-slate-700"
+                      : "border-slate-800 bg-slate-950/70 text-slate-300"
+                  }`}
+                >
                   {data.finishRequested
                     ? "Finishing"
                     : waiting
@@ -2345,7 +2543,11 @@ export function LiveStudioWorkbench({
                 </span>
                 {data.telemetry?.probe && (
                   <span
-                    className="hidden shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-emerald-500/30 bg-emerald-950/50 px-2 py-0.5 font-mono text-emerald-200 lg:inline-flex"
+                    className={`hidden shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 font-mono lg:inline-flex ${
+                      isLight
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                        : "border-emerald-500/30 bg-emerald-950/50 text-emerald-200"
+                    }`}
                     title="Continuous live probe RED metrics"
                   >
                     <span>{metric(data.telemetry.probe.rps)} RPS</span>
@@ -2354,7 +2556,9 @@ export function LiveStudioWorkbench({
                     )}
                     <span
                       className={
-                        data.telemetry.probe.errorRatePercent > 0 ? "text-rose-300" : "text-emerald-300"
+                        data.telemetry.probe.errorRatePercent > 0
+                          ? isLight ? "text-rose-600 font-semibold" : "text-rose-300"
+                          : isLight ? "text-emerald-700 font-semibold" : "text-emerald-300"
                       }
                     >
                       · {metric(data.telemetry.probe.errorRatePercent)}% err
@@ -2363,10 +2567,14 @@ export function LiveStudioWorkbench({
                 )}
                 {studio.sseConnected && (
                   <span
-                    className="hidden shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-sky-500/30 bg-sky-950/40 px-1.5 py-0.5 font-mono text-[9px] text-sky-300 xl:inline-flex"
+                    className={`hidden shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-1.5 py-0.5 font-mono text-[10px] xl:inline-flex ${
+                      isLight
+                        ? "border-sky-200 bg-sky-50 text-sky-700"
+                        : "border-sky-500/30 bg-sky-950/40 text-sky-300"
+                    }`}
                     title="Real-time SSE telemetry stream connected"
                   >
-                    <span className="size-1.5 rounded-full bg-sky-400" />
+                    <span className="size-1.5 rounded-full bg-sky-500" />
                     SSE
                   </span>
                 )}
@@ -2528,8 +2736,15 @@ export function LiveStudioWorkbench({
                 className="mavis-tabular mx-auto max-w-6xl space-y-4 px-1 py-1"
                 aria-labelledby="live-cluster-overview"
               >
-                <header className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
-                  <h2 id="live-cluster-overview" className="text-base font-semibold text-slate-100">
+                <header
+                  className={`flex flex-wrap items-center justify-between gap-2 border-b pb-3 ${
+                    isLight ? "border-slate-200" : "border-slate-800"
+                  }`}
+                >
+                  <h2
+                    id="live-cluster-overview"
+                    className={`text-base font-bold ${isLight ? "text-slate-900" : "text-slate-100"}`}
+                  >
                     Cluster Overview
                   </h2>
                   <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
@@ -2541,20 +2756,26 @@ export function LiveStudioWorkbench({
                         ["Confirmed actions", observedConfirmed.length.toLocaleString()],
                       ].map(([kLabel, kValue]) => (
                         <div key={kLabel} className="flex items-baseline gap-2">
-                          <dt className="text-slate-400">{kLabel}</dt>
-                          <dd className="font-semibold tabular-nums text-slate-200">{kValue}</dd>
+                          <dt className={isLight ? "text-slate-500" : "text-slate-400"}>{kLabel}</dt>
+                          <dd className={`font-semibold tabular-nums ${isLight ? "text-slate-900" : "text-slate-200"}`}>
+                            {kValue}
+                          </dd>
                         </div>
                       ))}
                     </dl>
                     <span
-                      className={`shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ${
-                        lastSessionFailed
-                          ? "bg-rose-500/15 text-rose-300"
-                          : downServicesCount
-                            ? "bg-rose-500/15 text-rose-300"
-                            : isTelemetryPreview
-                              ? "bg-sky-500/15 text-sky-300"
-                              : "bg-emerald-500/15 text-emerald-300"
+                      className={`shrink-0 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-semibold ${
+                        lastSessionFailed || downServicesCount
+                          ? isLight
+                            ? "border-rose-200 bg-rose-50 text-rose-700"
+                            : "border-rose-500/30 bg-rose-500/15 text-rose-300"
+                          : isTelemetryPreview
+                            ? isLight
+                              ? "border-sky-200 bg-sky-50 text-sky-700"
+                              : "border-sky-500/30 bg-sky-500/15 text-sky-300"
+                            : isLight
+                              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                              : "border-emerald-500/30 bg-emerald-500/15 text-emerald-300"
                       }`}
                     >
                       {lastSessionFailed
@@ -2577,6 +2798,7 @@ export function LiveStudioWorkbench({
                   actions={observedData.actions}
                   serviceGraph={observedData.telemetry?.serviceGraph}
                   spans={observedData.telemetry?.spans}
+                  isLight={isLight}
                   onSelectTrace={(tid) => {
                     setInspectedTraceId(tid);
                     setTab("logs");
@@ -2584,10 +2806,10 @@ export function LiveStudioWorkbench({
                 />
 
                 <section aria-label="Traffic & reliability">
-                  <h3 className="mb-2 text-xs font-semibold text-slate-200">
+                  <h3 className={`mb-2 text-xs font-bold ${isLight ? "text-slate-800" : "text-slate-200"}`}>
                     Traffic &amp; reliability
                   </h3>
-                  <dl className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,140px),1fr))] gap-2">
+                  <dl className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,140px),1fr))] gap-2.5">
                     {[
                       {
                         label: "Measured requests",
@@ -2627,17 +2849,29 @@ export function LiveStudioWorkbench({
                     ].map(({ label, value, unit, detail, warning }) => (
                       <div
                         key={label}
-                        className="rounded-lg border border-slate-700/80 bg-slate-900 p-3"
+                        className={`rounded-xl border p-3 ${
+                          isLight
+                            ? "border-slate-200 bg-slate-50/70"
+                            : "border-slate-700/80 bg-slate-900"
+                        }`}
                       >
-                        <dt className="text-xs font-medium text-slate-300">{label}</dt>
+                        <dt className={`text-xs font-medium ${isLight ? "text-slate-600" : "text-slate-300"}`}>
+                          {label}
+                        </dt>
                         <dd
-                          className={`mt-1 font-mono text-lg font-semibold tabular-nums ${
-                            warning ? "text-rose-300" : "text-slate-100"
+                          className={`mt-1 font-mono text-lg font-bold tabular-nums ${
+                            warning
+                              ? isLight ? "text-rose-600" : "text-rose-300"
+                              : isLight ? "text-slate-900" : "text-slate-100"
                           }`}
                         >
                           {value}{" "}
-                          {unit && <span className="text-[11px] text-slate-400">{unit}</span>}
-                          <span className="mt-1 block font-sans text-[11px] font-normal text-slate-400">
+                          {unit && (
+                            <span className={`text-[11px] font-medium ${isLight ? "text-slate-500" : "text-slate-400"}`}>
+                              {unit}
+                            </span>
+                          )}
+                          <span className={`mt-1 block font-sans text-[11px] font-normal ${isLight ? "text-slate-500" : "text-slate-400"}`}>
                             {detail}
                           </span>
                         </dd>
@@ -2647,8 +2881,10 @@ export function LiveStudioWorkbench({
                 </section>
 
                 <section aria-label="Resource capacity">
-                  <h3 className="mb-2 text-xs font-semibold text-slate-200">Resource capacity</h3>
-                  <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,230px),1fr))] gap-2">
+                  <h3 className={`mb-2 text-xs font-bold ${isLight ? "text-slate-800" : "text-slate-200"}`}>
+                    Resource capacity
+                  </h3>
+                  <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,230px),1fr))] gap-2.5">
                     {[
                       {
                         label: "CPU allocation",
@@ -2668,37 +2904,49 @@ export function LiveStudioWorkbench({
                     ].map(({ label, rightText, pct, detail }) => (
                       <div
                         key={label}
-                        className="space-y-2 rounded-lg border border-slate-700/80 bg-slate-900 p-3"
+                        className={`space-y-2 rounded-xl border p-3 ${
+                          isLight
+                            ? "border-slate-200 bg-slate-50/70"
+                            : "border-slate-700/80 bg-slate-900"
+                        }`}
                       >
                         <div className="flex flex-wrap items-baseline justify-between gap-1.5">
-                          <span className="text-xs font-semibold text-slate-200">{label}</span>
-                          <span className="font-mono text-xs tabular-nums text-slate-300">
+                          <span className={`text-xs font-semibold ${isLight ? "text-slate-900" : "text-slate-200"}`}>
+                            {label}
+                          </span>
+                          <span className={`font-mono text-xs tabular-nums ${isLight ? "text-slate-700" : "text-slate-300"}`}>
                             {rightText}
                           </span>
                         </div>
                         <div
-                          className="h-1.5 overflow-hidden rounded-full bg-slate-800"
+                          className={`h-2 overflow-hidden rounded-full ${isLight ? "bg-slate-200" : "bg-slate-800"}`}
                           aria-hidden="true"
                         >
                           <div
-                            className="h-full rounded-full bg-sky-400 transition-all"
+                            className="h-full rounded-full bg-sky-500 transition-all"
                             style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
                           />
                         </div>
-                        <p className="break-words text-[11px] text-slate-400">{detail}</p>
+                        <p className={`break-words text-[11px] ${isLight ? "text-slate-600" : "text-slate-400"}`}>
+                          {detail}
+                        </p>
                       </div>
                     ))}
                   </div>
                 </section>
 
-                <div className="grid grid-cols-1 gap-1.5 text-[11px] sm:grid-cols-2 lg:grid-cols-4">
+                <div className="grid grid-cols-1 gap-1.5 text-[11.5px] sm:grid-cols-2 lg:grid-cols-4">
                   {checklist.map(([label, done]) => (
                     <div
                       key={label}
-                      className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 ${
+                      className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 font-medium ${
                         done
-                          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
-                          : "border-slate-800 bg-slate-900/70 text-slate-400"
+                          ? isLight
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                            : "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+                          : isLight
+                            ? "border-slate-200 bg-slate-50 text-slate-600"
+                            : "border-slate-800 bg-slate-900/70 text-slate-400"
                       }`}
                     >
                       <span className="font-mono">{done ? "✓" : "○"}</span>
@@ -2866,17 +3114,17 @@ export function LiveStudioWorkbench({
             return (
               <section aria-label={t("Service telemetry", "Thông số Telemetry dịch vụ")} className="min-w-0 space-y-2.5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h2 className="text-xs font-semibold text-slate-200">
+                  <h2 className={`text-xs font-bold ${isLight ? "text-slate-900" : "text-slate-200"}`}>
                     {t("Service Telemetry", "Thông số Dịch vụ")} ({rows.length})
                   </h2>
-                  <span className="text-[11px] text-slate-400">
+                  <span className="text-[11px] text-muted-foreground">
                     {observedLabel} · {t("Read-only", "Chỉ đọc")}
                   </span>
                 </div>
 
-                <div className="max-w-full overflow-x-auto rounded-lg border border-slate-800">
+                <div className={`max-w-full overflow-x-auto rounded-xl border ${isLight ? "border-slate-200 bg-white" : "border-slate-800"}`}>
                   <table className="mavis-tabular w-full whitespace-nowrap text-left text-xs">
-                    <thead className="bg-slate-900 text-[11px] text-slate-400">
+                    <thead className={isLight ? "bg-slate-50 text-[11px] text-slate-600" : "bg-slate-900 text-[11px] text-slate-400"}>
                       <tr>
                         {[
                           t("Service", "Dịch vụ"),
@@ -2889,20 +3137,22 @@ export function LiveStudioWorkbench({
                           t("Req / Err%", "Yêu cầu / Lỗi%"),
                           "Spans",
                         ].map((heading) => (
-                          <th key={heading} scope="col" className="px-2.5 py-2 font-medium">
+                          <th key={heading} scope="col" className="px-2.5 py-2 font-semibold">
                             {heading}
                           </th>
                         ))}
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-800">
+                    <tbody className={`divide-y ${isLight ? "divide-slate-200/80" : "divide-slate-800"}`}>
                       {rows.map((row) => {
                         const isSelected = row.service === canvasSelected;
                         return (
                           <tr
                             key={row.service}
                             className={
-                              isSelected ? "bg-sky-950/35" : "hover:bg-slate-900/80"
+                              isSelected
+                                ? isLight ? "bg-sky-50" : "bg-sky-950/35"
+                                : isLight ? "hover:bg-slate-50" : "hover:bg-slate-900/80"
                             }
                           >
                             <td className="px-2.5 py-1.5">
@@ -2912,17 +3162,25 @@ export function LiveStudioWorkbench({
                                 onClick={() =>
                                   studio.setService(isSelected ? "" : row.service)
                                 }
-                                className="inline-flex items-center gap-1.5 font-mono font-medium text-sky-200 hover:underline"
+                                className={`inline-flex items-center gap-1.5 font-mono font-semibold hover:underline ${
+                                  isLight ? "text-primary" : "text-sky-200"
+                                }`}
                               >
                                 <span>{row.service}</span>
                                 {row.svcLimit?.runtime && (
-                                  <span className="rounded border border-slate-700/80 bg-slate-900 px-1 py-0.5 font-sans text-[10px] font-normal text-slate-400">
+                                  <span
+                                    className={`rounded border px-1 py-0.5 font-sans text-[10px] font-normal ${
+                                      isLight
+                                        ? "border-slate-200 bg-slate-100 text-slate-600"
+                                        : "border-slate-700/80 bg-slate-900 text-slate-400"
+                                    }`}
+                                  >
                                     {row.svcLimit.runtime}
                                   </span>
                                 )}
                               </button>
                             </td>
-                            <td className={`px-2.5 py-1.5 font-medium ${row.statusClass}`}>
+                            <td className={`px-2.5 py-1.5 font-semibold ${isLight ? (row.running === 0 ? "text-rose-600" : row.running && row.running > 0 ? "text-emerald-700" : "text-slate-600") : row.statusClass}`}>
                               <span className="inline-flex items-center gap-1.5">
                                 <span
                                   aria-hidden="true"
@@ -2931,28 +3189,28 @@ export function LiveStudioWorkbench({
                                 {row.statusLabel}
                               </span>
                             </td>
-                            <td className="px-2.5 py-1.5 font-mono tabular-nums text-slate-200">
+                            <td className={`px-2.5 py-1.5 font-mono tabular-nums ${isLight ? "text-slate-900" : "text-slate-200"}`}>
                               {row.running === undefined
                                 ? "—"
                                 : row.desired !== undefined && row.desired !== row.running
                                   ? `${row.running}/${row.desired}`
                                   : row.running}
                               {row.agg.containers > 1 && (
-                                <span className="ml-1 text-[10px] text-slate-400">
+                                <span className="ml-1 text-[10px] text-muted-foreground">
                                   ({row.agg.containers} active)
                                 </span>
                               )}
                             </td>
-                            <td className="px-2.5 py-1.5 font-mono tabular-nums text-slate-200">
+                            <td className={`px-2.5 py-1.5 font-mono tabular-nums ${isLight ? "text-slate-900" : "text-slate-200"}`}>
                               {row.agg.cpu}
                             </td>
-                            <td className="px-2.5 py-1.5 font-mono tabular-nums text-slate-200">
+                            <td className={`px-2.5 py-1.5 font-mono tabular-nums ${isLight ? "text-slate-900" : "text-slate-200"}`}>
                               {row.agg.memory}
                             </td>
-                            <td className="px-2.5 py-1.5 font-mono tabular-nums text-slate-300">
+                            <td className={`px-2.5 py-1.5 font-mono tabular-nums ${isLight ? "text-slate-700" : "text-slate-300"}`}>
                               {row.netIo}
                             </td>
-                            <td className="px-2.5 py-1.5 font-mono tabular-nums text-slate-200">
+                            <td className={`px-2.5 py-1.5 font-mono tabular-nums ${isLight ? "text-slate-900" : "text-slate-200"}`}>
                               {row.p95Ms !== undefined ? (
                                 <span>
                                   {metric(row.p95Ms)} ms
@@ -3148,6 +3406,7 @@ export function LiveStudioWorkbench({
               diagnosticLines={failedDiagnostics}
               selectedTraceId={inspectedTraceId}
               onSelectTrace={setInspectedTraceId}
+              isLight={isLight}
             />
           </div>
 
@@ -3156,10 +3415,10 @@ export function LiveStudioWorkbench({
               {/* Compact Header */}
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <h2 className="text-xs font-semibold text-slate-100">
+                  <h2 className={`text-xs font-bold ${isLight ? "text-slate-900" : "text-slate-100"}`}>
                     Snapshots &amp; Runtime Recording
                   </h2>
-                  <p className="text-[11px] text-slate-400">
+                  <p className="text-[11px] text-muted-foreground">
                     Capture topology screenshots (PNG) or record live runtime traffic flows between services.
                   </p>
                 </div>
@@ -3167,11 +3426,15 @@ export function LiveStudioWorkbench({
                   {recordingSteps > 0 && (
                     <span
                       role="status"
-                      className="inline-flex items-center gap-1.5 rounded-full border border-rose-500/40 bg-rose-500/15 px-2.5 py-0.5 font-mono text-[11px] text-rose-200"
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono text-[11px] ${
+                        isLight
+                          ? "border-rose-300 bg-rose-50 text-rose-700"
+                          : "border-rose-500/40 bg-rose-500/15 text-rose-200"
+                      }`}
                     >
                       <span
                         aria-hidden="true"
-                        className="size-1.5 animate-pulse rounded-full bg-rose-400"
+                        className="size-1.5 animate-pulse rounded-full bg-rose-500"
                       />
                       Recording · {recordingSeconds}s · {recordingSteps} frames
                     </span>
@@ -3181,7 +3444,7 @@ export function LiveStudioWorkbench({
                       type="button"
                       size="sm"
                       variant="outline"
-                      className="h-7 border-slate-600 bg-slate-900 px-2.5 text-[11px] text-slate-200 hover:bg-slate-800 hover:text-white"
+                      className="h-7 px-2.5 text-[11px]"
                       onClick={() => void downloadReceipt()}
                     >
                       {data.receiptSignature ? "Download signed receipt" : "Download receipt"}
@@ -3193,7 +3456,11 @@ export function LiveStudioWorkbench({
               {!authoring && data.actions.length === 0 && !isPreviewMode && (
                 <p
                   role="note"
-                  className="rounded border border-amber-500/35 bg-amber-500/10 px-2.5 py-1.5 text-[11px] leading-relaxed text-amber-200"
+                  className={`rounded-lg border px-2.5 py-1.5 text-[11px] leading-relaxed ${
+                    isLight
+                      ? "border-amber-300 bg-amber-50 text-amber-900"
+                      : "border-amber-500/35 bg-amber-500/10 text-amber-200"
+                  }`}
                 >
                   BR-08 (INCOMPLETE_SCENARIO guard): Execute at least one Start, Stop, or Scale action on a live service before
                   sealing your signed receipt.
@@ -3209,7 +3476,7 @@ export function LiveStudioWorkbench({
                   value={explanation}
                   maxLength={4000}
                   onChange={(event) => setExplanation(event.target.value)}
-                  className="h-8 min-w-52 flex-1 border-slate-700/80 bg-slate-950 text-xs text-slate-100 placeholder:text-slate-500"
+                  className="h-8 min-w-52 flex-1 text-xs"
                 />
 
                 <Button
@@ -3218,7 +3485,11 @@ export function LiveStudioWorkbench({
                   variant="outline"
                   disabled={capturingScreen || blocks.length === 0}
                   onClick={() => void captureCanvasScreenshot()}
-                  className="h-8 border-emerald-500/40 bg-emerald-500/10 px-2.5 text-[11px] text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-40"
+                  className={`h-8 px-2.5 text-[11.5px] font-semibold disabled:opacity-40 ${
+                    isLight
+                      ? "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                      : "border-emerald-500/40 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20"
+                  }`}
                 >
                   <Camera aria-hidden="true" className="mr-1.5 size-3.5" />
                   {capturingScreen ? "Capturing…" : "Screenshot PNG"}
@@ -3236,7 +3507,11 @@ export function LiveStudioWorkbench({
                         : "Record live canvas video + traffic flow timeline"
                     }
                     onClick={startLiveReplayRecording}
-                    className="h-8 border-sky-500/45 bg-sky-500/10 px-2.5 text-[11px] text-sky-200 hover:bg-sky-500/20 disabled:opacity-40"
+                    className={`h-8 px-2.5 text-[11.5px] font-semibold disabled:opacity-40 ${
+                      isLight
+                        ? "border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100"
+                        : "border-sky-500/45 bg-sky-500/10 text-sky-200 hover:bg-sky-500/20"
+                    }`}
                   >
                     <Video aria-hidden="true" className="mr-1.5 size-3.5" />
                     Record runtime replay
@@ -3570,11 +3845,7 @@ export function LiveStudioWorkbench({
               scrollbarWidth: "thin",
               scrollbarColor: isLight ? "#cbd5e1 #ffffff" : "#334155 #0a0f18",
             }}
-            className={`pointer-events-auto absolute top-4 right-4 z-20 flex max-h-[calc(100%-6.25rem)] w-[336px] max-w-[calc(100%-2rem)] flex-col overflow-hidden rounded-2xl border shadow-2xl ${
-              isLight
-                ? "border-slate-300 bg-white/98 text-slate-900"
-                : "border-slate-700 bg-[#0d1422]/98 text-slate-100"
-            }`}
+            className={`pointer-events-auto absolute top-4 right-4 z-20 flex max-h-[calc(100%-6.25rem)] w-[336px] max-w-[calc(100%-2rem)] flex-col overflow-hidden ${styleCfg.floatingCardClass}`}
           >
             {/* Floating Card Header with Close Button */}
             <div
@@ -3924,20 +4195,19 @@ export function LiveStudioWorkbench({
                       {!isPreviewMode &&
                         studio.services.length > 0 &&
                         (data.executionStatus === "RUNNING" || Boolean(data.exerciseEvaluation)) && (
-                          <div className="dark rounded-xl border border-slate-200 bg-slate-900 p-2.5 text-slate-100">
-                            <StudioExercisePanel
-                              data={data}
-                              services={studio.services}
-                              busy={busy}
-                              submittingPrediction={studio.prediction.isPending}
-                              onLockPrediction={(svcs, rationale) =>
-                                studio.submitPrediction(svcs, rationale)
-                              }
-                              onRunPrescribedChange={(kind, svc, rep, cpu, rps) =>
-                                studio.send(kind, svc, rep, cpu, rps)
-                              }
-                            />
-                          </div>
+                          <StudioExercisePanel
+                            data={data}
+                            services={studio.services}
+                            busy={busy}
+                            isLight={isLight}
+                            submittingPrediction={studio.prediction.isPending}
+                            onLockPrediction={(svcs, rationale) =>
+                              studio.submitPrediction(svcs, rationale)
+                            }
+                            onRunPrescribedChange={(kind, svc, rep, cpu, rps) =>
+                              studio.send(kind, svc, rep, cpu, rps)
+                            }
+                          />
                         )}
 
                       {/* Bottom Quick Shortcuts */}
@@ -3970,12 +4240,14 @@ export function LiveStudioWorkbench({
                   );
                 })()
               ) : (
-              <div className="dark rounded-xl bg-[#0a0f18] p-2.5 text-slate-100">
+              <div className={isLight ? "space-y-3 text-slate-900" : "dark rounded-xl bg-[#0a0f18] p-2.5 text-slate-100"}>
             {authoring && (
               <div
                 role="tablist"
                 aria-label="Lecturer setup panel tabs"
-                className="mb-3 grid grid-cols-3 gap-1 rounded-lg border border-slate-800 bg-slate-950/90 p-1"
+                className={`mb-3 grid grid-cols-3 gap-1 rounded-xl border p-1 ${
+                  isLight ? "border-slate-200 bg-slate-100" : "border-slate-800 bg-slate-950/90"
+                }`}
               >
                 {(
                   [
@@ -3990,10 +4262,14 @@ export function LiveStudioWorkbench({
                     role="tab"
                     aria-selected={setupPanel === id}
                     onClick={() => setSetupPanel(id)}
-                    className={`rounded-md px-1.5 py-1 text-[10.5px] font-semibold transition-colors ${
+                    className={`rounded-lg px-1.5 py-1.5 text-[11px] font-semibold transition-colors ${
                       setupPanel === id
-                        ? "bg-slate-800 text-white shadow-xs"
-                        : "text-slate-400 hover:text-slate-200"
+                        ? isLight
+                          ? "bg-white text-slate-900 shadow-xs"
+                          : "bg-slate-800 text-white shadow-xs"
+                        : isLight
+                          ? "text-slate-600 hover:text-slate-900"
+                          : "text-slate-400 hover:text-slate-200"
                     }`}
                   >
                     {tabLabel}
@@ -4004,28 +4280,28 @@ export function LiveStudioWorkbench({
 
             {setupPanel === "mission" && authoring ? (
               <section aria-label="Mission setup" className="space-y-3 text-xs">
-                <div className="flex items-center gap-1.5 border-b border-slate-800 pb-2 font-semibold text-slate-100">
-                  <Target aria-hidden="true" className="size-3.5 text-sky-400" />
+                <div className={`flex items-center gap-1.5 border-b pb-2 font-bold ${isLight ? "border-slate-200 text-slate-900" : "border-slate-800 text-slate-100"}`}>
+                  <Target aria-hidden="true" className={`size-3.5 ${isLight ? "text-primary" : "text-sky-400"}`} />
                   <span>Mission &amp; Pass Criteria</span>
                 </div>
 
-                <label className="block space-y-1 text-[11px] text-slate-400">
+                <label className={`block space-y-1 text-[11.5px] font-medium ${isLight ? "text-slate-600" : "text-slate-400"}`}>
                   <span>Student Mission</span>
                   <Textarea
                     value={missionDraft}
                     onChange={(e) => setMissionDraft(e.target.value)}
-                    className="min-h-20 border-slate-700 bg-slate-950 text-xs text-slate-100"
+                    className={`min-h-20 text-xs ${isLight ? "border-slate-300 bg-white text-slate-900" : "border-slate-700 bg-slate-950 text-slate-100"}`}
                   />
                 </label>
 
                 <div className="space-y-1.5">
-                  <label className="block space-y-1 text-[11px] text-slate-400">
+                  <label className={`block space-y-1 text-[11.5px] font-medium ${isLight ? "text-slate-600" : "text-slate-400"}`}>
                     <span>Baseline Probe GET Path</span>
                     <Input
                       value={baselineDraft}
                       onChange={(e) => setBaselineDraft(e.target.value)}
                       placeholder="/api/gateway/orders"
-                      className="h-8 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
+                      className={`h-8 font-mono text-xs ${isLight ? "border-slate-300 bg-white text-slate-900" : "border-slate-700 bg-slate-950 text-slate-100"}`}
                     />
                   </label>
                   <div className="flex flex-wrap gap-1">
@@ -4034,10 +4310,14 @@ export function LiveStudioWorkbench({
                         key={path}
                         type="button"
                         onClick={() => setBaselineDraft(path)}
-                        className={`rounded border px-1.5 py-0.5 font-mono text-[10px] transition-colors ${
+                        className={`rounded-md border px-1.5 py-0.5 font-mono text-[10.5px] transition-colors ${
                           baselineDraft === path
-                            ? "border-sky-500/50 bg-sky-500/15 text-sky-200"
-                            : "border-slate-800 bg-slate-950 text-slate-400 hover:border-slate-700 hover:text-slate-200"
+                            ? isLight
+                              ? "border-primary bg-primary/10 text-primary font-semibold"
+                              : "border-sky-500/50 bg-sky-500/15 text-sky-200"
+                            : isLight
+                              ? "border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300 hover:text-slate-900"
+                              : "border-slate-800 bg-slate-950 text-slate-400 hover:border-slate-700 hover:text-slate-200"
                         }`}
                       >
                         {path}
@@ -4047,7 +4327,7 @@ export function LiveStudioWorkbench({
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
-                  <label className="block space-y-1 text-[11px] text-slate-400">
+                  <label className={`block space-y-1 text-[11.5px] font-medium ${isLight ? "text-slate-600" : "text-slate-400"}`}>
                     <span>Max Error %</span>
                     <Input
                       type="number"
@@ -4056,10 +4336,10 @@ export function LiveStudioWorkbench({
                       value={maxErrDraft}
                       onChange={(e) => setMaxErrDraft(e.target.value)}
                       placeholder="0"
-                      className="h-8 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
+                      className={`h-8 font-mono text-xs ${isLight ? "border-slate-300 bg-white text-slate-900" : "border-slate-700 bg-slate-950 text-slate-100"}`}
                     />
                   </label>
-                  <label className="block space-y-1 text-[11px] text-slate-400">
+                  <label className={`block space-y-1 text-[11.5px] font-medium ${isLight ? "text-slate-600" : "text-slate-400"}`}>
                     <span>Min Replicas</span>
                     <Input
                       type="number"
@@ -4068,17 +4348,17 @@ export function LiveStudioWorkbench({
                       value={replicaCountDraft}
                       onChange={(e) => setReplicaCountDraft(e.target.value)}
                       placeholder="2"
-                      className="h-8 border-slate-700 bg-slate-950 font-mono text-xs text-slate-100"
+                      className={`h-8 font-mono text-xs ${isLight ? "border-slate-300 bg-white text-slate-900" : "border-slate-700 bg-slate-950 text-slate-100"}`}
                     />
                   </label>
                 </div>
 
-                <label className="block space-y-1 text-[11px] text-slate-400">
+                <label className={`block space-y-1 text-[11.5px] font-medium ${isLight ? "text-slate-600" : "text-slate-400"}`}>
                   <span>Target Scale Service</span>
                   <select
                     value={replicaSvcDraft}
                     onChange={(e) => setReplicaSvcDraft(e.target.value)}
-                    className="h-8 w-full rounded-md border border-slate-700 bg-slate-950 px-2 font-mono text-xs text-slate-100"
+                    className={`h-8 w-full rounded-md border px-2 font-mono text-xs ${isLight ? "border-slate-300 bg-white text-slate-900" : "border-slate-700 bg-slate-950 text-slate-100"}`}
                   >
                     <option value="">None</option>
                     {blocks.map((b) => (
@@ -4090,41 +4370,43 @@ export function LiveStudioWorkbench({
                 </label>
 
                 {/* Live Student Preview */}
-                <div className="space-y-1 rounded-lg border border-slate-800 bg-slate-950/75 p-2 text-[10.5px]">
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                <div className={`space-y-1 rounded-xl border p-2.5 text-[11px] ${isLight ? "border-slate-200 bg-slate-50" : "border-slate-800 bg-slate-950/75"}`}>
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
                     Student Will Receive
                   </p>
-                  <p className="text-slate-300">
+                  <p className={isLight ? "text-slate-700" : "text-slate-300"}>
                     Initial Faults:{" "}
-                    <code className="font-mono text-amber-300">
+                    <code className={`font-mono font-semibold ${isLight ? "text-amber-700" : "text-amber-300"}`}>
                       {authoring.initialStoppedServices.length > 0
                         ? authoring.initialStoppedServices.join(", ")
                         : "None (all start Up)"}
                     </code>
                   </p>
-                  <p className="text-slate-300">
+                  <p className={isLight ? "text-slate-700" : "text-slate-300"}>
                     Pass Target:{" "}
-                    <code className="font-mono text-emerald-300">
+                    <code className={`font-mono font-semibold ${isLight ? "text-emerald-700" : "text-emerald-300"}`}>
                       ≤{maxErrDraft || "0"}% err
                       {replicaSvcDraft && Number(replicaCountDraft) >= 2
                         ? ` · ${replicaSvcDraft} ≥${replicaCountDraft}×`
                         : ""}
                     </code>
                   </p>
-                  <p className="text-slate-300">
+                  <p className={isLight ? "text-slate-700" : "text-slate-300"}>
                     Probe:{" "}
-                    <code className="font-mono text-sky-300">GET {baselineDraft || "/health"}</code>
+                    <code className={`font-mono font-semibold ${isLight ? "text-sky-700" : "text-sky-300"}`}>
+                      GET {baselineDraft || "/health"}
+                    </code>
                   </p>
                 </div>
 
                 <div className="flex items-center justify-between gap-2 pt-1">
                   {authoring.saved && !missionDirty ? (
-                    <span className="inline-flex items-center gap-1 text-[11px] text-emerald-400">
+                    <span className={`inline-flex items-center gap-1 text-[11.5px] font-semibold ${isLight ? "text-emerald-700" : "text-emerald-400"}`}>
                       <Check aria-hidden="true" className="size-3.5" /> Saved
                     </span>
                   ) : (
                     <span
-                      className={`text-[10.5px] ${missionDirty ? "text-amber-300" : "text-slate-500"}`}
+                      className={`text-[11px] ${missionDirty ? (isLight ? "text-amber-700 font-medium" : "text-amber-300") : "text-muted-foreground"}`}
                     >
                       {missionDirty ? "Unsaved changes" : "Applies immediately to Lab"}
                     </span>
@@ -4159,26 +4441,26 @@ export function LiveStudioWorkbench({
               </section>
             ) : setupPanel === "presets" && authoring?.onApplyPreset ? (
               <section aria-label="Lab Exercise Presets setup" className="space-y-3 text-xs">
-                <div className="flex items-center gap-1.5 border-b border-slate-800 pb-2 font-semibold text-slate-100">
-                  <Zap aria-hidden="true" className="size-3.5 text-amber-400" />
+                <div className={`flex items-center gap-1.5 border-b pb-2 font-bold ${isLight ? "border-slate-200 text-slate-900" : "border-slate-800 text-slate-100"}`}>
+                  <Zap aria-hidden="true" className="size-3.5 text-amber-500" />
                   <span>Step 1 · Pick Lab Scenario</span>
                 </div>
 
-                <div className="space-y-1 rounded-lg border border-slate-800 bg-slate-950/70 p-2 text-[10.5px]">
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                <div className={`space-y-1 rounded-xl border p-2.5 text-[11px] ${isLight ? "border-slate-200 bg-slate-50" : "border-slate-800 bg-slate-950/70"}`}>
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
                     Active Config ({blocks.length} services)
                   </p>
-                  <p className="text-slate-300">
+                  <p className={isLight ? "text-slate-700" : "text-slate-300"}>
                     Starts Down:{" "}
-                    <code className="font-mono text-amber-300">
+                    <code className={`font-mono font-semibold ${isLight ? "text-amber-700" : "text-amber-300"}`}>
                       {authoring.initialStoppedServices.length > 0
                         ? authoring.initialStoppedServices.join(", ")
                         : "None"}
                     </code>
                   </p>
-                  <p className="text-slate-300">
+                  <p className={isLight ? "text-slate-700" : "text-slate-300"}>
                     Scale Target:{" "}
-                    <code className="font-mono text-sky-300">
+                    <code className={`font-mono font-semibold ${isLight ? "text-sky-700" : "text-sky-300"}`}>
                       {authoring.replicaService && Number(authoring.replicaCount) >= 2
                         ? `${authoring.replicaService} ≥ ${authoring.replicaCount}×`
                         : "Any (observe only)"}
@@ -4186,8 +4468,8 @@ export function LiveStudioWorkbench({
                   </p>
                 </div>
 
-                <p className="text-[11px] leading-relaxed text-slate-400">
-                  Pick a 1-click scenario for this repo, or click any 3D service block to customize.
+                <p className="text-[11.5px] leading-relaxed text-muted-foreground">
+                  Pick a 1-click scenario for this repo, or click any service node to customize.
                 </p>
 
                 <div className="space-y-2">
@@ -4199,7 +4481,9 @@ export function LiveStudioWorkbench({
                         presetTargets.faultTarget
                           ? `Starts ${presetTargets.faultTarget} Down · students recover it to 0% error.`
                           : "Marks 1 core service as Starts Down and requires 0% error rate after recovery.",
-                        "border-amber-500/35 bg-amber-500/10 hover:border-amber-400",
+                        isLight
+                          ? "border-amber-200 bg-amber-50/70 hover:border-amber-400"
+                          : "border-amber-500/35 bg-amber-500/10 hover:border-amber-400",
                       ],
                       [
                         "scale",
@@ -4207,7 +4491,9 @@ export function LiveStudioWorkbench({
                         presetTargets.primaryScale
                           ? `All Up · students scale ${presetTargets.primaryScale} to ≥ 2 replicas.`
                           : "Enables scaling on the primary stateless service and targets ≥ 2 replicas.",
-                        "border-sky-500/35 bg-sky-500/10 hover:border-sky-400",
+                        isLight
+                          ? "border-sky-200 bg-sky-50/70 hover:border-sky-400"
+                          : "border-sky-500/35 bg-sky-500/10 hover:border-sky-400",
                       ],
                       [
                         "chaos-scale",
@@ -4215,13 +4501,17 @@ export function LiveStudioWorkbench({
                         presetTargets.faultTarget && presetTargets.primaryScale
                           ? `Stops ${presetTargets.faultTarget} + scales ${presetTargets.primaryScale} to ≥ 2×.`
                           : "Combines 1 stopped dependency with scaling the primary service to 2 pods.",
-                        "border-purple-500/35 bg-purple-500/10 hover:border-purple-400",
+                        isLight
+                          ? "border-violet-200 bg-violet-50/70 hover:border-violet-400"
+                          : "border-purple-500/35 bg-purple-500/10 hover:border-purple-400",
                       ],
                       [
                         "healthy",
                         "Healthy Baseline",
                         `All ${blocks.length} services Start Up · students inspect traces & baseline metrics.`,
-                        "border-slate-700 bg-slate-950/70 hover:border-slate-500",
+                        isLight
+                          ? "border-slate-200 bg-slate-50/80 hover:border-slate-400"
+                          : "border-slate-700 bg-slate-950/70 hover:border-slate-500",
                       ],
                     ] as const
                   ).map(([id, title, desc, tone]) => {
@@ -4232,19 +4522,33 @@ export function LiveStudioWorkbench({
                         type="button"
                         disabled={authoring.busy}
                         onClick={() => authoring.onApplyPreset?.(id)}
-                        className={`w-full rounded-lg border p-2.5 text-left transition-colors disabled:opacity-40 ${tone} ${
-                          isActive ? "ring-1 ring-emerald-400/70" : ""
+                        className={`w-full rounded-xl border p-2.5 text-left transition-colors disabled:opacity-40 ${tone} ${
+                          isActive
+                            ? isLight
+                              ? "ring-2 ring-emerald-500/60"
+                              : "ring-1 ring-emerald-400/70"
+                            : ""
                         }`}
                       >
                         <div className="flex items-center justify-between gap-2">
-                          <p className="text-[11.5px] font-semibold text-slate-100">{title}</p>
+                          <p className={`text-[12.5px] font-bold ${isLight ? "text-slate-900" : "text-slate-100"}`}>
+                            {title}
+                          </p>
                           {isActive && (
-                            <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 font-mono text-[9.5px] font-semibold text-emerald-300">
+                            <span
+                              className={`rounded-full px-2 py-0.5 font-mono text-[10px] font-bold ${
+                                isLight
+                                  ? "bg-emerald-100 text-emerald-800"
+                                  : "bg-emerald-500/20 text-emerald-300"
+                              }`}
+                            >
                               Active
                             </span>
                           )}
                         </div>
-                        <p className="mt-1 text-[10.5px] leading-relaxed text-slate-400">{desc}</p>
+                        <p className={`mt-1 text-[11px] leading-relaxed ${isLight ? "text-slate-600" : "text-slate-400"}`}>
+                          {desc}
+                        </p>
                       </button>
                     );
                   })}
@@ -4255,7 +4559,11 @@ export function LiveStudioWorkbench({
                   size="sm"
                   variant="outline"
                   onClick={() => setSetupPanel("mission")}
-                  className="h-8 w-full border-sky-500/40 bg-sky-500/10 text-[11px] text-sky-200 hover:bg-sky-500/20"
+                  className={`h-8 w-full text-xs font-semibold ${
+                    isLight
+                      ? "border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100"
+                      : "border-sky-500/40 bg-sky-500/10 text-sky-200 hover:bg-sky-500/20"
+                  }`}
                 >
                   Next: Step 2 Mission &amp; Pass Target
                   <ArrowRight aria-hidden="true" className="ml-1.5 size-3.5" />
@@ -4355,6 +4663,107 @@ export function LiveStudioWorkbench({
                   );
                 })()}
               </section>
+            ) : isLight && authoring ? (
+              (() => {
+                const svc = selected || blocks[0]?.service || "";
+                const startsDown = Boolean(svc && authoring.initialStoppedServices.includes(svc));
+                const canScale = Boolean(svc && authoring.scalableServices.includes(svc));
+                return (
+                  <section aria-label="Block authoring setup" className="space-y-3 text-xs text-slate-900">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate font-mono text-sm font-bold text-slate-900">
+                          {svc || t("Select a service", "Chọn một service")}
+                        </span>
+                        <span
+                          className={`rounded-full border px-2 py-0.5 font-mono text-[10.5px] font-bold ${
+                            startsDown
+                              ? "border-rose-300 bg-rose-50 text-rose-700"
+                              : "border-emerald-300 bg-emerald-50 text-emerald-700"
+                          }`}
+                        >
+                          {startsDown ? "Starts Down" : "Starts Up"}
+                        </span>
+                      </div>
+                      {svc && (
+                        <div className="mt-3 grid grid-cols-2 gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={authoring.busy}
+                            onClick={() => authoring.onToggleInitialStopped(svc, false)}
+                            className={`h-8 text-xs font-semibold ${
+                              startsDown
+                                ? "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                                : "border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                            }`}
+                          >
+                            {startsDown ? "Set Starts Up" : "Set Starts Down"}
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={authoring.busy}
+                            onClick={() => authoring.onToggleScalable(svc)}
+                            className={`h-8 text-xs font-semibold ${
+                              canScale
+                                ? "border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100"
+                                : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+                            }`}
+                          >
+                            {canScale ? "Scalable ✓" : "Allow Scale"}
+                          </Button>
+                        </div>
+                      )}
+                      {svc && authoring.onRemoveBlock && blocks.length > 1 && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={authoring.busy}
+                          onClick={() => authoring.onRemoveBlock?.(svc)}
+                          className="mt-2 h-8 w-full border-slate-200 bg-white text-xs text-rose-700 hover:border-rose-300 hover:bg-rose-50"
+                        >
+                          <Trash2 className="mr-1.5 size-3.5" aria-hidden="true" />
+                          Remove from Canvas
+                        </Button>
+                      )}
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                        Canvas Services ({blocks.length})
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {blocks.map((block) => {
+                          const down = authoring.initialStoppedServices.includes(block.service);
+                          const active = block.service === svc;
+                          return (
+                            <button
+                              key={block.service}
+                              type="button"
+                              onClick={() => studio.setService(block.service)}
+                              className={`inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 font-mono text-[11.5px] font-semibold transition ${
+                                active
+                                  ? "border-primary bg-primary/10 text-primary"
+                                  : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                              }`}
+                            >
+                              <span
+                                className={`size-1.5 rounded-full ${down ? "bg-rose-500" : "bg-emerald-500"}`}
+                                aria-hidden="true"
+                              />
+                              {block.service}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </section>
+                );
+              })()
             ) : (
               <div className="space-y-3">
                 <LiveSandboxParity

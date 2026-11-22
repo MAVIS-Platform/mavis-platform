@@ -890,7 +890,8 @@ function StandaloneStudioContent() {
             asChild
             size="sm"
             variant="outline"
-            className="h-8 px-2.5 text-[13px]"
+            title={t("Test as Student", "Thử vai Sinh viên")}
+            className="h-8 whitespace-nowrap px-2.5 text-[12.5px]"
           >
             <Link
               href={buildStudioLiveHref({
@@ -902,13 +903,13 @@ function StandaloneStudioContent() {
               })}
             >
               <Play className="mr-1 size-3" aria-hidden="true" />
-              {t("Test as Student", "Thử vai SV")}
+              {t("Student", "Thử vai SV")}
             </Link>
           </Button>
           <Button
             asChild
             size="sm"
-            className="h-8 bg-emerald-600 px-2.5 text-[13px] text-white hover:bg-emerald-500"
+            className="h-8 whitespace-nowrap bg-emerald-600 px-2.5 text-[12.5px] text-white hover:bg-emerald-500"
           >
             <Link href={publishHref}>
               {t("Done · Step 6", "Xong · Bước 6")}

@@ -252,6 +252,7 @@ function SvgSeriesCard({
   series,
   markers,
   yMaxFloor,
+  isLight = false,
 }: {
   title: string;
   latestLabel: string;
@@ -259,6 +260,7 @@ function SvgSeriesCard({
   series: ReadonlyArray<{ name: string; color: string; values: ReadonlyArray<number | null> }>;
   markers: ReadonlyArray<ActionMarker>;
   yMaxFloor: number;
+  isLight?: boolean | undefined;
 }) {
   const width = 260;
   const height = 64;
@@ -269,20 +271,43 @@ function SvgSeriesCard({
   const count = Math.max(1, series[0]?.values.length ?? 0);
 
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900/75 p-2.5">
-      <div className="mb-1 flex items-center justify-between gap-2 text-[11px]">
-        <span className="font-medium text-slate-300">{title}</span>
-        <span className="font-mono font-semibold text-slate-100">
+    <div
+      className={`rounded-xl border p-3 ${
+        isLight ? "border-slate-200 bg-white shadow-2xs" : "border-slate-800 bg-slate-900/75"
+      }`}
+    >
+      <div className="mb-1 flex items-center justify-between gap-2 text-xs">
+        <span className={`font-medium ${isLight ? "text-slate-600" : "text-slate-300"}`}>{title}</span>
+        <span className={`font-mono font-semibold ${isLight ? "text-slate-900" : "text-slate-100"}`}>
           {latestLabel}
-          {latestLabel !== "—" && unit ? <span className="ml-0.5 text-[10px] font-normal text-slate-400">{unit}</span> : null}
+          {latestLabel !== "—" && unit ? (
+            <span className={`ml-0.5 text-[10px] font-normal ${isLight ? "text-slate-500" : "text-slate-400"}`}>
+              {unit}
+            </span>
+          ) : null}
         </span>
       </div>
       <svg viewBox={`0 0 ${width} ${height}`} className="h-16 w-full overflow-visible">
-        <line x1={padX} y1={height - padY} x2={width - padX} y2={height - padY} stroke="#1e293b" strokeWidth="1" />
-        <line x1={padX} y1={padY} x2={width - padX} y2={padY} stroke="#1e293b" strokeWidth="0.7" strokeDasharray="2 3" />
+        <line
+          x1={padX}
+          y1={height - padY}
+          x2={width - padX}
+          y2={height - padY}
+          stroke={isLight ? "#cbd5e1" : "#1e293b"}
+          strokeWidth="1"
+        />
+        <line
+          x1={padX}
+          y1={padY}
+          x2={width - padX}
+          y2={padY}
+          stroke={isLight ? "#e2e8f0" : "#1e293b"}
+          strokeWidth="0.7"
+          strokeDasharray="2 3"
+        />
         {markers.map((m) => {
           const x = padX + m.xRatio * (width - padX * 2);
-          const color = m.action === "STOP" ? "#fb7185" : m.action === "SCALE" ? "#38bdf8" : "#34d399";
+          const color = m.action === "STOP" ? "#e11d48" : m.action === "SCALE" ? "#0284c7" : "#059669";
           return (
             <g key={m.actionId}>
               <line x1={x} y1={2} x2={x} y2={height - 2} stroke={color} strokeWidth="1.2" strokeDasharray="3 2" />
@@ -304,7 +329,7 @@ function SvgSeriesCard({
               key={s.name}
               fill="none"
               stroke={s.color}
-              strokeWidth="1.7"
+              strokeWidth="1.9"
               strokeLinejoin="round"
               strokeLinecap="round"
               points={coords.join(" ")}
@@ -333,12 +358,14 @@ export function StudioRedCharts({
   serviceGraph,
   spans,
   onSelectTrace,
+  isLight = false,
 }: {
   history: ReadonlyArray<HistoryFrame> | null | undefined;
   actions: ReadonlyArray<StudioActionItem> | null | undefined;
   serviceGraph: ReadonlyArray<ServiceGraphEdge> | null | undefined;
   spans: ReadonlyArray<StudioSpan> | null | undefined;
   onSelectTrace?: ((traceId: string) => void) | undefined;
+  isLight?: boolean | undefined;
 }) {
   const { points, markers } = buildRedSeries(history, actions);
   const beforeAfter = computeBeforeAfterWindow(history, actions);
@@ -365,13 +392,13 @@ export function StudioRedCharts({
     <div className="space-y-2.5">
       {probePoints.length > 0 && (
         <div className="space-y-1.5">
-          <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
-            <span className="font-semibold text-slate-200">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+            <span className={`font-semibold ${isLight ? "text-slate-900" : "text-slate-200"}`}>
               Live RED Time-Series ({probePoints.length} frames)
             </span>
             <div className="flex items-center gap-2">
               {markers.length > 0 && (
-                <span className="text-[10px] text-slate-400">
+                <span className={`text-[11px] ${isLight ? "text-slate-600" : "text-slate-400"}`}>
                   Dashed lines = {markers.length} action{markers.length > 1 ? "s" : ""}
                 </span>
               )}
@@ -379,7 +406,11 @@ export function StudioRedCharts({
                 <button
                   type="button"
                   onClick={() => onSelectTrace(exemplarTraceId)}
-                  className="rounded border border-sky-500/40 bg-sky-950/50 px-2 py-0.5 font-mono text-[10px] text-sky-200 hover:bg-sky-900/60"
+                  className={`rounded-md border px-2 py-0.5 font-mono text-[11px] font-medium ${
+                    isLight
+                      ? "border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100"
+                      : "border-sky-500/40 bg-sky-950/50 text-sky-200 hover:bg-sky-900/60"
+                  }`}
                 >
                   Inspect slowest trace ({fmt(exemplarMs, 1)} ms)
                 </button>
@@ -393,7 +424,8 @@ export function StudioRedCharts({
               unit="rps"
               markers={markers}
               yMaxFloor={5}
-              series={[{ name: "RPS", color: "#34d399", values: points.map((p) => p.rps) }]}
+              isLight={isLight}
+              series={[{ name: "RPS", color: "#059669", values: points.map((p) => p.rps) }]}
             />
             <SvgSeriesCard
               title="Latency"
@@ -401,10 +433,11 @@ export function StudioRedCharts({
               unit="ms"
               markers={markers}
               yMaxFloor={25}
+              isLight={isLight}
               series={[
-                { name: "p50", color: "#38bdf8", values: points.map((p) => p.p50Ms) },
-                { name: "p95", color: "#fbbf24", values: points.map((p) => p.p95Ms) },
-                { name: "p99", color: "#fb7185", values: points.map((p) => p.p99Ms) },
+                { name: "p50", color: "#0284c7", values: points.map((p) => p.p50Ms) },
+                { name: "p95", color: "#d97706", values: points.map((p) => p.p95Ms) },
+                { name: "p99", color: "#e11d48", values: points.map((p) => p.p99Ms) },
               ]}
             />
             <SvgSeriesCard
@@ -413,43 +446,63 @@ export function StudioRedCharts({
               unit="%"
               markers={markers}
               yMaxFloor={10}
-              series={[{ name: "Err %", color: "#f43f5e", values: points.map((p) => p.errorRatePercent) }]}
+              isLight={isLight}
+              series={[{ name: "Err %", color: "#e11d48", values: points.map((p) => p.errorRatePercent) }]}
             />
           </div>
         </div>
       )}
 
       {beforeAfter && (
-        <div className="rounded-lg border border-slate-800 bg-slate-900/75 p-2.5 text-[11px]">
+        <div
+          className={`rounded-xl border p-3 text-xs ${
+            isLight ? "border-slate-200 bg-white shadow-2xs" : "border-slate-800 bg-slate-900/75"
+          }`}
+        >
           <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
-            <span className="font-semibold text-slate-200">
-              30s Before / After — <span className="font-mono text-sky-300">{beforeAfter.actionLabel}</span>
+            <span className={`font-semibold ${isLight ? "text-slate-900" : "text-slate-200"}`}>
+              30s Before / After —{" "}
+              <span className={`font-mono ${isLight ? "text-sky-700" : "text-sky-300"}`}>
+                {beforeAfter.actionLabel}
+              </span>
             </span>
-            <span className="font-mono text-[10px] text-slate-500">
+            <span className="font-mono text-[10.5px] text-slate-500">
               before n={beforeAfter.beforeSamples} · after n={beforeAfter.afterSamples}
             </span>
           </div>
           <div className="grid grid-cols-3 gap-2 font-mono tabular-nums">
-            <div className="rounded border border-slate-800/80 bg-slate-950/60 px-2 py-1.5">
-              <div className="text-[10px] text-slate-500">RPS</div>
-              <div className="text-slate-100">
+            <div
+              className={`rounded-lg border px-2.5 py-1.5 ${
+                isLight ? "border-slate-200 bg-slate-50" : "border-slate-800/80 bg-slate-950/60"
+              }`}
+            >
+              <div className="text-[10.5px] text-slate-500">RPS</div>
+              <div className={isLight ? "font-semibold text-slate-900" : "text-slate-100"}>
                 {fmt(beforeAfter.rpsBefore, 1)} → {fmt(beforeAfter.rpsAfter, 1)}
               </div>
             </div>
-            <div className="rounded border border-slate-800/80 bg-slate-950/60 px-2 py-1.5">
-              <div className="text-[10px] text-slate-500">p95 Latency</div>
-              <div className="text-slate-100">
+            <div
+              className={`rounded-lg border px-2.5 py-1.5 ${
+                isLight ? "border-slate-200 bg-slate-50" : "border-slate-800/80 bg-slate-950/60"
+              }`}
+            >
+              <div className="text-[10.5px] text-slate-500">p95 Latency</div>
+              <div className={isLight ? "font-semibold text-slate-900" : "text-slate-100"}>
                 {fmt(beforeAfter.p95BeforeMs, 1)} ms → {fmt(beforeAfter.p95AfterMs, 1)} ms
               </div>
             </div>
-            <div className="rounded border border-slate-800/80 bg-slate-950/60 px-2 py-1.5">
-              <div className="text-[10px] text-slate-500">Error Rate</div>
+            <div
+              className={`rounded-lg border px-2.5 py-1.5 ${
+                isLight ? "border-slate-200 bg-slate-50" : "border-slate-800/80 bg-slate-950/60"
+              }`}
+            >
+              <div className="text-[10.5px] text-slate-500">Error Rate</div>
               <div
-                className={
+                className={`font-semibold ${
                   (beforeAfter.errorAfterPct ?? 0) > (beforeAfter.errorBeforePct ?? 0) + 1
-                    ? "text-rose-300"
-                    : "text-emerald-300"
-                }
+                    ? isLight ? "text-rose-600" : "text-rose-300"
+                    : isLight ? "text-emerald-700" : "text-emerald-300"
+                }`}
               >
                 {fmt(beforeAfter.errorBeforePct, 1)}% → {fmt(beforeAfter.errorAfterPct, 1)}%
               </div>
@@ -459,29 +512,43 @@ export function StudioRedCharts({
       )}
 
       {serviceGraph && serviceGraph.length > 0 && (
-        <div className="overflow-x-auto rounded-lg border border-slate-800 bg-slate-900/75">
-          <table className="mavis-tabular w-full text-left font-mono text-[11px]">
-            <thead className="border-b border-slate-800 text-[10px] uppercase tracking-wide text-slate-500">
+        <div
+          className={`overflow-x-auto rounded-xl border ${
+            isLight ? "border-slate-200 bg-white shadow-2xs" : "border-slate-800 bg-slate-900/75"
+          }`}
+        >
+          <table className="mavis-tabular w-full text-left font-mono text-xs">
+            <thead
+              className={`border-b text-[11px] uppercase tracking-wide ${
+                isLight
+                  ? "border-slate-200 bg-slate-50 text-slate-600"
+                  : "border-slate-800 text-slate-500"
+              }`}
+            >
               <tr>
-                <th className="px-2.5 py-1.5 font-medium">Live Edge (OTel servicegraph)</th>
-                <th className="px-2.5 py-1.5 font-medium">RPS</th>
-                <th className="px-2.5 py-1.5 font-medium">p95</th>
-                <th className="px-2.5 py-1.5 font-medium">Error %</th>
+                <th className="px-3 py-2 font-semibold">Live Edge (OTel servicegraph)</th>
+                <th className="px-3 py-2 font-semibold">RPS</th>
+                <th className="px-3 py-2 font-semibold">p95</th>
+                <th className="px-3 py-2 font-semibold">Error %</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/70">
+            <tbody className={`divide-y ${isLight ? "divide-slate-200/80" : "divide-slate-800/70"}`}>
               {serviceGraph.map((edge) => (
                 <tr key={`${edge.client}->${edge.server}`}>
-                  <td className="px-2.5 py-1 text-slate-200">
-                    {edge.client} <span className="text-slate-500">→</span> {edge.server}
+                  <td className={`px-3 py-1.5 ${isLight ? "text-slate-900" : "text-slate-200"}`}>
+                    {edge.client} <span className="text-slate-400">→</span> {edge.server}
                   </td>
-                  <td className="px-2.5 py-1 text-emerald-300">{fmt(edge.rps, 1)}</td>
-                  <td className="px-2.5 py-1 text-slate-200">
+                  <td className={`px-3 py-1.5 font-semibold ${isLight ? "text-emerald-700" : "text-emerald-300"}`}>
+                    {fmt(edge.rps, 1)}
+                  </td>
+                  <td className={`px-3 py-1.5 ${isLight ? "text-slate-800" : "text-slate-200"}`}>
                     {edge.p95Ms != null ? `${fmt(edge.p95Ms, 1)} ms` : "—"}
                   </td>
                   <td
-                    className={`px-2.5 py-1 ${
-                      edge.errorRatePercent > 0 ? "text-rose-300" : "text-slate-400"
+                    className={`px-3 py-1.5 font-semibold ${
+                      edge.errorRatePercent > 0
+                        ? isLight ? "text-rose-600" : "text-rose-300"
+                        : isLight ? "text-slate-500" : "text-slate-400"
                     }`}
                   >
                     {fmt(edge.errorRatePercent, 1)}%
@@ -500,28 +567,48 @@ export function TraceWaterfallPanel({
   spans,
   traceId,
   onClose,
+  isLight = false,
 }: {
   spans: ReadonlyArray<StudioSpan> | null | undefined;
   traceId: string;
   onClose: () => void;
+  isLight?: boolean | undefined;
 }) {
   const { rows, totalMs } = buildTraceWaterfall(spans, traceId);
   if (rows.length === 0) return null;
 
   return (
-    <div className="mb-2 rounded-lg border border-sky-500/30 bg-[#080d18] p-2.5 font-mono text-[11px]">
-      <div className="mb-2 flex items-center justify-between gap-2 border-b border-slate-800 pb-1.5">
+    <div
+      className={`mb-2 rounded-xl border p-3 font-mono text-xs ${
+        isLight
+          ? "border-sky-200 bg-sky-50/50 text-slate-900"
+          : "border-sky-500/30 bg-[#080d18] text-slate-100"
+      }`}
+    >
+      <div
+        className={`mb-2 flex items-center justify-between gap-2 border-b pb-1.5 ${
+          isLight ? "border-sky-200" : "border-slate-800"
+        }`}
+      >
         <div className="flex items-center gap-2">
-          <span className="font-semibold text-sky-300">Trace Waterfall</span>
-          <span className="text-slate-400">{traceId.slice(0, 12)}</span>
-          <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-200">
+          <span className={`font-semibold ${isLight ? "text-sky-700" : "text-sky-300"}`}>
+            Trace Waterfall
+          </span>
+          <span className={isLight ? "text-slate-600" : "text-slate-400"}>{traceId.slice(0, 12)}</span>
+          <span
+            className={`rounded px-1.5 py-0.5 text-[10.5px] ${
+              isLight ? "bg-white text-slate-700 border border-slate-200" : "bg-slate-800 text-slate-200"
+            }`}
+          >
             {rows.length} spans · {fmt(totalMs, 1)} ms
           </span>
         </div>
         <button
           type="button"
           onClick={onClose}
-          className="text-[10px] text-slate-400 hover:text-slate-100"
+          className={`text-[11px] font-medium ${
+            isLight ? "text-slate-600 hover:text-slate-900" : "text-slate-400 hover:text-slate-100"
+          }`}
         >
           Close
         </button>
@@ -530,35 +617,43 @@ export function TraceWaterfallPanel({
         {rows.map((row) => (
           <div key={row.spanId} className="grid grid-cols-[minmax(160px,38%)_1fr_64px] items-center gap-2">
             <div
-              className="truncate text-slate-200"
+              className={`truncate ${isLight ? "text-slate-900" : "text-slate-200"}`}
               style={{ paddingLeft: `${row.depth * 12}px` }}
               title={`${row.runtimeService} — ${row.label}`}
             >
-              <span className="text-sky-300">{row.runtimeService}</span>{" "}
-              <span className="text-slate-400">{row.label}</span>
+              <span className={`font-semibold ${isLight ? "text-sky-700" : "text-sky-300"}`}>
+                {row.runtimeService}
+              </span>{" "}
+              <span className={isLight ? "text-slate-600" : "text-slate-400"}>{row.label}</span>
               {row.httpStatusCode != null && (
                 <span
-                  className={`ml-1 text-[10px] ${
+                  className={`ml-1 text-[10.5px] font-semibold ${
                     row.httpStatusCode >= 500
-                      ? "text-rose-300"
+                      ? isLight ? "text-rose-600" : "text-rose-300"
                       : row.httpStatusCode >= 400
-                        ? "text-amber-300"
-                        : "text-emerald-300"
+                        ? isLight ? "text-amber-700" : "text-amber-300"
+                        : isLight ? "text-emerald-700" : "text-emerald-300"
                   }`}
                 >
                   {row.httpStatusCode}
                 </span>
               )}
             </div>
-            <div className="relative h-3 overflow-hidden rounded bg-slate-900">
+            <div
+              className={`relative h-3 overflow-hidden rounded ${
+                isLight ? "bg-slate-200" : "bg-slate-900"
+              }`}
+            >
               <div
                 className={`absolute top-0.5 h-2 rounded-sm ${
-                  row.isError ? "bg-rose-500" : "bg-sky-400"
+                  row.isError ? "bg-rose-500" : "bg-sky-500"
                 }`}
                 style={{ left: `${row.offsetPct}%`, width: `${row.widthPct}%` }}
               />
             </div>
-            <div className="text-right tabular-nums text-slate-300">{fmt(row.durationMs, 1)} ms</div>
+            <div className={`text-right tabular-nums ${isLight ? "text-slate-700" : "text-slate-300"}`}>
+              {fmt(row.durationMs, 1)} ms
+            </div>
           </div>
         ))}
       </div>

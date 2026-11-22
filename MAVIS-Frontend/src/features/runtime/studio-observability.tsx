@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { computeArchitectureImpact } from "@/lib/architecture/reverse-bfs";
 import type { Response } from "@/lib/api/contracts";
+import { STUDIO_STYLES, resolveStudioStyle, type StudioStyleId } from "./studio-styles";
 
 type Studio = Response<"studioState">;
 
@@ -260,6 +261,7 @@ function renderIsoBox(
   strokeWidth = 1.2,
   topFill?: string,
 ) {
+  const isLightFill = /^#[b-fB-F]/.test(fillBase);
   const topY = cy - height;
   const topPoints = `${cx},${topY - ry} ${cx + rx},${topY} ${cx},${topY + ry} ${cx - rx},${topY}`;
   const leftPoints = `${cx - rx},${topY} ${cx},${topY + ry} ${cx},${cy + ry} ${cx - rx},${cy}`;
@@ -276,18 +278,18 @@ function renderIsoBox(
         points={leftPoints}
         fill={fillBase}
         stroke={stroke}
-        strokeOpacity="0.65"
+        strokeOpacity={isLightFill ? "0.75" : "0.65"}
         strokeWidth={strokeWidth * 0.9}
         strokeLinejoin="round"
       />
-      <polygon points={leftPoints} fill={stroke} opacity="0.1" />
+      <polygon points={leftPoints} fill={stroke} opacity={isLightFill ? "0.08" : "0.1"} />
       {/* Right Deep-Shaded Isometric Wall */}
       <polygon
         points={rightPoints}
-        fill="#050811"
-        opacity="0.78"
+        fill={isLightFill ? "#cbd5e1" : "#050811"}
+        opacity={isLightFill ? "0.45" : "0.78"}
         stroke={stroke}
-        strokeOpacity="0.55"
+        strokeOpacity={isLightFill ? "0.7" : "0.55"}
         strokeWidth={strokeWidth * 0.9}
         strokeLinejoin="round"
       />
@@ -296,11 +298,11 @@ function renderIsoBox(
         points={topPoints}
         fill={topFill ?? fillBase}
         stroke={stroke}
-        strokeOpacity="0.9"
+        strokeOpacity="0.92"
         strokeWidth={strokeWidth}
         strokeLinejoin="round"
       />
-      <polygon points={topPoints} fill={stroke} opacity="0.14" />
+      <polygon points={topPoints} fill={stroke} opacity={isLightFill ? "0.1" : "0.14"} />
     </g>
   );
 }
@@ -1097,6 +1099,7 @@ export function StudioObservability({
   canvasOnly = false,
   defaultView = "2D",
   surfaceTheme = "dark",
+  studioStyle,
 }: {
   data: Studio;
   selected: string;
@@ -1114,8 +1117,13 @@ export function StudioObservability({
   canvasOnly?: boolean;
   defaultView?: "2D" | "3D";
   surfaceTheme?: "light" | "dark";
+  studioStyle?: StudioStyleId | undefined;
 }) {
-  const isLight = surfaceTheme === "light";
+  const activeStyleId: StudioStyleId = resolveStudioStyle(
+    studioStyle ?? (surfaceTheme === "light" ? "daylight" : "control"),
+  );
+  const styleCfg = STUDIO_STYLES[activeStyleId];
+  const isLight = !styleCfg.isDark;
   const { t } = useLocale();
   const [view, setView] = useState<"2D" | "3D">(defaultView);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("LAYERED");
@@ -1620,14 +1628,10 @@ export function StudioObservability({
     <div className={canvasOnly ? "relative flex h-full min-h-0 flex-1 flex-col overflow-hidden" : "space-y-4"}>
       {exportError && <p role="alert">{t("Could not export graph")}</p>}
 
-      {/* Floating Bottom-Right Canvas Controls Pill (GonnaCrash style) */}
+      {/* Floating Bottom-Left Viewport Controls Pill (Original MAVIS Layout) */}
       {canvasOnly ? (
         <div
-          className={`pointer-events-auto absolute right-4 bottom-4 z-20 inline-flex items-center gap-1 rounded-full border px-1.5 py-1 shadow-md backdrop-blur-md ${
-            isLight
-              ? "border-slate-300 bg-white/95 text-slate-800"
-              : "border-slate-700/80 bg-slate-950/90 text-slate-200"
-          }`}
+          className={`pointer-events-auto absolute bottom-4 left-4 z-20 inline-flex items-center gap-1 px-1.5 py-1 ${styleCfg.floatingPillClass}`}
         >
           {(["2D", "3D"] as const).map((mode) => (
             <button
@@ -1920,9 +1924,7 @@ export function StudioObservability({
           viewBox="0 0 1200 660"
           className={
             canvasOnly
-              ? isLight
-                ? "h-full w-full select-none bg-[#FBFBF8]"
-                : "h-full w-full select-none bg-[#070b14]"
+              ? "h-full w-full select-none"
               : "min-w-[640px] w-full select-none rounded-lg border bg-background shadow-inner"
           }
           role="group"
@@ -1930,7 +1932,7 @@ export function StudioObservability({
           onContextMenu={(event) => event.preventDefault()}
           onLostPointerCapture={endPointerInteraction}
           style={{
-            ...(canvasOnly ? {} : { maxHeight: 560 }),
+            ...(canvasOnly ? { background: styleCfg.canvasBgCss } : { maxHeight: 560 }),
             touchAction: view === "3D" || draggingNode ? "none" : "auto",
             cursor: draggingNode ? "grabbing" : view === "3D" ? "grab" : "default",
           }}
@@ -2079,15 +2081,57 @@ export function StudioObservability({
           }}
         >
           <defs>
-            <pattern id="studio-grid" width="24" height="24" patternUnits="userSpaceOnUse">
-              <circle
-                cx="12"
-                cy="12"
-                r={isLight ? "1.15" : "1.05"}
-                fill={isLight ? "#CBD5E1" : "#334155"}
-                opacity={isLight ? "0.8" : "0.55"}
-              />
-            </pattern>
+            {styleCfg.gridKind === "blueprint" ? (
+              <>
+                <pattern id="studio-grid-minor" width="24" height="24" patternUnits="userSpaceOnUse">
+                  <path
+                    d="M 24 0 L 0 0 0 24"
+                    fill="none"
+                    stroke={styleCfg.gridColor}
+                    strokeWidth="0.7"
+                    opacity="0.75"
+                  />
+                </pattern>
+                <pattern id="studio-grid" width="120" height="120" patternUnits="userSpaceOnUse">
+                  <rect width="120" height="120" fill="url(#studio-grid-minor)" />
+                  <path
+                    d="M 120 0 L 0 0 0 120"
+                    fill="none"
+                    stroke={styleCfg.gridMajorColor}
+                    strokeWidth="1.15"
+                    opacity="0.8"
+                  />
+                  <path
+                    d="M 116 0 L 124 0 M 0 116 L 0 124"
+                    fill="none"
+                    stroke="#3B82F6"
+                    strokeWidth="1.2"
+                    opacity="0.55"
+                  />
+                </pattern>
+              </>
+            ) : styleCfg.gridKind === "plus" ? (
+              <pattern id="studio-grid" width="28" height="28" patternUnits="userSpaceOnUse">
+                <path
+                  d="M 14 11.5 V 16.5 M 11.5 14 H 16.5"
+                  fill="none"
+                  stroke={styleCfg.gridColor}
+                  strokeWidth="1.2"
+                  strokeLinecap="round"
+                  opacity="0.85"
+                />
+              </pattern>
+            ) : (
+              <pattern id="studio-grid" width="24" height="24" patternUnits="userSpaceOnUse">
+                <circle
+                  cx="12"
+                  cy="12"
+                  r={isLight ? "1.1" : "1.05"}
+                  fill={styleCfg.gridColor}
+                  opacity={isLight ? "0.75" : "0.55"}
+                />
+              </pattern>
+            )}
           </defs>
 
           {/* Infinite Camera Viewport Transform (draw.io / Figma style proportional zoom & pan) */}
@@ -2120,17 +2164,22 @@ export function StudioObservability({
               const crossB = project3DPoint(maxX, 14, 0);
               return (
                 <g>
-                  {/* Solid Top-Down Tabletop Surface (occludes back edges so view is ALWAYS unmistakably from above) */}
+                  {/* Solid Top-Down Tabletop Surface (adapts cleanly to bright architectural diorama or dark NOC stage) */}
                   <polygon
                     data-testid="studio-deck"
                     points={topPoly}
-                    fill="#0a101d"
-                    opacity="0.95"
-                    stroke="#334155"
-                    strokeOpacity="0.55"
-                    strokeWidth="1.4"
+                    fill={styleCfg.deckTopFill}
+                    opacity={isLight ? "0.96" : "0.95"}
+                    stroke={styleCfg.deckStroke}
+                    strokeOpacity={isLight ? "0.9" : "0.55"}
+                    strokeWidth={activeStyleId === "pop" ? "2" : "1.4"}
+                    style={
+                      isLight
+                        ? { filter: "drop-shadow(0 18px 28px rgba(15,23,42,0.10))" }
+                        : undefined
+                    }
                   />
-                  {/* Front-Facing 3D Slab Rim Walls ONLY (t1.x > t2.x in clockwise screen order = lower front rim) */}
+                  {/* Front-Facing 3D Slab Rim Walls ONLY */}
                   {[0, 1, 2, 3].map((i) => {
                     const next = (i + 1) % 4;
                     const t1 = topCorners[i]!;
@@ -2142,10 +2191,10 @@ export function StudioObservability({
                       <polygon
                         key={i}
                         points={`${t1.x},${t1.y} ${t2.x},${t2.y} ${b2.x},${b2.y} ${b1.x},${b1.y}`}
-                        fill="#1e293b"
-                        stroke="#334155"
-                        strokeWidth="1"
-                        opacity="0.85"
+                        fill={styleCfg.deckRimFill}
+                        stroke={styleCfg.deckStroke}
+                        strokeWidth={activeStyleId === "pop" ? "1.6" : "1"}
+                        opacity="0.92"
                       />
                     );
                   })}
@@ -2155,27 +2204,27 @@ export function StudioObservability({
                     y1={div1A.y}
                     x2={div1B.x}
                     y2={div1B.y}
-                    stroke="currentColor"
+                    stroke={styleCfg.deckGridStroke}
                     strokeDasharray="4 5"
-                    opacity="0.14"
+                    opacity={isLight ? "0.3" : "0.18"}
                   />
                   <line
                     x1={div2A.x}
                     y1={div2A.y}
                     x2={div2B.x}
                     y2={div2B.y}
-                    stroke="currentColor"
+                    stroke={styleCfg.deckGridStroke}
                     strokeDasharray="4 5"
-                    opacity="0.14"
+                    opacity={isLight ? "0.3" : "0.18"}
                   />
                   <line
                     x1={crossA.x}
                     y1={crossA.y}
                     x2={crossB.x}
                     y2={crossB.y}
-                    stroke="currentColor"
+                    stroke={styleCfg.deckGridStroke}
                     strokeDasharray="3 6"
-                    opacity="0.09"
+                    opacity={isLight ? "0.22" : "0.12"}
                   />
                 </g>
               );
@@ -2213,15 +2262,28 @@ export function StudioObservability({
             const targetStopped = resolveLiveReplicas(edge.to) === 0;
             const hasObservedOverlay = observedPairs.has(`${edge.from}->${edge.to}`);
             const isSkipColumn = view === "2D" && Math.abs(to.x - from.x) > 340;
+            const useOrtho = view === "2D" && styleCfg.wireMode === "orthogonal";
             const ctrlX = (from.x + to.x) / 2;
             const ctrlY = isSkipColumn
               ? Math.max(from.y, to.y) + 68
               : (from.y + to.y) / 2;
-            const staticPathD = isSkipColumn
-              ? `M ${from.x} ${from.y} Q ${ctrlX} ${ctrlY} ${to.x} ${to.y}`
-              : `M ${from.x} ${from.y} L ${to.x} ${to.y}`;
-            const midX = isSkipColumn ? 0.25 * from.x + 0.5 * ctrlX + 0.25 * to.x : (from.x + to.x) / 2;
-            const midY = isSkipColumn ? 0.25 * from.y + 0.5 * ctrlY + 0.25 * to.y : (from.y + to.y) / 2;
+            const staticPathD = useOrtho
+              ? isSkipColumn
+                ? `M ${from.x} ${from.y} L ${from.x} ${ctrlY} L ${to.x} ${ctrlY} L ${to.x} ${to.y}`
+                : `M ${from.x} ${from.y} L ${ctrlX} ${from.y} L ${ctrlX} ${to.y} L ${to.x} ${to.y}`
+              : isSkipColumn
+                ? `M ${from.x} ${from.y} Q ${ctrlX} ${ctrlY} ${to.x} ${to.y}`
+                : `M ${from.x} ${from.y} L ${to.x} ${to.y}`;
+            const midX = isSkipColumn
+              ? useOrtho
+                ? ctrlX
+                : 0.25 * from.x + 0.5 * ctrlX + 0.25 * to.x
+              : (from.x + to.x) / 2;
+            const midY = isSkipColumn
+              ? useOrtho
+                ? ctrlY
+                : 0.25 * from.y + 0.5 * ctrlY + 0.25 * to.y
+              : (from.y + to.y) / 2;
             return (
               <g key={edge.id}
                 data-studio-edge-from={edge.from} data-studio-edge-to={edge.to}
@@ -2333,7 +2395,10 @@ export function StudioObservability({
               const qy2 = from.y + (to.y - from.y) * 0.72;
               const cx1 = from.x + (to.x - from.x) * 0.5;
               const cx2 = from.x + (to.x - from.x) * 0.5;
-              const pathD = `M ${from.x} ${from.y} C ${cx1} ${from.y}, ${cx2} ${to.y}, ${to.x} ${to.y}`;
+              const pathD =
+                view === "2D" && styleCfg.wireMode === "orthogonal"
+                  ? `M ${from.x} ${from.y} L ${cx1} ${from.y} L ${cx1} ${to.y} L ${to.x} ${to.y}`
+                  : `M ${from.x} ${from.y} C ${cx1} ${from.y}, ${cx2} ${to.y}, ${to.x} ${to.y}`;
               const speedSec = Math.max(0.7, 2.2 / Math.max(1, Math.min(targetReplicas, 6))).toFixed(
                 2,
               );
@@ -2562,84 +2627,161 @@ export function StudioObservability({
                   >
                     {/* Pure 3D Software Engineering Sculpture (glows ONLY when selected/clicked or crashed) */}
                     <title>{nodeName}</title>
-                    <g
-                      data-studio-sculpture
-                      transform={`translate(${point.x} ${point.y + 8}) scale(${scale}) translate(${-point.x} ${-point.y - 8})`}
-                      style={
-                        isSelected || isDropTarget
-                          ? { filter: "drop-shadow(0 0 8px rgba(56, 189, 248, 0.5))" }
-                          : isStopped
-                            ? { filter: "drop-shadow(0 0 6px rgba(244, 63, 94, 0.45))" }
-                            : undefined
-                      }
-                    >
-                      {render3DSeNodeSculpture(name, archetype, point.x, point.y, isStopped, theme)}
-                    </g>
+                    {(() => {
+                      const light3DAccent = isCritical
+                        ? "#e11d48"
+                        : isWarning
+                          ? "#d97706"
+                          : archetype === "DATABASE"
+                            ? "#059669"
+                            : archetype === "GATEWAY"
+                              ? "#0284c7"
+                              : archetype === "QUEUE"
+                                ? "#7c3aed"
+                                : "#2563eb";
+                      const light3DTop = isCritical
+                        ? "#ffe4e6"
+                        : isWarning
+                          ? "#fef3c7"
+                          : archetype === "DATABASE"
+                            ? "#dcfce7"
+                            : archetype === "GATEWAY"
+                              ? "#e0f2fe"
+                              : archetype === "QUEUE"
+                                ? "#f3e8ff"
+                                : "#dbeafe";
+                      const sculptureTheme = isLight
+                        ? {
+                            stroke: isSelected ? "#0056D2" : light3DAccent,
+                            cardFill: isCritical ? "#fff1f2" : isWarning ? "#fffbeb" : "#ffffff",
+                            iconBg: light3DTop,
+                            accent: light3DAccent,
+                          }
+                        : theme;
+                      const pillBg = isLight
+                        ? isCritical
+                          ? "#fff1f2"
+                          : isWarning
+                            ? "#fffbeb"
+                            : "#ffffff"
+                        : "#0b111e";
+                      const pillStroke = isLight
+                        ? isCritical
+                          ? "#e11d48"
+                          : isWarning
+                            ? "#d97706"
+                            : isSelected
+                              ? "#0056D2"
+                              : activeStyleId === "pop"
+                                ? "#0f172a"
+                                : "#cbd5e1"
+                        : (healthColor ?? (isSelected ? "#38bdf8" : "#263348"));
+                      const pillChipBg = isLight
+                        ? light3DTop
+                        : (healthFill ?? (isSelected ? "#0c4a6e" : "#162033"));
+                      const pillIconColor = isLight
+                        ? light3DAccent
+                        : isStopped
+                          ? "#fda4af"
+                          : isSelected
+                            ? "#38bdf8"
+                            : "#94a3b8";
+                      const pillTextFill = isLight
+                        ? "#0f172a"
+                        : isSelected
+                          ? "#ffffff"
+                          : "#cbd5e1";
+                      const pillCountFill = isLight
+                        ? light3DAccent
+                        : (healthTint ?? (isSelected ? "#7dd3fc" : "#94a3b8"));
+                      return (
+                        <>
+                          <g
+                            data-studio-sculpture
+                            transform={`translate(${point.x} ${point.y + 8}) scale(${scale}) translate(${-point.x} ${-point.y - 8})`}
+                            style={
+                              isSelected || isDropTarget
+                                ? { filter: "drop-shadow(0 0 8px rgba(0, 86, 210, 0.4))" }
+                                : isStopped
+                                  ? { filter: "drop-shadow(0 0 6px rgba(225, 29, 72, 0.4))" }
+                                  : isLight
+                                    ? { filter: "drop-shadow(0 6px 10px rgba(15, 23, 42, 0.12))" }
+                                    : undefined
+                            }
+                          >
+                            {render3DSeNodeSculpture(name, archetype, point.x, point.y, isStopped, sculptureTheme)}
+                          </g>
 
-                    {/* Sleek Floating Pill Name Tag directly below the 3D Sculpture */}
-                    <rect
-                      data-studio-node-label
-                      x={point.x - labelWidth / 2}
-                      y={point.y + labelY}
-                      width={labelWidth}
-                      height={labelHeight}
-                      rx="12"
-                      fill="#0b111e"
-                      fillOpacity="0.96"
-                      stroke={healthColor ?? (isSelected ? "#38bdf8" : "#263348")}
-                      strokeOpacity={isSelected || isStopped ? "1" : "0.85"}
-                      strokeWidth={isSelected || isStopped ? 1.8 : 1}
-                      style={
-                        isSelected && !healthColor
-                          ? { filter: "drop-shadow(0 0 6px rgba(56, 189, 248, 0.35))" }
-                          : undefined
-                      }
-                    />
-                    {/* Left Functional Component Icon Badge inside the Pill */}
-                    <rect
-                      x={point.x - labelWidth / 2 + 4}
-                      y={point.y + 14}
-                      width="16"
-                      height="16"
-                      rx="8"
-                      fill={healthFill ?? (isSelected ? "#0c4a6e" : "#162033")}
-                    />
-                    {renderNodeFunctionGlyph(
-                      name,
-                      archetype,
-                      point.x - labelWidth / 2 + 12,
-                      point.y + 22,
-                      isStopped ? "#fda4af" : isSelected ? "#38bdf8" : "#94a3b8",
-                    )}
-                    <text
-                      x={point.x - 4}
-                      y={point.y + 25.5}
-                      textAnchor="middle"
-                      fill={isSelected ? "#ffffff" : "#cbd5e1"}
-                      fontSize="11"
-                      fontWeight="600"
-                    >
-                      {displayName}
-                    </text>
-                    {/* Compact Replica Count Badge inside the right end of the Pill */}
-                    <rect
-                      x={point.x + labelWidth / 2 - 31}
-                      y={point.y + 14}
-                      width="25"
-                      height="16"
-                      rx="8"
-                      fill={healthFill ?? (isSelected ? "#0c4a6e" : "#162033")}
-                    />
-                    <text
-                      x={point.x + labelWidth / 2 - 18.5}
-                      y={point.y + 25}
-                      textAnchor="middle"
-                      fill={healthTint ?? (isSelected ? "#7dd3fc" : "#94a3b8")}
-                      fontSize="9.5"
-                      fontWeight="600"
-                    >
-                      {pillBadgeText}
-                    </text>
+                          {/* Sleek Floating Pill Name Tag directly below the 3D Sculpture */}
+                          <rect
+                            data-studio-node-label
+                            x={point.x - labelWidth / 2}
+                            y={point.y + labelY}
+                            width={labelWidth}
+                            height={labelHeight}
+                            rx={activeStyleId === "blueprint" ? "4" : "12"}
+                            fill={pillBg}
+                            fillOpacity="0.97"
+                            stroke={pillStroke}
+                            strokeOpacity={isSelected || isStopped || isLight ? "1" : "0.85"}
+                            strokeWidth={isSelected || isStopped || activeStyleId === "pop" ? 1.8 : 1.1}
+                            style={
+                              isLight
+                                ? { filter: "drop-shadow(0 4px 10px rgba(15, 23, 42, 0.10))" }
+                                : isSelected && !healthColor
+                                  ? { filter: "drop-shadow(0 0 6px rgba(56, 189, 248, 0.35))" }
+                                  : undefined
+                            }
+                          />
+                          {/* Left Functional Component Icon Badge inside the Pill */}
+                          <rect
+                            x={point.x - labelWidth / 2 + 4}
+                            y={point.y + 14}
+                            width="16"
+                            height="16"
+                            rx={activeStyleId === "blueprint" ? "3" : "8"}
+                            fill={pillChipBg}
+                          />
+                          {renderNodeFunctionGlyph(
+                            name,
+                            archetype,
+                            point.x - labelWidth / 2 + 12,
+                            point.y + 22,
+                            pillIconColor,
+                          )}
+                          <text
+                            x={point.x - 4}
+                            y={point.y + 25.5}
+                            textAnchor="middle"
+                            fill={pillTextFill}
+                            fontFamily={styleCfg.nodeFontMono ? "monospace" : undefined}
+                            fontSize="11"
+                            fontWeight="700"
+                          >
+                            {displayName}
+                          </text>
+                          {/* Compact Replica Count Badge inside the right end of the Pill */}
+                          <rect
+                            x={point.x + labelWidth / 2 - 31}
+                            y={point.y + 14}
+                            width="25"
+                            height="16"
+                            rx={activeStyleId === "blueprint" ? "3" : "8"}
+                            fill={pillChipBg}
+                          />
+                          <text
+                            x={point.x + labelWidth / 2 - 18.5}
+                            y={point.y + 25}
+                            textAnchor="middle"
+                            fill={pillCountFill}
+                            fontSize="9.5"
+                            fontWeight="700"
+                          >
+                            {pillBadgeText}
+                          </text>
+                        </>
+                      );
+                    })()}
                     {renderConnectPort(name, point.x + 29 * scale, point.y + 8 - 18 * scale, isSelected || isDropTarget)}
                   </g>
                 );
@@ -2714,25 +2856,22 @@ export function StudioObservability({
                       !isStopped &&
                       !isPaused &&
                       (lastSvcAction?.action === "THROTTLE_CPU" || status === "Bottleneck");
-                    const stampLabel = isStopped
-                      ? "CRASHED"
-                      : isPaused
-                        ? "PAUSED"
-                        : isThrottled
-                          ? "THROTTLED"
-                          : isImpactedByOutage
-                            ? "IMPACTED"
-                            : null;
-                    const stampColor = isStopped
-                      ? "#e11d48"
-                      : isPaused || isThrottled
-                        ? "#d97706"
-                        : "#ea580c";
                     const replicasLabel = isStopped
-                      ? "0x"
+                      ? "0×"
                       : live
-                        ? `${live.runningReplicas}x`
-                        : "1x";
+                        ? `${live.runningReplicas}×`
+                        : "1×";
+                    const statePillText = isStopped
+                      ? activeStyleId === "blueprint" ? "[DOWN 0×]" : "DOWN 0×"
+                      : isPaused
+                        ? activeStyleId === "blueprint" ? "[PAUSED]" : "PAUSED"
+                        : isThrottled
+                          ? activeStyleId === "blueprint" ? "[SLOW]" : "SLOW"
+                          : isImpactedByOutage
+                            ? activeStyleId === "blueprint" ? "[IMPACTED]" : "IMPACTED"
+                            : activeStyleId === "blueprint"
+                              ? `[LIVE ${replicasLabel}]`
+                              : `LIVE ${replicasLabel}`;
                     const roleSubtitle =
                       archetype === "DATABASE"
                         ? "Database"
@@ -2741,132 +2880,232 @@ export function StudioObservability({
                           : archetype === "QUEUE"
                             ? "Message Broker"
                             : "Microservice";
-                    const cardW = Math.max(176, displayName.length * 7.8 + 64);
-                    const cardH = 62;
-                    const halfW = cardW / 2;
-                    const cardFill = isLight
-                      ? isStopped
-                        ? "#fff1f2"
-                        : isPaused || isThrottled || isImpactedByOutage
-                          ? "#fffbeb"
-                          : "#ffffff"
-                      : isStopped
-                        ? "#2a0913"
-                        : isPaused || isThrottled || isImpactedByOutage
-                          ? "#261b07"
-                          : "#111827";
-                    const cardStroke = isStopped
+                    const roleAccent =
+                      archetype === "DATABASE"
+                        ? "#10b981"
+                        : archetype === "GATEWAY"
+                          ? "#0ea5e9"
+                          : archetype === "QUEUE"
+                            ? "#8b5cf6"
+                            : "#2563eb";
+                    const stateAccent = isStopped
                       ? "#e11d48"
                       : isPaused || isThrottled || isImpactedByOutage
                         ? "#d97706"
-                        : isSelected || isDropTarget
-                          ? "#0056D2"
-                          : isLight
-                            ? "#1e293b"
-                            : "#334155";
+                        : roleAccent;
+                    const pillW = Math.max(54, statePillText.length * 6.2 + 12);
+                    const cardW = Math.max(204, displayName.length * 7.8 + pillW + 58);
+                    const cardH = 68;
+                    const halfW = cardW / 2;
+                    const popRoleFill = isStopped
+                      ? "#ffe4e6"
+                      : isPaused || isThrottled || isImpactedByOutage
+                        ? "#fef3c7"
+                        : archetype === "DATABASE"
+                          ? "#dcfce7"
+                          : archetype === "GATEWAY"
+                            ? "#e0f2fe"
+                            : archetype === "QUEUE"
+                              ? "#f3e8ff"
+                              : "#eff6ff";
+                    const cardFill =
+                      activeStyleId === "pop"
+                        ? popRoleFill
+                        : isLight
+                          ? isStopped
+                            ? "#fff5f6"
+                            : isPaused || isThrottled || isImpactedByOutage
+                              ? "#fffcf0"
+                              : activeStyleId === "blueprint"
+                                ? "#fafdff"
+                                : "#ffffff"
+                          : isStopped
+                            ? "#240a14"
+                            : isPaused || isThrottled || isImpactedByOutage
+                              ? "#241908"
+                              : "#0f172a";
+                    const cardStroke =
+                      activeStyleId === "pop"
+                        ? isStopped
+                          ? "#e11d48"
+                          : isSelected || isDropTarget
+                            ? "#0056D2"
+                            : "#0f172a"
+                        : isStopped
+                          ? "#e11d48"
+                          : isPaused || isThrottled || isImpactedByOutage
+                            ? "#d97706"
+                            : isSelected || isDropTarget
+                              ? "#0056D2"
+                              : activeStyleId === "blueprint"
+                                ? "#3b82f6"
+                                : isLight
+                                  ? "#cbd5e1"
+                                  : "#334155";
                     const titleFill = isLight ? "#0f172a" : "#f8fafc";
                     const subFill = isLight ? "#475569" : "#94a3b8";
                     const iconBg = isStopped
                       ? isLight ? "#ffe4e6" : "#4c0519"
-                      : archetype === "DATABASE"
-                        ? isLight ? "#dcfce7" : "#064e3b"
-                        : archetype === "GATEWAY"
-                          ? isLight ? "#e0f2fe" : "#0c4a6e"
-                          : archetype === "QUEUE"
-                            ? isLight ? "#f3e8ff" : "#3b0764"
-                            : isLight ? "#eff6ff" : "#1e3a8a";
-                    const iconInk = isStopped
-                      ? "#e11d48"
-                      : archetype === "DATABASE"
-                        ? "#059669"
-                        : archetype === "GATEWAY"
-                          ? "#0284c7"
-                          : archetype === "QUEUE"
-                            ? "#7c3aed"
-                            : "#0056D2";
+                      : isPaused || isThrottled || isImpactedByOutage
+                        ? isLight ? "#fef3c7" : "#451a03"
+                        : archetype === "DATABASE"
+                          ? isLight ? "#d1fae5" : "#064e3b"
+                          : archetype === "GATEWAY"
+                            ? isLight ? "#e0f2fe" : "#0c4a6e"
+                            : archetype === "QUEUE"
+                              ? isLight ? "#ede9fe" : "#3b0764"
+                              : isLight ? "#dbeafe" : "#1e3a8a";
+                    const pillBg = isStopped
+                      ? isLight ? "#ffe4e6" : "#4c0519"
+                      : isPaused || isThrottled || isImpactedByOutage
+                        ? isLight ? "#fef3c7" : "#451a03"
+                        : isLight ? "#ecfdf5" : "#064e3b";
+                    const pillInk = isStopped
+                      ? isLight ? "#be123c" : "#fda4af"
+                      : isPaused || isThrottled || isImpactedByOutage
+                        ? isLight ? "#b45309" : "#fcd34d"
+                        : isLight ? "#047857" : "#6ee7b7";
                     const barColor = isStopped
                       ? "#e11d48"
                       : isPaused || isThrottled || isImpactedByOutage
                         ? "#f59e0b"
                         : "#10b981";
-                    const barRatio = isStopped ? 1 : isPaused || isThrottled ? 0.85 : isImpactedByOutage ? 0.72 : 0.35;
+                    const barRatio = isStopped ? 1 : isPaused || isThrottled ? 0.85 : isImpactedByOutage ? 0.72 : 0.38;
+                    const r = styleCfg.nodeRadius;
 
                     return (
                       <g transform={`translate(${point.x}, ${point.y})`}>
+                        {/* Tactile Pop Hard Offset Shadow */}
+                        {styleCfg.nodeHardShadowColor && archetype !== "DATABASE" && (
+                          <rect
+                            x={-halfW + 4}
+                            y={-cardH / 2 + 4}
+                            width={cardW}
+                            height={cardH}
+                            rx={r}
+                            fill={isStopped ? "#e11d48" : styleCfg.nodeHardShadowColor}
+                          />
+                        )}
+
                         {archetype === "DATABASE" ? (
-                          <g style={{ filter: isSelected ? "drop-shadow(0 0 8px rgba(0,86,210,0.35))" : "drop-shadow(0 2px 6px rgba(15,23,42,0.08))" }}>
+                          <g style={{ filter: isSelected ? "drop-shadow(0 0 10px rgba(0,86,210,0.32))" : styleCfg.nodeShadow }}>
                             <path
-                              d={`M ${-halfW} ${-cardH / 2 + 10} L ${-halfW} ${cardH / 2 - 8} A ${halfW} 10 0 0 0 ${halfW} ${cardH / 2 - 8} L ${halfW} ${-cardH / 2 + 10} Z`}
+                              d={`M ${-halfW} ${-cardH / 2 + 11} L ${-halfW} ${cardH / 2 - 8} A ${halfW} 10 0 0 0 ${halfW} ${cardH / 2 - 8} L ${halfW} ${-cardH / 2 + 11} Z`}
                               fill={cardFill}
                               stroke={cardStroke}
-                              strokeWidth={isSelected || isStopped ? 2.2 : 1.5}
+                              strokeWidth={isSelected || isStopped ? 2.2 : styleCfg.nodeStrokeWidth}
                             />
                             <ellipse
                               cx="0"
-                              cy={-cardH / 2 + 10}
+                              cy={-cardH / 2 + 11}
                               rx={halfW}
                               ry="10"
-                              fill={isStopped ? (isLight ? "#fecdd3" : "#4c0519") : (isLight ? "#dcfce7" : "#064e3b")}
+                              fill={isStopped ? (isLight ? "#fecdd3" : "#4c0519") : (isLight ? "#a7f3d0" : "#065f46")}
                               stroke={cardStroke}
-                              strokeWidth={isSelected || isStopped ? 2.2 : 1.5}
+                              strokeWidth={isSelected || isStopped ? 2.2 : styleCfg.nodeStrokeWidth}
                             />
                           </g>
                         ) : (
-                          <rect
-                            data-studio-node-label
-                            x={-halfW}
-                            y={-cardH / 2}
-                            width={cardW}
-                            height={cardH}
-                            rx="12"
-                            fill={cardFill}
-                            stroke={cardStroke}
-                            strokeWidth={isSelected || isStopped ? 2.2 : 1.5}
-                            style={{
-                              filter: isSelected
-                                ? "drop-shadow(0 0 8px rgba(0,86,210,0.32))"
-                                : "drop-shadow(0 2px 6px rgba(15,23,42,0.08))",
-                            }}
-                          />
+                          <g style={{ filter: isSelected ? "drop-shadow(0 0 12px rgba(0,86,210,0.32))" : styleCfg.nodeShadow }}>
+                            <rect
+                              data-studio-node-label
+                              x={-halfW}
+                              y={-cardH / 2}
+                              width={cardW}
+                              height={cardH}
+                              rx={r}
+                              fill={cardFill}
+                              stroke={cardStroke}
+                              strokeWidth={isSelected || isStopped ? 2.2 : styleCfg.nodeStrokeWidth}
+                            />
+                            {/* Daylight Cloud & Control Glass vibrant color-coded top accent strip */}
+                            {styleCfg.nodeTopStrip && (
+                              <path
+                                d={`M ${-halfW + r} ${-cardH / 2} L ${halfW - r} ${-cardH / 2} A ${r} ${r} 0 0 1 ${halfW} ${-cardH / 2 + 5} L ${-halfW} ${-cardH / 2 + 5} A ${r} ${r} 0 0 1 ${-halfW + r} ${-cardH / 2} Z`}
+                                fill={stateAccent}
+                                opacity={isLight ? "0.92" : "0.85"}
+                              />
+                            )}
+                            {/* Architect Blueprint CAD 4-corner bracket ticks */}
+                            {styleCfg.nodeCornerTicks && (
+                              <g stroke={isStopped ? "#e11d48" : "#1d4ed8"} strokeWidth="2" fill="none">
+                                <path d={`M ${-halfW - 3} ${-cardH / 2 + 7} V ${-cardH / 2 - 3} H ${-halfW + 7}`} />
+                                <path d={`M ${halfW - 7} ${-cardH / 2 - 3} H ${halfW + 3} V ${-cardH / 2 + 7}`} />
+                                <path d={`M ${-halfW - 3} ${cardH / 2 - 7} V ${cardH / 2 + 3} H ${-halfW + 7}`} />
+                                <path d={`M ${halfW - 7} ${cardH / 2 + 3} H ${halfW + 3} V ${cardH / 2 - 7}`} />
+                              </g>
+                            )}
+                          </g>
                         )}
-                        {/* Component icon chip */}
+
+                        {/* Component Icon Chip */}
                         <rect
-                          x={-halfW + 10}
-                          y={archetype === "DATABASE" ? -8 : -16}
-                          width="28"
-                          height="28"
-                          rx="8"
+                          x={-halfW + 12}
+                          y={archetype === "DATABASE" ? -6 : -14}
+                          width="30"
+                          height="30"
+                          rx={activeStyleId === "blueprint" ? "4" : "9"}
                           fill={iconBg}
                         />
                         {renderNodeFunctionGlyph(
                           name,
                           archetype,
-                          -halfW + 24,
-                          archetype === "DATABASE" ? 6 : -2,
-                          iconInk,
+                          -halfW + 27,
+                          archetype === "DATABASE" ? 9 : 1,
+                          stateAccent,
                         )}
-                        {/* Service Name + Subtitle */}
+
+                        {/* Service Title + Role Subtitle */}
                         <text
-                          x={-halfW + 46}
-                          y={archetype === "DATABASE" ? 2 : -4}
+                          x={-halfW + 50}
+                          y={archetype === "DATABASE" ? 3 : -2}
                           textAnchor="start"
                           fill={titleFill}
+                          fontFamily={styleCfg.nodeFontMono ? "monospace" : undefined}
                           fontSize="12.5"
                           fontWeight="700"
                         >
                           {displayName}
                         </text>
                         <text
-                          x={-halfW + 46}
-                          y={archetype === "DATABASE" ? 16 : 11}
+                          x={-halfW + 50}
+                          y={archetype === "DATABASE" ? 17 : 13}
                           textAnchor="start"
                           fill={subFill}
-                          fontSize="10.5"
-                          fontWeight="500"
+                          fontFamily={styleCfg.nodeFontMono ? "monospace" : undefined}
+                          fontSize="10"
+                          fontWeight="600"
                         >
-                          {replicasLabel} · {roleSubtitle}
+                          {roleSubtitle}
                         </text>
-                        {/* Live mini health/load bar along bottom edge (GonnaCrash signature) */}
+
+                        {/* Integrated Status Pill inside top-right of card (original MAVIS Cloud Architecture badge) */}
+                        <g transform={`translate(${halfW - pillW - 10}, ${archetype === "DATABASE" ? -8 : -16})`}>
+                          <rect
+                            x="0"
+                            y="0"
+                            width={pillW}
+                            height="18"
+                            rx={activeStyleId === "blueprint" ? "3" : "9"}
+                            fill={pillBg}
+                            stroke={activeStyleId === "pop" ? "#0f172a" : stateAccent}
+                            strokeOpacity={activeStyleId === "pop" ? "0.9" : "0.4"}
+                            strokeWidth={activeStyleId === "pop" ? "1.3" : "1"}
+                          />
+                          <text
+                            x={pillW / 2}
+                            y="12"
+                            textAnchor="middle"
+                            fill={pillInk}
+                            fontFamily="monospace"
+                            fontSize="9"
+                            fontWeight="800"
+                          >
+                            {statePillText}
+                          </text>
+                        </g>
+
+                        {/* Bottom Live Health Meter */}
                         <rect
                           x={-halfW + 12}
                           y={cardH / 2 - 9}
@@ -2883,37 +3122,10 @@ export function StudioObservability({
                           rx="2"
                           fill={barColor}
                         />
-                        {/* Tilted GonnaCrash CRASHED / PAUSED / THROTTLED / IMPACTED Stamp (top-right, clear of incoming left edges) */}
-                        {stampLabel && (
-                          <g transform={`translate(${halfW - (stampLabel.length * 7.2 + 12) + 4}, ${-cardH / 2 - 5}) rotate(6)`}>
-                            <rect
-                              x="-2"
-                              y="-11"
-                              width={stampLabel.length * 7.2 + 12}
-                              height="17"
-                              rx="4"
-                              fill={isLight ? "#ffffff" : "#0f172a"}
-                              stroke={stampColor}
-                              strokeWidth="1.6"
-                            />
-                            <text
-                              x={(stampLabel.length * 7.2 + 10) / 2 - 1}
-                              y="1"
-                              textAnchor="middle"
-                              fill={stampColor}
-                              fontFamily="monospace"
-                              fontSize="9.5"
-                              fontWeight="800"
-                              letterSpacing="0.5"
-                            >
-                              {stampLabel}
-                            </text>
-                          </g>
-                        )}
                       </g>
                     );
                   })()}
-                  {renderConnectPort(name, point.x + 88, point.y, isSelected || isDropTarget)}
+                  {renderConnectPort(name, point.x + 102, point.y, isSelected || isDropTarget)}
                 </g>
               );
             })}

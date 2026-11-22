@@ -27,6 +27,7 @@ export function StudioExercisePanel({
   submittingPrediction,
   onLockPrediction,
   onRunPrescribedChange,
+  isLight = false,
 }: {
   data: Studio;
   services: readonly string[];
@@ -40,6 +41,7 @@ export function StudioExercisePanel({
     cpuPercent?: number,
     targetRps?: number,
   ) => Promise<void> | void;
+  isLight?: boolean | undefined;
 }) {
   const [selectedPredicted, setSelectedPredicted] = useState<string[]>([]);
   const [rationale, setRationale] = useState("");
@@ -88,19 +90,31 @@ export function StudioExercisePanel({
   return (
     <section
       aria-label="Change Impact & Auto-Grade"
-      className="space-y-2.5 rounded-lg border border-indigo-500/30 bg-slate-900/75 p-2.5 text-xs"
+      className={`space-y-2.5 rounded-xl border p-3 text-xs ${
+        isLight
+          ? "border-indigo-200 bg-indigo-50/55 text-slate-900"
+          : "border-indigo-500/30 bg-slate-900/75 text-slate-100"
+      }`}
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="inline-flex items-center gap-1.5 font-semibold text-indigo-200">
-          <Target className="size-3.5 text-indigo-400" aria-hidden="true" />
+        <span
+          className={`inline-flex items-center gap-1.5 font-semibold ${
+            isLight ? "text-indigo-900" : "text-indigo-200"
+          }`}
+        >
+          <Target className={`size-3.5 ${isLight ? "text-indigo-600" : "text-indigo-400"}`} aria-hidden="true" />
           Change Impact &amp; Auto-Grade
         </span>
         {evaluation && evaluation.totalRules > 0 && (
           <span
             className={`rounded-full border px-2 py-0.5 font-mono text-[10px] font-semibold ${
               evaluation.passed
-                ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
-                : "border-amber-500/40 bg-amber-500/15 text-amber-200"
+                ? isLight
+                  ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                  : "border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
+                : isLight
+                  ? "border-amber-300 bg-amber-50 text-amber-800"
+                  : "border-amber-500/40 bg-amber-500/15 text-amber-200"
             }`}
           >
             {evaluation.autoScorePercent}% ({evaluation.passedRules}/{evaluation.totalRules})
@@ -110,14 +124,24 @@ export function StudioExercisePanel({
 
       {/* Step 1: Student Change Impact Prediction */}
       {predictionLocked ? (
-        <div className="space-y-1.5 rounded-md border border-indigo-500/25 bg-indigo-950/30 p-2">
-          <div className="flex items-center justify-between gap-2 text-[10.5px]">
-            <span className="inline-flex items-center gap-1 font-semibold text-indigo-200">
-              <Lock className="size-3 text-indigo-400" aria-hidden="true" />
+        <div
+          className={`space-y-1.5 rounded-lg border p-2.5 ${
+            isLight
+              ? "border-indigo-200 bg-white"
+              : "border-indigo-500/25 bg-indigo-950/30"
+          }`}
+        >
+          <div className="flex items-center justify-between gap-2 text-[11px]">
+            <span
+              className={`inline-flex items-center gap-1 font-semibold ${
+                isLight ? "text-indigo-800" : "text-indigo-200"
+              }`}
+            >
+              <Lock className={`size-3 ${isLight ? "text-indigo-600" : "text-indigo-400"}`} aria-hidden="true" />
               Prediction locked
             </span>
             {evaluation?.impact && (
-              <span className="font-mono font-semibold text-emerald-300">
+              <span className={`font-mono font-bold ${isLight ? "text-emerald-700" : "text-emerald-300"}`}>
                 F1 {(evaluation.impact.f1Score * 100).toFixed(0)}%
               </span>
             )}
@@ -129,12 +153,18 @@ export function StudioExercisePanel({
               return (
                 <span
                   key={svc}
-                  className={`rounded border px-1.5 py-0.5 font-mono text-[10px] ${
+                  className={`rounded border px-1.5 py-0.5 font-mono text-[10.5px] font-medium ${
                     tp
-                      ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-200"
+                      ? isLight
+                        ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                        : "border-emerald-500/40 bg-emerald-500/15 text-emerald-200"
                       : fp
-                        ? "border-amber-500/40 bg-amber-500/15 text-amber-200"
-                        : "border-indigo-500/40 bg-indigo-500/15 text-indigo-200"
+                        ? isLight
+                          ? "border-amber-300 bg-amber-50 text-amber-800"
+                          : "border-amber-500/40 bg-amber-500/15 text-amber-200"
+                        : isLight
+                          ? "border-indigo-200 bg-indigo-50 text-indigo-800"
+                          : "border-indigo-500/40 bg-indigo-500/15 text-indigo-200"
                   }`}
                 >
                   {svc}
@@ -145,14 +175,22 @@ export function StudioExercisePanel({
             {evaluation?.impact?.falseNegatives.map((svc) => (
               <span
                 key={`fn-${svc}`}
-                className="rounded border border-rose-500/40 bg-rose-500/15 px-1.5 py-0.5 font-mono text-[10px] text-rose-200"
+                className={`rounded border px-1.5 py-0.5 font-mono text-[10.5px] font-medium ${
+                  isLight
+                    ? "border-rose-300 bg-rose-50 text-rose-700"
+                    : "border-rose-500/40 bg-rose-500/15 text-rose-200"
+                }`}
               >
                 {svc} (Missed)
               </span>
             ))}
           </div>
           {evaluation?.impact && (
-            <div className="grid grid-cols-3 gap-1 pt-0.5 font-mono text-[10px] text-slate-300">
+            <div
+              className={`grid grid-cols-3 gap-1 pt-0.5 font-mono text-[10.5px] font-semibold ${
+                isLight ? "text-slate-700" : "text-slate-300"
+              }`}
+            >
               <span>P: {(evaluation.impact.precision * 100).toFixed(0)}%</span>
               <span>R: {(evaluation.impact.recall * 100).toFixed(0)}%</span>
               <span>F1: {(evaluation.impact.f1Score * 100).toFixed(0)}%</span>
@@ -160,8 +198,14 @@ export function StudioExercisePanel({
           )}
         </div>
       ) : (
-        <div className="space-y-1.5 rounded-md border border-slate-800 bg-slate-950/60 p-2">
-          <p className="text-[10.5px] text-slate-300">
+        <div
+          className={`space-y-1.5 rounded-lg border p-2.5 ${
+            isLight
+              ? "border-slate-200 bg-white"
+              : "border-slate-800 bg-slate-950/60"
+          }`}
+        >
+          <p className={`text-[11px] ${isLight ? "text-slate-600" : "text-slate-300"}`}>
             {hasConfirmedAction
               ? "A change was already applied before locking a prediction."
               : "1. Predict which services will degrade before applying a fault/change:"}
@@ -177,10 +221,14 @@ export function StudioExercisePanel({
                       type="button"
                       aria-pressed={active}
                       onClick={() => toggleService(svc)}
-                      className={`rounded border px-1.5 py-0.5 font-mono text-[10.5px] transition-colors ${
+                      className={`rounded border px-1.5 py-0.5 font-mono text-[10.5px] font-medium transition-colors ${
                         active
-                          ? "border-indigo-400 bg-indigo-500/25 text-indigo-100"
-                          : "border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500"
+                          ? isLight
+                            ? "border-indigo-500 bg-indigo-50 text-indigo-800"
+                            : "border-indigo-400 bg-indigo-500/25 text-indigo-100"
+                          : isLight
+                            ? "border-slate-300 bg-slate-50 text-slate-700 hover:border-slate-400"
+                            : "border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500"
                       }`}
                     >
                       {svc}
@@ -192,7 +240,11 @@ export function StudioExercisePanel({
                 value={rationale}
                 onChange={(e) => setRationale(e.target.value)}
                 placeholder="Short hypothesis (optional)…"
-                className="h-7 border-slate-800 bg-slate-900 text-[11px] text-slate-100"
+                className={`h-7 text-[11px] ${
+                  isLight
+                    ? "border-slate-300 bg-white text-slate-900"
+                    : "border-slate-800 bg-slate-900 text-slate-100"
+                }`}
               />
               <Button
                 type="button"
@@ -217,7 +269,11 @@ export function StudioExercisePanel({
           variant="outline"
           disabled={busy || (predictionRequired && !predictionLocked)}
           onClick={runPrescribed}
-          className="h-7 w-full border-amber-500/40 bg-amber-500/10 font-mono text-[11px] text-amber-200 hover:bg-amber-500/20"
+          className={`h-7 w-full font-mono text-[11px] ${
+            isLight
+              ? "border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"
+              : "border-amber-500/40 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20"
+          }`}
         >
           <Play className="mr-1 size-3" aria-hidden="true" />
           Apply {prescribed.action} on {prescribed.service}
@@ -229,27 +285,42 @@ export function StudioExercisePanel({
 
       {/* Step 3: Live C3 Declarative Pass Criteria Checklist */}
       {evaluation && evaluation.rules.length > 0 && (
-        <div className="space-y-1 border-t border-slate-800 pt-2">
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+        <div className={`space-y-1 border-t pt-2 ${isLight ? "border-indigo-200" : "border-slate-800"}`}>
+          <div
+            className={`text-[10px] font-semibold uppercase tracking-wide ${
+              isLight ? "text-slate-600" : "text-slate-400"
+            }`}
+          >
             Pass Criteria ({evaluation.passedRules}/{evaluation.totalRules})
           </div>
           <ul className="space-y-1">
             {evaluation.rules.map((rule) => (
               <li
                 key={rule.id}
-                className="flex items-start gap-1.5 rounded border border-slate-800/80 bg-slate-950/60 px-2 py-1"
+                className={`flex items-start gap-1.5 rounded border px-2 py-1 ${
+                  isLight
+                    ? "border-slate-200 bg-white"
+                    : "border-slate-800/80 bg-slate-950/60"
+                }`}
               >
                 {rule.passed ? (
                   <CheckCircle2
-                    className="mt-0.5 size-3 shrink-0 text-emerald-400"
+                    className={`mt-0.5 size-3 shrink-0 ${isLight ? "text-emerald-600" : "text-emerald-400"}`}
                     aria-hidden="true"
                   />
                 ) : (
-                  <XCircle className="mt-0.5 size-3 shrink-0 text-rose-400" aria-hidden="true" />
+                  <XCircle
+                    className={`mt-0.5 size-3 shrink-0 ${isLight ? "text-rose-600" : "text-rose-400"}`}
+                    aria-hidden="true"
+                  />
                 )}
                 <div className="min-w-0 flex-1">
-                  <div className="truncate font-medium text-slate-200">{rule.label}</div>
-                  <div className="truncate font-mono text-[10px] text-slate-400">{rule.reason}</div>
+                  <div className={`truncate font-medium ${isLight ? "text-slate-900" : "text-slate-200"}`}>
+                    {rule.label}
+                  </div>
+                  <div className={`truncate font-mono text-[10px] ${isLight ? "text-slate-600" : "text-slate-400"}`}>
+                    {rule.reason}
+                  </div>
                 </div>
               </li>
             ))}
