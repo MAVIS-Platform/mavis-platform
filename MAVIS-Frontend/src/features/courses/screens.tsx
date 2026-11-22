@@ -6,12 +6,14 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowRight,
   ArrowUpRight,
+  Bot,
   BookOpen,
   Check,
   Clock3,
   Code2,
   Download,
   Network,
+  SendHorizontal,
   ShieldCheck,
 } from "lucide-react";
 import { MarkdownPreview } from "@/components/shared/markdown-preview";
@@ -57,7 +59,6 @@ import { Input } from "@/components/ui/input";
 import {
   ArchitectureGraph,
   ElementDetailsPanel,
-  type InspectorTab,
 } from "@/features/architecture/components";
 import { ArchitectureDiagrams } from "@/features/architecture/architecture-diagrams";
 import { DiagramPreview } from "@/features/architecture/diagram-preview";
@@ -1404,7 +1405,6 @@ function StepContent({
   const { t, locale } = useLocale();
   const client = useApi();
   const [selectedGraphId, setSelectedGraphId] = useState<string | null>(null);
-  const [inspectorTab, setInspectorTab] = useState<InspectorTab>("overview");
   const [tutorInput, setTutorInput] = useState("");
   const [tutorLoading, setTutorLoading] = useState(false);
   const [tutorHistory, setTutorHistory] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
@@ -1531,19 +1531,6 @@ function StepContent({
       : null);
   const selectedTutorElement =
     activeModel?.elements.find((el) => el.id === selectedGraphId) ?? activeModel?.elements[0];
-  const openSelectedContextInTutor = () => {
-    const subjectName =
-      selectedArchitectureLabel ?? selectedTutorElement?.name ?? "this architecture";
-    const promptText = t(
-      `Explain the static dependencies, contracts, and source evidence of ${subjectName}.`,
-      `Giải thích phụ thuộc tĩnh, hợp đồng kết nối và bằng chứng mã nguồn của ${subjectName}.`,
-    );
-    setInspectorTab("ai");
-    setTutorInput(promptText);
-    void askAiTutor(promptText);
-    document.getElementById("lab-ai-tutor")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  };
-
   const askAiTutor = async (rawQuestion: string) => {
     const q = rawQuestion.trim();
     if (!q || tutorLoading) return;
@@ -1656,22 +1643,24 @@ function StepContent({
     }
   };
 
-  const tutorPanelNode = (
-    <div id="lab-ai-tutor" className="scroll-mt-36">
-      <div className="space-y-3">
-        <div className="space-y-1">
-          <p className="text-xs font-semibold text-foreground">
-            {t("AI Architecture Tutor", "Trợ lý AI Kiến trúc SWD")}
-          </p>
-          <p className="text-xs leading-5 text-muted-foreground">
-            {t(
-              "Ask questions grounded in the selected C1–C3 component, relationships, and source code.",
-              "Đặt câu hỏi dựa trên thành phần C1–C3 đang chọn, các quan hệ và bằng chứng mã nguồn.",
-            )}
-          </p>
+  const tutorAssistantPanel = (
+    <section id="lab-ai-tutor" className="scroll-mt-36 rounded-2xl border bg-card p-4 sm:p-5">
+      <header className="flex items-center gap-3 border-b pb-4">
+        <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+          <Bot className="size-4" aria-hidden="true" />
+        </span>
+        <div>
+          <h3 className="text-sm font-semibold">{t("MAVIS AI Assistant", "Trợ lý MAVIS AI")}</h3>
+          <p className="text-xs text-muted-foreground">{t("Architecture Tutor", "Trợ lý kiến trúc")}</p>
         </div>
+      </header>
+      <div className="mt-4 rounded-xl bg-primary/5 px-3 py-3">
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-primary">{t("Current context", "Ngữ cảnh hiện tại")}</p>
+        <p className="mt-1 text-sm font-medium">{selectedArchitectureLabel ?? selectedTutorElement?.name ?? t("Architecture overview", "Tổng quan kiến trúc")}</p>
+      </div>
+      <div className="mt-4 space-y-3">
         <form
-          className="flex flex-col gap-2"
+          className="flex items-center gap-2"
           onSubmit={(event) => {
             event.preventDefault();
             void askAiTutor(tutorInput);
@@ -1681,7 +1670,7 @@ function StepContent({
             value={tutorInput}
             onChange={(event) => setTutorInput(event.target.value)}
             disabled={tutorLoading}
-            className="text-xs"
+            className="h-10 rounded-full text-xs"
             aria-label={t(
               "Ask the AI Architecture Tutor",
               "Đặt câu hỏi cho Trợ lý AI Kiến trúc",
@@ -1691,8 +1680,8 @@ function StepContent({
               `Hỏi về phụ thuộc, vai trò hoặc mã nguồn của ${selectedArchitectureLabel ?? selectedTutorElement?.name ?? "dịch vụ này"}…`,
             )}
           />
-          <Button type="submit" size="sm" disabled={tutorLoading || !tutorInput.trim()}>
-            {tutorLoading ? t("Analyzing…", "Đang phân tích…") : t("Ask AI", "Hỏi AI")}
+          <Button type="submit" size="icon" className="size-10 shrink-0 rounded-full" disabled={tutorLoading || !tutorInput.trim()} aria-label={t("Send question", "Gửi câu hỏi")}>
+            <SendHorizontal className="size-4" aria-hidden="true" />
           </Button>
         </form>
         <div className="flex flex-wrap gap-1.5">
@@ -1748,16 +1737,9 @@ function StepContent({
             </div>
           ) : (
             <div className="space-y-2 rounded-xl border border-teal-200 bg-teal-50/60 p-3 text-xs dark:border-teal-800 dark:bg-teal-950/20">
-              <div className="flex flex-wrap items-center justify-between gap-1.5">
-                <p className="font-semibold text-teal-950 dark:text-teal-200">
-                  {t("Evidence-Grounded Answer", "Giải thích đối chiếu Bằng chứng")}
-                </p>
-                {tutorReply.provider && (
-                  <Badge variant="outline" className="font-mono text-[10px] uppercase">
-                    {tutorReply.provider}
-                  </Badge>
-                )}
-              </div>
+              <p className="flex items-center gap-1.5 font-semibold text-teal-950 dark:text-teal-200">
+                <Bot className="size-4" aria-hidden="true" /> MAVIS AI
+              </p>
               <p className="whitespace-pre-wrap leading-5 text-foreground/90">
                 {tutorReply.answer}
               </p>
@@ -1770,7 +1752,7 @@ function StepContent({
             </div>
           ))}
       </div>
-    </div>
+    </section>
   );
 
   const openPhaseIssue = (issue: LabPhaseIssueKind) => {
@@ -2068,10 +2050,6 @@ function StepContent({
                           model={activeModel}
                           selectedId={selectedGraphId}
                           onSelect={setSelectedGraphId}
-                          activeTab={inspectorTab}
-                          onTabChange={setInspectorTab}
-                          onExplainWithAi={openSelectedContextInTutor}
-                          aiPanel={tutorPanelNode}
                         />
                       </aside>
                     </div>
@@ -2084,7 +2062,7 @@ function StepContent({
                         style="clean"
                       />
                       <DetailPanel title={t("AI Architecture Tutor", "Trợ lý AI Kiến trúc SWD")}>
-                        {tutorPanelNode}
+                        {tutorAssistantPanel}
                       </DetailPanel>
                     </div>
                   ) : studentContextLoading || fallbackModelQuery.isPending ? (
@@ -2093,7 +2071,7 @@ function StepContent({
                         {t("Loading architecture diagram…", "Đang tải sơ đồ kiến trúc…")}
                       </p>
                       <DetailPanel title={t("AI Architecture Tutor", "Trợ lý AI Kiến trúc SWD")}>
-                        {tutorPanelNode}
+                        {tutorAssistantPanel}
                       </DetailPanel>
                     </div>
                   ) : (
@@ -2105,7 +2083,7 @@ function StepContent({
                         )}
                       </p>
                       <DetailPanel title={t("AI Architecture Tutor", "Trợ lý AI Kiến trúc SWD")}>
-                        {tutorPanelNode}
+                        {tutorAssistantPanel}
                       </DetailPanel>
                     </div>
                   )
@@ -2123,10 +2101,6 @@ function StepContent({
                         model={activeModel}
                         selectedId={selectedGraphId}
                         onSelect={setSelectedGraphId}
-                        activeTab={inspectorTab}
-                        onTabChange={setInspectorTab}
-                        onExplainWithAi={openSelectedContextInTutor}
-                        aiPanel={tutorPanelNode}
                       />
                     </aside>
                   </div>
@@ -2135,6 +2109,7 @@ function StepContent({
                     {t("Loading architectural model…", "Đang tải mô hình kiến trúc…")}
                   </p>
                 )}
+                {activeModel && tutorAssistantPanel}
               </section>
 
               <details id="lab-static-impact" className="group rounded-xl border bg-card">
