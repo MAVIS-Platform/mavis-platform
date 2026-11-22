@@ -102,7 +102,7 @@ public class AdminRuntimeController {
  @GetMapping({"/profiles","/runner-profiles"}) public ApiResponse<?> profiles(){policy.requireSystemAdmin();return ApiResponse.success(settings.profiles());}
  @PatchMapping({"/profiles/{id}","/runner-profiles/{id}"}) public ApiResponse<?> profile(@PathVariable String id,@Valid @RequestBody ProfileUpdate r){policy.requireSystemAdmin();return ApiResponse.success(settings.updateProfile(id,r.enabled(),r.expectedRevision(),r.memoryMiB(),r.cpus(),r.timeoutSeconds(),n->record("CONFIGURE_RUNNER_PROFILE","RUNNER_PROFILE",id,Map.of("enabled",n.enabled(),"revision",n.revision(),"memoryMiB",n.memoryMiB(),"cpus",n.cpus(),"timeoutSeconds",n.timeoutSeconds()))));}
  private void record(String action,String type,String id,Map<String,Object> values){var details=new HashMap<>(values);details.put("configurationId",id);details.put("persistence","PROCESS_LOCAL");audit.recordAuditLog(action,type,UUID.nameUUIDFromBytes((type+":"+id).getBytes(StandardCharsets.UTF_8)),details);}
- @GetMapping("/runtime-sessions") @Transactional(readOnly=true) public ApiResponse<?> sessions(){policy.requireSystemAdmin();return ApiResponse.success(sessions.findAll(PageRequest.of(0,50,Sort.by(Sort.Direction.DESC,"createdAt"))).stream().map(RuntimeSessionResponseDTO::fromEntity).toList());}
+ @GetMapping("/runtime-sessions") @Transactional(readOnly=true) public ApiResponse<?> sessions(){policy.requireSystemAdmin();return ApiResponse.success(sessions.findTop50ByOrderByCreatedAtDesc().stream().map(RuntimeSessionResponseDTO::fromEntity).toList());}
  @PostMapping("/runtime-sessions/{sessionId}/force-stop") @Transactional
  public ApiResponse<?> forceStopSession(@PathVariable UUID sessionId) {
   policy.requireSystemAdmin();

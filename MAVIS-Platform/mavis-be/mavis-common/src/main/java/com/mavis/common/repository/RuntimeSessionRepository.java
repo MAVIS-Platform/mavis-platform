@@ -56,6 +56,9 @@ public interface RuntimeSessionRepository extends JpaRepository<RuntimeSession, 
     @EntityGraph(attributePaths = {"project", "sourceSnapshot", "triggeredBy", "assignment"})
     List<RuntimeSession> findByProject_Workspace_IdAndTriggeredBy_IdOrderByCreatedAtDesc(UUID workspaceId, UUID triggeredById);
 
+    @EntityGraph(attributePaths = {"project", "sourceSnapshot", "triggeredBy", "assignment", "modelVersion"})
+    List<RuntimeSession> findTop50ByOrderByCreatedAtDesc();
+
     List<RuntimeSession> findBySourceSnapshotId(UUID sourceSnapshotId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)

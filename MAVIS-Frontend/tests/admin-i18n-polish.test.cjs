@@ -361,3 +361,8 @@ test("Task #11 Final Polish: NOT_APPLICABLE Cleanup translates cleanly in EN/VI 
   assert.match(pageLayout, /isLast\s*\?\s*"flex min-w-24 flex-1"/);
   assert.match(appShell, /hidden h-8 max-w-40[\s\S]*lg:inline-flex/);
 });
+
+test("Task #12 Admin Runtime Sessions Timeout: backend-adapter grants runtimeReadSessions 60s budget", () => {
+  const backendAdapter = read("src/lib/api/backend-adapter.ts");
+  assert.match(backendAdapter, /"contextCandidates",\s*"runtimeReadSessions",\s*\]\.includes\(operation\)\s*\?\s*60000/);
+});

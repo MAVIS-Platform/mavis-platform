@@ -48,6 +48,7 @@ export class BackendAdapter implements ApiAdapter {
                 "model",
                 "reviewContext",
                 "contextCandidates",
+                "runtimeReadSessions",
               ].includes(operation)
             ? 60000
             : 20000,

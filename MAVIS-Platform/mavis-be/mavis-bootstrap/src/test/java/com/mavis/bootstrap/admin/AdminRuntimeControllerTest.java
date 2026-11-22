@@ -2,8 +2,10 @@ package com.mavis.bootstrap.admin;
 
 import com.mavis.analyzer.aiexplain.config.ApiKeyProvider;
 import com.mavis.analyzer.orchestrator.dto.JobResponseDTO;
+import com.mavis.analyzer.runtime.dto.RuntimeSessionResponseDTO;
 import com.mavis.analyzer.runtime.service.RuntimeSessionService;
 import com.mavis.common.config.PlatformRuntimeSettings;
+import com.mavis.common.entity.RuntimeSession;
 import com.mavis.common.exception.BusinessException;
 import com.mavis.common.exception.ErrorCode;
 import com.mavis.common.repository.JobRepository;
@@ -12,7 +14,9 @@ import com.mavis.common.security.AccessPolicyService;
 import com.mavis.platform.admin.service.AuditLogService;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -50,5 +54,36 @@ class AdminRuntimeControllerTest {
 
         var notFound = assertThrows(BusinessException.class, () -> controller.testIntegration("unknown"));
         assertEquals(ErrorCode.NOT_FOUND, notFound.getErrorCode());
+    }
+
+    @Test
+    void sessionsUsesEntityGraphTop50Query() {
+        var policy = mock(AccessPolicyService.class);
+        var sessionsRepo = mock(RuntimeSessionRepository.class);
+        var session = RuntimeSession.builder()
+                .id(UUID.randomUUID())
+                .executionStatus("FAILED")
+                .cleanupStatus("NOT_APPLICABLE")
+                .build();
+        when(sessionsRepo.findTop50ByOrderByCreatedAtDesc()).thenReturn(List.of(session));
+
+        var controller = new AdminRuntimeController(
+                policy,
+                new PlatformRuntimeSettings(),
+                mock(AuditLogService.class),
+                mock(ApiKeyProvider.class),
+                mock(JobRepository.class),
+                sessionsRepo,
+                mock(RuntimeSessionService.class));
+
+        var response = controller.sessions();
+        assertEquals(ErrorCode.SUCCESS.getCode(), response.getCode());
+        @SuppressWarnings("unchecked")
+        var list = (List<RuntimeSessionResponseDTO>) response.getData();
+        assertEquals(1, list.size());
+        assertEquals("NOT_APPLICABLE", list.getFirst().getCleanupStatus());
+        verify(policy).requireSystemAdmin();
+        verify(sessionsRepo).findTop50ByOrderByCreatedAtDesc();
+        verifyNoMoreInteractions(sessionsRepo);
     }
 }
