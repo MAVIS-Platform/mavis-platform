@@ -6744,7 +6744,7 @@ test("Task #04 SWD Inspector: 4-tab Sticky Inspector integrates Grounded AI Tuto
   assert.doesNotMatch(components, /Model \$\{model\.id\} · revision/);
   assert.match(screens, /id="lab-ai-tutor" className="scroll-mt-36/);
   assert.match(screens, /xl:sticky xl:top-20 xl:max-h-\[calc\(100vh-6rem\)\] xl:overflow-y-auto/);
-  assert.match(screens, /aiPanel=\{tutorPanelNode\}/);
+  assert.match(screens, /\{tutorAssistantPanel\}/);
   assert.doesNotMatch(screens, /BR-05 & DS-02b|Demo DS-02b/);
   assert.match(route, /cleanSourceLocator/);
 });
