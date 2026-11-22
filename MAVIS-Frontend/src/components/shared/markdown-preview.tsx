@@ -53,19 +53,19 @@ type ThemeClasses = {
 
 const THEME_STYLES: Record<MarkdownTheme, ThemeClasses> = {
   coursera: {
-    root: "space-y-2.5",
+    root: "space-y-3",
     h1: "mt-4 text-xl font-bold tracking-tight text-foreground",
     h2: "mt-4 border-b border-border/60 pb-1 text-lg font-semibold tracking-tight text-foreground",
     h3: "mt-3 text-base font-semibold text-foreground",
-    paragraph: "text-sm leading-7 text-muted-foreground",
-    list: "ml-5 space-y-1.5 text-sm leading-7 text-muted-foreground",
-    subList: "ml-5 mt-1 list-disc space-y-1 text-sm leading-6 text-muted-foreground",
-    blockquote: "border-l-2 border-teal-500/70 bg-teal-50/40 px-3 py-1.5 text-sm italic text-muted-foreground dark:bg-teal-950/20",
+    paragraph: "text-base leading-7 text-foreground",
+    list: "ml-5 space-y-2 text-base leading-7 text-foreground",
+    subList: "ml-5 mt-1 list-disc space-y-1 text-sm leading-6 text-foreground/90",
+    blockquote: "border-l-2 border-teal-500/70 bg-teal-50/40 px-3 py-2 text-sm italic text-foreground/90 dark:bg-teal-950/20",
     codeBlock: "overflow-x-auto rounded-lg border bg-muted/40 p-3 text-xs leading-6",
     tableWrap: "my-3 overflow-x-auto rounded-lg border border-border",
     thead: "bg-muted/50 text-foreground",
     th: "border-b px-3 py-2 font-semibold",
-    td: "px-3 py-2 align-top text-muted-foreground",
+    td: "px-3 py-2 align-top text-foreground/90",
   },
   academic: {
     root: "space-y-3 font-serif",

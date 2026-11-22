@@ -155,7 +155,10 @@ test("Coursera CDS contrast palette & simplified Lab header deduplicate prefixes
 
   assert.match(css, /--background:\s*#F7F9FC;/);
   assert.match(css, /--foreground:\s*#0F1114;/);
-  assert.match(css, /--muted-foreground:\s*#374151;/);
+  assert.match(css, /--muted-foreground:\s*#1F2937;/);
+  assert.match(css, /--text-xs:\s*0\.875rem;/);
+  assert.match(css, /--text-sm:\s*1rem;/);
+  assert.match(css, /--text-base:\s*1\.125rem;/);
   assert.match(css, /--primary:\s*#0056D2;/);
   assert.match(css, /--font-ui:\s*"Source Sans 3"/);
   assert.match(layout, /Source\+Sans\+3/);
