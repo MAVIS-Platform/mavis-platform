@@ -19,6 +19,8 @@ export function formatLabModeLabel(
 export function decodePlainTextEntities(value?: string | null): string {
   if (!value) return "";
   return value
+    .replace(/&amp;lt;([A-Z][A-Za-z0-9_,\s?]*)&(?:amp;)?gt;/g, "<$1>")
+    .replace(/&amp;lt;([A-Z][A-Za-z0-9_,\s?]*)>/g, "<$1>")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')

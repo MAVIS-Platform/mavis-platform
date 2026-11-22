@@ -316,3 +316,26 @@ test("Task #07 Navigation & Layout: SectionHeader supports backHref, /submission
   assert.doesNotMatch(courses, /sticky bottom-3/);
   assert.match(courses, /id="lab-switcher"[\s\S]*min-w-\[240px\] max-w-\[380px\]/);
 });
+
+test("Task #09 i18n, Modal Overlay & Navigation Polish: Inspector Evidence localized, double-escaped generics decoded, CourseBuilder prefix deduplicated, and Admin tabs/AppShell fixed", () => {
+  const { decodePlainTextEntities } = require("../src/lib/format/course-display.ts");
+  assert.equal(decodePlainTextEntities("Cấu hình phân tán với IOptions&amp;lt;T&gt;"), "Cấu hình phân tán với IOptions<T>");
+  assert.equal(decodePlainTextEntities("Cấu hình phân tán với IOptions&amp;lt;T>"), "Cấu hình phân tán với IOptions<T>");
+  assert.equal(decodePlainTextEntities("&amp;lt;script&amp;gt;"), "&lt;script&gt;");
+
+  const archComp = read("src/features/architecture/components.tsx");
+  const appShell = read("src/components/app-shell.tsx");
+  const adminScreens = read("src/features/administration/screens.tsx");
+  const builder = read("src/features/courses/course-builder.tsx");
+  const dialog = read("src/components/ui/dialog.tsx");
+  const teacherDash = read("src/features/workspaces/teacher-dashboard.tsx");
+
+  assert.match(archComp, /t\(\s*"No evidence is attached directly to this element\."/);
+  assert.match(archComp, /Evidence for related relationships/);
+  assert.match(appShell, /reviewSubmissionId/);
+  assert.match(appShell, /Curriculum & Materials/);
+  assert.match(adminScreens, /role="tab"[\s\S]*aria-selected=\{tab === "profiles"\}/);
+  assert.match(builder, /\^\(\?:Module\|Chương\)\\s\*\\d\+/);
+  assert.match(dialog, /backdrop-blur-xs/);
+  assert.match(teacherDash, /decodePlainTextEntities\(workspace\.description\)/);
+});

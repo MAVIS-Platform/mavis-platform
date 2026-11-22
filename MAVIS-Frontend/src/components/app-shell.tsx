@@ -266,6 +266,9 @@ function ShellChrome({
   const contentVariant =
     contentOverride ?? (scope === "project" || scope === "review" ? "workspace" : "standard");
   const showInlineDetail = Boolean(detailPanel) && (detailsInline || !onDetailClose);
+  const reviewSubmissionId = pathname.startsWith("/submissions/")
+    ? decodeURIComponent(pathname.slice("/submissions/".length).split("/")[0] ?? "")
+    : "";
   const decorateGroups = (navigation: readonly NavigationGroup[]): NavigationGroup[] =>
     navigation.map((group) => ({
       ...group,
@@ -290,8 +293,11 @@ function ShellChrome({
           !["/design-system", "/login"].includes(item.href)
         )
           return { ...item, href: `${item.href}${navigationQuery}` };
-        return scope === "review" && contextName && !item.href
-          ? { ...item, href: `/submissions/${encodeURIComponent(contextName)}#${item.id}` }
+        const reviewTarget =
+          reviewSubmissionId ||
+          (contextName && contextName !== "Select a workspace" ? contextName : "");
+        return scope === "review" && reviewTarget && !item.href
+          ? { ...item, href: `/submissions/${encodeURIComponent(reviewTarget)}#${item.id}` }
           : item;
       }),
     }));
@@ -381,7 +387,9 @@ function ShellChrome({
       ? role === "lecturer"
         ? "Grading & Gradebook"
         : "My Grades & Submissions"
-      : (pageTitle ?? activeItem?.label ?? route.title);
+      : pathname === "/workspace-overview" && params.get("view") === "course-authoring"
+        ? "Curriculum & Materials"
+        : (pageTitle ?? activeItem?.label ?? route.title);
   const showSidebar = live || role !== "student";
 
   useEffect(() => {

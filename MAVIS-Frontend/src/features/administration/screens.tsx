@@ -517,6 +517,8 @@ export function RuntimeProfiles() {
       >
         <Button
           type="button"
+          role="tab"
+          aria-selected={tab === "profiles"}
           size="sm"
           variant={tab === "profiles" ? "default" : "outline"}
           onClick={() => setTab("profiles")}
@@ -525,6 +527,8 @@ export function RuntimeProfiles() {
         </Button>
         <Button
           type="button"
+          role="tab"
+          aria-selected={tab === "sessions"}
           size="sm"
           variant={tab === "sessions" ? "default" : "outline"}
           onClick={() => setTab("sessions")}
@@ -533,6 +537,8 @@ export function RuntimeProfiles() {
         </Button>
         <Button
           type="button"
+          role="tab"
+          aria-selected={tab === "quotas"}
           size="sm"
           variant={tab === "quotas" ? "default" : "outline"}
           onClick={() => setTab("quotas")}

@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState, RequestState } from "@/components/shared/request-state";
 import { SearchInput } from "@/components/shared/forms";
 import { StatusBadge } from "@/components/shared/data";
+import { decodePlainTextEntities } from "@/lib/format/course-display";
 import { CreateWorkspace } from "./manage";
 import { useLocale } from "@/lib/i18n/locale-context";
 
@@ -224,7 +225,7 @@ export function TeacherDashboard() {
                           </Link>
                           {workspace.description && (
                             <p className="mt-1.5 line-clamp-2 text-xs text-muted-foreground">
-                              {workspace.description}
+                              {decodePlainTextEntities(workspace.description)}
                             </p>
                           )}
                         </div>

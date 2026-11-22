@@ -1669,11 +1669,12 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
                 <div className="border-b bg-card/60 px-5 py-3.5">
                   <div className="flex items-center justify-between gap-2">
                     <p className="min-w-0 truncate text-xs font-medium text-muted-foreground">
-                      {t(
-                        `Module ${inspectedItem.module.position}`,
-                        `Chương ${inspectedItem.module.position}`,
-                      )}{" "}
-                      · {inspectedItem.module.title}
+                      {/^(?:Module|Chương)\s*\d+/i.test(inspectedItem.module.title.trim())
+                        ? inspectedItem.module.title
+                        : `${t(
+                            `Module ${inspectedItem.module.position}`,
+                            `Chương ${inspectedItem.module.position}`,
+                          )} · ${inspectedItem.module.title}`}
                     </p>
                     {flatItems.length > 1 && (
                       <div className="flex shrink-0 items-center gap-1">

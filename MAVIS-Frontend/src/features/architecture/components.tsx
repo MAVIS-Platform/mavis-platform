@@ -209,6 +209,7 @@ function ElementEvidenceContext({
   elementId: string;
   onSelect?: (id: string) => void;
 }) {
+  const { t } = useLocale();
   const context = useApiQuery("elementEvidenceContext", { modelId: model.id, elementId });
   const related = context.data?.relationshipEvidence ?? [];
   const grouped = new Map<string, { edges: ArchitecturalModel["edges"]; evidence: Evidence[] }>();
@@ -228,27 +229,41 @@ function ElementEvidenceContext({
           <EvidenceViewer evidence={context.data!.directEvidence} subject="element" />
         ) : (
           <p className="rounded-lg border p-3 text-sm text-muted-foreground">
-            No evidence is attached directly to this element.
+            {t(
+              "No evidence is attached directly to this element.",
+              "Không có bằng chứng mã nguồn nào được gắn trực tiếp vào thành phần này.",
+            )}
             {related.length > 0
-              ? " Evidence for its incoming/outgoing relationships is listed below."
-              : " No persisted evidence was found for its incoming/outgoing relationships either. Source previews in 3E are separate from saved evidence."}
+              ? t(
+                  " Evidence for its incoming/outgoing relationships is listed below.",
+                  " Bằng chứng cho các mối quan hệ đến/đi liên quan được liệt kê ngay bên dưới.",
+                )
+              : t(
+                  " No persisted evidence was found for its incoming/outgoing relationships either. Source previews in 3E are separate from saved evidence.",
+                  " Cũng chưa có bằng chứng đã lưu cho các mối quan hệ liên quan. Phần xem trước mã nguồn tách biệt với bằng chứng đã lưu.",
+                )}
           </p>
         )}
         {related.length > 0 && (
           <section className="space-y-3">
             <h4 className="text-sm font-semibold">
-              Evidence for related relationships ({related.length})
+              {t(
+                `Evidence for related relationships (${related.length})`,
+                `Bằng chứng từ các quan hệ liên quan (${related.length})`,
+              )}
             </h4>
             <p className="text-xs text-muted-foreground">
-              These snippets support the listed relationships; they do not by themselves establish
-              this element&apos;s internal behavior.
+              {t(
+                "These snippets support the listed relationships; they do not by themselves establish this element's internal behavior.",
+                "Các trích đoạn mã nguồn này chứng minh kết nối giữa các thành phần, không thay thế cho cài đặt nội bộ của thành phần.",
+              )}
             </p>
             {[...grouped].map(([groupKey, group]) => {
               const edge = group.edges[0];
               const protocols = [...new Set(group.edges.map((candidate) => candidate.protocol))];
               const label = edge
                 ? `${name(edge.from)} → ${name(edge.to)}`
-                : `Relationship ${groupKey}`;
+                : t(`Relationship ${groupKey}`, `Quan hệ ${groupKey}`);
               return (
                 <div className="space-y-2" key={groupKey}>
                   {onSelect && edge ? (
