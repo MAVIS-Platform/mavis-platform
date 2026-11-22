@@ -2037,3 +2037,19 @@ test("Task #05 Quiz & Theory UX: Theory lessons stay unlocked before Quizzes, Ma
   assert.match(runner, /<QuizCountdownBanner/);
   assert.doesNotMatch(stage, /node\.label\.length > 18/);
 });
+
+test("Task #08 Coursera UX Polish: CourseBuilder/CourseOutline keep Quiz distinct from Studio Labs, Gradebook prevents overflow, and Lecturer workspaces avoids dash hang", () => {
+  const builder = read("src/features/courses/course-builder.tsx");
+  const outline = read("src/features/courses/course-outline.tsx");
+  const shell = read("src/features/courses/course-workspace-shell.tsx");
+  const submissions = read("src/features/submissions/screens.tsx");
+  const workspaces = read("src/features/workspaces/screens.tsx");
+
+  assert.match(builder, /if \(item\.type === "THEORY" \|\| item\.type === "QUIZ" \|\| item\.type === "ESSAY"\)/);
+  assert.match(builder, /shortVi: "Trắc nghiệm"/);
+  assert.match(outline, /QUIZ:\s*\{\s*en: "Quiz", vi: "Bài trắc nghiệm \(Quiz\)"/);
+  assert.match(shell, /className="min-w-0 max-w-full space-y-6"/);
+  assert.match(submissions, /className="min-w-0 max-w-full space-y-4"/);
+  assert.match(submissions, /className="min-w-0 max-w-full overflow-x-auto rounded-xl border bg-card"/);
+  assert.match(workspaces, /submissions\.isLoading \? "…" : submissions\.isSuccess \? pendingReviews : 0/);
+});

@@ -417,7 +417,7 @@ export function CourseWorkspaceShell({
   const activeStudentTab = resolveStudentTab(pathname, active);
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 max-w-full space-y-6">
       <header className="overflow-hidden rounded-2xl bg-gradient-to-r from-emerald-950 via-emerald-800 to-teal-600 p-5 text-white shadow-lg sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="min-w-0 space-y-2">

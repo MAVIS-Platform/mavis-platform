@@ -1477,3 +1477,61 @@ test("admin audit accepts structured JSON and preserves historical string detail
  assert.deepEqual(results.map(result=>result.details),[JSON.stringify({name:"QA workspace"}),"legacy",null]);
  assert.equal(validateResponse("audit",{},results).length,3);
 });
+
+test("submission lists gracefully fall back when a legacy row lacks model refs or returns 404 while detail remains strict", async t => {
+ environment(t);
+ const missingRow = {
+  id: project,
+  assignmentId: node,
+  projectId: null,
+  submittedById: node,
+  submittedAt: "2026-10-26T00:00:00Z",
+  sourceSnapshotId: null,
+  modelVersionId: null,
+ };
+ const brokenRow = {
+  id: snapshot,
+  assignmentId: node,
+  projectId: project,
+  submittedById: node,
+  submittedAt: "2026-10-26T00:00:00Z",
+  sourceSnapshotId: snapshot,
+  modelVersionId: model,
+ };
+ const healthyRow = {
+  id: job,
+  assignmentId: node,
+  projectId: project,
+  submittedById: node,
+  submittedAt: "2026-10-26T00:00:00Z",
+  sourceSnapshotId: snapshot,
+  modelVersionId: job,
+ };
+ t.mock.method(globalThis, "fetch", async url => {
+  const path = new URL(url).pathname.replace("/api/v1/", "");
+  if (path === "submissions/me") return Response.json({ code: 200, data: [missingRow, brokenRow, healthyRow] });
+  if (path === `submissions/${job}`) return Response.json({ code: 200, data: missingRow });
+  if (path === `analyzer/models/${model}`) return Response.json({ message: "Not found" }, { status: 404 });
+  if (path === `analyzer/models/${job}`) {
+   return Response.json({ code: 200, data: { id: job, projectId: project, sourceSnapshotId: snapshot, revision: 2, isLatestValid: true } });
+  }
+  if (path === `analyzer/snapshots/${snapshot}`) return Response.json({ code: 200, data: { id: snapshot, projectId: project } });
+  if (path.endsWith("/feedbacks")) return Response.json({ code: 200, data: [] });
+  throw Error("Unexpected request " + path);
+ });
+
+ const listResult = validateResponse(
+  "submissions",
+  {},
+  await executeJava("submissions", {}, "resilient-list-jwt", new AbortController().signal),
+ );
+ assert.equal(listResult.length, 3);
+ assert.equal(listResult[0].model.id, `fallback-model:${node}`);
+ assert.equal(listResult[1].model.id, model);
+ assert.equal(listResult[2].model.revision, 2);
+
+ await assert.rejects(
+  executeJava("submission", { submissionId: job }, "strict-detail-jwt", new AbortController().signal),
+  e => e.kind === "contract",
+ );
+});

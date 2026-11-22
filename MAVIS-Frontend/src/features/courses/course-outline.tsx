@@ -68,8 +68,8 @@ type OutlineModule = {
 };
 
 const TYPE_META: Record<string, { en: string; vi: string; icon: LucideIcon }> = {
-  THEORY: { en: "Theory Lab", vi: "Lab chỉ Lý thuyết", icon: BookOpen },
-  QUIZ: { en: "Theory + Quiz Lab", vi: "Lab Lý thuyết + Quiz", icon: HelpCircle },
+  THEORY: { en: "Theory", vi: "Bài đọc Lý thuyết", icon: BookOpen },
+  QUIZ: { en: "Quiz", vi: "Bài trắc nghiệm (Quiz)", icon: HelpCircle },
   ESSAY: { en: "Essay", vi: "Tự luận", icon: FileText },
   STATIC_LAB: { en: "Theory Lab", vi: "Lab chỉ Lý thuyết", icon: Code2 },
   IMPACT_LAB: { en: "Theory + Quiz Lab", vi: "Lab Lý thuyết + Quiz", icon: GitFork },

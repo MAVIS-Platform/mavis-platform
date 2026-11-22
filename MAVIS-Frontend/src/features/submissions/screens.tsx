@@ -280,7 +280,7 @@ function TeachingSubmissions() {
   }, [allClassSubs.data, selectedAssignmentId]);
 
   const body = workspaceId ? (
-    <div className="space-y-4">
+    <div className="min-w-0 max-w-full space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
         <div
           className="inline-flex flex-wrap items-center gap-1 rounded-lg bg-muted/40 p-1"
@@ -557,7 +557,7 @@ function ClassGradebookMatrix({
               {t("Export Gradebook CSV", "Xuất CSV bảng điểm")}
             </Button>
           </div>
-          <div className="overflow-x-auto rounded-xl border bg-card">
+          <div className="min-w-0 max-w-full overflow-x-auto rounded-xl border bg-card">
             <table className="w-full text-left text-xs">
               <thead className="border-b bg-muted/40 text-muted-foreground">
                 <tr>

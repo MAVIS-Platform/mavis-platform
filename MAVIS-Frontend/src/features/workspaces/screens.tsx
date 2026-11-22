@@ -128,7 +128,7 @@ export function Workspaces() {
                 {t("Needs your attention", "Cần bạn xem xét")}
               </p>
               <p className="mt-1 text-lg font-semibold">
-                {submissions.isSuccess ? pendingReviews : "—"}{" "}
+                {submissions.isLoading ? "…" : submissions.isSuccess ? pendingReviews : 0}{" "}
                 {t("submissions to review", "bài nộp chờ chấm")}
               </p>
               <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">

@@ -47,18 +47,18 @@ const TYPE_META: Record<
   { en: string; vi: string; shortEn: string; shortVi: string; icon: LucideIcon; tone: string }
 > = {
   THEORY: {
-    en: "Theory Lab",
-    vi: "Lab chỉ Lý thuyết",
-    shortEn: "Theory Only",
-    shortVi: "Chỉ Lý thuyết",
+    en: "Theory",
+    vi: "Bài đọc Lý thuyết",
+    shortEn: "Theory",
+    shortVi: "Lý thuyết",
     icon: BookOpen,
     tone: "text-teal-700 bg-teal-500/10 border-teal-500/25 dark:text-teal-300",
   },
   QUIZ: {
-    en: "Theory + Quiz Lab",
-    vi: "Lab Lý thuyết + Quiz",
-    shortEn: "Theory + Quiz",
-    shortVi: "Lý thuyết + Quiz",
+    en: "Quiz",
+    vi: "Bài trắc nghiệm (Quiz)",
+    shortEn: "Quiz",
+    shortVi: "Trắc nghiệm",
     icon: HelpCircle,
     tone: "text-indigo-700 bg-indigo-500/10 border-indigo-500/25 dark:text-indigo-300",
   },
@@ -456,6 +456,9 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
   );
 
   const resolveBuilderItemType = (item: Item): ItemType => {
+    if (item.type === "THEORY" || item.type === "QUIZ" || item.type === "ESSAY") {
+      return item.type;
+    }
     const linked = item.assignmentId
       ? assignmentRows.find((a) => a.id === item.assignmentId)
       : undefined;

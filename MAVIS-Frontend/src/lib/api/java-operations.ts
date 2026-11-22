@@ -33,6 +33,26 @@ const id = (input: Record<string, unknown>, key: string) => {
   if (!value.success) throw new ApiError("validation", 422);
   return value.data;
 };
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  worker: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  if (items.length === 0) return [];
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.max(1, Math.min(limit, items.length));
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (nextIndex < items.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        results[index] = await worker(items[index] as T, index);
+      }
+    }),
+  );
+  return results;
+}
 export async function currentSession(token: string | undefined, signal?: AbortSignal) {
   if (!token) return { user: null };
   try {
@@ -292,10 +312,35 @@ export async function executeJava(
       })
       .parse(raw);
     const theoryOnly = Boolean(sub.labMode && sub.labMode !== "LEGACY");
+    const fallbackRefs = () => {
+      const refModelId = sub.modelVersionId ?? `fallback-model:${sub.assignmentId}`;
+      const refProjectId = sub.projectId ?? `fallback-project:${sub.assignmentId}`;
+      const refSnapshotId = sub.sourceSnapshotId ?? `fallback-snapshot:${sub.assignmentId}`;
+      return {
+        model: {
+          id: refModelId,
+          projectId: refProjectId,
+          snapshotId: refSnapshotId,
+          revision: 1,
+          label: "Reference model",
+          elements: [],
+          edges: [],
+        },
+        source: {
+          id: refSnapshotId,
+          projectId: refProjectId,
+          name: "Reference source",
+          createdAt: sub.submittedAt,
+          validation: "valid",
+          evidenceComplete: true,
+        },
+      };
+    };
     let m: any;
     let source: any;
     let feedback: unknown;
     let runtime: any = null;
+    let usedFallback = false;
     if (theoryOnly) {
       const refModelId = sub.modelVersionId ?? `theory-model:${sub.assignmentId}`;
       const refProjectId = sub.projectId ?? `theory-project:${sub.assignmentId}`;
@@ -318,9 +363,36 @@ export async function executeJava(
         evidenceComplete: true,
       };
       feedback = await get(`submissions/${sub.id}/feedbacks`).catch(() => []);
+    } else if (!sub.modelVersionId || !sub.sourceSnapshotId || !sub.projectId) {
+      if (includeDetails) throw new ApiError("contract", 502);
+      usedFallback = true;
+      const refs = fallbackRefs();
+      m = refs.model;
+      source = refs.source;
+      feedback = await get(`submissions/${sub.id}/feedbacks`).catch(() => []);
+    } else if (!includeDetails) {
+      try {
+        [m, source, feedback] = await Promise.all([
+          model(sub.modelVersionId, false),
+          snapshot(sub.sourceSnapshotId),
+          get(`submissions/${sub.id}/feedbacks`).catch(() => []),
+        ]);
+        if (
+          m.id !== sub.modelVersionId ||
+          m.projectId !== sub.projectId ||
+          m.snapshotId !== sub.sourceSnapshotId
+        ) {
+          throw new ApiError("contract", 502);
+        }
+      } catch (err) {
+        if (err instanceof ApiError && err.kind === "contract") throw err;
+        usedFallback = true;
+        const refs = fallbackRefs();
+        m = refs.model;
+        source = refs.source;
+        feedback = [];
+      }
     } else {
-      if (!sub.modelVersionId || !sub.sourceSnapshotId || !sub.projectId)
-        throw new ApiError("contract", 502);
       [m, source, feedback, runtime] = await Promise.all([
         model(sub.modelVersionId, includeDetails),
         snapshot(sub.sourceSnapshotId),
@@ -394,7 +466,7 @@ export async function executeJava(
       studentId: sub.submittedById,
       submittedAt: sub.submittedAt,
       model: m,
-      snapshot: theoryOnly ? source : snapshotView(source),
+      snapshot: theoryOnly || usedFallback ? source : snapshotView(source),
       runtime,
       feedback: z
         .array(
@@ -1159,13 +1231,10 @@ export async function executeJava(
         typeof input["workspaceId"] === "string" && input["workspaceId"].trim()
           ? id(input, "workspaceId")
           : null;
-      return Promise.all(
-        list
-          .parse(
-            await get(workspaceId ? `submissions/me?workspaceId=${workspaceId}` : "submissions/me"),
-          )
-          .map((row) => coursework(row, false)),
+      const rows = list.parse(
+        await get(workspaceId ? `submissions/me?workspaceId=${workspaceId}` : "submissions/me"),
       );
+      return mapWithConcurrency(rows, 6, (row) => coursework(row, false));
     }
     case "workspaceSubmissions": {
       const workspaceId = id(input, "workspaceId");
@@ -1178,7 +1247,7 @@ export async function executeJava(
       }
       const suffix = query.toString() ? `?${query}` : "";
       const rows = list.parse(await get(`workspaces/${workspaceId}/submissions${suffix}`));
-      return Promise.all(rows.map((row) => coursework(row, false)));
+      return mapWithConcurrency(rows, 6, (row) => coursework(row, false));
     }
     case "assignmentSubmissions": {
       const workspaceId = id(input, "workspaceId"),
