@@ -3,7 +3,7 @@ import Link from "next/link";
 import { AdminCommandHeader, AdminRuntimeSummary, AdminToolbar, PageResults, Notice } from "./operations";
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Plus } from "lucide-react";
+import { ArrowUpRight, Boxes, Plus } from "lucide-react";
 import { summarizeJobModel } from "@/lib/navigation/admin-job-review";
 import { useApiMutation, useApiQuery } from "@/hooks/use-api";
 import { DataTable, DetailPanel, StatusBadge, SummaryCard } from "@/components/shared/data";
@@ -495,6 +495,136 @@ export function Integrations() {
           }}
         />
       </RequestState>
+    </div>
+  );
+}
+export function AdminStudioSetup() {
+  const { t } = useLocale();
+  const q = useApiQuery("profiles", {});
+  const runtimeHealth = useApiQuery("adminRuntimeHealth", {}, { refreshMs: 30000 });
+  const [tab, setTab] = useState<"profiles" | "sessions">("profiles");
+  const readiness = runtimeHealth.data?.surveyReadiness;
+  const runnerReady = readiness === "READY";
+  const runnerDegraded = readiness === "DEGRADED";
+
+  return (
+    <div className="space-y-5">
+      <AdminCommandHeader
+        active="studio-setup"
+        refreshing={q.isFetching || runtimeHealth.isFetching}
+        onRefresh={() => {
+          void q.refetch();
+          void runtimeHealth.refetch();
+        }}
+      />
+
+      {/* Quick Runner Status & Launch Studio Canvas Bar */}
+      <section
+        aria-label={t("Studio Runner & Quick Launch", "Runner Studio & Mở nhanh Canvas")}
+        className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border bg-card p-4 shadow-xs"
+      >
+        <div className="min-w-0 space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 text-sm font-bold text-foreground">
+              <Boxes className="size-4 text-primary" aria-hidden="true" />
+              {t("MAVIS Studio Setup Hub", "Trung tâm cấu hình MAVIS Studio")}
+            </span>
+            <Badge variant={runnerReady ? "success" : runnerDegraded ? "warning" : "destructive"}>
+              {runtimeHealth.isLoading
+                ? t("Checking Runner…", "Đang kiểm tra Runner…")
+                : runnerReady
+                  ? t("Runner Ready", "Runner Sẵn sàng")
+                  : runnerDegraded
+                    ? t("Runner Degraded", "Runner Suy giảm")
+                    : t("Runner Attention", "Cần kiểm tra Runner")}
+            </Badge>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {runtimeHealth.data ? (
+              <>
+                {t("Active slots:", "Slot đang chạy:")}{" "}
+                <strong className="mavis-tabular text-foreground">
+                  {runtimeHealth.data.activeSessions}/{runtimeHealth.data.maxActiveSessions}
+                </strong>{" "}
+                · {t("Queue:", "Hàng chờ:")}{" "}
+                <strong className="mavis-tabular text-foreground">
+                  {runtimeHealth.data.queuedSessions}/{runtimeHealth.data.maxQueuedSessions}
+                </strong>{" "}
+                · OCI:{" "}
+                <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground">
+                  {runtimeHealth.data.effectiveOciRuntime}
+                </code>
+              </>
+            ) : (
+              t(
+                "Configure Studio Docker execution profiles (CPU, RAM, timeout, concurrency) and supervise live student sessions.",
+                "Cấu hình hồ sơ thực thi Studio Docker (CPU, RAM, timeout, đồng thời) và quản lý các phiên đang chạy.",
+              )
+            )}
+          </p>
+        </div>
+
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <Button asChild size="sm">
+            <Link href="/administration/studio">
+              {t("Open Studio Canvas", "Mở Studio Canvas")}
+              <ArrowUpRight className="ml-1.5 size-4" aria-hidden="true" />
+            </Link>
+          </Button>
+        </div>
+      </section>
+
+      <div
+        className="flex flex-wrap gap-2"
+        role="tablist"
+        aria-label={t("Studio Setup Sections", "Các mục cấu hình Studio")}
+      >
+        <Button
+          type="button"
+          role="tab"
+          aria-selected={tab === "profiles"}
+          size="sm"
+          variant={tab === "profiles" ? "default" : "outline"}
+          onClick={() => setTab("profiles")}
+        >
+          {t("Execution Profiles", "Hồ sơ thực thi Runtime")}
+        </Button>
+        <Button
+          type="button"
+          role="tab"
+          aria-selected={tab === "sessions"}
+          size="sm"
+          variant={tab === "sessions" ? "default" : "outline"}
+          onClick={() => setTab("sessions")}
+        >
+          {t("Live Sessions & Force-Stop", "Phiên chạy thực tế & Dừng khẩn cấp")}
+        </Button>
+      </div>
+
+      {tab === "sessions" ? (
+        <AdminRuntimeSummary />
+      ) : (
+        <div className="space-y-4">
+          <AdminToolbar
+            fetching={q.isFetching}
+            updatedAt={q.dataUpdatedAt}
+            refresh={() => void q.refetch()}
+          />
+          <Notice>
+            {t(
+              "Profile changes apply immediately to newly started Studio Live sessions. Review CPU, RAM, and timeout limits before enabling a profile.",
+              "Thay đổi hồ sơ sẽ áp dụng ngay cho các phiên Studio Live mới. Kiểm tra kỹ giới hạn CPU, RAM và timeout trước khi bật.",
+            )}
+          </Notice>
+          <RequestState query={q} empty={!q.data?.length}>
+            <div className="grid items-start gap-4 lg:grid-cols-2">
+              {q.data?.map((p) => (
+                <ProfileForm key={p.id + ":" + p.revision} item={p} />
+              ))}
+            </div>
+          </RequestState>
+        </div>
+      )}
     </div>
   );
 }

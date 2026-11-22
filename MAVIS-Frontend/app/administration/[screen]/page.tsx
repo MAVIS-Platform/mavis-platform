@@ -3,6 +3,7 @@ import { AppShell } from "@/components/app-shell";
 import { PageContainer, SectionHeader } from "@/components/layout/page";
 import {
   Accounts,
+  AdminStudioSetup,
   Integrations,
   RuntimeProfiles,
   PlatformUsage,
@@ -23,6 +24,7 @@ const screens: Record<string, { title: string; component: ComponentType }> = {
   "runtime-summary": { title: "Runtime Summary", component: AdminRuntimeSummary },
   audit: { title: "Audit Records", component: AuditRecords },
   profiles: { title: "Runtime Execution Profiles", component: RuntimeProfiles },
+  "studio-setup": { title: "Studio Setup", component: AdminStudioSetup },
   "admin-sessions": { title: "Runtime Sessions", component: AdminSessions },
   studio: { title: "MAVIS Studio", component: StudioWorkbench },
   announcements: { title: "Announcement Management", component: AdminAnnouncements },
@@ -36,7 +38,7 @@ export default async function AdminPage({ params }: { params: Promise<{ screen: 
   if (!config) notFound();
   if (screen === "studio") return <StudioWorkbench />;
   const Screen = config.component;
-  const hasAdminBanner = ["health", "users", "profiles", "audit"].includes(screen);
+  const hasAdminBanner = ["health", "users", "studio-setup", "profiles", "audit"].includes(screen);
   return (
     <AppShell scope="global" activeId={screen} pageTitle={config.title} contentVariant="workspace">
       <div className="mx-auto w-full max-w-[1600px]">

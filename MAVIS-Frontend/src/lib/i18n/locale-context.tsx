@@ -1983,6 +1983,8 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Learning workspace": "Không gian học tập",
   "Curriculum & Labs": "Giáo trình & Bài Lab",
   "System Overview": "Tổng quan hệ thống",
+  "Studio": "Studio",
+  "Studio Setup": "Cấu hình Studio",
   "Governance & Audit": "Quản trị & Nhật ký",
   "My Grades & Submissions": "Điểm & Bài nộp",
   "Back to home": "Quay lại trang chủ",

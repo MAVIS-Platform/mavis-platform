@@ -1366,16 +1366,19 @@ test("FE-02 Student Submissions eliminate ReadOnlyDrawio iframe/.drawio and isol
   );
 });
 
-test("ADM-V2 Enterprise Control Center removes /administration/studio links and wires 1-click user/session controls", () => {
+test("ADM-V2 Enterprise Control Center wires Admin Studio Setup Hub and 1-click user/session controls", () => {
   const adminScreens = read("src/features/administration/screens.tsx");
   const adminOps = read("src/features/administration/operations.tsx");
+  const adminPage = read("app/administration/[screen]/page.tsx");
   const runtimeBackend = read("src/features/runtime/backend.tsx");
   const nav = read("src/lib/navigation.ts");
 
-  assert.doesNotMatch(adminScreens, /administration\/studio/);
-  assert.doesNotMatch(adminOps, /administration\/studio/);
+  assert.match(nav, /id:\s*"studio-setup",\s*label:\s*"Studio".*href:\s*"\/administration\/studio-setup"/);
+  assert.match(adminOps, /href:\s*"\/administration\/studio-setup"/);
+  assert.match(adminPage, /"studio-setup":\s*\{\s*title:\s*"Studio Setup",\s*component:\s*AdminStudioSetup\s*\}/);
+  assert.match(adminScreens, /export function AdminStudioSetup\(\)/);
+  assert.match(adminScreens, /href="\/administration\/studio"/);
   assert.doesNotMatch(runtimeBackend, /administration\/studio/);
-  assert.doesNotMatch(nav, /administration\/studio/);
   assert.ok(adminScreens.includes("createAccount"));
   assert.ok(adminScreens.includes("Activate"));
   assert.ok(adminOps.includes("forceStopRuntimeSession"));

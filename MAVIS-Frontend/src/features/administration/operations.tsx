@@ -9,6 +9,7 @@ import {
   Activity,
   AlertTriangle,
   ArrowUpRight,
+  Boxes,
   CheckCircle2,
   Database,
   HardDrive,
@@ -95,7 +96,7 @@ export function AdminCommandHeader({
   onRefresh,
   refreshing,
 }: {
-  active: "health" | "users" | "profiles" | "audit";
+  active: "health" | "users" | "studio-setup" | "profiles" | "audit";
   onRefresh?: () => void;
   refreshing?: boolean;
 }) {
@@ -108,7 +109,7 @@ export function AdminCommandHeader({
     (counts.data?.pendingVerificationUsers ?? 0) + (counts.data?.lockedUsers ?? 0);
 
   const tabs: Array<{
-    id: "health" | "users" | "profiles";
+    id: "health" | "users" | "studio-setup" | "profiles";
     href: string;
     label: string;
     icon: typeof Activity;
@@ -124,6 +125,12 @@ export function AdminCommandHeader({
       href: "/administration/users",
       label: t("Users & Roles", "Người dùng & Phân quyền"),
       icon: Users,
+    },
+    {
+      id: "studio-setup",
+      href: "/administration/studio-setup",
+      label: t("Studio Setup", "Cấu hình Studio"),
+      icon: Boxes,
     },
     {
       id: "profiles",

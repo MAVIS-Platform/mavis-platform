@@ -99,6 +99,7 @@ export const globalNavigation: Record<AppRole, readonly NavigationGroup[]> = {
       items: [
         { id: "health", label: "System Overview", icon: Activity, href: "/administration/health" },
         { id: "users", label: "Users & Roles", icon: Users, href: "/administration/users" },
+        { id: "studio-setup", label: "Studio", icon: Boxes, href: "/administration/studio-setup" },
         {
           id: "profiles",
           label: "Governance & Audit",
