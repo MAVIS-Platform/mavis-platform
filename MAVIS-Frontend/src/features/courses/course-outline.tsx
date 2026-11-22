@@ -361,33 +361,52 @@ function CourseOutlineBody({
           `Lộ trình ${modules.length} chặng từ ${firstStageTitle} đến ${lastStageTitle}, kết hợp lý thuyết, kiểm tra kiến thức và thực hành kiến trúc.`,
         ));
 
+  const breakdownParts = [
+    totalTheoryOnly > 0
+      ? `${totalTheoryOnly} ${t("theory & static analysis", "lý thuyết & phân tích tĩnh")}`
+      : null,
+    totalQuizLabs > 0
+      ? `${totalQuizLabs} ${t("quiz & dependency analysis", "trắc nghiệm & phân tích phụ thuộc")}`
+      : null,
+    totalStudioLabs > 0
+      ? `${totalStudioLabs} ${t("live Docker Studio labs", "bài thực hành Studio Live")}`
+      : null,
+  ].filter(Boolean);
+  const curriculumOverviewLine =
+    modules.length > 1 && firstStageTitle && lastStageTitle
+      ? t(
+          `Covers ${modules.length} modules and ${totalLabs} learning activities${breakdownParts.length ? ` (${breakdownParts.join(", ")})` : ""}, progressing from ${firstStageTitle} to ${lastStageTitle}.`,
+          `Gồm ${modules.length} chương với ${totalLabs} hoạt động học tập${breakdownParts.length ? ` (${breakdownParts.join(", ")})` : ""}, đi từ ${firstStageTitle} đến ${lastStageTitle}.`,
+        )
+      : t(
+          `Covers ${modules.length} module and ${totalLabs} learning activities${breakdownParts.length ? ` (${breakdownParts.join(", ")})` : ""}.`,
+          `Gồm ${modules.length} chương với ${totalLabs} hoạt động học tập${breakdownParts.length ? ` (${breakdownParts.join(", ")})` : ""}.`,
+        );
+
   return (
     <section aria-labelledby="course-outline-title" className="space-y-4">
       <div className="overflow-hidden rounded-2xl border border-border/90 bg-card shadow-xs">
-        <div className="space-y-3.5 px-5 py-5 sm:px-6">
+        <div className="space-y-3 px-5 py-5 sm:px-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0 flex-1 space-y-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge
-                  variant="outline"
-                  className="border-primary/25 bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary"
-                >
-                  {t("Course Syllabus", "Đề cương học phần")}
-                </Badge>
-                {courseStatus && (
-                  <Badge variant="secondary" className="text-xs font-semibold text-foreground">
-                    {courseStatus}
-                  </Badge>
-                )}
-              </div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-primary">
+                {t("Course Syllabus", "Đề cương học phần")}
+                {courseStatus ? ` · ${courseStatus}` : ""}
+              </p>
               <h2
                 id="course-outline-title"
                 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl"
               >
                 {courseTitle || t("Class content", "Nội dung lớp")}
               </h2>
-              <p className="max-w-4xl text-sm leading-6 text-foreground/80">
+              <p className="max-w-4xl text-[15px] leading-6 text-foreground/90">
                 {syllabusSummary}
+              </p>
+              <p className="max-w-4xl text-sm leading-6 text-muted-foreground">
+                <span className="font-semibold text-foreground">
+                  {t("Curriculum overview:", "Tóm tắt nội dung học:")}
+                </span>{" "}
+                {curriculumOverviewLine}
               </p>
             </div>
             {canManage && (
@@ -400,39 +419,15 @@ function CourseOutlineBody({
               </Button>
             )}
           </div>
-
-          <div className="flex flex-wrap items-center gap-2 pt-0.5 text-[13px] text-foreground/75">
-            <span className="inline-flex items-center rounded-full border border-border bg-background px-3 py-1 font-semibold text-foreground">
-              {modules.length} {t("chapters", "chương")}
-            </span>
-            <span className="inline-flex items-center rounded-full border border-border bg-background px-3 py-1 font-semibold text-foreground">
-              {totalLabs} {t("Labs in curriculum", "bài Lab trong lộ trình")}
-            </span>
-            {totalTheoryOnly > 0 && (
-              <span className="inline-flex items-center rounded-full border border-border/80 bg-card px-3 py-1 font-medium">
-                {totalTheoryOnly} {t("Theory Only", "Lab chỉ Lý thuyết")}
-              </span>
-            )}
-            {totalQuizLabs > 0 && (
-              <span className="inline-flex items-center rounded-full border border-border/80 bg-card px-3 py-1 font-medium">
-                {totalQuizLabs} {t("Theory + Quiz", "Lab Lý thuyết + Quiz")}
-              </span>
-            )}
-            {totalStudioLabs > 0 && (
-              <span className="inline-flex items-center rounded-full border border-primary/25 bg-primary/10 px-3 py-1 font-semibold text-primary">
-                {totalStudioLabs} {t("Full Studio", "Lab có cả Studio")}
-              </span>
-            )}
-          </div>
         </div>
 
         <div className="space-y-3 border-t border-border/80 bg-[#F4F8FF] px-5 py-4 dark:bg-primary/5 sm:px-6">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h3 className="inline-flex items-center gap-2 text-sm font-bold text-foreground">
+            <h3 className="inline-flex items-center gap-2 text-[15px] font-bold text-foreground">
               <Target className="size-4 text-primary" aria-hidden="true" />
               {t("Learning Outcomes & Progression", "Mục tiêu & Lộ trình kết quả đạt được")}
             </h3>
-            <span className="text-[13px] font-medium text-foreground/70">
+            <span className="text-sm text-muted-foreground">
               {t("What you'll master step by step", "Kiến thức & kỹ năng đạt được theo từng chặng")}
             </span>
           </div>
@@ -453,15 +448,15 @@ function CourseOutlineBody({
               return (
                 <li
                   key={module.id}
-                  className="flex items-start gap-3 rounded-xl border border-border/80 bg-card px-3.5 py-3 shadow-2xs"
+                  className="flex items-start gap-3 rounded-xl border border-border/80 bg-card px-4 py-3 shadow-2xs"
                 >
                   <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold tabular-nums text-primary-foreground">
                     {index + 1}
                   </span>
-                  <div className="min-w-0 space-y-0.5">
-                    <p className="text-sm font-semibold leading-snug text-foreground">{stageTitle}</p>
+                  <div className="min-w-0 space-y-1">
+                    <p className="text-[15px] font-semibold leading-snug text-foreground">{stageTitle}</p>
                     {outcomeDetail && (
-                      <p className="line-clamp-2 text-[13px] leading-5 text-foreground/75">
+                      <p className="line-clamp-2 text-sm leading-5 text-muted-foreground">
                         {outcomeDetail}
                       </p>
                     )}
@@ -514,7 +509,7 @@ function CourseOutlineBody({
                   <span className="block text-base font-bold leading-snug text-foreground sm:text-[17px]">
                     {module.title}
                   </span>
-                  <span className="mt-0.5 block text-[13px] text-foreground/70">
+                  <span className="mt-1 block text-sm leading-5 text-muted-foreground">
                     {module.items.length}{" "}
                     {module.items.length === 1 ? t("Lab", "bài Lab") : t("Labs", "bài Lab")}
                     {breakdown ? ` · ${breakdown}` : ""}
@@ -530,12 +525,12 @@ function CourseOutlineBody({
                   {module.items.length}
                 </Badge>
                 <ChevronDown
-                  className="size-4 text-foreground/70 transition-transform group-open:rotate-180"
+                  className="size-4 text-muted-foreground transition-transform group-open:rotate-180"
                   aria-hidden="true"
                 />
               </summary>
               {module.description && (
-                <p className="border-t border-border/80 bg-[#F8FAFC] px-5 py-3 text-sm leading-6 text-foreground/85 dark:bg-muted/20">
+                <p className="border-t border-border/80 bg-[#F8FAFC] px-5 py-3 text-[15px] leading-6 text-muted-foreground dark:bg-muted/20">
                   {module.description}
                 </p>
               )}
@@ -593,11 +588,11 @@ function CourseOutlineBody({
                           <span className="rounded bg-primary/10 px-2 py-0.5 font-mono text-xs font-bold text-primary">
                             Lab {idx + 1}
                           </span>
-                          <span className="text-xs font-semibold uppercase tracking-wide text-foreground/65">
+                          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                             {t(meta.en, meta.vi)}
                           </span>
                           {item.estimatedMinutes && (
-                            <span className="text-xs text-foreground/65">
+                            <span className="text-sm text-muted-foreground">
                               · ~{item.estimatedMinutes} {t("min", "phút")}
                             </span>
                           )}
@@ -611,17 +606,17 @@ function CourseOutlineBody({
                             </Badge>
                           )}
                         </div>
-                        <p className="mt-1 text-[15px] font-semibold leading-snug text-foreground">
+                        <p className="mt-1 text-base font-semibold leading-snug text-foreground">
                           {item.title}
                         </p>
                         {(item.description || (assignment?.title && assignment.title !== item.title)) && (
-                          <p className="mt-1 text-[13px] leading-5 text-foreground/75">
+                          <p className="mt-1 text-sm leading-5 text-muted-foreground">
                             {formatCoursePlainText(item.description || assignment?.title)}
                           </p>
                         )}
                         {item.type === "THEORY" && typeof item.content?.["body"] === "string" && (
                           <details className="mt-2.5 text-sm">
-                            <summary className="inline-flex cursor-pointer items-center gap-1.5 rounded-md bg-primary/10 px-3 py-1.5 text-[13px] font-semibold text-primary hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                            <summary className="inline-flex cursor-pointer items-center gap-1.5 rounded-md bg-primary/10 px-3 py-1.5 text-sm font-semibold text-primary hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                               📖 {t("Read lesson", "Đọc bài học")}
                             </summary>
                             <div className="mt-3 max-w-4xl space-y-4 rounded-xl border bg-background p-4 shadow-xs sm:p-5">

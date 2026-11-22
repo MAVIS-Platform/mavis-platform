@@ -245,6 +245,7 @@ function cleanDisplaySourceLocator(raw: string | null | undefined): string {
   return raw
     .replace(/^\/?data\/uploads\/[^/\s]+(?:\/|_source_extracted\/)?/i, "")
     .replace(/^[^/]*_source_extracted\//i, "")
+    .replace(/^[a-z0-9._-]+-[a-f0-9]{40}\//i, "")
     .trim();
 }
 

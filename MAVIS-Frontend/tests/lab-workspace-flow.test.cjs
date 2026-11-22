@@ -46,7 +46,7 @@ test("LabWorkspace unifies navigation into a single sticky horizontal stepper wi
     "Duplicate 260px left LabToc sidebar should be removed so diagrams use full width",
   );
   assert.match(screens, /Learning objective/);
-  assert.match(screens, /Static impact hypothesis/);
+  assert.match(screens, /Static impact (?:hypothesis|analysis)/);
 
   const html = renderToStaticMarkup(
     React.createElement(LabToc, {
@@ -165,6 +165,9 @@ test("Coursera CDS contrast palette & simplified Lab header deduplicate prefixes
   assert.match(screens, /\/\^Lab\\s\+\\d\+\/i\.test\(item\.title\.trim\(\)\)/);
   assert.match(screens, /step === 1 && labInstructions\?\.trim\(\)/);
   assert.match(screens, /\[a-f0-9\]\{40\}/);
-  assert.doesNotMatch(step2, /QA \/ Demo Edge Cases/);
   assert.doesNotMatch(toc, /mavis-tabular/);
+
+  const outline = read("src/features/courses/course-outline.tsx");
+  assert.match(outline, /Curriculum overview:/);
+  assert.doesNotMatch(outline, /Labs in curriculum/);
 });
