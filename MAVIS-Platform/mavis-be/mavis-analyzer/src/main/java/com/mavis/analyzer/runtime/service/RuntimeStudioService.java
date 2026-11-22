@@ -41,7 +41,7 @@ public class RuntimeStudioService {
     public record ActionRequest(@NotNull UUID actionId,
                                 @NotNull @Pattern(regexp="START|STOP|SCALE|PAUSE|RESUME|THROTTLE_CPU|SET_LOAD|SET_ENV|SWAP_VERSION") String action,
                                 @NotBlank @Size(max=128) String service,
-                                @Min(1) @Max(8) Integer replicas,
+                                @Min(1) @Max(3) Integer replicas,
                                 @Min(10) @Max(100) Integer cpuPercent,
                                 @Min(1) @Max(50) Integer targetRps,
                                 @Size(max=64) String envKey,
@@ -65,7 +65,7 @@ public class RuntimeStudioService {
     public record TelemetryRequest(@NotNull UUID sessionId, @NotBlank String resourceProject,
                                    @NotNull JsonNode telemetry) {}
     public record CaptureRequest(@NotBlank @Size(max=4000) String explanation,
-        @Size(max=1500000) String imageData, @Size(max=100) String observedAt) {
+        @Size(max=450000) String imageData, @Size(max=100) String observedAt) {
         public CaptureRequest(String explanation) {this(explanation,null,null);}
     }
     @Transactional(readOnly = true)
@@ -182,7 +182,7 @@ public class RuntimeStudioService {
         }
         if(request.imageData()!=null) {
             try {
-                if(!request.imageData().startsWith("data:image/png;base64,") || request.imageData().length()>1500000) throw new IllegalArgumentException();
+                if(!request.imageData().startsWith("data:image/png;base64,") || request.imageData().length()>450000) throw new IllegalArgumentException();
                 byte[] png=java.util.Base64.getDecoder().decode(request.imageData().substring(22));
                 if(png.length<24 || !java.util.Arrays.equals(java.util.Arrays.copyOf(png,8),new byte[]{(byte)137,80,78,71,13,10,26,10}))
                     throw new IllegalArgumentException();
@@ -345,6 +345,8 @@ public class RuntimeStudioService {
             throw error(ErrorCode.BAD_REQUEST, "Service is outside the confirmed session scope.");
         if (("SCALE".equals(request.action())) != (request.replicas() != null))
             throw error(ErrorCode.BAD_REQUEST, "Replicas are required only for SCALE.");
+        if ("SCALE".equals(request.action()) && (request.replicas() < 1 || request.replicas() > 3))
+            throw error(ErrorCode.BAD_REQUEST, "REPLICA_BOUNDS_EXCEEDED: Replicas must be between 1 and 3.");
         if (("THROTTLE_CPU".equals(request.action())) != (request.cpuPercent() != null))
             throw error(ErrorCode.BAD_REQUEST, "cpuPercent (10-100) is required only for THROTTLE_CPU.");
         if (("SET_LOAD".equals(request.action())) != (request.targetRps() != null))

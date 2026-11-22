@@ -12,7 +12,7 @@ public class PlatformRuntimeSettings {
  private final Map<String,Profile> profiles=new LinkedHashMap<>();
  public PlatformRuntimeSettings(){
   for(var item:List.of(new Integration("github","GitHub Source Provider",true,1),new Integration("gemini-ai","Google Gemini AI Explanation",true,1),new Integration("otel-collector","OpenTelemetry OTLP Collector",true,1)))integrations.put(item.id(),item);
-  for(String id:List.of("SPRING_BOOT_DOTNET_COMPOSE_V1","JAVA_SPRING_OTEL_V1","DOTNET8_LINUX_OTEL_V1"))profiles.put(id,new Profile(id,id,true,1,1024,2.0,300));
+  for(String id:List.of("SPRING_BOOT_DOTNET_COMPOSE_V1","JAVA_SPRING_OTEL_V1","DOTNET8_LINUX_OTEL_V1"))profiles.put(id,new Profile(id,id,true,1,512,0.5,300));
  }
  public synchronized List<Integration> integrations(){return List.copyOf(integrations.values());}
  public synchronized List<Profile> profiles(){return List.copyOf(profiles.values());}

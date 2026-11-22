@@ -105,6 +105,8 @@ export function useStudioSession(sessionId: string) {
     targetImage?: string;
   } | null>(null);
   const prevStatusRef = useRef<string | undefined>(undefined);
+  const sawQueuedRef = useRef(false);
+  const [cancelledWhileQueued, setCancelledWhileQueued] = useState(false);
 
   // Reset transient per-session UI state when switching or restarting sessions.
   const resetAction = action.reset;
@@ -118,8 +120,10 @@ export function useStudioSession(sessionId: string) {
     setDownloadError(null);
     setChaosTarget("");
     setSseConnected(false);
+    setCancelledWhileQueued(false);
     pending.current = null;
     prevStatusRef.current = undefined;
+    sawQueuedRef.current = false;
     resetAction();
     resetPrediction();
     resetFinish();
@@ -131,7 +135,43 @@ export function useStudioSession(sessionId: string) {
   const executionStatus = data?.executionStatus?.toUpperCase() ?? "";
   useEffect(() => {
     setCachedStatus(data?.finishRequested ? "FINISHING" : executionStatus);
+    if (executionStatus === "QUEUED") {
+      sawQueuedRef.current = true;
+      setCancelledWhileQueued(false);
+    } else if (executionStatus === "CANCELLED" && sawQueuedRef.current) {
+      setCancelledWhileQueued(true);
+    } else if (executionStatus === "RUNNING" || executionStatus === "COMPLETED") {
+      sawQueuedRef.current = false;
+      setCancelledWhileQueued(false);
+    }
   }, [executionStatus, data?.finishRequested]);
+
+  // Visible-tab heartbeat: refetch /studio/state every 30s (and on tab return) so only visible tabs keep QUEUED/RUNNING sessions alive.
+  const activeHeartbeatStatus =
+    executionStatus === "QUEUED" ||
+    executionStatus === "READY_FOR_DISPATCH" ||
+    executionStatus === "ALLOCATED" ||
+    executionStatus === "RUNNING";
+  const refetchState = state.refetch;
+  useEffect(() => {
+    if (!sessionId || !activeHeartbeatStatus) return;
+    const pingIfVisible = () => {
+      if (typeof document === "undefined" || document.visibilityState === "visible") {
+        void refetchState();
+      }
+    };
+    const timer = window.setInterval(pingIfVisible, 30_000);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void refetchState();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [sessionId, activeHeartbeatStatus, refetchState]);
   const streamEnabled =
     Boolean(sessionId) &&
     /^[a-f0-9-]{36}$/i.test(sessionId) &&
@@ -401,6 +441,7 @@ export function useStudioSession(sessionId: string) {
   return {
     state,
     sseConnected,
+    cancelledWhileQueued,
     data,
     services,
     target,

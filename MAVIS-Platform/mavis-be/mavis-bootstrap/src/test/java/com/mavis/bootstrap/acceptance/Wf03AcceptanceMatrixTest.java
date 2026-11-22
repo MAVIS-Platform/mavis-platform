@@ -647,7 +647,7 @@ class Wf03AcceptanceMatrixTest {
         when(configRepo.findById(projectA.getId())).thenReturn(Optional.of(cfg));
         when(scenarioRepo.findById(scn.getId())).thenReturn(Optional.of(scn));
 
-        for (int badReplica : List.of(0, 9, 20)) {
+        for (int badReplica : List.of(0, 4, 9, 20)) {
             assertThatThrownBy(() -> planningService.start(projectA.getId(),
                     new RuntimePlanningService.StartRequest(snapshotA.getId(), scn.getId(), 1, 1, true, Map.of(),
                             List.of(new RuntimePlanningService.InfrastructureActionRequest("SCALE", "order-service", badReplica)))))

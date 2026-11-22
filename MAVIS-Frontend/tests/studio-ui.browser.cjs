@@ -220,7 +220,7 @@ async function main() {
     await page.getByLabel("Explain the observed behavior").fill("Baseline before scaling");
     await page.getByRole("button", { name: "Capture evidence snapshot", exact: true }).click();
     await page.getByRole("button", { name: "Download evidence", exact: true }).waitFor();
-    await page.getByLabel("Replicas (1–8)").fill("4");
+    await page.getByLabel("Replicas (1–3)").fill("3");
     await page.getByRole("button", { name: "Scale replicas", exact: true }).click();
     await page.getByText("SCALE orders → 4 · PENDING", { exact: true }).waitFor();
     assert.equal(

@@ -1616,7 +1616,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         settings.requireIntegration("otel-collector");
         var limit=settings.requireProfile(session.getProfileName()==null?"SPRING_BOOT_DOTNET_COMPOSE_V1":session.getProfileName());
         var pinnedProfile=session.getScenarioConfig()==null?objectMapper.createObjectNode():session.getScenarioConfig().path("profile");
-        if(pinnedProfile.path("memoryMiB").asInt(256)>limit.memoryMiB() || pinnedProfile.path("cpus").asDouble(1)>limit.cpus() || pinnedProfile.path("timeoutSeconds").asInt(120)>limit.timeoutSeconds())
+        if(pinnedProfile.path("memoryMiB").asInt(256)>limit.memoryMiB() || pinnedProfile.path("cpus").asDouble(limit.cpus())>limit.cpus() || pinnedProfile.path("timeoutSeconds").asInt(120)>limit.timeoutSeconds())
             throw new BusinessException(ErrorCode.CONFLICT,"Pinned profile exceeds current administrative limits; create a new session");
     }
     private static byte[] readBounded(InputStream input) throws java.io.IOException {
@@ -1981,9 +1981,9 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
             }
             if ("SCALE".equals(action)) {
                 JsonNode replicasNode = actionNode.path("replicas");
-                if (!replicasNode.isIntegralNumber() || replicasNode.asInt() < 1 || replicasNode.asInt() > 8) {
+                if (!replicasNode.isIntegralNumber() || replicasNode.asInt() < 1 || replicasNode.asInt() > 3) {
                     throw new BusinessException(ErrorCode.BAD_REQUEST,
-                            "REPLICA_BOUNDS_EXCEEDED: Replica count must be between 1 and 8 for SCALE action");
+                            "REPLICA_BOUNDS_EXCEEDED: Replica count must be between 1 and 3 for SCALE action");
                 }
             }
         }

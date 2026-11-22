@@ -39,13 +39,28 @@ class RuntimeStudioServiceTest {
 
     @Test void actionRetryIsIdempotentAndDifferentPayloadIsRejected() {
         UUID actionId = UUID.randomUUID();
-        var request = new RuntimeStudioService.ActionRequest(actionId, "SCALE", "orders", 4);
+        var request = new RuntimeStudioService.ActionRequest(actionId, "SCALE", "orders", 3);
         assertEquals(1, service.submit(id, request).path("actions").size());
         assertEquals(1, service.submit(id, request).path("actions").size());
         assertThrows(BusinessException.class, () -> service.submit(id,
             new RuntimeStudioService.ActionRequest(actionId, "SCALE", "orders", 2)));
         assertThrows(BusinessException.class, () -> service.submit(id,
             new RuntimeStudioService.ActionRequest(UUID.randomUUID(), "STOP", "orders", null)));
+    }
+
+    @Test void scaleAboveThreeReplicasAndOversizedSnapshotAreRejected() {
+        var scaleEx = assertThrows(BusinessException.class, () -> service.submit(id,
+            new RuntimeStudioService.ActionRequest(UUID.randomUUID(), "SCALE", "orders", 4)));
+        assertEquals(com.mavis.common.exception.ErrorCode.BAD_REQUEST, scaleEx.getErrorCode());
+
+        ObjectNode control = mapper.createObjectNode();
+        control.putObject("telemetry").put("observedAt", "2026-11-23T00:00:00Z");
+        session.setStudioControl(control);
+        session.setSourceSnapshot(SourceSnapshot.builder().id(UUID.randomUUID()).build());
+        String oversizedPng = "data:image/png;base64," + "A".repeat(450_000);
+        var imgEx = assertThrows(BusinessException.class, () -> service.capture(id,
+            new RuntimeStudioService.CaptureRequest("Oversized PNG test", oversizedPng, "2026-11-23T00:00:00Z")));
+        assertEquals(com.mavis.common.exception.ErrorCode.BAD_REQUEST, imgEx.getErrorCode());
     }
 
     @Test void preparedProfileAllowsOnlyDeclaredScaleTargets() throws Exception {

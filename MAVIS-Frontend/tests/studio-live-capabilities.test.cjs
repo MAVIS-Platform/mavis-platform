@@ -566,3 +566,36 @@ test("Batch 2: Admin Studio Setup points to /workspaces and grading evidence dis
   assert.match(evidenceSrc, /exerciseEvaluation:\s*exerciseEvaluationSchema/);
   assert.match(evidenceSrc, /\{\s*enabled:\s*available\s*\}/);
 });
+
+test("Batch 3: Scale capped at 1..3, PNG snapshot downscales within 440k chars, visible-tab heartbeat active", () => {
+  const obsSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-observability.tsx"),
+    "utf8",
+  );
+  assert.ok(obsSrc.includes("[1, 2, 3] as const"));
+  assert.ok(obsSrc.includes("SNAPSHOT_MAX_DATA_URL_CHARS = 440_000"));
+  assert.ok(obsSrc.includes("[1280, 960, 720]"));
+  assert.ok(obsSrc.includes('toDataURL("image/png")'));
+  assert.ok(!obsSrc.includes('toDataURL("image/jpeg")'));
+
+  const paritySrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/live-sandbox-parity.tsx"),
+    "utf8",
+  );
+  assert.ok(paritySrc.includes("Replicas (1–3)"));
+  assert.ok(paritySrc.includes("[1, 2, 3].map"));
+  assert.ok(!paritySrc.includes("[1, 2, 4, 8].map"));
+
+  const sessionHookSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/use-studio-session.ts"),
+    "utf8",
+  );
+  assert.ok(sessionHookSrc.includes("visibilitychange"));
+  assert.ok(sessionHookSrc.includes("cancelledWhileQueued"));
+
+  const workbenchSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/live-studio-workbench.tsx"),
+    "utf8",
+  );
+  assert.ok(workbenchSrc.includes("Your queued session was cancelled because the tab was inactive. Click Run again."));
+});

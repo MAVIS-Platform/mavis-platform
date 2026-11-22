@@ -2139,7 +2139,7 @@ public class RuntimePlanningService {
     String service=action==null||action.service()==null?"":action.service().trim();
     if(!Set.of("STOP","START","SCALE").contains(type)||service.isBlank())
      throw new BusinessException(ErrorCode.BAD_REQUEST,"Infrastructure action must target a pinned application service");
-    if("SCALE".equals(type)&&(action.replicas()==null||action.replicas()<1||action.replicas()>8))
+    if("SCALE".equals(type)&&(action.replicas()==null||action.replicas()<1||action.replicas()>3))
      throw new BusinessException(ErrorCode.BAD_REQUEST,"REPLICA_BOUNDS_EXCEEDED");
     ObjectNode node=actionNodes.addObject().put("action",type).put("service",service);
     if(action.replicas()!=null)node.put("replicas",action.replicas());

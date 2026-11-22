@@ -915,14 +915,14 @@ export function LiveStudioWorkbench({
         }
         return;
       }
-      if (command.action === "SCALE" && command.replicas && command.replicas >= 1 && command.replicas <= 8) {
+      if (command.action === "SCALE" && command.replicas && command.replicas >= 1 && command.replicas <= 3) {
         authoring.onSetReplicaTarget?.(command.service, command.replicas);
       }
       return;
     }
     if (command.action === "SCALE") {
       if (!canScaleFor(command.service)) return;
-      if (command.replicas === undefined || command.replicas < 1 || command.replicas > 8) return;
+      if (command.replicas === undefined || command.replicas < 1 || command.replicas > 3) return;
     }
     void send(command.action, command.service, command.replicas);
   }
@@ -2348,6 +2348,24 @@ export function LiveStudioWorkbench({
                     <p className={isLight ? "font-medium text-slate-700" : "font-medium text-slate-200"}>
                       {effectiveMissionInstructions}
                     </p>
+                    {studio.cancelledWhileQueued && (
+                      <p
+                        role="status"
+                        className={`flex items-start gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11.5px] font-medium ${
+                          isLight
+                            ? "border-amber-300 bg-amber-50 text-amber-900"
+                            : "border-amber-500/40 bg-amber-500/15 text-amber-200"
+                        }`}
+                      >
+                        <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+                        <span>
+                          {t(
+                            "Your queued session was cancelled because the tab was inactive. Click Run again.",
+                            "Phiên chờ đã bị hủy do tab không hoạt động. Hãy bấm Run lại.",
+                          )}
+                        </span>
+                      </p>
+                    )}
                     {needsPrediction && (
                       <p
                         role="status"
@@ -4611,8 +4629,8 @@ export function LiveStudioWorkbench({
                           type="button"
                           size="sm"
                           variant="outline"
-                          disabled={!canLiveAct || busy || !selCanScale || selPhase !== "running" || (selRunning ?? 1) >= 8}
-                          onClick={() => void dispatchCommand("SCALE", selSvc, Math.min(8, (selRunning ?? 1) + 1))}
+                          disabled={!canLiveAct || busy || !selCanScale || selPhase !== "running" || (selRunning ?? 1) >= 3}
+                          onClick={() => void dispatchCommand("SCALE", selSvc, Math.min(3, (selRunning ?? 1) + 1))}
                           className="h-8 w-full whitespace-nowrap border-slate-300 bg-white text-xs font-semibold text-slate-800 hover:bg-slate-100 disabled:bg-slate-50 disabled:text-slate-400"
                         >
                           <Plus className="mr-1 size-3.5" aria-hidden="true" />

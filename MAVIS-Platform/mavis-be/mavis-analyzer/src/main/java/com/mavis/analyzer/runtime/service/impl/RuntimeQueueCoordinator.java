@@ -487,10 +487,13 @@ public class RuntimeQueueCoordinator {
     int reapAbandonedStudioSessions(Instant now) {
         List<RuntimeSession> running = runtimeSessionRepository
                 .findByExecutionStatusAndCancelRequestedAtIsNullOrderByCreatedAtAsc("RUNNING");
-        Set<UUID> activeRunningIds = new HashSet<>();
-        boolean hasWaiters = countQueuedSessions() > 0;
+        List<RuntimeSession> queued = runtimeSessionRepository
+                .findByExecutionStatusAndCancelRequestedAtIsNullOrderByCreatedAtAsc("QUEUED");
+        Set<UUID> activeTrackedIds = new HashSet<>();
+        boolean hasWaiters = !queued.isEmpty() || countQueuedSessions() > 0;
         long baseIdle = Math.max(30, abandonedIdleSeconds);
         long idleThresholdSeconds = hasWaiters ? baseIdle : baseIdle * 2L;
+        long queuedIdleThresholdSeconds = Math.max(300L, baseIdle * 2L);
         long minWarmupSeconds = Math.min(60L, baseIdle);
         int reaped = 0;
 
@@ -499,7 +502,7 @@ public class RuntimeQueueCoordinator {
             if (id == null) {
                 continue;
             }
-            activeRunningIds.add(id);
+            activeTrackedIds.add(id);
             boolean interactiveStudio = candidate.getScenarioConfig() != null
                     && candidate.getScenarioConfig().path("interactiveStudio").asBoolean(false);
             if (!interactiveStudio || candidate.getStartedAt() == null) {
@@ -528,13 +531,58 @@ public class RuntimeQueueCoordinator {
             });
             if (Boolean.TRUE.equals(cancelled)) {
                 uiHeartbeats.remove(id);
+                activeTrackedIds.remove(id);
                 reaped++;
                 abandonedReapedTotal.incrementAndGet();
                 log.info("Auto-reaped abandoned Studio session {} after {}s idle (waiters={})",
                         id, Duration.between(lastSeen, now).getSeconds(), hasWaiters);
             }
         }
-        uiHeartbeats.keySet().retainAll(activeRunningIds);
+
+        for (RuntimeSession candidate : queued) {
+            UUID id = candidate.getId();
+            if (id == null) {
+                continue;
+            }
+            boolean interactiveStudio = candidate.getScenarioConfig() != null
+                    && candidate.getScenarioConfig().path("interactiveStudio").asBoolean(false);
+            if (!interactiveStudio) {
+                activeTrackedIds.add(id);
+                continue;
+            }
+            Instant created = candidate.getCreatedAt() != null ? candidate.getCreatedAt().toInstant() : now;
+            Instant lastSeen = latestActivityTimestamp(id, candidate, created);
+            if (Duration.between(lastSeen, now).getSeconds() < queuedIdleThresholdSeconds) {
+                activeTrackedIds.add(id);
+                continue;
+            }
+            Boolean cancelled = runInTransaction(() -> {
+                RuntimeSession locked = runtimeSessionRepository.findLockedById(id).orElse(null);
+                if (locked == null || !"QUEUED".equalsIgnoreCase(locked.getExecutionStatus())
+                        || locked.getCancelRequestedAt() != null || locked.getCompletedAt() != null) {
+                    return false;
+                }
+                OffsetDateTime cancelledAt = OffsetDateTime.now();
+                locked.setScenarioStatus("CANCELLED");
+                locked.setExecutionStatus("CANCELLED");
+                locked.setCleanupStatus("NOT_APPLICABLE");
+                locked.setCancelRequestedAt(cancelledAt);
+                locked.setCompletedAt(cancelledAt);
+                runtimeSessionRepository.save(locked);
+                return true;
+            });
+            if (Boolean.TRUE.equals(cancelled)) {
+                uiHeartbeats.remove(id);
+                reaped++;
+                abandonedReapedTotal.incrementAndGet();
+                log.info("Auto-reaped abandoned QUEUED Studio session {} after {}s inactive",
+                        id, Duration.between(lastSeen, now).getSeconds());
+            } else {
+                activeTrackedIds.add(id);
+            }
+        }
+
+        uiHeartbeats.keySet().retainAll(activeTrackedIds);
         return reaped;
     }
 

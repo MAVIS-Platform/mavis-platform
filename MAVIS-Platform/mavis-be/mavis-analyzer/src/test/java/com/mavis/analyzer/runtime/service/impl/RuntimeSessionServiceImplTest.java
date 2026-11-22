@@ -863,7 +863,7 @@ class RuntimeSessionServiceImplTest {
         when(modelVersionRepository.findById(validModel.getId())).thenReturn(Optional.of(validModel));
         when(modelElementRepository.findByModelVersionId(validModel.getId())).thenReturn(Collections.emptyList());
 
-        for (int badReplica : List.of(0, 9)) {
+        for (int badReplica : List.of(0, 4, 9)) {
             ObjectNode cfg = objectMapper.createObjectNode();
             cfg.putObject("profile").putObject("applications").putObject("order-service").put("runtime", "java");
             cfg.putArray("infrastructureActions").addObject()

@@ -425,4 +425,50 @@ class RuntimeQueueCoordinatorTest {
         // After cooldown elapses, alerts fire again
         assertThat(stub.evaluateAndNotifyAlerts(now.plusSeconds(650))).isEqualTo(3);
     }
+
+    @Test
+    void reapAbandonedCancelsInactiveQueuedSessionAndPreservesActiveQueuedHeartbeat() {
+        Instant now = Instant.now();
+        UUID staleQueuedId = UUID.randomUUID();
+        UUID activeQueuedId = UUID.randomUUID();
+
+        var interactiveCfg = mapper.createObjectNode().put("interactiveStudio", true);
+        RuntimeSession staleQueued = RuntimeSession.builder()
+                .id(staleQueuedId)
+                .executionStatus("QUEUED")
+                .scenarioStatus("APPROVED")
+                .cleanupStatus("NOT_APPLICABLE")
+                .scenarioConfig(interactiveCfg)
+                .createdAt(OffsetDateTime.ofInstant(now.minusSeconds(400), ZoneOffset.UTC))
+                .build();
+        RuntimeSession activeQueued = RuntimeSession.builder()
+                .id(activeQueuedId)
+                .executionStatus("QUEUED")
+                .scenarioStatus("APPROVED")
+                .cleanupStatus("NOT_APPLICABLE")
+                .scenarioConfig(interactiveCfg)
+                .createdAt(OffsetDateTime.ofInstant(now.minusSeconds(400), ZoneOffset.UTC))
+                .build();
+
+        when(repository.findByExecutionStatusAndCancelRequestedAtIsNullOrderByCreatedAtAsc("RUNNING"))
+                .thenReturn(List.of());
+        when(repository.findByExecutionStatusAndCancelRequestedAtIsNullOrderByCreatedAtAsc("QUEUED"))
+                .thenReturn(List.of(staleQueued, activeQueued));
+        when(repository.findLockedById(staleQueuedId)).thenReturn(Optional.of(staleQueued));
+
+        coordinator.recordUiHeartbeat(activeQueuedId);
+
+        int reaped = coordinator.reapAbandonedStudioSessions(now);
+        assertThat(reaped).isEqualTo(1);
+        assertThat(staleQueued.getExecutionStatus()).isEqualTo("CANCELLED");
+        assertThat(staleQueued.getScenarioStatus()).isEqualTo("CANCELLED");
+        assertThat(staleQueued.getCompletedAt()).isNotNull();
+        assertThat(activeQueued.getExecutionStatus()).isEqualTo("QUEUED");
+
+        // Second sweep immediately after must retain activeQueuedId's heartbeat (not wiped by retainAll)
+        when(repository.findByExecutionStatusAndCancelRequestedAtIsNullOrderByCreatedAtAsc("QUEUED"))
+                .thenReturn(List.of(activeQueued));
+        assertThat(coordinator.reapAbandonedStudioSessions(now.plusSeconds(10))).isZero();
+        assertThat(activeQueued.getExecutionStatus()).isEqualTo("QUEUED");
+    }
 }

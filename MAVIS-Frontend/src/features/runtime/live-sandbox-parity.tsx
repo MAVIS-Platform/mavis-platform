@@ -348,8 +348,8 @@ export function LiveSandboxParity({
   }
 
   function scaleTo(value: number) {
-    if (!Number.isInteger(value) || value < 1 || value > 8) {
-      setMessage("Live accepts 1–8 replicas. BR-07 rejects larger requests.");
+    if (!Number.isInteger(value) || value < 1 || value > 3) {
+      setMessage("Live accepts 1–3 replicas. BR-07 rejects larger requests.");
       return;
     }
     if (value === running || !canScale) return;
@@ -1112,7 +1112,7 @@ export function LiveSandboxParity({
           <div className="space-y-1.5">
             <div className="flex items-center justify-between gap-1 text-[10px] text-slate-400">
               <span className="flex items-center gap-1">
-                {compact ? "Replicas (1–8)" : "Custom replicas (Live 1–8)"}
+                {compact ? "Replicas (1–3)" : "Custom replicas (Live 1–3)"}
                 {!compact && (
                   <span
                     className={`rounded-full border px-1.5 py-0.5 font-mono text-[8.5px] font-semibold ${BADGE[capability("replicas-1-8").state]}`}
@@ -1125,7 +1125,7 @@ export function LiveSandboxParity({
                 key={`${selected}:${running}`}
                 type="number"
                 min={1}
-                max={8}
+                max={3}
                 step={1}
                 aria-label="Live replica count"
                 defaultValue={Math.max(1, running ?? 1)}
@@ -1142,8 +1142,8 @@ export function LiveSandboxParity({
                 className="h-6 w-14 rounded border border-slate-700 bg-slate-950 px-1.5 text-center font-mono text-xs font-semibold text-slate-100 disabled:opacity-40"
               />
             </div>
-            <div className="grid grid-cols-4 gap-1">
-              {[1, 2, 4, 8].map((preset) => (
+            <div className="grid grid-cols-3 gap-1">
+              {[1, 2, 3].map((preset) => (
                 <button
                   key={preset}
                   type="button"
@@ -1164,7 +1164,7 @@ export function LiveSandboxParity({
                     type="button"
                     aria-label={`Scale ${selected} to ${preset}`}
                     disabled
-                    title="BR-07 bounds a Live session to 8 replicas."
+                    title="BR-07 bounds a Live session to 3 replicas."
                     className="h-6 rounded border border-slate-800 bg-slate-950/40 font-mono text-[10.5px] font-semibold text-slate-600"
                   >
                     ×{preset}
@@ -1200,7 +1200,7 @@ export function LiveSandboxParity({
             </button>
             <button
               type="button"
-              disabled={!canScale || busy || running === undefined || running === 0 || running >= 8}
+              disabled={!canScale || busy || running === undefined || running === 0 || running >= 3}
               onClick={() => void command("SCALE", selected, (running ?? 0) + 1)}
               className={`h-7 min-w-0 shrink-0 whitespace-nowrap rounded border border-sky-500/40 bg-sky-500/15 px-2 text-[11px] font-semibold text-sky-200 transition-colors hover:bg-sky-500/25 disabled:opacity-40 ${compact ? "col-span-2" : ""}`}
             >

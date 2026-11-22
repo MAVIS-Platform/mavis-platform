@@ -185,5 +185,17 @@ class LabStudioExerciseServiceTest {
                 List.of(new LabStudioExerciseService.DeclarativeRule("BOGUS_METRIC", "ALL", "LTE", 10.0, null)));
         assertThrows(BusinessException.class, () -> service.save(workspaceId, labId,
                 new LabStudioExerciseService.ExerciseRequest(null, null, null, List.of(), null, null, badRule, "bad")));
+
+        // Reject replica targets and SCALE targetChangeAction above 3
+        var tooManyReplicas = new LabStudioExerciseService.SuccessCriteria(
+                0, null, null, List.of(new LabStudioExerciseService.ReplicaTarget("orders", 4)));
+        assertThrows(BusinessException.class, () -> service.save(workspaceId, labId,
+                new LabStudioExerciseService.ExerciseRequest(null, null, null, List.of(), null, null, tooManyReplicas, "bad")));
+
+        var badScaleAction = new LabStudioExerciseService.SuccessCriteria(
+                0, null, null, List.of(), "SCALE_UNDER_LOAD", false, null,
+                new LabStudioExerciseService.ChangeAction("SCALE", "orders", 4, null, null), List.of());
+        assertThrows(BusinessException.class, () -> service.save(workspaceId, labId,
+                new LabStudioExerciseService.ExerciseRequest(null, null, null, List.of(), null, null, badScaleAction, "bad")));
     }
 }
