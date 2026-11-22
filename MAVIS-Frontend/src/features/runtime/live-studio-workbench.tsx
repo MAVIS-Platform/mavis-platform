@@ -544,10 +544,24 @@ export function LiveStudioWorkbench({
     prevFinishSuccessRef.current = finish.isSuccess;
   }, [finish.isSuccess]);
   const [leftWidth, setLeftWidth] = useState(244);
-  const [rightWidth, setRightWidth] = useState(324);
+  const [rightWidth, setRightWidth] = useState(340);
+  const [rightHeight, setRightHeight] = useState<number | null>(null);
+  const [missionWidth, setMissionWidth] = useState(278);
+  const [missionHeight, setMissionHeight] = useState<number | null>(null);
   const [bottomHeight, setBottomHeight] = useState(256);
   const [bottomCollapsed, setBottomCollapsed] = useState(true);
-  const [resizingAxis, setResizingAxis] = useState<"left" | "right" | "bottom" | null>(null);
+  const rightCardRef = useRef<HTMLElement>(null);
+  const missionCardRef = useRef<HTMLDivElement>(null);
+  type ResizeAxis =
+    | "left"
+    | "right"
+    | "right-height"
+    | "right-corner"
+    | "mission-width"
+    | "mission-height"
+    | "mission-corner"
+    | "bottom";
+  const [resizingAxis, setResizingAxis] = useState<ResizeAxis | null>(null);
   const resizeCleanupRef = useRef<(() => void) | null>(null);
   const [expanded, setExpanded] = useState(false);
   const dockExpanded = !bottomCollapsed && bottomHeight >= 320;
@@ -575,45 +589,70 @@ export function LiveStudioWorkbench({
   );
 
   function startResize(
-    axis: "left" | "right" | "bottom",
+    axis: ResizeAxis,
     startEvent: ReactPointerEvent<HTMLDivElement>,
   ) {
     startEvent.preventDefault();
+    startEvent.stopPropagation();
     resizeCleanupRef.current?.();
     const startX = startEvent.clientX;
     const startY = startEvent.clientY;
     const initialLeft = showLeft ? leftWidth : 0;
-    const initialRight = showRight ? rightWidth : 0;
+    const initialRight = rightCardRef.current?.getBoundingClientRect().width ?? rightWidth;
+    const initialRightHeight = rightCardRef.current?.getBoundingClientRect().height ?? rightHeight ?? 480;
+    const initialMissionWidth = missionCardRef.current?.getBoundingClientRect().width ?? missionWidth;
+    const initialMissionHeight = missionCardRef.current?.getBoundingClientRect().height ?? missionHeight ?? 240;
     const initialBottom = bottomCollapsed ? 36 : bottomHeight;
 
     setResizingAxis(axis);
     document.body.style.userSelect = "none";
-    document.body.style.cursor = axis === "bottom" ? "row-resize" : "col-resize";
+    document.body.style.cursor =
+      axis === "bottom" || axis === "right-height" || axis === "mission-height"
+        ? "row-resize"
+        : axis === "right-corner"
+          ? "nesw-resize"
+          : axis === "mission-corner"
+            ? "nwse-resize"
+            : "col-resize";
 
     function onPointerMove(moveEvent: PointerEvent) {
+      const dx = moveEvent.clientX - startX;
+      const dy = moveEvent.clientY - startY;
+      const maxCardW = Math.max(360, Math.min(720, window.innerWidth - 96));
+      const maxCardH = Math.max(260, window.innerHeight - 104);
+
       if (axis === "left") {
-        const raw = initialLeft + (moveEvent.clientX - startX);
+        const raw = initialLeft + dx;
         if (raw < 90) {
           setShowLeft(false);
         } else {
           setShowLeft(true);
           setLeftWidth(Math.max(180, Math.min(560, Math.round(raw))));
         }
-      } else if (axis === "right") {
-        const raw = initialRight - (moveEvent.clientX - startX);
-        if (raw < 110) {
-          setShowRight(false);
-        } else {
-          setShowRight(true);
-          setRightWidth(Math.max(220, Math.min(560, Math.round(raw))));
+      } else if (axis === "right" || axis === "right-corner") {
+        setRightWidth(Math.max(260, Math.min(maxCardW, Math.round(initialRight - dx))));
+        if (axis === "right-corner") {
+          setRightHeight(Math.max(220, Math.min(maxCardH, Math.round(initialRightHeight + dy))));
         }
+      } else if (axis === "right-height") {
+        setRightHeight(Math.max(220, Math.min(maxCardH, Math.round(initialRightHeight + dy))));
+      } else if (axis === "mission-width" || axis === "mission-corner") {
+        setMissionWidth(Math.max(210, Math.min(Math.min(520, maxCardW), Math.round(initialMissionWidth + dx))));
+        if (axis === "mission-corner") {
+          setMissionCollapsed(false);
+          setMissionHeight(Math.max(140, Math.min(maxCardH, Math.round(initialMissionHeight + dy))));
+        }
+      } else if (axis === "mission-height") {
+        setMissionCollapsed(false);
+        setMissionHeight(Math.max(140, Math.min(maxCardH, Math.round(initialMissionHeight + dy))));
       } else {
-        const raw = initialBottom - (moveEvent.clientY - startY);
+        const raw = initialBottom - dy;
+        const maxBottom = Math.max(540, Math.round(window.innerHeight * 0.78));
         if (raw < 72) {
           setBottomCollapsed(true);
         } else {
           setBottomCollapsed(false);
-          setBottomHeight(Math.max(100, Math.min(540, Math.round(raw))));
+          setBottomHeight(Math.max(100, Math.min(maxBottom, Math.round(raw))));
         }
       }
     }
@@ -1904,10 +1943,28 @@ export function LiveStudioWorkbench({
               aria-valuenow={leftWidth}
               aria-valuemin={180}
               aria-valuemax={560}
+              title={t("Drag to resize panel · Double-click to hide", "Kéo để chỉnh chiều rộng · Nhấp đúp để ẩn")}
               onPointerDown={(event) => startResize("left", event)}
               onDoubleClick={() => setShowLeft(false)}
-              className="w-1 shrink-0 cursor-col-resize bg-transparent transition-colors hover:bg-primary/30"
-            />
+              onKeyDown={(event) => {
+                if (event.key === "ArrowRight") {
+                  event.preventDefault();
+                  setLeftWidth((w) => Math.min(560, w + 20));
+                } else if (event.key === "ArrowLeft") {
+                  event.preventDefault();
+                  setLeftWidth((w) => Math.max(180, w - 20));
+                }
+              }}
+              className={`group flex w-1.5 shrink-0 cursor-col-resize items-center justify-center transition-colors hover:bg-primary/20 ${
+                resizingAxis === "left" ? "bg-primary/25" : "bg-transparent"
+              }`}
+            >
+              <span
+                className={`h-12 w-0.5 rounded-full transition-colors ${
+                  resizingAxis === "left" ? "bg-primary" : "bg-slate-400/35 group-hover:bg-primary"
+                }`}
+              />
+            </div>
           </>
         )}
 
@@ -2131,14 +2188,19 @@ export function LiveStudioWorkbench({
               </button>
             </nav>
 
-            {/* MODERN MAVIS MISSION CARD (Docked cleanly beside Left Rail — Style-Aware, NO yellow sticky note) */}
+            {/* MODERN MAVIS MISSION CARD (Docked cleanly beside Left Rail — Style-Aware & Freely Resizable) */}
             {!missionHidden && (
               <div
+                ref={missionCardRef}
                 aria-label={t("Lab Mission", "Mục tiêu Lab")}
-                className={`pointer-events-auto absolute top-4 left-[70px] z-20 w-[278px] overflow-hidden transition-all ${styleCfg.missionCardClass}`}
+                style={{
+                  width: missionWidth,
+                  ...(missionHeight != null && !missionCollapsed ? { height: missionHeight } : {}),
+                }}
+                className={`pointer-events-auto absolute top-4 left-[70px] z-20 flex max-h-[calc(100%-2rem)] max-w-[calc(100%-5.5rem)] flex-col overflow-hidden ${styleCfg.missionCardClass}`}
               >
-                <div className={`h-1.5 w-full ${styleCfg.missionAccentClass}`} aria-hidden="true" />
-                <div className="flex items-center justify-between gap-2 px-3.5 py-2.5">
+                <div className={`h-1.5 w-full shrink-0 ${styleCfg.missionAccentClass}`} aria-hidden="true" />
+                <div className="flex shrink-0 items-center justify-between gap-2 px-3.5 py-2.5">
                   <span className="inline-flex items-center gap-1.5 text-[13px] font-bold tracking-tight">
                     <Target className="size-3.5 shrink-0 text-primary" aria-hidden="true" />
                     {t("Lab Mission", "Mục tiêu Lab")}
@@ -2167,7 +2229,7 @@ export function LiveStudioWorkbench({
                   </div>
                 </div>
                 {!missionCollapsed && (
-                  <div className={`space-y-2 border-t px-3.5 pt-2.5 pb-3 text-[13px] leading-snug ${isLight ? "border-slate-200/80" : "border-slate-800"}`}>
+                  <div className={`min-h-0 flex-1 space-y-2 overflow-y-auto border-t px-3.5 pt-2.5 pb-3 text-[13px] leading-snug ${isLight ? "border-slate-200/80" : "border-slate-800"}`}>
                     <p className={isLight ? "font-medium text-slate-700" : "font-medium text-slate-200"}>
                       {effectiveMissionInstructions}
                     </p>
@@ -2233,6 +2295,82 @@ export function LiveStudioWorkbench({
                         })}
                     </ul>
                   </div>
+                )}
+
+                {/* Draggable Right, Bottom & Corner Resize Handles for Lab Mission */}
+                <div
+                  role="separator"
+                  tabIndex={0}
+                  aria-orientation="vertical"
+                  aria-label="Resize mission width"
+                  aria-valuenow={missionWidth}
+                  aria-valuemin={210}
+                  aria-valuemax={520}
+                  title={t("Drag to resize width · Double-click to reset", "Kéo để chỉnh chiều rộng · Nhấp đúp để đặt lại")}
+                  onPointerDown={(event) => startResize("mission-width", event)}
+                  onDoubleClick={() => setMissionWidth(278)}
+                  onKeyDown={(event) => {
+                    if (event.key === "ArrowRight") {
+                      event.preventDefault();
+                      setMissionWidth((w) => Math.min(520, w + 20));
+                    } else if (event.key === "ArrowLeft") {
+                      event.preventDefault();
+                      setMissionWidth((w) => Math.max(210, w - 20));
+                    }
+                  }}
+                  className="group absolute inset-y-2 right-0 z-10 flex w-2 cursor-col-resize items-center justify-end"
+                >
+                  <span
+                    className={`h-10 w-0.5 rounded-full transition-colors ${
+                      resizingAxis === "mission-width" || resizingAxis === "mission-corner"
+                        ? "bg-primary"
+                        : "bg-transparent group-hover:bg-primary/60"
+                    }`}
+                  />
+                </div>
+                {!missionCollapsed && (
+                  <>
+                    <div
+                      role="separator"
+                      tabIndex={0}
+                      aria-orientation="horizontal"
+                      aria-label="Resize mission height"
+                      aria-valuenow={missionHeight ?? 240}
+                      aria-valuemin={140}
+                      aria-valuemax={640}
+                      title={t("Drag to resize height · Double-click to reset", "Kéo để chỉnh chiều cao · Nhấp đúp để đặt lại")}
+                      onPointerDown={(event) => startResize("mission-height", event)}
+                      onDoubleClick={() => setMissionHeight(null)}
+                      onKeyDown={(event) => {
+                        if (event.key === "ArrowDown") {
+                          event.preventDefault();
+                          setMissionHeight((h) => Math.min(640, (h ?? 240) + 20));
+                        } else if (event.key === "ArrowUp") {
+                          event.preventDefault();
+                          setMissionHeight((h) => Math.max(140, (h ?? 240) - 20));
+                        }
+                      }}
+                      className="group absolute inset-x-2 bottom-0 z-10 flex h-2 cursor-row-resize items-end justify-center"
+                    >
+                      <span
+                        className={`h-0.5 w-10 rounded-full transition-colors ${
+                          resizingAxis === "mission-height" || resizingAxis === "mission-corner"
+                            ? "bg-primary"
+                            : "bg-transparent group-hover:bg-primary/60"
+                        }`}
+                      />
+                    </div>
+                    <div
+                      aria-label="Resize mission card"
+                      title={t("Drag corner to resize · Double-click to reset", "Kéo góc để chỉnh kích thước · Nhấp đúp để đặt lại")}
+                      onPointerDown={(event) => startResize("mission-corner", event)}
+                      onDoubleClick={() => {
+                        setMissionWidth(278);
+                        setMissionHeight(null);
+                      }}
+                      className="absolute right-0 bottom-0 z-20 size-3.5 cursor-nwse-resize"
+                    />
+                  </>
                 )}
               </div>
             )}
@@ -2441,24 +2579,32 @@ export function LiveStudioWorkbench({
             aria-label="Resize telemetry dock"
             aria-valuenow={bottomHeight}
             aria-valuemin={120}
-            aria-valuemax={540}
+            aria-valuemax={680}
             title="Drag up/down to resize Logs & Telemetry drawer"
             onPointerDown={(event) => startResize("bottom", event)}
             onDoubleClick={() => setBottomCollapsed(true)}
             onKeyDown={(event) => {
               if (event.key === "ArrowUp") {
                 event.preventDefault();
-                setBottomHeight((h) => Math.min(540, h + 20));
+                setBottomHeight((h) => Math.min(680, h + 20));
               } else if (event.key === "ArrowDown") {
                 event.preventDefault();
                 setBottomHeight((h) => Math.max(120, h - 20));
               }
             }}
-            className={`group relative flex h-1.5 shrink-0 cursor-row-resize items-center justify-center border-y transition-colors hover:bg-primary/25 ${
-              isLight ? "border-slate-200 bg-slate-100" : "border-slate-800 bg-slate-950"
+            className={`group relative flex h-2 shrink-0 cursor-row-resize items-center justify-center border-y transition-colors hover:bg-primary/20 ${
+              resizingAxis === "bottom"
+                ? "border-primary/40 bg-primary/20"
+                : isLight
+                  ? "border-slate-200 bg-slate-100"
+                  : "border-slate-800 bg-slate-950"
             }`}
           >
-            <div className="h-0.5 w-10 rounded-full bg-slate-400 group-hover:bg-primary" />
+            <div
+              className={`h-1 w-12 rounded-full transition-colors ${
+                resizingAxis === "bottom" ? "bg-primary" : "bg-slate-400/70 group-hover:bg-primary"
+              }`}
+            />
           </div>
 
           <div
@@ -3938,15 +4084,95 @@ export function LiveStudioWorkbench({
           )}
         </div>
 
-        {/* FLOATING RIGHT CONTEXTUAL CARD (GonnaCrash Style — Only 1 Card Open at a Time, Close Returns 100% Canvas) */}
+        {/* FLOATING RIGHT CONTEXTUAL CARD (Style-Aware & Freely Resizable on Left / Bottom / Corner Edges) */}
         {showRight && (
           <aside
+            ref={rightCardRef}
             style={{
+              width: rightWidth,
+              ...(rightHeight != null ? { height: rightHeight } : {}),
               scrollbarWidth: "thin",
               scrollbarColor: isLight ? "#cbd5e1 #ffffff" : "#334155 #0a0f18",
             }}
-            className={`pointer-events-auto absolute top-4 right-4 z-20 flex max-h-[calc(100%-6.25rem)] w-[336px] max-w-[calc(100%-2rem)] flex-col overflow-hidden ${styleCfg.floatingCardClass}`}
+            className={`pointer-events-auto absolute top-4 right-4 z-20 flex max-w-[calc(100%-2rem)] flex-col overflow-hidden ${
+              rightHeight != null ? "max-h-[calc(100%-2rem)]" : "max-h-[calc(100%-6.25rem)]"
+            } ${styleCfg.floatingCardClass}`}
           >
+            {/* Left-edge Horizontal Resize Handle */}
+            <div
+              role="separator"
+              tabIndex={0}
+              aria-orientation="vertical"
+              aria-label="Resize inspector width"
+              aria-valuenow={rightWidth}
+              aria-valuemin={260}
+              aria-valuemax={720}
+              title={t("Drag edge to resize width · Double-click to reset", "Kéo viền để chỉnh chiều rộng · Nhấp đúp để đặt lại")}
+              onPointerDown={(event) => startResize("right", event)}
+              onDoubleClick={() => setRightWidth(340)}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowLeft") {
+                  event.preventDefault();
+                  setRightWidth((w) => Math.min(720, w + 24));
+                } else if (event.key === "ArrowRight") {
+                  event.preventDefault();
+                  setRightWidth((w) => Math.max(260, w - 24));
+                }
+              }}
+              className="group absolute inset-y-2 left-0 z-20 flex w-2 cursor-col-resize items-center justify-start"
+            >
+              <span
+                className={`h-14 w-1 rounded-full transition-colors ${
+                  resizingAxis === "right" || resizingAxis === "right-corner"
+                    ? "bg-primary"
+                    : "bg-slate-400/35 group-hover:bg-primary/70"
+                }`}
+              />
+            </div>
+
+            {/* Bottom-edge Vertical Resize Handle */}
+            <div
+              role="separator"
+              tabIndex={0}
+              aria-orientation="horizontal"
+              aria-label="Resize inspector height"
+              aria-valuenow={rightHeight ?? 480}
+              aria-valuemin={220}
+              aria-valuemax={840}
+              title={t("Drag edge to resize height · Double-click to reset", "Kéo viền để chỉnh chiều cao · Nhấp đúp để đặt lại")}
+              onPointerDown={(event) => startResize("right-height", event)}
+              onDoubleClick={() => setRightHeight(null)}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowDown") {
+                  event.preventDefault();
+                  setRightHeight((h) => Math.min(840, (h ?? 480) + 24));
+                } else if (event.key === "ArrowUp") {
+                  event.preventDefault();
+                  setRightHeight((h) => Math.max(220, (h ?? 480) - 24));
+                }
+              }}
+              className="group absolute inset-x-3 bottom-0 z-20 flex h-2 cursor-row-resize items-end justify-center"
+            >
+              <span
+                className={`h-1 w-14 rounded-full transition-colors ${
+                  resizingAxis === "right-height" || resizingAxis === "right-corner"
+                    ? "bg-primary"
+                    : "bg-slate-400/35 group-hover:bg-primary/70"
+                }`}
+              />
+            </div>
+
+            {/* Bottom-left Diagonal Corner Resize Handle */}
+            <div
+              aria-label="Resize inspector panel"
+              title={t("Drag corner to resize · Double-click to reset", "Kéo góc để chỉnh kích thước · Nhấp đúp để đặt lại")}
+              onPointerDown={(event) => startResize("right-corner", event)}
+              onDoubleClick={() => {
+                setRightWidth(340);
+                setRightHeight(null);
+              }}
+              className="absolute bottom-0 left-0 z-30 size-3.5 cursor-nesw-resize"
+            />
             {/* Floating Card Header with Close Button */}
             <div
               className={`flex shrink-0 items-center justify-between gap-2 border-b px-4 py-2.5 ${

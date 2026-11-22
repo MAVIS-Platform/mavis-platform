@@ -458,3 +458,22 @@ test("LiveTerminalConsole renders service filter as a compact dropdown instead o
   assert.match(src, /All services \(\{serviceList\.length\}\)/);
   assert.doesNotMatch(src, /\{\/\* Service filter pills \*\/\}/);
 });
+
+test("LiveStudioWorkbench exposes draggable resize handles on inspector, mission card, blocks panel, and bottom drawer", () => {
+  const src = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/live-studio-workbench.tsx"),
+    "utf8",
+  );
+  for (const label of [
+    "Resize inspector width",
+    "Resize inspector height",
+    "Resize inspector panel",
+    "Resize mission width",
+    "Resize mission height",
+    "Resize mission card",
+    "Resize blocks panel",
+    "Resize telemetry dock",
+  ]) {
+    assert.ok(src.includes(`aria-label="${label}"`), `Missing resize handle: ${label}`);
+  }
+});
