@@ -45,6 +45,7 @@ class WorkspaceServiceImplTest {
     private UserRepository userRepository;
 
     @Mock private com.mavis.common.security.AccessPolicyService accessPolicyService;
+    @Mock private com.mavis.platform.workspace.service.CourseAccessService courseAccessService;
 
     @InjectMocks
     private WorkspaceServiceImpl workspaceService;
@@ -118,6 +119,7 @@ class WorkspaceServiceImplTest {
         assertThat(response.getMyRoleInWorkspace()).isEqualTo("LECTURER");
         assertThat(response.getCreatedAt()).isNotNull();
         assertThat(response.getUpdatedAt()).isNotNull();
+        verify(courseAccessService).createPasskey(eq(savedWorkspace.getId()), any());
 
         verify(workspaceRepository).save(any(Workspace.class));
         verify(workspaceMemberRepository).save(any(WorkspaceMember.class));
