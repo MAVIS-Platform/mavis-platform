@@ -81,29 +81,29 @@
 
 :root, [data-theme="light"] {
   color-scheme: light;
-  --background: #F1F5F9;
+  --background: #F5F7FA;
   --card: #FFFFFF;
-  --muted: #E9EFF6;
+  --muted: #EEF2F7;
   --popover: #FFFFFF;
-  --foreground: #0F172A;
-  --muted-foreground: #475569;
-  --border: #D2DCE8;
-  --input: #BCC9DA;
-  --primary: #2563EB;
+  --foreground: #1F1F1F;
+  --muted-foreground: #3D4756;
+  --border: #CFD8E3;
+  --input: #94A3B8;
+  --primary: #0056D2;
   --primary-foreground: #FFFFFF;
-  --primary-hover: #1D4ED8;
-  --secondary: #E2E8F0;
-  --secondary-foreground: #1E293B;
-  --accent: #E2EAF4;
-  --pressed: #D5E0EE;
-  --selected: #DBEAFE;
-  --selected-foreground: #1D4ED8;
-  --ring: #2563EB;
-  --disabled-background: #E2E8F0;
-  --disabled-foreground: #64748B;
-  --hero-background: #E6EFFB;
-  --section-background: #EBF1F8;
-  --body-text: #475569;
+  --primary-hover: #00419E;
+  --secondary: #E6ECF4;
+  --secondary-foreground: #1F1F1F;
+  --accent: #E8F1FD;
+  --pressed: #D6E6FB;
+  --selected: #E8F1FD;
+  --selected-foreground: #00419E;
+  --ring: #0056D2;
+  --disabled-background: #E6ECF4;
+  --disabled-foreground: #5B6678;
+  --hero-background: #E8F1FD;
+  --section-background: #EEF2F7;
+  --body-text: #3D4756;
   --success: oklch(0.44908 0.089321 161.530163);
   --success-subtle: oklch(0.955505 0.016565 162.747628);
   --warning: oklch(0.474537 0.102676 70.192909);
@@ -136,7 +136,7 @@
   --chart-3: var(--warning);
   --chart-4: var(--ai);
   --chart-5: var(--destructive);
-  --sidebar: #F8FAFC;
+  --sidebar: #FFFFFF;
   --sidebar-foreground: var(--foreground);
   --sidebar-primary: var(--primary);
   --sidebar-primary-foreground: var(--primary-foreground);
@@ -292,7 +292,7 @@
 
 @layer base {
   * { border-color: var(--border); }
-  body { margin: 0; font-family: var(--font-ui); font-size: var(--text-body); line-height: var(--line-body); background-color: var(--background); color: var(--foreground); -webkit-font-smoothing: antialiased; }
+  body { margin: 0; font-family: var(--font-ui); font-size: var(--text-body); line-height: var(--line-body); background-color: var(--background); color: var(--foreground); text-rendering: optimizeLegibility; }
   :where(h1, h2, h3, h4) { font-weight: 600; letter-spacing: -0.025em; }
   :where(h1) { font-size: var(--text-page); line-height: var(--line-page); }
   :where(h2) { font-size: var(--text-section); line-height: var(--line-section); }

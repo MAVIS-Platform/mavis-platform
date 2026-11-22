@@ -144,3 +144,19 @@ test("Step 3 submission flow hides dead Jump to Submission Box after submit, foc
   assert.match(screens, /querySelector<HTMLTextAreaElement>\("textarea"\)\?\.focus\(\{ preventScroll: true \}\)/);
   assert.match(subV2, /href=\{`\/submissions\/\$\{encodeURIComponent\(latest\.id\)\}`\}/);
 });
+
+test("Coursera CDS contrast palette & simplified Lab header deduplicate prefixes and show real lab instructions", () => {
+  const css = read("src/styles.css");
+  const screens = read("src/features/courses/screens.tsx");
+  const toc = read("src/features/courses/lab-toc.tsx");
+
+  assert.match(css, /--background:\s*#F5F7FA;/);
+  assert.match(css, /--foreground:\s*#1F1F1F;/);
+  assert.match(css, /--muted-foreground:\s*#3D4756;/);
+  assert.match(css, /--primary:\s*#0056D2;/);
+  assert.doesNotMatch(css, /-webkit-font-smoothing:\s*antialiased/);
+  assert.match(screens, /\/\^\(\?:Module\|Chương\)\\s\+\\d\+\/i\.test\(currentModule\.title\.trim\(\)\)/);
+  assert.match(screens, /\/\^Lab\\s\+\\d\+\/i\.test\(item\.title\.trim\(\)\)/);
+  assert.match(screens, /step === 1 && labInstructions\?\.trim\(\)/);
+  assert.doesNotMatch(toc, /mavis-tabular/);
+});

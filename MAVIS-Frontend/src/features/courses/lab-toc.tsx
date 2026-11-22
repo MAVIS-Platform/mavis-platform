@@ -98,7 +98,7 @@ export function LabToc({
                 style={{ width: `${progress}%` }}
               />
             </div>
-            <span className="mavis-tabular text-xs font-semibold text-primary">{progress}%</span>
+            <span className="tabular-nums text-xs font-semibold text-primary">{progress}%</span>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {preview && <Badge variant="warning">{t("Preview", "Xem trước")}</Badge>}
@@ -146,14 +146,14 @@ export function LabToc({
             const locked = step.state === "locked";
             const complete = step.state === "complete";
             const cardClass = cn(
-              "flex min-w-0 items-center gap-2.5 rounded-lg border px-3 py-2 text-xs transition-colors",
+              "flex min-w-0 items-center gap-2.5 rounded-lg border px-3 py-2 text-[13px] transition-colors",
               current
                 ? "border-primary bg-primary/10 font-semibold text-primary shadow-xs"
                 : complete
-                  ? "border-emerald-500/35 bg-emerald-500/5 text-foreground hover:border-primary/40"
+                  ? "border-emerald-600/35 bg-emerald-50/70 font-medium text-foreground hover:border-primary/50 dark:bg-emerald-500/10"
                   : locked
-                    ? "cursor-not-allowed border-border/60 bg-muted/25 text-muted-foreground/75"
-                    : "border-border/70 bg-muted/30 text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                    ? "cursor-not-allowed border-border bg-muted/40 text-muted-foreground"
+                    : "border-border bg-card font-medium text-foreground/85 hover:border-primary/40 hover:bg-muted/50 hover:text-foreground",
             );
             const inner = (
               <>

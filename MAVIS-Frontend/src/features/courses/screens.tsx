@@ -922,58 +922,57 @@ export function LabWorkspace() {
       )}
     >
       {workspace && lab && (
-        <div className="space-y-4">
-          <header className="mavis-hero-surface p-4 text-white sm:p-5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="min-w-0 space-y-2">
-                <div className="flex flex-wrap items-center gap-2 text-xs text-sky-100/90">
+        <div className="space-y-3">
+          <header className="mavis-hero-surface px-4 py-3.5 text-white sm:px-5">
+            <div className="flex flex-wrap items-center justify-between gap-2.5">
+              <div className="min-w-0 space-y-1.5">
+                <div className="flex flex-wrap items-center gap-1.5 text-xs text-sky-100">
                   <Link
-                    className="inline-flex items-center gap-1 rounded-md border border-white/25 bg-white/12 px-2.5 py-1 font-medium text-white transition-colors hover:bg-white/20"
+                    className="inline-flex items-center gap-1 rounded-md border border-white/25 bg-white/15 px-2.5 py-0.5 font-medium text-white transition-colors hover:bg-white/25"
                     href={`/roadmap?workspace=${encodeURIComponent(workspaceId)}`}
                   >
                     ← {t("Back to Course Syllabus", "Quay lại Lộ trình môn học")}
                   </Link>
-                  <span>/</span>
-                  <span className="truncate">{workspace.name}</span>
+                  <span className="text-white/50">/</span>
+                  <span className="truncate font-medium text-white/90">{workspace.name}</span>
                   {currentModule && (
                     <>
-                      <span>/</span>
-                      <span className="truncate">
-                        {t("Module", "Chương")} {currentModule.position}: {currentModule.title}
+                      <span className="text-white/50">/</span>
+                      <span className="truncate text-sky-100">
+                        {/^(?:Module|Chương)\s+\d+/i.test(currentModule.title.trim())
+                          ? currentModule.title
+                          : `${t("Module", "Chương")} ${currentModule.position}: ${currentModule.title}`}
                       </span>
                     </>
                   )}
                 </div>
-                <div className="space-y-2">
-                  <h1 className="text-xl font-bold tracking-tight text-white sm:text-2xl">
-                    {lab.title}
-                  </h1>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge
-                      variant="outline"
-                      className="border-white/25 bg-white/15 font-mono text-xs text-white"
+                <h1 className="text-lg font-bold tracking-tight text-white sm:text-xl">
+                  {lab.title}
+                </h1>
+                <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                  <Badge
+                    variant="outline"
+                    className="border-white/30 bg-white/15 font-mono text-[11px] text-white"
+                  >
+                    {t("Class", "Lớp")} {workspace.code || "—"}
+                  </Badge>
+                  <Badge className="border-teal-300/35 bg-teal-400/20 text-[11px] font-medium text-teal-50">
+                    {requiresRuntime
+                      ? t("Studio Live Practice Lab", "Lab Thực Hành Studio Live")
+                      : isTheoryOnlyLab
+                        ? t("Theory Only Lab", "Lab Chỉ Lý Thuyết")
+                        : t("Theory & Quiz Lab", "Lab Lý Thuyết & Quiz")}
+                  </Badge>
+                  {preview && <Badge variant="warning">{t("Preview", "Xem trước")}</Badge>}
+                  {readiness.map((gate) => (
+                    <span
+                      key={gate.label}
+                      className="rounded-md border border-white/20 bg-slate-950/20 px-2 py-0.5 text-[11px] text-white/95"
                     >
-                      {t("Class", "Lớp")} {workspace.code || "—"}
-                    </Badge>
-                    <Badge className="border-teal-300/30 bg-teal-400/20 text-teal-50">
-                      {requiresRuntime
-                        ? t("Studio Live Practice Lab", "Lab Thực Hành Studio Live")
-                        : isTheoryOnlyLab
-                          ? t("Theory Only Lab", "Lab Chỉ Lý Thuyết")
-                          : t("Theory & Quiz Lab", "Lab Lý Thuyết & Quiz")}
-                    </Badge>
-                    {preview && <Badge variant="warning">{t("Preview", "Xem trước")}</Badge>}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-1.5 pt-1 text-[11px] text-sky-100">
-                    {readiness.map((gate) => (
-                      <span
-                        key={gate.label}
-                        className="rounded-md border border-white/15 bg-slate-950/15 px-2 py-1"
-                      >
-                        <span className="text-sky-200">{gate.label}</span>: {readinessStateLabel(gate.state)}
-                      </span>
-                    ))}
-                  </div>
+                      <span className="text-sky-200">{gate.label}:</span>{" "}
+                      {readinessStateLabel(gate.state)}
+                    </span>
+                  ))}
                 </div>
               </div>
               <div
@@ -997,11 +996,14 @@ export function LabWorkspace() {
                         );
                       }
                     }}
-                    className="h-8 min-w-[240px] max-w-[380px] truncate rounded-lg border border-white/25 bg-white/12 px-2.5 text-xs leading-tight text-white outline-none hover:bg-white/20"
+                    className="h-8 min-w-[240px] max-w-[380px] truncate rounded-lg border border-white/30 bg-white/15 px-2.5 text-xs leading-tight text-white outline-none hover:bg-white/25"
                   >
                     {(roadmap.data?.labs ?? []).map((item) => {
                       const icon =
                         item.state === "PASSED" ? "✅" : item.state === "LOCKED" ? "🔒" : "▶️";
+                      const optionTitle = /^Lab\s+\d+/i.test(item.title.trim())
+                        ? item.title
+                        : `Lab ${item.position}: ${item.title}`;
                       return (
                         <option
                           key={item.assignmentId}
@@ -1009,7 +1011,7 @@ export function LabWorkspace() {
                           disabled={item.state === "LOCKED" && !preview}
                           className="bg-slate-900 text-white"
                         >
-                          {icon} Lab {item.position}: {item.title}
+                          {icon} {optionTitle}
                         </option>
                       );
                     })}
@@ -1910,64 +1912,69 @@ function StepContent({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <section className="rounded-xl border bg-card px-4 py-4 sm:px-5">
-        <div className="flex items-start gap-3">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-            <Icon aria-hidden="true" />
+      <section className="rounded-xl border bg-card px-4 py-3 shadow-xs sm:px-5">
+        <div className="flex flex-wrap items-start justify-between gap-2.5">
+          <div className="flex min-w-0 flex-1 items-start gap-3">
+            <div className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <Icon className="size-4" aria-hidden="true" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-baseline gap-2">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-primary">
+                  {t(`Phase ${displayPhase} / ${totalPhases}`, `Giai đoạn ${displayPhase} / ${totalPhases}`)}
+                </span>
+                <h2 className="text-base font-semibold text-foreground">
+                  {t(current.title, current.titleVi)}
+                </h2>
+              </div>
+              <p className="mt-1 text-[13.5px] leading-6 text-foreground/90">
+                <span className="font-semibold text-foreground">
+                  {t("Learning objective", "Mục tiêu học tập")}:
+                </span>{" "}
+                {step === 1 && labInstructions?.trim()
+                  ? labInstructions.trim()
+                  : t(current.description, current.descriptionVi)}
+              </p>
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                <span>
+                  <strong className="font-medium text-foreground">
+                    {t("Reference snapshot", "Snapshot tham chiếu")}:
+                  </strong>{" "}
+                  {hasReferenceArch
+                    ? t("C1–C3 model ready", "Mô hình C1–C3 sẵn sàng")
+                    : t("Not required", "Không bắt buộc")}
+                </span>
+                <span>
+                  <strong className="font-medium text-foreground">
+                    {t("Next requirement", "Yêu cầu tiếp theo")}:
+                  </strong>{" "}
+                  {step === 1
+                    ? requiresRuntime
+                      ? !runtimePrerequisiteMissing
+                        ? t("Complete Runtime Studio experiment", "Hoàn thành thực nghiệm Runtime Studio")
+                        : t("Pass Module Quiz first", "Đạt Quiz Module trước")
+                      : t("Review evidence & submit", "Rà soát bằng chứng & nộp bài")
+                    : step === 2
+                      ? t("Seal runtime evidence", "Niêm phong bằng chứng runtime")
+                      : t("Complete submission form", "Hoàn tất khung nộp bài")}
+                </span>
+              </div>
+            </div>
           </div>
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-              {t(`Phase ${displayPhase} / ${totalPhases}`, `Giai đoạn ${displayPhase} / ${totalPhases}`)}
-            </p>
-            <h2 className="mt-0.5 text-lg font-semibold">{t(current.title, current.titleVi)}</h2>
-            <p className="mt-1 text-sm leading-6 text-muted-foreground">
-              {t(current.description, current.descriptionVi)}
-            </p>
-            <Button type="button" size="sm" variant="ghost" className="mt-2 h-auto px-0 text-xs text-muted-foreground hover:bg-transparent hover:text-primary" onClick={() => openPhaseIssue(step === 1 ? "static-guidance" : step === 2 ? "runtime-guidance" : "submission-explanation")}>
-              {t("Need help or want to report an issue?", "Cần hỗ trợ hoặc muốn báo lỗi?")}
-            </Button>
-          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-7 shrink-0 px-2 text-xs font-medium text-muted-foreground hover:text-primary"
+            onClick={() =>
+              openPhaseIssue(
+                step === 1 ? "static-guidance" : step === 2 ? "runtime-guidance" : "submission-explanation",
+              )
+            }
+          >
+            {t("Need help?", "Cần hỗ trợ?")}
+          </Button>
         </div>
-        <dl className="mt-4 grid gap-3 border-t pt-3 text-xs sm:grid-cols-3">
-          <div>
-            <dt className="font-semibold uppercase tracking-wide text-muted-foreground">
-              {t("Learning objective", "Mục tiêu học tập")}
-            </dt>
-            <dd className="mt-1 leading-5 text-foreground">
-              {step === 1
-                ? t("Understand the curated architecture through evidence.", "Hiểu kiến trúc tham chiếu thông qua evidence.")
-                : step === 2
-                  ? t("Observe and validate impact in the runtime scenario.", "Quan sát và kiểm chứng tác động trong kịch bản runtime.")
-                  : t("Review evidence and submit the completed Lab.", "Kiểm tra evidence và nộp Lab hoàn tất.")}
-            </dd>
-          </div>
-          <div>
-            <dt className="font-semibold uppercase tracking-wide text-muted-foreground">
-              {t("Reference snapshot", "Snapshot tham chiếu")}
-            </dt>
-            <dd className="mt-1 leading-5 text-foreground">
-              {hasReferenceArch
-                ? t("Curated C1–C3 model and source evidence ready.", "Mô hình C1–C3 và evidence mã nguồn đã sẵn sàng.")
-                : t("No reference snapshot is required for this Lab.", "Lab này không yêu cầu snapshot tham chiếu.")}
-            </dd>
-          </div>
-          <div>
-            <dt className="font-semibold uppercase tracking-wide text-muted-foreground">
-              {t("Next requirement", "Yêu cầu tiếp theo")}
-            </dt>
-            <dd className="mt-1 leading-5 text-foreground">
-              {step === 1
-                ? requiresRuntime
-                  ? !runtimePrerequisiteMissing
-                    ? t("Launch Runtime Studio and complete your live experiment.", "Mở Runtime Studio và hoàn thành thực nghiệm trực tiếp.")
-                    : t("Pass the Module Quiz before Runtime Studio.", "Đạt Quiz Module trước khi vào Runtime Studio.")
-                  : t("Review static evidence before submitting.", "Rà soát evidence tĩnh trước khi nộp.")
-                : step === 2
-                  ? t("Seal verified runtime evidence before submission.", "Niêm phong evidence runtime đã xác minh trước khi nộp.")
-                  : t("Complete the required submission fields.", "Hoàn tất các trường bắt buộc của bài nộp.")}
-            </dd>
-          </div>
-        </dl>
       </section>
 
       {step === 1 && (
