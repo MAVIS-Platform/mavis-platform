@@ -291,105 +291,6 @@ export function ClassPasskeyDialog({
   );
 }
 
-function ClassHeaderPasskey({ workspaceId }: { workspaceId: string }) {
-  const { t } = useLocale();
-  const passkeysQuery = useCoursePasskeys(workspaceId);
-  const createKey = useCreateCoursePasskey(workspaceId);
-  const deleteKey = useDeleteCoursePasskey(workspaceId);
-  const [copied, setCopied] = useState(false);
-  const autoCreatedForWorkspaceRef = useRef<string | null>(null);
-  const copiedTimerRef = useRef<number | null>(null);
-
-  const activePasskeys = (passkeysQuery.data ?? []).filter((pk) => pk.active && pk.code);
-  const currentKey = activePasskeys[0] ?? null;
-  const busy = createKey.isPending || deleteKey.isPending;
-
-  useEffect(() => {
-    return () => {
-      if (copiedTimerRef.current !== null) {
-        window.clearTimeout(copiedTimerRef.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    if (
-      passkeysQuery.isSuccess &&
-      activePasskeys.length === 0 &&
-      !createKey.isPending &&
-      autoCreatedForWorkspaceRef.current !== workspaceId
-    ) {
-      autoCreatedForWorkspaceRef.current = workspaceId;
-      createKey.mutate({ validHours: 720 });
-    }
-  }, [passkeysQuery.isSuccess, activePasskeys.length, createKey, workspaceId]);
-
-  const handleCopy = () => {
-    if (!currentKey?.code) {
-      if (!busy) {
-        createKey.mutate({ validHours: 720 });
-      }
-      return;
-    }
-    const markCopied = () => {
-      setCopied(true);
-      if (copiedTimerRef.current !== null) {
-        window.clearTimeout(copiedTimerRef.current);
-      }
-      copiedTimerRef.current = window.setTimeout(() => setCopied(false), 1800);
-    };
-    if (navigator.clipboard?.writeText) {
-      void navigator.clipboard.writeText(currentKey.code).then(markCopied, () => undefined);
-    }
-  };
-
-  const handleRegenerate = async () => {
-    if (busy) return;
-    const oldKeys = [...activePasskeys];
-    await createKey.mutateAsync({ validHours: 720 });
-    for (const old of oldKeys) {
-      await deleteKey.mutateAsync(old.id).catch(() => undefined);
-    }
-    setCopied(false);
-  };
-
-  return (
-    <div id="class-passkey" className="inline-flex items-center gap-1">
-      <button
-        type="button"
-        onClick={handleCopy}
-        className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/40 bg-amber-400/20 px-2.5 py-0.5 font-mono text-xs font-semibold text-amber-100 transition hover:bg-amber-400/30"
-        title={t("Click to copy Class Passkey", "Bấm để sao chép mã Passkey lớp học")}
-      >
-        {copied ? (
-          <Check className="size-3.5 text-emerald-200" aria-hidden="true" />
-        ) : (
-          <KeyRound className="size-3.5 text-amber-200" aria-hidden="true" />
-        )}
-        <span>
-          {copied
-            ? t("Copied!", "Đã chép!")
-            : currentKey?.code
-              ? `${t("Key", "Mã")}: ${currentKey.code}`
-              : busy
-                ? t("Generating…", "Đang tạo…")
-                : t("Class Passkey", "Mã lớp (Passkey)")}
-        </span>
-      </button>
-      <button
-        type="button"
-        disabled={busy}
-        onClick={() => void handleRegenerate()}
-        className="inline-flex size-6 items-center justify-center rounded-full border border-amber-300/40 bg-amber-400/20 text-amber-100 transition hover:bg-amber-400/30 disabled:cursor-not-allowed disabled:opacity-50"
-        aria-label={t("Regenerate Class Passkey", "Tạo lại mã Passkey lớp học")}
-        title={t("Regenerate passkey", "Tạo lại mã Passkey mới")}
-      >
-        <RefreshCw className={cn("size-3", busy && "animate-spin")} aria-hidden="true" />
-      </button>
-    </div>
-  );
-}
-
 export function CourseWorkspaceShell({
   workspace,
   active,
@@ -450,7 +351,6 @@ export function CourseWorkspaceShell({
                   ? t("Archived", "Đã lưu trữ")
                   : t("Active", "Đang hoạt động")}
               </Badge>
-              {!isStudent && <ClassHeaderPasskey workspaceId={workspace.id} />}
             </div>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-white/80">
               {creatorName && (
