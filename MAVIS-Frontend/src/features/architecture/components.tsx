@@ -302,7 +302,10 @@ function cleanArchitectureDescription(raw: string | null | undefined): string {
   if (!raw) return "";
   return raw
     .replace(/(?:\/?data\/uploads\/[^\s·,;)]+|[^\s·,;)]*_source_extracted[^\s·,;)]*)/gi, "")
-    .replace(/\b(?:PACKAGE|CLASS_INTERFACE|SERVICE_CONTAINER|COMPONENT|CONTROLLER|ENTITY|REPOSITORY)\s*·\s*(?=$|·)/gi, "")
+    .replace(
+      /\b(?:PACKAGE|CLASS_INTERFACE|SERVICE_CONTAINER|COMPONENT|CONTROLLER|ENTITY|REPOSITORY)\s*·\s*(?=$|·)/gi,
+      "",
+    )
     .replace(/\s*·\s*$/g, "")
     .replace(/^\s*·\s*/g, "")
     .replace(/\s{2,}/g, " ")
@@ -396,11 +399,7 @@ export function ElementDetailsPanel({
   const children = element ? model.elements.filter((node) => node.parentId === element.id) : [];
   const nameOf = (id: string) => model.elements.find((node) => node.id === id)?.name ?? id;
   const cleanedDescription = cleanArchitectureDescription(element?.description);
-  function connectionList(
-    title: string,
-    titleVi: string,
-    relations: ArchitecturalModel["edges"],
-  ) {
+  function connectionList(title: string, titleVi: string, relations: ArchitecturalModel["edges"]) {
     const grouped = new Map<string, ArchitecturalModel["edges"]>();
     for (const relation of relations) {
       const key = `${relation.from}:${relation.to}`;
@@ -447,9 +446,7 @@ export function ElementDetailsPanel({
                         </Badge>
                       ))}
                       {uncertain && (
-                        <Badge variant="warning">
-                          {t("Needs verification", "Cần đối chiếu")}
-                        </Badge>
+                        <Badge variant="warning">{t("Needs verification", "Cần đối chiếu")}</Badge>
                       )}
                     </div>
                   </div>
@@ -531,8 +528,9 @@ export function ElementDetailsPanel({
             { id: "ai", label: t("Ask AI", "Hỏi AI") },
           ]
         : [];
-  const visibleTab =
-    detailTabs.some((tab) => tab.id === currentTab) ? currentTab : (detailTabs[0]?.id ?? "overview");
+  const visibleTab = detailTabs.some((tab) => tab.id === currentTab)
+    ? currentTab
+    : (detailTabs[0]?.id ?? "overview");
   const aiButton =
     aiPanel || onExplainWithAi ? (
       <div className="pt-1">
@@ -792,10 +790,16 @@ export function ArchitectureGraph({
   model,
   selectedId,
   onSelect,
+  highlightIds = [],
+  onClearHighlight,
 }: {
   model: ArchitecturalModel;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
+  /** Contextual analyses (for example Reverse BFS) can highlight related nodes without
+   * changing the student's current selection. */
+  highlightIds?: string[];
+  onClearHighlight?: (() => void) | undefined;
 }) {
   const localeCtx = useLocale();
   const t = localeCtx.t;
@@ -840,6 +844,8 @@ export function ArchitectureGraph({
         model={model}
         selectedId={selectedId}
         onSelect={onSelect}
+        highlightIds={highlightIds}
+        {...(onClearHighlight ? { onClearHighlight } : {})}
         projection={projection}
         expanded={expanded}
         onToggleExpanded={() => setExpanded((value) => !value)}

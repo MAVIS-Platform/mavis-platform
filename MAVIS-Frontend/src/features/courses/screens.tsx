@@ -34,7 +34,7 @@ import {
   type StudentLabReferenceArchitecture,
   type StudentLabStudioSession,
 } from "@/features/workspaces/course-access";
-import { DetailPanel, StatusBadge } from "@/components/shared/data";
+import { DetailPanel } from "@/components/shared/data";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -56,10 +56,7 @@ import {
   getRuleName,
 } from "@/features/architecture/three-e-content";
 import { Input } from "@/components/ui/input";
-import {
-  ArchitectureGraph,
-  ElementDetailsPanel,
-} from "@/features/architecture/components";
+import { ArchitectureGraph, ElementDetailsPanel } from "@/features/architecture/components";
 import { ArchitectureDiagrams } from "@/features/architecture/architecture-diagrams";
 import { DiagramPreview } from "@/features/architecture/diagram-preview";
 import { buildStudioLiveHref } from "@/features/runtime/standalone-studio-live";
@@ -139,8 +136,7 @@ const learningSteps: LearningStep[] = [
       "Review the Studio evidence and receipt before submitting the completed Lab for grading.",
     titleVi: "Kiểm tra Evidence",
     shortTitleVi: "Kiểm tra Evidence",
-    descriptionVi:
-      "Kiểm tra evidence và receipt của Studio trước khi nộp Lab hoàn tất để chấm.",
+    descriptionVi: "Kiểm tra evidence và receipt của Studio trước khi nộp Lab hoàn tất để chấm.",
     icon: ShieldCheck,
   },
 ];
@@ -249,7 +245,6 @@ function cleanDisplaySourceLocator(raw: string | null | undefined): string {
   return raw
     .replace(/^\/?data\/uploads\/[^/\s]+(?:\/|_source_extracted\/)?/i, "")
     .replace(/^[^/]*_source_extracted\//i, "")
-    .replace(/^[a-z0-9._-]+-[a-f0-9]{40}\//i, "")
     .trim();
 }
 
@@ -1108,7 +1103,9 @@ export function LabWorkspace() {
               labId={lab.id}
               labOrder={lab.labOrder}
               labTitle={lab.title}
-              labInstructions={lab.instructions || studentContext.data?.assignment?.description || ""}
+              labInstructions={
+                lab.instructions || studentContext.data?.assignment?.description || ""
+              }
               moduleTheoryItems={moduleItems
                 .filter((item) => item.type === "THEORY")
                 .map((item) => ({
@@ -1152,9 +1149,13 @@ const STATIC_RULE_IDS = ["RULE-01", "RULE-02", "RULE-03", "RULE-04", "RULE-05"] 
 function StaticEvaluationSummary({
   modelId,
   allowRunEvaluation = false,
+  model,
+  onSelectElement,
 }: {
   modelId: string | undefined;
   allowRunEvaluation?: boolean | undefined;
+  model?: ArchitecturalModel | undefined;
+  onSelectElement?: ((elementId: string) => void) | undefined;
 }) {
   const { locale, t } = useLocale();
   const client = useApi();
@@ -1194,6 +1195,15 @@ function StaticEvaluationSummary({
           ? "PASS"
           : "PENDING";
       const severity = topFinding ? String(topFinding["severity"] ?? "INFO") : "INFO";
+      const elementIds = details?.["elementIds"];
+      const affectedElementIds = details?.["affectedElementIds"];
+      const relatedElementIds = topFinding
+        ? [
+            topFinding["elementId"],
+            ...(Array.isArray(elementIds) ? elementIds : []),
+            ...(Array.isArray(affectedElementIds) ? affectedElementIds : []),
+          ].filter((value): value is string => typeof value === "string" && value.length > 0)
+        : [];
       return {
         ruleId,
         label: getRuleName(ruleId, locale),
@@ -1202,9 +1212,19 @@ function StaticEvaluationSummary({
         unverifiedMetadata,
         message:
           topFinding && typeof topFinding["message"] === "string" ? topFinding["message"] : "",
+        relatedElementIds: [...new Set(relatedElementIds)],
       };
     });
   }, [evaluationId, findings.data, locale]);
+
+  const summary = useMemo(
+    () => ({
+      passed: ruleRows.filter((row) => row.status === "PASS").length,
+      attention: ruleRows.filter((row) => row.status === "VIOLATION").length,
+      review: ruleRows.filter((row) => row.status === "NEEDS_REVIEW").length,
+    }),
+    [ruleRows],
+  );
 
   return (
     <DetailPanel
@@ -1212,8 +1232,8 @@ function StaticEvaluationSummary({
     >
       <p className="text-xs leading-5 text-muted-foreground">
         {t(
-          "Rule status (PASS / VIOLATION / NEEDS_REVIEW) is reported separately from severity (INFO / WARNING / ERROR).",
-          "Trạng thái quy tắc (PASS / VIOLATION / NEEDS_REVIEW) được tách biệt rõ với mức độ nghiêm trọng (INFO / WARNING / ERROR).",
+          "Read-only findings from the curated reference snapshot. Open a rule to inspect its explanation and available source evidence.",
+          "Kết quả chỉ đọc từ source snapshot tham chiếu. Mở một quy tắc để xem giải thích và evidence mã nguồn hiện có.",
         )}
       </p>
       {!modelId ? (
@@ -1257,6 +1277,20 @@ function StaticEvaluationSummary({
             </div>
           )}
           <div className="divide-y rounded-xl border bg-background">
+            <div className="flex flex-wrap gap-2 p-3 text-[11px] text-muted-foreground">
+              <span>
+                {t("Rules checked", "Đã kiểm tra")}: {ruleRows.length}
+              </span>
+              <span>
+                {t("No issue found", "Không phát hiện vấn đề")}: {summary.passed}
+              </span>
+              <span>
+                {t("Needs attention", "Cần kiểm tra")}: {summary.attention}
+              </span>
+              <span>
+                {t("Needs verification", "Cần xác minh")}: {summary.review}
+              </span>
+            </div>
             {ruleRows.map((row) => (
               <details key={row.ruleId} className="group text-xs">
                 <summary className="flex cursor-pointer list-none flex-wrap items-start justify-between gap-3 p-3 marker:content-none">
@@ -1268,17 +1302,32 @@ function StaticEvaluationSummary({
                   </div>
                   <div className="flex shrink-0 flex-wrap items-center gap-2">
                     <div className="text-right">
-                      <span className="block text-[10px] uppercase tracking-wide text-muted-foreground">{t("Rule Status", "Trạng thái")}</span>
-                      <StatusBadge status={row.status} />
+                      <Badge
+                        variant={
+                          row.status === "VIOLATION"
+                            ? "destructive"
+                            : row.status === "NEEDS_REVIEW"
+                              ? "warning"
+                              : "outline"
+                        }
+                        className="text-[10px]"
+                      >
+                        {row.status === "PASS"
+                          ? t("No issue found", "Không phát hiện vấn đề")
+                          : row.status === "VIOLATION"
+                            ? t("Needs attention", "Cần kiểm tra")
+                            : row.status === "NEEDS_REVIEW"
+                              ? t("Needs verification", "Cần xác minh")
+                              : t("Waiting for results", "Đang chờ kết quả")}
+                      </Badge>
                     </div>
                     <div className="text-right">
-                      <span className="block text-[10px] uppercase tracking-wide text-muted-foreground">{t("Severity", "Mức độ")}</span>
                       <Badge variant="outline" className="text-[10px]">
                         {row.severity === "ERROR"
-                          ? t("Error", "Lỗi")
+                          ? t("High priority", "Ưu tiên cao")
                           : row.severity === "WARNING"
                             ? t("Warning", "Cảnh báo")
-                            : t("Info", "Thông tin")}
+                            : t("Information", "Thông tin")}
                       </Badge>
                     </div>
                   </div>
@@ -1286,13 +1335,42 @@ function StaticEvaluationSummary({
                 <div className="space-y-2 border-t px-3 py-2.5">
                   {(row.unverifiedMetadata || row.status === "NEEDS_REVIEW") && (
                     <p className="text-[11px] font-medium text-amber-700 dark:text-amber-300">
-                      {t("Missing Call-Site / Evidence Grounding (Needs Review)", "Thiếu bằng chứng Call-Site / cần rà soát")}
+                      {t(
+                        "Missing Call-Site / Evidence Grounding (Needs Review)",
+                        "Thiếu bằng chứng Call-Site / cần rà soát",
+                      )}
                     </p>
                   )}
                   {row.message ? (
                     <p className="leading-5 text-muted-foreground">{row.message}</p>
                   ) : (
-                    <p className="leading-5 text-muted-foreground">{t("No additional persisted finding detail is available for this rule.", "Chưa có chi tiết finding được lưu thêm cho quy tắc này.")}</p>
+                    <p className="leading-5 text-muted-foreground">
+                      {t(
+                        "No additional persisted finding detail is available for this rule.",
+                        "Chưa có chi tiết finding được lưu thêm cho quy tắc này.",
+                      )}
+                    </p>
+                  )}
+                  {row.relatedElementIds.length > 0 && onSelectElement && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {row.relatedElementIds
+                        .map((id) => model?.elements.find((element) => element.id === id))
+                        .filter((element): element is NonNullable<typeof element> =>
+                          Boolean(element),
+                        )
+                        .map((element) => (
+                          <Button
+                            key={element.id}
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-7 px-2 text-[11px]"
+                            onClick={() => onSelectElement(element.id)}
+                          >
+                            {t("View", "Xem")} {element.name}
+                          </Button>
+                        ))}
+                    </div>
                   )}
                 </div>
               </details>
@@ -1406,9 +1484,13 @@ function StepContent({
   const { t, locale } = useLocale();
   const client = useApi();
   const [selectedGraphId, setSelectedGraphId] = useState<string | null>(null);
+  const [impactAnalysisOpen, setImpactAnalysisOpen] = useState(false);
+  const [impactHighlightIds, setImpactHighlightIds] = useState<string[]>([]);
   const [tutorInput, setTutorInput] = useState("");
   const [tutorLoading, setTutorLoading] = useState(false);
-  const [tutorHistory, setTutorHistory] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
+  const [tutorHistory, setTutorHistory] = useState<
+    Array<{ role: "user" | "assistant"; content: string }>
+  >([]);
   const [tutorReply, setTutorReply] = useState<{
     question: string;
     answer: string;
@@ -1526,12 +1608,30 @@ function StepContent({
   );
   const selectedElement = activeModel?.elements.find((item) => item.id === selectedGraphId);
   const selectedConnection = activeModel?.edges.find((item) => item.id === selectedGraphId);
-  const selectedArchitectureLabel = selectedElement?.name ??
+  const selectedArchitectureLabel =
+    selectedElement?.name ??
     (selectedConnection
       ? `${activeModel?.elements.find((item) => item.id === selectedConnection.from)?.name ?? selectedConnection.from} → ${activeModel?.elements.find((item) => item.id === selectedConnection.to)?.name ?? selectedConnection.to}`
       : null);
   const selectedTutorElement =
     activeModel?.elements.find((el) => el.id === selectedGraphId) ?? activeModel?.elements[0];
+  const openImpactAnalysis = () => {
+    if (!selectedElement) return;
+    // Reverse BFS is visualized on the dependency graph; preserve the selection while
+    // switching to the one view that can highlight the full upstream path.
+    onSelectInlineC4View("GRAPH");
+    setImpactAnalysisOpen(true);
+  };
+  const closeImpactAnalysis = () => {
+    setImpactAnalysisOpen(false);
+    setImpactHighlightIds([]);
+  };
+  useEffect(() => {
+    if (inlineC4View !== "GRAPH" && impactAnalysisOpen) {
+      setImpactAnalysisOpen(false);
+      setImpactHighlightIds([]);
+    }
+  }, [impactAnalysisOpen, inlineC4View]);
   const askAiTutor = async (rawQuestion: string) => {
     const q = rawQuestion.trim();
     if (!q || tutorLoading) return;
@@ -1652,12 +1752,20 @@ function StepContent({
         </span>
         <div>
           <h3 className="text-sm font-semibold">{t("MAVIS AI Assistant", "Trợ lý MAVIS AI")}</h3>
-          <p className="text-xs text-muted-foreground">{t("Architecture Tutor", "Trợ lý kiến trúc")}</p>
+          <p className="text-xs text-muted-foreground">
+            {t("Architecture Tutor", "Trợ lý kiến trúc")}
+          </p>
         </div>
       </header>
       <div className="mt-4 rounded-xl bg-primary/5 px-3 py-3">
-        <p className="text-[10px] font-semibold uppercase tracking-wide text-primary">{t("Current context", "Ngữ cảnh hiện tại")}</p>
-        <p className="mt-1 text-sm font-medium">{selectedArchitectureLabel ?? selectedTutorElement?.name ?? t("Architecture overview", "Tổng quan kiến trúc")}</p>
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-primary">
+          {t("Current context", "Ngữ cảnh hiện tại")}
+        </p>
+        <p className="mt-1 text-sm font-medium">
+          {selectedArchitectureLabel ??
+            selectedTutorElement?.name ??
+            t("Architecture overview", "Tổng quan kiến trúc")}
+        </p>
       </div>
       <div className="mt-4 space-y-3">
         <form
@@ -1672,16 +1780,19 @@ function StepContent({
             onChange={(event) => setTutorInput(event.target.value)}
             disabled={tutorLoading}
             className="h-10 rounded-full text-xs"
-            aria-label={t(
-              "Ask the AI Architecture Tutor",
-              "Đặt câu hỏi cho Trợ lý AI Kiến trúc",
-            )}
+            aria-label={t("Ask the AI Architecture Tutor", "Đặt câu hỏi cho Trợ lý AI Kiến trúc")}
             placeholder={t(
               `Ask about ${selectedArchitectureLabel ?? selectedTutorElement?.name ?? "this service"} coupling or source…`,
               `Hỏi về phụ thuộc, vai trò hoặc mã nguồn của ${selectedArchitectureLabel ?? selectedTutorElement?.name ?? "dịch vụ này"}…`,
             )}
           />
-          <Button type="submit" size="icon" className="size-10 shrink-0 rounded-full" disabled={tutorLoading || !tutorInput.trim()} aria-label={t("Send question", "Gửi câu hỏi")}>
+          <Button
+            type="submit"
+            size="icon"
+            className="size-10 shrink-0 rounded-full"
+            disabled={tutorLoading || !tutorInput.trim()}
+            aria-label={t("Send question", "Gửi câu hỏi")}
+          >
             <SendHorizontal className="size-4" aria-hidden="true" />
           </Button>
         </form>
@@ -1765,25 +1876,58 @@ function StepContent({
       case "static-data":
         return {
           title: t("Static Studio data could not load", "Không tải được dữ liệu Static Studio"),
-          description: t("The curated architecture data is unavailable, so C1–C3 evidence cannot be reviewed safely.", "Dữ liệu kiến trúc đã chọn lọc hiện không tải được nên chưa thể kiểm tra evidence C1–C3 an toàn."),
-          recovery: t("Refresh the Lab first. If this persists, copy the report for your lecturer to check the reference snapshot.", "Hãy tải lại Lab trước. Nếu lỗi vẫn còn, sao chép báo cáo để giảng viên kiểm tra snapshot tham chiếu."),
+          description: t(
+            "The curated architecture data is unavailable, so C1–C3 evidence cannot be reviewed safely.",
+            "Dữ liệu kiến trúc đã chọn lọc hiện không tải được nên chưa thể kiểm tra evidence C1–C3 an toàn.",
+          ),
+          recovery: t(
+            "Refresh the Lab first. If this persists, copy the report for your lecturer to check the reference snapshot.",
+            "Hãy tải lại Lab trước. Nếu lỗi vẫn còn, sao chép báo cáo để giảng viên kiểm tra snapshot tham chiếu.",
+          ),
           actionLabel: t("Review Static Studio", "Xem lại Static Studio"),
-          action: () => document.getElementById("lab-static-workspace")?.scrollIntoView({ behavior: "smooth", block: "start" }),
+          action: () =>
+            document
+              .getElementById("lab-static-workspace")
+              ?.scrollIntoView({ behavior: "smooth", block: "start" }),
         };
       case "runtime-configuration":
         return {
           title: t("Runtime Studio configuration is missing", "Runtime Studio chưa được cấu hình"),
-          description: t("This Lab has no ready Runtime Studio topology, so the practical exercise cannot start.", "Lab này chưa có topology Runtime Studio sẵn sàng nên chưa thể bắt đầu phần thực hành."),
-          recovery: t("This needs lecturer configuration. Copy the report and send it to your lecturer, then return after the Studio exercise is prepared.", "Trường hợp này cần giảng viên cấu hình. Hãy sao chép báo cáo gửi giảng viên rồi quay lại sau khi Studio exercise sẵn sàng."),
+          description: t(
+            "This Lab has no ready Runtime Studio topology, so the practical exercise cannot start.",
+            "Lab này chưa có topology Runtime Studio sẵn sàng nên chưa thể bắt đầu phần thực hành.",
+          ),
+          recovery: t(
+            "This needs lecturer configuration. Copy the report and send it to your lecturer, then return after the Studio exercise is prepared.",
+            "Trường hợp này cần giảng viên cấu hình. Hãy sao chép báo cáo gửi giảng viên rồi quay lại sau khi Studio exercise sẵn sàng.",
+          ),
           actionLabel: t("Back to Lab", "Quay lại Lab"),
           action: () => undefined,
         };
       case "runtime-guidance":
       case "runtime-failed":
         return {
-          title: phaseIssue === "runtime-failed" ? t("Runtime Studio session needs attention", "Phiên Runtime Studio cần được kiểm tra") : t("Need help with Runtime Studio?", "Cần hỗ trợ với Runtime Studio?"),
-          description: phaseIssue === "runtime-failed" ? t("The current Runtime Studio session did not start or finish correctly, so its evidence is not valid yet.", "Phiên Runtime Studio hiện tại chưa khởi chạy hoặc hoàn tất đúng nên evidence chưa hợp lệ.") : t("Runtime Studio is where you run the assigned scenario and capture observed evidence using only allowed actions.", "Runtime Studio là nơi bạn chạy kịch bản được giao và lưu evidence quan sát với các thao tác được phép."),
-          recovery: t("Open Studio Live, inspect the session, use only Stop, Start, or Scale, capture a snapshot, then choose Finish Studio. If it fails again, copy the report for your lecturer.", "Mở Studio Live, kiểm tra phiên, chỉ dùng Stop, Start hoặc Scale, lưu snapshot rồi chọn Hoàn tất Studio. Nếu vẫn lỗi, sao chép báo cáo gửi giảng viên."),
+          title:
+            phaseIssue === "runtime-failed"
+              ? t(
+                  "Runtime Studio session needs attention",
+                  "Phiên Runtime Studio cần được kiểm tra",
+                )
+              : t("Need help with Runtime Studio?", "Cần hỗ trợ với Runtime Studio?"),
+          description:
+            phaseIssue === "runtime-failed"
+              ? t(
+                  "The current Runtime Studio session did not start or finish correctly, so its evidence is not valid yet.",
+                  "Phiên Runtime Studio hiện tại chưa khởi chạy hoặc hoàn tất đúng nên evidence chưa hợp lệ.",
+                )
+              : t(
+                  "Runtime Studio is where you run the assigned scenario and capture observed evidence using only allowed actions.",
+                  "Runtime Studio là nơi bạn chạy kịch bản được giao và lưu evidence quan sát với các thao tác được phép.",
+                ),
+          recovery: t(
+            "Open Studio Live, inspect the session, use only Stop, Start, or Scale, capture a snapshot, then choose Finish Studio. If it fails again, copy the report for your lecturer.",
+            "Mở Studio Live, kiểm tra phiên, chỉ dùng Stop, Start hoặc Scale, lưu snapshot rồi chọn Hoàn tất Studio. Nếu vẫn lỗi, sao chép báo cáo gửi giảng viên.",
+          ),
           actionLabel: t("Open Runtime Studio", "Mở Runtime Studio"),
           action: () => window.location.assign(standaloneStudioHref),
         };
@@ -1791,47 +1935,91 @@ function StepContent({
       case "submission-runtime":
         return {
           title: t("Runtime evidence is incomplete", "Evidence Runtime chưa đầy đủ"),
-          description: t("This Lab needs a verified Runtime Studio receipt before it can be submitted for grading.", "Lab này cần biên nhận Runtime Studio đã xác minh trước khi nộp bài để giảng viên chấm điểm."),
-          recovery: t("Return to Runtime Studio, complete the scenario, capture the required evidence, and select Finish Studio to seal the receipt.", "Hãy quay lại Runtime Studio, hoàn tất kịch bản, lưu bằng chứng bắt buộc và chọn Hoàn tất Studio để niêm phong biên nhận."),
+          description: t(
+            "This Lab needs a verified Runtime Studio receipt before it can be submitted for grading.",
+            "Lab này cần biên nhận Runtime Studio đã xác minh trước khi nộp bài để giảng viên chấm điểm.",
+          ),
+          recovery: t(
+            "Return to Runtime Studio, complete the scenario, capture the required evidence, and select Finish Studio to seal the receipt.",
+            "Hãy quay lại Runtime Studio, hoàn tất kịch bản, lưu bằng chứng bắt buộc và chọn Hoàn tất Studio để niêm phong biên nhận.",
+          ),
           actionLabel: t("Return to Runtime Studio", "Quay lại Runtime Studio"),
           action: () => window.location.assign(runtimeEvidenceHref),
         };
       case "submission-failed":
         return {
           title: t("Lab submission could not be saved", "Không thể lưu bài nộp Lab"),
-          description: t("Your draft remains in this browser so you can retry safely.", "Bản nháp vẫn được giữ trong trình duyệt này để bạn có thể thử lại an toàn."),
-          recovery: t("Check the explanation and required Runtime receipt, then try again. If it still fails, copy the report for your lecturer.", "Hãy kiểm tra phần giải trình và receipt Runtime bắt buộc, rồi thử lại. Nếu vẫn lỗi, sao chép báo cáo gửi giảng viên."),
+          description: t(
+            "Your draft remains in this browser so you can retry safely.",
+            "Bản nháp vẫn được giữ trong trình duyệt này để bạn có thể thử lại an toàn.",
+          ),
+          recovery: t(
+            "Check the explanation and required Runtime receipt, then try again. If it still fails, copy the report for your lecturer.",
+            "Hãy kiểm tra phần giải trình và receipt Runtime bắt buộc, rồi thử lại. Nếu vẫn lỗi, sao chép báo cáo gửi giảng viên.",
+          ),
           actionLabel: t("Retry submission", "Thử nộp lại"),
           action: jumpToSubmissionBox,
         };
       case "submission-explanation":
         return {
           title: t("Your Lab explanation is required", "Cần có phần giải trình Lab"),
-          description: t("The Lab cannot be submitted without your written explanation of the evidence and what you learned.", "Không thể nộp Lab nếu chưa có phần giải trình về evidence và kiến thức bạn rút ra."),
-          recovery: t("Write your explanation in the submission box, connect it to the evidence, then submit again.", "Hãy viết phần giải trình trong khung nộp bài, liên hệ với evidence rồi nộp lại."),
+          description: t(
+            "The Lab cannot be submitted without your written explanation of the evidence and what you learned.",
+            "Không thể nộp Lab nếu chưa có phần giải trình về evidence và kiến thức bạn rút ra.",
+          ),
+          recovery: t(
+            "Write your explanation in the submission box, connect it to the evidence, then submit again.",
+            "Hãy viết phần giải trình trong khung nộp bài, liên hệ với evidence rồi nộp lại.",
+          ),
           actionLabel: t("Go to submission", "Đi tới phần nộp bài"),
           action: jumpToSubmissionBox,
         };
       default:
         return {
           title: t("Need help with Static Studio?", "Cần hỗ trợ với Static Studio?"),
-          description: t("Static Studio is for reviewing C1–C3 architecture, source evidence, and your Reverse BFS impact hypothesis.", "Static Studio dùng để xem kiến trúc C1–C3, evidence mã nguồn và giả thuyết tác động Reverse BFS."),
-          recovery: t("Inspect the selected node or connection, read its evidence, then compare Reverse BFS with the dependency graph before moving on.", "Hãy kiểm tra node hoặc kết nối đã chọn, đọc evidence, rồi đối chiếu Reverse BFS với đồ thị phụ thuộc trước khi chuyển bước."),
+          description: t(
+            "Static Studio is for reviewing C1–C3 architecture, source evidence, and your Reverse BFS impact hypothesis.",
+            "Static Studio dùng để xem kiến trúc C1–C3, evidence mã nguồn và giả thuyết tác động Reverse BFS.",
+          ),
+          recovery: t(
+            "Inspect the selected node or connection, read its evidence, then compare Reverse BFS with the dependency graph before moving on.",
+            "Hãy kiểm tra node hoặc kết nối đã chọn, đọc evidence, rồi đối chiếu Reverse BFS với đồ thị phụ thuộc trước khi chuyển bước.",
+          ),
           actionLabel: t("Open impact hypothesis", "Mở giả thuyết tác động"),
-          action: () => document.getElementById("lab-static-impact")?.scrollIntoView({ behavior: "smooth", block: "start" }),
+          action: () =>
+            document
+              .getElementById("lab-static-impact")
+              ?.scrollIntoView({ behavior: "smooth", block: "start" }),
         };
     }
   })();
   useEffect(() => {
-    const automaticIssue = step === 1 && fallbackModelQuery.isError ? "static-data" : step === 2 && needsSandboxBootstrap ? "runtime-failed" : step === 3 && requiresRuntime && !liveStudioVerified && !preview ? "evidence-missing" : null;
+    const automaticIssue =
+      step === 1 && fallbackModelQuery.isError
+        ? "static-data"
+        : step === 2 && needsSandboxBootstrap
+          ? "runtime-failed"
+          : step === 3 && requiresRuntime && !liveStudioVerified && !preview
+            ? "evidence-missing"
+            : null;
     if (!automaticIssue || shownAutomaticIssueKeys.current.has(`${step}:${automaticIssue}`)) return;
     shownAutomaticIssueKeys.current.add(`${step}:${automaticIssue}`);
     openPhaseIssue(automaticIssue);
-  }, [fallbackModelQuery.isError, liveStudioVerified, needsSandboxBootstrap, preview, requiresRuntime, step]);
+  }, [
+    fallbackModelQuery.isError,
+    liveStudioVerified,
+    needsSandboxBootstrap,
+    preview,
+    requiresRuntime,
+    step,
+  ]);
 
   return (
     <>
-      <Dialog open={runtimeConfigurationDialogOpen} onOpenChange={setRuntimeConfigurationDialogOpen}>
+      <Dialog
+        open={runtimeConfigurationDialogOpen}
+        onOpenChange={setRuntimeConfigurationDialogOpen}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
@@ -1853,7 +2041,11 @@ function StepContent({
           </DialogHeader>
           <DialogFooter>
             {runtimeConfigurationMissing && isStudent && (
-              <Button type="button" variant="outline" onClick={() => setRuntimeConfigurationDialogOpen(false)}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setRuntimeConfigurationDialogOpen(false)}
+              >
                 {t("Close", "Đóng")}
               </Button>
             )}
@@ -1873,7 +2065,11 @@ function StepContent({
                 </Link>
               </Button>
             )}
-            <Button type="button" variant="outline" onClick={() => setRuntimeConfigurationDialogOpen(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setRuntimeConfigurationDialogOpen(false)}
+            >
               {t("Close", "Đóng")}
             </Button>
           </DialogFooter>
@@ -1886,10 +2082,13 @@ function StepContent({
             <DialogDescription>{phaseIssueContent.recovery}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button type="button" onClick={() => {
-              setPhaseIssueDialogOpen(false);
-              phaseIssueContent.action();
-            }}>
+            <Button
+              type="button"
+              onClick={() => {
+                setPhaseIssueDialogOpen(false);
+                phaseIssueContent.action();
+              }}
+            >
               {phaseIssueContent.actionLabel}
             </Button>
           </DialogFooter>
@@ -1904,7 +2103,10 @@ function StepContent({
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-baseline gap-2">
                 <span className="text-[11px] font-semibold uppercase tracking-wider text-primary">
-                  {t(`Phase ${displayPhase} / ${totalPhases}`, `Giai đoạn ${displayPhase} / ${totalPhases}`)}
+                  {t(
+                    `Phase ${displayPhase} / ${totalPhases}`,
+                    `Giai đoạn ${displayPhase} / ${totalPhases}`,
+                  )}
                 </span>
                 <h2 className="text-base font-semibold text-foreground">
                   {t(current.title, current.titleVi)}
@@ -1934,7 +2136,10 @@ function StepContent({
                   {step === 1
                     ? requiresRuntime
                       ? !runtimePrerequisiteMissing
-                        ? t("Complete Runtime Studio experiment", "Hoàn thành thực nghiệm Runtime Studio")
+                        ? t(
+                            "Complete Runtime Studio experiment",
+                            "Hoàn thành thực nghiệm Runtime Studio",
+                          )
                         : t("Pass Module Quiz first", "Đạt Quiz Module trước")
                       : t("Review evidence & submit", "Rà soát bằng chứng & nộp bài")
                     : step === 2
@@ -1951,7 +2156,11 @@ function StepContent({
             className="h-7 shrink-0 px-2 text-xs font-medium text-muted-foreground hover:text-primary"
             onClick={() =>
               openPhaseIssue(
-                step === 1 ? "static-guidance" : step === 2 ? "runtime-guidance" : "submission-explanation",
+                step === 1
+                  ? "static-guidance"
+                  : step === 2
+                    ? "runtime-guidance"
+                    : "submission-explanation",
               )
             }
           >
@@ -1964,7 +2173,11 @@ function StepContent({
         <div className="space-y-5">
           {hasReferenceArch ? (
             <>
-              <section id="lab-static-workspace" className="scroll-mt-36 space-y-4 rounded-xl border bg-card p-4 sm:p-5" aria-label={t("Architecture workspace", "Không gian kiến trúc")}>
+              <section
+                id="lab-static-workspace"
+                className="scroll-mt-36 space-y-4 rounded-xl border bg-card p-4 sm:p-5"
+                aria-label={t("Architecture workspace", "Không gian kiến trúc")}
+              >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <h3 className="text-base font-semibold text-foreground">
@@ -1980,25 +2193,52 @@ function StepContent({
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge variant="outline" className="font-mono">
                       {modelRevision !== undefined
-                        ? t(`Model revision r${modelRevision}`, `Mô hình phiên bản r${modelRevision}`)
+                        ? t(
+                            `Model revision r${modelRevision}`,
+                            `Mô hình phiên bản r${modelRevision}`,
+                          )
                         : t("Revision pending", "Đang chờ bản phân tích")}
                     </Badge>
-                    {client.mode === "backend" && Boolean(snapshotId || referenceArchitecture?.snapshotId) && (
-                      <Button asChild size="sm" variant="outline">
-                        <a
-                          href={`/api/backend/assignments/${encodeURIComponent(labId)}/reference-source`}
-                          download
-                          title={
-                            studentContext?.assignment?.referenceSource?.artifactHash
-                              ? `SHA-256: ${studentContext.assignment.referenceSource.artifactHash}`
-                              : t("Download curated reference source archive", "Tải tệp nén mã nguồn tham chiếu đã ghim")
-                          }
-                        >
-                          <Download className="mr-1.5 size-3.5" aria-hidden="true" />
-                          {t("Download Reference .zip", "Tải mã nguồn (.zip)")}
-                        </a>
-                      </Button>
-                    )}
+                    {client.mode === "backend" &&
+                      Boolean(snapshotId || referenceArchitecture?.snapshotId) && (
+                        <Button asChild size="sm" variant="outline">
+                          <a
+                            href={`/api/backend/assignments/${encodeURIComponent(labId)}/reference-source`}
+                            download
+                            title={
+                              studentContext?.assignment?.referenceSource?.artifactHash
+                                ? `SHA-256: ${studentContext.assignment.referenceSource.artifactHash}`
+                                : t(
+                                    "Download curated reference source archive",
+                                    "Tải tệp nén mã nguồn tham chiếu đã ghim",
+                                  )
+                            }
+                          >
+                            <Download className="mr-1.5 size-3.5" aria-hidden="true" />
+                            {t("Download Reference .zip", "Tải mã nguồn (.zip)")}
+                          </a>
+                        </Button>
+                      )}
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={!selectedElement}
+                      onClick={openImpactAnalysis}
+                      title={
+                        selectedElement
+                          ? t(
+                              "Analyze the selected element's static dependency impact",
+                              "Phân tích tác động phụ thuộc tĩnh của thành phần đã chọn",
+                            )
+                          : t(
+                              "Select a graph element first",
+                              "Hãy chọn một thành phần trên đồ thị trước",
+                            )
+                      }
+                    >
+                      <Network className="mr-1.5 size-3.5" aria-hidden="true" />
+                      {t("Analyze Impact", "Phân tích tác động")}
+                    </Button>
                   </div>
                 </div>
 
@@ -2047,11 +2287,24 @@ function StepContent({
                         />
                       </div>
                       <aside className="min-w-0 xl:sticky xl:top-20 xl:max-h-[calc(100vh-6rem)] xl:overflow-y-auto">
-                        <ElementDetailsPanel
-                          model={activeModel}
-                          selectedId={selectedGraphId}
-                          onSelect={setSelectedGraphId}
-                        />
+                        <div className="space-y-3">
+                          <ElementDetailsPanel
+                            model={activeModel}
+                            selectedId={selectedGraphId}
+                            onSelect={setSelectedGraphId}
+                          />
+                          <p className="text-xs leading-5 text-muted-foreground">
+                            {selectedElement
+                              ? t(
+                                  "Use Analyze Impact to inspect only the selected element's potential static dependency impact.",
+                                  "Dùng Phân tích tác động để xem tác động phụ thuộc tĩnh tiềm năng của thành phần đang chọn.",
+                                )
+                              : t(
+                                  "Select an element to inspect its details, source evidence, or potential impact.",
+                                  "Chọn một thành phần để xem chi tiết, evidence mã nguồn hoặc tác động tiềm năng.",
+                                )}
+                          </p>
+                        </div>
                       </aside>
                     </div>
                   ) : activeDiagramMermaid ? (
@@ -2068,7 +2321,10 @@ function StepContent({
                     </div>
                   ) : studentContextLoading || fallbackModelQuery.isPending ? (
                     <div className="space-y-4">
-                      <p role="status" className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+                      <p
+                        role="status"
+                        className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground"
+                      >
                         {t("Loading architecture diagram…", "Đang tải sơ đồ kiến trúc…")}
                       </p>
                       <DetailPanel title={t("AI Architecture Tutor", "Trợ lý AI Kiến trúc SWD")}>
@@ -2095,14 +2351,29 @@ function StepContent({
                         model={activeModel}
                         selectedId={selectedGraphId}
                         onSelect={setSelectedGraphId}
+                        highlightIds={impactHighlightIds}
+                        onClearHighlight={() => setImpactHighlightIds([])}
                       />
                     </div>
                     <aside className="min-w-0 xl:sticky xl:top-20 xl:max-h-[calc(100vh-6rem)] xl:overflow-y-auto">
-                      <ElementDetailsPanel
-                        model={activeModel}
-                        selectedId={selectedGraphId}
-                        onSelect={setSelectedGraphId}
-                      />
+                      <div className="space-y-3">
+                        <ElementDetailsPanel
+                          model={activeModel}
+                          selectedId={selectedGraphId}
+                          onSelect={setSelectedGraphId}
+                        />
+                        <p className="text-xs leading-5 text-muted-foreground">
+                          {selectedElement
+                            ? t(
+                                "Use Analyze Impact to inspect only the selected element's potential static dependency impact.",
+                                "Dùng Phân tích tác động để xem tác động phụ thuộc tĩnh tiềm năng của thành phần đang chọn.",
+                              )
+                            : t(
+                                "Select an element to inspect its details, source evidence, or potential impact.",
+                                "Chọn một thành phần để xem chi tiết, evidence mã nguồn hoặc tác động tiềm năng.",
+                              )}
+                        </p>
+                      </div>
                     </aside>
                   </div>
                 ) : (
@@ -2113,15 +2384,30 @@ function StepContent({
                 {activeModel && tutorAssistantPanel}
               </section>
 
-              <details id="lab-static-impact" className="group rounded-xl border bg-card">
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-semibold marker:content-none">
-                  <span>{t("Static impact hypothesis (Reverse BFS)", "Giả thuyết tác động tĩnh (Reverse BFS)")}</span>
-                  <span className="text-xs font-normal text-muted-foreground group-open:hidden">
-                    {t("Open impact explorer", "Mở trình khám phá tác động")}
-                  </span>
-                </summary>
-                <div className="border-t px-4 py-4">
+              {impactAnalysisOpen && selectedElement && (
+                <section
+                  id="lab-static-impact"
+                  className="rounded-xl border bg-card p-4 sm:p-5"
+                  aria-label={t("Static impact analysis", "Phân tích tác động tĩnh")}
+                >
+                  <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-base font-semibold">
+                        {t("Impact analysis", "Phân tích tác động")}
+                      </h3>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {t(
+                          `Potential dependency impact for ${selectedElement.name}. Results are static, not verified runtime behavior.`,
+                          `Tác động phụ thuộc tiềm năng của ${selectedElement.name}. Đây là kết quả tĩnh, chưa phải hành vi runtime đã xác minh.`,
+                        )}
+                      </p>
+                    </div>
+                    <Button type="button" variant="outline" size="sm" onClick={closeImpactAnalysis}>
+                      {t("Close analysis", "Đóng phân tích")}
+                    </Button>
+                  </div>
                   <Step2StaticImpact
+                    key={selectedElement.id}
                     projectId={resolvedModelProjectId}
                     modelId={modelId}
                     modelQuery={modelQuery}
@@ -2129,9 +2415,12 @@ function StepContent({
                     inlineModel={activeModel}
                     waitForContext={studentContextLoading}
                     onOpenC1C3View={onOpenC1C3View}
+                    initialTargetId={selectedElement.id}
+                    onImpactChange={setImpactHighlightIds}
+                    onFocusElement={(elementId) => setSelectedGraphId(elementId)}
                   />
-                </div>
-              </details>
+                </section>
+              )}
 
               {referenceArchitecture?.evaluation?.findings &&
               referenceArchitecture.evaluation.findings.length > 0 ? (
@@ -2142,103 +2431,141 @@ function StepContent({
                   )}
                 >
                   <div className="space-y-4">
-                    <div className="divide-y border-y">
-                      {(() => {
-                        const rankStatus = (status: string) =>
-                          status === "VIOLATION" ? 3 : status === "NEEDS_REVIEW" ? 2 : 1;
-                        const grouped = new Map<
-                          string,
-                          {
-                            ruleId: string;
-                            status: string;
-                            items: typeof referenceArchitecture.evaluation.findings;
-                          }
-                        >();
-                        for (const finding of referenceArchitecture.evaluation.findings) {
-                          const existing = grouped.get(finding.ruleId);
-                          if (!existing) {
-                            grouped.set(finding.ruleId, {
-                              ruleId: finding.ruleId,
-                              status: finding.status,
-                              items: [finding],
-                            });
-                          } else {
-                            existing.items.push(finding);
-                            if (rankStatus(finding.status) > rankStatus(existing.status)) {
-                              existing.status = finding.status;
-                            }
-                          }
+                    <div className="flex flex-wrap gap-2 text-xs">
+                      <Badge variant="outline">
+                        {t("Rules checked", "Quy tắc đã kiểm tra")}:{" "}
+                        {referenceArchitecture.evaluation.findings.length}
+                      </Badge>
+                      <Badge variant="outline">
+                        {t("Needs attention", "Cần kiểm tra")}:{" "}
+                        {
+                          referenceArchitecture.evaluation.findings.filter(
+                            (finding) => finding.status === "VIOLATION",
+                          ).length
                         }
-                        return [...grouped.values()]
-                          .sort((a, b) => a.ruleId.localeCompare(b.ruleId))
-                          .map((group) => {
-                            const messages = group.items
-                              .map((item) => item.message?.trim())
-                              .filter((msg): msg is string => Boolean(msg));
-                            return (
-                              <details key={group.ruleId} className="group">
-                                <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 py-3 text-sm marker:content-none hover:bg-muted/40">
-                                  <div className="flex min-w-0 flex-wrap items-center gap-2.5">
-                                    <span className="rounded bg-muted px-2 py-0.5 font-mono text-xs font-semibold text-foreground">
-                                      {group.ruleId}
-                                    </span>
-                                    <span className="font-semibold text-foreground">
-                                      {getRuleName(group.ruleId, locale)}
-                                    </span>
-                                    {group.items.length > 1 && (
-                                      <span className="text-xs font-medium text-muted-foreground">
-                                        ({group.items.length}{" "}
-                                        {t("findings", "phát hiện")})
-                                      </span>
-                                    )}
-                                  </div>
-                                  <StatusBadge status={group.status} />
-                                </summary>
-                                {messages.length > 0 && (
-                                  <ul className="space-y-1.5 pb-3 pl-4 text-sm leading-6 text-muted-foreground list-disc">
-                                    {messages.map((msg, idx) => (
-                                      <li key={idx}>{msg}</li>
+                      </Badge>
+                      <Badge variant="outline">
+                        {t("Needs verification", "Cần xác minh")}:{" "}
+                        {
+                          referenceArchitecture.evaluation.findings.filter(
+                            (finding) => finding.status === "NEEDS_REVIEW",
+                          ).length
+                        }
+                      </Badge>
+                    </div>
+                    <p className="text-xs leading-5 text-muted-foreground">
+                      {t(
+                        "These are read-only results from the curated source snapshot. Open a result to understand its evidence and return to the graph to explore related elements.",
+                        "Đây là kết quả chỉ đọc từ source snapshot tham chiếu. Mở một kết quả để xem evidence, rồi quay lại đồ thị để khám phá các thành phần liên quan.",
+                      )}
+                    </p>
+                    <div className="divide-y rounded-xl border bg-background">
+                      {referenceArchitecture.evaluation.findings.map((finding) => {
+                        const relatedElements = (activeModel?.elements ?? []).filter((element) =>
+                          finding.message.toLowerCase().includes(element.name.toLowerCase()),
+                        );
+                        const studentStatus =
+                          finding.status === "PASS"
+                            ? t("No issue found", "Không phát hiện vấn đề")
+                            : finding.status === "VIOLATION"
+                              ? t("Needs attention", "Cần kiểm tra")
+                              : t("Needs verification", "Cần xác minh thêm");
+                        const studentSeverity =
+                          finding.severity === "ERROR"
+                            ? t("High priority", "Ưu tiên cao")
+                            : finding.severity === "WARNING"
+                              ? t("Warning", "Cảnh báo")
+                              : t("Information", "Thông tin");
+                        return (
+                          <details key={finding.id} className="group text-xs">
+                            <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 p-3 marker:content-none">
+                              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                <span className="font-mono font-semibold">{finding.ruleId}</span>
+                                <span className="font-medium">
+                                  {getRuleName(finding.ruleId, locale)}
+                                </span>
+                              </div>
+                              <div className="flex shrink-0 items-center gap-2">
+                                <Badge
+                                  variant={
+                                    finding.status === "VIOLATION"
+                                      ? "destructive"
+                                      : finding.status === "NEEDS_REVIEW"
+                                        ? "warning"
+                                        : "outline"
+                                  }
+                                >
+                                  {studentStatus}
+                                </Badge>
+                                <Badge variant="outline" className="text-[10px]">
+                                  {studentSeverity}
+                                </Badge>
+                              </div>
+                            </summary>
+                            {finding.message && (
+                              <div className="space-y-2 border-t px-3 py-2.5 leading-5 text-muted-foreground">
+                                <p>{finding.message}</p>
+                                {relatedElements.length > 0 && (
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {relatedElements.slice(0, 4).map((element) => (
+                                      <Button
+                                        key={element.id}
+                                        type="button"
+                                        size="sm"
+                                        variant="outline"
+                                        className="h-7 px-2 text-[11px]"
+                                        onClick={(event) => {
+                                          event.preventDefault();
+                                          setSelectedGraphId(element.id);
+                                          document
+                                            .getElementById("lab-static-workspace")
+                                            ?.scrollIntoView({
+                                              behavior: "smooth",
+                                              block: "start",
+                                            });
+                                        }}
+                                      >
+                                        {t("View", "Xem")} {element.name}
+                                      </Button>
                                     ))}
-                                  </ul>
+                                  </div>
                                 )}
-                              </details>
-                            );
-                          });
-                      })()}
+                              </div>
+                            )}
+                          </details>
+                        );
+                      })}
                     </div>
                     {referenceArchitecture.evidences.length > 0 && (
-                      <details className="pt-1">
-                        <summary className="cursor-pointer text-sm font-semibold text-primary hover:underline">
-                          {t(
-                            `Verified Source Code Evidence (${referenceArchitecture.evidences.length})`,
-                            `Bằng chứng mã nguồn đã xác minh (${referenceArchitecture.evidences.length})`,
-                          )}
-                        </summary>
-                        <div className="mt-3 divide-y rounded-lg border bg-card">
+                      <div className="space-y-2">
+                        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          {t("Verified Source Code Evidence", "Bằng chứng mã nguồn đã xác minh")}
+                        </h3>
+                        <div className="grid gap-2.5 md:grid-cols-2">
                           {referenceArchitecture.evidences.slice(0, 8).map((ev) => (
-                            <div key={ev.id} className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 text-sm">
-                              <div className="min-w-0">
-                                <span className="font-mono text-xs font-semibold text-foreground">
+                            <div key={ev.id} className="rounded-xl border bg-muted/20 p-3 text-xs">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <span className="break-all font-mono font-semibold text-foreground">
                                   {cleanDisplaySourceLocator(ev.locator) ||
                                     t("Source location", "Vị trí mã nguồn")}
                                 </span>
-                                {ev.excerpt && (
-                                  <code className="ml-2 rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
-                                    {ev.excerpt.trim().slice(0, 80)}
-                                  </code>
+                                {ev.sourceType && (
+                                  <Badge variant="outline">
+                                    {ev.sourceType === "STATIC_CODE"
+                                      ? t("Source code", "Mã nguồn tĩnh")
+                                      : ev.sourceType}
+                                  </Badge>
                                 )}
                               </div>
-                              {ev.sourceType && (
-                                <Badge variant="secondary" className="text-[11px] font-medium">
-                                  {ev.sourceType === "STATIC_CODE"
-                                    ? t("Source code", "Mã nguồn tĩnh")
-                                    : ev.sourceType}
-                                </Badge>
+                              {ev.excerpt && (
+                                <pre className="mt-2 overflow-x-auto rounded bg-background p-2 font-mono text-[11px] leading-relaxed text-muted-foreground">
+                                  {ev.excerpt}
+                                </pre>
                               )}
                             </div>
                           ))}
                         </div>
-                      </details>
+                      </div>
                     )}
                   </div>
                 </DetailPanel>
@@ -2246,6 +2573,14 @@ function StepContent({
                 <StaticEvaluationSummary
                   modelId={modelId}
                   allowRunEvaluation={!isStudent && Boolean(viewModelQuery)}
+                  model={activeModel}
+                  onSelectElement={(elementId) => {
+                    setSelectedGraphId(elementId);
+                    onSelectInlineC4View("GRAPH");
+                    document
+                      .getElementById("lab-static-workspace")
+                      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  }}
                 />
               )}
             </>
@@ -2262,7 +2597,10 @@ function StepContent({
                       </div>
                     )}
                     {moduleTheoryItems?.map((item) => (
-                      <article key={item.id} className="space-y-2 rounded-xl border bg-background p-4 sm:p-5">
+                      <article
+                        key={item.id}
+                        className="space-y-2 rounded-xl border bg-background p-4 sm:p-5"
+                      >
                         <h4 className="text-sm font-semibold text-foreground">{item.title}</h4>
                         <MarkdownPreview markdown={item.body} />
                       </article>
@@ -2279,12 +2617,14 @@ function StepContent({
               )}
             </div>
           )}
-
         </div>
       )}
 
       {step === 3 && (
-        <div className="space-y-4" aria-label={t("Evidence review and submission", "Kiểm tra evidence và nộp bài")}>
+        <div
+          className="space-y-4"
+          aria-label={t("Evidence review and submission", "Kiểm tra evidence và nộp bài")}
+        >
           {requiresRuntime && !liveStudioVerified && !preview ? (
             <DetailPanel title={t("Runtime evidence required", "Cần evidence Runtime Studio")}>
               <p className="text-sm leading-6 text-muted-foreground">

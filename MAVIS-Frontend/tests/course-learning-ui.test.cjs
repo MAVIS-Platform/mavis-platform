@@ -1810,12 +1810,13 @@ test("Bug #03: decodePlainTextEntities decodes escaped entities and StudentCours
   assert.match(syllabus, /No published modules yet/);
 });
 
-test("Bug #05: Reverse BFS simulator uses accurate 3-phase flow copy instead of stale Step 3 Quiz instructions", () => {
+test("Bug #05: Reverse BFS analysis stays contextual and does not show stale Quiz instructions", () => {
   const step2Impact = read("src/features/courses/step2-static-impact.tsx");
 
   assert.doesNotMatch(step2Impact, /Proceed to Step 3 Quiz|How to complete Step 2/);
-  assert.match(step2Impact, /Reverse BFS Impact Simulator — Static impact check/);
-  assert.match(step2Impact, /Course Roadmap Module Quiz/);
+  assert.match(step2Impact, /Static impact analysis/);
+  assert.match(step2Impact, /Static dependency only/);
+  assert.match(step2Impact, /onImpactChange/);
 });
 
 test("Bug #07: formatLabModeLabel humanizes labMode enums and SubmissionReview back link avoids trailing ampersand", () => {
