@@ -75,7 +75,7 @@ export function ArchitectureDiagrams({
   const resolveKind = guidedStatic ? resolveGuidedDiagramKind : resolveDiagramKind;
   const initialKind = controlledKind ?? resolveKind(requestedKindParam);
   const [kind, setKind] = useState<DiagramKind>(initialKind),
-    [service, setService] = useState(""),
+    [service, setService] = useState(guidedStatic ? "ALL" : ""),
     [theme, setTheme] = useState<DrawioTheme>("clean"),
     [c4AiEnrichment, setC4AiEnrichment] = useState<C4AiDiagramEnrichment | null>(null),
     [generatedState, setGeneratedState] = useState<{ targetKey: string; xml: string }>({
@@ -86,16 +86,40 @@ export function ArchitectureDiagrams({
   const api = useApi(),
     cache = useQueryClient();
   const model = sourceModel;
+  const canonicalOrder = [
+    "api-gateway",
+    "identity-service",
+    "catalog-service",
+    "order-service",
+    "notification-service",
+    "service-discovery",
+  ];
   const allContainers = model.elements
     .filter((node) => node.elementType === "SERVICE_CONTAINER")
     .map((node) => ({
       ...node,
       count: model.elements.filter((child) => child.parentId === node.id).length,
     }))
-    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+    .sort((a, b) => {
+      if (guidedStatic) {
+        const ia = canonicalOrder.indexOf(a.name);
+        const ib = canonicalOrder.indexOf(b.name);
+        if (ia !== -1 || ib !== -1) {
+          return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
+        }
+      }
+      return b.count - a.count || a.name.localeCompare(b.name);
+    });
   const populatedContainers = allContainers.filter((node) => node.count > 0);
   const containers = populatedContainers.length > 0 ? populatedContainers : allContainers;
-  const container = containers.find((node) => node.id === service) ?? containers[0];
+  const container =
+    guidedStatic && service === "ALL"
+      ? undefined
+      : (containers.find((node) => node.id === service) ?? containers[0]);
+  const selectedC3TargetId =
+    guidedStatic && kind === "COMPONENT" && (service === "ALL" || !service)
+      ? "ALL"
+      : (container?.id ?? containers[0]?.id);
   const isUmlWorkspaceKind = [
     "UML_CLASS",
     "UML_PACKAGE",
@@ -152,8 +176,8 @@ export function ArchitectureDiagrams({
   }, [isC4EnrichableKind, kind, model, container?.id, systemName, locale]);
 
   const selection = useMemo(
-    () => selectDiagram(model, kind, container?.id, { systemName }),
-    [model, kind, container?.id, systemName],
+    () => selectDiagram(model, kind, selectedC3TargetId, { systemName }),
+    [model, kind, selectedC3TargetId, systemName],
   );
   const document = useMemo(
     () =>
@@ -280,19 +304,52 @@ export function ArchitectureDiagrams({
               />
             </div>
           )}
-          {showServiceSelect && (
-            <div className="w-full sm:w-80">
-              <SelectField
-                label={t("Service to inspect (C3 Component)", "Chọn Service để xem C3 Component")}
-                value={container?.id ?? ""}
-                onChange={setService}
-                options={containers.map((node) => ({
-                  value: node.id,
-                  label: `${node.name}${node.count === 0 ? ` · ${t("no components extracted", "chưa tách thành phần con")}` : ""}`,
-                }))}
-              />
-            </div>
-          )}
+          {showServiceSelect &&
+            (guidedStatic ? (
+              <div
+                className="flex flex-wrap items-center gap-1.5"
+                role="group"
+                aria-label={t("Service filter (C3 Component)", "Chọn Service để xem C3 Component")}
+              >
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={service === "ALL" || !service ? "default" : "outline"}
+                  className="h-7 px-2.5 text-xs"
+                  onClick={() => setService("ALL")}
+                >
+                  {t(`All Services (${containers.length})`, `Tổng quan (${containers.length} Services)`)}
+                </Button>
+                {containers.map((node) => {
+                  const active = service === node.id;
+                  return (
+                    <Button
+                      key={node.id}
+                      type="button"
+                      size="sm"
+                      variant={active ? "default" : "outline"}
+                      className="h-7 px-2.5 text-xs"
+                      onClick={() => setService(node.id)}
+                    >
+                      {node.name}
+                      <span className="ml-1 text-[10px] opacity-75">({node.count})</span>
+                    </Button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="w-full sm:w-80">
+                <SelectField
+                  label={t("Service to inspect (C3 Component)", "Chọn Service để xem C3 Component")}
+                  value={container?.id ?? ""}
+                  onChange={setService}
+                  options={containers.map((node) => ({
+                    value: node.id,
+                    label: `${node.name}${node.count === 0 ? ` · ${t("no components extracted", "chưa tách thành phần con")}` : ""}`,
+                  }))}
+                />
+              </div>
+            ))}
           {showServiceScopeSelect && (
             <div className="w-full sm:w-80">
               <SelectField
