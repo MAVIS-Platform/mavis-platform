@@ -25,6 +25,11 @@ import {
   resolveStudioStyle,
   type StudioStyleId,
 } from "./studio-styles";
+import {
+  StudioThreeStage,
+  type StudioThreeEdge,
+  type StudioThreeNode,
+} from "./studio-three-stage";
 
 type Studio = Response<"studioState">;
 
@@ -1155,6 +1160,11 @@ export function StudioObservability({
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [camera, setCamera] = useState(DEFAULT_3D_CAMERA);
   const [cameraFormOpen, setCameraFormOpen] = useState(true);
+  const [webglReady, setWebglReady] = useState(false);
+  const handleWebglReadyChange = useCallback((ready: boolean) => {
+    setWebglReady(ready);
+  }, []);
+  const webglActive = view === "3D" && webglReady;
   const [customOffsets, setCustomOffsets] = useState<Record<string, { x: number; y: number }>>({});
   const [pinnedPositions, setPinnedPositions] = useState<Record<string, { x: number; y: number }>>(
     {},
@@ -1503,6 +1513,145 @@ export function StudioObservability({
     customOffsets,
     pinnedPositions,
     snapToGrid,
+  ]);
+
+  const { threeNodes, threeEdges } = useMemo(() => {
+    if (view !== "3D") {
+      return { threeNodes: [] as StudioThreeNode[], threeEdges: [] as StudioThreeEdge[] };
+    }
+    const replicasFor = (svc: string) => {
+      const liveSvc = telemetry?.services.find((item) => item.service === svc);
+      return liveSvc ? liveSvc.runningReplicas : 1;
+    };
+    const selectedIsStopped = selected ? replicasFor(selected) === 0 : false;
+    const builtNodes: StudioThreeNode[] = [];
+    for (const [name, point] of positions.entries()) {
+      const live = telemetry?.services.find((item) => item.service === name);
+      const elId = data.serviceMappings?.[name];
+      const element = reference.data?.elements.find((el) => el.id === elId);
+      const archetype = classifyArchetype(name, element?.elementType, element?.layer);
+      const isAffected = affected.has(elId ?? "");
+      const isSelected = selected === name;
+      const isDropTarget = dropTargetNode === name;
+      const isStopped = live !== undefined && live.runningReplicas === 0;
+      const isImpactedByOutage = isAffected && selectedIsStopped && !isStopped;
+      const status = nodeStatus?.[name];
+      const isCritical = isStopped || status === "Overloaded";
+      const isWarning = isImpactedByOutage || status === "Bottleneck" || status === "Rate limited";
+      const palette = resolveStudioNodePalette(activeStyleId, name, archetype, {
+        isCritical,
+        isWarning,
+        isSelected,
+        isDropTarget,
+      });
+      builtNodes.push({
+        id: name,
+        label: nodeNames?.[name] ?? name,
+        archetype,
+        wx: point.wx,
+        wz: point.wz,
+        replicas: live ? live.runningReplicas : 1,
+        isStopped,
+        isCritical,
+        isWarning,
+        isSelected,
+        isDropTarget,
+        palette,
+      });
+    }
+
+    const builtEdges: StudioThreeEdge[] = [];
+    for (const edge of staticEdges) {
+      const targetStopped = replicasFor(edge.to) === 0;
+      builtEdges.push({
+        id: `static:${edge.id}`,
+        from: edge.from,
+        to: edge.to,
+        kind: "static",
+        color: targetStopped ? "#e11d48" : isLight ? "#94a3b8" : "#64748b",
+        dashed: true,
+        isSevered: targetStopped,
+      });
+    }
+
+    const sgByPair = new Map(
+      (telemetry?.serviceGraph ?? []).map((sg) => [`${sg.client}->${sg.server}`, sg]),
+    );
+    const rawEdges = (telemetry?.interactions ?? []).filter(
+      (edge) => !traceId || edge.traceId === traceId,
+    );
+    const deduped = traceId
+      ? rawEdges
+      : [...new Map(rawEdges.map((edge) => [`${edge.fromService}->${edge.toService}`, edge])).values()];
+    deduped.forEach((edge, idx) => {
+      const span = spansByTraceAndId.get(`${edge.traceId}:${edge.childSpanId}`);
+      const sg = sgByPair.get(`${edge.fromService}->${edge.toService}`);
+      const status = span?.httpStatusCode;
+      const httpError = typeof status === "number" && status >= 400 && status <= 599;
+      const edgeSevered =
+        httpError ||
+        span?.spanStatus?.toUpperCase() === "ERROR" ||
+        (sg !== undefined && sg.errorRatePercent >= 5);
+      const edgeDegraded =
+        !edgeSevered &&
+        sg !== undefined &&
+        (sg.errorRatePercent > 0 || (sg.p95Ms ?? 0) >= 250);
+      const faultLabel = span?.circuitOpen
+        ? "CIRCUIT OPEN"
+        : sg && sg.errorRatePercent >= 5
+          ? `${Number(sg.rps.toFixed(1))} rps · ${Math.round(sg.errorRatePercent)}% err`
+          : httpError
+            ? `${status} ✕`
+            : "CALL FAILED";
+      const durationNs = span?.durationNanoseconds?.trim();
+      const durationMs = durationNs ? Number(durationNs) / 1_000_000 : NaN;
+      const latencyLabel = sg
+        ? `${Number(sg.rps.toFixed(1))} rps${sg.p95Ms != null ? ` · ${Math.round(sg.p95Ms)}ms` : ""}`
+        : Number.isFinite(durationMs) && durationMs >= 0
+          ? `${simulated ? "≈ " : ""}${durationMs > 0 && durationMs < 0.1 ? "<0.1" : Number(durationMs.toFixed(durationMs < 10 ? 1 : 0))} ms`
+          : null;
+      const targetReplicas = replicasFor(edge.toService);
+      const edgeColor = edgeSevered
+        ? "#e11d48"
+        : edgeDegraded
+          ? "#d97706"
+          : sg && sg.rps > 0
+            ? "#059669"
+            : isLight
+              ? "#475569"
+              : "#64748b";
+      builtEdges.push({
+        id: `obs:${edge.traceId}:${idx}`,
+        from: edge.fromService,
+        to: edge.toService,
+        kind: "observed",
+        color: edgeColor,
+        dashed: false,
+        label: edgeSevered ? faultLabel : latencyLabel,
+        isSevered: edgeSevered,
+        isDegraded: edgeDegraded,
+        speedSec: Math.max(0.7, 2.2 / Math.max(1, Math.min(targetReplicas, 6))),
+      });
+    });
+
+    return { threeNodes: builtNodes, threeEdges: builtEdges };
+  }, [
+    view,
+    positions,
+    telemetry,
+    data.serviceMappings,
+    reference.data,
+    affected,
+    selected,
+    dropTargetNode,
+    nodeStatus,
+    activeStyleId,
+    nodeNames,
+    staticEdges,
+    isLight,
+    traceId,
+    spansByTraceAndId,
+    simulated,
   ]);
 
   function nodeAt(clientX: number, clientY: number) {
@@ -1866,10 +2015,9 @@ export function StudioObservability({
                       isLight ? "text-slate-500" : "text-slate-400"
                     }`}
                   >
-                    {t(
-                      "Right-drag to orbit · Scroll to zoom",
-                      "Chuột phải kéo xoay · Cuộn để zoom",
-                    )}
+                    {webglActive
+                      ? t("Drag to orbit 3D · Scroll to zoom", "Kéo để xoay 3D · Cuộn để zoom")
+                      : t("Right-drag to orbit · Scroll to zoom", "Chuột phải kéo xoay · Cuộn để zoom")}
                   </p>
                 </div>
               )}
@@ -1886,6 +2034,7 @@ export function StudioObservability({
                 aria-pressed={view === mode}
                 onClick={() => {
                   if (view !== mode) onSound?.("select");
+                  if (mode === "2D") setWebglReady(false);
                   setView(mode);
                 }}
                 className={`rounded-full px-2 py-0.5 font-mono text-xs font-semibold transition ${
@@ -1969,6 +2118,7 @@ export function StudioObservability({
               aria-pressed={view === mode}
               onClick={() => {
                 if (view !== mode) onSound?.("select");
+                if (mode === "2D") setWebglReady(false);
                 setView(mode);
               }}
             >
@@ -2156,7 +2306,7 @@ export function StudioObservability({
         </div>
       )}
 
-      {/* Interactive 2D/3D Studio Canvas + Volumetric 3D Isometric Server Racks & Stacked Replica Cubes */}
+      {/* Interactive 2D/3D Studio Canvas (Real Three.js WebGL 3D when view === "3D" + crisp 2D SVG) */}
       <div
         className={
           canvasOnly
@@ -2164,6 +2314,31 @@ export function StudioObservability({
             : "relative max-w-full overflow-x-auto"
         }
       >
+        {view === "3D" && (
+          <StudioThreeStage
+            nodes={threeNodes}
+            edges={threeEdges}
+            deckBounds={deckBounds}
+            camera={camera}
+            zoom={zoom}
+            pan={pan}
+            styleId={activeStyleId}
+            busy={busy}
+            onCameraChange={setCamera}
+            onZoomChange={setZoom}
+            onPanChange={setPan}
+            onSelect={(svc) => {
+              if (svc && svc !== selected) onSound?.("select");
+              onSelect(svc);
+            }}
+            onDropTool={(toolId, targetService) => {
+              const tool = PALETTE_ITEMS.find((item) => item.id === toolId) ?? draggedTool ?? null;
+              if (tool) applyPaletteToolToService(tool, targetService);
+              setDraggedTool(null);
+            }}
+            onReadyChange={handleWebglReadyChange}
+          />
+        )}
         <svg
           ref={svg}
           data-studio-graph="true"
@@ -2393,7 +2568,12 @@ export function StudioObservability({
             {/* Infinite Studio Blueprint Grid (spans 10,800 × 10,800 world units when zoomed out) */}
             <rect data-studio-background x="-4800" y="-4800" width="10800" height="10800" fill="url(#studio-grid)" />
 
-          {/* 3D Top-Down Turntable Architecture Platform Deck (orbits 360° left-to-right, always viewed from above) */}
+          <g
+            data-studio-svg-overlay
+            opacity={webglActive ? 0 : 1}
+            style={webglActive ? { pointerEvents: "none" } : undefined}
+          >
+          {/* 3D Top-Down Turntable Architecture Platform Deck (SVG fallback when WebGL is inactive) */}
           {view === "3D" &&
             (() => {
               const { minX, maxX, minZ, maxZ } = deckBounds;
@@ -2502,7 +2682,7 @@ export function StudioObservability({
           )}
 
           {/* Static Dependency Edges + Observed Traffic + Interactive 2D/3D Service Blocks */}
-          <g data-tour="studio-services-graph">
+          <g data-tour={webglActive ? undefined : "studio-services-graph"}>
           {(() => {
             const observedPairs = new Set(
               (telemetry?.interactions ?? [])
@@ -3345,6 +3525,7 @@ export function StudioObservability({
               />;
             })()}
           </g>
+          </g>
         </svg>
       </div>
 
@@ -3641,6 +3822,36 @@ const SNAPSHOT_MAX_EDGES = [1280, 960, 720] as const;
 
 export async function captureStudioImage(svg: SVGSVGElement, wholeDiagram = false): Promise<string> {
   const styles = getComputedStyle(svg);
+  const webglCanvas = svg.parentElement?.querySelector<HTMLCanvasElement>(
+    "canvas[data-studio-webgl-canvas]",
+  );
+  if (
+    webglCanvas &&
+    webglCanvas.width > 0 &&
+    webglCanvas.height > 0 &&
+    webglCanvas.offsetParent !== null
+  ) {
+    const naturalW = webglCanvas.width;
+    const naturalH = webglCanvas.height;
+    const longest = Math.max(naturalW, naturalH);
+    const canvas = document.createElement("canvas");
+    for (const maxEdge of SNAPSHOT_MAX_EDGES) {
+      const scale = Math.min(1, maxEdge / longest);
+      canvas.width = Math.max(1, Math.round(naturalW * scale));
+      canvas.height = Math.max(1, Math.round(naturalH * scale));
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("Could not render Studio snapshot");
+      context.fillStyle =
+        styles.backgroundColor && styles.backgroundColor !== "rgba(0, 0, 0, 0)"
+          ? styles.backgroundColor
+          : "#f3f8ff";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(webglCanvas, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL("image/png");
+      if (dataUrl.length <= SNAPSHOT_MAX_DATA_URL_CHARS) return dataUrl;
+    }
+    throw new Error("Snapshot image too large");
+  }
   const url = URL.createObjectURL(
     new Blob([serializeStudioGraph(svg, wholeDiagram)], { type: "image/svg+xml;charset=utf-8" }),
   );
@@ -3679,6 +3890,11 @@ export function serializeStudioGraph(
   preserveMotion = false,
 ): string {
   const clone = svg.cloneNode(true) as SVGSVGElement;
+  const overlayClone = clone.querySelector("[data-studio-svg-overlay]");
+  if (overlayClone) {
+    overlayClone.removeAttribute("opacity");
+    overlayClone.removeAttribute("style");
+  }
   const styles = getComputedStyle(svg);
   clone.setAttribute(
     "style",

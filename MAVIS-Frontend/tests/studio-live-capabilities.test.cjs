@@ -697,7 +697,12 @@ test("Studio Live mounts comprehensive bilingual Guided Tour (?) trigger next to
     assert.ok(workbenchSrc.includes(anchor), `Missing tour anchor in live-studio-workbench.tsx: ${anchor}`);
   }
   assert.ok(obsSrc.includes('data-tour="studio-3d-controls-group"'));
-  assert.ok(obsSrc.includes('data-tour="studio-services-graph"'));
+  assert.ok(obsSrc.includes('"studio-services-graph"'));
+  const stageSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-three-stage.tsx"),
+    "utf8",
+  );
+  assert.ok(stageSrc.includes('"studio-services-graph"'));
 });
 
 test("Studio 3D/2D service icons and sculptures adapt distinctly to all 4 Studio themes", () => {
@@ -744,4 +749,26 @@ test("Studio 3D/2D service icons and sculptures adapt distinctly to all 4 Studio
     resolveStudioSidebarIconClass("daylight", "order-service"),
     resolveStudioSidebarIconClass("control", "order-service"),
   );
+});
+
+test("Studio Live 3D mode uses real Three.js WebGL stage with dynamic import, 3D meshes, and WebGL PNG snapshot capture", () => {
+  const stageSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-three-stage.tsx"),
+    "utf8",
+  );
+  const obsSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-observability.tsx"),
+    "utf8",
+  );
+
+  assert.ok(stageSrc.includes('import("three")'), "Three.js must be dynamically imported for 3D mode");
+  assert.ok(stageSrc.includes("preserveDrawingBuffer: true"), "WebGL must preserve drawing buffer for PNG snapshots");
+  assert.ok(stageSrc.includes('data-testid="studio-3d-webgl"'));
+  assert.ok(stageSrc.includes('data-studio-engine="three-webgl"'));
+  assert.ok(stageSrc.includes("TubeGeometry"), "Observed traffic must render true 3D curved tubes");
+  assert.ok(stageSrc.includes("Raycaster"), "3D meshes must support click and drag-drop raycasting");
+  assert.ok(stageSrc.includes("disposeObjectTree"), "3D resources must dispose cleanly on unmount/rebuild");
+
+  assert.ok(obsSrc.includes("<StudioThreeStage"));
+  assert.ok(obsSrc.includes('canvas[data-studio-webgl-canvas]'), "captureStudioImage must capture live WebGL canvas in 3D mode");
 });
