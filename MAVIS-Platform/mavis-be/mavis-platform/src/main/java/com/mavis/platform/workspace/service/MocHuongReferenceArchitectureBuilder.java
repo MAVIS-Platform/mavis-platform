@@ -90,6 +90,7 @@ public final class MocHuongReferenceArchitectureBuilder {
 
     private BuiltResult buildAll() {
         addC1ActorsAndExternals();
+        addC2Microservices();
         Map<String, UUID> serviceIds = new LinkedHashMap<>();
         for (String svc : REAL_MICROSERVICES) {
             ModelElement el = node(svc);
@@ -125,6 +126,33 @@ public final class MocHuongReferenceArchitectureBuilder {
                 "OpenTelemetry & MAVIS Observability",
                 "Thu thập OTLP traces (:4318/v1/traces) & Actuator Prometheus metrics",
                 props("contextReviewState", "CONFIRMED", "endpoint", "http://otel-collector:4318/v1/traces"));
+    }
+
+    private void addC2Microservices() {
+        addNode("api-gateway", null, "SERVICE_CONTAINER", "Java 21 · Spring Cloud Gateway (:8080)",
+                "api-gateway",
+                "Edge reverse proxy · JWT Bearer verification, X-Correlation-Id filter & lb:// routing",
+                props("port", "8080", "role", "Edge API Gateway", "framework", "Java 21 / Spring Cloud Gateway", "layerHint", "edge"));
+        addNode("service-discovery", null, "SERVICE_CONTAINER", "Java 21 · Netflix Eureka Server (:8761)",
+                "service-discovery",
+                "Dynamic service registry for api-gateway & business microservices",
+                props("port", "8761", "role", "Service Discovery Registry", "framework", "Java 21 / Spring Cloud Netflix Eureka", "layerHint", "platform"));
+        addNode("identity-service", null, "SERVICE_CONTAINER", "Java 21 · Spring Boot 3 (:8081)",
+                "identity-service",
+                "Authentication, registration, user profiles & JWT token issuance",
+                props("port", "8081", "role", "Identity & Auth Bounded Context", "framework", "Java 21 / Spring Boot 3", "database", "identity_db", "layerHint", "domain"));
+        addNode("catalog-service", null, "SERVICE_CONTAINER", "Java 21 · Spring Boot 3 (:8082)",
+                "catalog-service",
+                "Product & Category catalog, Redis Cache-Aside & optimistic stock reserve/release APIs",
+                props("port", "8082", "role", "Catalog & Inventory Bounded Context", "framework", "Java 21 / Spring Boot 3", "database", "catalog_db", "layerHint", "domain"));
+        addNode("order-service", null, "SERVICE_CONTAINER", "Java 21 · Spring Boot 3 (:8083)",
+                "order-service",
+                "Order lifecycle, Saga Orchestrator, OpenFeign Resilience4j client & Transactional Outbox",
+                props("port", "8083", "role", "Order & Saga Orchestrator Context", "framework", "Java 21 / Spring Boot 3", "database", "order_db", "layerHint", "domain"));
+        addNode("notification-service", null, "SERVICE_CONTAINER", "Java 21 · Spring Boot 3 (:8084)",
+                "notification-service",
+                "Idempotent Kafka consumer (order.created, order.cancelled) & user notification history",
+                props("port", "8084", "role", "Notification Bounded Context", "framework", "Java 21 / Spring Boot 3", "database", "notification_db", "layerHint", "domain"));
     }
 
     private DiagramVersion buildC1ContextDiagram() {
