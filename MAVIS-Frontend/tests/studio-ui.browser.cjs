@@ -326,7 +326,7 @@ async function main() {
     assert.ok(Number(await bottomSep.getAttribute("aria-valuenow")) > bottomBefore + 40, "bottom splitter must drag taller");
     await page.screenshot({path:path.join(output,"live-workbench-before-tabs.png"),fullPage:true,animations:"disabled"});
     await page.getByRole("button",{name:/Stats/}).click();
-    await page.getByText("Step 1: Capture baseline snapshot",{exact:true}).waitFor();
+    await page.getByRole("heading",{name:"Cluster Overview"}).waitFor();
     await page.getByRole("button",{name:/Snapshots/}).click();
     await page.getByText("Capture evidence snapshot",{exact:true}).waitFor();
     await page.getByRole("button",{name:"Record runtime replay",exact:true}).click();

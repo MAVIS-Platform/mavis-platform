@@ -1352,9 +1352,6 @@ export function LiveStudioWorkbench({
         replicaSvcDraft !== authoring.replicaService ||
         replicaCountDraft !== authoring.replicaCount),
   );
-  const missionReady = Boolean(
-    authoring && authoring.instructions.trim().length > 0 && authoring.baselinePath.trim().length > 0 && !missionDirty,
-  );
 
   const probeSuggestions = useMemo(() => {
     const names = blocks.map((b) => b.service.toLowerCase());
@@ -1366,26 +1363,6 @@ export function LiveStudioWorkbench({
     items.push("/health");
     return Array.from(new Set(items));
   }, [blocks]);
-
-  const checklist = authoring
-    ? ([
-        ["1. Pick Scenario / Initial Faults", blocks.length > 0],
-        ["2. Save Student Mission & Pass Target", missionReady],
-        [
-          "3. Optional: Test-Run Live Docker",
-          data.executionStatus === "RUNNING" || Boolean(authoring.hasVerifiedSession),
-        ],
-        ["4. Return & Publish in Step 6", Boolean(authoring.publishHref)],
-      ] as const)
-    : ([
-        ["Step 1: Capture baseline snapshot", (data.snapshots?.length ?? 0) >= 1],
-        ["Step 2: Scale replicas or inject fault", hasConfirmedAction],
-        ["Step 3: Capture post-change snapshot & compare", (data.snapshots?.length ?? 0) >= 2],
-        [
-          "Step 4: Finish Studio & seal HMAC receipt",
-          data.executionStatus === "COMPLETED" || Boolean(data.receiptDigest),
-        ],
-      ] as const);
 
   const isQueued = data.executionStatus.toUpperCase() === "QUEUED";
 
@@ -3076,41 +3053,12 @@ export function LiveStudioWorkbench({
                     isLight ? "border-slate-200" : "border-slate-800"
                   }`}
                 >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h2
-                      id="live-cluster-overview"
-                      className={`text-sm font-bold ${isLight ? "text-slate-900" : "text-slate-100"}`}
-                    >
-                      Cluster Overview
-                    </h2>
-                    <span
-                      className={`shrink-0 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
-                        lastSessionFailed || downServicesCount
-                          ? isLight
-                            ? "border-rose-200 bg-rose-50 text-rose-700"
-                            : "border-rose-500/30 bg-rose-500/15 text-rose-300"
-                          : isTelemetryPreview
-                            ? isLight
-                              ? "border-sky-200 bg-sky-50 text-sky-700"
-                              : "border-sky-500/30 bg-sky-500/15 text-sky-300"
-                            : isLight
-                              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                              : "border-emerald-500/30 bg-emerald-500/15 text-emerald-300"
-                      }`}
-                    >
-                      {lastSessionFailed
-                        ? isTimedOut
-                          ? "Timed out"
-                          : "Failed"
-                        : downServicesCount
-                          ? `${downServicesCount} down`
-                          : isTelemetryPreview
-                            ? "Setup preview"
-                            : blocks.length
-                              ? "Healthy"
-                              : "No services"}
-                    </span>
-                  </div>
+                  <h2
+                    id="live-cluster-overview"
+                    className={`text-sm font-bold ${isLight ? "text-slate-900" : "text-slate-100"}`}
+                  >
+                    Cluster Overview
+                  </h2>
 
                   <dl className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
                     {[
@@ -3261,28 +3209,7 @@ export function LiveStudioWorkbench({
                   </section>
                 </div>
 
-                {/* Row 3: Slim 4-Step Mission Checklist */}
-                <div className="grid grid-cols-1 gap-1.5 text-[11px] sm:grid-cols-2 lg:grid-cols-4">
-                  {checklist.map(([label, done]) => (
-                    <div
-                      key={label}
-                      className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 font-medium ${
-                        done
-                          ? isLight
-                            ? "border-emerald-200 bg-emerald-50/80 text-emerald-800"
-                            : "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
-                          : isLight
-                            ? "border-slate-200 bg-white text-slate-600"
-                            : "border-slate-800 bg-slate-900/70 text-slate-400"
-                      }`}
-                    >
-                      <span className="font-mono">{done ? "✓" : "○"}</span>
-                      <span className="truncate">{label}</span>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Row 4: Live RED Charts + Collapsible Service Edges & Action History */}
+                {/* Row 3: Live RED Charts + Collapsible Service Edges & Action History */}
                 <StudioRedCharts
                   history={observedData.telemetryHistory}
                   actions={observedData.actions}

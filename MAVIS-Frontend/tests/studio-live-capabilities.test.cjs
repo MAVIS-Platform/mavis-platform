@@ -1060,3 +1060,17 @@ test("LiveTerminalConsole omits fake compose header and red error card, streamin
   assert.doesNotMatch(src, /Errors only \(/);
   assert.match(src, /explainRuntimeDiagnostic\(trimmed\)/);
 });
+
+test("Stats tab shows only Cluster Overview metrics without 4-step checklist or duplicate status badge", () => {
+  const src = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/live-studio-workbench.tsx"),
+    "utf8",
+  );
+  const start = src.indexOf('aria-labelledby="live-cluster-overview"');
+  const end = src.indexOf("<StudioRedCharts", start);
+  const statsHeaderAndKpis = src.slice(start, end);
+  assert.doesNotMatch(src, /Step 1: Capture baseline snapshot/);
+  assert.doesNotMatch(statsHeaderAndKpis, /Timed out/);
+  assert.doesNotMatch(statsHeaderAndKpis, /Setup preview/);
+  assert.match(statsHeaderAndKpis, /Cluster Overview[\s\S]*Traffic &amp; reliability[\s\S]*Resource capacity/);
+});
