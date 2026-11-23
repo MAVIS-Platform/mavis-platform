@@ -47,6 +47,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ErrorState } from "@/components/shared/request-state";
+import { ScreenHelpTrigger } from "@/components/shared/screen-guided-tour";
 import { useApiQuery } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
 import type { Response } from "@/lib/api/contracts";
@@ -1571,8 +1572,24 @@ export function LiveStudioWorkbench({
             </Button>
           )}
 
+          {/* Studio Live Guided Tour (?) Trigger */}
+          <ScreenHelpTrigger
+            screenId="studio-live"
+            onTriggerClick={() => {
+              setTelemetryPopoverOpen(false);
+              setStylePopoverOpen(false);
+              setSettingsPopoverOpen(false);
+            }}
+            triggerClassName={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition ${
+              isLight
+                ? "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
+                : "border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-600 hover:bg-slate-800 hover:text-white"
+            }`}
+            iconClassName="size-4"
+          />
+
           {/* Compact Live Metrics Summary & Session Switcher Popover */}
-          <div className="relative hidden shrink-0 lg:block">
+          <div data-tour="studio-telemetry-hud" className="relative hidden shrink-0 lg:block">
             <button
               type="button"
               onClick={() => {
@@ -1692,7 +1709,7 @@ export function LiveStudioWorkbench({
           </div>
 
           {/* 4-Style Architectural Visual Switcher (Daylight Cloud / Blueprint / Tactile Pop / Control Glass) */}
-          <div className="relative">
+          <div data-tour="studio-style-picker" className="relative">
             <button
               type="button"
               aria-label={t("Studio visual style", "Chọn phong cách Studio")}
@@ -1851,7 +1868,7 @@ export function LiveStudioWorkbench({
           )}
 
           {/* Workspace Options Popover Trigger */}
-          <div className="relative">
+          <div data-tour="studio-settings-btn" className="relative">
             <button
               type="button"
               aria-label={t("Studio settings", "Cài đặt Studio")}
@@ -2063,7 +2080,7 @@ export function LiveStudioWorkbench({
           style={{ background: styleCfg.canvasBg }}
           className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
         >
-          <div ref={graphRef} className="relative min-h-[240px] min-w-0 flex-1 overflow-hidden">
+          <div ref={graphRef} data-tour="studio-canvas" className="relative min-h-[240px] min-w-0 flex-1 overflow-hidden">
             {state.isError && state.data && (
               <div
                 role="status"
@@ -2137,11 +2154,13 @@ export function LiveStudioWorkbench({
 
             {/* LEFT VERTICAL FLOATING TOOL RAIL (Original MAVIS Architecture Workbench — Figma/Miro Style) */}
             <nav
+              data-tour="studio-tool-rail"
               aria-label={t("Studio tools", "Công cụ Studio")}
               className={`pointer-events-auto absolute top-4 left-4 z-20 flex flex-col items-center gap-1.5 p-1.5 ${styleCfg.railClass}`}
             >
               <button
                 type="button"
+                data-tour="studio-tool-mission"
                 title={t("Mission & Pass Criteria", "Mục tiêu & Tiêu chí")}
                 aria-label={t("Mission & Pass Criteria", "Mục tiêu & Tiêu chí")}
                 aria-pressed={!missionHidden}
@@ -2166,6 +2185,7 @@ export function LiveStudioWorkbench({
 
               <button
                 type="button"
+                data-tour="studio-tool-services"
                 title={
                   authoring
                     ? t("Scenario & Block Setup", "Thiết lập Kịch bản & Block")
@@ -2200,6 +2220,7 @@ export function LiveStudioWorkbench({
 
               <button
                 type="button"
+                data-tour="studio-tool-diagnostics"
                 title={t("Impact & Root Cause Diagnostics", "Chẩn đoán Change Impact")}
                 aria-label={t("Impact & Root Cause Diagnostics", "Chẩn đoán Change Impact")}
                 aria-pressed={showRight && rightCardMode === "diagnostics"}
@@ -2294,6 +2315,7 @@ export function LiveStudioWorkbench({
             {!missionHidden && (
               <div
                 ref={missionCardRef}
+                data-tour="studio-mission"
                 aria-label={t("Lab Mission", "Mục tiêu Lab")}
                 onPointerDown={() => setFrontPanel("mission")}
                 style={{
@@ -2529,6 +2551,7 @@ export function LiveStudioWorkbench({
             {/* CENTERED BOTTOM FLOATING COMMAND DOCK (Original MAVIS Signature — Figma/macOS style) */}
             {bottomCollapsed && (
               <div
+                data-tour="studio-command-dock"
                 aria-label={t("Live Command Dock", "Thanh điều khiển trực tiếp")}
                 className={`pointer-events-auto absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 px-3 py-2 ${styleCfg.floatingPillClass}`}
               >
@@ -4245,6 +4268,7 @@ export function LiveStudioWorkbench({
         {showRight && (
           <aside
             ref={rightCardRef}
+            data-tour="studio-service-inspector"
             onPointerDown={() => setFrontPanel("right")}
             style={{
               top: 16 + rightOffset.y,

@@ -1868,6 +1868,7 @@ export function StudioObservability({
             </section>
           )}
           <div
+            data-tour="studio-viewport-pill"
             className={`pointer-events-auto absolute bottom-4 left-4 z-20 inline-flex items-center gap-0.5 px-1 py-1 ${styleCfg.floatingPillClass}`}
           >
             {(["2D", "3D"] as const).map((mode) => (

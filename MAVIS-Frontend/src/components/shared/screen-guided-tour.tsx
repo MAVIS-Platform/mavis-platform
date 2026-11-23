@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { CircleHelp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -58,11 +59,13 @@ export function findBestTargetElement(selectors: readonly string[]): HTMLElement
 function getHeaderFloor(el: HTMLElement): number {
   if (typeof document === "undefined") return 8;
   const tag = (el.tagName || "").toLowerCase();
-  if (tag === "aside" || el.closest?.("aside")) return 8;
+  if (tag === "aside" || tag === "header" || el.closest?.("aside") || el.closest?.("header")) {
+    return 4;
+  }
   const headerEl = document.querySelector("header");
-  if (!headerEl) return 8;
+  if (!headerEl) return 4;
   const hr = headerEl.getBoundingClientRect();
-  return hr.bottom > 0 && hr.bottom <= 120 ? Math.max(8, Math.round(hr.bottom + 8)) : 8;
+  return hr.bottom > 0 && hr.bottom <= 120 ? Math.max(8, Math.round(hr.bottom + 8)) : 4;
 }
 
 function scrollTargetIntoSpotlightView(targetEl: HTMLElement) {
@@ -93,9 +96,15 @@ function scrollTargetIntoSpotlightView(targetEl: HTMLElement) {
 export function ScreenHelpTrigger({
   screenId,
   onCustomStart,
+  triggerClassName,
+  iconClassName,
+  onTriggerClick,
 }: {
   screenId?: string | null | undefined;
   onCustomStart?: (() => void) | undefined;
+  triggerClassName?: string | undefined;
+  iconClassName?: string | undefined;
+  onTriggerClick?: (() => void) | undefined;
 }) {
   const { t } = useLocale();
   const tour = resolveScreenTour(screenId);
@@ -121,12 +130,16 @@ export function ScreenHelpTrigger({
             type="button"
             variant="ghost"
             size="icon"
-            className="size-9 shrink-0 rounded-full text-muted-foreground hover:text-foreground"
+            onClick={onTriggerClick}
+            className={
+              triggerClassName ??
+              "size-9 shrink-0 rounded-full text-muted-foreground hover:text-foreground"
+            }
             aria-label={t("Screen guide", "Hướng dẫn màn hình")}
             title={t("Screen guide", "Hướng dẫn màn hình")}
             data-tour-trigger={tour.id}
           >
-            <CircleHelp className="size-5" aria-hidden="true" />
+            <CircleHelp className={iconClassName ?? "size-5"} aria-hidden="true" />
           </Button>
         </DialogTrigger>
         <DialogContent
@@ -308,9 +321,9 @@ export function ScreenSpotlightOverlay({
     }
   }
 
-  return (
+  const overlay = (
     <div
-      className="fixed inset-0 z-50 pointer-events-none"
+      className="fixed inset-0 z-[100] pointer-events-none"
       role="dialog"
       aria-modal="false"
       aria-labelledby={`${id}-tour-title`}
@@ -406,4 +419,6 @@ export function ScreenSpotlightOverlay({
       </div>
     </div>
   );
+
+  return typeof document !== "undefined" ? createPortal(overlay, document.body) : overlay;
 }

@@ -2060,11 +2060,160 @@ export const SCREEN_TOUR_CATALOG = {
       },
     ],
   },
+
+  "studio-live": {
+    id: "studio-live",
+    title: {
+      en: "MAVIS Live Studio — Complete Interactive Guide",
+      vi: "MAVIS Live Studio — Hướng dẫn toàn diện",
+    },
+    subtitle: {
+      en: "Run real containerized microservices in 3D/2D, inject faults or scale replicas safely, inspect live OpenTelemetry traces & RED metrics, and capture verified evidence snapshots.",
+      vi: "Chạy hệ thống microservice trên Docker thật ở chế độ 3D/2D, thử nghiệm sự cố hoặc scale replica an toàn, theo dõi OTel traces & biểu đồ RED trực tiếp và chụp ảnh bằng chứng để nộp bài.",
+    },
+    cards: [
+      {
+        badge: "1",
+        title: {
+          en: "Standard 5-Step Lab Workflow",
+          vi: "Quy trình làm Lab chuẩn (5 bước)",
+        },
+        description: {
+          en: "Read Lab Mission & lock your Prediction → Click Run to boot real Docker containers → Trigger actions (Stop, Pause, Scale, CPU, Load) → Inspect Impact/Traces & Capture Snapshot → Click Submit Lab.",
+          vi: "Đọc Mục tiêu Lab & khóa Dự đoán (Prediction) → Bấm Run để khởi chạy Docker thật → Tác động lên service (Stop, Pause, Scale, CPU, Load) → Xem Impact/Traces & chụp Snapshot → Bấm Submit Lab.",
+        },
+      },
+      {
+        badge: "2",
+        title: {
+          en: "Quick 3D / 2D Canvas Controls",
+          vi: "Thao tác nhanh trên Canvas 3D / 2D",
+        },
+        description: {
+          en: "Left-drag background to pan · Right-drag in 3D to orbit camera · Scroll to zoom · Click any microservice block to open live Docker actions & real-time telemetry.",
+          vi: "Kéo chuột trái nền để di chuyển (Pan) · Kéo chuột phải trong 3D để xoay góc nhìn · Cuộn chuột để phóng to/thu nhỏ · Bấm vào bất kỳ service nào để mở bảng điều khiển Docker & thông số chi tiết.",
+        },
+      },
+    ],
+    steps: [
+      {
+        id: "studio-mission",
+        selectors: ['[data-tour="studio-mission"]', '[data-tour="studio-tool-mission"]'],
+        title: {
+          en: "1. Lab Mission, Pass Checklist & Prediction",
+          vi: "1. Mục tiêu Lab, Tiêu chí đạt & Dự đoán (Prediction)",
+        },
+        description: {
+          en: "Review your lab instructions, track live pass requirements, and lock your Prediction of impacted services before executing changes. You can drag, resize, or collapse this card anytime.",
+          vi: "Xem yêu cầu bài lab, theo dõi các tiêu chí hoàn thành (dấu tích xanh) và khóa Dự đoán những service bị ảnh hưởng trước khi thao tác. Bạn có thể kéo di chuyển, đổi kích thước hoặc thu gọn thẻ này.",
+        },
+      },
+      {
+        id: "studio-canvas",
+        selectors: ['[data-testid="studio-deck"]', '[data-tour="studio-canvas"]'],
+        title: {
+          en: "2. Live 3D / 2D Microservice Topology",
+          vi: "2. Sơ đồ Microservice 3D / 2D trực tiếp",
+        },
+        description: {
+          en: "Each 3D block represents a real containerized microservice. Dashed lines show static dependencies; glowing arcs show real OpenTelemetry traffic (rps & latency). Click any service to inspect or control it.",
+          vi: "Mỗi khối 3D đại diện cho 1 microservice chạy container thật. Dây nét đứt là phụ thuộc tĩnh; dây cung nổi kèm rps · ms là lưu lượng OpenTelemetry thật. Bấm vào từng service để xem và điều khiển.",
+        },
+      },
+      {
+        id: "studio-3d-camera",
+        selectors: ['[data-testid="studio-3d-controls"]', '[data-tour="studio-viewport-pill"]'],
+        title: {
+          en: "3. 3D Camera, Layout Modes & 2D/3D Switcher",
+          vi: "3. Điều khiển góc nhìn 3D, Bố cục & Chuyển 2D/3D",
+        },
+        description: {
+          en: "Switch presets (Isometric, Top-down, Elevation), rotate/tilt smoothly, or switch Layered / Circular / Grid layouts. Use the pill right below to toggle 2D/3D, auto-layout, fit view, or zoom.",
+          vi: "Đổi nhanh góc nhìn (Isometric, Từ trên, Góc thấp), xoay trái/phải, nâng/hạ góc hoặc đổi bố cục Theo tầng / Vòng tròn / Lưới. Thanh gọn bên dưới dùng để đổi 2D/3D, căn giữa hoặc phóng to/thu nhỏ.",
+        },
+      },
+      {
+        id: "studio-dock",
+        selectors: ['[data-tour="studio-command-dock"]'],
+        title: {
+          en: "4. Live Command Dock (Run · Snapshot · Submit)",
+          vi: "4. Thanh lệnh trung tâm (Run · Snapshot · Submit)",
+        },
+        description: {
+          en: "Click Run to boot the real Docker stack (bounded to 512 MiB / 0.5 CPU / 300s). While LIVE, capture PNG evidence snapshots, jump to Impact or Logs & Traces, and click Submit Lab once at least 1 snapshot is saved.",
+          vi: "Bấm Run để khởi chạy cụm Docker thật (giới hạn an toàn 512 MiB / 0.5 CPU / 300 giây). Khi phiên đang LIVE, bấm chụp Snapshot PNG làm bằng chứng, mở nhanh Impact / Logs & Traces và bấm Submit Lab khi đã lưu ít nhất 1 snapshot.",
+        },
+      },
+      {
+        id: "studio-tool-rail",
+        selectors: ['[data-tour="studio-tool-rail"]'],
+        title: {
+          en: "5. Left Studio Tool Rail (5 Work Panels)",
+          vi: "5. Thanh công cụ bên trái (5 bảng làm việc)",
+        },
+        description: {
+          en: "Quickly toggle the 5 core panels: Lab Mission, Services & Controls, Impact Diagnostics, Snapshots & History (with saved count badge), and Logs & Traces (console, waterfall & RED charts).",
+          vi: "Bật/tắt nhanh 5 khu vực chính: Mục tiêu Lab, Điều khiển Services, Chẩn đoán Change Impact, Lịch sử Snapshot (kèm số lượng đã chụp) và Logs & Traces (console, trace waterfall & biểu đồ RED).",
+        },
+      },
+      {
+        id: "studio-services-controls",
+        selectors: ['[data-tour="studio-service-inspector"]', '[data-tour="studio-tool-services"]'],
+        title: {
+          en: "6. Live Docker Actions & Service Inspector",
+          vi: "6. Lệnh Docker trực tiếp & Điều khiển Service",
+        },
+        description: {
+          en: "Open this drawer (or click a service node) to run verified Docker actions: Stop/Start, Pause/Resume (freeze container), Scale 1..3 replicas, CPU Throttle (25/50/100%), and Live Probe Load (5–50 RPS).",
+          vi: "Mở bảng này (hoặc bấm trực tiếp vào 1 service trên sơ đồ) để chạy lệnh Docker được cấp phép: Stop/Start, Pause/Resume (đóng băng container), Scale 1..3 replica, bóp CPU (25/50/100%) và chỉnh tải Probe (5–50 RPS).",
+        },
+      },
+      {
+        id: "studio-diagnostics",
+        selectors: ['[data-tour="studio-tool-diagnostics"]'],
+        title: {
+          en: "7. Change Impact & Before → After Diagnostics",
+          vi: "7. Chẩn đoán Change Impact & So sánh Before → After",
+        },
+        description: {
+          en: "Inspect cascading fault propagation paths verified from live OTel spans, identify root-cause services, and compare Before vs After latency and error rates after each experiment.",
+          vi: "Xem đường lan truyền lỗi dây chuyền được xác thực từ OTel trace thật, xác định service nguyên nhân gốc và đối chiếu độ trễ P95 / tỉ lệ lỗi trước và sau mỗi thao tác.",
+        },
+      },
+      {
+        id: "studio-telemetry-hud",
+        selectors: ['[data-tour="studio-telemetry-hud"]'],
+        title: {
+          en: "8. Live Runtime Telemetry HUD & Session Switcher",
+          vi: "8. Thanh thông số Runtime trực tiếp & Chọn phiên Docker",
+        },
+        description: {
+          en: "Monitor cluster health at a glance: healthy services (e.g. 4/4), live RPS, P95 latency (ms), and error rate (% err). Click this pill to open the 4-KPI summary or switch between past Docker sessions.",
+          vi: "Theo dõi nhanh sức khỏe toàn cụm: số service khỏe (vd 4/4), tốc độ request (rps), độ trễ P95 (ms) và tỉ lệ lỗi (% err). Bấm vào thanh này để xem 4 chỉ số tổng quan và chuyển xem lại các phiên Docker trước đó.",
+        },
+      },
+      {
+        id: "studio-style-settings",
+        selectors: ['[data-tour="studio-style-picker"]', '[data-tour="studio-settings-btn"]'],
+        title: {
+          en: "9. Studio Visual Themes & Workspace Settings",
+          vi: "9. Giao diện hiển thị (4 chủ đề) & Cài đặt Studio",
+        },
+        description: {
+          en: "Switch between 4 architectural styles (Daylight Cloud, Blueprint, Tactile Pop, Control Glass dark mode) and open Settings to toggle the Service List sidebar or UI sounds. Click '?' anytime to replay this guide.",
+          vi: "Đổi giữa 4 phong cách hiển thị (Daylight Cloud, Blueprint, Tactile Pop, Control Glass nền tối) và mở nút Cài đặt bên cạnh để bật/tắt thanh danh sách service hoặc âm thanh. Bấm lại dấu '?' bất cứ lúc nào để xem lại hướng dẫn.",
+        },
+      },
+    ],
+  },
 } satisfies Record<string, ScreenTourDefinition>;
 
 const CATALOG_MAP: Record<string, ScreenTourDefinition> = SCREEN_TOUR_CATALOG;
 
 const TITLE_TO_SCREEN_ID: Record<string, string> = {
+  "studio-live": "studio-live",
+  "studio live": "studio-live",
+  "mavis live": "studio-live",
   overview: "overview",
   "my projects": "overview",
   "import project source": "import",
