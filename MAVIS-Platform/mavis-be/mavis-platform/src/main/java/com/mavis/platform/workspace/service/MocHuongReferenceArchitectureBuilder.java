@@ -96,6 +96,7 @@ public final class MocHuongReferenceArchitectureBuilder {
         addC2Infrastructure();
         List<ModelRelationship> c2Edges = addC2Relationships();
         addC3GatewayAndDiscovery();
+        addC3IdentityComponents();
         Map<String, UUID> serviceIds = new LinkedHashMap<>();
         for (String svc : REAL_MICROSERVICES) {
             ModelElement el = node(svc);
@@ -297,6 +298,35 @@ public final class MocHuongReferenceArchitectureBuilder {
                 props("order", "-2 -> -1"));
         addC3Edge("c3-gw-jwt-ver", "gw-jwt-filter", "gw-jwt-verifier", "CODE_DEPENDENCY",
                 props("call", "jwtTokenVerifier.verify(token)"));
+    }
+
+    private void addC3IdentityComponents() {
+        addComponent("id-auth-ctrl", "identity-service", "Spring MVC @RestController",
+                "AuthController", "CONTROLLER",
+                "com.mochuong.identity.controller.AuthController",
+                "Exposes POST /api/v1/auth/register & POST /api/v1/auth/login");
+        addComponent("id-user-ctrl", "identity-service", "Spring MVC @RestController",
+                "UserController", "CONTROLLER",
+                "com.mochuong.identity.controller.UserController",
+                "Exposes GET /api/v1/users/me");
+        addComponent("id-service", "identity-service", "Spring @Service",
+                "IdentityService", "SERVICE",
+                "com.mochuong.identity.service.IdentityService",
+                "Validates credentials, hashes passwords, and issues access JWTs");
+        addComponent("id-jwt-issuer", "identity-service", "JJWT Security",
+                "JwtTokenIssuer", "SECURITY",
+                "com.mochuong.identity.security.JwtTokenIssuer",
+                "Signs HMAC-SHA JWT tokens with userId, email and role claims");
+        addComponent("id-user-repo", "identity-service", "Spring Data JPA",
+                "UserAccountRepository", "REPOSITORY",
+                "com.mochuong.identity.repository.UserAccountRepository",
+                "Persists UserAccount entities inside isolated identity_db");
+
+        addC3Edge("c3-id-auth-svc", "id-auth-ctrl", "id-service", "CODE_DEPENDENCY", props("tierEdge", "Controller->Service"));
+        addC3Edge("c3-id-user-svc", "id-user-ctrl", "id-service", "CODE_DEPENDENCY", props("tierEdge", "Controller->Service"));
+        addC3Edge("c3-id-svc-jwt", "id-service", "id-jwt-issuer", "CODE_DEPENDENCY", props("call", "jwtTokenIssuer.issueToken(account)"));
+        addC3Edge("c3-id-svc-repo", "id-service", "id-user-repo", "CODE_DEPENDENCY", props("tierEdge", "Service->Repository"));
+        addC3Edge("c3-id-repo-db", "id-user-repo", "identity-db", "DATABASE_ACCESS", props("schema", "identity_db"));
     }
 
     private DiagramVersion buildC1ContextDiagram() {
