@@ -100,6 +100,7 @@ public final class MocHuongReferenceArchitectureBuilder {
         addC3CatalogComponents();
         addC3OrderComponents();
         addC3NotificationComponents();
+        addRealEvidences();
         Map<String, UUID> serviceIds = new LinkedHashMap<>();
         for (String svc : REAL_MICROSERVICES) {
             ModelElement el = node(svc);
@@ -465,6 +466,144 @@ public final class MocHuongReferenceArchitectureBuilder {
                 props("tierEdge", "Consumer->Repository"));
         addC3Edge("c3-noti-repo-db", "noti-repo", "notification-db", "DATABASE_ACCESS", props("schema", "notification_db"));
         addC3Edge("c3-noti-procrepo-db", "noti-proc-repo", "notification-db", "DATABASE_ACCESS", props("schema", "notification_db"));
+    }
+
+    private void addRealEvidences() {
+        // C2 & C3 OpenFeign CALL_SITE + Resilience4j (order-service -> catalog-service)
+        addRelEvidence("order-catalog-feign",
+                "order-service/src/main/java/com/mochuong/order/client/CatalogFeignClient.java:9",
+                "STATIC_CODE",
+                "@FeignClient(name = \"catalog-service\", path = \"/api/v1/products\")");
+        addRelEvidence("order-catalog-feign",
+                "order-service/src/main/java/com/mochuong/order/service/CatalogIntegrationService.java:36",
+                "STATIC_CODE",
+                "@CircuitBreaker(name=\"catalogService\") -> catalogFeignClient.getProductById(productId)");
+        addRelEvidence("c3-ord-feign-cat",
+                "order-service/src/main/java/com/mochuong/order/service/CatalogIntegrationService.java:45",
+                "STATIC_CODE",
+                "catalogFeignClient.reserveStock(productId, new StockAdjustmentRequest(quantity));");
+        addRelEvidence("c3-ord-int-feign",
+                "order-service/src/main/java/com/mochuong/order/service/CatalogIntegrationService.java:31",
+                "STATIC_CODE",
+                "@CircuitBreaker(name = \"catalogService\", fallbackMethod = \"getProductFallback\")");
+        addRelEvidence("c3-ord-saga-int",
+                "order-service/src/main/java/com/mochuong/order/service/OrderSagaOrchestrator.java:79",
+                "STATIC_CODE",
+                "catalogIntegrationService.reserveStock(item.getProductId(), item.getQuantity());");
+
+        // Gateway routes & JWT global filter
+        addRelEvidence("gw-identity",
+                "api-gateway/src/main/resources/application.yml:26",
+                "STATIC_CONFIG",
+                "- id: identity-service / uri: lb://identity-service / Path=/api/v1/auth/**,/api/v1/users/**");
+        addRelEvidence("gw-catalog",
+                "api-gateway/src/main/resources/application.yml:30",
+                "STATIC_CONFIG",
+                "- id: catalog-service / uri: lb://catalog-service / Path=/api/v1/products/**,/api/v1/categories/**");
+        addRelEvidence("gw-order",
+                "api-gateway/src/main/resources/application.yml:34",
+                "STATIC_CONFIG",
+                "- id: order-service / uri: lb://order-service / Path=/api/v1/orders/**");
+        addRelEvidence("gw-notification",
+                "api-gateway/src/main/resources/application.yml:38",
+                "STATIC_CONFIG",
+                "- id: notification-service / uri: lb://notification-service / Path=/api/v1/notifications/**");
+        addRelEvidence("c3-gw-jwt-ver",
+                "api-gateway/src/main/java/com/mochuong/gateway/filter/JwtAuthenticationGatewayFilter.java:63",
+                "STATIC_CODE",
+                "verifiedUser = jwtTokenVerifier.verify(token);");
+
+        // Async Kafka Outbox Publish & Idempotent Consumer Subscribe
+        addRelEvidence("ord-kafka",
+                "order-service/src/main/java/com/mochuong/order/service/OutboxEventPublisher.java:39",
+                "STATIC_CODE",
+                "kafkaTemplate.send(event.getTopic(), event.getAggregateId(), event.getPayload())");
+        addRelEvidence("c3-ord-pub-kafka",
+                "order-service/src/main/java/com/mochuong/order/service/OutboxEventPublisher.java:33",
+                "STATIC_CODE",
+                "@Scheduled(fixedDelayString = \"${outbox.poll-interval-ms:2000}\") public void publishPendingEvents()");
+        addRelEvidence("kafka-noti",
+                "notification-service/src/main/java/com/mochuong/notification/consumer/OrderEventConsumer.java:38",
+                "STATIC_CODE",
+                "@KafkaListener(topics = \"order.created\", groupId = \"notification-group\")");
+        addRelEvidence("c3-kafka-noti-cons",
+                "notification-service/src/main/java/com/mochuong/notification/consumer/OrderEventConsumer.java:44",
+                "STATIC_CODE",
+                "@KafkaListener(topics = \"order.cancelled\", groupId = \"notification-group\")");
+        addRelEvidence("c3-noti-cons-proc",
+                "notification-service/src/main/java/com/mochuong/notification/consumer/OrderEventConsumer.java:67",
+                "STATIC_CODE",
+                "processedEventRepository.save(new ProcessedEvent(event.eventId(), topic, Instant.now()));");
+
+        // Redis Cache-Aside + Isolated PostgreSQL Databases
+        addRelEvidence("cat-redis",
+                "catalog-service/src/main/java/com/mochuong/catalog/service/ProductService.java:38",
+                "STATIC_CODE",
+                "@Cacheable(value = \"products\", key = \"#id\")");
+        addRelEvidence("id-db",
+                "identity-service/src/main/resources/application.yml:8",
+                "STATIC_CONFIG",
+                "url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:identity_db}");
+        addRelEvidence("cat-db",
+                "catalog-service/src/main/resources/application.yml:8",
+                "STATIC_CONFIG",
+                "url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:catalog_db}");
+        addRelEvidence("ord-db",
+                "order-service/src/main/resources/application.yml:8",
+                "STATIC_CONFIG",
+                "url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:order_db}");
+        addRelEvidence("noti-db",
+                "notification-service/src/main/resources/application.yml:8",
+                "STATIC_CONFIG",
+                "url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:notification_db}");
+
+        // Eureka & OTel
+        addRelEvidence("gw-otel",
+                "api-gateway/src/main/resources/application.yml:72",
+                "STATIC_CONFIG",
+                "management.otlp.tracing.endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://otel-collector:4318}/v1/traces");
+
+        // Node-level locator anchors for direct canvas element inspection
+        addNodeEvidence("api-gateway",
+                "api-gateway/src/main/java/com/mochuong/gateway/filter/JwtAuthenticationGatewayFilter.java:28",
+                "STATIC_CODE",
+                "public class JwtAuthenticationGatewayFilter implements GlobalFilter, Ordered");
+        addNodeEvidence("service-discovery",
+                "service-discovery/src/main/java/com/mochuong/discovery/ServiceDiscoveryApplication.java:9",
+                "STATIC_CODE",
+                "@EnableEurekaServer public class ServiceDiscoveryApplication");
+        addNodeEvidence("identity-service",
+                "identity-service/src/main/java/com/mochuong/identity/service/IdentityService.java:73",
+                "STATIC_CODE",
+                "String token = jwtTokenIssuer.issueToken(account);");
+        addNodeEvidence("catalog-service",
+                "catalog-service/src/main/java/com/mochuong/catalog/controller/ProductController.java:25",
+                "STATIC_CODE",
+                "@RestController @RequestMapping(\"/api/v1/products\") public class ProductController");
+        addNodeEvidence("order-service",
+                "order-service/src/main/java/com/mochuong/order/controller/OrderController.java:22",
+                "STATIC_CODE",
+                "@RestController @RequestMapping(\"/api/v1/orders\") public class OrderController");
+        addNodeEvidence("notification-service",
+                "notification-service/src/main/java/com/mochuong/notification/consumer/OrderEventConsumer.java:21",
+                "STATIC_CODE",
+                "public class OrderEventConsumer");
+        addNodeEvidence("ord-cat-feign",
+                "order-service/src/main/java/com/mochuong/order/client/CatalogFeignClient.java:9",
+                "STATIC_CODE",
+                "@FeignClient(name = \"catalog-service\", path = \"/api/v1/products\")");
+        addNodeEvidence("ord-cat-int",
+                "order-service/src/main/java/com/mochuong/order/service/CatalogIntegrationService.java:31",
+                "STATIC_CODE",
+                "@CircuitBreaker(name = \"catalogService\", fallbackMethod = \"getProductFallback\")");
+        addNodeEvidence("cat-prod-svc",
+                "catalog-service/src/main/java/com/mochuong/catalog/service/ProductService.java:38",
+                "STATIC_CODE",
+                "@Cacheable(value = \"products\", key = \"#id\")");
+        addNodeEvidence("noti-consumer",
+                "notification-service/src/main/java/com/mochuong/notification/consumer/OrderEventConsumer.java:38",
+                "STATIC_CODE",
+                "@KafkaListener(topics = \"order.created\", groupId = \"notification-group\")");
     }
 
     private DiagramVersion buildC1ContextDiagram() {

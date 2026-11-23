@@ -167,7 +167,8 @@ public class CourseLabStudentService {
             String scope,
             String languageStack,
             UUID parentElementId,
-            String status) {}
+            String status,
+            JsonNode properties) {}
 
     public record ReferenceRelationshipView(
             UUID id,
@@ -176,10 +177,12 @@ public class CourseLabStudentService {
             UUID targetElementId,
             String targetName,
             String relationType,
-            String originLayer) {}
+            String originLayer,
+            JsonNode properties) {}
 
     public record ReferenceEvidenceView(
             UUID id,
+            UUID elementId,
             UUID relationshipId,
             String locator,
             String sourceType,
@@ -201,6 +204,7 @@ public class CourseLabStudentService {
 
     public record ReferenceArchitectureView(
             UUID projectId,
+            String projectName,
             UUID snapshotId,
             UUID modelVersionId,
             Integer revision,
@@ -557,7 +561,8 @@ public class CourseLabStudentService {
                         e.getScope(),
                         e.getLanguageStack(),
                         e.getParentElement() != null ? e.getParentElement().getId() : null,
-                        e.getStatus()))
+                        e.getStatus(),
+                        e.getProperties()))
                 .toList();
 
         List<ReferenceRelationshipView> relationshipViews = relationships.findByModelVersionId(modelId).stream()
@@ -568,7 +573,8 @@ public class CourseLabStudentService {
                         r.getTargetElement() != null ? r.getTargetElement().getId() : null,
                         r.getTargetElement() != null ? r.getTargetElement().getName() : null,
                         r.getRelationType(),
-                        r.getOriginLayer()))
+                        r.getOriginLayer(),
+                        r.getProperties()))
                 .toList();
 
         if (!elementViews.isEmpty() && (diagramViews.isEmpty()
@@ -591,6 +597,7 @@ public class CourseLabStudentService {
         List<ReferenceEvidenceView> evidenceViews = evidences.findByModelVersionId(modelId).stream()
                 .map(ev -> new ReferenceEvidenceView(
                         ev.getId(),
+                        ev.getElement() != null ? ev.getElement().getId() : null,
                         ev.getRelationship() != null ? ev.getRelationship().getId() : null,
                         ev.getLocator(),
                         ev.getSourceType(),
@@ -610,6 +617,7 @@ public class CourseLabStudentService {
 
         return new ReferenceArchitectureView(
                 refModel.getProject().getId(),
+                refModel.getProject().getName(),
                 refModel.getSourceSnapshot().getId(),
                 modelId,
                 refModel.getRevision(),
