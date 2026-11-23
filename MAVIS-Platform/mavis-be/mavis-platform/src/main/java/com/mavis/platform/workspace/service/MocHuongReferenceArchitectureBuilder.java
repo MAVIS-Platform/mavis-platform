@@ -91,6 +91,7 @@ public final class MocHuongReferenceArchitectureBuilder {
     private BuiltResult buildAll() {
         addC1ActorsAndExternals();
         addC2Microservices();
+        addC2Infrastructure();
         Map<String, UUID> serviceIds = new LinkedHashMap<>();
         for (String svc : REAL_MICROSERVICES) {
             ModelElement el = node(svc);
@@ -153,6 +154,27 @@ public final class MocHuongReferenceArchitectureBuilder {
                 "notification-service",
                 "Idempotent Kafka consumer (order.created, order.cancelled) & user notification history",
                 props("port", "8084", "role", "Notification Bounded Context", "framework", "Java 21 / Spring Boot 3", "database", "notification_db", "layerHint", "domain"));
+    }
+
+    private void addC2Infrastructure() {
+        addNode("identity-db", null, "DATABASE", "PostgreSQL 16 · identity_db",
+                "identity-db", "Isolated PostgreSQL datastore owned exclusively by identity-service",
+                props("resourceRole", "LOGICAL_DATASTORE", "protocol", "PostgreSQL 16 · identity_db", "datastoreKind", "POSTGRES", "ownerService", "identity-service"));
+        addNode("catalog-db", null, "DATABASE", "PostgreSQL 16 · catalog_db",
+                "catalog-db", "Isolated PostgreSQL datastore owned exclusively by catalog-service",
+                props("resourceRole", "LOGICAL_DATASTORE", "protocol", "PostgreSQL 16 · catalog_db", "datastoreKind", "POSTGRES", "ownerService", "catalog-service"));
+        addNode("order-db", null, "DATABASE", "PostgreSQL 16 · order_db",
+                "order-db", "Isolated PostgreSQL datastore (orders + outbox_events) owned exclusively by order-service",
+                props("resourceRole", "LOGICAL_DATASTORE", "protocol", "PostgreSQL 16 · order_db", "datastoreKind", "POSTGRES", "ownerService", "order-service"));
+        addNode("notification-db", null, "DATABASE", "PostgreSQL 16 · notification_db",
+                "notification-db", "Isolated PostgreSQL datastore (notifications + processed_events) owned by notification-service",
+                props("resourceRole", "LOGICAL_DATASTORE", "protocol", "PostgreSQL 16 · notification_db", "datastoreKind", "POSTGRES", "ownerService", "notification-service"));
+        addNode("redis", null, "DATABASE", "Redis 7 · Cache-Aside",
+                "redis", "Product read cache (Cache-Aside \"products\" via @Cacheable / @CacheEvict)",
+                props("resourceRole", "LOGICAL_DATASTORE", "protocol", "Redis 7 · Cache-Aside", "datastoreKind", "CACHE", "ownerService", "catalog-service"));
+        addNode("kafka", null, "MESSAGE_CHANNEL", "Apache Kafka 3.7 KRaft (:9092)",
+                "kafka", "Event broker carrying order.created and order.cancelled domain events",
+                props("protocol", "Kafka KRaft · order.created, order.cancelled", "topics", "order.created,order.cancelled"));
     }
 
     private DiagramVersion buildC1ContextDiagram() {
