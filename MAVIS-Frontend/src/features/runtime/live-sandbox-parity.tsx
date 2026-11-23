@@ -215,7 +215,7 @@ function observedLogs(data: Studio) {
     .toLowerCase();
 }
 
-function parseMemoryMiB(raw?: string): number | undefined {
+export function parseMemoryMiB(raw?: string): number | undefined {
   if (!raw) return undefined;
   const usage = raw.split("/")[0]?.trim() ?? "";
   const match = usage.match(/^([\d.]+)\s*(KiB|KB|K|MiB|MB|M|GiB|GB|G|B)?$/i);

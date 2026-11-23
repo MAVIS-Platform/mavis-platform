@@ -69,6 +69,7 @@ import {
 } from "./studio-evidence";
 import {
   LiveSandboxParity,
+  parseMemoryMiB,
   summarizeServiceStats,
   type LiveBlockAuthoringControls,
   type StudioSetupPanel,
@@ -4541,6 +4542,13 @@ export function LiveStudioWorkbench({
                   const selRunning = selSvc ? runningFor(data, selSvc) : undefined;
                   const selObs = selSvc ? data.telemetry?.services.find((s) => s.service === selSvc) : undefined;
                   const selStats = summarizeServiceStats(selObs?.stats);
+                  const [ramUsed, ramLimit] = selStats.memory.split("/").map((part) => part.trim());
+                  const ramUsedMiB = parseMemoryMiB(ramUsed);
+                  const ramLimitMiB = parseMemoryMiB(ramLimit);
+                  const ramPct =
+                    ramUsedMiB !== undefined && ramLimitMiB !== undefined && ramLimitMiB > 0
+                      ? Math.min(100, Math.round((ramUsedMiB / ramLimitMiB) * 100))
+                      : null;
                   const selBlock = blocks.find((b) => b.service === selSvc);
                   const selCanScale = Boolean(selBlock?.canScale ?? (selSvc && !data.topology));
                   const selPhase = selSvc ? servicePhase(data, selSvc) : "stopped";
@@ -4575,24 +4583,55 @@ export function LiveStudioWorkbench({
                                   : "STANDBY"}
                           </span>
                         </div>
-                        <dl className="mavis-tabular mt-2.5 grid grid-cols-3 gap-1.5 text-center">
-                          <div className="rounded-lg border border-slate-200 bg-white px-2 py-1.5">
-                            <dt className="text-[11px] text-slate-500">Replicas</dt>
-                            <dd className="font-mono text-xs font-bold text-slate-900">
+                        <dl className="mavis-tabular mt-2.5 grid grid-cols-2 gap-1.5">
+                          <div className="flex items-center justify-between gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5">
+                            <dt className="shrink-0 text-[11px] text-slate-500">Replicas</dt>
+                            <dd className="whitespace-nowrap font-mono text-xs font-bold text-slate-900">
                               {selRunning ?? "—"}
                             </dd>
                           </div>
-                          <div className="rounded-lg border border-slate-200 bg-white px-2 py-1.5">
-                            <dt className="text-[11px] text-slate-500">CPU</dt>
-                            <dd className="font-mono text-xs font-bold text-slate-900">
+                          <div className="flex items-center justify-between gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5">
+                            <dt className="shrink-0 text-[11px] text-slate-500">CPU</dt>
+                            <dd className="whitespace-nowrap font-mono text-xs font-bold text-slate-900">
                               {selStats.cpu}
                             </dd>
                           </div>
-                          <div className="rounded-lg border border-slate-200 bg-white px-2 py-1.5">
-                            <dt className="text-[11px] text-slate-500">RAM</dt>
-                            <dd className="font-mono text-xs font-bold text-slate-900">
-                              {selStats.memory}
-                            </dd>
+                          <div
+                            data-testid="studio-inspector-ram-card"
+                            className="col-span-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5"
+                          >
+                            <div className="flex items-baseline justify-between gap-2">
+                              <dt className="shrink-0 text-[11px] text-slate-500">RAM</dt>
+                              <dd className="whitespace-nowrap font-mono text-[11.5px] font-bold text-slate-900">
+                                {ramLimit ? (
+                                  <>
+                                    {ramUsed}
+                                    <span className="font-medium text-slate-400"> / {ramLimit}</span>
+                                    {ramPct !== null && (
+                                      <span className="ml-1.5 text-[10.5px] font-semibold text-slate-500">
+                                        ({ramPct}%)
+                                      </span>
+                                    )}
+                                  </>
+                                ) : (
+                                  selStats.memory
+                                )}
+                              </dd>
+                            </div>
+                            {ramPct !== null && (
+                              <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                                <div
+                                  className={`h-full rounded-full transition-all ${
+                                    ramPct >= 85
+                                      ? "bg-rose-500"
+                                      : ramPct >= 70
+                                        ? "bg-amber-500"
+                                        : "bg-emerald-500"
+                                  }`}
+                                  style={{ width: `${ramPct}%` }}
+                                />
+                              </div>
+                            )}
                           </div>
                         </dl>
                       </div>

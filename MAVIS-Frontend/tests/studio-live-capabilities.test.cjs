@@ -854,3 +854,16 @@ test("Studio Live terminal parses OTel javaagent timestamps, backfills boot line
   );
   assert.ok(!standaloneSrc.includes("Activate Simulated Sandbox Telemetry"));
 });
+
+test("Service inspector RAM card spans full width on a single non-wrapping line", () => {
+  const workbenchSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/live-studio-workbench.tsx"),
+    "utf8",
+  );
+  const ramBlockStart = workbenchSrc.indexOf('data-testid="studio-inspector-ram-card"');
+  assert.ok(ramBlockStart > 0, "Expected studio-inspector-ram-card testid");
+  const ramBlock = workbenchSrc.slice(ramBlockStart, ramBlockStart + 900);
+  assert.ok(ramBlock.includes("col-span-2"), "RAM tile must span full width across the 2-column metric grid");
+  assert.ok(ramBlock.includes("whitespace-nowrap"), "RAM value must not wrap onto multiple lines");
+  assert.ok(workbenchSrc.includes("parseMemoryMiB"), "Workbench should reuse parseMemoryMiB for utilization ratio");
+});
