@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { CheckCircle2, Clock3, ClipboardCheck, Plus, Search, Users } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -27,13 +27,15 @@ import {
   formatTenScaleScore,
   toTenScaleScore,
 } from "@/lib/format/course-display";
-import { canEditLecturerCourse } from "@/features/lecturer/application/course-access-policy";
+import {
+  canEditLecturerCourse,
+  lecturerCourseAccess,
+} from "@/features/lecturer/application/course-access-policy";
 
 const WORKSPACES_PER_PAGE = 6;
 
 export function Workspaces() {
   const { t } = useLocale();
-  const router = useRouter();
   const query = useApiQuery("workspaces", {});
   const session = useSession();
   const { workspaceId } = useSelection();
@@ -248,11 +250,11 @@ export function Workspaces() {
                     role="link"
                     tabIndex={0}
                     aria-label={t(`Open ${workspace.name}`, `Mở ${workspace.name}`)}
-                    onClick={() => router.push(workspaceUrl)}
+                    onClick={() => window.location.assign(workspaceUrl)}
                     onKeyDown={(event) => {
                       if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
-                        router.push(workspaceUrl);
+                        window.location.assign(workspaceUrl);
                       }
                     }}
                     className="group flex min-h-[350px] cursor-pointer flex-col overflow-hidden rounded-lg border bg-card transition-all duration-200 ease-out hover:-translate-y-1 hover:border-primary/40 hover:shadow-lg focus-visible:-translate-y-1 focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 active:translate-y-0 active:scale-[0.99]"
@@ -409,6 +411,7 @@ export function WorkspaceOverview() {
   const workspace = query.data?.find((w) => w.id === workspaceId);
   const canManage = workspace?.myRole === "LECTURER" || session.data?.user?.role === "admin";
   const canEdit = canEditLecturerCourse(workspace?.status, canManage);
+  const courseAccess = lecturerCourseAccess(workspace?.status);
   const requestedView = params.get("view");
   const activeTab =
     canManage && requestedView === "course-authoring"
@@ -469,7 +472,10 @@ export function WorkspaceOverview() {
               />
             )}
             {activeTab === "authoring" && canManage && canEdit && (
-              <CourseBuilder workspaceId={workspace.id} />
+              <CourseBuilder
+                workspaceId={workspace.id}
+                canCreateModules={courseAccess.canCreateModules}
+              />
             )}
             {activeTab === "authoring" && canManage && !canEdit && (
               <CourseOutline workspaceId={workspace.id} canManage={false} active />

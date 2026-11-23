@@ -6,10 +6,12 @@ const path = require("node:path");
 const root = path.resolve(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
-test("Lecturer architecture owns one fail-closed course lifecycle policy", () => {
+test("Lecturer lifecycle keeps Active courses operational but freezes structural creation", () => {
   const policy = read("src/features/lecturer/application/course-access-policy.ts");
   assert.match(policy, /status !== "ARCHIVED"/);
-  assert.match(policy, /isEditable: !isActive/);
+  assert.match(policy, /isEditable: true/);
+  assert.match(policy, /canCreateModules: !isActive/);
+  assert.match(policy, /canCreateLabs: !isActive/);
   assert.match(policy, /hasManageRole && lecturerCourseAccess\(status\)\.isEditable/);
 });
 
@@ -17,20 +19,21 @@ test("Course Lecturer workspace consumes the shared lifecycle policy", () => {
   const globalWorkspace = read("src/features/workspaces/screens.tsx");
   const courseShell = read("src/features/courses/course-workspace-shell.tsx");
   assert.match(globalWorkspace, /canEditLecturerCourse\(workspace\?\.status, canManage\)/);
-  assert.match(courseShell, /Khóa học đang hoạt động — chỉ xem/);
-  assert.match(courseShell, /actions && courseAccess\.isEditable/);
+  assert.doesNotMatch(courseShell, /Khóa học đang hoạt động — chỉ xem/);
+  assert.match(courseShell, /actions && <div/);
 });
 
-test("Active Lecturer courses keep content, Lab, roster, grading and settings read-only", () => {
+test("Active Lecturer courses only block new Modules and Labs", () => {
   const workspace = read("src/features/workspaces/screens.tsx");
   const labs = read("src/features/assignments/screens.tsx");
   const authoring = read("src/features/assignments/lab-authoring.tsx");
-  const grades = read("src/features/submissions/screens.tsx");
+  const courseBuilder = read("src/features/courses/course-builder.tsx");
   assert.match(workspace, /disabled=\{remove\.isPending \|\| !canEdit\}/);
   assert.match(workspace, /activeTab === "authoring" && canManage && canEdit/);
-  assert.match(labs, /courseAccess\.isEditable &&/);
-  assert.match(authoring, /!courseAccess\.isEditable/);
-  assert.match(grades, /!courseAccess\.isEditable[\s\S]*ClassGradebookMatrix/);
+  assert.match(workspace, /canCreateModules=\{courseAccess\.canCreateModules\}/);
+  assert.match(labs, /courseAccess\.canCreateLabs &&/);
+  assert.match(authoring, /!assignment && !courseAccess\.canCreateLabs/);
+  assert.match(courseBuilder, /if \(!canCreateModules\) return/);
 });
 
 test("Global Lecturer workspace hides its sidebar and uses a single Course Management heading", () => {
@@ -46,7 +49,7 @@ test("Global Lecturer workspace hides its sidebar and uses a single Course Manag
 test("Lecturer course cards open directly and own an Active-Inactive lifecycle toggle", () => {
   const workspace = read("src/features/workspaces/screens.tsx");
   assert.match(workspace, /role="link"/);
-  assert.match(workspace, /onClick=\{\(\) => router\.push\(workspaceUrl\)\}/);
+  assert.match(workspace, /onClick=\{\(\) => window\.location\.assign\(workspaceUrl\)\}/);
   assert.match(workspace, /<Switch/);
   assert.match(workspace, /archiveWorkspace\.mutateAsync/);
   assert.match(workspace, /updateWorkspace\.mutateAsync/);

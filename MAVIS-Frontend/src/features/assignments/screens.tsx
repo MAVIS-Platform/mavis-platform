@@ -137,7 +137,7 @@ function LecturerAssignments({ embedded = false }: { embedded?: boolean } = {}) 
               />
             </div>
           )}
-          {courseAccess.isEditable && (
+          {courseAccess.canCreateLabs && (
             <>
               <ImportLabButton workspaceId={workspaceId} />
               <Button asChild size="sm">

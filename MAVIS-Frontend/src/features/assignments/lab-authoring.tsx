@@ -318,7 +318,7 @@ export function LabAuthoring() {
 
           {section === "create" && (
             <div className="flex flex-wrap items-center gap-1.5">
-              {assignment && (
+              {assignment && courseAccess.canCreateLabs && (
                 <Badge
                   variant={isPublished ? "success" : "secondary"}
                   className="shrink-0 font-semibold whitespace-nowrap"
@@ -450,7 +450,8 @@ export function LabAuthoring() {
           </nav>
         )}
       </div>
-      {!courseAccess.isEditable ? (
+      {!courseAccess.isEditable ||
+      (section === "create" && !assignment && !courseAccess.canCreateLabs) ? (
         <Assignments embedded />
       ) : section === "create" ? (
         content

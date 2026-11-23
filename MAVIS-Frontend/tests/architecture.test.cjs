@@ -4989,8 +4989,7 @@ test("My Workspaces is a compact LMS class list with tabs and a module outline",
       code: "SWD392",
       name: "Lớp SWD392",
       myRole: "LECTURER",
-      // The Lecturer lifecycle policy only permits authoring while the course
-      // is inactive. ARCHIVED is the current API representation of INACTIVE.
+      // ARCHIVED is the current API representation of INACTIVE.
       status: "ARCHIVED",
       members: [
         { id: "u1", name: "Lecturer", role: "LECTURER" },
@@ -5155,7 +5154,8 @@ test("My Workspaces is a compact LMS class list with tabs and a module outline",
   assert.match(rootHtml, /Create class/);
   assert.match(rootHtml, /Lớp SWD392/);
   assert.match(rootHtml, /Mobile Programming/);
-  assert.match(rootHtml, /Open class/);
+  assert.match(rootHtml, /role="link"/);
+  assert.doesNotMatch(rootHtml, /Open class/);
   assert.doesNotMatch(
     rootHtml,
     /Create a place for learning to take shape/,

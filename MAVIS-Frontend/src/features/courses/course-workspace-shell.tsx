@@ -21,7 +21,6 @@ import { UserAvatar } from "@/components/shared/user-avatar";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { cn } from "@/lib/utils";
 import type { Response } from "@/lib/api/contracts";
-import { lecturerCourseAccess } from "@/features/lecturer/application/course-access-policy";
 
 export type CourseWorkspaceTab =
   | "content"
@@ -173,7 +172,6 @@ export function CourseWorkspaceShell({
   const isStudent = workspace.myRole?.toUpperCase() === "STUDENT";
   const activeStaffTab = resolveStaffTab(pathname, active);
   const activeStudentTab = resolveStudentTab(pathname, active);
-  const courseAccess = lecturerCourseAccess(workspace.status);
 
   return (
     <div className="min-w-0 max-w-full space-y-6">
@@ -209,13 +207,6 @@ export function CourseWorkspaceShell({
                   ? t("Archived", "Đã lưu trữ")
                   : t("Active", "Đang hoạt động")}
               </Badge>
-              {!isStudent && (
-                <Badge className="border-white/25 bg-white/15 text-white hover:bg-white/20">
-                  {courseAccess.isEditable
-                    ? t("Editing enabled", "Có thể chỉnh sửa")
-                    : t("Read only", "Chỉ xem")}
-                </Badge>
-              )}
             </div>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-white/80">
               {creatorName && (
@@ -245,9 +236,7 @@ export function CourseWorkspaceShell({
               </span>
             </div>
           </div>
-          {actions && courseAccess.isEditable && (
-            <div className="flex flex-wrap items-center gap-2">{actions}</div>
-          )}
+          {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
         </div>
         {showTabs && (
           <nav
@@ -281,20 +270,6 @@ export function CourseWorkspaceShell({
           </nav>
         )}
       </header>
-      {!isStudent && !courseAccess.isEditable && (
-        <div
-          role="status"
-          className="rounded-xl border border-amber-300/70 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-700 dark:bg-amber-950/35 dark:text-amber-100"
-        >
-          <span className="font-semibold">
-            {t("Active course — read only.", "Khóa học đang hoạt động — chỉ xem.")}
-          </span>{" "}
-          {t(
-            "Deactivate the course before changing content, students, grades, or settings.",
-            "Hãy chuyển khóa học sang không hoạt động trước khi sửa nội dung, sinh viên, điểm hoặc cài đặt.",
-          )}
-        </div>
-      )}
       {children}
     </div>
   );

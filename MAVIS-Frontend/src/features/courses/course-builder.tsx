@@ -370,7 +370,13 @@ function ItemFields({
   );
 }
 
-export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
+export function CourseBuilder({
+  workspaceId,
+  canCreateModules = true,
+}: {
+  workspaceId: string;
+  canCreateModules?: boolean;
+}) {
   const { t } = useLocale();
   const course = useCourseAuthoring(workspaceId);
   const assignments = useApiQuery(
@@ -583,6 +589,7 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
   };
 
   const openAddModule = () => {
+    if (!canCreateModules) return;
     clearRightEditors();
     setShowAddModule(true);
     setDrawerOpen(true);
@@ -625,6 +632,7 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
 
   const addModule = (event: React.FormEvent) => {
     event.preventDefault();
+    if (!canCreateModules) return;
     if (!moduleTitle.trim()) return;
     const body: { title: string; description?: string; prerequisiteModuleId?: string } = {
       title: moduleTitle.trim(),
@@ -803,17 +811,19 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
           )}
           {isDraft && (
             <>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="border-slate-300 font-semibold text-foreground dark:border-border"
-                disabled={busy}
-                onClick={openAddModule}
-              >
-                <Plus className="mr-1 size-3.5" aria-hidden="true" />
-                {t("New module", "Thêm chương")}
-              </Button>
+              {canCreateModules && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="border-slate-300 font-semibold text-foreground dark:border-border"
+                  disabled={busy}
+                  onClick={openAddModule}
+                >
+                  <Plus className="mr-1 size-3.5" aria-hidden="true" />
+                  {t("New module", "Thêm chương")}
+                </Button>
+              )}
               <Button
                 type="button"
                 size="sm"
@@ -1006,7 +1016,7 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
                           "Tạo bản nháp mới để thêm chương vào giáo trình này.",
                         )}
                   </p>
-                  {isDraft && (
+                  {isDraft && canCreateModules && (
                     <Button type="button" size="sm" className="mt-3" onClick={openAddModule}>
                       <Plus className="mr-1 size-3.5" aria-hidden="true" />
                       {t("Add module", "Thêm chương")}
@@ -1353,7 +1363,7 @@ export function CourseBuilder({ workspaceId }: { workspaceId: string }) {
                 aria-label={t("Curriculum Inspector", "Trình xem & sửa học liệu")}
                 className="flex h-full w-full max-w-2xl min-w-0 flex-col border-l border-border bg-background shadow-2xl"
               >
-            {isDraft && showAddModule ? (
+            {isDraft && canCreateModules && showAddModule ? (
               <form onSubmit={addModule} className="flex min-h-0 flex-1 flex-col">
                 <div className="flex items-center justify-between gap-2 border-b bg-card/60 px-5 py-3">
                   <div>
