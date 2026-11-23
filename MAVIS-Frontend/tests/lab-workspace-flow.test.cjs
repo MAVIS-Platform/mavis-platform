@@ -45,7 +45,7 @@ test("LabWorkspace unifies navigation into a single sticky horizontal stepper wi
     /lg:grid-cols-\[260px_minmax\(0,1fr\)\]/,
     "Duplicate 260px left LabToc sidebar should be removed so diagrams use full width",
   );
-  assert.match(screens, /Learning objective/);
+  assert.doesNotMatch(screens, /Learning objective/);
   assert.match(screens, /Static impact (?:hypothesis|analysis)/);
 
   const html = renderToStaticMarkup(
@@ -117,7 +117,7 @@ test("Non-runtime Labs (THEORY_ONLY / THEORY_QUIZ) omit Runtime (N/A) step and r
   assert.match(screens, /const displayedStep: 1 \| 2 \| 3 = !requiresRuntime && activeStep === 2 \? 3 : activeStep;/);
   assert.match(screens, /learningSteps\.filter\(\(step\) => step\.id !== 2\)/);
   assert.match(screens, /const prevStep: 1 \| 2 = step === 3 && !requiresRuntime \? 1 : \(\(step - 1\) as 1 \| 2\);/);
-  assert.match(screens, /const totalPhases = requiresRuntime \? 3 : 2;/);
+  assert.match(screens, /const nextStep = step === 1 && !requiresRuntime \? 3 : next;/);
 
   const html = renderToStaticMarkup(
     React.createElement(LabToc, {
@@ -172,7 +172,7 @@ test("Coursera CDS contrast palette & simplified Lab header deduplicate prefixes
   assert.match(data, /semanticStatusClasses/);
   assert.match(screens, /\/\^\(\?:Module\|Chương\)\\s\+\\d\+\/i\.test\(currentModule\.title\.trim\(\)\)/);
   assert.match(screens, /\/\^Lab\\s\+\\d\+\/i\.test\(item\.title\.trim\(\)\)/);
-  assert.match(screens, /step === 1 && labInstructions\?\.trim\(\)/);
+  assert.match(screens, /labInstructions\?\.trim\(\)/);
   assert.match(screens, /\[a-f0-9\]\{40\}/);
   assert.doesNotMatch(toc, /mavis-tabular/);
 

@@ -288,9 +288,9 @@ test("LabWorkspace uses a class-module-Lab breadcrumb, a focused entry summary a
 
   assert.match(course, /LabToc/);
   assert.match(course, /preview/i);
-  assert.match(course, /Learning objective/);
-  assert.match(course, /Reference snapshot/);
-  assert.match(course, /Next requirement/);
+  assert.doesNotMatch(course, /Learning objective/);
+  assert.doesNotMatch(course, /Reference snapshot/);
+  assert.doesNotMatch(course, /Next requirement/);
   assert.match(course, /t\("Class", "Lớp"\)/);
   assert.match(course, /t\("Module", "Chương"\)/);
 });
@@ -360,10 +360,10 @@ test("new Course and Lab surfaces expose direct Vietnamese copy", () => {
     assert.ok(course.includes(text), text);
 });
 
-test("Guided Lab Step 1 exposes inline C1-C3 & Dependency Graph views, pinned IDs, and 5-rule 3E evaluation", () => {
+test("Guided Lab Step 1 exposes inline C1-C3 & Dependency Graph views and hides clutter banners", () => {
   const course = read("src/features/courses/screens.tsx");
   assert.ok(
-    course.includes("Explore the curated C1–C3 views and Dependency Graph."),
+    !course.includes("Explore the curated C1–C3 views and Dependency Graph."),
   );
   assert.ok(course.includes("C1 System Context"));
   assert.ok(course.includes("C2 Container"));
@@ -375,8 +375,8 @@ test("Guided Lab Step 1 exposes inline C1-C3 & Dependency Graph views, pinned ID
   assert.doesNotMatch(course, />modelVersionId</);
   assert.doesNotMatch(course, /"Pinned learning context"/);
   assert.doesNotMatch(course, /"Lab readiness"/);
-  assert.ok(course.includes("StaticEvaluationSummary"));
-  assert.ok(course.includes("Missing Call-Site / Evidence Grounding"));
+  assert.doesNotMatch(course, /StaticEvaluationSummary/);
+  assert.doesNotMatch(course, /"Download Reference \.zip"/);
 });
 
 test("Stage 4 Reverse BFS terminates safely on cyclic dependencies, reports unaffected/isolated nodes, and avoids false positives on diamonds", () => {
