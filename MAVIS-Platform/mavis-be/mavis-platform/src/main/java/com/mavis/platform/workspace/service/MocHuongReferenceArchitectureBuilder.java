@@ -89,6 +89,7 @@ public final class MocHuongReferenceArchitectureBuilder {
     }
 
     private BuiltResult buildAll() {
+        addC1ActorsAndExternals();
         Map<String, UUID> serviceIds = new LinkedHashMap<>();
         for (String svc : REAL_MICROSERVICES) {
             ModelElement el = node(svc);
@@ -96,7 +97,11 @@ public final class MocHuongReferenceArchitectureBuilder {
                 serviceIds.put(svc, el.getId());
             }
         }
-        List<DiagramVersion> savedDiagrams = hooks.saveDiagrams().apply(List.of());
+        List<DiagramVersion> diagramList = new ArrayList<>();
+        if (node("customer") != null && node("admin-staff") != null && node("otel-observability") != null) {
+            diagramList.add(buildC1ContextDiagram());
+        }
+        List<DiagramVersion> savedDiagrams = hooks.saveDiagrams().apply(diagramList);
         ObjectNode metrics = json.createObjectNode()
                 .put("complianceScore", 96.0)
                 .put("totalFindings", 0)
@@ -107,6 +112,150 @@ public final class MocHuongReferenceArchitectureBuilder {
                 .summaryMetrics(metrics)
                 .build());
         return new BuiltResult(serviceIds, allElements, allRelationships, allEvidences, savedDiagrams);
+    }
+
+    private void addC1ActorsAndExternals() {
+        addNode("customer", null, "PERSON", "Web / Mobile Client",
+                "Customer", "Khách hàng duyệt sản phẩm, đặt hàng & nhận thông báo đơn hàng",
+                props("contextReviewState", "CONFIRMED", "actorRole", "End-User Shopper"));
+        addNode("admin-staff", null, "PERSON", "Admin / Portal",
+                "Admin / Staff", "Quản trị viên quản lý danh mục, sản phẩm & tồn kho",
+                props("contextReviewState", "CONFIRMED", "actorRole", "Store Administrator"));
+        addNode("otel-observability", null, "EXTERNAL_SYSTEM", "OTLP / Prometheus",
+                "OpenTelemetry & MAVIS Observability",
+                "Thu thập OTLP traces (:4318/v1/traces) & Actuator Prometheus metrics",
+                props("contextReviewState", "CONFIRMED", "endpoint", "http://otel-collector:4318/v1/traces"));
+    }
+
+    private DiagramVersion buildC1ContextDiagram() {
+        ObjectNode layout = json.createObjectNode()
+                .put("schemaVersion", "1.0")
+                .put("modelVersionId", model.getId().toString());
+        ArrayNode nodes = layout.putArray("nodes");
+        String systemId = "system:moc-huong-shop";
+        ModelElement customer = node("customer");
+        ModelElement admin = node("admin-staff");
+        ModelElement otel = node("otel-observability");
+
+        ObjectNode custNode = nodes.addObject()
+                .put("id", customer.getId().toString())
+                .put("kind", "PERSON")
+                .put("name", customer.getName())
+                .put("description", customer.getScope())
+                .put("x", 40)
+                .put("y", 40);
+        custNode.put("languageStack", customer.getLanguageStack());
+
+        ObjectNode adminNode = nodes.addObject()
+                .put("id", admin.getId().toString())
+                .put("kind", "PERSON")
+                .put("name", admin.getName())
+                .put("description", admin.getScope())
+                .put("x", 40)
+                .put("y", 220);
+        adminNode.put("languageStack", admin.getLanguageStack());
+
+        ObjectNode sysNode = nodes.addObject()
+                .put("id", systemId)
+                .put("kind", "SYSTEM")
+                .put("name", SYSTEM_NAME)
+                .put("description", "Java 21 / Spring Boot 3 E-Commerce Microservices Platform")
+                .put("x", 360)
+                .put("y", 120);
+        sysNode.put("languageStack", "Java 21 / Spring Cloud");
+
+        ObjectNode otelNode = nodes.addObject()
+                .put("id", otel.getId().toString())
+                .put("kind", "EXTERNAL_SYSTEM")
+                .put("name", otel.getName())
+                .put("description", otel.getScope())
+                .put("x", 700)
+                .put("y", 120);
+        otelNode.put("languageStack", otel.getLanguageStack());
+
+        ArrayNode edges = layout.putArray("edges");
+        addContextEdge(edges, "ctx-cust-sys", customer.getId().toString(), systemId, "SERVICE_HTTP_CALL",
+                "Browse & place orders (HTTPS)");
+        addContextEdge(edges, "ctx-admin-sys", admin.getId().toString(), systemId, "SERVICE_HTTP_CALL",
+                "Manage catalog & stock (JWT)");
+        addContextEdge(edges, "ctx-sys-otel", systemId, otel.getId().toString(), "TRACING_EXPORT",
+                "Export OTLP spans & metrics");
+
+        return DiagramVersion.builder()
+                .modelVersion(model)
+                .notation("C4")
+                .level("CONTEXT")
+                .layoutJson(layout)
+                .build();
+    }
+
+    private void addContextEdge(
+            ArrayNode edges, String id, String from, String to, String type, String label) {
+        edges.addObject()
+                .put("id", id)
+                .put("from", from)
+                .put("to", to)
+                .put("source", from)
+                .put("target", to)
+                .put("type", type)
+                .put("relationType", type)
+                .put("label", label)
+                .put("originLayer", "STATIC");
+    }
+
+    private DiagramVersion buildDiagram(
+            String notation, String level, List<ModelElement> nodesList, List<ModelRelationship> edgesList) {
+        ObjectNode layout = json.createObjectNode()
+                .put("schemaVersion", "1.0")
+                .put("modelVersionId", model.getId().toString());
+        ArrayNode nodes = layout.putArray("nodes");
+        for (int i = 0; i < nodesList.size(); i++) {
+            ModelElement el = nodesList.get(i);
+            ObjectNode obj = nodes.addObject()
+                    .put("id", el.getId().toString())
+                    .put("name", el.getName())
+                    .put("kind", el.getElementType())
+                    .put("type", el.getElementType())
+                    .put("status", el.getStatus())
+                    .put("x", (i % 4) * 260)
+                    .put("y", (i / 4) * 160);
+            obj.put("languageStack", el.getLanguageStack());
+            if (el.getScope() != null) {
+                obj.put("description", el.getScope());
+            }
+            if (el.getProperties() != null) {
+                obj.set("properties", el.getProperties().deepCopy());
+            }
+            obj.putObject("position").put("x", (i % 4) * 260).put("y", (i / 4) * 160);
+            obj.putObject("data")
+                    .put("label", el.getName())
+                    .put("status", el.getStatus())
+                    .put("technology", el.getLanguageStack());
+            if ("C4".equals(notation)) {
+                obj.put("c4Type", "COMPONENT".equals(el.getElementType()) ? "Component" : "Container");
+            }
+            if (el.getParentElement() != null) {
+                obj.put("parentId", el.getParentElement().getId().toString());
+            }
+        }
+        ArrayNode edges = layout.putArray("edges");
+        for (ModelRelationship edge : edgesList) {
+            ObjectNode eObj = edges.addObject()
+                    .put("id", edge.getId().toString())
+                    .put("from", edge.getSourceElement().getId().toString())
+                    .put("to", edge.getTargetElement().getId().toString())
+                    .put("source", edge.getSourceElement().getId().toString())
+                    .put("target", edge.getTargetElement().getId().toString())
+                    .put("type", edge.getRelationType())
+                    .put("relationType", edge.getRelationType())
+                    .put("label", edge.getRelationType())
+                    .put("originLayer", edge.getOriginLayer())
+                    .put("direction", edge.getDirection());
+            if (edge.getProperties() != null) {
+                eObj.set("properties", edge.getProperties().deepCopy());
+            }
+        }
+        return DiagramVersion.builder().modelVersion(model).notation(notation).level(level).layoutJson(layout).build();
     }
 
     private ModelElement addNode(
