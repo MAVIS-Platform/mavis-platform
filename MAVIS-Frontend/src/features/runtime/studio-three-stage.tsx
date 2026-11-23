@@ -70,6 +70,21 @@ export type StudioThreeStageProps = {
 const WORLD_SCALE = 1 / 82;
 const THREE_PITCH_MIN = 0.34;
 const THREE_PITCH_MAX = 1.38;
+const THREE_ZOOM_MIN = 0.45;
+const THREE_ZOOM_MAX = 2.2;
+
+export function computeNextWheelZoom(
+  currentZoom: number,
+  deltaY: number,
+  deltaMode = 0,
+  ctrlKey = false,
+): number {
+  const pixelDelta = deltaMode === 1 ? deltaY * 24 : deltaMode === 2 ? deltaY * 180 : deltaY;
+  const clampedDelta = Math.max(-160, Math.min(160, pixelDelta));
+  const sensitivity = ctrlKey ? 0.0045 : 0.0018;
+  const next = currentZoom * Math.exp(-clampedDelta * sensitivity);
+  return Math.max(THREE_ZOOM_MIN, Math.min(THREE_ZOOM_MAX, next));
+}
 
 type ThreeModule = typeof import("three");
 
@@ -1255,6 +1270,9 @@ export function StudioThreeStage({
   const groundPlaneRef = useRef<THREE.Plane | null>(null);
   const hitVecRef = useRef<THREE.Vector3 | null>(null);
   const lastTourRectRef = useRef({ l: -1, t: -1, w: -1, h: -1 });
+  const viewportSizeRef = useRef({ w: 1, h: 1 });
+  const wheelActiveUntilRef = useRef(0);
+  const zoomSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Smooth target vs current camera state (mutated inside RAF with zero React re-renders)
   const targetCamRef = useRef({ yaw: camera.yaw, pitch: camera.pitch, zoom, panX: pan.x, panY: pan.y });
@@ -1264,15 +1282,16 @@ export function StudioThreeStage({
   callbacksRef.current = { onCameraChange, onZoomChange, onPanChange, onMoveNode, onSelect, onDropTool };
 
   useEffect(() => {
-    // Do not fight active pointer drag with throttled/stale React camera props
+    // Do not fight active pointer drag or wheel zoom with throttled/stale React camera props
+    const isWheeling = performance.now() < wheelActiveUntilRef.current;
     if (dragRef.current && (dragRef.current.mode === "ORBIT" || dragRef.current.mode === "PAN")) {
-      targetCamRef.current.zoom = zoom;
+      if (!isWheeling) targetCamRef.current.zoom = zoom;
       return;
     }
     targetCamRef.current = {
       yaw: camera.yaw,
       pitch: Math.max(THREE_PITCH_MIN, Math.min(THREE_PITCH_MAX, camera.pitch)),
-      zoom,
+      zoom: isWheeling ? targetCamRef.current.zoom : zoom,
       panX: pan.x,
       panY: pan.y,
     };
@@ -1283,6 +1302,26 @@ export function StudioThreeStage({
     let cancelled = false;
     let rafId = 0;
     let resizeObserver: ResizeObserver | null = null;
+    const boundCanvas = canvasRef.current;
+
+    // Native non-passive wheel listener: zero React re-renders mid-scroll, smooth delta-proportional zoom
+    const handleWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      const nextZoom = computeNextWheelZoom(
+        targetCamRef.current.zoom,
+        event.deltaY,
+        event.deltaMode,
+        event.ctrlKey,
+      );
+      targetCamRef.current.zoom = nextZoom;
+      wheelActiveUntilRef.current = performance.now() + 260;
+      if (zoomSyncTimerRef.current) clearTimeout(zoomSyncTimerRef.current);
+      zoomSyncTimerRef.current = setTimeout(() => {
+        zoomSyncTimerRef.current = null;
+        callbacksRef.current.onZoomChange(Number(targetCamRef.current.zoom.toFixed(3)));
+      }, 180);
+    };
+    boundCanvas?.addEventListener("wheel", handleWheel, { passive: false });
 
     void import("three")
       .then((T) => {
@@ -1318,6 +1357,7 @@ export function StudioThreeStage({
         const scene = new T.Scene();
         const width = Math.max(1, container.clientWidth);
         const height = Math.max(1, container.clientHeight);
+        viewportSizeRef.current = { w: width, h: height };
         renderer.setSize(width, height, false);
 
         const perspCam = new T.PerspectiveCamera(34, width / height, 0.1, 140);
@@ -1360,6 +1400,7 @@ export function StudioThreeStage({
         resizeObserver = new ResizeObserver(() => {
           const w = Math.max(1, container.clientWidth);
           const h = Math.max(1, container.clientHeight);
+          viewportSizeRef.current = { w, h };
           renderer.setSize(w, h, false);
           perspCam.aspect = w / h;
           perspCam.updateProjectionMatrix();
@@ -1381,9 +1422,12 @@ export function StudioThreeStage({
           // Frame-rate independent exponential inertial damping (OrbitControls-grade silky glide)
           const target = targetCamRef.current;
           const live = liveCamRef.current;
+          const isWheeling = now < wheelActiveUntilRef.current;
           const smooth = dragRef.current
             ? 1 - Math.exp(-dt * 20)
-            : 1 - Math.exp(-dt * 9);
+            : isWheeling
+              ? 1 - Math.exp(-dt * 18)
+              : 1 - Math.exp(-dt * 11);
           live.yaw += (target.yaw - live.yaw) * smooth;
           live.pitch += (target.pitch - live.pitch) * smooth;
           live.zoom += (target.zoom - live.zoom) * smooth;
@@ -1417,12 +1461,17 @@ export function StudioThreeStage({
 
           renderer.render(scene, perspCam);
 
-          // Update invisible projected bounding box for Guided Tour step 2 only when idle & bounds shift
+          // Update invisible projected bounding box for Guided Tour step 2 only once camera has settled (zero layout reflow during zoom/orbit)
+          const isCameraSettling =
+            Math.abs(target.zoom - live.zoom) > 0.004 ||
+            Math.abs(target.yaw - live.yaw) > 0.002 ||
+            Math.abs(target.pitch - live.pitch) > 0.002 ||
+            Math.abs(target.panX - live.panX) > 0.5 ||
+            Math.abs(target.panY - live.panY) > 0.5;
           const tourBox = tourBoxRef.current;
           const rigs = nodeRigsRef.current;
-          if (tourBox && rigs.length > 0 && !dragRef.current) {
-            const w = container.clientWidth;
-            const h = container.clientHeight;
+          if (tourBox && rigs.length > 0 && !dragRef.current && !isWheeling && !isCameraSettling) {
+            const { w, h } = viewportSizeRef.current;
             let minX = w;
             let maxX = 0;
             let minY = h;
@@ -1470,6 +1519,11 @@ export function StudioThreeStage({
     return () => {
       cancelled = true;
       cancelAnimationFrame(rafId);
+      boundCanvas?.removeEventListener("wheel", handleWheel);
+      if (zoomSyncTimerRef.current) {
+        clearTimeout(zoomSyncTimerRef.current);
+        zoomSyncTimerRef.current = null;
+      }
       resizeObserver?.disconnect();
       if (threeRef.current && contentGroupRef.current) {
         disposeObjectTree(threeRef.current, contentGroupRef.current);
@@ -2047,13 +2101,6 @@ export function StudioThreeStage({
           isDragging ? "cursor-grabbing" : hoveredService ? "cursor-grab" : "cursor-default"
         }`}
         onContextMenu={(event) => event.preventDefault()}
-        onWheel={(event) => {
-          event.preventDefault();
-          const factor = event.deltaY < 0 ? 1.1 : 0.91;
-          const nextZoom = Math.max(0.45, Math.min(2.2, Number((targetCamRef.current.zoom * factor).toFixed(2))));
-          targetCamRef.current.zoom = nextZoom;
-          callbacksRef.current.onZoomChange(nextZoom);
-        }}
         onPointerDown={(event) => {
           if (![0, 1, 2].includes(event.button)) return;
           event.preventDefault();

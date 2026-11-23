@@ -962,3 +962,28 @@ test("3D stage implements SE-standard UML/C4/CodeCity nodes, trust zones, and se
   // Observability passes real RAM/CPU/pause/throttle/RPS/protocol into threeNodes & threeEdges
   assert.ok(obsSrc.includes("ramPct") && obsSrc.includes("cpuPct") && obsSrc.includes("cpuThrottlePct"));
 });
+
+test("3D wheel zoom uses native non-passive listener, delta-proportional scaling, debounced React sync, and zero RAF layout reflow", () => {
+  const stageSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-three-stage.tsx"),
+    "utf8",
+  );
+  const { computeNextWheelZoom } = require("../src/features/runtime/studio-three-stage.tsx");
+
+  // Fine trackpad scroll scales smoothly instead of jumping 10%
+  const fineIn = computeNextWheelZoom(1.0, -8, 0, false);
+  assert.ok(fineIn > 1.005 && fineIn < 1.03, `Expected smooth fine zoom-in, got ${fineIn}`);
+  // Standard mouse wheel notch scales crisply and reversibly
+  const notchIn = computeNextWheelZoom(1.0, -100, 0, false);
+  const notchBack = computeNextWheelZoom(notchIn, 100, 0, false);
+  assert.ok(notchIn > 1.15 && notchIn < 1.25);
+  assert.ok(Math.abs(notchBack - 1.0) < 0.001);
+  // Clamps cleanly to [0.45, 2.2]
+  assert.equal(computeNextWheelZoom(2.15, -500, 0, true), 2.2);
+  assert.equal(computeNextWheelZoom(0.46, 500, 0, true), 0.45);
+  // Uses native non-passive wheel listener and avoids per-frame container.clientWidth reads in RAF
+  assert.ok(stageSrc.includes('addEventListener("wheel", handleWheel, { passive: false })'));
+  assert.ok(!stageSrc.includes("onWheel={(event) =>"));
+  assert.ok(stageSrc.includes("const { w, h } = viewportSizeRef.current;"));
+  assert.ok(stageSrc.includes("!isWheeling && !isCameraSettling"));
+});
