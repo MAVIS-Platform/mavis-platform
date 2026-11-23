@@ -11,7 +11,6 @@ import {
   Check,
   Clock3,
   Code2,
-  Download,
   Minus,
   Network,
   SendHorizontal,
@@ -55,7 +54,6 @@ import {
   buildThreeESubjectContext,
   checkThreeEScopeGuardrail,
   collectConcreteThreeEEvidences,
-  getRuleName,
 } from "@/features/architecture/three-e-content";
 import { Input } from "@/components/ui/input";
 import { ArchitectureGraph, ElementDetailsPanel } from "@/features/architecture/components";
@@ -1147,244 +1145,6 @@ export function LabWorkspace() {
   );
 }
 
-const STATIC_RULE_IDS = ["RULE-01", "RULE-02", "RULE-03", "RULE-04", "RULE-05"] as const;
-
-function StaticEvaluationSummary({
-  modelId,
-  allowRunEvaluation = false,
-  model,
-  onSelectElement,
-}: {
-  modelId: string | undefined;
-  allowRunEvaluation?: boolean | undefined;
-  model?: ArchitecturalModel | undefined;
-  onSelectElement?: ((elementId: string) => void) | undefined;
-}) {
-  const { locale, t } = useLocale();
-  const client = useApi();
-  const enabled = client.mode === "backend" && Boolean(modelId);
-  const runs = useApiQuery("evaluations", { modelId: modelId ?? "" }, { enabled });
-  const evaluate = useApiMutation("evaluateModel");
-  const latestRun = useMemo(
-    () =>
-      [...(runs.data ?? [])].sort((a, b) =>
-        String(b.result?.["createdAt"] ?? "").localeCompare(String(a.result?.["createdAt"] ?? "")),
-      )[0],
-    [runs.data],
-  );
-  const evaluationId = latestRun?.id ?? "";
-  const findings = useApiQuery(
-    "evaluationFindings",
-    { evaluationId, modelId: modelId ?? "" },
-    { enabled: enabled && Boolean(evaluationId) },
-  );
-
-  const ruleRows = useMemo(() => {
-    const items = findings.data ?? [];
-    return STATIC_RULE_IDS.map((ruleId) => {
-      const ruleFindings = items.filter((item) => String(item["ruleId"] ?? "") === ruleId);
-      const topFinding =
-        ruleFindings.find((item) => item["status"] === "VIOLATION") ??
-        ruleFindings.find((item) => item["status"] === "NEEDS_REVIEW") ??
-        ruleFindings[0];
-      const details =
-        topFinding && typeof topFinding["details"] === "object" && topFinding["details"]
-          ? (topFinding["details"] as Record<string, unknown>)
-          : undefined;
-      const unverifiedMetadata = details?.["evidenceSufficiency"] === "UNVERIFIED_METADATA_ONLY";
-      const status = topFinding
-        ? String(topFinding["status"] ?? "NEEDS_REVIEW")
-        : evaluationId
-          ? "PASS"
-          : "PENDING";
-      const severity = topFinding ? String(topFinding["severity"] ?? "INFO") : "INFO";
-      const elementIds = details?.["elementIds"];
-      const affectedElementIds = details?.["affectedElementIds"];
-      const relatedElementIds = topFinding
-        ? [
-            topFinding["elementId"],
-            ...(Array.isArray(elementIds) ? elementIds : []),
-            ...(Array.isArray(affectedElementIds) ? affectedElementIds : []),
-          ].filter((value): value is string => typeof value === "string" && value.length > 0)
-        : [];
-      return {
-        ruleId,
-        label: getRuleName(ruleId, locale),
-        status,
-        severity,
-        unverifiedMetadata,
-        message:
-          topFinding && typeof topFinding["message"] === "string" ? topFinding["message"] : "",
-        relatedElementIds: [...new Set(relatedElementIds)],
-      };
-    });
-  }, [evaluationId, findings.data, locale]);
-
-  const summary = useMemo(
-    () => ({
-      passed: ruleRows.filter((row) => row.status === "PASS").length,
-      attention: ruleRows.filter((row) => row.status === "VIOLATION").length,
-      review: ruleRows.filter((row) => row.status === "NEEDS_REVIEW").length,
-    }),
-    [ruleRows],
-  );
-
-  return (
-    <DetailPanel
-      title={t("Static Evaluation Summary (5 Rules)", "Tổng hợp đánh giá tĩnh (5 quy tắc)")}
-    >
-      <p className="text-xs leading-5 text-muted-foreground">
-        {t(
-          "Read-only findings from the curated reference snapshot. Open a rule to inspect its explanation and available source evidence.",
-          "Kết quả chỉ đọc từ source snapshot tham chiếu. Mở một quy tắc để xem giải thích và evidence mã nguồn hiện có.",
-        )}
-      </p>
-      {!modelId ? (
-        <p className="text-sm text-muted-foreground">
-          {t(
-            "Pinned static model is required before rule evaluation results can load.",
-            "Cần có model tĩnh đã ghim để tải kết quả đánh giá 5 quy tắc.",
-          )}
-        </p>
-      ) : runs.isPending || (evaluationId && findings.isPending) ? (
-        <p role="status" className="text-sm text-muted-foreground">
-          {t("Loading static evaluation findings…", "Đang tải kết quả đánh giá kiến trúc tĩnh…")}
-        </p>
-      ) : runs.isError ? (
-        <ErrorState error={runs.error} onRetry={() => void runs.refetch()} />
-      ) : (
-        <div className="space-y-2.5">
-          {!evaluationId && (
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-xs text-muted-foreground">
-                {t(
-                  "No persisted evaluation run yet; rule readiness stays pending until static evaluation completes.",
-                  "Chưa có lượt đánh giá tĩnh nào được lưu; trạng thái các quy tắc sẽ hiển thị sau khi hoàn tất đánh giá.",
-                )}
-              </p>
-              {allowRunEvaluation && modelId && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={evaluate.isPending}
-                  onClick={() =>
-                    evaluate.mutate({ modelId }, { onSuccess: () => void runs.refetch() })
-                  }
-                >
-                  {evaluate.isPending
-                    ? t("Evaluating 5 Rules…", "Đang đánh giá 5 quy tắc…")
-                    : t("Run 5-Rule Static Evaluation", "Chạy đánh giá 5 quy tắc")}
-                </Button>
-              )}
-            </div>
-          )}
-          <div className="divide-y rounded-xl border bg-background">
-            <div className="flex flex-wrap gap-2 p-3 text-[11px] text-muted-foreground">
-              <span>
-                {t("Rules checked", "Đã kiểm tra")}: {ruleRows.length}
-              </span>
-              <span>
-                {t("No issue found", "Không phát hiện vấn đề")}: {summary.passed}
-              </span>
-              <span>
-                {t("Needs attention", "Cần kiểm tra")}: {summary.attention}
-              </span>
-              <span>
-                {t("Needs verification", "Cần xác minh")}: {summary.review}
-              </span>
-            </div>
-            {ruleRows.map((row) => (
-              <details key={row.ruleId} className="group text-xs">
-                <summary className="flex cursor-pointer list-none flex-wrap items-start justify-between gap-3 p-3 marker:content-none">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-mono font-semibold text-foreground">{row.ruleId}</span>
-                      <span className="font-medium text-foreground">{row.label}</span>
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 flex-wrap items-center gap-2">
-                    <div className="text-right">
-                      <Badge
-                        variant={
-                          row.status === "VIOLATION"
-                            ? "destructive"
-                            : row.status === "NEEDS_REVIEW"
-                              ? "warning"
-                              : "outline"
-                        }
-                        className="text-[10px]"
-                      >
-                        {row.status === "PASS"
-                          ? t("No issue found", "Không phát hiện vấn đề")
-                          : row.status === "VIOLATION"
-                            ? t("Needs attention", "Cần kiểm tra")
-                            : row.status === "NEEDS_REVIEW"
-                              ? t("Needs verification", "Cần xác minh")
-                              : t("Waiting for results", "Đang chờ kết quả")}
-                      </Badge>
-                    </div>
-                    <div className="text-right">
-                      <Badge variant="outline" className="text-[10px]">
-                        {row.severity === "ERROR"
-                          ? t("High priority", "Ưu tiên cao")
-                          : row.severity === "WARNING"
-                            ? t("Warning", "Cảnh báo")
-                            : t("Information", "Thông tin")}
-                      </Badge>
-                    </div>
-                  </div>
-                </summary>
-                <div className="space-y-2 border-t px-3 py-2.5">
-                  {(row.unverifiedMetadata || row.status === "NEEDS_REVIEW") && (
-                    <p className="text-[11px] font-medium text-amber-700 dark:text-amber-300">
-                      {t(
-                        "Missing Call-Site / Evidence Grounding (Needs Review)",
-                        "Thiếu bằng chứng Call-Site / cần rà soát",
-                      )}
-                    </p>
-                  )}
-                  {row.message ? (
-                    <p className="leading-5 text-muted-foreground">{row.message}</p>
-                  ) : (
-                    <p className="leading-5 text-muted-foreground">
-                      {t(
-                        "No additional persisted finding detail is available for this rule.",
-                        "Chưa có chi tiết finding được lưu thêm cho quy tắc này.",
-                      )}
-                    </p>
-                  )}
-                  {row.relatedElementIds.length > 0 && onSelectElement && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {row.relatedElementIds
-                        .map((id) => model?.elements.find((element) => element.id === id))
-                        .filter((element): element is NonNullable<typeof element> =>
-                          Boolean(element),
-                        )
-                        .map((element) => (
-                          <Button
-                            key={element.id}
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className="h-7 px-2 text-[11px]"
-                            onClick={() => onSelectElement(element.id)}
-                          >
-                            {t("View", "Xem")} {element.name}
-                          </Button>
-                        ))}
-                    </div>
-                  )}
-                </div>
-              </details>
-            ))}
-          </div>
-        </div>
-      )}
-    </DetailPanel>
-  );
-}
-
 function RuntimeEvidenceStatus({
   complete,
   label,
@@ -1591,14 +1351,9 @@ function StepContent({
     returnTo: `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=2`,
     sessionId: activeStudioSessionId || undefined,
   });
-  const viewModelQuery = modelQuery ?? referenceModelQuery ?? null;
-  const current = resolveStepMeta(step, { hasReferenceArch, isTheoryOnlyLab, requiresRuntime });
-  const Icon = current.icon;
   const next = step < 3 ? ((step + 1) as 2 | 3) : undefined;
   const nextStep = step === 1 && !requiresRuntime ? 3 : next;
   const prevStep: 1 | 2 = step === 3 && !requiresRuntime ? 1 : ((step - 1) as 1 | 2);
-  const totalPhases = requiresRuntime ? 3 : 2;
-  const displayPhase = !requiresRuntime && step === 3 ? 2 : step;
   const nextAvailable =
     nextStep !== undefined && !(step === 2 && requiresRuntime && !liveStudioVerified && !preview);
   const needsSandboxBootstrap = Boolean(
@@ -1619,13 +1374,6 @@ function StepContent({
       : null);
   const selectedTutorElement =
     activeModel?.elements.find((el) => el.id === selectedGraphId) ?? activeModel?.elements[0];
-  const openImpactAnalysis = () => {
-    if (!selectedElement) return;
-    // Reverse BFS is visualized on the dependency graph; preserve the selection while
-    // switching to the one view that can highlight the full upstream path.
-    onSelectInlineC4View("GRAPH");
-    setImpactAnalysisOpen(true);
-  };
   const closeImpactAnalysis = () => {
     setImpactAnalysisOpen(false);
     setImpactHighlightIds([]);
@@ -2126,80 +1874,6 @@ function StepContent({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <section className="rounded-xl border bg-card px-4 py-3 shadow-xs sm:px-5">
-        <div className="flex flex-wrap items-start justify-between gap-2.5">
-          <div className="flex min-w-0 flex-1 items-start gap-3">
-            <div className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <Icon className="size-4" aria-hidden="true" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-baseline gap-2">
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-primary">
-                  {t(
-                    `Phase ${displayPhase} / ${totalPhases}`,
-                    `Giai đoạn ${displayPhase} / ${totalPhases}`,
-                  )}
-                </span>
-                <h2 className="text-base font-semibold text-foreground">
-                  {t(current.title, current.titleVi)}
-                </h2>
-              </div>
-              <p className="mt-1 text-[13.5px] leading-6 text-foreground/90">
-                <span className="font-semibold text-foreground">
-                  {t("Learning objective", "Mục tiêu học tập")}:
-                </span>{" "}
-                {step === 1 && labInstructions?.trim()
-                  ? labInstructions.trim()
-                  : t(current.description, current.descriptionVi)}
-              </p>
-              <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                <span>
-                  <strong className="font-medium text-foreground">
-                    {t("Reference snapshot", "Snapshot tham chiếu")}:
-                  </strong>{" "}
-                  {hasReferenceArch
-                    ? t("C1–C3 model ready", "Mô hình C1–C3 sẵn sàng")
-                    : t("Not required", "Không bắt buộc")}
-                </span>
-                <span>
-                  <strong className="font-medium text-foreground">
-                    {t("Next requirement", "Yêu cầu tiếp theo")}:
-                  </strong>{" "}
-                  {step === 1
-                    ? requiresRuntime
-                      ? !runtimePrerequisiteMissing
-                        ? t(
-                            "Complete Runtime Studio experiment",
-                            "Hoàn thành thực nghiệm Runtime Studio",
-                          )
-                        : t("Pass Module Quiz first", "Đạt Quiz Module trước")
-                      : t("Review evidence & submit", "Rà soát bằng chứng & nộp bài")
-                    : step === 2
-                      ? t("Seal runtime evidence", "Niêm phong bằng chứng runtime")
-                      : t("Complete submission form", "Hoàn tất khung nộp bài")}
-                </span>
-              </div>
-            </div>
-          </div>
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            className="h-7 shrink-0 px-2 text-xs font-medium text-muted-foreground hover:text-primary"
-            onClick={() =>
-              openPhaseIssue(
-                step === 1
-                  ? "static-guidance"
-                  : step === 2
-                    ? "runtime-guidance"
-                    : "submission-explanation",
-              )
-            }
-          >
-            {t("Need help?", "Cần hỗ trợ?")}
-          </Button>
-        </div>
-      </section>
 
       {step === 1 && (
         <div className="space-y-5">
@@ -2210,70 +1884,6 @@ function StepContent({
                 className="scroll-mt-36 space-y-4 rounded-xl border bg-card p-4 sm:p-5"
                 aria-label={t("Architecture workspace", "Không gian kiến trúc")}
               >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <h3 className="text-base font-semibold text-foreground">
-                      {t("Architecture workspace", "Không gian kiến trúc")}
-                    </h3>
-                    <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                      {t(
-                        "Explore the curated C1–C3 views and Dependency Graph. Select a node or connection to inspect its evidence.",
-                        "Khám phá các góc nhìn C1–C3 và Đồ thị phụ thuộc đã được chọn lọc. Chọn node hoặc kết nối để xem evidence.",
-                      )}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant="outline" className="font-mono">
-                      {modelRevision !== undefined
-                        ? t(
-                            `Model revision r${modelRevision}`,
-                            `Mô hình phiên bản r${modelRevision}`,
-                          )
-                        : t("Revision pending", "Đang chờ bản phân tích")}
-                    </Badge>
-                    {client.mode === "backend" &&
-                      Boolean(snapshotId || referenceArchitecture?.snapshotId) && (
-                        <Button asChild size="sm" variant="outline">
-                          <a
-                            href={`/api/backend/assignments/${encodeURIComponent(labId)}/reference-source`}
-                            download
-                            title={
-                              studentContext?.assignment?.referenceSource?.artifactHash
-                                ? `SHA-256: ${studentContext.assignment.referenceSource.artifactHash}`
-                                : t(
-                                    "Download curated reference source archive",
-                                    "Tải tệp nén mã nguồn tham chiếu đã ghim",
-                                  )
-                            }
-                          >
-                            <Download className="mr-1.5 size-3.5" aria-hidden="true" />
-                            {t("Download Reference .zip", "Tải mã nguồn (.zip)")}
-                          </a>
-                        </Button>
-                      )}
-                    <Button
-                      type="button"
-                      size="sm"
-                      disabled={!selectedElement}
-                      onClick={openImpactAnalysis}
-                      title={
-                        selectedElement
-                          ? t(
-                              "Analyze the selected element's static dependency impact",
-                              "Phân tích tác động phụ thuộc tĩnh của thành phần đã chọn",
-                            )
-                          : t(
-                              "Select a graph element first",
-                              "Hãy chọn một thành phần trên đồ thị trước",
-                            )
-                      }
-                    >
-                      <Network className="mr-1.5 size-3.5" aria-hidden="true" />
-                      {t("Analyze Impact", "Phân tích tác động")}
-                    </Button>
-                  </div>
-                </div>
-
                 <div
                   className="flex flex-wrap gap-2"
                   role="tablist"
@@ -2326,15 +1936,10 @@ function StepContent({
                             onSelect={setSelectedGraphId}
                           />
                           <p className="text-xs leading-5 text-muted-foreground">
-                            {selectedElement
-                              ? t(
-                                  "Use Analyze Impact to inspect only the selected element's potential static dependency impact.",
-                                  "Dùng Phân tích tác động để xem tác động phụ thuộc tĩnh tiềm năng của thành phần đang chọn.",
-                                )
-                              : t(
-                                  "Select an element to inspect its details, source evidence, or potential impact.",
-                                  "Chọn một thành phần để xem chi tiết, evidence mã nguồn hoặc tác động tiềm năng.",
-                                )}
+                            {t(
+                              "Select an element to inspect its details and source evidence.",
+                              "Chọn một thành phần để xem chi tiết và evidence mã nguồn.",
+                            )}
                           </p>
                         </div>
                       </aside>
@@ -2386,15 +1991,10 @@ function StepContent({
                           onSelect={setSelectedGraphId}
                         />
                         <p className="text-xs leading-5 text-muted-foreground">
-                          {selectedElement
-                            ? t(
-                                "Use Analyze Impact to inspect only the selected element's potential static dependency impact.",
-                                "Dùng Phân tích tác động để xem tác động phụ thuộc tĩnh tiềm năng của thành phần đang chọn.",
-                              )
-                            : t(
-                                "Select an element to inspect its details, source evidence, or potential impact.",
-                                "Chọn một thành phần để xem chi tiết, evidence mã nguồn hoặc tác động tiềm năng.",
-                              )}
+                          {t(
+                            "Select an element to inspect its details and source evidence.",
+                            "Chọn một thành phần để xem chi tiết và evidence mã nguồn.",
+                          )}
                         </p>
                       </div>
                     </aside>
@@ -2443,168 +2043,6 @@ function StepContent({
                     onFocusElement={(elementId) => setSelectedGraphId(elementId)}
                   />
                 </section>
-              )}
-
-              {referenceArchitecture?.evaluation?.findings &&
-              referenceArchitecture.evaluation.findings.length > 0 ? (
-                <DetailPanel
-                  title={t(
-                    "Static Evaluation Summary & Source Evidence",
-                    "Tổng hợp đánh giá tĩnh & bằng chứng mã nguồn",
-                  )}
-                >
-                  <div className="space-y-4">
-                    <div className="flex flex-wrap gap-2 text-xs">
-                      <Badge variant="outline">
-                        {t("Rules checked", "Quy tắc đã kiểm tra")}:{" "}
-                        {referenceArchitecture.evaluation.findings.length}
-                      </Badge>
-                      <Badge variant="outline">
-                        {t("Needs attention", "Cần kiểm tra")}:{" "}
-                        {
-                          referenceArchitecture.evaluation.findings.filter(
-                            (finding) => finding.status === "VIOLATION",
-                          ).length
-                        }
-                      </Badge>
-                      <Badge variant="outline">
-                        {t("Needs verification", "Cần xác minh")}:{" "}
-                        {
-                          referenceArchitecture.evaluation.findings.filter(
-                            (finding) => finding.status === "NEEDS_REVIEW",
-                          ).length
-                        }
-                      </Badge>
-                    </div>
-                    <p className="text-xs leading-5 text-muted-foreground">
-                      {t(
-                        "These are read-only results from the curated source snapshot. Open a result to understand its evidence and return to the graph to explore related elements.",
-                        "Đây là kết quả chỉ đọc từ source snapshot tham chiếu. Mở một kết quả để xem evidence, rồi quay lại đồ thị để khám phá các thành phần liên quan.",
-                      )}
-                    </p>
-                    <div className="divide-y rounded-xl border bg-background">
-                      {referenceArchitecture.evaluation.findings.map((finding) => {
-                        const relatedElements = (activeModel?.elements ?? []).filter((element) =>
-                          finding.message.toLowerCase().includes(element.name.toLowerCase()),
-                        );
-                        const studentStatus =
-                          finding.status === "PASS"
-                            ? t("No issue found", "Không phát hiện vấn đề")
-                            : finding.status === "VIOLATION"
-                              ? t("Needs attention", "Cần kiểm tra")
-                              : t("Needs verification", "Cần xác minh thêm");
-                        const studentSeverity =
-                          finding.severity === "ERROR"
-                            ? t("High priority", "Ưu tiên cao")
-                            : finding.severity === "WARNING"
-                              ? t("Warning", "Cảnh báo")
-                              : t("Information", "Thông tin");
-                        return (
-                          <details key={finding.id} className="group text-xs">
-                            <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 p-3 marker:content-none">
-                              <div className="flex min-w-0 flex-wrap items-center gap-2">
-                                <span className="font-mono font-semibold">{finding.ruleId}</span>
-                                <span className="font-medium">
-                                  {getRuleName(finding.ruleId, locale)}
-                                </span>
-                              </div>
-                              <div className="flex shrink-0 items-center gap-2">
-                                <Badge
-                                  variant={
-                                    finding.status === "VIOLATION"
-                                      ? "destructive"
-                                      : finding.status === "NEEDS_REVIEW"
-                                        ? "warning"
-                                        : "outline"
-                                  }
-                                >
-                                  {studentStatus}
-                                </Badge>
-                                <Badge variant="outline" className="text-[10px]">
-                                  {studentSeverity}
-                                </Badge>
-                              </div>
-                            </summary>
-                            {finding.message && (
-                              <div className="space-y-2 border-t px-3 py-2.5 leading-5 text-muted-foreground">
-                                <p>{finding.message}</p>
-                                {relatedElements.length > 0 && (
-                                  <div className="flex flex-wrap gap-1.5">
-                                    {relatedElements.slice(0, 4).map((element) => (
-                                      <Button
-                                        key={element.id}
-                                        type="button"
-                                        size="sm"
-                                        variant="outline"
-                                        className="h-7 px-2 text-[11px]"
-                                        onClick={(event) => {
-                                          event.preventDefault();
-                                          setSelectedGraphId(element.id);
-                                          document
-                                            .getElementById("lab-static-workspace")
-                                            ?.scrollIntoView({
-                                              behavior: "smooth",
-                                              block: "start",
-                                            });
-                                        }}
-                                      >
-                                        {t("View", "Xem")} {element.name}
-                                      </Button>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </details>
-                        );
-                      })}
-                    </div>
-                    {referenceArchitecture.evidences.length > 0 && (
-                      <div className="space-y-2">
-                        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                          {t("Verified Source Code Evidence", "Bằng chứng mã nguồn đã xác minh")}
-                        </h3>
-                        <div className="grid gap-2.5 md:grid-cols-2">
-                          {referenceArchitecture.evidences.slice(0, 8).map((ev) => (
-                            <div key={ev.id} className="rounded-xl border bg-muted/20 p-3 text-xs">
-                              <div className="flex flex-wrap items-center justify-between gap-2">
-                                <span className="break-all font-mono font-semibold text-foreground">
-                                  {cleanDisplaySourceLocator(ev.locator) ||
-                                    t("Source location", "Vị trí mã nguồn")}
-                                </span>
-                                {ev.sourceType && (
-                                  <Badge variant="outline">
-                                    {ev.sourceType === "STATIC_CODE"
-                                      ? t("Source code", "Mã nguồn tĩnh")
-                                      : ev.sourceType}
-                                  </Badge>
-                                )}
-                              </div>
-                              {ev.excerpt && (
-                                <pre className="mt-2 overflow-x-auto rounded bg-background p-2 font-mono text-[11px] leading-relaxed text-muted-foreground">
-                                  {ev.excerpt}
-                                </pre>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </DetailPanel>
-              ) : (
-                <StaticEvaluationSummary
-                  modelId={modelId}
-                  allowRunEvaluation={!isStudent && Boolean(viewModelQuery)}
-                  model={activeModel}
-                  onSelectElement={(elementId) => {
-                    setSelectedGraphId(elementId);
-                    onSelectInlineC4View("GRAPH");
-                    document
-                      .getElementById("lab-static-workspace")
-                      ?.scrollIntoView({ behavior: "smooth", block: "start" });
-                  }}
-                />
               )}
             </>
           ) : (

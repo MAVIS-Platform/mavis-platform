@@ -196,15 +196,13 @@ test("Lecturer UX Pack 1: single-line breadcrumbs & class tabs, Google mark isol
   assert.match(subComponents, /Technical verification IDs & digests/);
 });
 
-test("Council Scope Gap Pack: Student Download Reference ZIP, THEORY_ONLY Markdown reader, Admin Test Connection, and VI parity", () => {
+test("Council Scope Gap Pack: THEORY_ONLY Markdown reader, Admin Test Connection, and VI parity", () => {
   const courses = read("src/features/courses/screens.tsx");
   const admin = read("src/features/administration/screens.tsx");
   const locale = read("src/lib/i18n/locale-context.tsx");
   const subScreens = read("src/features/submissions/screens.tsx");
   const workbench = read("src/features/runtime/live-studio-workbench.tsx");
 
-  assert.match(courses, /\/api\/backend\/assignments\/\$\{encodeURIComponent\(labId\)\}\/reference-source/);
-  assert.match(courses, /Download Reference \.zip/);
   assert.match(courses, /Lesson & Reading Material/);
   assert.match(courses, /<MarkdownPreview markdown=\{labInstructions\} \/>/);
   assert.match(admin, /useApiMutation\("testIntegration"\)/);
