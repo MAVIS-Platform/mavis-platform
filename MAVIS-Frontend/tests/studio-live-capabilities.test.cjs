@@ -895,3 +895,38 @@ test("3D WebGL stage uses right-drag orbit, left-drag block movement, and camera
   assert.ok(threeNodesBlock.includes("worldPoints"), "threeNodes must read from camera-independent worldPoints");
   assert.ok(!threeNodesBlock.includes("positions"), "threeNodes must not depend on camera-projected positions");
 });
+
+test("Studio wires deduplicate static vs observed 1-to-1, unify 4-state colors, and clear middle 3D blocks", () => {
+  const obsSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-observability.tsx"),
+    "utf8",
+  );
+  const stageSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-three-stage.tsx"),
+    "utf8",
+  );
+  // 1-to-1 deduplication in both 3D (threeEdges) and 2D (SVG staticEdges)
+  assert.ok(
+    obsSrc.includes("if (observedPairs.has(`${edge.from}->${edge.to}`)) continue;"),
+    "3D threeEdges must suppress duplicate static edge when observed traffic exists",
+  );
+  assert.ok(
+    obsSrc.includes("if (hasObservedOverlay) return null;"),
+    "2D SVG staticEdges must suppress duplicate static edge when observed traffic exists",
+  );
+  // Unified healthy live traffic color (no dull slate gray for healthy observed spans)
+  assert.ok(obsSrc.includes("#0d9488"), "Healthy span-observed traffic must render in teal/emerald, not slate gray");
+  // 3D rim anchoring & obstacle clearance helper
+  assert.ok(stageSrc.includes("export function compute3DEdgeAnchors("));
+  const { compute3DEdgeAnchors } = require("../src/features/runtime/studio-three-stage.tsx");
+  const nodes = [
+    { id: "api-gateway", wx: -220, wz: 0 },
+    { id: "order-service", wx: 0, wz: 0 },
+    { id: "payment-service", wx: 220, wz: 0 },
+  ];
+  const clear = compute3DEdgeAnchors(-220 / 82, 0, 220 / 82, 0, nodes, "api-gateway", "payment-service", false);
+  // Endpoints are anchored at pedestal rims (pulled inward from center by > 0.5)
+  assert.ok(clear.sx > -220 / 82 + 0.45 && clear.ex < 220 / 82 - 0.45);
+  // Midpoint bows laterally away from intermediate order-service at (0, 0)
+  assert.ok(Math.abs(clear.midZ) >= 0.55, `Expected lateral deflection away from middle node, got midZ=${clear.midZ}`);
+});

@@ -1606,7 +1606,22 @@ export function StudioObservability({
     }
 
     const builtEdges: StudioThreeEdge[] = [];
+    const sgByPair = new Map(
+      (telemetry?.serviceGraph ?? []).map((sg) => [`${sg.client}->${sg.server}`, sg]),
+    );
+    const rawEdges = (telemetry?.interactions ?? []).filter(
+      (edge) => !traceId || edge.traceId === traceId,
+    );
+    const deduped = traceId
+      ? rawEdges
+      : [...new Map(rawEdges.map((edge) => [`${edge.fromService}->${edge.toService}`, edge])).values()];
+    const observedPairs = new Set(
+      deduped.map((edge) => `${edge.fromService}->${edge.toService}`),
+    );
+
+    // 1-to-1 edge rendering: suppress duplicate static dashed line when live observed traffic exists for the same pair
     for (const edge of staticEdges) {
+      if (observedPairs.has(`${edge.from}->${edge.to}`)) continue;
       const targetStopped = replicasFor(edge.to) === 0;
       builtEdges.push({
         id: `static:${edge.id}`,
@@ -1619,15 +1634,6 @@ export function StudioObservability({
       });
     }
 
-    const sgByPair = new Map(
-      (telemetry?.serviceGraph ?? []).map((sg) => [`${sg.client}->${sg.server}`, sg]),
-    );
-    const rawEdges = (telemetry?.interactions ?? []).filter(
-      (edge) => !traceId || edge.traceId === traceId,
-    );
-    const deduped = traceId
-      ? rawEdges
-      : [...new Map(rawEdges.map((edge) => [`${edge.fromService}->${edge.toService}`, edge])).values()];
     deduped.forEach((edge, idx) => {
       const span = spansByTraceAndId.get(`${edge.traceId}:${edge.childSpanId}`);
       const sg = sgByPair.get(`${edge.fromService}->${edge.toService}`);
@@ -1656,15 +1662,18 @@ export function StudioObservability({
           ? `${simulated ? "≈ " : ""}${durationMs > 0 && durationMs < 0.1 ? "<0.1" : Number(durationMs.toFixed(durationMs < 10 ? 1 : 0))} ms`
           : null;
       const targetReplicas = replicasFor(edge.toService);
+      // Unified 4-state wire palette: Rose=error, Amber=degraded, Emerald/Teal=healthy live traffic, Dashed Gray=static only
       const edgeColor = edgeSevered
         ? "#e11d48"
         : edgeDegraded
           ? "#d97706"
           : sg && sg.rps > 0
-            ? "#059669"
+            ? isLight
+              ? "#059669"
+              : "#10b981"
             : isLight
-              ? "#475569"
-              : "#64748b";
+              ? "#0d9488"
+              : "#14b8a6";
       builtEdges.push({
         id: `obs:${edge.traceId}:${idx}`,
         from: edge.fromService,
@@ -2753,6 +2762,7 @@ export function StudioObservability({
             if (!from || !to) return null;
             const targetStopped = resolveLiveReplicas(edge.to) === 0;
             const hasObservedOverlay = observedPairs.has(`${edge.from}->${edge.to}`);
+            if (hasObservedOverlay) return null;
             const isSkipColumn = view === "2D" && Math.abs(to.x - from.x) > 340;
             const useOrtho = view === "2D" && styleCfg.wireMode === "orthogonal";
             const ctrlX = (from.x + to.x) / 2;
@@ -2915,17 +2925,19 @@ export function StudioObservability({
                   : edgeDegraded
                     ? "#d97706"
                     : sg && sg.rps > 0
-                      ? "#059669"
+                      ? isLight
+                        ? "#059669"
+                        : "#10b981"
                       : isLight
-                        ? "#475569"
-                        : "#64748b";
+                        ? "#0d9488"
+                        : "#14b8a6";
               const strokeWeight = wireSelected
                 ? "3.2"
                 : sg && sg.rps > 0
-                  ? String(Math.min(3.6, Math.max(1.8, 1.5 + Math.log2(sg.rps + 1) * 0.55)).toFixed(1))
+                  ? String(Math.min(3.6, Math.max(2.0, 1.6 + Math.log2(sg.rps + 1) * 0.55)).toFixed(1))
                   : edgeSevered
-                    ? "2.0"
-                    : "1.5";
+                    ? "2.2"
+                    : "1.9";
               return (
                 <g
                   key={edge.traceId + index}

@@ -74,6 +74,7 @@ type EdgeRig = {
   from: string;
   to: string;
   kind: "static" | "observed";
+  hasReverse: boolean;
   line?: THREE.Line | undefined;
   tubeMesh?: THREE.Mesh | undefined;
   arrowMesh?: THREE.Mesh | undefined;
@@ -81,6 +82,60 @@ type EdgeRig = {
   curve?: THREE.QuadraticBezierCurve3 | undefined;
   isSevered?: boolean | undefined;
 };
+
+export function compute3DEdgeAnchors(
+  ax: number,
+  az: number,
+  bx: number,
+  bz: number,
+  allNodes: ReadonlyArray<{ id: string; wx: number; wz: number }>,
+  fromId: string,
+  toId: string,
+  hasReverseEdge: boolean,
+) {
+  const dx = bx - ax;
+  const dz = bz - az;
+  const centerDist = Math.hypot(dx, dz);
+  const nx = centerDist > 0.001 ? dx / centerDist : 1;
+  const nz = centerDist > 0.001 ? dz / centerDist : 0;
+  // Anchor endpoints at the outer pedestal rim instead of stabbing through block centers
+  const rimOffset = Math.min(0.54, Math.max(0.16, centerDist * 0.24));
+  const sx = ax + nx * rimOffset;
+  const sz = az + nz * rimOffset;
+  const ex = bx - nx * rimOffset;
+  const ez = bz - nz * rimOffset;
+  const spanDist = Math.max(0.1, centerDist - rimOffset * 2);
+
+  // Deflect curves cleanly away from intermediate blocks or bidirectional partner edges
+  const px = -nz;
+  const pz = nx;
+  let lateralBow = hasReverseEdge ? 0.36 : 0;
+  let extraLift = 0;
+  for (const other of allNodes) {
+    if (other.id === fromId || other.id === toId) continue;
+    const ox = other.wx * WORLD_SCALE;
+    const oz = other.wz * WORLD_SCALE;
+    const t = ((ox - sx) * nx + (oz - sz) * nz) / Math.max(0.1, spanDist);
+    if (t <= 0.12 || t >= 0.88) continue;
+    const projX = sx + nx * (t * spanDist);
+    const projZ = sz + nz * (t * spanDist);
+    const signedPerp = (ox - projX) * px + (oz - projZ) * pz;
+    const perpDist = Math.abs(signedPerp);
+    if (perpDist < 0.92) {
+      const pushDir = signedPerp >= 0 ? -1 : 1;
+      const strength = (0.92 - perpDist) * 1.15;
+      if (Math.abs(strength) > Math.abs(lateralBow)) {
+        lateralBow = pushDir * Math.max(0.58, strength);
+      }
+      extraLift = Math.max(extraLift, 0.34);
+    }
+  }
+
+  const lift = Math.min(1.65, Math.max(0.54, spanDist * 0.24)) + extraLift;
+  const midX = (sx + ex) / 2 + px * lateralBow;
+  const midZ = (sz + ez) / 2 + pz * lateralBow;
+  return { sx, sz, ex, ez, midX, midZ, lift, nx, nz };
+}
 
 type StageDrag =
   | { mode: "ORBIT"; x: number; y: number; moved: boolean; pointerId: number; lastSyncAt: number }
@@ -978,20 +1033,26 @@ export function StudioThreeStage({
     }
 
     // 3. Real 3D Static Floor Lines + Elevated 3D Observed Traffic Arcs + Packets
+    const edgePairSet = new Set(edges.map((e) => `${e.from}->${e.to}`));
+    const upVec = new T.Vector3(0, 1, 0);
     for (const edge of edges) {
       const from = nodeById.get(edge.from);
       const to = nodeById.get(edge.to);
       if (!from || !to) continue;
 
-      const p0 = new T.Vector3(from.wx * WORLD_SCALE, 0.06, from.wz * WORLD_SCALE);
-      const p2 = new T.Vector3(to.wx * WORLD_SCALE, 0.06, to.wz * WORLD_SCALE);
-      const dist = p0.distanceTo(p2);
-      if (dist < 0.05) continue;
+      const ax = from.wx * WORLD_SCALE;
+      const az = from.wz * WORLD_SCALE;
+      const bx = to.wx * WORLD_SCALE;
+      const bz = to.wz * WORLD_SCALE;
+      if (Math.hypot(bx - ax, bz - az) < 0.05) continue;
+
+      const hasReverse = edgePairSet.has(`${edge.to}->${edge.from}`);
+      const anchor = compute3DEdgeAnchors(ax, az, bx, bz, nodes, edge.from, edge.to, hasReverse);
 
       if (edge.kind === "static") {
         const lineGeo = new T.BufferGeometry().setFromPoints([
-          new T.Vector3(p0.x, 0.024, p0.z),
-          new T.Vector3(p2.x, 0.024, p2.z),
+          new T.Vector3(anchor.sx, 0.03, anchor.sz),
+          new T.Vector3(anchor.ex, 0.03, anchor.ez),
         ]);
         const lineMat = new T.LineDashedMaterial({
           color: new T.Color(edge.color),
@@ -1003,36 +1064,63 @@ export function StudioThreeStage({
         const line = new T.Line(lineGeo, lineMat);
         line.computeLineDistances();
         contentGroup.add(line);
-        edgeRigsRef.current.push({ from: edge.from, to: edge.to, kind: "static", line });
+
+        // Subtle floor directional tip right at target pedestal rim
+        const tipGeo = new T.ConeGeometry(0.06, 0.16, 8);
+        const tipMat = new T.MeshBasicMaterial({
+          color: new T.Color(edge.color),
+          transparent: true,
+          opacity: edge.isSevered ? 0.9 : 0.55,
+        });
+        const tipMesh = new T.Mesh(tipGeo, tipMat);
+        tipMesh.position.set(anchor.ex - anchor.nx * 0.08, 0.045, anchor.ez - anchor.nz * 0.08);
+        tipMesh.quaternion.setFromUnitVectors(upVec, new T.Vector3(anchor.nx, 0, anchor.nz).normalize());
+        contentGroup.add(tipMesh);
+
+        edgeRigsRef.current.push({
+          from: edge.from,
+          to: edge.to,
+          kind: "static",
+          hasReverse,
+          line,
+          arrowMesh: tipMesh,
+        });
         continue;
       }
 
-      // Observed Live OTel 3D Arch Tube
-      const lift = Math.min(1.55, Math.max(0.62, dist * 0.27));
-      const mid = new T.Vector3((p0.x + p2.x) / 2, lift, (p0.z + p2.z) / 2);
+      // Observed Live OTel 3D Arch Tube anchored to pedestal rims with obstacle clearance
+      const p0 = new T.Vector3(anchor.sx, 0.22, anchor.sz);
+      const mid = new T.Vector3(anchor.midX, anchor.lift, anchor.midZ);
+      const p2 = new T.Vector3(anchor.ex, 0.22, anchor.ez);
       const curve = new T.QuadraticBezierCurve3(p0, mid, p2);
-      const tubeGeo = new T.TubeGeometry(curve, 28, edge.isSevered ? 0.032 : 0.036, 8, false);
+      const tubeGeo = new T.TubeGeometry(curve, 28, edge.isSevered ? 0.034 : 0.038, 8, false);
       const tubeMat = new T.MeshStandardMaterial({
         color: new T.Color(edge.color),
         emissive: new T.Color(edge.color),
-        emissiveIntensity: styleId === "control" ? 0.55 : 0.15,
-        roughness: 0.35,
+        emissiveIntensity: styleId === "control" ? 0.55 : 0.16,
+        roughness: 0.32,
       });
       const tubeMesh = new T.Mesh(tubeGeo, tubeMat);
       contentGroup.add(tubeMesh);
 
-      // 3D Directional Cone Arrowhead near Target
-      const arrowPos = curve.getPoint(0.84);
-      const arrowTan = curve.getTangent(0.84).normalize();
-      const arrowGeo = new T.ConeGeometry(0.09, 0.22, 10);
+      // 3D Directional Cone Arrowhead cleanly meeting target pedestal rim
+      const arrowPos = curve.getPoint(0.91);
+      const arrowTan = curve.getTangent(0.91).normalize();
+      const arrowGeo = new T.ConeGeometry(0.085, 0.21, 10);
       const arrowMesh = new T.Mesh(arrowGeo, tubeMat);
       arrowMesh.position.copy(arrowPos);
-      arrowMesh.quaternion.setFromUnitVectors(new T.Vector3(0, 1, 0), arrowTan);
+      arrowMesh.quaternion.setFromUnitVectors(upVec, arrowTan);
       contentGroup.add(arrowMesh);
 
-      // Animated Glowing 3D Packet Sphere
-      const pktColor = edge.isSevered ? "#f43f5e" : styleId === "control" ? "#38bdf8" : "#0ea5e9";
-      const pktGeo = new T.SphereGeometry(0.085, 12, 12);
+      // Animated Glowing 3D Packet Sphere matching edge health state
+      const pktColor = edge.isSevered
+        ? "#f43f5e"
+        : edge.isDegraded
+          ? "#f59e0b"
+          : styleId === "control"
+            ? "#34d399"
+            : "#10b981";
+      const pktGeo = new T.SphereGeometry(0.082, 12, 12);
       const pktMat = new T.MeshBasicMaterial({ color: new T.Color(pktColor) });
       const pktMesh = new T.Mesh(pktGeo, pktMat);
       contentGroup.add(pktMesh);
@@ -1043,12 +1131,12 @@ export function StudioThreeStage({
         phase: (edge.id.length * 0.19) % 1,
       });
 
-      // Floating Traffic Metric Badge at Apex
+      // Floating Traffic Metric Badge at Cleared Apex
       let badgeSprite: THREE.Sprite | undefined;
       if (edge.label) {
         badgeSprite = createEdgeBadgeSprite(T, edge.label, edge, isLight);
         const apex = curve.getPoint(0.5);
-        badgeSprite.position.set(apex.x, apex.y + 0.22, apex.z);
+        badgeSprite.position.set(apex.x, apex.y + 0.2, apex.z);
         contentGroup.add(badgeSprite);
       }
 
@@ -1056,6 +1144,7 @@ export function StudioThreeStage({
         from: edge.from,
         to: edge.to,
         kind: "observed",
+        hasReverse,
         tubeMesh,
         arrowMesh,
         badgeSprite,
@@ -1126,9 +1215,13 @@ export function StudioThreeStage({
     if (rig) {
       rig.group.position.set(wx * WORLD_SCALE, 0, wz * WORLD_SCALE);
     }
+    const allLiveNodes = [...liveNodePosRef.current.entries()].map(([id, pos]) => ({
+      id,
+      wx: pos.wx,
+      wz: pos.wz,
+    }));
     const up = new T.Vector3(0, 1, 0);
     for (const edge of edgeRigsRef.current) {
-      if (edge.from !== serviceId && edge.to !== serviceId) continue;
       const a = liveNodePosRef.current.get(edge.from);
       const b = liveNodePosRef.current.get(edge.to);
       if (!a || !b) continue;
@@ -1136,30 +1229,49 @@ export function StudioThreeStage({
       const az = a.wz * WORLD_SCALE;
       const bx = b.wx * WORLD_SCALE;
       const bz = b.wz * WORLD_SCALE;
+      const anchor = compute3DEdgeAnchors(
+        ax,
+        az,
+        bx,
+        bz,
+        allLiveNodes,
+        edge.from,
+        edge.to,
+        edge.hasReverse,
+      );
       if (edge.kind === "static" && edge.line) {
         const pos = edge.line.geometry.getAttribute("position") as THREE.BufferAttribute | undefined;
         if (pos) {
-          pos.setXYZ(0, ax, 0.024, az);
-          pos.setXYZ(1, bx, 0.024, bz);
+          pos.setXYZ(0, anchor.sx, 0.03, anchor.sz);
+          pos.setXYZ(1, anchor.ex, 0.03, anchor.ez);
           pos.needsUpdate = true;
           edge.line.computeLineDistances();
         }
+        if (edge.arrowMesh) {
+          edge.arrowMesh.position.set(
+            anchor.ex - anchor.nx * 0.08,
+            0.045,
+            anchor.ez - anchor.nz * 0.08,
+          );
+          edge.arrowMesh.quaternion.setFromUnitVectors(
+            up,
+            new T.Vector3(anchor.nx, 0, anchor.nz).normalize(),
+          );
+        }
       } else if (edge.kind === "observed" && edge.curve && edge.tubeMesh) {
-        edge.curve.v0.set(ax, 0.06, az);
-        edge.curve.v2.set(bx, 0.06, bz);
-        const dist = edge.curve.v0.distanceTo(edge.curve.v2);
-        const lift = Math.min(1.55, Math.max(0.62, dist * 0.27));
-        edge.curve.v1.set((ax + bx) / 2, lift, (az + bz) / 2);
-        const nextGeo = new T.TubeGeometry(edge.curve, 24, edge.isSevered ? 0.032 : 0.036, 8, false);
+        edge.curve.v0.set(anchor.sx, 0.22, anchor.sz);
+        edge.curve.v1.set(anchor.midX, anchor.lift, anchor.midZ);
+        edge.curve.v2.set(anchor.ex, 0.22, anchor.ez);
+        const nextGeo = new T.TubeGeometry(edge.curve, 24, edge.isSevered ? 0.034 : 0.038, 8, false);
         edge.tubeMesh.geometry.dispose();
         edge.tubeMesh.geometry = nextGeo;
         if (edge.arrowMesh) {
-          edge.arrowMesh.position.copy(edge.curve.getPoint(0.84));
-          edge.arrowMesh.quaternion.setFromUnitVectors(up, edge.curve.getTangent(0.84).normalize());
+          edge.arrowMesh.position.copy(edge.curve.getPoint(0.91));
+          edge.arrowMesh.quaternion.setFromUnitVectors(up, edge.curve.getTangent(0.91).normalize());
         }
         if (edge.badgeSprite) {
           const apex = edge.curve.getPoint(0.5);
-          edge.badgeSprite.position.set(apex.x, apex.y + 0.22, apex.z);
+          edge.badgeSprite.position.set(apex.x, apex.y + 0.2, apex.z);
         }
       }
     }
