@@ -601,11 +601,12 @@ class RuntimeStudioApiIntegrationTest extends ApiIntegrationContext {
                     Map.<String, Object>of("actionId", UUID.randomUUID().toString(), "action", "START", "service", "payment"),
                     Map.<String, Object>of("actionId", UUID.randomUUID().toString(), "action", "SCALE", "service", "orders", "replicas", 3))) {
                 String aid = (String) cmd.get("actionId");
+                long actionDeadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(90);
                 mvc.perform(post(studioUrl + "/actions").header("Authorization", studentAuth)
                         .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(cmd)))
                     .andExpect(status().isOk());
                 boolean confirmed = false;
-                while (System.nanoTime() < deadline && runnerProc.isAlive() && !confirmed) {
+                while (System.nanoTime() < actionDeadline && runnerProc.isAlive() && !confirmed) {
                     var stateData = mapper.readTree(mvc.perform(get(studioUrl).header("Authorization", studentAuth))
                         .andReturn().getResponse().getContentAsString()).path("data");
                     for (var act : stateData.path("actions")) {
@@ -625,7 +626,8 @@ class RuntimeStudioApiIntegrationTest extends ApiIntegrationContext {
 
             // Wait for fresh post-SCALE telemetry sample
             String observedAfter = null;
-            while (System.nanoTime() < deadline && runnerProc.isAlive()) {
+            long telemetryDeadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(60);
+            while (System.nanoTime() < telemetryDeadline && runnerProc.isAlive()) {
                 var stateData = mapper.readTree(mvc.perform(get(studioUrl).header("Authorization", studentAuth))
                     .andReturn().getResponse().getContentAsString()).path("data");
                 String obs = stateData.path("telemetry").path("observedAt").asText("");
@@ -645,7 +647,7 @@ class RuntimeStudioApiIntegrationTest extends ApiIntegrationContext {
             var snapAfterRes = mvc.perform(post(studioUrl + "/snapshots").header("Authorization", studentAuth)
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(mapper.writeValueAsString(Map.of(
-                        "explanation", "After STOP/START payment and SCALE orders to 4 replicas on live Docker.",
+                        "explanation", "After STOP/START payment and SCALE orders to 3 replicas on live Docker.",
                         "imageData", png1x1,
                         "observedAt", observedAfter))))
                 .andExpect(status().isOk()).andReturn();
@@ -697,7 +699,7 @@ class RuntimeStudioApiIntegrationTest extends ApiIntegrationContext {
                 "snapshotGrades", java.util.List.of(
                     Map.of("snapshotId", "STEP_1_STATIC", "score", 9.0),
                     Map.of("snapshotId", snapBeforeId, "title", "Live Baseline", "score", 9.0, "comment", "Verified baseline"),
-                    Map.of("snapshotId", snapAfterId, "title", "Live Scaled 4 Replicas", "score", 9.5, "comment", "Verified scale to 4 replicas")
+                    Map.of("snapshotId", snapAfterId, "title", "Live Scaled 3 Replicas", "score", 9.5, "comment", "Verified scale to 3 replicas")
                 )
             );
             mvc.perform(put("/api/v1/submissions/" + submissionId + "/review").header("Authorization", lecturerAuth)

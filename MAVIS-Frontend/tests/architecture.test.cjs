@@ -999,7 +999,7 @@ test("project groups persist independently, restore active routes and tolerate d
   assert.doesNotThrow(() => render().toggle("Runtime", true));
 });
 
-test("lecturer sidebar nests class destinations and keeps one Lab Creation menu", () => {
+test("lecturer workspace uses the global top header without the legacy sidebar", () => {
   const React = require("react"),
     { renderToStaticMarkup } = require("react-dom/server"),
     { ThemeProvider } = require("../src/components/theme-provider.tsx");
@@ -1047,9 +1047,11 @@ test("lecturer sidebar nests class destinations and keeps one Lab Creation menu"
       ),
     ),
   );
-  assert.ok(html.includes('aria-label="Collapse SE180711 · FA menu"'));
+  assert.ok(html.includes('aria-label="Lecturer navigation"'));
   assert.ok(html.includes('href="/workspace-overview?workspace=class-1"'));
-  assert.ok(html.includes('aria-label="Labs" href="/lab-authoring?workspace=class-1"'));
+  assert.ok(html.includes("Course Workspace"));
+  assert.ok(!html.includes('aria-label="Global navigation"'));
+  assert.ok(!html.includes('aria-label="Collapse SE180711 · FA menu"'));
   assert.ok(!html.includes('aria-label="Lab Library"'));
   assert.ok(!html.includes('aria-label="Theory Library"'));
   assert.ok(!html.includes("👨‍🏫 Lecturer"));
@@ -1191,7 +1193,8 @@ test("non-live project sidebar never exposes legacy projectNavigation and is hid
   assert.ok(!html.includes("Runtime Configuration"));
   assert.ok(html.includes("Project content"));
   assert.ok(html.includes("MAVIS home"));
-  assert.ok(html.includes("Teaching"));
+  assert.ok(html.includes('aria-label="Lecturer navigation"'));
+  assert.ok(html.includes("Course Workspace"));
 
   const studentHtml = renderToStaticMarkup(
     React.createElement(
@@ -4989,8 +4992,7 @@ test("My Workspaces is a compact LMS class list with tabs and a module outline",
       code: "SWD392",
       name: "Lớp SWD392",
       myRole: "LECTURER",
-      // ARCHIVED is the current API representation of INACTIVE.
-      status: "ARCHIVED",
+      status: "INACTIVE",
       members: [
         { id: "u1", name: "Lecturer", role: "LECTURER" },
         { id: "u2", name: "Student A", role: "STUDENT" },
@@ -5233,7 +5235,7 @@ test("My Workspaces is a compact LMS class list with tabs and a module outline",
     "Class rename/archive lives in the dedicated Settings tab",
   );
   assert.match(settingsHtml, /Rename/);
-  assert.match(settingsHtml, /Reopen workspace/);
+  assert.match(settingsHtml, /Archive workspace/);
   const { WorkspaceSelector } = require("../src/features/workspaces/components.tsx");
   assert.equal(
     renderComp(WorkspaceSelector, "ws-swd"),

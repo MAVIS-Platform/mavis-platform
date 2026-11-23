@@ -558,7 +558,10 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
         var probe = new HttpScenarioDefinition("studio-readiness",
             [new("ready", service, "GET", app.ReadinessPath, 200, AllowClientError: app.AllowClientErrorReadiness)], 3);
         using var readinessDeadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        var readinessSeconds = ComposeOverrideBuilder.IsKernelSandboxedRuntime(IsolationRuntime) ? 60 : 30;
+        // A restarted JVM can legitimately need more than 30 seconds to become ready on a
+        // CPU-limited runner. Treating that warm-up as an infrastructure-action failure makes
+        // STOP -> START flaky even though Docker has started the service successfully.
+        var readinessSeconds = 60;
         readinessDeadline.CancelAfter(TimeSpan.FromSeconds(readinessSeconds));
         while (!readinessDeadline.IsCancellationRequested)
         {
