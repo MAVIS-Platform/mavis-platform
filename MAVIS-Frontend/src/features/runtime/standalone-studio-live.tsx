@@ -28,7 +28,6 @@ import { useLocale } from "@/lib/i18n/locale-context";
 import {
   PublishCourseLab,
   useAutoConfigureStudio,
-  useBootstrapLabStudio,
   useCourseSetup,
   useRuntimeSetupReadiness,
   useStartLabStudioSession,
@@ -237,7 +236,6 @@ function StandaloneStudioContent() {
 
   // Shared Lab Studio sessions & mutations
   const startStudio = useStartLabStudioSession(workspaceId, assignmentId);
-  const bootstrapStudio = useBootstrapLabStudio(workspaceId, assignmentId);
   const labSessions = useStudentLabStudioSessions(
     workspaceId,
     assignmentId,
@@ -392,16 +390,6 @@ function StandaloneStudioContent() {
       studioStateQuery.data?.executionStatus === "COMPLETED" &&
         studioStateQuery.data?.receiptDigest,
     );
-
-  const needsSandboxBootstrap = Boolean(
-    !isAuthorMode &&
-    activeSessionId &&
-    studioStateQuery.isSuccess &&
-    (studioStateQuery.data.executionStatus === "FAILED" ||
-      (studioStateQuery.data.services.length === 0 &&
-        !studioStateQuery.data.telemetry &&
-        !(studioStateQuery.data as Record<string, unknown>)["simulatedSandbox"])),
-  );
 
   // Auto-start a student Studio session once when entering standalone /studio-live with no sessions yet.
   useEffect(() => {
@@ -977,20 +965,6 @@ function StandaloneStudioContent() {
               </Link>
             </Button>
           )}
-          {needsSandboxBootstrap && activeSessionId && (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={bootstrapStudio.isPending}
-              onClick={() => bootstrapStudio.mutate(activeSessionId)}
-              className="h-8 border-amber-500/50 bg-amber-50 px-2.5 text-[13px] text-amber-800 hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-200 dark:hover:bg-amber-500/20"
-            >
-              {bootstrapStudio.isPending
-                ? t("Activating Sandbox…", "Đang kích hoạt Sandbox…")
-                : t("Activate Simulated Sandbox Telemetry", "Kích hoạt Sandbox Telemetry")}
-            </Button>
-          )}
         </>
       )}
     </div>
@@ -1022,11 +996,10 @@ function StandaloneStudioContent() {
       )}
 
       {/* Error strips if any mutation fails */}
-      {(autoStudio.error || startStudio.error || bootstrapStudio.error) && (
+      {(autoStudio.error || startStudio.error) && (
         <div className="shrink-0 space-y-1 border-b border-destructive/30 bg-destructive/10 px-4 py-2">
           {autoStudio.error && <ErrorState error={autoStudio.error} />}
           {startStudio.error && <ErrorState error={startStudio.error} />}
-          {bootstrapStudio.error && <ErrorState error={bootstrapStudio.error} />}
         </div>
       )}
 

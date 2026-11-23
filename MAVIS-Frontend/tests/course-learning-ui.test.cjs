@@ -159,7 +159,7 @@ test("guided Lab launches standalone full-screen Runtime Studio without external
   assert.ok(course.includes("buildStudioLiveHref("));
   assert.ok(standalone.includes("<LiveStudioWorkbench"));
   assert.ok(standalone.includes("useStartLabStudioSession("));
-  assert.ok(standalone.includes("useBootstrapLabStudio("));
+  assert.ok(!standalone.includes("useBootstrapLabStudio("));
   assert.ok(standalone.includes("step=2"));
   assert.ok(standalone.includes("step=3#lab-submit"));
   assert.ok(standalone.includes("Runtime access required"));
@@ -541,7 +541,10 @@ test("Studio in the guided Lab keeps Runtime Studio as a separate phase and conn
   const standalone = read("src/features/runtime/standalone-studio-live.tsx");
   assert.match(course, /if \(id === 2\) return runtimeReady/);
   assert.ok(course.includes("Open Studio Live"));
-  assert.ok(standalone.includes("Activate Simulated Sandbox Telemetry"));
+  assert.ok(
+    !standalone.includes("Activate Simulated Sandbox Telemetry"),
+    "Studio Live must stay strictly real-Docker and never offer simulated sandbox telemetry fallback",
+  );
 });
 
 test("Evidence & Submit receives the verified Runtime Studio session", () => {

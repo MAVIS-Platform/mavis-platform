@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Activity, Check, Copy, Search, Terminal } from "lucide-react";
+import { Activity, AlertTriangle, Check, Copy, Filter, Play, Search, Terminal } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -25,6 +25,9 @@ export type TerminalLogEntry = {
   timestampLabel: string;
   level: TerminalLogLevel;
   message: string;
+  isNoise?: boolean;
+  isAction?: boolean;
+  friendlyMessage?: string;
 };
 
 const SERVICE_COLORS_DARK = [
@@ -57,7 +60,9 @@ const SYSTEM_SERVICE_COLORS_LIGHT: Record<string, { text: string; dot: string }>
 
 const COMPOSE_PREFIX_RE = /^([a-zA-Z0-9_.-]+)\s*\|\s*(.*)$/;
 const ISO_TS_RE =
-  /^(\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}:\d{2}(?:[.,]\d{1,9})?(?:Z|[+-]\d{2}:?\d{2})?)\s+(.*)$/;
+  /^\[?(\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}:\d{2}(?:[.,]\d{1,9})?(?:Z|[+-]\d{2}:?\d{2})?)\]?\s+(.*)$/;
+const OTEL_AGENT_TS_RE =
+  /^\[otel\.javaagent\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})[:.,](\d{1,3})\s*([+-]\d{2}:?\d{2}|Z)?\]\s*(.*)$/i;
 const CLOCK_TS_RE = /^(\d{2}:\d{2}:\d{2}(?:[.,]\d{1,3})?)\s+(.*)$/;
 const ERROR_LINE_RE =
   /\b(ERROR|FATAL|SEVERE|PANIC|EXCEPTION|ECONNREFUSED|OOMKILLED|CRASHED)\b/i;
@@ -65,6 +70,9 @@ const STACK_LINE_RE = /^\s*(at\s+[\w.$<>]+\(|Caused by:|\.\.\.\s+\d+\s+more)/;
 const WARN_LINE_RE =
   /\b(WARN|WARNING|DEPRECATED|TIMEOUT|TIMED OUT|RETRYING|CIRCUIT[\s_-]?OPEN)\b/i;
 const INFO_LINE_RE = /\b(INFO|STARTED|LISTENING|READY|HEALTHY|BOOTED)\b/i;
+const JVM_CDS_NOISE_RE = /^OpenJDK 64-Bit Server VM warning:\s*Sharing is only supported/i;
+const BOOT_NOISE_RE =
+  /^(Picked up JAVA_TOOL_OPTIONS:|OpenJDK 64-Bit Server VM warning:\s*Sharing is only supported|\[otel\.javaagent\].*VersionLogger|ATTRIBUTES_EVENTS_AND_SPAN_NAMES_OMITTED_FOR_REDACTION$|MISSING_PARENT_SPAN$)|No active profile set, falling back to|opentelemetry-javaagent\s*-\s*version/i;
 
 function formatClock(date: Date): string {
   const hh = String(date.getHours()).padStart(2, "0");
@@ -73,11 +81,67 @@ function formatClock(date: Date): string {
   return `${hh}:${mm}:${ss}`;
 }
 
+export function isBootNoiseMessage(message: string): boolean {
+  return BOOT_NOISE_RE.test(message.trim());
+}
+
+export function explainRuntimeDiagnostic(raw: string): string | null {
+  const text = raw.trim();
+  if (!text) return null;
+  if (/BACKEND_RESTART_RECOVERY/i.test(text)) {
+    return "Previous Docker session stopped because the backend server restarted during deployment. Click Run to start a fresh Docker session.";
+  }
+  if (/DOCKER_UP_FAILED/i.test(text)) {
+    return "Docker Compose failed to start all lab containers. Check the error lines below or click Run to retry.";
+  }
+  if (/TIMED_?OUT|SESSION_TIMED_OUT/i.test(text)) {
+    return "Docker session reached the 300-second safety time limit and was cleaned up. Click Run to launch a new session.";
+  }
+  if (/STUDIO_QUEUE_FULL|QUEUE_INACTIVE/i.test(text)) {
+    return "All Runner slots were busy or the tab stayed inactive while queued. Click Run again to rejoin the queue.";
+  }
+  if (/^ATTRIBUTES_EVENTS_AND_SPAN_NAMES_OMITTED_FOR_REDACTION$/i.test(text)) {
+    return "OTel privacy filter active: sensitive span attributes and event payloads are redacted.";
+  }
+  if (/^MISSING_PARENT_SPAN$/i.test(text)) {
+    return "Partial OTel trace captured (child span arrived before root parent span).";
+  }
+  return null;
+}
+
 export function parseTimestampPrefix(line: string): {
   timestampMs: number | null;
   timestampLabel: string;
   body: string;
 } {
+  const otelMatch = line.match(OTEL_AGENT_TS_RE);
+  if (otelMatch) {
+    const dateTime = otelMatch[1]!.replace(" ", "T");
+    const millis = otelMatch[2]!.padEnd(3, "0").slice(0, 3);
+    const rawTz = otelMatch[3] ?? "Z";
+    const tz =
+      rawTz === "Z"
+        ? "Z"
+        : rawTz.includes(":")
+          ? rawTz
+          : `${rawTz.slice(0, 3)}:${rawTz.slice(3)}`;
+    const parsed = new Date(`${dateTime}.${millis}${tz}`);
+    const ms = parsed.getTime();
+    const rest = (otelMatch[4] ?? "").trim();
+    const cleanedBody = rest ? `[otel.javaagent] ${rest}` : "[otel.javaagent]";
+    if (Number.isFinite(ms)) {
+      return {
+        timestampMs: ms,
+        timestampLabel: formatClock(parsed),
+        body: cleanedBody,
+      };
+    }
+    return {
+      timestampMs: null,
+      timestampLabel: otelMatch[1]!.slice(11, 19),
+      body: cleanedBody,
+    };
+  }
   const isoMatch = line.match(ISO_TS_RE);
   if (isoMatch) {
     const normalized = isoMatch[1]!.replace(",", ".").replace(" ", "T");
@@ -121,6 +185,7 @@ function classifyLogLevel(
   message: string,
   previousLevel: TerminalLogLevel,
 ): TerminalLogLevel {
+  if (JVM_CDS_NOISE_RE.test(message)) return "PLAIN";
   if (STACK_LINE_RE.test(message)) {
     return previousLevel === "WARN" ? "WARN" : "ERROR";
   }
@@ -143,30 +208,47 @@ export function buildTerminalEntries(
   const entries: TerminalLogEntry[] = [];
   let seq = 0;
 
+  const observedParsed = data.telemetry?.observedAt ? new Date(data.telemetry.observedAt) : null;
+  const observedAtMs =
+    observedParsed && Number.isFinite(observedParsed.getTime()) ? observedParsed.getTime() : null;
+  const observedClockLabel = observedAtMs !== null ? formatClock(new Date(observedAtMs)) : "";
+
   for (const svc of data.telemetry?.services ?? []) {
     if (!svc.logs?.trim()) continue;
-    let lastTsMs: number | null = null;
-    let lastLevel: TerminalLogLevel = "PLAIN";
-    for (const rawLine of svc.logs.split(/\r?\n/)) {
+    const rawLines = svc.logs.split(/\r?\n/).filter((line) => line.trim().length > 0);
+    const parsedLines = rawLines.map((rawLine) => {
       const trimmedEnd = rawLine.trimEnd();
-      if (!trimmedEnd.trim()) continue;
       const prefixMatch = trimmedEnd.match(COMPOSE_PREFIX_RE);
       const sourceLabel = prefixMatch ? prefixMatch[1]! : svc.service;
       const afterPrefix = prefixMatch ? prefixMatch[2]! : trimmedEnd;
-      const { timestampMs, timestampLabel, body } = parseTimestampPrefix(afterPrefix);
-      const effectiveTs = timestampMs ?? lastTsMs;
-      if (timestampMs !== null) lastTsMs = timestampMs;
-      const level = classifyLogLevel(body, lastLevel);
+      const parsed = parseTimestampPrefix(afterPrefix);
+      return { sourceLabel, ...parsed };
+    });
+    const firstContainerTsMs =
+      parsedLines.find((item) => item.timestampMs !== null)?.timestampMs ?? null;
+    let lastTsMs: number | null = firstContainerTsMs;
+    let lastLevel: TerminalLogLevel = "PLAIN";
+    for (const item of parsedLines) {
+      const effectiveTs = item.timestampMs ?? lastTsMs;
+      if (item.timestampMs !== null) lastTsMs = item.timestampMs;
+      const effectiveLabel =
+        item.timestampLabel ||
+        (effectiveTs !== null ? formatClock(new Date(effectiveTs)) : observedClockLabel);
+      const level = classifyLogLevel(item.body, lastLevel);
       lastLevel = level;
+      const noise = isBootNoiseMessage(item.body);
+      const friendly = explainRuntimeDiagnostic(item.body) ?? undefined;
       entries.push({
         id: `log-${svc.service}-${seq}`,
         seq: seq++,
         service: svc.service,
-        sourceLabel,
+        sourceLabel: item.sourceLabel,
         timestampMs: effectiveTs,
-        timestampLabel,
+        timestampLabel: effectiveLabel,
         level,
-        message: body,
+        message: item.body,
+        isNoise: noise,
+        ...(friendly ? { friendlyMessage: friendly } : {}),
       });
     }
   }
@@ -196,25 +278,29 @@ export function buildTerminalEntries(
       service: action.service,
       sourceLabel: "mavis-runner",
       timestampMs: tsMs,
-      timestampLabel: tsMs !== null ? formatClock(new Date(tsMs)) : "",
+      timestampLabel: tsMs !== null ? formatClock(new Date(tsMs)) : observedClockLabel,
       level,
       message: summaryParts.join(" "),
+      isAction: true,
     });
   }
 
   for (const warning of data.telemetry?.warnings ?? []) {
-    if (!warning.trim()) continue;
-    const parsed = data.telemetry?.observedAt ? new Date(data.telemetry.observedAt) : null;
-    const tsMs = parsed && Number.isFinite(parsed.getTime()) ? parsed.getTime() : null;
+    const trimmed = warning.trim();
+    if (!trimmed) continue;
+    const noise = isBootNoiseMessage(trimmed);
+    const friendly = explainRuntimeDiagnostic(trimmed) ?? undefined;
     entries.push({
       id: `warn-${seq}`,
       seq: seq++,
       service: "otel-collector",
       sourceLabel: "otel-collector",
-      timestampMs: tsMs,
-      timestampLabel: tsMs !== null ? formatClock(new Date(tsMs)) : "",
+      timestampMs: observedAtMs,
+      timestampLabel: observedClockLabel,
       level: "WARN",
-      message: warning.trim(),
+      message: trimmed,
+      isNoise: noise,
+      ...(friendly ? { friendlyMessage: friendly } : {}),
     });
   }
 
@@ -232,15 +318,17 @@ export function buildTerminalEntries(
     const trimmed = rawDiag.trim();
     if (!trimmed || seenDiagnostics.has(trimmed)) continue;
     seenDiagnostics.add(trimmed);
+    const friendly = explainRuntimeDiagnostic(trimmed) ?? undefined;
     entries.push({
       id: `diag-${seq}`,
       seq: seq++,
       service: "mavis-runner",
       sourceLabel: "mavis-runner",
       timestampMs: null,
-      timestampLabel: "",
+      timestampLabel: observedClockLabel,
       level: "ERROR",
       message: trimmed,
+      ...(friendly ? { friendlyMessage: friendly } : {}),
     });
   }
 
@@ -272,6 +360,7 @@ type LiveTerminalConsoleProps = {
   diagnosticLines?: readonly string[] | undefined;
   selectedTraceId?: string | null | undefined;
   onSelectTrace?: ((traceId: string | null) => void) | undefined;
+  onRetryRun?: (() => void) | undefined;
   isLight?: boolean | undefined;
 };
 
@@ -286,6 +375,7 @@ export function LiveTerminalConsole({
   diagnosticLines = [],
   selectedTraceId,
   onSelectTrace,
+  onRetryRun,
   isLight = false,
 }: LiveTerminalConsoleProps) {
   const [view, setView] = useState<"console" | "traces">("console");
@@ -299,7 +389,8 @@ export function LiveTerminalConsole({
     if (selectedTraceId) setView("traces");
   }, [selectedTraceId]);
   const [serviceFilter, setServiceFilter] = useState<string>("ALL");
-  const [levelFilter, setLevelFilter] = useState<"ALL" | "WARN" | "ERROR">("ALL");
+  const [levelFilter, setLevelFilter] = useState<"ALL" | "ACT" | "WARN" | "ERROR">("ALL");
+  const [hideNoise, setHideNoise] = useState(true);
   const [query, setQuery] = useState("");
   const [wrap, setWrap] = useState(true);
   const [copied, setCopied] = useState(false);
@@ -428,13 +519,25 @@ export function LiveTerminalConsole({
     return [...names];
   }, [data.services, entries, spans]);
 
-  const errorCount = useMemo(
-    () => entries.filter((entry) => entry.level === "ERROR").length,
+  const hiddenNoiseCount = useMemo(
+    () => entries.filter((entry) => entry.isNoise).length,
     [entries],
   );
+  const visibleBaseEntries = useMemo(
+    () => (hideNoise ? entries.filter((entry) => !entry.isNoise) : entries),
+    [entries, hideNoise],
+  );
+  const errorCount = useMemo(
+    () => visibleBaseEntries.filter((entry) => entry.level === "ERROR").length,
+    [visibleBaseEntries],
+  );
   const warnCount = useMemo(
-    () => entries.filter((entry) => entry.level === "WARN").length,
-    [entries],
+    () => visibleBaseEntries.filter((entry) => entry.level === "WARN").length,
+    [visibleBaseEntries],
+  );
+  const actionCount = useMemo(
+    () => visibleBaseEntries.filter((entry) => entry.isAction).length,
+    [visibleBaseEntries],
   );
 
   const normalizedQuery = query.trim().toLowerCase();
@@ -442,8 +545,9 @@ export function LiveTerminalConsole({
     serviceFilter !== "ALL" && serviceList.includes(serviceFilter) ? serviceFilter : "ALL";
 
   const filteredEntries = useMemo(() => {
-    return entries.filter((entry) => {
+    return visibleBaseEntries.filter((entry) => {
       if (activeServiceFilter !== "ALL" && entry.service !== activeServiceFilter) return false;
+      if (levelFilter === "ACT" && !entry.isAction) return false;
       if (levelFilter === "ERROR" && entry.level !== "ERROR") return false;
       if (levelFilter === "WARN" && entry.level !== "WARN" && entry.level !== "ERROR") {
         return false;
@@ -451,13 +555,14 @@ export function LiveTerminalConsole({
       if (
         normalizedQuery &&
         !entry.message.toLowerCase().includes(normalizedQuery) &&
+        !(entry.friendlyMessage ?? "").toLowerCase().includes(normalizedQuery) &&
         !entry.sourceLabel.toLowerCase().includes(normalizedQuery)
       ) {
         return false;
       }
       return true;
     });
-  }, [entries, activeServiceFilter, levelFilter, normalizedQuery]);
+  }, [visibleBaseEntries, activeServiceFilter, levelFilter, normalizedQuery]);
 
   const filteredSpans = useMemo(() => {
     return spans.filter((span) => {
@@ -581,7 +686,7 @@ export function LiveTerminalConsole({
             }`}
           >
             <Terminal aria-hidden="true" className={`size-3 ${isLight && view !== "console" ? "text-emerald-600" : "text-emerald-400"}`} />
-            Terminal ({entries.length})
+            Logs ({visibleBaseEntries.length})
           </button>
           <button
             type="button"
@@ -669,6 +774,7 @@ export function LiveTerminalConsole({
               {(
                 [
                   ["ALL", "ALL"],
+                  ["ACT", actionCount > 0 ? `ACT (${actionCount})` : "ACT"],
                   ["WARN", warnCount > 0 ? `WARN (${warnCount})` : "WARN"],
                   ["ERROR", errorCount > 0 ? `ERR (${errorCount})` : "ERR"],
                 ] as const
@@ -683,7 +789,9 @@ export function LiveTerminalConsole({
                         ? isLight ? "bg-rose-100 text-rose-700" : "bg-rose-500/20 text-rose-200"
                         : lvl === "WARN"
                           ? isLight ? "bg-amber-100 text-amber-800" : "bg-amber-500/20 text-amber-200"
-                          : isLight ? "bg-slate-900 text-white" : "bg-slate-800 text-slate-100"
+                          : lvl === "ACT"
+                            ? isLight ? "bg-indigo-100 text-indigo-800" : "bg-indigo-500/20 text-indigo-200"
+                            : isLight ? "bg-slate-900 text-white" : "bg-slate-800 text-slate-100"
                       : isLight
                         ? "text-slate-600 hover:text-slate-900"
                         : "text-slate-400 hover:text-slate-200"
@@ -693,6 +801,32 @@ export function LiveTerminalConsole({
                 </button>
               ))}
             </div>
+          )}
+
+          {view === "console" && hiddenNoiseCount > 0 && (
+            <button
+              type="button"
+              data-testid="studio-logs-noise-toggle"
+              aria-pressed={!hideNoise}
+              onClick={() => setHideNoise((prev) => !prev)}
+              className={`inline-flex h-6 items-center gap-1 rounded-md border px-1.5 font-mono text-[10.5px] transition ${
+                !hideNoise
+                  ? isLight
+                    ? "border-sky-300 bg-sky-50 text-sky-800"
+                    : "border-sky-500/40 bg-sky-500/15 text-sky-200"
+                  : isLight
+                    ? "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900"
+                    : "border-slate-800 bg-[#05080f] text-slate-400 hover:border-slate-700 hover:text-slate-200"
+              }`}
+              title={
+                hideNoise
+                  ? "Show hidden JVM/OTel startup boilerplate lines"
+                  : "Hide repetitive JVM/OTel startup boilerplate lines"
+              }
+            >
+              <Filter aria-hidden="true" className="size-3" />
+              {hideNoise ? `Clean (+${hiddenNoiseCount} boot)` : "Raw logs"}
+            </button>
           )}
 
           <label className="relative flex items-center">
@@ -843,32 +977,139 @@ export function LiveTerminalConsole({
             </span>
           </div>
 
+          {/* Clear Session Failure Diagnostic Card (Real Docker errors surfaced cleanly — no simulated fallback) */}
+          {(["FAILED", "TIMED_OUT", "TIMEDOUT", "TIMEOUT"].includes(
+            data.executionStatus.toUpperCase(),
+          ) ||
+            Boolean(systemError) ||
+            diagnosticLines.length > 0) &&
+            !isBooting && (
+              <div
+                data-testid="studio-logs-error-banner"
+                role="alert"
+                className={`mb-2 flex flex-wrap items-start justify-between gap-2 rounded-lg border px-3 py-2 font-sans text-xs ${
+                  isLight
+                    ? "border-rose-200 bg-rose-50/90 text-rose-950"
+                    : "border-rose-500/35 bg-rose-950/35 text-rose-100"
+                }`}
+              >
+                <div className="min-w-0 flex-1 space-y-1">
+                  <div className="flex flex-wrap items-center gap-1.5 font-semibold">
+                    <AlertTriangle
+                      aria-hidden="true"
+                      className={`size-3.5 shrink-0 ${isLight ? "text-rose-600" : "text-rose-400"}`}
+                    />
+                    <span>
+                      {["TIMED_OUT", "TIMEDOUT", "TIMEOUT"].includes(
+                        data.executionStatus.toUpperCase(),
+                      )
+                        ? "Docker session timed out"
+                        : "Docker session failed — live containers stopped"}
+                    </span>
+                    {diagnosticLines[0] && (
+                      <span
+                        className={`rounded px-1.5 py-0.5 font-mono text-[10px] font-bold ${
+                          isLight
+                            ? "bg-rose-100 text-rose-800"
+                            : "bg-rose-500/20 text-rose-200"
+                        }`}
+                      >
+                        {diagnosticLines[0].slice(0, 64)}
+                      </span>
+                    )}
+                  </div>
+                  <p className={`text-[11.5px] leading-snug ${isLight ? "text-rose-800" : "text-rose-200/90"}`}>
+                    {explainRuntimeDiagnostic(diagnosticLines[0] ?? systemError ?? data.executionStatus) ??
+                      systemError ??
+                      "Inspect the highlighted ERROR lines below to see which container failed, then click Run to boot a fresh Docker stack."}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  {errorCount > 0 && levelFilter !== "ERROR" && (
+                    <button
+                      type="button"
+                      onClick={() => setLevelFilter("ERROR")}
+                      className={`inline-flex h-7 items-center rounded-md border px-2 text-[11px] font-semibold transition ${
+                        isLight
+                          ? "border-rose-300 bg-white text-rose-700 hover:bg-rose-100"
+                          : "border-rose-500/40 bg-rose-950/60 text-rose-200 hover:bg-rose-900/60"
+                      }`}
+                    >
+                      Errors only ({errorCount})
+                    </button>
+                  )}
+                  {onRetryRun && (
+                    <button
+                      type="button"
+                      onClick={onRetryRun}
+                      className={`inline-flex h-7 items-center gap-1 rounded-md px-2.5 text-[11px] font-semibold transition ${
+                        isLight
+                          ? "bg-slate-900 text-white hover:bg-slate-800"
+                          : "bg-sky-500 text-slate-950 hover:bg-sky-400"
+                      }`}
+                    >
+                      <Play aria-hidden="true" className="size-3" />
+                      Run Fresh Session
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
           {filteredEntries.length > 0 ? (
             <div role="log" aria-live="polite" className="space-y-0.5">
               {filteredEntries.map((entry, idx) => {
                 const color = serviceColorFor(entry.sourceLabel, serviceList, isLight);
+                const shortSource = entry.sourceLabel.replace(/-\d+$/, "");
+                const badgeText = entry.isAction
+                  ? "ACT"
+                  : entry.level === "ERROR"
+                    ? "ERR"
+                    : entry.level === "WARN"
+                      ? "WARN"
+                      : "INFO";
+                const badgeClass = entry.isAction
+                  ? isLight
+                    ? "bg-indigo-100 text-indigo-800"
+                    : "bg-indigo-500/20 text-indigo-200"
+                  : entry.level === "ERROR"
+                    ? isLight
+                      ? "bg-rose-100 text-rose-800"
+                      : "bg-rose-500/25 text-rose-200"
+                    : entry.level === "WARN"
+                      ? isLight
+                        ? "bg-amber-100 text-amber-800"
+                        : "bg-amber-500/20 text-amber-200"
+                      : isLight
+                        ? "bg-slate-200/80 text-slate-600"
+                        : "bg-slate-800 text-slate-400";
                 const rowTone =
                   entry.level === "ERROR"
                     ? isLight
-                      ? "bg-rose-50 text-rose-800"
-                      : "bg-rose-500/[0.07] text-rose-200"
+                      ? "bg-rose-50/90 text-rose-900"
+                      : "bg-rose-500/[0.08] text-rose-200"
                     : entry.level === "WARN"
                       ? isLight
-                        ? "bg-amber-50 text-amber-900"
-                        : "bg-amber-500/[0.05] text-amber-200"
-                      : isLight
-                        ? "text-slate-800"
-                        : "text-slate-200";
+                        ? "bg-amber-50/80 text-amber-950"
+                        : "bg-amber-500/[0.06] text-amber-200"
+                      : entry.isAction
+                        ? isLight
+                          ? "bg-indigo-50/60 text-slate-900"
+                          : "bg-indigo-500/[0.07] text-indigo-100"
+                        : isLight
+                          ? "text-slate-800"
+                          : "text-slate-200";
                 return (
                   <div
                     key={entry.id}
+                    data-log-row
                     role={entry.level === "ERROR" ? "alert" : undefined}
-                    className={`flex items-start rounded-sm px-1 py-0.5 ${
-                      isLight ? "hover:bg-slate-200/50" : "hover:bg-slate-800/35"
+                    className={`flex items-start gap-1.5 rounded-sm px-1.5 py-0.5 ${
+                      isLight ? "hover:bg-slate-200/50" : "hover:bg-slate-800/40"
                     } ${rowTone}`}
                   >
                     <span
-                      className={`w-7 shrink-0 select-none pr-2 text-right text-[10px] tabular-nums ${
+                      className={`w-6 shrink-0 select-none text-right text-[10px] tabular-nums ${
                         isLight ? "text-slate-400" : "text-slate-600"
                       }`}
                     >
@@ -876,27 +1117,46 @@ export function LiveTerminalConsole({
                     </span>
                     {hasTimestamps && (
                       <span
-                        className={`w-[62px] shrink-0 select-none pr-2 text-[10px] tabular-nums ${
-                          isLight ? "text-slate-500" : "text-slate-500"
+                        data-log-time
+                        className={`w-[58px] shrink-0 select-none text-[10.5px] tabular-nums ${
+                          isLight ? "text-slate-500" : "text-slate-400"
                         }`}
                       >
-                        {entry.timestampLabel || "—"}
+                        {entry.timestampLabel || observedClock || "boot"}
                       </span>
                     )}
+                    <span
+                      className={`mt-0.5 inline-flex w-10 shrink-0 justify-center rounded px-1 py-px text-[9.5px] font-bold tracking-wide ${badgeClass}`}
+                    >
+                      {badgeText}
+                    </span>
                     <span
                       title={entry.sourceLabel}
                       className={`w-32 shrink-0 truncate border-r pr-2 text-right font-semibold sm:w-36 ${
                         isLight ? "border-slate-200" : "border-slate-800/90"
                       } ${color.text}`}
                     >
-                      {entry.sourceLabel}
+                      {shortSource}
                     </span>
                     <span
-                      className={`min-w-0 flex-1 pl-2 ${
+                      className={`min-w-0 flex-1 pl-1 ${
                         wrap ? "whitespace-pre-wrap break-words" : "whitespace-pre"
                       }`}
                     >
-                      {entry.message}
+                      {entry.friendlyMessage ? (
+                        <>
+                          <span className="font-sans font-medium">{entry.friendlyMessage}</span>
+                          <span
+                            className={`ml-1.5 text-[10px] opacity-70 ${
+                              isLight ? "text-slate-500" : "text-slate-400"
+                            }`}
+                          >
+                            ({entry.message})
+                          </span>
+                        </>
+                      ) : (
+                        entry.message
+                      )}
                     </span>
                   </div>
                 );
@@ -914,19 +1174,36 @@ export function LiveTerminalConsole({
               )}
             </div>
           ) : entries.length > 0 ? (
-            <div className="flex items-center justify-between gap-2 py-3 text-slate-500">
-              <span>No terminal lines match the active filter.</span>
-              <button
-                type="button"
-                onClick={() => {
-                  setServiceFilter("ALL");
-                  setLevelFilter("ALL");
-                  setQuery("");
-                }}
-                className={isLight ? "text-sky-700 hover:underline" : "text-sky-300 hover:underline"}
-              >
-                Reset filters
-              </button>
+            <div className="flex flex-wrap items-center justify-between gap-2 py-3 text-slate-500">
+              <span>
+                {hideNoise && hiddenNoiseCount > 0 && levelFilter === "ALL" && !normalizedQuery
+                  ? `${hiddenNoiseCount} repetitive JVM/OTel startup lines are hidden in Clean view.`
+                  : "No terminal lines match the active filter."}
+              </span>
+              <div className="flex items-center gap-2">
+                {hideNoise && hiddenNoiseCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setHideNoise(false)}
+                    className={isLight ? "font-medium text-sky-700 hover:underline" : "font-medium text-sky-300 hover:underline"}
+                  >
+                    Show raw boot logs ({hiddenNoiseCount})
+                  </button>
+                )}
+                {(activeServiceFilter !== "ALL" || levelFilter !== "ALL" || normalizedQuery) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setServiceFilter("ALL");
+                      setLevelFilter("ALL");
+                      setQuery("");
+                    }}
+                    className={isLight ? "text-sky-700 hover:underline" : "text-sky-300 hover:underline"}
+                  >
+                    Reset filters
+                  </button>
+                )}
+              </div>
             </div>
           ) : (
             <div className="space-y-1 py-1 text-[11px]">

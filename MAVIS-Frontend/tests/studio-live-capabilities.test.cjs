@@ -772,3 +772,85 @@ test("Studio Live 3D mode uses real Three.js WebGL stage with dynamic import, 3D
   assert.ok(obsSrc.includes("<StudioThreeStage"));
   assert.ok(obsSrc.includes('canvas[data-studio-webgl-canvas]'), "captureStudioImage must capture live WebGL canvas in 3D mode");
 });
+
+test("Studio Live terminal parses OTel javaagent timestamps, backfills boot line times, filters JVM noise, and explains errors cleanly", () => {
+  const originalLoad = Module._load;
+  let parseTimestampPrefix;
+  let buildTerminalEntries;
+  let isBootNoiseMessage;
+  let explainRuntimeDiagnostic;
+  try {
+    Module._load = function (id, ...args) {
+      if (id === "lucide-react" || id.endsWith("button") || id.endsWith("input") || id.endsWith("select")) return {};
+      return originalLoad.call(this, id, ...args);
+    };
+    ({
+      parseTimestampPrefix,
+      buildTerminalEntries,
+      isBootNoiseMessage,
+      explainRuntimeDiagnostic,
+    } = require("../src/features/runtime/live-terminal-console.tsx"));
+  } finally {
+    Module._load = originalLoad;
+  }
+
+  // OTel javaagent timestamp format with colon milliseconds must parse cleanly
+  const otelLine = parseTimestampPrefix(
+    "[otel.javaagent 2026-11-23 10:01:21:412 +0000] [main] INFO io.opentelemetry.javaagent.tooling.VersionLogger - opentelemetry-javaagent - version: 2.32.0",
+  );
+  assert.equal(otelLine.timestampMs, Date.parse("2026-11-23T10:01:21.412Z"));
+  assert.match(otelLine.timestampLabel, /^\d{2}:\d{2}:\d{2}$/);
+  assert.ok(otelLine.body.startsWith("[otel.javaagent] [main] INFO"));
+
+  // Pre-timestamp JVM lines inherit the container's first parsed timestamp (no missing "—" gaps)
+  const entries = buildTerminalEntries({
+    sessionId: "s-logs-1",
+    interactive: true,
+    services: ["api-gateway"],
+    finishRequested: false,
+    executionStatus: "FAILED",
+    cleanupStatus: "CONFIRMED",
+    actions: [],
+    telemetry: {
+      observedAt: "2026-11-23T10:02:24.000Z",
+      services: [
+        {
+          service: "api-gateway",
+          replicas: 1,
+          runningReplicas: 0,
+          stats: [],
+          logs: [
+            "api-gateway-1 | Picked up JAVA_TOOL_OPTIONS: -javaagent:/mavis-otel/java/opentelemetry-javaagent.jar",
+            "api-gateway-1 | OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes",
+            "api-gateway-1 | [otel.javaagent 2026-11-23 10:01:21:412 +0000] [main] INFO io.opentelemetry.javaagent.tooling.VersionLogger - opentelemetry-javaagent - version: 2.32.0",
+            "api-gateway-1 | 2026-11-23T10:01:25.100Z ERROR Connection refused to payment-service",
+          ].join("\n"),
+        },
+      ],
+      spans: [],
+      interactions: [],
+      warnings: ["ATTRIBUTES_EVENTS_AND_SPAN_NAMES_OMITTED_FOR_REDACTION"],
+    },
+  });
+
+  // Every single entry now has a formatted HH:mm:ss timestamp
+  assert.ok(entries.every((entry) => /^\d{2}:\d{2}:\d{2}$/.test(entry.timestampLabel)));
+  // JVM CDS warning is downgraded from false-alarm WARN to PLAIN noise
+  assert.equal(entries[1].level, "PLAIN");
+  assert.equal(entries[0].isNoise, true);
+  assert.equal(entries[1].isNoise, true);
+  assert.equal(entries[2].isNoise, true);
+  // Real application ERROR stays clean (isNoise=false) and highlighted
+  assert.equal(entries[3].level, "ERROR");
+  assert.equal(entries[3].isNoise, false);
+  // Cryptic internal warnings are flagged as noise and carry friendly explanations
+  assert.equal(isBootNoiseMessage("ATTRIBUTES_EVENTS_AND_SPAN_NAMES_OMITTED_FOR_REDACTION"), true);
+  assert.match(explainRuntimeDiagnostic("BACKEND_RESTART_RECOVERY") ?? "", /restarted/i);
+
+  // Studio Live has zero simulated sandbox fallback button
+  const standaloneSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/standalone-studio-live.tsx"),
+    "utf8",
+  );
+  assert.ok(!standaloneSrc.includes("Activate Simulated Sandbox Telemetry"));
+});
