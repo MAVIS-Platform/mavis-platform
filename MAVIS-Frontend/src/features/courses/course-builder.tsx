@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BookOpen,
@@ -21,6 +22,7 @@ import {
   Play,
   Plus,
   Save,
+  Send,
   Search,
   Settings2,
   Trash2,
@@ -33,7 +35,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { useApiQuery } from "@/hooks/use-api";
+import { useApiMutation, useApiQuery } from "@/hooks/use-api";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { useCourseAuthoring } from "@/features/workspaces/course-access";
 import { labTierMeta, resolveLabTier } from "@/features/assignments/requirements";
@@ -124,6 +126,14 @@ type AssignmentRow = {
   aiPolicy?: unknown;
 };
 
+type InlineQuizQuestion = {
+  prompt: string;
+  options: string[];
+  correctOption: number;
+  explanation: string;
+  points: number;
+};
+
 type ItemDraft = {
   type: ItemType;
   title: string;
@@ -131,6 +141,8 @@ type ItemDraft = {
   body: string;
   prompt: string;
   rubric: string;
+  quizQuestions: InlineQuizQuestion[];
+  passPercent: number;
   assignmentId: string;
   estimatedMinutes: string;
   required: boolean;
@@ -143,6 +155,8 @@ const emptyDraft = (): ItemDraft => ({
   body: "",
   prompt: "",
   rubric: "",
+  quizQuestions: [],
+  passPercent: 70,
   assignmentId: "",
   estimatedMinutes: "",
   required: true,
@@ -181,6 +195,8 @@ function contentFromDraft(draft: ItemDraft): Record<string, unknown> {
   if (draft.type === "THEORY") return { ...meta, body: draft.body.trim() };
   if (draft.type === "ESSAY")
     return { ...meta, prompt: draft.prompt.trim(), rubric: parseRubric(draft.rubric) };
+  if (draft.type === "QUIZ")
+    return { ...meta, passPercent: draft.passPercent, questions: draft.quizQuestions };
   return meta;
 }
 
@@ -193,6 +209,11 @@ function draftFromItem(item: Item): ItemDraft {
     body: typeof content["body"] === "string" ? content["body"] : "",
     prompt: typeof content["prompt"] === "string" ? content["prompt"] : "",
     rubric: rubricText(content["rubric"]),
+    quizQuestions: Array.isArray(content["questions"])
+      ? (content["questions"] as InlineQuizQuestion[])
+      : [],
+    passPercent:
+      typeof content["passPercent"] === "number" ? Number(content["passPercent"]) : 70,
     assignmentId: item.assignmentId ?? "",
     estimatedMinutes:
       typeof content["estimatedMinutes"] === "number" && content["estimatedMinutes"] > 0
@@ -207,7 +228,20 @@ function draftValid(draft: ItemDraft) {
   if (draft.type === "THEORY" && !draft.body.trim()) return false;
   if (draft.type === "ESSAY" && !draft.prompt.trim()) return false;
   if (
-    ["QUIZ", "STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(draft.type) &&
+    draft.type === "QUIZ" &&
+    (draft.quizQuestions.length < 1 ||
+      draft.quizQuestions.some(
+        (question) =>
+          !question.prompt.trim() ||
+          question.options.filter((option) => option.trim()).length < 2 ||
+          question.correctOption < 0 ||
+          question.correctOption >= question.options.length,
+      ))
+  ) {
+    return false;
+  }
+  if (
+    ["STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"].includes(draft.type) &&
     !draft.assignmentId
   ) {
     return false;
@@ -242,12 +276,12 @@ function ItemFields({
   assignments: AssignmentRow[];
   t: (en: string, vi: string) => string;
 }) {
-  const isLegacyRawTheory = draft.type === "THEORY" && !draft.assignmentId;
+  const isStandaloneContent = ["THEORY", "QUIZ", "ESSAY"].includes(draft.type);
   const labs =
     draft.type === "RUNTIME_LAB"
       ? assignments.filter((assignment) => assignment.requireRuntimeTrace)
       : assignments;
-  const needsAssignment = !isLegacyRawTheory;
+  const needsAssignment = !isStandaloneContent;
   return (
     <div className="space-y-3.5">
       {needsAssignment && (
@@ -293,7 +327,7 @@ function ItemFields({
       )}
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="block space-y-1 text-xs font-medium">
-          <span>{t("Lab tier in this chapter", "Cấp độ bài Lab trong Chương / Mốc")}</span>
+          <span>{t("Learning item type", "Loại nội dung học")}</span>
           <select
             className="w-full rounded-md border bg-background px-3 py-2 text-sm"
             value={draft.type}
@@ -301,15 +335,15 @@ function ItemFields({
               const nextType = event.target.value as ItemType;
               onChange({
                 type: nextType,
-                ...(nextType === "THEORY" ? { assignmentId: "" } : {}),
+                ...(isStandaloneContent || ["THEORY", "QUIZ", "ESSAY"].includes(nextType)
+                  ? { assignmentId: "" }
+                  : {}),
               });
             }}
           >
-            {(["THEORY", "STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"] as const).map((type) => (
+            {(["THEORY", "QUIZ", "STATIC_LAB", "IMPACT_LAB", "RUNTIME_LAB"] as const).map((type) => (
               <option key={type} value={type}>
-                {type === "THEORY"
-                  ? t("Standalone Theory Lesson", "Bài Lý thuyết độc lập")
-                  : t(TYPE_META[type].en, TYPE_META[type].vi)}
+                {t(TYPE_META[type].en, TYPE_META[type].vi)}
               </option>
             ))}
           </select>
@@ -346,7 +380,7 @@ function ItemFields({
           />
         </label>
       </div>
-      {isLegacyRawTheory && (
+      {draft.type === "THEORY" && (
         <label className="block space-y-1 text-xs font-medium">
           <span>{t("Theory content", "Nội dung lý thuyết")}</span>
           <Textarea
@@ -356,6 +390,128 @@ function ItemFields({
           />
         </label>
       )}
+      {draft.type === "QUIZ" && (
+        <div className="space-y-3 rounded-xl border bg-muted/20 p-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              {t("Quiz questions", "Câu hỏi Quiz")}
+            </p>
+            <label className="flex items-center gap-2 text-xs font-medium">
+              {t("Pass", "Điểm đạt")}
+              <Input
+                className="h-8 w-20"
+                type="number"
+                min={1}
+                max={100}
+                value={draft.passPercent}
+                onChange={(event) => onChange({ passPercent: Number(event.target.value) })}
+              />
+              %
+            </label>
+          </div>
+          {draft.quizQuestions.map((question, questionIndex) => (
+            <div key={questionIndex} className="space-y-2 rounded-lg border bg-background p-3">
+              <div className="flex items-center gap-2">
+                <Input
+                  aria-label={t(`Question ${questionIndex + 1}`, `Câu ${questionIndex + 1}`)}
+                  placeholder={t("Question prompt", "Nội dung câu hỏi")}
+                  value={question.prompt}
+                  onChange={(event) =>
+                    onChange({
+                      quizQuestions: draft.quizQuestions.map((entry, index) =>
+                        index === questionIndex ? { ...entry, prompt: event.target.value } : entry,
+                      ),
+                    })
+                  }
+                />
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  aria-label={t("Remove question", "Xóa câu hỏi")}
+                  onClick={() =>
+                    onChange({
+                      quizQuestions: draft.quizQuestions.filter((_, index) => index !== questionIndex),
+                    })
+                  }
+                >
+                  <Trash2 className="size-4" aria-hidden="true" />
+                </Button>
+              </div>
+              <Textarea
+                rows={3}
+                aria-label={t("Answer options", "Các phương án")}
+                placeholder={t("One answer option per line", "Mỗi dòng là một phương án")}
+                value={question.options.join("\n")}
+                onChange={(event) =>
+                  onChange({
+                    quizQuestions: draft.quizQuestions.map((entry, index) =>
+                      index === questionIndex
+                        ? { ...entry, options: event.target.value.split("\n") }
+                        : entry,
+                    ),
+                  })
+                }
+              />
+              <div className="grid gap-2 sm:grid-cols-[180px_minmax(0,1fr)]">
+                <label className="space-y-1 text-xs font-medium">
+                  <span>{t("Correct option", "Đáp án đúng")}</span>
+                  <select
+                    className="h-9 w-full rounded-md border bg-background px-2 text-sm"
+                    value={question.correctOption}
+                    onChange={(event) =>
+                      onChange({
+                        quizQuestions: draft.quizQuestions.map((entry, index) =>
+                          index === questionIndex
+                            ? { ...entry, correctOption: Number(event.target.value) }
+                            : entry,
+                        ),
+                      })
+                    }
+                  >
+                    {question.options.map((option, optionIndex) => (
+                      <option key={optionIndex} value={optionIndex}>
+                        {optionIndex + 1}. {option || t("Option", "Phương án")}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="space-y-1 text-xs font-medium">
+                  <span>{t("Explanation", "Giải thích")}</span>
+                  <Input
+                    value={question.explanation}
+                    onChange={(event) =>
+                      onChange({
+                        quizQuestions: draft.quizQuestions.map((entry, index) =>
+                          index === questionIndex
+                            ? { ...entry, explanation: event.target.value }
+                            : entry,
+                        ),
+                      })
+                    }
+                  />
+                </label>
+              </div>
+            </div>
+          ))}
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() =>
+              onChange({
+                quizQuestions: [
+                  ...draft.quizQuestions,
+                  { prompt: "", options: ["", ""], correctOption: 0, explanation: "", points: 1 },
+                ],
+              })
+            }
+          >
+            <Plus className="mr-1.5 size-3.5" aria-hidden="true" />
+            {t("Add question", "Thêm câu hỏi")}
+          </Button>
+        </div>
+      )}
       <label className="flex items-center gap-2 text-xs font-medium">
         <input
           type="checkbox"
@@ -363,7 +519,7 @@ function ItemFields({
           checked={draft.required}
           onChange={(event) => onChange({ required: event.target.checked })}
         />
-        {t("Required Lab in this milestone", "Bài Lab bắt buộc trong Mốc này")}
+        {t("Required learning item", "Nội dung học bắt buộc")}
       </label>
     </div>
   );
@@ -371,13 +527,18 @@ function ItemFields({
 
 export function CourseBuilder({
   workspaceId,
+  workspaceName,
   canCreateModules = true,
 }: {
   workspaceId: string;
+  workspaceName?: string;
   canCreateModules?: boolean;
 }) {
   const { t } = useLocale();
+  const params = useSearchParams();
+  const intent = params?.get("intent") ?? null;
   const course = useCourseAuthoring(workspaceId);
+  const activateCourse = useApiMutation("updateWorkspace");
   const assignments = useApiQuery(
     "assignments",
     { workspaceId },
@@ -416,6 +577,7 @@ export function CourseBuilder({
 
   const inspectorRef = useRef<HTMLElement>(null);
   const inspectorBodyRef = useRef<HTMLDivElement>(null);
+  const intentHandledRef = useRef(false);
 
   useEffect(() => {
     setTitle(course.data?.title ?? "");
@@ -460,6 +622,21 @@ export function CourseBuilder({
     () => (assignments.data ?? []) as AssignmentRow[],
     [assignments.data],
   );
+
+  useEffect(() => {
+    if (intentHandledRef.current || !isDraft || modules.length === 0) return;
+    if (intent === "quiz") {
+      const moduleId = modules[0]!.id;
+      setDrafts((current) => ({
+        ...current,
+        [moduleId]: { ...emptyDraft(), type: "QUIZ", title: t("New Quiz", "Quiz mới") },
+      }));
+      setAddingItemModuleId(moduleId);
+      setCollapsedModules((current) => ({ ...current, [moduleId]: false }));
+      setDrawerOpen(true);
+      intentHandledRef.current = true;
+    }
+  }, [intent, isDraft, modules, t]);
 
   const resolveBuilderItemType = (item: Item): ItemType => {
     if (item.type === "THEORY" || item.type === "QUIZ" || item.type === "ESSAY") {
@@ -752,6 +929,11 @@ export function CourseBuilder({
       t("Could not update the learning item.", "Không cập nhật được nội dung.")) ||
     (course.deleteItem.isError &&
       t("Could not delete the learning item.", "Không xóa được nội dung.")) ||
+    (activateCourse.isError &&
+      t(
+        "Could not publish and activate the Course. Check incomplete content and try again.",
+        "Không thể publish và kích hoạt khóa học. Hãy kiểm tra nội dung chưa hoàn tất rồi thử lại.",
+      )) ||
     null;
 
   return (
@@ -791,6 +973,25 @@ export function CourseBuilder({
               <Lock className="mr-1.5 size-3.5" aria-hidden="true" />
               {t("Active · published", "Đang hoạt động · đã xuất bản")}
             </Badge>
+          )}
+          {isDraft && workspaceName && data?.modules.some((module) => module.items.length > 0) && (
+            <Button
+              type="button"
+              size="sm"
+              disabled={busy || activateCourse.isPending}
+              onClick={() =>
+                activateCourse.mutate({
+                  workspaceId,
+                  name: workspaceName,
+                  status: "ACTIVE",
+                })
+              }
+            >
+              <Send className="mr-1.5 size-3.5" aria-hidden="true" />
+              {activateCourse.isPending
+                ? t("Publishing…", "Đang publish…")
+                : t("Publish Changes", "Publish Changes")}
+            </Button>
           )}
         </div>
       </div>
@@ -1251,8 +1452,8 @@ export function CourseBuilder({
                                     <Plus className="size-4" aria-hidden="true" />
                                   </span>
                                   {t(
-                                    "Add Lab to this milestone",
-                                    "Thêm bài Lab vào Chương / Mốc này",
+                                    "Add content to this milestone",
+                                    "Thêm nội dung vào Chương / Mốc này",
                                   )}
                                 </button>
                               </div>

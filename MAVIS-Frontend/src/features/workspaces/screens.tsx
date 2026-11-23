@@ -13,13 +13,21 @@ import { Pagination, SearchInput } from "@/components/shared/forms";
 import { DataTable, DetailPanel } from "@/components/shared/data";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { CreateWorkspace, WorkspaceControls } from "./manage";
-import { CoursePasskey, CourseRoadmap, useWorkspaceGradebook } from "./course-access";
+import {
+  CoursePasskey,
+  CourseRoadmap,
+  useCourseAuthoring,
+  useWorkspaceGradebook,
+} from "./course-access";
 import { ReferenceManagement } from "./reference-manage";
 import { CourseWorkspaceShell } from "@/features/courses/course-workspace-shell";
 import { LecturerCurriculumManager } from "@/features/courses/lecturer-curriculum-manager";
 import { Courses, CourseRoadmap as CourseRoadmapScreen } from "@/features/courses/screens";
 import { CourseOutline } from "@/features/courses/course-outline";
 import { CourseBuilder } from "@/features/courses/course-builder";
+import { CourseContentHub } from "@/features/courses/course-content-hub";
+import { CourseFirstSetupFlow } from "@/features/courses/course-first-setup-flow";
+import { QuizLibrary } from "@/features/courses/quiz-library";
 import { CourseSetupPanel } from "@/features/courses/course-setup";
 import { useLocale } from "@/lib/i18n/locale-context";
 import {
@@ -417,10 +425,18 @@ export function WorkspaceOverview() {
   const canManage = workspace?.myRole === "LECTURER" || session.data?.user?.role === "admin";
   const canEdit = canEditLecturerCourse(workspace?.status, canManage);
   const courseAccess = lecturerCourseAccess(workspace?.status);
+  const authoring = useCourseAuthoring(workspace?.id ?? "", Boolean(workspace && canManage));
+  const hasLearningContent = Boolean(
+    authoring.data?.modules.some((module) => module.items.length > 0),
+  );
   const requestedView = params.get("view");
   const activeTab =
     canManage && requestedView === "course-authoring"
       ? "authoring"
+      : canManage && requestedView === "quiz-library"
+        ? "quiz-library"
+      : canManage && (requestedView === "content-actions" || requestedView === "course-flow")
+        ? "content-actions"
       : canManage && requestedView === "course-setup"
         ? "setup"
         : "outline";
@@ -435,16 +451,36 @@ export function WorkspaceOverview() {
           actions={
             canManage ? (
               <>
-                <Button
-                  asChild
-                  size="sm"
-                  variant="outline"
-                  className="border-white/30 bg-white/15 text-white hover:bg-white/25 hover:text-white"
-                >
-                  <Link href={`/assignments?workspace=${encodeURIComponent(workspace.id)}`}>
-                    {t("Manage Labs", "Quản lý Lab")}
-                  </Link>
-                </Button>
+                {canEdit && (
+                  <Button
+                    asChild
+                    size="sm"
+                    variant="outline"
+                    className="border-white/30 bg-white/15 text-white hover:bg-white/25 hover:text-white"
+                  >
+                    <Link
+                      href={
+                        hasLearningContent
+                          ? `/workspace-overview?workspace=${encodeURIComponent(workspace.id)}&view=content-actions`
+                          : `/workspace-overview?workspace=${encodeURIComponent(workspace.id)}&view=course-flow&step=repository`
+                      }
+                    >
+                      <Plus className="mr-1.5 size-4" aria-hidden="true" />
+                      {hasLearningContent
+                        ? t("Add content", "Thêm nội dung")
+                        : t("Start course setup", "Bắt đầu thiết lập khóa học")}
+                    </Link>
+                  </Button>
+                )}
+                {canEdit && hasLearningContent && (
+                  <Button asChild size="sm">
+                    <Link
+                      href={`/workspace-overview?workspace=${encodeURIComponent(workspace.id)}&view=course-authoring`}
+                    >
+                      {t("Update Course", "Cập nhật khóa học")}
+                    </Link>
+                  </Button>
+                )}
                 <Button asChild size="sm">
                   <Link href={`/submissions?workspace=${encodeURIComponent(workspace.id)}`}>
                     {t("Review submissions", "Chấm bài nộp")}
@@ -467,6 +503,7 @@ export function WorkspaceOverview() {
               <LecturerCurriculumManager
                 workspaceId={workspace.id}
                 active={workspace.status === "ACTIVE"}
+                editable={canEdit}
               />
             )}
             {activeTab === "outline" && !canManage && (
@@ -479,8 +516,25 @@ export function WorkspaceOverview() {
             {activeTab === "authoring" && canManage && canEdit && (
               <CourseBuilder
                 workspaceId={workspace.id}
+                workspaceName={workspace.name}
                 canCreateModules={courseAccess.canCreateModules}
               />
+            )}
+            {activeTab === "content-actions" && canManage && canEdit && (
+              requestedView === "course-flow" ? (
+                <CourseFirstSetupFlow workspaceId={workspace.id} />
+              ) : (
+                <CourseContentHub workspaceId={workspace.id} />
+              )
+            )}
+            {activeTab === "quiz-library" && canManage && canEdit && (
+              <QuizLibrary workspaceId={workspace.id} />
+            )}
+            {activeTab === "quiz-library" && canManage && !canEdit && (
+              <CourseOutline workspaceId={workspace.id} canManage={false} active />
+            )}
+            {activeTab === "content-actions" && canManage && !canEdit && (
+              <CourseOutline workspaceId={workspace.id} canManage={false} active />
             )}
             {activeTab === "authoring" && canManage && !canEdit && (
               <CourseOutline workspaceId={workspace.id} canManage={false} active />

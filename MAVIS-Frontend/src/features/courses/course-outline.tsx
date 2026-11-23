@@ -523,6 +523,8 @@ function CourseOutlineBody({
                     item.type === "QUIZ"
                       ? (item.quizQuestions && item.quizQuestions.length > 0
                           ? item.quizQuestions
+                          : Array.isArray(item.content?.["questions"])
+                            ? (item.content["questions"] as QuizQuestionData[])
                           : !item.assignmentId && isJavaCourseraWorkspace && !isCsharpCourse
                             ? matchQuizQuestionsForItem(module.position, item.title)
                             : [])

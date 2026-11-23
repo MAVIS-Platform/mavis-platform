@@ -234,9 +234,24 @@ public class CourseAuthoringService {
             }
         }
         if ("QUIZ".equals(item.getItemType()) && item.getAssignmentId() == null) {
-            throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "Quiz item must link to its versioned Quiz Lab");
+            JsonNode questions = content.get("questions");
+            if (questions == null || !questions.isArray() || questions.isEmpty()) {
+                throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,
+                        "Quiz item requires at least one inline question");
+            }
+            for (JsonNode question : questions) {
+                JsonNode prompt = question.get("prompt");
+                JsonNode options = question.get("options");
+                int correctOption = question.path("correctOption").asInt(-1);
+                if (prompt == null || !prompt.isTextual() || prompt.asText().isBlank()
+                        || options == null || !options.isArray() || options.size() < 2
+                        || correctOption < 0 || correctOption >= options.size()) {
+                    throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,
+                            "Inline Quiz questions require a prompt, two options, and a valid answer");
+                }
+            }
         }
-        if ("QUIZ".equals(item.getItemType())) {
+        if ("QUIZ".equals(item.getItemType()) && item.getAssignmentId() != null) {
             Integer quizCount = jdbc.queryForObject("SELECT count(*) FROM course_quizzes WHERE assignment_id = ? AND version > 0", Integer.class, item.getAssignmentId());
             if (quizCount == null || quizCount < 1) throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "Quiz item must link to a Lab with a published Quiz version");
         }

@@ -6,8 +6,6 @@ import { type ReactNode } from "react";
 import {
   ArrowLeft,
   ClipboardCheck,
-  FilePlus2,
-  GraduationCap,
   LayoutGrid,
   Map,
   Settings,
@@ -33,7 +31,7 @@ export type CourseWorkspaceTab =
   | "settings"
   | "results";
 
-type UnifiedStaffTab = Exclude<CourseWorkspaceTab, "results">;
+type UnifiedStaffTab = "content" | "submissions" | "members" | "settings";
 type UnifiedStudentTab = "syllabus" | "lab" | "submissions";
 
 const STAFF_TABS: Array<{
@@ -49,20 +47,6 @@ const STAFF_TABS: Array<{
     vi: "Tổng quan",
     icon: LayoutGrid,
     href: (ws) => `/workspace-overview?workspace=${encodeURIComponent(ws)}`,
-  },
-  {
-    id: "authoring",
-    en: "Modules",
-    vi: "Học phần",
-    icon: GraduationCap,
-    href: (ws) => `/workspace-overview?workspace=${encodeURIComponent(ws)}&view=course-authoring`,
-  },
-  {
-    id: "lab-authoring",
-    en: "Labs",
-    vi: "Bài Lab",
-    icon: FilePlus2,
-    href: (ws) => `/lab-authoring?workspace=${encodeURIComponent(ws)}`,
   },
   {
     id: "submissions",
@@ -123,7 +107,7 @@ function resolveStaffTab(pathname: string | null, active: CourseWorkspaceTab): U
     pathname === "/lab-authoring" ||
     pathname === "/assignments"
   ) {
-    return "lab-authoring";
+    return "content";
   }
   if (pathname === "/submissions" || active === "submissions" || active === "results") {
     return "submissions";
@@ -134,7 +118,7 @@ function resolveStaffTab(pathname: string | null, active: CourseWorkspaceTab): U
   if (pathname === "/members" || active === "members") {
     return "members";
   }
-  return active;
+  return "content";
 }
 
 function resolveStudentTab(pathname: string | null, active: CourseWorkspaceTab): UnifiedStudentTab {
@@ -198,14 +182,16 @@ export function CourseWorkspaceShell({
               )}
               <Badge
                 className={
-                  workspace.status === "ARCHIVED"
-                    ? "border-slate-300/30 bg-slate-800/50 text-slate-200"
-                    : "border-emerald-300/30 bg-emerald-500/25 text-emerald-100"
+                  workspace.status === "ACTIVE"
+                    ? "border-emerald-300/30 bg-emerald-500/25 text-emerald-100"
+                    : "border-slate-300/30 bg-slate-800/50 text-slate-200"
                 }
               >
-                {workspace.status === "ARCHIVED"
-                  ? t("Archived", "Đã lưu trữ")
-                  : t("Active", "Đang hoạt động")}
+                {workspace.status === "ACTIVE"
+                  ? t("Active", "Đang hoạt động")
+                  : workspace.status === "INACTIVE"
+                    ? t("Inactive", "Chưa hoạt động")
+                    : t("Archived", "Đã lưu trữ")}
               </Badge>
             </div>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-white/80">

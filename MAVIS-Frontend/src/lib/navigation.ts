@@ -5,7 +5,6 @@ import {
   ClipboardCheck,
   Code2,
   FileClock,
-  FilePlus2,
   FileSearch,
   Files,
   GitCompareArrows,
@@ -179,18 +178,6 @@ export const lecturerWorkspaceNavigation: readonly NavigationGroup[] = [
         label: "Overview",
         icon: LayoutGrid,
         href: "/workspace-overview",
-      },
-      {
-        id: "course-authoring",
-        label: "Modules",
-        icon: GraduationCap,
-        href: "/workspace-overview?view=course-authoring",
-      },
-      {
-        id: "lab-authoring",
-        label: "Labs",
-        icon: FilePlus2,
-        href: "/lab-authoring",
       },
       {
         id: "assignment-submissions",

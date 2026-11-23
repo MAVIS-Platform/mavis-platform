@@ -9,14 +9,16 @@ import { CourseOutline } from "./course-outline";
 export function LecturerCurriculumManager({
   workspaceId,
   active = true,
+  editable = false,
 }: {
   workspaceId: string;
   active?: boolean | undefined;
+  editable?: boolean;
 }) {
   return (
     <div className="space-y-6">
       {/* Passkey moved to CourseWorkspaceShell header next to ACTIVE badge (Active Class Passkeys: <CoursePasskey />) */}
-      <CourseOutline workspaceId={workspaceId} canManage active={active} />
+      <CourseOutline workspaceId={workspaceId} canManage={editable} active={active} />
     </div>
   );
 }

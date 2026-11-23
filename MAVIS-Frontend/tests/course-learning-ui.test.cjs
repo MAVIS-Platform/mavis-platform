@@ -1083,7 +1083,7 @@ test("Lab Library is available inside Lab Creation and Quiz can be generated fro
   assert.ok(authoring.includes('id: "theory-library", en: "Theory Library"'));
   assert.ok(authoring.includes("<Assignments embedded />"));
   assert.ok(authoring.includes("<TheoryLibrary />"));
-  assert.match(navigation, /id: "lab-authoring"[\s\S]*?label: "Labs"/);
+  assert.doesNotMatch(navigation, /id: "lab-authoring"[\s\S]*?label: "Labs"/);
   assert.ok(authoring.includes('id: "library", en: "Lab Library"'));
   assert.ok(authoring.includes('id: "theory-library", en: "Theory Library"'));
   assert.ok(authoring.includes("<Assignments embedded />"));

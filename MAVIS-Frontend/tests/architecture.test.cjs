@@ -826,8 +826,6 @@ test("lecturer workspace navigation exposes unified class command destinations w
   const destinations = lecturerWorkspaceNavigation.flatMap((group) => group.items);
   assert.deepEqual(Object.fromEntries(destinations.map((item) => [item.id, item.href])), {
     "workspace-overview": "/workspace-overview",
-    "course-authoring": "/workspace-overview?view=course-authoring",
-    "lab-authoring": "/lab-authoring",
     "assignment-submissions": "/submissions",
     members: "/members",
     settings: "/members?tab=settings",
@@ -5167,8 +5165,8 @@ test("My Workspaces is a compact LMS class list with tabs and a module outline",
   const overviewHtml = renderComp(WorkspaceOverview, "ws-swd");
   assert.match(overviewHtml, /aria-label="Class sections"/);
   assert.match(overviewHtml, />Overview</);
-  assert.match(overviewHtml, />Modules</);
-  assert.match(overviewHtml, />Labs</);
+  assert.doesNotMatch(overviewHtml, />Modules</);
+  assert.doesNotMatch(overviewHtml, />Labs</);
   assert.doesNotMatch(overviewHtml, /Lab Library/);
   assert.match(overviewHtml, />Grades</);
   assert.match(overviewHtml, />Students</);
@@ -5198,7 +5196,7 @@ test("My Workspaces is a compact LMS class list with tabs and a module outline",
     "Overview must not include member management",
   );
   const membersHtml = renderComp(WorkspaceMembers, "ws-swd");
-  assert.match(membersHtml, /Class sections/, "lecturer class view shows unified 7-tab navigation");
+  assert.match(membersHtml, /Class sections/, "lecturer class view shows unified navigation");
   assert.match(membersHtml, />Students</);
   assert.match(
     membersHtml,

@@ -579,7 +579,7 @@ export function CourseRoadmap() {
                       )}
                     </summary>
                     <div className="mt-4 space-y-5">
-                      <CourseBuilder workspaceId={workspaceId} />
+                      <CourseBuilder workspaceId={workspaceId} workspaceName={workspace.name} />
                       <CourseSetupPanel workspaceId={workspaceId} />
                     </div>
                   </details>

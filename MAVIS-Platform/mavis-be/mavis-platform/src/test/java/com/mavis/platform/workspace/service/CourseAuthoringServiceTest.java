@@ -111,6 +111,26 @@ class CourseAuthoringServiceTest {
     }
 
     @Test
+    void standaloneQuizCanBePublishedWithoutLabAssignment() {
+        var question = JsonNodeFactory.instance.objectNode();
+        question.put("prompt", "Which boundary owns the data?");
+        question.set("options", JsonNodeFactory.instance.arrayNode().add("Service A").add("Service B"));
+        question.put("correctOption", 0);
+        var questions = JsonNodeFactory.instance.arrayNode().add(question);
+        CourseItem quiz = CourseItem.builder().id(UUID.randomUUID()).module(module).itemType("QUIZ")
+                .title("Boundary Quiz").position(1)
+                .content(JsonNodeFactory.instance.objectNode().set("questions", questions)).required(true).build();
+        when(items.findByModuleIdOrderByPositionAsc(moduleId)).thenReturn(List.of(quiz));
+        when(versions.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        try (MockedStatic<SecurityUtils> security = mockStatic(SecurityUtils.class)) {
+            security.when(SecurityUtils::getCurrentUserId).thenReturn(lecturerId);
+            var published = service.publish(workspaceId);
+            assertEquals(1, published.version());
+        }
+    }
+
+    @Test
     void publishWritesImmutableVersionWithSha256Digest() {
         when(items.findByModuleIdOrderByPositionAsc(moduleId)).thenReturn(List.of(
                 CourseItem.builder().id(UUID.randomUUID()).module(module).itemType("THEORY").title("Boundaries")

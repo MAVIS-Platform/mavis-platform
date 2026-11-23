@@ -23,6 +23,28 @@ test("Course Lecturer workspace consumes the shared lifecycle policy", () => {
   assert.match(courseShell, /actions && <div/);
 });
 
+test("Lecturer Course navigation centralizes authoring in Overview", () => {
+  const shell = read("src/features/courses/course-workspace-shell.tsx");
+  const navigation = read("src/lib/navigation.ts");
+  const hub = read("src/features/courses/course-content-hub.tsx");
+  const firstFlow = read("src/features/courses/course-first-setup-flow.tsx");
+  assert.doesNotMatch(shell, /en: "Modules"|en: "Labs"/);
+  assert.doesNotMatch(navigation, /label: "Modules"|label: "Labs"/);
+  assert.match(hub, /Add Repository/);
+  assert.match(hub, /Add Lesson/);
+  assert.match(hub, /Add Quiz/);
+  assert.match(hub, /Add Lab/);
+  assert.match(hub, /Update Course/);
+  assert.match(firstFlow, /Repository/);
+  assert.match(firstFlow, /Lesson/);
+  assert.match(firstFlow, /Quiz/);
+  assert.match(firstFlow, /MAVIS Studio Lab/);
+  assert.match(firstFlow, /Arrange Modules/);
+  assert.match(firstFlow, /Publish Changes/);
+  assert.match(firstFlow, /Back to Overview/);
+  assert.match(firstFlow, /Next:/);
+});
+
 test("Active Lecturer courses lock authoring while Inactive courses expose module and Lab creation", () => {
   const workspace = read("src/features/workspaces/screens.tsx");
   const labs = read("src/features/assignments/screens.tsx");
@@ -34,6 +56,8 @@ test("Active Lecturer courses lock authoring while Inactive courses expose modul
   assert.match(labs, /courseAccess\.canCreateLabs &&/);
   assert.match(authoring, /!assignment && !courseAccess\.canCreateLabs/);
   assert.match(courseBuilder, /if \(!canCreateModules\) return/);
+  assert.match(courseBuilder, /t\("Publish Changes", "Publish Changes"\)/);
+  assert.match(courseBuilder, /status: "ACTIVE"/);
 });
 
 test("Global Lecturer workspace hides its sidebar and uses a single Course Management heading", () => {
