@@ -98,6 +98,7 @@ public final class MocHuongReferenceArchitectureBuilder {
         addC3GatewayAndDiscovery();
         addC3IdentityComponents();
         addC3CatalogComponents();
+        addC3OrderComponents();
         Map<String, UUID> serviceIds = new LinkedHashMap<>();
         for (String svc : REAL_MICROSERVICES) {
             ModelElement el = node(svc);
@@ -369,6 +370,60 @@ public final class MocHuongReferenceArchitectureBuilder {
         addC3Edge("c3-cat-csvc-crepo", "cat-cat-svc", "cat-cat-repo", "CODE_DEPENDENCY", props("tierEdge", "Service->Repository"));
         addC3Edge("c3-cat-prepo-db", "cat-prod-repo", "catalog-db", "DATABASE_ACCESS", props("schema", "catalog_db"));
         addC3Edge("c3-cat-crepo-db", "cat-cat-repo", "catalog-db", "DATABASE_ACCESS", props("schema", "catalog_db"));
+    }
+
+    private void addC3OrderComponents() {
+        addComponent("ord-ctrl", "order-service", "Spring MVC @RestController",
+                "OrderController", "CONTROLLER",
+                "com.mochuong.order.controller.OrderController",
+                "Exposes POST /api/v1/orders, GET /my, GET /{id}, POST /{id}/cancel");
+        addComponent("ord-svc", "order-service", "Spring @Service",
+                "OrderService", "SERVICE",
+                "com.mochuong.order.service.OrderService",
+                "Application service delegating order flows to OrderSagaOrchestrator");
+        addComponent("ord-saga", "order-service", "Spring @Service",
+                "OrderSagaOrchestrator", "SERVICE",
+                "com.mochuong.order.service.OrderSagaOrchestrator",
+                "Coordinates local ACID order+outbox persistence and Catalog stock compensation");
+        addComponent("ord-cat-int", "order-service", "Resilience4j + @Service",
+                "CatalogIntegrationService", "INTEGRATION",
+                "com.mochuong.order.service.CatalogIntegrationService",
+                "Wraps CatalogFeignClient with @CircuitBreaker, @Retry and @Bulkhead(\"catalogService\")");
+        addComponent("ord-cat-feign", "order-service", "Spring Cloud OpenFeign",
+                "CatalogFeignClient", "CLIENT",
+                "com.mochuong.order.client.CatalogFeignClient",
+                "@FeignClient(name = \"catalog-service\", path = \"/api/v1/products\")");
+        addComponent("ord-tx-svc", "order-service", "Spring @Service",
+                "OrderTransactionService", "SERVICE",
+                "com.mochuong.order.service.OrderTransactionService",
+                "Persists Order and OutboxEvent atomically inside order_db transaction");
+        addComponent("ord-outbox-pub", "order-service", "Spring @Scheduled",
+                "OutboxEventPublisher", "PUBLISHER",
+                "com.mochuong.order.service.OutboxEventPublisher",
+                "Polls outbox_events and publishes order.created / order.cancelled via KafkaTemplate");
+        addComponent("ord-repo", "order-service", "Spring Data JPA",
+                "OrderRepository", "REPOSITORY",
+                "com.mochuong.order.repository.OrderRepository",
+                "Persists Order & OrderItem aggregates in isolated order_db");
+        addComponent("ord-outbox-repo", "order-service", "Spring Data JPA",
+                "OutboxEventRepository", "REPOSITORY",
+                "com.mochuong.order.repository.OutboxEventRepository",
+                "Persists PENDING / PUBLISHED transactional outbox rows in order_db");
+
+        addC3Edge("c3-ord-ctrl-svc", "ord-ctrl", "ord-svc", "CODE_DEPENDENCY", props("tierEdge", "Controller->Service"));
+        addC3Edge("c3-ord-svc-saga", "ord-svc", "ord-saga", "CODE_DEPENDENCY", props("tierEdge", "Service->Orchestrator"));
+        addC3Edge("c3-ord-saga-int", "ord-saga", "ord-cat-int", "CODE_DEPENDENCY", props("pattern", "Resilience4j Decorator"));
+        addC3Edge("c3-ord-int-feign", "ord-cat-int", "ord-cat-feign", "CODE_DEPENDENCY", props("call", "catalogFeignClient"));
+        addC3Edge("c3-ord-saga-tx", "ord-saga", "ord-tx-svc", "CODE_DEPENDENCY", props("pattern", "Local ACID + Outbox"));
+        addC3Edge("c3-ord-tx-orepo", "ord-tx-svc", "ord-repo", "CODE_DEPENDENCY", props("tierEdge", "Service->Repository"));
+        addC3Edge("c3-ord-tx-outrepo", "ord-tx-svc", "ord-outbox-repo", "CODE_DEPENDENCY", props("tierEdge", "Service->Repository"));
+        addC3Edge("c3-ord-pub-outrepo", "ord-outbox-pub", "ord-outbox-repo", "CODE_DEPENDENCY", props("pollInterval", "2000ms"));
+        addC3Edge("c3-ord-orepo-db", "ord-repo", "order-db", "DATABASE_ACCESS", props("schema", "order_db"));
+        addC3Edge("c3-ord-outrepo-db", "ord-outbox-repo", "order-db", "DATABASE_ACCESS", props("schema", "order_db"));
+        addC3Edge("c3-ord-feign-cat", "ord-cat-feign", "cat-prod-ctrl", "SERVICE_HTTP_CALL",
+                props("client", "CatalogFeignClient", "targetService", "catalog-service", "endpoint", "/api/v1/products/{id}"));
+        addC3Edge("c3-ord-pub-kafka", "ord-outbox-pub", "kafka", "MESSAGE_PUBLISH",
+                props("topics", "order.created,order.cancelled"));
     }
 
     private DiagramVersion buildC1ContextDiagram() {
