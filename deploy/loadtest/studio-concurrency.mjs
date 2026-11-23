@@ -17,6 +17,37 @@ import { readFileSync } from "node:fs";
 
 const TERMINAL = new Set(["COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT", "TIMEDOUT", "TIMEOUT"]);
 
+function parseCookieMap(cookieHeader) {
+  const jar = new Map();
+  for (const part of cookieHeader.split(";")) {
+    const eq = part.indexOf("=");
+    if (eq <= 0) continue;
+    const name = part.slice(0, eq).trim();
+    const value = part.slice(eq + 1).trim();
+    if (name) jar.set(name, value);
+  }
+  return jar;
+}
+
+function serializeCookieMap(jar) {
+  return [...jar.entries()].map(([k, v]) => `${k}=${v}`).join("; ");
+}
+
+function applySetCookies(jar, headers) {
+  const setCookies = typeof headers.getSetCookie === "function" ? headers.getSetCookie() : [];
+  for (const raw of setCookies) {
+    const [pair, ...attrs] = raw.split(";");
+    const eq = pair.indexOf("=");
+    if (eq <= 0) continue;
+    const name = pair.slice(0, eq).trim();
+    const value = pair.slice(eq + 1).trim();
+    const expired = attrs.some((a) => /^max-age\s*=\s*0$/i.test(a.trim()));
+    if (!name) continue;
+    if (expired || value === "") jar.delete(name);
+    else jar.set(name, value);
+  }
+}
+
 function parseAuthEntries() {
   const raw =
     process.env.MAVIS_LOADTEST_AUTH ||
@@ -33,7 +64,7 @@ function parseAuthEntries() {
         return { mode: "bearer", headerName: "Authorization", headerValue: `Bearer ${token}` };
       }
       const cookie = line.replace(/^Cookie:\s*/i, "").trim();
-      return { mode: "cookie", headerName: "Cookie", headerValue: cookie };
+      return { mode: "cookie", jar: parseCookieMap(cookie) };
     });
 }
 
@@ -58,7 +89,10 @@ function createClient(baseUrl, auth, controlLatencies) {
   const cleanBase = baseUrl.replace(/\/+$/, "");
 
   async function request(method, path, body) {
-    const headers = { [auth.headerName]: auth.headerValue };
+    const headers =
+      auth.mode === "cookie"
+        ? { Cookie: serializeCookieMap(auth.jar) }
+        : { [auth.headerName]: auth.headerValue };
     if (auth.mode === "cookie" && method !== "GET") {
       headers.Origin = origin;
     }
@@ -77,6 +111,9 @@ function createClient(baseUrl, auth, controlLatencies) {
       throw new LoadTestError("NETWORK_ERROR", String(err));
     }
     controlLatencies.push(performance.now() - started);
+    if (auth.mode === "cookie") {
+      applySetCookies(auth.jar, res.headers);
+    }
     const json = await res.json().catch(() => null);
     if (!res.ok) {
       const code =
@@ -229,6 +266,13 @@ async function main() {
     finishTimeoutMs: Math.max(5000, Number.parseInt(process.env.FINISH_TIMEOUT_MS || "90000", 10)),
     pollIntervalMs: Math.max(50, Number.parseInt(process.env.POLL_INTERVAL_MS || "2000", 10)),
   };
+
+  if (authEntries.length < cfg.concurrency) {
+    console.error(
+      `MAVIS_LOADTEST_AUTH has ${authEntries.length} account(s), but CONCURRENCY=${cfg.concurrency} requires at least ${cfg.concurrency} distinct accounts.`,
+    );
+    process.exit(2);
+  }
 
   const bootTimes = [];
   const controlLatencies = [];

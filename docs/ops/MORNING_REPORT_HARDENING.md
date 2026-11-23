@@ -14,9 +14,9 @@
 
 | Batch | Task | Nội dung tóm tắt | Trạng thái | Commit |
 |---|---|---|---|---|
-| **Batch 1** | 1.1 | Whitelist env ở `RuntimeRunnerDispatcher.java` (chỉ truyền `PATH`, `HOME`, `DOCKER_HOST`, `MAVIS_RUNNER_*`, `DOTNET_*`) | `DONE` | `71f215d1` |
-| **Batch 1** | 1.2 | Chặn SV ghi `runtime-config` (`PUT .../runtime-config` chỉ `ADMIN` hoặc `LECTURER` của khóa) | `DONE` | `71f215d1` |
-| **Batch 1** | 1.3 | Enforce `allowedActions` ở server trong `RuntimeStudioService.submit()` (trả 400 `STUDIO_ACTION_NOT_ALLOWED`) | `DONE` | `71f215d1` |
+| **Batch 1** | 1.1 | Chặn (blocklist) biến env của project có tiền tố `PATH`, `HOME`, `TMPDIR`, `SHELL`, `ENV`, `BASH_ENV`, `LD_`, `DOTNET_`, `COREHOST_`, `CORECLR_`, `ASPNETCORE_`, `DOCKER_`, `MAVIS_` trong `RuntimeRunnerDispatcher.java` | `DONE` | `71f215d1` |
+| **Batch 1** | 1.2 | Chặn ghi `runtime-config` và build sandbox image theo loại project `STUDENT_WORKING` (trả HTTP `403 STUDENT_RUNTIME_CONFIG_FORBIDDEN` ở `saveConfiguration` và `buildSandboxImages`) | `DONE` | `71f215d1` |
+| **Batch 1** | 1.3 | Enforce `allowedActions` ở server trong `RuntimeStudioService.submit()` (trả HTTP `403 STUDIO_ACTION_NOT_ALLOWED`) | `DONE` | `71f215d1` |
 | **Batch 1** | 1.4 | Sửa `saveVisualExercise` ở `standalone-studio-live.tsx` giữ đủ 5 trường Change Impact | `DONE` | `71f215d1` |
 | **Batch 1** | 1.5 | Sửa `docker container prune -f --filter 'label!=com.docker.compose.project'` ở CI & `deploy-vps.sh`, thêm vòng drain `mavisrun-*` (360s), nâng timeout deploy lên 25 phút | `DONE` *(containerized `deploy-vps.test.sh`: `READY_FOR_OPS_VERIFY` trên CI)* | `71f215d1` |
 | **Batch 2** | 2.1 | Tự mở panel Change Impact Prediction 1 lần/phiên khi bài yêu cầu + cảnh báo amber trong Lab Mission | `DONE` *(đã kiểm chứng trên Chromium local `1366×768`)* | `efe55506` |
@@ -38,6 +38,12 @@
 | **Batch 4A** | 4.4 | Thêm `--backup-only <dest>` vào `deploy/apply-course-schema.py`, tạo `deploy/backup-db.sh` (LF, `chmod +x`), cập nhật `deploy/deploy-vps.sh` (copy cả `apply-course-schema.py` & `backup-db.sh` + cài `/etc/cron.d/mavis-db-backup` idempotent) và `.github/workflows/deploy-production.yml` (`retry_scp`) | `DONE` *(chạy `backup-db.sh` thật trên VPS + kiểm tra Aiven backup: `READY_FOR_OPS_VERIFY`)* | `41bf46f1` |
 | **Batch 4A** | 4.5 | Tạo script load test zero-dependency `deploy/loadtest/studio-concurrency.mjs` (hỗ trợ cả Cookie `/api/backend`+`/api/mavis` lẫn Bearer `/api/v1`, xuất JSON Go/No-Go) + test stub end-to-end `deploy/tests/test_studio_loadtest.mjs` | `DONE` *(test stub xanh; chạy 10 phiên × 3 vòng thật trên Runner VM: `READY_FOR_OPS_VERIFY`)* | `41bf46f1` |
 | **Batch 4A** | 4.6 | Bổ sung §6 Ops Runbook vào cuối `docs/ops/STUDIO_HARDENING_PLAN.md` | `DONE` | `41bf46f1` |
+| **Batch 5** | 5.1 | Giữ nguyên receipt chưa có `.ack.json` và các manifest `.allocation-*` / `.recovery-*`; chỉ xóa cặp receipt đã ack cũ > 7 ngày trong `WorkerPoolLoop.cs` | `DONE` | *(Batch 5)* |
+| **Batch 5** | 5.2 | Khóa orphan reaper sau `MAVIS_WORKER_DEDICATED_HOST=1` (`compose.runner-worker.yml` đặt mặc định `1`, bỏ gợi ý hybrid trên Control VPS) và bỏ qua project đang giữ lock `runner-<project>.lock` | `DONE` | *(Batch 5)* |
+| **Batch 5** | 5.3 | Đo dung lượng đĩa trống trên `stateRoot` (bind mount của host) và đổi tên log thành `hostStateFreeMiB` | `DONE` | *(Batch 5)* |
+| **Batch 5** | 5.4 | Khôi phục `refreshDockerAndRuntimeProbe()` trong `RuntimeQueueCoordinator.getRuntimeHealth` ở chế độ `REMOTE_WORKER` (trả `DEGRADED` khi Docker control-plane lỗi ở 4A) | `DONE` | *(Batch 5)* |
+| **Batch 5** | 5.5 | Thêm cookie jar tự cập nhật `Set-Cookie` và chặn thoát mã `2` nếu thiếu tài khoản (`< CONCURRENCY`) trong `studio-concurrency.mjs` + test stub | `DONE` | *(Batch 5)* |
+| **Batch 5** | 5.6 | Sửa mô tả Batch 1 / phạm vi test trong báo cáo sáng cho khớp code và thêm câu SQL chỉ đọc kiểm Scale > 3 (Batch 6) vào Runbook §6.6 | `DONE` | *(Batch 5)* |
 
 **Không có task nào `BLOCKED`.**
 
@@ -46,12 +52,12 @@
 ## 2. Bằng Chứng Kiểm Thử & Build
 
 ### 2.1 Java Backend (`mavis-be`, Java 21)
-Lệnh chạy hồi quy tổng hợp cuối Batch 4A (bao phủ toàn bộ unit + acceptance tests liên quan từ Batch 1 đến Batch 4A):
+Lệnh chạy bộ **194 test chọn lọc (11 class)** bao phủ các unit + acceptance test liên quan từ Batch 1 đến Batch 4A (không phải toàn bộ test suite của backend):
 ```powershell
 cd MAVIS-Platform/mavis-be
 .\mvnw.cmd -B -ntp -pl mavis-bootstrap -am "-Dsurefire.failIfNoSpecifiedTests=false" "-Dtest=RuntimeRunnerDispatcherTest,RuntimeSessionServiceImplTest,RuntimeStudioServiceTest,RuntimePlanningServiceTest,RuntimeQueueCoordinatorTest,StudioExerciseEvaluatorTest,StudioTelemetryHubTest,CourseLabStudentServiceTest,LabStudioExerciseServiceTest,Wf03AcceptanceMatrixTest,RunnerReceiptIngestServiceImplTest" test
 ```
-**Kết quả:** `BUILD SUCCESS` — **194/194 PASS, 0 Failures, 0 Errors, 0 Skipped**:
+**Kết quả:** `BUILD SUCCESS` — **194/194 test chọn lọc PASS, 0 Failures, 0 Errors, 0 Skipped**:
 - `mavis-platform`: `LabStudioExerciseServiceTest` (6)
 - `mavis-analyzer`: `RunnerReceiptIngestServiceImplTest` (23), `RuntimeQueueCoordinatorTest` (16 — gồm test mới `QUEUED` reaper + `REMOTE_WORKER` heartbeat 30s), `RuntimeRunnerDispatcherTest` (16), `RuntimeSessionServiceImplTest` (31), `RuntimePlanningServiceTest` (33), `RuntimeStudioServiceTest` (25), `StudioExerciseEvaluatorTest` (5), `StudioTelemetryHubTest` (2) → 151 tests
 - `mavis-bootstrap`: `Wf03AcceptanceMatrixTest` (28), `CourseLabStudentServiceTest` (9) → 37 tests
@@ -77,7 +83,7 @@ npm run build   # chạy xác nhận cuối Batch 2 (16.5s) và Batch 3 (8.6s); 
 - `tsc --noEmit --incremental false`: **0 errors**
 - `npm test`: **541/541 PASS, 0 Failed, 0 Skipped**
 - `next build`: **PASS** (Batch 2: `16.5s`, Batch 3: `8.6s`)
-- Kiểm chứng trình duyệt thật (Chromium headless tích hợp sẵn trên máy local ở `1366×768`, Batch 2): **4/4 PASS** (Light auto-open Prediction + cảnh báo amber + preset CPU/Load + 0 overflow; Light Pause → `PAUSED` + `Resume` mở + `Finish Studio` khóa khi 0 snapshot; Dark Pause/Resume/Stop đồng nhất; màn chấm `?view=grading` mở sẵn `Auto-check` F1 100% + chip TP + rule).
+- Kiểm chứng trình duyệt Chromium headless tích hợp sẵn ở `1366×768` chạy trên **fixture server giả lập cục bộ** (không phải backend thật có Docker, Batch 2): **4/4 PASS** (Light auto-open Prediction + cảnh báo amber + preset CPU/Load + 0 overflow; Light Pause → `PAUSED` + `Resume` mở + `Finish Studio` khóa khi 0 snapshot; Dark Pause/Resume/Stop đồng nhất; màn chấm `?view=grading` mở sẵn `Auto-check` F1 100% + chip TP + rule).
 
 ### 2.4 Deploy Scripts, Schema Backup & Concurrency Load Test
 ```powershell

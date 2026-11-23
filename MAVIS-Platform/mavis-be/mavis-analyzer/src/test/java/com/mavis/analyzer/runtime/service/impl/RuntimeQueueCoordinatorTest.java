@@ -474,7 +474,14 @@ class RuntimeQueueCoordinatorTest {
 
     @Test
     void remoteWorkerHealthRequiresRecentWorkerPollWithin30Seconds() {
+        java.util.concurrent.atomic.AtomicBoolean dockerOk = new java.util.concurrent.atomic.AtomicBoolean(true);
         RuntimeQueueCoordinator stub = new RuntimeQueueCoordinator(repository, dispatcher, mapper) {
+            @Override
+            protected CommandOutput runHostCommand(List<String> command, long timeoutSeconds) {
+                return dockerOk.get()
+                        ? new CommandOutput(0, "{\"runc\":{}}")
+                        : new CommandOutput(1, "");
+            }
             @Override
             protected long usableDiskMiB() { return 20_000L; }
             @Override
@@ -499,5 +506,12 @@ class RuntimeQueueCoordinatorTest {
         var stale = stub.getRuntimeHealth(polledAt.plusSeconds(45));
         assertThat(stale.surveyReadiness()).isEqualTo("DEGRADED");
         assertThat(stale.warnings()).anyMatch(w -> w.contains("Remote worker heartbeat is stale"));
+
+        // Control-plane Docker unreachable in REMOTE_WORKER (4A still builds lab images) -> DEGRADED, not BLOCKED
+        dockerOk.set(false);
+        ReflectionTestUtils.setField(stub, "lastRuntimeProbeMillis", 0L);
+        var dockerDown = stub.getRuntimeHealth(polledAt.plusSeconds(10));
+        assertThat(dockerDown.surveyReadiness()).isEqualTo("DEGRADED");
+        assertThat(dockerDown.warnings()).anyMatch(w -> w.contains("Control-plane Docker unreachable: lab image builds unavailable."));
     }
 }

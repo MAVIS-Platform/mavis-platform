@@ -19,8 +19,8 @@ function startStubServer() {
     const body = bodyText ? JSON.parse(bodyText) : {};
     const url = new URL(req.url, `http://${req.headers.host}`);
 
-    const send = (status, payload) => {
-      res.writeHead(status, { "Content-Type": "application/json" });
+    const send = (status, payload, extraHeaders = {}) => {
+      res.writeHead(status, { "Content-Type": "application/json", ...extraHeaders });
       res.end(JSON.stringify(payload));
     };
 
@@ -34,7 +34,7 @@ function startStubServer() {
     // Launch Studio session
     if (req.method === "POST" && /\/studio-sessions$/.test(url.pathname)) {
       const id = `00000000-0000-0000-0000-${String(++seq).padStart(12, "0")}`;
-      sessions.set(id, { polls: 0, status: "QUEUED", actions: [], snapshots: 0 });
+      sessions.set(id, { polls: 0, status: "QUEUED", actions: [], snapshots: 0, rotatedSeen: false });
       return send(200, { status: 200, data: { id, executionStatus: "QUEUED" } });
     }
 
@@ -44,6 +44,26 @@ function startStubServer() {
       const s = sessions.get(sessionId);
       if (!s) return send(404, { message: "Not found" });
       s.polls++;
+      if (s.polls === 1) {
+        // Simulate BFF auto-refresh rotating mavis_session & mavis_refresh
+        return send(
+          200,
+          {
+            executionStatus: s.status,
+            telemetry: { services: [{ service: "payment-api", runningReplicas: 1 }] },
+            actions: s.actions,
+          },
+          {
+            "Set-Cookie": [
+              `mavis_session=rotated-${sessionId}; Path=/; HttpOnly`,
+              `mavis_refresh=refresh-${sessionId}; Path=/; HttpOnly`,
+            ],
+          },
+        );
+      }
+      if (String(req.headers.cookie || "").includes(`mavis_session=rotated-${sessionId}`)) {
+        s.rotatedSeen = true;
+      }
       if (s.status === "QUEUED" && s.polls >= 2) s.status = "RUNNING";
       return send(200, {
         executionStatus: s.status,
@@ -53,6 +73,8 @@ function startStubServer() {
     }
     if (url.pathname === "/api/mavis/studioAction") {
       const s = sessions.get(body.sessionId);
+      assert.match(String(req.headers.cookie || ""), new RegExp(`mavis_session=rotated-${body.sessionId}`));
+      assert.match(String(req.headers.cookie || ""), new RegExp(`mavis_refresh=refresh-${body.sessionId}`));
       s.actions.push({ action: body.action, service: body.service, status: "CONFIRMED" });
       return send(200, { ok: true });
     }
@@ -114,7 +136,7 @@ function startStubServer() {
 const { server, baseUrl, sessions } = await startStubServer();
 try {
   for (const [label, auth] of [
-    ["cookie", "Cookie: mavis_session=s1\nmavis_session=s2"],
+    ["cookie", "Cookie: mavis_session=s1; mavis_refresh=r1\nmavis_session=s2; mavis_refresh=r2"],
     ["bearer", "Bearer jwt-1\nAuthorization: Bearer jwt-2"],
   ]) {
     const { stdout } = await execFileAsync(process.execPath, [scriptPath], {
@@ -135,15 +157,38 @@ try {
     assert.equal(report.goNoGo.passed, true, `${label}: expected Go/No-Go pass`);
   }
   assert.equal(sessions.size, 4);
+  let cookieRotatedCount = 0;
   for (const s of sessions.values()) {
     assert.equal(s.status, "COMPLETED");
     assert.equal(s.snapshots, 1);
+    if (s.rotatedSeen) cookieRotatedCount++;
     assert.deepEqual(
       s.actions.map((a) => `${a.action}:${a.service}`),
       ["STOP:payment-api", "START:payment-api"],
     );
   }
-  console.log("PASS: studio-concurrency.mjs verified for both Cookie and Bearer auth flows.");
+  assert.equal(cookieRotatedCount, 2, "Expected both Cookie virtual students to pick up rotated Set-Cookie values");
+
+  // Fewer auth accounts than CONCURRENCY must exit 2
+  let insufficientExit = 0;
+  try {
+    await execFileAsync(process.execPath, [scriptPath], {
+      env: {
+        ...process.env,
+        MAVIS_BASE_URL: baseUrl,
+        MAVIS_LOADTEST_AUTH: "mavis_session=s1; mavis_refresh=r1\nmavis_session=s2; mavis_refresh=r2",
+        WORKSPACE_ID: "11111111-1111-1111-1111-111111111111",
+        ASSIGNMENT_ID: "22222222-2222-2222-2222-222222222222",
+        CONCURRENCY: "3",
+        ROUNDS: "1",
+      },
+    });
+  } catch (err) {
+    insufficientExit = err.code;
+  }
+  assert.equal(insufficientExit, 2, "Expected exit code 2 when auth entries < CONCURRENCY");
+
+  console.log("PASS: studio-concurrency.mjs verified for Cookie refresh, Bearer flow, and account-count guard.");
 } finally {
   server.close();
 }

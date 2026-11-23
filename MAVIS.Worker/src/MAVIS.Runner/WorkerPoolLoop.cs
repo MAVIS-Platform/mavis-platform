@@ -17,7 +17,7 @@ public static class WorkerPoolLoop
     private static readonly Regex Sha256ImageIdPattern = new("^sha256:[0-9a-f]{64}$", RegexOptions.Compiled);
     private static readonly SemaphoreSlim PrerequisiteLock = new(1, 1);
 
-    public sealed record MaintenanceReport(int DeliveredReceipts, int OrphansReaped, int SandboxImagesRemoved, int StateEntriesRemoved, long DiskFreeMiB);
+    public sealed record MaintenanceReport(int DeliveredReceipts, int OrphansReaped, int SandboxImagesRemoved, int StateEntriesRemoved, long HostStateFreeMiB);
 
     public static async Task RunAsync(JavaRuntimeClient java, IDockerCommands docker, string collectorConfigPath,
         string stateRoot, int concurrency, string workerId, string? ociRuntime, bool writableRootfsUnderKernelSandbox,
@@ -356,27 +356,35 @@ public static class WorkerPoolLoop
 
     public static async Task<MaintenanceReport> RunMaintenanceCycleAsync(
         JavaRuntimeClient java, IDockerCommands docker, string stateRoot,
-        IReadOnlySet<string> activeProjects, string workerId, CancellationToken ct, DateTimeOffset? utcNow = null)
+        IReadOnlySet<string> activeProjects, string workerId, CancellationToken ct,
+        DateTimeOffset? utcNow = null, bool? dedicatedHost = null)
     {
         var now = utcNow ?? DateTimeOffset.UtcNow;
         var delivered = await DeliverPendingReceiptsAsync(java, stateRoot, ct);
 
-        // 1. Reap orphaned mavisrun-* compose projects not belonging to an active worker slot.
-        var discovered = new HashSet<string>(StringComparer.Ordinal);
-        var psProjects = await docker.RunAsync(["ps", "-a", "--format", "{{.Label \"com.docker.compose.project\"}}"], stateRoot, 15, ct);
-        if (psProjects.ExitCode == 0)
-            CollectMavisRunProjects(psProjects.StandardOutput, discovered);
-        var composeProjects = await docker.RunAsync(["compose", "ls", "-a", "--format", "{{.Name}}"], stateRoot, 15, ct);
-        if (composeProjects.ExitCode == 0)
-            CollectMavisRunProjects(composeProjects.StandardOutput, discovered);
-
+        // 1. Reap orphaned mavisrun-* compose projects ONLY on a dedicated Runner VM host,
+        // and never touch a project whose runner-<project>.lock lease is still held by another process.
+        var isDedicatedHost = dedicatedHost ??
+            string.Equals(Environment.GetEnvironmentVariable("MAVIS_WORKER_DEDICATED_HOST"), "1", StringComparison.Ordinal);
         var orphansReaped = 0;
-        foreach (var project in discovered)
+        if (isDedicatedHost)
         {
-            if (activeProjects.Contains(project)) continue;
-            var down = await docker.RunAsync(["compose", "-p", project, "down", "-v", "--remove-orphans"], stateRoot, 30, ct);
-            if (down.ExitCode == 0)
-                orphansReaped++;
+            var discovered = new HashSet<string>(StringComparer.Ordinal);
+            var psProjects = await docker.RunAsync(["ps", "-a", "--format", "{{.Label \"com.docker.compose.project\"}}"], stateRoot, 15, ct);
+            if (psProjects.ExitCode == 0)
+                CollectMavisRunProjects(psProjects.StandardOutput, discovered);
+            var composeProjects = await docker.RunAsync(["compose", "ls", "-a", "--format", "{{.Name}}"], stateRoot, 15, ct);
+            if (composeProjects.ExitCode == 0)
+                CollectMavisRunProjects(composeProjects.StandardOutput, discovered);
+
+            foreach (var project in discovered)
+            {
+                if (activeProjects.Contains(project)) continue;
+                if (IsProjectLeaseHeld(stateRoot, project)) continue;
+                var down = await docker.RunAsync(["compose", "-p", project, "down", "-v", "--remove-orphans"], stateRoot, 30, ct);
+                if (down.ExitCode == 0)
+                    orphansReaped++;
+            }
         }
 
         // 2. Prune dangling images, old build cache, and unused mavis-sandbox-* images older than 14 days.
@@ -413,14 +421,33 @@ public static class WorkerPoolLoop
             }
         }
 
-        // 3. Clean stale state-root artifacts older than 7 days, sparing active sessions.
+        // 3. Clean stale state-root artifacts older than 7 days, sparing active sessions, recovery manifests, and unacked receipts.
         var stateRemoved = CleanStaleStateEntries(stateRoot, activeProjects, now.AddDays(-7));
-        var diskFreeMiB = GetDockerFreeDiskMiB(stateRoot);
+        var hostStateFreeMiB = GetHostStateFreeDiskMiB(stateRoot);
 
         Console.WriteLine(
-            $"[worker:{workerId}] hygiene diskFreeMiB={diskFreeMiB} orphansReaped={orphansReaped} " +
+            $"[worker:{workerId}] hygiene hostStateFreeMiB={hostStateFreeMiB} orphansReaped={orphansReaped} " +
             $"sandboxImagesRemoved={sandboxImagesRemoved} stateRemoved={stateRemoved} deliveredPending={delivered}");
-        return new MaintenanceReport(delivered, orphansReaped, sandboxImagesRemoved, stateRemoved, diskFreeMiB);
+        return new MaintenanceReport(delivered, orphansReaped, sandboxImagesRemoved, stateRemoved, hostStateFreeMiB);
+    }
+
+    internal static bool IsProjectLeaseHeld(string stateRoot, string project)
+    {
+        var lockPath = Path.Combine(stateRoot, "runner-" + project + ".lock");
+        if (!File.Exists(lockPath)) return false;
+        try
+        {
+            using var probe = new FileStream(lockPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+            return false;
+        }
+        catch (FileNotFoundException)
+        {
+            return false;
+        }
+        catch (IOException)
+        {
+            return true;
+        }
     }
 
     private static void CollectMavisRunProjects(string stdout, HashSet<string> target)
@@ -460,6 +487,9 @@ public static class WorkerPoolLoop
         {
             var name = Path.GetFileName(entry);
             if (string.Equals(name, "receipts", StringComparison.OrdinalIgnoreCase)) continue;
+            // Preserve allocation and recovery manifests so interrupted sessions remain recoverable.
+            if (name.StartsWith(".allocation-", StringComparison.OrdinalIgnoreCase) ||
+                name.StartsWith(".recovery-", StringComparison.OrdinalIgnoreCase)) continue;
             if (IsActiveEntry(name)) continue;
             try
             {
@@ -473,6 +503,12 @@ public static class WorkerPoolLoop
                 }
                 else if (File.Exists(entry) && File.GetLastWriteTimeUtc(entry) < cutoff.UtcDateTime)
                 {
+                    if (name.StartsWith("runner-", StringComparison.OrdinalIgnoreCase) &&
+                        name.EndsWith(".lock", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var project = name["runner-".Length..^".lock".Length];
+                        if (IsProjectLeaseHeld(stateRoot, project)) continue;
+                    }
                     File.Delete(entry);
                     removed++;
                 }
@@ -483,15 +519,28 @@ public static class WorkerPoolLoop
         var receiptsDir = Path.Combine(stateRoot, "receipts");
         if (Directory.Exists(receiptsDir))
         {
-            foreach (var file in Directory.EnumerateFiles(receiptsDir))
+            foreach (var receiptFile in Directory.EnumerateFiles(receiptsDir, "mavisrun-*.json"))
             {
-                var name = Path.GetFileName(file);
+                var name = Path.GetFileName(receiptFile);
+                if (name.EndsWith(".ack.json", StringComparison.OrdinalIgnoreCase)) continue;
                 if (IsActiveEntry(name)) continue;
+                var project = Path.GetFileNameWithoutExtension(receiptFile);
+                var ackFile = Path.Combine(receiptsDir, project + ".ack.json");
+                var lockFile = Path.Combine(receiptsDir, project + ".delivery.lock");
                 try
                 {
-                    if (File.GetLastWriteTimeUtc(file) < cutoff.UtcDateTime)
+                    if (!File.Exists(ackFile))
                     {
-                        File.Delete(file);
+                        if (File.GetLastWriteTimeUtc(receiptFile) < cutoff.UtcDateTime)
+                            Console.Error.WriteLine($"[worker] unacknowledged receipt older than 7 days preserved project={project}");
+                        continue;
+                    }
+                    if (File.GetLastWriteTimeUtc(ackFile) < cutoff.UtcDateTime &&
+                        File.GetLastWriteTimeUtc(receiptFile) < cutoff.UtcDateTime)
+                    {
+                        File.Delete(receiptFile);
+                        File.Delete(ackFile);
+                        if (File.Exists(lockFile)) File.Delete(lockFile);
                         removed++;
                     }
                 }
@@ -501,12 +550,12 @@ public static class WorkerPoolLoop
         return removed;
     }
 
-    private static long GetDockerFreeDiskMiB(string fallbackPath)
+    private static long GetHostStateFreeDiskMiB(string stateRoot)
     {
+        // shortcut: measures the host filesystem backing stateRoot (/tmp), assuming it shares the disk with /var/lib/docker; upgrade if the Runner VM mounts /var/lib/docker on a separate volume.
         try
         {
-            var probePath = Directory.Exists("/var/lib/docker") ? "/var/lib/docker" : fallbackPath;
-            var root = Path.GetPathRoot(Path.GetFullPath(probePath));
+            var root = Path.GetPathRoot(Path.GetFullPath(stateRoot));
             if (string.IsNullOrWhiteSpace(root)) return -1;
             var info = new DriveInfo(root);
             return info.AvailableFreeSpace / (1024L * 1024L);

@@ -212,7 +212,7 @@ public sealed class WorkerPoolHardeningTests : IDisposable
         });
 
         var report = await WorkerPoolLoop.RunMaintenanceCycleAsync(
-            java, docker, _root, new HashSet<string> { activeProject }, "worker-test", CancellationToken.None, now);
+            java, docker, _root, new HashSet<string> { activeProject }, "worker-test", CancellationToken.None, now, dedicatedHost: true);
 
         Assert.Equal(1, report.DeliveredReceipts);
         Assert.Equal(1, report.OrphansReaped);
@@ -231,6 +231,98 @@ public sealed class WorkerPoolHardeningTests : IDisposable
         Assert.DoesNotContain(docker.Calls, c => c is ["image", "rm", "-f", "img-inuse"]);
         Assert.DoesNotContain(docker.Calls, c => c is ["image", "rm", "-f", "img-fresh"]);
         Assert.DoesNotContain(docker.Calls, c => c is ["image", "rm", "-f", "img-pg"]);
+    }
+
+    [Fact]
+    public async Task MaintenanceCyclePreservesUnackedReceiptsAndRecoveryManifestsWhileCleaningOldAckedReceipts()
+    {
+        Directory.CreateDirectory(_root);
+        var now = new DateTimeOffset(2026, 11, 23, 3, 0, 0, TimeSpan.Zero);
+        var oldUtc = now.AddDays(-10).UtcDateTime;
+
+        var unackedProj = "mavisrun-" + new string('3', 32);
+        var ackedProj = "mavisrun-" + new string('4', 32);
+        var receiptsDir = Path.Combine(_root, "receipts");
+        Directory.CreateDirectory(receiptsDir);
+
+        var unackedReceipt = Path.Combine(receiptsDir, unackedProj + ".json");
+        await File.WriteAllTextAsync(unackedReceipt, $"{{\"sessionId\":\"s-3\",\"resourceProject\":\"{unackedProj}\"}}");
+        File.SetLastWriteTimeUtc(unackedReceipt, oldUtc);
+
+        var ackedReceipt = Path.Combine(receiptsDir, ackedProj + ".json");
+        var ackedAck = Path.Combine(receiptsDir, ackedProj + ".ack.json");
+        var ackedLock = Path.Combine(receiptsDir, ackedProj + ".delivery.lock");
+        await File.WriteAllTextAsync(ackedReceipt, "{}");
+        await File.WriteAllTextAsync(ackedAck, "{}");
+        await File.WriteAllTextAsync(ackedLock, "");
+        File.SetLastWriteTimeUtc(ackedReceipt, oldUtc);
+        File.SetLastWriteTimeUtc(ackedAck, oldUtc);
+        File.SetLastWriteTimeUtc(ackedLock, oldUtc);
+
+        var allocManifest = Path.Combine(_root, ".allocation-" + unackedProj + ".json");
+        var recoveryManifest = Path.Combine(_root, ".recovery-" + unackedProj + ".json");
+        var recoveryAck = Path.Combine(_root, ".recovery-" + unackedProj + ".ack.json");
+        await File.WriteAllTextAsync(allocManifest, "{}");
+        await File.WriteAllTextAsync(recoveryManifest, "{}");
+        await File.WriteAllTextAsync(recoveryAck, "{}");
+        File.SetLastWriteTimeUtc(allocManifest, oldUtc);
+        File.SetLastWriteTimeUtc(recoveryManifest, oldUtc);
+        File.SetLastWriteTimeUtc(recoveryAck, oldUtc);
+
+        // Backend unavailable (400 permanent error) so unacked receipt stays undelivered
+        var handler = new FakeHandler(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)));
+        using var java = new JavaRuntimeClient(new Uri("http://127.0.0.1:8080/"), "test-runner-key", handler, (_, _) => Task.CompletedTask);
+        var docker = new FakeDocker(_ => new DockerCommandResult(0, ""));
+
+        var report = await WorkerPoolLoop.RunMaintenanceCycleAsync(
+            java, docker, _root, new HashSet<string>(), "worker-test", CancellationToken.None, now, dedicatedHost: false);
+
+        Assert.Equal(1, report.StateEntriesRemoved);
+        Assert.True(File.Exists(unackedReceipt));
+        Assert.False(File.Exists(ackedReceipt));
+        Assert.False(File.Exists(ackedAck));
+        Assert.False(File.Exists(ackedLock));
+        Assert.True(File.Exists(allocManifest));
+        Assert.True(File.Exists(recoveryManifest));
+        Assert.True(File.Exists(recoveryAck));
+    }
+
+    [Fact]
+    public async Task OrphanReaperRequiresDedicatedHostAndSkipsLeaseHeldProjects()
+    {
+        Directory.CreateDirectory(_root);
+        var leasedProj = "mavisrun-" + new string('5', 32);
+        var freeOrphanProj = "mavisrun-" + new string('6', 32);
+
+        var handler = new FakeHandler(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+        using var java = new JavaRuntimeClient(new Uri("http://127.0.0.1:8080/"), "test-runner-key", handler, (_, _) => Task.CompletedTask);
+
+        // 1. Without dedicated host flag -> 0 compose down calls
+        var nonDedicatedDocker = new FakeDocker(args =>
+            args is ["ps", "-a", "--format", "{{.Label \"com.docker.compose.project\"}}"]
+                ? new DockerCommandResult(0, $"{leasedProj}\n{freeOrphanProj}\n")
+                : new DockerCommandResult(0, ""));
+
+        var skippedReport = await WorkerPoolLoop.RunMaintenanceCycleAsync(
+            java, nonDedicatedDocker, _root, new HashSet<string>(), "worker-test", CancellationToken.None, dedicatedHost: false);
+        Assert.Equal(0, skippedReport.OrphansReaped);
+        Assert.DoesNotContain(nonDedicatedDocker.Calls, c => c is ["compose", "-p", ..]);
+
+        // 2. With dedicated host flag + held lease lock -> skips leasedProj, reaps freeOrphanProj
+        var leasePath = Path.Combine(_root, "runner-" + leasedProj + ".lock");
+        using var heldLease = new FileStream(leasePath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+
+        var dedicatedDocker = new FakeDocker(args =>
+            args is ["ps", "-a", "--format", "{{.Label \"com.docker.compose.project\"}}"]
+                ? new DockerCommandResult(0, $"{leasedProj}\n{freeOrphanProj}\n")
+                : new DockerCommandResult(0, ""));
+
+        var reapedReport = await WorkerPoolLoop.RunMaintenanceCycleAsync(
+            java, dedicatedDocker, _root, new HashSet<string>(), "worker-test", CancellationToken.None, dedicatedHost: true);
+
+        Assert.Equal(1, reapedReport.OrphansReaped);
+        Assert.Contains(dedicatedDocker.Calls, c => c is ["compose", "-p", var p, "down", "-v", "--remove-orphans"] && p == freeOrphanProj);
+        Assert.DoesNotContain(dedicatedDocker.Calls, c => c is ["compose", "-p", var p, ..] && p == leasedProj);
     }
 
     public void Dispose()

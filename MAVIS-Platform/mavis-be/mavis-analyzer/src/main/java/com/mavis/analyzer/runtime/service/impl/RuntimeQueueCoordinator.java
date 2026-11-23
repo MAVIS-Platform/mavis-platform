@@ -733,9 +733,7 @@ public class RuntimeQueueCoordinator {
     }
 
     RuntimeHealthSnapshot getRuntimeHealth(Instant now) {
-        if (!isRemoteWorkerMode()) {
-            refreshDockerAndRuntimeProbe();
-        }
+        refreshDockerAndRuntimeProbe();
         long active = countActiveSessions();
         long queued = countQueuedSessions();
         long freeMiB = usableDiskMiB();
@@ -767,6 +765,10 @@ public class RuntimeQueueCoordinator {
             warnings.add("Host free disk space is low (" + freeMiB + " MiB free; threshold " + lowDiskThresholdMiB + " MiB).");
         }
         if (isRemoteWorkerMode()) {
+            if (!cachedDockerReachable) {
+                if ("READY".equals(readiness)) readiness = "DEGRADED";
+                warnings.add("Control-plane Docker unreachable: lab image builds unavailable.");
+            }
             Instant lastPoll = lastWorkerPollAt;
             if (lastPoll == null) {
                 if ("READY".equals(readiness)) readiness = "DEGRADED";

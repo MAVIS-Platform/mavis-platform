@@ -419,14 +419,14 @@ Sau đó mở trang **Admin › Studio** kiểm tra trạng thái `surveyReadine
    ```bash
    cd /opt/mavis && docker compose --env-file .env.production -f deploy/compose.production.yml up -d --no-build backend
    ```
-2. **Trên Runner VM** (Ubuntu 24.04, 8 vCPU / 16 GB RAM / ≥ 100 GB SSD, chỉ mở inbound SSH):
+2. **Trên Runner VM** (Ubuntu 24.04, 8 vCPU / 16 GB RAM / ≥ 100 GB SSD, chỉ mở inbound SSH; **tuyệt đối không chạy worker này trên Control VPS**):
    ```bash
    MAVIS_JAVA_URL=https://maviss.site \
    MAVIS_RUNNER_SERVICE_KEY=<khớp-control-plane> \
    MAVIS_WORKER_CONCURRENCY=10 \
    docker compose -f deploy/compose.runner-worker.yml up -d --build
    ```
-   Worker tự seed volume OTel (`mavis-agents-java-2-32-0-dotnet-1-17-0-bundle-3`), tự build `mavis-poc-runner:4`, tự gửi lại receipt tồn đọng lúc khởi động, và mỗi 5 phút tự dọn `mavisrun-*` mồ côi + ảnh/cache cũ + ghi log `diskFreeMiB`.
+   Worker tự seed volume OTel (`mavis-agents-java-2-32-0-dotnet-1-17-0-bundle-3`), tự build `mavis-poc-runner:4`, tự gửi lại receipt tồn đọng lúc khởi động, và mỗi 5 phút tự dọn `mavisrun-*` mồ côi (chỉ bật khi `MAVIS_WORKER_DEDICATED_HOST=1` và bỏ qua project đang giữ lock `runner-<project>.lock`) + ảnh/cache cũ + ghi log `hostStateFreeMiB` (đo trên ổ chứa `/tmp/mavis-runner-state`). Receipt chưa có `.ack.json` và các manifest `.allocation-*` / `.recovery-*` không bao giờ bị xóa.
 3. **Xem trạng thái, log và restart worker:**
    ```bash
    docker compose -f deploy/compose.runner-worker.yml ps
@@ -453,7 +453,7 @@ Sau đó mở trang **Admin › Studio** kiểm tra trạng thái `surveyReadine
   CONCURRENCY=10 ROUNDS=3 \
   node deploy/loadtest/studio-concurrency.mjs
   ```
-  *(Mỗi dòng trong `10-student-cookies.txt` là `Cookie: mavis_session=...` hoặc `Bearer <jwt>` của 1 tài khoản SV đã enroll).*
+  > **Lưu ý auth trên production:** Backend Java không public ra internet nên production chỉ dùng được chế độ **Cookie** qua Next.js BFF (`https://maviss.site`). File `10-student-cookies.txt` phải có **ít nhất 10 dòng cho 10 tài khoản SV khác nhau đã enroll** (thiếu sẽ thoát mã `2`), và mỗi dòng nên chứa đủ cả 2 cookie (`Cookie: mavis_session=...; mavis_refresh=...`) để script tự cập nhật khi BFF xoay vòng token sau 15 phút.
 - **Tiêu chí Go để nâng lên `10` slot:** `failPercent < 5%` (≤ 1/30), `bootMs.p95 < 60000`, `controlApiMs.p95 < 3000`, và kiểm tra trên Runner VM sau 10 phút có **0** stack `mavisrun-*` mồ côi (`docker ps -a --format '{{.Label "com.docker.compose.project"}}' | grep -c '^mavisrun-'`).
 - Nếu quá tải đột xuất trong giờ học: hạ nhanh `MAVIS_RUNTIME_MAX_ACTIVE_STUDIO_SESSIONS` (ví dụ `10` → `5`) và `MAVIS_WORKER_CONCURRENCY`, restart backend/worker (ngoài thời điểm có phiên chạy).
 
@@ -476,4 +476,60 @@ Sau đó mở trang **Admin › Studio** kiểm tra trạng thái `surveyReadine
      scp <user>@<control-vps>:/opt/mavis/db-backups/$(ssh <user>@<control-vps> 'ls -t /opt/mavis/db-backups/daily-*.dump | head -n 1 | xargs basename') ./
      ```
   3. Kiểm tra bảng điều khiển nhà cung cấp DB ngoài (Aiven) để xác nhận automated backups / point-in-time recovery vẫn đang bật.
+
+### 6.6 Audit dữ liệu production có rule Scale > 3 (chỉ đọc — Batch 6)
+Sau khi giới hạn Scale mới về `1..3`, chạy câu SQL **chỉ đọc** này trên Aiven console / `psql` để tìm các bài lab cũ (cả bản nháp `lab_studio_exercises` lẫn bản đã publish `assignments.studio_exercise_snapshot`) có yêu cầu Scale > 3. Lab nào xuất hiện cần GV mở trong editor chỉnh về `≤ 3` rồi publish lại:
+
+```sql
+WITH exercise_sources AS (
+  SELECT
+    a.workspace_id,
+    a.id AS assignment_id,
+    a.title,
+    'draft (lab_studio_exercises)' AS source,
+    e.success_criteria AS criteria,
+    e.instructions
+  FROM lab_studio_exercises e
+  JOIN assignments a ON a.id = e.assignment_id
+  UNION ALL
+  SELECT
+    a.workspace_id,
+    a.id AS assignment_id,
+    a.title,
+    'published (studio_exercise_snapshot)' AS source,
+    a.studio_exercise_snapshot -> 'successCriteria' AS criteria,
+    a.studio_exercise_snapshot ->> 'instructions' AS instructions
+  FROM assignments a
+  WHERE a.studio_exercise_snapshot IS NOT NULL
+)
+SELECT
+  workspace_id,
+  assignment_id,
+  title,
+  source,
+  criteria -> 'minReplicas' AS min_replicas,
+  criteria -> 'targetChangeAction' AS target_change_action,
+  criteria -> 'rules' AS rules
+FROM exercise_sources
+WHERE
+  EXISTS (
+    SELECT 1
+    FROM jsonb_array_elements(COALESCE(criteria -> 'minReplicas', '[]'::jsonb)) elem
+    WHERE (elem ->> 'count') ~ '^[0-9]+$' AND (elem ->> 'count')::int > 3
+  )
+  OR (
+    criteria -> 'targetChangeAction' ->> 'action' = 'SCALE'
+    AND (criteria -> 'targetChangeAction' ->> 'replicas') ~ '^[0-9]+$'
+    AND (criteria -> 'targetChangeAction' ->> 'replicas')::int > 3
+  )
+  OR EXISTS (
+    SELECT 1
+    FROM jsonb_array_elements(COALESCE(criteria -> 'rules', '[]'::jsonb)) r
+    WHERE r ->> 'metric' = 'REPLICAS'
+      AND (r ->> 'threshold') ~ '^[0-9]+(\.[0-9]+)?$'
+      AND (r ->> 'threshold')::numeric > 3
+  )
+  OR COALESCE(instructions, '') ~* '(scale[^0-9]{0,20}[4-9]|replicas[^0-9]{0,10}[4-9]|×[4-9])'
+ORDER BY workspace_id, assignment_id, source;
+```
 
