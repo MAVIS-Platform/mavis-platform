@@ -1575,6 +1575,7 @@ export function LiveStudioWorkbench({
           {/* Studio Live Guided Tour (?) Trigger */}
           <ScreenHelpTrigger
             screenId="studio-live"
+            surfaceTheme={isLight ? "light" : "dark"}
             onTriggerClick={() => {
               setTelemetryPopoverOpen(false);
               setStylePopoverOpen(false);
@@ -1708,6 +1709,35 @@ export function LiveStudioWorkbench({
             )}
           </div>
 
+          {recordingSteps > 0 && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={savingReplay}
+              onClick={() => void stopAndSaveLiveReplay()}
+              className="h-8 border-rose-500/50 bg-rose-500/15 px-2.5 font-mono text-xs text-rose-600 dark:text-rose-200"
+            >
+              <span className="mr-1.5 size-1.5 animate-pulse rounded-full bg-rose-500" aria-hidden="true" />
+              REC {String(Math.floor(recordingSeconds / 60)).padStart(2, "0")}:
+              {String(recordingSeconds % 60).padStart(2, "0")} · {recordingSteps}
+            </Button>
+          )}
+
+          {!hideSwitchToSandbox && onSwitchToSandbox && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 px-2.5 text-xs"
+              onClick={onSwitchToSandbox}
+            >
+              Switch to Sandbox
+            </Button>
+          )}
+
+          {/* Theme Switcher + Workspace Settings Grouped Together for Clean Spotlight */}
+          <div data-tour="studio-top-right-tools" className="flex shrink-0 items-center gap-1.5">
           {/* 4-Style Architectural Visual Switcher (Daylight Cloud / Blueprint / Tactile Pop / Control Glass) */}
           <div data-tour="studio-style-picker" className="relative">
             <button
@@ -1840,33 +1870,6 @@ export function LiveStudioWorkbench({
             )}
           </div>
 
-          {recordingSteps > 0 && (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={savingReplay}
-              onClick={() => void stopAndSaveLiveReplay()}
-              className="h-8 border-rose-500/50 bg-rose-500/15 px-2.5 font-mono text-xs text-rose-600 dark:text-rose-200"
-            >
-              <span className="mr-1.5 size-1.5 animate-pulse rounded-full bg-rose-500" aria-hidden="true" />
-              REC {String(Math.floor(recordingSeconds / 60)).padStart(2, "0")}:
-              {String(recordingSeconds % 60).padStart(2, "0")} · {recordingSteps}
-            </Button>
-          )}
-
-          {!hideSwitchToSandbox && onSwitchToSandbox && (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-8 px-2.5 text-xs"
-              onClick={onSwitchToSandbox}
-            >
-              Switch to Sandbox
-            </Button>
-          )}
-
           {/* Workspace Options Popover Trigger */}
           <div data-tour="studio-settings-btn" className="relative">
             <button
@@ -1979,6 +1982,7 @@ export function LiveStudioWorkbench({
                 </div>
               </div>
             )}
+          </div>
           </div>
 
           {standaloneHeader?.right}

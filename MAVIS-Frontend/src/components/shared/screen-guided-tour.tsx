@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { CircleHelp } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -99,12 +99,14 @@ export function ScreenHelpTrigger({
   triggerClassName,
   iconClassName,
   onTriggerClick,
+  surfaceTheme,
 }: {
   screenId?: string | null | undefined;
   onCustomStart?: (() => void) | undefined;
   triggerClassName?: string | undefined;
   iconClassName?: string | undefined;
   onTriggerClick?: (() => void) | undefined;
+  surfaceTheme?: "light" | "dark" | undefined;
 }) {
   const { t } = useLocale();
   const tour = resolveScreenTour(screenId);
@@ -113,6 +115,9 @@ export function ScreenHelpTrigger({
   const startingTour = useRef(false);
 
   if (!tour) return null;
+
+  const isLightSurface = surfaceTheme === "light";
+  const isDarkSurface = surfaceTheme === "dark";
 
   const startTour = () => {
     if (onCustomStart) {
@@ -143,7 +148,14 @@ export function ScreenHelpTrigger({
           </Button>
         </DialogTrigger>
         <DialogContent
-          className="sm:max-w-2xl"
+          data-tour-surface={surfaceTheme ?? "auto"}
+          className={`sm:max-w-2xl ${
+            isLightSurface
+              ? "border-slate-200 bg-white text-slate-900 shadow-2xl"
+              : isDarkSurface
+                ? "border-slate-700 bg-slate-900 text-slate-100 shadow-2xl"
+                : ""
+          }`}
           onCloseAutoFocus={(event) => {
             if (startingTour.current) {
               event.preventDefault();
@@ -153,8 +165,18 @@ export function ScreenHelpTrigger({
           }}
         >
           <DialogHeader>
-            <DialogTitle>{t(tour.title.en, tour.title.vi)}</DialogTitle>
-            <DialogDescription>
+            <DialogTitle
+              className={
+                isLightSurface ? "text-slate-900" : isDarkSurface ? "text-slate-100" : undefined
+              }
+            >
+              {t(tour.title.en, tour.title.vi)}
+            </DialogTitle>
+            <DialogDescription
+              className={
+                isLightSurface ? "text-slate-600" : isDarkSurface ? "text-slate-300" : undefined
+              }
+            >
               {t(tour.subtitle.en, tour.subtitle.vi)}
             </DialogDescription>
           </DialogHeader>
@@ -162,16 +184,46 @@ export function ScreenHelpTrigger({
             {tour.cards.map((card, idx) => (
               <div
                 key={card.badge}
-                className="flex flex-col justify-between space-y-3 rounded-lg border bg-card p-3.5"
+                className={`flex flex-col justify-between space-y-3 rounded-lg border p-3.5 ${
+                  isLightSurface
+                    ? "border-slate-200 bg-slate-50 text-slate-900"
+                    : isDarkSurface
+                      ? "border-slate-700 bg-slate-800/70 text-slate-100"
+                      : "bg-card"
+                }`}
               >
                 <div className="space-y-2">
-                  <p className="flex items-center gap-1.5 font-semibold text-foreground">
-                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 font-bold text-primary">
+                  <p
+                    className={`flex items-center gap-1.5 font-semibold ${
+                      isLightSurface
+                        ? "text-slate-900"
+                        : isDarkSurface
+                          ? "text-slate-100"
+                          : "text-foreground"
+                    }`}
+                  >
+                    <span
+                      className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full font-bold ${
+                        isLightSurface
+                          ? "bg-blue-100 text-blue-700"
+                          : isDarkSurface
+                            ? "bg-sky-500/20 text-sky-300"
+                            : "bg-primary/10 text-primary"
+                      }`}
+                    >
                       {card.badge}
                     </span>
                     <span>{t(card.title.en, card.title.vi)}</span>
                   </p>
-                  <p className="leading-6 text-muted-foreground">
+                  <p
+                    className={`leading-6 ${
+                      isLightSurface
+                        ? "text-slate-600"
+                        : isDarkSurface
+                          ? "text-slate-300"
+                          : "text-muted-foreground"
+                    }`}
+                  >
                     {t(card.description.en, card.description.vi)}
                   </p>
                 </div>
@@ -179,6 +231,13 @@ export function ScreenHelpTrigger({
                   <div>
                     <Button
                       type="button"
+                      className={
+                        isLightSurface
+                          ? "bg-slate-900 text-white hover:bg-slate-800"
+                          : isDarkSurface
+                            ? "bg-sky-500 text-slate-950 hover:bg-sky-400"
+                            : undefined
+                      }
                       onClick={() => {
                         startingTour.current = true;
                         setOpen(false);
@@ -198,6 +257,7 @@ export function ScreenHelpTrigger({
           tour={tour}
           stepIndex={stepIndex}
           onStepChange={setStepIndex}
+          surfaceTheme={surfaceTheme}
         />
       )}
     </>
@@ -208,17 +268,35 @@ export function ScreenSpotlightOverlay({
   tour,
   stepIndex,
   onStepChange,
+  surfaceTheme,
 }: {
   tour: ScreenTourDefinition;
   stepIndex: number;
   onStepChange: (next: number | null) => void;
+  surfaceTheme?: "light" | "dark" | undefined;
 }) {
   const { t } = useLocale();
   const id = useId();
   const total = tour.steps.length;
   const currentStep = tour.steps[stepIndex];
+  const cardRef = useRef<HTMLDivElement>(null);
   const [rect, setRect] = useState<TargetRect | null>(null);
   const [viewport, setViewport] = useState({ width: 1280, height: 800 });
+  const [cardHeight, setCardHeight] = useState(190);
+
+  useLayoutEffect(() => {
+    const el = cardRef.current;
+    if (!el) return;
+    const syncHeight = () => {
+      const next = Math.ceil(el.getBoundingClientRect().height);
+      if (next > 40) setCardHeight(next);
+    };
+    syncHeight();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(syncHeight);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [stepIndex, viewport.width, viewport.height]);
 
   useEffect(() => {
     if (!currentStep || typeof window === "undefined") return;
@@ -293,31 +371,40 @@ export function ScreenSpotlightOverlay({
   if (!currentStep) return null;
 
   const isLast = stepIndex + 1 >= total;
-  const cardWidth = Math.min(360, viewport.width - 32);
-  let cardTop = Math.max(24, (viewport.height - 240) / 2);
-  let cardLeft = Math.max(16, (viewport.width - cardWidth) / 2);
+  const isLightSurface = surfaceTheme === "light";
+  const isDarkSurface = surfaceTheme === "dark";
+  const cardWidth = Math.min(340, viewport.width - 32);
+  const margin = 12;
+  const gap = 14;
+  const clampLeft = (value: number) =>
+    Math.min(Math.max(margin, value), Math.max(margin, viewport.width - cardWidth - margin));
+  const clampTop = (value: number) =>
+    Math.min(Math.max(margin, value), Math.max(margin, viewport.height - cardHeight - margin));
+
+  let cardTop = clampTop((viewport.height - cardHeight) / 2);
+  let cardLeft = clampLeft((viewport.width - cardWidth) / 2);
 
   if (rect) {
-    const spaceBelow = viewport.height - (rect.top + rect.height);
-    const spaceAbove = rect.top - 64;
-    const spaceRight = viewport.width - (rect.left + rect.width);
-    const spaceLeft = rect.left;
+    const canPlaceBelow = rect.top + rect.height + gap + cardHeight <= viewport.height - margin;
+    const canPlaceAbove = rect.top - gap - cardHeight >= margin;
+    const canPlaceRight = rect.left + rect.width + gap + cardWidth <= viewport.width - margin;
+    const canPlaceLeft = rect.left - gap - cardWidth >= margin;
 
-    if (spaceBelow >= 230) {
-      cardTop = Math.min(viewport.height - 230, rect.top + rect.height + 14);
-      cardLeft = Math.min(Math.max(16, rect.left), viewport.width - cardWidth - 16);
-    } else if (spaceAbove >= 220) {
-      cardTop = Math.max(72, rect.top - 220);
-      cardLeft = Math.min(Math.max(16, rect.left), viewport.width - cardWidth - 16);
-    } else if (spaceRight >= cardWidth + 24) {
-      cardTop = Math.min(Math.max(72, rect.top), viewport.height - 230);
-      cardLeft = rect.left + rect.width + 16;
-    } else if (spaceLeft >= cardWidth + 24) {
-      cardTop = Math.min(Math.max(72, rect.top), viewport.height - 230);
-      cardLeft = rect.left - cardWidth - 16;
+    if (canPlaceBelow) {
+      cardTop = rect.top + rect.height + gap;
+      cardLeft = clampLeft(rect.left);
+    } else if (canPlaceAbove) {
+      cardTop = rect.top - gap - cardHeight;
+      cardLeft = clampLeft(rect.left);
+    } else if (canPlaceRight) {
+      cardTop = clampTop(rect.top);
+      cardLeft = rect.left + rect.width + gap;
+    } else if (canPlaceLeft) {
+      cardTop = clampTop(rect.top);
+      cardLeft = rect.left - gap - cardWidth;
     } else {
-      cardTop = Math.max(72, viewport.height - 240);
-      cardLeft = Math.max(16, viewport.width - cardWidth - 20);
+      cardTop = clampTop(viewport.height - cardHeight - margin);
+      cardLeft = clampLeft(viewport.width - cardWidth - margin);
     }
   }
 
@@ -329,17 +416,25 @@ export function ScreenSpotlightOverlay({
       aria-labelledby={`${id}-tour-title`}
       aria-describedby={`${id}-tour-desc`}
       data-screen-tour-active={tour.id}
+      data-tour-surface={surfaceTheme ?? "auto"}
     >
       {rect ? (
         <div
           aria-hidden="true"
+          data-tour-spotlight-ring
           style={{
             top: `${rect.top}px`,
             left: `${rect.left}px`,
             width: `${rect.width}px`,
             height: `${rect.height}px`,
           }}
-          className="pointer-events-none fixed rounded-xl ring-2 ring-primary ring-offset-2 ring-offset-background transition-all duration-200 shadow-[0_0_0_9999px_rgb(0_0_0/0.58)]"
+          className={`pointer-events-none fixed rounded-xl ring-2 ring-offset-2 transition-all duration-200 shadow-[0_0_0_9999px_rgb(0_0_0/0.55)] ${
+            isLightSurface
+              ? "ring-blue-600 ring-offset-white"
+              : isDarkSurface
+                ? "ring-sky-400 ring-offset-slate-950"
+                : "ring-primary ring-offset-background"
+          }`}
         />
       ) : (
         <div
@@ -349,15 +444,31 @@ export function ScreenSpotlightOverlay({
       )}
 
       <div
+        ref={cardRef}
+        data-tour-tooltip-card
         style={{
           top: `${cardTop}px`,
           left: `${cardLeft}px`,
           width: `${cardWidth}px`,
         }}
-        className="pointer-events-auto fixed rounded-xl border border-primary/40 bg-popover p-4 text-popover-foreground shadow-2xl space-y-3 transition-all duration-200"
+        className={`pointer-events-auto fixed space-y-2.5 rounded-xl border p-4 shadow-2xl transition-all duration-200 ${
+          isLightSurface
+            ? "border-slate-200 bg-white text-slate-900"
+            : isDarkSurface
+              ? "border-slate-700 bg-slate-900 text-slate-100"
+              : "border-primary/40 bg-popover text-popover-foreground"
+        }`}
       >
         <div className="flex items-center justify-between gap-2">
-          <p className="text-xs font-semibold text-primary">
+          <p
+            className={`text-xs font-semibold ${
+              isLightSurface
+                ? "text-blue-600"
+                : isDarkSurface
+                  ? "text-sky-400"
+                  : "text-primary"
+            }`}
+          >
             {t("Step", "Bước")} {stepIndex + 1}/{total}
           </p>
           <div className="flex items-center gap-1" aria-hidden="true">
@@ -366,21 +477,51 @@ export function ScreenSpotlightOverlay({
                 key={s.id}
                 className={`h-1.5 rounded-full transition-all ${
                   idx === stepIndex
-                    ? "w-4 bg-primary"
+                    ? isLightSurface
+                      ? "w-4 bg-blue-600"
+                      : isDarkSurface
+                        ? "w-4 bg-sky-400"
+                        : "w-4 bg-primary"
                     : idx < stepIndex
-                      ? "w-1.5 bg-primary/50"
-                      : "w-1.5 bg-muted-foreground/30"
+                      ? isLightSurface
+                        ? "w-1.5 bg-blue-300"
+                        : isDarkSurface
+                          ? "w-1.5 bg-sky-400/50"
+                          : "w-1.5 bg-primary/50"
+                      : isLightSurface
+                        ? "w-1.5 bg-slate-200"
+                        : isDarkSurface
+                          ? "w-1.5 bg-slate-700"
+                          : "w-1.5 bg-muted-foreground/30"
                 }`}
               />
             ))}
           </div>
         </div>
 
-        <h3 id={`${id}-tour-title`} className="text-sm font-semibold leading-snug text-foreground">
+        <h3
+          id={`${id}-tour-title`}
+          className={`text-sm font-semibold leading-snug ${
+            isLightSurface
+              ? "text-slate-900"
+              : isDarkSurface
+                ? "text-slate-100"
+                : "text-foreground"
+          }`}
+        >
           {t(currentStep.title.en, currentStep.title.vi)}
         </h3>
 
-        <p id={`${id}-tour-desc`} className="text-xs leading-5 text-muted-foreground">
+        <p
+          id={`${id}-tour-desc`}
+          className={`text-xs leading-5 ${
+            isLightSurface
+              ? "text-slate-600"
+              : isDarkSurface
+                ? "text-slate-300"
+                : "text-muted-foreground"
+          }`}
+        >
           {t(currentStep.description.en, currentStep.description.vi)}
         </p>
 
@@ -389,6 +530,13 @@ export function ScreenSpotlightOverlay({
             type="button"
             variant="ghost"
             size="sm"
+            className={
+              isLightSurface
+                ? "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                : isDarkSurface
+                  ? "text-slate-300 hover:bg-slate-800 hover:text-white"
+                  : undefined
+            }
             onClick={() => onStepChange(null)}
           >
             {t("Skip tour", "Bỏ qua")}
@@ -399,6 +547,13 @@ export function ScreenSpotlightOverlay({
                 type="button"
                 variant="outline"
                 size="sm"
+                className={
+                  isLightSurface
+                    ? "border-slate-300 bg-white text-slate-800 hover:bg-slate-50"
+                    : isDarkSurface
+                      ? "border-slate-700 bg-slate-800 text-slate-100 hover:bg-slate-700"
+                      : undefined
+                }
                 onClick={() => onStepChange(stepIndex - 1)}
               >
                 {t("Back", "Quay lại")}
@@ -407,6 +562,13 @@ export function ScreenSpotlightOverlay({
             <Button
               type="button"
               size="sm"
+              className={
+                isLightSurface
+                  ? "bg-slate-900 text-white hover:bg-slate-800"
+                  : isDarkSurface
+                    ? "bg-sky-500 text-slate-950 hover:bg-sky-400"
+                    : undefined
+              }
               onClick={() => {
                 if (isLast) onStepChange(null);
                 else onStepChange(stepIndex + 1);

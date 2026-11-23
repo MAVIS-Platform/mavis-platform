@@ -1674,12 +1674,15 @@ export function StudioObservability({
 
       {/* Floating Bottom-Left Viewport Controls Pill + Collapsible 3D Camera & Layout Form */}
       {canvasOnly ? (
-        <>
+        <div
+          data-tour="studio-3d-controls-group"
+          className="pointer-events-none absolute bottom-4 left-4 z-20 flex flex-col items-start gap-2"
+        >
           {view === "3D" && (
             <section
               data-testid="studio-3d-controls"
               aria-label={t("3D Camera & Layout", "Góc nhìn 3D & Bố cục")}
-              className={`pointer-events-auto absolute bottom-16 left-4 z-20 ${
+              className={`pointer-events-auto ${
                 cameraFormOpen ? "w-[252px]" : "w-auto"
               } ${styleCfg.floatingCardClass}`}
             >
@@ -1869,7 +1872,7 @@ export function StudioObservability({
           )}
           <div
             data-tour="studio-viewport-pill"
-            className={`pointer-events-auto absolute bottom-4 left-4 z-20 inline-flex items-center gap-0.5 px-1 py-1 ${styleCfg.floatingPillClass}`}
+            className={`pointer-events-auto inline-flex items-center gap-0.5 px-1 py-1 ${styleCfg.floatingPillClass}`}
           >
             {(["2D", "3D"] as const).map((mode) => (
               <button
@@ -1949,7 +1952,7 @@ export function StudioObservability({
               <Plus className="size-3.5" aria-hidden="true" />
             </button>
           </div>
-        </>
+        </div>
       ) : (
         <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-lg border bg-muted/30 p-2">
           <h3 className="mr-auto font-medium">{t("Runtime topology and impact")}</h3>
@@ -2493,7 +2496,8 @@ export function StudioObservability({
             </>
           )}
 
-          {/* Static Dependency Edges + Severed Link / Circuit Breaker Banner when target is STOPPED */}
+          {/* Static Dependency Edges + Observed Traffic + Interactive 2D/3D Service Blocks */}
+          <g data-tour="studio-services-graph">
           {(() => {
             const observedPairs = new Set(
               (telemetry?.interactions ?? [])
@@ -3387,6 +3391,7 @@ export function StudioObservability({
                 </g>
               );
             })}
+          </g>
             {activeWire && (() => {
               const from = positions.get(activeWire.from);
               const to = positions.get(activeWire.to);

@@ -665,7 +665,7 @@ test("Studio Live mounts comprehensive bilingual Guided Tour (?) trigger next to
   const tour = resolveScreenTour("studio-live");
   assert.ok(tour, "Missing studio-live guided tour catalog entry");
   assert.equal(tour.cards.length, 2);
-  assert.equal(tour.steps.length, 9);
+  assert.equal(tour.steps.length, 7);
   for (const step of tour.steps) {
     assert.ok(step.title.en && step.title.vi, `Missing bilingual title on ${step.id}`);
     assert.ok(step.description.en && step.description.vi, `Missing bilingual description on ${step.id}`);
@@ -676,21 +676,26 @@ test("Studio Live mounts comprehensive bilingual Guided Tour (?) trigger next to
     path.join(__dirname, "../src/features/runtime/live-studio-workbench.tsx"),
     "utf8",
   );
+  const obsSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-observability.tsx"),
+    "utf8",
+  );
   const triggerPos = workbenchSrc.indexOf('screenId="studio-live"');
   const hudPos = workbenchSrc.indexOf('data-tour="studio-telemetry-hud"');
   assert.ok(triggerPos > 0 && hudPos > triggerPos, "Tour (?) trigger must sit directly before the Telemetry HUD pill");
+  assert.ok(workbenchSrc.includes('surfaceTheme={isLight ? "light" : "dark"}'));
   for (const anchor of [
     'data-tour="studio-mission"',
     'data-tour="studio-canvas"',
     'data-tour="studio-command-dock"',
     'data-tour="studio-tool-rail"',
-    'data-tour="studio-tool-services"',
-    'data-tour="studio-tool-diagnostics"',
     'data-tour="studio-telemetry-hud"',
+    'data-tour="studio-top-right-tools"',
     'data-tour="studio-style-picker"',
     'data-tour="studio-settings-btn"',
-    'data-tour="studio-service-inspector"',
   ]) {
     assert.ok(workbenchSrc.includes(anchor), `Missing tour anchor in live-studio-workbench.tsx: ${anchor}`);
   }
+  assert.ok(obsSrc.includes('data-tour="studio-3d-controls-group"'));
+  assert.ok(obsSrc.includes('data-tour="studio-services-graph"'));
 });
