@@ -238,6 +238,22 @@ class CourseSetupServiceTest {
         verify(assignments).saveAndFlush(lab);
     }
 
+    @Test void autoConfigureStudioAllowsInactiveDraftWorkspaceButRejectsArchived() {
+        workspace.setStatus("INACTIVE");
+        when(assignments.findLockedById(assignmentId)).thenReturn(Optional.of(lab));
+        when(configurations.findById(projectId)).thenReturn(Optional.empty());
+        when(assignments.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(jdbc.queryForObject(org.mockito.ArgumentMatchers.contains("runtime_scenarios"), eq(Integer.class), eq(projectId)))
+                .thenReturn(0);
+
+        var result = setup.autoConfigureStudio(workspaceId, assignmentId);
+        assertTrue(result.studioFrozen());
+
+        workspace.setStatus("ARCHIVED");
+        assertThrows(com.mavis.common.exception.BusinessException.class,
+                () -> setup.autoConfigureStudio(workspaceId, assignmentId));
+    }
+
     @Test void autoConfigurePreservesPreparedMuslRuntime() {
         var elements = mock(ModelElementRepository.class);
         org.springframework.test.util.ReflectionTestUtils.setField(setup, "elements", elements);

@@ -466,7 +466,7 @@ public class CourseSetupService {
         access.requireWorkspaceLecturer(workspaceId);
         Workspace workspace = workspaces.findById(workspaceId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Workspace not found"));
-        if (!"ACTIVE".equals(workspace.getStatus())) {
+        if ("ARCHIVED".equals(workspace.getStatus())) {
             throw new BusinessException(ErrorCode.CONFLICT, "Workspace is archived");
         }
         Assignment lab = assignments.findLockedById(assignmentId)

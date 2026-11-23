@@ -70,6 +70,10 @@ class MigrationUpgradeTest {
                         try(var rows=sql.executeQuery("SELECT properties->>'contextFactOrigin' FROM context_person_probe")){assertTrue(rows.next());assertEquals("USER_CONFIRMED",rows.getString(1));}
                         SQLException unsupported=assertThrows(SQLException.class,()->sql.execute("INSERT INTO context_person_probe(model_version_id,element_type,name) VALUES (uuid_generate_v4(),'INVENTED_TYPE','Invalid')"));
                         assertEquals("23514",unsupported.getSQLState());
+                        sql.execute("CREATE TEMP TABLE workspace_status_probe (LIKE workspaces INCLUDING CONSTRAINTS INCLUDING DEFAULTS)");
+                        assertEquals(1,sql.executeUpdate("INSERT INTO workspace_status_probe(code,name,created_by,status) VALUES ('DRAFT-1','Draft Class',uuid_generate_v4(),'INACTIVE')"));
+                        SQLException badWorkspaceStatus=assertThrows(SQLException.class,()->sql.execute("INSERT INTO workspace_status_probe(code,name,created_by,status) VALUES ('BAD-1','Bad',uuid_generate_v4(),'UNKNOWN')"));
+                        assertEquals("23514",badWorkspaceStatus.getSQLState());
                         try(var rows=sql.executeQuery("SELECT to_regclass('submission_reviews')")) { assertTrue(rows.next());assertNotNull(rows.getString(1)); }
                         try(var rows=sql.executeQuery("SELECT count(*) FROM information_schema.columns WHERE table_name='submission_snapshots' AND column_name IN ('evidence_package_digest','student_snapshots')")) { assertTrue(rows.next());assertEquals(2,rows.getInt(1)); }
                         try(var rows=sql.executeQuery("SELECT count(*) FROM information_schema.columns WHERE table_name='submission_reviews' AND column_name IN ('snapshot_grades','lab_outcome')")) { assertTrue(rows.next());assertEquals(2,rows.getInt(1)); }
