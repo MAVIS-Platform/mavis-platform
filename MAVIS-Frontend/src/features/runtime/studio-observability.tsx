@@ -30,6 +30,7 @@ import {
   type StudioThreeEdge,
   type StudioThreeNode,
 } from "./studio-three-stage";
+import { parseMemoryMiB, summarizeServiceStats } from "./live-sandbox-parity";
 
 type Studio = Response<"studioState">;
 
@@ -1569,6 +1570,7 @@ export function StudioObservability({
       return liveSvc ? liveSvc.runningReplicas : 1;
     };
     const selectedIsStopped = selected ? replicasFor(selected) === 0 : false;
+    const confirmedActions = (data.actions ?? []).filter((a) => a.status === "CONFIRMED");
     const builtNodes: StudioThreeNode[] = [];
     for (const [name, point] of worldPoints.entries()) {
       const live = telemetry?.services.find((item) => item.service === name);
@@ -1579,33 +1581,79 @@ export function StudioObservability({
       const isSelected = selected === name;
       const isDropTarget = dropTargetNode === name;
       const isStopped = live !== undefined && live.runningReplicas === 0;
+      const lastSvcAction = [...confirmedActions].reverse().find((a) => a.service === name);
+      const isPaused = !isStopped && lastSvcAction?.action === "PAUSE";
+      const cpuThrottlePct =
+        !isStopped &&
+        !isPaused &&
+        lastSvcAction?.action === "THROTTLE_CPU" &&
+        typeof lastSvcAction.cpuPercent === "number" &&
+        lastSvcAction.cpuPercent < 100
+          ? lastSvcAction.cpuPercent
+          : null;
+      const statsSummary = summarizeServiceStats(live?.stats);
+      const [ramUsedStr, ramLimitStr] = statsSummary.memory.split("/").map((p) => p.trim());
+      const ramUsedMiB = parseMemoryMiB(ramUsedStr);
+      const ramLimitMiB = parseMemoryMiB(ramLimitStr) ?? data.limits?.memoryMiB;
+      const ramPct =
+        !isStopped && ramUsedMiB !== undefined && ramLimitMiB !== undefined && ramLimitMiB > 0
+          ? Math.min(100, Math.round((ramUsedMiB / ramLimitMiB) * 100))
+          : null;
+      const cpuMatch = statsSummary.cpu.match(/[\d.]+/);
+      const cpuNum = cpuMatch ? Number(cpuMatch[0]) : NaN;
+      const cpuPct = !isStopped && Number.isFinite(cpuNum) ? Math.min(100, cpuNum) : null;
       const isImpactedByOutage = isAffected && selectedIsStopped && !isStopped;
       const status = nodeStatus?.[name];
       const isCritical = isStopped || status === "Overloaded";
-      const isWarning = isImpactedByOutage || status === "Bottleneck" || status === "Rate limited";
+      const isWarning =
+        isPaused ||
+        cpuThrottlePct !== null ||
+        isImpactedByOutage ||
+        status === "Bottleneck" ||
+        status === "Rate limited";
       const palette = resolveStudioNodePalette(activeStyleId, name, archetype, {
         isCritical,
         isWarning,
         isSelected,
         isDropTarget,
       });
+      const stereotype =
+        archetype === "GATEWAY"
+          ? "«gateway»"
+          : archetype === "DATABASE"
+            ? "«database»"
+            : archetype === "QUEUE"
+              ? "«broker»"
+              : "«service»";
       builtNodes.push({
         id: name,
         label: nodeNames?.[name] ?? name,
         archetype,
+        stereotype,
+        tier: point.tier,
         wx: point.wx,
         wz: point.wz,
         replicas: live ? live.runningReplicas : 1,
         isStopped,
+        isPaused,
         isCritical,
         isWarning,
         isSelected,
         isDropTarget,
+        ramPct,
+        cpuPct,
+        cpuThrottlePct,
+        ramLabel: ramPct !== null ? `${ramPct}%` : null,
         palette,
       });
     }
 
     const builtEdges: StudioThreeEdge[] = [];
+    const staticProtocolByPair = new Map(
+      staticEdges.map((edge) => [`${edge.from}->${edge.to}`, edge.protocol]),
+    );
+    const isAsyncProtocol = (proto?: string | null) =>
+      Boolean(proto && /(kafka|amqp|rabbit|queue|event|async|pubsub|mq|stream|sqs|sns)/i.test(proto));
     const sgByPair = new Map(
       (telemetry?.serviceGraph ?? []).map((sg) => [`${sg.client}->${sg.server}`, sg]),
     );
@@ -1630,6 +1678,8 @@ export function StudioObservability({
         kind: "static",
         color: targetStopped ? "#e11d48" : isLight ? "#94a3b8" : "#64748b",
         dashed: true,
+        protocol: edge.protocol,
+        isAsync: isAsyncProtocol(edge.protocol),
         isSevered: targetStopped,
       });
     }
@@ -1637,6 +1687,8 @@ export function StudioObservability({
     deduped.forEach((edge, idx) => {
       const span = spansByTraceAndId.get(`${edge.traceId}:${edge.childSpanId}`);
       const sg = sgByPair.get(`${edge.fromService}->${edge.toService}`);
+      const pairKey = `${edge.fromService}->${edge.toService}`;
+      const protocol = staticProtocolByPair.get(pairKey) ?? null;
       const status = span?.httpStatusCode;
       const httpError = typeof status === "number" && status >= 400 && status <= 599;
       const edgeSevered =
@@ -1681,6 +1733,9 @@ export function StudioObservability({
         kind: "observed",
         color: edgeColor,
         dashed: false,
+        protocol,
+        isAsync: isAsyncProtocol(protocol) || isAsyncProtocol(span?.operationName),
+        rps: sg?.rps ?? null,
         label: edgeSevered ? faultLabel : latencyLabel,
         isSevered: edgeSevered,
         isDegraded: edgeDegraded,
@@ -1693,6 +1748,8 @@ export function StudioObservability({
     view,
     worldPoints,
     telemetry,
+    data.actions,
+    data.limits?.memoryMiB,
     data.serviceMappings,
     reference.data,
     affected,

@@ -930,3 +930,33 @@ test("Studio wires deduplicate static vs observed 1-to-1, unify 4-state colors, 
   // Midpoint bows laterally away from intermediate order-service at (0, 0)
   assert.ok(Math.abs(clear.midZ) >= 0.55, `Expected lateral deflection away from middle node, got midZ=${clear.midZ}`);
 });
+
+test("3D stage implements SE-standard UML/C4/CodeCity nodes, trust zones, and semantic connectors without business-name toy shapes", () => {
+  const stageSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-three-stage.tsx"),
+    "utf8",
+  );
+  const obsSrc = fs.readFileSync(
+    path.join(__dirname, "../src/features/runtime/studio-observability.tsx"),
+    "utf8",
+  );
+  // Zero business-name hardcoded toy shapes
+  assert.ok(!stageSrc.includes("Stepped Fulfillment Pavilion"));
+  assert.ok(!stageSrc.includes("Armored Vault Unit"));
+  assert.ok(!stageSrc.includes("Parcel Cube"));
+  // Authoritative SE stereotypes, CAD plinths, replica pods, data-driven RAM/CPU gauges, and architectural zones
+  assert.ok(stageSrc.includes("createRoundedSlabGeo("));
+  assert.ok(stageSrc.includes("createTopPlateTexture("));
+  assert.ok(stageSrc.includes("attachFrontTelemetryBar("));
+  assert.ok(stageSrc.includes("createZonePlateMesh("));
+  assert.ok(stageSrc.includes("EDGE / INGRESS"));
+  assert.ok(stageSrc.includes("CORE SERVICES · DOCKER NET"));
+  assert.ok(stageSrc.includes("DATA & MESSAGING"));
+  assert.ok(stageSrc.includes("«gateway»") && stageSrc.includes("«service»") && stageSrc.includes("«database»") && stageSrc.includes("«broker»"));
+  // Port socket collars, RPS thickness encoding, and UML Sync vs Async connector semantics
+  assert.ok(stageSrc.includes("startPort") && stageSrc.includes("endPort"));
+  assert.ok(stageSrc.includes("Math.log2(rpsVal + 1)"));
+  assert.ok(stageSrc.includes("isAsync"));
+  // Observability passes real RAM/CPU/pause/throttle/RPS/protocol into threeNodes & threeEdges
+  assert.ok(obsSrc.includes("ramPct") && obsSrc.includes("cpuPct") && obsSrc.includes("cpuThrottlePct"));
+});

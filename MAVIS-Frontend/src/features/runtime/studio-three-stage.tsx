@@ -8,14 +8,21 @@ export type StudioThreeNode = {
   id: string;
   label: string;
   archetype: "DATABASE" | "GATEWAY" | "QUEUE" | "SERVICE";
+  stereotype?: string | undefined;
+  tier?: number | undefined;
   wx: number;
   wz: number;
   replicas: number;
   isStopped: boolean;
+  isPaused?: boolean | undefined;
   isCritical: boolean;
   isWarning: boolean;
   isSelected: boolean;
   isDropTarget: boolean;
+  ramPct?: number | null | undefined;
+  cpuPct?: number | null | undefined;
+  cpuThrottlePct?: number | null | undefined;
+  ramLabel?: string | null | undefined;
   palette: StudioNodeVisualPalette;
 };
 
@@ -26,6 +33,9 @@ export type StudioThreeEdge = {
   kind: "static" | "observed";
   color: string;
   dashed: boolean;
+  protocol?: string | null | undefined;
+  isAsync?: boolean | undefined;
+  rps?: number | null | undefined;
   label?: string | null;
   isSevered?: boolean;
   isDegraded?: boolean;
@@ -75,9 +85,14 @@ type EdgeRig = {
   to: string;
   kind: "static" | "observed";
   hasReverse: boolean;
+  isAsync: boolean;
+  tubeRadius: number;
   line?: THREE.Line | undefined;
   tubeMesh?: THREE.Mesh | undefined;
   arrowMesh?: THREE.Mesh | undefined;
+  startPort?: THREE.Mesh | undefined;
+  endPort?: THREE.Mesh | undefined;
+  breakRing?: THREE.Mesh | undefined;
   badgeSprite?: THREE.Sprite | undefined;
   curve?: THREE.QuadraticBezierCurve3 | undefined;
   isSevered?: boolean | undefined;
@@ -98,8 +113,8 @@ export function compute3DEdgeAnchors(
   const centerDist = Math.hypot(dx, dz);
   const nx = centerDist > 0.001 ? dx / centerDist : 1;
   const nz = centerDist > 0.001 ? dz / centerDist : 0;
-  // Anchor endpoints at the outer pedestal rim instead of stabbing through block centers
-  const rimOffset = Math.min(0.54, Math.max(0.16, centerDist * 0.24));
+  // Anchor port sockets flush against the outer Service Boundary Plinth rim (1.22x0.90)
+  const rimOffset = Math.min(0.60, Math.max(0.18, centerDist * 0.24));
   const sx = ax + nx * rimOffset;
   const sz = az + nz * rimOffset;
   const ex = bx - nx * rimOffset;
@@ -195,7 +210,13 @@ function createNodeLabelSprite(
   const canvas = document.createElement("canvas");
   const dpr = 2;
   const text = node.label.length > 22 ? `${node.label.slice(0, 20)}…` : node.label;
-  const badge = node.isStopped ? "0" : `×${node.replicas}`;
+  const badge = node.isStopped
+    ? "0"
+    : node.isPaused
+      ? "PAUSED"
+      : node.cpuThrottlePct
+        ? `×${node.replicas}·${node.cpuThrottlePct}%`
+        : `×${node.replicas}`;
   const isMono = styleId === "blueprint";
   const font = `700 ${13 * dpr}px ${isMono ? "ui-monospace, SFMono-Regular, Menlo, monospace" : "Inter, system-ui, sans-serif"}`;
   const badgeFont = `700 ${11 * dpr}px ui-monospace, SFMono-Regular, Menlo, monospace`;
@@ -361,6 +382,424 @@ function createEdgeBadgeSprite(
   return sprite;
 }
 
+/**
+ * Creates a chamfered/beveled industrial CAD prism whose exact bounding box spans
+ * X: [-w/2, +w/2], Y: [0, h], Z: [-d/2, +d/2].
+ */
+function createRoundedSlabGeo(
+  T: ThreeModule,
+  w: number,
+  h: number,
+  d: number,
+  cornerRadius = 0.08,
+  bevel = 0.014,
+): THREE.BufferGeometry {
+  const b = Math.min(bevel, w * 0.12, d * 0.12, h * 0.25);
+  const iw = Math.max(0.02, w - b * 2);
+  const id = Math.max(0.02, d - b * 2);
+  const r = Math.min(cornerRadius, iw * 0.45, id * 0.45);
+  const hw = iw / 2;
+  const hd = id / 2;
+
+  const shape = new T.Shape();
+  shape.moveTo(-hw + r, -hd);
+  shape.lineTo(hw - r, -hd);
+  shape.quadraticCurveTo(hw, -hd, hw, -hd + r);
+  shape.lineTo(hw, hd - r);
+  shape.quadraticCurveTo(hw, hd, hw - r, hd);
+  shape.lineTo(-hw + r, hd);
+  shape.quadraticCurveTo(-hw, hd, -hw, hd - r);
+  shape.lineTo(-hw, -hd + r);
+  shape.quadraticCurveTo(-hw, -hd, -hw + r, -hd);
+
+  const geo = new T.ExtrudeGeometry(shape, {
+    depth: Math.max(0.01, h - b * 2),
+    bevelEnabled: true,
+    bevelSegments: 2,
+    steps: 1,
+    bevelSize: b,
+    bevelThickness: b,
+  });
+  geo.rotateX(-Math.PI / 2);
+  geo.translate(0, b, 0);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/**
+ * High-DPI engineering top nameplate texture rendered flush onto container/gateway top faces.
+ * Encodes UML 2.5 stereotype («gateway», «service», «database», «broker»), crisp technical
+ * schematic glyph, and real Docker RAM/lifecycle readout — zero decorative polygons.
+ */
+function createTopPlateTexture(
+  T: ThreeModule,
+  node: StudioThreeNode,
+  styleId: StudioStyleId,
+): THREE.CanvasTexture {
+  const canvas = document.createElement("canvas");
+  canvas.width = 256;
+  canvas.height = 176;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return new T.CanvasTexture(canvas);
+
+  const isDark = styleId === "control";
+  const isPop = styleId === "pop";
+  const strokeCol = node.isCritical
+    ? "#e11d48"
+    : node.isWarning
+      ? "#d97706"
+      : node.palette.stroke;
+  const accentCol = node.isCritical
+    ? "#f43f5e"
+    : node.isWarning
+      ? "#f59e0b"
+      : node.palette.accent;
+  const textCol = isDark ? "#e2e8f0" : "#0f172a";
+  const mutedCol = isDark ? "#94a3b8" : "#64748b";
+
+  // Subtle recessed engineering faceplate
+  ctx.fillStyle = isDark ? "#0f172a" : isPop ? "#fffdf8" : "#f8fafc";
+  drawRoundedRect(ctx, 4, 4, 248, 168, 14);
+  ctx.fill();
+  ctx.strokeStyle = strokeCol;
+  ctx.lineWidth = isPop ? 3.5 : 2;
+  ctx.stroke();
+
+  // Corner CAD registration ticks
+  ctx.strokeStyle = isDark ? "rgba(148,163,184,0.35)" : "rgba(100,116,139,0.28)";
+  ctx.lineWidth = 1.5;
+  for (const [cx, cy, dx, dy] of [
+    [16, 16, 10, 10],
+    [240, 16, -10, 10],
+    [16, 160, 10, -10],
+    [240, 160, -10, -10],
+  ] as const) {
+    ctx.beginPath();
+    ctx.moveTo(cx, cy + dy);
+    ctx.lineTo(cx, cy);
+    ctx.lineTo(cx + dx, cy);
+    ctx.stroke();
+  }
+
+  // Top-left UML stereotype («gateway» / «service» / «database» / «broker»)
+  const stereotype =
+    node.stereotype ??
+    (node.archetype === "GATEWAY"
+      ? "«gateway»"
+      : node.archetype === "DATABASE"
+        ? "«database»"
+        : node.archetype === "QUEUE"
+          ? "«broker»"
+          : "«service»");
+  ctx.font = "700 18px ui-monospace, SFMono-Regular, Menlo, monospace";
+  ctx.fillStyle = accentCol;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillText(stereotype, 22, 32);
+
+  // Top-right runtime status badge
+  const statusTag = node.isStopped
+    ? "STOPPED"
+    : node.isPaused
+      ? "PAUSED"
+      : node.cpuThrottlePct
+        ? `CPU ${node.cpuThrottlePct}%`
+        : "LIVE";
+  const statusBg = node.isStopped
+    ? isDark
+      ? "rgba(244,63,94,0.22)"
+      : "#ffe4e6"
+    : node.isPaused || node.cpuThrottlePct
+      ? isDark
+        ? "rgba(245,158,11,0.22)"
+        : "#fef3c7"
+      : isDark
+        ? "rgba(16,185,129,0.22)"
+        : "#d1fae5";
+  const statusFg = node.isStopped
+    ? isDark
+      ? "#fda4af"
+      : "#be123c"
+    : node.isPaused || node.cpuThrottlePct
+      ? isDark
+        ? "#fcd34d"
+        : "#b45309"
+      : isDark
+        ? "#6ee7b7"
+        : "#047857";
+  ctx.font = "700 14px ui-monospace, SFMono-Regular, Menlo, monospace";
+  const tagW = Math.max(54, Math.ceil(ctx.measureText(statusTag).width) + 16);
+  drawRoundedRect(ctx, 234 - tagW, 19, tagW, 26, 8);
+  ctx.fillStyle = statusBg;
+  ctx.fill();
+  ctx.fillStyle = statusFg;
+  ctx.textAlign = "center";
+  ctx.fillText(statusTag, 234 - tagW / 2, 32.5);
+
+  // Clean horizontal divider
+  ctx.strokeStyle = isDark ? "rgba(148,163,184,0.2)" : "rgba(148,163,184,0.35)";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(20, 54);
+  ctx.lineTo(236, 54);
+  ctx.stroke();
+
+  // Center authoritative SE schematic symbol (CNCF / UML / C4 / EIP)
+  ctx.save();
+  ctx.strokeStyle = accentCol;
+  ctx.fillStyle = accentCol;
+  ctx.lineWidth = 3;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  const gx = 128;
+  const gy = 92;
+  if (node.archetype === "GATEWAY") {
+    // Ingress router fan-out schematic (1 inbound -> 3 routed lanes)
+    ctx.beginPath();
+    ctx.moveTo(gx - 56, gy);
+    ctx.lineTo(gx - 18, gy);
+    ctx.moveTo(gx - 18, gy);
+    ctx.lineTo(gx + 34, gy - 20);
+    ctx.moveTo(gx - 18, gy);
+    ctx.lineTo(gx + 46, gy);
+    ctx.moveTo(gx - 18, gy);
+    ctx.lineTo(gx + 34, gy + 20);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(gx - 18, gy, 7, 0, Math.PI * 2);
+    ctx.fill();
+    for (const [ax, ay] of [
+      [gx + 34, gy - 20],
+      [gx + 46, gy],
+      [gx + 34, gy + 20],
+    ] as const) {
+      ctx.beginPath();
+      ctx.arc(ax, ay, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else if (node.archetype === "DATABASE") {
+    // Canonical C4/UML cylinder schematic
+    ctx.beginPath();
+    ctx.ellipse(gx, gy - 16, 30, 9, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(gx - 30, gy - 16);
+    ctx.lineTo(gx - 30, gy + 16);
+    ctx.ellipse(gx, gy + 16, 30, 9, 0, Math.PI, 0, true);
+    ctx.lineTo(gx + 30, gy - 16);
+    ctx.stroke();
+  } else if (node.archetype === "QUEUE") {
+    // Canonical EIP message channel pipe with buffered slots
+    drawRoundedRect(ctx, gx - 48, gy - 15, 96, 30, 15);
+    ctx.stroke();
+    for (let i = -1; i <= 1; i++) {
+      drawRoundedRect(ctx, gx + i * 24 - 7, gy - 7, 14, 14, 3);
+      ctx.fill();
+    }
+  } else {
+    // UML 2.5 Deployment Component / Container Node schematic (isometric container icon + ports)
+    drawRoundedRect(ctx, gx - 38, gy - 20, 76, 40, 8);
+    ctx.stroke();
+    // UML component twin port tabs on left edge
+    ctx.fillStyle = isDark ? "#0f172a" : "#ffffff";
+    ctx.fillRect(gx - 47, gy - 13, 16, 9);
+    ctx.strokeRect(gx - 47, gy - 13, 16, 9);
+    ctx.fillRect(gx - 47, gy + 4, 16, 9);
+    ctx.strokeRect(gx - 47, gy + 4, 16, 9);
+    // Internal pod count indicator bars
+    ctx.fillStyle = accentCol;
+    const pods = Math.max(1, Math.min(3, node.replicas || 1));
+    const slotW = 14;
+    const totalW = pods * slotW + (pods - 1) * 7;
+    const startX = gx - totalW / 2 + 4;
+    for (let i = 0; i < pods; i++) {
+      drawRoundedRect(ctx, startX + i * (slotW + 7), gy - 9, slotW, 18, 3);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+
+  // Bottom live telemetry strip (RAM % bar + Replica count)
+  const ramPct = node.ramPct ?? null;
+  ctx.font = "700 14px ui-monospace, SFMono-Regular, Menlo, monospace";
+  ctx.fillStyle = mutedCol;
+  ctx.textAlign = "left";
+  ctx.fillText("RAM", 22, 144);
+  const barX = 62;
+  const barW = 112;
+  const barY = 138;
+  const barH = 11;
+  drawRoundedRect(ctx, barX, barY, barW, barH, 5.5);
+  ctx.fillStyle = isDark ? "#1e293b" : "#e2e8f0";
+  ctx.fill();
+  if (ramPct !== null && ramPct > 0) {
+    const fillW = Math.max(10, Math.round((barW * Math.min(100, ramPct)) / 100));
+    drawRoundedRect(ctx, barX, barY, fillW, barH, 5.5);
+    ctx.fillStyle = ramPct >= 85 ? "#f43f5e" : ramPct >= 70 ? "#f59e0b" : "#10b981";
+    ctx.fill();
+  }
+  ctx.fillStyle = textCol;
+  ctx.textAlign = "right";
+  ctx.fillText(ramPct !== null ? `${ramPct}%` : `×${node.replicas}`, 234, 144);
+
+  const texture = new T.CanvasTexture(canvas);
+  texture.colorSpace = T.SRGBColorSpace;
+  texture.minFilter = T.LinearFilter;
+  texture.magFilter = T.LinearFilter;
+  return texture;
+}
+
+/**
+ * Ground-projected architectural trust zone plate (UML Deployment Environment / CodeCity District).
+ */
+function createZonePlateMesh(
+  T: ThreeModule,
+  title: string,
+  width: number,
+  depth: number,
+  accentHex: string,
+  isLight: boolean,
+): THREE.Mesh {
+  const canvas = document.createElement("canvas");
+  canvas.width = 512;
+  canvas.height = Math.max(192, Math.round(512 * (depth / Math.max(0.5, width))));
+  const ctx = canvas.getContext("2d");
+  if (ctx) {
+    const pad = 10;
+    const w = canvas.width - pad * 2;
+    const h = canvas.height - pad * 2;
+    drawRoundedRect(ctx, pad, pad, w, h, 18);
+    ctx.fillStyle = isLight ? `${accentHex}0d` : `${accentHex}18`;
+    ctx.fill();
+    ctx.save();
+    ctx.setLineDash([12, 9]);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = isLight ? `${accentHex}55` : `${accentHex}75`;
+    ctx.stroke();
+    ctx.restore();
+
+    // Crisp corner architectural zone label printed flat onto the deck
+    ctx.font = "700 18px ui-monospace, SFMono-Regular, Menlo, monospace";
+    const labelW = Math.ceil(ctx.measureText(title).width) + 22;
+    drawRoundedRect(ctx, pad + 14, pad + 12, labelW, 30, 8);
+    ctx.fillStyle = isLight ? "rgba(255,255,255,0.88)" : "rgba(9,13,22,0.88)";
+    ctx.fill();
+    ctx.strokeStyle = isLight ? `${accentHex}44` : `${accentHex}66`;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.fillStyle = accentHex;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillText(title, pad + 25, pad + 27.5);
+  }
+  const tex = new T.CanvasTexture(canvas);
+  tex.colorSpace = T.SRGBColorSpace;
+  tex.minFilter = T.LinearFilter;
+  const mat = new T.MeshBasicMaterial({
+    map: tex,
+    transparent: true,
+    depthWrite: false,
+  });
+  const mesh = new T.Mesh(new T.PlaneGeometry(width, depth), mat);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.renderOrder = 2;
+  return mesh;
+}
+
+function attachFrontTelemetryBar(
+  T: ThreeModule,
+  parent: THREE.Group,
+  node: StudioThreeNode,
+  panelW: number,
+  panelY: number,
+  frontZ: number,
+  isDark: boolean,
+) {
+  // Recessed dark telemetry bezel slot on front wall of container/gateway
+  const bezel = new T.Mesh(
+    new T.BoxGeometry(panelW, 0.11, 0.018),
+    new T.MeshStandardMaterial({
+      color: new T.Color(isDark ? "#020617" : "#0f172a"),
+      roughness: 0.45,
+      metalness: 0.25,
+    }),
+  );
+  bezel.position.set(0, panelY, frontZ);
+  bezel.userData = { serviceId: node.id };
+  parent.add(bezel);
+
+  // Status LED dot on left of bezel
+  const ledColor = node.isStopped
+    ? "#f43f5e"
+    : node.isPaused || node.isWarning
+      ? "#f59e0b"
+      : "#10b981";
+  const led = new T.Mesh(
+    new T.BoxGeometry(0.05, 0.05, 0.022),
+    new T.MeshStandardMaterial({
+      color: new T.Color(ledColor),
+      emissive: new T.Color(ledColor),
+      emissiveIntensity: isDark ? 1.1 : 0.7,
+      roughness: 0.2,
+    }),
+  );
+  led.position.set(-panelW / 2 + 0.055, panelY, frontZ + 0.004);
+  led.userData = { serviceId: node.id };
+  parent.add(led);
+
+  // Data-driven RAM utilization bar inside front bezel (CodeCity / live Docker memory mapping)
+  const trackW = Math.max(0.14, panelW - 0.17);
+  const trackCenterX = 0.045;
+  const track = new T.Mesh(
+    new T.BoxGeometry(trackW, 0.036, 0.014),
+    new T.MeshBasicMaterial({ color: new T.Color("#334155") }),
+  );
+  track.position.set(trackCenterX, panelY - 0.012, frontZ + 0.005);
+  track.userData = { serviceId: node.id };
+  parent.add(track);
+
+  const ramPct = node.ramPct ?? (node.isStopped ? 0 : null);
+  if (ramPct !== null && ramPct > 0) {
+    const fillW = Math.max(0.03, (trackW * Math.min(100, ramPct)) / 100);
+    const ramColor = ramPct >= 85 ? "#f43f5e" : ramPct >= 70 ? "#f59e0b" : "#10b981";
+    const fill = new T.Mesh(
+      new T.BoxGeometry(fillW, 0.038, 0.018),
+      new T.MeshStandardMaterial({
+        color: new T.Color(ramColor),
+        emissive: new T.Color(ramColor),
+        emissiveIntensity: isDark ? 0.9 : 0.55,
+        roughness: 0.25,
+      }),
+    );
+    fill.position.set(trackCenterX - trackW / 2 + fillW / 2, panelY - 0.012, frontZ + 0.008);
+    fill.userData = { serviceId: node.id };
+    parent.add(fill);
+  }
+
+  // Upper micro-strip for CPU load / cgroup throttle indicator
+  const cpuRatio = node.cpuThrottlePct
+    ? node.cpuThrottlePct / 100
+    : node.cpuPct != null
+      ? Math.max(0.08, Math.min(1, node.cpuPct / 100))
+      : 0;
+  if (!node.isStopped && cpuRatio > 0) {
+    const cpuFillW = Math.max(0.03, trackW * cpuRatio);
+    const cpuColor = node.cpuThrottlePct ? "#f59e0b" : "#38bdf8";
+    const cpuFill = new T.Mesh(
+      new T.BoxGeometry(cpuFillW, 0.018, 0.018),
+      new T.MeshStandardMaterial({
+        color: new T.Color(cpuColor),
+        emissive: new T.Color(cpuColor),
+        emissiveIntensity: 0.65,
+        roughness: 0.3,
+      }),
+    );
+    cpuFill.position.set(trackCenterX - trackW / 2 + cpuFillW / 2, panelY + 0.028, frontZ + 0.008);
+    cpuFill.userData = { serviceId: node.id };
+    parent.add(cpuFill);
+  }
+}
+
 function addOutlinedMesh(
   T: ThreeModule,
   parent: THREE.Group,
@@ -377,13 +816,19 @@ function addOutlinedMesh(
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   mesh.userData = { serviceId };
-  const edges = new T.LineSegments(new T.EdgesGeometry(geometry, 24), edgeMaterial);
+  const edges = new T.LineSegments(new T.EdgesGeometry(geometry, 32), edgeMaterial);
   edges.userData = { serviceId };
   mesh.add(edges);
   parent.add(mesh);
   return mesh;
 }
 
+/**
+ * Authoritative SE-Standard 3D Node Builder:
+ * - UML 2.5 Deployment Node + Service Boundary Plinth (host/cgroup boundary)
+ * - C4 Container Stereotypes (Gateway Router / Microservice Container Pods / Database Cylinder / EIP Broker)
+ * - CodeCity / Kiali Data-Driven Telemetry (real replica pod units 1..3, live RAM/CPU gauges, pause cage, stopped collapse)
+ */
 function buildServiceRig(
   T: ThreeModule,
   node: StudioThreeNode,
@@ -399,175 +844,238 @@ function buildServiceRig(
   const isPop = styleId === "pop";
   const isBlueprint = styleId === "blueprint";
 
-  const bodyMat = new T.MeshStandardMaterial({
-    color: new T.Color(node.palette.cardFill),
-    roughness: isPop ? 0.68 : isDark ? 0.34 : isBlueprint ? 0.82 : 0.46,
-    metalness: isDark ? 0.32 : isPop ? 0.04 : 0.1,
+  const plinthMat = new T.MeshStandardMaterial({
+    color: new T.Color(isDark ? "#1e293b" : isBlueprint ? "#e0f2fe" : "#e2e8f0"),
+    roughness: isDark ? 0.52 : 0.72,
+    metalness: isDark ? 0.28 : 0.08,
+  });
+
+  const chassisMat = new T.MeshStandardMaterial({
+    color: new T.Color(node.isStopped ? (isDark ? "#1e293b" : "#cbd5e1") : node.palette.cardFill),
+    roughness: isPop ? 0.58 : isDark ? 0.32 : isBlueprint ? 0.72 : 0.42,
+    metalness: isDark ? 0.34 : isPop ? 0.06 : 0.14,
     emissive: new T.Color(isDark ? node.palette.iconBg : node.isCritical ? "#4c0519" : "#000000"),
-    emissiveIntensity: isDark ? 0.25 : node.isCritical ? 0.12 : 0,
+    emissiveIntensity: isDark ? 0.2 : node.isCritical ? 0.12 : 0,
     transparent: isBlueprint,
     opacity: isBlueprint ? 0.94 : 1,
   });
 
-  const roofMat = new T.MeshStandardMaterial({
+  const capMat = new T.MeshStandardMaterial({
     color: new T.Color(node.palette.iconBg),
-    roughness: isPop ? 0.58 : isDark ? 0.28 : 0.4,
-    metalness: isDark ? 0.38 : 0.12,
-    emissive: new T.Color(isDark ? node.palette.stroke : "#000000"),
-    emissiveIntensity: isDark ? 0.22 : 0,
+    roughness: isDark ? 0.28 : 0.38,
+    metalness: isDark ? 0.4 : 0.14,
   });
 
   const accentMat = new T.MeshStandardMaterial({
     color: new T.Color(node.palette.accent),
-    roughness: 0.3,
-    metalness: isDark ? 0.45 : 0.2,
+    roughness: 0.28,
+    metalness: isDark ? 0.48 : 0.22,
     emissive: new T.Color(node.palette.accent),
-    emissiveIntensity: isDark ? 0.55 : node.isCritical || node.isWarning ? 0.3 : 0.08,
-  });
-
-  const ledMat = new T.MeshStandardMaterial({
-    color: new T.Color(node.isStopped ? "#f43f5e" : node.isWarning ? "#f59e0b" : "#10b981"),
-    emissive: new T.Color(node.isStopped ? "#f43f5e" : node.isWarning ? "#f59e0b" : "#10b981"),
-    emissiveIntensity: isDark ? 0.95 : 0.45,
-    roughness: 0.2,
+    emissiveIntensity: isDark ? 0.5 : node.isCritical || node.isWarning ? 0.28 : 0.1,
   });
 
   const edgeMat = new T.LineBasicMaterial({
     color: new T.Color(node.palette.stroke),
     transparent: !isPop,
-    opacity: isPop ? 1 : isDark ? 0.9 : isBlueprint ? 0.88 : 0.65,
+    opacity: isPop ? 0.95 : isDark ? 0.85 : isBlueprint ? 0.85 : 0.55,
   });
 
-  const n = node.id.toLowerCase();
-  const baseScale = node.isStopped ? 0.92 : 1 + 0.055 * Math.max(0, node.replicas - 1);
   const sculptureGroup = new T.Group();
-  sculptureGroup.scale.setScalar(baseScale);
   group.add(sculptureGroup);
 
-  let topY = 0.85;
+  // 1. Service Boundary Plinth (UML 2.5 Execution Environment / Docker cgroup host boundary)
+  const plinthW = 1.24;
+  const plinthH = 0.085;
+  const plinthD = 0.92;
+  addOutlinedMesh(
+    T,
+    sculptureGroup,
+    createRoundedSlabGeo(T, plinthW, plinthH, plinthD, 0.1, 0.012),
+    plinthMat,
+    edgeMat,
+    [0, 0, 0],
+    node.id,
+  );
+  // Color-coded stereotype rail along front rim of boundary plinth
+  const rail = new T.Mesh(new T.BoxGeometry(plinthW - 0.22, 0.028, 0.022), accentMat);
+  rail.position.set(0, plinthH - 0.025, plinthD / 2 + 0.002);
+  rail.userData = { serviceId: node.id };
+  sculptureGroup.add(rail);
 
-  if (
-    node.archetype === "GATEWAY" ||
-    /(gateway|edge|proxy|ingress|cdn|waf)/.test(n)
-  ) {
-    // True 3D Twin-Pillar Architectural Gateway Arch
-    addOutlinedMesh(T, sculptureGroup, new T.BoxGeometry(0.24, 0.64, 0.40), bodyMat, edgeMat, [-0.34, 0.32, 0], node.id);
-    addOutlinedMesh(T, sculptureGroup, new T.BoxGeometry(0.24, 0.64, 0.40), bodyMat, edgeMat, [0.34, 0.32, 0], node.id);
-    addOutlinedMesh(T, sculptureGroup, new T.BoxGeometry(1.06, 0.22, 0.52), roofMat, edgeMat, [0, 0.75, 0], node.id);
-    // 3D Routing Arrow Emblem on Roof
-    addOutlinedMesh(T, sculptureGroup, new T.BoxGeometry(0.36, 0.06, 0.09), accentMat, edgeMat, [-0.08, 0.89, 0], node.id);
+  let topY = 0.62;
+  const topTex = createTopPlateTexture(T, node, styleId);
+  const topPlateMat = new T.MeshBasicMaterial({
+    map: topTex,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+  });
+
+  if (node.archetype === "GATEWAY") {
+    // CNCF / Cloudcraft 1U/2U Edge Ingress Router Chassis
+    const gwW = 1.06;
+    const gwH = node.isStopped ? 0.15 : 0.34;
+    const gwD = 0.72;
     addOutlinedMesh(
       T,
       sculptureGroup,
-      new T.ConeGeometry(0.11, 0.22, 4),
-      accentMat,
+      createRoundedSlabGeo(T, gwW, gwH, gwD, 0.07, 0.014),
+      chassisMat,
       edgeMat,
-      [0.2, 0.89, 0],
+      [0, plinthH, 0],
       node.id,
-      [0, 0, -Math.PI / 2],
     );
-    topY = 1.05;
-  } else if (
-    node.archetype === "DATABASE" ||
-    /(postgres|mysql|mongo|nosql|redis|cache|s3|storage|elastic|search|\bdb\b)/.test(n)
-  ) {
-    // True 3D Multi-Platter Database Cylinder Stack
-    addOutlinedMesh(T, sculptureGroup, new T.CylinderGeometry(0.46, 0.48, 0.22, 24), bodyMat, edgeMat, [0, 0.11, 0], node.id);
-    addOutlinedMesh(T, sculptureGroup, new T.CylinderGeometry(0.41, 0.41, 0.06, 24), accentMat, edgeMat, [0, 0.25, 0], node.id);
-    addOutlinedMesh(T, sculptureGroup, new T.CylinderGeometry(0.46, 0.46, 0.22, 24), bodyMat, edgeMat, [0, 0.39, 0], node.id);
-    addOutlinedMesh(T, sculptureGroup, new T.CylinderGeometry(0.41, 0.41, 0.06, 24), accentMat, edgeMat, [0, 0.53, 0], node.id);
-    addOutlinedMesh(T, sculptureGroup, new T.CylinderGeometry(0.46, 0.46, 0.22, 24), roofMat, edgeMat, [0, 0.67, 0], node.id);
-    addOutlinedMesh(T, sculptureGroup, new T.CylinderGeometry(0.16, 0.16, 0.05, 16), ledMat, edgeMat, [0, 0.80, 0], node.id);
-    topY = 0.92;
-  } else if (
-    node.archetype === "QUEUE" ||
-    /(kafka|rabbit|amqp|broker|queue|\bmq\b|stream)/.test(n)
-  ) {
-    // True 3D Horizontal Message Conduit Pipe on Dual Cradles
-    addOutlinedMesh(T, sculptureGroup, new T.BoxGeometry(0.16, 0.22, 0.52), bodyMat, edgeMat, [-0.28, 0.11, 0], node.id);
-    addOutlinedMesh(T, sculptureGroup, new T.BoxGeometry(0.16, 0.22, 0.52), bodyMat, edgeMat, [0.28, 0.11, 0], node.id);
+    // Crisp top technical plate («gateway»)
+    const topPlate = new T.Mesh(new T.PlaneGeometry(gwW - 0.12, gwD - 0.12), topPlateMat);
+    topPlate.rotation.x = -Math.PI / 2;
+    topPlate.position.set(0, plinthH + gwH + 0.004, 0);
+    topPlate.userData = { serviceId: node.id };
+    sculptureGroup.add(topPlate);
+
+    if (!node.isStopped) {
+      attachFrontTelemetryBar(T, sculptureGroup, node, gwW - 0.18, plinthH + gwH * 0.5, gwD / 2 + 0.004, isDark);
+    }
+    topY = plinthH + gwH + 0.06;
+  } else if (node.archetype === "DATABASE") {
+    // Canonical C4 / UML Multi-Platter Data Store Cylinder
+    const cylR = 0.42;
+    const tierH = node.isStopped ? 0.1 : 0.17;
+    const tiers = node.isStopped ? 1 : 3;
+    for (let i = 0; i < tiers; i++) {
+      const y = plinthH + tierH / 2 + i * (tierH + 0.04);
+      addOutlinedMesh(
+        T,
+        sculptureGroup,
+        new T.CylinderGeometry(cylR, cylR, tierH, 28),
+        i === tiers - 1 ? capMat : chassisMat,
+        edgeMat,
+        [0, y, 0],
+        node.id,
+      );
+      if (i < tiers - 1) {
+        const ring = new T.Mesh(
+          new T.CylinderGeometry(cylR - 0.03, cylR - 0.03, 0.035, 28),
+          accentMat,
+        );
+        ring.position.set(0, y + tierH / 2 + 0.02, 0);
+        ring.userData = { serviceId: node.id };
+        sculptureGroup.add(ring);
+      }
+    }
+    const stackTop = plinthH + tiers * tierH + (tiers - 1) * 0.04;
+    const topDisk = new T.Mesh(new T.CircleGeometry(cylR - 0.04, 28), topPlateMat);
+    topDisk.rotation.x = -Math.PI / 2;
+    topDisk.position.set(0, stackTop + 0.004, 0);
+    topDisk.userData = { serviceId: node.id };
+    sculptureGroup.add(topDisk);
+    topY = stackTop + 0.06;
+  } else if (node.archetype === "QUEUE") {
+    // Canonical EIP Horizontal Message Broker Conduit on Dual Cradles
+    const cradleMat = capMat;
+    for (const cx of [-0.32, 0.32]) {
+      addOutlinedMesh(
+        T,
+        sculptureGroup,
+        new T.BoxGeometry(0.14, 0.18, 0.56),
+        cradleMat,
+        edgeMat,
+        [cx, plinthH + 0.09, 0],
+        node.id,
+      );
+    }
+    const pipeY = plinthH + 0.34;
     addOutlinedMesh(
       T,
       sculptureGroup,
-      new T.CylinderGeometry(0.28, 0.28, 0.98, 20),
-      roofMat,
+      new T.CylinderGeometry(0.24, 0.24, 0.96, 24),
+      chassisMat,
       edgeMat,
-      [0, 0.44, 0],
+      [0, pipeY, 0],
       node.id,
       [0, 0, Math.PI / 2],
     );
-    addOutlinedMesh(
-      T,
-      sculptureGroup,
-      new T.CylinderGeometry(0.32, 0.32, 0.08, 20),
-      accentMat,
-      edgeMat,
-      [-0.44, 0.44, 0],
-      node.id,
-      [0, 0, Math.PI / 2],
-    );
-    addOutlinedMesh(
-      T,
-      sculptureGroup,
-      new T.CylinderGeometry(0.32, 0.32, 0.08, 20),
-      accentMat,
-      edgeMat,
-      [0.44, 0.44, 0],
-      node.id,
-      [0, 0, Math.PI / 2],
-    );
-    topY = 0.86;
-  } else if (/(order|cart|checkout)/.test(n)) {
-    // True 3D Stepped Fulfillment Pavilion
-    addOutlinedMesh(T, sculptureGroup, new T.BoxGeometry(1.00, 0.32, 0.84), bodyMat, edgeMat, [0, 0.16, 0], node.id);
-    addOutlinedMesh(T, sculptureGroup, new T.BoxGeometry(0.64, 0.30, 0.56), roofMat, edgeMat, [0, 0.47, 0], node.id);
-    addOutlinedMesh(T, sculptureGroup, new T.BoxGeometry(0.24, 0.16, 0.24), accentMat, edgeMat, [0, 0.70, 0], node.id, [0, Math.PI / 4, 0]);
-    // Status LED indicators on front & back walls
-    addOutlinedMesh(T, sculptureGroup, new T.BoxGeometry(0.14, 0.06, 0.04), ledMat, edgeMat, [-0.28, 0.16, 0.43], node.id);
-    addOutlinedMesh(T, sculptureGroup, new T.BoxGeometry(0.14, 0.06, 0.04), ledMat, edgeMat, [0.28, 0.16, -0.43], node.id);
-    topY = 0.90;
-  } else if (/(payment|billing|ledger|wallet|invoice)/.test(n)) {
-    // True 3D Armored Vault Unit
-    addOutlinedMesh(T, sculptureGroup, new T.BoxGeometry(0.92, 0.54, 0.74), bodyMat, edgeMat, [0, 0.27, 0], node.id);
-    addOutlinedMesh(T, sculptureGroup, new T.BoxGeometry(0.95, 0.08, 0.77), accentMat, edgeMat, [0, 0.27, 0], node.id);
-    addOutlinedMesh(T, sculptureGroup, new T.BoxGeometry(0.64, 0.09, 0.44), roofMat, edgeMat, [0, 0.585, 0], node.id);
-    addOutlinedMesh(T, sculptureGroup, new T.BoxGeometry(0.12, 0.06, 0.04), ledMat, edgeMat, [0.28, 0.42, 0.38], node.id);
-    addOutlinedMesh(T, sculptureGroup, new T.BoxGeometry(0.12, 0.06, 0.04), ledMat, edgeMat, [-0.28, 0.42, -0.38], node.id);
-    topY = 0.78;
-  } else if (/(catalog|inventory|product|warehouse)/.test(n)) {
-    // True 3D Modular Dual-Blade Server Stack + Parcel Cube
-    addOutlinedMesh(T, sculptureGroup, new T.BoxGeometry(0.92, 0.22, 0.78), bodyMat, edgeMat, [0, 0.11, 0], node.id);
-    addOutlinedMesh(T, sculptureGroup, new T.BoxGeometry(0.84, 0.07, 0.70), accentMat, edgeMat, [0, 0.255, 0], node.id);
-    addOutlinedMesh(T, sculptureGroup, new T.BoxGeometry(0.92, 0.22, 0.78), roofMat, edgeMat, [0, 0.40, 0], node.id);
-    addOutlinedMesh(T, sculptureGroup, new T.BoxGeometry(0.28, 0.24, 0.28), accentMat, edgeMat, [0, 0.63, 0], node.id, [0, Math.PI / 4, 0]);
-    addOutlinedMesh(T, sculptureGroup, new T.BoxGeometry(0.12, 0.05, 0.04), ledMat, edgeMat, [-0.3, 0.40, 0.40], node.id);
-    topY = 0.88;
+    for (const rx of [-0.42, 0, 0.42]) {
+      const collar = new T.Mesh(
+        new T.CylinderGeometry(0.27, 0.27, 0.055, 24),
+        accentMat,
+      );
+      collar.rotation.z = Math.PI / 2;
+      collar.position.set(rx, pipeY, 0);
+      collar.userData = { serviceId: node.id };
+      sculptureGroup.add(collar);
+    }
+    topY = pipeY + 0.28;
   } else {
-    // Generic True 3D Microservice Compute Block
-    addOutlinedMesh(T, sculptureGroup, new T.BoxGeometry(0.86, 0.56, 0.76), bodyMat, edgeMat, [0, 0.28, 0], node.id);
-    addOutlinedMesh(T, sculptureGroup, new T.BoxGeometry(0.76, 0.10, 0.66), roofMat, edgeMat, [0, 0.61, 0], node.id);
-    addOutlinedMesh(T, sculptureGroup, new T.BoxGeometry(0.14, 0.06, 0.04), ledMat, edgeMat, [-0.24, 0.42, 0.39], node.id);
-    topY = 0.82;
+    // UML 2.5 Deployment Node + Real Docker Replica Container Pods (1..3 side-by-side inside Service Boundary)
+    const podCount = node.isStopped ? 1 : Math.max(1, Math.min(3, node.replicas || 1));
+    const podH = node.isStopped ? 0.14 : 0.44;
+    const podD = 0.68;
+    const spanW = 1.04;
+    const gap = 0.06;
+    const podW = (spanW - gap * (podCount - 1)) / podCount;
+
+    for (let i = 0; i < podCount; i++) {
+      const px = -spanW / 2 + podW / 2 + i * (podW + gap);
+      const podGeo = createRoundedSlabGeo(T, podW, podH, podD, 0.055, 0.013);
+      addOutlinedMesh(T, sculptureGroup, podGeo, chassisMat, edgeMat, [px, plinthH, 0], node.id);
+
+      // Clean subtle top trim bezel strip
+      const capStrip = new T.Mesh(new T.BoxGeometry(podW - 0.06, 0.02, 0.04), accentMat);
+      capStrip.position.set(px, plinthH + podH - 0.015, podD / 2 - 0.045);
+      capStrip.userData = { serviceId: node.id };
+      sculptureGroup.add(capStrip);
+
+      // Data-driven RAM + CPU telemetry gauge recessed into the front face of each running pod
+      if (!node.isStopped) {
+        const gaugeHolder = new T.Group();
+        gaugeHolder.position.set(px, 0, 0);
+        attachFrontTelemetryBar(
+          T,
+          gaugeHolder,
+          node,
+          Math.max(0.22, podW - 0.08),
+          plinthH + podH * 0.48,
+          podD / 2 + 0.004,
+          isDark,
+        );
+        sculptureGroup.add(gaugeHolder);
+      }
+
+      // Top plate decal on single pod (or compact schematic on each twin/triple replica pod)
+      const plateW = Math.max(0.22, podW - 0.08);
+      const plateD = Math.min(podD - 0.1, plateW * 0.72 + 0.18);
+      const plate = new T.Mesh(new T.PlaneGeometry(plateW, plateD), topPlateMat);
+      plate.rotation.x = -Math.PI / 2;
+      plate.position.set(px, plinthH + podH + 0.004, -0.02);
+      plate.userData = { serviceId: node.id };
+      sculptureGroup.add(plate);
+    }
+
+    // Translucent Amber Freeze Enclosure when Docker PAUSE is active
+    if (node.isPaused) {
+      const cageGeo = new T.BoxGeometry(spanW + 0.1, podH + 0.1, podD + 0.1);
+      const cageFill = new T.Mesh(
+        cageGeo,
+        new T.MeshBasicMaterial({
+          color: new T.Color("#f59e0b"),
+          transparent: true,
+          opacity: 0.1,
+          depthWrite: false,
+        }),
+      );
+      cageFill.position.set(0, plinthH + (podH + 0.06) / 2, 0);
+      cageFill.userData = { serviceId: node.id };
+      const cageWire = new T.LineSegments(
+        new T.EdgesGeometry(cageGeo),
+        new T.LineBasicMaterial({ color: new T.Color("#f59e0b") }),
+      );
+      cageFill.add(cageWire);
+      sculptureGroup.add(cageFill);
+    }
+
+    topY = plinthH + podH + 0.08;
   }
 
-  // Real 3D Replica Pods (visible when scaled to 2 or 3 replicas!)
-  const replicaPods: THREE.Object3D[] = [];
-  const extraPods = Math.max(0, Math.min(2, node.replicas - 1));
-  for (let i = 0; i < extraPods; i++) {
-    const angle = i === 0 ? Math.PI * 0.25 : Math.PI * 1.25;
-    const pod = addOutlinedMesh(
-      T,
-      sculptureGroup,
-      new T.BoxGeometry(0.24, 0.24, 0.24),
-      roofMat,
-      edgeMat,
-      [Math.cos(angle) * 0.72, 0.12, Math.sin(angle) * 0.72],
-      node.id,
-    );
-    replicaPods.push(pod);
-  }
-
-  // Selection / Drop-Target / Fault Floor Halo Ring
+  // Rectangular Architectural Selection / Drop-Target / Fault Boundary Halo around Plinth
   let halo: THREE.Mesh | undefined;
   if (node.isSelected || node.isDropTarget || node.isCritical || node.isWarning) {
     const haloColor = node.isCritical
@@ -579,23 +1087,41 @@ function buildServiceRig(
           : styleId === "control"
             ? "#38bdf8"
             : "#0056D2";
-    const haloGeo = new T.RingGeometry(0.66, 0.78, 36);
+    const outerW = plinthW + 0.16;
+    const outerD = plinthD + 0.16;
+    const innerW = plinthW + 0.05;
+    const innerD = plinthD + 0.05;
+    const outerShape = new T.Shape();
+    outerShape.moveTo(-outerW / 2, -outerD / 2);
+    outerShape.lineTo(outerW / 2, -outerD / 2);
+    outerShape.lineTo(outerW / 2, outerD / 2);
+    outerShape.lineTo(-outerW / 2, outerD / 2);
+    outerShape.closePath();
+    const hole = new T.Path();
+    hole.moveTo(-innerW / 2, -innerD / 2);
+    hole.lineTo(innerW / 2, -innerD / 2);
+    hole.lineTo(innerW / 2, innerD / 2);
+    hole.lineTo(-innerW / 2, innerD / 2);
+    hole.closePath();
+    outerShape.holes.push(hole);
+
+    const haloGeo = new T.ShapeGeometry(outerShape);
     const haloMat = new T.MeshBasicMaterial({
       color: new T.Color(haloColor),
       side: T.DoubleSide,
       transparent: true,
-      opacity: 0.85,
+      opacity: 0.88,
     });
     halo = new T.Mesh(haloGeo, haloMat);
     halo.rotation.x = -Math.PI / 2;
-    halo.position.y = 0.018;
+    halo.position.y = 0.016;
     halo.userData = { serviceId: node.id };
     group.add(halo);
   }
 
   // Crisp 3D Floating Service Pill Sprite
   const labelSprite = createNodeLabelSprite(T, node, styleId);
-  labelSprite.position.set(0, topY * baseScale + 0.32, 0);
+  labelSprite.position.set(0, topY + 0.30, 0);
   labelSprite.userData = { serviceId: node.id };
   group.add(labelSprite);
 
@@ -606,7 +1132,7 @@ function buildServiceRig(
     phase: (node.wx * 0.013 + node.wz * 0.017) % (Math.PI * 2),
     active: !node.isStopped,
     halo,
-    replicaPods,
+    replicaPods: [],
   };
 }
 
@@ -999,26 +1525,79 @@ export function StudioThreeStage({
     deckMesh.add(new T.LineSegments(new T.EdgesGeometry(deckGeo), deckEdgeMat));
     contentGroup.add(deckMesh);
 
-    // Subtle tier divider lines on deck surface
+    // Uniform subtle CAD drafting grid across the deck surface
     const gridVerts: number[] = [];
-    const x1 = minX + deckW / 3;
-    const x2 = minX + (deckW * 2) / 3;
-    gridVerts.push(x1, 0.008, minZ, x1, 0.008, maxZ);
-    gridVerts.push(x2, 0.008, minZ, x2, 0.008, maxZ);
-    gridVerts.push(minX, 0.008, deckCz, maxX, 0.008, deckCz);
-    const gridGeo = new T.BufferGeometry();
-    gridGeo.setAttribute("position", new T.Float32BufferAttribute(gridVerts, 3));
-    const gridLine = new T.LineSegments(
-      gridGeo,
-      new T.LineBasicMaterial({
-        color: new T.Color(styleCfg.deckGridStroke),
-        transparent: true,
-        opacity: isLight ? 0.25 : 0.2,
-      }),
-    );
-    contentGroup.add(gridLine);
+    const gridStep = 1.0;
+    for (let gx = Math.ceil(minX / gridStep) * gridStep; gx <= maxX; gx += gridStep) {
+      gridVerts.push(gx, 0.006, minZ, gx, 0.006, maxZ);
+    }
+    for (let gz = Math.ceil(minZ / gridStep) * gridStep; gz <= maxZ; gz += gridStep) {
+      gridVerts.push(minX, 0.006, gz, maxX, 0.006, gz);
+    }
+    if (gridVerts.length > 0) {
+      const gridGeo = new T.BufferGeometry();
+      gridGeo.setAttribute("position", new T.Float32BufferAttribute(gridVerts, 3));
+      const gridLine = new T.LineSegments(
+        gridGeo,
+        new T.LineBasicMaterial({
+          color: new T.Color(styleCfg.deckGridStroke),
+          transparent: true,
+          opacity: isLight ? 0.16 : 0.14,
+        }),
+      );
+      contentGroup.add(gridLine);
+    }
 
-    // 2. Real 3D Service Sculptures
+    // Dynamic Architectural Trust Zones (UML 2.5 Deployment Environment / C4 System Boundary / CodeCity Districts)
+    const zoneSpecs: Array<{
+      title: string;
+      accent: string;
+      members: StudioThreeNode[];
+    }> = [
+      {
+        title: "EDGE / INGRESS",
+        accent: isLight ? "#0284c7" : "#38bdf8",
+        members: nodes.filter((n) => n.archetype === "GATEWAY"),
+      },
+      {
+        title: "CORE SERVICES · DOCKER NET",
+        accent: isLight ? "#4f46e5" : "#818cf8",
+        members: nodes.filter((n) => n.archetype === "SERVICE"),
+      },
+      {
+        title: "DATA & MESSAGING",
+        accent: isLight ? "#0d9488" : "#2dd4bf",
+        members: nodes.filter((n) => n.archetype === "DATABASE" || n.archetype === "QUEUE"),
+      },
+    ];
+    for (const zone of zoneSpecs) {
+      if (zone.members.length === 0) continue;
+      let zMinX = Infinity;
+      let zMaxX = -Infinity;
+      let zMinZ = Infinity;
+      let zMaxZ = -Infinity;
+      for (const m of zone.members) {
+        const mx = m.wx * WORLD_SCALE;
+        const mz = m.wz * WORLD_SCALE;
+        zMinX = Math.min(zMinX, mx);
+        zMaxX = Math.max(zMaxX, mx);
+        zMinZ = Math.min(zMinZ, mz);
+        zMaxZ = Math.max(zMaxZ, mz);
+      }
+      const padX = 0.86;
+      const padZ = 0.78;
+      const bx0 = Math.max(minX + 0.14, zMinX - padX);
+      const bx1 = Math.min(maxX - 0.14, zMaxX + padX);
+      const bz0 = Math.max(minZ + 0.14, zMinZ - padZ);
+      const bz1 = Math.min(maxZ - 0.14, zMaxZ + padZ);
+      const zw = Math.max(1.5, bx1 - bx0);
+      const zd = Math.max(1.3, bz1 - bz0);
+      const plate = createZonePlateMesh(T, zone.title, zw, zd, zone.accent, isLight);
+      plate.position.set((bx0 + bx1) / 2, 0.011, (bz0 + bz1) / 2);
+      contentGroup.add(plate);
+    }
+
+    // 2. Real 3D SE-Standard Service Deployment Nodes
     const nodeById = new Map<string, StudioThreeNode>();
     for (const node of nodes) {
       nodeById.set(node.id, node);
@@ -1032,7 +1611,7 @@ export function StudioThreeStage({
       nodeRigsRef.current.push(rig);
     }
 
-    // 3. Real 3D Static Floor Lines + Elevated 3D Observed Traffic Arcs + Packets
+    // 3. Semantic SE Connectors (Port Socket Collars + Throughput-Encoded Sync/Async Conduits + Fault Indicators)
     const edgePairSet = new Set(edges.map((e) => `${e.from}->${e.to}`));
     const upVec = new T.Vector3(0, 1, 0);
     for (const edge of edges) {
@@ -1047,33 +1626,34 @@ export function StudioThreeStage({
       if (Math.hypot(bx - ax, bz - az) < 0.05) continue;
 
       const hasReverse = edgePairSet.has(`${edge.to}->${edge.from}`);
+      const isAsync = Boolean(edge.isAsync);
       const anchor = compute3DEdgeAnchors(ax, az, bx, bz, nodes, edge.from, edge.to, hasReverse);
 
       if (edge.kind === "static") {
         const lineGeo = new T.BufferGeometry().setFromPoints([
-          new T.Vector3(anchor.sx, 0.03, anchor.sz),
-          new T.Vector3(anchor.ex, 0.03, anchor.ez),
+          new T.Vector3(anchor.sx, 0.028, anchor.sz),
+          new T.Vector3(anchor.ex, 0.028, anchor.ez),
         ]);
         const lineMat = new T.LineDashedMaterial({
           color: new T.Color(edge.color),
-          dashSize: 0.16,
-          gapSize: 0.12,
+          dashSize: 0.14,
+          gapSize: 0.11,
           transparent: true,
-          opacity: edge.isSevered ? 0.9 : 0.55,
+          opacity: edge.isSevered ? 0.9 : 0.52,
         });
         const line = new T.Line(lineGeo, lineMat);
         line.computeLineDistances();
         contentGroup.add(line);
 
-        // Subtle floor directional tip right at target pedestal rim
-        const tipGeo = new T.ConeGeometry(0.06, 0.16, 8);
+        // Subtle floor directional tip right at target plinth rim
+        const tipGeo = new T.ConeGeometry(0.055, 0.15, 8);
         const tipMat = new T.MeshBasicMaterial({
           color: new T.Color(edge.color),
           transparent: true,
-          opacity: edge.isSevered ? 0.9 : 0.55,
+          opacity: edge.isSevered ? 0.9 : 0.52,
         });
         const tipMesh = new T.Mesh(tipGeo, tipMat);
-        tipMesh.position.set(anchor.ex - anchor.nx * 0.08, 0.045, anchor.ez - anchor.nz * 0.08);
+        tipMesh.position.set(anchor.ex - anchor.nx * 0.08, 0.042, anchor.ez - anchor.nz * 0.08);
         tipMesh.quaternion.setFromUnitVectors(upVec, new T.Vector3(anchor.nx, 0, anchor.nz).normalize());
         contentGroup.add(tipMesh);
 
@@ -1082,35 +1662,86 @@ export function StudioThreeStage({
           to: edge.to,
           kind: "static",
           hasReverse,
+          isAsync,
+          tubeRadius: 0.02,
           line,
           arrowMesh: tipMesh,
         });
         continue;
       }
 
-      // Observed Live OTel 3D Arch Tube anchored to pedestal rims with obstacle clearance
-      const p0 = new T.Vector3(anchor.sx, 0.22, anchor.sz);
+      // Observed Live OTel 3D Conduit anchored to Port Socket Collars on plinth rims
+      const portY = 0.15;
+      const p0 = new T.Vector3(anchor.sx, portY, anchor.sz);
       const mid = new T.Vector3(anchor.midX, anchor.lift, anchor.midZ);
-      const p2 = new T.Vector3(anchor.ex, 0.22, anchor.ez);
+      const p2 = new T.Vector3(anchor.ex, portY, anchor.ez);
       const curve = new T.QuadraticBezierCurve3(p0, mid, p2);
-      const tubeGeo = new T.TubeGeometry(curve, 28, edge.isSevered ? 0.034 : 0.038, 8, false);
-      const tubeMat = new T.MeshStandardMaterial({
+
+      // Encode live OTel RPS throughput in conduit radius (Kiali / Service Mesh convention)
+      const rpsVal = edge.rps ?? 0;
+      const tubeRadius = edge.isSevered
+        ? 0.032
+        : rpsVal > 0
+          ? Math.min(0.052, Math.max(0.028, 0.024 + Math.log2(rpsVal + 1) * 0.0095))
+          : 0.027;
+
+      const conduitMat = new T.MeshStandardMaterial({
         color: new T.Color(edge.color),
         emissive: new T.Color(edge.color),
-        emissiveIntensity: styleId === "control" ? 0.55 : 0.16,
-        roughness: 0.32,
+        emissiveIntensity: styleId === "control" ? 0.52 : 0.16,
+        roughness: 0.3,
+        metalness: 0.18,
       });
-      const tubeMesh = new T.Mesh(tubeGeo, tubeMat);
-      contentGroup.add(tubeMesh);
 
-      // 3D Directional Cone Arrowhead cleanly meeting target pedestal rim
+      // Hardware Port Socket Collars at source & destination Service Boundary rims
+      const portGeo = new T.CylinderGeometry(0.068, 0.075, 0.05, 14);
+      const startPort = new T.Mesh(portGeo, conduitMat);
+      startPort.position.set(anchor.sx, portY - 0.015, anchor.sz);
+      contentGroup.add(startPort);
+      const endPort = new T.Mesh(portGeo, conduitMat);
+      endPort.position.set(anchor.ex, portY - 0.015, anchor.ez);
+      contentGroup.add(endPort);
+
+      let tubeMesh: THREE.Mesh | undefined;
+      let asyncLine: THREE.Line | undefined;
+      if (isAsync) {
+        // UML Async Event/Message connector: dashed elevated arch
+        const pts = curve.getPoints(32);
+        const asyncGeo = new T.BufferGeometry().setFromPoints(pts);
+        const asyncMat = new T.LineDashedMaterial({
+          color: new T.Color(edge.color),
+          dashSize: 0.18,
+          gapSize: 0.12,
+        });
+        asyncLine = new T.Line(asyncGeo, asyncMat);
+        asyncLine.computeLineDistances();
+        contentGroup.add(asyncLine);
+      } else {
+        // UML Sync HTTP/gRPC connector: solid continuous conduit
+        const tubeGeo = new T.TubeGeometry(curve, 28, tubeRadius, 10, false);
+        tubeMesh = new T.Mesh(tubeGeo, conduitMat);
+        contentGroup.add(tubeMesh);
+      }
+
+      // Directional tip: filled cone (Sync) vs open ring/chevron (Async)
       const arrowPos = curve.getPoint(0.91);
       const arrowTan = curve.getTangent(0.91).normalize();
-      const arrowGeo = new T.ConeGeometry(0.085, 0.21, 10);
-      const arrowMesh = new T.Mesh(arrowGeo, tubeMat);
+      const arrowGeo = isAsync
+        ? new T.TorusGeometry(0.075, 0.022, 8, 16)
+        : new T.ConeGeometry(Math.max(0.075, tubeRadius * 2.2), 0.2, 10);
+      const arrowMesh = new T.Mesh(arrowGeo, conduitMat);
       arrowMesh.position.copy(arrowPos);
       arrowMesh.quaternion.setFromUnitVectors(upVec, arrowTan);
       contentGroup.add(arrowMesh);
+
+      // Mid-span Fault Break Ring when severed (HTTP 5xx / Circuit Open / Container Down)
+      let breakRing: THREE.Mesh | undefined;
+      if (edge.isSevered) {
+        breakRing = new T.Mesh(new T.TorusGeometry(0.105, 0.022, 8, 18), conduitMat);
+        breakRing.position.copy(curve.getPoint(0.5));
+        breakRing.quaternion.setFromUnitVectors(upVec, curve.getTangent(0.5).normalize());
+        contentGroup.add(breakRing);
+      }
 
       // Animated Glowing 3D Packet Sphere matching edge health state
       const pktColor = edge.isSevered
@@ -1120,7 +1751,7 @@ export function StudioThreeStage({
           : styleId === "control"
             ? "#34d399"
             : "#10b981";
-      const pktGeo = new T.SphereGeometry(0.082, 12, 12);
+      const pktGeo = new T.SphereGeometry(Math.max(0.07, tubeRadius * 1.9), 12, 12);
       const pktMat = new T.MeshBasicMaterial({ color: new T.Color(pktColor) });
       const pktMesh = new T.Mesh(pktGeo, pktMat);
       contentGroup.add(pktMesh);
@@ -1136,7 +1767,7 @@ export function StudioThreeStage({
       if (edge.label) {
         badgeSprite = createEdgeBadgeSprite(T, edge.label, edge, isLight);
         const apex = curve.getPoint(0.5);
-        badgeSprite.position.set(apex.x, apex.y + 0.2, apex.z);
+        badgeSprite.position.set(apex.x, apex.y + 0.21, apex.z);
         contentGroup.add(badgeSprite);
       }
 
@@ -1145,8 +1776,14 @@ export function StudioThreeStage({
         to: edge.to,
         kind: "observed",
         hasReverse,
+        isAsync,
+        tubeRadius,
+        line: asyncLine,
         tubeMesh,
         arrowMesh,
+        startPort,
+        endPort,
+        breakRing,
         badgeSprite,
         curve,
         isSevered: edge.isSevered,
@@ -1258,20 +1895,34 @@ export function StudioThreeStage({
             new T.Vector3(anchor.nx, 0, anchor.nz).normalize(),
           );
         }
-      } else if (edge.kind === "observed" && edge.curve && edge.tubeMesh) {
-        edge.curve.v0.set(anchor.sx, 0.22, anchor.sz);
+      } else if (edge.kind === "observed" && edge.curve) {
+        const portY = 0.15;
+        edge.curve.v0.set(anchor.sx, portY, anchor.sz);
         edge.curve.v1.set(anchor.midX, anchor.lift, anchor.midZ);
-        edge.curve.v2.set(anchor.ex, 0.22, anchor.ez);
-        const nextGeo = new T.TubeGeometry(edge.curve, 24, edge.isSevered ? 0.034 : 0.038, 8, false);
-        edge.tubeMesh.geometry.dispose();
-        edge.tubeMesh.geometry = nextGeo;
+        edge.curve.v2.set(anchor.ex, portY, anchor.ez);
+        if (edge.startPort) edge.startPort.position.set(anchor.sx, portY - 0.015, anchor.sz);
+        if (edge.endPort) edge.endPort.position.set(anchor.ex, portY - 0.015, anchor.ez);
+        if (edge.isAsync && edge.line) {
+          const nextGeo = new T.BufferGeometry().setFromPoints(edge.curve.getPoints(28));
+          edge.line.geometry.dispose();
+          edge.line.geometry = nextGeo;
+          edge.line.computeLineDistances();
+        } else if (edge.tubeMesh) {
+          const nextGeo = new T.TubeGeometry(edge.curve, 24, edge.tubeRadius, 8, false);
+          edge.tubeMesh.geometry.dispose();
+          edge.tubeMesh.geometry = nextGeo;
+        }
         if (edge.arrowMesh) {
           edge.arrowMesh.position.copy(edge.curve.getPoint(0.91));
           edge.arrowMesh.quaternion.setFromUnitVectors(up, edge.curve.getTangent(0.91).normalize());
         }
+        if (edge.breakRing) {
+          edge.breakRing.position.copy(edge.curve.getPoint(0.5));
+          edge.breakRing.quaternion.setFromUnitVectors(up, edge.curve.getTangent(0.5).normalize());
+        }
         if (edge.badgeSprite) {
           const apex = edge.curve.getPoint(0.5);
-          edge.badgeSprite.position.set(apex.x, apex.y + 0.2, apex.z);
+          edge.badgeSprite.position.set(apex.x, apex.y + 0.21, apex.z);
         }
       }
     }
