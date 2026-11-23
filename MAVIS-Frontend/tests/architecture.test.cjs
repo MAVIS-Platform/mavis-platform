@@ -4989,7 +4989,9 @@ test("My Workspaces is a compact LMS class list with tabs and a module outline",
       code: "SWD392",
       name: "Lớp SWD392",
       myRole: "LECTURER",
-      status: "ACTIVE",
+      // The Lecturer lifecycle policy only permits authoring while the course
+      // is inactive. ARCHIVED is the current API representation of INACTIVE.
+      status: "ARCHIVED",
       members: [
         { id: "u1", name: "Lecturer", role: "LECTURER" },
         { id: "u2", name: "Student A", role: "STUDENT" },
@@ -5231,7 +5233,7 @@ test("My Workspaces is a compact LMS class list with tabs and a module outline",
     "Class rename/archive lives in the dedicated Settings tab",
   );
   assert.match(settingsHtml, /Rename/);
-  assert.match(settingsHtml, /Archive workspace/);
+  assert.match(settingsHtml, /Reopen workspace/);
   const { WorkspaceSelector } = require("../src/features/workspaces/components.tsx");
   assert.equal(
     renderComp(WorkspaceSelector, "ws-swd"),
