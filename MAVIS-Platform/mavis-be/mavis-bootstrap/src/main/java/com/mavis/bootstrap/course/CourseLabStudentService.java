@@ -44,6 +44,7 @@ import com.mavis.platform.assignment.service.AssignmentService;
 import com.mavis.platform.submission.dto.SubmissionResponseDTO;
 import com.mavis.platform.submission.service.SubmissionService;
 import com.mavis.platform.submission.service.impl.SubmissionReviewService;
+import com.mavis.platform.workspace.curriculum.JavaCourseraCatalog;
 import com.mavis.platform.workspace.service.CourseQuizService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -892,7 +893,7 @@ public class CourseLabStudentService {
                 .filter(el -> "SERVICE_CONTAINER".equalsIgnoreCase(el.getElementType()) && el.getName() != null)
                 .toList();
         if (containers.isEmpty()) {
-            for (String svc : List.of("api-gateway", "order-service", "payment-service", "inventory-service")) {
+            for (String svc : JavaCourseraCatalog.CURATED_SERVICES) {
                 blocks.addObject().put("service", svc).put("label", svc).put("canScale", true).put("initiallyStopped", false);
             }
         } else {

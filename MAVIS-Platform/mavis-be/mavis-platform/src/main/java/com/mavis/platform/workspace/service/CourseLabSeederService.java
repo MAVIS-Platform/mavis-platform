@@ -159,7 +159,7 @@ public class CourseLabSeederService {
                     JavaCourseraCatalog.COURSE_DESCRIPTION,
                     JavaCourseraCatalog.modules(),
                     JavaCourseraCatalog.allLessons(),
-                    List.of("api-gateway", "order-service", "payment-service", "inventory-service"),
+                    MocHuongReferenceArchitectureBuilder.REAL_MICROSERVICES,
                     false,
                     "COURSE_JAVA_COURSERA_SEEDED");
         }
@@ -229,6 +229,17 @@ public class CourseLabSeederService {
                 WHERE c.workspace_id = ? AND c.status = 'PUBLISHED'
                 """, Integer.class, workspaceId);
         int expectedModules = track.modules().size();
+        if (!track.csharpTrack() && !existingLabs.isEmpty() && needsMocHuongUpgrade(existingLabs)) {
+            SEEDING_IN_PROGRESS.get().add(workspaceId);
+            try {
+                upgradeJavaWorkspaceToMocHuong(workspaceId, existingLabs);
+            } catch (Exception ex) {
+                log.warn("Auto-upgrading workspace {} to Moc Huong reference architecture deferred: {}",
+                        workspaceId, ex.getMessage());
+            } finally {
+                SEEDING_IN_PROGRESS.get().remove(workspaceId);
+            }
+        }
         if (isCourseraLabsAligned(existingLabs, track.modules())
                 && publishedModules != null && publishedModules >= expectedModules) {
             return;
@@ -370,6 +381,9 @@ public class CourseLabSeederService {
                 .filter(java.util.Objects::nonNull)
                 .findFirst()
                 .orElseGet(() -> seedReferenceModel(workspaceId, workspace, lecturer));
+        if (!track.csharpTrack() && !existingLabs.isEmpty() && needsMocHuongUpgrade(existingLabs)) {
+            upgradeJavaWorkspaceToMocHuong(workspaceId, existingLabs);
+        }
         ensureReferenceRuntimeSetup(refModel, java.util.Map.of());
 
         List<CourseraModuleSpec> catalogModules = track.modules();
@@ -736,15 +750,15 @@ public class CourseLabSeederService {
         Project refProject = projects.save(Project.builder()
                 .workspace(workspace)
                 .owner(lecturer)
-                .name("Curated E-Commerce Reference (Spring Boot & .NET Core)")
-                .description("Curated multi-service repository (API Gateway, Order Service, Payment Service, Inventory Service, C# Orders/Catalog) for Guided Labs.")
+                .name(MocHuongReferenceArchitectureBuilder.SYSTEM_NAME)
+                .description("Curated Java 21 / Spring Boot 3 microservices repository (Service Discovery, API Gateway, Identity, Catalog, Order, Notification) from MAVIS-Platform/Moc-Huong-Shop.")
                 .defaultBranch("main")
                 .projectType("TEACHER_REFERENCE")
                 .isReferenceTemplate(true)
                 .status("ACTIVE")
                 .build());
 
-        byte[] zipBytes = buildCuratedArchive();
+        byte[] zipBytes = MocHuongReferenceArchitectureBuilder.buildMocHuongArchive();
         Path archivePath = persistArchive(workspaceId, refProject.getId(), zipBytes);
         String sha256 = HashUtils.sha256Hex(zipBytes);
 
@@ -770,94 +784,138 @@ public class CourseLabSeederService {
                 .createdBy(lecturer)
                 .build());
 
-        ModelElement customer = elements.save(ModelElement.builder()
-                .modelVersion(refModel).elementType("EXTERNAL_SYSTEM").languageStack("Actor")
-                .name("Customer").scope("external").status("VALIDATED").build());
-        ModelElement gateway = elements.save(ModelElement.builder()
-                .modelVersion(refModel).elementType("SERVICE_CONTAINER").languageStack("Java / Spring Cloud Gateway")
-                .name("api-gateway").scope("service").status("VALIDATED").build());
-        ModelElement orderService = elements.save(ModelElement.builder()
-                .modelVersion(refModel).elementType("SERVICE_CONTAINER").languageStack("Java / Spring Boot")
-                .name("order-service").scope("service").status("VALIDATED").build());
-        ModelElement paymentService = elements.save(ModelElement.builder()
-                .modelVersion(refModel).elementType("SERVICE_CONTAINER").languageStack("Java / Spring Boot")
-                .name("payment-service").scope("service").status("VALIDATED").build());
-        ModelElement inventoryService = elements.save(ModelElement.builder()
-                .modelVersion(refModel).elementType("SERVICE_CONTAINER").languageStack("Java / Spring Boot")
-                .name("inventory-service").scope("service").status("VALIDATED").build());
+        MocHuongReferenceArchitectureBuilder.BuiltResult built = MocHuongReferenceArchitectureBuilder.populate(
+                json,
+                refModel,
+                refSnapshot,
+                new MocHuongReferenceArchitectureBuilder.PersistenceHooks(
+                        elements::save,
+                        relationships::save,
+                        evidences::save,
+                        diagrams::saveAll,
+                        evaluations::save
+                ));
 
-        ModelElement orderController = elements.save(ModelElement.builder()
-                .modelVersion(refModel).parentElement(orderService).elementType("COMPONENT").languageStack("Spring MVC")
-                .name("OrderController").scope("order-service").status("VALIDATED").build());
-        ModelElement paymentClient = elements.save(ModelElement.builder()
-                .modelVersion(refModel).parentElement(orderService).elementType("COMPONENT").languageStack("OpenFeign")
-                .name("PaymentClient").scope("order-service").status("VALIDATED").build());
-        ModelElement paymentController = elements.save(ModelElement.builder()
-                .modelVersion(refModel).parentElement(paymentService).elementType("COMPONENT").languageStack("Spring MVC")
-                .name("PaymentController").scope("payment-service").status("VALIDATED").build());
-        ModelElement inventoryController = elements.save(ModelElement.builder()
-                .modelVersion(refModel).parentElement(inventoryService).elementType("COMPONENT").languageStack("Spring MVC")
-                .name("InventoryController").scope("inventory-service").status("VALIDATED").build());
-
-        ModelRelationship customerToGateway = relationships.save(ModelRelationship.builder()
-                .modelVersion(refModel).sourceElement(customer).targetElement(gateway)
-                .relationType("SERVICE_HTTP_CALL").originLayer("STATIC").direction("DIRECTED").build());
-        ModelRelationship gatewayToOrder = relationships.save(ModelRelationship.builder()
-                .modelVersion(refModel).sourceElement(gateway).targetElement(orderService)
-                .relationType("SERVICE_HTTP_CALL").originLayer("STATIC").direction("DIRECTED").build());
-        ModelRelationship orderToPayment = relationships.save(ModelRelationship.builder()
-                .modelVersion(refModel).sourceElement(orderService).targetElement(paymentService)
-                .relationType("SERVICE_HTTP_CALL").originLayer("STATIC").direction("DIRECTED").build());
-        ModelRelationship orderToInventory = relationships.save(ModelRelationship.builder()
-                .modelVersion(refModel).sourceElement(orderService).targetElement(inventoryService)
-                .relationType("SERVICE_HTTP_CALL").originLayer("STATIC").direction("DIRECTED").build());
-        ModelRelationship clientToPaymentController = relationships.save(ModelRelationship.builder()
-                .modelVersion(refModel).sourceElement(paymentClient).targetElement(paymentController)
-                .relationType("CODE_DEPENDENCY").originLayer("STATIC").direction("DIRECTED").build());
-        ModelRelationship orderCtrlToClient = relationships.save(ModelRelationship.builder()
-                .modelVersion(refModel).sourceElement(orderController).targetElement(paymentClient)
-                .relationType("CODE_DEPENDENCY").originLayer("STATIC").direction("DIRECTED").build());
-
-        evidences.save(Evidence.builder()
-                .sourceSnapshot(refSnapshot)
-                .modelVersion(refModel)
-                .relationship(orderToPayment)
-                .locator("order-service/src/main/java/com/curated/order/PaymentClient.java:6")
-                .adapterVersion("curated-seed-v1")
-                .sourceType("STATIC_CODE")
-                .excerpt("@FeignClient(name = \"payment-service\", url = \"http://payment-service:8082\")")
-                .build());
-
-        List<ModelElement> containers = List.of(gateway, orderService, paymentService, inventoryService);
-        List<ModelRelationship> containerEdges = List.of(gatewayToOrder, orderToPayment, orderToInventory);
-        List<ModelElement> components = List.of(orderService, paymentService, inventoryService, orderController, paymentClient, paymentController, inventoryController);
-        List<ModelRelationship> componentEdges = List.of(orderCtrlToClient, clientToPaymentController, orderToInventory);
-
-        diagrams.saveAll(List.of(
-                buildContextDiagram(refModel, refProject.getName(), customer, customerToGateway),
-                buildDiagram(refModel, "DEPENDENCY_GRAPH", "SERVICE", containers, containerEdges),
-                buildDiagram(refModel, "C4", "CONTAINER", containers, containerEdges),
-                buildDiagram(refModel, "C4", "COMPONENT", components, componentEdges)
-        ));
-
-        ObjectNode metrics = json.createObjectNode()
-                .put("complianceScore", 88.0)
-                .put("totalFindings", 0)
-                .put("passedRules", 5);
-        evaluations.save(EvaluationRun.builder()
-                .modelVersion(refModel)
-                .ruleSetVersion("3e-3")
-                .summaryMetrics(metrics)
-                .build());
-
-        java.util.Map<String, UUID> serviceIds = new java.util.LinkedHashMap<>();
-        serviceIds.put("api-gateway", gateway.getId());
-        serviceIds.put("order-service", orderService.getId());
-        serviceIds.put("payment-service", paymentService.getId());
-        serviceIds.put("inventory-service", inventoryService.getId());
-        ensureReferenceRuntimeSetup(refModel, serviceIds);
+        ensureReferenceRuntimeSetup(refModel, built.serviceIds());
 
         return refModel;
+    }
+
+    private boolean needsMocHuongUpgrade(List<Assignment> existingLabs) {
+        if (existingLabs == null || existingLabs.isEmpty()) {
+            return false;
+        }
+        ModelVersion refModel = existingLabs.stream()
+                .map(Assignment::getReferenceModel)
+                .filter(java.util.Objects::nonNull)
+                .findFirst()
+                .orElse(null);
+        if (refModel == null || refModel.getId() == null || refModel.getProject() == null) {
+            return false;
+        }
+        List<ModelElement> existing = elements.findByModelVersionId(refModel.getId());
+        if (existing == null || existing.isEmpty()) {
+            return false;
+        }
+        String projName = refModel.getProject().getName();
+        if (!MocHuongReferenceArchitectureBuilder.SYSTEM_NAME.equals(projName)) {
+            return true;
+        }
+        boolean hasFake = existing.stream()
+                .anyMatch(e -> "payment-service".equalsIgnoreCase(e.getName())
+                        || "inventory-service".equalsIgnoreCase(e.getName()));
+        if (hasFake) {
+            return true;
+        }
+        boolean hasCatalog = existing.stream().anyMatch(e -> "catalog-service".equalsIgnoreCase(e.getName()));
+        boolean hasIdentity = existing.stream().anyMatch(e -> "identity-service".equalsIgnoreCase(e.getName()));
+        boolean hasActors = existing.stream().anyMatch(e -> "PERSON".equalsIgnoreCase(e.getElementType()));
+        return !(hasCatalog && hasIdentity && hasActors);
+    }
+
+    private void upgradeJavaWorkspaceToMocHuong(UUID workspaceId, List<Assignment> existingLabs) {
+        ModelVersion refModel = existingLabs.stream()
+                .map(Assignment::getReferenceModel)
+                .filter(java.util.Objects::nonNull)
+                .findFirst()
+                .orElse(null);
+        if (refModel == null || refModel.getId() == null || refModel.getProject() == null) {
+            return;
+        }
+        Project refProject = refModel.getProject();
+        Integer subRefs = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM submission_snapshots WHERE model_version_id = ?",
+                Integer.class, refModel.getId());
+        if (subRefs != null && subRefs > 0) {
+            log.info("Skipping in-place rebuild for reference model {} ({} submission_snapshots reference it)",
+                    refModel.getId(), subRefs);
+        } else {
+            List<Evidence> oldEvidences = evidences.findByModelVersionId(refModel.getId());
+            if (oldEvidences != null && !oldEvidences.isEmpty()) {
+                evidences.deleteAll(oldEvidences);
+            }
+            List<ModelRelationship> oldRels = relationships.findByModelVersionId(refModel.getId());
+            if (oldRels != null && !oldRels.isEmpty()) {
+                relationships.deleteAll(oldRels);
+            }
+            List<ModelElement> oldElements = elements.findByModelVersionId(refModel.getId());
+            if (oldElements != null && !oldElements.isEmpty()) {
+                List<ModelElement> children = oldElements.stream().filter(e -> e.getParentElement() != null).toList();
+                List<ModelElement> roots = oldElements.stream().filter(e -> e.getParentElement() == null).toList();
+                if (!children.isEmpty()) {
+                    elements.deleteAll(children);
+                }
+                if (!roots.isEmpty()) {
+                    elements.deleteAll(roots);
+                }
+            }
+            List<DiagramVersion> oldDiagrams = diagrams.findByModelVersionId(refModel.getId());
+            if (oldDiagrams != null && !oldDiagrams.isEmpty()) {
+                diagrams.deleteAll(oldDiagrams);
+            }
+            refProject.setName(MocHuongReferenceArchitectureBuilder.SYSTEM_NAME);
+            refProject.setDescription("Curated Java 21 / Spring Boot 3 microservices repository (Service Discovery, API Gateway, Identity, Catalog, Order, Notification) from MAVIS-Platform/Moc-Huong-Shop.");
+            projects.saveAndFlush(refProject);
+
+            SourceSnapshot refSnapshot = refModel.getSourceSnapshot();
+            if (refSnapshot != null) {
+                byte[] zipBytes = MocHuongReferenceArchitectureBuilder.buildMocHuongArchive();
+                Path archivePath = persistArchive(workspaceId, refProject.getId(), zipBytes);
+                refSnapshot.setArtifactHash(HashUtils.sha256Hex(zipBytes));
+                refSnapshot.setStoragePath(archivePath.toString());
+                snapshots.saveAndFlush(refSnapshot);
+                MocHuongReferenceArchitectureBuilder.BuiltResult built = MocHuongReferenceArchitectureBuilder.populate(
+                        json,
+                        refModel,
+                        refSnapshot,
+                        new MocHuongReferenceArchitectureBuilder.PersistenceHooks(
+                                elements::save,
+                                relationships::save,
+                                evidences::save,
+                                diagrams::saveAll,
+                                evaluations::save
+                        ));
+                refreshReferenceRuntimeSetup(refModel, built.serviceIds());
+            }
+        }
+        ObjectNode targetTopology = buildStudioTopologyForServices(MocHuongReferenceArchitectureBuilder.REAL_MICROSERVICES);
+        for (Assignment lab : existingLabs) {
+            if (Boolean.TRUE.equals(lab.getRequireRuntimeTrace()) && hasStaleTopology(lab.getStudioTopologySnapshot())) {
+                lab.setStudioTopologySnapshot(targetTopology);
+                lab.setStudioTopologyRevision(lab.getStudioTopologyRevision() != null ? lab.getStudioTopologyRevision() : 1);
+                assignments.saveAndFlush(lab);
+            }
+        }
+    }
+
+    private boolean hasStaleTopology(com.fasterxml.jackson.databind.JsonNode snapshot) {
+        if (snapshot == null || !snapshot.path("blocks").isArray()) {
+            return true;
+        }
+        String raw = snapshot.path("blocks").toString();
+        return raw.contains("payment-service")
+                || raw.contains("inventory-service")
+                || !raw.contains("catalog-service");
     }
 
     private void upgradeExistingLabsIfSafe(List<Assignment> existingLabs) {
@@ -890,6 +948,15 @@ public class CourseLabSeederService {
     }
 
     private void ensureReferenceRuntimeSetup(ModelVersion refModel, java.util.Map<String, UUID> knownServiceIds) {
+        upsertReferenceRuntimeSetup(refModel, knownServiceIds, false);
+    }
+
+    private void refreshReferenceRuntimeSetup(ModelVersion refModel, java.util.Map<String, UUID> knownServiceIds) {
+        upsertReferenceRuntimeSetup(refModel, knownServiceIds, true);
+    }
+
+    private void upsertReferenceRuntimeSetup(
+            ModelVersion refModel, java.util.Map<String, UUID> knownServiceIds, boolean overwriteExisting) {
         if (refModel == null || refModel.getProject() == null || refModel.getSourceSnapshot() == null
                 || refModel.getProject().getId() == null) {
             return;
@@ -898,47 +965,73 @@ public class CourseLabSeederService {
         Integer cfgCount = jdbc.queryForObject(
                 "SELECT count(*) FROM runtime_configurations WHERE project_id = ?",
                 Integer.class, refProjectId);
-        if (cfgCount == null || cfgCount == 0) {
-            java.util.Map<String, UUID> serviceMap = new java.util.LinkedHashMap<>(knownServiceIds);
-            if (serviceMap.isEmpty()) {
-                for (ModelElement el : elements.findByModelVersionId(refModel.getId())) {
-                    if ("SERVICE_CONTAINER".equals(el.getElementType()) && el.getName() != null && el.getId() != null) {
-                        serviceMap.putIfAbsent(el.getName(), el.getId());
-                    }
-                }
-            }
-            ObjectNode profile = json.createObjectNode();
-            ObjectNode apps = profile.putObject("applications");
-            apps.putObject("api-gateway").put("runtime", "java").put("containerPort", 8080);
-            apps.putObject("order-service").put("runtime", "java").put("containerPort", 8081);
-            apps.putObject("payment-service").put("runtime", "java").put("containerPort", 8082);
-            apps.putObject("inventory-service").put("runtime", "java").put("containerPort", 8083);
-            ObjectNode mappings = profile.putObject("serviceMappings");
-            serviceMap.forEach((name, id) -> {
-                if (id != null) mappings.put(name, id.toString());
-            });
-            profile.set("studioTopology", buildDefaultStudioTopology());
+        if (overwriteExisting || cfgCount == null || cfgCount == 0) {
+            ObjectNode profile = buildReferenceRuntimeProfile(refModel, knownServiceIds);
             jdbc.update("""
                     INSERT INTO runtime_configurations (project_id, source_snapshot_id, model_version_id, profile_id, profile, revision)
                     VALUES (?, ?, ?, 'SPRING_BOOT_DOTNET_COMPOSE_V1', CAST(? AS jsonb), 1)
-                    ON CONFLICT (project_id) DO NOTHING
-                    """, refProjectId, refModel.getSourceSnapshot().getId(), refModel.getId(), profile.toString());
+                    ON CONFLICT (project_id) DO UPDATE
+                    SET source_snapshot_id = EXCLUDED.source_snapshot_id,
+                        model_version_id = EXCLUDED.model_version_id,
+                        profile = CASE WHEN ? THEN EXCLUDED.profile ELSE runtime_configurations.profile END,
+                        revision = CASE WHEN ? THEN runtime_configurations.revision + 1 ELSE runtime_configurations.revision END
+                    """, refProjectId, refModel.getSourceSnapshot().getId(), refModel.getId(), profile.toString(), overwriteExisting, overwriteExisting);
         }
 
         Integer scnCount = jdbc.queryForObject(
                 "SELECT count(*) FROM runtime_scenarios WHERE project_id = ?",
                 Integer.class, refProjectId);
+        ArrayNode steps = buildMocHuongRuntimeScenarios();
         if (scnCount == null || scnCount == 0) {
-            ArrayNode steps = json.createArrayNode();
-            steps.addObject().put("id", "order-checkout").put("service", "order-service")
-                    .put("method", "POST").put("path", "/api/orders").put("expectedStatus", 200);
-            steps.addObject().put("id", "inventory-health").put("service", "inventory-service")
-                    .put("method", "GET").put("path", "/api/inventory/health").put("expectedStatus", 200);
             jdbc.update("""
                     INSERT INTO runtime_scenarios (id, project_id, name, steps, revision)
-                    VALUES (?, ?, 'Curated Resilience Check', CAST(? AS jsonb), 1)
+                    VALUES (?, ?, 'Moc Huong Resilience & Flow Check', CAST(? AS jsonb), 1)
                     """, UUID.randomUUID(), refProjectId, steps.toString());
+        } else if (overwriteExisting) {
+            jdbc.update("""
+                    UPDATE runtime_scenarios
+                    SET name = 'Moc Huong Resilience & Flow Check',
+                        steps = CAST(? AS jsonb),
+                        revision = revision + 1
+                    WHERE project_id = ?
+                    """, steps.toString(), refProjectId);
         }
+    }
+
+    private ObjectNode buildReferenceRuntimeProfile(ModelVersion refModel, java.util.Map<String, UUID> knownServiceIds) {
+        java.util.Map<String, UUID> serviceMap = new java.util.LinkedHashMap<>(knownServiceIds);
+        if (serviceMap.isEmpty()) {
+            for (ModelElement el : elements.findByModelVersionId(refModel.getId())) {
+                if ("SERVICE_CONTAINER".equals(el.getElementType()) && el.getName() != null && el.getId() != null) {
+                    serviceMap.putIfAbsent(el.getName(), el.getId());
+                }
+            }
+        }
+        ObjectNode profile = json.createObjectNode();
+        ObjectNode apps = profile.putObject("applications");
+        apps.putObject("service-discovery").put("runtime", "java").put("containerPort", 8761);
+        apps.putObject("api-gateway").put("runtime", "java").put("containerPort", 8080);
+        apps.putObject("identity-service").put("runtime", "java").put("containerPort", 8081);
+        apps.putObject("catalog-service").put("runtime", "java").put("containerPort", 8082);
+        apps.putObject("order-service").put("runtime", "java").put("containerPort", 8083);
+        apps.putObject("notification-service").put("runtime", "java").put("containerPort", 8084);
+        ObjectNode mappings = profile.putObject("serviceMappings");
+        serviceMap.forEach((name, id) -> {
+            if (id != null) mappings.put(name, id.toString());
+        });
+        profile.set("studioTopology", buildDefaultStudioTopology());
+        return profile;
+    }
+
+    private ArrayNode buildMocHuongRuntimeScenarios() {
+        ArrayNode steps = json.createArrayNode();
+        steps.addObject().put("id", "order-checkout").put("service", "order-service")
+                .put("method", "POST").put("path", "/api/v1/orders").put("expectedStatus", 200);
+        steps.addObject().put("id", "catalog-products").put("service", "catalog-service")
+                .put("method", "GET").put("path", "/api/v1/products").put("expectedStatus", 200);
+        steps.addObject().put("id", "identity-auth").put("service", "identity-service")
+                .put("method", "POST").put("path", "/api/v1/auth/login").put("expectedStatus", 200);
+        return steps;
     }
 
     private ObjectNode markArchivedV1(com.fasterxml.jackson.databind.JsonNode existingPolicy) {
@@ -951,8 +1044,7 @@ public class CourseLabSeederService {
     }
 
     public ObjectNode buildDefaultStudioTopology() {
-        return buildStudioTopologyForServices(
-                List.of("api-gateway", "order-service", "payment-service", "inventory-service"));
+        return buildStudioTopologyForServices(MocHuongReferenceArchitectureBuilder.REAL_MICROSERVICES);
     }
 
     private ObjectNode buildStudioTopologyForServices(List<String> serviceNames) {
@@ -981,7 +1073,7 @@ public class CourseLabSeederService {
                     new LabSeedSpec(
                             "java-07",
                             "Lab 02 · Runtime Resilience, Circuit Breaker & Stop/Scale Impact",
-                            "Verify live OpenTelemetry runtime traces on the curated architecture, perform a MAVIS Studio Stop/Scale chaos experiment on payment-service, and submit your verified runtime & architecture package.",
+                            "Verify live OpenTelemetry runtime traces on the curated architecture, perform a MAVIS Studio Stop/Scale chaos experiment on catalog-service, and submit your verified runtime & architecture package.",
                             List.of("C4_CONTAINER", "DEPENDENCY_GRAPH"),
                             true),
                     new LabSeedSpec(
@@ -1015,70 +1107,6 @@ public class CourseLabSeederService {
         return specs;
     }
 
-    private DiagramVersion buildContextDiagram(ModelVersion model, String projectName, ModelElement customer, ModelRelationship rel) {
-        ObjectNode layout = json.createObjectNode()
-                .put("schemaVersion", "1.0")
-                .put("modelVersionId", model.getId().toString());
-        ArrayNode nodes = layout.putArray("nodes");
-        String systemId = "system:" + model.getProject().getId();
-        nodes.addObject().put("id", systemId).put("kind", "SYSTEM").put("name", projectName).put("x", 280).put("y", 0);
-        nodes.addObject().put("id", customer.getId().toString()).put("kind", "PERSON").put("name", customer.getName()).put("x", 640).put("y", 0);
-        ArrayNode edges = layout.putArray("edges");
-        edges.addObject()
-                .put("id", rel.getId().toString())
-                .put("from", customer.getId().toString())
-                .put("to", systemId)
-                .put("source", customer.getId().toString())
-                .put("target", systemId)
-                .put("type", rel.getRelationType())
-                .put("relationType", rel.getRelationType())
-                .put("originLayer", "STATIC");
-        return DiagramVersion.builder().modelVersion(model).notation("C4").level("CONTEXT").layoutJson(layout).build();
-    }
-
-    private DiagramVersion buildDiagram(
-            ModelVersion model, String notation, String level, List<ModelElement> nodesList, List<ModelRelationship> edgesList) {
-        ObjectNode layout = json.createObjectNode()
-                .put("schemaVersion", "1.0")
-                .put("modelVersionId", model.getId().toString());
-        ArrayNode nodes = layout.putArray("nodes");
-        for (int i = 0; i < nodesList.size(); i++) {
-            ModelElement node = nodesList.get(i);
-            ObjectNode obj = nodes.addObject()
-                    .put("id", node.getId().toString())
-                    .put("name", node.getName())
-                    .put("kind", node.getElementType())
-                    .put("type", node.getElementType())
-                    .put("status", node.getStatus())
-                    .put("x", (i % 4) * 260)
-                    .put("y", (i / 4) * 160);
-            obj.put("languageStack", node.getLanguageStack());
-            obj.putObject("position").put("x", (i % 4) * 260).put("y", (i / 4) * 160);
-            obj.putObject("data").put("label", node.getName()).put("status", node.getStatus()).put("technology", node.getLanguageStack());
-            if ("C4".equals(notation)) {
-                obj.put("c4Type", "COMPONENT".equals(node.getElementType()) ? "Component" : "Container");
-            }
-            if (node.getParentElement() != null) {
-                obj.put("parentId", node.getParentElement().getId().toString());
-            }
-        }
-        ArrayNode edges = layout.putArray("edges");
-        for (ModelRelationship edge : edgesList) {
-            edges.addObject()
-                    .put("id", edge.getId().toString())
-                    .put("from", edge.getSourceElement().getId().toString())
-                    .put("to", edge.getTargetElement().getId().toString())
-                    .put("source", edge.getSourceElement().getId().toString())
-                    .put("target", edge.getTargetElement().getId().toString())
-                    .put("type", edge.getRelationType())
-                    .put("relationType", edge.getRelationType())
-                    .put("label", edge.getRelationType())
-                    .put("originLayer", edge.getOriginLayer())
-                    .put("direction", edge.getDirection());
-        }
-        return DiagramVersion.builder().modelVersion(model).notation(notation).level(level).layoutJson(layout).build();
-    }
-
     private Path persistArchive(UUID workspaceId, UUID projectId, byte[] zipBytes) {
         String filename = "curated-course-" + workspaceId + "-" + projectId + ".zip";
         try {
@@ -1104,97 +1132,6 @@ public class CourseLabSeederService {
     }
 
     public static byte[] buildCuratedArchive() {
-        try (ByteArrayOutputStream out = new ByteArrayOutputStream();
-             ZipOutputStream zip = new ZipOutputStream(out)) {
-            writeEntry(zip, "pom.xml", """
-                    <project xmlns="http://maven.apache.org/POM/4.0.0">
-                      <modelVersion>4.0.0</modelVersion>
-                      <groupId>com.curated</groupId>
-                      <artifactId>curated-ecommerce</artifactId>
-                      <version>1.0.0</version>
-                      <packaging>pom</packaging>
-                    </project>
-                    """);
-            writeEntry(zip, "order-service/src/main/java/com/curated/order/OrderController.java", """
-                    package com.curated.order;
-                    import org.springframework.web.bind.annotation.PostMapping;
-                    import org.springframework.web.bind.annotation.RestController;
-                    @RestController
-                    public class OrderController {
-                        private final PaymentClient paymentClient;
-                        public OrderController(PaymentClient paymentClient) { this.paymentClient = paymentClient; }
-                        @PostMapping("/api/orders")
-                        public String createOrder() { return paymentClient.authorize(); }
-                    }
-                    """);
-            writeEntry(zip, "order-service/src/main/java/com/curated/order/PaymentClient.java", """
-                    package com.curated.order;
-                    import org.springframework.cloud.openfeign.FeignClient;
-                    import org.springframework.web.bind.annotation.PostMapping;
-                    @FeignClient(name = "payment-service", url = "http://payment-service:8082")
-                    public interface PaymentClient {
-                        @PostMapping("/api/payments/authorize")
-                        String authorize();
-                    }
-                    """);
-            writeEntry(zip, "payment-service/src/main/java/com/curated/payment/PaymentController.java", """
-                    package com.curated.payment;
-                    import org.springframework.web.bind.annotation.PostMapping;
-                    import org.springframework.web.bind.annotation.RestController;
-                    @RestController
-                    public class PaymentController {
-                        @PostMapping("/api/payments/authorize")
-                        public String authorize() { return "AUTHORIZED"; }
-                    }
-                    """);
-            writeEntry(zip, "inventory-service/src/main/java/com/curated/inventory/InventoryController.java", """
-                    package com.curated.inventory;
-                    import org.springframework.web.bind.annotation.GetMapping;
-                    import org.springframework.web.bind.annotation.RestController;
-                    @RestController
-                    public class InventoryController {
-                        @GetMapping("/api/inventory/health")
-                        public String health() { return "IN_STOCK"; }
-                    }
-                    """);
-            writeEntry(zip, "Orders/Program.cs", """
-                    var builder = WebApplication.CreateBuilder(args);
-                    builder.Services.AddHttpClient("catalog", client => client.BaseAddress = new Uri("http://catalog-service:8084"));
-                    var app = builder.Build();
-                    app.MapGet("/api/orders/health", () => Results.Ok(new { service = "orders-dotnet", status = "UP" }));
-                    app.Run();
-                    """);
-            writeEntry(zip, "Catalog/Program.cs", """
-                    var builder = WebApplication.CreateBuilder(args);
-                    var app = builder.Build();
-                    app.MapGet("/api/catalog/items", () => Results.Ok(new[] { "SKU-001", "SKU-002" }));
-                    app.Run();
-                    """);
-            writeEntry(zip, "docker-compose.yml", """
-                    services:
-                      api-gateway:
-                        image: mavis/api-gateway:curated
-                        ports: ["8080:8080"]
-                      order-service:
-                        image: mavis/order-service:curated
-                        ports: ["8081:8081"]
-                      payment-service:
-                        image: mavis/payment-service:curated
-                        ports: ["8082:8082"]
-                      inventory-service:
-                        image: mavis/inventory-service:curated
-                        ports: ["8083:8083"]
-                    """);
-            zip.finish();
-            return out.toByteArray();
-        } catch (IOException ex) {
-            throw new IllegalStateException("Failed to build curated archive", ex);
-        }
-    }
-
-    private static void writeEntry(ZipOutputStream zip, String name, String content) throws IOException {
-        zip.putNextEntry(new ZipEntry(name));
-        zip.write(content.getBytes(StandardCharsets.UTF_8));
-        zip.closeEntry();
+        return MocHuongReferenceArchitectureBuilder.buildMocHuongArchive();
     }
 }

@@ -162,8 +162,8 @@ class CourseLabSeederServiceTest {
         var resolvedArchive = archiveResolver.resolve(savedSnap.get(), true);
         assertThat(resolvedArchive.exists()).isTrue();
         try (var zip = new java.util.zip.ZipFile(resolvedArchive.getFile())) {
-            assertThat(zip.getEntry("order-service/src/main/java/com/curated/order/PaymentClient.java")).isNotNull();
-            assertThat(zip.getEntry("inventory-service/src/main/java/com/curated/inventory/InventoryController.java")).isNotNull();
+            assertThat(zip.getEntry("order-service/src/main/java/com/mochuong/order/client/CatalogFeignClient.java")).isNotNull();
+            assertThat(zip.getEntry("catalog-service/src/main/java/com/mochuong/catalog/controller/ProductController.java")).isNotNull();
             assertThat(zip.getEntry("Orders/Program.cs")).isNotNull();
             assertThat(zip.getEntry("Catalog/Program.cs")).isNotNull();
         }
@@ -176,7 +176,7 @@ class CourseLabSeederServiceTest {
         assertThat(savedAssignments.get(0).getStudioTopologySnapshot()).isNull();
         assertThat(savedAssignments.get(1).getLabMode()).isEqualTo("THEORY_QUIZ_STUDIO");
         assertThat(savedAssignments.get(1).getStudioTopologySnapshot()).isNotNull();
-        assertThat(savedAssignments.get(1).getStudioTopologySnapshot().path("blocks").size()).isEqualTo(4);
+        assertThat(savedAssignments.get(1).getStudioTopologySnapshot().path("blocks").size()).isEqualTo(6);
         assertThat(savedAssignments.get(1).getStudioTopologyRevision()).isEqualTo(1);
         assertThat(savedAssignments.get(2).getLabMode()).isEqualTo("THEORY_QUIZ_STUDIO");
         assertThat(savedAssignments.get(2).getStudioTopologySnapshot()).isNotNull();
