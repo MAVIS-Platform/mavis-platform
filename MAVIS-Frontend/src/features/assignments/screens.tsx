@@ -3,15 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import {
-  BookOpen,
-  Eye,
-  GitBranch,
-  Pencil,
-  Plus,
-  Search,
-  Trash2,
-} from "lucide-react";
+import { BookOpen, Eye, GitBranch, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -32,6 +24,7 @@ import { AssignmentSourceDetails } from "./source-picker";
 import { ImportLabButton } from "./lab-transfer";
 import { LabPrerequisitesDialog } from "./lab-prerequisites-dialog";
 import type { Assignment } from "./requirements";
+import { lecturerCourseAccess } from "@/features/lecturer/application/course-access-policy";
 
 function formatOptionalDate(value: string | undefined): string | null {
   if (!value || value === "No deadline") return null;
@@ -58,6 +51,7 @@ function LecturerAssignments({ embedded = false }: { embedded?: boolean } = {}) 
   const workspaceId = params?.get("workspace") || selection.workspaceId;
   const workspacesQuery = useApiQuery("workspaces", {});
   const workspace = workspacesQuery.data?.find((item) => item.id === workspaceId);
+  const courseAccess = lecturerCourseAccess(workspace?.status);
   const query = useApiQuery("assignments", { workspaceId }, { enabled: Boolean(workspaceId) });
   const roadmap = useCourseRoadmap(workspaceId);
   const setup = useCourseSetup(workspaceId);
@@ -143,13 +137,17 @@ function LecturerAssignments({ embedded = false }: { embedded?: boolean } = {}) 
               />
             </div>
           )}
-          <ImportLabButton workspaceId={workspaceId} />
-          <Button asChild size="sm">
-            <Link href={`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&tab=info`}>
-              <Plus className="mr-1 size-4" aria-hidden="true" />
-              {t("Create a Lab", "Tạo Lab")}
-            </Link>
-          </Button>
+          {courseAccess.isEditable && (
+            <>
+              <ImportLabButton workspaceId={workspaceId} />
+              <Button asChild size="sm">
+                <Link href={`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&tab=info`}>
+                  <Plus className="mr-1 size-4" aria-hidden="true" />
+                  {t("Create a Lab", "Tạo Lab")}
+                </Link>
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
@@ -224,12 +222,14 @@ function LecturerAssignments({ embedded = false }: { embedded?: boolean } = {}) 
                     )}
                   </div>
                   <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-                    <Button asChild size="sm" variant="outline">
-                      <Link href={creatorHref}>
-                        <Pencil className="mr-1 size-3.5" aria-hidden="true" />
-                        {t("Edit", "Sửa")}
-                      </Link>
-                    </Button>
+                    {courseAccess.isEditable && (
+                      <Button asChild size="sm" variant="outline">
+                        <Link href={creatorHref}>
+                          <Pencil className="mr-1 size-3.5" aria-hidden="true" />
+                          {t("Edit", "Sửa")}
+                        </Link>
+                      </Button>
+                    )}
                     {inClass ? (
                       <Button asChild size="sm" variant="outline">
                         <Link href={previewHref}>
@@ -237,18 +237,20 @@ function LecturerAssignments({ embedded = false }: { embedded?: boolean } = {}) 
                           {t("Preview", "Xem trước")}
                         </Link>
                       </Button>
-                    ) : (
+                    ) : courseAccess.isEditable ? (
                       <PublishCourseLab workspaceId={workspaceId} assignmentId={lab.id} />
+                    ) : null}
+                    {courseAccess.isEditable && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setPrerequisiteLab(lab)}
+                      >
+                        <GitBranch className="mr-1 size-3.5" aria-hidden="true" />
+                        {t("Prerequisites", "Điều kiện")}
+                      </Button>
                     )}
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => setPrerequisiteLab(lab)}
-                    >
-                      <GitBranch className="mr-1 size-3.5" aria-hidden="true" />
-                      {t("Prerequisites", "Điều kiện")}
-                    </Button>
                     {inClass && (
                       <Button asChild size="sm" variant="ghost">
                         <Link
@@ -258,35 +260,37 @@ function LecturerAssignments({ embedded = false }: { embedded?: boolean } = {}) 
                         </Link>
                       </Button>
                     )}
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      className="text-muted-foreground hover:text-destructive"
-                      disabled={remove.isPending || Boolean(inClass)}
-                      title={
-                        inClass
-                          ? t(
-                              "Remove this Lab from the class before deleting it.",
-                              "Hãy gỡ Lab khỏi lớp trước khi xóa.",
+                    {courseAccess.isEditable && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="text-muted-foreground hover:text-destructive"
+                        disabled={remove.isPending || Boolean(inClass)}
+                        title={
+                          inClass
+                            ? t(
+                                "Remove this Lab from the class before deleting it.",
+                                "Hãy gỡ Lab khỏi lớp trước khi xóa.",
+                              )
+                            : undefined
+                        }
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              t(
+                                "Delete this Lab from the library? This cannot be undone.",
+                                "Xóa Lab này khỏi kho? Không thể hoàn tác.",
+                              ),
                             )
-                          : undefined
-                      }
-                      onClick={() => {
-                        if (
-                          window.confirm(
-                            t(
-                              "Delete this Lab from the library? This cannot be undone.",
-                              "Xóa Lab này khỏi kho? Không thể hoàn tác.",
-                            ),
                           )
-                        )
-                          remove.mutate({ workspaceId, assignmentId: lab.id });
-                      }}
-                    >
-                      <Trash2 className="size-3.5" aria-hidden="true" />
-                      <span className="sr-only">{t("Delete", "Xóa")}</span>
-                    </Button>
+                            remove.mutate({ workspaceId, assignmentId: lab.id });
+                        }}
+                      >
+                        <Trash2 className="size-3.5" aria-hidden="true" />
+                        <span className="sr-only">{t("Delete", "Xóa")}</span>
+                      </Button>
+                    )}
                   </div>
                 </li>
               );
@@ -295,15 +299,17 @@ function LecturerAssignments({ embedded = false }: { embedded?: boolean } = {}) 
         )}
         {remove.error && <ErrorState error={remove.error} />}
       </RequestState>
-      <LabPrerequisitesDialog
-        workspaceId={workspaceId}
-        lab={prerequisiteLab}
-        labs={labs}
-        open={Boolean(prerequisiteLab)}
-        onOpenChange={(open) => {
-          if (!open) setPrerequisiteLab(null);
-        }}
-      />
+      {courseAccess.isEditable && (
+        <LabPrerequisitesDialog
+          workspaceId={workspaceId}
+          lab={prerequisiteLab}
+          labs={labs}
+          open={Boolean(prerequisiteLab)}
+          onOpenChange={(open) => {
+            if (!open) setPrerequisiteLab(null);
+          }}
+        />
+      )}
     </div>
   );
 
@@ -332,7 +338,8 @@ function StudentAssignments() {
   }, [query.data, requestedAssignmentId]);
 
   useEffect(() => {
-    if (!requestedAssignmentId || !query.data?.some((item) => item.id === requestedAssignmentId)) return;
+    if (!requestedAssignmentId || !query.data?.some((item) => item.id === requestedAssignmentId))
+      return;
     document
       .getElementById(`assignment-${requestedAssignmentId}`)
       ?.scrollIntoView({ block: "start", behavior: "smooth" });
@@ -381,7 +388,10 @@ function StudentAssignments() {
                 }
               >
                 <AssignmentInstructions>{assignment.instructions}</AssignmentInstructions>
-                <AssignmentSourceDetails source={assignment.referenceSource} assignmentId={assignment.id} />
+                <AssignmentSourceDetails
+                  source={assignment.referenceSource}
+                  assignmentId={assignment.id}
+                />
                 <div className="flex flex-wrap items-center gap-2">
                   {!locked && (
                     <Button asChild>

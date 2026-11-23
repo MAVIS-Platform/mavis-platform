@@ -25,6 +25,7 @@ import { useLocale } from "@/lib/i18n/locale-context";
 import { SubmissionVersionHeader } from "./components";
 import { GradingPanel, resolveSubmissionOutcome } from "./grading";
 import type { Submission } from "@/types/domain";
+import { lecturerCourseAccess } from "@/features/lecturer/application/course-access-policy";
 
 export function filterStudentSubmissions(
   submissions: ReadonlyArray<Submission>,
@@ -235,6 +236,7 @@ function TeachingSubmissions() {
   const params = useSearchParams();
   const workspaces = useApiQuery("workspaces", {});
   const workspace = workspaces.data?.find((item) => item.id === workspaceId);
+  const courseAccess = lecturerCourseAccess(workspace?.status);
   const initialAssignment = params.get("assignment");
   const [selected, setSelected] = useState(initialAssignment || "ALL");
   const [viewMode, setViewMode] = useState<"queue" | "essays" | "gradebook">(
@@ -257,9 +259,7 @@ function TeachingSubmissions() {
     );
   }, [assignments.data]);
   const selectedAssignmentId =
-    selected === "ALL"
-      ? "ALL"
-      : sortedAssignments.find((a) => a.id === selected)?.id ?? "ALL";
+    selected === "ALL" ? "ALL" : (sortedAssignments.find((a) => a.id === selected)?.id ?? "ALL");
   const allClassSubs = useApiQuery(
     "workspaceSubmissions",
     { workspaceId },
@@ -369,10 +369,18 @@ function TeachingSubmissions() {
         )}
       </div>
 
-      {viewMode === "essays" ? (
+      {!courseAccess.isEditable ? (
+        <ClassGradebookMatrix
+          workspaceId={workspaceId}
+          workspaceCode={workspace?.code || workspaceId}
+        />
+      ) : viewMode === "essays" ? (
         <CourseEssaysGradingPanel workspaceId={workspaceId} />
       ) : viewMode === "gradebook" ? (
-        <ClassGradebookMatrix workspaceId={workspaceId} workspaceCode={workspace?.code || workspaceId} />
+        <ClassGradebookMatrix
+          workspaceId={workspaceId}
+          workspaceCode={workspace?.code || workspaceId}
+        />
       ) : (
         <RequestState
           query={assignments}
@@ -564,8 +572,12 @@ function ClassGradebookMatrix({
                   <th className="sticky left-0 bg-muted/40 px-3 py-2.5 font-semibold">
                     {t("Student", "Sinh viên")}
                   </th>
-                  <th className="whitespace-nowrap px-2.5 py-2.5 font-semibold">{t("Progress", "Tiến độ")}</th>
-                  <th className="whitespace-nowrap px-2.5 py-2.5 font-semibold">{t("Avg Score", "Điểm TB")}</th>
+                  <th className="whitespace-nowrap px-2.5 py-2.5 font-semibold">
+                    {t("Progress", "Tiến độ")}
+                  </th>
+                  <th className="whitespace-nowrap px-2.5 py-2.5 font-semibold">
+                    {t("Avg Score", "Điểm TB")}
+                  </th>
                   {gradebook.data.labs.map((lab) => (
                     <th key={lab.assignmentId} className="min-w-28 px-2.5 py-2.5 font-semibold">
                       {formatCourseLabTitle(lab.title, lab.labOrder, lab.assignmentId)}
@@ -580,7 +592,9 @@ function ClassGradebookMatrix({
                     <tr key={student.studentId} className="hover:bg-muted/20">
                       <td className="sticky left-0 max-w-44 bg-card px-3 py-2.5">
                         <p className="truncate font-medium text-foreground">{student.fullName}</p>
-                        <p className="truncate text-[11px] text-muted-foreground">{student.email}</p>
+                        <p className="truncate text-[11px] text-muted-foreground">
+                          {student.email}
+                        </p>
                       </td>
                       <td className="whitespace-nowrap px-2.5 py-2.5 font-medium">
                         {student.passedLabs ?? 0}/{gradebook.data.labs.length}
@@ -592,7 +606,12 @@ function ClassGradebookMatrix({
                       </td>
                       {gradebook.data.labs.map((lab) => {
                         const cell = cellMap.get(lab.assignmentId);
-                        if (!cell) return <td key={lab.assignmentId} className="px-2.5 py-2.5">—</td>;
+                        if (!cell)
+                          return (
+                            <td key={lab.assignmentId} className="px-2.5 py-2.5">
+                              —
+                            </td>
+                          );
                         const outcomeVariant =
                           cell.labOutcome === "PASSED"
                             ? "success"
@@ -608,7 +627,10 @@ function ClassGradebookMatrix({
                               >
                                 <Badge variant={outcomeVariant}>
                                   {cell.reviewScore !== null
-                                    ? formatTenScaleScore(cell.reviewScore, cell.reviewScoreTenScale)
+                                    ? formatTenScaleScore(
+                                        cell.reviewScore,
+                                        cell.reviewScoreTenScale,
+                                      )
                                     : cell.labOutcome === "PASSED"
                                       ? t("Passed", "Đạt")
                                       : cell.reviewStatus === "PENDING" || !cell.reviewStatus
@@ -836,7 +858,10 @@ function SubmissionResult({ submission }: { submission: Submission }) {
           ? ` · ${formatTenScaleScore(submission.reviewScore, submission.reviewScoreTenScale)}`
           : ""}
         {outcome && (
-          <Badge className="ml-2 whitespace-nowrap" variant={outcome === "PASS" ? "success" : "warning"}>
+          <Badge
+            className="ml-2 whitespace-nowrap"
+            variant={outcome === "PASS" ? "success" : "warning"}
+          >
             {outcome === "PASS" ? t("Pass", "Đạt") : t("Needs revision", "Cần chỉnh sửa")}
           </Badge>
         )}
@@ -859,7 +884,10 @@ function SubmissionResultQuery({ submissionId }: { submissionId: string }) {
           <StatusLabel status={query.data.status} />
           {query.data.score !== null ? ` · ${formatTenScaleScore(query.data.score)}` : ""}
           {outcome && (
-            <Badge className="ml-2 whitespace-nowrap" variant={outcome === "PASS" ? "success" : "warning"}>
+            <Badge
+              className="ml-2 whitespace-nowrap"
+              variant={outcome === "PASS" ? "success" : "warning"}
+            >
               {outcome === "PASS" ? t("Pass", "Đạt") : t("Needs revision", "Cần chỉnh sửa")}
             </Badge>
           )}
@@ -906,11 +934,7 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
               </Link>
             </Button>
             {canReview && nextPending && (
-              <Button
-                asChild
-                size="sm"
-                className="bg-indigo-600 text-white hover:bg-indigo-700"
-              >
+              <Button asChild size="sm" className="bg-indigo-600 text-white hover:bg-indigo-700">
                 <Link href={`/submissions/${encodeURIComponent(nextPending.id)}`}>
                   {t(
                     `Next pending (${otherPending.length}) →`,

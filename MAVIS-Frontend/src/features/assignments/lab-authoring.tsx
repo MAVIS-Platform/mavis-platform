@@ -29,6 +29,7 @@ import { useCourseAuthoring, useCourseSetup } from "@/features/workspaces/course
 import { TheoryLibrary } from "@/features/workspaces/theory-library";
 import { Assignments } from "./screens";
 import { resolveLabTier, type Assignment } from "./requirements";
+import { lecturerCourseAccess } from "@/features/lecturer/application/course-access-policy";
 import { LabInfoForm } from "./lab-info-form";
 import { LabTheorySection } from "./lab-theory-section";
 import { LabSourceSection } from "./lab-source-section";
@@ -119,9 +120,12 @@ export function LabAuthoring() {
   const theoryReady =
     (attachedTheory.data?.length ?? 0) > 0 ||
     modules.some((module) =>
-      module.items.some((item) => item.type === "THEORY" && item.assignmentId === activeAssignmentId),
+      module.items.some(
+        (item) => item.type === "THEORY" && item.assignmentId === activeAssignmentId,
+      ),
     );
   const canManage = workspace?.myRole === "LECTURER" || session.data?.user?.role === "admin";
+  const courseAccess = lecturerCourseAccess(workspace?.status);
   const isPublished = Boolean(setupLab?.published || assignment?.labOrder != null);
 
   useEffect(() => {
@@ -177,7 +181,9 @@ export function LabAuthoring() {
 
   if (!workspaceId) {
     return (
-      <p className="text-sm text-muted-foreground">{t("Select a class first.", "Hãy chọn lớp trước.")}</p>
+      <p className="text-sm text-muted-foreground">
+        {t("Select a class first.", "Hãy chọn lớp trước.")}
+      </p>
     );
   }
 
@@ -313,7 +319,10 @@ export function LabAuthoring() {
           {section === "create" && (
             <div className="flex flex-wrap items-center gap-1.5">
               {assignment && (
-                <Badge variant={isPublished ? "success" : "secondary"} className="shrink-0 font-semibold whitespace-nowrap">
+                <Badge
+                  variant={isPublished ? "success" : "secondary"}
+                  className="shrink-0 font-semibold whitespace-nowrap"
+                >
                   {isPublished ? t("Published", "Đã công bố") : t("Draft", "Bản nháp")}
                 </Badge>
               )}
@@ -330,9 +339,7 @@ export function LabAuthoring() {
                   }}
                   className="h-9 w-44 2xl:w-52 overflow-hidden text-ellipsis whitespace-nowrap rounded-lg border border-slate-300 bg-card px-2.5 text-xs font-semibold text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 dark:border-border"
                 >
-                  <option value="">
-                    {t("Switch Lab…", "Chuyển nhanh bài Lab…")}
-                  </option>
+                  <option value="">{t("Switch Lab…", "Chuyển nhanh bài Lab…")}</option>
                   {allLabs.map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.title}
@@ -349,7 +356,9 @@ export function LabAuthoring() {
                   onClick={() => {
                     setCreatedAssignmentId("");
                     setTab("info");
-                    router.push(`/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&tab=info`);
+                    router.push(
+                      `/lab-authoring?workspace=${encodeURIComponent(workspaceId)}&tab=info`,
+                    );
                   }}
                 >
                   <Plus className="mr-1 size-3.5" aria-hidden="true" />
@@ -357,7 +366,12 @@ export function LabAuthoring() {
                 </Button>
               )}
               {assignment && (
-                <Button asChild size="sm" variant="outline" className="shrink-0 px-2.5 text-xs whitespace-nowrap">
+                <Button
+                  asChild
+                  size="sm"
+                  variant="outline"
+                  className="shrink-0 px-2.5 text-xs whitespace-nowrap"
+                >
                   <Link
                     href={`/lab?${new URLSearchParams({
                       workspace: workspaceId,
@@ -408,7 +422,9 @@ export function LabAuthoring() {
                   {item.done ? (
                     <CheckCircle2
                       className={`size-4 shrink-0 ${
-                        active ? "text-primary-foreground" : "text-emerald-600 dark:text-emerald-400"
+                        active
+                          ? "text-primary-foreground"
+                          : "text-emerald-600 dark:text-emerald-400"
                       }`}
                       aria-hidden="true"
                     />
@@ -434,7 +450,15 @@ export function LabAuthoring() {
           </nav>
         )}
       </div>
-      {section === "create" ? content : section === "library" ? <Assignments embedded /> : <TheoryLibrary />}
+      {!courseAccess.isEditable ? (
+        <Assignments embedded />
+      ) : section === "create" ? (
+        content
+      ) : section === "library" ? (
+        <Assignments embedded />
+      ) : (
+        <TheoryLibrary />
+      )}
     </div>
   );
 

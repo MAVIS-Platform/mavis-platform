@@ -12,11 +12,7 @@ import { Pagination, SearchInput } from "@/components/shared/forms";
 import { DataTable, DetailPanel } from "@/components/shared/data";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { CreateWorkspace, WorkspaceControls } from "./manage";
-import {
-  CoursePasskey,
-  CourseRoadmap,
-  useWorkspaceGradebook,
-} from "./course-access";
+import { CoursePasskey, CourseRoadmap, useWorkspaceGradebook } from "./course-access";
 import { ReferenceManagement } from "./reference-manage";
 import { CourseWorkspaceShell } from "@/features/courses/course-workspace-shell";
 import { LecturerCurriculumManager } from "@/features/courses/lecturer-curriculum-manager";
@@ -30,6 +26,10 @@ import {
   formatTenScaleScore,
   toTenScaleScore,
 } from "@/lib/format/course-display";
+import {
+  canEditLecturerCourse,
+  lecturerCourseAccess,
+} from "@/features/lecturer/application/course-access-policy";
 
 const WORKSPACES_PER_PAGE = 6;
 
@@ -234,103 +234,119 @@ export function Workspaces() {
           <>
             <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
               {pagedWorkspaces.map((workspace) => {
-            const pending = pendingByWorkspace.get(workspace.id) ?? 0;
-            const members = workspace.members ?? [];
-            const students = members.filter(
-              (member) => member.role.toUpperCase() === "STUDENT",
-            ).length;
-            const creatorName =
-              workspace.createdByName?.trim() ||
-              (workspace.createdById
-                ? members.find((member) => member.id === workspace.createdById)?.name?.trim()
-                : undefined) ||
-              members.find((member) => member.role.toUpperCase() === "LECTURER")?.name?.trim() ||
-              "";
-            const archived = (workspace.status ?? "ACTIVE") === "ARCHIVED";
-            const workspaceUrl = `/workspace-overview?workspace=${encodeURIComponent(workspace.id)}`;
-            return (
-              <article
-                key={workspace.id}
-                className="flex min-h-[350px] flex-col overflow-hidden rounded-lg border bg-card transition-shadow hover:shadow-md"
-              >
-                <CourseCover
-                  courseId={workspace.id}
-                  className="flex items-start justify-between gap-2 p-3"
-                >
-                  <span className="relative rounded bg-white px-2 py-1 text-xs font-semibold text-slate-900">
-                    {workspace.code || t("CLASS", "LỚP")}
-                  </span>
-                  {archived ? (
-                    <span className="text-xs text-muted-foreground">
-                      {t("Archived", "Lưu trữ")}
-                    </span>
-                  ) : (
-                    <span className="relative inline-flex items-center gap-1 rounded bg-white/95 px-2 py-1 text-xs text-emerald-700">
-                      <span className="size-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
-                      {t("Active", "Đang hoạt động")}
-                    </span>
-                  )}
-                </CourseCover>
-                <div className="flex flex-1 flex-col gap-3 p-5">
-                  <p className="truncate text-xs tracking-wide text-muted-foreground">
-                    <span className="uppercase">{t("Lecturer", "Giảng viên")}</span>
-                    {creatorName ? ` · ${creatorName}` : ""}
-                  </p>
-                  <Link
-                    className="truncate text-xl font-semibold tracking-tight text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    href={workspaceUrl}
+                const pending = pendingByWorkspace.get(workspace.id) ?? 0;
+                const members = workspace.members ?? [];
+                const students = members.filter(
+                  (member) => member.role.toUpperCase() === "STUDENT",
+                ).length;
+                const creatorName =
+                  workspace.createdByName?.trim() ||
+                  (workspace.createdById
+                    ? members.find((member) => member.id === workspace.createdById)?.name?.trim()
+                    : undefined) ||
+                  members
+                    .find((member) => member.role.toUpperCase() === "LECTURER")
+                    ?.name?.trim() ||
+                  "";
+                const archived = (workspace.status ?? "ACTIVE") === "ARCHIVED";
+                const courseAccess = lecturerCourseAccess(workspace.status);
+                const workspaceUrl = `/workspace-overview?workspace=${encodeURIComponent(workspace.id)}`;
+                return (
+                  <article
+                    key={workspace.id}
+                    className="flex min-h-[350px] flex-col overflow-hidden rounded-lg border bg-card transition-shadow hover:shadow-md"
                   >
-                    {workspace.name}
-                  </Link>
-                  {workspace.description && (
-                    <p className="line-clamp-1 text-xs text-muted-foreground">
-                      {decodePlainTextEntities(workspace.description)}
-                    </p>
-                  )}
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs tabular-nums text-muted-foreground">
-                    <span className="inline-flex items-center gap-1">
-                      <Users className="size-3.5" aria-hidden="true" />
-                      {students} {students === 1 ? t("student", "sinh viên") : t("students", "sinh viên")}
-                    </span>
-                    {submissions.isSuccess && (
-                      <span
-                        className={
-                          (pendingByWorkspace.get(workspace.id) ?? 0) > 0
-                            ? "inline-flex items-center gap-1 text-amber-600 dark:text-amber-400"
-                            : "inline-flex items-center gap-1"
-                        }
-                      >
-                        {pending > 0 ? (
-                          <Clock3 className="size-3.5" aria-hidden="true" />
-                        ) : (
-                          <CheckCircle2 className="size-3.5" aria-hidden="true" />
-                        )}
-                        {pending > 0
-                          ? pending + " " + t("to grade", "bài chờ chấm")
-                          : t("Up to date", "Đã cập nhật")}
+                    <CourseCover
+                      courseId={workspace.id}
+                      className="flex items-start justify-between gap-2 p-3"
+                    >
+                      <span className="relative rounded bg-white px-2 py-1 text-xs font-semibold text-slate-900">
+                        {workspace.code || t("CLASS", "LỚP")}
                       </span>
-                    )}
-                  </div>
-                  <div className="mt-auto grid grid-cols-2 gap-3 border-t pt-4">
-                    <Button asChild>
-                      <Link href={workspaceUrl}>{t("Open class", "Mở lớp")}</Link>
-                    </Button>
-                    <Button asChild variant="outline" className="border-primary/45 text-primary hover:bg-primary/10">
+                      {archived ? (
+                        <span className="text-xs text-muted-foreground">
+                          {t("Archived", "Lưu trữ")}
+                        </span>
+                      ) : (
+                        <span className="relative inline-flex items-center gap-1 rounded bg-white/95 px-2 py-1 text-xs text-emerald-700">
+                          <span
+                            className="size-1.5 rounded-full bg-emerald-500"
+                            aria-hidden="true"
+                          />
+                          {t("Active", "Đang hoạt động")}
+                        </span>
+                      )}
+                    </CourseCover>
+                    <div className="flex flex-1 flex-col gap-3 p-5">
+                      <p className="truncate text-xs tracking-wide text-muted-foreground">
+                        <span className="uppercase">{t("Lecturer", "Giảng viên")}</span>
+                        {creatorName ? ` · ${creatorName}` : ""}
+                      </p>
                       <Link
-                        href={
-                          "/submissions?workspace=" +
-                          encodeURIComponent(workspace.id) +
-                          (pending > 0 ? "&status=PENDING" : "")
-                        }
+                        className="truncate text-xl font-semibold tracking-tight text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        href={workspaceUrl}
                       >
-                        {t("Submissions", "Bài nộp")}
+                        {workspace.name}
                       </Link>
-                    </Button>
-                  </div>
-                </div>
-              </article>
-            );
-          })}
+                      {workspace.description && (
+                        <p className="line-clamp-1 text-xs text-muted-foreground">
+                          {decodePlainTextEntities(workspace.description)}
+                        </p>
+                      )}
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs tabular-nums text-muted-foreground">
+                        <span className="inline-flex items-center gap-1">
+                          <Users className="size-3.5" aria-hidden="true" />
+                          {students}{" "}
+                          {students === 1 ? t("student", "sinh viên") : t("students", "sinh viên")}
+                        </span>
+                        {submissions.isSuccess && (
+                          <span
+                            className={
+                              (pendingByWorkspace.get(workspace.id) ?? 0) > 0
+                                ? "inline-flex items-center gap-1 text-amber-600 dark:text-amber-400"
+                                : "inline-flex items-center gap-1"
+                            }
+                          >
+                            {pending > 0 ? (
+                              <Clock3 className="size-3.5" aria-hidden="true" />
+                            ) : (
+                              <CheckCircle2 className="size-3.5" aria-hidden="true" />
+                            )}
+                            {pending > 0
+                              ? pending + " " + t("to grade", "bài chờ chấm")
+                              : t("Up to date", "Đã cập nhật")}
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-auto grid grid-cols-2 gap-3 border-t pt-4">
+                        <Button asChild>
+                          <Link href={workspaceUrl}>{t("Open class", "Mở lớp")}</Link>
+                        </Button>
+                        <Button
+                          asChild
+                          variant="outline"
+                          className="border-primary/45 text-primary hover:bg-primary/10"
+                        >
+                          <Link
+                            href={
+                              "/submissions?workspace=" +
+                              encodeURIComponent(workspace.id) +
+                              (pending > 0 ? "&status=PENDING" : "")
+                            }
+                          >
+                            {t("Submissions", "Bài nộp")}
+                          </Link>
+                        </Button>
+                        <p className="col-span-2 text-xs text-muted-foreground">
+                          {courseAccess.isEditable
+                            ? t("Inactive · editing enabled", "Không hoạt động · có thể chỉnh sửa")
+                            : t("Active · read only", "Đang hoạt động · chỉ xem")}
+                        </p>
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
               {visibleWorkspaces.length === 0 && (
                 <p className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground md:col-span-2 xl:col-span-3">
                   {t(
@@ -365,6 +381,7 @@ export function WorkspaceOverview() {
   const query = useApiQuery("workspaces", {});
   const workspace = query.data?.find((w) => w.id === workspaceId);
   const canManage = workspace?.myRole === "LECTURER" || session.data?.user?.role === "admin";
+  const canEdit = canEditLecturerCourse(workspace?.status, canManage);
   const requestedView = params.get("view");
   const activeTab =
     canManage && requestedView === "course-authoring"
@@ -411,11 +428,11 @@ export function WorkspaceOverview() {
                 active={workspace.status !== "ARCHIVED"}
               />
             )}
-            {activeTab === "outline" && canManage && (
-              <LecturerCurriculumManager
-                workspaceId={workspace.id}
-                active={workspace.status !== "ARCHIVED"}
-              />
+            {activeTab === "outline" && canManage && canEdit && (
+              <LecturerCurriculumManager workspaceId={workspace.id} active />
+            )}
+            {activeTab === "outline" && canManage && !canEdit && (
+              <CourseOutline workspaceId={workspace.id} canManage={false} active />
             )}
             {activeTab === "outline" && !canManage && (
               <CourseOutline
@@ -424,8 +441,13 @@ export function WorkspaceOverview() {
                 active={workspace.status !== "ARCHIVED"}
               />
             )}
-            {activeTab === "authoring" && canManage && <CourseBuilder workspaceId={workspace.id} />}
-            {activeTab === "setup" && canManage && (
+            {activeTab === "authoring" && canManage && canEdit && (
+              <CourseBuilder workspaceId={workspace.id} />
+            )}
+            {activeTab === "authoring" && canManage && !canEdit && (
+              <CourseOutline workspaceId={workspace.id} canManage={false} active />
+            )}
+            {activeTab === "setup" && canManage && canEdit && (
               <div className="space-y-5">
                 <CourseSetupPanel workspaceId={workspace.id} />
                 <div id="class-passkey">
@@ -458,11 +480,9 @@ export function WorkspaceMembers() {
   const workspace = query.data?.find((w) => w.id === workspaceId);
   const canManage =
     workspace?.myRole?.toUpperCase() === "LECTURER" || session.data?.user?.role === "admin";
+  const canEdit = canEditLecturerCourse(workspace?.status, canManage);
   const activeTab = canManage && params?.get("tab") === "settings" ? "settings" : "members";
-  const gradebook = useWorkspaceGradebook(
-    workspaceId ?? "",
-    Boolean(workspaceId && canManage),
-  );
+  const gradebook = useWorkspaceGradebook(workspaceId ?? "", Boolean(workspaceId && canManage));
   const studentStatsById = new Map(
     (gradebook.data?.students ?? []).map((entry) => [entry.studentId.toLowerCase(), entry]),
   );
@@ -491,27 +511,31 @@ export function WorkspaceMembers() {
         <CourseWorkspaceShell workspace={workspace} active={activeTab}>
           {activeTab === "settings" && canManage ? (
             <div className="space-y-5">
-              <div id="class-passkey">
-                <CoursePasskey workspaceId={workspace.id} />
-              </div>
-              <section className="rounded-2xl border bg-card p-5 shadow-xs">
-                <div className="space-y-0.5">
-                  <h3 className="text-base font-semibold">
-                    {t("Class settings", "Cài đặt chung của lớp")}
-                  </h3>
-                  <p className="text-xs text-muted-foreground">
-                    {t(
-                      "Update class name, description, or archive this class when the term ends.",
-                      "Cập nhật tên lớp, mô tả hoặc lưu trữ lớp học khi kết thúc học kỳ.",
-                    )}
-                  </p>
+              {canEdit && (
+                <div id="class-passkey">
+                  <CoursePasskey workspaceId={workspace.id} />
                 </div>
-                <WorkspaceControls
-                  key={`${workspace.id}-settings`}
-                  workspace={workspace}
-                  mode="overview"
-                />
-              </section>
+              )}
+              {canEdit && (
+                <section className="rounded-2xl border bg-card p-5 shadow-xs">
+                  <div className="space-y-0.5">
+                    <h3 className="text-base font-semibold">
+                      {t("Class settings", "Cài đặt chung của lớp")}
+                    </h3>
+                    <p className="text-xs text-muted-foreground">
+                      {t(
+                        "Update class name, description, or archive this class when the term ends.",
+                        "Cập nhật tên lớp, mô tả hoặc lưu trữ lớp học khi kết thúc học kỳ.",
+                      )}
+                    </p>
+                  </div>
+                  <WorkspaceControls
+                    key={`${workspace.id}-settings`}
+                    workspace={workspace}
+                    mode="overview"
+                  />
+                </section>
+              )}
             </div>
           ) : (
             <div className="space-y-4">
@@ -568,7 +592,11 @@ export function WorkspaceMembers() {
                     label: t("Status", "Trạng thái"),
                     render: (m) => {
                       if (gradebookLoading) {
-                        return <span className="text-xs text-muted-foreground">{t("Loading…", "Đang tải…")}</span>;
+                        return (
+                          <span className="text-xs text-muted-foreground">
+                            {t("Loading…", "Đang tải…")}
+                          </span>
+                        );
                       }
                       const stats = lookupStats(m);
                       const passed = stats?.passedLabs ?? 0;
@@ -576,7 +604,10 @@ export function WorkspaceMembers() {
                       const inProgress = passed > 0 || stats?.averageScore != null;
                       return completed ? (
                         <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
-                          <span className="size-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
+                          <span
+                            className="size-1.5 rounded-full bg-emerald-500"
+                            aria-hidden="true"
+                          />
                           {t("Completed", "Hoàn thành")}
                         </span>
                       ) : inProgress ? (
@@ -586,7 +617,10 @@ export function WorkspaceMembers() {
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/50 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
-                          <span className="size-1.5 rounded-full bg-muted-foreground" aria-hidden="true" />
+                          <span
+                            className="size-1.5 rounded-full bg-muted-foreground"
+                            aria-hidden="true"
+                          />
                           {t("Enrolled", "Đã tham gia")}
                         </span>
                       );
@@ -597,7 +631,11 @@ export function WorkspaceMembers() {
                     label: t("Learning Progress", "Tiến độ học tập"),
                     render: (m) => {
                       if (gradebookLoading) {
-                        return <span className="text-xs text-muted-foreground">{t("Loading…", "Đang tải…")}</span>;
+                        return (
+                          <span className="text-xs text-muted-foreground">
+                            {t("Loading…", "Đang tải…")}
+                          </span>
+                        );
                       }
                       if (gradebookFailed) {
                         return (
@@ -617,7 +655,8 @@ export function WorkspaceMembers() {
                         <div className="min-w-36 space-y-1">
                           <div className="flex justify-between text-[11px] font-medium">
                             <span className="text-emerald-700 dark:text-emerald-400">
-                              {passed}/{totalLabs} {totalLabs === 1 ? t("Lab", "Lab") : t("Labs", "Labs")}
+                              {passed}/{totalLabs}{" "}
+                              {totalLabs === 1 ? t("Lab", "Lab") : t("Labs", "Labs")}
                             </span>
                             <span className="text-muted-foreground">{pct}%</span>
                           </div>
@@ -643,7 +682,11 @@ export function WorkspaceMembers() {
                     label: t("Average Score", "Điểm trung bình"),
                     render: (m) => {
                       if (gradebookLoading) {
-                        return <span className="text-xs text-muted-foreground">{t("Loading…", "Đang tải…")}</span>;
+                        return (
+                          <span className="text-xs text-muted-foreground">
+                            {t("Loading…", "Đang tải…")}
+                          </span>
+                        );
                       }
                       const stats = lookupStats(m);
                       const tenScale = toTenScaleScore(
@@ -678,7 +721,7 @@ export function WorkspaceMembers() {
                               <Button
                                 size="sm"
                                 variant="outline"
-                                disabled={remove.isPending}
+                                disabled={remove.isPending || !canEdit}
                                 onClick={() => {
                                   if (window.confirm(`Remove ${m.name} from this class?`))
                                     remove.mutate({ workspaceId: workspace.id, userId: m.id });
