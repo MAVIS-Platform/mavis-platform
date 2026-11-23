@@ -32,7 +32,7 @@ public final class MocHuongReferenceArchitectureBuilder {
     public static final String REPO_URL = "https://github.com/MAVIS-Platform/Moc-Huong-Shop";
     public static final String COMMIT_SHA = "84f8e6c5c3aee575c2464f40d6742fb847f3a3e4";
     public static final String SYSTEM_NAME = "Mộc Hương Shop Platform";
-    public static final String ADAPTER_VERSION = "moc-huong-v2";
+    public static final String ADAPTER_VERSION = "moc-huong-v3";
 
     public static final List<String> REAL_MICROSERVICES = List.of(
             "service-discovery",
@@ -143,14 +143,20 @@ public final class MocHuongReferenceArchitectureBuilder {
     private void addC1ActorsAndExternals() {
         addNode("customer", null, "PERSON", "Web / Mobile Client",
                 "Customer", "Khách hàng duyệt sản phẩm, đặt hàng & nhận thông báo đơn hàng",
-                props("contextReviewState", "CONFIRMED", "actorRole", "End-User Shopper"));
+                props("contextReviewState", "CONFIRMED", "contextFactOrigin", "USER_CONFIRMED",
+                        "contextActionLabel", "Browse & place orders (HTTPS)",
+                        "actorRole", "End-User Shopper"));
         addNode("admin-staff", null, "PERSON", "Admin / Portal",
                 "Admin / Staff", "Quản trị viên quản lý danh mục, sản phẩm & tồn kho",
-                props("contextReviewState", "CONFIRMED", "actorRole", "Store Administrator"));
+                props("contextReviewState", "CONFIRMED", "contextFactOrigin", "USER_CONFIRMED",
+                        "contextActionLabel", "Manage catalog & stock (JWT)",
+                        "actorRole", "Store Administrator"));
         addNode("otel-observability", null, "EXTERNAL_SYSTEM", "OTLP / Prometheus",
                 "OpenTelemetry & MAVIS Observability",
                 "Thu thập OTLP traces (:4318/v1/traces) & Actuator Prometheus metrics",
-                props("contextReviewState", "CONFIRMED", "endpoint", "http://otel-collector:4318/v1/traces"));
+                props("contextReviewState", "CONFIRMED", "contextFactOrigin", "USER_CONFIRMED",
+                        "contextActionLabel", "Export OTLP spans & metrics",
+                        "endpoint", "http://otel-collector:4318/v1/traces"));
     }
 
     private void addC2Microservices() {
@@ -334,6 +340,14 @@ public final class MocHuongReferenceArchitectureBuilder {
                 "JwtTokenIssuer", "SECURITY",
                 "com.mochuong.identity.security.JwtTokenIssuer",
                 "Signs HMAC-SHA JWT tokens with userId, email and role claims");
+        addComponent("id-pwd-cfg", "identity-service", "Spring Security",
+                "PasswordEncoderConfig", "CONFIG",
+                "com.mochuong.identity.config.PasswordEncoderConfig",
+                "Provides BCryptPasswordEncoder @Bean for credential hashing");
+        addComponent("id-seeder", "identity-service", "Spring ApplicationRunner",
+                "IdentityDataSeeder", "CONFIG",
+                "com.mochuong.identity.config.IdentityDataSeeder",
+                "Seeds admin@mochuong.vn, staff@mochuong.vn & customer@mochuong.vn accounts on startup");
         addComponent("id-user-repo", "identity-service", "Spring Data JPA",
                 "UserAccountRepository", "REPOSITORY",
                 "com.mochuong.identity.repository.UserAccountRepository",
@@ -342,6 +356,9 @@ public final class MocHuongReferenceArchitectureBuilder {
         addC3Edge("c3-id-auth-svc", "id-auth-ctrl", "id-service", "CODE_DEPENDENCY", props("tierEdge", "Controller->Service"));
         addC3Edge("c3-id-user-svc", "id-user-ctrl", "id-service", "CODE_DEPENDENCY", props("tierEdge", "Controller->Service"));
         addC3Edge("c3-id-svc-jwt", "id-service", "id-jwt-issuer", "CODE_DEPENDENCY", props("call", "jwtTokenIssuer.issueToken(account)"));
+        addC3Edge("c3-id-svc-pwd", "id-service", "id-pwd-cfg", "CODE_DEPENDENCY", props("call", "passwordEncoder.matches / encode"));
+        addC3Edge("c3-id-seeder-repo", "id-seeder", "id-user-repo", "CODE_DEPENDENCY", props("call", "userAccountRepository.save"));
+        addC3Edge("c3-id-seeder-pwd", "id-seeder", "id-pwd-cfg", "CODE_DEPENDENCY", props("call", "passwordEncoder.encode"));
         addC3Edge("c3-id-svc-repo", "id-service", "id-user-repo", "CODE_DEPENDENCY", props("tierEdge", "Service->Repository"));
         addC3Edge("c3-id-repo-db", "id-user-repo", "identity-db", "DATABASE_ACCESS", props("schema", "identity_db"));
     }
@@ -395,7 +412,7 @@ public final class MocHuongReferenceArchitectureBuilder {
         addComponent("ord-svc", "order-service", "Spring @Service",
                 "OrderService", "SERVICE",
                 "com.mochuong.order.service.OrderService",
-                "Application service delegating order flows to OrderSagaOrchestrator");
+                "Handles read queries (getOrderById, getMyOrders) from OrderRepository");
         addComponent("ord-saga", "order-service", "Spring @Service",
                 "OrderSagaOrchestrator", "SERVICE",
                 "com.mochuong.order.service.OrderSagaOrchestrator",
@@ -426,7 +443,9 @@ public final class MocHuongReferenceArchitectureBuilder {
                 "Persists PENDING / PUBLISHED transactional outbox rows in order_db");
 
         addC3Edge("c3-ord-ctrl-svc", "ord-ctrl", "ord-svc", "CODE_DEPENDENCY", props("tierEdge", "Controller->Service"));
-        addC3Edge("c3-ord-svc-saga", "ord-svc", "ord-saga", "CODE_DEPENDENCY", props("tierEdge", "Service->Orchestrator"));
+        addC3Edge("c3-ord-ctrl-saga", "ord-ctrl", "ord-saga", "CODE_DEPENDENCY", props("tierEdge", "Controller->Orchestrator"));
+        addC3Edge("c3-ord-svc-repo", "ord-svc", "ord-repo", "CODE_DEPENDENCY", props("tierEdge", "Service->Repository"));
+        addC3Edge("c3-ord-saga-repo", "ord-saga", "ord-repo", "CODE_DEPENDENCY", props("tierEdge", "Orchestrator->Repository"));
         addC3Edge("c3-ord-saga-int", "ord-saga", "ord-cat-int", "CODE_DEPENDENCY", props("pattern", "Resilience4j Decorator"));
         addC3Edge("c3-ord-int-feign", "ord-cat-int", "ord-cat-feign", "CODE_DEPENDENCY", props("call", "catalogFeignClient"));
         addC3Edge("c3-ord-saga-tx", "ord-saga", "ord-tx-svc", "CODE_DEPENDENCY", props("pattern", "Local ACID + Outbox"));
@@ -493,6 +512,18 @@ public final class MocHuongReferenceArchitectureBuilder {
                 "order-service/src/main/java/com/mochuong/order/service/CatalogIntegrationService.java:31",
                 "STATIC_CODE",
                 "@CircuitBreaker(name = \"catalogService\", fallbackMethod = \"getProductFallback\")");
+        addRelEvidence("c3-ord-ctrl-saga",
+                "order-service/src/main/java/com/mochuong/order/controller/OrderController.java:38",
+                "STATIC_CODE",
+                "OrderResponse response = orderSagaOrchestrator.placeOrder(customerId, customerEmail, idempotencyKey, request);");
+        addRelEvidence("c3-ord-svc-repo",
+                "order-service/src/main/java/com/mochuong/order/service/OrderService.java:24",
+                "STATIC_CODE",
+                "Order order = orderRepository.findWithItemsById(orderId)");
+        addRelEvidence("c3-ord-saga-repo",
+                "order-service/src/main/java/com/mochuong/order/service/OrderSagaOrchestrator.java:96",
+                "STATIC_CODE",
+                "Order order = orderRepository.findWithItemsById(orderId)");
         addRelEvidence("c3-ord-saga-int",
                 "order-service/src/main/java/com/mochuong/order/service/OrderSagaOrchestrator.java:79",
                 "STATIC_CODE",
@@ -611,6 +642,14 @@ public final class MocHuongReferenceArchitectureBuilder {
                 "notification-service/src/main/java/com/mochuong/notification/consumer/OrderEventConsumer.java:38",
                 "STATIC_CODE",
                 "@KafkaListener(topics = \"order.created\", groupId = \"notification-group\")");
+        addNodeEvidence("id-seeder",
+                "identity-service/src/main/java/com/mochuong/identity/config/IdentityDataSeeder.java:22",
+                "STATIC_CODE",
+                "public class IdentityDataSeeder implements ApplicationRunner");
+        addNodeEvidence("id-pwd-cfg",
+                "identity-service/src/main/java/com/mochuong/identity/config/PasswordEncoderConfig.java:12",
+                "STATIC_CODE",
+                "public PasswordEncoder passwordEncoder() { return new BCryptPasswordEncoder(); }");
     }
 
     private DiagramVersion buildC1ContextDiagram() {

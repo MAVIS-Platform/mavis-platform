@@ -731,6 +731,146 @@ class CourseLabSeederServiceTest {
     }
 
     @Test
+    void upgradesOutdatedReferenceModelToImmutableR2WhenSubmissionSnapshotsExist() throws Exception {
+        UUID workspaceId = UUID.randomUUID();
+        User lecturer = User.builder().id(UUID.randomUUID()).email("gv.java@mavis.edu.vn").build();
+        Workspace workspace = Workspace.builder()
+                .id(workspaceId).code("JAVA-MS-2026").name("Java V2").status("ACTIVE").courseMode(true).build();
+        Project refProject = Project.builder()
+                .id(UUID.randomUUID())
+                .workspace(workspace)
+                .owner(lecturer)
+                .name("Curated E-Commerce Reference")
+                .build();
+        SourceSnapshot r1Snapshot = SourceSnapshot.builder()
+                .id(UUID.randomUUID()).project(refProject).build();
+        ModelVersion r1Model = ModelVersion.builder()
+                .id(UUID.randomUUID())
+                .project(refProject)
+                .sourceSnapshot(r1Snapshot)
+                .revision(1)
+                .isLatestValid(true)
+                .createdBy(lecturer)
+                .build();
+
+        List<ModelElement> oldElements = List.of(
+                ModelElement.builder().id(UUID.randomUUID()).modelVersion(r1Model).name("api-gateway").elementType("SERVICE_CONTAINER").build(),
+                ModelElement.builder().id(UUID.randomUUID()).modelVersion(r1Model).name("order-service").elementType("SERVICE_CONTAINER").build(),
+                ModelElement.builder().id(UUID.randomUUID()).modelVersion(r1Model).name("payment-service").elementType("SERVICE_CONTAINER").build(),
+                ModelElement.builder().id(UUID.randomUUID()).modelVersion(r1Model).name("inventory-service").elementType("SERVICE_CONTAINER").build());
+
+        var v2Modules = JavaCourseraCatalog.modules();
+        List<Assignment> existingLabs = new ArrayList<>();
+        for (int i = 0; i < v2Modules.size(); i++) {
+            existingLabs.add(Assignment.builder()
+                    .id(UUID.randomUUID())
+                    .workspace(workspace)
+                    .createdBy(lecturer)
+                    .title(v2Modules.get(i).labTitle())
+                    .description(v2Modules.get(i).labDescription())
+                    .labOrder(i + 1)
+                    .requireRuntimeTrace(v2Modules.get(i).visualLab() != null && v2Modules.get(i).visualLab().requireRuntimeTrace())
+                    .referenceModel(r1Model)
+                    .build());
+        }
+
+        AccessPolicyService access = mock(AccessPolicyService.class);
+        WorkspaceRepository workspaces = mock(WorkspaceRepository.class);
+        AssignmentRepository assignments = mock(AssignmentRepository.class);
+        ProjectRepository projects = mock(ProjectRepository.class);
+        SourceSnapshotRepository snapshots = mock(SourceSnapshotRepository.class);
+        ModelVersionRepository models = mock(ModelVersionRepository.class);
+        ModelElementRepository elements = mock(ModelElementRepository.class);
+        ModelRelationshipRepository relationships = mock(ModelRelationshipRepository.class);
+        DiagramVersionRepository diagrams = mock(DiagramVersionRepository.class);
+        EvaluationRunRepository evaluations = mock(EvaluationRunRepository.class);
+        EvidenceRepository evidences = mock(EvidenceRepository.class);
+        CourseQuizService quizzes = mock(CourseQuizService.class);
+        CourseAccessService courses = mock(CourseAccessService.class);
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        ObjectMapper json = new ObjectMapper();
+        CourseCurriculum curriculum = new CourseCurriculum(json);
+
+        when(access.requireCurrentActiveUser()).thenReturn(lecturer);
+        when(workspaces.findLockedById(workspaceId)).thenReturn(Optional.of(workspace));
+        when(assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId)).thenReturn(existingLabs);
+        when(assignments.saveAndFlush(any(Assignment.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(elements.findByModelVersionId(r1Model.getId())).thenReturn(oldElements);
+        when(models.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(refProject.getId()))
+                .thenReturn(Optional.of(r1Model));
+        when(models.findMaxRevisionByProjectId(refProject.getId())).thenReturn(1);
+        when(projects.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+        AtomicReference<SourceSnapshot> savedSnapshot = new AtomicReference<>();
+        when(snapshots.save(any())).thenAnswer(inv -> {
+            SourceSnapshot s = inv.getArgument(0);
+            if (s.getId() == null) s.setId(UUID.randomUUID());
+            savedSnapshot.set(s);
+            return s;
+        });
+        AtomicReference<ModelVersion> savedNewModel = new AtomicReference<>();
+        when(models.saveAndFlush(any())).thenAnswer(inv -> {
+            ModelVersion m = inv.getArgument(0);
+            if (m.getId() == null) m.setId(UUID.randomUUID());
+            savedNewModel.set(m);
+            return m;
+        });
+        List<ModelElement> newElements = new ArrayList<>();
+        when(elements.save(any())).thenAnswer(inv -> {
+            ModelElement e = inv.getArgument(0);
+            if (e.getId() == null) e.setId(UUID.randomUUID());
+            newElements.add(e);
+            return e;
+        });
+        when(relationships.save(any())).thenAnswer(inv -> {
+            ModelRelationship r = inv.getArgument(0);
+            if (r.getId() == null) r.setId(UUID.randomUUID());
+            return r;
+        });
+        when(evidences.save(any())).thenAnswer(inv -> {
+            Evidence ev = inv.getArgument(0);
+            if (ev.getId() == null) ev.setId(UUID.randomUUID());
+            return ev;
+        });
+        when(diagrams.saveAll(anyList())).thenAnswer(inv -> inv.getArgument(0));
+        when(evaluations.save(any())).thenAnswer(inv -> {
+            EvaluationRun run = inv.getArgument(0);
+            if (run.getId() == null) run.setId(UUID.randomUUID());
+            return run;
+        });
+        when(jdbc.queryForObject(contains("FROM runtime_configurations"), eq(Integer.class), any())).thenReturn(1);
+        when(jdbc.queryForObject(contains("FROM runtime_scenarios"), eq(Integer.class), any())).thenReturn(1);
+        when(courses.roadmap(workspaceId)).thenReturn(new CourseAccessService.Roadmap(true, "IN_PROGRESS", List.of()));
+
+        CourseLabSeederService seeder = new CourseLabSeederService(
+                access, workspaces, assignments, projects, snapshots, models,
+                elements, relationships, diagrams, evaluations, evidences,
+                curriculum, quizzes, courses, jdbc, json, tempDir.toString());
+
+        seeder.seedCurated(workspaceId, CourseLabSeederService.PRESET_JAVA_COURSERA);
+
+        ModelVersion r2 = savedNewModel.get();
+        assertThat(r2).isNotNull();
+        assertThat(r2.getId()).isNotEqualTo(r1Model.getId());
+        assertThat(r2.getRevision()).isEqualTo(2);
+        assertThat(r2.getIsLatestValid()).isTrue();
+        assertThat(r1Model.getIsLatestValid()).isFalse();
+        assertThat(refProject.getName()).isEqualTo(MocHuongReferenceArchitectureBuilder.SYSTEM_NAME);
+        assertThat(refProject.getReferenceSnapshotId()).isEqualTo(savedSnapshot.get().getId());
+
+        verify(models).invalidatePreviousVersions(refProject.getId(), r2.getId());
+        verify(elements, never()).deleteAll(any());
+        verify(diagrams, never()).deleteAll(any());
+        verify(relationships, never()).deleteAll(any());
+        verify(evidences, never()).deleteAll(any());
+
+        assertThat(existingLabs).allSatisfy(lab -> assertThat(lab.getReferenceModel().getId()).isEqualTo(r2.getId()));
+        assertThat(newElements).extracting(ModelElement::getName).contains(
+                "service-discovery", "api-gateway", "identity-service",
+                "catalog-service", "order-service", "notification-service",
+                "IdentityDataSeeder", "PasswordEncoderConfig", "Customer");
+    }
+
+    @Test
     void seedsCsharpCourseraCourseWith5ActiveOrderedLabsAndFruitShopTopology() throws Exception {
         UUID workspaceId = UUID.randomUUID();
         User lecturer = User.builder().id(UUID.randomUUID()).email("gv.java@mavis.edu.vn").build();

@@ -283,6 +283,10 @@ public class CourseLabSeederService {
         boolean fullCurriculum = PRESET_FULL_CURRICULUM.equalsIgnoreCase(normalizedPreset);
         List<Assignment> existingLabs = assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId);
         upgradeExistingLabsIfSafe(existingLabs);
+        boolean isCsharpWs = workspace.getCode() != null && workspace.getCode().toUpperCase().contains("CSHARP");
+        if (!isCsharpWs && !existingLabs.isEmpty() && needsMocHuongUpgrade(existingLabs)) {
+            upgradeJavaWorkspaceToMocHuong(workspaceId, existingLabs);
+        }
 
         if (!fullCurriculum && !existingLabs.isEmpty()) {
             ensureCourseMode(workspace);
@@ -382,7 +386,10 @@ public class CourseLabSeederService {
                 .findFirst()
                 .orElseGet(() -> seedReferenceModel(workspaceId, workspace, lecturer));
         if (!track.csharpTrack() && !existingLabs.isEmpty() && needsMocHuongUpgrade(existingLabs)) {
-            upgradeJavaWorkspaceToMocHuong(workspaceId, existingLabs);
+            ModelVersion upgraded = upgradeJavaWorkspaceToMocHuong(workspaceId, existingLabs);
+            if (upgraded != null) {
+                refModel = upgraded;
+            }
         }
         ensureReferenceRuntimeSetup(refModel, java.util.Map.of());
 
@@ -805,15 +812,40 @@ public class CourseLabSeederService {
         if (existingLabs == null || existingLabs.isEmpty()) {
             return false;
         }
-        ModelVersion refModel = existingLabs.stream()
-                .map(Assignment::getReferenceModel)
-                .filter(java.util.Objects::nonNull)
-                .findFirst()
-                .orElse(null);
+        java.util.Map<UUID, ModelVersion> distinctModels = new java.util.LinkedHashMap<>();
+        for (Assignment lab : existingLabs) {
+            ModelVersion ref = lab.getReferenceModel();
+            if (ref != null && ref.getId() != null && ref.getProject() != null) {
+                distinctModels.putIfAbsent(ref.getId(), ref);
+            }
+        }
+        if (distinctModels.isEmpty()) {
+            return false;
+        }
+        boolean anyNonEmpty = false;
+        for (ModelVersion candidate : distinctModels.values()) {
+            List<ModelElement> existing = elements.findByModelVersionId(candidate.getId());
+            if (existing == null || existing.isEmpty()) {
+                continue;
+            }
+            anyNonEmpty = true;
+            if (isOutdatedMocHuongModel(candidate, existing)) {
+                return true;
+            }
+        }
+        if (!anyNonEmpty) {
+            return false;
+        }
+        if (distinctModels.size() > 1) {
+            return true;
+        }
+        return existingLabs.stream().anyMatch(lab -> lab.getReferenceModel() == null);
+    }
+
+    private boolean isOutdatedMocHuongModel(ModelVersion refModel, List<ModelElement> existing) {
         if (refModel == null || refModel.getId() == null || refModel.getProject() == null) {
             return false;
         }
-        List<ModelElement> existing = elements.findByModelVersionId(refModel.getId());
         if (existing == null || existing.isEmpty()) {
             return false;
         }
@@ -827,67 +859,61 @@ public class CourseLabSeederService {
         if (hasFake) {
             return true;
         }
-        boolean hasCatalog = existing.stream().anyMatch(e -> "catalog-service".equalsIgnoreCase(e.getName()));
-        boolean hasIdentity = existing.stream().anyMatch(e -> "identity-service".equalsIgnoreCase(e.getName()));
-        boolean hasActors = existing.stream().anyMatch(e -> "PERSON".equalsIgnoreCase(e.getElementType()));
-        return !(hasCatalog && hasIdentity && hasActors);
+        Set<String> presentNames = new java.util.HashSet<>();
+        for (ModelElement e : existing) {
+            if (e.getName() != null) {
+                presentNames.add(e.getName());
+            }
+        }
+        for (String svc : MocHuongReferenceArchitectureBuilder.REAL_MICROSERVICES) {
+            if (!presentNames.contains(svc)) {
+                return true;
+            }
+        }
+        boolean hasConfirmedActor = existing.stream()
+                .filter(e -> "PERSON".equalsIgnoreCase(e.getElementType()) && e.getProperties() != null)
+                .anyMatch(e -> "USER_CONFIRMED".equals(e.getProperties().path("contextFactOrigin").asText("")));
+        if (!hasConfirmedActor || !presentNames.contains("IdentityDataSeeder")) {
+            return true;
+        }
+        List<ModelRelationship> rels = relationships.findByModelVersionId(refModel.getId());
+        return rels != null && rels.stream().anyMatch(r -> r.getSourceElement() != null
+                && r.getTargetElement() != null
+                && "OrderService".equals(r.getSourceElement().getName())
+                && "OrderSagaOrchestrator".equals(r.getTargetElement().getName()));
     }
 
-    private void upgradeJavaWorkspaceToMocHuong(UUID workspaceId, List<Assignment> existingLabs) {
+    private ModelVersion upgradeJavaWorkspaceToMocHuong(UUID workspaceId, List<Assignment> existingLabs) {
         ModelVersion refModel = existingLabs.stream()
                 .map(Assignment::getReferenceModel)
                 .filter(java.util.Objects::nonNull)
                 .findFirst()
                 .orElse(null);
         if (refModel == null || refModel.getId() == null || refModel.getProject() == null) {
-            return;
+            return refModel;
         }
         Project refProject = refModel.getProject();
-        Integer subRefs = jdbc.queryForObject(
-                "SELECT COUNT(*) FROM submission_snapshots WHERE model_version_id = ?",
-                Integer.class, refModel.getId());
-        if (subRefs != null && subRefs > 0) {
-            log.info("Skipping in-place rebuild for reference model {} ({} submission_snapshots reference it)",
-                    refModel.getId(), subRefs);
-        } else {
-            List<Evidence> oldEvidences = evidences.findByModelVersionId(refModel.getId());
-            if (oldEvidences != null && !oldEvidences.isEmpty()) {
-                evidences.deleteAll(oldEvidences);
-            }
-            List<ModelRelationship> oldRels = relationships.findByModelVersionId(refModel.getId());
-            if (oldRels != null && !oldRels.isEmpty()) {
-                relationships.deleteAll(oldRels);
-            }
-            List<ModelElement> oldElements = elements.findByModelVersionId(refModel.getId());
-            if (oldElements != null && !oldElements.isEmpty()) {
-                List<ModelElement> children = oldElements.stream().filter(e -> e.getParentElement() != null).toList();
-                List<ModelElement> roots = oldElements.stream().filter(e -> e.getParentElement() == null).toList();
-                if (!children.isEmpty()) {
-                    elements.deleteAll(children);
-                }
-                if (!roots.isEmpty()) {
-                    elements.deleteAll(roots);
+        ModelVersion targetModel = null;
+        java.util.Optional<ModelVersion> latestOpt =
+                models.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(refProject.getId());
+        if (latestOpt != null && latestOpt.isPresent()) {
+            ModelVersion candidate = latestOpt.get();
+            if (candidate.getId() != null) {
+                List<ModelElement> candidateEls = elements.findByModelVersionId(candidate.getId());
+                if (candidateEls != null && !candidateEls.isEmpty()
+                        && !isOutdatedMocHuongModel(candidate, candidateEls)) {
+                    targetModel = candidate;
                 }
             }
-            List<DiagramVersion> oldDiagrams = diagrams.findByModelVersionId(refModel.getId());
-            if (oldDiagrams != null && !oldDiagrams.isEmpty()) {
-                diagrams.deleteAll(oldDiagrams);
-            }
-            refProject.setName(MocHuongReferenceArchitectureBuilder.SYSTEM_NAME);
-            refProject.setDescription("Curated Java 21 / Spring Boot 3 microservices repository (Service Discovery, API Gateway, Identity, Catalog, Order, Notification) from MAVIS-Platform/Moc-Huong-Shop.");
-            projects.saveAndFlush(refProject);
-
-            SourceSnapshot refSnapshot = refModel.getSourceSnapshot();
-            if (refSnapshot != null) {
-                byte[] zipBytes = MocHuongReferenceArchitectureBuilder.buildMocHuongArchive();
-                Path archivePath = persistArchive(workspaceId, refProject.getId(), zipBytes);
-                refSnapshot.setArtifactHash(HashUtils.sha256Hex(zipBytes));
-                refSnapshot.setStoragePath(archivePath.toString());
-                snapshots.saveAndFlush(refSnapshot);
+        }
+        if (targetModel == null) {
+            ModelVersion created = createNextMocHuongRevision(workspaceId, refProject, refModel);
+            if (created != null && created.getSourceSnapshot() != null) {
+                targetModel = created;
                 MocHuongReferenceArchitectureBuilder.BuiltResult built = MocHuongReferenceArchitectureBuilder.populate(
                         json,
-                        refModel,
-                        refSnapshot,
+                        targetModel,
+                        targetModel.getSourceSnapshot(),
                         new MocHuongReferenceArchitectureBuilder.PersistenceHooks(
                                 elements::save,
                                 relationships::save,
@@ -895,17 +921,73 @@ public class CourseLabSeederService {
                                 diagrams::saveAll,
                                 evaluations::save
                         ));
-                refreshReferenceRuntimeSetup(refModel, built.serviceIds());
+                refreshReferenceRuntimeSetup(targetModel, built.serviceIds());
             }
+        }
+        if (targetModel != null && targetModel.getId() != null) {
+            models.invalidatePreviousVersions(refProject.getId(), targetModel.getId());
         }
         ObjectNode targetTopology = buildStudioTopologyForServices(MocHuongReferenceArchitectureBuilder.REAL_MICROSERVICES);
         for (Assignment lab : existingLabs) {
+            boolean labChanged = false;
+            if (targetModel != null && targetModel.getId() != null && (lab.getReferenceModel() == null
+                    || !targetModel.getId().equals(lab.getReferenceModel().getId()))) {
+                lab.setReferenceModel(targetModel);
+                labChanged = true;
+            }
             if (Boolean.TRUE.equals(lab.getRequireRuntimeTrace()) && hasStaleTopology(lab.getStudioTopologySnapshot())) {
                 lab.setStudioTopologySnapshot(targetTopology);
                 lab.setStudioTopologyRevision(lab.getStudioTopologyRevision() != null ? lab.getStudioTopologyRevision() : 1);
+                labChanged = true;
+            }
+            if (labChanged) {
                 assignments.saveAndFlush(lab);
             }
         }
+        return targetModel != null ? targetModel : refModel;
+    }
+
+    private ModelVersion createNextMocHuongRevision(UUID workspaceId, Project refProject, ModelVersion previousModel) {
+        Integer dbMaxRev = models.findMaxRevisionByProjectId(refProject.getId());
+        int currentRev = previousModel.getRevision() != null ? previousModel.getRevision() : 1;
+        int nextRev = Math.max(dbMaxRev != null ? dbMaxRev : 0, currentRev) + 1;
+
+        byte[] zipBytes = MocHuongReferenceArchitectureBuilder.buildMocHuongArchive();
+        Path archivePath = persistArchive(workspaceId, refProject.getId(), zipBytes);
+        User createdBy = refProject.getOwner() != null ? refProject.getOwner() : previousModel.getCreatedBy();
+        SourceSnapshot newSnapshot = snapshots.save(SourceSnapshot.builder()
+                .project(refProject)
+                .sourceType("ZIP_UPLOAD")
+                .branchName("main")
+                .artifactHash(HashUtils.sha256Hex(zipBytes))
+                .storagePath(archivePath.toString())
+                .isPublished(true)
+                .createdBy(createdBy)
+                .build());
+        if (newSnapshot == null) {
+            return null;
+        }
+        refProject.setName(MocHuongReferenceArchitectureBuilder.SYSTEM_NAME);
+        refProject.setDescription("Curated Java 21 / Spring Boot 3 microservices repository (Service Discovery, API Gateway, Identity, Catalog, Order, Notification) from MAVIS-Platform/Moc-Huong-Shop.");
+        refProject.setReferenceSnapshotId(newSnapshot.getId());
+        projects.saveAndFlush(refProject);
+
+        previousModel.setIsLatestValid(false);
+        ModelVersion newModel = models.saveAndFlush(ModelVersion.builder()
+                .project(refProject)
+                .sourceSnapshot(newSnapshot)
+                .revision(nextRev)
+                .schemaVersion("1.0")
+                .origin("GENERATED")
+                .isLatestValid(true)
+                .createdBy(createdBy)
+                .build());
+        if (newModel == null) {
+            return null;
+        }
+        log.info("Created immutable reference model revision r{} ({}) for project {} (replacing r{})",
+                nextRev, newModel.getId(), refProject.getId(), currentRev);
+        return newModel;
     }
 
     private boolean hasStaleTopology(com.fasterxml.jackson.databind.JsonNode snapshot) {
