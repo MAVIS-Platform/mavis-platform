@@ -186,12 +186,26 @@ class MocHuongReferenceArchitectureTest {
                 "JwtAuthenticationGatewayFilter",
                 "ServiceDiscoveryApplication",
                 "AuthController",
+                "PasswordEncoderConfig",
+                "IdentityDataSeeder",
                 "ProductController",
                 "OrderController",
                 "OrderSagaOrchestrator",
                 "CatalogFeignClient",
                 "OutboxEventPublisher",
                 "OrderEventConsumer");
+
+        assertThat(built.relationships())
+                .anyMatch(r -> "OrderController".equals(r.getSourceElement().getName())
+                        && "OrderService".equals(r.getTargetElement().getName()))
+                .anyMatch(r -> "OrderController".equals(r.getSourceElement().getName())
+                        && "OrderSagaOrchestrator".equals(r.getTargetElement().getName()))
+                .anyMatch(r -> "OrderService".equals(r.getSourceElement().getName())
+                        && "OrderRepository".equals(r.getTargetElement().getName()))
+                .anyMatch(r -> "OrderSagaOrchestrator".equals(r.getSourceElement().getName())
+                        && "OrderRepository".equals(r.getTargetElement().getName()))
+                .noneMatch(r -> "OrderService".equals(r.getSourceElement().getName())
+                        && "OrderSagaOrchestrator".equals(r.getTargetElement().getName()));
 
         boolean directControllerToRepo = built.relationships().stream().anyMatch(r -> {
             String srcTier = r.getSourceElement().getProperties() != null
@@ -207,9 +221,14 @@ class MocHuongReferenceArchitectureTest {
         assertThat(built.evidences())
                 .extracting(Evidence::getLocator)
                 .contains(
+                        "order-service/src/main/java/com/mochuong/order/controller/OrderController.java:38",
+                        "order-service/src/main/java/com/mochuong/order/service/OrderService.java:24",
+                        "order-service/src/main/java/com/mochuong/order/service/OrderSagaOrchestrator.java:96",
                         "order-service/src/main/java/com/mochuong/order/client/CatalogFeignClient.java:9",
                         "order-service/src/main/java/com/mochuong/order/service/OutboxEventPublisher.java:39",
                         "notification-service/src/main/java/com/mochuong/notification/consumer/OrderEventConsumer.java:38",
+                        "identity-service/src/main/java/com/mochuong/identity/config/IdentityDataSeeder.java:22",
+                        "identity-service/src/main/java/com/mochuong/identity/config/PasswordEncoderConfig.java:12",
                         "api-gateway/src/main/java/com/mochuong/gateway/filter/JwtAuthenticationGatewayFilter.java:63");
     }
 

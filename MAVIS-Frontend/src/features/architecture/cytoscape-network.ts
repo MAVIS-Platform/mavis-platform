@@ -44,6 +44,27 @@ export function networkColor(type?: string) {
   }
 }
 
+export function shortProtocolLabel(protocol: string): string {
+  switch (protocol) {
+    case "GATEWAY_ROUTE":
+      return "Route";
+    case "SERVICE_HTTP_CALL":
+      return "HTTP / Feign";
+    case "DATABASE_ACCESS":
+      return "DB / Cache";
+    case "MESSAGE_PUBLISH":
+      return "Publish";
+    case "MESSAGE_SUBSCRIBE":
+      return "Subscribe";
+    case "SERVICE_DISCOVERY":
+      return "Eureka";
+    case "TRACING_EXPORT":
+      return "OTLP";
+    default:
+      return protocol;
+  }
+}
+
 // Renderer IDs are namespaced; source IDs remain unchanged for evidence and 3E.
 export function networkElements(
   model: ArchitecturalModel,
@@ -122,13 +143,14 @@ export function networkElements(
               edge.protocol.includes("RUNTIME");
             return {
               group: "edges" as const,
-              classes: hasRuntime ? "runtime-verified" : "",
+              classes: hasRuntime ? "runtime-verified directed-static" : "directed-static",
               data: {
                 id: `edge:${edge.id}`,
                 sourceId: edge.id,
                 source: `node:${edge.from}`,
                 target: `node:${edge.to}`,
                 label: edge.protocol,
+                shortLabel: shortProtocolLabel(edge.protocol),
                 color: hasRuntime ? "#10b981" : networkColor(nodes.get(edge.from)?.elementType),
                 exploreColor: hasRuntime ? "#10b981" : appearance.get(edge.from)!.color,
                 lineStyle: edge.uncertain

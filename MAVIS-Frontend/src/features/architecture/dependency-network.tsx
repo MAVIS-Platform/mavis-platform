@@ -162,8 +162,8 @@ export function DependencyNetwork({
     [controlledConnections, model, projection.model],
   );
   const elements = useMemo(
-    () => networkElements(projection.model, null, connections),
-    [projection.model, connections],
+    () => networkElements(projection.model, null, guidedStatic ? undefined : connections),
+    [connections, guidedStatic, projection.model],
   );
   function inspectConnection(connection: NetworkConnection) {
     if (onConnectionSelect) onConnectionSelect(connection.key);
@@ -272,17 +272,17 @@ export function DependencyNetwork({
         {
           selector: "edge",
           style: {
-            width: 1.5,
+            width: guidedStatic ? 1.8 : 1.5,
             "curve-style": (edge) =>
-              edge.data("source") === edge.data("target") ? "bezier" : "straight",
+              guidedStatic || edge.data("source") === edge.data("target") ? "bezier" : "straight",
             "control-point-step-size": 45,
             "line-color": "data(color)",
             "target-arrow-color": "data(color)",
-            "target-arrow-shape": "none",
+            "target-arrow-shape": guidedStatic ? "triangle" : "none",
             "source-arrow-shape": "none",
             "line-style": "solid",
-            "arrow-scale": 0.8,
-            opacity: 0.65,
+            "arrow-scale": guidedStatic ? 0.9 : 0.8,
+            opacity: guidedStatic ? 0.8 : 0.65,
             "overlay-opacity": 0,
           },
         },
@@ -302,6 +302,26 @@ export function DependencyNetwork({
         { selector: "edge.focused", style: { width: 3, opacity: 1 } },
         { selector: "node.search-match", style: { "border-width": 4, "font-weight": "bold" } },
         ...exploreStyles,
+        ...(guidedStatic
+          ? [
+              {
+                selector:
+                  "edge.directed-static, edge.directed-static.explore, edge.directed-static.explore.focused, edge.directed-static.explore.hover-neighbor",
+                style: {
+                  "curve-style": "bezier" as const,
+                  "target-arrow-shape": "triangle" as const,
+                  "arrow-scale": 0.9,
+                  "target-arrow-color": "data(color)",
+                  label: "data(shortLabel)",
+                  "font-size": "9px",
+                  color: "#334155",
+                  "text-background-color": "#ffffff",
+                  "text-background-opacity": 0.9,
+                  "text-background-padding": "2px",
+                },
+              },
+            ]
+          : []),
       ],
     });
     if (saved) {
@@ -324,7 +344,7 @@ export function DependencyNetwork({
       setHovered(
         target.isNode()
           ? `${target.data("label")} · ${target.data("elementType") ?? "Element"} · ${target.degree()} connections`
-          : `${target.source().data("label")} — ${target.target().data("label")} · ${target.data("label")}`,
+          : `${target.source().data("label")} ${target.data("connectionKey") ? "—" : "→"} ${target.target().data("label")} · ${target.data("label")}`,
       );
     });
     cy.on("mouseout", "node, edge", () => {
@@ -333,7 +353,11 @@ export function DependencyNetwork({
     });
     cy.on("tap", "node, edge", (event) => {
       const target = event.target;
-      if (target.isEdge() && selection.current.onConnectionSelect) {
+      if (
+        target.isEdge() &&
+        selection.current.onConnectionSelect &&
+        target.data("connectionKey")
+      ) {
         const key = String(target.data("connectionKey"));
         if (selection.current.selectedConnectionKey === key)
           selection.current.onClearConnection?.();
@@ -432,7 +456,7 @@ export function DependencyNetwork({
       refreshTheme.current = () => {};
       presentMode.current = () => {};
     };
-  }, [active, elements, nodes, projection.model]);
+  }, [active, elements, guidedStatic, nodes, projection.model]);
 
   useEffect(() => {
     if (!fillHeight) return;
@@ -1098,7 +1122,11 @@ export function DependencyNetwork({
             })}
         </div>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px]">
-          <span>One plain line per pair · select for direction, source &amp; evidence</span>
+          <span>
+            {guidedStatic
+              ? "Directed arrows & protocol labels · click a node or edge for 3E evidence"
+              : "One plain line per pair · select for direction, source & evidence"}
+          </span>
         </div>
       </div>
     </section>

@@ -273,7 +273,11 @@ export function deriveC4ContextModel(model: ArchitecturalModel): {
               description:
                 element.description ||
                 "Explicit actor declared in the model; its business role requires confirmation.",
-              actionLabel: "Declared interaction with the system",
+              actionLabel:
+                typeof element.properties?.["contextActionLabel"] === "string" &&
+                element.properties["contextActionLabel"].trim()
+                  ? element.properties["contextActionLabel"].trim()
+                  : "Declared interaction with the system",
               underlyingNodeIds: [element.id],
               underlyingEdgeIds: incoming.map((edge) => edge.id),
               direction: incoming.some((edge) => edge.from === element.id) ? "INBOUND" as const : "OUTBOUND" as const,
@@ -323,7 +327,12 @@ export function deriveC4ContextModel(model: ArchitecturalModel): {
         el.description?.replace(/\s*·\s*null\b/gi, "").trim() ||
         "External software system outside the target system boundary",
       actionLabel:
-        direction === "INBOUND" ? "Declared inbound dependency" : "Declared external dependency",
+        typeof el.properties?.["contextActionLabel"] === "string" &&
+        el.properties["contextActionLabel"].trim()
+          ? el.properties["contextActionLabel"].trim()
+          : direction === "INBOUND"
+            ? "Declared inbound dependency"
+            : "Declared external dependency",
       direction,
       underlyingEdgeIds: relatedEdges.map((e) => e.id),
     });
