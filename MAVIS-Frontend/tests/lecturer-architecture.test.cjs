@@ -13,10 +13,9 @@ test("Lecturer architecture owns one fail-closed course lifecycle policy", () =>
   assert.match(policy, /hasManageRole && lecturerCourseAccess\(status\)\.isEditable/);
 });
 
-test("Global and Course Lecturer workspaces consume the shared lifecycle policy", () => {
+test("Course Lecturer workspace consumes the shared lifecycle policy", () => {
   const globalWorkspace = read("src/features/workspaces/screens.tsx");
   const courseShell = read("src/features/courses/course-workspace-shell.tsx");
-  assert.match(globalWorkspace, /lecturerCourseAccess\(workspace\.status\)/);
   assert.match(globalWorkspace, /canEditLecturerCourse\(workspace\?\.status, canManage\)/);
   assert.match(courseShell, /Khóa học đang hoạt động — chỉ xem/);
   assert.match(courseShell, /actions && courseAccess\.isEditable/);
@@ -32,4 +31,25 @@ test("Active Lecturer courses keep content, Lab, roster, grading and settings re
   assert.match(labs, /courseAccess\.isEditable &&/);
   assert.match(authoring, /!courseAccess\.isEditable/);
   assert.match(grades, /!courseAccess\.isEditable[\s\S]*ClassGradebookMatrix/);
+});
+
+test("Global Lecturer workspace hides its sidebar and uses a single Course Management heading", () => {
+  const shell = read("src/components/app-shell.tsx");
+  const workspace = read("src/features/workspaces/screens.tsx");
+  assert.match(shell, /pathname === "\/workspaces" && !selectedWorkspaceId/);
+  assert.match(workspace, /t\("Course Management", "Quản lý khóa học"\)/);
+  assert.doesNotMatch(workspace, /A great class starts here/);
+  assert.doesNotMatch(workspace, /Your teaching space/);
+  assert.doesNotMatch(workspace, /Open a class to organize/);
+});
+
+test("Lecturer course cards open directly and own an Active-Inactive lifecycle toggle", () => {
+  const workspace = read("src/features/workspaces/screens.tsx");
+  assert.match(workspace, /role="link"/);
+  assert.match(workspace, /onClick=\{\(\) => router\.push\(workspaceUrl\)\}/);
+  assert.match(workspace, /<Switch/);
+  assert.match(workspace, /archiveWorkspace\.mutateAsync/);
+  assert.match(workspace, /updateWorkspace\.mutateAsync/);
+  assert.doesNotMatch(workspace, /t\("Open class", "Mở lớp"\)/);
+  assert.doesNotMatch(workspace, /Active · read only/);
 });

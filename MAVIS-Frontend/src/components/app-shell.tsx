@@ -119,9 +119,7 @@ function ManagedShellChrome(props: AppShellProps) {
     ? (previewRole ?? "student")
     : (session.data?.user?.role ?? "student");
   const canQueryAuth =
-    !signingOut &&
-    !onPreviewNavigate &&
-    (api.mode !== "backend" || Boolean(session.data?.user));
+    !signingOut && !onPreviewNavigate && (api.mode !== "backend" || Boolean(session.data?.user));
   const selection = useSelection();
   const pathname = usePathname();
   const route = existingRouteContext(pathname);
@@ -388,7 +386,8 @@ function ShellChrome({
       : pathname === "/workspace-overview" && params.get("view") === "course-authoring"
         ? "Modules"
         : (pageTitle ?? activeItem?.label ?? route.title);
-  const showSidebar = live || role !== "student";
+  const showSidebar =
+    (live || role !== "student") && !(pathname === "/workspaces" && !selectedWorkspaceId);
 
   useEffect(() => {
     const compactViewport = window.matchMedia("(max-width: 1279px)").matches;
@@ -696,7 +695,9 @@ function ShellChrome({
                         <div className="flex items-center gap-2.5">
                           <UserAvatar name={displayName} avatarUrl={avatarUrl} size="md" />
                           <div className="min-w-0 flex-1">
-                            <span className="block truncate text-sm font-semibold">{displayName}</span>
+                            <span className="block truncate text-sm font-semibold">
+                              {displayName}
+                            </span>
                             {displayEmail && (
                               <span className="block truncate text-[11px] font-normal text-muted-foreground">
                                 {displayEmail}
@@ -728,7 +729,9 @@ function ShellChrome({
                         }}
                       >
                         <LogOut />
-                        {signOutPending ? t("Signing out…", "Đang đăng xuất…") : t("Sign out", "Đăng xuất")}
+                        {signOutPending
+                          ? t("Signing out…", "Đang đăng xuất…")
+                          : t("Sign out", "Đăng xuất")}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>

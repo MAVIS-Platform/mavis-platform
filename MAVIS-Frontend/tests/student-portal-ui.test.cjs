@@ -58,7 +58,7 @@ test("Student global navigation excludes Free Studio Sandbox and locks to guided
 
 test("AppShell hides the sidebar for Student immersive learning", () => {
   const shell = read("src/components/app-shell.tsx");
-  assert.match(shell, /const showSidebar = live \|\| role !== "student"/);
+  assert.match(shell, /pathname === "\/workspaces" && !selectedWorkspaceId/);
   assert.match(shell, /showSidebar && <Sidebar/);
   assert.doesNotMatch(shell, /"Learning workspace"/);
 });

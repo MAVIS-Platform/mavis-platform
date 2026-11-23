@@ -87,7 +87,7 @@ test("student navigation keeps one unified Learning section and preserves all-ro
   assert.doesNotMatch(navigation, /studentWorkspaceNavigation/);
   assert.doesNotMatch(shell, /Learning workspace/);
   assert.match(shell, /children:\s*workspaceEntries/);
-  assert.match(shell, /const showSidebar = live \|\| role !== "student"/);
+  assert.match(shell, /pathname === "\/workspaces" && !selectedWorkspaceId/);
   assert.match(shell, /showSidebar && <Sidebar/);
 });
 

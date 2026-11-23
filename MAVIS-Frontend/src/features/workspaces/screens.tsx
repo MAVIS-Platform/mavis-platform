@@ -1,12 +1,13 @@
 "use client";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { CheckCircle2, Clock3, ClipboardCheck, Plus, Search, Users } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { CourseCover } from "@/components/course-cover";
 import { useApiMutation, useApiQuery, useSession, useSelection } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { ErrorState, RequestState } from "@/components/shared/request-state";
 import { Pagination, SearchInput } from "@/components/shared/forms";
 import { DataTable, DetailPanel } from "@/components/shared/data";
@@ -26,22 +27,23 @@ import {
   formatTenScaleScore,
   toTenScaleScore,
 } from "@/lib/format/course-display";
-import {
-  canEditLecturerCourse,
-  lecturerCourseAccess,
-} from "@/features/lecturer/application/course-access-policy";
+import { canEditLecturerCourse } from "@/features/lecturer/application/course-access-policy";
 
 const WORKSPACES_PER_PAGE = 6;
 
 export function Workspaces() {
   const { t } = useLocale();
+  const router = useRouter();
   const query = useApiQuery("workspaces", {});
   const session = useSession();
   const { workspaceId } = useSelection();
   const [showCreate, setShowCreate] = useState(false);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "archived">("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
   const [page, setPage] = useState(1);
+  const [changingStatusId, setChangingStatusId] = useState<string | null>(null);
+  const archiveWorkspace = useApiMutation("archiveWorkspace");
+  const updateWorkspace = useApiMutation("updateWorkspace");
   const canCreate = ["lecturer", "admin"].includes(session.data?.user?.role ?? "");
   const submissions = useApiQuery("submissions", {}, { enabled: canCreate });
   const selected = query.data?.find((w) => w.id === workspaceId);
@@ -50,7 +52,7 @@ export function Workspaces() {
     return (query.data ?? []).filter((workspace) => {
       const archived = (workspace.status ?? "ACTIVE") === "ARCHIVED";
       if (statusFilter === "active" && archived) return false;
-      if (statusFilter === "archived" && !archived) return false;
+      if (statusFilter === "inactive" && !archived) return false;
       return (
         !term ||
         workspace.name.toLowerCase().includes(term) ||
@@ -91,19 +93,9 @@ export function Workspaces() {
           <header className="mavis-hero-surface px-6 py-7 text-white md:px-8">
             <div className="relative flex flex-wrap items-center justify-between gap-6">
               <div className="max-w-2xl">
-                <p className="mb-2.5 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">
-                  <span className="h-1 w-6 rounded-full bg-teal-300" />
-                  {t("Your teaching space", "Không gian giảng dạy")}
-                </p>
                 <h1 className="text-2xl font-bold tracking-tight text-white md:text-3xl">
-                  {t("A great class starts here.", "Khởi đầu cho một lớp học tuyệt vời.")}
+                  {t("Course Management", "Quản lý khóa học")}
                 </h1>
-                <p className="mt-2 max-w-xl text-sm leading-6 text-sky-100/90">
-                  {t(
-                    "Open a class to organize modules, Labs, students and grading.",
-                    "Mở một lớp để tổ chức chương, Lab, sinh viên và chấm điểm.",
-                  )}
-                </p>
               </div>
               <div className="flex flex-wrap items-center gap-2.5">
                 <Button
@@ -196,7 +188,7 @@ export function Workspaces() {
                 [
                   ["all", t("All", "Tất cả")],
                   ["active", t("Active", "Đang hoạt động")],
-                  ["archived", t("Archived", "Lưu trữ")],
+                  ["inactive", t("Inactive", "Không hoạt động")],
                 ] as const
               ).map(([id, label]) => (
                 <button
@@ -249,12 +241,21 @@ export function Workspaces() {
                     ?.name?.trim() ||
                   "";
                 const archived = (workspace.status ?? "ACTIVE") === "ARCHIVED";
-                const courseAccess = lecturerCourseAccess(workspace.status);
                 const workspaceUrl = `/workspace-overview?workspace=${encodeURIComponent(workspace.id)}`;
                 return (
                   <article
                     key={workspace.id}
-                    className="flex min-h-[350px] flex-col overflow-hidden rounded-lg border bg-card transition-shadow hover:shadow-md"
+                    role="link"
+                    tabIndex={0}
+                    aria-label={t(`Open ${workspace.name}`, `Mở ${workspace.name}`)}
+                    onClick={() => router.push(workspaceUrl)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        router.push(workspaceUrl);
+                      }
+                    }}
+                    className="group flex min-h-[350px] cursor-pointer flex-col overflow-hidden rounded-lg border bg-card transition-all duration-200 ease-out hover:-translate-y-1 hover:border-primary/40 hover:shadow-lg focus-visible:-translate-y-1 focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 active:translate-y-0 active:scale-[0.99]"
                   >
                     <CourseCover
                       courseId={workspace.id}
@@ -263,31 +264,60 @@ export function Workspaces() {
                       <span className="relative rounded bg-white px-2 py-1 text-xs font-semibold text-slate-900">
                         {workspace.code || t("CLASS", "LỚP")}
                       </span>
-                      {archived ? (
-                        <span className="text-xs text-muted-foreground">
-                          {t("Archived", "Lưu trữ")}
+                      <div
+                        className="relative flex items-center gap-2 rounded-lg bg-white/95 px-2.5 py-1.5 shadow-sm"
+                        onClick={(event) => event.stopPropagation()}
+                        onKeyDown={(event) => event.stopPropagation()}
+                      >
+                        <Switch
+                          checked={!archived}
+                          disabled={changingStatusId === workspace.id}
+                          aria-label={t(
+                            `Set ${workspace.name} ${archived ? "active" : "inactive"}`,
+                            `Chuyển ${workspace.name} sang ${archived ? "hoạt động" : "không hoạt động"}`,
+                          )}
+                          onCheckedChange={async (active) => {
+                            setChangingStatusId(workspace.id);
+                            try {
+                              if (active) {
+                                await updateWorkspace.mutateAsync({
+                                  workspaceId: workspace.id,
+                                  name: workspace.name,
+                                  status: "ACTIVE",
+                                });
+                              } else {
+                                await archiveWorkspace.mutateAsync({ workspaceId: workspace.id });
+                              }
+                            } catch {
+                              // The mutation retains its error for the shared error state below.
+                            } finally {
+                              setChangingStatusId(null);
+                            }
+                          }}
+                        />
+                        <span
+                          className={
+                            archived
+                              ? "text-xs font-medium text-slate-600"
+                              : "text-xs font-medium text-emerald-700"
+                          }
+                        >
+                          {changingStatusId === workspace.id
+                            ? t("Updating…", "Đang cập nhật…")
+                            : archived
+                              ? t("Inactive", "Không hoạt động")
+                              : t("Active", "Đang hoạt động")}
                         </span>
-                      ) : (
-                        <span className="relative inline-flex items-center gap-1 rounded bg-white/95 px-2 py-1 text-xs text-emerald-700">
-                          <span
-                            className="size-1.5 rounded-full bg-emerald-500"
-                            aria-hidden="true"
-                          />
-                          {t("Active", "Đang hoạt động")}
-                        </span>
-                      )}
+                      </div>
                     </CourseCover>
                     <div className="flex flex-1 flex-col gap-3 p-5">
                       <p className="truncate text-xs tracking-wide text-muted-foreground">
                         <span className="uppercase">{t("Lecturer", "Giảng viên")}</span>
                         {creatorName ? ` · ${creatorName}` : ""}
                       </p>
-                      <Link
-                        className="truncate text-xl font-semibold tracking-tight text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        href={workspaceUrl}
-                      >
+                      <h3 className="truncate text-xl font-semibold tracking-tight text-foreground transition-colors group-hover:text-primary">
                         {workspace.name}
-                      </Link>
+                      </h3>
                       {workspace.description && (
                         <p className="line-clamp-1 text-xs text-muted-foreground">
                           {decodePlainTextEntities(workspace.description)}
@@ -318,16 +348,15 @@ export function Workspaces() {
                           </span>
                         )}
                       </div>
-                      <div className="mt-auto grid grid-cols-2 gap-3 border-t pt-4">
-                        <Button asChild>
-                          <Link href={workspaceUrl}>{t("Open class", "Mở lớp")}</Link>
-                        </Button>
+                      <div className="mt-auto grid gap-3 border-t pt-4">
                         <Button
                           asChild
                           variant="outline"
                           className="border-primary/45 text-primary hover:bg-primary/10"
                         >
                           <Link
+                            onClick={(event) => event.stopPropagation()}
+                            onKeyDown={(event) => event.stopPropagation()}
                             href={
                               "/submissions?workspace=" +
                               encodeURIComponent(workspace.id) +
@@ -337,11 +366,6 @@ export function Workspaces() {
                             {t("Submissions", "Bài nộp")}
                           </Link>
                         </Button>
-                        <p className="col-span-2 text-xs text-muted-foreground">
-                          {courseAccess.isEditable
-                            ? t("Inactive · editing enabled", "Không hoạt động · có thể chỉnh sửa")
-                            : t("Active · read only", "Đang hoạt động · chỉ xem")}
-                        </p>
                       </div>
                     </div>
                   </article>
@@ -356,6 +380,9 @@ export function Workspaces() {
                 </p>
               )}
             </div>
+            {(archiveWorkspace.error || updateWorkspace.error) && (
+              <ErrorState error={archiveWorkspace.error ?? updateWorkspace.error} />
+            )}
             {pageCount > 1 && (
               <div className="mt-6">
                 <Pagination page={currentPage} pageCount={pageCount} onPageChange={setPage} />
