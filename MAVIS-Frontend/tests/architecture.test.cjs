@@ -4992,7 +4992,7 @@ test("My Workspaces is a compact LMS class list with tabs and a module outline",
       code: "SWD392",
       name: "Lớp SWD392",
       myRole: "LECTURER",
-      status: "INACTIVE",
+      status: "ARCHIVED",
       members: [
         { id: "u1", name: "Lecturer", role: "LECTURER" },
         { id: "u2", name: "Student A", role: "STUDENT" },
@@ -5177,6 +5177,12 @@ test("My Workspaces is a compact LMS class list with tabs and a module outline",
   assert.match(overviewHtml, /Foundations/);
   assert.match(overviewHtml, /Service boundaries/);
   assert.match(overviewHtml, /Lab 1 Architecture/);
+  client.setQueryData(
+    ["api", "workspaces", {}],
+    classes.map((workspace) =>
+      workspace.id === "ws-swd" ? { ...workspace, status: "INACTIVE" } : workspace,
+    ),
+  );
   const authoringHtml = renderComp(WorkspaceOverview, "ws-swd", "view=course-authoring");
   assert.match(authoringHtml, /Delete module/);
   assert.doesNotMatch(authoringHtml, /aria-label="Curriculum Inspector"/);

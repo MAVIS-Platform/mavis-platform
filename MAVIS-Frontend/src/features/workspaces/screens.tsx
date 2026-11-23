@@ -463,11 +463,11 @@ export function WorkspaceOverview() {
                 active={workspace.status === "ACTIVE"}
               />
             )}
-            {activeTab === "outline" && canManage && canEdit && (
-              <LecturerCurriculumManager workspaceId={workspace.id} active />
-            )}
-            {activeTab === "outline" && canManage && !canEdit && (
-              <CourseOutline workspaceId={workspace.id} canManage={false} active />
+            {activeTab === "outline" && canManage && (
+              <LecturerCurriculumManager
+                workspaceId={workspace.id}
+                active={workspace.status === "ACTIVE"}
+              />
             )}
             {activeTab === "outline" && !canManage && (
               <CourseOutline

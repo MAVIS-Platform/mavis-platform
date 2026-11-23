@@ -83,6 +83,17 @@ class CourseAuthoringServiceTest {
     }
 
     @Test
+    void startingDraftReopensLegacyArchivedCourse() {
+        course.setStatus("ARCHIVED");
+
+        var result = service.startDraft(workspaceId);
+
+        assertEquals("DRAFT", result.status());
+        assertEquals(3, result.draftRevision());
+        verify(courses).save(course);
+    }
+
+    @Test
     void modulePrerequisiteMustBelongToAnEarlierModule() {
         var request = new CourseAuthoringService.ModuleRequest("Advanced", null, UUID.randomUUID());
         assertThrows(BusinessException.class, () -> service.addModule(workspaceId, request));

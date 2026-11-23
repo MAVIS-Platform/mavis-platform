@@ -70,8 +70,7 @@ public class CourseAuthoringService {
         access.requireWorkspaceLecturer(workspaceId);
         CourseDefinition course = courses.findLockedByWorkspaceId(workspaceId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Course not found"));
-        if ("ARCHIVED".equals(course.getStatus())) throw new BusinessException(ErrorCode.CONFLICT, "Archived Course cannot be edited");
-        if ("PUBLISHED".equals(course.getStatus())) {
+        if ("PUBLISHED".equals(course.getStatus()) || "ARCHIVED".equals(course.getStatus())) {
             course.setStatus("DRAFT");
             course.setDraftRevision(course.getDraftRevision() + 1);
             courses.save(course);

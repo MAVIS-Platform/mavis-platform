@@ -62,4 +62,35 @@ class CourseLifecycleServiceTest {
         assertThrows(BusinessException.class, () -> lifecycle.activate(workspaceId));
         verify(authoring, never()).publishForActivation(workspaceId);
     }
+
+    @Test
+    void activationReopensLegacyArchivedCourseBeforePublishing() {
+        UUID workspaceId = UUID.randomUUID();
+        var archived = course(workspaceId, "ARCHIVED");
+        var draft = course(workspaceId, "DRAFT");
+        when(authoring.findExistingForAuthoring(workspaceId)).thenReturn(Optional.of(archived));
+        when(authoring.startDraft(workspaceId)).thenReturn(draft);
+
+        lifecycle.activate(workspaceId);
+
+        var order = inOrder(authoring);
+        order.verify(authoring).startDraft(workspaceId);
+        order.verify(authoring).publishForActivation(workspaceId);
+    }
+
+    @Test
+    void preparingAuthoringReopensLegacyArchivedCourse() {
+        UUID workspaceId = UUID.randomUUID();
+        when(authoring.findExistingForAuthoring(workspaceId))
+                .thenReturn(Optional.of(course(workspaceId, "ARCHIVED")));
+
+        lifecycle.prepareAuthoring(workspaceId);
+
+        verify(authoring).startDraft(workspaceId);
+    }
+
+    private static CourseAuthoringService.CourseView course(UUID workspaceId, String status) {
+        return new CourseAuthoringService.CourseView(UUID.randomUUID(), workspaceId, "Course", null,
+                status, 1, 0, List.of());
+    }
 }

@@ -24,6 +24,10 @@ public class CourseLifecycleService {
                         ErrorCode.UNPROCESSABLE_ENTITY,
                         "Create the course roadmap before activating this course"));
 
+        if ("ARCHIVED".equals(course.status())) {
+            course = authoring.startDraft(workspaceId);
+        }
+
         var assignmentIds = new LinkedHashSet<UUID>();
         course.modules().forEach(module -> module.items().forEach(item -> {
             if (item.assignmentId() != null) assignmentIds.add(item.assignmentId());
@@ -37,7 +41,9 @@ public class CourseLifecycleService {
 
     public void prepareAuthoring(UUID workspaceId) {
         authoring.findExistingForAuthoring(workspaceId).ifPresent(course -> {
-            if ("PUBLISHED".equals(course.status())) authoring.startDraft(workspaceId);
+            if ("PUBLISHED".equals(course.status()) || "ARCHIVED".equals(course.status())) {
+                authoring.startDraft(workspaceId);
+            }
         });
     }
 }
