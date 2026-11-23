@@ -447,7 +447,7 @@ public class CourseLabStudentService {
         if (stepsNode.isEmpty()) {
             String defaultPath = primaryService.toLowerCase(Locale.ROOT).contains("gateway")
                     && appsNode != null && appsNode.has("order-service")
-                    ? (appsNode.has("payment-service") ? "/api/gateway/orders/1" : "/api/gateway/orders")
+                    ? "/api/gateway/orders"
                     : "/health";
             stepsNode.addObject()
                     .put("id", "studio-smoke")
