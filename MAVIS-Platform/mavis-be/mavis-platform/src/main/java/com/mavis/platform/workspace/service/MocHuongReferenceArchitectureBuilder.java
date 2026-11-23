@@ -109,6 +109,12 @@ public final class MocHuongReferenceArchitectureBuilder {
             }
         }
         List<ModelElement> containerNodes = c2ContainerNodes();
+        List<ModelElement> depGraphNodes = new ArrayList<>();
+        if (node("customer") != null) depGraphNodes.add(node("customer"));
+        if (node("admin-staff") != null) depGraphNodes.add(node("admin-staff"));
+        depGraphNodes.addAll(containerNodes);
+        if (node("otel-observability") != null) depGraphNodes.add(node("otel-observability"));
+
         List<ModelElement> componentDiagramNodes = new ArrayList<>();
         for (String svc : REAL_MICROSERVICES) {
             componentDiagramNodes.add(node(svc));
@@ -118,7 +124,8 @@ public final class MocHuongReferenceArchitectureBuilder {
         if (node("customer") != null && node("admin-staff") != null && node("otel-observability") != null) {
             diagramList.add(buildC1ContextDiagram());
         }
-        diagramList.add(buildDiagram("C4", "CONTAINER", containerNodes, c2Edges));
+        diagramList.add(buildDiagram("DEPENDENCY_GRAPH", "SERVICE", depGraphNodes, c2Edges));
+        diagramList.add(buildDiagram("C4", "CONTAINER", depGraphNodes, c2Edges));
         diagramList.add(buildDiagram("C4", "COMPONENT", componentDiagramNodes, c3ComponentEdges));
         List<DiagramVersion> savedDiagrams = hooks.saveDiagrams().apply(diagramList);
         ObjectNode metrics = json.createObjectNode()
@@ -727,7 +734,7 @@ public final class MocHuongReferenceArchitectureBuilder {
                     .put("target", edge.getTargetElement().getId().toString())
                     .put("type", edge.getRelationType())
                     .put("relationType", edge.getRelationType())
-                    .put("label", edge.getRelationType())
+                    .put("label", resolveEdgeLabel(edge))
                     .put("originLayer", edge.getOriginLayer())
                     .put("direction", edge.getDirection());
             if (edge.getProperties() != null) {
@@ -735,6 +742,46 @@ public final class MocHuongReferenceArchitectureBuilder {
             }
         }
         return DiagramVersion.builder().modelVersion(model).notation(notation).level(level).layoutJson(layout).build();
+    }
+
+    private String resolveEdgeLabel(ModelRelationship edge) {
+        if (edge == null) return "";
+        com.fasterxml.jackson.databind.JsonNode p = edge.getProperties();
+        if (p != null) {
+            String explicit = p.path("label").asText("");
+            if (!explicit.isBlank()) return explicit;
+            String type = edge.getRelationType();
+            if ("GATEWAY_ROUTE".equals(type) && !p.path("route").asText("").isBlank()) {
+                return p.path("route").asText();
+            }
+            if ("SERVICE_DISCOVERY".equals(type)) {
+                return "Eureka (:8761)";
+            }
+            if ("DATABASE_ACCESS".equals(type) && !p.path("protocol").asText("").isBlank()) {
+                return p.path("protocol").asText();
+            }
+            if ("MESSAGE_PUBLISH".equals(type) && !p.path("topics").asText("").isBlank()) {
+                return "Publish " + p.path("topics").asText();
+            }
+            if ("MESSAGE_SUBSCRIBE".equals(type) && !p.path("topics").asText("").isBlank()) {
+                return "Subscribe " + p.path("topics").asText();
+            }
+            if ("SERVICE_HTTP_CALL".equals(type)) {
+                if (!p.path("client").asText("").isBlank()) {
+                    return "OpenFeign (" + p.path("resilience").asText("HTTP") + ")";
+                }
+                if (!p.path("transport").asText("").isBlank()) {
+                    return p.path("transport").asText();
+                }
+            }
+            if ("TRACING_EXPORT".equals(type) && !p.path("protocol").asText("").isBlank()) {
+                return p.path("protocol").asText();
+            }
+            if (!p.path("kind").asText("").isBlank()) {
+                return p.path("kind").asText();
+            }
+        }
+        return edge.getRelationType();
     }
 
     private ModelElement addNode(
