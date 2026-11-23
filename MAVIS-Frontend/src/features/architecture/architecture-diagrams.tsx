@@ -280,6 +280,25 @@ export function ArchitectureDiagrams({
   }
   const showServiceSelect = ["COMPONENT", "LOGICAL"].includes(kind);
   const showServiceScopeSelect = ["UML_CLASS", "UML_PACKAGE"].includes(kind);
+  const resolveCanvasSelect = (rawId: string) => {
+    const stripped = rawId.replace(/^projection:/, "");
+    if (
+      model.elements.some((el) => el.id === rawId) ||
+      model.edges.some((edge) => edge.id === rawId)
+    ) {
+      onSelect(rawId);
+      return;
+    }
+    if (
+      model.elements.some((el) => el.id === stripped) ||
+      model.edges.some((edge) => edge.id === stripped)
+    ) {
+      onSelect(stripped);
+      return;
+    }
+    const matchedDocEdge = c4DocEdges.find((edge) => edge.key === rawId);
+    onSelect(matchedDocEdge?.canonicalId ?? rawId);
+  };
   return (
     <section
       aria-label="Architecture diagrams"
@@ -471,7 +490,7 @@ export function ArchitectureDiagrams({
             <ArchitectureSvgViewer
               xml={xml}
               selectedId={selectedId}
-              onSelect={onSelect}
+              onSelect={resolveCanvasSelect}
             />
           ) : <DrawioEditor
             key={`${model.id}:${key}`}

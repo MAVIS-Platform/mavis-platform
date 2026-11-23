@@ -1377,15 +1377,22 @@ function StepContent({
         !studioStateQuery.data.telemetry &&
         !(studioStateQuery.data as Record<string, unknown>)["simulatedSandbox"])),
   );
-  const selectedElement = activeModel?.elements.find((item) => item.id === selectedGraphId);
-  const selectedConnection = activeModel?.edges.find((item) => item.id === selectedGraphId);
+  const normalizedSelectedId = selectedGraphId?.replace(/^projection:/, "") ?? selectedGraphId;
+  const selectedElement =
+    activeModel?.elements.find((item) => item.id === selectedGraphId) ??
+    activeModel?.elements.find((item) => item.id === normalizedSelectedId);
+  const selectedConnection =
+    activeModel?.edges.find((item) => item.id === selectedGraphId) ??
+    activeModel?.edges.find((item) => item.id === normalizedSelectedId) ??
+    activeModel?.edges.find((item) =>
+      selectedGraphId ? item.underlyingEdgeIds?.includes(selectedGraphId) : false,
+    );
   const selectedArchitectureLabel =
     selectedElement?.name ??
     (selectedConnection
       ? `${activeModel?.elements.find((item) => item.id === selectedConnection.from)?.name ?? selectedConnection.from} → ${activeModel?.elements.find((item) => item.id === selectedConnection.to)?.name ?? selectedConnection.to}`
       : null);
-  const selectedTutorElement =
-    activeModel?.elements.find((el) => el.id === selectedGraphId) ?? activeModel?.elements[0];
+  const selectedTutorElement = selectedElement ?? activeModel?.elements[0];
   const closeImpactAnalysis = () => {
     setImpactAnalysisOpen(false);
     setImpactHighlightIds([]);
@@ -1400,7 +1407,12 @@ function StepContent({
     const q = rawQuestion.trim();
     if (!q || tutorLoading) return;
     const targetId =
-      selectedGraphId ?? activeModel?.elements[0]?.id ?? activeModel?.edges[0]?.id ?? "";
+      selectedElement?.id ??
+      selectedConnection?.id ??
+      normalizedSelectedId ??
+      activeModel?.elements[0]?.id ??
+      activeModel?.edges[0]?.id ??
+      "";
     if (!activeModel || !targetId) {
       setTutorReply({
         question: q,
